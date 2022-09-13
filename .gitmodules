@@ -1,0 +1,3 @@
+[submodule "nevresim"]
+	path = nevresim
+	url = https://github.com/dyigitpolat/nevresim.git
