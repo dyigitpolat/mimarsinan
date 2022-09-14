@@ -1,4 +1,4 @@
-from mimarsinan.chip_simulation.execute_nevresim import execute_simulator
+from mimarsinan.chip_simulation.execute_nevresim import *
 from mimarsinan.test.xor_test.xor_test_utils import *
 from mimarsinan.test.test_utils import *
 from mimarsinan.mapping.simple_mlp_mapper import *
