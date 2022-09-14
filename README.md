@@ -1,5 +1,6 @@
 # mimarsinan
-a pipeline for **m**odeling **i**n-**m**emory **ar**chitectures for **s**piking **n**eural **n**etworks
+a pipeline for ***m***odeling ***i***n-***m***emory ***ar***chitectures for 
+***s***piking ***n***eural ***n***etworks
 
 
 ## requirements
