@@ -1,5 +1,5 @@
 # mimarsinan
-a pipeline for modeling in-memory architectures for spiking neural networks
+a pipeline for **m**odeling **i**n-**m**emory **ar**chitectures for **s**piking **n**eural **n**etworks
 
 
 ## requirements
