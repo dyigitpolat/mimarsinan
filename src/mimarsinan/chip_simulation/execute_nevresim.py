@@ -4,10 +4,9 @@ def execute_simulator(simulator_filename):
     cmd = ["./{}".format(simulator_filename)]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
 
-    while(True):
-        line = p.stdout.readline()
-        print(line.decode("utf-8"))
-        if not line:
-            break
+    
+    line = p.stdout.readline()
+    output_values = [int(val) for val in line.split()]
+    p.wait()
 
-    return p.wait()
+    return output_values

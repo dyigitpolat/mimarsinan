@@ -16,14 +16,17 @@ def input_to_file(
     f.write(result)
     f.close()
 
-def save_inputs_to_files(generated_files_path, train_loader):
+
+def save_inputs_to_files(generated_files_path, loader, input_count):
     input_files_path = "{}/inputs/".format(generated_files_path)
     prepare_containing_directory(input_files_path)
 
-    for batch_idx, (input, target) in enumerate(zip(*train_loader)):
+    for batch_idx, (x, y) in enumerate(loader):
+        if(batch_idx >= input_count): break
         input_to_file(
-            input, np.argmax(target.tolist()), 
+            x.flatten(), np.argmax(y.tolist()), 
             "{}{}.txt".format(input_files_path, batch_idx))
+        
 
 def save_weights_and_chip_code(chip, generated_files_path):
     weight_file_path = "{}/weights/".format(generated_files_path)
@@ -38,3 +41,23 @@ def save_weights_and_chip_code(chip, generated_files_path):
     f = open("{}chip_weights.txt".format(weight_file_path), "w")
     f.write(chip.get_weights_string())
     f.close()
+
+
+def chip_output_to_predictions(chip_output, number_of_classes):
+    return [ 
+        np.argmax(chip_output[i:i+number_of_classes]) 
+            for i in range(0, len(chip_output), number_of_classes)]
+
+
+def evaluate_chip_output(
+    chip_output, test_loader, number_of_classes):
+
+    predictions = chip_output_to_predictions(chip_output, number_of_classes)
+
+    total = 0
+    correct = 0
+    for ((_, y), (p)) in zip(test_loader, predictions):
+        correct += int(y.item() == p)
+        total += 1
+    
+    return float(correct) / total
