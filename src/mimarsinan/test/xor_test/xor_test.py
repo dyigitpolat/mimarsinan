@@ -1,8 +1,8 @@
-from mimarsinan.chip_simulation.execute_nevresim import *
 from mimarsinan.test.xor_test.xor_test_utils import *
 from mimarsinan.test.test_utils import *
 from mimarsinan.mapping.simple_mlp_mapper import *
 from mimarsinan.chip_simulation.compile_nevresim import *
+from mimarsinan.chip_simulation.execute_nevresim import *
 from mimarsinan.code_generation.generate_main import *
 
 def test_xor():
@@ -17,7 +17,10 @@ def test_xor():
     chip = simple_mlp_to_chip(xor_model)
 
     print("Saving inputs to file...")
-    save_inputs_to_files(generated_files_path, get_xor_train_data())
+    save_inputs_to_files(
+        generated_files_path, 
+        zip(*get_xor_train_data()), 
+        input_count)
 
     print("Saving trained weights and chip generation code...")
     save_weights_and_chip_code(chip, generated_files_path)
@@ -31,8 +34,16 @@ def test_xor():
         "../nevresim/")
     print("Compilation outcome:", compiled_simulator_filename)
 
-    print("Executing simulator...")
-    execute_simulator(compiled_simulator_filename)
 
+    print("Executing simulator...")
+    chip_output = execute_simulator(compiled_simulator_filename)
+
+    print("Evaluating simulator output...")
+    x, y = get_xor_train_data()
+    y = [np.argmax(y_i) for y_i in y]
+    accuracy = evaluate_chip_output(
+        chip_output, zip(x, y), 2)
+
+    print("SNN accuracy on XOR is:", accuracy*100, "%")
     print("XOR test done.")
 
