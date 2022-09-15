@@ -33,6 +33,6 @@ def simple_mlp_to_chip(
         output_list.append(SpikeSource(len(cores_list) - 1, idx))
 
     chip = ChipModel(axons_per_core, neurons_per_core, len(cores_list), 
-        inputs, outputs, 0, connections_list, output_list, cores_list)
+        inputs, outputs, 0.075, connections_list, output_list, cores_list)
     
     return chip    
