@@ -1,6 +1,5 @@
 from mimarsinan.test.test_models.simple_mlp import *
 
-import numpy as np
 import torch
 
 def get_xor_train_data():
@@ -28,7 +27,7 @@ def train_xor_model():
     ann = None
     while(loss > 0.01):
         del ann
-        ann = SimpleMLP()
+        ann = SimpleMLP(3,1,2,2)
         optimizer = torch.optim.Adam(ann.parameters(), lr = 0.01)
         for _ in range(num_epochs):
             ann.train()
