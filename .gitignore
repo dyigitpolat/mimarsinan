@@ -135,3 +135,7 @@ generated/
 # compiled binaries
 .bin
 bin/
+
+# datasets
+.datasets
+datasets/
