@@ -139,3 +139,7 @@ bin/
 # datasets
 .datasets
 datasets/
+
+# .vscode garbage
+.vscode
+vscode/
