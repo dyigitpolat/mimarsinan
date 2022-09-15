@@ -21,11 +21,12 @@ class SimpleMLP(nn.Module):
 
         self.layers.append(
             nn.Linear(in_features=inner_mlp_width, out_features=output_size))
+        
 
     def forward(self, x):
         output = x.view(x.size(0), -1)
         for layer in self.layers:
             output = layer(output)
-            output = nn.ReLU()(output)
+            output = nn.LeakyReLU()(output)
 
         return output

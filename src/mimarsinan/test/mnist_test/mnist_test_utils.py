@@ -24,7 +24,7 @@ def get_mnist_data(batch_size=1):
 
 def train_on_mnist(ann, device, epochs):
 
-    train_loader, _ = get_mnist_data(500)
+    train_loader, _ = get_mnist_data(5000)
     optimizer = torch.optim.Adam(ann.parameters(), lr = 0.01)
     
     for epoch in range(epochs):
@@ -43,7 +43,7 @@ def test_on_mnist(ann, device):
     total = 0
     correct = 0
     with torch.no_grad():
-        _, test_loader = get_mnist_data(500)
+        _, test_loader = get_mnist_data(5000)
         for (x, y) in test_loader:
             y.to(device)
             outputs = ann.forward(x)

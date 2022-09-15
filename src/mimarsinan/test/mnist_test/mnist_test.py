@@ -15,8 +15,8 @@ def test_mnist():
     
     mnist_input_size = 28*28
     mnist_output_size = 10
-    inner_mlp_width = 512
-    inner_mlp_count = 2
+    inner_mlp_width = 64
+    inner_mlp_count = 4
     epochs = 10
 
     ann_model = SimpleMLP(
