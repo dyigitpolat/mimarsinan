@@ -1,5 +1,5 @@
 from cgi import test
-from mimarsinan.test.test_models.simple_mlp import *
+from mimarsinan.models.simple_mlp import *
 from mimarsinan.test.mnist_test.mnist_test_utils import *
 
 import torch
