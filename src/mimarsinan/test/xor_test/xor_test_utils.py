@@ -1,4 +1,4 @@
-from mimarsinan.test.test_models.simple_mlp import *
+from mimarsinan.models.simple_mlp import *
 
 import torch
 

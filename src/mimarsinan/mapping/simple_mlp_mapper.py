@@ -1,6 +1,6 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.mapping.mapping_utils import *
-from mimarsinan.test.test_models.simple_mlp import *
+from mimarsinan.models.simple_mlp import *
 
 def simple_mlp_to_chip(
     simple_mlp_model: SimpleMLP):
