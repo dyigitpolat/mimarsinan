@@ -1,8 +1,5 @@
-from cgi import test
 from mimarsinan.models.simple_mlp import *
 from mimarsinan.test.mnist_test.mnist_test_utils import *
-
-import torch
 
 from mimarsinan.mapping.simple_mlp_mapper import *
 from mimarsinan.chip_simulation.compile_nevresim import *
@@ -10,14 +7,16 @@ from mimarsinan.chip_simulation.execute_nevresim import *
 from mimarsinan.code_generation.generate_main import *
 from mimarsinan.test.test_utils import *
 
+import torch
+
 def test_mnist():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     mnist_input_size = 28*28
     mnist_output_size = 10
-    inner_mlp_width = 64
-    inner_mlp_count = 4
-    epochs = 10
+    inner_mlp_width = 512
+    inner_mlp_count = 2
+    epochs = 15
 
     ann_model = SimpleMLP(
         inner_mlp_width, 
