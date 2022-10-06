@@ -20,9 +20,9 @@ def test_mnist_nni():
     experiment.config.tuner.name = 'TPE'
     experiment.config.tuner.class_args['optimize_mode'] = 'maximize'
     experiment.config.max_trial_number = 40
-    experiment.config.trial_concurrency = 20
+    experiment.config.trial_concurrency = 10
 
-    experiment.run(8081, wait_completion=True)
+    experiment.run(8082, wait_completion=True)
 
     for trial in experiment.export_data():
         print(trial.parameter, "accuracy: ", trial.value)
