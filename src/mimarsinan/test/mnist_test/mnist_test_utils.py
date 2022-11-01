@@ -25,13 +25,13 @@ def get_mnist_data(batch_size=1):
 def train_on_mnist_for_one_epoch(ann, device, optimizer, train_loader, epoch):
     print("Training epoch:", epoch)
     for (x, y) in train_loader:
+        optimizer.zero_grad()
         ann.train()
         y.to(device)
         outputs = ann.forward(x)
         loss = nn.CrossEntropyLoss()(outputs.cpu(), y)
         loss.backward()
         optimizer.step()
-        optimizer.zero_grad()
 
 def train_on_mnist(ann, device, epochs):
     train_loader, _ = get_mnist_data(5000)
