@@ -3,7 +3,8 @@ from mimarsinan.mapping.mapping_utils import *
 from mimarsinan.models.simple_mlp import *
 
 def simple_mlp_to_chip(
-    simple_mlp_model: SimpleMLP):
+    simple_mlp_model: SimpleMLP,
+    leak = 0.075):
     model = simple_mlp_model.cpu()
 
     neurons_per_core = max([l.weight.size(0) for l in model.layers])
@@ -33,6 +34,6 @@ def simple_mlp_to_chip(
         output_list.append(SpikeSource(len(cores_list) - 1, idx))
 
     chip = ChipModel(axons_per_core, neurons_per_core, len(cores_list), 
-        inputs, outputs, 0.075, connections_list, output_list, cores_list)
+        inputs, outputs, leak, connections_list, output_list, cores_list)
     
     return chip    
