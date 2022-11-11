@@ -1,4 +1,4 @@
-from mimarsinan.models.simple_mlp import *
+from mimarsinan.models.simple_mlp_mixer import *
 from mimarsinan.test.cifar10_test.cifar10_test_utils import *
 
 from mimarsinan.mapping.simple_mlp_mapper import *
@@ -12,16 +12,24 @@ import torch
 def test_cifar10():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    cifar10_input_size = 32*32*3
+    cifar10_h = 32
+    cifar10_w = 32
+    cifar10_c = 3
     cifar10_output_size = 10
     inner_mlp_width = 256
     inner_mlp_count = 3
     epochs = 20
 
-    ann_model = SimpleMLP(
-        inner_mlp_width, 
-        inner_mlp_count, 
-        cifar10_input_size, 
+    ann_model = SimpleMLPMixer(
+        3, 3,
+        256,
+        16,
+        256,
+        inner_mlp_width,
+        inner_mlp_count,
+        [0, 0.3, 0.7, 1.0],
+        [0, 0.3, 0.7, 1.0],
+        cifar10_h,cifar10_w,cifar10_c, 
         cifar10_output_size)
 
     print("Training model...")
