@@ -16,19 +16,36 @@ def test_cifar10():
     cifar10_w = 32
     cifar10_c = 3
     cifar10_output_size = 10
-    inner_mlp_width = 256
-    inner_mlp_count = 3
+
+    patch_rows = 2
+    patch_cols = 5
+    patch_features = 16
+    patch_channels = 12
+    mixer_features = 192
+    inner_mlp_width = 96
+    inner_mlp_count = 5
+    patch_center_x = 0.08694925708954612
+    patch_center_y = -0.1331866809478088
+    patch_lensing_exp_x = 0.6774739010970796
+    patch_lensing_exp_y = 0.946826221904054
+
+    region_borders_x = get_region_borders(
+        patch_cols, patch_center_x, patch_lensing_exp_x)
+
+    region_borders_y = get_region_borders(
+        patch_rows, patch_center_y, patch_lensing_exp_y)
+    
     epochs = 20
 
     ann_model = SimpleMLPMixer(
-        3, 3,
-        256,
-        16,
-        256,
+        patch_rows, patch_cols,
+        patch_features,
+        patch_channels,
+        mixer_features,
         inner_mlp_width,
         inner_mlp_count,
-        [0, 0.3, 0.7, 1.0],
-        [0, 0.3, 0.7, 1.0],
+        region_borders_x,
+        region_borders_y,
         cifar10_h,cifar10_w,cifar10_c, 
         cifar10_output_size)
 
