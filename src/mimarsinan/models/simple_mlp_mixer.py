@@ -16,10 +16,10 @@ class SimpleMLPMixer(nn.Module):
         patch_dim_h, patch_dim_w,
         patch_features,
         patch_channels,
-        mixer_channels,
+        mixer_features,
         inner_mlp_width,
         inner_mlp_count, 
-        divs_h, divs_w,
+        divs_w, divs_h,
         h, w, c,
         output_size):
         super(SimpleMLPMixer, self).__init__()
@@ -54,13 +54,13 @@ class SimpleMLPMixer(nn.Module):
             nn.Sequential(
                 nn.Linear(
                 in_features=(patch_features//patch_channels)*patch_count, 
-                out_features=mixer_channels),
+                out_features=mixer_features),
                 nn.ReLU()
             )] * patch_channels)
 
         self.combiner = nn.Sequential(
             nn.Linear(
-            in_features=mixer_channels*patch_channels,
+            in_features=mixer_features*patch_channels,
             out_features=inner_mlp_width),
             nn.ReLU())
 
