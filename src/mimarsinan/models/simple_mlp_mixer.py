@@ -36,6 +36,7 @@ class SimpleMLPMixer(nn.Module):
 
         patch_count = patch_dim_h * patch_dim_w
 
+        self.input_layer_norm = nn.LayerNorm([c,h,w])
 
         self.patch_mlps = nn.ModuleList([])
 
@@ -48,28 +49,37 @@ class SimpleMLPMixer(nn.Module):
                             out_features=patch_features),
                         nn.ReLU()))
 
-        print(self.patch_mlps)
-
         self.mixer_mlps = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(
                 in_features=(patch_features//patch_channels)*patch_count, 
                 out_features=mixer_features),
-                nn.ReLU()
+                nn.ReLU(),
+                nn.Linear(
+                in_features=mixer_features, 
+                out_features=mixer_features),
+                nn.LayerNorm([mixer_features])
             )] * patch_channels)
 
         self.combiner = nn.Sequential(
             nn.Linear(
             in_features=mixer_features*patch_channels,
             out_features=inner_mlp_width),
-            nn.ReLU())
-
+            nn.ReLU(),
+            nn.Linear(
+            in_features=inner_mlp_width,
+            out_features=inner_mlp_width))
+        
         self.inner_mlps = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(
                     in_features=inner_mlp_width, 
                     out_features=inner_mlp_width),
-                nn.ReLU()
+                nn.ReLU(),
+                nn.Linear(
+                    in_features=inner_mlp_width, 
+                    out_features=inner_mlp_width),
+                nn.LayerNorm([inner_mlp_width])
             )] * inner_mlp_count)
 
         self.classifier = nn.Linear(
@@ -78,6 +88,8 @@ class SimpleMLPMixer(nn.Module):
             
         
     def forward(self, x : torch.Tensor):
+        x = self.input_layer_norm(x)
+
         patches = []
         divs_h = [round(v * self.h) for v in self.divs_h]
         divs_w = [round(v * self.w) for v in self.divs_w]
@@ -94,8 +106,9 @@ class SimpleMLPMixer(nn.Module):
         for i in range(self.patch_channels):
             begin = i*mixer_channel_size
             end = (i + 1)*mixer_channel_size
-            mixers.append(
-                self.mixer_mlps[i](torch.cat(
+
+            mixers.append(self.mixer_mlps[i](
+                torch.cat(
                     [p[:,begin:end] for p in patches], -1)))
 
         y = self.combiner(torch.cat(mixers, -1))
