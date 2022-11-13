@@ -1,4 +1,3 @@
-from mimarsinan.models.simple_mlp_mixer import *
 from mimarsinan.test.cifar10_test.cifar10_test_utils import *
 
 from mimarsinan.mapping.simple_mlp_mapper import *
@@ -8,46 +7,20 @@ from mimarsinan.code_generation.generate_main import *
 from mimarsinan.test.test_utils import *
 
 import torch
+import json
 
 def test_cifar10():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    cifar10_h = 32
-    cifar10_w = 32
-    cifar10_c = 3
     cifar10_output_size = 10
-
-    patch_rows = 2
-    patch_cols = 5
-    patch_features = 16
-    patch_channels = 12
-    mixer_features = 192
-    inner_mlp_width = 96
-    inner_mlp_count = 5
-    patch_center_x = 0.08694925708954612
-    patch_center_y = -0.1331866809478088
-    patch_lensing_exp_x = 0.6774739010970796
-    patch_lensing_exp_y = 0.946826221904054
-
-    region_borders_x = get_region_borders(
-        patch_cols, patch_center_x, patch_lensing_exp_x)
-
-    region_borders_y = get_region_borders(
-        patch_rows, patch_center_y, patch_lensing_exp_y)
-    
     epochs = 20
 
-    ann_model = SimpleMLPMixer(
-        patch_rows, patch_cols,
-        patch_features,
-        patch_channels,
-        mixer_features,
-        inner_mlp_width,
-        inner_mlp_count,
-        region_borders_x,
-        region_borders_y,
-        cifar10_h,cifar10_w,cifar10_c, 
-        cifar10_output_size)
+    parameters_json = """
+{"patch_cols": 5, "patch_rows": 2, "patch_features": 96, "patch_channels": 9, "mixer_features": 32, "inner_mlp_count": 3, "inner_mlp_width": 48, "patch_center_x": 0.112628610118272, "patch_center_y": -0.09517194661813913, "patch_lensing_exp_x": 1.2024024373539308, "patch_lensing_exp_y": 1.7521070752952321}
+    """
+
+    parameters = json.loads(parameters_json)
+    ann_model = get_mlp_mixer_model(parameters)
 
     print("Training model...")
     train_on_cifar10(ann_model, device, epochs)
