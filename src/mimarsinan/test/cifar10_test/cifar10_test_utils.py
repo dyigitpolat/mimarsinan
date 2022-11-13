@@ -1,3 +1,6 @@
+from mimarsinan.models.simple_mlp_mixer import *
+from mimarsinan.search.patch_borders import *
+
 import torch.nn as nn
 
 import torch
@@ -60,22 +63,31 @@ def test_on_cifar10(ann, device):
     
     return correct, total
 
-# regions: 2, 8
-# center: -0.15, 0.15
-# exp: 0.5, 2
-def get_region_borders(regions, center, exp):
-    borders = [ 2 * (x/regions) - 1.0 for x in range(regions + 1)]
-    
-    for i in range(1, regions):
-        if(borders[i] < 0):
-            borders[i] = -(abs(borders[i])**exp)
-        else:
-            borders[i] = borders[i]**exp
+def get_mlp_mixer_model(parameters):
+    cifar10_h = 32
+    cifar10_w = 32
+    cifar10_c = 3
+    cifar10_output_size = 10
 
-        borders[i] += center
-        borders[i] = max(borders[i], -1.0)
-        borders[i] = min(borders[i], 1.0)
-    
-    borders = [(x+1) / 2 for x in borders]
-    return borders
+    region_borders_x = get_region_borders(
+        int(parameters['patch_cols']), 
+        int(parameters['patch_center_x']), 
+        int(parameters['patch_lensing_exp_x']))
+
+    region_borders_y = get_region_borders(
+        int(parameters['patch_rows']), 
+        int(parameters['patch_center_y']), 
+        int(parameters['patch_lensing_exp_y']))
+        
+    return SimpleMLPMixer(
+        int(parameters['patch_rows']), int(parameters['patch_cols']),
+        int(parameters['patch_features']),
+        int(parameters['patch_channels']),
+        int(parameters['mixer_features']),
+        int(parameters['inner_mlp_width']),
+        int(parameters['inner_mlp_count']),
+        region_borders_x,
+        region_borders_y,
+        cifar10_h,cifar10_w,cifar10_c, 
+        cifar10_output_size)
 

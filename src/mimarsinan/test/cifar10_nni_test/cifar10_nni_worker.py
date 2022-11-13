@@ -19,8 +19,6 @@ def cifar10_nni_worker():
     cifar10_w = 32
     cifar10_c = 3
     cifar10_output_size = 10
-
-    epochs = 20
     
     parameters = nni.get_next_parameter()
 
