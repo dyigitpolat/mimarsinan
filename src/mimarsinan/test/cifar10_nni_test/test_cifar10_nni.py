@@ -11,9 +11,9 @@ def test_cifar10_nni():
 
         'patch_cols': {'_type': 'quniform', '_value': [2, 8, 1]},
         'patch_rows': {'_type': 'quniform', '_value': [2, 8, 1]},
-        'patch_features': {'_type': 'choice', '_value': [
-            16, 32, 48, 64, 96, 128, 192, 256]},
-        'patch_channels': {'_type': 'quniform', '_value': [1, 16, 1]},
+        'features_per_patch': {'_type': 'choice', '_value': [
+            4, 8, 16, 32, 48, 64, 96, 128, 192, 256]},
+        'mixer_channels': {'_type': 'quniform', '_value': [1, 16, 1]},
         'mixer_features': {'_type': 'choice', '_value': [
             16, 32, 48, 64, 96, 128, 192, 256]},
         'inner_mlp_count': {'_type': 'quniform', '_value': [1, 5, 1]},
@@ -32,7 +32,7 @@ def test_cifar10_nni():
     experiment.config.tuner.name = 'TPE'
     experiment.config.tuner.class_args['optimize_mode'] = 'minimize'
     experiment.config.max_trial_number = 100
-    experiment.config.trial_concurrency = 10
+    experiment.config.trial_concurrency = 2
 
     experiment.run(8082, wait_completion=True)
 
@@ -40,5 +40,11 @@ def test_cifar10_nni():
     for trial in trials:
         print(trial.parameter, "ntk: ", trial.value)
 
-    print("best: ", min([(t.value, t.parameter) for t in trials]))
+    import json
+    best = min([(t.value, json.dumps(t.parameter)) for t in trials])
+    print("best: ", best)
+
+    epochs = 40
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_on_cifar10(get_mlp_mixer_model(json.loads(best[1])), device, epochs)
     

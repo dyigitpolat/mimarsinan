@@ -25,17 +25,19 @@ def cifar10_nni_worker():
     region_borders_x = get_region_borders(
         int(parameters['patch_cols']), 
         int(parameters['patch_center_x']), 
-        int(parameters['patch_lensing_exp_x']))
+        int(parameters['patch_lensing_exp_x']),
+        cifar10_w)
 
     region_borders_y = get_region_borders(
         int(parameters['patch_rows']), 
         int(parameters['patch_center_y']), 
-        int(parameters['patch_lensing_exp_y']))
+        int(parameters['patch_lensing_exp_y']),
+        cifar10_h)
         
     ann_model = SimpleMLPMixer(
         int(parameters['patch_rows']), int(parameters['patch_cols']),
-        int(parameters['patch_features']),
-        int(parameters['patch_channels']),
+        int(parameters['features_per_patch']),
+        int(parameters['mixer_channels']),
         int(parameters['mixer_features']),
         int(parameters['inner_mlp_width']),
         int(parameters['inner_mlp_count']),

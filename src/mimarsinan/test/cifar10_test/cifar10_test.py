@@ -13,13 +13,14 @@ def test_cifar10():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     cifar10_output_size = 10
-    epochs = 20
+    epochs = 40
 
     parameters_json = """
-{"patch_cols": 5, "patch_rows": 2, "patch_features": 96, "patch_channels": 9, "mixer_features": 32, "inner_mlp_count": 3, "inner_mlp_width": 48, "patch_center_x": 0.112628610118272, "patch_center_y": -0.09517194661813913, "patch_lensing_exp_x": 1.2024024373539308, "patch_lensing_exp_y": 1.7521070752952321}
+{"patch_cols": 3, "patch_rows": 6, "features_per_patch": 64, "mixer_channels": 16, "mixer_features": 256, "inner_mlp_count": 1, "inner_mlp_width": 256, "patch_center_x": 0.14759132338024478, "patch_center_y": -0.009039915551949072, "patch_lensing_exp_x": 1.6640504814631036, "patch_lensing_exp_y": 1.3571390903600555}
     """
 
     parameters = json.loads(parameters_json)
+    print(parameters)
     ann_model = get_mlp_mixer_model(parameters)
 
     print("Training model...")
