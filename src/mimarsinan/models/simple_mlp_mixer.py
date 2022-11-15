@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from mimarsinan.search.patch_borders import *
 
 def calculate_patch_size(i, j, divs_h, divs_w, c):
     patch_h = divs_h[i+1] - divs_h[i]
@@ -129,6 +130,31 @@ class SimpleMLPMixer(nn.Module):
         
         return self.classifier(y)
         
+
+def get_mlp_mixer_model(parameters, h, w, c, output_size):
+    region_borders_x = get_region_borders(
+        int(parameters['patch_cols']), 
+        int(parameters['patch_center_x']), 
+        int(parameters['patch_lensing_exp_x']),
+        w)
+
+    region_borders_y = get_region_borders(
+        int(parameters['patch_rows']), 
+        int(parameters['patch_center_y']), 
+        int(parameters['patch_lensing_exp_y']),
+        h)
+        
+    return SimpleMLPMixer(
+        int(parameters['patch_rows']), int(parameters['patch_cols']),
+        int(parameters['features_per_patch']),
+        int(parameters['mixer_channels']),
+        int(parameters['mixer_features']),
+        int(parameters['inner_mlp_width']),
+        int(parameters['inner_mlp_count']),
+        region_borders_x,
+        region_borders_y,
+        h,w,c, 
+        output_size)
 
 
         
