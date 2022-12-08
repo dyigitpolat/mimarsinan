@@ -1,3 +1,5 @@
+import json
+
 class SpikeSource:
     def __init__(self, core, neuron, is_input = False, is_off = False):
         self.is_input_: bool = is_input
@@ -164,5 +166,57 @@ consteval auto generate_chip()
                 for w in neuron.weights:
                     result += str(w) + ' '
         return result
+
+    def get_chip_json(self):
+        result = { 
+            "axon_count": self.axon_count, 
+            "neuron_count": self.neuron_count, 
+            "core_count": self.core_count, 
+            "input_size": self.input_size, 
+            "output_size": self.output_size, 
+            "leak": self.leak, 
+            "core_parameters": [],
+            "core_connections": []}
+
+        for core in self.cores:
+            core_params = []
+            for neuron in core.neurons:
+                core_params.append({
+                    "threshold": neuron.thresh,
+                    "bias": neuron.bias,
+                    "weights": neuron.weights
+                })
+            result["core_parameters"].append(core_params)
+        
+        for con in self.connections:
+            result["core_connections"].append({
+                "source": con.axon_sources,
+                "target": con.axon_target
+            })
+        
+        return json.dumps(result)
+
+    def load_from_json(self, json_string):
+        data = json.loads(json_string)
+        self.axon_count = data["axon_count"]
+        self.neuron_count = data["neuron_count"]
+        self.core_count = data["core_count"]
+        self.input_size = data["input_size"]
+        self.output_size = data["output_size"]
+        self.leak = data["leak"]
+
+        self.connections = []
+        for con in data["core_connections"]:
+            self.connections.append(Connection(con["source"], con["target"]))
+
+        self.cores = []
+        for core in data["core_parameters"]:
+            neurons = []
+            for neuron in core:
+                neurons.append(Neuron(neuron["weights"], neuron["threshold"], neuron["bias"]))
+            self.cores.append(Core(neurons))
+
+        
+
 
 
