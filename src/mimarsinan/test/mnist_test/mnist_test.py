@@ -16,13 +16,14 @@ def test_mnist():
     mnist_output_size = 10
     inner_mlp_width = 256
     inner_mlp_count = 2
-    epochs = 15
+    epochs = 20
 
     ann_model = SimpleMLP(
         inner_mlp_width, 
         inner_mlp_count, 
         mnist_input_size, 
-        mnist_output_size)
+        mnist_output_size,
+        bias=False)
 
     print("Training model...")
     train_on_mnist(ann_model, device, epochs)
@@ -54,6 +55,7 @@ def test_mnist():
     print("Evaluating simulator output...")
     _, test_loader = get_mnist_data(1)
     accuracy = evaluate_chip_output(chip_output, test_loader, mnist_output_size)
-
     print("SNN accuracy on MNIST is:", accuracy*100, "%")
+
+    export_json_to_file(chip, generated_files_path + "chip.json")
     print("MNIST test done.")
