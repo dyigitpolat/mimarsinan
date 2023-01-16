@@ -13,56 +13,54 @@ import json
 
 def test_cifar100():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
     
     cifar100_h = 32
     cifar100_w = 32
     cifar100_c = 3
     cifar100_output_size = 100
-    epochs = 10
 
     parameters_json = """
-{"patch_cols": 2, "patch_rows": 2, "features_per_patch": 128, "mixer_channels": 2, "mixer_features": 192, "inner_mlp_count": 1, "inner_mlp_width": 256, "patch_center_x": 0.10791982871676419, "patch_center_y": 0.11482804202479702, "patch_lensing_exp_x": 1.4504157513380167, "patch_lensing_exp_y": 1.0891351827978881}
+{
+    "patch_size0": 2,
+    "hidden_size0": 128,
+    "hidden_c0": 256,
+    "hidden_s0": 64,
+    "num_layers0": 8,
+    "patch_size1": 4,
+    "hidden_size1": 128,
+    "hidden_c1": 256,
+    "hidden_s1": 64,
+    "num_layers1": 8
+}
     """
-    parameters = [json.loads(parameters_json)]
-
-    parameters_json = """
-{"patch_cols": 1, "patch_rows": 1, "features_per_patch": 128, "mixer_channels": 5, "mixer_features": 256, "inner_mlp_count": 1, "inner_mlp_width": 256, "patch_center_x": 0.059533182215429206, "patch_center_y": 0.08140525657312064, "patch_lensing_exp_x": 0.9543679158636879, "patch_lensing_exp_y": 1.695490749983732}
-    """
-    parameters.append(json.loads(parameters_json))
-
-    ann_model = EnsembleMLPMixer(
-        parameters, cifar100_h, cifar100_w, cifar100_c, cifar100_output_size)
 
     print("Training model...")
-    train_on_cifar100(ann_model, device, epochs)
+    args = Args()
+    experiment_name = f"{args.seed}_{args.model}_{args.dataset}_{args.optimizer}_{args.scheduler}"
+    if args.autoaugment:
+        experiment_name += "_aa"
+    if args.clip_grad:
+        experiment_name += f"_cg{args.clip_grad}"
+    if args.off_act:
+        experiment_name += f"_noact"
+    if args.cutmix_prob>0.:
+        experiment_name += f'_cm'
+    if args.is_cls_token:
+        experiment_name += f"_cls"
+    
+    for _, v in json.loads(parameters_json).items():
+        experiment_name += f"_{v}"
 
-    generated_files_path = "../generated/cifar100/"
-    simulation_length = 200
-    input_count = 100
+    wandb.login()
+    with wandb.init(project='mlp_mixer_test_run', config=args, name=experiment_name):
+        train_dl, test_dl = get_dataloaders(args)
+        ann_model = EnsembleMLPMixer(
+            get_parameter_dict_list(
+                json.loads(parameters_json), 2), 32, 32, 3, 100).to(args.device)
+        trainer = Trainer(ann_model, args)
+        trainer.fit(train_dl, test_dl)
+    
+    torch.save(ann_model.state_dict(), f"../saved_models/{experiment_name}")
 
-    _, test_loader = get_cifar100_data(1)
-
-    print("Mapping trained model to chip...")
-    chip = simple_mlp_to_chip(ann_model, leak=0.0)
-
-    print("Saving trained weights and chip generation code...")
-    save_inputs_to_files(generated_files_path, test_loader, input_count)
-    save_weights_and_chip_code(chip, generated_files_path)
-
-    print("Generating main function code...")
-    generate_main_function(generated_files_path, input_count, simulation_length)
-
-    print("Compiling nevresim for mapped chip...")
-    simulator_filename = \
-        compile_simulator(generated_files_path, "../nevresim/")
-    print("Compilation outcome:", simulator_filename)
-
-    print("Executing simulator...")
-    chip_output = execute_simulator(simulator_filename)
-
-    print("Evaluating simulator output...")
-    _, test_loader = get_cifar100_data(1)
-    accuracy = evaluate_chip_output(chip_output, test_loader, cifar100_output_size)
-
-    print("SNN accuracy on cifar100 is:", accuracy*100, "%")
     print("cifar100 test done.")
