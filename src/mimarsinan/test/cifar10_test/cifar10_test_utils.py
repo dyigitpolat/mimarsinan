@@ -32,9 +32,11 @@ def get_cifar10_data(batch_size=1):
         transform=test_transform)
                             
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=32, 
+        pin_memory=True)
     test_loader = torch.utils.data.DataLoader(
-        test_set, batch_size=batch_size, shuffle=False, num_workers=0)
+        test_set, batch_size=batch_size, shuffle=False, num_workers=32,
+        pin_memory=True)
 
     return train_loader, test_loader
 
@@ -44,13 +46,14 @@ def train_on_cifar10_for_one_epoch(ann, device, optimizer, train_loader, epoch):
         optimizer.zero_grad()
         ann.train()
         y.to(device)
+        x.to(device)
         outputs = ann.forward(x)
-        loss = nn.CrossEntropyLoss()(outputs.cpu(), y)
+        loss = nn.CrossEntropyLoss()(outputs, y)
         loss.backward()
         optimizer.step()
 
 def train_on_cifar10(ann, device, epochs):
-    train_loader, _ = get_cifar10_data(4096)
+    train_loader, _ = get_cifar10_data(5000)
     optimizer = torch.optim.Adam(ann.parameters(), lr = 0.001)
     
     for epoch in range(epochs):
