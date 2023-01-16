@@ -18,6 +18,7 @@ def get_region_borders(regions, center, exp, length):
         borders[i] = min(borders[i], 1.0)
     
     borders = [(x+1) / 2 for x in borders]
+
     borders = [round(v * length) for v in borders]
     for i in range(len(borders)//2):
         if(borders[i] >= borders[i+1]):
@@ -26,6 +27,5 @@ def get_region_borders(regions, center, exp, length):
     for i in range(len(borders) - 1, len(borders)//2, -1):
         if(borders[i] <= borders[i-1]):
             borders[i-1] = borders[i] - 1
-    
-    print(borders)
+
     return borders
