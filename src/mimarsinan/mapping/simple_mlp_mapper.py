@@ -35,5 +35,11 @@ def simple_mlp_to_chip(
 
     chip = ChipModel(axons_per_core, neurons_per_core, len(cores_list), 
         inputs, outputs, leak, connections_list, output_list, cores_list)
+
+    # chip.load_from_json(chip.get_chip_json()) # sanity check
     
     return chip    
+
+def export_json_to_file(chip, filename):
+    with open(filename, 'w') as f:
+        f.write(chip.get_chip_json())
