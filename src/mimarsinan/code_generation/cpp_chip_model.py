@@ -176,7 +176,8 @@ consteval auto generate_chip()
             "output_size": self.output_size, 
             "leak": self.leak, 
             "core_parameters": [],
-            "core_connections": []}
+            "core_connections": [],
+            "output_buffer": []}
 
         for core in self.cores:
             core_params = []
@@ -189,11 +190,24 @@ consteval auto generate_chip()
             result["core_parameters"].append(core_params)
         
         for con in self.connections:
-            result["core_connections"].append({
-                "source": con.axon_sources,
-                "target": con.axon_target
-            })
+            result["core_connections"].append([])
+            cur = result["core_connections"][-1]
+            for src in con.axon_sources:
+                cur.append({
+                    "is_input": src.is_input_,
+                    "is_off": src.is_off_,
+                    "source_core": src.core_,
+                    "source_neuron": src.neuron_,
+                })
         
+        for out in self.output_buffer:
+            result["output_buffer"].append({
+                "is_input": out.is_input_,
+                "is_off": out.is_off_,
+                "source_core": out.core_,
+                "source_neuron": out.neuron_
+            })
+
         return json.dumps(result)
 
     def load_from_json(self, json_string):
@@ -207,7 +221,16 @@ consteval auto generate_chip()
 
         self.connections = []
         for con in data["core_connections"]:
-            self.connections.append(Connection(con["source"], con["target"]))
+            src_list = []
+            for src in con:
+                src_list.append(
+                    SpikeSource( 
+                        src["source_core"], 
+                        src["source_neuron"],
+                        src["is_input"], 
+                        src["is_off"]))
+
+            self.connections.append(Connection(src_list))
 
         self.cores = []
         for core in data["core_parameters"]:
@@ -215,6 +238,15 @@ consteval auto generate_chip()
             for neuron in core:
                 neurons.append(Neuron(neuron["weights"], neuron["threshold"], neuron["bias"]))
             self.cores.append(Core(neurons))
+
+        self.output_buffer = []
+        for out in data["output_buffer"]:
+            self.output_buffer.append(
+                SpikeSource(
+                    out["source_core"], 
+                    out["source_neuron"],
+                    out["is_input"], 
+                    out["is_off"]))
 
         
 
