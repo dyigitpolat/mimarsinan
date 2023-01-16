@@ -1,34 +1,26 @@
 from mimarsinan.models.simple_mlp_mixer import *
+from mimarsinan.models.ensemble_mlp_mixer import *
 from mimarsinan.test.cifar100_test.cifar100_test_utils import *
 from mimarsinan.test.test_utils import *
+from mimarsinan.test.cifar100_test.cifar100_nni_worker import get_number_of_mlp_mixers
 
 from nni.experiment import Experiment
 
 def test_cifar100_nni():
     experiment = Experiment('local')
 
-    search_space = {
+    search_space = get_omihub_mlp_mixer_search_space()
 
-        'patch_cols': {'_type': 'quniform', '_value': [2, 8, 1]},
-        'patch_rows': {'_type': 'quniform', '_value': [2, 8, 1]},
-        'features_per_patch': {'_type': 'choice', '_value': [
-            16, 32, 48, 64, 96, 128]},
-        'mixer_channels': {'_type': 'quniform', '_value': [1, 16, 1]},
-        'mixer_features': {'_type': 'choice', '_value': [
-            16, 32, 48, 64, 96, 128, 192, 256]},
-        'inner_mlp_count': {'_type': 'quniform', '_value': [1, 5, 1]},
-        'inner_mlp_width': {'_type': 'choice', '_value': [
-            16, 32, 48, 64, 96, 128, 192, 256]},
-        'patch_center_x': {'_type': 'uniform', '_value': [-0.15, 0.15]},
-        'patch_center_y': {'_type': 'uniform', '_value': [-0.15, 0.15]},
-        'patch_lensing_exp_x': {'_type': 'uniform', '_value': [0.5, 2.0]},
-        'patch_lensing_exp_y': {'_type': 'uniform', '_value': [0.5, 2.0]}
-    }
+    number_of_mlp_mixers = get_number_of_mlp_mixers()
+    augmented_search_space = {}
+    for i in range(number_of_mlp_mixers):
+        for k in search_space:
+            augmented_search_space[k + str(i)] = search_space[k]
 
     experiment.config.trial_command = \
         'python mimarsinan/test/cifar100_test/cifar100_nni_worker.py'
     experiment.config.trial_code_directory = '.'
-    experiment.config.search_space = search_space
+    experiment.config.search_space = augmented_search_space
     experiment.config.tuner.name = 'TPE'
     experiment.config.tuner.class_args['optimize_mode'] = 'minimize'
     experiment.config.max_trial_number = 500
@@ -44,7 +36,11 @@ def test_cifar100_nni():
     best = min([(t.value, json.dumps(t.parameter)) for t in trials])
     print("best: ", best)
 
-    epochs = 200
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_on_cifar100(get_mlp_mixer_model(json.loads(best[1])), device, epochs)
+    with wandb.init(project='mlp_mixer_seed_run', config=args, name=experiment_name):
+        train_dl, test_dl = get_dataloaders(args)
+        ann_model = EnsembleMLPMixer(
+            get_parameter_dict_list(
+                json.loads(best[1]), number_of_mlp_mixers), 32, 32, 3, 100)
+        trainer = Trainer(ann_model, args)
+        trainer.fit(train_dl, test_dl)
     
