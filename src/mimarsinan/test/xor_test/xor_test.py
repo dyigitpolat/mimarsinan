@@ -45,5 +45,7 @@ def test_xor():
         chip_output, zip(x, y), 2)
 
     print("SNN accuracy on XOR is:", accuracy*100, "%")
+
+    export_json_to_file(chip, generated_files_path + "chip.json")
     print("XOR test done.")
 
