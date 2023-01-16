@@ -32,26 +32,30 @@ def get_cifar100_data(batch_size=1):
         transform=test_transform)
                             
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=32, 
+        pin_memory=True, prefetch_factor=max(60000//batch_size, 2))
     test_loader = torch.utils.data.DataLoader(
-        test_set, batch_size=batch_size, shuffle=False, num_workers=0)
+        test_set, batch_size=batch_size, shuffle=False, num_workers=32, 
+        pin_memory=True)
 
     return train_loader, test_loader
 
 def train_on_cifar100_for_one_epoch(ann, device, optimizer, train_loader, epoch):
     print("Training epoch:", epoch)
-    for (x, y) in train_loader:
+    for idx, (x, y) in enumerate(train_loader):
         optimizer.zero_grad()
         ann.train()
         y.to(device)
+        x.to(device)
+        print("forward...")
         outputs = ann.forward(x)
-        loss = nn.CrossEntropyLoss()(outputs.cpu(), y)
+        loss = nn.CrossEntropyLoss()(outputs, y)
         loss.backward()
         optimizer.step()
 
-def train_on_cifar100(ann, device, epochs):
-    train_loader, _ = get_cifar100_data(4000)
-    optimizer = torch.optim.Adam(ann.parameters(), lr = 0.001)
+def train_on_cifar100(ann, device, epochs, batch_size=1000):
+    train_loader, _ = get_cifar100_data(batch_size)
+    optimizer = torch.optim.AdamW(ann.parameters(), lr = 0.001)
     
     for epoch in range(epochs):
         train_on_cifar100_for_one_epoch(
@@ -65,8 +69,9 @@ def test_on_cifar100(ann, device):
     total = 0
     correct = 0
     with torch.no_grad():
-        _, test_loader = get_cifar100_data(4000)
+        _, test_loader = get_cifar100_data(10000)
         for (x, y) in test_loader:
+            x.to(device)
             y.to(device)
             outputs = ann.forward(x)
             _, predicted = outputs.cpu().max(1)
