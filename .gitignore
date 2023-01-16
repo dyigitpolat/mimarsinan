@@ -137,9 +137,13 @@ generated/
 bin/
 
 # datasets
-.datasets
 datasets/
 
 # .vscode garbage
-.vscode
-vscode/
+.vscode/
+
+# .vscode garbage
+wandb/
+
+# torch
+*.state_dict
