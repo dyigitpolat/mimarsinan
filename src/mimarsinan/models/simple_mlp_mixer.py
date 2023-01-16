@@ -8,6 +8,19 @@ def calculate_patch_size(i, j, divs_h, divs_w, c):
 
     return round(patch_h * patch_w * c)
 
+class GetPatch(nn.Module):
+    def __init__(self, i, j, divs_h, divs_w):
+        super(GetPatch, self).__init__()
+        self.i_begin = divs_h[i]
+        self.i_end = divs_h[i+1]
+        self.j_begin = divs_w[j]
+        self.j_end = divs_w[j+1]
+    
+    def forward(self, x):
+        return x[:,:,
+            self.i_begin:self.i_end,
+            self.j_begin:self.j_end].reshape(x.size(0), -1)
+
 class SimpleMLPMixer(nn.Module):
     def __init__(
         self, 
@@ -45,10 +58,11 @@ class SimpleMLPMixer(nn.Module):
 
                 self.patch_mlps.append(
                     nn.Sequential(
+                        GetPatch(i,j,divs_h, divs_w),
                         nn.Linear(
                             in_features=patch_size, 
                             out_features=self.patch_features),
-                        nn.GELU(),
+                        nn.ReLU(),
                         nn.Linear(
                             in_features=self.patch_features, 
                             out_features=self.patch_features)))
@@ -62,7 +76,7 @@ class SimpleMLPMixer(nn.Module):
                     nn.Linear(
                         in_features=mixer_input_size, 
                         out_features=mixer_features),
-                    nn.GELU(),
+                    nn.ReLU(),
                     nn.Linear(
                         in_features=mixer_features, 
                         out_features=mixer_features)))
@@ -75,7 +89,7 @@ class SimpleMLPMixer(nn.Module):
             nn.Linear(
                 in_features=combiner_in_size,
                 out_features=inner_mlp_width),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Linear(
                 in_features=inner_mlp_width,
                 out_features=inner_mlp_width))
@@ -85,7 +99,7 @@ class SimpleMLPMixer(nn.Module):
                 nn.Linear(
                     in_features=inner_mlp_width, 
                     out_features=inner_mlp_width),
-                nn.GELU(),
+                nn.ReLU(),
                 nn.Linear(
                     in_features=inner_mlp_width, 
                     out_features=inner_mlp_width),
@@ -103,27 +117,19 @@ class SimpleMLPMixer(nn.Module):
         xnorm = self.input_layer_norm(x)
 
         patches = []
-        divs_h = self.divs_h
-        divs_w = self.divs_w
-        for i in range(self.patch_dim_h):
-            for j in range(self.patch_dim_w):
-                patches.append(
-                    self.patch_mlps[i*self.patch_dim_w + j](
-                        xnorm[:,:,
-                            divs_h[i]:divs_h[i+1],
-                            divs_w[j]:divs_w[j+1]].reshape(xnorm.size(0), -1)))
-        
+        for patch_mlp in self.patch_mlps:
+            patches.append(patch_mlp(xnorm))
+
         mixers = []
         mixer_channel_size = self.features_per_patch//self.mixer_channels
-        for i in range(self.mixer_channels):
+        for i, mixer in enumerate(self.mixer_mlps):
             begin = i*mixer_channel_size
             end = (i + 1)*mixer_channel_size
-
-            mixers.append(self.mixer_mlps[i](
+            mixers.append(mixer(
                 torch.cat([p[:,begin:end] for p in patches], -1)))
-                
+        
         y = self.combiner(torch.cat([*mixers, *patches], -1))
-        y = nn.Dropout()(y)
+        y = nn.Dropout(p = 0.1)(y)
 
         for mlp in self.inner_mlps:
             y = mlp(y)
@@ -134,14 +140,14 @@ class SimpleMLPMixer(nn.Module):
 def get_mlp_mixer_model(parameters, h, w, c, output_size):
     region_borders_x = get_region_borders(
         int(parameters['patch_cols']), 
-        int(parameters['patch_center_x']), 
-        int(parameters['patch_lensing_exp_x']),
+        float(parameters['patch_center_x']), 
+        float(parameters['patch_lensing_exp_x']),
         w)
 
     region_borders_y = get_region_borders(
         int(parameters['patch_rows']), 
-        int(parameters['patch_center_y']), 
-        int(parameters['patch_lensing_exp_y']),
+        float(parameters['patch_center_y']), 
+        float(parameters['patch_lensing_exp_y']),
         h)
         
     return SimpleMLPMixer(
@@ -155,6 +161,24 @@ def get_mlp_mixer_model(parameters, h, w, c, output_size):
         region_borders_y,
         h,w,c, 
         output_size)
+
+def get_mlpmixer_search_space():
+    return {
+        'patch_cols': {'_type': 'quniform', '_value': [1, 8, 1]},
+        'patch_rows': {'_type': 'quniform', '_value': [1, 8, 1]},
+        'features_per_patch': {'_type': 'choice', '_value': [
+            16, 32, 48, 64, 96, 128]},
+        'mixer_channels': {'_type': 'quniform', '_value': [1, 16, 1]},
+        'mixer_features': {'_type': 'choice', '_value': [
+            16, 32, 48, 64, 96, 128, 192, 256]},
+        'inner_mlp_count': {'_type': 'quniform', '_value': [1, 5, 1]},
+        'inner_mlp_width': {'_type': 'choice', '_value': [
+            16, 32, 48, 64, 96, 128, 192, 256]},
+        'patch_center_x': {'_type': 'uniform', '_value': [-0.15, 0.15]},
+        'patch_center_y': {'_type': 'uniform', '_value': [-0.15, 0.15]},
+        'patch_lensing_exp_x': {'_type': 'uniform', '_value': [0.5, 2.0]},
+        'patch_lensing_exp_y': {'_type': 'uniform', '_value': [0.5, 2.0]}
+    }
 
 
         
