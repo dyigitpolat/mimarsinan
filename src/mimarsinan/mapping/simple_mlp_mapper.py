@@ -4,7 +4,8 @@ from mimarsinan.models.simple_mlp import *
 
 def simple_mlp_to_chip(
     simple_mlp_model: SimpleMLP,
-    leak = 0.075):
+    leak = 0.075,
+    quantize = False):
     model = simple_mlp_model.cpu()
 
     neurons_per_core = max([l.weight.size(0) for l in model.layers])
@@ -23,7 +24,7 @@ def simple_mlp_to_chip(
         cores_list.append(generate_core_weights(
             neurons_per_core, axons_per_core, 
             layer.weight.cpu(), layer.weight.size(0),
-            1.0, biases[i] ))
+            1.0, biases[i], quantize=quantize))
         
         connections_list.append(generate_core_connection_info(
             axons_per_core, layer.weight.size(1), max(i - 1, 0), (i == 0)
