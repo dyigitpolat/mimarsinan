@@ -8,6 +8,7 @@ from mimarsinan.code_generation.generate_main import *
 from mimarsinan.test.test_utils import *
 
 import torch
+import time
 
 def test_mnist():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -16,7 +17,15 @@ def test_mnist():
     mnist_output_size = 10
     inner_mlp_width = 256
     inner_mlp_count = 2
-    epochs = 20
+    epochs = 6
+
+    Tq = 25
+    simulation_length = Tq
+
+    generated_files_path = "../generated/mnist/"
+    input_count = 10000
+
+    _, test_loader = get_mnist_data(1)
 
     ann_model = SimpleMLP(
         inner_mlp_width, 
@@ -28,14 +37,12 @@ def test_mnist():
     print("Training model...")
     train_on_mnist(ann_model, device, epochs)
 
-    generated_files_path = "../generated/mnist/"
-    simulation_length = 200
-    input_count = 100
-
-    _, test_loader = get_mnist_data(1)
+    print("Retraining model with CQ...")
+    cq_ann_model = SimpleMLP_CQ(ann_model, Tq)
+    train_on_mnist(cq_ann_model, device, epochs // 2)
 
     print("Mapping trained model to chip...")
-    chip = simple_mlp_to_chip(ann_model)
+    chip = simple_mlp_to_chip(cq_ann_model, leak=0, quantize=True)
 
     print("Saving trained weights and chip generation code...")
     save_inputs_to_files(generated_files_path, test_loader, input_count)
@@ -50,7 +57,10 @@ def test_mnist():
     print("Compilation outcome:", simulator_filename)
 
     print("Executing simulator...")
-    chip_output = execute_simulator(simulator_filename)
+    start_time = time.time()
+    chip_output = execute_simulator(simulator_filename, input_count, num_proc=50)
+    end_time = time.time()
+    print("Simulation time:", end_time - start_time)
 
     print("Evaluating simulator output...")
     _, test_loader = get_mnist_data(1)
