@@ -2,10 +2,11 @@ main_cpp_template = \
 """
 #include "generate_chip.hpp"
 #include "_tests/all.hpp"
+#include <cstdlib>
 
 namespace nevresim::tests {{
     
-void test_main()
+void test_main(int start, int end)
 {{
     static constinit auto chip = 
         generate_chip<SpikingCompute>();
@@ -15,7 +16,7 @@ void test_main()
     load_weights(
         chip, "{0}weights/chip_weights.txt");
 
-    for(int idx = 0; idx < {1}; ++idx)
+    for(int idx = start; idx < end; ++idx)
     {{
         auto [input, target] = load_input_n("{0}inputs/", idx);
         auto buffer = chip.template execute<exec>(input);
@@ -30,8 +31,9 @@ void test_main()
 
 }}
 
-int main()
+int main(int argc, char** argv)
 {{
-    nevresim::tests::test_main();
+    nevresim::tests::test_main(
+        std::atoi(argv[1]), std::atoi(argv[2]));
 }}
 """
