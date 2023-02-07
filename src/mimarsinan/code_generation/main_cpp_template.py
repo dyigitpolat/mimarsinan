@@ -1,6 +1,7 @@
 main_cpp_template = \
 """
 #include "generate_chip.hpp"
+#include "simulator/compute_policy/fire_policy/novena_fire.hpp"
 #include "_tests/all.hpp"
 #include <cstdlib>
 
@@ -9,9 +10,9 @@ namespace nevresim::tests {{
 void test_main(int start, int end)
 {{
     static constinit auto chip = 
-        generate_chip<SpikingCompute>();
+        generate_chip<SpikingCompute<NovenaFirePolicy>>();
     
-    using exec = SpikingExecution<{2}, StochasticSpikeGenerator>;
+    using exec = SpikingExecution<{2}, StochasticSpikeGenerator, NovenaFirePolicy>;
 
     load_weights(
         chip, "{0}weights/chip_weights.txt");
