@@ -1,23 +1,18 @@
 from mimarsinan.code_generation.cpp_chip_model import *
+import math
 
 q_max = 7
 q_min = -8
 
-def quantize_weight_to_int(
-    weight, max_weight, min_weight):
-    
-    if(weight > 0):
-        return int(
-            ((q_max) * (weight)) / (max_weight))
-    if(weight < 0): 
-        return int(
-            ((q_min) * (weight)) / (min_weight))
-    
-    return 0
+def quantize_weight(w, max_w, min_w):
+    if(w > 0):
+        return round((q_max * w) / max_w)
+    else:
+        return round((q_min * w) / min_w)
 
-def do_quantize_4bits(w, max, min, switch=False):
+def do_quantize(w, max_w, min_w, switch=False):
     if(switch):
-        return quantize_weight_to_int(w, max, min)
+        return quantize_weight(w, max_w, min_w)
     else:
         return w
 
@@ -28,13 +23,13 @@ def generate_core_weights(
     max_w = weight_tensor.max().item()
     min_w = weight_tensor.min().item()
     if(quantize):
-        thresh = int(q_max * thresh / max_w)
+        thresh = round(q_max * thresh / max_w)
 
     neurons: list[Neuron] = []
     for idx in range(neurons_count):
         if(idx < outs):
             neuron_ws = [ 
-                do_quantize_4bits(w.item(), max_w, min_w, quantize) \
+                do_quantize(w.item(), max_w, min_w, quantize) \
                 for w in weight_tensor[idx] ]
 
             for _ in range(axons_count - weight_tensor[idx].shape[0]):
