@@ -19,30 +19,39 @@ def test_mnist():
     inner_mlp_count = 2
     epochs = 6
 
-    Tq = 25
-    simulation_length = Tq
+    Tq = 37
+    simulation_length = Tq + 3
 
     generated_files_path = "../generated/mnist/"
     input_count = 10000
 
     _, test_loader = get_mnist_data(1)
 
-    ann_model = SimpleMLP(
-        inner_mlp_width, 
-        inner_mlp_count, 
-        mnist_input_size, 
-        mnist_output_size,
-        bias=False)
+    # ann_model = SimpleMLP(
+    #     inner_mlp_width, 
+    #     inner_mlp_count, 
+    #     mnist_input_size, 
+    #     mnist_output_size,
+    #     bias=False)
 
-    print("Training model...")
-    train_on_mnist(ann_model, device, epochs)
+    # print("Pretraining model...")
+    # train_on_mnist(ann_model, device, epochs * 2)
 
-    print("Retraining model with CQ...")
-    cq_ann_model = SimpleMLP_CQ(ann_model, Tq)
-    train_on_mnist(cq_ann_model, device, epochs // 2)
+    # print("Tuning model with CQ...")
+    # cq_ann_model = SimpleMLP_CQ(ann_model, Tq)
+    # train_on_mnist(cq_ann_model, device, epochs // 2)
 
-    print("Mapping trained model to chip...")
-    chip = simple_mlp_to_chip(cq_ann_model, leak=0, quantize=True)
+    # print("Tuning model with CQ and weight quantization...")
+    # train_on_mnist_quantized(cq_ann_model, device, epochs // 2)
+
+    # print("Mapping trained model to chip...")
+    # chip = simple_mlp_to_chip(cq_ann_model, leak=0, quantize=True)
+
+    # WARNING: Remove this line to use the trained model
+    print("Loading chip from file...")
+    chip = ChipModel()
+    chip_json = open("../generated/mnist/chip.json", "r").read()
+    chip.load_from_json(chip_json)
 
     print("Saving trained weights and chip generation code...")
     save_inputs_to_files(generated_files_path, test_loader, input_count)
@@ -67,5 +76,5 @@ def test_mnist():
     accuracy = evaluate_chip_output(chip_output, test_loader, mnist_output_size)
     print("SNN accuracy on MNIST is:", accuracy*100, "%")
 
-    export_json_to_file(chip, generated_files_path + "chip.json")
+    # export_json_to_file(chip, generated_files_path + "chip.json")
     print("MNIST test done.")
