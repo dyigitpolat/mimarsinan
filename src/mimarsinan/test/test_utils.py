@@ -1,10 +1,9 @@
 from mimarsinan.common.file_utils import *
 
 import numpy as np
-import torch
 
 def input_to_file(
-    input: torch.Tensor, target: torch.Tensor, filename:str):
+    input, target, filename:str):
     result = ""
     result += str(target) + ' '
     result += '1' + ' '
@@ -48,10 +47,8 @@ def chip_output_to_predictions(chip_output, number_of_classes):
         np.argmax(chip_output[i:i+number_of_classes]) 
             for i in range(0, len(chip_output), number_of_classes)]
 
-
 def evaluate_chip_output(
     chip_output, test_loader, number_of_classes):
-
     predictions = chip_output_to_predictions(chip_output, number_of_classes)
 
     total = 0
