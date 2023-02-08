@@ -4,10 +4,11 @@ from mimarsinan.code_generation.main_cpp_template import *
 def generate_main_function(
     generated_files_path,
     input_count,
-    simulation_length):
+    simulation_length,
+    cpp_code_template = main_cpp_template):
 
     main_cpp_code = \
-        main_cpp_template.format(
+        cpp_code_template.format(
             generated_files_path, 
             input_count,
             simulation_length)
