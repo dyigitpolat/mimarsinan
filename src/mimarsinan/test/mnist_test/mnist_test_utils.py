@@ -4,6 +4,8 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 
+from mimarsinan.models.simple_mlp import *
+
 datasets_path = "../datasets"
 
 def get_mnist_data(batch_size=1):
@@ -24,6 +26,7 @@ def get_mnist_data(batch_size=1):
 
 def train_on_mnist_for_one_epoch(ann, device, optimizer, train_loader, epoch):
     print("Training epoch:", epoch)
+
     for (x, y) in train_loader:
         optimizer.zero_grad()
         ann.train()
@@ -31,11 +34,11 @@ def train_on_mnist_for_one_epoch(ann, device, optimizer, train_loader, epoch):
         outputs = ann.forward(x)
         loss = nn.CrossEntropyLoss()(outputs.cpu(), y)
         loss.backward()
-        optimizer.step()
+        optimizer.step()       
 
-def train_on_mnist(ann, device, epochs):
+def train_on_mnist(ann, device, epochs, lr=0.01):
     train_loader, _ = get_mnist_data(5000)
-    optimizer = torch.optim.Adam(ann.parameters(), lr = 0.01)
+    optimizer = torch.optim.Adam(ann.parameters(), lr = lr)
     
     for epoch in range(epochs):
         train_on_mnist_for_one_epoch(
@@ -58,3 +61,57 @@ def test_on_mnist(ann, device):
             correct += float(predicted.eq(y).sum().item())
     
     return correct, total
+
+
+q_max = 7
+q_min = -8
+
+def quantize_weight_tensor(weight_tensor):
+    max_weight = torch.max(weight_tensor)
+    min_weight = torch.min(weight_tensor)
+
+    return torch.where(
+        weight_tensor > 0,
+        torch.round(((q_max) * (weight_tensor)) / (max_weight)) / (q_max / max_weight),
+        torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
+
+def quantize_model(ann):
+    for layer in ann.layers:
+        if isinstance(layer, nn.Linear):
+            layer.weight = nn.Parameter(quantize_weight_tensor(layer.weight))
+
+def update_model_weights(ann, qnn):
+    for layer, q_layer in zip(ann.layers, qnn.layers):
+        if isinstance(layer, nn.Linear):
+            q_layer.weight = nn.Parameter(layer.weight)
+
+def update_quantized_model(ann, qnn):
+    update_model_weights(ann, qnn)
+    quantize_model(qnn)
+
+def train_on_mnist_for_one_epoch_quantized(ann, qnn, device, optimizer, train_loader, epoch):
+    print("Training epoch:", epoch)
+    for (x, y) in train_loader:
+        update_quantized_model(ann, qnn)
+        optimizer.zero_grad()
+        ann.train()
+        q_loss = nn.CrossEntropyLoss()(qnn(x), y)
+        loss = nn.CrossEntropyLoss()(ann(x), y)
+        total_loss = 0.5*q_loss + 0.5*loss
+        print(f"q_loss: {q_loss.item():.3f}, loss: {loss.item():.3f}, total_loss: {total_loss.item():.3f}")
+        total_loss.backward()
+        optimizer.step()
+
+import copy 
+def train_on_mnist_quantized(ann, device, epochs, lr=0.001):
+    qnn = copy.deepcopy(ann)
+
+    train_loader, _ = get_mnist_data(10000)
+    optimizer = torch.optim.Adam(ann.parameters(), lr = lr)
+    for epoch in range(epochs):
+        train_on_mnist_for_one_epoch_quantized(
+            ann, qnn, device, optimizer, train_loader, epoch)
+
+        if(epoch % max(epochs // 10, 1) == 0):
+            correct, total = test_on_mnist(ann, device)
+            print(correct, '/', total)
