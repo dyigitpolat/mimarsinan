@@ -56,8 +56,8 @@ class Core:
 
 class ChipModel:
     def __init__(
-        self, axons, neurons, cores, inputs, outputs, leak,
-        connections_list, output_list, cores_list):
+        self, axons = 0, neurons = 0, cores = 0, inputs = 0, outputs = 0, leak = 0,
+        connections_list = [], output_list = [], cores_list = []):
 
         self.axon_count = axons
         self.neuron_count = neurons
