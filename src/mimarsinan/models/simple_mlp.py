@@ -42,10 +42,10 @@ class SoftQuantize(nn.Module):
         super(SoftQuantize, self).__init__()
         self.Tq = Tq
     
-    def forward(self, x):
+    def forward(self, x, alpha=10.0):
         h = 1.0 / self.Tq
         w = 1.0 / self.Tq
-        a = torch.tensor(5.0)
+        a = torch.tensor(alpha)
         output = h * (
             0.5 * (1.0/torch.tanh(a/2)) * 
             torch.tanh(a * ((x/w-torch.floor(x/w))-0.5)) + 
@@ -58,6 +58,7 @@ class SimpleMLP_CQ(nn.Module):
         self.model = model
         self.layers = nn.ModuleList(model.layers)
         self.Tq = Tq
+        self.alpha = 4.5
     
     def forward(self, x):
         output = x.view(x.size(0), -1)
@@ -73,7 +74,7 @@ class SimpleMLP_CQ(nn.Module):
             output = torch.clamp(output, 0.0, 1.0)
 
             # soft quantize
-            output = SoftQuantize(self.Tq)(output)
+            output = SoftQuantize(self.Tq)(output, self.alpha)
 
         return output
 
