@@ -22,6 +22,10 @@ class MLPMixer(nn.Module):
         num_patches = img_size // patch_size * img_size // patch_size
         # (b, c, h, w) -> (b, d, h//p, w//p) -> (b, h//p*w//p, d)
         self.is_cls_token = is_cls_token
+        self.img_dim_h = img_size
+        self.img_dim_w = img_size
+        self.img_dim_c = in_channels
+        self.num_classes = num_classes
 
         self.patch_emb = nn.Sequential(
             nn.Conv2d(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size),
