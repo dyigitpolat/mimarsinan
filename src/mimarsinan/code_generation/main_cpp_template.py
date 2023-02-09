@@ -3,6 +3,15 @@ main_cpp_template = \
 #include "generate_chip.hpp"
 #include "simulator/compute_policy/fire_policy/novena_fire.hpp"
 #include "_tests/all.hpp"
+
+#include "simulator/spike_generation/stochastic_spike_generator.hpp"
+#include "simulator/spike_generation/deterministic_spike_generator.hpp"
+#include "simulator/execution/spiking_execution.hpp"
+#include "simulator/execution/real_valued_execution.hpp"
+#include "simulator/compute_policy/spiking_compute.hpp"
+#include "simulator/compute_policy/real_valued_compute.hpp"
+#include "simulator/compute_policy/fire_policy/novena_fire.hpp"
+
 #include <cstdlib>
 
 namespace nevresim::tests {{
@@ -11,8 +20,8 @@ void test_main(int start, int end)
 {{
     static constinit auto chip = 
         generate_chip<SpikingCompute<NovenaFirePolicy>>();
-    
-    using exec = SpikingExecution<{2}, StochasticSpikeGenerator, NovenaFirePolicy>;
+
+    using exec = SpikingExecution<{2}, DeterministicSpikeGenerator, NovenaFirePolicy>;
 
     load_weights(
         chip, "{0}weights/chip_weights.txt");
