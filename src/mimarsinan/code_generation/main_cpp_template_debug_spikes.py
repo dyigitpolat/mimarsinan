@@ -3,6 +3,13 @@ main_cpp_template_debug_spikes = \
 #include "generate_chip.hpp"
 #include "simulator/compute_policy/fire_policy/novena_fire.hpp"
 #include "_tests/all.hpp"
+
+#include "simulator/spike_generation/stochastic_spike_generator.hpp"
+#include "simulator/execution/spiking_execution.hpp"
+#include "simulator/compute_policy/spiking_compute.hpp"
+#include "simulator/compute_policy/real_valued_compute.hpp"
+#include "simulator/compute_policy/fire_policy/novena_fire.hpp"
+
 #include <cstdlib>
 
 namespace nevresim::tests {{
