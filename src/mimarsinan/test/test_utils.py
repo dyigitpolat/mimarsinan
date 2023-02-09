@@ -48,7 +48,11 @@ def chip_output_to_predictions(chip_output, number_of_classes):
             for i in range(0, len(chip_output), number_of_classes)]
 
 def evaluate_chip_output(
-    chip_output, test_loader, number_of_classes):
+    chip_output, test_loader, number_of_classes, verbose = False):
+    if verbose:
+        for i in range(0, len(chip_output), number_of_classes):
+            print(chip_output[i:i+number_of_classes])
+
     predictions = chip_output_to_predictions(chip_output, number_of_classes)
 
     total = 0
