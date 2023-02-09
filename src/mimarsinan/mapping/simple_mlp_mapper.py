@@ -4,7 +4,7 @@ from mimarsinan.models.simple_mlp import *
 
 def simple_mlp_to_chip(
     simple_mlp_model: SimpleMLP,
-    leak = 0.075,
+    leak = 0.0,
     quantize = False):
     model = simple_mlp_model.cpu()
 
