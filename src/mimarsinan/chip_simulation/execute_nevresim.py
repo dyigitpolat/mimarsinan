@@ -16,7 +16,7 @@ def execute_simulator(simulator_filename, input_count, num_proc = 4):
     for p in pipes:
         line = p.stdout.readline()
         for val in line.split():
-            output_values.append(int(val)) 
+            output_values.append(float(val)) 
         p.wait()
 
     return output_values
