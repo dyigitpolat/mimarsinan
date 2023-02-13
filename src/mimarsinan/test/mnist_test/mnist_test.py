@@ -58,7 +58,9 @@ def test_mnist():
     save_weights_and_chip_code(chip, generated_files_path)
 
     print("Generating main function code...")
-    generate_main_function(generated_files_path, input_count, simulation_length)
+    generate_main_function(
+        generated_files_path, input_count, simulation_length,
+        main_cpp_template, get_config("Deterministic", "Novena", "int"))
 
     print("Compiling nevresim for mapped chip...")
     simulator_filename = \

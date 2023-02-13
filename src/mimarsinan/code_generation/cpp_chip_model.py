@@ -110,9 +110,10 @@ consteval auto generate_outputs()
     return outs;
 }}
 
-template <typename ComputePolicy>
+template <typename ComputePolicy, typename WeightType>
 consteval auto generate_chip()
 {{
+    using weight_t = WeightType;
     constexpr std::size_t axon_count{{{0}}};
     constexpr std::size_t neuron_count{{{1}}};
     constexpr std::size_t core_count{{{2}}};
@@ -121,6 +122,7 @@ consteval auto generate_chip()
     constexpr MembraneLeak<weight_t> leak{{{5}}};
 
     using Cfg = nevresim::ChipConfiguration<
+        weight_t,
         axon_count,
         neuron_count,
         core_count,
