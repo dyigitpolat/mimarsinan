@@ -18,12 +18,14 @@ namespace nevresim::tests {{
     
 void test_main(int start, int end)
 {{
+    using weight_t = {5};
+
     static constinit auto chip = 
-        generate_chip<SpikingCompute<NovenaFirePolicy>>();
+        generate_chip<SpikingCompute<{4}FirePolicy>, weight_t>();
 
-    using exec = SpikingExecution<{2}, DeterministicSpikeGenerator, NovenaFirePolicy>;
+    using exec = SpikingExecution<{2}, {3}SpikeGenerator, weight_t, {4}FirePolicy>;
 
-    load_weights(
+    load_weights<weight_t>(
         chip, "{0}weights/chip_weights.txt");
 
     for(int idx = start; idx < end; ++idx)
