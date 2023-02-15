@@ -50,8 +50,16 @@ def chip_output_to_predictions(chip_output, number_of_classes):
 def evaluate_chip_output(
     chip_output, test_loader, number_of_classes, verbose = False):
     if verbose:
-        for i in range(0, len(chip_output), number_of_classes):
-            print(chip_output[i:i+number_of_classes])
+        total_spikes = sum(chip_output)
+        print("Total spikes: {}".format(total_spikes))
+
+        confusion_matrix = np.array([[0 for i in range(10)] for j in range(10)])
+        for ((_, y), (p)) in zip(test_loader, chip_output_to_predictions(chip_output, number_of_classes)):
+            confusion_matrix[y.item()][p] += 1
+        print("Confusion matrix:")
+        print(confusion_matrix)
+
+    
 
     predictions = chip_output_to_predictions(chip_output, number_of_classes)
 

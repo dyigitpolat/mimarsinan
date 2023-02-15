@@ -17,6 +17,7 @@ def test_debug_spikes():
 
     generated_files_path = "../generated/debug_spikes/"
     input_count = 1
+    output_count = 33
 
     chip = ChipModel()
     chip_json = open("../generated/debug_spikes/chip.json", "r").read()
@@ -29,7 +30,7 @@ def test_debug_spikes():
 
     print("Generating main function code...")
     generate_main_function(
-        generated_files_path, input_count, simulation_length, 
+        generated_files_path, input_count, output_count, simulation_length, 
         main_cpp_template_debug_spikes, get_config("Deterministic", "Novena", "int"))
 
     print("Compiling nevresim for mapped chip...")

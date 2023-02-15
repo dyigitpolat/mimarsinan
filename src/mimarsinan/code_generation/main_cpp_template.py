@@ -23,7 +23,7 @@ void test_main(int start, int end)
     static constinit auto chip = 
         generate_chip<SpikingCompute<{4}FirePolicy>, weight_t>();
 
-    using exec = SpikingExecution<{2}, {3}SpikeGenerator, weight_t, {4}FirePolicy>;
+    using exec = SpikingExecution<{2}, {6}, {3}SpikeGenerator, weight_t, {4}FirePolicy>;
 
     load_weights<weight_t>(
         chip, "{0}weights/chip_weights.txt");

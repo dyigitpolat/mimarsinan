@@ -9,6 +9,7 @@ def test_xor():
     generated_files_path = "../generated/xor/"
     simulation_length = 1000
     input_count = 4
+    output_count = 2
 
     print("Training model...")
     xor_model = train_xor_model()
@@ -26,7 +27,7 @@ def test_xor():
     save_weights_and_chip_code(chip, generated_files_path)
 
     print("Generating main function code...")
-    generate_main_function(generated_files_path, input_count, simulation_length)
+    generate_main_function(generated_files_path, input_count, output_count, simulation_length)
 
     print("Compiling nevresim for mapped chip...")
     compiled_simulator_filename = compile_simulator(
