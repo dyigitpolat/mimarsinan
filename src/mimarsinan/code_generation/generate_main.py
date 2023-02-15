@@ -11,6 +11,7 @@ def get_config(spike_gen_mode = "Stochastic", firing_mode = "Default", weight_ty
 def generate_main_function(
     generated_files_path,
     input_count,
+    output_count,
     simulation_length,
     cpp_code_template = main_cpp_template,
     simulation_config = get_config()):
@@ -22,7 +23,8 @@ def generate_main_function(
             simulation_length,
             simulation_config["spike_gen_mode"],
             simulation_config["firing_mode"],
-            simulation_config["weight_type"])
+            simulation_config["weight_type"],
+            output_count)
 
     main_cpp_filename = "{}/main/main.cpp".format(generated_files_path)
 

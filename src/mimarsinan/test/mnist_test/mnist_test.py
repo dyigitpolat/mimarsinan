@@ -19,7 +19,7 @@ def test_mnist():
     inner_mlp_count = 2
     epochs = 6
 
-    Tq = 37
+    Tq = 34
     simulation_length = Tq + 3
 
     generated_files_path = "../generated/mnist/"
@@ -54,12 +54,12 @@ def test_mnist():
     chip.load_from_json(chip_json)
 
     print("Saving trained weights and chip generation code...")
-    save_inputs_to_files(generated_files_path, test_loader, input_count)
+    # save_inputs_to_files(generated_files_path, test_loader, input_count)
     save_weights_and_chip_code(chip, generated_files_path)
 
     print("Generating main function code...")
     generate_main_function(
-        generated_files_path, input_count, simulation_length,
+        generated_files_path, input_count, mnist_output_size, simulation_length,
         main_cpp_template, get_config("Deterministic", "Novena", "int"))
 
     print("Compiling nevresim for mapped chip...")
