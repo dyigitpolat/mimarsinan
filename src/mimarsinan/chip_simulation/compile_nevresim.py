@@ -1,7 +1,7 @@
 import subprocess
 from mimarsinan.common.file_utils import *
 
-gcc_command = "g++-11"
+cc_command = "clang++-14"
 cpp_standard = "c++20"
 optimization_flag = "-O3"
 
@@ -10,7 +10,7 @@ def compile_simulator(generated_files_path, nevresim_path):
     prepare_containing_directory(simulator_filename)
 
     cmd = [
-        gcc_command, 
+        cc_command, 
         optimization_flag, 
         "{}/main/main.cpp".format(generated_files_path), 
         "-I", "{}/include".format(nevresim_path), 
