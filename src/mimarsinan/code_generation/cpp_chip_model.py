@@ -57,7 +57,7 @@ class Core:
 class ChipModel:
     def __init__(
         self, axons = 0, neurons = 0, cores = 0, inputs = 0, outputs = 0, leak = 0,
-        connections_list = [], output_list = [], cores_list = []):
+        connections_list = [], output_list = [], cores_list = [], weight_type = float):
 
         self.axon_count = axons
         self.neuron_count = neurons
@@ -65,6 +65,7 @@ class ChipModel:
         self.input_size = inputs
         self.output_size = outputs
         self.leak = leak
+        self.weight_type = weight_type
 
         self.connections: list[Connection] = connections_list
         self.output_buffer: list[SpikeSource] = output_list
@@ -163,10 +164,10 @@ consteval auto generate_chip()
         result = "";
         for core in self.cores:
             for neuron in core.neurons:
-                result += str(neuron.thresh) + ' '
-                result += str(neuron.bias) + ' '
+                result += str(self.weight_type(neuron.thresh)) + ' '
+                result += str(self.weight_type(neuron.bias)) + ' '
                 for w in neuron.weights:
-                    result += str(w) + ' '
+                    result += str(self.weight_type(w)) + ' '
         return result
 
     def get_chip_json(self):

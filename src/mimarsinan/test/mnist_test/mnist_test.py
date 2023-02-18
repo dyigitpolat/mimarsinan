@@ -19,7 +19,7 @@ def test_mnist():
     inner_mlp_count = 2
     epochs = 6
 
-    Tq = 34
+    Tq = 37
     simulation_length = Tq + 3
 
     generated_files_path = "../generated/mnist/"
@@ -39,23 +39,17 @@ def test_mnist():
 
     # print("Tuning model with CQ...")
     # cq_ann_model = SimpleMLP_CQ(ann_model, Tq)
-    # train_on_mnist(cq_ann_model, device, epochs // 2)
+    # train_on_mnist(cq_ann_model, device, epochs)
 
     # print("Tuning model with CQ and weight quantization...")
-    # train_on_mnist_quantized(cq_ann_model, device, epochs // 2)
+    # train_on_mnist_quantized(cq_ann_model, device, epochs)
 
     # print("Mapping trained model to chip...")
-    # chip = simple_mlp_to_chip(cq_ann_model, leak=0, quantize=True)
+    # chip = simple_mlp_to_chip(cq_ann_model, leak=0, quantize=True, weight_type=int)
 
-    # WARNING: Remove this line to use the trained model
-    print("Loading chip from file...")
-    chip = ChipModel()
-    chip_json = open("../generated/mnist/chip.json", "r").read()
-    chip.load_from_json(chip_json)
-
-    print("Saving trained weights and chip generation code...")
+    # print("Saving trained weights and chip generation code...")
     # save_inputs_to_files(generated_files_path, test_loader, input_count)
-    save_weights_and_chip_code(chip, generated_files_path)
+    # save_weights_and_chip_code(chip, generated_files_path)
 
     print("Generating main function code...")
     generate_main_function(
@@ -75,7 +69,7 @@ def test_mnist():
 
     print("Evaluating simulator output...")
     _, test_loader = get_mnist_data(1)
-    accuracy = evaluate_chip_output(chip_output, test_loader, mnist_output_size)
+    accuracy = evaluate_chip_output(chip_output, test_loader, mnist_output_size, verbose=True)
     print("SNN accuracy on MNIST is:", accuracy*100, "%")
 
     # export_json_to_file(chip, generated_files_path + "chip.json")

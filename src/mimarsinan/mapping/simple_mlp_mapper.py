@@ -5,7 +5,8 @@ from mimarsinan.models.simple_mlp import *
 def simple_mlp_to_chip(
     simple_mlp_model: SimpleMLP,
     leak = 0.0,
-    quantize = False):
+    quantize = False,
+    weight_type = float):
     model = simple_mlp_model.cpu()
 
     neurons_per_core = max([l.weight.size(0) for l in model.layers])
@@ -35,7 +36,7 @@ def simple_mlp_to_chip(
         output_list.append(SpikeSource(len(cores_list) - 1, idx))
 
     chip = ChipModel(axons_per_core, neurons_per_core, len(cores_list), 
-        inputs, outputs, leak, connections_list, output_list, cores_list)
+        inputs, outputs, leak, connections_list, output_list, cores_list, weight_type)
 
     # chip.load_from_json(chip.get_chip_json()) # sanity check
     
