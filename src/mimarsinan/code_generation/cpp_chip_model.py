@@ -8,11 +8,11 @@ class SpikeSource:
         self.neuron_: int = neuron
 
     def get_string(self) -> str:
-        if(self.is_input_):
-            return "Src{in," + str(self.neuron_) + "}"
-        
         if(self.is_off_):
             return "Src{off,0}"
+        
+        if(self.is_input_):
+            return "Src{in," + str(self.neuron_) + "}"
         
         return "Src{" + str(self.core_) + "," + str(self.neuron_) + "}"
 
