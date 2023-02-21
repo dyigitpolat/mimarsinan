@@ -88,16 +88,20 @@ def update_quantized_model(ann, qnn):
     update_model_weights(ann, qnn)
     quantize_model(qnn)
 
+def transfer_gradients(a, b):
+    for a_layer, b_layer in zip(a.layers, b.layers):
+        if isinstance(a_layer, nn.Linear):
+            a_layer.weight.grad = b_layer.weight.grad
+
 def train_on_mnist_for_one_epoch_quantized(ann, qnn, device, optimizer, train_loader, epoch):
     print("Training epoch:", epoch)
     for (x, y) in train_loader:
         update_quantized_model(ann, qnn)
         optimizer.zero_grad()
         ann.train()
-        y_to_one_hot = torch.nn.functional.one_hot(y, 10) * 1.0
-        loss = nn.MSELoss()(ann(x), y_to_one_hot)
-        loss *= nn.MSELoss()(qnn(x), y_to_one_hot) ** 5.5
-        loss.backward()
+        qnn.train()
+        nn.CrossEntropyLoss()(qnn(x), y).backward()
+        transfer_gradients(ann, qnn)
         optimizer.step()
 
 import copy 
