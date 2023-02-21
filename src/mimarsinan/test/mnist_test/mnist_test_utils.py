@@ -31,8 +31,7 @@ def train_on_mnist_for_one_epoch(ann, device, optimizer, train_loader, epoch):
         optimizer.zero_grad()
         ann.train()
         y.to(device)
-        outputs = ann.forward(x)
-        loss = nn.CrossEntropyLoss()(outputs.cpu(), y)
+        loss = nn.CrossEntropyLoss()(ann(x), y)
         loss.backward()
         optimizer.step()       
 
@@ -95,11 +94,10 @@ def train_on_mnist_for_one_epoch_quantized(ann, qnn, device, optimizer, train_lo
         update_quantized_model(ann, qnn)
         optimizer.zero_grad()
         ann.train()
-        q_loss = nn.CrossEntropyLoss()(qnn(x), y)
-        loss = nn.CrossEntropyLoss()(ann(x), y)
-        total_loss = 0.5*q_loss + 0.5*loss
-        print(f"q_loss: {q_loss.item():.3f}, loss: {loss.item():.3f}, total_loss: {total_loss.item():.3f}")
-        total_loss.backward()
+        y_to_one_hot = torch.nn.functional.one_hot(y, 10) * 1.0
+        loss = nn.MSELoss()(ann(x), y_to_one_hot)
+        loss *= nn.MSELoss()(qnn(x), y_to_one_hot) ** 5.5
+        loss.backward()
         optimizer.step()
 
 import copy 
