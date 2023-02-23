@@ -15,11 +15,11 @@ import numpy as np
 import torchvision
 import torchvision.transforms as transforms
 
-
 class MLPMixer(nn.Module):
     def __init__(self,in_channels=3,img_size=32, patch_size=4, hidden_size=512, hidden_s=256, hidden_c=2048, num_layers=8, num_classes=10, drop_p=0., off_act=False, is_cls_token=False):
         super(MLPMixer, self).__init__()
         num_patches = img_size // patch_size * img_size // patch_size
+        self.num_patches = num_patches
         # (b, c, h, w) -> (b, d, h//p, w//p) -> (b, h//p*w//p, d)
         self.is_cls_token = is_cls_token
         self.img_dim_h = img_size
@@ -28,18 +28,20 @@ class MLPMixer(nn.Module):
         self.num_classes = num_classes
 
         self.patch_emb = nn.Sequential(
-            nn.Conv2d(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size),
-            Rearrange('b d h w -> b (h w) d')
+            nn.Conv2d(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=False),
+            Rearrange('b d h w -> b (h w) d'), 
+            nn.ReLU()
         )
 
         if self.is_cls_token:
             self.cls_token = nn.Parameter(torch.randn(1, 1, hidden_size))
-            num_patches += 1
+            self.num_patches += 1
 
-
+        self.num_layers = num_layers
+        self.hidden_s = hidden_s
         self.mixer_layers = nn.Sequential(
             *[
-                MixerLayer(num_patches, hidden_size, hidden_s, hidden_c, drop_p, off_act) 
+                MixerLayer(self.num_patches, hidden_size, hidden_s, hidden_c, drop_p, off_act) 
             for _ in range(num_layers)
             ]
         )
@@ -64,6 +66,7 @@ class MixerLayer(nn.Module):
         super(MixerLayer, self).__init__()
         self.mlp1 = MLP1(num_patches, hidden_s, hidden_size, drop_p, off_act)
         self.mlp2 = MLP2(hidden_size, hidden_c, drop_p, off_act)
+
     def forward(self, x):
         out = self.mlp1(x)
         out = self.mlp2(out)
@@ -72,15 +75,15 @@ class MixerLayer(nn.Module):
 class MLP1(nn.Module):
     def __init__(self, num_patches, hidden_s, hidden_size, drop_p, off_act):
         super(MLP1, self).__init__()
-        self.ln = nn.LayerNorm(hidden_size)
-        self.fc1 = nn.Conv1d(num_patches, hidden_s, kernel_size=1)
+        self.ln = nn.Identity() #nn.LayerNorm(hidden_size)
+        self.fc1 = nn.Conv1d(num_patches, hidden_s, kernel_size=1, bias=False)
         self.do1 = nn.Dropout(p=drop_p)
-        self.fc2 = nn.Conv1d(hidden_s, num_patches, kernel_size=1)
+        self.fc2 = nn.Conv1d(hidden_s, num_patches, kernel_size=1, bias=False)
         self.do2 = nn.Dropout(p=drop_p)
-        self.act = F.gelu if not off_act else lambda x:x
+        self.act = nn.ReLU() #F.gelu if not off_act else lambda x:x
     def forward(self, x):
         out = self.do1(self.act(self.fc1(self.ln(x))))
-        out = self.do2(self.fc2(out))
+        out = self.do2(self.act(self.fc2(out)))
         return out+x
 
 class MLP2(nn.Module):
@@ -94,7 +97,7 @@ class MLP2(nn.Module):
         self.act = F.gelu if not off_act else lambda x:x
     def forward(self, x):
         out = self.do1(self.act(self.fc1(self.ln(x))))
-        out = self.do2(self.fc2(out))
+        out = self.do2(self.act(self.fc2(out)))
         return out+x
 
 class Trainer(object):
