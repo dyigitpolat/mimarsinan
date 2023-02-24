@@ -13,18 +13,29 @@ class Mapping:
         pass
 
     def map_fc(self, 
-        input_tensor_sources,  # numpy array of SpikeSource [num_patches, kernel_features]
-        output_shape, # [hidden_s, kernel_features] 
-        fc_weights): # numpy array of weights [hidden_s, num_patches]
-        assert input_tensor_sources.shape[-1] == output_shape[-1]
-        new_cores_count = output_shape[-1]
-        out_neurons_count = output_shape[-2]
-        input_axons_count = input_tensor_sources.shape[-2]
+        input_tensor_sources,  # 
+        output_shape, # 
+        fc_weights): # 
+
+        w_rows = fc_weights.shape[-2]
+        w_cols = fc_weights.shape[-1]
+        x_rows = input_tensor_sources.shape[-2]
+        x_cols = input_tensor_sources.shape[-1]
+        o_rows = output_shape[-2]
+        o_cols = output_shape[-1]
+
+        assert o_rows == w_rows
+        assert o_cols == x_cols
+        assert x_rows == w_cols
+
+        new_cores_count = o_cols
+        out_neurons_count = o_rows
+        input_axons_count = x_rows
 
         core_matrix = np.zeros([self.axons_per_core, self.neurons_per_core])
         core_matrix[0:input_axons_count, 0:out_neurons_count] = fc_weights.transpose()
 
-        for i in range(new_cores_count): #out_cores
+        for i in range(new_cores_count): 
             self.cores.append(
                 generate_core_weights(
                     self.neurons_per_core, self.axons_per_core, core_matrix.transpose(),
@@ -41,6 +52,14 @@ class Mapping:
             
             self.connections.append(Connection(spike_sources))
 
+        layer_sources = []
+        core_offset = len(self.cores) - new_cores_count
+        for neuron_idx in range(o_rows):
+            layer_sources.append(
+                [SpikeSource(core_offset + core_idx, neuron_idx) for core_idx in range(o_cols)])
+        
+        return np.array(layer_sources)
+    
 def omihub_mlp_mixer_to_chip(
     omihub_mlp_mixer_model: MLPMixer,
     leak = 0.0,
@@ -56,7 +75,6 @@ def omihub_mlp_mixer_to_chip(
     in_width = model.img_dim_w
 
     input_size = in_channels * in_height * in_width
-    output_size = model.num_classes
     
     kernel_features = model.patch_emb[0].weight.size(0)
     kernel_h = model.patch_emb[0].weight.size(2)
@@ -65,10 +83,6 @@ def omihub_mlp_mixer_to_chip(
     patch_rows = in_height // kernel_h
     patch_cols = in_width // kernel_w
     num_patches = patch_rows * patch_cols
-
-    patch_size = in_channels * kernel_h * kernel_w
-
-    # patch_emb, in_ch = in_channels, out_ch = kernel_featuresm
 
     np_weights = model.patch_emb[0].weight.data.numpy()
     cores_list = []
@@ -103,35 +117,59 @@ def omihub_mlp_mixer_to_chip(
 
     prev_core_count = len(cores_list) - num_patches
     print("prev_core_count", prev_core_count)
-
-    input_sources = []
-    for i in range(num_patches):
-        input_sources.append([])
-        for j in range(kernel_features):
-            input_sources[i].append(
-                SpikeSource(i, j, True, False))
-    input_sources = np.array(input_sources)
-    layer_output_shape = np.array([model.hidden_s, kernel_features])
     
     mapping = Mapping()
     mapping.neurons_per_core = neurons_per_core
     mapping.axons_per_core = axons_per_core
     mapping.cores = cores_list
     mapping.connections = connections_list
-    mapping.map_fc(
-        input_sources, 
-        layer_output_shape, 
-        model.mixer_layers[0].mlp1.fc1.weight.data[:, :, 0].numpy())
+
+    # prepare input sources
+    input_sources = []
+    for i in range(num_patches):
+        input_sources.append([])
+        for j in range(kernel_features):
+            input_sources[i].append(
+                SpikeSource(i, j, True, False))
+    layer_sources = np.array(input_sources)
+
+    fc_layers = []
+    for i in range(model.num_layers):
+        fc_layers.append(
+            model.mixer_layers[i].mlp1.fc1)
+        fc_layers.append(
+            model.mixer_layers[i].mlp1.fc2)
+        fc_layers.append(
+            model.mixer_layers[i].mlp2.fc1)
+        fc_layers.append(
+            model.mixer_layers[i].mlp2.fc2)
+    
+    !!!# do average pooling
+    fc_layers.append(model.clf)
         
+    for layer in fc_layers:
+        if isinstance(layer, nn.Linear):
+            layer_sources = layer_sources.transpose()
+
+        layer_weights = layer.weight.data.numpy().squeeze()
+        layer_output_shape = np.array([layer_weights.shape[-2], layer_sources.shape[-1]])
+        layer_sources = mapping.map_fc(
+            layer_sources, 
+            layer_output_shape, 
+            layer_weights)   
+        
+        if isinstance(layer, nn.Linear):
+            layer_sources = layer_sources.transpose()
+        
+    print(layer_sources.shape)
     output_list = []
-    for i in range(kernel_features):
-        for j in range(model.hidden_s):
-            output_list.append(SpikeSource(num_patches+i, j))
+    for source in layer_sources.flatten():
+        output_list.append(source)
     
     chip = ChipModel(axons_per_core, neurons_per_core, len(mapping.cores), 
-        input_size, output_size, leak, mapping.connections, output_list, mapping.cores, weight_type)
+        input_size, len(output_list), leak, mapping.connections, output_list, mapping.cores, weight_type)
 
-    # chip.load_from_json(chip.get_chip_json()) # sanity check
+    chip.load_from_json(chip.get_chip_json()) # sanity check
     return chip    
 
 def export_json_to_file(chip, filename):

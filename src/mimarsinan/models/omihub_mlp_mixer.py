@@ -45,9 +45,10 @@ class MLPMixer(nn.Module):
             for _ in range(num_layers)
             ]
         )
-        self.ln = nn.LayerNorm(hidden_size)
+        self.ln = nn.Identity() #nn.LayerNorm(hidden_size)
 
         self.clf = nn.Linear(hidden_size, num_classes)
+        self.debug = None
 
 
     def forward(self, x):
@@ -58,6 +59,8 @@ class MLPMixer(nn.Module):
         out = self.ln(out)
         out = out[:, 0] if self.is_cls_token else out.mean(dim=1)
         out = self.clf(out)
+        out = nn.ReLU()(out)
+        self.debug = out
         return out
 
 
@@ -84,21 +87,22 @@ class MLP1(nn.Module):
     def forward(self, x):
         out = self.do1(self.act(self.fc1(self.ln(x))))
         out = self.do2(self.act(self.fc2(out)))
-        return out+x
+        
+        return out # +x
 
 class MLP2(nn.Module):
     def __init__(self, hidden_size, hidden_c, drop_p, off_act):
         super(MLP2, self).__init__()
-        self.ln = nn.LayerNorm(hidden_size)
-        self.fc1 = nn.Linear(hidden_size, hidden_c)
+        self.ln = nn.Identity() #nn.LayerNorm(hidden_size)
+        self.fc1 = nn.Linear(hidden_size, hidden_c, bias=False)
         self.do1 = nn.Dropout(p=drop_p)
-        self.fc2 = nn.Linear(hidden_c, hidden_size)
+        self.fc2 = nn.Linear(hidden_c, hidden_size, bias=False)
         self.do2 = nn.Dropout(p=drop_p)
-        self.act = F.gelu if not off_act else lambda x:x
+        self.act = nn.ReLU() #F.gelu if not off_act else lambda x:x
     def forward(self, x):
         out = self.do1(self.act(self.fc1(self.ln(x))))
         out = self.do2(self.act(self.fc2(out)))
-        return out+x
+        return out # +x
 
 class Trainer(object):
     def __init__(self, model, args):
