@@ -26,14 +26,12 @@ def test_mapping():
     generated_files_path = "../generated/mapping/"
     test_input = torch.randn(input_count, 1, 28, 28)
 
-    out_size = 32*32
+    out_size = 10
     test_loader = [(test_input, torch.ones(1,out_size))]
 
-    ann_model = MLPMixer(1, 28, 4, 32, 32, 32, 1, out_size)
+    ann_model = MLPMixer(1, 28, 4, 32, 33, 34, 1, out_size)
 
     ann_model(test_input)
-    #print(ann_model.debug_vals)
-    print(ann_model.debug_sum)
 
     print("Mapping trained model to chip...")
     chip = omihub_mlp_mixer_to_chip(ann_model, leak=0, quantize=False, weight_type=float)
@@ -59,9 +57,9 @@ def test_mapping():
     print("chipsum", sum(chip_output))
     tot = 0
     inc = 0
-    layer_debug_tensor = ann_model.mixer_layers[0].mlp1.debug
+    layer_debug_tensor = ann_model.debug.detach().numpy().flatten()
     for i in range(len(chip_output)):
-        if(abs(chip_output[i]-layer_debug_tensor.numpy().transpose().flatten()[i]) > 0.001):
+        if(abs(chip_output[i]-layer_debug_tensor[i]) > 0.001):
             inc +=1
         tot += 1
     
