@@ -186,8 +186,8 @@ consteval auto generate_chip()
             core_params = []
             for neuron in core.neurons:
                 core_params.append({
-                    "threshold": neuron.thresh,
-                    "bias": neuron.bias,
+                    "threshold": self.weight_type(neuron.thresh),
+                    "bias": self.weight_type(neuron.bias),
                     "weights": neuron.weights
                 })
             result["core_parameters"].append(core_params)
@@ -197,18 +197,18 @@ consteval auto generate_chip()
             cur = result["core_connections"][-1]
             for src in con.axon_sources:
                 cur.append({
-                    "is_input": src.is_input_,
-                    "is_off": src.is_off_,
-                    "source_core": src.core_,
-                    "source_neuron": src.neuron_,
+                    "is_input": bool(src.is_input_),
+                    "is_off": bool(src.is_off_),
+                    "source_core": int(src.core_),
+                    "source_neuron": int(src.neuron_),
                 })
         
         for out in self.output_buffer:
             result["output_buffer"].append({
-                "is_input": out.is_input_,
-                "is_off": out.is_off_,
-                "source_core": out.core_,
-                "source_neuron": out.neuron_
+                "is_input": bool(out.is_input_),
+                "is_off": bool(out.is_off_),
+                "source_core": int(out.core_),
+                "source_neuron": int(out.neuron_)
             })
 
         return json.dumps(result)
