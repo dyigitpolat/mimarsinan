@@ -6,8 +6,10 @@ q_min = -8
 
 def quantize_weight(w, max_w, min_w):
     if(w > 0):
+        if(max_w == 0): return 0
         return round((q_max * w) / max_w)
     else:
+        if(min_w == 0): return 0
         return round((q_min * w) / min_w)
 
 def do_quantize(w, max_w, min_w, switch=False):
@@ -23,6 +25,7 @@ def generate_core_weights(
     max_w = weight_tensor.max().item()
     min_w = weight_tensor.min().item()
     if(quantize):
+        if(max_w == 0): max_w = 1.0
         thresh = round(q_max * thresh / max_w)
 
     neurons: list[Neuron] = []
