@@ -47,7 +47,7 @@ class MLPMixer(nn.Module):
         )
         self.ln = nn.Identity() #nn.LayerNorm(hidden_size)
 
-        self.clf = nn.Linear(hidden_size, num_classes)
+        self.clf = nn.Linear(hidden_size, num_classes, bias=False)
         self.debug = None
 
 
@@ -57,10 +57,13 @@ class MLPMixer(nn.Module):
             out = torch.cat([self.cls_token.repeat(out.size(0),1,1), out], dim=1)
         out = self.mixer_layers(out)
         out = self.ln(out)
+        
         out = out[:, 0] if self.is_cls_token else out.mean(dim=1)
+
         out = self.clf(out)
         out = nn.ReLU()(out)
         self.debug = out
+
         return out
 
 

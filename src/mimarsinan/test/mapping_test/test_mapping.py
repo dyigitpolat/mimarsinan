@@ -10,6 +10,14 @@ from mimarsinan.code_generation.generate_main import *
 import torch
 import time
 
+def almost_equal(a, b, epsilon=0.00001):
+    eq1 = abs(a - b) < epsilon
+    eq2 = True
+    if(b != 0.0 and b != -0.0 and a != 0.0 and a != -0.0):
+        eq2 = abs(1.0 - a/b) < 0.1
+
+    return eq1 and eq2
+
 def test_mapping():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -29,7 +37,7 @@ def test_mapping():
     out_size = 10
     test_loader = [(test_input, torch.ones(1,out_size))]
 
-    ann_model = MLPMixer(1, 28, 4, 32, 33, 34, 1, out_size)
+    ann_model = MLPMixer(1, 28, 4, 32, 33, 34, 4, out_size)
 
     ann_model(test_input)
 
@@ -59,9 +67,13 @@ def test_mapping():
     inc = 0
     layer_debug_tensor = ann_model.debug.detach().numpy().flatten()
     for i in range(len(chip_output)):
-        if(abs(chip_output[i]-layer_debug_tensor[i]) > 0.001):
+        if(not almost_equal(chip_output[i], layer_debug_tensor[i])):
             inc +=1
         tot += 1
+    
+
+    print(chip_output)
+    print(layer_debug_tensor)
     
     print("inc", inc)
     print("tot", tot)
