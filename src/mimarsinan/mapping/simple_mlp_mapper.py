@@ -19,13 +19,20 @@ def simple_mlp_to_chip(
     cores_list: list[Core] = []
     connections_list: list[Connection] = []
     for i, layer in enumerate(model.layers):
+        weights = layer.weight.detach().numpy()
+
+        threshold = 1.0
+        if (quantize):
+            weights = quantize_weight_tensor(weights)
+            threshold = calculate_threshold(weights)
+
         if(layer.bias is not None):
             biases[i] = layer.bias.cpu().tolist()
         
         cores_list.append(generate_core_weights(
             neurons_per_core, axons_per_core, 
-            layer.weight.cpu(), layer.weight.size(0),
-            1.0, biases[i], quantize=quantize))
+            weights, layer.weight.size(0),
+            threshold, biases[i]))
         
         connections_list.append(generate_core_connection_info(
             axons_per_core, layer.weight.size(1), max(i - 1, 0), (i == 0)

@@ -2,11 +2,12 @@ from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.mapping.mapping_utils import *
 from mimarsinan.models.omihub_mlp_mixer import *
 
+class AvgPoolLayer:
+    pass
 class Mapping:
     def __init__(self):
         self.cores = []
         self.connections = []
-        self.quantize = False
 
         self.neurons_per_core = 64
         self.axons_per_core = 64
@@ -15,7 +16,9 @@ class Mapping:
     def map_fc(self, 
         input_tensor_sources,  # 
         output_shape, # 
-        fc_weights): # 
+        fc_weights, 
+        quantize,
+        threshold = 1.0): # 
 
         w_rows = fc_weights.shape[-2]
         w_cols = fc_weights.shape[-1]
@@ -36,10 +39,14 @@ class Mapping:
         core_matrix[0:input_axons_count, 0:out_neurons_count] = fc_weights.transpose()
 
         for i in range(new_cores_count): 
+            if (quantize):
+                core_matrix = quantize_weight_tensor(core_matrix)
+                threshold = calculate_threshold(core_matrix)
+
             self.cores.append(
                 generate_core_weights(
                     self.neurons_per_core, self.axons_per_core, core_matrix.transpose(),
-                    self.neurons_per_core, 0.0, quantize=self.quantize))
+                    self.neurons_per_core, threshold))
 
             spike_sources = []
             for j in range(input_axons_count):
@@ -59,6 +66,36 @@ class Mapping:
                 [SpikeSource(core_offset + core_idx, neuron_idx) for core_idx in range(o_cols)])
         
         return np.array(layer_sources)
+
+def map_mm(mapping, layer_sources, layer_weights, quantize, threshold = 1.0):
+    layer_output_shape = np.array([layer_weights.shape[-2], layer_sources.shape[-1]])
+    return mapping.map_fc(
+        layer_sources, 
+        layer_output_shape, 
+        layer_weights,
+        quantize,
+        threshold)   
+    
+def map_conv1d(mapping, layer_sources, layer, quantize):
+    layer_weights = layer.weight.data.numpy().squeeze()
+    return map_mm(mapping, layer_sources, layer_weights, quantize)
+      
+def map_linear(mapping, layer_sources, layer, quantize):
+    layer_sources = layer_sources.transpose()
+    layer_sources = map_conv1d(mapping, layer_sources, layer, quantize)
+    layer_sources = layer_sources.transpose()
+    return layer_sources
+
+def map_avg_pool(mapping, layer_sources, quantize):
+    factor =  1.0 / layer_sources.shape[0]
+    threshold = 1.0
+
+    if quantize:
+        factor = 1.0
+        threshold = layer_sources.shape[0]
+
+    weights = np.ones([1, layer_sources.shape[0]]) * factor
+    return map_mm(mapping, layer_sources, weights, False, threshold)
     
 def omihub_mlp_mixer_to_chip(
     omihub_mlp_mixer_model: MLPMixer,
@@ -88,6 +125,11 @@ def omihub_mlp_mixer_to_chip(
     cores_list = []
     connections_list = []
     for j in range(num_patches):
+        threshold = 1.0
+        if (quantize):
+            core_matrix = quantize_weight_tensor(core_matrix)
+            threshold = calculate_threshold(core_matrix)
+
         core_matrix = np.zeros([axons_per_core, neurons_per_core])
         core_source_neurons = -np.ones([axons_per_core], dtype=np.int32) # -1 means no connection
         
@@ -106,7 +148,7 @@ def omihub_mlp_mixer_to_chip(
         cores_list.append(
             generate_core_weights(
                 neurons_per_core, axons_per_core, core_matrix.transpose(), 
-                neurons_per_core, 0.0, quantize=quantize))
+                neurons_per_core, threshold))
         
         is_off = lambda i: core_source_neurons[i] == -1
         connections_list.append(
@@ -144,23 +186,17 @@ def omihub_mlp_mixer_to_chip(
         fc_layers.append(
             model.mixer_layers[i].mlp2.fc2)
     
-    !!!# do average pooling
+    fc_layers.append(AvgPoolLayer())
     fc_layers.append(model.clf)
         
     for layer in fc_layers:
-        if isinstance(layer, nn.Linear):
-            layer_sources = layer_sources.transpose()
-
-        layer_weights = layer.weight.data.numpy().squeeze()
-        layer_output_shape = np.array([layer_weights.shape[-2], layer_sources.shape[-1]])
-        layer_sources = mapping.map_fc(
-            layer_sources, 
-            layer_output_shape, 
-            layer_weights)   
-        
-        if isinstance(layer, nn.Linear):
-            layer_sources = layer_sources.transpose()
-        
+        if isinstance(layer, nn.Conv1d):
+            layer_sources = map_conv1d(mapping, layer_sources, layer, quantize)
+        elif isinstance(layer, nn.Linear):
+            layer_sources = map_linear(mapping, layer_sources, layer, quantize)
+        elif isinstance(layer, AvgPoolLayer):
+            layer_sources = map_avg_pool(mapping, layer_sources, quantize)
+            
     print(layer_sources.shape)
     output_list = []
     for source in layer_sources.flatten():

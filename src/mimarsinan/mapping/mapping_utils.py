@@ -1,5 +1,6 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 import math
+import numpy as np
 
 q_max = 7
 q_min = -8
@@ -17,23 +18,28 @@ def do_quantize(w, max_w, min_w, switch=False):
         return quantize_weight(w, max_w, min_w)
     else:
         return w
+    
+def quantize_weight_tensor(weight_tensor):
+    max_w = weight_tensor.max().item()
+    min_w = weight_tensor.min().item()
+    return np.array([
+        [quantize_weight(w.item(), max_w, min_w) for w in row] \
+        for row in weight_tensor
+    ])
+
+def calculate_threshold(weight_tensor):
+    max_w = weight_tensor.max().item()
+    if(max_w == 0): max_w = 1.0
+    return round((q_max * 1.0) / max_w)
 
 def generate_core_weights(
     neurons_count, axons_count, weight_tensor, outs, 
-    thresh, bias_tensor = None, quantize = False):
-
-    max_w = weight_tensor.max().item()
-    min_w = weight_tensor.min().item()
-    if(quantize):
-        if(max_w == 0): max_w = 1.0
-        thresh = round(q_max * thresh / max_w)
+    thresh, bias_tensor = None):
 
     neurons: list[Neuron] = []
     for idx in range(neurons_count):
         if(idx < outs):
-            neuron_ws = [ 
-                do_quantize(w.item(), max_w, min_w, quantize) \
-                for w in weight_tensor[idx] ]
+            neuron_ws = [w for w in weight_tensor[idx]]
 
             for _ in range(axons_count - weight_tensor[idx].shape[0]):
                 neuron_ws.append(int(0))
