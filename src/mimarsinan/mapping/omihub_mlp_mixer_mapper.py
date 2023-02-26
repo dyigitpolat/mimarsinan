@@ -40,8 +40,8 @@ class Mapping:
 
         for i in range(new_cores_count): 
             if (quantize):
-                core_matrix = quantize_weight_tensor(core_matrix)
                 threshold = calculate_threshold(core_matrix)
+                core_matrix = quantize_weight_tensor(core_matrix)
 
             self.cores.append(
                 generate_core_weights(
@@ -127,8 +127,8 @@ def omihub_mlp_mixer_to_chip(
     for j in range(num_patches):
         threshold = 1.0
         if (quantize):
-            core_matrix = quantize_weight_tensor(core_matrix)
             threshold = calculate_threshold(core_matrix)
+            core_matrix = quantize_weight_tensor(core_matrix)
 
         core_matrix = np.zeros([axons_per_core, neurons_per_core])
         core_source_neurons = -np.ones([axons_per_core], dtype=np.int32) # -1 means no connection

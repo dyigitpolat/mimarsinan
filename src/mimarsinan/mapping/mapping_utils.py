@@ -56,7 +56,7 @@ def generate_core_weights(
 def generate_core_weights_legacy(
     neurons_count, axons_count, weight_tensor, outs, 
     thresh, bias_tensor = None, quantize = False):
-
+    
     max_w = weight_tensor.max().item()
     min_w = weight_tensor.min().item()
     if(quantize):
