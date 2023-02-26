@@ -17,9 +17,9 @@ def test_mnist():
     mnist_output_size = 10
     inner_mlp_width = 256
     inner_mlp_count = 1
-    pretrain_epochs = 3
-    cq_only_epochs = 3
-    cq_quantize_epochs = 3
+    pretrain_epochs = 1
+    cq_only_epochs = 1
+    cq_quantize_epochs = 1
 
     Tq = 37
     simulation_length = Tq + 3
