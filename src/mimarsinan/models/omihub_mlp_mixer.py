@@ -91,7 +91,7 @@ class MLP1(nn.Module):
         out = self.do1(self.act(self.fc1(self.ln(x))))
         out = self.do2(self.act(self.fc2(out)))
         
-        return out # +x
+        return out+x
 
 class MLP2(nn.Module):
     def __init__(self, hidden_size, hidden_c, drop_p, off_act):
@@ -105,7 +105,7 @@ class MLP2(nn.Module):
     def forward(self, x):
         out = self.do1(self.act(self.fc1(self.ln(x))))
         out = self.do2(self.act(self.fc2(out)))
-        return out # +x
+        return out+x
 
 class Trainer(object):
     def __init__(self, model, args):

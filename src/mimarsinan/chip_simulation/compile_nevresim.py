@@ -4,6 +4,8 @@ from mimarsinan.common.file_utils import *
 cc_command = "clang++-14"
 cpp_standard = "c++20"
 optimization_flag = "-O3"
+step_limit = 256*256*10000
+step_limit_option = f"-fconstexpr-steps={step_limit}"
 
 def compile_simulator(generated_files_path, nevresim_path):
     simulator_filename = "../bin/simulator"
@@ -12,6 +14,7 @@ def compile_simulator(generated_files_path, nevresim_path):
     cmd = [
         cc_command, 
         optimization_flag, 
+        step_limit_option,
         "{}/main/main.cpp".format(generated_files_path), 
         "-I", "{}/include".format(nevresim_path), 
         "-I", "{}/chip".format(generated_files_path), 

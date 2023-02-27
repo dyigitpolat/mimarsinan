@@ -4,6 +4,11 @@ from mimarsinan.models.omihub_mlp_mixer import *
 
 class AvgPoolLayer:
     pass
+class AddOp:
+    def __init__(self, source_idx_a, source_idx_b):
+        self.source_idx_a = source_idx_a
+        self.source_idx_b = source_idx_b
+
 class Mapping:
     def __init__(self):
         self.cores = []
@@ -96,6 +101,17 @@ def map_avg_pool(mapping, layer_sources, quantize):
 
     weights = np.ones([1, layer_sources.shape[0]]) * factor
     return map_mm(mapping, layer_sources, weights, False, threshold)
+
+def map_add_op(mapping, layer_sources_a, layer_sources_b):
+    assert layer_sources_a.shape == layer_sources_b.shape
+
+    x_rows = layer_sources_a.shape[-2]
+    layer_sources = np.concatenate([layer_sources_a, layer_sources_b], axis=0)
+    weights = np.concatenate([np.eye(x_rows), np.eye(x_rows)], axis=0).transpose()
+    return map_mm(mapping, layer_sources, weights, quantize=False)
+
+
+    
     
 def omihub_mlp_mixer_to_chip(
     omihub_mlp_mixer_model: MLPMixer,
@@ -105,7 +121,7 @@ def omihub_mlp_mixer_to_chip(
     model = omihub_mlp_mixer_model.cpu()
 
     neurons_per_core = 64
-    axons_per_core = 64
+    axons_per_core = 256
 
     in_channels = model.img_dim_c
     in_height = model.img_dim_h
@@ -176,26 +192,38 @@ def omihub_mlp_mixer_to_chip(
     layer_sources = np.array(input_sources)
 
     fc_layers = []
+    fc_layers.append(0) # input
     for i in range(model.num_layers):
         fc_layers.append(
             model.mixer_layers[i].mlp1.fc1)
         fc_layers.append(
             model.mixer_layers[i].mlp1.fc2)
         fc_layers.append(
+            AddOp(len(fc_layers), len(fc_layers)-2))
+        fc_layers.append(
             model.mixer_layers[i].mlp2.fc1)
         fc_layers.append(
             model.mixer_layers[i].mlp2.fc2)
+        fc_layers.append(
+            AddOp(len(fc_layers), len(fc_layers)-2))
     
     fc_layers.append(AvgPoolLayer())
     fc_layers.append(model.clf)
         
+    layer_sources_list = []
     for layer in fc_layers:
+        layer_sources_list.append(layer_sources)
+
         if isinstance(layer, nn.Conv1d):
             layer_sources = map_conv1d(mapping, layer_sources, layer, quantize)
         elif isinstance(layer, nn.Linear):
             layer_sources = map_linear(mapping, layer_sources, layer, quantize)
         elif isinstance(layer, AvgPoolLayer):
             layer_sources = map_avg_pool(mapping, layer_sources, quantize)
+        elif isinstance(layer, AddOp):
+            layer_sources = map_add_op(mapping, 
+                layer_sources_list[layer.source_idx_a], 
+                layer_sources_list[layer.source_idx_b])
             
     print(layer_sources.shape)
     output_list = []
