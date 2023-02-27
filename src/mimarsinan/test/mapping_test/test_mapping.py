@@ -37,7 +37,7 @@ def test_mapping():
     out_size = 10
     test_loader = [(test_input, torch.ones(1,out_size))]
 
-    ann_model = MLPMixer(1, 28, 4, 32, 33, 34, 4, out_size)
+    ann_model = MLPMixer(1, 28, 14, 32, 33, 34, 4, out_size)
 
     ann_model(test_input)
 

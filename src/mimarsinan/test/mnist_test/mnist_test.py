@@ -17,12 +17,12 @@ def test_mnist():
     mnist_output_size = 10
     inner_mlp_width = 256
     inner_mlp_count = 1
-    pretrain_epochs = 1
-    cq_only_epochs = 1
-    cq_quantize_epochs = 1
+    pretrain_epochs = 12
+    cq_only_epochs = 6
+    cq_quantize_epochs = 12
 
-    Tq = 37
-    simulation_length = Tq + 3
+    Tq = 15
+    simulation_length = 2 * Tq + 3
 
     generated_files_path = "../generated/mnist/"
     input_count = 10000
@@ -45,6 +45,8 @@ def test_mnist():
 
     print("Tuning model with CQ and weight quantization...")
     train_on_mnist_quantized(cq_ann_model, device, cq_quantize_epochs)
+
+    ###### 
 
     print("Mapping trained model to chip...")
     chip = simple_mlp_to_chip(cq_ann_model, leak=0, quantize=True, weight_type=int)
