@@ -32,12 +32,12 @@ def test_mapping():
     ann_model = MLPMixer()
 
     generated_files_path = "../generated/mapping/"
-    test_input = torch.randn(input_count, 1, 28, 28)
+    test_input = torch.randn(input_count, 3, 14, 14)
 
     out_size = 10
     test_loader = [(test_input, torch.ones(1,out_size))]
 
-    ann_model = MLPMixer(1, 28, 14, 32, 33, 34, 4, out_size)
+    ann_model = MLPMixer(3, 14, 7, 32, 33, 34, 4, out_size)
 
     ann_model(test_input)
 
