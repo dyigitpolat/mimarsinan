@@ -62,7 +62,6 @@ def test_mapping():
     end_time = time.time()
     print("Simulation time:", end_time - start_time)
 
-    print("chipsum", sum(chip_output))
     tot = 0
     inc = 0
     layer_debug_tensor = ann_model.debug.detach().numpy().flatten()
@@ -70,10 +69,6 @@ def test_mapping():
         if(not almost_equal(chip_output[i], layer_debug_tensor[i])):
             inc +=1
         tot += 1
-    
-
-    print(chip_output)
-    print(layer_debug_tensor)
     
     print("inc", inc)
     print("tot", tot)
