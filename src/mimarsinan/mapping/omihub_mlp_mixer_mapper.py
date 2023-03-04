@@ -1,7 +1,7 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.mapping.mapping_utils import *
 from mimarsinan.models.omihub_mlp_mixer import *
-    
+
 def omihub_mlp_mixer_to_chip(
     omihub_mlp_mixer_model: MLPMixer,
     leak = 0.0,
@@ -29,42 +29,6 @@ def omihub_mlp_mixer_to_chip(
     np_weights = model.patch_emb[0].weight.data.numpy()
     cores_list = []
     connections_list = []
-    for j in range(num_patches):
-        threshold = 1.0
-        if (quantize):
-            threshold = calculate_threshold(core_matrix)
-            core_matrix = quantize_weight_tensor(core_matrix)
-
-        core_matrix = np.zeros([axons_per_core, neurons_per_core])
-        core_source_neurons = -np.ones([axons_per_core], dtype=np.int32) # -1 means no connection
-        
-        for ch_ in range(in_channels):
-            for h_ in range(kernel_h):
-                for w_ in range(kernel_w):
-                    axon_id = ch_ * kernel_h * kernel_w + h_ * kernel_w + w_
-                    weights = np_weights[:, ch_, h_, w_].flatten()
-                    assert len(weights) == kernel_features
-                    core_matrix[axon_id, 0:kernel_features] = weights
-                    
-                    img_row = kernel_h * (j // patch_rows) + h_
-                    img_col = kernel_w * (j % patch_rows) + w_
-                    core_source_neurons[axon_id] = \
-                        ch_ * in_height * in_width + img_row * in_width + img_col
-                    
-        cores_list.append(
-            generate_core_weights(
-                neurons_per_core, axons_per_core, core_matrix.transpose(), 
-                neurons_per_core, threshold))
-        
-        is_off = lambda i: core_source_neurons[i] == -1
-        connections_list.append(
-            Connection([
-                SpikeSource(0, core_source_neurons[i], not is_off(i), is_off(i)) 
-                for i in range(axons_per_core)
-            ]))
-
-    prev_core_count = len(cores_list) - num_patches
-    print("prev_core_count", prev_core_count)
     
     mapping = Mapping()
     mapping.neurons_per_core = neurons_per_core
@@ -74,15 +38,18 @@ def omihub_mlp_mixer_to_chip(
 
     # prepare input sources
     input_sources = []
-    for i in range(num_patches):
+    for i in range(in_channels):
         input_sources.append([])
-        for j in range(kernel_features):
-            input_sources[i].append(
-                SpikeSource(i, j, True, False))
+        for j in range(in_height):
+            input_sources[i].append([])
+            for k in range(in_width):
+                input_idx = i * in_height * in_width + j * in_width + k
+                input_sources[i][j].append(
+                    SpikeSource(0, input_idx, True, False))
     layer_sources = np.array(input_sources)
 
     fc_layers = []
-    fc_layers.append(0) # input
+    fc_layers.append(PatchEmbeddingLayer()) 
     for i in range(model.num_layers):
         fc_layers.append(
             model.mixer_layers[i].mlp1.fc1)
@@ -103,7 +70,6 @@ def omihub_mlp_mixer_to_chip(
     layer_sources_list = []
     for layer in fc_layers:
         layer_sources_list.append(layer_sources)
-
         if isinstance(layer, nn.Conv1d):
             layer_sources = map_conv1d(mapping, layer_sources, layer, quantize)
         elif isinstance(layer, nn.Linear):
@@ -114,8 +80,9 @@ def omihub_mlp_mixer_to_chip(
             layer_sources = map_add_op(mapping, 
                 layer_sources_list[layer.source_idx_a], 
                 layer_sources_list[layer.source_idx_b])
+        elif isinstance(layer, PatchEmbeddingLayer):
+            layer_sources = map_patch_embedding(mapping, layer_sources, model.patch_emb[0], quantize)
             
-    print(layer_sources.shape)
     output_list = []
     for source in layer_sources.flatten():
         output_list.append(source)

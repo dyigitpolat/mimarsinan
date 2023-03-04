@@ -1,6 +1,10 @@
 from mimarsinan.code_generation.cpp_chip_model import *
+from mimarsinan.models.layers import *
+
 import math
 import numpy as np
+import torch
+import torch.nn as nn
 
 q_max = 7
 q_min = -8
@@ -17,9 +21,8 @@ def quantize_weight_tensor(weight_tensor):
     max_w = weight_tensor.max().item()
     min_w = weight_tensor.min().item()
     return np.array([
-        [quantize_weight(w.item(), max_w, min_w) for w in row] \
-        for row in weight_tensor
-    ])
+        [quantize_weight(w.item(), max_w, min_w) for w in weight_tensor.flatten()]
+    ]).reshape(weight_tensor.shape)
 
 def calculate_threshold(weight_tensor):
     max_w = weight_tensor.max().item()
@@ -55,7 +58,8 @@ def generate_core_connection_info(
     
     return Connection(axon_sources)
 
-
+class PatchEmbeddingLayer:
+    pass
 class AvgPoolLayer:
     pass
 class AddOp:
@@ -110,7 +114,13 @@ class Mapping:
             for j in range(input_axons_count):
                 source_core = input_tensor_sources[j, i].core_
                 source_neuron = input_tensor_sources[j, i].neuron_
-                spike_sources.append(SpikeSource(source_core, source_neuron))
+                source_is_input = input_tensor_sources[j, i].is_input_
+                source_is_off = input_tensor_sources[j, i].is_off_
+                spike_sources.append(SpikeSource(
+                    source_core, 
+                    source_neuron,
+                    source_is_input,
+                    source_is_off))
             
             for j in range(self.axons_per_core - input_axons_count):
                 spike_sources.append(SpikeSource(0, 0, is_input=False, is_off=True))
@@ -162,3 +172,47 @@ def map_add_op(mapping, layer_sources_a, layer_sources_b):
     layer_sources = np.concatenate([layer_sources_a, layer_sources_b], axis=0)
     weights = np.concatenate([np.eye(x_rows), np.eye(x_rows)], axis=0).transpose()
     return map_mm(mapping, layer_sources, weights, quantize=False)
+
+def fuse_normalizer(layer, norm : Normalizer):
+    print("fusing...")
+    layer.weight.data *= norm.get_factor().cpu()
+
+def fuse_layers(layers):
+    prev_layer = None
+    for layer in layers:
+        if isinstance(layer, Normalizer):
+            fuse_normalizer(prev_layer, layer)
+                
+        prev_layer = layer
+
+def map_patch_embedding(mapping, layer_sources, layer, quantize):
+    kernel_weights = layer.weight.data.numpy()
+
+    in_channels = layer_sources.shape[-3]
+    in_height = layer_sources.shape[-2]
+    in_width = layer_sources.shape[-1]
+
+    kernel_h = kernel_weights.shape[2]
+    kernel_w = kernel_weights.shape[3]
+
+    patch_rows = in_height // kernel_h
+    patch_cols = in_width // kernel_w
+
+    kernel_weights = kernel_weights.reshape(
+        kernel_weights.shape[0], in_channels * kernel_h * kernel_w)
+
+    output_sources = []
+    for i in range(patch_rows):
+        for j in range(patch_cols):
+            patch_sources = \
+                layer_sources[:, i*kernel_h:(i+1)*kernel_h, j*kernel_w:(j+1)*kernel_w]
+            
+            patch_sources = patch_sources.reshape(
+                in_channels * kernel_h * kernel_w, 1)
+            
+            output_sources.append(
+                map_mm(mapping, patch_sources, kernel_weights, quantize))
+            
+    return np.array(output_sources).reshape(
+        patch_rows * patch_cols, kernel_weights.shape[0]
+    )
