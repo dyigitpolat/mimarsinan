@@ -216,3 +216,16 @@ def map_patch_embedding(mapping, layer_sources, layer, quantize):
     return np.array(output_sources).reshape(
         patch_rows * patch_cols, kernel_weights.shape[0]
     )
+
+def prepare_input_sources(input_shape):
+    input_sources = []
+    for i in range(input_shape[-3]):
+        input_sources.append([])
+        for j in range(input_shape[-2]):
+            input_sources[i].append([])
+            for k in range(input_shape[-1]):
+                input_idx = \
+                    i * input_shape[-2] * input_shape[-1] + j * input_shape[-1] + k
+                input_sources[i][j].append(
+                    SpikeSource(0, input_idx, True, False))
+    return np.array(input_sources)
