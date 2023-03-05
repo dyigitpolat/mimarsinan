@@ -18,35 +18,12 @@ def omihub_mlp_mixer_to_chip(
 
     input_size = in_channels * in_height * in_width
     
-    kernel_features = model.patch_emb[0].weight.size(0)
-    kernel_h = model.patch_emb[0].weight.size(2)
-    kernel_w = model.patch_emb[0].weight.size(3)
-
-    patch_rows = in_height // kernel_h
-    patch_cols = in_width // kernel_w
-    num_patches = patch_rows * patch_cols
-
-    np_weights = model.patch_emb[0].weight.data.numpy()
-    cores_list = []
-    connections_list = []
-    
     mapping = Mapping()
     mapping.neurons_per_core = neurons_per_core
     mapping.axons_per_core = axons_per_core
-    mapping.cores = cores_list
-    mapping.connections = connections_list
 
-    # prepare input sources
-    input_sources = []
-    for i in range(in_channels):
-        input_sources.append([])
-        for j in range(in_height):
-            input_sources[i].append([])
-            for k in range(in_width):
-                input_idx = i * in_height * in_width + j * in_width + k
-                input_sources[i][j].append(
-                    SpikeSource(0, input_idx, True, False))
-    layer_sources = np.array(input_sources)
+    input_shape = (in_channels, in_height, in_width)
+    layer_sources = prepare_input_sources(input_shape)
 
     fc_layers = []
     fc_layers.append(PatchEmbeddingLayer()) 
