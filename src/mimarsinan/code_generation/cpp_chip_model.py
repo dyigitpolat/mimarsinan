@@ -188,7 +188,7 @@ consteval auto generate_chip()
                 core_params.append({
                     "threshold": self.weight_type(neuron.thresh),
                     "bias": self.weight_type(neuron.bias),
-                    "weights": neuron.weights
+                    "weights": [self.weight_type(w) for w in neuron.weights]
                 })
             result["core_parameters"].append(core_params)
         
