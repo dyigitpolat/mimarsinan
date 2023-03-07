@@ -1,5 +1,6 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.models.layers import *
+from mimarsinan.mapping.softcore_mapping import *
 
 import math
 import numpy as np
@@ -71,6 +72,8 @@ class Mapping:
         self.cores = []
         self.connections = []
 
+        self.soft_cores = []
+
         self.neurons_per_core = 64
         self.axons_per_core = 64
         pass
@@ -100,6 +103,9 @@ class Mapping:
         core_matrix = np.zeros([self.axons_per_core, self.neurons_per_core])
         core_matrix[0:input_axons_count, 0:out_neurons_count] = fc_weights.transpose()
 
+        core_matrix_2 = np.zeros([input_axons_count, out_neurons_count])
+        core_matrix_2[:, :] = fc_weights.transpose()
+
         for i in range(new_cores_count): 
             if (quantize):
                 threshold = calculate_threshold(core_matrix)
@@ -121,6 +127,9 @@ class Mapping:
                     source_neuron,
                     source_is_input,
                     source_is_off))
+            
+            self.soft_cores.append(
+                SoftCore(core_matrix_2, spike_sources.copy(), len(self.soft_cores)))
             
             for j in range(self.axons_per_core - input_axons_count):
                 spike_sources.append(SpikeSource(0, 0, is_input=False, is_off=True))
