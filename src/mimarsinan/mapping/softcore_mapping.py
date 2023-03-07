@@ -1,12 +1,16 @@
+from mimarsinan.code_generation.cpp_chip_model import *
+
 import numpy as np
 
 def is_off(idx): return idx == -1
 def is_input(idx): return idx == -2
 
 class SoftCore:
-    def __init__(self, core_matrix, axon_sources):
+    def __init__(self, core_matrix, axon_sources, id):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
+
+        self.id = id
 
     def get_input_count(self):
         return len(self.axon_sources)
@@ -29,7 +33,14 @@ class HardCore:
         assert self.available_axons >= softcore.get_input_count() 
         assert self.available_neurons >= softcore.get_output_count()            
 
-        self.core_matrix[:softcore.get_input_count(), :softcore.get_output_count()] = softcore.core_matrix
+        axon_offset = self.axons_per_core - self.available_axons
+        neuron_offset = self.neurons_per_core - self.available_neurons
+        
+        self.core_matrix[
+            axon_offset : axon_offset+softcore.get_input_count(), 
+            neuron_offset : neuron_offset+softcore.get_output_count()] \
+                = softcore.core_matrix
+        
         self.axon_sources.extend(softcore.axon_sources)
 
         self.available_axons -= softcore.get_input_count()
@@ -42,9 +53,21 @@ class HardCoreMapping:
         self.neurons_per_core = neurons_per_core
 
         self.hardcores = []
+        self.output_sources = []
 
-    def map(self, softcores_list):
+        self.neuron_mapping = {}
+
+    def merge_softcore_into(self, hardcore, softcore):
+        prev_output_count = hardcore.neurons_per_core - hardcore.available_neurons
+        hardcore.add_softcore(softcore)
         
+        for soft_neuron_idx in range(softcore.get_output_count()):
+            target_core_idx = len(self.hardcores) - 1
+            target_neuron_idx = prev_output_count + soft_neuron_idx
+            self.neuron_mapping[(softcore.id, soft_neuron_idx)] = \
+                (target_core_idx, target_neuron_idx)
+                
+    def map(self, softcores_list, output_sources):
         def is_mapping_possible(core, hardcore):
             return \
                 core.get_input_count() <= hardcore.available_axons and \
@@ -70,25 +93,52 @@ class HardCoreMapping:
                     raise Exception("Too many inputs for a core")
                 if core.get_output_count() > self.neurons_per_core:
                     raise Exception("Too many outputs for a core")
+
+        def pick_best_core(unmapped_cores):
+            core_a = get_core_with_most_inputs_that_can_map(unmapped_cores)
+            core_b = get_core_with_most_outputs_that_can_map(unmapped_cores)
+            
+            core = None
+            if core_a is None and core_b is None: core = None
+            elif core_a is None: core = core_b
+            elif core_b is None: core = core_a
+            else:
+                if core_a.get_input_count() > core_b.get_output_count():
+                    core = core_a
+                else:
+                    core = core_b
+
+            return core
         
         unmapped_cores = [core for core in softcores_list]
         verify_softcores(unmapped_cores)
 
         self.hardcores.append(HardCore(self.axons_per_core, self.neurons_per_core))
         while len(unmapped_cores) > 0:
-            core_a = get_core_with_most_inputs_that_can_map(unmapped_cores)
-            core_b = get_core_with_most_outputs_that_can_map(unmapped_cores)
-
-            if core_a.get_input_count() > core_b.get_output_count():
-                core = core_a
-            else:
-                core = core_b
-        
+            core = pick_best_core(unmapped_cores)
+            
             if core is None:
                 self.hardcores.append(HardCore(self.axons_per_core, self.neurons_per_core))
             else:
-                self.hardcores[-1].add_softcore(core)
+                self.merge_softcore_into(self.hardcores[-1], core)
                 unmapped_cores.remove(core)
+
+        def remap_sources(sources):
+            for source in sources:
+                if source.is_off_ or source.is_input_: continue
+                source.core_, source.neuron_ = \
+                    self.neuron_mapping[(source.core_, source.neuron_)]
+            
+        for hardcore in self.hardcores:
+            remap_sources(hardcore.axon_sources)
+                
+        remap_sources(output_sources)
+
+        for hardcore in self.hardcores:
+            axon_count = len(hardcore.axon_sources)
+            for _ in range(self.axons_per_core - axon_count):
+                hardcore.axon_sources.append(
+                    SpikeSource(0, 0, is_input=False, is_off=True))
                 
             
 
