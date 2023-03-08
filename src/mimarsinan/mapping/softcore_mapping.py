@@ -11,6 +11,7 @@ class SoftCore:
         self.axon_sources = axon_sources
 
         self.id = id
+        self.threshold = 1.0
 
     def get_input_count(self):
         return len(self.axon_sources)
@@ -29,6 +30,8 @@ class HardCore:
         self.available_axons = axons_per_core
         self.available_neurons = neurons_per_core
 
+        self.threshold = None
+
     def add_softcore(self, softcore):
         assert self.available_axons >= softcore.get_input_count() 
         assert self.available_neurons >= softcore.get_output_count()            
@@ -45,6 +48,16 @@ class HardCore:
 
         self.available_axons -= softcore.get_input_count()
         self.available_neurons -= softcore.get_output_count()
+
+        if self.threshold is None:
+            self.threshold = softcore.threshold
+        else:
+            prev_weights_count = axon_offset * neuron_offset
+            new_weights_count = softcore.get_input_count() * softcore.get_output_count()
+            
+            self.threshold = \
+                (self.threshold * prev_weights_count + softcore.threshold * new_weights_count) \
+                / (prev_weights_count + new_weights_count)
     
 
 class HardCoreMapping:
@@ -69,7 +82,15 @@ class HardCoreMapping:
                 
     def map(self, softcores_list, output_sources):
         def is_mapping_possible(core, hardcore):
+            tolerance = 0.01
+            if hardcore.threshold is not None:
+                threshold_diff = abs(core.threshold - hardcore.threshold)
+                diff_rate = threshold_diff / hardcore.threshold
+            else:
+                diff_rate = 0.0
+
             return \
+                diff_rate <= tolerance and \
                 core.get_input_count() <= hardcore.available_axons and \
                 core.get_output_count() <= hardcore.available_neurons
         
