@@ -7,29 +7,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-q_max = 7
-q_min = -8
-
-def quantize_weight(w, max_w, min_w):
-    if(w > 0):
-        if(max_w == 0): return 0
-        return round((q_max * w) / max_w)
-    else:
-        if(min_w == 0): return 0
-        return round((q_min * w) / min_w)
-    
-def quantize_weight_tensor(weight_tensor):
-    max_w = weight_tensor.max().item()
-    min_w = weight_tensor.min().item()
-    return np.array([
-        [quantize_weight(w.item(), max_w, min_w) for w in weight_tensor.flatten()]
-    ]).reshape(weight_tensor.shape)
-
-def calculate_threshold(weight_tensor):
-    max_w = weight_tensor.max().item()
-    if(max_w == 0): max_w = 1.0
-    return round((q_max * 1.0) / max_w)
-
 def generate_core_weights(
     neurons_count, axons_count, weight_tensor, outs, 
     thresh, bias_tensor = None):
@@ -69,9 +46,6 @@ class AddOp:
         self.source_idx_b = source_idx_b
 class Mapping:
     def __init__(self):
-        self.cores = []
-        self.connections = []
-
         self.soft_cores = []
 
         self.neurons_per_core = 64
@@ -81,9 +55,7 @@ class Mapping:
     def map_fc(self, 
         input_tensor_sources,  # 
         output_shape, # 
-        fc_weights, 
-        quantize,
-        threshold = 1.0): # 
+        fc_weights): # 
 
         w_rows = fc_weights.shape[-2]
         w_cols = fc_weights.shape[-1]
@@ -100,22 +72,10 @@ class Mapping:
         out_neurons_count = o_rows
         input_axons_count = x_rows
 
-        core_matrix = np.zeros([self.axons_per_core, self.neurons_per_core])
-        core_matrix[0:input_axons_count, 0:out_neurons_count] = fc_weights.transpose()
-
-        core_matrix_2 = np.zeros([input_axons_count, out_neurons_count])
-        core_matrix_2[:, :] = fc_weights.transpose()
+        core_matrix = np.zeros([input_axons_count, out_neurons_count])
+        core_matrix[:, :] = fc_weights.transpose()
 
         for i in range(new_cores_count): 
-            if (quantize):
-                threshold = calculate_threshold(core_matrix)
-                core_matrix = quantize_weight_tensor(core_matrix)
-
-            self.cores.append(
-                generate_core_weights(
-                    self.neurons_per_core, self.axons_per_core, core_matrix.transpose(),
-                    self.neurons_per_core, threshold))
-
             spike_sources = []
             for j in range(input_axons_count):
                 source_core = input_tensor_sources[j, i].core_
@@ -129,50 +89,37 @@ class Mapping:
                     source_is_off))
             
             self.soft_cores.append(
-                SoftCore(core_matrix_2, spike_sources.copy(), len(self.soft_cores)))
-            
-            for j in range(self.axons_per_core - input_axons_count):
-                spike_sources.append(SpikeSource(0, 0, is_input=False, is_off=True))
-            
-            self.connections.append(Connection(spike_sources))
+                SoftCore(core_matrix, spike_sources.copy(), len(self.soft_cores)))
 
         layer_sources = []
-        core_offset = len(self.cores) - new_cores_count
+        core_offset = len(self.soft_cores) - new_cores_count
         for neuron_idx in range(o_rows):
             layer_sources.append(
                 [SpikeSource(core_offset + core_idx, neuron_idx) for core_idx in range(o_cols)])
         
         return np.array(layer_sources)
 
-def map_mm(mapping, layer_sources, layer_weights, quantize, threshold = 1.0):
+def map_mm(mapping, layer_sources, layer_weights):
     layer_output_shape = np.array([layer_weights.shape[-2], layer_sources.shape[-1]])
     return mapping.map_fc(
         layer_sources, 
         layer_output_shape, 
-        layer_weights,
-        quantize,
-        threshold)   
+        layer_weights)   
     
-def map_conv1d(mapping, layer_sources, layer, quantize):
+def map_conv1d(mapping, layer_sources, layer):
     layer_weights = layer.weight.data.numpy().squeeze()
-    return map_mm(mapping, layer_sources, layer_weights, quantize)
+    return map_mm(mapping, layer_sources, layer_weights)
       
-def map_linear(mapping, layer_sources, layer, quantize):
+def map_linear(mapping, layer_sources, layer):
     layer_sources = layer_sources.transpose()
-    layer_sources = map_conv1d(mapping, layer_sources, layer, quantize)
+    layer_sources = map_conv1d(mapping, layer_sources, layer)
     layer_sources = layer_sources.transpose()
     return layer_sources
 
-def map_avg_pool(mapping, layer_sources, quantize):
+def map_avg_pool(mapping, layer_sources):
     factor =  1.0 / layer_sources.shape[0]
-    threshold = 1.0
-
-    if quantize:
-        factor = 1.0
-        threshold = layer_sources.shape[0]
-
     weights = np.ones([1, layer_sources.shape[0]]) * factor
-    return map_mm(mapping, layer_sources, weights, False, threshold)
+    return map_mm(mapping, layer_sources, weights)
 
 def map_add_op(mapping, layer_sources_a, layer_sources_b):
     assert layer_sources_a.shape == layer_sources_b.shape
@@ -180,7 +127,7 @@ def map_add_op(mapping, layer_sources_a, layer_sources_b):
     x_rows = layer_sources_a.shape[-2]
     layer_sources = np.concatenate([layer_sources_a, layer_sources_b], axis=0)
     weights = np.concatenate([np.eye(x_rows), np.eye(x_rows)], axis=0).transpose()
-    return map_mm(mapping, layer_sources, weights, quantize=False)
+    return map_mm(mapping, layer_sources, weights)
 
 def fuse_normalizer(layer, norm : Normalizer):
     print("fusing...")
@@ -194,7 +141,7 @@ def fuse_layers(layers):
                 
         prev_layer = layer
 
-def map_patch_embedding(mapping, layer_sources, layer, quantize):
+def map_patch_embedding(mapping, layer_sources, layer):
     kernel_weights = layer.weight.data.numpy()
 
     in_channels = layer_sources.shape[-3]
@@ -220,7 +167,7 @@ def map_patch_embedding(mapping, layer_sources, layer, quantize):
                 in_channels * kernel_h * kernel_w, 1)
             
             output_sources.append(
-                map_mm(mapping, patch_sources, kernel_weights, quantize))
+                map_mm(mapping, patch_sources, kernel_weights))
             
     return np.array(output_sources).reshape(
         patch_rows * patch_cols, kernel_weights.shape[0]
@@ -237,4 +184,15 @@ def prepare_input_sources(input_shape):
                     i * input_shape[-2] * input_shape[-1] + j * input_shape[-1] + k
                 input_sources[i][j].append(
                     SpikeSource(0, input_idx, True, False))
+    return np.array(input_sources)
+
+def prepare_1d_input_sources(input_shape):
+    input_sources = []
+    for j in range(input_shape[-2]):
+        input_sources.append([])
+        for k in range(input_shape[-1]):
+            input_idx = \
+                j * input_shape[-1] + k
+            input_sources[j].append(
+                SpikeSource(0, input_idx, True, False))
     return np.array(input_sources)
