@@ -1,6 +1,7 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.models.layers import *
 from mimarsinan.mapping.softcore_mapping import *
+from mimarsinan.mapping.weight_quantization import *
 
 import math
 import numpy as np
@@ -48,8 +49,8 @@ class Mapping:
     def __init__(self):
         self.soft_cores = []
 
-        self.neurons_per_core = 64
-        self.axons_per_core = 64
+        self.max_neurons = 64
+        self.max_axons = 64
         pass
 
     def map_fc(self, 
@@ -196,3 +197,34 @@ def prepare_1d_input_sources(input_shape):
             input_sources[j].append(
                 SpikeSource(0, input_idx, True, False))
     return np.array(input_sources)
+
+def to_chip(input_size, output_sources, softcore_mapping, axons_per_core, neurons_per_core, leak, quantize, weight_type):
+    
+    if quantize:
+        quantize_softcores(softcore_mapping.soft_cores, bits=4)
+
+    hardcore_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
+    hardcore_mapping.map(softcore_mapping.soft_cores, output_sources)
+
+    hardcores = [
+        generate_core_weights(
+            neurons_per_core, 
+            axons_per_core, 
+            hardcore.core_matrix.transpose(),
+            neurons_per_core,
+            hardcore.threshold)
+        for hardcore in hardcore_mapping.hardcores
+    ]
+
+    hardcore_connections = \
+        [ Connection(hardcore.axon_sources) for hardcore in hardcore_mapping.hardcores ]
+        
+    chip = ChipModel(
+        axons_per_core, neurons_per_core, len(hardcores), input_size,
+        len(output_sources), leak, hardcore_connections, output_sources, hardcores, 
+        weight_type
+    )
+
+    chip.load_from_json(chip.get_chip_json()) # sanity check
+    
+    return chip    

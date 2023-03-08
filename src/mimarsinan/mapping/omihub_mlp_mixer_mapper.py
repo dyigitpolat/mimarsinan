@@ -20,8 +20,8 @@ def omihub_mlp_mixer_to_chip(
     input_size = in_channels * in_height * in_width
     
     mapping = Mapping()
-    mapping.neurons_per_core = neurons_per_core
-    mapping.axons_per_core = axons_per_core
+    mapping.max_neurons = neurons_per_core
+    mapping.max_axons = axons_per_core
 
     input_shape = (in_channels, in_height, in_width)
     layer_sources = prepare_input_sources(input_shape)
@@ -66,33 +66,10 @@ def omihub_mlp_mixer_to_chip(
     for source in layer_sources.flatten():
         output_list.append(source)
     
-    if quantize:
-        quantize_softcores(mapping.soft_cores, bits=4)
-
-    hardcore_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
-    hardcore_mapping.map(mapping.soft_cores, output_list)
-    
-    hardcores = [
-        generate_core_weights(
-            neurons_per_core, 
-            axons_per_core, 
-            hardcore.core_matrix.transpose(),
-            neurons_per_core,
-            hardcore.threshold)
-        for hardcore in hardcore_mapping.hardcores
-    ]
-
-    hardcore_connections = \
-        [ Connection(hardcore.axon_sources) for hardcore in hardcore_mapping.hardcores ]
-        
-    chip = ChipModel(
-        axons_per_core, neurons_per_core, len(hardcores), input_size,
-        len(output_list), leak, hardcore_connections, output_list, hardcores, 
-        weight_type
-    )
-
-    chip.load_from_json(chip.get_chip_json()) # sanity check
-    return chip     
+    return to_chip(
+        input_size, output_list, 
+        mapping, mapping.max_axons, mapping.max_neurons,
+        leak, quantize, weight_type)   
 
 def export_json_to_file(chip, filename):
     with open(filename, 'w') as f:
