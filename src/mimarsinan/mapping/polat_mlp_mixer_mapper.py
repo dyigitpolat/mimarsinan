@@ -12,6 +12,7 @@ def polat_mlp_mixer_to_chip(
 
     neurons_per_core = 256
     axons_per_core = 256
+    max_cores = 43
 
     in_channels = model.img_dim_c
     in_height = model.img_dim_h
@@ -69,10 +70,14 @@ def polat_mlp_mixer_to_chip(
     for source in layer_sources.flatten():
         output_list.append(source)
     
-    return to_chip(
+    chip = to_chip(
         input_size, output_list, 
         mapping, mapping.max_axons, mapping.max_neurons,
         leak, quantize, weight_type)     
+    
+    assert chip.core_count <= max_cores
+
+    return chip
 
 def export_json_to_file(chip, filename):
     with open(filename, 'w') as f:
