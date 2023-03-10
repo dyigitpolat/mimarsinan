@@ -1,7 +1,9 @@
 from mimarsinan.models.simple_mlp import *
+from mimarsinan.models.polat_mlp_mixer import *
 from mimarsinan.test.mnist_test.mnist_test_utils import *
 
 from mimarsinan.mapping.simple_mlp_mapper import *
+from mimarsinan.mapping.polat_mlp_mixer_mapper import *
 from mimarsinan.chip_simulation.compile_nevresim import *
 from mimarsinan.chip_simulation.execute_nevresim import *
 from mimarsinan.code_generation.generate_main import *
@@ -29,27 +31,39 @@ def test_mnist():
 
     _, test_loader = get_mnist_data(1)
 
-    ann_model = SimpleMLP(
-        inner_mlp_width, 
-        inner_mlp_count, 
-        mnist_input_size, 
-        mnist_output_size,
-        bias=False)
+    # ann_model = SimpleMLP(
+    #     inner_mlp_width, 
+    #     inner_mlp_count, 
+    #     mnist_input_size, 
+    #     mnist_output_size,
+    #     bias=False)
+    
+    ann_model = PolatMLPMixer(
+        in_channels=1,
+        img_size=28, 
+        patch_size=14, 
+        hidden_size=64, 
+        hidden_s=64, 
+        hidden_c=128, 
+        num_layers=1, 
+        num_classes=10, 
+        drop_p=0.0)
 
     print("Pretraining model...")
     train_on_mnist(ann_model, device, pretrain_epochs)
 
     print("Tuning model with CQ...")
-    cq_ann_model = SimpleMLP_CQ(ann_model, Tq)
-    train_on_mnist(cq_ann_model, device, cq_only_epochs)
+    #cq_ann_model = SimpleMLP_CQ(ann_model, Tq)
+    ann_model.enable_cq(15)
+    train_on_mnist(ann_model, device, cq_only_epochs)
 
     print("Tuning model with CQ and weight quantization...")
-    train_on_mnist_quantized(cq_ann_model, device, cq_quantize_epochs)
+    train_on_mnist_quantized(ann_model, device, cq_quantize_epochs)
 
     ###### 
 
     print("Mapping trained model to chip...")
-    chip = simple_mlp_to_chip(cq_ann_model, leak=0, quantize=True, weight_type=int)
+    chip = polat_mlp_mixer_to_chip(ann_model, leak=0, quantize=True, weight_type=int)
 
     print("Saving input data to files...")
     save_inputs_to_files(generated_files_path, test_loader, input_count)
