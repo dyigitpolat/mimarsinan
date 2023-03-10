@@ -24,11 +24,11 @@ def get_cifar10_data(batch_size=1):
     ])
 
     train_dataset = torchvision.datasets.CIFAR10(
-        root=datasets_path, train=True, download=True,
+        root=datasets_path, train=True, download=False,
         transform=train_transform)
 
     test_set = torchvision.datasets.CIFAR10(
-        root=datasets_path, train=False, download=True,
+        root=datasets_path, train=False, download=False,
         transform=test_transform)
                             
     train_loader = torch.utils.data.DataLoader(
@@ -46,15 +46,14 @@ def train_on_cifar10_for_one_epoch(ann, device, optimizer, train_loader, epoch):
         optimizer.zero_grad()
         ann.train()
         y.to(device)
-        x.to(device)
         outputs = ann.forward(x)
         loss = nn.CrossEntropyLoss()(outputs, y)
         loss.backward()
         optimizer.step()
 
 def train_on_cifar10(ann, device, epochs):
-    train_loader, _ = get_cifar10_data(5000)
-    optimizer = torch.optim.Adam(ann.parameters(), lr = 0.001)
+    train_loader, _ = get_cifar10_data(250)
+    optimizer = torch.optim.Adam(ann.parameters(), lr = 0.001, weight_decay=0.00005)
     
     for epoch in range(epochs):
         train_on_cifar10_for_one_epoch(
@@ -108,3 +107,55 @@ def get_mlp_mixer_model(parameters):
         cifar10_h,cifar10_w,cifar10_c, 
         cifar10_output_size)
 
+q_max = 7
+q_min = -8
+
+def quantize_weight_tensor(weight_tensor):
+    max_weight = torch.max(weight_tensor)
+    min_weight = torch.min(weight_tensor)
+
+    return torch.where(
+        weight_tensor > 0,
+        torch.round(((q_max) * (weight_tensor)) / (max_weight)) / (q_max / max_weight),
+        torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
+
+def quantize_model(ann):
+    for param in ann.parameters():
+        param.data = nn.Parameter(quantize_weight_tensor(param)).data
+
+def update_model_weights(ann, qnn):
+    for param, q_param in zip(ann.parameters(), qnn.parameters()):
+        q_param.data = nn.Parameter(param).data
+
+def update_quantized_model(ann, qnn):
+    update_model_weights(ann, qnn)
+    quantize_model(qnn)
+
+def transfer_gradients(a, b):
+    for a_param, b_param in zip(a.parameters(), b.parameters()):
+        a_param.grad = b_param.grad
+
+def train_on_cifar10_for_one_epoch_quantized(ann, qnn, device, optimizer, train_loader, epoch):
+    print("Training epoch:", epoch)
+    for (x, y) in train_loader:
+        update_quantized_model(ann, qnn)
+        optimizer.zero_grad()
+        ann.train()
+        qnn.train()
+        nn.CrossEntropyLoss()(qnn(x), y).backward()
+        transfer_gradients(ann, qnn)
+        optimizer.step()
+
+import copy 
+def train_on_cifar10_quantized(ann, device, epochs, lr=0.001, weight_decay=0.00005):
+    qnn = copy.deepcopy(ann)
+
+    train_loader, _ = get_cifar10_data(500)
+    optimizer = torch.optim.Adam(ann.parameters(), lr = lr)
+    for epoch in range(epochs):
+        train_on_cifar10_for_one_epoch_quantized(
+            ann, qnn, device, optimizer, train_loader, epoch)
+
+        if(epoch % max(epochs // 10, 1) == 0):
+            correct, total = test_on_cifar10(ann, device)
+            print(correct, '/', total)
