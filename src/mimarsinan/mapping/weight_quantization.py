@@ -21,9 +21,9 @@ class WeightQuantization:
         ]).reshape(weights.shape)
     
     def calculate_threshold(self, weights):
-        max_w = weights.max()
+        max_w = weights.max().item()
         if(max_w == 0): max_w = 1.0
-        return round((self.q_max * 1.0) / max_w)
+        return max(1, round((self.q_max * 1.0) / max_w))
 
 def quantize_softcores(softcores, bits):
     quantizer = WeightQuantization(bits)
