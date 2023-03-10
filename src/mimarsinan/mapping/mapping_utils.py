@@ -56,7 +56,8 @@ class Mapping:
     def map_fc(self, 
         input_tensor_sources,  # 
         output_shape, # 
-        fc_weights): # 
+        fc_weights,
+        fc_biases = None): # 
 
         w_rows = fc_weights.shape[-2]
         w_cols = fc_weights.shape[-1]
@@ -73,8 +74,13 @@ class Mapping:
         out_neurons_count = o_rows
         input_axons_count = x_rows
 
-        core_matrix = np.zeros([input_axons_count, out_neurons_count])
-        core_matrix[:, :] = fc_weights.transpose()
+        if(fc_biases is None):
+            core_matrix = np.zeros([input_axons_count, out_neurons_count])
+        else:
+            core_matrix = np.zeros([input_axons_count+1, out_neurons_count])
+            core_matrix[-1, :] = fc_biases.flatten()
+
+        core_matrix[:input_axons_count, :] = fc_weights.transpose()
 
         for i in range(new_cores_count): 
             spike_sources = []
@@ -89,6 +95,9 @@ class Mapping:
                     source_is_input,
                     source_is_off))
             
+            if(fc_biases is not None):
+                spike_sources.append(SpikeSource(0, 0, False, False, True))
+            
             self.soft_cores.append(
                 SoftCore(core_matrix, spike_sources.copy(), len(self.soft_cores)))
 
@@ -100,16 +109,22 @@ class Mapping:
         
         return np.array(layer_sources)
 
-def map_mm(mapping, layer_sources, layer_weights):
+def map_mm(mapping, layer_sources, layer_weights, layer_biases = None):
     layer_output_shape = np.array([layer_weights.shape[-2], layer_sources.shape[-1]])
     return mapping.map_fc(
         layer_sources, 
         layer_output_shape, 
-        layer_weights)   
+        layer_weights,
+        layer_biases)   
     
 def map_conv1d(mapping, layer_sources, layer):
     layer_weights = layer.weight.data.numpy().squeeze()
-    return map_mm(mapping, layer_sources, layer_weights)
+    if layer.bias is not None:
+        layer_biases = layer.bias.data.numpy().squeeze()
+    else:
+        layer_biases = None
+
+    return map_mm(mapping, layer_sources, layer_weights, layer_biases)
       
 def map_linear(mapping, layer_sources, layer):
     layer_sources = layer_sources.transpose()
@@ -199,7 +214,6 @@ def prepare_1d_input_sources(input_shape):
     return np.array(input_sources)
 
 def to_chip(input_size, output_sources, softcore_mapping, axons_per_core, neurons_per_core, leak, quantize, weight_type):
-    
     if quantize:
         quantize_softcores(softcore_mapping.soft_cores, bits=4)
 
@@ -227,4 +241,4 @@ def to_chip(input_size, output_sources, softcore_mapping, axons_per_core, neuron
 
     chip.load_from_json(chip.get_chip_json()) # sanity check
     
-    return chip    
+    return chip

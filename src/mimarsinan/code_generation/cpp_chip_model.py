@@ -1,9 +1,10 @@
 import json
 
 class SpikeSource:
-    def __init__(self, core, neuron, is_input = False, is_off = False):
+    def __init__(self, core, neuron, is_input = False, is_off = False, is_always_on = False):
         self.is_input_: bool = is_input
         self.is_off_: bool = is_off
+        self.is_always_on_: bool = is_always_on
         self.core_: int = core
         self.neuron_: int = neuron
 
@@ -13,6 +14,9 @@ class SpikeSource:
         
         if(self.is_input_):
             return "Src{in," + str(self.neuron_) + "}"
+        
+        if(self.is_always_on_):
+            return "Src{on,0}"
         
         return "Src{" + str(self.core_) + "," + str(self.neuron_) + "}"
 
@@ -85,7 +89,7 @@ class ChipModel:
 namespace nevresim
 {
 
-template <typename Con, typename Src, size_t core_count, size_t in, size_t off>
+template <typename Con, typename Src, size_t core_count, size_t in, size_t off, size_t on>
 consteval auto generate_connections()
 {
     std::array<Con, core_count> cons; 
@@ -138,11 +142,12 @@ consteval auto generate_chip()
 
     constexpr nevresim::core_id_t in = nevresim::k_input_buffer_id;
     constexpr nevresim::core_id_t off = nevresim::k_no_connection;
+    constexpr nevresim::core_id_t on = nevresim::k_always_on;
 
     using Chip = nevresim::Chip<
         Cfg, 
         Map{{
-            generate_connections<Con, Src, core_count, in, off>(),
+            generate_connections<Con, Src, core_count, in, off, on>(),
             generate_outputs<Src, output_size>()}}, 
         ComputePolicy>;
 
@@ -199,6 +204,7 @@ consteval auto generate_chip()
                 cur.append({
                     "is_input": bool(src.is_input_),
                     "is_off": bool(src.is_off_),
+                    "is_on": bool(src.is_always_on_),
                     "source_core": int(src.core_),
                     "source_neuron": int(src.neuron_),
                 })
@@ -207,6 +213,7 @@ consteval auto generate_chip()
             result["output_buffer"].append({
                 "is_input": bool(out.is_input_),
                 "is_off": bool(out.is_off_),
+                "is_on": bool(src.is_always_on_),
                 "source_core": int(out.core_),
                 "source_neuron": int(out.neuron_)
             })
@@ -231,7 +238,8 @@ consteval auto generate_chip()
                         src["source_core"], 
                         src["source_neuron"],
                         src["is_input"], 
-                        src["is_off"]))
+                        src["is_off"],
+                        src["is_on"]))
 
             self.connections.append(Connection(src_list))
 
@@ -249,7 +257,8 @@ consteval auto generate_chip()
                     out["source_core"], 
                     out["source_neuron"],
                     out["is_input"], 
-                    out["is_off"]))
+                    out["is_off"],
+                    src["is_on"]))
 
         
 
