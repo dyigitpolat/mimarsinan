@@ -31,6 +31,8 @@ class HardCore:
         self.available_neurons = neurons_per_core
 
         self.threshold = None
+    
+        self.unusable_space = 0
 
     def add_softcore(self, softcore):
         assert self.available_axons >= softcore.get_input_count() 
@@ -51,14 +53,10 @@ class HardCore:
 
         if self.threshold is None:
             self.threshold = softcore.threshold
-        else:
-            prev_weights_count = axon_offset * neuron_offset
-            new_weights_count = softcore.get_input_count() * softcore.get_output_count()
-            
-            self.threshold = \
-                (self.threshold * prev_weights_count + softcore.threshold * new_weights_count) \
-                / (prev_weights_count + new_weights_count)
-    
+
+        self.unusable_space += \
+            (neuron_offset * softcore.get_input_count()) + \
+            (axon_offset * softcore.get_output_count())
 
 class HardCoreMapping:
     def __init__(self, axons_per_core, neurons_per_core):
@@ -67,8 +65,9 @@ class HardCoreMapping:
 
         self.hardcores = []
         self.output_sources = []
-
         self.neuron_mapping = {}
+
+        self.unusable_space = 0
 
     def merge_softcore_into(self, hardcore, softcore):
         prev_output_count = hardcore.neurons_per_core - hardcore.available_neurons
@@ -82,7 +81,7 @@ class HardCoreMapping:
                 
     def map(self, softcores_list, output_sources):
         def is_mapping_possible(core, hardcore):
-            tolerance = 0.01
+            tolerance = 0.1
             if hardcore.threshold is not None:
                 threshold_diff = abs(core.threshold - hardcore.threshold)
                 diff_rate = threshold_diff / hardcore.threshold
@@ -130,6 +129,14 @@ class HardCoreMapping:
                     core = core_b
 
             return core
+
+        def update_unusable_space(hardcore):
+            available_axons = hardcore.available_axons
+            available_neurons = hardcore.available_neurons
+            wasted_space = \
+                (self.neurons_per_core * available_axons) + \
+                ((self.axons_per_core - available_axons) * available_neurons)
+            self.unusable_space += wasted_space + hardcore.unusable_space    
         
         unmapped_cores = [core for core in softcores_list]
         verify_softcores(unmapped_cores)
@@ -139,6 +146,7 @@ class HardCoreMapping:
             core = pick_best_core(unmapped_cores)
             
             if core is None:
+                update_unusable_space(self.hardcores[-1])
                 self.hardcores.append(HardCore(self.axons_per_core, self.neurons_per_core))
             else:
                 self.merge_softcore_into(self.hardcores[-1], core)
