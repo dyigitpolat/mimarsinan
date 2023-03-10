@@ -15,6 +15,36 @@ import numpy as np
 import torchvision
 import torchvision.transforms as transforms
 
+import copy
+
+q_max = 7
+q_min = -8
+
+def quantize_weight_tensor(weight_tensor):
+    max_weight = torch.max(weight_tensor)
+    min_weight = torch.min(weight_tensor)
+
+    return torch.where(
+        weight_tensor > 0,
+        torch.round(((q_max) * (weight_tensor)) / (max_weight)) / (q_max / max_weight),
+        torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
+
+def quantize_model(ann):
+    for param in ann.parameters():
+        param.data = nn.Parameter(quantize_weight_tensor(param)).data
+
+def update_model_weights(ann, qnn):
+    for param, q_param in zip(ann.parameters(), qnn.parameters()):
+        q_param.data = nn.Parameter(param).data
+
+def update_quantized_model(ann, qnn):
+    update_model_weights(ann, qnn)
+    quantize_model(qnn)
+
+def transfer_gradients(a, b):
+    for a_param, b_param in zip(a.parameters(), b.parameters()):
+        a_param.grad = b_param.grad
+
 class MLPMixer(nn.Module):
     def __init__(self,in_channels=3,img_size=32, patch_size=4, hidden_size=512, hidden_s=256, hidden_c=2048, num_layers=8, num_classes=10, drop_p=0., off_act=False, is_cls_token=False):
         super(MLPMixer, self).__init__()
@@ -108,8 +138,7 @@ class MLP2(nn.Module):
         return out+x
 
 class Trainer(object):
-    def __init__(self, model, args):
-        wandb.config.update(args)
+    def __init__(self, model, args, num_steps = 0):
         self.device = args.device
         self.clip_grad = args.clip_grad
         self.cutmix_beta = args.cutmix_beta
@@ -139,7 +168,7 @@ class Trainer(object):
         self.epochs = args.epochs
         self.criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
 
-        self.num_steps = 0
+        self.num_steps = num_steps
         self.epoch_loss, self.epoch_corr, self.epoch_acc = 0., 0., 0.
     
     def _train_one_step(self, batch):
@@ -182,6 +211,53 @@ class Trainer(object):
             'acc':acc
         }, step=self.num_steps)
 
+    def _train_one_step_q(self, batch, qnn):
+        update_quantized_model(self.model, qnn)
+
+        qnn.train()
+        self.model.train()
+        img, label = batch
+        self.num_steps += 1
+        img, label = img.to(self.device), label.to(self.device)
+
+        self.optimizer.zero_grad()
+        r = np.random.rand(1)
+        if self.cutmix_beta > 0 and r < self.cutmix_prob:
+            # generate mixed sample
+            lam = np.random.beta(self.cutmix_beta, self.cutmix_beta)
+            rand_index = torch.randperm(img.size(0)).to(self.device)
+            target_a = label
+            target_b = label[rand_index]
+            bbx1, bby1, bbx2, bby2 = rand_bbox(img.size(), lam)
+            img[:, :, bbx1:bbx2, bby1:bby2] = img[rand_index, :, bbx1:bbx2, bby1:bby2]
+            # adjust lambda to exactly match pixel ratio
+            lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (img.size()[-1] * img.size()[-2]))
+            # compute output
+            with torch.cuda.amp.autocast():
+                out = qnn(img)
+                loss = self.criterion(out, target_a) * lam + self.criterion(out, target_b) * (1. - lam)
+        else:
+            # compute output
+            with torch.cuda.amp.autocast():
+                out = qnn(img)
+                loss = self.criterion(out, label)
+
+        self.scaler.scale(loss).backward()
+        if self.clip_grad:
+            nn.utils.clip_grad_norm_(qnn.parameters(), self.clip_grad)
+        
+        transfer_gradients(self.model, qnn)
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+
+
+        acc = out.argmax(dim=-1).eq(label).sum(-1)/img.size(0)
+        wandb.log({
+            'loss':loss,
+            'acc':acc
+        }, step=self.num_steps)
+        
+
 
     # @torch.no_grad
     def _test_one_step(self, batch):
@@ -201,6 +277,33 @@ class Trainer(object):
         for epoch in range(1, self.epochs+1):
             for batch in train_dl:
                 self._train_one_step(batch)
+            wandb.log({
+                'epoch': epoch, 
+                'lr': self.optimizer.param_groups[0]["lr"],
+                }, step=self.num_steps
+            )
+            self.scheduler.step()
+
+            
+            num_imgs = 0.
+            self.epoch_loss, self.epoch_corr, self.epoch_acc = 0., 0., 0.
+            for batch in test_dl:
+                self._test_one_step(batch)
+                num_imgs += batch[0].size(0)
+            self.epoch_loss /= num_imgs
+            self.epoch_acc = self.epoch_corr / num_imgs
+            wandb.log({
+                'val_loss': self.epoch_loss,
+                'val_acc': self.epoch_acc
+                }, step=self.num_steps
+            )
+
+    def fit_q(self, train_dl, test_dl):
+        qnn = copy.deepcopy(self.model)
+
+        for epoch in range(1, self.epochs+1):
+            for batch in train_dl:
+                self._train_one_step_q(batch, qnn)
             wandb.log({
                 'epoch': epoch, 
                 'lr': self.optimizer.param_groups[0]["lr"],
