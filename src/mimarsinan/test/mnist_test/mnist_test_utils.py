@@ -75,23 +75,20 @@ def quantize_weight_tensor(weight_tensor):
         torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
 
 def quantize_model(ann):
-    for layer in ann.layers:
-        if isinstance(layer, nn.Linear):
-            layer.weight = nn.Parameter(quantize_weight_tensor(layer.weight))
+    for param in ann.parameters():
+        param.data = nn.Parameter(quantize_weight_tensor(param)).data
 
 def update_model_weights(ann, qnn):
-    for layer, q_layer in zip(ann.layers, qnn.layers):
-        if isinstance(layer, nn.Linear):
-            q_layer.weight = nn.Parameter(layer.weight)
+    for param, q_param in zip(ann.parameters(), qnn.parameters()):
+        q_param.data = nn.Parameter(param).data
 
 def update_quantized_model(ann, qnn):
     update_model_weights(ann, qnn)
     quantize_model(qnn)
 
 def transfer_gradients(a, b):
-    for a_layer, b_layer in zip(a.layers, b.layers):
-        if isinstance(a_layer, nn.Linear):
-            a_layer.weight.grad = b_layer.weight.grad
+    for a_param, b_param in zip(a.parameters(), b.parameters()):
+        a_param.grad = b_param.grad
 
 def train_on_mnist_for_one_epoch_quantized(ann, qnn, device, optimizer, train_loader, epoch):
     print("Training epoch:", epoch)
