@@ -24,46 +24,30 @@ def omihub_mlp_mixer_to_chip(
     mapping.max_axons = axons_per_core
 
     input_shape = (in_channels, in_height, in_width)
-    layer_sources = prepare_input_sources(input_shape)
-
-    fc_layers = []
-    fc_layers.append(PatchEmbeddingLayer()) 
-    for i in range(model.num_layers):
-        fc_layers.append(
-            model.mixer_layers[i].mlp1.fc1)
-        fc_layers.append(
-            model.mixer_layers[i].mlp1.fc2)
-        fc_layers.append(
-            AddOp(len(fc_layers), len(fc_layers)-2))
-        fc_layers.append(
-            model.mixer_layers[i].mlp2.fc1)
-        fc_layers.append(
-            model.mixer_layers[i].mlp2.fc2)
-        fc_layers.append(
-            AddOp(len(fc_layers), len(fc_layers)-2))
     
-    fc_layers.append(AvgPoolLayer())
-    fc_layers.append(model.clf)
+    input_mapper = InputMapper(input_shape)
+    patch_emb_mapper = PatchEmbeddingMapper(input_mapper, model.patch_emb[0])
+    prev_mapper = patch_emb_mapper
+    for i in range(model.num_layers):
+        mixer_m1_fc1 = NormalizerMapper(
+            Conv1DMapper(prev_mapper, model.mixer_layers[i].mlp1.fc1), 
+            model.mixer_layers[i].mlp1.ln)
         
-    layer_sources_list = []
-    for layer in fc_layers:
-        layer_sources_list.append(layer_sources)
-
-        if isinstance(layer, nn.Conv1d):
-            layer_sources = map_conv1d(mapping, layer_sources, layer)
-        elif isinstance(layer, nn.Linear):
-            layer_sources = map_linear(mapping, layer_sources, layer)
-        elif isinstance(layer, AvgPoolLayer):
-            layer_sources = map_avg_pool(mapping, layer_sources)
-        elif isinstance(layer, AddOp):
-            layer_sources = map_add_op(mapping, 
-                layer_sources_list[layer.source_idx_a], 
-                layer_sources_list[layer.source_idx_b])
-        elif isinstance(layer, PatchEmbeddingLayer):
-            layer_sources = map_patch_embedding(mapping, layer_sources, model.patch_emb[0])
+        mixer_m1_fc2 = Conv1DMapper(mixer_m1_fc1, model.mixer_layers[i].mlp1.fc2)
+        mixer_m1_add = AddMapper(prev_mapper, mixer_m1_fc2)
+        mixer_m2_fc1 = NormalizerMapper(
+            LinearMapper(mixer_m1_add, model.mixer_layers[i].mlp2.fc1), 
+            model.mixer_layers[i].mlp2.ln)
+        
+        mixer_m2_fc2 = LinearMapper(mixer_m2_fc1, model.mixer_layers[i].mlp2.fc2)
+        mixer_m2_add = AddMapper(mixer_m1_add, mixer_m2_fc2)
+        prev_mapper = mixer_m2_add
+        
+    avg_pool_mapper = AvgPoolMapper(prev_mapper)
+    classifier_mapper = LinearMapper(avg_pool_mapper, model.clf)
             
     output_list = []
-    for source in layer_sources.flatten():
+    for source in classifier_mapper.map(mapping).flatten():
         output_list.append(source)
     
     return to_chip(
