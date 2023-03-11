@@ -116,6 +116,166 @@ def map_mm(mapping, layer_sources, layer_weights, layer_biases = None):
         layer_output_shape, 
         layer_weights,
         layer_biases)   
+
+class InputMapper:
+    def __init__(self, input_shape):
+        self.input_shape = input_shape
+        self.sources = None
+    
+    def map(self, _):
+        if self.sources is not None:
+            return self.sources
+    
+        input_length = 1
+        for dim in self.input_shape:
+            input_length *= dim
+        
+        input_sources = []
+        for input_idx in range(input_length):
+            input_sources.append(
+                SpikeSource(0, input_idx, True, False))
+        
+        self.sources = np.array(input_sources).reshape(self.input_shape)
+        return self.sources
+
+class Conv1DMapper:
+    def __init__(self, source_mapper, layer):
+        self.layer = layer
+        self.source_mapper = source_mapper
+        self.sources = None
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_weights = self.layer.weight.data.numpy().squeeze()
+        if self.layer.bias is not None:
+            layer_biases = self.layer.bias.data.numpy().squeeze()
+        else:
+            layer_biases = None
+
+        self.sources = map_mm(mapping, self.source_mapper.map(mapping), layer_weights, layer_biases)
+        return self.sources
+
+class LinearMapper:
+    def __init__(self, source_mapper, layer):
+        self.layer = layer
+        self.source_mapper = source_mapper
+        self.sources = None
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_weights = self.layer.weight.data.numpy().squeeze()
+        if self.layer.bias is not None:
+            layer_biases = self.layer.bias.data.numpy().squeeze()
+        else:
+            layer_biases = None
+        
+        layer_sources = self.source_mapper.map(mapping)
+        layer_sources = layer_sources.transpose()
+        layer_sources = map_mm(mapping, layer_sources, layer_weights, layer_biases)
+        layer_sources = layer_sources.transpose()
+
+        self.sources = layer_sources
+        return self.sources
+
+class AvgPoolMapper:
+    def __init__(self, source_mapper):
+        self.source_mapper = source_mapper
+        self.sources = None
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_sources = self.source_mapper.map(mapping)
+
+        factor =  1.0 / layer_sources.shape[0]
+        weights = np.ones([1, layer_sources.shape[0]]) * factor
+
+        self.sources = map_mm(mapping, layer_sources, weights)
+        return self.sources 
+    
+class NormalizerMapper:
+    def __init__(self, source_mapper, layer):
+        self.source_mapper = source_mapper
+        self.layer = layer
+        self.sources = None
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        self.source_mapper.layer.weight.data *= self.layer.get_factor()
+
+        self.sources = self.source_mapper.map(mapping)
+        return self.sources
+class AddMapper:
+    def __init__(self, source_mapper_a, source_mapper_b):
+        self.source_mapper_a = source_mapper_a
+        self.source_mapper_b = source_mapper_b
+        self.sources = None
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_sources_a = self.source_mapper_a.map(mapping)
+        layer_sources_b = self.source_mapper_b.map(mapping)
+
+        assert layer_sources_a.shape == layer_sources_b.shape
+
+        x_rows = layer_sources_a.shape[-2]
+        layer_sources = np.concatenate([layer_sources_a, layer_sources_b], axis=0)
+        weights = np.concatenate([np.eye(x_rows), np.eye(x_rows)], axis=0).transpose()
+
+        self.sources = map_mm(mapping, layer_sources, weights)
+        return self.sources
+    
+class PatchEmbeddingMapper:
+    def __init__(self, source_mapper, layer):
+        self.source_mapper = source_mapper
+        self.layer = layer
+        self.sources = None
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        kernel_weights = self.layer.weight.data.numpy()
+        layer_sources = self.source_mapper.map(mapping)
+
+        in_channels = layer_sources.shape[-3]
+        in_height = layer_sources.shape[-2]
+        in_width = layer_sources.shape[-1]
+
+        kernel_h = kernel_weights.shape[2]
+        kernel_w = kernel_weights.shape[3]
+
+        patch_rows = in_height // kernel_h
+        patch_cols = in_width // kernel_w
+
+        kernel_weights = kernel_weights.reshape(
+            kernel_weights.shape[0], in_channels * kernel_h * kernel_w)
+
+        output_sources = []
+        for i in range(patch_rows):
+            for j in range(patch_cols):
+                patch_sources = \
+                    layer_sources[:, i*kernel_h:(i+1)*kernel_h, j*kernel_w:(j+1)*kernel_w]
+                
+                patch_sources = patch_sources.reshape(
+                    in_channels * kernel_h * kernel_w, 1)
+                
+                output_sources.append(
+                    map_mm(mapping, patch_sources, kernel_weights))
+                
+        self.sources =  np.array(output_sources).reshape(
+            patch_rows * patch_cols, kernel_weights.shape[0])
+        
+        return self.sources
     
 def map_conv1d(mapping, layer_sources, layer):
     layer_weights = layer.weight.data.numpy().squeeze()

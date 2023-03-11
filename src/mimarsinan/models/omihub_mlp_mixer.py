@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
+from mimarsinan.models.layers import *
 
 
 import torch
@@ -111,8 +112,8 @@ class MixerLayer(nn.Module):
 class MLP1(nn.Module):
     def __init__(self, num_patches, hidden_s, hidden_size, drop_p, off_act):
         super(MLP1, self).__init__()
-        self.ln = nn.Identity() #nn.LayerNorm(hidden_size)
-        self.fc1 = nn.Conv1d(num_patches, hidden_s, kernel_size=1, bias=False)
+        self.ln = Normalizer() #nn.LayerNorm(hidden_size)
+        self.fc1 = nn.Conv1d(num_patches, hidden_s, kernel_size=1, bias=True)
         self.do1 = nn.Dropout(p=drop_p)
         self.fc2 = nn.Conv1d(hidden_s, num_patches, kernel_size=1, bias=False)
         self.do2 = nn.Dropout(p=drop_p)
@@ -126,8 +127,8 @@ class MLP1(nn.Module):
 class MLP2(nn.Module):
     def __init__(self, hidden_size, hidden_c, drop_p, off_act):
         super(MLP2, self).__init__()
-        self.ln = nn.Identity() #nn.LayerNorm(hidden_size)
-        self.fc1 = nn.Linear(hidden_size, hidden_c, bias=False)
+        self.ln = Normalizer() #nn.LayerNorm(hidden_size)
+        self.fc1 = nn.Linear(hidden_size, hidden_c, bias=True)
         self.do1 = nn.Dropout(p=drop_p)
         self.fc2 = nn.Linear(hidden_c, hidden_size, bias=False)
         self.do2 = nn.Dropout(p=drop_p)
