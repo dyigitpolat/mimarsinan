@@ -15,31 +15,15 @@ simple_mlp_model: SimpleMLP,
     mapping.max_axons = 784
 
     input_size = model.layers[0].weight.size(1)
-    fc_layers = []
+
+    input_shape = (1, input_size)
+    input = InputMapper(input_shape)
+    prev = input
     for layer in model.layers:
-        fc_layers.append(layer)
-
-    layer_sources = prepare_1d_input_sources((1,input_size))
-
-    layer_sources_list = []
-    for layer in fc_layers:
-        layer_sources_list.append(layer_sources)
-
-        if isinstance(layer, nn.Conv1d):
-            layer_sources = map_conv1d(mapping, layer_sources, layer)
-        elif isinstance(layer, nn.Linear):
-            layer_sources = map_linear(mapping, layer_sources, layer)
-        elif isinstance(layer, AvgPoolLayer):
-            layer_sources = map_avg_pool(mapping, layer_sources)
-        elif isinstance(layer, AddOp):
-            layer_sources = map_add_op(mapping, 
-                layer_sources_list[layer.source_idx_a], 
-                layer_sources_list[layer.source_idx_b])
-        elif isinstance(layer, PatchEmbeddingLayer):
-            layer_sources = map_patch_embedding(mapping, layer_sources, layer.layer)
+        prev = LinearMapper(prev, layer)
             
     output_list = []
-    for source in layer_sources.flatten():
+    for source in prev.map(mapping).flatten():
         output_list.append(source)
 
     return to_chip(

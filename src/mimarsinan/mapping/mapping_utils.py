@@ -3,10 +3,7 @@ from mimarsinan.models.layers import *
 from mimarsinan.mapping.softcore_mapping import *
 from mimarsinan.mapping.weight_quantization import *
 
-import math
 import numpy as np
-import torch
-import torch.nn as nn
 
 def generate_core_weights(
     neurons_count, axons_count, weight_tensor, outs, 
@@ -37,14 +34,6 @@ def generate_core_connection_info(
     
     return Connection(axon_sources)
 
-class PatchEmbeddingLayer:
-    pass
-class AvgPoolLayer:
-    pass
-class AddOp:
-    def __init__(self, source_idx_a, source_idx_b):
-        self.source_idx_a = source_idx_a
-        self.source_idx_b = source_idx_b
 class Mapping:
     def __init__(self):
         self.soft_cores = []
@@ -276,102 +265,6 @@ class PatchEmbeddingMapper:
             patch_rows * patch_cols, kernel_weights.shape[0])
         
         return self.sources
-    
-def map_conv1d(mapping, layer_sources, layer):
-    layer_weights = layer.weight.data.numpy().squeeze()
-    if layer.bias is not None:
-        layer_biases = layer.bias.data.numpy().squeeze()
-    else:
-        layer_biases = None
-
-    return map_mm(mapping, layer_sources, layer_weights, layer_biases)
-      
-def map_linear(mapping, layer_sources, layer):
-    layer_sources = layer_sources.transpose()
-    layer_sources = map_conv1d(mapping, layer_sources, layer)
-    layer_sources = layer_sources.transpose()
-    return layer_sources
-
-def map_avg_pool(mapping, layer_sources):
-    factor =  1.0 / layer_sources.shape[0]
-    weights = np.ones([1, layer_sources.shape[0]]) * factor
-    return map_mm(mapping, layer_sources, weights)
-
-def map_add_op(mapping, layer_sources_a, layer_sources_b):
-    assert layer_sources_a.shape == layer_sources_b.shape
-
-    x_rows = layer_sources_a.shape[-2]
-    layer_sources = np.concatenate([layer_sources_a, layer_sources_b], axis=0)
-    weights = np.concatenate([np.eye(x_rows), np.eye(x_rows)], axis=0).transpose()
-    return map_mm(mapping, layer_sources, weights)
-
-def fuse_normalizer(layer, norm : Normalizer):
-    print("fusing...")
-    layer.weight.data *= norm.get_factor().cpu()
-
-def fuse_layers(layers):
-    prev_layer = None
-    for layer in layers:
-        if isinstance(layer, Normalizer):
-            fuse_normalizer(prev_layer, layer)
-                
-        prev_layer = layer
-
-def map_patch_embedding(mapping, layer_sources, layer):
-    kernel_weights = layer.weight.data.numpy()
-
-    in_channels = layer_sources.shape[-3]
-    in_height = layer_sources.shape[-2]
-    in_width = layer_sources.shape[-1]
-
-    kernel_h = kernel_weights.shape[2]
-    kernel_w = kernel_weights.shape[3]
-
-    patch_rows = in_height // kernel_h
-    patch_cols = in_width // kernel_w
-
-    kernel_weights = kernel_weights.reshape(
-        kernel_weights.shape[0], in_channels * kernel_h * kernel_w)
-
-    output_sources = []
-    for i in range(patch_rows):
-        for j in range(patch_cols):
-            patch_sources = \
-                layer_sources[:, i*kernel_h:(i+1)*kernel_h, j*kernel_w:(j+1)*kernel_w]
-            
-            patch_sources = patch_sources.reshape(
-                in_channels * kernel_h * kernel_w, 1)
-            
-            output_sources.append(
-                map_mm(mapping, patch_sources, kernel_weights))
-            
-    return np.array(output_sources).reshape(
-        patch_rows * patch_cols, kernel_weights.shape[0]
-    )
-
-def prepare_input_sources(input_shape):
-    input_sources = []
-    for i in range(input_shape[-3]):
-        input_sources.append([])
-        for j in range(input_shape[-2]):
-            input_sources[i].append([])
-            for k in range(input_shape[-1]):
-                input_idx = \
-                    i * input_shape[-2] * input_shape[-1] + j * input_shape[-1] + k
-                input_sources[i][j].append(
-                    SpikeSource(0, input_idx, True, False))
-    return np.array(input_sources)
-
-def prepare_1d_input_sources(input_shape):
-    input_sources = []
-    for j in range(input_shape[-2]):
-        input_sources.append([])
-        for k in range(input_shape[-1]):
-            input_idx = \
-                j * input_shape[-1] + k
-            input_sources[j].append(
-                SpikeSource(0, input_idx, True, False))
-    return np.array(input_sources)
 
 def to_chip(input_size, output_sources, softcore_mapping, axons_per_core, neurons_per_core, leak, quantize, weight_type):
     if quantize:
