@@ -25,49 +25,26 @@ def polat_mlp_mixer_to_chip(
     mapping.max_axons = axons_per_core
 
     input_shape = (in_channels, in_height, in_width)
-    layer_sources = prepare_input_sources(input_shape)
 
-    fc_layers = []
-    fc_layers.append(PatchEmbeddingLayer()) # input
+    input = InputMapper(input_shape)
+    patch_emb = PatchEmbeddingMapper(input, model.patch_emb[0])
+    prev = patch_emb
     for i in range(model.num_layers):
-        fc_layers.append(
-            model.mixer_layers[i].mlp1.fc1)
-        fc_layers.append(
-            model.mixer_layers[i].mlp1.fc2)
-        fc_layers.append(
-            model.mixer_layers[i].mlp1.ln)
+        mixer_m1_fc1 = Conv1DMapper(prev, model.mixer_layers[i].mlp1.fc1)
+        mixer_m1_fc2 = Conv1DMapper(mixer_m1_fc1, model.mixer_layers[i].mlp1.fc2)
+        mixer_m1_fc2_norm = NormalizerMapper(mixer_m1_fc2, model.mixer_layers[i].mlp1.ln)
         
-        fc_layers.append(
-            model.mixer_layers[i].mlp2.fc1)
-        fc_layers.append(
-            model.mixer_layers[i].mlp2.fc2)
-        fc_layers.append(
-            model.mixer_layers[i].mlp2.ln)
+        mixer_m2_fc1 = LinearMapper(mixer_m1_fc2_norm, model.mixer_layers[i].mlp2.fc1)
+        mixer_m2_fc2 = LinearMapper(mixer_m2_fc1, model.mixer_layers[i].mlp2.fc2)
+        mixer_m2_fc2_norm = NormalizerMapper(mixer_m2_fc2, model.mixer_layers[i].mlp2.ln)
+
+        prev = mixer_m2_fc2_norm
     
-    fc_layers.append(AvgPoolLayer())
-    fc_layers.append(model.clf)
-
-    fuse_layers(fc_layers)
-        
-    layer_sources_list = []
-    for layer in fc_layers:
-        layer_sources_list.append(layer_sources)
-
-        if isinstance(layer, nn.Conv1d):
-            layer_sources = map_conv1d(mapping, layer_sources, layer)
-        elif isinstance(layer, nn.Linear):
-            layer_sources = map_linear(mapping, layer_sources, layer)
-        elif isinstance(layer, AvgPoolLayer):
-            layer_sources = map_avg_pool(mapping, layer_sources)
-        elif isinstance(layer, AddOp):
-            layer_sources = map_add_op(mapping, 
-                layer_sources_list[layer.source_idx_a], 
-                layer_sources_list[layer.source_idx_b])
-        elif isinstance(layer, PatchEmbeddingLayer):
-            layer_sources = map_patch_embedding(mapping, layer_sources, model.patch_emb[0])
+    avg_pool = AvgPoolMapper(prev)
+    classifier = LinearMapper(avg_pool, model.clf)
             
     output_list = []
-    for source in layer_sources.flatten():
+    for source in classifier.map(mapping).flatten():
         output_list.append(source)
     
     chip = to_chip(
