@@ -3,29 +3,7 @@ from mimarsinan.mapping.mapping_utils import *
 from mimarsinan.mapping.weight_quantization import *
 from mimarsinan.models.omihub_mlp_mixer import *
     
-def polat_mlp_mixer_to_chip(
-    omihub_mlp_mixer_model: MLPMixer,
-    leak = 0.0,
-    quantize = False,
-    weight_type = float):
-    model = omihub_mlp_mixer_model.cpu()
-
-    neurons_per_core = 256
-    axons_per_core = 256
-    max_cores = 43
-
-    in_channels = model.img_dim_c
-    in_height = model.img_dim_h
-    in_width = model.img_dim_w
-
-    input_size = in_channels * in_height * in_width
-    
-    mapping = Mapping()
-    mapping.max_neurons = neurons_per_core
-    mapping.max_axons = axons_per_core
-
-    input_shape = (in_channels, in_height, in_width)
-
+def get_polat_mlp_repr(input_shape, model):
     input = InputMapper(input_shape)
     patch_emb = PatchEmbeddingMapper(input, model.patch_emb[0])
     prev = patch_emb
@@ -42,17 +20,41 @@ def polat_mlp_mixer_to_chip(
     
     avg_pool = AvgPoolMapper(prev)
     classifier = LinearMapper(avg_pool, model.clf)
-            
-    output_list = []
-    for source in classifier.map(mapping).flatten():
-        output_list.append(source)
-    
-    chip = to_chip(
-        input_size, output_list, 
-        mapping, mapping.max_axons, mapping.max_neurons,
-        leak, quantize, weight_type)     
-    
-    assert chip.core_count <= max_cores
+
+    return ModelRepresentation(classifier)
+
+
+def polat_mlp_mixer_to_chip(
+    omihub_mlp_mixer_model: MLPMixer,
+    leak = 0.0,
+    quantize = False,
+    weight_type = float):
+    model = omihub_mlp_mixer_model.cpu()
+
+    neurons_per_core = 256
+    axons_per_core = 256
+    max_cores = 43
+
+    in_channels = model.img_dim_c
+    in_height = model.img_dim_h
+    in_width = model.img_dim_w
+
+    input_size = in_channels * in_height * in_width
+    input_shape = (in_channels, in_height, in_width)
+
+    model_repr = get_polat_mlp_repr(input_shape, model)
+    soft_core_mapping = SoftCoreMapping()
+    soft_core_mapping.map(model_repr)
+
+    if quantize:
+        quantize_softcores(soft_core_mapping.soft_cores, bits=4)
+
+    hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
+    hard_core_mapping.map(soft_core_mapping)
+
+    chip = hard_cores_to_chip(
+        input_size, hard_core_mapping, axons_per_core, neurons_per_core,
+        leak, weight_type)     
 
     return chip
 

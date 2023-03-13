@@ -2,6 +2,15 @@ from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.mapping.mapping_utils import *
 from mimarsinan.mapping.weight_quantization import *
 from mimarsinan.models.simple_mlp import *   
+from mimarsinan.models.hard_core_flow import *   
+
+def get_simple_mlp_repr(input_shape, model):
+    input = InputMapper(input_shape)
+    prev = input
+    for layer in model.layers:
+        prev = LinearMapper(prev, layer)
+    
+    return ModelRepresentation(prev)
 
 def simple_mlp_to_chip(
 simple_mlp_model: SimpleMLP,
@@ -9,27 +18,37 @@ simple_mlp_model: SimpleMLP,
     quantize = False,
     weight_type = float):
     model = simple_mlp_model.cpu()
-
-    mapping = Mapping()
-    mapping.max_neurons = 256
-    mapping.max_axons = 784
+    neurons_per_core = 256
+    axons_per_core = 785
 
     input_size = model.layers[0].weight.size(1)
-
     input_shape = (1, input_size)
-    input = InputMapper(input_shape)
-    prev = input
-    for layer in model.layers:
-        prev = LinearMapper(prev, layer)
-            
-    output_list = []
-    for source in prev.map(mapping).flatten():
-        output_list.append(source)
+    model_repr = get_simple_mlp_repr(input_shape, model)
+    soft_core_mapping = SoftCoreMapping()
+    soft_core_mapping.map(model_repr)
 
-    return to_chip(
-        input_size, output_list, 
-        mapping, mapping.max_axons, mapping.max_neurons,
-        leak, quantize, weight_type)
+    if quantize:
+        quantize_softcores(soft_core_mapping.soft_cores, bits=4)
+
+    hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
+    hard_core_mapping.map(soft_core_mapping)
+
+    chip = hard_cores_to_chip(
+        input_size, hard_core_mapping, axons_per_core, neurons_per_core,
+        leak, weight_type)     
+
+    return chip
+
+def simple_mlp_to_hard_core_flow(input_shape, simple_mlp_model, max_axons, max_neurons):
+    model_repr = get_simple_mlp_repr(input_shape, simple_mlp_model)
+    soft_core_mapping = SoftCoreMapping()
+    soft_core_mapping.map(model_repr)
+
+    hard_core_mapping = HardCoreMapping(max_axons, max_neurons)
+    hard_core_mapping.map(soft_core_mapping)
+
+    return HardCoreFlow(input_shape, hard_core_mapping)
+
 
 def export_json_to_file(chip, filename):
     with open(filename, 'w') as f:

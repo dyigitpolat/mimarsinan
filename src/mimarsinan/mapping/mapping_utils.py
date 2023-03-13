@@ -34,13 +34,17 @@ def generate_core_connection_info(
     
     return Connection(axon_sources)
 
-class Mapping:
+class SoftCoreMapping:
     def __init__(self):
         self.soft_cores = []
+        self.output_sources = []
 
         self.max_neurons = 64
         self.max_axons = 64
         pass
+
+    def map(self, model_representation):
+        self.output_sources = np.array(model_representation.map(self)).flatten().tolist()
 
     def map_fc(self, 
         input_tensor_sources,  # 
@@ -265,13 +269,16 @@ class PatchEmbeddingMapper:
             patch_rows * patch_cols, kernel_weights.shape[0])
         
         return self.sources
+    
+class ModelRepresentation:
+    def __init__(self, output_layer_mapper):
+        self.output_layer_mapper = output_layer_mapper
 
-def to_chip(input_size, output_sources, softcore_mapping, axons_per_core, neurons_per_core, leak, quantize, weight_type):
-    if quantize:
-        quantize_softcores(softcore_mapping.soft_cores, bits=4)
+    def map(self, mapping):
+        return self.output_layer_mapper.map(mapping)
 
-    hardcore_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
-    hardcore_mapping.map(softcore_mapping.soft_cores, output_sources)
+def hard_cores_to_chip(input_size, hardcore_mapping, axons_per_core, neurons_per_core, leak, weight_type):
+    output_sources = hardcore_mapping.output_sources
 
     hardcores = [
         generate_core_weights(
