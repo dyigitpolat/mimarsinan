@@ -3,28 +3,7 @@ from mimarsinan.mapping.mapping_utils import *
 from mimarsinan.mapping.weight_quantization import *
 from mimarsinan.models.omihub_mlp_mixer import *
 
-def omihub_mlp_mixer_to_chip(
-    omihub_mlp_mixer_model: MLPMixer,
-    leak = 0.0,
-    quantize = False,
-    weight_type = float):
-    model = omihub_mlp_mixer_model.cpu()
-
-    neurons_per_core = 64
-    axons_per_core = 256
-
-    in_channels = model.img_dim_c
-    in_height = model.img_dim_h
-    in_width = model.img_dim_w
-
-    input_size = in_channels * in_height * in_width
-    
-    mapping = Mapping()
-    mapping.max_neurons = neurons_per_core
-    mapping.max_axons = axons_per_core
-
-    input_shape = (in_channels, in_height, in_width)
-    
+def get_omihub_repr(input_shape, model):
     input_mapper = InputMapper(input_shape)
     patch_emb_mapper = PatchEmbeddingMapper(input_mapper, model.patch_emb[0])
     prev_mapper = patch_emb_mapper
@@ -45,15 +24,41 @@ def omihub_mlp_mixer_to_chip(
         
     avg_pool_mapper = AvgPoolMapper(prev_mapper)
     classifier_mapper = LinearMapper(avg_pool_mapper, model.clf)
-            
-    output_list = []
-    for source in classifier_mapper.map(mapping).flatten():
-        output_list.append(source)
-    
-    return to_chip(
-        input_size, output_list, 
-        mapping, mapping.max_axons, mapping.max_neurons,
-        leak, quantize, weight_type)   
+
+    return ModelRepresentation(classifier_mapper)
+
+def omihub_mlp_mixer_to_chip(
+    omihub_mlp_mixer_model: MLPMixer,
+    leak = 0.0,
+    quantize = False,
+    weight_type = float):
+    model = omihub_mlp_mixer_model.cpu()
+
+    neurons_per_core = 64
+    axons_per_core = 256
+
+    in_channels = model.img_dim_c
+    in_height = model.img_dim_h
+    in_width = model.img_dim_w
+
+    input_size = in_channels * in_height * in_width
+    input_shape = (in_channels, in_height, in_width)
+
+    model_repr = get_omihub_repr(input_shape, model)
+    soft_core_mapping = SoftCoreMapping()
+    soft_core_mapping.map(model_repr)
+
+    if quantize:
+        quantize_softcores(soft_core_mapping.soft_cores, bits=4)
+
+    hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
+    hard_core_mapping.map(soft_core_mapping)
+
+    chip = hard_cores_to_chip(
+        input_size, hard_core_mapping, axons_per_core, neurons_per_core,
+        leak, weight_type)     
+
+    return chip
 
 def export_json_to_file(chip, filename):
     with open(filename, 'w') as f:

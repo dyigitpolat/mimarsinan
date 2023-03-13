@@ -79,7 +79,7 @@ class HardCoreMapping:
             self.neuron_mapping[(softcore.id, soft_neuron_idx)] = \
                 (target_core_idx, target_neuron_idx)
                 
-    def map(self, softcores_list, output_sources):
+    def map(self, softcore_mapping):
         def is_mapping_possible(core, hardcore):
             tolerance = 0.1
             if hardcore.threshold is not None:
@@ -110,9 +110,9 @@ class HardCoreMapping:
         def verify_softcores(softcores):
             for core in softcores:
                 if core.get_input_count() > self.axons_per_core:
-                    raise Exception("Too many inputs for a core")
+                    raise Exception(f"Too many inputs for a core {core.get_input_count()} > {self.axons_per_core}")
                 if core.get_output_count() > self.neurons_per_core:
-                    raise Exception("Too many outputs for a core")
+                    raise Exception(f"Too many outputs for a core {core.get_output_count()} > {self.neurons_per_core}")
 
         def pick_best_core(unmapped_cores):
             core_a = get_core_with_most_inputs_that_can_map(unmapped_cores)
@@ -138,7 +138,7 @@ class HardCoreMapping:
                 ((self.axons_per_core - available_axons) * available_neurons)
             self.unusable_space += wasted_space + hardcore.unusable_space    
         
-        unmapped_cores = [core for core in softcores_list]
+        unmapped_cores = [core for core in softcore_mapping.soft_cores]
         verify_softcores(unmapped_cores)
 
         self.hardcores.append(HardCore(self.axons_per_core, self.neurons_per_core))
@@ -161,7 +161,8 @@ class HardCoreMapping:
         for hardcore in self.hardcores:
             remap_sources(hardcore.axon_sources)
                 
-        remap_sources(output_sources)
+        self.output_sources = np.array(softcore_mapping.output_sources)
+        remap_sources(self.output_sources)
 
         for hardcore in self.hardcores:
             axon_count = len(hardcore.axon_sources)
