@@ -8,7 +8,7 @@ import numpy as np
 def generate_core_weights(
     neurons_count, axons_count, weight_tensor, outs, 
     thresh, bias_tensor = None):
-
+    
     neurons: list[Neuron] = []
     for idx in range(neurons_count):
         if(idx < outs):
@@ -36,7 +36,7 @@ def generate_core_connection_info(
 
 class SoftCoreMapping:
     def __init__(self):
-        self.soft_cores = []
+        self.cores = []
         self.output_sources = []
 
         self.max_neurons = 64
@@ -91,11 +91,11 @@ class SoftCoreMapping:
             if(fc_biases is not None):
                 spike_sources.append(SpikeSource(0, 0, False, False, True))
             
-            self.soft_cores.append(
-                SoftCore(core_matrix, spike_sources.copy(), len(self.soft_cores)))
+            self.cores.append(
+                SoftCore(core_matrix, spike_sources.copy(), len(self.cores)))
 
         layer_sources = []
-        core_offset = len(self.soft_cores) - new_cores_count
+        core_offset = len(self.cores) - new_cores_count
         for neuron_idx in range(o_rows):
             layer_sources.append(
                 [SpikeSource(core_offset + core_idx, neuron_idx) for core_idx in range(o_cols)])
@@ -287,11 +287,11 @@ def hard_cores_to_chip(input_size, hardcore_mapping, axons_per_core, neurons_per
             hardcore.core_matrix.transpose(),
             neurons_per_core,
             hardcore.threshold)
-        for hardcore in hardcore_mapping.hardcores
+        for hardcore in hardcore_mapping.cores
     ]
 
     hardcore_connections = \
-        [ Connection(hardcore.axon_sources) for hardcore in hardcore_mapping.hardcores ]
+        [ Connection(hardcore.axon_sources) for hardcore in hardcore_mapping.cores ]
         
     chip = ChipModel(
         axons_per_core, neurons_per_core, len(hardcores), input_size,

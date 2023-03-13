@@ -21,6 +21,33 @@ class Normalizer(nn.Module):
         
         factor = self.get_factor().detach()
         return x * factor
+    
+class SoftQuantize(nn.Module):
+    def __init__(self, Tq):
+        super(SoftQuantize, self).__init__()
+        self.Tq = Tq
+    
+    def forward(self, x, alpha=10.0):
+        h = 1.0 / self.Tq
+        w = 1.0 / self.Tq
+        a = torch.tensor(alpha)
+        output = h * (
+            0.5 * (1.0/torch.tanh(a/2)) * 
+            torch.tanh(a * ((x/w-torch.floor(x/w))-0.5)) + 
+            0.5 + torch.floor(x/w))
+        return output
+
+class CQ_Activation(nn.Module):
+    def __init__(self, Tq):
+        super(CQ_Activation, self).__init__()
+        self.Tq = Tq
+        self.soft_quantize = SoftQuantize(Tq)
+    
+    def forward(self, x):
+        out = nn.ReLU()(x)
+        out = torch.clamp(out, 0.0, 1.0)
+        out = self.soft_quantize(out, 4.5)
+        return out
 
 
         

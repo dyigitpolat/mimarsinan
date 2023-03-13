@@ -1,0 +1,80 @@
+import torch.nn as nn
+import torch
+
+class CoreFlow(nn.Module):
+    def __init__(self, input_shape, core_mapping):
+        super(CoreFlow, self).__init__()
+        self.input_shape = input_shape
+
+        self.core_mapping = core_mapping
+        self.cores = core_mapping.cores
+        self.output_sources = core_mapping.output_sources
+        self.core_params = nn.ParameterList(
+            [nn.Parameter(torch.tensor(self.cores[core].core_matrix.transpose(), dtype=torch.float32)) for core in range(len(self.cores))]
+        )
+
+        self.activation = nn.ReLU()
+
+    def update_cores(self):
+        for idx, core in enumerate(self.cores):
+            core.core_matrix[:,:] = self.core_params[idx].detach().numpy().transpose()
+    
+    def get_signal(self, x, buffers, core, neuron, is_input, is_off, is_always_on):
+        if is_input:
+            return x[:, neuron]
+        
+        if is_off:
+            return torch.zeros_like(x[:, 0])
+        
+        if is_always_on:
+            return torch.ones_like(x[:, 0])
+        
+        return buffers[core][:, neuron]
+    
+    def get_signal_tensor(self, x, buffers, sources):
+        signals = []
+        for spike_source in sources:
+            signals.append( self.get_signal(
+                x, 
+                buffers,
+                spike_source.core_, 
+                spike_source.neuron_, 
+                spike_source.is_input_, 
+                spike_source.is_off_, 
+                spike_source.is_always_on_))
+        
+        return torch.stack(signals).transpose(0, 1)
+    
+    def set_activation(self, activation):
+        self.activation = activation
+    
+    def forward(self, x):
+        x = x.view(x.shape[0], -1)
+
+        buffers = []
+        for core in self.cores:
+            buffers.append(torch.zeros(x.shape[0], core.get_output_count()))
+        
+        chip_delay = len(self.cores)
+        for _ in range(chip_delay):
+            for core_idx in range(len(self.cores)):
+                input_signals = self.get_signal_tensor(
+                    x, buffers, self.cores[core_idx].axon_sources)
+
+                buffers[core_idx] = torch.matmul(
+                    self.core_params[core_idx], input_signals.T).T
+                buffers[core_idx] = self.activation(buffers[core_idx])
+        
+        output_signals = self.get_signal_tensor(x, buffers, self.output_sources)
+        return output_signals
+
+        
+
+
+
+        
+
+
+
+
+

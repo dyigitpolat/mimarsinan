@@ -2,7 +2,7 @@ from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.mapping.mapping_utils import *
 from mimarsinan.mapping.weight_quantization import *
 from mimarsinan.models.simple_mlp import *   
-from mimarsinan.models.hard_core_flow import *   
+from mimarsinan.models.core_flow import *   
 
 def get_simple_mlp_repr(input_shape, model):
     input = InputMapper(input_shape)
@@ -28,7 +28,7 @@ simple_mlp_model: SimpleMLP,
     soft_core_mapping.map(model_repr)
 
     if quantize:
-        quantize_softcores(soft_core_mapping.soft_cores, bits=4)
+        quantize_cores(soft_core_mapping.cores, bits=4)
 
     hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
     hard_core_mapping.map(soft_core_mapping)
@@ -39,15 +39,12 @@ simple_mlp_model: SimpleMLP,
 
     return chip
 
-def simple_mlp_to_hard_core_flow(input_shape, simple_mlp_model, max_axons, max_neurons):
+def simple_mlp_to_core_flow(input_shape, simple_mlp_model, max_axons, max_neurons):
     model_repr = get_simple_mlp_repr(input_shape, simple_mlp_model)
     soft_core_mapping = SoftCoreMapping()
     soft_core_mapping.map(model_repr)
 
-    hard_core_mapping = HardCoreMapping(max_axons, max_neurons)
-    hard_core_mapping.map(soft_core_mapping)
-
-    return HardCoreFlow(input_shape, hard_core_mapping)
+    return CoreFlow(input_shape, soft_core_mapping)
 
 
 def export_json_to_file(chip, filename):

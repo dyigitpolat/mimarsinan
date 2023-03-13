@@ -17,17 +17,20 @@ def test_mnist():
     
     mnist_input_size = 28*28
     mnist_output_size = 10
-    inner_mlp_width = 256
-    inner_mlp_count = 1
+    inner_mlp_width = 255
+    inner_mlp_count = 2
     pretrain_epochs = 12
     cq_only_epochs = 6
     cq_quantize_epochs = 12
 
-    Tq = 15
-    simulation_length = 2 * Tq + 3
+    Tq = 30
+    simulation_length = Tq + 3
 
     generated_files_path = "../generated/mnist/"
     input_count = 10000
+
+    neurons_per_core = 256
+    axons_per_core = 785
 
     _, test_loader = get_mnist_data(1)
 
@@ -36,22 +39,40 @@ def test_mnist():
         inner_mlp_count, 
         mnist_input_size, 
         mnist_output_size,
-        bias=False)
+        bias=True)
 
     print("Pretraining model...")
     train_on_mnist(ann_model, device, pretrain_epochs)
 
     print("Tuning model with CQ...")
-    cq_ann_model = SimpleMLP_CQ(ann_model, Tq)
-    train_on_mnist(cq_ann_model, device, cq_only_epochs)
+    cf = simple_mlp_to_core_flow((1, mnist_input_size), ann_model, axons_per_core, neurons_per_core)
+    cf.set_activation(CQ_Activation(Tq))
+    train_on_mnist(cf, device, cq_only_epochs)
 
     print("Tuning model with CQ and weight quantization...")
-    train_on_mnist_quantized(cq_ann_model, device, cq_quantize_epochs)
+    train_on_mnist_quantized(cf, device, cq_quantize_epochs)
+
+    print("Updating model weights...")
+    cf.update_cores()
+
+    print("Quantizing model weights...")
+    quantize_cores(cf.cores, bits=4)
 
     ###### 
 
-    print("Mapping trained model to chip...")
-    chip = simple_mlp_to_chip(cq_ann_model, leak=0, quantize=True, weight_type=int)
+    print("Mapping soft cores to hard cores...")
+    core_mapping = cf.core_mapping
+    hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
+    hard_core_mapping.map(core_mapping)
+
+    print("Mapping hard cores to chip...")
+    chip = hard_cores_to_chip(
+        mnist_input_size,
+        hard_core_mapping, 
+        axons_per_core,
+        neurons_per_core, 
+        leak=0,
+        weight_type=int)
 
     print("Saving input data to files...")
     save_inputs_to_files(generated_files_path, test_loader, input_count)
