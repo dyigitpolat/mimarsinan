@@ -34,6 +34,12 @@ class HardCore:
     
         self.unusable_space = 0
 
+    def get_input_count(self):
+        return self.axons_per_core
+    
+    def get_output_count(self):
+        return self.neurons_per_core
+
     def add_softcore(self, softcore):
         assert self.available_axons >= softcore.get_input_count() 
         assert self.available_neurons >= softcore.get_output_count()            
@@ -63,7 +69,7 @@ class HardCoreMapping:
         self.axons_per_core = axons_per_core
         self.neurons_per_core = neurons_per_core
 
-        self.hardcores = []
+        self.cores = []
         self.output_sources = []
         self.neuron_mapping = {}
 
@@ -74,7 +80,7 @@ class HardCoreMapping:
         hardcore.add_softcore(softcore)
         
         for soft_neuron_idx in range(softcore.get_output_count()):
-            target_core_idx = len(self.hardcores) - 1
+            target_core_idx = len(self.cores) - 1
             target_neuron_idx = prev_output_count + soft_neuron_idx
             self.neuron_mapping[(softcore.id, soft_neuron_idx)] = \
                 (target_core_idx, target_neuron_idx)
@@ -95,7 +101,7 @@ class HardCoreMapping:
         
         def get_first_core_that_can_map(cores):
             for core in cores:
-                if is_mapping_possible(core, self.hardcores[-1]):
+                if is_mapping_possible(core, self.cores[-1]):
                     return core
             return None
         
@@ -138,18 +144,18 @@ class HardCoreMapping:
                 ((self.axons_per_core - available_axons) * available_neurons)
             self.unusable_space += wasted_space + hardcore.unusable_space    
         
-        unmapped_cores = [core for core in softcore_mapping.soft_cores]
+        unmapped_cores = [core for core in softcore_mapping.cores]
         verify_softcores(unmapped_cores)
 
-        self.hardcores.append(HardCore(self.axons_per_core, self.neurons_per_core))
+        self.cores.append(HardCore(self.axons_per_core, self.neurons_per_core))
         while len(unmapped_cores) > 0:
             core = pick_best_core(unmapped_cores)
             
             if core is None:
-                update_unusable_space(self.hardcores[-1])
-                self.hardcores.append(HardCore(self.axons_per_core, self.neurons_per_core))
+                update_unusable_space(self.cores[-1])
+                self.cores.append(HardCore(self.axons_per_core, self.neurons_per_core))
             else:
-                self.merge_softcore_into(self.hardcores[-1], core)
+                self.merge_softcore_into(self.cores[-1], core)
                 unmapped_cores.remove(core)
 
         def remap_sources(sources):
@@ -158,13 +164,13 @@ class HardCoreMapping:
                 source.core_, source.neuron_ = \
                     self.neuron_mapping[(source.core_, source.neuron_)]
             
-        for hardcore in self.hardcores:
+        for hardcore in self.cores:
             remap_sources(hardcore.axon_sources)
                 
         self.output_sources = np.array(softcore_mapping.output_sources)
         remap_sources(self.output_sources)
 
-        for hardcore in self.hardcores:
+        for hardcore in self.cores:
             axon_count = len(hardcore.axon_sources)
             for _ in range(self.axons_per_core - axon_count):
                 hardcore.axon_sources.append(

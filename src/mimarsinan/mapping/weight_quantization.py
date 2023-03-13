@@ -25,11 +25,11 @@ class WeightQuantization:
         if(max_w == 0): max_w = 1.0
         return max(1, round((self.q_max * 1.0) / max_w))
 
-def quantize_softcores(softcores, bits):
+def quantize_cores(cores, bits):
     quantizer = WeightQuantization(bits)
 
-    for softcore in softcores:
+    for softcore in cores:
         softcore.threshold = quantizer.calculate_threshold(softcore.core_matrix)
         softcore.core_matrix = quantizer.quantize(softcore.core_matrix)
         
-    return softcores
+    return cores

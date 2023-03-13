@@ -47,7 +47,7 @@ def polat_mlp_mixer_to_chip(
     soft_core_mapping.map(model_repr)
 
     if quantize:
-        quantize_softcores(soft_core_mapping.soft_cores, bits=4)
+        quantize_cores(soft_core_mapping.cores, bits=4)
 
     hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
     hard_core_mapping.map(soft_core_mapping)
