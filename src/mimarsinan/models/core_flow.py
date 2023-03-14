@@ -1,3 +1,5 @@
+from mimarsinan.mapping.chip_delay import *
+
 import torch.nn as nn
 import torch
 
@@ -14,6 +16,7 @@ class CoreFlow(nn.Module):
         )
 
         self.activation = nn.ReLU()
+        self.chip_delay = ChipDelay(core_mapping).calculate()
 
     def update_cores(self):
         for idx, core in enumerate(self.cores):
@@ -55,8 +58,7 @@ class CoreFlow(nn.Module):
         for core in self.cores:
             buffers.append(torch.zeros(x.shape[0], core.get_output_count()))
         
-        chip_delay = len(self.cores)
-        for _ in range(chip_delay):
+        for _ in range(self.chip_delay):
             for core_idx in range(len(self.cores)):
                 input_signals = self.get_signal_tensor(
                     x, buffers, self.cores[core_idx].axon_sources)
