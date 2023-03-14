@@ -175,13 +175,4 @@ class HardCoreMapping:
             for _ in range(self.axons_per_core - axon_count):
                 hardcore.axon_sources.append(
                     SpikeSource(0, 0, is_input=False, is_off=True))
-                
-            
-
-        
-        
-        
-    
-
-
-    
+                    
