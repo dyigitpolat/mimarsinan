@@ -30,7 +30,5 @@ class ChipDelay:
     def calculate(self):
         self.memo = {}
         self.visited = set()
-        print("Calculating chip delay...")
-        print("Total cores:", len(self.mapping.cores))
         return max([
             self.get_delay_for(source.core_) for source in self.mapping.output_sources])
