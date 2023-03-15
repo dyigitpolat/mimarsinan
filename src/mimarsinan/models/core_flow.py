@@ -35,24 +35,25 @@ class CoreFlow(nn.Module):
         return buffers[core][:, neuron]
     
     def get_signal_tensor(self, x, buffers, sources):
-        signals = []
-        for spike_source in sources:
-            signals.append( self.get_signal(
+        signal_tensor = torch.empty(x.shape[0], len(sources), device=x.device)
+        for idx, spike_source in enumerate(sources):
+            signal_tensor[:, idx] = self.get_signal(
                 x, 
                 buffers,
                 spike_source.core_, 
                 spike_source.neuron_, 
                 spike_source.is_input_, 
                 spike_source.is_off_, 
-                spike_source.is_always_on_))
+                spike_source.is_always_on_)
         
-        return torch.stack(signals).transpose(0, 1)
+        return signal_tensor
     
     def set_activation(self, activation):
         self.activation = activation
     
     def forward(self, x):
         x = x.view(x.shape[0], -1)
+        x = self.activation(x)
 
         buffers = []
         for core in self.cores:
