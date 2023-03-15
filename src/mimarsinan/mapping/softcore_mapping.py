@@ -4,6 +4,7 @@ import numpy as np
 
 def is_off(idx): return idx == -1
 def is_input(idx): return idx == -2
+def is_always_on(idx): return idx == -3
 
 class SoftCore:
     def __init__(self, core_matrix, axon_sources, id):
@@ -160,7 +161,7 @@ class HardCoreMapping:
 
         def remap_sources(sources):
             for source in sources:
-                if source.is_off_ or source.is_input_: continue
+                if source.is_off_ or source.is_input_ or source.is_always_on_: continue
                 source.core_, source.neuron_ = \
                     self.neuron_mapping[(source.core_, source.neuron_)]
             
@@ -174,5 +175,5 @@ class HardCoreMapping:
             axon_count = len(hardcore.axon_sources)
             for _ in range(self.axons_per_core - axon_count):
                 hardcore.axon_sources.append(
-                    SpikeSource(0, 0, is_input=False, is_off=True))
+                    SpikeSource(-1, 0, is_input=False, is_off=True))
                     

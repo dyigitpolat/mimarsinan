@@ -30,7 +30,7 @@ def generate_core_connection_info(
     axons_count, ins, core, is_input_core):
     axon_sources = [SpikeSource(core, i, is_input_core) for i in range(ins)]
     for _ in range(axons_count - ins):
-        axon_sources.append(SpikeSource(core, 0, False, True)) 
+        axon_sources.append(SpikeSource(-1, 0, False, True)) 
     
     return Connection(axon_sources)
 
@@ -89,7 +89,7 @@ class SoftCoreMapping:
                     source_is_off))
             
             if(fc_biases is not None):
-                spike_sources.append(SpikeSource(0, 0, False, False, True))
+                spike_sources.append(SpikeSource(-3, 0, False, False, True))
             
             self.cores.append(
                 SoftCore(core_matrix, spike_sources.copy(), len(self.cores)))
@@ -126,7 +126,7 @@ class InputMapper:
         input_sources = []
         for input_idx in range(input_length):
             input_sources.append(
-                SpikeSource(0, input_idx, True, False))
+                SpikeSource(-2, input_idx, True, False))
         
         self.sources = np.array(input_sources).reshape(self.input_shape)
         return self.sources
@@ -203,12 +203,49 @@ class NormalizerMapper:
         
         self.source_mapper.layer.weight.data *= self.layer.get_factor()
 
+        if self.source_mapper.layer.bias is not None:
+            self.source_mapper.layer.bias.data *= self.layer.get_factor()
+
         self.sources = self.source_mapper.map(mapping)
         return self.sources
+    
+class BatchNormMapper:
+    def __init__(self, source_mapper, bn_layer):
+        self.source_mapper = source_mapper
+        self.layer = bn_layer
+        self.sources = None
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        gamma = self.layer.weight.data
+        beta = self.layer.bias.data
+        var = self.layer.running_var.data
+        mean = self.layer.running_mean.data
+        u = gamma / torch.sqrt(var + self.layer.eps)
+
+        print(self.source_mapper.layer.weight.data.shape)
+        print(mean.shape)
+        print(beta.shape)
+        print(u.shape)
+        self.source_mapper.layer.weight.data *= u.unsqueeze(1)
+        print(self.source_mapper.layer.weight.data.shape)
+        
+        print(self.source_mapper.layer.bias.data.shape)
+        print(mean.shape)
+        print(beta.shape)
+        print(u.shape)
+        self.source_mapper.layer.bias.data = u * (self.source_mapper.layer.bias.data - mean) + beta
+
+        self.sources = self.source_mapper.map(mapping)
+        return self.sources
+
 class AddMapper:
     def __init__(self, source_mapper_a, source_mapper_b):
         self.source_mapper_a = source_mapper_a
         self.source_mapper_b = source_mapper_b
+
         self.sources = None
 
     def map(self, mapping):
