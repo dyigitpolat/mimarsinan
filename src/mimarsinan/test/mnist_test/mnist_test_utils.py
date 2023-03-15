@@ -4,7 +4,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 
-from mimarsinan.models.simple_mlp import *
+from mimarsinan.models.core_flow import *
 
 datasets_path = "../datasets"
 
@@ -75,8 +75,9 @@ def quantize_weight_tensor(weight_tensor):
         torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
 
 def quantize_model(ann):
-    for param in ann.parameters():
-        param.data = nn.Parameter(quantize_weight_tensor(param)).data
+    assert isinstance(ann, CoreFlow)
+    for core_param in ann.core_params:
+        core_param.data = quantize_weight_tensor(core_param.data)
 
 def update_model_weights(ann, qnn):
     for param, q_param in zip(ann.parameters(), qnn.parameters()):

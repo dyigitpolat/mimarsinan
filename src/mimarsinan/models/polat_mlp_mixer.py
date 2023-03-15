@@ -63,10 +63,8 @@ class PolatMLPMixer(nn.Module):
         self.img_dim_c = in_channels
         self.num_classes = num_classes
 
-        self.cq_layer = nn.Identity()
-
         self.patch_emb = nn.Sequential(
-            Conv2d_WS(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=False),
+            Conv2d_WS(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=True),
             Rearrange('b d h w -> b (h w) d'), 
             nn.LeakyReLU()
         )
@@ -79,38 +77,18 @@ class PolatMLPMixer(nn.Module):
             for _ in range(num_layers)
             ]
         )
-        self.clf = nn.Linear(hidden_size, num_classes, bias=False)
-        self.norm = Normalizer()
+        self.clf = nn.Linear(hidden_size, num_classes, bias=True)
         self.debug = None
-    
-    def enable_cq(self, Tq):
-        self.cq_layer = SoftQuantize(Tq)
-        for layer in self.mixer_layers:
-            layer.enable_cq(Tq)
-    
-    def disable_cq(self):
-        self.cq_layer = nn.Identity()
-        for layer in self.mixer_layers:
-            layer.disable_cq()
 
     def forward(self, x):
-        out = self.cq_layer(x)
-        out = self.patch_emb(out)
-        out = torch.clamp(out, -0.05, 1.05)
-        out = self.cq_layer(out)
+        out = self.patch_emb(x)
 
         out = self.mixer_layers(out)
         out = out.mean(dim=1)
-
         out = nn.LeakyReLU()(out)
-        out = torch.clamp(out, -0.05, 1.05)
-        out = self.cq_layer(out)
 
         out = self.clf(out)
-
         out = nn.LeakyReLU()(out)
-        out = torch.clamp(out, -0.05, 1.05)
-        out = self.cq_layer(out)
 
         self.debug = out
 
@@ -122,14 +100,6 @@ class MixerLayer(nn.Module):
         self.mlp1 = MLP1(num_patches, hidden_s, hidden_size, drop_p)
         self.mlp2 = MLP2(hidden_size, hidden_c, drop_p)
 
-    def enable_cq(self, Tq):
-        self.mlp1.enable_cq(Tq)
-        self.mlp2.enable_cq(Tq)
-    
-    def disable_cq(self):
-        self.mlp1.disable_cq()
-        self.mlp2.disable_cq()
-
     def forward(self, x):
         out = self.mlp1(x)
         out = self.mlp2(out)
@@ -140,32 +110,20 @@ class MLP1(nn.Module):
     def __init__(self, num_patches, hidden_s, hidden_size, drop_p):
         super(MLP1, self).__init__()
         self.ln = Normalizer()
-        self.fc1 = nn.Conv1d(num_patches, hidden_s, kernel_size=1, bias=False)
+        self.fc1 = nn.Conv1d(num_patches, hidden_s, kernel_size=1, bias=True)
         self.do1 = nn.Dropout(p=drop_p)
-        self.fc2 = nn.Conv1d(hidden_s, num_patches, kernel_size=1, bias=False)
+        self.fc2 = nn.Conv1d(hidden_s, num_patches, kernel_size=1, bias=True)
         self.do2 = nn.Dropout(p=drop_p)
         self.act = nn.LeakyReLU()
-
-        self.cq_layer = nn.Identity()
-
-    def enable_cq(self, Tq):
-        self.cq_layer = SoftQuantize(Tq)
-    
-    def disable_cq(self):
-        self.cq_layer = nn.Identity()
     
     def forward(self, x):
         out = self.fc1(x)
         out = self.act(out)
-        out = torch.clamp(out, -0.05, 1.05)
-        out = self.cq_layer(out)
         out = self.do1(out)
 
         out = self.fc2(out)
         out = self.ln(out)
         out = self.act(out)
-        out = torch.clamp(out, -0.05, 1.05)
-        out = self.cq_layer(out)
         out = self.do2(out)
         
         return out
@@ -174,32 +132,20 @@ class MLP2(nn.Module):
     def __init__(self, hidden_size, hidden_c, drop_p):
         super(MLP2, self).__init__()
         self.ln = Normalizer()
-        self.fc1 = nn.Linear(hidden_size, hidden_c, bias=False)
+        self.fc1 = nn.Linear(hidden_size, hidden_c, bias=True)
         self.do1 = nn.Dropout(p=drop_p)
-        self.fc2 = nn.Linear(hidden_c, hidden_size, bias=False)
+        self.fc2 = nn.Linear(hidden_c, hidden_size, bias=True)
         self.do2 = nn.Dropout(p=drop_p)
         self.act = nn.LeakyReLU()
-
-        self.cq_layer = nn.Identity()
-
-    def enable_cq(self, Tq):
-        self.cq_layer = SoftQuantize(Tq)
-    
-    def disable_cq(self):
-        self.cq_layer = nn.Identity()
 
     def forward(self, x):
         out = self.fc1(x)
         out = self.act(out)
-        out = torch.clamp(out, -0.05, 1.05)
-        out = self.cq_layer(out)
         out = self.do1(out)
 
         out = self.fc2(out)
         out = self.ln(out)
         out = self.act(out)
-        out = torch.clamp(out, -0.05, 1.05)
-        out = self.cq_layer(out)
         out = self.do2(out)
 
         return out

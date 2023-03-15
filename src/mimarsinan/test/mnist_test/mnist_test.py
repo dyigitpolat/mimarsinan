@@ -2,6 +2,7 @@ from mimarsinan.models.simple_mlp import *
 from mimarsinan.models.polat_mlp_mixer import *
 from mimarsinan.test.mnist_test.mnist_test_utils import *
 
+from mimarsinan.mapping.chip_delay import *
 from mimarsinan.mapping.simple_mlp_mapper import *
 from mimarsinan.mapping.polat_mlp_mixer_mapper import *
 from mimarsinan.chip_simulation.compile_nevresim import *
@@ -16,12 +17,13 @@ def test_mnist():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     mnist_input_size = 28*28
+    mnist_input_shape = (1,28*28)
     mnist_output_size = 10
     inner_mlp_width = 255
     inner_mlp_count = 2
-    pretrain_epochs = 12
-    cq_only_epochs = 6
-    cq_quantize_epochs = 12
+    pretrain_epochs = 1
+    cq_only_epochs = 1
+    cq_quantize_epochs = 1
 
     Tq = 30
     simulation_length = Tq + 3
@@ -44,8 +46,21 @@ def test_mnist():
     print("Pretraining model...")
     train_on_mnist(ann_model, device, pretrain_epochs)
 
+    print("Mapping model to soft cores...")
+    model_repr = get_simple_mlp_repr(mnist_input_shape, ann_model)
+    soft_core_mapping = SoftCoreMapping()
+    soft_core_mapping.map(model_repr)
+    print("  Number of soft cores:", len(soft_core_mapping.cores))
+    print("  Soft core mapping delay: ", ChipDelay(soft_core_mapping).calculate())
+
+    print("Mapping soft cores to hard cores...")
+    hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
+    hard_core_mapping.map(soft_core_mapping)
+    print("  Number of hard cores:", len(hard_core_mapping.cores))
+    print("  Hard core mapping delay: ", ChipDelay(hard_core_mapping).calculate())
+
     print("Tuning model with CQ...")
-    cf = simple_mlp_to_core_flow((1, mnist_input_size), ann_model, axons_per_core, neurons_per_core)
+    cf = CoreFlow(mnist_input_shape, hard_core_mapping)
     cf.set_activation(CQ_Activation(Tq))
     train_on_mnist(cf, device, cq_only_epochs)
 
@@ -56,14 +71,12 @@ def test_mnist():
     cf.update_cores()
 
     print("Quantizing model weights...")
-    quantize_cores(cf.cores, bits=4)
+    quantize_cores(hard_core_mapping.cores, bits=4)
 
     ###### 
 
-    print("Mapping soft cores to hard cores...")
-    core_mapping = cf.core_mapping
-    hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
-    hard_core_mapping.map(core_mapping)
+    print("Calculating delay for hard core mapping...")
+    print(f"delay: {ChipDelay(hard_core_mapping).calculate()}")
 
     print("Mapping hard cores to chip...")
     chip = hard_cores_to_chip(

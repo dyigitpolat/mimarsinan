@@ -54,7 +54,7 @@ def polat_mlp_mixer_to_chip(
 
     chip = hard_cores_to_chip(
         input_size, hard_core_mapping, axons_per_core, neurons_per_core,
-        leak, weight_type)     
+        leak, weight_type)
 
     return chip
 
