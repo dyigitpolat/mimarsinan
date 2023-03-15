@@ -4,7 +4,7 @@ class ChipDelay:
         self.memo = {}
         self.visited = set()
 
-    def get_delay_for(self, source_core_idx, depth=0):
+    def get_delay_for(self, source_core_idx):
         if source_core_idx in self.memo: return self.memo[source_core_idx]
         if source_core_idx in self.visited: return 0
         
@@ -21,7 +21,7 @@ class ChipDelay:
         
         self.visited.add(source_core_idx)
         result = 1 + max([
-            self.get_delay_for(core, depth+1) for core in source_cores])
+            self.get_delay_for(core) for core in source_cores])
         self.visited.remove(source_core_idx)
 
         self.memo[source_core_idx] = result
