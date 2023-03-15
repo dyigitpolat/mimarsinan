@@ -22,6 +22,19 @@ class Normalizer(nn.Module):
         factor = self.get_factor().detach()
         return x * factor
     
+class WokeBatchNorm1d(nn.BatchNorm1d):
+    def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True, track_running_stats=True):
+        super(WokeBatchNorm1d, self).__init__(num_features, eps, momentum, affine, track_running_stats)
+        
+    def forward(self, x):
+        if len(x.shape) == 2:
+            return nn.BatchNorm1d.forward(self, x)
+        else:
+            x = x.transpose(1, 2)
+            x = nn.BatchNorm1d.forward(self, x)
+            x = x.transpose(1, 2)
+            return x
+    
 class SoftQuantize(nn.Module):
     def __init__(self, Tq):
         super(SoftQuantize, self).__init__()
