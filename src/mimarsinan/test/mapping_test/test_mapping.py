@@ -73,4 +73,7 @@ def test_mapping():
     print("inc", inc)
     print("tot", tot)
 
+    print(chip_output)
+    print(layer_debug_tensor)
+
     print("Mapping test done.")

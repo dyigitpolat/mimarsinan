@@ -27,7 +27,7 @@ def get_ann_model(args):
         patch_size=8, 
         hidden_size=32, 
         hidden_s=192, 
-        hidden_c=192, 
+        hidden_c=16, 
         num_layers=1, 
         num_classes=10, 
         drop_p=0.3).to(args.device)
@@ -86,7 +86,7 @@ def test_cifar10():
     args.epochs = 10
     args.device = torch.device("cuda")
 
-    pretrain_epochs = 1
+    pretrain_epochs = 10
     cq_only_epochs = 1
     cq_quantize_epochs = 1
     
@@ -95,8 +95,8 @@ def test_cifar10():
         in_channels=3,
         img_size=32, 
         patch_size=8, 
-        hidden_size=16, 
-        hidden_s=64, 
+        hidden_size=32, 
+        hidden_s=32, 
         hidden_c=128, 
         num_layers=1, 
         num_classes=10, 
@@ -128,6 +128,12 @@ def test_cifar10():
     print("  Number of soft cores:", len(soft_core_mapping.cores))
     print("  Soft core mapping delay: ", ChipDelay(soft_core_mapping).calculate())
 
+    print("Testing CoreFlow with soft cores...")
+    cf = CoreFlow(cifar10_input_shape, soft_core_mapping)
+    cf.set_activation(nn.LeakyReLU())
+    correct, total = test_on_cifar10(cf, device)
+    print(f"{correct}/{total}")
+
     print("Mapping soft cores to hard cores...")
     axons_per_core = 256
     neurons_per_core = 256
@@ -136,9 +142,14 @@ def test_cifar10():
     print("  Number of hard cores:", len(hard_core_mapping.cores))
     print("  Hard core mapping delay: ", ChipDelay(hard_core_mapping).calculate())
 
+    print("Testing CoreFlow with hard cores...")
+    cf = CoreFlow(cifar10_input_shape, hard_core_mapping)
+    cf.set_activation(nn.LeakyReLU())
+    correct, total = test_on_cifar10(cf, device)
+    print(f"{correct}/{total}")
+
     print("Tuning model with CQ...")
     Tq = 30
-    cf = CoreFlow(cifar10_input_shape, hard_core_mapping)
     cf.set_activation(CQ_Activation(Tq))
     train_on_cifar10(cf, device, cq_only_epochs)
 

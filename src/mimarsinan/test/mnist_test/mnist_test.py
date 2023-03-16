@@ -20,10 +20,11 @@ def test_mnist():
     mnist_input_shape = (1,28*28)
     mnist_output_size = 10
     inner_mlp_width = 255
-    inner_mlp_count = 2
-    pretrain_epochs = 1
-    cq_only_epochs = 1
-    cq_quantize_epochs = 1
+    inner_mlp_count = 4
+    pretrain_epochs = 2
+    leaky_epochs = 2
+    cq_only_epochs = 2
+    cq_quantize_epochs = 3
 
     Tq = 30
     simulation_length = Tq + 3
@@ -46,6 +47,10 @@ def test_mnist():
     print("Pretraining model...")
     train_on_mnist(ann_model, device, pretrain_epochs)
 
+    print("Testing pretrained model...")
+    correct, total = test_on_mnist(ann_model, device)
+    print("  Correct:", correct, "Total:", total)
+
     print("Mapping model to soft cores...")
     model_repr = get_simple_mlp_repr(mnist_input_shape, ann_model)
     soft_core_mapping = SoftCoreMapping()
@@ -59,8 +64,21 @@ def test_mnist():
     print("  Number of hard cores:", len(hard_core_mapping.cores))
     print("  Hard core mapping delay: ", ChipDelay(hard_core_mapping).calculate())
 
-    print("Tuning model with CQ...")
+    print("Creating CoreFlow...")
     cf = CoreFlow(mnist_input_shape, hard_core_mapping)
+
+    print("Testing CoreFlow...")
+    correct, total = test_on_mnist(cf, device)
+    print("  Correct:", correct, "Total:", total)
+
+    print("Tuning model with leaky clamp...")
+    cycles = 10
+    for i in range(cycles):
+        clamp_leak = i * (1.0/cycles)
+        cf.set_activation(LeakyClamp(clamp_leak))
+        train_on_mnist(cf, device, cq_only_epochs)
+
+    print("Tuning model with CQ...")
     cf.set_activation(CQ_Activation(Tq))
     train_on_mnist(cf, device, cq_only_epochs)
 
