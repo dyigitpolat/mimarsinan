@@ -7,8 +7,12 @@ from mimarsinan.models.core_flow import *
 def get_simple_mlp_repr(input_shape, model):
     input = InputMapper(input_shape)
     prev = input
+    i = 0
     for layer in model.layers:
         prev = LinearMapper(prev, layer)
+        if i > 1 and i < len(model.layers) - 1:
+            prev = BatchNormMapper(prev, model.bns[i-1])
+        i += 1
     
     return ModelRepresentation(prev)
 

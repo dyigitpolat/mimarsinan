@@ -10,13 +10,13 @@ def get_polat_mlp_repr(input_shape, model):
     for i in range(model.num_layers):
         mixer_m1_fc1 = Conv1DMapper(prev, model.mixer_layers[i].mlp1.fc1)
         mixer_m1_fc2 = Conv1DMapper(mixer_m1_fc1, model.mixer_layers[i].mlp1.fc2)
-        mixer_m1_fc2_norm = NormalizerMapper(mixer_m1_fc2, model.mixer_layers[i].mlp1.ln)
+        #mixer_m1_fc2_norm = BatchNormMapper(mixer_m1_fc2, model.mixer_layers[i].mlp1.ln)
         
-        mixer_m2_fc1 = LinearMapper(mixer_m1_fc2_norm, model.mixer_layers[i].mlp2.fc1)
+        mixer_m2_fc1 = LinearMapper(mixer_m1_fc2, model.mixer_layers[i].mlp2.fc1)
         mixer_m2_fc2 = LinearMapper(mixer_m2_fc1, model.mixer_layers[i].mlp2.fc2)
-        mixer_m2_fc2_norm = NormalizerMapper(mixer_m2_fc2, model.mixer_layers[i].mlp2.ln)
+        #mixer_m2_fc2_norm = BatchNormMapper(mixer_m2_fc2, model.mixer_layers[i].mlp2.ln)
 
-        prev = mixer_m2_fc2_norm
+        prev = mixer_m2_fc2
     
     avg_pool = AvgPoolMapper(prev)
     classifier = LinearMapper(avg_pool, model.clf)

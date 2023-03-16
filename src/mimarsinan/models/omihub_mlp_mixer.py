@@ -119,7 +119,8 @@ class MLP1(nn.Module):
         self.do2 = nn.Dropout(p=drop_p)
         self.act = nn.ReLU() #F.gelu if not off_act else lambda x:x
     def forward(self, x):
-        out = self.do1(self.act(self.fc1(self.ln(x))))
+        #out = self.do1(self.act(self.fc1(self.ln(x))))
+        out = self.do1(self.act(self.ln(self.fc1(x))))
         out = self.do2(self.act(self.fc2(out)))
         
         return out+x
@@ -127,14 +128,15 @@ class MLP1(nn.Module):
 class MLP2(nn.Module):
     def __init__(self, hidden_size, hidden_c, drop_p, off_act):
         super(MLP2, self).__init__()
-        self.ln = Normalizer() #nn.LayerNorm(hidden_size)
+        self.ln = Normalizer() #WokeBatchNorm1d(hidden_c) #nn.LayerNorm(hidden_size)
         self.fc1 = nn.Linear(hidden_size, hidden_c, bias=True)
         self.do1 = nn.Dropout(p=drop_p)
         self.fc2 = nn.Linear(hidden_c, hidden_size, bias=False)
         self.do2 = nn.Dropout(p=drop_p)
         self.act = nn.ReLU() #F.gelu if not off_act else lambda x:x
     def forward(self, x):
-        out = self.do1(self.act(self.fc1(self.ln(x))))
+        #out = self.do1(self.act(self.fc1(self.ln(x))))
+        out = self.do1(self.act(self.ln(self.fc1(x))))
         out = self.do2(self.act(self.fc2(out)))
         return out+x
 
