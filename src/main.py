@@ -10,13 +10,20 @@ from mimarsinan.test.mapping_test.test_mapping import *
 
 from mimarsinan.test.debug_spikes_test.debug_spikes_test import *
 
+def force_cudnn_initialization():
+    s = 32
+    dev = torch.device('cuda')
+    torch.nn.functional.conv2d(torch.zeros(s, s, s, s, device=dev), torch.zeros(s, s, s, s, device=dev))
+
+force_cudnn_initialization()
+
 # test_debug_spikes()
 # test_xor()
 # test_mnist()
 # test_mnist_nni()
 # test_mnist_ntk_nni()
-# test_cifar10()
+test_cifar10()
 # test_cifar10_nni()
 # test_cifar100()
 # test_cifar100_nni()
-test_mapping()
+# test_mapping()
