@@ -536,4 +536,4 @@ if __name__=='__main__':
         trainer = Trainer(model, args)
         trainer.fit(train_dl, test_dl)
 
-        torch.save(model.state_dict(), f"./saved_models/{experiment_name}")
+        torch.save(model.state_dict(), f"./saved_models/{experiment_name}.state_dict")
