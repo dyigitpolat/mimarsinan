@@ -28,8 +28,8 @@ class WeightQuantization:
 def quantize_cores(cores, bits):
     quantizer = WeightQuantization(bits)
 
-    for softcore in cores:
-        softcore.threshold = quantizer.calculate_threshold(softcore.core_matrix)
-        softcore.core_matrix = quantizer.quantize(softcore.core_matrix)
+    for core in cores:
+        core.threshold = quantizer.calculate_threshold(core.core_matrix)
+        core.core_matrix = quantizer.quantize(core.core_matrix)
         
     return cores
