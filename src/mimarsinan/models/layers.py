@@ -62,6 +62,22 @@ class CQ_Activation(nn.Module):
         out = self.soft_quantize(out, 4.5)
         return out
 
+class LeakyClamp(nn.Module):
+    def __init__(self, leak):
+        super(LeakyClamp, self).__init__()
+        self.leak = 1.0 - leak
+    
+    def forward(self, x):
+        x = nn.LeakyReLU()(x)
+        return torch.where(
+            x < 0.0,
+            -self.leak * x,
+            torch.where(
+                x < 1.0,
+                x,
+                self.leak * x)
+        )
+
 
         
 
