@@ -1,5 +1,8 @@
+from mimarsinan.models.layers import *
+
 import torch.nn as nn
 import torch
+
 class SimpleMLP(nn.Module):
     def __init__(
         self, 
@@ -16,12 +19,14 @@ class SimpleMLP(nn.Module):
                     in_features=input_size, out_features=inner_mlp_width,
                     bias=bias),
             ])
+        self.bns = []
 
         for _ in range(inner_mlp_count):
             self.layers.append(
                 nn.Linear(
                     in_features=inner_mlp_width, out_features=inner_mlp_width,
                     bias=bias))
+            self.bns.append(WokeBatchNorm1d(inner_mlp_width))
 
         self.layers.append(
             nn.Linear(
@@ -31,9 +36,13 @@ class SimpleMLP(nn.Module):
 
     def forward(self, x):
         output = x.view(x.size(0), -1)
+        i = 0
         for layer in self.layers:
             output = layer(output)
+            if i > 1 and i < len(self.layers) - 1:
+                output = self.bns[i - 1](output)
             output = nn.LeakyReLU()(output)
+            i += 1
 
         return output
 

@@ -91,6 +91,7 @@ class SoftCoreMapping:
             if(fc_biases is not None):
                 spike_sources.append(SpikeSource(-3, 0, False, False, True))
             
+            assert len(spike_sources) == core_matrix.shape[0]
             self.cores.append(
                 SoftCore(core_matrix, spike_sources.copy(), len(self.cores)))
 
@@ -215,28 +216,34 @@ class BatchNormMapper:
         self.layer = bn_layer
         self.sources = None
 
+    def __fuse_linear(self):
+        l = self.source_mapper.layer
+        bn = self.layer
+    
+        new_w = l.weight.data.clone()
+        new_b = l.bias.data.clone()
+
+        gamma = bn.weight.data
+        beta = bn.bias.data
+        var = bn.running_var.data
+        mean = bn.running_mean.data
+        u = gamma / torch.sqrt(var + bn.eps)
+
+        new_w[:,:] = l.weight.data * u.unsqueeze(1)
+        new_b[:] = (l.bias.data - mean) * u + beta
+        
+        self.source_mapper.layer.weight.data = new_w
+        self.source_mapper.layer.bias.data = new_b
+
+    def __fuse_conv1d(self):
+        pass
+
     def map(self, mapping):
         if self.sources is not None:
             return self.sources
         
-        gamma = self.layer.weight.data
-        beta = self.layer.bias.data
-        var = self.layer.running_var.data
-        mean = self.layer.running_mean.data
-        u = gamma / torch.sqrt(var + self.layer.eps)
-
-        print(self.source_mapper.layer.weight.data.shape)
-        print(mean.shape)
-        print(beta.shape)
-        print(u.shape)
-        self.source_mapper.layer.weight.data *= u.unsqueeze(1)
-        print(self.source_mapper.layer.weight.data.shape)
-        
-        print(self.source_mapper.layer.bias.data.shape)
-        print(mean.shape)
-        print(beta.shape)
-        print(u.shape)
-        self.source_mapper.layer.bias.data = u * (self.source_mapper.layer.bias.data - mean) + beta
+        if isinstance(self.source_mapper.layer, nn.Linear):
+            self.__fuse_linear()
 
         self.sources = self.source_mapper.map(mapping)
         return self.sources

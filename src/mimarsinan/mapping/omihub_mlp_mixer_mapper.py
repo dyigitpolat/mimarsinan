@@ -8,17 +8,16 @@ def get_omihub_repr(input_shape, model):
     patch_emb_mapper = PatchEmbeddingMapper(input_mapper, model.patch_emb[0])
     prev_mapper = patch_emb_mapper
     for i in range(model.num_layers):
-        mixer_m1_fc1 = NormalizerMapper(
-            Conv1DMapper(prev_mapper, model.mixer_layers[i].mlp1.fc1), 
-            model.mixer_layers[i].mlp1.ln)
+        mixer_m1_fc1 = Conv1DMapper(prev_mapper, model.mixer_layers[i].mlp1.fc1)
+        mizer_m1_ln = NormalizerMapper(mixer_m1_fc1, model.mixer_layers[i].mlp1.ln)
         
-        mixer_m1_fc2 = Conv1DMapper(mixer_m1_fc1, model.mixer_layers[i].mlp1.fc2)
+        mixer_m1_fc2 = Conv1DMapper(mizer_m1_ln, model.mixer_layers[i].mlp1.fc2)
         mixer_m1_add = AddMapper(prev_mapper, mixer_m1_fc2)
-        mixer_m2_fc1 = NormalizerMapper(
-            LinearMapper(mixer_m1_add, model.mixer_layers[i].mlp2.fc1), 
-            model.mixer_layers[i].mlp2.ln)
+
+        mixer_m2_fc1 = LinearMapper(mixer_m1_add, model.mixer_layers[i].mlp2.fc1)
+        mixer_m2_ln = NormalizerMapper(mixer_m2_fc1, model.mixer_layers[i].mlp2.ln)
         
-        mixer_m2_fc2 = LinearMapper(mixer_m2_fc1, model.mixer_layers[i].mlp2.fc2)
+        mixer_m2_fc2 = LinearMapper(mixer_m2_ln, model.mixer_layers[i].mlp2.fc2)
         mixer_m2_add = AddMapper(mixer_m1_add, mixer_m2_fc2)
         prev_mapper = mixer_m2_add
         
@@ -49,7 +48,7 @@ def omihub_mlp_mixer_to_chip(
     soft_core_mapping.map(model_repr)
 
     if quantize:
-        quantize_softcores(soft_core_mapping.soft_cores, bits=4)
+        quantize_cores(soft_core_mapping.cores, bits=4)
 
     hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
     hard_core_mapping.map(soft_core_mapping)
