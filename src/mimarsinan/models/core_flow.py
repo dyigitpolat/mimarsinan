@@ -56,17 +56,20 @@ class CoreFlow(nn.Module):
         x = self.activation(x)
 
         buffers = []
+        input_signals = []
         for core in self.cores:
             buffers.append(torch.zeros(x.shape[0], core.get_output_count()))
+            input_signals.append(torch.zeros(x.shape[0], core.get_input_count()))
         
-        for _ in range(self.cycles):
+        for _ in range(len(self.cores)):
             for core_idx in range(len(self.cores)):
-                input_signals = self.get_signal_tensor(
+                input_signals[core_idx] = self.get_signal_tensor(
                     x, buffers, self.cores[core_idx].axon_sources)
 
-                buffers[core_idx] = torch.matmul(
-                    self.core_params[core_idx], input_signals.T).T
-                buffers[core_idx] = self.activation(buffers[core_idx])
+            for core_idx in range(len(self.cores)):
+                buffers[core_idx] = self.activation(
+                    torch.matmul(
+                        self.core_params[core_idx], input_signals[core_idx].T).T)
         
         output_signals = self.get_signal_tensor(x, buffers, self.output_sources)
         return output_signals
