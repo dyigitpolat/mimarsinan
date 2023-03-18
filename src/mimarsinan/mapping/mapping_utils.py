@@ -59,9 +59,9 @@ class SoftCoreMapping:
         o_rows = output_shape[-2]
         o_cols = output_shape[-1]
 
-        assert o_rows == w_rows
-        assert o_cols == x_cols
-        assert x_rows == w_cols
+        assert o_rows == w_rows, "o_rows: {}, w_rows: {}".format(o_rows, w_rows)
+        assert o_cols == x_cols, "o_cols: {}, x_cols: {}".format(o_cols, x_cols)
+        assert x_rows == w_cols, "x_rows: {}, w_cols: {}".format(x_rows, w_cols)
 
         new_cores_count = o_cols
         out_neurons_count = o_rows
@@ -130,6 +130,19 @@ class InputMapper:
                 SpikeSource(-2, input_idx, True, False))
         
         self.sources = np.array(input_sources).reshape(self.input_shape)
+        return self.sources
+    
+class ReshapeMapper:
+    def __init__(self, source_mapper, output_shape):
+        self.source_mapper = source_mapper
+        self.output_shape = output_shape
+        self.sources = None
+    
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        self.sources = self.source_mapper.map(mapping).reshape(self.output_shape)
         return self.sources
 
 class Conv1DMapper:
