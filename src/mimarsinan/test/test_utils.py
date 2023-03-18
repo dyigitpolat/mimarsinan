@@ -70,3 +70,11 @@ def evaluate_chip_output(
         total += 1
     
     return float(correct) / total
+
+def almost_equal(a, b, epsilon=0.00001):
+    eq1 = abs(a - b) < epsilon
+    eq2 = True
+    if((b != 0.0) and (b != -0.0) and (a != 0.0) and (a != -0.0)):
+        eq2 = abs(1.0 - a/b) < 0.1
+
+    return eq1 and eq2
