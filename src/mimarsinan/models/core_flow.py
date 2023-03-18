@@ -53,7 +53,6 @@ class CoreFlow(nn.Module):
     
     def forward(self, x):
         x = x.view(x.shape[0], -1)
-        x = self.activation(x)
 
         buffers = []
         input_signals = []
@@ -73,14 +72,3 @@ class CoreFlow(nn.Module):
         
         output_signals = self.get_signal_tensor(x, buffers, self.output_sources)
         return output_signals
-
-        
-
-
-
-        
-
-
-
-
-
