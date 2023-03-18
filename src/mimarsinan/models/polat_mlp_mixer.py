@@ -65,8 +65,8 @@ class PolatMLPMixer(nn.Module):
         self.num_classes = num_classes
 
         self.patch_emb = nn.Sequential(
-            Conv2d_WS(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=True),
-            #nn.Conv2d(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=True),
+            #Conv2d_WS(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=True),
+            nn.Conv2d(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=True),
             Rearrange('b d h w -> b (h w) d'), 
             nn.LeakyReLU()
         )
