@@ -1,4 +1,4 @@
-from mimarsinan.mapping.chip_delay import *
+from mimarsinan.mapping.chip_latency import *
 
 import torch.nn as nn
 import torch
@@ -16,7 +16,7 @@ class CoreFlow(nn.Module):
         )
 
         self.activation = nn.ReLU()
-        self.cycles = ChipDelay(core_mapping).calculate()
+        self.cycles = ChipLatency(core_mapping).calculate()
 
     def update_cores(self):
         for idx, core in enumerate(self.cores):
