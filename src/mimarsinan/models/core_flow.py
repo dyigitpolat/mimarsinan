@@ -60,7 +60,7 @@ class CoreFlow(nn.Module):
             buffers.append(torch.zeros(x.shape[0], core.get_output_count()))
             input_signals.append(torch.zeros(x.shape[0], core.get_input_count()))
         
-        for _ in range(len(self.cores)):
+        for _ in range(self.cycles):
             for core_idx in range(len(self.cores)):
                 input_signals[core_idx] = self.get_signal_tensor(
                     x, buffers, self.cores[core_idx].axon_sources)

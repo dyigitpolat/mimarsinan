@@ -15,12 +15,12 @@ class ChipDelay:
         return source.core_ < 0
 
     def get_delay_for(self, source):
-        source_core_idx = source.core_
+        key = (source.core_, source.neuron_)
 
-        if source_core_idx in self.memo: return self.memo[source_core_idx]
+        if key in self.memo: return self.memo[key]
         
         if self.__is_direct_signal(source):
-            self.memo[source_core_idx] = 0
+            self.memo[key] = 0
             return 0
         
         current_core = self.mapping.cores[source.core_]
@@ -30,7 +30,7 @@ class ChipDelay:
         result = 1 + max([
             self.get_delay_for(source) for source in non_zero_axon_sources])
 
-        self.memo[source_core_idx] = result
+        self.memo[key] = result
         return result
         
     def calculate(self):
