@@ -1,31 +1,28 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.mapping.mapping_utils import *
 from mimarsinan.mapping.weight_quantization import *
-from mimarsinan.models.omihub_mlp_mixer import *
+from mimarsinan.models.polat_mlp_mixer import *
     
 def get_polat_mlp_repr(input_shape, model):
-    input = InputMapper(input_shape)
-    patch_emb = PatchEmbeddingMapper(input, model.patch_emb[0])
-    prev = patch_emb
+    out = InputMapper(input_shape)
+    out = PatchEmbeddingMapper(out, model.patch_emb[0])
     for i in range(model.num_layers):
-        mixer_m1_fc1 = Conv1DMapper(prev, model.mixer_layers[i].mlp1.fc1)
-        mixer_m1_fc2 = Conv1DMapper(mixer_m1_fc1, model.mixer_layers[i].mlp1.fc2)
-        #mixer_m1_fc2_norm = BatchNormMapper(mixer_m1_fc2, model.mixer_layers[i].mlp1.ln)
+        out = Conv1DMapper(out, model.mixer_layers[i].mlp1.fc1)
+        out = Conv1DMapper(out, model.mixer_layers[i].mlp1.fc2)
+        #out = BatchNormMapper(out, model.mixer_layers[i].mlp1.ln)
         
-        mixer_m2_fc1 = LinearMapper(mixer_m1_fc2, model.mixer_layers[i].mlp2.fc1)
-        mixer_m2_fc2 = LinearMapper(mixer_m2_fc1, model.mixer_layers[i].mlp2.fc2)
-        #mixer_m2_fc2_norm = BatchNormMapper(mixer_m2_fc2, model.mixer_layers[i].mlp2.ln)
-
-        prev = mixer_m2_fc2
+        out = LinearMapper(out, model.mixer_layers[i].mlp2.fc1)
+        out = LinearMapper(out, model.mixer_layers[i].mlp2.fc2)
+        out = BatchNormMapper(out, model.mixer_layers[i].mlp2.ln)
     
-    avg_pool = AvgPoolMapper(prev)
-    classifier = LinearMapper(avg_pool, model.clf)
+    out = AvgPoolMapper(out)
+    out = LinearMapper(out, model.clf)
 
-    return ModelRepresentation(classifier)
+    return ModelRepresentation(out)
 
 
 def polat_mlp_mixer_to_chip(
-    omihub_mlp_mixer_model: MLPMixer,
+    omihub_mlp_mixer_model: PolatMLPMixer,
     leak = 0.0,
     quantize = False,
     weight_type = float):

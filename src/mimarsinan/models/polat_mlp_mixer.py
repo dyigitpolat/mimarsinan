@@ -31,6 +31,7 @@ class Conv2d_WS(nn.Conv2d):
         weight = weight - weight_mean
         std = weight.view(weight.size(0), -1).std(dim=1).view(-1, 1, 1, 1) + 1e-5
         weight = weight / std.expand_as(weight)
+        self.weight.data = weight.data
         return F.conv2d(x, weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
 class SoftQuantize(nn.Module):
@@ -65,6 +66,7 @@ class PolatMLPMixer(nn.Module):
 
         self.patch_emb = nn.Sequential(
             Conv2d_WS(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=True),
+            #nn.Conv2d(in_channels, hidden_size ,kernel_size=patch_size, stride=patch_size, bias=True),
             Rearrange('b d h w -> b (h w) d'), 
             nn.LeakyReLU()
         )
@@ -84,6 +86,7 @@ class PolatMLPMixer(nn.Module):
         out = self.patch_emb(x)
 
         out = self.mixer_layers(out)
+        
         out = out.mean(dim=1)
         out = nn.LeakyReLU()(out)
 
@@ -109,10 +112,10 @@ class MixerLayer(nn.Module):
 class MLP1(nn.Module):
     def __init__(self, num_patches, hidden_s, hidden_size, drop_p):
         super(MLP1, self).__init__()
-        self.ln = nn.Identity()
         self.fc1 = nn.Conv1d(num_patches, hidden_s, kernel_size=1, bias=True)
         self.do1 = nn.Dropout(p=drop_p)
         self.fc2 = nn.Conv1d(hidden_s, num_patches, kernel_size=1, bias=True)
+        self.ln = nn.Identity() #nn.BatchNorm1d(num_patches)
         self.do2 = nn.Dropout(p=drop_p)
         self.act = nn.LeakyReLU()
     
@@ -131,10 +134,10 @@ class MLP1(nn.Module):
 class MLP2(nn.Module):
     def __init__(self, hidden_size, hidden_c, drop_p):
         super(MLP2, self).__init__()
-        self.ln = nn.Identity()
         self.fc1 = nn.Linear(hidden_size, hidden_c, bias=True)
         self.do1 = nn.Dropout(p=drop_p)
         self.fc2 = nn.Linear(hidden_c, hidden_size, bias=True)
+        self.ln = WokeBatchNorm1d(hidden_size)
         self.do2 = nn.Dropout(p=drop_p)
         self.act = nn.LeakyReLU()
 
