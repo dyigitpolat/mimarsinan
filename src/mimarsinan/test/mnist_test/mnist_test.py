@@ -2,7 +2,7 @@ from mimarsinan.models.simple_mlp import *
 from mimarsinan.models.polat_mlp_mixer import *
 from mimarsinan.test.mnist_test.mnist_test_utils import *
 
-from mimarsinan.mapping.chip_delay import *
+from mimarsinan.mapping.chip_latency import *
 from mimarsinan.mapping.simple_mlp_mapper import *
 from mimarsinan.mapping.polat_mlp_mixer_mapper import *
 from mimarsinan.chip_simulation.compile_nevresim import *
@@ -56,13 +56,13 @@ def test_mnist():
     soft_core_mapping = SoftCoreMapping()
     soft_core_mapping.map(model_repr)
     print("  Number of soft cores:", len(soft_core_mapping.cores))
-    print("  Soft core mapping delay: ", ChipDelay(soft_core_mapping).calculate())
+    print("  Soft core mapping delay: ", ChipLatency(soft_core_mapping).calculate())
 
     print("Mapping soft cores to hard cores...")
     hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
     hard_core_mapping.map(soft_core_mapping)
     print("  Number of hard cores:", len(hard_core_mapping.cores))
-    print("  Hard core mapping delay: ", ChipDelay(hard_core_mapping).calculate())
+    print("  Hard core mapping delay: ", ChipLatency(hard_core_mapping).calculate())
 
     print("Creating CoreFlow...")
     cf = CoreFlow(mnist_input_shape, hard_core_mapping)
@@ -94,7 +94,7 @@ def test_mnist():
     ###### 
 
     print("Calculating delay for hard core mapping...")
-    print(f"delay: {ChipDelay(hard_core_mapping).calculate()}")
+    print(f"delay: {ChipLatency(hard_core_mapping).calculate()}")
 
     print("Mapping hard cores to chip...")
     chip = hard_cores_to_chip(

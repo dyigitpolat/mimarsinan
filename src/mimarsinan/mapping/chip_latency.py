@@ -1,4 +1,4 @@
-class ChipDelay:
+class ChipLatency:
     def __init__(self, mapping):
         self.mapping = mapping
         self.memo = {}

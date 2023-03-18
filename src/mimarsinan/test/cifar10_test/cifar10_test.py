@@ -126,7 +126,7 @@ def test_cifar10():
     soft_core_mapping = SoftCoreMapping()
     soft_core_mapping.map(model_repr)
     print("  Number of soft cores:", len(soft_core_mapping.cores))
-    print("  Soft core mapping delay: ", ChipDelay(soft_core_mapping).calculate())
+    print("  Soft core mapping delay: ", ChipLatency(soft_core_mapping).calculate())
 
     print("Testing CoreFlow with soft cores...")
     cf = CoreFlow(cifar10_input_shape, soft_core_mapping)
@@ -140,7 +140,7 @@ def test_cifar10():
     hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
     hard_core_mapping.map(soft_core_mapping)
     print("  Number of hard cores:", len(hard_core_mapping.cores))
-    print("  Hard core mapping delay: ", ChipDelay(hard_core_mapping).calculate())
+    print("  Hard core mapping delay: ", ChipLatency(hard_core_mapping).calculate())
 
     print("Testing CoreFlow with hard cores...")
     cf = CoreFlow(cifar10_input_shape, hard_core_mapping)
@@ -165,7 +165,7 @@ def test_cifar10():
     ###### 
 
     print("Calculating delay for hard core mapping...")
-    print(f"delay: {ChipDelay(hard_core_mapping).calculate()}")
+    print(f"delay: {ChipLatency(hard_core_mapping).calculate()}")
 
     print("Mapping hard cores to chip...")
     chip = hard_cores_to_chip(

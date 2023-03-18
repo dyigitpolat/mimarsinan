@@ -36,7 +36,7 @@ def test_core_flow():
     soft_core_mapping = SoftCoreMapping()
     soft_core_mapping.map(model_repr)
     print("  Number of soft cores:", len(soft_core_mapping.cores))
-    print("  Soft core mapping delay: ", ChipDelay(soft_core_mapping).calculate())
+    print("  Soft core mapping delay: ", ChipLatency(soft_core_mapping).calculate())
 
     print("Mapping soft cores to hard cores...")
     axons_per_core = 256
@@ -44,7 +44,7 @@ def test_core_flow():
     hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
     hard_core_mapping.map(soft_core_mapping)
     print("  Number of hard cores:", len(hard_core_mapping.cores))
-    print("  Hard core mapping delay: ", ChipDelay(hard_core_mapping).calculate())
+    print("  Hard core mapping delay: ", ChipLatency(hard_core_mapping).calculate())
 
     print("Forward pass with test input on CoreFlow model...")
     cf = CoreFlow(test_input.shape, hard_core_mapping)
