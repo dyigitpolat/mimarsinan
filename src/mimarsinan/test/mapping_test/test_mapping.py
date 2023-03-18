@@ -10,39 +10,49 @@ from mimarsinan.code_generation.generate_main import *
 import torch
 import time
 
-def almost_equal(a, b, epsilon=0.00001):
-    eq1 = abs(a - b) < epsilon
-    eq2 = True
-    if(b != 0.0 and b != -0.0 and a != 0.0 and a != -0.0):
-        eq2 = abs(1.0 - a/b) < 0.1
-
-    return eq1 and eq2
-
 def test_mapping():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    
-    mnist_input_size = 28*28
-    mnist_output_size = 10
-    epochs = 1
-
-    mnist_output_size = 10
     input_count = 1
-
-    ann_model = MLPMixer()
-
     generated_files_path = "../generated/mapping/"
     test_input = torch.randn(input_count, 3, 14, 14)
 
     out_size = 10
     test_loader = [(test_input, torch.ones(1,out_size))]
+    ann_model = MLPMixer(3, 14, 7, 32, 33, 34, 1, out_size)
 
-    ann_model = MLPMixer(3, 14, 7, 32, 33, 34, 4, out_size)
-
+    print("Forward pass with test input on original model...")
     ann_model(test_input)
 
-    print("Mapping trained model to chip...")
-    chip = omihub_mlp_mixer_to_chip(ann_model, leak=0, quantize=False, weight_type=float)
+    print("Mapping model to soft cores...")
+    model_repr = get_omihub_repr(test_input.shape[1:], ann_model)
+    soft_core_mapping = SoftCoreMapping()
+    soft_core_mapping.map(model_repr)
+    print("  Number of soft cores:", len(soft_core_mapping.cores))
+    print("  Soft core mapping delay: ", ChipLatency(soft_core_mapping).calculate())
+
+    print("Mapping soft cores to hard cores...")
+    axons_per_core = 256
+    neurons_per_core = 256
+    hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
+    hard_core_mapping.map(soft_core_mapping)
+    print("  Number of hard cores:", len(hard_core_mapping.cores))
+    print("  Hard core mapping delay: ", ChipLatency(hard_core_mapping).calculate())
+
+    print("Creating CoreFlow model...")
+    cf = CoreFlow(test_input.shape, hard_core_mapping)
+
+    print("Forward pass with test input on CoreFlow model...")
+    cf_out = cf(test_input).squeeze()
+
+    print("Mapping hard cores to chip...")
+    chip = hard_cores_to_chip(
+        sum(test_input.shape[1:]),
+        hard_core_mapping, 
+        axons_per_core,
+        neurons_per_core, 
+        leak=0,
+        weight_type=float)
 
     print("Saving trained weights and chip generation code...")
     save_inputs_to_files(generated_files_path, test_loader, input_count)
@@ -62,6 +72,7 @@ def test_mapping():
     end_time = time.time()
     print("Simulation time:", end_time - start_time)
 
+    print("Comparing outputs (original vs chip)...")
     tot = 0
     inc = 0
     layer_debug_tensor = ann_model.debug.detach().numpy().flatten()
@@ -69,11 +80,24 @@ def test_mapping():
         if(not almost_equal(chip_output[i], layer_debug_tensor[i])):
             inc +=1
         tot += 1
-    
+
     print("inc", inc)
     print("tot", tot)
 
     print(chip_output)
     print(layer_debug_tensor)
+    print(cf_out)
+    print(cf_out.shape)
+    
+    print("Comparing outputs (cf vs chip)...")
+    tot = 0
+    inc = 0
+    for i in range(len(chip_output)):
+        if(not almost_equal(chip_output[i], cf_out[i])):
+            inc +=1
+        tot += 1
+    
+    print("inc", inc)
+    print("tot", tot)
 
     print("Mapping test done.")
