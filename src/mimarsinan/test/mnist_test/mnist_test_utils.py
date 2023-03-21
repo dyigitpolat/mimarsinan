@@ -61,17 +61,30 @@ def test_on_mnist(ann, device):
     
     return correct, total
 
+def avg_top(weight_tensor, p):
+    q = max(1, int(p * weight_tensor.numel()))
+    return torch.mean(torch.topk(weight_tensor.flatten(), q)[0])
+
+def avg_bottom(weight_tensor, p):
+    q = max(1, int(p * weight_tensor.numel()))
+    return -torch.mean(torch.topk(-weight_tensor.flatten(), q)[0])
+
 def quantize_weight_tensor(weight_tensor, bits):
     q_min = -( 2 ** (bits - 1) )
     q_max = ( 2 ** (bits - 1) ) - 1
 
-    max_weight = weight_tensor.max().item()
-    min_weight = weight_tensor.max().item()
+    max_weight = avg_top(weight_tensor, 0.01).item()
+    min_weight = avg_bottom(weight_tensor, 0.01).item()
 
-    return torch.where(
-        weight_tensor > 0,
-        torch.round(((q_max) * (weight_tensor)) / (max_weight)) / (q_max / max_weight),
-        torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
+    neg_scale = 1.0
+    if abs(min_weight) > 0: neg_scale = abs(q_max/min_weight)
+    pos_scale = 1.0
+    if abs(max_weight) > 0: pos_scale = abs(q_max/max_weight)
+
+    scale = min(neg_scale, pos_scale)
+    clipped_weights = torch.clamp(weight_tensor, min_weight, max_weight)
+
+    return torch.round(clipped_weights * scale) / scale
 
 def quantize_model(ann, bits):
     assert isinstance(ann, CoreFlow)

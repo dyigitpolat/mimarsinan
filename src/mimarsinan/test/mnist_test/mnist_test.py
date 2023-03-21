@@ -12,6 +12,7 @@ from mimarsinan.test.test_utils import *
 
 import torch
 import time
+import math
 
 def test_mnist():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,14 +21,13 @@ def test_mnist():
     mnist_input_shape = (1,28*28)
     mnist_output_size = 10
     inner_mlp_width = 255
-    inner_mlp_count = 4
-    pretrain_epochs = 2
-    leaky_epochs = 2
-    cq_only_epochs = 2
-    cq_quantize_epochs = 3
+    inner_mlp_count = 3
+    pretrain_epochs = 12
+    cq_no_clamp_epochs = 3
+    cq_only_epochs = 6
+    cq_quantize_epochs = 12
 
     Tq = 30
-    simulation_length = Tq + 3
 
     generated_files_path = "../generated/mnist/"
     input_count = 10000
@@ -58,35 +58,55 @@ def test_mnist():
     print("  Number of soft cores:", len(soft_core_mapping.cores))
     print("  Soft core mapping delay: ", ChipLatency(soft_core_mapping).calculate())
 
+    print("Testing CoreFlow with soft core mapping...")
+    cf = CoreFlow(mnist_input_shape, soft_core_mapping)
+    cf.set_activation(nn.LeakyReLU())
+    correct, total = test_on_mnist(cf, device)
+    print("  Correct:", correct, "Total:", total)
+
+    calculate_core_thresholds(soft_core_mapping.cores, 4)
+
     print("Mapping soft cores to hard cores...")
     hard_core_mapping = HardCoreMapping(axons_per_core, neurons_per_core)
     hard_core_mapping.map(soft_core_mapping)
     print("  Number of hard cores:", len(hard_core_mapping.cores))
     print("  Hard core mapping delay: ", ChipLatency(hard_core_mapping).calculate())
 
-    print("Creating CoreFlow...")
+    print("Testing CoreFlow with hard core mapping...")
     cf = CoreFlow(mnist_input_shape, hard_core_mapping)
-
-    print("Testing CoreFlow...")
+    cf.set_activation(nn.LeakyReLU())
     correct, total = test_on_mnist(cf, device)
     print("  Correct:", correct, "Total:", total)
 
-    print("Tuning model with leaky clamp...")
-    cycles = 10
-    for i in range(cycles):
-        clamp_leak = i * (1.0/cycles)
-        cf.set_activation(LeakyClamp(clamp_leak))
-        train_on_mnist(cf, device, cq_only_epochs)
+    print("Tuning model with CQ no clamp...")
+    lr = 0.001
+    cf.set_activation(CQ_Activation_NoClamp(Tq))
+    train_on_mnist(cf, device, cq_no_clamp_epochs, lr = lr)
+
+    # print("Tuning model with CQ leaky clamp...")
+    # cycles = 10
+    # for i in range(cycles):
+    #     clamp_leak = math.sin((i * (1.0/cycles)))**0.5
+    #     print("  Cycle:", i+1, "/", cycles)
+    #     print("  Clamp leak:", clamp_leak)
+    #     cf.set_activation(CQ_Activation_LeakyClamp(Tq, clamp_leak))
+    #     train_on_mnist(cf, device, cq_only_epochs, lr = lr)
+    #     lr = lr * 0.9
 
     print("Tuning model with CQ...")
     cf.set_activation(CQ_Activation(Tq))
-    train_on_mnist(cf, device, cq_only_epochs)
+    train_on_mnist(cf, device, cq_only_epochs, lr=lr)
 
     print("Tuning model with CQ and weight quantization...")
-    train_on_mnist_quantized(cf, device, cq_quantize_epochs)
+    cf.set_activation(CQ_Activation(Tq))
+    train_on_mnist_quantized(cf, device, cq_quantize_epochs, lr=0.1*lr)
+
+    # save model state dict to file:
+    torch.save(cf.state_dict(), "../generated/mnist/quantized_coreflow_state_dict.pt")
 
     print("Updating model weights...")
     cf.update_cores()
+    hard_core_mapping.cores = cf.cores
 
     print("Quantizing model weights...")
     quantize_cores(hard_core_mapping.cores, bits=4)
@@ -112,6 +132,7 @@ def test_mnist():
     save_weights_and_chip_code(chip, generated_files_path)
 
     print("Generating main function code...")
+    simulation_length = Tq + ChipLatency(hard_core_mapping).calculate()
     generate_main_function(
         generated_files_path, input_count, mnist_output_size, simulation_length,
         main_cpp_template, get_config("Deterministic", "Novena", "int"))

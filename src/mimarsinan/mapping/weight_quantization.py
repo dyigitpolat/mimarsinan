@@ -1,48 +1,69 @@
 import numpy as np
 
+def np_topk(a, k):
+    if k == 0:
+        return np.array([])
+    elif k > 0:
+        return np.partition(a, -k)[-k:]
+    else:
+        return np.partition(a, -k)[:-k]
+
 class WeightQuantization:
     def __init__(self, bits):
         self.q_min = -( 2 ** (bits - 1) )
         self.q_max = ( 2 ** (bits - 1) ) - 1
+    
+    def avg_top(self, w, p):
+        wf = w.flatten()
+        count = len(wf)
+        q = max(1, int(p * count))
+        return np.mean(np_topk(wf, q))
 
-    def quantize_weight_(self, w, min_w, max_w):
-        if(w > 0):
-            if(max_w == 0): return 0
-            return round((self.q_max * w) / max_w)
-        else:
-            if(min_w == 0): return 0
-            return round((self.q_min * w) / min_w)
+    def avg_bottom(self, w, p):
+        wf = w.flatten()
+        count = len(wf)
+        q = max(1, int(p * count))
+        return -np.mean(np_topk(-wf, q))    
+    
+    def smooth_max(self, w):
+        return self.avg_top(w, 0.01).item()
+
+    def smooth_min(self, w):
+        return self.avg_bottom(w, 0.01).item()
+
+    def quantize_weight_(self, w, scale):
+        return np.round(w * scale)
+    
+    def get_scale(self, min_w, max_w):
+        neg_scale = 1.0
+        if abs(min_w) > 0: neg_scale = abs(self.q_max/min_w)
+        pos_scale = 1.0
+        if abs(max_w) > 0: pos_scale = abs(self.q_max/max_w)
+        
+        return min(neg_scale, pos_scale)
 
     def quantize(self, weights):
-        max_w = weights.max().item()
-        min_w = weights.min().item()
-        return np.array([
-            [self.quantize_weight_(w, min_w, max_w) for w in weights.flatten()]
-        ]).reshape(weights.shape)
+        max_w = self.smooth_max(weights)
+        min_w = self.smooth_min(weights)
+
+        scale = self.get_scale(min_w, max_w)
+        clipped_weights = np.clip(weights, min_w, max_w)
+
+        return self.quantize_weight_(clipped_weights, scale)
 
     def quantize_without_scaling(self, weights):
-        max_w = weights.max().item()
-        min_w = weights.min().item()
-        return np.where(
-            weights > 0,
-            np.round(((self.q_max) * (weights)) / (max_w)) / (self.q_max / max_w),
-            np.round(((self.q_min) * (weights)) / (min_w)) / (self.q_min / min_w))
+        max_w = self.smooth_max(weights)
+        min_w = self.smooth_min(weights)
+
+        scale = self.get_scale(min_w, max_w)
+        clipped_weights = np.clip(clipped_weights, min_w, max_w)
+
+        return self.quantize_weight_(clipped_weights, scale) / scale
     
     def calculate_threshold(self, weights):
-        max_w = weights.max().item()
-        if(max_w == 0): max_w = 1.0
-        return max(1, round((self.q_max * 1.0) / max_w))
-    
-    def scale(self, weights):
-        max_w = weights.max().item()
-        min_w = weights.min().item()
-        if(max_w == 0): max_w = 1.0
-        if(min_w == 0): min_w = 1.0
-
-        return np.where(
-            weights > 0,
-            weights * (self.q_max / max_w),
-            weights * (self.q_min / min_w))
+        max_w = self.smooth_max(weights)
+        min_w = self.smooth_min(weights)
+        return self.get_scale(min_w, max_w)
 
 def quantize_cores(cores, bits):
     quantizer = WeightQuantization(bits)
@@ -66,10 +87,4 @@ def calculate_core_thresholds(cores, bits):
     quantizer = WeightQuantization(bits)
     for core in cores:
         core.threshold = quantizer.calculate_threshold(core.core_matrix)
-    return cores
-
-def scale_quantized_cores(cores, bits):
-    quantizer = WeightQuantization(bits)
-    for core in cores:
-        core.core_matrix *= quantizer.scale(core.core_matrix)
     return cores

@@ -9,6 +9,8 @@ import torch.utils.data
 import torchvision
 import torchvision.transforms as transforms
 
+import math
+
 datasets_path = "../datasets"
 
 def get_cifar10_data(batch_size=1):
@@ -52,9 +54,9 @@ def train_on_cifar10_for_one_epoch(ann, device, optimizer, train_loader, epoch):
         loss.backward()
         optimizer.step()
 
-def train_on_cifar10(ann, device, epochs):
-    train_loader, _ = get_cifar10_data(500)
-    optimizer = torch.optim.Adam(ann.parameters(), lr = 0.001, weight_decay=0.00005)
+def train_on_cifar10(ann, device, epochs, lr = 0.001, batch_size = 5000):
+    train_loader, _ = get_cifar10_data(batch_size)
+    optimizer = torch.optim.Adam(ann.parameters(), lr = lr, weight_decay=0.00005)
     
     for epoch in range(epochs):
         train_on_cifar10_for_one_epoch(
@@ -68,7 +70,7 @@ def test_on_cifar10(ann, device):
     total = 0
     correct = 0
     with torch.no_grad():
-        _, test_loader = get_cifar10_data(4096)
+        _, test_loader = get_cifar10_data(10000)
         for (x, y) in test_loader:
             y.to(device)
             outputs = ann.forward(x)
@@ -109,17 +111,30 @@ def get_mlp_mixer_model(parameters):
         cifar10_output_size)
 
 
+def avg_top(weight_tensor, p):
+    q = max(1, int(p * weight_tensor.numel()))
+    return torch.mean(torch.topk(weight_tensor.flatten(), q)[0])
+
+def avg_bottom(weight_tensor, p):
+    q = max(1, int(p * weight_tensor.numel()))
+    return -torch.mean(torch.topk(-weight_tensor.flatten(), q)[0])
+
 def quantize_weight_tensor(weight_tensor, bits):
     q_min = -( 2 ** (bits - 1) )
     q_max = ( 2 ** (bits - 1) ) - 1
 
-    max_weight = weight_tensor.max().item()
-    min_weight = weight_tensor.max().item()
+    max_weight = avg_top(weight_tensor, 0.01).item()
+    min_weight = avg_bottom(weight_tensor, 0.01).item()
 
-    return torch.where(
-        weight_tensor > 0,
-        torch.round(((q_max) * (weight_tensor)) / (max_weight)) / (q_max / max_weight),
-        torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
+    neg_scale = 1.0
+    if abs(min_weight) > 0: neg_scale = abs(q_max/min_weight)
+    pos_scale = 1.0
+    if abs(max_weight) > 0: pos_scale = abs(q_max/max_weight)
+
+    scale = min(neg_scale, pos_scale)
+    clipped_weights = torch.clamp(weight_tensor, min_weight, max_weight)
+
+    return torch.round(clipped_weights * scale) / scale
 
 def quantize_model(ann, bits):
     assert isinstance(ann, CoreFlow)
@@ -155,10 +170,10 @@ def train_on_cifar10_for_one_epoch_quantized(ann, qnn, device, optimizer, train_
         optimizer.step()
 
 import copy 
-def train_on_cifar10_quantized(ann, device, epochs, lr=0.001, weight_decay=0.00005):
+def train_on_cifar10_quantized(ann, device, epochs, lr=0.001, weight_decay=0.00005, batch_size = 10000):
     qnn = copy.deepcopy(ann)
 
-    train_loader, _ = get_cifar10_data(10000)
+    train_loader, _ = get_cifar10_data(batch_size)
     optimizer = torch.optim.Adam(ann.parameters(), lr = lr)
     for epoch in range(epochs):
         train_on_cifar10_for_one_epoch_quantized(
