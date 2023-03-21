@@ -26,6 +26,10 @@ class ChipLatency:
         current_core = self.mapping.cores[source.core_]
         non_zero_axon_sources = self.__get_non_zero_axon_sources(
             current_core, source.neuron_)
+        
+        if len(non_zero_axon_sources) == 0:
+            self.memo[key] = 0
+            return 0
 
         result = 1 + max([
             self.get_delay_for(source) for source in non_zero_axon_sources])
