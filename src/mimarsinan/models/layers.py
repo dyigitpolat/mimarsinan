@@ -40,7 +40,7 @@ class SoftQuantize(nn.Module):
         super(SoftQuantize, self).__init__()
         self.Tq = Tq
     
-    def forward(self, x, alpha=10.0):
+    def forward(self, x, alpha=4.5):
         h = 1.0 / self.Tq
         w = 1.0 / self.Tq
         a = torch.tensor(alpha)
@@ -49,6 +49,21 @@ class SoftQuantize(nn.Module):
             torch.tanh(a * ((x/w-torch.floor(x/w))-0.5)) + 
             0.5 + torch.floor(x/w))
         return output
+
+class LeakyClamp(nn.Module):
+    def __init__(self, leak):
+        super(LeakyClamp, self).__init__()
+        self.leak = 1.0 - leak
+    
+    def forward(self, x):
+        return nn.LeakyReLU()(
+            torch.where(
+                x < 0.0,
+                self.leak * x,
+                torch.where(
+                    x < 1.0,
+                    x,
+                    self.leak * x)))
 
 class CQ_Activation(nn.Module):
     def __init__(self, Tq):
@@ -61,23 +76,27 @@ class CQ_Activation(nn.Module):
         out = torch.clamp(out, 0.0, 1.0)
         out = self.soft_quantize(out, 4.5)
         return out
-
-class LeakyClamp(nn.Module):
-    def __init__(self, leak):
-        super(LeakyClamp, self).__init__()
-        self.leak = 1.0 - leak
+    
+class CQ_Activation_NoClamp(nn.Module):
+    def __init__(self, Tq):
+        super(CQ_Activation_NoClamp, self).__init__()
+        self.Tq = Tq
+        self.soft_quantize = SoftQuantize(Tq)
     
     def forward(self, x):
-        x = nn.LeakyReLU()(x)
-        return torch.where(
-            x < 0.0,
-            -self.leak * x,
-            torch.where(
-                x < 1.0,
-                x,
-                self.leak * x)
-        )
-
-
-        
-
+        out = nn.LeakyReLU()(x)
+        out = self.soft_quantize(out, 4.5)
+        return out
+    
+class CQ_Activation_LeakyClamp(nn.Module):
+    def __init__(self, Tq, leak):
+        super(CQ_Activation_LeakyClamp, self).__init__()
+        self.Tq = Tq
+        self.soft_quantize = SoftQuantize(Tq)
+        self.leak = leak
+    
+    def forward(self, x):
+        out = LeakyClamp(self.leak)(x)
+        out = self.soft_quantize(out, 4.5)
+        return out
+    
