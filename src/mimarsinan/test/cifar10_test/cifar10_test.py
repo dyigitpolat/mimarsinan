@@ -6,6 +6,10 @@ from mimarsinan.code_generation.generate_main import *
 from mimarsinan.test.test_utils import *
 
 from mimarsinan.models.core_flow import *
+
+from mimarsinan.models.omihub_mlp_mixer import *
+from mimarsinan.mapping.omihub_mlp_mixer_mapper import *
+
 from mimarsinan.models.polat_mlp_mixer import *
 from mimarsinan.mapping.polat_mlp_mixer_mapper import *
 
@@ -83,21 +87,22 @@ def test_cifar10():
     args = Args()
     args.dataset = "c10"
     args.batch_size = 128
-    args.epochs = 10
+    args.epochs = 1
     args.device = torch.device("cuda")
 
-    pretrain_epochs = 10
-    cq_only_epochs = 1
-    cq_quantize_epochs = 1
+    pretrain_epochs = 1000
+    cq_no_clamp_epochs = 100
+    cq_only_epochs = 200
+    cq_quantize_epochs = 800
     
     #ann_model = train_model(args)
     ann_model = PolatMLPMixer(
         in_channels=3,
         img_size=32, 
         patch_size=8, 
-        hidden_size=32, 
-        hidden_s=32, 
-        hidden_c=128, 
+        hidden_size=27, 
+        hidden_s=15, 
+        hidden_c=118, 
         num_layers=1, 
         num_classes=10, 
         drop_p=0.05)
@@ -116,7 +121,8 @@ def test_cifar10():
     # ann_model(test_input.to(device))
 
     print("Pretraining model...")
-    train_on_cifar10(ann_model, device, pretrain_epochs)
+    train_on_cifar10(ann_model, device, pretrain_epochs, batch_size=1000)
+    torch.save(ann_model.state_dict(), "../generated/cifar10/pretrained_state_dict.pt")
 
     #ann_model.load_state_dict(torch.load("../saved_models/model_pt100.state_dict"))
     #torch.save(ann_model.state_dict(), f"../saved_models/model_pt{pretrain_epochs}.state_dict")
@@ -134,6 +140,8 @@ def test_cifar10():
     correct, total = test_on_cifar10(cf, device)
     print(f"{correct}/{total}")
 
+    calculate_core_thresholds(soft_core_mapping.cores, 4)
+
     print("Mapping soft cores to hard cores...")
     axons_per_core = 256
     neurons_per_core = 256
@@ -148,24 +156,33 @@ def test_cifar10():
     correct, total = test_on_cifar10(cf, device)
     print(f"{correct}/{total}")
 
+    print("Tuning model with CQ no clamp...")
+    lr = 0.001
+    Tq = 30
+    cf.set_activation(CQ_Activation_NoClamp(Tq))
+    train_on_cifar10(cf, device, cq_no_clamp_epochs, lr = lr, batch_size=10000)
+    torch.save(cf.state_dict(), "../generated/cifar10/noclamp_coreflow_state_dict.pt")
+
     print("Tuning model with CQ...")
     Tq = 30
     cf.set_activation(CQ_Activation(Tq))
-    train_on_cifar10(cf, device, cq_only_epochs)
+    train_on_cifar10(cf, device, cq_only_epochs, lr = lr, batch_size=25000)
+    torch.save(cf.state_dict(), "../generated/cifar10/cq_only_coreflow_state_dict.pt")
 
     print("Tuning model with CQ and weight quantization...")
-    train_on_cifar10_quantized(cf, device, cq_quantize_epochs)
+    Tq = 30
+    cf.set_activation(CQ_Activation(Tq))
+    train_on_cifar10_quantized(cf, device, cq_quantize_epochs, lr = lr * 0.1, batch_size=25000)
+    torch.save(cf.state_dict(), "../generated/cifar10/cq_quantized_state_dict.pt")
 
     print("Updating model weights...")
     cf.update_cores()
+    hard_core_mapping.cores = cf.cores
 
     print("Quantizing model weights...")
     quantize_cores(hard_core_mapping.cores, bits=4)
 
     ###### 
-
-    print("Calculating delay for hard core mapping...")
-    print(f"delay: {ChipLatency(hard_core_mapping).calculate()}")
 
     print("Mapping hard cores to chip...")
     chip = hard_cores_to_chip(
