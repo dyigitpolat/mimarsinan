@@ -51,7 +51,7 @@ def test_on_mnist(ann, device):
     total = 0
     correct = 0
     with torch.no_grad():
-        _, test_loader = get_mnist_data(5000)
+        _, test_loader = get_mnist_data(50000)
         for (x, y) in test_loader:
             y.to(device)
             outputs = ann.forward(x)
@@ -61,23 +61,22 @@ def test_on_mnist(ann, device):
     
     return correct, total
 
+def quantize_weight_tensor(weight_tensor, bits):
+    q_min = -( 2 ** (bits - 1) )
+    q_max = ( 2 ** (bits - 1) ) - 1
 
-q_max = 7
-q_min = -8
-
-def quantize_weight_tensor(weight_tensor):
-    max_weight = torch.max(weight_tensor)
-    min_weight = torch.min(weight_tensor)
+    max_weight = weight_tensor.max().item()
+    min_weight = weight_tensor.max().item()
 
     return torch.where(
         weight_tensor > 0,
         torch.round(((q_max) * (weight_tensor)) / (max_weight)) / (q_max / max_weight),
         torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
 
-def quantize_model(ann):
+def quantize_model(ann, bits):
     assert isinstance(ann, CoreFlow)
     for core_param in ann.core_params:
-        core_param.data = quantize_weight_tensor(core_param.data)
+        core_param.data = quantize_weight_tensor(core_param.data, bits)
 
 def update_model_weights(ann, qnn):
     for param, q_param in zip(ann.parameters(), qnn.parameters()):
@@ -85,7 +84,7 @@ def update_model_weights(ann, qnn):
 
 def update_quantized_model(ann, qnn):
     update_model_weights(ann, qnn)
-    quantize_model(qnn)
+    quantize_model(qnn, bits=4)
 
 def transfer_gradients(a, b):
     for a_param, b_param in zip(a.parameters(), b.parameters()):
@@ -113,5 +112,5 @@ def train_on_mnist_quantized(ann, device, epochs, lr=0.001):
             ann, qnn, device, optimizer, train_loader, epoch)
 
         if(epoch % max(epochs // 10, 1) == 0):
-            correct, total = test_on_mnist(ann, device)
+            correct, total = test_on_mnist(qnn, device)
             print(correct, '/', total)

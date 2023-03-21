@@ -108,22 +108,23 @@ def get_mlp_mixer_model(parameters):
         cifar10_h,cifar10_w,cifar10_c, 
         cifar10_output_size)
 
-q_max = 7
-q_min = -8
 
-def quantize_weight_tensor(weight_tensor):
-    max_weight = torch.max(weight_tensor)
-    min_weight = torch.min(weight_tensor)
+def quantize_weight_tensor(weight_tensor, bits):
+    q_min = -( 2 ** (bits - 1) )
+    q_max = ( 2 ** (bits - 1) ) - 1
+
+    max_weight = weight_tensor.max().item()
+    min_weight = weight_tensor.max().item()
 
     return torch.where(
         weight_tensor > 0,
         torch.round(((q_max) * (weight_tensor)) / (max_weight)) / (q_max / max_weight),
         torch.round(((q_min) * (weight_tensor)) / (min_weight)) / (q_min / min_weight))
 
-def quantize_model(ann):
+def quantize_model(ann, bits):
     assert isinstance(ann, CoreFlow)
     for core_param in ann.core_params:
-        core_param.data = quantize_weight_tensor(core_param.data)
+        core_param.data = quantize_weight_tensor(core_param.data, bits)
 
 def update_model_weights(ann, qnn):
     for param, q_param in zip(ann.parameters(), qnn.parameters()):
@@ -131,7 +132,7 @@ def update_model_weights(ann, qnn):
 
 def update_quantized_model(ann, qnn):
     update_model_weights(ann, qnn)
-    quantize_model(qnn)
+    quantize_model(qnn, bits=4)
 
 def transfer_gradients(a, b):
     for a_param, b_param in zip(a.parameters(), b.parameters()):
@@ -139,12 +140,17 @@ def transfer_gradients(a, b):
 
 def train_on_cifar10_for_one_epoch_quantized(ann, qnn, device, optimizer, train_loader, epoch):
     print("Training epoch:", epoch)
+    b = 0
     for (x, y) in train_loader:
+        print(100* b / len(train_loader))
+        b += 1
         update_quantized_model(ann, qnn)
         optimizer.zero_grad()
         ann.train()
         qnn.train()
-        nn.CrossEntropyLoss()(qnn(x), y).backward()
+        loss = nn.CrossEntropyLoss()(qnn(x), y)
+        loss.backward()
+        print(loss)
         transfer_gradients(ann, qnn)
         optimizer.step()
 
@@ -152,7 +158,7 @@ import copy
 def train_on_cifar10_quantized(ann, device, epochs, lr=0.001, weight_decay=0.00005):
     qnn = copy.deepcopy(ann)
 
-    train_loader, _ = get_cifar10_data(500)
+    train_loader, _ = get_cifar10_data(10000)
     optimizer = torch.optim.Adam(ann.parameters(), lr = lr)
     for epoch in range(epochs):
         train_on_cifar10_for_one_epoch_quantized(
