@@ -1,10 +1,11 @@
+from mimarsinan.models.core_flow import *
+from mimarsinan.mapping.weight_quantization import *
+
 import torch.nn as nn
 
 import torch
 import torchvision
 import torchvision.transforms as transforms
-
-from mimarsinan.models.core_flow import *
 
 datasets_path = "../datasets"
 
@@ -61,35 +62,10 @@ def test_on_mnist(ann, device):
     
     return correct, total
 
-def avg_top(weight_tensor, p):
-    q = max(1, int(p * weight_tensor.numel()))
-    return torch.mean(torch.topk(weight_tensor.flatten(), q)[0])
-
-def avg_bottom(weight_tensor, p):
-    q = max(1, int(p * weight_tensor.numel()))
-    return -torch.mean(torch.topk(-weight_tensor.flatten(), q)[0])
-
-def quantize_weight_tensor(weight_tensor, bits):
-    q_min = -( 2 ** (bits - 1) )
-    q_max = ( 2 ** (bits - 1) ) - 1
-
-    max_weight = avg_top(weight_tensor, 0.01).item()
-    min_weight = avg_bottom(weight_tensor, 0.01).item()
-
-    neg_scale = 1.0
-    if abs(min_weight) > 0: neg_scale = abs(q_max/min_weight)
-    pos_scale = 1.0
-    if abs(max_weight) > 0: pos_scale = abs(q_max/max_weight)
-
-    scale = min(neg_scale, pos_scale)
-    clipped_weights = torch.clamp(weight_tensor, min_weight, max_weight)
-
-    return torch.round(clipped_weights * scale) / scale
-
 def quantize_model(ann, bits):
-    assert isinstance(ann, CoreFlow)
-    for core_param in ann.core_params:
-        core_param.data = quantize_weight_tensor(core_param.data, bits)
+    quantizer = TensorQuantization(bits, 0.01)
+    for param in ann.parameters():
+        param.data = quantizer.quantize_tensor(param.data)
 
 def update_model_weights(ann, qnn):
     for param, q_param in zip(ann.parameters(), qnn.parameters()):
