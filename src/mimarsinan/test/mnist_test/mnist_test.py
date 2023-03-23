@@ -21,7 +21,8 @@ def test_mnist():
     mnist_input_shape = (1,28*28)
     mnist_output_size = 10
     inner_mlp_width = 255
-    inner_mlp_count = 3
+    inner_mlp_count = 6
+
     pretrain_epochs = 12
     cq_no_clamp_epochs = 3
     cq_only_epochs = 6
@@ -109,7 +110,7 @@ def test_mnist():
     hard_core_mapping.cores = cf.cores
 
     print("Quantizing model weights...")
-    quantize_cores(hard_core_mapping.cores, bits=4)
+    quantize_cores(hard_core_mapping.cores, bits=4, clipping_p=0.01)
 
     ###### 
 
