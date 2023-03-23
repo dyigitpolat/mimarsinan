@@ -9,7 +9,7 @@ import torch.utils.data
 import torchvision
 import torchvision.transforms as transforms
 
-import math
+from mimarsinan.mapping.weight_quantization import *
 
 datasets_path = "../datasets"
 
@@ -110,36 +110,10 @@ def get_mlp_mixer_model(parameters):
         cifar10_h,cifar10_w,cifar10_c, 
         cifar10_output_size)
 
-
-def avg_top(weight_tensor, p):
-    q = max(1, int(p * weight_tensor.numel()))
-    return torch.mean(torch.topk(weight_tensor.flatten(), q)[0])
-
-def avg_bottom(weight_tensor, p):
-    q = max(1, int(p * weight_tensor.numel()))
-    return -torch.mean(torch.topk(-weight_tensor.flatten(), q)[0])
-
-def quantize_weight_tensor(weight_tensor, bits):
-    q_min = -( 2 ** (bits - 1) )
-    q_max = ( 2 ** (bits - 1) ) - 1
-
-    max_weight = avg_top(weight_tensor, 0.01).item()
-    min_weight = avg_bottom(weight_tensor, 0.01).item()
-
-    neg_scale = 1.0
-    if abs(min_weight) > 0: neg_scale = abs(q_max/min_weight)
-    pos_scale = 1.0
-    if abs(max_weight) > 0: pos_scale = abs(q_max/max_weight)
-
-    scale = min(neg_scale, pos_scale)
-    clipped_weights = torch.clamp(weight_tensor, min_weight, max_weight)
-
-    return torch.round(clipped_weights * scale) / scale
-
 def quantize_model(ann, bits):
-    assert isinstance(ann, CoreFlow)
-    for core_param in ann.core_params:
-        core_param.data = quantize_weight_tensor(core_param.data, bits)
+    quantizer = TensorQuantization(bits, clipping_p=0.01)
+    for param in ann.parameters():
+        param.data = quantizer.quantize_tensor(param.data)
 
 def update_model_weights(ann, qnn):
     for param, q_param in zip(ann.parameters(), qnn.parameters()):
@@ -155,17 +129,13 @@ def transfer_gradients(a, b):
 
 def train_on_cifar10_for_one_epoch_quantized(ann, qnn, device, optimizer, train_loader, epoch):
     print("Training epoch:", epoch)
-    b = 0
     for (x, y) in train_loader:
-        print(100* b / len(train_loader))
-        b += 1
         update_quantized_model(ann, qnn)
         optimizer.zero_grad()
         ann.train()
         qnn.train()
         loss = nn.CrossEntropyLoss()(qnn(x), y)
         loss.backward()
-        print(loss)
         transfer_gradients(ann, qnn)
         optimizer.step()
 
@@ -174,11 +144,49 @@ def train_on_cifar10_quantized(ann, device, epochs, lr=0.001, weight_decay=0.000
     qnn = copy.deepcopy(ann)
 
     train_loader, _ = get_cifar10_data(batch_size)
-    optimizer = torch.optim.Adam(ann.parameters(), lr = lr)
+    optimizer = torch.optim.Adam(ann.parameters(), lr = lr, weight_decay=weight_decay)
     for epoch in range(epochs):
         train_on_cifar10_for_one_epoch_quantized(
             ann, qnn, device, optimizer, train_loader, epoch)
 
         if(epoch % max(epochs // 10, 1) == 0):
-            correct, total = test_on_cifar10(ann, device)
+            correct, total = test_on_cifar10(qnn, device)
+            print(correct, '/', total)
+
+
+def clip_model_weights(ann, bits):
+    quantizer = TensorQuantization(bits)
+    quantizer.p = 0.01
+
+    for param in ann.parameters():
+        param.data = quantizer.get_clipped_weights(param.data)
+
+def update_clipped_model(ann, qnn):
+    update_model_weights(ann, qnn)
+    clip_model_weights(qnn, bits=4)
+
+def train_on_cifar10_for_one_epoch_weight_clipped(ann, qnn, device, optimizer, train_loader, epoch):
+    print("Training epoch:", epoch)
+    for (x, y) in train_loader:
+        update_clipped_model(ann, qnn)
+        optimizer.zero_grad()
+        ann.train()
+        qnn.train()
+        loss = nn.CrossEntropyLoss()(qnn(x), y)
+        loss.backward()
+        transfer_gradients(ann, qnn)
+        optimizer.step()
+
+import copy 
+def train_on_cifar10_weight_clipped(ann, device, epochs, lr=0.001, weight_decay=0.00005, batch_size = 10000):
+    qnn = copy.deepcopy(ann)
+
+    train_loader, _ = get_cifar10_data(batch_size)
+    optimizer = torch.optim.Adam(ann.parameters(), lr = lr, weight_decay=weight_decay)
+    for epoch in range(epochs):
+        train_on_cifar10_for_one_epoch_weight_clipped(
+            ann, qnn, device, optimizer, train_loader, epoch)
+
+        if(epoch % max(epochs // 10, 1) == 0):
+            correct, total = test_on_cifar10(qnn, device)
             print(correct, '/', total)
