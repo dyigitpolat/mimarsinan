@@ -12,7 +12,9 @@ class CoreFlow(nn.Module):
         self.cores = core_mapping.cores
         self.output_sources = core_mapping.output_sources
         self.core_params = nn.ParameterList(
-            [nn.Parameter(torch.tensor(self.cores[core].core_matrix.transpose(), dtype=torch.float32)) for core in range(len(self.cores))]
+            [nn.Parameter(torch.tensor(
+                self.cores[core].core_matrix.transpose(), dtype=torch.float32))\
+                    for core in range(len(self.cores))]
         )
 
         self.activation = nn.ReLU()
@@ -20,9 +22,12 @@ class CoreFlow(nn.Module):
 
     def update_cores(self):
         for idx, core in enumerate(self.cores):
-            core.core_matrix[:,:] = self.core_params[idx].detach().numpy().transpose()
+            core.core_matrix[:,:] = \
+                self.core_params[idx].detach().numpy().transpose()
     
-    def get_signal(self, x, buffers, core, neuron, is_input, is_off, is_always_on):
+    def get_signal(
+            self, x, buffers, core, neuron, is_input, is_off, is_always_on):
+        
         if is_input:
             return x[:, neuron]
         
@@ -58,7 +63,8 @@ class CoreFlow(nn.Module):
         input_signals = []
         for core in self.cores:
             buffers.append(torch.zeros(x.shape[0], core.get_output_count()))
-            input_signals.append(torch.zeros(x.shape[0], core.get_input_count()))
+            input_signals.append(
+                torch.zeros(x.shape[0], core.get_input_count()))
         
         for _ in range(self.cycles):
             for core_idx in range(len(self.cores)):
@@ -68,7 +74,8 @@ class CoreFlow(nn.Module):
             for core_idx in range(len(self.cores)):
                 buffers[core_idx] = self.activation(
                     torch.matmul(
-                        self.core_params[core_idx], input_signals[core_idx].T).T)
+                        self.core_params[core_idx], 
+                        input_signals[core_idx].T).T)
         
         output_signals = self.get_signal_tensor(x, buffers, self.output_sources)
         return output_signals
