@@ -1,6 +1,6 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.mapping.mapping_utils import *
-from mimarsinan.mapping.weight_quantization import *
+from mimarsinan.transformations.weight_quantization import *
 from mimarsinan.models.simple_mlp import *   
 from mimarsinan.models.core_flow import *   
 

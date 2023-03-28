@@ -1,7 +1,7 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.models.layers import *
 from mimarsinan.mapping.softcore_mapping import *
-from mimarsinan.mapping.weight_quantization import *
+from mimarsinan.transformations.weight_quantization import *
 
 import numpy as np
 
