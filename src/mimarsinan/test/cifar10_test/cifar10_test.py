@@ -11,6 +11,8 @@ from mimarsinan.visualization.hardcore_visualization import *
 from mimarsinan.models.polat_mlp_mixer import *
 from mimarsinan.mapping.polat_mlp_mixer_mapper import *
 
+from mimarsinan.transformations.chip_quantization import *
+
 import torch
 import time
 
@@ -18,17 +20,21 @@ def test_cifar10():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
 
+
     cifar10_input_shape = (3, 32, 32)
 
-    pretraining_epochs = 1
-    cq_quantize_epochs = 1
-    cf_cq_quantize_epochs = 1
+    pretraining_epochs = 10
+    cq_quantize_epochs = 10
+    cf_cq_quantize_epochs = 2
+
+    quantizer = ChipQuantization(bits = 4)
     
+    clipping_p = 0.01
     ann_model = PolatMLPMixer(
         in_channels=3,
         img_size=32, 
         patch_size=8, 
-        hidden_size=63, 
+        hidden_size=47, 
         hidden_s=47,
         hidden_c=15, 
         num_layers=1, 
@@ -48,7 +54,7 @@ def test_cifar10():
     print("Tuning model with CQ and weight clipping...")
     Tq = 30
     PolatMLPMixer.polat_activation = CQ_Activation(Tq)
-    train_on_cifar10_weight_clipped(ann_model, device, cq_quantize_epochs, batch_size=1000, lr = 0.001)
+    train_on_cifar10_quantized(ann_model, device, cq_quantize_epochs, batch_size=1000, lr = 0.001, clipping_p=clipping_p)
     torch.save(ann_model.state_dict(), "../generated/cifar10/_cq_quantized_state_dict.pt")
 
     print("Mapping model to soft cores...")
@@ -58,13 +64,13 @@ def test_cifar10():
     print("  Number of soft cores:", len(soft_core_mapping.cores))
     print("  Soft core mapping delay: ", ChipLatency(soft_core_mapping).calculate())
 
-    # print("Testing CoreFlow with soft cores...")
-    # cf = CoreFlow(cifar10_input_shape, soft_core_mapping)
-    # cf.set_activation(nn.LeakyReLU())
-    # correct, total = test_on_cifar10(cf, device)
-    # print(f"{correct}/{total}")
+    print("Testing CoreFlow with soft cores...")
+    cf = CoreFlow(cifar10_input_shape, soft_core_mapping)
+    cf.set_activation(nn.LeakyReLU())
+    correct, total = test_on_cifar10(cf, device)
+    print(f"{correct}/{total}")
 
-    calculate_core_thresholds(soft_core_mapping.cores, 4)
+    quantizer.calculate_core_thresholds(soft_core_mapping.cores)
 
     print("Mapping soft cores to hard cores...")
     axons_per_core = 256
@@ -75,17 +81,16 @@ def test_cifar10():
     print("  Hard core mapping delay: ", ChipLatency(hard_core_mapping).calculate())
     HardCoreMappingVisualizer(hard_core_mapping).visualize("../generated/cifar10/hard_core_mapping.png")
 
-
-    # print("Testing CoreFlow with hard cores...")
-    # cf = CoreFlow(cifar10_input_shape, hard_core_mapping)
-    # cf.set_activation(nn.LeakyReLU())
-    # correct, total = test_on_cifar10(cf, device)
-    # print(f"{correct}/{total}")
+    print("Testing CoreFlow with hard cores...")
+    cf = CoreFlow(cifar10_input_shape, hard_core_mapping)
+    cf.set_activation(nn.LeakyReLU())
+    correct, total = test_on_cifar10(cf, device)
+    print(f"{correct}/{total}")
 
     print("Tuning hard core mapping with CQ and weight quantization...")
     Tq = 30
     cf.set_activation(CQ_Activation(Tq))
-    train_on_cifar10_quantized(cf, device, cf_cq_quantize_epochs, lr = 0.0001, batch_size=10000)
+    train_on_cifar10_quantized(cf, device, cf_cq_quantize_epochs, lr = 0.0001, batch_size=10000, clipping_p=clipping_p)
     torch.save(cf.state_dict(), "../generated/cifar10/cf_cq_quantized_state_dict.pt")
 
     print("Updating model weights...")
@@ -93,7 +98,9 @@ def test_cifar10():
     hard_core_mapping.cores = cf.cores
 
     print("Quantizing model weights...")
-    quantize_cores(hard_core_mapping.cores, bits=4, clipping_p=0.01)
+    quantizer.quantize(hard_core_mapping.cores)
+    # for core in hard_core_mapping.cores:
+    #     core.core_matrix /= core.threshold
 
     # final mapping
     HardCoreMappingVisualizer(hard_core_mapping).visualize("../generated/cifar10/final_hard_core_mapping.png")

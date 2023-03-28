@@ -10,6 +10,7 @@ import torchvision
 import torchvision.transforms as transforms
 
 from mimarsinan.transformations.weight_quantization import *
+from mimarsinan.transformations.weight_clipping import *
 
 datasets_path = "../datasets"
 
@@ -110,27 +111,27 @@ def get_mlp_mixer_model(parameters):
         cifar10_h,cifar10_w,cifar10_c, 
         cifar10_output_size)
 
-def quantize_model(ann, bits, clipping_p=0.0):
-    quantizer = TensorQuantization(bits, clipping_p=clipping_p)
+def quantize_model(ann, bits):
+    quantizer = TensorQuantization(bits)
     for param in ann.parameters():
-        param.data = quantizer.quantize_tensor(param.data)
+        param.data = quantizer.quantize(param.data)
 
 def update_model_weights(ann, qnn):
     for param, q_param in zip(ann.parameters(), qnn.parameters()):
         q_param.data = nn.Parameter(param).data
 
-def update_quantized_model(ann, qnn, clipping_p=0.0):
+def update_quantized_model(ann, qnn):
     update_model_weights(ann, qnn)
-    quantize_model(qnn, bits=4, clipping_p=clipping_p)
+    quantize_model(qnn, bits=4)
 
 def transfer_gradients(a, b):
     for a_param, b_param in zip(a.parameters(), b.parameters()):
         a_param.grad = b_param.grad
 
-def train_on_cifar10_for_one_epoch_quantized(ann, qnn, device, optimizer, train_loader, epoch, clipping_p=0.0):
+def train_on_cifar10_for_one_epoch_quantized(ann, qnn, device, optimizer, train_loader, epoch):
     print("Training epoch:", epoch)
     for (x, y) in train_loader:
-        update_quantized_model(ann, qnn, clipping_p=clipping_p)
+        update_quantized_model(ann, qnn)
         optimizer.zero_grad()
         ann.train()
         qnn.train()
@@ -140,26 +141,25 @@ def train_on_cifar10_for_one_epoch_quantized(ann, qnn, device, optimizer, train_
         optimizer.step()
 
 import copy 
-def train_on_cifar10_quantized(ann, device, epochs, lr=0.001, weight_decay=0.00005, batch_size = 10000, clipping_p=0.0):
+def train_on_cifar10_quantized(ann, device, epochs, lr=0.001, weight_decay=0.00005, batch_size = 10000):
     qnn = copy.deepcopy(ann)
 
     train_loader, _ = get_cifar10_data(batch_size)
     optimizer = torch.optim.Adam(ann.parameters(), lr = lr, weight_decay=weight_decay)
     for epoch in range(epochs):
         train_on_cifar10_for_one_epoch_quantized(
-            ann, qnn, device, optimizer, train_loader, epoch, clipping_p=clipping_p)
+            ann, qnn, device, optimizer, train_loader, epoch)
 
         if(epoch % max(epochs // 10, 1) == 0):
             correct, total = test_on_cifar10(qnn, device)
             print(correct, '/', total)
 
 
-def clip_model_weights(ann, bits, clipping_p=0.0):
-    quantizer = TensorQuantization(bits)
-    quantizer.p = clipping_p
+def clip_model_weights(ann, bits):
+    clipper = SoftTensorClipping(bits, clipping_rate=0.01)
 
     for param in ann.parameters():
-        param.data = quantizer.get_clipped_weights(param.data)
+        param.data = clipper.get_clipped_weights(param.data)
 
 def update_clipped_model(ann, qnn):
     update_model_weights(ann, qnn)
