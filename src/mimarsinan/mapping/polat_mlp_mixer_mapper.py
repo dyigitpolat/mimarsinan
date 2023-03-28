@@ -1,6 +1,6 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.mapping.mapping_utils import *
-from mimarsinan.mapping.weight_quantization import *
+from mimarsinan.transformations.weight_quantization import *
 from mimarsinan.models.polat_mlp_mixer import *
     
 def get_polat_mlp_repr(input_shape, model):

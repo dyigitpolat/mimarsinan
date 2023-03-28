@@ -1,5 +1,5 @@
 from mimarsinan.models.core_flow import *
-from mimarsinan.mapping.weight_quantization import *
+from mimarsinan.transformations.weight_quantization import *
 
 import torch.nn as nn
 
@@ -63,7 +63,7 @@ def test_on_mnist(ann, device):
     return correct, total
 
 def quantize_model(ann, bits):
-    quantizer = TensorQuantization(bits, 0.01)
+    quantizer = TensorQuantization(bits, clipping_p=0.05)
     for param in ann.parameters():
         param.data = quantizer.quantize_tensor(param.data)
 
