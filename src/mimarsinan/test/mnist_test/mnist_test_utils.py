@@ -1,5 +1,6 @@
 from mimarsinan.models.core_flow import *
 from mimarsinan.transformations.weight_quantization import *
+from mimarsinan.transformations.weight_clipping import *
 
 import torch.nn as nn
 
@@ -63,9 +64,14 @@ def test_on_mnist(ann, device):
     return correct, total
 
 def quantize_model(ann, bits):
-    quantizer = TensorQuantization(bits, clipping_p=0.05)
+    quantizer = TensorQuantization(bits)
     for param in ann.parameters():
-        param.data = quantizer.quantize_tensor(param.data)
+        param.data = quantizer.quantize(param.data)
+
+def clip_model_weights(ann):
+    clipper = SoftTensorClipping(0.05)
+    for param in ann.parameters():
+        param.data = clipper.get_clipped_weights(param.data)
 
 def update_model_weights(ann, qnn):
     for param, q_param in zip(ann.parameters(), qnn.parameters()):
@@ -73,6 +79,7 @@ def update_model_weights(ann, qnn):
 
 def update_quantized_model(ann, qnn):
     update_model_weights(ann, qnn)
+    clip_model_weights(qnn)
     quantize_model(qnn, bits=4)
 
 def transfer_gradients(a, b):
