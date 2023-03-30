@@ -1,3 +1,5 @@
+from mimarsinan.transformations.transformation_utils import *
+
 import numpy as np
 import torch
 
@@ -8,11 +10,6 @@ class TensorQuantization:
         self.bits = bits
         self.q_min = -( 2 ** (bits - 1) )
         self.q_max = ( 2 ** (bits - 1) ) - 1
-
-    def transform_np_array(self, weight_array, transformation):
-        weight_tensor = torch.from_numpy(weight_array)
-        quantized_weight_tensor = transformation(weight_tensor)
-        return quantized_weight_tensor.detach().numpy()
     
     def get_scale(self, weights):
         if isinstance(weights, np.ndarray):
@@ -33,7 +30,14 @@ class TensorQuantization:
     
     def quantize(self, weights):
         if isinstance(weights, np.ndarray):
-            return self.transform_np_array(weights, self.quantize)
+            return transform_np_array(weights, self.quantize)
         
         scale = self.get_scale(weights)
         return torch.round(weights * scale) / scale
+    
+    def scaled_quantize(self, weights):
+        if isinstance(weights, np.ndarray):
+            return transform_np_array(weights, self.scaled_quantize)
+        
+        scale = self.get_scale(weights)
+        return torch.round(weights * scale)
