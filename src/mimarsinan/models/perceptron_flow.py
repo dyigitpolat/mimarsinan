@@ -139,9 +139,10 @@ class PatchedPerceptronFlow(nn.Module):
         super(PatchedPerceptronFlow, self).__init__()
 
         self.input_shape = input_shape
+        self.input_channels = input_shape[-3]
         self.patch_width = patch_width
         self.patch_height = patch_height
-        self.patch_size = self.patch_width * self.patch_height
+        self.patch_size = self.patch_width * self.patch_height * self.input_channels
         self.patch_rows = input_shape[-2] // self.patch_height
         self.patch_cols = input_shape[-1] // self.patch_width
         self.patch_count = self.patch_rows * self.patch_cols
@@ -151,11 +152,11 @@ class PatchedPerceptronFlow(nn.Module):
         self.patch_layers = nn.ModuleList(
             [Perceptron(self.patch_channels, self.patch_size) for _ in range(self.patch_count)])
         
-        self.fc_layers = nn.ModuleList([
-            Perceptron(self.features, self.features),
-            Perceptron(self.features, self.features, normalization=nn.BatchNorm1d(max_neurons)),
-            Perceptron(self.features, self.features),
-            Perceptron(self.features, self.features, normalization=nn.BatchNorm1d(max_neurons))])
+        self.fc_layers = nn.ModuleList()
+        for _ in range(2):
+            self.fc_layers.append(Perceptron(self.features, self.features))
+            self.fc_layers.append(Perceptron(self.features, self.features, 
+                                             normalization=nn.BatchNorm1d(self.features)))
 
         self.output_layer = Perceptron(num_classes, self.features) 
 
