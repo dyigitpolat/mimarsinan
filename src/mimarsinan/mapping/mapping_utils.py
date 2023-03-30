@@ -3,6 +3,7 @@ from mimarsinan.models.layers import *
 from mimarsinan.mapping.softcore_mapping import *
 from mimarsinan.transformations.weight_quantization import *
 
+import einops
 import numpy as np
 
 def generate_core_weights(
@@ -149,6 +150,46 @@ class ReshapeMapper:
             return self.sources
         
         self.sources = self.source_mapper.map(mapping).reshape(self.output_shape)
+        return self.sources
+    
+class EinopsRearrangeMapper:
+    def __init__(self, source_mapper, einops_str, *einops_args, **einops_kwargs):
+        self.source_mapper = source_mapper
+        self.einops_str = einops_str
+        self.einops_args = einops_args
+        self.einops_kwargs = einops_kwargs
+        self.sources = None
+    
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_sources = self.source_mapper.map(mapping)
+        layer_sources = einops.einops.rearrange(
+            layer_sources, self.einops_str, *self.einops_args, **self.einops_kwargs)
+        print(layer_sources.shape)
+
+        self.sources = layer_sources
+        return self.sources
+    
+class StackMapper:
+    def __init__(self, source_mappers):
+        self.source_mappers = source_mappers
+        self.sources = None
+    
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_sources_list = []
+        for mapper in self.source_mappers:
+            sources = mapper.map(mapping)
+            print(sources.shape)
+            layer_sources_list.append(sources)
+        layer_sources = np.stack(layer_sources_list).squeeze()
+        print(layer_sources.shape)
+        
+        self.sources = layer_sources
         return self.sources
 
 class Conv1DMapper:
@@ -297,6 +338,24 @@ class AddMapper:
 
         self.sources = map_mm(mapping, layer_sources, weights)
         return self.sources
+
+class SubscriptMapper:
+    def __init__(self, source_mapper, index):
+        self.source_mapper = source_mapper
+        self.index = index
+
+        self.sources = None
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_sources = self.source_mapper.map(mapping)[self.index]
+        print(layer_sources.shape)
+
+        self.sources = layer_sources
+        return self.sources
+
     
 class PatchEmbeddingMapper:
     def __init__(self, source_mapper, layer):
