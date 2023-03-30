@@ -10,6 +10,7 @@ from mimarsinan.test.mapping_test.test_mapping import *
 from mimarsinan.test.core_flow_test.core_flow_test import *
 from mimarsinan.test.mnist_test.mnist_perceptron_test import *
 from mimarsinan.test.mnist_test.mnist_patched_perceptron_test import *
+from mimarsinan.test.cifar10_test.cifar10_patch_perceptron_test import *
 
 from mimarsinan.test.debug_spikes_test.debug_spikes_test import *
 
@@ -32,4 +33,5 @@ force_cudnn_initialization()
 # test_mapping()
 # test_core_flow()
 # test_mnist_perceptron()
-test_mnist_patched_perceptron()
+# test_mnist_patched_perceptron()
+test_cifar10_patched_perceptron()
