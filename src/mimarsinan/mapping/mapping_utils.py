@@ -73,7 +73,7 @@ class SoftCoreMapping:
             core_matrix = np.zeros([input_axons_count+1, out_neurons_count])
             core_matrix[-1, :] = fc_biases.flatten()
 
-        core_matrix[:input_axons_count, :] = fc_weights.transpose()
+        core_matrix[:input_axons_count, :] = fc_weights.T
 
         for i in range(new_cores_count): 
             spike_sources = []
@@ -113,6 +113,12 @@ def map_mm(mapping, layer_sources, layer_weights, layer_biases = None):
 
 class InputMapper:
     def __init__(self, input_shape):
+        if len(input_shape) == 1:
+            input_shape = (1, input_shape[0])
+            
+        if isinstance(input_shape, int):
+            input_shape = (1, input_shape)
+
         self.input_shape = input_shape
         self.sources = None
     
@@ -222,7 +228,27 @@ class NormalizerMapper:
 
         self.sources = self.source_mapper.map(mapping)
         return self.sources
+
+def get_fused_weights(linear_layer, bn_layer):
+    l = linear_layer
+    bn = bn_layer
+
+    w = l.weight.data
+    b = l.bias.data if l.bias is not None else torch.zeros(w.shape[0])
+
+    new_w = l.weight.data.clone()
+    new_b = l.bias.data.clone()
+
+    gamma = bn.weight.data
+    beta = bn.bias.data
+    var = bn.running_var.data
+    mean = bn.running_mean.data
+    u = gamma / torch.sqrt(var + bn.eps)
+
+    new_w[:,:] = w * u.unsqueeze(1)
+    new_b[:] = (b - mean) * u + beta
     
+    return new_w, new_b
 class BatchNormMapper:
     def __init__(self, source_mapper, bn_layer):
         self.source_mapper = source_mapper
@@ -230,20 +256,8 @@ class BatchNormMapper:
         self.sources = None
 
     def __fuse_linear(self):
-        l = self.source_mapper.layer
-        bn = self.layer
-    
-        new_w = l.weight.data.clone()
-        new_b = l.bias.data.clone()
-
-        gamma = bn.weight.data
-        beta = bn.bias.data
-        var = bn.running_var.data
-        mean = bn.running_mean.data
-        u = gamma / torch.sqrt(var + bn.eps)
-
-        new_w[:,:] = l.weight.data * u.unsqueeze(1)
-        new_b[:] = (l.bias.data - mean) * u + beta
+        new_w, new_b = get_fused_weights(
+            self.source_mapper.layer, self.layer)
         
         self.source_mapper.layer.weight.data = new_w
         self.source_mapper.layer.bias.data = new_b

@@ -1,4 +1,5 @@
 from mimarsinan.transformations.weight_quantization import TensorQuantization
+from mimarsinan.transformations.weight_clipping import SoftTensorClipping
 import numpy as np
 
 class ChipQuantization:
@@ -36,6 +37,6 @@ class ChipQuantization:
             
         for core in cores:
             core.threshold = round(core.threshold)
-            core.core_matrix = self.quantizer.quantize(core.core_matrix)
+            core.core_matrix = self.quantizer.scaled_quantize(core.core_matrix)
 
         return scale

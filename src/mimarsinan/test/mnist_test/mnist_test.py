@@ -114,9 +114,10 @@ def test_mnist():
     hard_core_mapping.cores = cf.cores
 
     print("Quantizing mapped model weights...")
+    for core in hard_core_mapping.cores:
+        core.core_matrix = SoftTensorClipping(0.05).get_clipped_weights(torch.tensor(core.core_matrix)).detach().numpy()
     scale = quantizer.quantize(hard_core_mapping.cores)
     print("  Threshold scale:", scale)
-
 
     print("Visualizing final mapping...")
     HardCoreMappingVisualizer(hard_core_mapping).visualize("../generated/mnist/final_hard_core_mapping.png")
