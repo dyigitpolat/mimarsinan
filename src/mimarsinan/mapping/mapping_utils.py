@@ -167,7 +167,6 @@ class EinopsRearrangeMapper:
         layer_sources = self.source_mapper.map(mapping)
         layer_sources = einops.einops.rearrange(
             layer_sources, self.einops_str, *self.einops_args, **self.einops_kwargs)
-        print(layer_sources.shape)
 
         self.sources = layer_sources
         return self.sources
@@ -184,10 +183,8 @@ class StackMapper:
         layer_sources_list = []
         for mapper in self.source_mappers:
             sources = mapper.map(mapping)
-            print(sources.shape)
             layer_sources_list.append(sources)
         layer_sources = np.stack(layer_sources_list).squeeze()
-        print(layer_sources.shape)
         
         self.sources = layer_sources
         return self.sources
@@ -351,7 +348,6 @@ class SubscriptMapper:
             return self.sources
         
         layer_sources = self.source_mapper.map(mapping)[self.index]
-        print(layer_sources.shape)
 
         self.sources = layer_sources
         return self.sources
