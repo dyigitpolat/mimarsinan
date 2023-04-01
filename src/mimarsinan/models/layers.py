@@ -66,7 +66,7 @@ class LeakyClamp(nn.Module):
                 torch.where(
                     x < 1.0,
                     x,
-                    self.leak * x)))
+                    (1.0-self.leak) + self.leak * x)))
 
 class CQ_Activation(nn.Module):
     def __init__(self, Tq):
