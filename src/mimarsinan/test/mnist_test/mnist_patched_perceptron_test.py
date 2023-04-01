@@ -13,10 +13,14 @@ import time
 
 mnist_patched_perceptron_test_clipping_rate = 0.01
 
-def clip_model_weights(model, clipping_rate=mnist_patched_perceptron_test_clipping_rate):
+def special_decay(w):
+    return torch.sin(torch.arctan(w))
+
+def clip_model_weights_and_decay(model, clipping_rate=mnist_patched_perceptron_test_clipping_rate):
     clipper = SoftTensorClipping(clipping_rate)
     for param in model.parameters():
         param.data = clipper.get_clipped_weights(param.data)
+        #param.data = special_decay(param.data)
 
 def quantize_model(model, bits=4):
     quantizer = TensorQuantization(bits)
@@ -24,8 +28,11 @@ def quantize_model(model, bits=4):
         param.data = quantizer.quantize(param.data)
 
 def clip_and_quantize_model(model, bits=4, clipping_rate=mnist_patched_perceptron_test_clipping_rate):
-    clip_model_weights(model, clipping_rate)
+    clip_model_weights_and_decay(model, clipping_rate)
     quantize_model(model, bits)
+
+def circular_interpolation(x):
+    return math.sin(0.5 * math.pi * x)**0.5
 
 def test_mnist_patched_perceptron():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,12 +40,12 @@ def test_mnist_patched_perceptron():
     mnist_input_shape = (1, 28, 28)
     mnist_output_size = 10
     Tq = 30
+    batch_size = 10000
 
-    pretrain_epochs = 12
-    cycles = 5
+    pretrain_epochs = 4
+    cycles = 4
     cycle_epochs = 4
-    cq_only_epochs = 6
-    cq_quantize_epochs = 24
+    fused_tuning_epochs = 4
 
     perceptron_flow = PatchedPerceptronFlow(
         mnist_input_shape, mnist_output_size,
@@ -49,55 +56,49 @@ def test_mnist_patched_perceptron():
     train_with_weight_trasformation(
         model=perceptron_flow, 
         device=device,
-        train_dataloader=get_mnist_data(5000)[0],
+        train_dataloader=get_mnist_data(batch_size)[0],
         test_dataloader=get_mnist_data(50000)[1],
         weight_transformation=lambda x: x,
         epochs=pretrain_epochs,
         lr=lr)
-    lr *= 0.1
-
-    print("Fusing normalization...")
-    perceptron_flow.fuse_normalization()
-
+    
     print("Tuning model with CQ leaky clamp...")
+    Tq_start = 100
+    Tq_end = 15
     for i in range(cycles):
-        clamp_leak = math.sin((i * (1.0/cycles)))**0.5
+        step = i + 1
+        clamp_leak = circular_interpolation(step * (1.0/cycles))
+        Tq = int(Tq_start - (Tq_start - Tq_end) * (step * (1.0/cycles)))
         print("  Cycle:", i+1, "/", cycles)
         print("  Clamp leak:", clamp_leak)
+        print("  Tq:", Tq)
         perceptron_flow.set_activation(CQ_Activation_LeakyClamp(Tq, clamp_leak))
         train_with_weight_trasformation(
             model=perceptron_flow, 
             device=device,
-            train_dataloader=get_mnist_data(5000)[0],
+            train_dataloader=get_mnist_data(batch_size)[0],
             test_dataloader=get_mnist_data(50000)[1],
-            weight_transformation=clip_model_weights,
+            weight_transformation=clip_model_weights_and_decay,
             epochs=cycle_epochs,
             lr=lr)
-        lr = lr * 0.9
+        lr *= 0.9
+    
+    print("Fusing normalization...")
+    perceptron_flow.fuse_normalization()
 
-    print("Tuning model with CQ only...")
+    print("Tuning model with CQ and weight quantization after fuse...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
     lr *= 0.5
     train_with_weight_trasformation(
             model=perceptron_flow, 
             device=device,
-            train_dataloader=get_mnist_data(5000)[0],
-            test_dataloader=get_mnist_data(50000)[1],
-            weight_transformation=clip_model_weights,
-            epochs=cq_only_epochs,
-            lr=lr)
-
-    print("Tuning model with CQ and weight quantization...")
-    perceptron_flow.set_activation(CQ_Activation(Tq))
-    lr *= 0.5
-    train_with_weight_trasformation(
-            model=perceptron_flow, 
-            device=device,
-            train_dataloader=get_mnist_data(5000)[0],
+            train_dataloader=get_mnist_data(batch_size)[0],
             test_dataloader=get_mnist_data(50000)[1],
             weight_transformation=clip_and_quantize_model,
-            epochs=cq_quantize_epochs,
+            epochs=fused_tuning_epochs,
             lr=lr)
+    
+    perceptron_flow.normalize_parameters()
 
     print("Soft core mapping...")
     soft_core_mapping = SoftCoreMapping()
