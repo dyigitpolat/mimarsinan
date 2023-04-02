@@ -89,9 +89,9 @@ def train_with_weight_trasformation(
     weight_transformation, epochs, lr):
 
     # b = a
-    def update_model_weights(model_a, model_b):
-        for a_param, b_param in zip(model_a.parameters(), model_b.parameters()):
-            b_param.data = nn.Parameter(a_param).data
+    def update_model_weights(from_model, to_model):
+        for from_param, to_param in zip(from_model.parameters(), to_model.parameters()):
+            to_param.data = nn.Parameter(from_param).data
 
     def update_model(a, b):
         update_model_weights(a, b)
@@ -136,3 +136,5 @@ def train_with_weight_trasformation(
         if(epoch % max(epochs // 10, 1) == 0):
             correct, total = test(model_b, device, test_dataloader)
             print(correct, '/', total)
+
+    update_model_weights(model_b, model)
