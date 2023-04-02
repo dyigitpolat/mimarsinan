@@ -60,6 +60,14 @@ def test_mnist_patched_perceptron():
         train_dataloader=get_mnist_data(batch_size)[0],
         test_dataloader=get_mnist_data(50000)[1],
         weight_transformation=lambda x: x,
+        epochs=1,
+        lr=lr)
+    train_with_weight_trasformation(
+        model=perceptron_flow, 
+        device=device,
+        train_dataloader=get_mnist_data(batch_size)[0],
+        test_dataloader=get_mnist_data(50000)[1],
+        weight_transformation=clip_model_weights_and_decay,
         epochs=pretrain_epochs,
         lr=lr)
     
@@ -71,7 +79,7 @@ def test_mnist_patched_perceptron():
         device=device,
         train_dataloader=get_mnist_data(batch_size)[0],
         test_dataloader=get_mnist_data(50000)[1],
-        weight_transformation=clip_and_quantize_model,
+        weight_transformation=clip_model_weights_and_decay,
         epochs=fused_tuning_epochs,
         lr=lr)
 
