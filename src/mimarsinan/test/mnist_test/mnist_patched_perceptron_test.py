@@ -20,7 +20,7 @@ def clip_model_weights_and_decay(model, clipping_rate=mnist_patched_perceptron_t
     clipper = SoftTensorClipping(clipping_rate)
     for param in model.parameters():
         param.data = clipper.get_clipped_weights(param.data)
-        #param.data = special_decay(param.data)
+        param.data = special_decay(param.data)
 
 def quantize_model(model, bits=4):
     quantizer = TensorQuantization(bits)
@@ -40,12 +40,13 @@ def test_mnist_patched_perceptron():
     mnist_input_shape = (1, 28, 28)
     mnist_output_size = 10
     Tq = 30
-    batch_size = 10000
+    batch_size = 2000
 
-    pretrain_epochs = 4
+    pretrain_epochs = 12
     cycles = 4
-    cycle_epochs = 4
-    fused_tuning_epochs = 4
+    cycle_epochs = 12
+    fused_tuning_epochs = 12
+    hardcore_tuning_epochs = 6
 
     perceptron_flow = PatchedPerceptronFlow(
         mnist_input_shape, mnist_output_size,
@@ -62,33 +63,24 @@ def test_mnist_patched_perceptron():
         epochs=pretrain_epochs,
         lr=lr)
     
-    print("Tuning model with CQ leaky clamp...")
-    Tq_start = 100
-    Tq_end = 15
-    for i in range(cycles):
-        step = i + 1
-        clamp_leak = circular_interpolation(step * (1.0/cycles))
-        Tq = int(Tq_start - (Tq_start - Tq_end) * (step * (1.0/cycles)))
-        print("  Cycle:", i+1, "/", cycles)
-        print("  Clamp leak:", clamp_leak)
-        print("  Tq:", Tq)
-        perceptron_flow.set_activation(CQ_Activation_LeakyClamp(Tq, clamp_leak))
-        train_with_weight_trasformation(
-            model=perceptron_flow, 
-            device=device,
-            train_dataloader=get_mnist_data(batch_size)[0],
-            test_dataloader=get_mnist_data(50000)[1],
-            weight_transformation=clip_model_weights_and_decay,
-            epochs=cycle_epochs,
-            lr=lr)
-        lr *= 0.9
-    
+    print("Tuning model with CQ...")
+    perceptron_flow.set_activation(CQ_Activation(Tq))
+    lr *= 0.1
+    train_with_weight_trasformation(
+        model=perceptron_flow, 
+        device=device,
+        train_dataloader=get_mnist_data(batch_size)[0],
+        test_dataloader=get_mnist_data(50000)[1],
+        weight_transformation=clip_and_quantize_model,
+        epochs=fused_tuning_epochs,
+        lr=lr)
+
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
     print("Tuning model with CQ and weight quantization after fuse...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
-    lr *= 0.5
+    lr *= 0.1
     train_with_weight_trasformation(
             model=perceptron_flow, 
             device=device,
@@ -114,6 +106,9 @@ def test_mnist_patched_perceptron():
     correct, total = test_on_mnist(core_flow, device)
     print("  Correct:", correct, "Total:", total)
 
+    print("Calculating soft core thresholds for hardcore mapping...")
+    ChipQuantization(bits = 4).calculate_core_thresholds(soft_core_mapping.cores)
+
     print("Hard core mapping...")
     axons_per_core = 256
     neurons_per_core = 256
@@ -122,11 +117,6 @@ def test_mnist_patched_perceptron():
     for idx, core in enumerate(hard_core_mapping.cores):
         print(f"  Core {idx} matrix shape:", core.core_matrix.shape)
     
-    print("Quantizing mapped model weights...")
-    clip_core_weights(hard_core_mapping.cores, mnist_patched_perceptron_test_clipping_rate)
-    scale = ChipQuantization(bits = 4).quantize(hard_core_mapping.cores)
-    print("  Scale:", scale)
-
     print("Core flow mapping...")
     core_flow = CoreFlow(mnist_input_shape, hard_core_mapping)
     core_flow.set_activation(CQ_Activation(Tq))
@@ -134,6 +124,26 @@ def test_mnist_patched_perceptron():
     print("Testing with core flow...")
     correct, total = test_on_mnist(core_flow, device)
     print("  Correct:", correct, "Total:", total)
+
+    # print("Tuning hard core mapping...")
+    # lr *= 0.5
+    # train_with_weight_trasformation(
+    #     model=core_flow, 
+    #     device=device,
+    #     train_dataloader=get_mnist_data(batch_size)[0],
+    #     test_dataloader=get_mnist_data(50000)[1],
+    #     weight_transformation=clip_and_quantize_model,
+    #     epochs=hardcore_tuning_epochs,
+    #     lr=lr)
+    
+    # print("Updating hard core parameters...")
+    # core_flow.update_cores()
+    # hard_core_mapping.cores = core_flow.cores
+    
+    print("Quantizing hard core mapping...")
+    #clip_core_weights(hard_core_mapping.cores)
+    scale = ChipQuantization(bits = 4).quantize(hard_core_mapping.cores)
+    print("  Scale:", scale)
 
     print("Visualizing final mapping...")
     HardCoreMappingVisualizer(hard_core_mapping).visualize("../generated/mnist/final_hard_core_mapping.png")
