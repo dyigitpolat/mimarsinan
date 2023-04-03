@@ -36,16 +36,17 @@ def test_cifar10_patched_perceptron():
     
     cifar10_input_shape = (3, 32, 32)
     cifar10_output_size = 10
-    Tq = 30
+    Tq = 4
+    steps = 30
     batch_size = 2000
 
-    pretrain_epochs = 12
-    cq_tuning_epochs = 12
-    fused_tuning_epochs = 12
+    pretrain_epochs = 48
+    fused_tuning_epochs = 24
+    hardcore_tuning_epochs = 2
 
     perceptron_flow = PatchedPerceptronFlow(
         cifar10_input_shape, cifar10_output_size,
-        192, 192, 8, 8)
+        192, 256, 8, 8, fc_depth=1)
 
     print("Pretraining model...")
     lr = 0.001
@@ -66,18 +67,6 @@ def test_cifar10_patched_perceptron():
         epochs=pretrain_epochs,
         lr=lr)
     
-    print("Tuning model with CQ...")
-    perceptron_flow.set_activation(CQ_Activation(Tq))
-    lr *= 0.5
-    train_with_weight_trasformation(
-        model=perceptron_flow, 
-        device=device,
-        train_dataloader=get_cifar10_data(batch_size)[0],
-        test_dataloader=get_cifar10_data(50000)[1],
-        weight_transformation=clip_model_weights_and_decay,
-        epochs=cq_tuning_epochs,
-        lr=lr)
-    
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
@@ -87,13 +76,11 @@ def test_cifar10_patched_perceptron():
     train_with_weight_trasformation(
         model=perceptron_flow, 
         device=device,
-        train_dataloader=get_cifar10_data(batch_size)[0],
+        train_dataloader=get_cifar10_data(batch_size*2)[0],
         test_dataloader=get_cifar10_data(50000)[1],
         weight_transformation=clip_and_quantize_model,
         epochs=fused_tuning_epochs,
         lr=lr)
-    
-    perceptron_flow.normalize_parameters()
 
     print("Soft core mapping...")
     soft_core_mapping = SoftCoreMapping()
@@ -127,6 +114,24 @@ def test_cifar10_patched_perceptron():
     print("Testing with core flow...")
     correct, total = test_on_cifar10(core_flow, device)
     print("  Correct:", correct, "Total:", total)
+
+    print("Tuning hard core mapping...")
+    lr *= 0.5
+    train_with_weight_trasformation(
+        model=core_flow, 
+        device=device,
+        train_dataloader=get_cifar10_data(batch_size*2)[0],
+        test_dataloader=get_cifar10_data(50000)[1],
+        weight_transformation=clip_and_quantize_model,
+        epochs=hardcore_tuning_epochs,
+        lr=lr)
+    
+    print("Normalizing parameters...")
+    core_flow.normalize_parameters()
+    
+    print("Updating hard core parameters...")
+    core_flow.update_cores()
+    hard_core_mapping.cores = core_flow.cores
     
     print("Quantizing hard core mapping...")
     scale = ChipQuantization(bits = 4).quantize(hard_core_mapping.cores)
@@ -162,7 +167,7 @@ def test_cifar10_patched_perceptron():
     save_weights_and_chip_code(chip, generated_files_path)
 
     print("Generating main function code...")
-    simulation_length = int(scale * Tq + ChipLatency(hard_core_mapping).calculate())
+    simulation_length = int(scale * steps + ChipLatency(hard_core_mapping).calculate())
     generate_main_function(
         generated_files_path, input_count, cifar10_output_size, simulation_length,
         main_cpp_template, get_config("Deterministic", "Novena", "int"))
