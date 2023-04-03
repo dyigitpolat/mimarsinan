@@ -126,9 +126,6 @@ def test_cifar10_patched_perceptron():
         epochs=hardcore_tuning_epochs,
         lr=lr)
     
-    print("Normalizing parameters...")
-    core_flow.normalize_parameters()
-    
     print("Updating hard core parameters...")
     core_flow.update_cores()
     hard_core_mapping.cores = core_flow.cores

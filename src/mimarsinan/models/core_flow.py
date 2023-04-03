@@ -20,17 +20,6 @@ class CoreFlow(nn.Module):
         self.activation = nn.ReLU()
         self.cycles = ChipLatency(core_mapping).calculate()
 
-        self.max_input_activations = nn.Parameter(torch.zeros([len(self.cores)]), requires_grad=False)
-        self.max_output_activations = nn.Parameter(torch.zeros([len(self.cores)]), requires_grad=False)
-
-    def normalize_parameters(self):
-        for core_idx, core in enumerate(self.cores):
-            for axon_idx, spike_source in enumerate(core.axon_sources):
-                if spike_source.is_always_on_:
-                    self.core_params[core_idx].data[:, axon_idx] /= self.max_output_activations[core_idx]
-                else:
-                    self.core_params[core_idx].data[:, axon_idx] *= self.max_input_activations[core_idx] / self.max_output_activations[core_idx]
-
     def update_cores(self):
         for idx, core in enumerate(self.cores):
             core.core_matrix[:,:] = \
@@ -83,14 +72,10 @@ class CoreFlow(nn.Module):
                     x, buffers, self.cores[core_idx].axon_sources)
 
             for core_idx in range(len(self.cores)):
-                self.max_input_activations[core_idx] = torch.max(input_signals[core_idx])
-                
                 buffers[core_idx] = self.activation(
                     torch.matmul(
                         self.core_params[core_idx], 
                         input_signals[core_idx].T).T)
-                
-                self.max_output_activations[core_idx] = torch.max(buffers[core_idx])
         
         output_signals = self.get_signal_tensor(x, buffers, self.output_sources)
         return output_signals
