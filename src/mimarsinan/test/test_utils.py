@@ -43,29 +43,32 @@ def save_weights_and_chip_code(chip, generated_files_path):
 
 
 def chip_output_to_predictions(chip_output, number_of_classes):
-    return [ 
-        np.argmax(chip_output[i:i+number_of_classes]) 
-            for i in range(0, len(chip_output), number_of_classes)]
+    prediction_count = int(len(chip_output) / number_of_classes)
+    output_array = np.array(chip_output).reshape((prediction_count, number_of_classes))
+
+    predictions = np.zeros(prediction_count, dtype=int)
+    for i in range(prediction_count):
+        predictions[i] = np.argmax(output_array[i])
+    return predictions
 
 def evaluate_chip_output(
     chip_output, test_loader, number_of_classes, verbose = False):
+    predictions = chip_output_to_predictions(chip_output, number_of_classes)
+    targets = np.array([y.item() for (_, y) in test_loader], dtype=int)
+
     if verbose:
         total_spikes = sum(chip_output)
         print("Total spikes: {}".format(total_spikes))
 
         confusion_matrix = np.array([[0 for i in range(10)] for j in range(10)])
-        for ((_, y), (p)) in zip(test_loader, chip_output_to_predictions(chip_output, number_of_classes)):
+        for (y, p) in zip(targets, predictions):
             confusion_matrix[y.item()][p] += 1
         print("Confusion matrix:")
         print(confusion_matrix)
 
-    
-
-    predictions = chip_output_to_predictions(chip_output, number_of_classes)
-
     total = 0
     correct = 0
-    for ((_, y), (p)) in zip(test_loader, predictions):
+    for (y, p) in zip(targets, predictions):
         correct += int(y.item() == p)
         total += 1
     
@@ -82,7 +85,7 @@ def almost_equal(a, b, epsilon=0.00001):
 import torch
 import torch.nn as nn
 import copy
-
+    
 def train_with_weight_trasformation(
     model, device, 
     train_dataloader, test_dataloader, 
@@ -100,10 +103,11 @@ def train_with_weight_trasformation(
     # d_a = d_b
     def transfer_gradients(a, b):
         for a_param, b_param in zip(a.parameters(), b.parameters()):
-            a_param.grad = b_param.grad
+            if a_param.requires_grad: 
+                a_param.grad = b_param.grad
 
     def train_one_epoch(model_a, model_b, optimizer, train_loader, epoch):
-        print("Training epoch:", epoch)
+        print("  Training epoch:", epoch)
         for (x, y) in train_loader:
             update_model(model_a, model_b)
             optimizer.zero_grad()
@@ -125,6 +129,8 @@ def train_with_weight_trasformation(
                 correct += float(predicted.eq(y).sum().item())
         return correct, total
 
+    print("  LR:", lr)
+
     model_b = copy.deepcopy(model)
 
     train_loader = train_dataloader
@@ -135,6 +141,6 @@ def train_with_weight_trasformation(
 
         if(epoch % max(epochs // 10, 1) == 0):
             correct, total = test(model_b, device, test_dataloader)
-            print(correct, '/', total)
+            print("  Test acc:", correct, '/', total)
 
     update_model_weights(model_b, model)
