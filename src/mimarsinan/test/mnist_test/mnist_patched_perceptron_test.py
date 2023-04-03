@@ -19,7 +19,7 @@ def special_decay(w):
 def clip_model_weights_and_decay(model, clipping_rate=mnist_patched_perceptron_test_clipping_rate):
     clipper = SoftTensorClipping(clipping_rate)
     for param in model.parameters():
-        param.data = clipper.get_clipped_weights(param.data)
+        #param.data = clipper.get_clipped_weights(param.data)
         param.data = special_decay(param.data)
 
 def quantize_model(model, bits=4):
@@ -42,13 +42,13 @@ def test_mnist_patched_perceptron():
     Tq = 30
     batch_size = 2000
 
-    pretrain_epochs = 12
-    fused_tuning_epochs = 6
-    hardcore_tuning_epochs = 2
+    pretrain_epochs = 2
+    fused_tuning_epochs = 2
+    hardcore_tuning_epochs = 1
 
     perceptron_flow = PatchedPerceptronFlow(
         mnist_input_shape, mnist_output_size,
-        240, 240, 7, 7)
+        240, 240, 7, 7, fc_depth=3)
 
     print("Pretraining model...")
     lr = 0.01
@@ -127,9 +127,6 @@ def test_mnist_patched_perceptron():
         weight_transformation=clip_and_quantize_model,
         epochs=hardcore_tuning_epochs,
         lr=lr)
-    
-    print("Normalizing parameters...")
-    core_flow.normalize_parameters()
     
     print("Updating hard core parameters...")
     core_flow.update_cores()
