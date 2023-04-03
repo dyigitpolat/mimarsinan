@@ -38,21 +38,30 @@ class WokeBatchNorm1d(nn.BatchNorm1d):
             x = x.transpose(1, 2)
             return x
     
+    
+from torch.autograd import Function
+
+class StaircaseFunction(Function):
+    @staticmethod
+    def forward(ctx, x, Tq):
+        #Tq = torch.tensor(Tq)
+        #ctx.save_for_backward(x, Tq)
+        return torch.round(x * Tq) / Tq
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        #x, Tq = ctx.saved_tensors
+        grad_input = grad_output.clone()
+        return grad_input, None
+
 class SoftQuantize(nn.Module):
     def __init__(self, Tq):
         super(SoftQuantize, self).__init__()
         self.Tq = Tq
     
     def forward(self, x, alpha=4.5):
-        h = 1.0 / self.Tq
-        w = 1.0 / self.Tq
-        a = torch.tensor(alpha)
-        output = h * (
-            0.5 * (1.0/torch.tanh(a/2)) * 
-            torch.tanh(a * ((x/w-torch.floor(x/w))-0.5)) + 
-            0.5 + torch.floor(x/w))
-        return output
-
+        return StaircaseFunction.apply(x, self.Tq)
+    
 class LeakyClamp(nn.Module):
     def __init__(self, leak):
         super(LeakyClamp, self).__init__()
