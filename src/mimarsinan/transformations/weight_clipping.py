@@ -11,6 +11,8 @@ class SoftTensorClipping:
         p = self.rate
         wf = weight_tensor.flatten()
         wf = wf[torch.abs(wf) > 0]
+        if wf.numel() == 0:
+            return torch.tensor(0.0)
         q = max(1, int(p * wf.numel()))
         return torch.mean(torch.topk(wf, q)[0])
 
@@ -18,6 +20,8 @@ class SoftTensorClipping:
         p = self.rate
         wf = weight_tensor.flatten()
         wf = wf[torch.abs(wf) > 0]
+        if wf.numel() == 0:
+            return torch.tensor(0.0)
         q = max(1, int(p * wf.numel()))
         return -torch.mean(torch.topk(-wf, q)[0])
 

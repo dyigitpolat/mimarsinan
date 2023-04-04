@@ -89,14 +89,32 @@ import copy
 def train_with_weight_trasformation(
     model, device, 
     train_dataloader, test_dataloader, 
-    forward_hook, epochs, lr):
+    weight_transformation, epochs, lr):
 
-    def train_one_epoch(model, optimizer, train_loader, epoch):
+    # b = a
+    def update_model_weights(from_model, to_model):
+        for from_param, to_param in zip(from_model.parameters(), to_model.parameters()):
+            to_param.data = nn.Parameter(from_param).data
+
+    def update_model(a, b):
+        update_model_weights(a, b)
+        weight_transformation(b)
+    
+    # d_a = d_b
+    def transfer_gradients(a, b):
+        for a_param, b_param in zip(a.parameters(), b.parameters()):
+            if a_param.requires_grad: 
+                a_param.grad = b_param.grad
+
+    def train_one_epoch(model_a, model_b, optimizer, train_loader, epoch):
         print("  Training epoch:", epoch)
         for (x, y) in train_loader:
+            update_model(model_a, model_b)
             optimizer.zero_grad()
-            model.train()
-            nn.CrossEntropyLoss()(model(x), y).backward()
+            model_a.train()
+            model_b.train()
+            nn.CrossEntropyLoss()(model_b(x), y).backward()
+            transfer_gradients(model_a, model_b)
             optimizer.step()
 
     def test(model, device, test_loader):
@@ -113,20 +131,16 @@ def train_with_weight_trasformation(
 
     print("  LR:", lr)
 
+    model_b = copy.deepcopy(model)
+
     train_loader = train_dataloader
     optimizer = torch.optim.Adam(model.parameters(), lr = lr)
-    
-    hook = None
-    if forward_hook is not None:
-        hook = model.register_forward_hook(forward_hook)
-
     for epoch in range(epochs):
         train_one_epoch(
-            model, optimizer, train_loader, epoch)
+            model, model_b, optimizer, train_loader, epoch)
 
         if(epoch % max(epochs // 10, 1) == 0):
-            correct, total = test(model, device, test_dataloader)
+            correct, total = test(model_b, device, test_dataloader)
             print("  Test acc:", correct, '/', total)
 
-    if hook is not None:
-        hook.remove()
+    update_model_weights(model_b, model)
