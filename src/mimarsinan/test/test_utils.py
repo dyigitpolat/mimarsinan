@@ -1,9 +1,13 @@
 from mimarsinan.common.file_utils import *
 
 import numpy as np
+import os
 
 def input_to_file(
     input, target, filename:str):
+    if os.path.isfile(filename):
+        return
+
     result = ""
     result += str(target) + ' '
     result += '1' + ' '
@@ -94,7 +98,7 @@ def train_with_weight_trasformation(
     # b = a
     def update_model_weights(from_model, to_model):
         for from_param, to_param in zip(from_model.parameters(), to_model.parameters()):
-            to_param.data = nn.Parameter(from_param).data
+            to_param.data[:] = from_param.data[:]
 
     def update_model(a, b):
         update_model_weights(a, b)
