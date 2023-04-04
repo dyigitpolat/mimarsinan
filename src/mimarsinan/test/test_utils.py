@@ -89,7 +89,7 @@ import copy
 def train_with_weight_trasformation(
     model, device, 
     train_dataloader, test_dataloader, 
-    weight_transformation, epochs, lr):
+    weight_transformation, epochs, lr, custom_loss = None):
 
     # b = a
     def update_model_weights(from_model, to_model):
@@ -106,14 +106,19 @@ def train_with_weight_trasformation(
             if a_param.requires_grad: 
                 a_param.grad = b_param.grad
 
-    def train_one_epoch(model_a, model_b, optimizer, train_loader, epoch):
+    def train_one_epoch(model_a, model_b, optimizer, train_loader, epoch, custom_loss):
         print("  Training epoch:", epoch)
         for (x, y) in train_loader:
             update_model(model_a, model_b)
             optimizer.zero_grad()
             model_a.train()
             model_b.train()
-            nn.CrossEntropyLoss()(model_b(x), y).backward()
+            loss = nn.CrossEntropyLoss()(model_b(x), y)
+            if custom_loss is not None:
+                augmented_loss = custom_loss(model_b)
+                print("    Custom loss:", augmented_loss)
+                loss *= augmented_loss
+            loss.backward()
             transfer_gradients(model_a, model_b)
             optimizer.step()
 
@@ -137,7 +142,7 @@ def train_with_weight_trasformation(
     optimizer = torch.optim.Adam(model.parameters(), lr = lr)
     for epoch in range(epochs):
         train_one_epoch(
-            model, model_b, optimizer, train_loader, epoch)
+            model, model_b, optimizer, train_loader, epoch, custom_loss)
 
         if(epoch % max(epochs // 10, 1) == 0):
             correct, total = test(model_b, device, test_dataloader)

@@ -19,7 +19,7 @@ def special_decay(w):
 def clip_model_weights_and_decay(model, clipping_rate=mnist_patched_perceptron_test_clipping_rate):
     clipper = SoftTensorClipping(clipping_rate)
     for param in model.parameters():
-        #param.data = clipper.get_clipped_weights(param.data)
+        param.data = clipper.get_clipped_weights(param.data)
         param.data = special_decay(param.data)
 
 def quantize_model(model, bits=4):
@@ -33,6 +33,9 @@ def clip_and_quantize_model(model, bits=4, clipping_rate=mnist_patched_perceptro
 
 def circular_interpolation(x):
     return math.sin(0.5 * math.pi * x)**0.5
+
+def activation_penalty_loss(perceptron_flow):
+    return 1.0 + perceptron_flow.get_activation_penalty() 
 
 def test_mnist_patched_perceptron():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -59,7 +62,8 @@ def test_mnist_patched_perceptron():
         test_dataloader=get_mnist_data(50000)[1],
         weight_transformation=lambda x: x,
         epochs=1,
-        lr=lr)
+        lr=lr, 
+        custom_loss=activation_penalty_loss)
     train_with_weight_trasformation(
         model=perceptron_flow, 
         device=device,
@@ -67,7 +71,8 @@ def test_mnist_patched_perceptron():
         test_dataloader=get_mnist_data(50000)[1],
         weight_transformation=clip_model_weights_and_decay,
         epochs=pretrain_epochs,
-        lr=lr)
+        lr=lr, 
+        custom_loss=activation_penalty_loss)
 
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
@@ -82,7 +87,8 @@ def test_mnist_patched_perceptron():
         test_dataloader=get_mnist_data(50000)[1],
         weight_transformation=clip_and_quantize_model,
         epochs=fused_tuning_epochs,
-        lr=lr)
+        lr=lr, 
+        custom_loss=activation_penalty_loss)
 
     print("Soft core mapping...")
     soft_core_mapping = SoftCoreMapping()
