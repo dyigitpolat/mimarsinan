@@ -2,38 +2,6 @@ from mimarsinan.mapping.mapping_utils import *
 
 import torch.nn as nn
 
-def soft_histogram(tensor, num_bins):
-    bins = torch.linspace(-0.1, 1.1, num_bins)
-    bandwidth = 1.0 / (2.0*num_bins)
-
-    pdfs = torch.exp(-0.5*((tensor.view(-1, 1) - bins)**2)/(bandwidth**2))
-    return pdfs.sum(dim=0)
-
-class DebugCounter:
-    val = 0
-
-def calculate_activation_penalty(output_tensor):
-    sample_size = 1000
-    num_bins = 100
-    target_mean = 0.5
-    target_std = 1.0 / (2.0 * torch.pi)
-
-    target_distribution_samples = torch.randn(sample_size) * target_std + target_mean
-    target_distribution = soft_histogram(target_distribution_samples, num_bins)
-    
-    output_sample_indices = torch.randperm(output_tensor.numel())[:sample_size]
-    output_samples = output_tensor.flatten()[output_sample_indices]
-    output_distribution = soft_histogram(output_samples, num_bins)
-
-    if DebugCounter.val == 2000:
-        import matplotlib.pyplot as plt
-        plt.plot(target_distribution.detach().numpy())
-        plt.plot(output_distribution.detach().numpy())
-        plt.savefig("fig.png")
-        exit()
-    DebugCounter.val += 1
-    return torch.sum((output_distribution - target_distribution)**2)
-
 class Perceptron(nn.Module):
     def __init__(
         self, 
@@ -50,8 +18,6 @@ class Perceptron(nn.Module):
 
         self.normalization = normalization
         self.activation = nn.LeakyReLU()
-
-        self.activation_penalty = nn.Parameter(torch.tensor(0.0), requires_grad=False)
     
     def set_activation(self, activation):
         self.activation = activation
@@ -73,13 +39,11 @@ class Perceptron(nn.Module):
 
         self.normalization = nn.Identity()
 
-
     def forward(self, x):
         out = self.layer(x)
         out = self.normalization(out)
         out = self.activation(out)
         
-        self.activation_penalty.data = calculate_activation_penalty(out)
         return out
 
 
@@ -214,18 +178,8 @@ class PatchedPerceptronFlow(nn.Module):
             layer.set_activation(activation)
 
         self.output_layer.set_activation(activation)
-
-    def get_activation_penalty(self):
-        penalty = torch.tensor(0.0)
-        for layer in self.patch_layers:
-            penalty += layer.activation_penalty.data
-
-        for layer in self.fc_layers:
-            penalty += layer.activation_penalty.data
-
-        penalty += self.output_layer.activation_penalty.data
-        return penalty
     
+
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
         out = EinopsRearrangeMapper(
@@ -246,7 +200,6 @@ class PatchedPerceptronFlow(nn.Module):
         
         out = PerceptronMapper(out, self.output_layer)
         return ModelRepresentation(out)
-
     
     def forward(self, x):
         out = einops.einops.rearrange(
