@@ -179,7 +179,6 @@ class PatchedPerceptronFlow(nn.Module):
 
         self.output_layer.set_activation(activation)
     
-
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
         out = EinopsRearrangeMapper(
@@ -200,7 +199,7 @@ class PatchedPerceptronFlow(nn.Module):
         
         out = PerceptronMapper(out, self.output_layer)
         return ModelRepresentation(out)
-    
+
     def forward(self, x):
         out = einops.einops.rearrange(
             x, 
@@ -219,4 +218,3 @@ class PatchedPerceptronFlow(nn.Module):
         out = self.output_layer(out)
         
         return out
-
