@@ -16,10 +16,10 @@ mnist_patched_perceptron_test_clipping_rate = 0.01
 def special_decay(w):
     return torch.sin(torch.arctan(w))
 
-def clip_model_weights_and_decay(model, input, output, clipping_rate=mnist_patched_perceptron_test_clipping_rate):
-    clipper = SoftTensorClipping(clipping_rate)
+def clip_model_weights_and_decay(model):
+    clipper = SoftTensorClipping(mnist_patched_perceptron_test_clipping_rate)
     for param in model.parameters():
-        #param.data = clipper.get_clipped_weights(param.data)
+        param.data = clipper.get_clipped_weights(param.data)
         param.data = special_decay(param.data)
 
 def quantize_model(model, bits=4):
@@ -27,9 +27,9 @@ def quantize_model(model, bits=4):
     for param in model.parameters():
         param.data = quantizer.quantize(param.data)
 
-def clip_and_quantize_model(model, input, output, bits=4, clipping_rate=mnist_patched_perceptron_test_clipping_rate):
-    clip_model_weights_and_decay(model, input, output, clipping_rate)
-    quantize_model(model, bits)
+def clip_and_quantize_model(model):
+    clip_model_weights_and_decay(model)
+    quantize_model(model, bits=4)
 
 def circular_interpolation(x):
     return math.sin(0.5 * math.pi * x)**0.5
@@ -57,15 +57,7 @@ def test_mnist_patched_perceptron():
         device=device,
         train_dataloader=get_mnist_data(batch_size)[0],
         test_dataloader=get_mnist_data(50000)[1],
-        forward_hook=None,
-        epochs=1,
-        lr=lr)
-    train_with_weight_trasformation(
-        model=perceptron_flow, 
-        device=device,
-        train_dataloader=get_mnist_data(batch_size)[0],
-        test_dataloader=get_mnist_data(50000)[1],
-        forward_hook=clip_model_weights_and_decay,
+        weight_transformation=clip_model_weights_and_decay,
         epochs=pretrain_epochs,
         lr=lr)
 
@@ -80,7 +72,7 @@ def test_mnist_patched_perceptron():
         device=device,
         train_dataloader=get_mnist_data(batch_size)[0],
         test_dataloader=get_mnist_data(50000)[1],
-        forward_hook=clip_and_quantize_model,
+        weight_transformation=clip_and_quantize_model,
         epochs=fused_tuning_epochs,
         lr=lr)
 
@@ -124,7 +116,7 @@ def test_mnist_patched_perceptron():
         device=device,
         train_dataloader=get_mnist_data(batch_size)[0],
         test_dataloader=get_mnist_data(50000)[1],
-        forward_hook=clip_and_quantize_model,
+        weight_transformation=clip_and_quantize_model,
         epochs=hardcore_tuning_epochs,
         lr=lr)
     
