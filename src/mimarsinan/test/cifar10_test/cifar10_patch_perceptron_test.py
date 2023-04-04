@@ -31,9 +31,6 @@ def clip_and_quantize_model(model, bits=4, clipping_rate=cifar10_patched_percept
     clip_model_weights_and_decay(model, clipping_rate)
     quantize_model(model, bits)
 
-def activation_penalty_loss(perceptron_flow):
-    return 1.0 + perceptron_flow.get_activation_penalty() 
-
 def test_cifar10_patched_perceptron():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -43,8 +40,8 @@ def test_cifar10_patched_perceptron():
     steps = 30
     batch_size = 2000
 
-    pretrain_epochs = 2
-    fused_tuning_epochs = 2
+    pretrain_epochs = 48
+    fused_tuning_epochs = 24
     hardcore_tuning_epochs = 2
 
     perceptron_flow = PatchedPerceptronFlow(
@@ -60,8 +57,7 @@ def test_cifar10_patched_perceptron():
         test_dataloader=get_cifar10_data(50000)[1],
         weight_transformation=lambda x: x,
         epochs=1,
-        lr=lr,
-        custom_loss=activation_penalty_loss)
+        lr=lr)
     train_with_weight_trasformation(
         model=perceptron_flow, 
         device=device,
@@ -69,8 +65,7 @@ def test_cifar10_patched_perceptron():
         test_dataloader=get_cifar10_data(50000)[1],
         weight_transformation=clip_model_weights_and_decay,
         epochs=pretrain_epochs,
-        lr=lr,
-        custom_loss=activation_penalty_loss)
+        lr=lr)
     
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
@@ -85,8 +80,7 @@ def test_cifar10_patched_perceptron():
         test_dataloader=get_cifar10_data(50000)[1],
         weight_transformation=clip_and_quantize_model,
         epochs=fused_tuning_epochs,
-        lr=lr,
-        custom_loss=activation_penalty_loss)
+        lr=lr)
 
     print("Soft core mapping...")
     soft_core_mapping = SoftCoreMapping()
@@ -130,8 +124,7 @@ def test_cifar10_patched_perceptron():
         test_dataloader=get_cifar10_data(50000)[1],
         weight_transformation=clip_and_quantize_model,
         epochs=hardcore_tuning_epochs,
-        lr=lr,
-        custom_loss=activation_penalty_loss)
+        lr=lr)
     
     print("Updating hard core parameters...")
     core_flow.update_cores()
