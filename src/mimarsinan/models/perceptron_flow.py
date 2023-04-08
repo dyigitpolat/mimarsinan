@@ -161,23 +161,18 @@ class PatchedPerceptronFlow(nn.Module):
 
         self.output_layer = Perceptron(num_classes, self.features) 
 
+        self.out = None
+
+    def get_perceptrons(self):
+        return self.patch_layers + self.fc_layers + [self.output_layer]
+
     def fuse_normalization(self):
-        for layer in self.patch_layers:
+        for layer in self.get_perceptrons():
             layer.fuse_normalization()
-
-        for layer in self.fc_layers:
-            layer.fuse_normalization()
-
-        self.output_layer.fuse_normalization()
 
     def set_activation(self, activation):
-        for layer in self.patch_layers:
+        for layer in self.get_perceptrons():
             layer.set_activation(activation)
-
-        for layer in self.fc_layers:
-            layer.set_activation(activation)
-
-        self.output_layer.set_activation(activation)
     
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
@@ -200,21 +195,67 @@ class PatchedPerceptronFlow(nn.Module):
         out = PerceptronMapper(out, self.output_layer)
         return ModelRepresentation(out)
 
-    def forward(self, x):
+    def forward(self, x, stats={}):
         out = einops.einops.rearrange(
             x, 
             'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', 
             p1=self.patch_height, p2=self.patch_width)
         
+        means_patch, vars_patch = [], []
         out_tensor = torch.zeros((x.shape[0], self.features))
         for idx in range(self.patch_count):
             length = self.patch_channels
             out_tensor[:, idx*length:(idx+1)*length] = self.patch_layers[idx](out[:,idx])
-        
+            means_patch.append(out_tensor[:, idx*length:(idx+1)*length].flatten().mean())
+            vars_patch.append(out_tensor[:, idx*length:(idx+1)*length].flatten().var())
+        stats["means_patch"] = torch.stack(means_patch)
+        stats["vars_patch"] = torch.stack(vars_patch)
+
+        means_fc, vars_fc = [], []
         out = out_tensor
         for layer in self.fc_layers:
             out = layer(out)
+            means_fc.append(out.flatten().mean())
+            vars_fc.append(out.flatten().var())
+        stats["means_fc"] = torch.stack(means_fc)
+        stats["vars_fc"] = torch.stack(vars_fc)
 
         out = self.output_layer(out)
-        
         return out
+    
+    def statistical_consistency_loss(self, indicators):
+        mean_of_indicators = indicators.mean()
+        return torch.sqrt(torch.sum((indicators - mean_of_indicators) ** 2))
+    
+    def get_parameter_stats(self, parameter_list):
+        param_means = []
+        param_vars = []
+        for layer in parameter_list:
+            for param in layer.parameters():
+                param_means.append(param.mean())
+                param_vars.append(param.var())
+        param_means = torch.stack(param_means)
+        param_vars = torch.stack(param_vars)
+        return param_means, param_vars
+
+    def loss(self, x, y):
+        stats = {}
+        out = self(x, stats)
+
+        param_means, param_vars = self.get_parameter_stats(self.fc_layers)
+
+        param_mean_error = self.statistical_consistency_loss(param_means)
+        param_var_error = self.statistical_consistency_loss(param_vars)
+        mean_fc_error = self.statistical_consistency_loss(stats["means_fc"])
+        var_fc_error = self.statistical_consistency_loss(stats["vars_fc"])
+        mean_patch_error = self.statistical_consistency_loss(stats["means_patch"])
+        var_patch_error = self.statistical_consistency_loss(stats["vars_patch"])
+
+        consistency_error = \
+            param_mean_error + param_var_error + mean_fc_error + var_fc_error \
+            + mean_patch_error + var_patch_error
+
+        self.out = out
+        return nn.CrossEntropyLoss()(out, y) + consistency_error
+    
+
