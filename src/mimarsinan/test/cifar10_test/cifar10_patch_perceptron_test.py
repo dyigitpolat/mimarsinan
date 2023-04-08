@@ -13,23 +13,23 @@ import time
 
 cifar10_patched_perceptron_test_clipping_rate = 0.01
 
-def special_decay(w):
-    return torch.sin(torch.arctan(w))
-
-def clip_model_weights_and_decay(model, clipping_rate=cifar10_patched_perceptron_test_clipping_rate):
-    clipper = SoftTensorClipping(clipping_rate)
+def clip_model_weights_and_decay(model):
+    clipper = SoftTensorClipping(cifar10_patched_perceptron_test_clipping_rate)
     for param in model.parameters():
         param.data = clipper.get_clipped_weights(param.data)
-        param.data = special_decay(param.data)
+        param.data = torch.sin(torch.arctan(param.data))
 
-def quantize_model(model, bits=4):
-    quantizer = TensorQuantization(bits)
+def quantize_model(model):
+    quantizer = TensorQuantization(bits = 4)
+    # for p in model.get_perceptrons():
+    #     p.layer.weight.data = quantizer.quantize(p.layer.weight.data)
+    #     p.layer.bias.data = quantizer.quantize(p.layer.bias.data)
     for param in model.parameters():
         param.data = quantizer.quantize(param.data)
 
-def clip_and_quantize_model(model, bits=4, clipping_rate=cifar10_patched_perceptron_test_clipping_rate):
-    clip_model_weights_and_decay(model, clipping_rate)
-    quantize_model(model, bits)
+def clip_and_quantize_model(model):
+    clip_model_weights_and_decay(model)
+    quantize_model(model)
 
 def test_cifar10_patched_perceptron():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -37,11 +37,13 @@ def test_cifar10_patched_perceptron():
     cifar10_input_shape = (3, 32, 32)
     cifar10_output_size = 10
     Tq = 4
-    steps = 30
-    batch_size = 2000
+    steps = 32
+    batch_size = 1000
 
-    pretrain_epochs = 3
-    fused_tuning_epochs = 3
+    pretrain_cycles = 1
+    pretrain_epochs = 48
+    fused_tuning_cycles = 4
+    fused_tuning_epochs = 8
     hardcore_tuning_epochs = 1
 
     perceptron_flow = PatchedPerceptronFlow(
@@ -50,28 +52,74 @@ def test_cifar10_patched_perceptron():
 
     print("Pretraining model...")
     lr = 0.001
-    train_with_weight_trasformation(
+    perceptron_flow.set_activation(nn.LeakyReLU())
+    lr, prev_acc = train_until_target_accuracy_with_weight_transformation(
         model=perceptron_flow, 
         device=device,
         train_dataloader=get_cifar10_data(batch_size)[0],
         test_dataloader=get_cifar10_data(50000)[1],
         weight_transformation=clip_model_weights_and_decay,
-        epochs=pretrain_epochs,
-        lr=lr)
+        max_epochs=pretrain_epochs,
+        lr=lr,
+        target_accuracy=1.0)
     
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
-    print("Tuning model with CQ and weight quantization after fuse...")
-    perceptron_flow.set_activation(CQ_Activation(Tq))
-    train_with_weight_trasformation(
+    ## test ##
+    perceptron_flow.set_activation(nn.LeakyReLU())
+    lr, _ = train_until_target_accuracy_with_weight_transformation(
         model=perceptron_flow, 
         device=device,
-        train_dataloader=get_cifar10_data(batch_size*2)[0],
+        train_dataloader=get_cifar10_data(batch_size)[0],
         test_dataloader=get_cifar10_data(50000)[1],
         weight_transformation=clip_and_quantize_model,
-        epochs=fused_tuning_epochs,
-        lr=lr)
+        max_epochs=pretrain_epochs,
+        lr=lr,
+        target_accuracy=prev_acc)
+    
+    perceptron_flow.set_activation(nn.ReLU())
+    lr, _ = train_until_target_accuracy_with_weight_transformation(
+        model=perceptron_flow, 
+        device=device,
+        train_dataloader=get_cifar10_data(batch_size)[0],
+        test_dataloader=get_cifar10_data(50000)[1],
+        weight_transformation=clip_and_quantize_model,
+        max_epochs=pretrain_epochs,
+        lr=lr,
+        target_accuracy=prev_acc)
+    
+    class ClampedReLU(nn.Module):
+        def forward(self, x):
+            return torch.clamp(x, 0.0, 1.0)
+
+    perceptron_flow.set_activation(ClampedReLU())
+    lr, _ = train_until_target_accuracy_with_weight_transformation(
+        model=perceptron_flow, 
+        device=device,
+        train_dataloader=get_cifar10_data(batch_size)[0],
+        test_dataloader=get_cifar10_data(50000)[1],
+        weight_transformation=clip_and_quantize_model,
+        max_epochs=pretrain_epochs,
+        lr=lr,
+        target_accuracy=prev_acc)
+    ## test ##
+
+    print("Tuning model with CQ and weight quantization after fuse...")
+    lr *= 0.5
+    currentTq = (2 ** (fused_tuning_cycles - 1)) * Tq
+    while currentTq >= Tq:
+        perceptron_flow.set_activation(CQ_Activation(currentTq))
+        lr, _ = train_until_target_accuracy_with_weight_transformation(
+            model=perceptron_flow, 
+            device=device,
+            train_dataloader=get_cifar10_data(batch_size)[0],
+            test_dataloader=get_cifar10_data(50000)[1],
+            weight_transformation=clip_and_quantize_model,
+            max_epochs=pretrain_epochs,
+            lr=lr,
+            target_accuracy=prev_acc)
+        currentTq //= 2
 
     print("Soft core mapping...")
     soft_core_mapping = SoftCoreMapping()
@@ -154,7 +202,7 @@ def test_cifar10_patched_perceptron():
     simulation_length = int(scale * steps + ChipLatency(hard_core_mapping).calculate())
     generate_main_function(
         generated_files_path, input_count, cifar10_output_size, simulation_length,
-        main_cpp_template, get_config("Deterministic", "Novena", "int"))
+        main_cpp_template, get_config("Stochastic", "Novena", "int"))
 
     print("Compiling nevresim for mapped chip...")
     simulator_filename = \
