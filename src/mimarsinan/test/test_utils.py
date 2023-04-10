@@ -160,7 +160,8 @@ def train_with_weight_trasformation(
 def train_until_target_accuracy_with_weight_transformation (
     model, device, 
     train_dataloader, test_dataloader, 
-    weight_transformation, max_epochs, lr, 
+    weight_transformation, max_epochs, 
+    lr_max, lr, 
     target_accuracy):
 
     # b = a
@@ -217,24 +218,22 @@ def train_until_target_accuracy_with_weight_transformation (
     optimizer = torch.optim.Adam(model.parameters(), lr = lr)
     epochs = 0
     acc = 0
-    temp_acc = 0
+    top_acc = 0
+    lr_min = lr_max / 1000
     while acc < target_accuracy and epochs < max_epochs:
-        optimizer.param_groups[0]['lr'] *= 0.9
-
         acc = train_one_epoch(
             model, model_b, optimizer, train_loader, epochs)
 
-        if(epochs % max(epochs // 10, 4) == 0):
+        if(epochs % 5 == 0):
             correct, total = test(model_b, device, test_dataloader)
+            print("  LR:", round(optimizer.param_groups[0]['lr'], 7))
+            print("  Train acc:", acc * 100, '%') 
             print("  Test acc:", correct, '/', total)
         
-        if temp_acc > acc:
-            optimizer.param_groups[0]['lr'] *= 2.0
-            temp_acc = 0
-        else:
-            temp_acc = acc
+        if acc > top_acc and optimizer.param_groups[0]['lr'] > lr_min:
+            optimizer.param_groups[0]['lr'] *= 0.99
+            top_acc = acc
 
-        print("  LR:", optimizer.param_groups[0]['lr'])
         epochs += 1
 
     update_model_weights(model_b, model)
@@ -244,4 +243,4 @@ def train_until_target_accuracy_with_weight_transformation (
 
     correct, total = test(model, device, train_dataloader)
     print("  Train acc:", correct, '/', total)
-    return optimizer.param_groups[0]['lr']
+    return optimizer.param_groups[0]['lr'], correct / total
