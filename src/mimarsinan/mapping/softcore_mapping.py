@@ -88,7 +88,7 @@ class HardCoreMapping:
                 
     def map(self, softcore_mapping):
         def is_mapping_possible(core, hardcore):
-            tolerance = 0.1
+            tolerance = 0.01
             if hardcore.threshold is not None:
                 threshold_diff = abs(core.threshold - hardcore.threshold)
                 diff_rate = threshold_diff / hardcore.threshold
