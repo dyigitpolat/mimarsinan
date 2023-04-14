@@ -20,6 +20,7 @@ def force_cudnn_initialization():
     torch.nn.functional.conv2d(torch.zeros(s, s, s, s, device=dev), torch.zeros(s, s, s, s, device=dev))
 
 force_cudnn_initialization()
+NevresimDriver.nevresim_path = "../nevresim/"
 
 # test_debug_spikes()
 # test_xor()
@@ -33,5 +34,5 @@ force_cudnn_initialization()
 # test_mapping()
 # test_core_flow()
 # test_mnist_perceptron()
-# test_mnist_patched_perceptron()
+test_mnist_patched_perceptron()
 test_cifar10_patched_perceptron()
