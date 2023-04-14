@@ -8,6 +8,8 @@ step_limit = 256*256*10000
 step_limit_option = f"-fconstexpr-steps={step_limit}"
 
 def compile_simulator(generated_files_path, nevresim_path):
+    print("Compiling nevresim for mapped chip...")
+
     simulator_filename = "../bin/simulator"
     prepare_containing_directory(simulator_filename)
 
@@ -23,6 +25,8 @@ def compile_simulator(generated_files_path, nevresim_path):
 
     p = subprocess.Popen(cmd)
     if( p.wait() == 0 ):
+        print("Compilation outcome:", simulator_filename)
         return simulator_filename
     else:
-        return "COMPILATION FAILED"
+        print("Compilation failed.")
+        return None

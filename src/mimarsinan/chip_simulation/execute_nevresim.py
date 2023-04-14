@@ -1,6 +1,11 @@
 import subprocess
+import time
 
 def execute_simulator(simulator_filename, input_count, num_proc = 4):
+    print("Executing simulator...")
+
+    start_time = time.time()
+
     pipes = []
     for i in range(num_proc):
         start = i * input_count // num_proc
@@ -18,5 +23,8 @@ def execute_simulator(simulator_filename, input_count, num_proc = 4):
         for val in line.split():
             output_values.append(float(val)) 
         p.wait()
+
+    end_time = time.time()
+    print("  Simulation time:", end_time - start_time)
 
     return output_values

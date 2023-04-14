@@ -16,6 +16,7 @@ def generate_main_function(
     simulation_length,
     cpp_code_template = main_cpp_template,
     simulation_config = get_config()):
+    print("Generating main function code...")
 
     main_cpp_code = \
         cpp_code_template.format(
