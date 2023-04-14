@@ -225,7 +225,7 @@ class PatchedPerceptronFlow(nn.Module):
     
     def statistical_consistency_loss(self, indicators):
         mean_of_indicators = indicators.mean()
-        return torch.sqrt(torch.sum((indicators - mean_of_indicators) ** 2))
+        return torch.sqrt(torch.mean((indicators - mean_of_indicators) ** 2))
     
     def get_parameter_stats(self, parameter_list):
         param_means = []
@@ -243,19 +243,30 @@ class PatchedPerceptronFlow(nn.Module):
         out = self(x, stats)
 
         param_means, param_vars = self.get_parameter_stats(self.fc_layers)
-
         param_mean_error = self.statistical_consistency_loss(param_means)
         param_var_error = self.statistical_consistency_loss(param_vars)
+
+        param_means_patch, param_vars_patch = self.get_parameter_stats(self.patch_layers)
+        param_mean_error_patch = self.statistical_consistency_loss(param_means_patch)
+        param_var_error_patch = self.statistical_consistency_loss(param_vars_patch)
+
         mean_fc_error = self.statistical_consistency_loss(stats["means_fc"])
         var_fc_error = self.statistical_consistency_loss(stats["vars_fc"])
         mean_patch_error = self.statistical_consistency_loss(stats["means_patch"])
         var_patch_error = self.statistical_consistency_loss(stats["vars_patch"])
 
-        consistency_error = \
-            param_mean_error + param_var_error + mean_fc_error + var_fc_error \
-            + mean_patch_error + var_patch_error
+        activation_consistency_error = \
+            torch.sqrt(torch.mean(torch.stack([
+                mean_fc_error, var_fc_error, 
+                mean_patch_error, var_patch_error]) ** 2))
+        
+        parameter_consistency_error = \
+            torch.sqrt(torch.mean(torch.stack([
+                param_mean_error, param_var_error,
+                param_mean_error_patch, param_var_error_patch]) ** 2))
+        
 
         self.out = out
-        return nn.CrossEntropyLoss()(out, y) + consistency_error
+        return nn.CrossEntropyLoss()(out, y) * (activation_consistency_error + parameter_consistency_error)
     
 
