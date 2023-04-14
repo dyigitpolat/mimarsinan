@@ -7,8 +7,11 @@ from mimarsinan.chip_simulation.execute_nevresim import *
 import numpy as np
 
 class NevresimDriver:
+    nevresim_path = None
+
     def __init__(
         self, input_buffer_size, hard_core_mapping, generated_files_path, weight_type):
+        assert NevresimDriver.nevresim_path is not None, "nevresim path is not set."
 
         self.weight_type = weight_type
 
@@ -24,7 +27,7 @@ class NevresimDriver:
         save_weights_and_chip_code(self.chip, generated_files_path)
 
         self.simulator_filename = \
-            compile_simulator(generated_files_path, "../nevresim/")
+            compile_simulator(generated_files_path, NevresimDriver.nevresim_path)
         
         if self.simulator_filename is None:
             raise Exception("Compilation failed.")
