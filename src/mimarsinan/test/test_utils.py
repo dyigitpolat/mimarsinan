@@ -137,8 +137,8 @@ def train_until_target_accuracy_with_weight_transformation (
         total = 0
         correct = 0
         for (x, y) in train_loader:
-            update_model(model_a, model_b)
             optimizer.zero_grad()
+            update_model(model_a, model_b)
             model_a.train()
             model_b.train()
             loss = model_b.loss(x, y)
