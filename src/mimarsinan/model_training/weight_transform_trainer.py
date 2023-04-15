@@ -23,11 +23,10 @@ class WeightTransformTrainer(BasicTrainer):
     def _backward_pass_on_loss(self, loss_function, x, y):
         self._update_and_transform_model()
         self.aux_model.train()
-        self.model.train()
-        loss = loss_function(self.model, x, y)
-        loss.backward()
-        self._transfer_gradients_to_aux()
 
+        loss = super()._backward_pass_on_loss(loss_function, x, y)
+
+        self._transfer_gradients_to_aux()
         return loss
     
     def _get_optimizer_and_scheduler(self, lr):
