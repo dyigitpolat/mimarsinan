@@ -6,11 +6,9 @@ from mimarsinan.transformations.weight_clipping import *
 from mimarsinan.transformations.chip_quantization import *
 from mimarsinan.visualization.hardcore_visualization import *
 
+
+from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
-
-
-import time
-import math
 
 mnist_patched_perceptron_test_clipping_rate = 0.01
 
@@ -32,6 +30,22 @@ def clip_and_quantize_model(model):
     clip_model_weights_and_decay(model)
     quantize_model(model)
 
+def clip_param(param_data):
+    clipper = SoftTensorClipping(mnist_patched_perceptron_test_clipping_rate)
+
+    out = clipper.get_clipped_weights(param_data)
+    out = special_decay(out)
+    return out
+
+def clip_and_quantize_param(param_data):
+    clipper = SoftTensorClipping(mnist_patched_perceptron_test_clipping_rate)
+    quantizer = TensorQuantization(bits=4)
+
+    out = clipper.get_clipped_weights(param_data)
+    out = special_decay(out)
+    out = quantizer.quantize(out)
+    return out
+
 def test_mnist_patched_perceptron():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -41,53 +55,36 @@ def test_mnist_patched_perceptron():
     simulation_length = 32
     batch_size = 2000
 
-    pretrain_epochs = 4
-    max_epochs = 10 * pretrain_epochs
+    pretrain_epochs = 5
+    max_epochs = pretrain_epochs
     Tq_start = 64
 
     perceptron_flow = PatchedPerceptronFlow(
         mnist_input_shape, mnist_output_size,
         240, 240, 7, 7, fc_depth=3)
+    
+    train_loader = get_mnist_data(batch_size)[0]
+    test_loader = get_mnist_data(50000)[1]
 
+    trainer = WeightTransformTrainer(
+        perceptron_flow, device, train_loader, test_loader, clip_param)
+    
     print("Pretraining model...")
     lr = 0.001
     perceptron_flow.set_activation(ClampedShiftReLU(0.5/Tq))
-    lr, prev_acc = train_until_target_accuracy_with_weight_transformation(
-        model=perceptron_flow,
-        device=device,
-        train_dataloader=get_mnist_data(batch_size)[0],
-        test_dataloader=get_mnist_data(50000)[1],
-        weight_transformation=clip_model_weights_and_decay,
-        max_epochs=pretrain_epochs,
-        lr=lr,
-        target_accuracy=1.0)
+    prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
 
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
-    train_until_target_accuracy_with_weight_transformation(
-        model=perceptron_flow, 
-        device=device,
-        train_dataloader=get_mnist_data(batch_size)[0],
-        test_dataloader=get_mnist_data(50000)[1],
-        weight_transformation=clip_and_quantize_model,
-        max_epochs=10,
-        lr=lr,
-        target_accuracy=prev_acc)
+    trainer.weight_transformation = clip_and_quantize_param
+    trainer.train_until_target_accuracy(lr, ppf_loss, max_epochs, prev_acc)
 
     print("Soft core mapping...")
     soft_core_mapping = SoftCoreMapping()
     soft_core_mapping.map(perceptron_flow.get_mapper_repr())
-
-    print("Core flow mapping...")
-    core_flow = CoreFlow(mnist_input_shape, soft_core_mapping)
-    core_flow.set_activation(CQ_Activation(Tq))
-
-    print("Testing with core flow...")
-    correct, total = test_on_mnist(core_flow, device)
-    print("  Correct:", correct, "Total:", total)
 
     print("Calculating soft core thresholds for hardcore mapping...")
     ChipQuantization(bits = 4).calculate_core_thresholds(soft_core_mapping.cores)
