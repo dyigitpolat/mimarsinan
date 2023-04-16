@@ -10,6 +10,8 @@ from mimarsinan.visualization.hardcore_visualization import *
 from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
 
+from mimarsinan.tuning.smooth_adaptation import *
+
 mnist_patched_perceptron_test_clipping_rate = 0.01
 
 def special_decay(w):
@@ -71,11 +73,25 @@ def test_mnist_patched_perceptron():
     
     print("Pretraining model...")
     lr = 0.001
+    def shift_adaptation(shift_amount):
+        perceptron_flow.set_activation(ClampedShiftReLU(shift_amount))
+        trainer.train_n_epochs(lr, ppf_loss, 2)
+    
+    print("Running adaptation cycles...")
+    BasicSmoothAdaptation(shift_adaptation).adapt_smoothly([(0, 0.5/Tq)], 5)
+
     perceptron_flow.set_activation(ClampedShiftReLU(0.5/Tq))
-    prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
+    prev_acc = trainer.train_n_epochs(lr, ppf_loss, 1)
 
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
+
+    def alpha_adaptation(alpha):
+        print("  Tuning model with soft CQ with alpha = {}...".format(alpha))
+        perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
+        trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
+    
+    BasicSmoothAdaptation(alpha_adaptation).adapt_smoothly([(0, 5)], 5)
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
