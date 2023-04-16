@@ -4,9 +4,8 @@ import numpy as np
 import math
 
 class HardCoreMappingVisualizer:
-    def __init__(self, mapping, title="HardCoreMappingVisualizer"):
+    def __init__(self, mapping):
         self.mapping = mapping
-        self.title = title
 
     def visualize(self, filename):
         rows = int(math.sqrt(len(self.mapping.cores)))
