@@ -210,6 +210,23 @@ class ClampedShiftReLU(nn.Module):
     def forward(self, x):
         return DifferentiableShiftClamp.apply(x, 0.0, 1.0, self.shift)
     
+class SmoothStaircaseFunction(Function):
+    @staticmethod
+    def forward(ctx, x, Tq, alpha):
+        h = 1.0 / Tq
+        w = 1.0 / Tq
+        a = torch.tensor(alpha)
+        output = h * (
+            0.5 * (1.0/torch.tanh(a/2)) * 
+            torch.tanh(a * ((x/w-torch.floor(x/w))-0.5)) + 
+            0.5 + torch.floor(x/w))
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_input = grad_output.clone()
+        return grad_input, None, None
+    
 class SmoothStaircase(nn.Module):
     def __init__(self, Tq, alpha):
         super(SmoothStaircase, self).__init__()
@@ -217,14 +234,7 @@ class SmoothStaircase(nn.Module):
         self.alpha = alpha
     
     def forward(self, x):
-        h = 1.0 / self.Tq
-        w = 1.0 / self.Tq
-        a = torch.tensor(self.alpha)
-        output = h * (
-            0.5 * (1.0/torch.tanh(a/2)) * 
-            torch.tanh(a * ((x/w-torch.floor(x/w))-0.5)) + 
-            0.5 + torch.floor(x/w))
-        return output
+        return SmoothStaircaseFunction.apply(x, self.Tq, self.alpha)
 
 class CQ_Activation_Soft(nn.Module):
     def __init__(self, Tq, alpha):
@@ -236,5 +246,5 @@ class CQ_Activation_Soft(nn.Module):
     def forward(self, x):
         out = x - 0.5/self.Tq
         out = self.staircase(out)
-        out = torch.clamp(out, 0.0, 1.0)
+        out = ClampedReLU()(out)
         return out
