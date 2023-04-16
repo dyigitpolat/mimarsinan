@@ -62,21 +62,6 @@ class SoftQuantize(nn.Module):
     def forward(self, x):
         return StaircaseFunction.apply(x, self.Tq)
     
-class LeakyClamp(nn.Module):
-    def __init__(self, leak):
-        super(LeakyClamp, self).__init__()
-        self.leak = 1.0 - leak
-    
-    def forward(self, x):
-        return nn.LeakyReLU()(
-            torch.where(
-                x < 0.0,
-                self.leak * x,
-                torch.where(
-                    x < 1.0,
-                    x,
-                    (1.0-self.leak) + self.leak * x)))
-    
 class DifferentiableClamp(Function):
     @staticmethod
     def forward(ctx, x, a, b):
@@ -98,7 +83,6 @@ class DifferentiableClamp(Function):
     
         grad_input = grad_output * grad
         return grad_input, None, None
-
 class CQ_Activation(nn.Module):
     def __init__(self, Tq):
         super(CQ_Activation, self).__init__()
@@ -109,72 +93,10 @@ class CQ_Activation(nn.Module):
         out = torch.clamp(x, 0.0, 1.0)
         out = self.soft_quantize(out)
         return out
-
-class CQ_Activation_Interpolated(nn.Module):
-    def __init__(self, Tq, i):
-        super(CQ_Activation_Interpolated, self).__init__()
-        self.Tq = Tq
-        self.soft_quantize = SoftQuantize(Tq)
-        self.i = i
-    
-    def forward(self, x):
-        out = torch.clamp(x, 0.0, 1.0)
-        out =  self.i * self.soft_quantize(out) + (1.0 - self.i) * (out - 0.5) / self.Tq
-        return out
-    
-class CQ_Activation_NoClamp(nn.Module):
-    def __init__(self, Tq):
-        super(CQ_Activation_NoClamp, self).__init__()
-        self.Tq = Tq
-        self.soft_quantize = SoftQuantize(Tq)
-    
-    def forward(self, x):
-        out = nn.LeakyReLU()(x)
-        out = self.soft_quantize(out)
-        return out
     
 class ClampedReLU(nn.Module):
     def forward(self, x):
         return DifferentiableClamp.apply(x, 0.0, 1.0)
-
-
-class DifferentiableShiftClamp(Function):
-    @staticmethod
-    def forward(ctx, x, a, b, shift):
-        a = torch.tensor(a)
-        b = torch.tensor(b)
-        shift = torch.tensor(shift)
-        ctx.save_for_backward(x, a, b, shift)
-        return torch.clamp(x - shift, a, b)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        x, a, b, shift = ctx.saved_tensors
-        left = a + shift
-        right = b + shift
-        grad = torch.where(
-            x < left,
-            torch.exp(x-left),
-            torch.where(
-                x < right,
-                1.0,
-                torch.exp(right-x)))
-    
-        grad_input = grad_output * grad
-        return grad_input, None, None, None
-    
-class Shifted_CQ_Activation(nn.Module):
-    def __init__(self, Tq, shift):
-        super(Shifted_CQ_Activation, self).__init__()
-        self.Tq = Tq
-        self.soft_quantize = SoftQuantize(Tq)
-        self.shift = shift
-    
-    def forward(self, x):
-        out = x - self.shift
-        out = torch.clamp(out, 0.0, 1.0)
-        out = self.soft_quantize(out)
-        return out
     
 class DifferentiableShiftClamp(Function):
     @staticmethod
