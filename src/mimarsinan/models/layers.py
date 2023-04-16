@@ -235,6 +235,6 @@ class CQ_Activation_Soft(nn.Module):
     
     def forward(self, x):
         out = x - 0.5/self.Tq
-        out = self.staircase(x)
-        out = torch.clamp(x, 0.0, 1.0)
+        out = self.staircase(out)
+        out = torch.clamp(out, 0.0, 1.0)
         return out
