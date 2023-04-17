@@ -9,7 +9,6 @@ from mimarsinan.visualization.hardcore_visualization import *
 
 from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
-
 from mimarsinan.tuning.smooth_adaptation import *
 
 mnist_patched_perceptron_test_clipping_rate = 0.01
@@ -57,7 +56,7 @@ def test_mnist_patched_perceptron():
     simulation_length = 32
     batch_size = 2000
 
-    pretrain_epochs = 5
+    pretrain_epochs = 20
     max_epochs = pretrain_epochs
     Tq_start = 64
 
@@ -73,31 +72,29 @@ def test_mnist_patched_perceptron():
     
     print("Pretraining model...")
     lr = 0.001
-    def shift_adaptation(shift_amount):
-        perceptron_flow.set_activation(ClampedShiftReLU(shift_amount))
-        trainer.train_n_epochs(lr, ppf_loss, 2)
-    
-    print("Running adaptation cycles...")
-    BasicSmoothAdaptation(shift_adaptation).adapt_smoothly([(0, 0.5/Tq)], 5)
-
-    perceptron_flow.set_activation(ClampedShiftReLU(0.5/Tq))
-    prev_acc = trainer.train_n_epochs(lr, ppf_loss, 1)
+    perceptron_flow.set_activation(ClampedReLU())
+    prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
 
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
-    def alpha_adaptation(alpha):
-        print("  Tuning model with soft CQ with alpha = {}...".format(alpha))
+    def alpha_and_Tq_adaptation(alpha, Tq):
+        print("  Tuning model with soft CQ with alpha = {} and Tq = {}...".format(alpha, Tq))
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
-        trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
+        trainer.weight_transformation = clip_and_quantize_param
+        trainer.train_until_target_accuracy(lr, ppf_loss, 4, prev_acc)
     
-    BasicSmoothAdaptation(alpha_adaptation).adapt_smoothly([(0, 5)], 5)
+    alpha_interpolator = BasicInterpolation(0, 15, curve = lambda x: x ** 2)
+    Tq_interpolator = BasicInterpolation(100, 4, curve = lambda x: x ** 0.5)
+    BasicSmoothAdaptation(alpha_and_Tq_adaptation).adapt_smoothly([
+        alpha_interpolator, Tq_interpolator], 30)
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
     trainer.weight_transformation = clip_and_quantize_param
     trainer.train_until_target_accuracy(lr, ppf_loss, max_epochs, prev_acc)
 
+    ######
     print("Soft core mapping...")
     soft_core_mapping = SoftCoreMapping()
     soft_core_mapping.map(perceptron_flow.get_mapper_repr())
