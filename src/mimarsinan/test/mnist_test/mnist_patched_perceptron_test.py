@@ -6,10 +6,13 @@ from mimarsinan.transformations.weight_clipping import *
 from mimarsinan.transformations.chip_quantization import *
 from mimarsinan.visualization.hardcore_visualization import *
 
-
+from mimarsinan.common.wandb_utils import *
 from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
 from mimarsinan.tuning.basic_smooth_adaptation import *
+
+
+import random
 
 mnist_patched_perceptron_test_clipping_rate = 0.01
 
@@ -63,21 +66,24 @@ def test_mnist_patched_perceptron():
     pretrain_epochs = 10
     max_epochs = pretrain_epochs
 
-
     perceptron_flow = PatchedPerceptronFlow(
         mnist_input_shape, mnist_output_size,
         240, 240, 7, 7, fc_depth=3)
     
     train_loader = get_mnist_data(batch_size)[0]
-    test_loader = get_mnist_data(50000)[1]
+    validation_loader = get_mnist_data(1000)[2]
+
+    reporter = WandB_Reporter("mnist_patched_perceptron_test", "experiment")
 
     trainer = WeightTransformTrainer(
-        perceptron_flow, device, train_loader, test_loader, decay_param)
+        perceptron_flow, device, train_loader, validation_loader, decay_param)
+    trainer.report_function = reporter.report
     
     print("Pretraining model...")
     lr = 0.001
     perceptron_flow.set_activation(ClampedReLU())
     prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
+    print(trainer.validate())
 
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
@@ -88,6 +94,8 @@ def test_mnist_patched_perceptron():
 
     def alpha_and_Tq_adaptation(alpha, Tq):
         print("  Tuning model with soft CQ with alpha = {} and Tq = {}...".format(alpha, Tq))
+        reporter.report("alpha", alpha)
+        reporter.report("Tq", Tq)
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
         trainer.weight_transformation = decay_and_quantize_param
         trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
@@ -121,7 +129,7 @@ def test_mnist_patched_perceptron():
     core_flow.set_activation(CQ_Activation(Tq))
 
     print("Testing with core flow...")
-    correct, total = test_on_mnist(core_flow, device)
+    correct, total = trainer.validate(core_flow, device)
     print("  Correct:", correct, "Total:", total)
 
     print("Quantizing hard core mapping...")
@@ -136,7 +144,7 @@ def test_mnist_patched_perceptron():
     ######
     mnist_input_size = 28*28
     generated_files_path = "../generated/mnist/"
-    _, test_loader = get_mnist_data(1)
+    test_loader = get_mnist_data(1)[1]
 
     print("Calculating delay for hard core mapping...")
     delay = ChipLatency(hard_core_mapping).calculate()
@@ -155,7 +163,6 @@ def test_mnist_patched_perceptron():
         simulation_steps)
 
     print("Evaluating simulator output...")
-    _, test_loader = get_mnist_data(1)
     accuracy = evaluate_chip_output(predictions, test_loader, verbose=True)
     print("SNN accuracy on MNIST is:", accuracy*100, "%")
 
