@@ -90,7 +90,7 @@ class CQ_Activation(nn.Module):
         self.soft_quantize = SoftQuantize(Tq)
     
     def forward(self, x):
-        out = torch.clamp(x, 0.0, 1.0)
+        out = ClampedReLU()(x)
         out = self.soft_quantize(out)
         return out
     
