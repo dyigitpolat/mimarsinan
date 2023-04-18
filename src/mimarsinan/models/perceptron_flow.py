@@ -230,10 +230,9 @@ def statistical_consistency_loss(indicators):
 def get_parameter_stats(parameter_list):
     param_means = []
     param_vars = []
-    for layer in parameter_list:
-        for param in layer.parameters():
-            param_means.append(param.mean())
-            param_vars.append(param.var())
+    for param in parameter_list:
+        param_means.append(param.mean())
+        param_vars.append(param.var())
     param_means = torch.stack(param_means)
     param_vars = torch.stack(param_vars)
     return param_means, param_vars
@@ -242,13 +241,9 @@ def ppf_loss(ppf_model, x, y):
     stats = {}
     out = ppf_model(x, stats)
 
-    param_means, param_vars = get_parameter_stats(ppf_model.fc_layers)
+    param_means, param_vars = get_parameter_stats(ppf_model.parameters())
     param_mean_error = statistical_consistency_loss(param_means)
     param_var_error = statistical_consistency_loss(param_vars)
-
-    param_means_patch, param_vars_patch = get_parameter_stats(ppf_model.patch_layers)
-    param_mean_error_patch = statistical_consistency_loss(param_means_patch)
-    param_var_error_patch = statistical_consistency_loss(param_vars_patch)
 
     mean_fc_error = statistical_consistency_loss(stats["means_fc"])
     var_fc_error = statistical_consistency_loss(stats["vars_fc"])
@@ -262,8 +257,7 @@ def ppf_loss(ppf_model, x, y):
     
     parameter_consistency_error = \
         torch.sqrt(torch.mean(torch.stack([
-            param_mean_error, param_var_error,
-            param_mean_error_patch, param_var_error_patch]) ** 2))
+            param_mean_error, param_var_error]) ** 2))
     
     return nn.CrossEntropyLoss()(out, y) * (activation_consistency_error + parameter_consistency_error)
     
