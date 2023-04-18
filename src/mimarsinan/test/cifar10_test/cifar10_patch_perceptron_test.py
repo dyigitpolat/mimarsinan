@@ -8,7 +8,7 @@ from mimarsinan.visualization.hardcore_visualization import *
 
 from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
-from mimarsinan.tuning.smooth_adaptation import *
+from mimarsinan.tuning.basic_smooth_adaptation import *
 
 cifar10_patched_perceptron_test_clipping_rate = 0.01
 

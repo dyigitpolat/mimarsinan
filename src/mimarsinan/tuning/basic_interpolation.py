@@ -6,3 +6,4 @@ class BasicInterpolation:
 
     def __call__(self, t):
         return self.curve(t) * (self.end - self.start) + self.start
+    
