@@ -40,7 +40,7 @@ def test_mnist():
 
     quantizer = ChipQuantization(bits = 4)
 
-    _, test_loader = get_mnist_data(1)
+    _, test_loader, _ = get_mnist_data(1)
 
     ann_model = SimpleMLP(
         inner_mlp_width, 
@@ -161,7 +161,7 @@ def test_mnist():
     print("Simulation time:", end_time - start_time)
 
     print("Evaluating simulator output...")
-    _, test_loader = get_mnist_data(1)
+    _, test_loader, _ = get_mnist_data(1)
     accuracy = evaluate_chip_output(chip_output, test_loader, mnist_output_size, verbose=True)
     print("SNN accuracy on MNIST is:", accuracy*100, "%")
 
