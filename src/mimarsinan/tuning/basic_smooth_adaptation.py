@@ -8,4 +8,3 @@ class BasicSmoothAdaptation:
         for cycle in range(cycles):
             t = (cycle + 1) / cycles
             self.adaptation_function(*[i(t) for i in interpolators])
-        

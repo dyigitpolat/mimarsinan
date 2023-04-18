@@ -9,12 +9,12 @@ from mimarsinan.visualization.hardcore_visualization import *
 
 from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
-from mimarsinan.tuning.smooth_adaptation import *
+from mimarsinan.tuning.basic_smooth_adaptation import *
 
 mnist_patched_perceptron_test_clipping_rate = 0.01
 
 def special_decay(w):
-    return torch.sin(torch.arctan(w))
+    return torch.clamp(w, -1, 1)
 
 def clip_model_weights_and_decay(model):
     clipper = SoftTensorClipping(mnist_patched_perceptron_test_clipping_rate)
@@ -31,14 +31,18 @@ def clip_and_quantize_model(model):
     clip_model_weights_and_decay(model)
     quantize_model(model)
 
-def clip_param(param_data):
-    clipper = SoftTensorClipping(mnist_patched_perceptron_test_clipping_rate)
-
-    out = clipper.get_clipped_weights(param_data)
-    out = special_decay(out)
+def decay_param(param_data):
+    out = special_decay(param_data)
     return out
 
-def clip_and_quantize_param(param_data):
+def decay_and_quantize_param(param_data):
+    quantizer = TensorQuantization(bits=4)
+
+    out = special_decay(param_data)
+    out = quantizer.quantize(out)
+    return out
+
+def clip_decay_and_quantize_param(param_data):
     clipper = SoftTensorClipping(mnist_patched_perceptron_test_clipping_rate)
     quantizer = TensorQuantization(bits=4)
 
@@ -56,9 +60,9 @@ def test_mnist_patched_perceptron():
     simulation_length = 32
     batch_size = 2000
 
-    pretrain_epochs = 20
+    pretrain_epochs = 10
     max_epochs = pretrain_epochs
-    Tq_start = 64
+
 
     perceptron_flow = PatchedPerceptronFlow(
         mnist_input_shape, mnist_output_size,
@@ -68,7 +72,7 @@ def test_mnist_patched_perceptron():
     test_loader = get_mnist_data(50000)[1]
 
     trainer = WeightTransformTrainer(
-        perceptron_flow, device, train_loader, test_loader, clip_param)
+        perceptron_flow, device, train_loader, test_loader, decay_param)
     
     print("Pretraining model...")
     lr = 0.001
@@ -78,20 +82,24 @@ def test_mnist_patched_perceptron():
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
+    print("Sanity check...")
+    trainer.weight_transformation = lambda x: x
+    trainer.train_n_epochs(lr=0.0, loss_function=ppf_loss, epochs=1)
+
     def alpha_and_Tq_adaptation(alpha, Tq):
         print("  Tuning model with soft CQ with alpha = {} and Tq = {}...".format(alpha, Tq))
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
-        trainer.weight_transformation = clip_and_quantize_param
-        trainer.train_until_target_accuracy(lr, ppf_loss, 4, prev_acc)
+        trainer.weight_transformation = decay_and_quantize_param
+        trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
     
     alpha_interpolator = BasicInterpolation(0, 15, curve = lambda x: x ** 2)
     Tq_interpolator = BasicInterpolation(100, 4, curve = lambda x: x ** 0.5)
     BasicSmoothAdaptation(alpha_and_Tq_adaptation).adapt_smoothly([
-        alpha_interpolator, Tq_interpolator], 30)
+        alpha_interpolator, Tq_interpolator], 10)
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
-    trainer.weight_transformation = clip_and_quantize_param
+    trainer.weight_transformation = clip_decay_and_quantize_param
     trainer.train_until_target_accuracy(lr, ppf_loss, max_epochs, prev_acc)
 
     ######
