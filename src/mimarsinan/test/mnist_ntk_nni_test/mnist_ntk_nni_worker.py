@@ -30,7 +30,7 @@ def mnist_ntk_nni_worker():
         mnist_input_size, 
         mnist_output_size)
 
-    train_loader, _ = get_mnist_data(200)
+    train_loader, _, _ = get_mnist_data(200)
     ntk = get_ntk(ann_model, train_loader)
     print(f"NTK:{ntk}")
 

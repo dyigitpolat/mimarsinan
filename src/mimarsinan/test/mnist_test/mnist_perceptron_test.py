@@ -13,7 +13,7 @@ import time
 
 mnist_perceptron_test_clipping_rate = 0.01
 
-def clip_model_weights(model, clipping_rate=mnist_perceptron_test_clipping_rate):
+def clip_model_weights_and_decay(model, clipping_rate=mnist_perceptron_test_clipping_rate):
     clipper = SoftTensorClipping(clipping_rate)
     for param in model.parameters():
         param.data = clipper.get_clipped_weights(param.data)
@@ -24,7 +24,7 @@ def quantize_model(model, bits=4):
         param.data = quantizer.quantize(param.data)
 
 def clip_and_quantize_model(model, bits=4, clipping_rate=mnist_perceptron_test_clipping_rate):
-    clip_model_weights(model, clipping_rate)
+    clip_model_weights_and_decay(model, clipping_rate)
     quantize_model(model, bits)
 
 def test_mnist_perceptron():
@@ -68,7 +68,7 @@ def test_mnist_perceptron():
             device=device,
             train_dataloader=get_mnist_data(5000)[0],
             test_dataloader=get_mnist_data(50000)[1],
-            weight_transformation=clip_model_weights,
+            weight_transformation=clip_model_weights_and_decay,
             epochs=cycle_epochs,
             lr=lr)
         lr = lr * 0.9
@@ -81,7 +81,7 @@ def test_mnist_perceptron():
             device=device,
             train_dataloader=get_mnist_data(5000)[0],
             test_dataloader=get_mnist_data(50000)[1],
-            weight_transformation=clip_model_weights,
+            weight_transformation=clip_model_weights_and_decay,
             epochs=cq_only_epochs,
             lr=lr)
 
@@ -141,7 +141,7 @@ def test_mnist_perceptron():
     mnist_input_size = 28*28
     generated_files_path = "../generated/mnist/"
     input_count = 10000
-    _, test_loader = get_mnist_data(1)
+    _, test_loader, _ = get_mnist_data(1)
 
     print("Calculating delay for hard core mapping...")
     print(f"delay: {ChipLatency(hard_core_mapping).calculate()}")
@@ -179,7 +179,7 @@ def test_mnist_perceptron():
     print("Simulation time:", end_time - start_time)
 
     print("Evaluating simulator output...")
-    _, test_loader = get_mnist_data(1)
+    _, test_loader, _ = get_mnist_data(1)
     accuracy = evaluate_chip_output(chip_output, test_loader, mnist_output_size, verbose=True)
     print("SNN accuracy on MNIST is:", accuracy*100, "%")
 
