@@ -6,53 +6,38 @@ from mimarsinan.transformations.weight_clipping import *
 from mimarsinan.transformations.chip_quantization import *
 from mimarsinan.visualization.hardcore_visualization import *
 
+from mimarsinan.common.wandb_utils import *
 from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
-from mimarsinan.tuning.basic_smooth_adaptation import *
+
+from mimarsinan.tuning.smart_smooth_adaptation import *
+from mimarsinan.tuning.basic_interpolation import *
+
 
 cifar10_patched_perceptron_test_clipping_rate = 0.01
 
-def clip_model_weights_and_decay(model):
-    clipper = SoftTensorClipping(cifar10_patched_perceptron_test_clipping_rate)
-    for param in model.parameters():
-        param.data = clipper.get_clipped_weights(param.data)
-        param.data = torch.sin(torch.arctan(param.data))
+def special_decay(w):
+    return torch.clamp(w, -1, 1)
 
-def quantize_model(model):
-    quantizer = TensorQuantization(bits = 4)
-    for param in model.parameters():
-        param.data = quantizer.quantize(param.data)
-
-def clip_and_quantize_model(model):
-    clip_model_weights_and_decay(model)
-    quantize_model(model)
-
-def generate_clip_quantize(bits):
-    def clip_quantize(model):
-        clipper = SoftTensorClipping(cifar10_patched_perceptron_test_clipping_rate)
-        quantizer = TensorQuantization(bits = bits)
-        for param in model.parameters():
-            param.data = clipper.get_clipped_weights(param.data)
-            param.data = torch.sin(torch.arctan(param.data))
-            param.data = quantizer.quantize(param.data)
-    return clip_quantize
-
-def clip_param(param_data):
-    clipper = SoftTensorClipping(cifar10_patched_perceptron_test_clipping_rate)
-
-    out = clipper.get_clipped_weights(param_data)
-    out = torch.sin(torch.arctan(out))
+def decay_param(param_data):
+    out = special_decay(param_data)
     return out
 
-def clip_and_quantize_param(param_data):
+def decay_and_quantize_param(param_data):
+    quantizer = TensorQuantization(bits=4)
+
+    out = special_decay(param_data)
+    out = quantizer.quantize(out)
+    return out
+
+def clip_decay_and_quantize_param(param_data):
     clipper = SoftTensorClipping(cifar10_patched_perceptron_test_clipping_rate)
     quantizer = TensorQuantization(bits=4)
 
     out = clipper.get_clipped_weights(param_data)
-    out = torch.sin(torch.arctan(out))
+    out = special_decay(out)
     out = quantizer.quantize(out)
     return out
-
 
 def test_cifar10_patched_perceptron():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -72,34 +57,61 @@ def test_cifar10_patched_perceptron():
         192, 256, 8, 8, fc_depth=3)
     
     train_loader = get_cifar10_data(batch_size)[0]
-    test_loader = get_cifar10_data(50000)[1]
+    test_loader = get_cifar10_data(10000)[1]
+    validation_loader = get_cifar10_data(1000)[2]
+
+    reporter = WandB_Reporter("cifar10_patched_perceptron_test", "experiment")
 
     trainer = WeightTransformTrainer(
-        perceptron_flow, device, train_loader, test_loader, clip_param)
-
+        perceptron_flow, device, train_loader, validation_loader, decay_param)
+    trainer.report_function = reporter.report
+    
     print("Pretraining model...")
     lr = 0.001
-
     perceptron_flow.set_activation(ClampedReLU())
     prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
+    print(trainer.validate())
 
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
+    print("Wake up after fuse...")
+    trainer.train_until_target_accuracy(lr, ppf_loss, pretrain_epochs, prev_acc)
+    print(trainer.validate())
+
+    def evaluate_model(alpha, Tq):
+        perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
+        return trainer.validate_train()
+    
+    def clone_state():
+        return perceptron_flow.state_dict()
+    
+    def restore_state(state):
+        perceptron_flow.load_state_dict(state)
+
     def alpha_and_Tq_adaptation(alpha, Tq):
         print("  Tuning model with soft CQ with alpha = {} and Tq = {}...".format(alpha, Tq))
+        reporter.report("alpha", alpha)
+        reporter.report("Tq", Tq)
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
-        trainer.weight_transformation = clip_and_quantize_param
+        trainer.weight_transformation = decay_and_quantize_param
         trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
     
-    alpha_interpolator = BasicInterpolation(0, 15, curve = lambda x: x ** 2)
+    alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 2)
     Tq_interpolator = BasicInterpolation(100, 4, curve = lambda x: x ** 0.5)
-    BasicSmoothAdaptation(alpha_and_Tq_adaptation).adapt_smoothly([
-        alpha_interpolator, Tq_interpolator], 30)
+
+    SmartSmoothAdaptation (
+        alpha_and_Tq_adaptation,
+        clone_state,
+        restore_state,
+        evaluate_model
+    ).adapt_smoothly(
+        interpolators=[alpha_interpolator, Tq_interpolator], 
+        max_cycles=30)
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
-    trainer.weight_transformation = clip_and_quantize_param
+    trainer.weight_transformation = clip_decay_and_quantize_param
     trainer.train_until_target_accuracy(lr, ppf_loss, max_epochs, prev_acc)
 
     print("Soft core mapping...")
@@ -120,8 +132,9 @@ def test_cifar10_patched_perceptron():
     core_flow.set_activation(CQ_Activation(Tq))
 
     print("Testing with core flow...")
-    correct, total = test_on_cifar10(core_flow, device)
-    print("  Correct:", correct, "Total:", total)
+    core_flow_trainer = WeightTransformTrainer(
+        core_flow, device, train_loader, test_loader, decay_and_quantize_param)
+    print("  Core flow accuracy:", core_flow_trainer.validate())
 
     print("Quantizing hard core mapping...")
     scale = ChipQuantization(bits = 4).quantize(hard_core_mapping.cores)
