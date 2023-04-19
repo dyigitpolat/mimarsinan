@@ -58,15 +58,18 @@ class BasicTrainer:
                 total += float(y.size(0))
                 correct += float(predicted.eq(y).sum().item())
                 break
-        
-        self._report("Validation accuracy", correct / total)
+            
         return correct / total
     
     def validate(self):
-        return self._validate_on_loader(self.validation_loader)
+        acc = self._validate_on_loader(self.validation_loader)
+        self._report("Validation accuracy", acc)
+        return acc
     
     def validate_train(self):
-        return self._validate_on_loader(self.train_loader)
+        acc = self._validate_on_loader(self.train_loader)
+        self._report("Validation accuracy on train set", acc)
+        return acc
     
     def train_n_epochs(self, lr, loss_function, epochs):
         return self.train_until_target_accuracy(lr, loss_function, epochs, 1.0)
