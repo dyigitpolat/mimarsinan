@@ -97,8 +97,8 @@ def test_cifar10_patched_perceptron():
         trainer.weight_transformation = decay_and_quantize_param
         trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
     
-    alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 2)
-    Tq_interpolator = BasicInterpolation(100, 4, curve = lambda x: x ** 0.5)
+    alpha_interpolator = BasicInterpolation(0.1, 50, curve = lambda x: x ** 2)
+    Tq_interpolator = BasicInterpolation(100, 2, curve = lambda x: x ** 0.5)
 
     SmartSmoothAdaptation (
         alpha_and_Tq_adaptation,
@@ -107,7 +107,7 @@ def test_cifar10_patched_perceptron():
         evaluate_model
     ).adapt_smoothly(
         interpolators=[alpha_interpolator, Tq_interpolator], 
-        max_cycles=30)
+        max_cycles=50)
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
@@ -167,7 +167,6 @@ def test_cifar10_patched_perceptron():
         simulation_steps)
 
     print("Evaluating simulator output...")
-    _, test_loader = get_cifar10_data(1)
     accuracy = evaluate_chip_output(predictions, test_loader, verbose=True)
     print("SNN accuracy on cifar10 is:", accuracy*100, "%")
 
