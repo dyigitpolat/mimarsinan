@@ -13,13 +13,16 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
         self.tolerance = 0.01
         self.step_epsilon = 0.0001
 
+    def _lower_bound(self, t, interpolators):
+        prev_metric = self.evaluation_function(*[i(t) for i in interpolators])
+        return prev_metric * (1 - self.tolerance)
+
     def _find_step_size(self, t, interpolators):
         step_size = (1 - t)
         state = self.state_clone_function()
-        prev_metric = self.evaluation_function(*[i(t) for i in interpolators])
 
         current_metric = 0
-        lower_bound = prev_metric * (1 - self.tolerance)
+        lower_bound = self._lower_bound(t, interpolators)
         while current_metric < lower_bound and step_size > self.step_epsilon:
             print("step_size: ", step_size)
             next_t = t + step_size
@@ -30,7 +33,6 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
                 step_size /= 2
 
         print("current_metric: ", current_metric)
-        print("prev_metric: ", prev_metric)
         return step_size
 
     def adapt_smoothly(self, interpolators, max_cycles):
