@@ -9,7 +9,9 @@ from mimarsinan.visualization.hardcore_visualization import *
 from mimarsinan.common.wandb_utils import *
 from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
-from mimarsinan.tuning.basic_smooth_adaptation import *
+
+from mimarsinan.tuning.basic_interpolation import *
+from mimarsinan.tuning.smart_smooth_adaptation import *
 
 
 import random
@@ -18,21 +20,6 @@ mnist_patched_perceptron_test_clipping_rate = 0.01
 
 def special_decay(w):
     return torch.clamp(w, -1, 1)
-
-def clip_model_weights_and_decay(model):
-    clipper = SoftTensorClipping(mnist_patched_perceptron_test_clipping_rate)
-    for param in model.parameters():
-        param.data = clipper.get_clipped_weights(param.data)
-        param.data = special_decay(param.data)
-
-def quantize_model(model):
-    quantizer = TensorQuantization(bits=4)
-    for param in model.parameters():
-        param.data = quantizer.quantize(param.data)
-
-def clip_and_quantize_model(model):
-    clip_model_weights_and_decay(model)
-    quantize_model(model)
 
 def decay_param(param_data):
     out = special_decay(param_data)
@@ -63,7 +50,7 @@ def test_mnist_patched_perceptron():
     simulation_length = 32
     batch_size = 2000
 
-    pretrain_epochs = 10
+    pretrain_epochs = 5
     max_epochs = pretrain_epochs
 
     perceptron_flow = PatchedPerceptronFlow(
@@ -71,6 +58,7 @@ def test_mnist_patched_perceptron():
         240, 240, 7, 7, fc_depth=3)
     
     train_loader = get_mnist_data(batch_size)[0]
+    test_loader = get_mnist_data(10000)[1]
     validation_loader = get_mnist_data(1000)[2]
 
     reporter = WandB_Reporter("mnist_patched_perceptron_test", "experiment")
@@ -88,9 +76,19 @@ def test_mnist_patched_perceptron():
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
-    print("Sanity check...")
-    trainer.weight_transformation = lambda x: x
-    trainer.train_n_epochs(lr=0.0, loss_function=ppf_loss, epochs=1)
+    print("Wake up after fuse...")
+    trainer.train_until_target_accuracy(lr, ppf_loss, pretrain_epochs, prev_acc)
+    print(trainer.validate())
+
+    def evaluate_model(alpha, Tq):
+        perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
+        return trainer.validate_train()
+    
+    def clone_state():
+        return perceptron_flow.state_dict()
+    
+    def restore_state(state):
+        perceptron_flow.load_state_dict(state)
 
     def alpha_and_Tq_adaptation(alpha, Tq):
         print("  Tuning model with soft CQ with alpha = {} and Tq = {}...".format(alpha, Tq))
@@ -100,10 +98,17 @@ def test_mnist_patched_perceptron():
         trainer.weight_transformation = decay_and_quantize_param
         trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
     
-    alpha_interpolator = BasicInterpolation(0, 15, curve = lambda x: x ** 2)
+    alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 2)
     Tq_interpolator = BasicInterpolation(100, 4, curve = lambda x: x ** 0.5)
-    BasicSmoothAdaptation(alpha_and_Tq_adaptation).adapt_smoothly([
-        alpha_interpolator, Tq_interpolator], 10)
+
+    SmartSmoothAdaptation (
+        alpha_and_Tq_adaptation,
+        clone_state,
+        restore_state,
+        evaluate_model
+    ).adapt_smoothly(
+        interpolators=[alpha_interpolator, Tq_interpolator], 
+        max_cycles=30)
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
@@ -129,8 +134,9 @@ def test_mnist_patched_perceptron():
     core_flow.set_activation(CQ_Activation(Tq))
 
     print("Testing with core flow...")
-    correct, total = trainer.validate(core_flow, device)
-    print("  Correct:", correct, "Total:", total)
+    core_flow_trainer = WeightTransformTrainer(
+        core_flow, device, train_loader, test_loader, decay_and_quantize_param)
+    print("  Core flow accuracy:", core_flow_trainer.validate())
 
     print("Quantizing hard core mapping...")
     scale = ChipQuantization(bits = 4).quantize(hard_core_mapping.cores)
