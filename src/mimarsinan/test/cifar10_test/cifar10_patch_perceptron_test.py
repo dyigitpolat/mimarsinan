@@ -148,7 +148,7 @@ def test_cifar10_patched_perceptron():
     ######
     cifar10_input_size = 3*32*32
     generated_files_path = "../generated/cifar10/"
-    _, test_loader = get_cifar10_data(1)
+    test_loader = get_cifar10_data(1)[1]
 
     print("Calculating delay for hard core mapping...")
     delay = ChipLatency(hard_core_mapping).calculate()
