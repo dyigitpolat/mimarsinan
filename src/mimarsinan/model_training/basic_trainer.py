@@ -9,10 +9,11 @@ class BasicTrainer:
         self.device = device
         self.train_loader = train_loader
         self.validation_loader = validation_loader
-        self.report_function = lambda name, value: print(f"    {name}: {value}")
+        self.report_function = None
 
     def _report(self, metric_name, metric_value):
-        self.report_function(metric_name, metric_value)
+        if self.report_function is not None:
+            self.report_function(metric_name, metric_value)
 
     def _get_optimizer_and_scheduler(self, lr):
         optimizer = torch.optim.Adam(self.model.parameters(), lr = lr)
@@ -47,11 +48,11 @@ class BasicTrainer:
         scheduler.step(loss)
         return tracker.get_accuracy()
     
-    def validate(self):
+    def _validate_on_loader(self, loader):
         total = 0
         correct = 0
         with torch.no_grad():
-            for (x, y) in self.validation_loader:
+            for (x, y) in loader:
                 self.model.eval()
                 _, predicted = self.model(x).max(1)
                 total += float(y.size(0))
@@ -60,6 +61,12 @@ class BasicTrainer:
         
         self._report("Validation accuracy", correct / total)
         return correct / total
+    
+    def validate(self):
+        return self._validate_on_loader(self.validation_loader)
+    
+    def validate_train(self):
+        return self._validate_on_loader(self.train_loader)
     
     def train_n_epochs(self, lr, loss_function, epochs):
         return self.train_until_target_accuracy(lr, loss_function, epochs, 1.0)
