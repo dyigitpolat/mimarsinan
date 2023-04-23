@@ -11,6 +11,8 @@ a pipeline for ***m***odeling ***i***n-***m***emory ***ar***chitectures for
     - einops
     - wandb
     - warmup_scheduler
+    - wfdb
+    
 - nevresim
 - g++ 11
 
