@@ -13,7 +13,7 @@ class WeightTransformTrainer(BasicTrainer):
 
     def _update_and_transform_model(self):
         for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
-            param.data[:] = self.weight_transformation(aux_param.data[:])
+            param.data[:] = self.weight_transformation(aux_param.data[:]).to(self.device)
 
     def _transfer_gradients_to_aux(self):
         for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
@@ -38,7 +38,7 @@ class WeightTransformTrainer(BasicTrainer):
         return optimizer, scheduler
     
     def train_until_target_accuracy(self, lr, loss_function, max_epochs, target_accuracy):
-        self.aux_model = copy.deepcopy(self.model)
+        self.aux_model = copy.deepcopy(self.model).to(self.device)
         accuracy = super().train_until_target_accuracy(lr, loss_function, max_epochs, target_accuracy)
         return accuracy
 

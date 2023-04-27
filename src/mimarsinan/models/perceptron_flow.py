@@ -202,7 +202,7 @@ class PatchedPerceptronFlow(nn.Module):
             p1=self.patch_height, p2=self.patch_width)
         
         means_patch, vars_patch = [], []
-        out_tensor = torch.zeros((x.shape[0], self.features))
+        out_tensor = torch.zeros((x.shape[0], self.features), device=x.device)
         for idx in range(self.patch_count):
             length = self.patch_channels
             out_tensor[:, idx*length:(idx+1)*length] = self.patch_layers[idx](out[:,idx])

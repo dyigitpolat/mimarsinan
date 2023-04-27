@@ -1,11 +1,12 @@
 from mimarsinan.model_training.training_utilities import AccuracyTracker
+from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 
 import torch
 
 class BasicTrainer:
     def __init__(
             self, model, device, train_loader, validation_loader):
-        self.model = model
+        self.model = model.to(device)
         self.device = device
         self.train_loader = train_loader
         self.validation_loader = validation_loader
@@ -39,6 +40,8 @@ class BasicTrainer:
         tracker = AccuracyTracker()
         loss = None
         for (x, y) in self.train_loader:
+            x, y = x.to(self.device), y.to(self.device)
+
             hook_handle = self.model.register_forward_hook(tracker.create_hook(y))
             loss = self._optimize(loss_function, x, y, optimizer)
             hook_handle.remove()
@@ -48,11 +51,21 @@ class BasicTrainer:
         scheduler.step(loss)
         return tracker.get_accuracy()
     
+    def _train_one_step(self, loss_function, lr):
+        optimizer, _ = self._get_optimizer_and_scheduler(lr)
+        for (x, y) in self.train_loader:
+            x, y = x.to(self.device), y.to(self.device)
+            
+            self._optimize(loss_function, x, y, optimizer)
+            break
+    
     def _validate_on_loader(self, loader):
         total = 0
         correct = 0
         with torch.no_grad():
             for (x, y) in loader:
+                x, y = x.to(self.device), y.to(self.device)
+
                 self.model.eval()
                 _, predicted = self.model(x).max(1)
                 total += float(y.size(0))
@@ -75,7 +88,13 @@ class BasicTrainer:
         return self.train_until_target_accuracy(lr, loss_function, epochs, 1.0)
 
     def train_until_target_accuracy(self, lr, loss_function, max_epochs, target_accuracy):
-        optimizer, scheduler = self._get_optimizer_and_scheduler(lr)
+        tuned_lr = LearningRateExplorer(
+            training_function=lambda lr_: self._train_one_step(loss_function, lr_),
+            evaluation_function=self.validate_train,
+            model=self.model,
+            max_lr=lr).find_lr_for_tuning()
+        
+        optimizer, scheduler = self._get_optimizer_and_scheduler(tuned_lr)
 
         training_accuracy = 0
         for _ in range(max_epochs):
