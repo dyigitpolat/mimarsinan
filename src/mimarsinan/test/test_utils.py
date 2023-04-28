@@ -12,12 +12,12 @@ def chip_output_to_predictions(chip_output, number_of_classes):
     return predictions
 
 def evaluate_chip_output(
-    predictions, test_loader, verbose = False):
+    predictions, test_loader, num_classes, verbose = False):
     targets = np.array([y.item() for (_, y) in test_loader], dtype=int)
 
     if verbose:
 
-        confusion_matrix = np.array([[0 for i in range(10)] for j in range(10)])
+        confusion_matrix = np.array([[0 for i in range(num_classes)] for j in range(num_classes)])
         for (y, p) in zip(targets, predictions):
             confusion_matrix[y.item()][p] += 1
         print("Confusion matrix:")

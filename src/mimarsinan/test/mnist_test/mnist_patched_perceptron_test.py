@@ -11,7 +11,8 @@ from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
 
 from mimarsinan.tuning.basic_interpolation import *
-from mimarsinan.tuning.smart_smooth_adaptation import *
+from mimarsinan.tuning.basic_smooth_adaptation import *
+from mimarsinan.tuning.learning_rate_explorer import *
 
 
 import random
@@ -50,12 +51,12 @@ def test_mnist_patched_perceptron():
     simulation_length = 32
     batch_size = 2000
 
-    pretrain_epochs = 5
+    pretrain_epochs = 15
     max_epochs = pretrain_epochs
 
     perceptron_flow = PatchedPerceptronFlow(
         mnist_input_shape, mnist_output_size,
-        240, 240, 7, 7, fc_depth=3)
+        240, 240, 7, 7, fc_depth=2)
     
     train_loader = get_mnist_data(batch_size)[0]
     test_loader = get_mnist_data(10000)[1]
@@ -73,13 +74,6 @@ def test_mnist_patched_perceptron():
     prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
     print(trainer.validate())
 
-    print("Fusing normalization...")
-    perceptron_flow.fuse_normalization()
-
-    print("Wake up after fuse...")
-    trainer.train_until_target_accuracy(lr, ppf_loss, pretrain_epochs, prev_acc)
-    print(trainer.validate())
-
     def evaluate_model(alpha, Tq):
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
         return trainer.validate_train()
@@ -91,24 +85,30 @@ def test_mnist_patched_perceptron():
         perceptron_flow.load_state_dict(state)
 
     def alpha_and_Tq_adaptation(alpha, Tq):
+        nonlocal prev_acc
         print("  Tuning model with soft CQ with alpha = {} and Tq = {}...".format(alpha, Tq))
         reporter.report("alpha", alpha)
         reporter.report("Tq", Tq)
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
-        trainer.weight_transformation = decay_and_quantize_param
-        trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
+        trainer.weight_transformation = decay_param
+        acc = trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
+        prev_acc = max(prev_acc, acc)
     
     alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 2)
-    Tq_interpolator = BasicInterpolation(100, 4, curve = lambda x: x ** 0.5)
+    Tq_interpolator = BasicInterpolation(100, 2, curve = lambda x: x ** 0.2)
 
-    SmartSmoothAdaptation (
-        alpha_and_Tq_adaptation,
-        clone_state,
-        restore_state,
-        evaluate_model
+    BasicSmoothAdaptation (
+        alpha_and_Tq_adaptation
     ).adapt_smoothly(
         interpolators=[alpha_interpolator, Tq_interpolator], 
-        max_cycles=30)
+        cycles=10)
+
+    print("Fusing normalization...")
+    perceptron_flow.fuse_normalization()
+
+    print("Wake up after fuse...")
+    trainer.train_until_target_accuracy(lr, ppf_loss, pretrain_epochs, prev_acc)
+    print(trainer.validate())
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
@@ -169,7 +169,7 @@ def test_mnist_patched_perceptron():
         simulation_steps)
 
     print("Evaluating simulator output...")
-    accuracy = evaluate_chip_output(predictions, test_loader, verbose=True)
+    accuracy = evaluate_chip_output(predictions, test_loader, mnist_output_size, verbose=True)
     print("SNN accuracy on MNIST is:", accuracy*100, "%")
 
     print("MNIST perceptron test done.")

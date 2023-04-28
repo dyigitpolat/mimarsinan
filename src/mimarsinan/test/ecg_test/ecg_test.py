@@ -162,7 +162,7 @@ def test_ecg_patched_perceptron():
         simulation_steps)
 
     print("Evaluating simulator output...")
-    accuracy = evaluate_chip_output(predictions, test_loader, verbose=True)
+    accuracy = evaluate_chip_output(predictions, test_loader, ecg_output_size, verbose=True)
     print("SNN accuracy on ECG is:", accuracy*100, "%")
 
     print("ECG perceptron test done.")

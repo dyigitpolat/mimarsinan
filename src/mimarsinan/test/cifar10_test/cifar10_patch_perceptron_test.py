@@ -10,7 +10,7 @@ from mimarsinan.common.wandb_utils import *
 from mimarsinan.model_training.weight_transform_trainer import *
 from mimarsinan.chip_simulation.nevresim_driver import *
 
-from mimarsinan.tuning.smart_smooth_adaptation import *
+from mimarsinan.tuning.smarter_smooth_adaptation import *
 from mimarsinan.tuning.basic_interpolation import *
 
 
@@ -48,13 +48,13 @@ def test_cifar10_patched_perceptron():
     simulation_length = 64
     batch_size = 1000
 
-    pretrain_epochs = 25
-    max_epochs = 10 * pretrain_epochs
+    pretrain_epochs = 20
+    max_epochs = 2 * pretrain_epochs
     Tq_start = 100 
 
     perceptron_flow = PatchedPerceptronFlow(
         cifar10_input_shape, cifar10_output_size,
-        192, 256, 8, 8, fc_depth=3)
+        192, 256, 8, 8, fc_depth=2)
     
     train_loader = get_cifar10_data(batch_size)[0]
     test_loader = get_cifar10_data(10000)[1]
@@ -72,13 +72,6 @@ def test_cifar10_patched_perceptron():
     prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
     print(trainer.validate())
 
-    print("Fusing normalization...")
-    perceptron_flow.fuse_normalization()
-
-    print("Wake up after fuse...")
-    trainer.train_until_target_accuracy(lr, ppf_loss, pretrain_epochs, prev_acc)
-    print(trainer.validate())
-
     def evaluate_model(alpha, Tq):
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
         return trainer.validate_train()
@@ -90,24 +83,34 @@ def test_cifar10_patched_perceptron():
         perceptron_flow.load_state_dict(state)
 
     def alpha_and_Tq_adaptation(alpha, Tq):
+        nonlocal prev_acc
         print("  Tuning model with soft CQ with alpha = {} and Tq = {}...".format(alpha, Tq))
         reporter.report("alpha", alpha)
         reporter.report("Tq", Tq)
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
-        trainer.weight_transformation = decay_and_quantize_param
-        trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
+        trainer.weight_transformation = decay_param
+        acc = trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
+        prev_acc = max(prev_acc, acc)
     
-    alpha_interpolator = BasicInterpolation(0.1, 50, curve = lambda x: x ** 2)
+    alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 4)
     Tq_interpolator = BasicInterpolation(100, 2, curve = lambda x: x ** 0.5)
 
-    SmartSmoothAdaptation (
+    SmarterSmoothAdaptation (
         alpha_and_Tq_adaptation,
         clone_state,
         restore_state,
-        evaluate_model
+        evaluate_model,
+        prev_acc
     ).adapt_smoothly(
         interpolators=[alpha_interpolator, Tq_interpolator], 
         max_cycles=50)
+
+    print("Fusing normalization...")
+    perceptron_flow.fuse_normalization()
+
+    print("Wake up after fuse...")
+    trainer.train_until_target_accuracy(lr, ppf_loss, pretrain_epochs, prev_acc)
+    print(trainer.validate())
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
@@ -167,7 +170,7 @@ def test_cifar10_patched_perceptron():
         simulation_steps)
 
     print("Evaluating simulator output...")
-    accuracy = evaluate_chip_output(predictions, test_loader, verbose=True)
+    accuracy = evaluate_chip_output(predictions, test_loader, cifar10_output_size, verbose=True)
     print("SNN accuracy on cifar10 is:", accuracy*100, "%")
 
     print("cifar10 perceptron test done.")

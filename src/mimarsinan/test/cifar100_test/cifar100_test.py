@@ -5,6 +5,9 @@ from mimarsinan.chip_simulation.execute_nevresim import *
 from mimarsinan.code_generation.generate_main import *
 from mimarsinan.test.test_utils import *
 
+from mimarsinan.models.omihub_mlp_mixer import *
+from mimarsinan.mapping.omihub_mlp_mixer_mapper import *
+
 from mimarsinan.models.polat_mlp_mixer import *
 from mimarsinan.mapping.polat_mlp_mixer_mapper import *
 
