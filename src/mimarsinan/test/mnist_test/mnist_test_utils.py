@@ -20,11 +20,11 @@ def get_mnist_data(batch_size=1):
         transform=transforms.ToTensor())
                             
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=32)
     test_loader = torch.utils.data.DataLoader(
-        test_set, batch_size=batch_size, shuffle=False, num_workers=0)
+        test_set, batch_size=batch_size, shuffle=False, num_workers=32)
     validation_loader = torch.utils.data.DataLoader(
-        test_set, batch_size=batch_size, shuffle=True, num_workers=0)
+        test_set, batch_size=batch_size, shuffle=True, num_workers=32)
 
     return train_loader, test_loader, validation_loader
 
