@@ -54,7 +54,7 @@ def test_ecg_patched_perceptron():
     simulation_length = 32
     batch_size = 4296
 
-    pretrain_epochs = 3
+    pretrain_epochs = 10
     max_epochs = pretrain_epochs
 
     perceptron_flow = PatchedPerceptronFlow(
@@ -91,7 +91,7 @@ def test_ecg_patched_perceptron():
         reporter.report("Tq", Tq)
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
         trainer.weight_transformation = decay_param
-        acc = trainer.train_until_target_accuracy(lr, ppf_loss, 3, prev_acc)
+        acc = trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
         prev_acc = max(prev_acc, acc)
     
     alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 2)

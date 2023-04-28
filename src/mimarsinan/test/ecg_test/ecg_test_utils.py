@@ -5,10 +5,10 @@ import torch
 
 #define a transform that shifts x within the range of 10% of its length
 def shift(x):
-    shift_amt = np.random.uniform(-0.3, 0.3)
+    shift_amt = np.random.uniform(-0.4, 0.4)
     shift = int(shift_amt * x.shape[1])
 
-    x = x * np.random.uniform(0.5, 1.5)
+    x = x * np.random.uniform(0.2, 1.1)
     x = torch.clamp(x, min=0, max=1)
     return torch.roll(x, shift, dims=1)
 
@@ -58,13 +58,11 @@ def get_ecg_data(batch_size):
 
     X_train_ = torch.FloatTensor(train_x)
     X_train_ = X_train_.reshape(-1,1,180,1)
-    print(X_train_.shape)
 
     y_train_ = torch.LongTensor(train_y)
         
     X_test = torch.FloatTensor(test_x)
     X_test = X_test.reshape(-1,1,180,1)
-    print(X_test.shape)
 
     y_test_ = test_y
     y_test = torch.LongTensor(test_y)
@@ -87,20 +85,9 @@ def get_ecg_data(batch_size):
 
         def __len__(self):
             return self.data.size(0)
-        
-    train_pairs = [(X_train_[i], y_train_[i]) for i in range(len(X_train_))]
-    # oversample minority classes
-    train_pairs_0 = [pair for pair in train_pairs if pair[1] == 0]
-    train_pairs_1 = [pair for pair in train_pairs if pair[1] == 1]
-    train_pairs_1_over = train_pairs_1 * int(len(train_pairs_0)/len(train_pairs_1))
-    train_pairs_over = train_pairs_0 + train_pairs_1_over
-    np.random.shuffle(train_pairs_over)
-    X_train_o = torch.stack([pair[0] for pair in train_pairs_over])
-    y_train_o = torch.stack([pair[1] for pair in train_pairs_over])
 
-    custom_train_set = CustomTensorDataset(X_train_o, y_train_o, transform=shift)
+    custom_train_set = CustomTensorDataset(X_train_, y_train_, transform=shift)
 
-    torch_dataset_train = torch.utils.data.TensorDataset(X_train_o, y_train_o)
     torch_dataset_test = torch.utils.data.TensorDataset(X_test, y_test)
     torch_dataset_validation = torch.utils.data.TensorDataset(X_train_, y_train_)
 
