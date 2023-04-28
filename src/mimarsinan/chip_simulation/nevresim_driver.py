@@ -25,14 +25,8 @@ class NevresimDriver:
         
         self.generated_files_path = generated_files_path
         save_weights_and_chip_code(self.chip, generated_files_path)
-
-        self.simulator_filename = \
-            compile_simulator(generated_files_path, NevresimDriver.nevresim_path)
         
-        if self.simulator_filename is None:
-            raise Exception("Compilation failed.")
-        
-    def __simulator_output_to_predictions(self, simulator_output, number_of_classes):
+    def _simulator_output_to_predictions(self, simulator_output, number_of_classes):
         total_spikes = sum(simulator_output)
         print("  Total spikes: {}".format(total_spikes))
 
@@ -43,6 +37,17 @@ class NevresimDriver:
         for i in range(prediction_count):
             predictions[i] = np.argmax(output_array[i])
         return predictions
+    
+    def _prepare_simulator(self, max_input_count, simulation_length):
+        generate_main_function(
+            self.generated_files_path, max_input_count, self.chip.output_size, simulation_length,
+            main_cpp_template, get_config("Stochastic", "Novena", self.weight_type.__name__))
+        
+        self.simulator_filename = \
+            compile_simulator(self.generated_files_path, NevresimDriver.nevresim_path)
+        
+        if self.simulator_filename is None:
+            raise Exception("Compilation failed.")
 
     def predict_spiking(self, input_loader, simulation_length, max_input_count=None, num_proc=50):
         if max_input_count is None:
@@ -50,10 +55,8 @@ class NevresimDriver:
             print("  Max input count:", max_input_count)
         
         save_inputs_to_files(self.generated_files_path, input_loader, max_input_count)
-        generate_main_function(
-            self.generated_files_path, max_input_count, self.chip.output_size, simulation_length,
-            main_cpp_template, get_config("Stochastic", "Novena", self.weight_type.__name__))
         
+        self._prepare_simulator(max_input_count, simulation_length)
         simulator_output = execute_simulator(self.simulator_filename, max_input_count, num_proc)
         
-        return self.__simulator_output_to_predictions(simulator_output, self.chip.output_size)
+        return self._simulator_output_to_predictions(simulator_output, self.chip.output_size)
