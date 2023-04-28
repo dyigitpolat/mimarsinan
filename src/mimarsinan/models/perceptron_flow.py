@@ -72,8 +72,8 @@ class PerceptronMapper:
             return self.sources
         
         layer_weights, layer_biases = self.fuse_normalization()
-        layer_weights.detach().numpy()
-        layer_biases.detach().numpy()
+        layer_weights.detach().cpu().numpy()
+        layer_biases.detach().cpu().numpy()
 
         layer_sources = self.source_mapper.map(mapping)
         layer_sources = layer_sources.transpose()

@@ -72,9 +72,9 @@ class SoftCoreMapping:
             core_matrix = np.zeros([input_axons_count, out_neurons_count])
         else:
             core_matrix = np.zeros([input_axons_count+1, out_neurons_count])
-            core_matrix[-1, :] = fc_biases.flatten()
+            core_matrix[-1, :] = fc_biases.flatten().cpu().numpy()
 
-        core_matrix[:input_axons_count, :] = fc_weights.T
+        core_matrix[:input_axons_count, :] = fc_weights.cpu().numpy().T
 
         for i in range(new_cores_count): 
             spike_sources = []
