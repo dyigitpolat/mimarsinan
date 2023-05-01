@@ -11,24 +11,22 @@ def chip_output_to_predictions(chip_output, number_of_classes):
         predictions[i] = np.argmax(output_array[i])
     return predictions
 
+
 def evaluate_chip_output(
-    predictions, test_loader, num_classes, verbose = False):
-    targets = np.array([y.item() for (_, y) in test_loader], dtype=int)
-
+    predictions, targets, num_classes, verbose = False):
     if verbose:
-
         confusion_matrix = np.array([[0 for i in range(num_classes)] for j in range(num_classes)])
         for (y, p) in zip(targets, predictions):
             confusion_matrix[y.item()][p] += 1
         print("Confusion matrix:")
         print(confusion_matrix)
-
+    
     total = 0
     correct = 0
     for (y, p) in zip(targets, predictions):
         correct += int(y.item() == p)
         total += 1
-    
+
     return float(correct) / total
 
 def almost_equal(a, b, epsilon=0.00001):

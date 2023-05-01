@@ -170,7 +170,9 @@ def test_cifar10_patched_perceptron():
         simulation_steps)
 
     print("Evaluating simulator output...")
-    accuracy = evaluate_chip_output(predictions, test_loader, cifar10_output_size, verbose=True)
+    accuracy = evaluate_chip_output(predictions, 
+                                    next(iter(get_cifar10_data(len(predictions))))[1], 
+                                    cifar10_output_size, verbose=True)
     print("SNN accuracy on cifar10 is:", accuracy*100, "%")
 
     print("cifar10 perceptron test done.")

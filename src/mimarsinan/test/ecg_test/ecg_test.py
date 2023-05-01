@@ -50,11 +50,11 @@ def test_ecg_patched_perceptron():
 
     ecg_input_shape = (1, 180, 1)
     ecg_output_size = 2
-    Tq = 2
+    Tq = 4
     simulation_length = 32
     batch_size = 4296
 
-    pretrain_epochs = 20
+    pretrain_epochs = 15
     max_epochs = pretrain_epochs
 
     perceptron_flow = PatchedPerceptronFlow(
@@ -93,17 +93,17 @@ def test_ecg_patched_perceptron():
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
         trainer.weight_transformation = decay_param
         tuned_lr = LearningRateExplorer(trainer, perceptron_flow, lr, lr / 100, 0.01).find_lr_for_tuning()
-        acc = trainer.train_until_target_accuracy(tuned_lr, 15, prev_acc)
+        acc = trainer.train_until_target_accuracy(tuned_lr, 10, prev_acc)
         prev_acc = max(prev_acc, acc)
     
     alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 2)
-    Tq_interpolator = BasicInterpolation(50, Tq, curve = lambda x: x ** 0.2)
+    Tq_interpolator = BasicInterpolation(50, Tq / 2, curve = lambda x: x ** 0.2)
 
     BasicSmoothAdaptation (
         alpha_and_Tq_adaptation
     ).adapt_smoothly(
         interpolators=[alpha_interpolator, Tq_interpolator], 
-        cycles=10)
+        cycles=30)
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
@@ -164,7 +164,10 @@ def test_ecg_patched_perceptron():
         simulation_steps)
 
     print("Evaluating simulator output...")
-    accuracy = evaluate_chip_output(predictions, test_loader, ecg_output_size, verbose=True)
+    accuracy = evaluate_chip_output(
+        predictions, 
+        next(iter(get_ecg_data(len(predictions))))[1], 
+        ecg_output_size, verbose=True)
     print("SNN accuracy on ECG is:", accuracy*100, "%")
 
     print("ECG perceptron test done.")
