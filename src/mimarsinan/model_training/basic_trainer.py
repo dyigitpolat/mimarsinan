@@ -5,12 +5,13 @@ import torch
 
 class BasicTrainer:
     def __init__(
-            self, model, device, train_loader, validation_loader):
+            self, model, device, train_loader, validation_loader, loss_function):
         self.model = model.to(device)
         self.device = device
         self.train_loader = train_loader
         self.validation_loader = validation_loader
         self.report_function = None
+        self.loss_function = loss_function
 
     def _report(self, metric_name, metric_value):
         if self.report_function is not None:
@@ -24,26 +25,26 @@ class BasicTrainer:
 
         return optimizer, scheduler
 
-    def _backward_pass_on_loss(self, loss_function, x, y):
+    def _backward_pass_on_loss(self, x, y):
         self.model.train()
-        loss = loss_function(self.model, x, y)
+        loss = self.loss_function(self.model, x, y)
         loss.backward()
         return loss
     
-    def _optimize(self, loss_function, x, y, optimizer):
+    def _optimize(self, x, y, optimizer):
         optimizer.zero_grad()
-        loss = self._backward_pass_on_loss(loss_function, x, y)
+        loss = self._backward_pass_on_loss(x, y)
         optimizer.step()
         return loss
 
-    def _train_one_epoch(self, optimizer, scheduler, loss_function):
+    def _train_one_epoch(self, optimizer, scheduler):
         tracker = AccuracyTracker()
         loss = None
         for (x, y) in self.train_loader:
             x, y = x.to(self.device), y.to(self.device)
 
             hook_handle = self.model.register_forward_hook(tracker.create_hook(y))
-            loss = self._optimize(loss_function, x, y, optimizer)
+            loss = self._optimize(x, y, optimizer)
             hook_handle.remove()
             
             self._report("Training loss", loss)
@@ -51,12 +52,12 @@ class BasicTrainer:
         scheduler.step(loss)
         return tracker.get_accuracy()
     
-    def _train_one_step(self, loss_function, lr):
+    def _train_one_step(self, lr):
         optimizer, _ = self._get_optimizer_and_scheduler(lr)
         for (x, y) in self.train_loader:
             x, y = x.to(self.device), y.to(self.device)
             
-            self._optimize(loss_function, x, y, optimizer)
+            self._optimize(x, y, optimizer)
             break
     
     def _validate_on_loader(self, loader):
@@ -84,15 +85,16 @@ class BasicTrainer:
         self._report("Validation accuracy on train set", acc)
         return acc
     
-    def train_n_epochs(self, lr, loss_function, epochs):
-        return self.train_until_target_accuracy(lr, loss_function, epochs, 1.0)
+    def train_n_epochs(self, lr, epochs):
+        return self.train_until_target_accuracy(lr, epochs, 1.0)
 
-    def train_until_target_accuracy(self, lr, loss_function, max_epochs, target_accuracy):
+    def train_until_target_accuracy(self, lr, max_epochs, target_accuracy):
+        self._report("LR", lr)
         optimizer, scheduler = self._get_optimizer_and_scheduler(lr)
 
         training_accuracy = 0
         for _ in range(max_epochs):
-            training_accuracy = self._train_one_epoch(optimizer, scheduler, loss_function)
+            training_accuracy = self._train_one_epoch(optimizer, scheduler)
             self._report("Training accuracy", training_accuracy)
             self.validate()
             if training_accuracy >= target_accuracy: break

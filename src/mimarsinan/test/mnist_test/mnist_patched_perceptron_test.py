@@ -65,13 +65,13 @@ def test_mnist_patched_perceptron():
     reporter = WandB_Reporter("mnist_patched_perceptron_test", "experiment")
 
     trainer = WeightTransformTrainer(
-        perceptron_flow, device, train_loader, validation_loader, decay_param)
+        perceptron_flow, device, train_loader, validation_loader, ppf_loss, decay_param)
     trainer.report_function = reporter.report
     
     print("Pretraining model...")
     lr = 0.001
     perceptron_flow.set_activation(ClampedReLU())
-    prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
+    prev_acc = trainer.train_n_epochs(lr, pretrain_epochs)
     print(trainer.validate())
 
     def evaluate_model(alpha, Tq):
@@ -91,7 +91,7 @@ def test_mnist_patched_perceptron():
         reporter.report("Tq", Tq)
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
         trainer.weight_transformation = decay_param
-        acc = trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
+        acc = trainer.train_until_target_accuracy(lr, 10, prev_acc)
         prev_acc = max(prev_acc, acc)
     
     alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 2)
@@ -107,13 +107,13 @@ def test_mnist_patched_perceptron():
     perceptron_flow.fuse_normalization()
 
     print("Wake up after fuse...")
-    trainer.train_until_target_accuracy(lr, ppf_loss, pretrain_epochs, prev_acc)
+    trainer.train_until_target_accuracy(lr, pretrain_epochs, prev_acc)
     print(trainer.validate())
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
     trainer.weight_transformation = clip_decay_and_quantize_param
-    trainer.train_until_target_accuracy(lr, ppf_loss, max_epochs, prev_acc)
+    trainer.train_until_target_accuracy(lr, max_epochs, prev_acc)
 
     ######
     print("Soft core mapping...")
@@ -135,7 +135,7 @@ def test_mnist_patched_perceptron():
 
     print("Testing with core flow...")
     core_flow_trainer = WeightTransformTrainer(
-        core_flow, device, train_loader, test_loader, decay_and_quantize_param)
+        core_flow, device, train_loader, test_loader, ppf_loss, decay_and_quantize_param)
     print("  Core flow accuracy:", core_flow_trainer.validate())
 
     print("Quantizing hard core mapping...")
