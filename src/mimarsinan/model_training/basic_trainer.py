@@ -51,14 +51,6 @@ class BasicTrainer:
         scheduler.step(loss)
         return tracker.get_accuracy()
     
-    def _train_one_step(self, lr):
-        optimizer, _ = self._get_optimizer_and_scheduler(lr)
-        for (x, y) in self.train_loader:
-            x, y = x.to(self.device), y.to(self.device)
-            
-            self._optimize(x, y, optimizer)
-            break
-    
     def _validate_on_loader(self, loader):
         total = 0
         correct = 0
@@ -83,6 +75,14 @@ class BasicTrainer:
         acc = self._validate_on_loader(self.train_loader)
         self._report("Validation accuracy on train set", acc)
         return acc
+
+    def train_one_step(self, lr):
+        optimizer, _ = self._get_optimizer_and_scheduler(lr)
+        for (x, y) in self.train_loader:
+            x, y = x.to(self.device), y.to(self.device)
+            
+            self._optimize(x, y, optimizer)
+            break
     
     def train_n_epochs(self, lr, epochs):
         return self.train_until_target_accuracy(lr, epochs, 1.0)
