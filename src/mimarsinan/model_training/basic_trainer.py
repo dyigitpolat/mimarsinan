@@ -1,5 +1,4 @@
 from mimarsinan.model_training.training_utilities import AccuracyTracker
-from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 
 import torch
 
