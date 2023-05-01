@@ -5,49 +5,12 @@ import torch
 
 #define a transform that shifts x within the range of 10% of its length
 def shift(x):
-    shift_amt = np.random.uniform(-0.4, 0.4)
+    shift_amt = np.random.uniform(-0.3, 0.3)
     shift = int(shift_amt * x.shape[1])
 
-    x = x * np.random.uniform(0.2, 1.1)
+    x = x * np.random.uniform(0.2, 1.8)
     x = torch.clamp(x, min=0, max=1)
     return torch.roll(x, shift, dims=1)
-
-
-def plot_array(array, title=None):
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.plot(array)
-    if title is not None:
-        plt.title(title)
-    plt.show()
-
-def plot_spectrogram(array, title=None):
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.specgram(array, NFFT=64, noverlap=63)
-    if title is not None:
-        plt.title(title)
-    plt.show()
-
-def plot_2d_img_array(array, markings, title=None):
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.imshow(array, cmap='gray')
-    if title is not None:
-        plt.title(title)
-    #put red lines where markigs ==1
-    # for i in range(len(markings)):
-    #     if markings[i] == 0:
-    #         plt.axvline(x=i, color='r', alpha=0.1)
-    #     else:
-    #         plt.axvline(x=i, color='b', alpha=0.1)
-
-    plt.show()
-
-def normalize_array(array):
-    array = (array - array.mean()) / array.std()
-    # return torch.where(array > 0, array ** 0.9, -((-array) ** 0.9))
-    return 0.6*torch.tanh(0.5*torch.pi*array) / (0.5*torch.pi) + 0.4*array
 
 
 def get_ecg_data(batch_size):
@@ -99,6 +62,42 @@ def get_ecg_data(batch_size):
 
 # Example usage
 if __name__ == "__main__":
+    def plot_array(array, title=None):
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.plot(array)
+        if title is not None:
+            plt.title(title)
+        plt.show()
+
+    def plot_spectrogram(array, title=None):
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.specgram(array, NFFT=64, noverlap=63)
+        if title is not None:
+            plt.title(title)
+        plt.show()
+
+    def plot_2d_img_array(array, markings, title=None):
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.imshow(array, cmap='gray')
+        if title is not None:
+            plt.title(title)
+        #put red lines where markigs ==1
+        # for i in range(len(markings)):
+        #     if markings[i] == 0:
+        #         plt.axvline(x=i, color='r', alpha=0.1)
+        #     else:
+        #         plt.axvline(x=i, color='b', alpha=0.1)
+
+        plt.show()
+
+    def normalize_array(array):
+        array = (array - array.mean()) / array.std()
+        # return torch.where(array > 0, array ** 0.9, -((-array) ** 0.9))
+        return 0.6*torch.tanh(0.5*torch.pi*array) / (0.5*torch.pi) + 0.4*array
+
     device = 'cuda'
 
     train_loader = get_ecg_data(4296)[0]
