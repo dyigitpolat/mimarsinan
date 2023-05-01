@@ -88,13 +88,7 @@ class BasicTrainer:
         return self.train_until_target_accuracy(lr, loss_function, epochs, 1.0)
 
     def train_until_target_accuracy(self, lr, loss_function, max_epochs, target_accuracy):
-        tuned_lr = LearningRateExplorer(
-            training_function=lambda lr_: self._train_one_step(loss_function, lr_),
-            evaluation_function=self.validate_train,
-            model=self.model,
-            max_lr=lr).find_lr_for_tuning()
-        
-        optimizer, scheduler = self._get_optimizer_and_scheduler(tuned_lr)
+        optimizer, scheduler = self._get_optimizer_and_scheduler(lr)
 
         training_accuracy = 0
         for _ in range(max_epochs):
