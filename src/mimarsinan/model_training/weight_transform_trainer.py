@@ -6,8 +6,8 @@ import copy
 
 class WeightTransformTrainer(BasicTrainer):
     def __init__(
-            self, model, device, train_loader, test_loader, weight_transformation):
-        super().__init__(model, device, train_loader, test_loader)
+            self, model, device, train_loader, test_loader, loss_function, weight_transformation):
+        super().__init__(model, device, train_loader, test_loader, loss_function)
         self.weight_transformation = weight_transformation
         self.aux_model = None
 
@@ -20,11 +20,11 @@ class WeightTransformTrainer(BasicTrainer):
             if param.requires_grad:
                 aux_param.grad = param.grad
     
-    def _backward_pass_on_loss(self, loss_function, x, y):
+    def _backward_pass_on_loss(self, x, y):
         self._update_and_transform_model()
         self.aux_model.train()
 
-        loss = super()._backward_pass_on_loss(loss_function, x, y)
+        loss = super()._backward_pass_on_loss(x, y)
 
         self._transfer_gradients_to_aux()
         return loss
@@ -37,8 +37,8 @@ class WeightTransformTrainer(BasicTrainer):
         
         return optimizer, scheduler
     
-    def train_until_target_accuracy(self, lr, loss_function, max_epochs, target_accuracy):
+    def train_until_target_accuracy(self, lr, max_epochs, target_accuracy):
         self.aux_model = copy.deepcopy(self.model).to(self.device)
-        accuracy = super().train_until_target_accuracy(lr, loss_function, max_epochs, target_accuracy)
+        accuracy = super().train_until_target_accuracy(lr, max_epochs, target_accuracy)
         return accuracy
 

@@ -50,11 +50,11 @@ def test_ecg_patched_perceptron():
 
     ecg_input_shape = (1, 180, 1)
     ecg_output_size = 2
-    Tq = 4
+    Tq = 2
     simulation_length = 32
     batch_size = 4296
 
-    pretrain_epochs = 10
+    pretrain_epochs = 20
     max_epochs = pretrain_epochs
 
     perceptron_flow = PatchedPerceptronFlow(
@@ -68,20 +68,21 @@ def test_ecg_patched_perceptron():
     reporter = WandB_Reporter("ecg_patched_perceptron_test", "experiment")
 
     trainer = WeightTransformTrainer(
-        perceptron_flow, device, train_loader, validation_loader, decay_param)
+        perceptron_flow, device, train_loader, validation_loader, ppf_loss, decay_param)
     trainer.report_function = reporter.report
     
     print("Pretraining model...")
     lr = 0.001
     perceptron_flow.set_activation(ClampedReLU())
-    prev_acc = trainer.train_n_epochs(lr, ppf_loss, pretrain_epochs)
+    prev_acc = trainer.train_n_epochs(lr, pretrain_epochs)
     print(trainer.validate())
 
     print("Fusing normalization...")
     perceptron_flow.fuse_normalization()
 
     print("Wake up after fuse...")
-    trainer.train_until_target_accuracy(lr, ppf_loss, pretrain_epochs, prev_acc)
+    tuned_lr = LearningRateExplorer(trainer, perceptron_flow, lr, lr / 100, -0.1).find_lr_for_tuning()
+    trainer.train_until_target_accuracy(tuned_lr, pretrain_epochs, prev_acc)
     print(trainer.validate())
 
     def alpha_and_Tq_adaptation(alpha, Tq):
@@ -91,22 +92,23 @@ def test_ecg_patched_perceptron():
         reporter.report("Tq", Tq)
         perceptron_flow.set_activation(CQ_Activation_Soft(Tq, alpha))
         trainer.weight_transformation = decay_param
-        acc = trainer.train_until_target_accuracy(lr, ppf_loss, 10, prev_acc)
+        tuned_lr = LearningRateExplorer(trainer, perceptron_flow, lr, lr / 100, 0.01).find_lr_for_tuning()
+        acc = trainer.train_until_target_accuracy(tuned_lr, 15, prev_acc)
         prev_acc = max(prev_acc, acc)
     
     alpha_interpolator = BasicInterpolation(0.1, 15, curve = lambda x: x ** 2)
-    Tq_interpolator = BasicInterpolation(100, 2, curve = lambda x: x ** 0.2)
+    Tq_interpolator = BasicInterpolation(50, Tq, curve = lambda x: x ** 0.2)
 
     BasicSmoothAdaptation (
         alpha_and_Tq_adaptation
     ).adapt_smoothly(
         interpolators=[alpha_interpolator, Tq_interpolator], 
-        cycles=30)
+        cycles=10)
 
     print("Tuning model with CQ and weight quantization...")
     perceptron_flow.set_activation(CQ_Activation(Tq))
     trainer.weight_transformation = clip_decay_and_quantize_param
-    trainer.train_until_target_accuracy(lr, ppf_loss, max_epochs, prev_acc)
+    trainer.train_until_target_accuracy(lr, max_epochs, prev_acc)
 
     ######
     print("Soft core mapping...")
@@ -128,7 +130,7 @@ def test_ecg_patched_perceptron():
 
     print("Testing with core flow...")
     core_flow_trainer = WeightTransformTrainer(
-        core_flow, device, train_loader, test_loader, decay_and_quantize_param)
+        core_flow, device, train_loader, test_loader, ppf_loss, decay_and_quantize_param)
     print("  Core flow accuracy:", core_flow_trainer.validate())
 
     print("Quantizing hard core mapping...")
