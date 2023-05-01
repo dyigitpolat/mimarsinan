@@ -37,6 +37,10 @@ class WeightTransformTrainer(BasicTrainer):
         
         return optimizer, scheduler
     
+    def train_one_step(self, lr):
+        self.aux_model = copy.deepcopy(self.model).to(self.device)
+        return super().train_one_step(lr)
+    
     def train_until_target_accuracy(self, lr, max_epochs, target_accuracy):
         self.aux_model = copy.deepcopy(self.model).to(self.device)
         accuracy = super().train_until_target_accuracy(lr, max_epochs, target_accuracy)
