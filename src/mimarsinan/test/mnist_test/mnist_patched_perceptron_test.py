@@ -169,7 +169,9 @@ def test_mnist_patched_perceptron():
         simulation_steps)
 
     print("Evaluating simulator output...")
-    accuracy = evaluate_chip_output(predictions, test_loader, mnist_output_size, verbose=True)
+    accuracy = evaluate_chip_output(predictions, 
+                                    next(iter(get_mnist_data(len(predictions))))[1],
+                                    mnist_output_size, verbose=True)
     print("SNN accuracy on MNIST is:", accuracy*100, "%")
 
     print("MNIST perceptron test done.")
