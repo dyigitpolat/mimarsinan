@@ -12,8 +12,10 @@ class WeightTransformTrainer(BasicTrainer):
         self.aux_model = None
 
     def _update_and_transform_model(self):
-        for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
-            param.data[:] = self.weight_transformation(aux_param.data[:]).to(self.device)
+        for (name, param), (_, aux_param) in zip(self.model.named_parameters(), self.aux_model.named_parameters()):
+            
+            if ('weight' in name) or ('bias' in name):
+                param.data[:] = self.weight_transformation(aux_param.data[:]).to(self.device)
 
     def _transfer_gradients_to_aux(self):
         for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
