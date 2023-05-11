@@ -150,16 +150,17 @@ class PatchedPerceptronFlow(nn.Module):
 
         self.features = min(max_axons, max_neurons)
         self.patch_channels = self.features // self.patch_count
+        self.fc_width = self.patch_channels * self.patch_count
         self.patch_layers = nn.ModuleList(
             [Perceptron(self.patch_channels, self.patch_size) for _ in range(self.patch_count)])
         
         self.fc_layers = nn.ModuleList()
         for _ in range(fc_depth):
-            self.fc_layers.append(Perceptron(self.features, self.features))
-            self.fc_layers.append(Perceptron(self.features, self.features, 
-                                             normalization=nn.BatchNorm1d(self.features)))
+            self.fc_layers.append(Perceptron(self.fc_width, self.fc_width))
+            self.fc_layers.append(Perceptron(self.fc_width, self.fc_width, 
+                                             normalization=nn.BatchNorm1d(self.fc_width)))
 
-        self.output_layer = Perceptron(num_classes, self.features) 
+        self.output_layer = Perceptron(num_classes, self.fc_width) 
 
         self.out = None
 
@@ -202,7 +203,7 @@ class PatchedPerceptronFlow(nn.Module):
             p1=self.patch_height, p2=self.patch_width)
         
         means_patch, vars_patch = [], []
-        out_tensor = torch.zeros((x.shape[0], self.features), device=x.device)
+        out_tensor = torch.zeros((x.shape[0], self.fc_width), device=x.device)
         for idx in range(self.patch_count):
             length = self.patch_channels
             out_tensor[:, idx*length:(idx+1)*length] = self.patch_layers[idx](out[:,idx])
