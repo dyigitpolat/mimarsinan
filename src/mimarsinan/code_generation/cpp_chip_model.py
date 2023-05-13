@@ -177,12 +177,12 @@ consteval auto generate_chip()
 
     def get_chip_json(self):
         result = { 
-            "axon_count": self.axon_count, 
-            "neuron_count": self.neuron_count, 
-            "core_count": self.core_count, 
-            "input_size": self.input_size, 
-            "output_size": self.output_size, 
-            "leak": self.leak, 
+            "axon_count": int(self.axon_count), 
+            "neuron_count": int(self.neuron_count), 
+            "core_count": int(self.core_count), 
+            "input_size": int(self.input_size), 
+            "output_size": int(self.output_size), 
+            "leak": self.weight_type(self.leak), 
             "core_parameters": [],
             "core_connections": [],
             "output_buffer": []}
