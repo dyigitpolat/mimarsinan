@@ -24,13 +24,13 @@ void test_main(int start, int end)
     using exec = SpikingExecution<1, {6}, {3}SpikeGenerator, weight_t, {4}FirePolicy>;
 
     load_weights<weight_t>(
-        chip, "{0}weights/chip_weights.txt");
+        chip, "{0}/weights/chip_weights.txt");
 
     for(int idx = start; idx < end; ++idx)
     {{
         for(int j = 0; j < {2}; ++j)
         {{  
-            auto [input, target] = load_input_n("{0}inputs/", idx);
+            auto [input, target] = load_input_n("{0}/inputs/", idx);
             auto buffer = chip.template execute<exec>(input);
             for(int neuron{{}}; auto i : buffer)
             {{
