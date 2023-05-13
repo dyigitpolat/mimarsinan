@@ -26,11 +26,11 @@ void test_main(int start, int end)
     using exec = SpikingExecution<{2}, {6}, {3}SpikeGenerator, weight_t, {4}FirePolicy>;
 
     load_weights<weight_t>(
-        chip, "{0}weights/chip_weights.txt");
+        chip, "{0}/weights/chip_weights.txt");
 
     for(int idx = start; idx < end; ++idx)
     {{
-        auto [input, target] = load_input_n("{0}inputs/", idx);
+        auto [input, target] = load_input_n("{0}/inputs/", idx);
         auto buffer = chip.template execute<exec>(input);
         for(auto i : buffer)
         {{
