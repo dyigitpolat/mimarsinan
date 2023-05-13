@@ -2,6 +2,7 @@ from mimarsinan.pipelining.model_building.patched_perceptron_flow_builder import
 from mimarsinan.pipelining.pretrainer import Pretrainer
 from mimarsinan.pipelining.activation_quantization_tuner import ActivationQuantizationTuner
 from mimarsinan.pipelining.normalization_fuser import NormalizationFuser
+from mimarsinan.pipelining.weight_quantization_tuner import WeightQuantizationTuner
 from mimarsinan.pipelining.soft_core_mapper import SoftCoreMapper
 from mimarsinan.pipelining.hard_core_mapper import HardCoreMapper
 from mimarsinan.pipelining.core_flow_tuner import CoreFlowTuner
@@ -61,44 +62,31 @@ class Pipeline:
         self.working_directory = working_directory
         
     def run(self):
-        # Pretraining
-        pretraining_accuracy = Pretrainer(self, 10).run()
+        print("Pretraining...")
+        pretraining_accuracy = Pretrainer(self, 5).run()
 
-        # Activation quantization
+        print("Activation quantization...")
         ActivationQuantizationTuner(
-            self, 10, self.target_tq, pretraining_accuracy).run()
+            self, 1, self.target_tq, pretraining_accuracy).run()
 
-        # Batchnorm fusion
+        print("Normalization fusion...")
         NormalizationFuser(self).run()
 
-        # Weight quantization
-        ActivationQuantizationTuner(
-            self, 10, self.target_tq, pretraining_accuracy).run()
+        print("Weight quantization...")
+        WeightQuantizationTuner(
+            self, 1, self.target_tq, pretraining_accuracy).run()
 
-        # Soft core mapping
+        print("Soft core mapping...")
         soft_core_mapping = SoftCoreMapper(self).run()
         
-        # Hard core mapping
+        print("Hard core mapping...")
         hard_core_mapping = HardCoreMapper(self, soft_core_mapping).run()
 
-        # CoreFlow tuning
+        print("CoreFlow tuning...")
         core_flow_accuracy, threshold_scale = CoreFlowTuner(
             self, hard_core_mapping, self.target_tq).run()
 
-        # Chip simulation
+        print("Simulation...")
         chip_accuracy = SimulationRunner(
             self, hard_core_mapping, threshold_scale, self.target_tq).run()
-
-
-
-    
-
-
-
-
-
-
-
-    
-
-
+        
