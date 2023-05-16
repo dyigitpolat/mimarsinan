@@ -1,11 +1,12 @@
 from mimarsinan.model_training.training_utilities import AccuracyTracker
 
+import torch.nn as nn
 import torch
 
 class BasicTrainer:
     def __init__(
             self, model, device, train_loader, validation_loader, loss_function):
-        self.model = model.to(device)
+        self.model = nn.DataParallel(model).to(device)
         self.device = device
         self.train_loader = train_loader
         self.validation_loader = validation_loader
