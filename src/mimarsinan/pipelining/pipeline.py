@@ -13,7 +13,7 @@ from mimarsinan.models.perceptron_flow import ppf_loss
 import numpy as np
 import torch
 
-class Pipeline:
+class BasicClassificationPipeline:
     def __init__(self, 
         training_dataloader, 
         validation_dataloader, 
@@ -27,6 +27,7 @@ class Pipeline:
         self.max_axons = platform_constraints['max_axons']
         self.max_neurons = platform_constraints['max_neurons']
         self.target_tq = platform_constraints['target_tq']
+        self.simulation_steps = platform_constraints['simulation_steps']
 
         # Data
         self.training_dataloader = training_dataloader
@@ -52,6 +53,7 @@ class Pipeline:
         self.model = PatchedPerceptronFlowBuilder(
             self.max_axons, self.max_neurons, 
             self.input_shape, self.num_classes).build()
+        self.lr = 0.01
         
         # Loss definitions
         self.pt_loss = ppf_loss
@@ -63,18 +65,21 @@ class Pipeline:
         
     def run(self):
         print("Pretraining...")
-        pretraining_accuracy = Pretrainer(self, 5).run()
+        pretraining_accuracy = Pretrainer(self, 15).run()
 
         print("Activation quantization...")
-        ActivationQuantizationTuner(
-            self, 1, self.target_tq, pretraining_accuracy).run()
+        aq_accuracy = ActivationQuantizationTuner(
+            self, 10, self.target_tq, pretraining_accuracy).run()
+        print(f"AQ final accuracy: {aq_accuracy}")
+        assert aq_accuracy >= pretraining_accuracy * 0.9
 
         print("Normalization fusion...")
         NormalizationFuser(self).run()
 
         print("Weight quantization...")
-        WeightQuantizationTuner(
-            self, 1, self.target_tq, pretraining_accuracy).run()
+        wq_accuracy = WeightQuantizationTuner(
+            self, 10, self.target_tq, aq_accuracy).run()
+        print(f"WQ final accuracy: {wq_accuracy}")
 
         print("Soft core mapping...")
         soft_core_mapping = SoftCoreMapper(self).run()
@@ -85,8 +90,10 @@ class Pipeline:
         print("CoreFlow tuning...")
         core_flow_accuracy, threshold_scale = CoreFlowTuner(
             self, hard_core_mapping, self.target_tq).run()
+        print(f"CoreFlow final accuracy: {core_flow_accuracy}")
 
         print("Simulation...")
         chip_accuracy = SimulationRunner(
-            self, hard_core_mapping, threshold_scale, self.target_tq).run()
+            self, hard_core_mapping, threshold_scale, self.simulation_steps).run()
+        print(f"Simulation accuracy: {chip_accuracy}")
         
