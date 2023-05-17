@@ -15,20 +15,18 @@ class Pretrainer:
             pipeline.training_dataloader, 
             pipeline.validation_dataloader, 
             pipeline.pt_loss, decay_param)
-        self.trainer.report_function = pipeline.reporter.report
-
-        # Automatic learning rate
-        desired_improvement = (1.0 / pipeline.num_classes) / 10
-        self.tuned_lr = LearningRateExplorer(
-            self.trainer, 
-            self.model, 
-            max_lr=1e-1, 
-            min_lr=1e-5, 
-            desired_improvement=desired_improvement).find_lr_for_tuning()
+        
+        def report(key, value):
+            if key == "Training accuracy":
+                print(f"Pretraining accuracy: {value}")
+            pipeline.reporter.report(key, value)
+        self.trainer.report_function = report
+        
+        self.lr = pipeline.lr
         
         # Epochs
         self.epochs = epochs
         
     def run(self):
         self.model.set_activation(ClampedReLU())
-        return self.trainer.train_n_epochs(self.tuned_lr, self.epochs)
+        return self.trainer.train_n_epochs(self.lr, self.epochs)
