@@ -53,7 +53,12 @@ class BasicClassificationPipeline:
         self.model = PatchedPerceptronFlowBuilder(
             self.max_axons, self.max_neurons, 
             self.input_shape, self.num_classes).build()
+        
+        # Training hyper parameters
         self.lr = 0.01
+        self.pretraining_epochs = 15
+        self.aq_cycle_epochs = 10
+        self.wq_cycle_epochs = 10
         
         # Loss definitions
         self.pt_loss = ppf_loss
@@ -65,21 +70,22 @@ class BasicClassificationPipeline:
         
     def run(self):
         print("Pretraining...")
-        pretraining_accuracy = Pretrainer(self, 15).run()
+        pretraining_accuracy = Pretrainer(self, self.pretraining_epochs).run()
 
         print("Activation quantization...")
         aq_accuracy = ActivationQuantizationTuner(
-            self, 10, self.target_tq, pretraining_accuracy).run()
+            self, self.aq_cycle_epochs, self.target_tq, pretraining_accuracy).run()
         print(f"AQ final accuracy: {aq_accuracy}")
-        assert aq_accuracy >= pretraining_accuracy * 0.9
+        assert aq_accuracy > pretraining_accuracy * 0.9
 
         print("Normalization fusion...")
         NormalizationFuser(self).run()
 
         print("Weight quantization...")
         wq_accuracy = WeightQuantizationTuner(
-            self, 10, self.target_tq, aq_accuracy).run()
+            self, self.wq_cycle_epochs, self.target_tq, aq_accuracy).run()
         print(f"WQ final accuracy: {wq_accuracy}")
+        assert wq_accuracy > aq_accuracy * 0.9
 
         print("Soft core mapping...")
         soft_core_mapping = SoftCoreMapper(self).run()
