@@ -15,7 +15,8 @@ class SimulationRunner:
         for xs, ys in pipeline.test_dataloader:
             self.test_input.extend(xs)
             self.test_targets.extend(ys)
-        self.test_data = zip(np.array(self.test_input), np.array(self.test_targets))
+        self.test_data = \
+            [*zip(np.array(self.test_input), np.array(self.test_targets))]
 
         self.mapping = mapping
         self.threshold_scale = threshold_scale
@@ -58,5 +59,4 @@ class SimulationRunner:
 
         print("Evaluating simulator output...")
         accuracy = self._evaluate_chip_output(predictions)
-        print("SNN accuracy on MNIST is:", accuracy*100, "%")
         return accuracy
