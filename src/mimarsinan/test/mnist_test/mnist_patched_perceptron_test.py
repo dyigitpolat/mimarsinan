@@ -1,6 +1,6 @@
 from mimarsinan.test.mnist_test.mnist_test_utils import *
 from mimarsinan.common.wandb_utils import *
-from mimarsinan.pipelining.pipeline import BasicClassificationPipeline
+from mimarsinan.pipelining.basic_classification_pipeline import BasicClassificationPipeline
 
 import torch
 
