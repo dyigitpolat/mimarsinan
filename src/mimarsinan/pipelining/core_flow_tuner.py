@@ -24,6 +24,6 @@ class CoreFlowTuner:
         
         accuracy = core_flow_trainer.validate()
         scale = ChipQuantization(bits = 4).quantize(
-            self.hard_core_mapping.cores)
+            self.mapping.cores)
 
         return accuracy, scale
