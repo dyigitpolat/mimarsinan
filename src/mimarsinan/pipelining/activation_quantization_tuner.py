@@ -62,7 +62,8 @@ class ActivationQuantizationTuner:
 
     def run(self):
         Tq_interpolator = BasicInterpolation(
-            100, self.target_tq, 
+            2 * self.target_tq * self.cycles, 
+            self.target_tq, 
             curve = lambda x: x ** 0.2)
 
         BasicSmoothAdaptation (
