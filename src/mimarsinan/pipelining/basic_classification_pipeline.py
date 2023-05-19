@@ -1,5 +1,6 @@
 from mimarsinan.pipelining.model_building.patched_perceptron_flow_builder import PatchedPerceptronFlowBuilder
 from mimarsinan.pipelining.pretrainer import Pretrainer
+from mimarsinan.pipelining.shift_tuner import ShiftTuner
 from mimarsinan.pipelining.activation_quantization_tuner import ActivationQuantizationTuner
 from mimarsinan.pipelining.normalization_fuser import NormalizationFuser
 from mimarsinan.pipelining.weight_quantization_tuner import WeightQuantizationTuner
@@ -20,6 +21,7 @@ class BasicClassificationPipeline:
         test_dataloader,
         num_classes,
         platform_constraints: dict,
+        training_parameters: dict,
         reporter,
         working_directory):
 
@@ -55,10 +57,12 @@ class BasicClassificationPipeline:
             self.input_shape, self.num_classes).build()
         
         # Training hyper parameters
-        self.lr = 0.01
-        self.pretraining_epochs = 15
-        self.aq_cycle_epochs = 10
-        self.wq_cycle_epochs = 10
+        self.lr = training_parameters['lr']
+        self.pretraining_epochs = training_parameters['pretraining_epochs']
+        self.aq_cycle_epochs = training_parameters['aq_cycle_epochs']
+        self.wq_cycle_epochs = training_parameters['wq_cycle_epochs']
+        self.aq_cycles = training_parameters['aq_cycles']
+        self.wq_cycles = training_parameters['wq_cycles']
         
         # Loss definitions
         self.pt_loss = ppf_loss
@@ -72,11 +76,17 @@ class BasicClassificationPipeline:
         print("Pretraining...")
         pretraining_accuracy = Pretrainer(self, self.pretraining_epochs).run()
 
+        print("Shift tuning...")
+        shift_accuracy = ShiftTuner(
+            self, self.aq_cycle_epochs, self.target_tq, pretraining_accuracy).run()
+        print(f"Shift final accuracy: {shift_accuracy}")
+        assert shift_accuracy > pretraining_accuracy * 0.9
+
         print("Activation quantization...")
         aq_accuracy = ActivationQuantizationTuner(
-            self, self.aq_cycle_epochs, self.target_tq, pretraining_accuracy).run()
+            self, self.aq_cycle_epochs, self.target_tq, shift_accuracy).run()
         print(f"AQ final accuracy: {aq_accuracy}")
-        assert aq_accuracy > pretraining_accuracy * 0.9
+        assert aq_accuracy > shift_accuracy * 0.9
 
         print("Normalization fusion...")
         NormalizationFuser(self).run()
