@@ -16,7 +16,8 @@ class LearningRateExplorer:
         if self.base_accuracy is None:
             self.base_accuracy = self.evaluation_function()
 
-        target_acc = self.base_accuracy * ( 1.0 + self.desired_improvement )
+        real_improvement = self.desired_improvement * (1.0 - self.base_accuracy)
+        target_acc = self.base_accuracy + real_improvement
 
         lr = self.max_lr
         acc = 0
@@ -25,7 +26,9 @@ class LearningRateExplorer:
             self.training_function(lr)
             acc = self.evaluation_function()
             if acc < target_acc:
-                lr *= 0.9
+                lr *= 0.7
+                real_improvement *= 0.999
+                target_acc = self.base_accuracy + real_improvement
             
             self.model.load_state_dict(original_state)
         return lr
