@@ -1,6 +1,6 @@
 from mimarsinan.pipelining.model_building.patched_perceptron_flow_builder import PatchedPerceptronFlowBuilder
 from mimarsinan.pipelining.pretrainer import Pretrainer
-from mimarsinan.pipelining.shift_tuner import ShiftTuner
+from mimarsinan.pipelining.activation_shifter import ActivationShifter
 from mimarsinan.pipelining.activation_quantization_tuner import ActivationQuantizationTuner
 from mimarsinan.pipelining.normalization_fuser import NormalizationFuser
 from mimarsinan.pipelining.weight_quantization_tuner import WeightQuantizationTuner
@@ -76,11 +76,11 @@ class BasicClassificationPipeline:
         print("Pretraining...")
         pretraining_accuracy = Pretrainer(self, self.pretraining_epochs).run()
 
-        print("Shift tuning...")
-        shift_accuracy = ShiftTuner(
+        print("Shifting activation...")
+        shift_accuracy = ActivationShifter(
             self, self.aq_cycle_epochs, self.target_tq, pretraining_accuracy).run()
-        print(f"Shift final accuracy: {shift_accuracy}")
-        assert shift_accuracy > pretraining_accuracy * 0.9
+        print(f"Accuracy after activation shift: {shift_accuracy}")
+        assert shift_accuracy > pretraining_accuracy * 0.95
 
         print("Activation quantization...")
         aq_accuracy = ActivationQuantizationTuner(
@@ -89,13 +89,15 @@ class BasicClassificationPipeline:
         assert aq_accuracy > shift_accuracy * 0.9
 
         print("Normalization fusion...")
-        NormalizationFuser(self).run()
+        fn_accuracy = NormalizationFuser(self).run()
+        print(f"Fused normalization accuracy: {aq_accuracy}")
+        assert fn_accuracy > aq_accuracy * 0.9
 
         print("Weight quantization...")
         wq_accuracy = WeightQuantizationTuner(
             self, self.wq_cycle_epochs, self.target_tq, aq_accuracy).run()
         print(f"WQ final accuracy: {wq_accuracy}")
-        assert wq_accuracy > aq_accuracy * 0.9
+        assert wq_accuracy > fn_accuracy * 0.9
 
         print("Soft core mapping...")
         soft_core_mapping = SoftCoreMapper(self).run()
