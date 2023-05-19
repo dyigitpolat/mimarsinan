@@ -62,6 +62,18 @@ class SoftQuantize(nn.Module):
     def forward(self, x):
         return StaircaseFunction.apply(x, self.Tq)
     
+class CQ_Activation(nn.Module):
+    def __init__(self, Tq):
+        super(CQ_Activation, self).__init__()
+        self.Tq = Tq
+        self.soft_quantize = SoftQuantize(Tq)
+    
+    def forward(self, x):
+        out = ClampedReLU()(x)
+        out = self.soft_quantize(out)
+        return out
+
+
 class DifferentiableClamp(Function):
     @staticmethod
     def forward(ctx, x, a, b):
@@ -83,54 +95,9 @@ class DifferentiableClamp(Function):
     
         grad_input = grad_output * grad
         return grad_input, None, None
-class CQ_Activation(nn.Module):
-    def __init__(self, Tq):
-        super(CQ_Activation, self).__init__()
-        self.Tq = Tq
-        self.soft_quantize = SoftQuantize(Tq)
-    
-    def forward(self, x):
-        out = ClampedReLU()(x)
-        out = self.soft_quantize(out)
-        return out
-    
 class ClampedReLU(nn.Module):
     def forward(self, x):
         return DifferentiableClamp.apply(x, 0.0, 1.0)
-    
-class DifferentiableShiftClamp(Function):
-    @staticmethod
-    def forward(ctx, x, a, b, shift):
-        a = torch.tensor(a)
-        b = torch.tensor(b)
-        shift = torch.tensor(shift)
-        ctx.save_for_backward(x, a, b, shift)
-        return torch.clamp(x - shift, a, b)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        x, a, b, shift = ctx.saved_tensors
-        a = a + shift
-        b = b + shift
-        steepness = 10.0
-        grad = torch.where(
-            x < a,
-            torch.exp(steepness*(x-a)),
-            torch.where(
-                x < b,
-                1.0,
-                torch.exp(steepness*(b-x))))
-    
-        grad_input = grad_output * grad
-        return grad_input, None, None, None
-
-class ClampedShiftReLU(nn.Module):
-    def __init__(self, shift):
-        super(ClampedShiftReLU, self).__init__()
-        self.shift = shift
-
-    def forward(self, x):
-        return DifferentiableShiftClamp.apply(x, 0.0, 1.0, self.shift)
     
 class SmoothStaircaseFunction(Function):
     @staticmethod
@@ -170,3 +137,12 @@ class CQ_Activation_Soft(nn.Module):
         out = self.staircase(out)
         out = ClampedReLU()(out)
         return out
+
+class ShiftedActivation(nn.Module):
+    def __init__(self, activation, shift):
+        super(ShiftedActivation, self).__init__()
+        self.activation = activation
+        self.shift = shift
+    
+    def forward(self, x):
+        return self.activation(x - self.shift)
