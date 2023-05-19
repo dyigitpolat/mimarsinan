@@ -23,13 +23,15 @@ class ActivationShifter:
             pipeline.wq_loss)
         
     def run(self):
+        shift_amount = 0.5 / self.target_tq
+
         for perceptron in self.model.get_perceptrons():
             perceptron.set_activation(
-                ShiftedActivation(perceptron.activation, 0.5 / self.target_tq))
+                ShiftedActivation(perceptron.activation, shift_amount))
 
             if isinstance(perceptron.normalization, nn.Identity):
-                perceptron.layer.bias.data += 0.5 / self.target_tq
+                perceptron.layer.bias.data += shift_amount
             else:
-                perceptron.normalization.bias.data += 0.5 / self.target_tq
+                perceptron.normalization.bias.data += shift_amount
 
         return self.trainer.validate_train()
