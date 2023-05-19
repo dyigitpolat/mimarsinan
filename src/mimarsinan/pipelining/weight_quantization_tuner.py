@@ -3,23 +3,22 @@ from mimarsinan.transformations.parameter_transforms.collection import *
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.models.layers import CQ_Activation
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
-from mimarsinan.tuning.basic_smooth_adaptation import BasicSmoothAdaptation
+from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 
 class WeightQuantizationTuner:
     def __init__(self, pipeline, epochs, target_tq, target_accuracy):
         # Targets
         self.target_tq = target_tq
-        self.target_accuracy = target_accuracy
+        self.target_accuracy = target_accuracy * 0.99
 
         # Model
         self.model = pipeline.model
-        self.model.set_activation(CQ_Activation(self.target_tq))
 
         def mixed_transform(rate):
             def transform(param):
                 a = clip_decay_and_quantize_param(param)
                 b = param
-                return a * rate + b * (1.0 - rate)
+                return a * rate + b * (1 - rate)
             return transform
 
         # Trainer
@@ -36,18 +35,10 @@ class WeightQuantizationTuner:
             pipeline.reporter.report(key, value)
 
         self.trainer.report_function = report
-
-        # Automatic learning rate
-        self.lr = LearningRateExplorer(
-            self.trainer, 
-            self.model, 
-            pipeline.lr, 
-            pipeline.lr / 1000, 
-            0.1 / pipeline.num_classes).find_lr_for_tuning()
         
         # Epochs
         self.epochs = epochs
-        self.cycles = 10
+        self.cycles = pipeline.wq_cycles
 
         # Targets
         self.target_tq = target_tq
@@ -62,20 +53,41 @@ class WeightQuantizationTuner:
             self.model.set_activation(CQ_Activation(self.target_tq))
             self.trainer.weight_transformation = mixed_transform(q_rate)
 
-            acc = self.trainer.train_until_target_accuracy(
-                self.lr, self.epochs, self._prev_acc)
+            lr = LearningRateExplorer(
+                self.trainer, 
+                self.model, 
+                pipeline.lr / 20, 
+                pipeline.lr / 1000, 
+                0.01).find_lr_for_tuning()
             
-            self._prev_acc = max(self._prev_acc, acc)
+            acc = self.trainer.train_until_target_accuracy(
+                lr, self.epochs, self._prev_acc)
+            
+            acc = self.trainer.train_n_epochs(lr / 2, 2)
+            
+            self._prev_acc = max(self._prev_acc, acc) * 0.999
             
         self.adaptation_function = adaptation
 
     def run(self):
         self.model.set_activation(CQ_Activation(self.target_tq))
+    
+        def evaluate_model(alpha):
+            return self.trainer.validate_train()
 
-        BasicSmoothAdaptation (
-            self.adaptation_function
-        ).adapt_smoothly(
-            interpolators=[BasicInterpolation(0.0, 1.0)], 
-            cycles=self.cycles)
+        def clone_state():
+            return self.model.state_dict()
+
+        def restore_state(state):
+            self.model.load_state_dict(state)
+
+        adapter = SmartSmoothAdaptation (
+            self.adaptation_function,
+            clone_state,
+            restore_state,
+            evaluate_model
+        )
+
+        adapter.adapt_smoothly(interpolators=[BasicInterpolation(0.0, 1.0)])
         
         return self.trainer.validate_train()
