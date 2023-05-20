@@ -1,4 +1,4 @@
-from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.model_training.weight_transform_trainer import WeightTransformTrainer
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.transformations.parameter_transforms.collection import *
 from mimarsinan.models.layers import ShiftedActivation
@@ -15,12 +15,15 @@ class ActivationShifter:
         self.model = pipeline.model
 
         # Trainer
-        self.trainer = BasicTrainer(
+        self.trainer = WeightTransformTrainer(
             self.model, 
             pipeline.device, 
             pipeline.training_dataloader, 
             pipeline.validation_dataloader, 
-            pipeline.wq_loss)
+            pipeline.aq_loss, clip_and_decay_param)
+        
+        # LR
+        self.lr = pipeline.lr
         
     def run(self):
         shift_amount = 0.5 / self.target_tq
@@ -34,4 +37,12 @@ class ActivationShifter:
             else:
                 perceptron.normalization.bias.data += shift_amount
 
+        lr = LearningRateExplorer(
+            self.trainer,
+            self.model,
+            self.lr / 10,
+            self.lr / 1000,
+            0.01).find_lr_for_tuning()
+
+        self.trainer.train_n_epochs(lr / 2, 2)
         return self.trainer.validate_train()
