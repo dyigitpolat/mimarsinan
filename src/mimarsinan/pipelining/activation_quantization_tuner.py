@@ -1,7 +1,7 @@
 from mimarsinan.model_training.weight_transform_trainer import WeightTransformTrainer
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.transformations.parameter_transforms.collection import *
-from mimarsinan.models.layers import CQ_Activation_Soft, CQ_Activation
+from mimarsinan.models.layers import CQ_Activation_Soft, CQ_Activation, ShiftedActivation
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 
@@ -37,11 +37,13 @@ class ActivationQuantizationTuner:
         # Adaptation
         self._prev_acc = target_accuracy
         self.lr = pipeline.lr
-        def adaptation(alpha):
-            print("  Tuning model with soft CQ with alpha = {}...".format(alpha))
+        def adaptation(alpha, tq):
+            print(f"  CQ Tuning with alpha = {alpha}, tq = {tq}")
             pipeline.reporter.report("alpha", alpha)
 
-            self.model.set_activation(CQ_Activation_Soft(self.target_tq, alpha))
+            shift_amount = (0.5 / self.target_tq) - (0.5 / tq)
+            soft_cq = CQ_Activation_Soft(tq, alpha)
+            self.model.set_activation(ShiftedActivation(soft_cq, shift_amount))
             self.trainer.weight_transformation = clip_and_decay_param
 
             self.lr = LearningRateExplorer(
@@ -66,9 +68,15 @@ class ActivationQuantizationTuner:
             0.1, 
             20, 
             curve = lambda x: x ** 2)
+        tq_interpolator = BasicInterpolation(
+            self.target_tq * 2 * self.cycles, 
+            self.target_tq, 
+            curve = lambda x: x ** 0.2)
         
-        def evaluate_model(alpha):
-            self.model.set_activation(CQ_Activation_Soft(self.target_tq, alpha))
+        def evaluate_model(alpha, tq):
+            shift_amount = (0.5 / self.target_tq) - (0.5 / tq)
+            soft_cq = CQ_Activation_Soft(tq, alpha)
+            self.model.set_activation(ShiftedActivation(soft_cq, shift_amount))
             return self.trainer.validate_train()
 
         def clone_state():
@@ -84,9 +92,10 @@ class ActivationQuantizationTuner:
             evaluate_model
         )
 
-        adapter.adapt_smoothly(interpolators=[alpha_interpolator])
+        adapter.adapt_smoothly(interpolators=[
+            alpha_interpolator, tq_interpolator])
+        
         self.model.set_activation(CQ_Activation(self.target_tq))
-
         lr = LearningRateExplorer(
                 self.trainer, 
                 self.model, 
