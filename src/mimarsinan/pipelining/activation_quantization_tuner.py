@@ -104,7 +104,7 @@ class ActivationQuantizationTuner:
             restore_state,
             evaluate_model
         )
-        adapter.tolerance = 0.0
+        adapter.tolerance = 0.01
 
         adapter.adapt_smoothly(interpolators=[
             alpha_interpolator, tq_interpolator, q_rate_interpolator])
