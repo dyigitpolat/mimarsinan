@@ -14,7 +14,7 @@ class Pretrainer:
             pipeline.device, 
             pipeline.training_dataloader, 
             pipeline.validation_dataloader, 
-            pipeline.pt_loss, decay_param)
+            pipeline.pt_loss, clip_and_decay_param)
         
         def report(key, value):
             if key == "Training accuracy":
