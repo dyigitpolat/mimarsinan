@@ -151,6 +151,11 @@ class PatchedPerceptronFlow(nn.Module):
         self.features = min(max_axons, max_neurons)
         self.patch_channels = self.features // self.patch_count
         self.fc_width = self.patch_channels * self.patch_count
+
+        assert self.fc_width <= max_neurons, "not enough neurons"
+        assert self.fc_width <= max_axons, "not enough axons"
+        assert self.patch_channels <= max_axons, "not enough axons"
+
         self.patch_layers = nn.ModuleList(
             [Perceptron(self.patch_channels, self.patch_size) for _ in range(self.patch_count)])
         
