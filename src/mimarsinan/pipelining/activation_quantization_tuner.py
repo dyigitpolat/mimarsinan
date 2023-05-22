@@ -14,13 +14,22 @@ class ActivationQuantizationTuner:
         # Model
         self.model = pipeline.model
 
+        def mixed_transform(rate):
+            def transform(param):
+                a = clip_and_decay_param(param)
+                b = param
+                return a * rate + b * (1 - rate)
+            return transform
+        
+        self.parametric_transform = mixed_transform
+
         # Trainer
         self.trainer = WeightTransformTrainer(
             self.model, 
             pipeline.device, 
             pipeline.training_dataloader, 
             pipeline.validation_dataloader, 
-            pipeline.aq_loss, clip_and_decay_param)
+            pipeline.aq_loss, mixed_transform(0.01))
         
         def report(key, value):
             if key == "Training accuracy":
@@ -36,15 +45,15 @@ class ActivationQuantizationTuner:
 
         # Adaptation
         self._prev_acc = target_accuracy
-        self.lr = pipeline.lr
-        def adaptation(alpha, tq):
-            print(f"  CQ Tuning with alpha = {alpha}, tq = {tq}")
+        self.lr = pipeline.lr / 10
+        def adaptation(alpha, tq, q_rate):
+            print(f"  CQ Tuning with alpha = {alpha}, tq = {tq}, q_rate = {q_rate}...")
             pipeline.reporter.report("alpha", alpha)
 
             shift_amount = (0.5 / self.target_tq) - (0.5 / tq)
             soft_cq = CQ_Activation_Soft(tq, alpha)
             self.model.set_activation(ShiftedActivation(soft_cq, shift_amount))
-            self.trainer.weight_transformation = clip_and_decay_param
+            self.trainer.weight_transformation = self.parametric_transform(q_rate)
 
             self.lr = LearningRateExplorer(
                 self.trainer, 
@@ -72,11 +81,15 @@ class ActivationQuantizationTuner:
             self.target_tq * 2 * self.cycles, 
             self.target_tq, 
             curve = lambda x: x ** 0.2)
+        q_rate_interpolator = BasicInterpolation(0,1)
         
-        def evaluate_model(alpha, tq):
+        def evaluate_model(alpha, tq, q_rate):
             shift_amount = (0.5 / self.target_tq) - (0.5 / tq)
             soft_cq = CQ_Activation_Soft(tq, alpha)
             self.model.set_activation(ShiftedActivation(soft_cq, shift_amount))
+            self.trainer.weight_transformation = self.parametric_transform(q_rate)
+            
+            self.trainer.train_n_epochs(self.lr / 2, 1)
             return self.trainer.validate_train()
 
         def clone_state():
@@ -91,9 +104,10 @@ class ActivationQuantizationTuner:
             restore_state,
             evaluate_model
         )
+        adapter.tolerance = 0.0
 
         adapter.adapt_smoothly(interpolators=[
-            alpha_interpolator, tq_interpolator])
+            alpha_interpolator, tq_interpolator, q_rate_interpolator])
         
         self.model.set_activation(CQ_Activation(self.target_tq))
         lr = LearningRateExplorer(
