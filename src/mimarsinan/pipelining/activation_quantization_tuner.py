@@ -45,6 +45,7 @@ class ActivationQuantizationTuner:
 
         # Adaptation
         self._prev_acc = target_accuracy
+        self.pipeline_lr = pipeline.lr
         self.lr = pipeline.lr / 10
         def adaptation(alpha, tq, q_rate):
             print(f"  CQ Tuning with alpha = {alpha}, tq = {tq}, q_rate = {q_rate}...")
@@ -109,12 +110,13 @@ class ActivationQuantizationTuner:
         adapter.adapt_smoothly(interpolators=[
             alpha_interpolator, tq_interpolator, q_rate_interpolator])
         
+        self.trainer.weight_transformation = clip_and_decay_param
         self.model.set_activation(CQ_Activation(self.target_tq))
         lr = LearningRateExplorer(
                 self.trainer, 
                 self.model, 
-                self.lr / 10, 
-                self.lr / 1000, 
+                self.pipeline_lr / 10, 
+                self.pipeline_lr / 1000, 
                 0.01).find_lr_for_tuning()
         self.trainer.train_until_target_accuracy(
             lr, self.epochs, self.target_accuracy)
