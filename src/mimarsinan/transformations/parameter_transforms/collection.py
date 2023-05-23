@@ -6,7 +6,8 @@ import torch
 pipeline_clipping_rate = 0.01
 
 def special_decay(w):
-    return torch.clamp(w, -1, 1)
+    #return torch.clamp(w, -1, 1)
+    return torch.sin(torch.tanh(w))
 
 def decay_param(param_data):
     out = special_decay(param_data)
