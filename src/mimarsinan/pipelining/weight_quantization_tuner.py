@@ -68,7 +68,7 @@ class WeightQuantizationTuner:
             
             acc = self.trainer.train_n_epochs(self.lr / 2, 2)
             
-            self._prev_acc = max(self._prev_acc, acc) * 0.99
+            self._prev_acc = max(self._prev_acc, acc) * 0.999
             
         self.adaptation_function = adaptation
 
