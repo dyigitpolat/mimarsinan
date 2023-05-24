@@ -11,24 +11,26 @@ class PatchedPerceptronFlowBuilder:
         self.output_shape = output_shape
 
     def build(self):
-        patch_cols = -1
-        patch_rows = -1
-        for i in range(1, int(math.sqrt(self.max_axons)) + 1):
-            try:
-                patch_rows = max(self.input_shape[-2] // i, 1)
-                patch_cols = max(self.input_shape[-1] // i, 1)
+        perceptron_flow = None
 
+        print(f"Input shape: {self.input_shape}")
+        for i in range(2, int(math.sqrt(self.max_axons)) + 1):
+            patch_rows = max(self.input_shape[-2] // i, 1)
+            patch_cols = max(self.input_shape[-1] // i, 1)
+
+            print(f"Trying patch dimensions {i}: {patch_rows} x {patch_cols}")
+            try:
                 perceptron_flow = PatchedPerceptronFlow(
                     self.input_shape, self.output_shape,
                     self.max_axons - 1, self.max_neurons,
-                    patch_rows, 
-                    patch_cols, fc_depth=2)
+                    patch_cols, 
+                    patch_rows, fc_depth=2)
                 break
             except: 
-                continue
+                pass
         
         print(f"Patch dimensions {patch_cols} x {patch_cols}")
-        assert patch_cols != -1 or patch_rows != -1, "Could not find a valid patch size for the given input shape and max axons."
-
+        assert perceptron_flow is not None, \
+            "Could not find a valid patch size for the given input shape and max axons."
     
         return perceptron_flow
