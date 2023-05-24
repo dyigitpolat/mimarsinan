@@ -35,11 +35,3 @@ def clip_and_decay_param(param_data):
     out = clipper.get_clipped_weights(param_data)
     out = special_decay(out)
     return out
-
-def clip_and_quantize_param(param_data):
-    clipper = SoftTensorClipping(pipeline_clipping_rate)
-    quantizer = TensorQuantization(bits=4)
-
-    out = clipper.get_clipped_weights(param_data)
-    out = quantizer.quantize(out)
-    return out
