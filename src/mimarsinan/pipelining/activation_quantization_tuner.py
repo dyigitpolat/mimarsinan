@@ -1,7 +1,7 @@
 from mimarsinan.model_training.weight_transform_trainer import WeightTransformTrainer
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.transformations.parameter_transforms.collection import *
-from mimarsinan.models.layers import CQ_Activation_Soft, CQ_Activation, ShiftedActivation
+from mimarsinan.models.layers import CQ_Activation_Parametric, CQ_Activation, ShiftedActivation
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 
@@ -14,11 +14,13 @@ class ActivationQuantizationTuner:
         # Model
         self.model = pipeline.model
 
-        def mixed_transform(rate):
+        def mixed_transform(transform_rate):
             def transform(param):
-                a = clip_and_decay_param(param)
-                b = param
-                return a * rate + b * (1 - rate)
+                random_mask = torch.rand(param.shape, device=param.device)
+                random_mask = (random_mask < transform_rate).float()
+                return \
+                    random_mask * clip_and_decay_param(param) \
+                    + (1 - random_mask) * param
             return transform
         
         self.parametric_transform = mixed_transform
@@ -47,14 +49,12 @@ class ActivationQuantizationTuner:
         self._prev_acc = target_accuracy
         self.pipeline_lr = pipeline.lr
         self.lr = pipeline.lr / 10
-        def adaptation(alpha, tq, q_rate):
-            print(f"  CQ Tuning with alpha = {alpha}, tq = {tq}, q_rate = {q_rate}...")
-            pipeline.reporter.report("alpha", alpha)
+        def adaptation(cq_rate, transform_rate):
+            print(f"  CQ Tuning with rate = {cq_rate}, transform_rate = {transform_rate}...")
+            pipeline.reporter.report("cq_rate", cq_rate)
 
-            shift_amount = (0.5 / self.target_tq) - (0.5 / tq)
-            soft_cq = CQ_Activation_Soft(tq, alpha)
-            self.model.set_activation(ShiftedActivation(soft_cq, shift_amount))
-            self.trainer.weight_transformation = self.parametric_transform(q_rate)
+            self.model.set_activation(CQ_Activation_Parametric(self.target_tq, cq_rate))
+            self.trainer.weight_transformation = self.parametric_transform(transform_rate)
 
             self.lr = LearningRateExplorer(
                 self.trainer, 
@@ -74,21 +74,12 @@ class ActivationQuantizationTuner:
         
 
     def run(self):
-        alpha_interpolator = BasicInterpolation(
-            0.1, 
-            20, 
-            curve = lambda x: x ** 2)
-        tq_interpolator = BasicInterpolation(
-            self.target_tq * 2 * self.cycles, 
-            self.target_tq, 
-            curve = lambda x: x ** 0.2)
-        q_rate_interpolator = BasicInterpolation(0,1)
+        cq_rate_interpolator = BasicInterpolation(0, 1)
+        transform_rate_interpolator = BasicInterpolation(0,1)
         
-        def evaluate_model(alpha, tq, q_rate):
-            shift_amount = (0.5 / self.target_tq) - (0.5 / tq)
-            soft_cq = CQ_Activation_Soft(tq, alpha)
-            self.model.set_activation(ShiftedActivation(soft_cq, shift_amount))
-            self.trainer.weight_transformation = self.parametric_transform(q_rate)
+        def evaluate_model(cq_rate, transform_rate):
+            self.model.set_activation(CQ_Activation_Parametric(self.target_tq, cq_rate))
+            self.trainer.weight_transformation = self.parametric_transform(transform_rate)
             
             self.trainer.train_n_epochs(self.lr / 2, 1)
             return self.trainer.validate_train()
@@ -108,7 +99,7 @@ class ActivationQuantizationTuner:
         adapter.tolerance = 0.01
 
         adapter.adapt_smoothly(interpolators=[
-            alpha_interpolator, tq_interpolator, q_rate_interpolator])
+            cq_rate_interpolator, transform_rate_interpolator])
         
         self.trainer.weight_transformation = clip_and_decay_param
         self.model.set_activation(CQ_Activation(self.target_tq))

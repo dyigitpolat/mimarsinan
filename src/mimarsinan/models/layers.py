@@ -72,8 +72,23 @@ class CQ_Activation(nn.Module):
         out = ClampedReLU()(x)
         out = self.soft_quantize(out)
         return out
+class CQ_Activation_Parametric(nn.Module):
+    def __init__(self, Tq, rate):
+        super(CQ_Activation_Parametric, self).__init__()
+        self.Tq = Tq
+        self.rate = rate
+        self.soft_quantize = SoftQuantize(Tq)
+    
+    def forward(self, x):
+        out_0 = ClampedReLU()(x - 0.5 / self.Tq)
+        out_1 = ClampedReLU()(x)
 
-
+        random_mask = torch.rand(x.shape, device=x.device)
+        random_mask = (random_mask < self.rate).float()
+        return \
+            random_mask * self.soft_quantize(out_1) \
+            + (1.0 - random_mask) * out_0
+    
 class DifferentiableClamp(Function):
     @staticmethod
     def forward(ctx, x, a, b):
@@ -137,7 +152,7 @@ class CQ_Activation_Soft(nn.Module):
         out = self.staircase(out)
         out = ClampedReLU()(out)
         return out
-
+    
 class ShiftedActivation(nn.Module):
     def __init__(self, activation, shift):
         super(ShiftedActivation, self).__init__()
