@@ -16,9 +16,11 @@ class WeightQuantizationTuner:
 
         def mixed_transform(rate):
             def transform(param):
-                a = clip_decay_and_quantize_param(param)
-                b = param
-                return a * rate + b * (1 - rate)
+                random_mask = torch.rand(param.shape, device=param.device)
+                random_mask = (random_mask < rate).float()
+                return \
+                    random_mask * clip_decay_and_quantize_param(param) \
+                    + (1 - random_mask) * param
             return transform
         
         self.transform = mixed_transform
