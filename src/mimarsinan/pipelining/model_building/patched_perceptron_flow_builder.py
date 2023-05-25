@@ -4,11 +4,13 @@ import math
 class PatchedPerceptronFlowBuilder:
     def __init__(self, 
                  max_axons, max_neurons,
-                 input_shape, output_shape):
+                 input_shape, output_shape,
+                 model_complexity):
         self.max_axons = max_axons
         self.max_neurons = max_neurons
         self.input_shape = input_shape
         self.output_shape = output_shape
+        self.model_complexity = model_complexity
 
     def build(self):
         perceptron_flow = None
@@ -24,7 +26,7 @@ class PatchedPerceptronFlowBuilder:
                     self.input_shape, self.output_shape,
                     self.max_axons - 1, self.max_neurons,
                     patch_cols, 
-                    patch_rows, fc_depth=2)
+                    patch_rows, fc_depth=self.model_complexity)
                 break
             except: 
                 pass
