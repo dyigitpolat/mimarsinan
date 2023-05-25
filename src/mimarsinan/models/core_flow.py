@@ -20,6 +20,10 @@ class CoreFlow(nn.Module):
         self.activation = nn.ReLU()
         self.cycles = ChipLatency(core_mapping).calculate()
 
+        # Stats
+        self.core_avgs = [None] * len(self.cores)
+        self.chip_avg = None
+
     def update_cores(self):
         for idx, core in enumerate(self.cores):
             core.core_matrix[:,:] = \
@@ -55,6 +59,20 @@ class CoreFlow(nn.Module):
     
     def set_activation(self, activation):
         self.activation = activation
+
+    def update_stats(self, buffers):
+        for i in range(len(self.cores)):
+            if self.core_avgs[i] is None:
+                self.core_avgs[i] = torch.mean(buffers[i]).item()
+            else:
+                self.core_avgs[i] = \
+                    0.9 * self.core_avgs[i] + 0.1 * torch.mean(buffers[i]).item()
+        
+        if self.chip_avg is None:
+            self.chip_avg = torch.mean(torch.cat(buffers)).item()
+        else:
+            self.chip_avg = \
+                0.9 * self.chip_avg + 0.1 * torch.mean(torch.cat(buffers)).item()
     
     def forward(self, x):
         x = x.view(x.shape[0], -1)
@@ -77,5 +95,6 @@ class CoreFlow(nn.Module):
                         self.core_params[core_idx], 
                         input_signals[core_idx].T).T)
         
+        self.update_stats(buffers)
         output_signals = self.get_signal_tensor(x, buffers, self.output_sources)
         return output_signals
