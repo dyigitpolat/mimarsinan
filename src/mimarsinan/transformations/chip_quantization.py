@@ -36,7 +36,7 @@ class ChipQuantization:
         scale = self.scale_thresholds(cores)
             
         for core in cores:
-            core.threshold = round(core.threshold * (1.0 - 1.0 / self.quantizer.q_max))
+            core.threshold = round(core.threshold)
             core.core_matrix = self.quantizer.scaled_quantize(core.core_matrix)
 
         return scale
