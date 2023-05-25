@@ -94,13 +94,13 @@ class BasicClassificationPipeline:
 
         print("Normalization fusion...")
         fn_accuracy = NormalizationFuser(self).run()
-        print(f"Fused normalization accuracy: {aq_accuracy}")
+        print(f"Fused normalization accuracy: {fn_accuracy}")
         assert fn_accuracy > aq_accuracy * 0.9
 
         print("Weight quantization...")
         wq_accuracy = WeightQuantizationTuner(
             self, self.wq_cycle_epochs, self.target_tq, aq_accuracy).run()
-        print(f"WQ final accuracy: {wq_accuracy}")
+        print(f"WQ final accuracy: {fn_accuracy}")
         assert wq_accuracy > fn_accuracy * 0.9
 
         print("Soft core mapping...")
