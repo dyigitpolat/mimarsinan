@@ -154,7 +154,7 @@ class PatchedPerceptronFlow(nn.Module):
 
         assert self.fc_width <= max_neurons, "not enough neurons"
         assert self.fc_width <= max_axons, "not enough axons"
-        assert self.patch_channels <= max_axons, "not enough axons"
+        assert self.patch_size <= max_axons, "not enough axons"
 
         self.patch_layers = nn.ModuleList(
             [Perceptron(self.patch_channels, self.patch_size) for _ in range(self.patch_count)])
@@ -231,14 +231,15 @@ class PatchedPerceptronFlow(nn.Module):
     
 def statistical_consistency_loss(indicators):
     mean_of_indicators = indicators.mean()
-    return torch.sqrt(torch.mean((indicators - mean_of_indicators) ** 2))
+    return torch.mean((indicators - mean_of_indicators) ** 2)
 
-def get_parameter_stats(parameter_list):
+def get_parameter_stats(named_parameter_list):
     param_means = []
     param_vars = []
-    for param in parameter_list:
-        param_means.append(param.mean())
-        param_vars.append(param.var())
+    for name, param in named_parameter_list:
+        if "weight" in name or "bias" in name:
+            param_means.append(param.mean())
+            param_vars.append(param.var())
     param_means = torch.stack(param_means)
     param_vars = torch.stack(param_vars)
     return param_means, param_vars
@@ -246,8 +247,9 @@ def get_parameter_stats(parameter_list):
 def ppf_loss(ppf_model, x, y):
     stats = {}
     out = ppf_model(x, stats)
+    # return nn.CrossEntropyLoss()(out, y)
 
-    param_means, param_vars = get_parameter_stats(ppf_model.parameters())
+    param_means, param_vars = get_parameter_stats(ppf_model.named_parameters())
     param_mean_error = statistical_consistency_loss(param_means)
     param_var_error = statistical_consistency_loss(param_vars)
 
@@ -256,15 +258,15 @@ def ppf_loss(ppf_model, x, y):
     mean_patch_error = statistical_consistency_loss(stats["means_patch"])
     var_patch_error = statistical_consistency_loss(stats["vars_patch"])
 
-    activation_consistency_error = \
-        torch.sqrt(torch.mean(torch.stack([
-            mean_fc_error, var_fc_error, 
-            mean_patch_error, var_patch_error]) ** 2))
+    # activation_consistency_error = \
+    #     torch.sqrt(torch.mean(torch.stack([
+    #         mean_fc_error, var_fc_error, 
+    #         mean_patch_error, var_patch_error]) ** 2))
     
-    parameter_consistency_error = \
-        torch.sqrt(torch.mean(torch.stack([
-            param_mean_error, param_var_error]) ** 2))
+    parameter_consistency_error = (param_mean_error + param_var_error)
     
-    return nn.CrossEntropyLoss()(out, y) * (activation_consistency_error + parameter_consistency_error)
+    return nn.CrossEntropyLoss()(out, y) * (
+        #activation_consistency_error + 
+        parameter_consistency_error)
     
 
