@@ -10,6 +10,7 @@ from mimarsinan.pipelining.core_flow_tuner import CoreFlowTuner
 from mimarsinan.pipelining.simulation_runner import SimulationRunner
 
 from mimarsinan.models.perceptron_flow import ppf_loss
+from mimarsinan.common.file_utils import prepare_containing_directory
 
 import numpy as np
 import torch
@@ -52,9 +53,11 @@ class BasicClassificationPipeline:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Model
+        self.model_complexity = 2
         self.model = PatchedPerceptronFlowBuilder(
             self.max_axons, self.max_neurons, 
-            self.input_shape, self.num_classes).build()
+            self.input_shape, self.num_classes,
+            self.model_complexity).build()
         
         # Training hyper parameters
         self.lr = training_parameters['lr']
@@ -71,6 +74,7 @@ class BasicClassificationPipeline:
         
         # File
         self.working_directory = working_directory
+        prepare_containing_directory(self.working_directory)
         
     def run(self):
         print("Pretraining...")
@@ -108,6 +112,7 @@ class BasicClassificationPipeline:
         print("CoreFlow tuning...")
         core_flow_accuracy, threshold_scale = CoreFlowTuner(
             self, hard_core_mapping, self.target_tq).run()
+        print(f"Scale: {threshold_scale}")
         print(f"CoreFlow final accuracy: {core_flow_accuracy}")
 
         print("Simulation...")
