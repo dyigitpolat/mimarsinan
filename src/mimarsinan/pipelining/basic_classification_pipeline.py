@@ -24,7 +24,8 @@ class BasicClassificationPipeline:
         platform_constraints: dict,
         training_parameters: dict,
         reporter,
-        working_directory):
+        working_directory,
+        model_complexity=2):
 
         # Platform constraints
         self.max_axons = platform_constraints['max_axons']
@@ -53,7 +54,7 @@ class BasicClassificationPipeline:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Model
-        self.model_complexity = 2
+        self.model_complexity = model_complexity
         self.model = PatchedPerceptronFlowBuilder(
             self.max_axons, self.max_neurons, 
             self.input_shape, self.num_classes,
