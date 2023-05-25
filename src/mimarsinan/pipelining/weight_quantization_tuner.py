@@ -44,10 +44,6 @@ class WeightQuantizationTuner:
         self.epochs = epochs
         self.cycles = pipeline.wq_cycles
 
-        # Targets
-        self.target_tq = target_tq
-        self.target_accuracy = target_accuracy
-
         # Adaptation
         self._prev_acc = target_accuracy
         self.lr = pipeline.lr / 20
@@ -75,10 +71,10 @@ class WeightQuantizationTuner:
         self.adaptation_function = adaptation
 
     def run(self):
-        self.model.set_activation(CQ_Activation(self.target_tq))
-    
         def evaluate_model(q_rate):
+            self.model.set_activation(CQ_Activation(self.target_tq))
             self.trainer.weight_transformation = self.transform(q_rate)
+
             self.trainer.train_n_epochs(self.lr / 2, 1)
             return self.trainer.validate_train()
 
