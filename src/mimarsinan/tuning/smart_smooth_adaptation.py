@@ -22,19 +22,18 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
         return prev_metric * (1 - self.tolerance)
 
     def _find_step_size(self, t, interpolators):
-        step_size = (1 - t)
+        step_size = (1 - t) * 2
         state = self.state_clone_function()
 
         current_metric = 0
         lower_bound = self._lower_bound(t, interpolators)
         while current_metric < lower_bound and step_size > self.min_step:
+            step_size /= 2
             print("step_size: ", step_size)
+            
             next_t = t + step_size
             current_metric = self.evaluation_function(*[i(next_t) for i in interpolators])
-
-            if current_metric < lower_bound:
-                self.state_restore_function(state)
-                step_size /= 2
+            self.state_restore_function(state)
 
         self._adjust_minimum_step(step_size, t)
 
