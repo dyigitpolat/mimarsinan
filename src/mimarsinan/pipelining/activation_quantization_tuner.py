@@ -31,7 +31,7 @@ class ActivationQuantizationTuner:
             pipeline.device, 
             pipeline.training_dataloader, 
             pipeline.validation_dataloader, 
-            pipeline.aq_loss, mixed_transform(0.01))
+            pipeline.aq_loss, mixed_transform(0.001))
         
         def report(key, value):
             if key == "Training accuracy":
@@ -68,7 +68,7 @@ class ActivationQuantizationTuner:
             
             acc = self.trainer.train_n_epochs(self.lr / 2, 2)
             
-            self._prev_acc = max(self._prev_acc, acc) * 0.99
+            self._prev_acc = max(self._prev_acc * 0.99, acc)
 
         self.adaptation_function = adaptation
         

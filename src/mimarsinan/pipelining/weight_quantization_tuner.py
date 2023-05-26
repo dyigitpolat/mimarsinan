@@ -31,7 +31,7 @@ class WeightQuantizationTuner:
             pipeline.device, 
             pipeline.training_dataloader, 
             pipeline.validation_dataloader, 
-            pipeline.wq_loss, mixed_transform(0.5))
+            pipeline.wq_loss, mixed_transform(0.001))
         
         def report(key, value):
             if key == "Training accuracy":
@@ -66,7 +66,7 @@ class WeightQuantizationTuner:
             
             acc = self.trainer.train_n_epochs(self.lr / 2, 2)
             
-            self._prev_acc = max(self._prev_acc, acc) * 0.999
+            self._prev_acc = max(self._prev_acc * 0.999, acc)
             
         self.adaptation_function = adaptation
 
