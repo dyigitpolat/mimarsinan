@@ -53,6 +53,8 @@ class WeightQuantizationTuner:
 
             self.model.set_activation(CQ_Activation(self.target_tq))
             self.trainer.weight_transformation = mixed_transform(q_rate)
+    
+            acc = self.trainer.train_n_epochs(self.lr / 2, 1)
 
             self.lr = LearningRateExplorer(
                 self.trainer, 
@@ -60,7 +62,7 @@ class WeightQuantizationTuner:
                 pipeline.lr / 20, 
                 pipeline.lr / 1000, 
                 0.01).find_lr_for_tuning()
-            
+
             acc = self.trainer.train_until_target_accuracy(
                 self.lr, self.epochs, self._prev_acc)
             
