@@ -101,7 +101,7 @@ class BasicClassificationPipeline:
         print("Weight quantization...")
         wq_accuracy = WeightQuantizationTuner(
             self, self.wq_cycle_epochs, self.target_tq, aq_accuracy).run()
-        print(f"WQ final accuracy: {fn_accuracy}")
+        print(f"WQ final accuracy: {wq_accuracy}")
         assert wq_accuracy > fn_accuracy * 0.9
 
         print("Soft core mapping...")
