@@ -29,8 +29,7 @@ class ActivationQuantizationTuner:
         self.trainer = WeightTransformTrainer(
             self.model, 
             pipeline.device, 
-            pipeline.training_dataloader, 
-            pipeline.validation_dataloader, 
+            pipeline.data_provider,
             pipeline.aq_loss, mixed_transform(0.001))
         
         def report(key, value):

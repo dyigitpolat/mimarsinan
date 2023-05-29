@@ -9,8 +9,7 @@ class NormalizationFuser:
         self.trainer = BasicTrainer(
             self.model, 
             pipeline.device, 
-            pipeline.training_dataloader, 
-            pipeline.validation_dataloader, 
+            pipeline.data_provider, 
             pipeline.wq_loss)
 
     def run(self):

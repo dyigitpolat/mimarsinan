@@ -6,8 +6,8 @@ import copy
 
 class WeightTransformTrainer(BasicTrainer):
     def __init__(
-            self, model, device, train_loader, test_loader, loss_function, weight_transformation):
-        super().__init__(model, device, train_loader, test_loader, loss_function)
+            self, model, device, data_provider, loss_function, weight_transformation):
+        super().__init__(model, device, data_provider, loss_function)
         self.weight_transformation = weight_transformation
         self.aux_model = copy.deepcopy(self.model).to(self.device)
 
