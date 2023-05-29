@@ -15,9 +15,8 @@ class ActivationShifter:
         # Trainer
         self.trainer = BasicTrainer(
             self.model, 
-            pipeline.device, 
-            pipeline.training_dataloader, 
-            pipeline.validation_dataloader, 
+            pipeline.device,
+            pipeline.data_provider,
             pipeline.aq_loss)
         
         def report(key, value):

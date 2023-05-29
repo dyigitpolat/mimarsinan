@@ -17,9 +17,7 @@ import torch
 
 class BasicClassificationPipeline:
     def __init__(self, 
-        training_dataloader, 
-        validation_dataloader, 
-        test_dataloader,
+        data_provider,
         num_classes,
         platform_constraints: dict,
         training_parameters: dict,
@@ -34,13 +32,11 @@ class BasicClassificationPipeline:
         self.simulation_steps = platform_constraints['simulation_steps']
 
         # Data
-        self.training_dataloader = training_dataloader
-        self.validation_dataloader = validation_dataloader
-        self.test_dataloader = test_dataloader
+        self.data_provider = data_provider
 
         # Metadata
-        self.input_shape = next(iter(training_dataloader))[0].shape[1:]
-        self.output_shape = next(iter(training_dataloader))[1].shape[1:]
+        self.input_shape = data_provider.get_input_shape()
+        self.output_shape = data_provider.get_output_shape()
         if len(self.output_shape) == 0: self.output_shape = (1,)
 
         self.input_size = np.prod(self.input_shape)
@@ -100,7 +96,7 @@ class BasicClassificationPipeline:
 
         print("Weight quantization...")
         wq_accuracy = WeightQuantizationTuner(
-            self, self.wq_cycle_epochs, self.target_tq, aq_accuracy).run()
+            self, self.wq_cycle_epochs, self.target_tq, fn_accuracy).run()
         print(f"WQ final accuracy: {wq_accuracy}")
         assert wq_accuracy > fn_accuracy * 0.9
 

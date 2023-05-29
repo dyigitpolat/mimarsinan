@@ -4,13 +4,23 @@ import torch
 
 class BasicTrainer:
     def __init__(
-            self, model, device, train_loader, validation_loader, loss_function):
+            self, model, device, data_provider, loss_function):
         self.model = model.to(device)
         self.device = device
-        self.train_loader = train_loader
-        self.validation_loader = validation_loader
+
+        self.data_provider = data_provider
+        self.train_loader = data_provider.get_training_loader(
+            data_provider.get_training_batch_size())
+        self.validation_loader = data_provider.get_validation_loader(
+            data_provider.get_validation_batch_size())
+        self.test_loader = data_provider.get_test_loader(
+            data_provider.get_test_batch_size())
+        
         self.report_function = None
         self.loss_function = loss_function
+
+        self.val_iter = iter(self.validation_loader)
+        self.train_iter = iter(self.train_loader)
 
     def _report(self, metric_name, metric_value):
         if self.report_function is not None:
@@ -51,28 +61,51 @@ class BasicTrainer:
         scheduler.step(loss)
         return tracker.get_accuracy()
     
-    def _validate_on_loader(self, loader):
+    def _validate_on_loader(self, x, y):
         total = 0
         correct = 0
         with torch.no_grad():
-            for (x, y) in loader:
-                x, y = x.to(self.device), y.to(self.device)
-
-                self.model.eval()
-                _, predicted = self.model(x).max(1)
-                total += float(y.size(0))
-                correct += float(predicted.eq(y).sum().item())
-                break
+            self.model.eval()
+            _, predicted = self.model(x).max(1)
+            total += float(y.size(0))
+            correct += float(predicted.eq(y).sum().item())
             
         return correct / total
     
+    def test(self):
+        total = 0
+        correct = 0
+        with torch.no_grad():
+            self.model.eval()
+            for (x, y) in self.test_loader:
+                x, y = x.to(self.device), y.to(self.device)
+                _, predicted = self.model(x).max(1)
+                total += float(y.size(0))
+                correct += float(predicted.eq(y).sum().item())
+                
+        acc = correct / total
+        self._report("Test accuracy", acc)
+        return acc
+    
     def validate(self):
-        acc = self._validate_on_loader(self.validation_loader)
+        try:
+            x, y = next(self.val_iter)
+        except StopIteration:
+            self.val_iter = iter(self.validation_loader)
+            x, y = next(self.val_iter)
+
+        acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
         self._report("Validation accuracy", acc)
         return acc
     
     def validate_train(self):
-        acc = self._validate_on_loader(self.train_loader)
+        try:
+            x, y = next(self.train_iter)
+        except StopIteration:
+            self.train_iter = iter(self.train_loader)
+            x, y = next(self.train_iter)
+
+        acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
         self._report("Validation accuracy on train set", acc)
         return acc
 
@@ -98,4 +131,4 @@ class BasicTrainer:
             self.validate()
             if training_accuracy >= target_accuracy: break
         
-        return training_accuracy
+        return self.validate_train()
