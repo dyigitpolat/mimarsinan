@@ -12,9 +12,13 @@ class SimulationRunner:
 
         self.test_input = []
         self.test_targets = []
-        for xs, ys in pipeline.test_dataloader:
+        test_loader = pipeline.data_provider.get_test_loader(
+            pipeline.data_provider.get_test_batch_size())
+        
+        for xs, ys in test_loader:
             self.test_input.extend(xs)
             self.test_targets.extend(ys)
+            
         self.test_data = \
             [*zip(np.array(self.test_input), np.array(self.test_targets))]
 
