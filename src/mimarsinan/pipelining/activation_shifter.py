@@ -47,4 +47,4 @@ class ActivationShifter:
         shift_amount = 0.5 / self.target_tq
         self.shift_activation(shift_amount)
         self.trainer.train_until_target_accuracy(self.lr / 20, 2, self.target_accuracy)
-        return self.trainer.validate_train()
+        return self.trainer.validate()

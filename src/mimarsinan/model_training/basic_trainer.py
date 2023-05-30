@@ -131,4 +131,4 @@ class BasicTrainer:
             self.validate()
             if training_accuracy >= target_accuracy: break
         
-        return self.validate_train()
+        return self.validate()
