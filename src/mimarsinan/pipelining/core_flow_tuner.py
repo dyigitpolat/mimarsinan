@@ -9,8 +9,7 @@ class CoreFlowTuner:
     def __init__(self, pipeline, mapping, target_tq):
         self.model = pipeline.model
         self.device = pipeline.device
-        self.train_loader = pipeline.training_dataloader
-        self.test_loader = pipeline.test_dataloader
+        self.data_provider = pipeline.data_provider
         self.input_shape = pipeline.input_shape
 
         self.mapping = mapping
@@ -24,33 +23,31 @@ class CoreFlowTuner:
         core_flow.set_activation(CQ_Activation(self.target_tq))
         core_flow_trainer = BasicTrainer(
             core_flow, 
-            self.device, self.train_loader, self.test_loader, 
+            self.device, self.data_provider,
             None)
         
-        core_flow_trainer.validate_train()
+        core_flow_trainer.validate()
         core_avgs, chip_avg = core_flow.core_avgs, core_flow.chip_avg
 
         for core in self.mapping.cores:
             core.threshold = core.threshold * 0.9
 
-        cycles = 10
-        for _ in range(cycles):
-            spiking_core_flow = SpikingCoreFlow(self.input_shape, self.mapping, self.simulation_steps)
-            spiking_core_flow_trainer = BasicTrainer(
-                spiking_core_flow, 
-                self.device, self.train_loader, self.test_loader,
-                None)
-            
-            spiking_accuracy = spiking_core_flow_trainer.validate_train()
-            print(f"    Current Spiking CoreFlow Accuracy: {spiking_accuracy}")
-            for idx, core in enumerate(self.mapping.cores):
-                rate_numerator = core_avgs[idx] / chip_avg
-                rate_denominator = spiking_core_flow.core_avgs[idx] / spiking_core_flow.chip_avg
-                rate = rate_numerator / rate_denominator
+        spiking_core_flow = SpikingCoreFlow(self.input_shape, self.mapping, self.simulation_steps)
+        spiking_core_flow_trainer = BasicTrainer(
+            spiking_core_flow, 
+            self.device, self.data_provider,
+            None)
+        
+        spiking_accuracy = spiking_core_flow_trainer.validate()
+        print(f"    Current Spiking CoreFlow Accuracy: {spiking_accuracy}")
+        for idx, core in enumerate(self.mapping.cores):
+            rate_numerator = core_avgs[idx] / chip_avg
+            rate_denominator = spiking_core_flow.core_avgs[idx] / spiking_core_flow.chip_avg
+            rate = rate_numerator / rate_denominator
 
-                factor = cycles // 2
-                rate = ((factor - 1) + rate) / factor
-                core.threshold = core.threshold / rate
+            factor = 5
+            rate = ((factor - 1) + rate) / factor
+            core.threshold = core.threshold / rate
         
         for core in self.mapping.cores:
             core.threshold = round(core.threshold)
@@ -58,7 +55,7 @@ class CoreFlowTuner:
     def _validate_core_flow(self, core_flow):
         core_flow_trainer = BasicTrainer(
             core_flow, 
-            self.device, self.train_loader, self.test_loader, 
+            self.device, self.data_provider,
             None)
         
         return core_flow_trainer.validate()
