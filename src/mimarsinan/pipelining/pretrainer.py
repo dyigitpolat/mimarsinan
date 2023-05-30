@@ -12,8 +12,7 @@ class Pretrainer:
         self.trainer = WeightTransformTrainer(
             self.model, 
             pipeline.device, 
-            pipeline.training_dataloader, 
-            pipeline.validation_dataloader, 
+            pipeline.data_provider, 
             pipeline.pt_loss, clip_and_decay_param)
         
         def report(key, value):
