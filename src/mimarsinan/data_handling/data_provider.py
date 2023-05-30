@@ -69,7 +69,7 @@ class DataProvider:
         return self.get_training_set_size() // 100
     
     def get_validation_batch_size(self):
-        return self.get_validation_set_size() // 100
+        return self.get_validation_set_size()
     
     def get_test_batch_size(self):
         return self.get_test_set_size()
