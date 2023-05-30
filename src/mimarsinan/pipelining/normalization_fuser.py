@@ -15,4 +15,4 @@ class NormalizationFuser:
     def run(self):
         self.model.fuse_normalization()
 
-        return self.trainer.validate_train()
+        return self.trainer.validate()

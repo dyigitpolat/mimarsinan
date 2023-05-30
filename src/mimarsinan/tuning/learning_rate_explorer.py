@@ -3,7 +3,7 @@ class LearningRateExplorer:
                  trainer, model, max_lr, min_lr, 
                  desired_improvement = 0.0, base_accuracy = None):
         self.training_function = trainer.train_one_step
-        self.evaluation_function = trainer.validate_train
+        self.evaluation_function = trainer.validate
         self.model = model
         self.max_lr = max_lr
         self.min_lr = min_lr

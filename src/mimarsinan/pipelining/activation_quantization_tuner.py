@@ -81,7 +81,7 @@ class ActivationQuantizationTuner:
             self.trainer.weight_transformation = self.parametric_transform(transform_rate)
             
             self.trainer.train_n_epochs(self.lr / 2, 1)
-            return self.trainer.validate_train()
+            return self.trainer.validate()
 
         def clone_state():
             return self.model.state_dict()
@@ -112,4 +112,4 @@ class ActivationQuantizationTuner:
             lr, self.epochs, self.target_accuracy)
 
         
-        return self.trainer.validate_train()
+        return self.trainer.validate()
