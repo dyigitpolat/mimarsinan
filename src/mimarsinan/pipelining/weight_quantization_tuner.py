@@ -29,8 +29,7 @@ class WeightQuantizationTuner:
         self.trainer = WeightTransformTrainer(
             self.model, 
             pipeline.device, 
-            pipeline.training_dataloader, 
-            pipeline.validation_dataloader, 
+            pipeline.data_provider, 
             pipeline.wq_loss, mixed_transform(0.001))
         
         def report(key, value):
@@ -46,39 +45,39 @@ class WeightQuantizationTuner:
 
         # Adaptation
         self._prev_acc = target_accuracy
-        self.lr = pipeline.lr / 20
+        self.pipeline_lr = pipeline.lr 
         def adaptation(q_rate):
             print(f"  Tuning model with q_rate = {q_rate}...")
             pipeline.reporter.report("Quantization Rate", q_rate)
 
             self.model.set_activation(CQ_Activation(self.target_tq))
             self.trainer.weight_transformation = mixed_transform(q_rate)
-    
-            acc = self.trainer.train_n_epochs(self.lr / 2, 1)
 
-            self.lr = LearningRateExplorer(
-                self.trainer, 
-                self.model, 
-                pipeline.lr / 20, 
-                pipeline.lr / 1000, 
-                0.01).find_lr_for_tuning()
-
+            lr = self.find_lr()
             acc = self.trainer.train_until_target_accuracy(
-                self.lr, self.epochs, self._prev_acc)
+                lr, self.epochs, self._prev_acc)
             
-            acc = self.trainer.train_n_epochs(self.lr / 2, 2)
+            acc = self.trainer.train_n_epochs(lr / 2, 2)
             
             self._prev_acc = max(self._prev_acc * 0.999, acc)
             
         self.adaptation_function = adaptation
+    
+    def find_lr(self):
+        return LearningRateExplorer(
+            self.trainer, 
+            self.model, 
+            self.pipeline_lr / 20, 
+            self.pipeline_lr / 1000, 
+            0.01).find_lr_for_tuning()
 
     def run(self):
         def evaluate_model(q_rate):
             self.model.set_activation(CQ_Activation(self.target_tq))
             self.trainer.weight_transformation = self.transform(q_rate)
 
-            self.trainer.train_n_epochs(self.lr / 2, 1)
-            return self.trainer.validate_train()
+            self.trainer.train_n_epochs(self.find_lr(), 1)
+            return self.trainer.validate()
 
         def clone_state():
             return self.model.state_dict()
@@ -95,4 +94,4 @@ class WeightQuantizationTuner:
 
         adapter.adapt_smoothly(interpolators=[BasicInterpolation(0.0, 1.0)])
         
-        return self.trainer.validate_train()
+        return self.trainer.validate()
