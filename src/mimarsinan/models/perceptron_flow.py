@@ -48,7 +48,9 @@ class Perceptron(nn.Module):
         out = self.layer(x)
         out = self.normalization(out)
         out = self.activation(out)
-        out = self.regularization(out)
+        
+        if self.training:
+            out = self.regularization(out)
         
         return out
 
