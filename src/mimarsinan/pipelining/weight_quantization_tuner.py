@@ -31,13 +31,7 @@ class WeightQuantizationTuner:
             pipeline.device, 
             pipeline.data_provider, 
             pipeline.wq_loss, mixed_transform(0.001))
-        
-        def report(key, value):
-            if key == "Training accuracy":
-                print(f"WQ accuracy: {value}")
-            pipeline.reporter.report(key, value)
-
-        self.trainer.report_function = report
+        self.trainer.report_function = pipeline.reporter.report
         
         # Epochs
         self.epochs = epochs
@@ -75,8 +69,7 @@ class WeightQuantizationTuner:
         def evaluate_model(q_rate):
             self.model.set_activation(CQ_Activation(self.target_tq))
             self.trainer.weight_transformation = self.transform(q_rate)
-
-            self.trainer.train_n_epochs(self.find_lr(), 1)
+            self.trainer.train_one_step(self.pipeline_lr / 40)
             return self.trainer.validate()
 
         def clone_state():

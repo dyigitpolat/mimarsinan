@@ -15,6 +15,7 @@ class CoreFlowTuner:
         self.mapping = mapping
         self.target_tq = target_tq
         self.simulation_steps = pipeline.simulation_steps
+        self.report_function = pipeline.reporter.report
 
     def _tune_thresholds(self):
         print("  Tuning thresholds...")
@@ -25,6 +26,7 @@ class CoreFlowTuner:
             core_flow, 
             self.device, self.data_provider,
             None)
+        core_flow_trainer.report_function = self.report_function 
         
         core_flow_trainer.validate()
         core_avgs, chip_avg = core_flow.core_avgs, core_flow.chip_avg
@@ -37,6 +39,7 @@ class CoreFlowTuner:
             spiking_core_flow, 
             self.device, self.data_provider,
             None)
+        spiking_core_flow_trainer.report_function = self.report_function 
         
         spiking_accuracy = spiking_core_flow_trainer.validate()
         print(f"    Current Spiking CoreFlow Accuracy: {spiking_accuracy}")
@@ -57,6 +60,7 @@ class CoreFlowTuner:
             core_flow, 
             self.device, self.data_provider,
             None)
+        core_flow_trainer.report_function = self.report_function
         
         return core_flow_trainer.validate()
 

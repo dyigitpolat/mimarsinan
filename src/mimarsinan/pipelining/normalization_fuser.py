@@ -11,6 +11,7 @@ class NormalizationFuser:
             pipeline.device, 
             pipeline.data_provider, 
             pipeline.wq_loss)
+        self.trainer.report_function = pipeline.reporter.report
 
     def run(self):
         self.model.fuse_normalization()
