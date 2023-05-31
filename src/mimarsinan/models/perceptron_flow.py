@@ -18,6 +18,8 @@ class Perceptron(nn.Module):
 
         self.normalization = normalization
         self.activation = nn.LeakyReLU()
+
+        self.regularization = nn.Identity()
     
     def set_activation(self, activation):
         self.activation = activation
@@ -39,10 +41,14 @@ class Perceptron(nn.Module):
 
         self.normalization = nn.Identity()
 
+    def set_regularization(self, regularizer):
+        self.layer.weight_regularizer = regularizer
+
     def forward(self, x):
         out = self.layer(x)
         out = self.normalization(out)
         out = self.activation(out)
+        out = self.regularization(out)
         
         return out
 
@@ -179,6 +185,10 @@ class PatchedPerceptronFlow(nn.Module):
     def set_activation(self, activation):
         for layer in self.get_perceptrons():
             layer.set_activation(activation)
+
+    def set_regularization(self, regularizer):
+        for layer in self.patch_layers + self.fc_layers:
+            layer.set_regularization(regularizer)
     
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
