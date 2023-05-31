@@ -31,14 +31,7 @@ class ActivationQuantizationTuner:
             pipeline.device, 
             pipeline.data_provider,
             pipeline.aq_loss, mixed_transform(0.001))
-        
-        def report(key, value):
-            if key == "Training accuracy":
-                print(f"AQ accuracy: {value}")
-            pipeline.reporter.report(key, value)
-
-        self.report = report
-        self.trainer.report_function = self.report
+        self.trainer.report_function = pipeline.reporter.report
 
         # Epochs
         self.epochs = epochs

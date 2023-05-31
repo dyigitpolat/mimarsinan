@@ -18,14 +18,7 @@ class ActivationShifter:
             pipeline.device,
             pipeline.data_provider,
             pipeline.aq_loss)
-        
-        def report(key, value):
-            if key == "Training accuracy":
-                print(f"Shift accuracy: {value}")
-            pipeline.reporter.report(key, value)
-
-        self.report = report
-        self.trainer.report_function = self.report
+        self.trainer.report_function = pipeline.reporter.report
         
         # Training
         self.lr = pipeline.lr
