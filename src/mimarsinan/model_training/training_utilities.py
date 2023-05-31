@@ -17,3 +17,8 @@ class AccuracyTracker:
     def reset(self):
         self.correct = 0
         self.total = 0
+
+import torch.nn as nn
+class BasicClassificationLoss:
+    def __call__(self, model, x, y):
+        return nn.CrossEntropyLoss()(model(x), y)
