@@ -6,8 +6,6 @@ import torchvision
 import torch
 
 class MNIST_DataProvider(DataProvider):
-    datasets_path = "../datasets"
-
     def __init__(self):
         super().__init__()
 

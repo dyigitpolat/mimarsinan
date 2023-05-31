@@ -6,8 +6,6 @@ import torchvision
 import torch
 
 class CIFAR10_DataProvider(DataProvider):
-    datasets_path = "../datasets"
-
     def __init__(self):
         super().__init__()
 
@@ -22,17 +20,21 @@ class CIFAR10_DataProvider(DataProvider):
             transforms.Normalize([0, 0, 0], [1, 1, 1])
         ])
 
-        base_training_dataset = torchvision.datasets.CIFAR10(
+        training_dataset = torchvision.datasets.CIFAR10(
             root=self.datasets_path, train=True, download=True,
             transform=train_transform)
         
+        validation_dataset = torchvision.datasets.CIFAR10(
+            root=self.datasets_path, train=True, download=True,
+            transform=test_validation_transform)
+        
         training_validation_split = 0.99
-        training_length = int(len(base_training_dataset) * training_validation_split)
+        training_length = int(len(training_dataset) * training_validation_split)
         
         self.training_dataset = torch.utils.data.Subset(
-            base_training_dataset, range(0, training_length))
+            training_dataset, range(0, training_length))
         self.validation_dataset = torch.utils.data.Subset(
-            base_training_dataset, range(training_length, len(base_training_dataset)))
+            validation_dataset, range(training_length, len(training_dataset)))
 
         self.test_dataset = torchvision.datasets.CIFAR10(
             root=self.datasets_path, train=False, download=True,
