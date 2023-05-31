@@ -11,9 +11,11 @@ from mimarsinan.pipelining.simulation_runner import SimulationRunner
 
 from mimarsinan.models.perceptron_flow import ppf_loss
 from mimarsinan.common.file_utils import prepare_containing_directory
+from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 class BasicClassificationPipeline:
     def __init__(self, 
@@ -65,9 +67,9 @@ class BasicClassificationPipeline:
         self.wq_cycles = training_parameters['wq_cycles']
         
         # Loss definitions
-        self.pt_loss = ppf_loss
-        self.aq_loss = ppf_loss
-        self.wq_loss = ppf_loss
+        self.pt_loss = BasicClassificationLoss()
+        self.aq_loss = BasicClassificationLoss()
+        self.wq_loss = BasicClassificationLoss()
         
         # File
         self.working_directory = working_directory
