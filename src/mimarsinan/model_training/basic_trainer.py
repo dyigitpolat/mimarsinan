@@ -124,11 +124,13 @@ class BasicTrainer:
         self._report("LR", lr)
         optimizer, scheduler = self._get_optimizer_and_scheduler(lr)
 
-        training_accuracy = 0
+        validation_accuracy = 0
         for _ in range(max_epochs):
             training_accuracy = self._train_one_epoch(optimizer, scheduler)
             self._report("Training accuracy", training_accuracy)
-            self.validate()
-            if training_accuracy >= target_accuracy: break
+
+            validation_accuracy = self.validate()
+            if validation_accuracy >= target_accuracy: break
         
-        return self.validate()
+        self.test()
+        return validation_accuracy
