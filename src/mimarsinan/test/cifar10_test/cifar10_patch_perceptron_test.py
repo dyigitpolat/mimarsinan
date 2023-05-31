@@ -2,36 +2,34 @@ from mimarsinan.test.cifar10_test.cifar10_test_utils import *
 from mimarsinan.common.wandb_utils import *
 from mimarsinan.pipelining.basic_classification_pipeline import BasicClassificationPipeline
 
+from mimarsinan.data_handling.data_providers.cifar10_data_provider import CIFAR10_DataProvider
 import torch
 
 def test_cifar10_patched_perceptron():
-    training_dataloader = get_cifar10_data(2000)[0]
-    validation_dataloader = get_cifar10_data(1000)[2]
-    test_dataloader = get_cifar10_data(10000)[1]
+    data_provider = CIFAR10_DataProvider()
 
     reporter = WandB_Reporter("cifar10_pipeline_test", "experiment")
 
     pipeline = BasicClassificationPipeline(
-        training_dataloader,
-        validation_dataloader,
-        test_dataloader,
+        data_provider,
         10,
         {
             "max_axons": 256, 
             "max_neurons": 256, 
-            "target_tq": 16, 
-            "simulation_steps": 64
+            "target_tq": 512, 
+            "simulation_steps": 512
         },
         {
             "lr": 0.001, 
-            "pretraining_epochs": 20, 
-            "aq_cycle_epochs": 10, 
-            "wq_cycle_epochs": 10,
-            "aq_cycles": 10,
-            "wq_cycles": 10
+            "pretraining_epochs": 50, 
+            "aq_cycle_epochs": 15, 
+            "wq_cycle_epochs": 15,
+            "aq_cycles": 15,
+            "wq_cycles": 15
         },
         reporter,
-        "../generated/cifar10_2/"
+        "../generated/cifar10_2/",
+        model_complexity=2
     )
 
     pipeline.run()
