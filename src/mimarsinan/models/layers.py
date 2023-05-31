@@ -161,3 +161,18 @@ class ShiftedActivation(nn.Module):
     
     def forward(self, x):
         return self.activation(x - self.shift)
+    
+class NoisyDropout(nn.Module):
+    def __init__(self, dropout_p, rate, noise_radius):
+        super(NoisyDropout, self).__init__()
+        self.dropout_p = dropout_p
+        self.rate = rate
+        self.noise_radius = noise_radius
+    
+    def forward(self, x):
+        random_mask = torch.rand(x.shape, device=x.device)
+        random_mask = (random_mask < self.rate).float()
+
+        out = nn.Dropout(self.dropout_p)(x)
+        out = out + self.noise_radius * torch.randn_like(out)
+        return random_mask * out
