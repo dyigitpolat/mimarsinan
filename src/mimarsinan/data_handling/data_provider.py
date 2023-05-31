@@ -1,6 +1,8 @@
 import torch
 
 class DataProvider:
+    datasets_path = "../datasets"
+    
     def __init__(self):
         self._num_workers = 4
         self._pin_memory = True
