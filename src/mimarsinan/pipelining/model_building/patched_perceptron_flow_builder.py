@@ -31,7 +31,7 @@ class PatchedPerceptronFlowBuilder:
             except: 
                 pass
         
-        print(f"Patch dimensions {patch_cols} x {patch_cols}")
+        print(f"Patch dimensions {patch_rows} x {patch_cols}")
         assert perceptron_flow is not None, \
             "Could not find a valid patch size for the given input shape and max axons."
     
