@@ -41,11 +41,13 @@ class CoreFlowTuner:
             None)
         spiking_core_flow_trainer.report_function = self.report_function 
         
-        spiking_accuracy = spiking_core_flow_trainer.validate()
-        print(f"    Current Spiking CoreFlow Accuracy: {spiking_accuracy}")
         for idx, core in enumerate(self.mapping.cores):
             rate_numerator = core_avgs[idx] / chip_avg
             rate_denominator = spiking_core_flow.core_avgs[idx] / spiking_core_flow.chip_avg
+            
+            if rate_denominator == 0: 
+                print(f"    WARNING: rate_denominator for core {idx} is 0, setting to 0.5")
+                rate_denominator = 0.5
             rate = rate_numerator / rate_denominator
 
             factor = 5
