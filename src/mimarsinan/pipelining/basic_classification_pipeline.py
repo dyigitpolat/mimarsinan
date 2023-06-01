@@ -14,7 +14,6 @@ from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 
 import numpy as np
 import torch
-import torch.nn as nn
 
 class BasicClassificationPipeline:
     def __init__(self, 
@@ -34,9 +33,9 @@ class BasicClassificationPipeline:
 
         # Data
         self.data_provider = data_provider
-        print("Training data size: ", self.data_provider.get_training_data_size())
-        print("Validation data size: ", self.data_provider.get_validation_data_size())
-        print("Test data size: ", self.data_provider.get_test_data_size())
+        print("Training data size: ", self.data_provider.get_training_set_size())
+        print("Validation data size: ", self.data_provider.get_validation_set_size())
+        print("Test data size: ", self.data_provider.get_test_set_size())
 
         # Metadata
         self.input_shape = data_provider.get_input_shape()
