@@ -12,7 +12,7 @@ class Pretrainer:
             self.model, 
             pipeline.device, 
             pipeline.data_provider, 
-            pipeline.pt_loss, clip_and_decay_param)
+            pipeline.loss, clip_and_decay_param)
         self.trainer.report_function = pipeline.reporter.report
         
         self.lr = pipeline.lr

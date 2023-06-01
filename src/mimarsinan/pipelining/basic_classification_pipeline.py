@@ -9,7 +9,6 @@ from mimarsinan.pipelining.hard_core_mapper import HardCoreMapper
 from mimarsinan.pipelining.core_flow_tuner import CoreFlowTuner
 from mimarsinan.pipelining.simulation_runner import SimulationRunner
 
-from mimarsinan.models.perceptron_flow import ppf_loss
 from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 
@@ -35,6 +34,9 @@ class BasicClassificationPipeline:
 
         # Data
         self.data_provider = data_provider
+        print("Training data size: ", self.data_provider.get_training_data_size())
+        print("Validation data size: ", self.data_provider.get_validation_data_size())
+        print("Test data size: ", self.data_provider.get_test_data_size())
 
         # Metadata
         self.input_shape = data_provider.get_input_shape()
@@ -67,9 +69,7 @@ class BasicClassificationPipeline:
         self.wq_cycles = training_parameters['wq_cycles']
         
         # Loss definitions
-        self.pt_loss = BasicClassificationLoss()
-        self.aq_loss = BasicClassificationLoss()
-        self.wq_loss = BasicClassificationLoss()
+        self.loss = BasicClassificationLoss()
         
         # File
         self.working_directory = working_directory
@@ -92,7 +92,7 @@ class BasicClassificationPipeline:
         assert aq_accuracy > shift_accuracy * 0.9
 
         print("Normalization fusion...")
-        fn_accuracy = NormalizationFuser(self).run()
+        fn_accuracy = NormalizationFuser(self, aq_accuracy).run()
         print(f"Fused normalization accuracy: {fn_accuracy}")
         assert fn_accuracy > aq_accuracy * 0.9
 

@@ -30,7 +30,7 @@ class ActivationQuantizationTuner:
             self.model, 
             pipeline.device, 
             pipeline.data_provider,
-            pipeline.aq_loss, mixed_transform(0.001))
+            pipeline.loss, mixed_transform(0.001))
         self.trainer.report_function = pipeline.reporter.report
 
         # Epochs

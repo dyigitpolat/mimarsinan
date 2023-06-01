@@ -17,7 +17,7 @@ class ActivationShifter:
             self.model, 
             pipeline.device,
             pipeline.data_provider,
-            pipeline.aq_loss)
+            pipeline.loss)
         self.trainer.report_function = pipeline.reporter.report
         
         # Training
