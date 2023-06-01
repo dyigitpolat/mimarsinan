@@ -41,6 +41,7 @@ class CoreFlowTuner:
             None)
         spiking_core_flow_trainer.report_function = self.report_function 
         
+        spiking_core_flow_trainer.validate()
         for idx, core in enumerate(self.mapping.cores):
             rate_numerator = core_avgs[idx] / chip_avg
             rate_denominator = spiking_core_flow.core_avgs[idx] / spiking_core_flow.chip_avg
