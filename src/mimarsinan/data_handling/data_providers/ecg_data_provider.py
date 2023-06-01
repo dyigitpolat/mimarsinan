@@ -16,9 +16,11 @@ class ECG_DataProvider(DataProvider):
 
         train_x = torch.FloatTensor(f['x_train']).reshape(-1, 1, 180, 1)
         train_y = torch.LongTensor(f['y_train'])
+        print(f"training class distribution: {np.unique(train_y, return_counts=True)}")
 
         test_x = torch.FloatTensor(f['x_test']).reshape(-1, 1, 180, 1)
         test_y = torch.LongTensor(f['y_test'])
+        print(f"test class distribution: {np.unique(test_y, return_counts=True)}")
 
         class AugmentedDataset(torch.utils.data.Dataset):
             def __init__(self, x, y, transform):
@@ -48,9 +50,9 @@ class ECG_DataProvider(DataProvider):
             
 
     def _augmentation(self, x):
-        shift_amt = np.random.uniform(-0.1, 0.1)
+        shift_amt = np.random.uniform(-0.3, 0.3)
         shift = int(shift_amt * x.shape[1])
-        x = x * np.random.uniform(0.9, 1.1)
+        x = x * np.random.uniform(0.8, 1.3)
         x = torch.clamp(x, min=0, max=1)
         return torch.roll(x, shift, dims=1)
 
