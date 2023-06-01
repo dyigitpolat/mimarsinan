@@ -20,7 +20,7 @@ class SimulationRunner:
             self.test_targets.extend(ys)
             
         self.test_data = \
-            [*zip(np.array(self.test_input), np.array(self.test_targets))]
+            [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
 
         self.mapping = mapping
         self.threshold_scale = threshold_scale
