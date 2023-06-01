@@ -6,6 +6,7 @@ class DataProvider:
     def __init__(self):
         self._num_workers = 4
         self._pin_memory = True
+        self._persistent_workers = True
         self._training_loaders = {}
         self._validation_loaders = {}
         self._test_loaders = {}
@@ -38,7 +39,8 @@ class DataProvider:
         
         return torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, shuffle=shuffle, 
-            num_workers=self._num_workers, pin_memory=self._pin_memory)
+            num_workers=self._num_workers, pin_memory=self._pin_memory,
+            persistent_workers=self._persistent_workers)
     
     def get_training_loader(self, batch_size):
         if batch_size not in self._training_loaders:
