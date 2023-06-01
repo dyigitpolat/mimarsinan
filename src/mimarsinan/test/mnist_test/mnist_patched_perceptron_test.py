@@ -21,7 +21,7 @@ def test_mnist_patched_perceptron():
         },
         {
             "lr": 0.001, 
-            "pretraining_epochs": 5, 
+            "pretraining_epochs": 10, 
             "aq_cycle_epochs": 10, 
             "wq_cycle_epochs": 10,
             "aq_cycles": 10,
