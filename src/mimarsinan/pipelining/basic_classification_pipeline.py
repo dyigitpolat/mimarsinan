@@ -1,9 +1,10 @@
 from mimarsinan.pipelining.model_building.patched_perceptron_flow_builder import PatchedPerceptronFlowBuilder
 from mimarsinan.pipelining.pretrainer import Pretrainer
 from mimarsinan.pipelining.activation_shifter import ActivationShifter
-from mimarsinan.pipelining.activation_quantization_tuner import ActivationQuantizationTuner
 from mimarsinan.pipelining.normalization_fuser import NormalizationFuser
-from mimarsinan.pipelining.weight_quantization_tuner import WeightQuantizationTuner
+from mimarsinan.pipelining.tuners.activation_quantization_tuner import ActivationQuantizationTuner
+from mimarsinan.pipelining.tuners.weight_quantization_tuner import WeightQuantizationTuner
+from mimarsinan.pipelining.tuners.basic_tuner import BasicTuner
 from mimarsinan.pipelining.soft_core_mapper import SoftCoreMapper
 from mimarsinan.pipelining.hard_core_mapper import HardCoreMapper
 from mimarsinan.pipelining.core_flow_tuner import CoreFlowTuner
@@ -30,6 +31,8 @@ class BasicClassificationPipeline:
         self.max_neurons = platform_constraints['max_neurons']
         self.target_tq = platform_constraints['target_tq']
         self.simulation_steps = platform_constraints['simulation_steps']
+        #self.weight_bits = platform_constraints['weight_bits']
+        self.weight_bits = 4
 
         # Data
         self.data_provider = data_provider
@@ -64,8 +67,6 @@ class BasicClassificationPipeline:
         self.pretraining_epochs = training_parameters['pretraining_epochs']
         self.aq_cycle_epochs = training_parameters['aq_cycle_epochs']
         self.wq_cycle_epochs = training_parameters['wq_cycle_epochs']
-        self.aq_cycles = training_parameters['aq_cycles']
-        self.wq_cycles = training_parameters['wq_cycles']
         
         # Loss definitions
         self.loss = BasicClassificationLoss()
@@ -86,7 +87,7 @@ class BasicClassificationPipeline:
 
         print("Activation quantization...")
         aq_accuracy = ActivationQuantizationTuner(
-            self, self.aq_cycle_epochs, self.target_tq, shift_accuracy).run()
+            self, self.aq_cycle_epochs, shift_accuracy).run()
         print(f"AQ final accuracy: {aq_accuracy}")
         assert aq_accuracy > shift_accuracy * 0.9
 
@@ -97,7 +98,7 @@ class BasicClassificationPipeline:
 
         print("Weight quantization...")
         wq_accuracy = WeightQuantizationTuner(
-            self, self.wq_cycle_epochs, self.target_tq, fn_accuracy).run()
+            self, self.wq_cycle_epochs, self.weight_bits, fn_accuracy).run()
         print(f"WQ final accuracy: {wq_accuracy}")
         assert wq_accuracy > fn_accuracy * 0.9
 
@@ -117,4 +118,3 @@ class BasicClassificationPipeline:
         chip_accuracy = SimulationRunner(
             self, hard_core_mapping, threshold_scale, self.simulation_steps).run()
         print(f"Simulation accuracy: {chip_accuracy}")
-        
