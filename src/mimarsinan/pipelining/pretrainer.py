@@ -1,4 +1,4 @@
-from mimarsinan.model_training.weight_transform_trainer import WeightTransformTrainer
+from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.transformations.parameter_transforms.collection import *
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.models.layers import ClampedReLU, NoisyDropout
@@ -8,11 +8,11 @@ class Pretrainer:
         self.model = pipeline.model
 
         # Trainer
-        self.trainer = WeightTransformTrainer(
+        self.trainer = BasicTrainer(
             self.model, 
             pipeline.device, 
             pipeline.data_provider, 
-            pipeline.loss, clip_and_decay_param)
+            pipeline.loss)
         self.trainer.report_function = pipeline.reporter.report
         
         self.lr = pipeline.lr
