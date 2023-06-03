@@ -111,11 +111,14 @@ class BasicTrainer:
 
     def train_one_step(self, lr):
         optimizer, _ = self._get_optimizer_and_scheduler(lr)
-        for (x, y) in self.train_loader:
-            x, y = x.to(self.device), y.to(self.device)
+        try:
+            x, y = next(self.train_iter)
+        except StopIteration:
+            self.train_iter = iter(self.train_loader)
+            x, y = next(self.train_iter)
             
-            self._optimize(x, y, optimizer)
-            break
+        x, y = x.to(self.device), y.to(self.device)
+        self._optimize(x, y, optimizer)
     
     def train_n_epochs(self, lr, epochs):
         return self.train_until_target_accuracy(lr, epochs, 1.0)
