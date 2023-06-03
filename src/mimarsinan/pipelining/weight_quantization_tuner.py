@@ -19,8 +19,8 @@ class WeightQuantizationTuner:
                 random_mask = torch.rand(param.shape, device=param.device)
                 random_mask = (random_mask < rate).float()
                 return \
-                    random_mask * clip_decay_and_quantize_param(param) \
-                    + (1 - random_mask) * clip_and_decay_param(param)
+                    random_mask * noisy_clip_decay_and_quantize_param(param) \
+                    + (1 - random_mask) * noisy_clip_and_decay_param(param)
             return transform
         
         self.transform = mixed_transform
