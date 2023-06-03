@@ -19,7 +19,7 @@ class ActivationQuantizationTuner:
                 random_mask = torch.rand(param.shape, device=param.device)
                 random_mask = (random_mask < transform_rate).float()
                 return \
-                    random_mask * clip_and_decay_param(param) \
+                    random_mask * noisy_clip_and_decay_param(param) \
                     + (1 - random_mask) * param
             return transform
         
@@ -93,7 +93,7 @@ class ActivationQuantizationTuner:
         adapter.adapt_smoothly(interpolators=[
             cq_rate_interpolator, transform_rate_interpolator])
         
-        self.trainer.weight_transformation = clip_and_decay_param
+        self.trainer.weight_transformation = noisy_clip_and_decay_param
         self.model.set_activation(CQ_Activation(self.target_tq))
         lr = LearningRateExplorer(
                 self.trainer, 
