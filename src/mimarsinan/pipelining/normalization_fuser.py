@@ -1,4 +1,4 @@
-from mimarsinan.model_training.weight_transform_trainer import WeightTransformTrainer
+from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.transformations.parameter_transforms.collection import *
 
 class NormalizationFuser:
@@ -20,12 +20,10 @@ class NormalizationFuser:
         self.model.fuse_normalization()
 
         # Trainer
-        self.trainer = WeightTransformTrainer(
+        self.trainer = BasicTrainer(
             self.model, 
             self.device, 
             self.data_provider,
-            self.loss, clip_and_decay_param)
+            self.loss)
         self.trainer.report_function = self.reporter.report
-
-        self.trainer.train_until_target_accuracy(self.lr / 40, 2, self.target_accuracy)
         return self.trainer.validate()
