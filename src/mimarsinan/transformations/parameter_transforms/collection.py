@@ -5,8 +5,8 @@ import torch
 
 pipeline_clipping_rate = 0.01
 
-def add_noise(w, amount = 0.01):
-    return w + torch.rand_like(w) * amount
+def add_noise(w, amount = 0.05):
+    return w - torch.abs(torch.rand_like(w) * amount)
 
 def special_decay(w):
     return torch.clamp(w, -1, 1)
