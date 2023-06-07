@@ -26,9 +26,7 @@ class SpikingCoreFlow(nn.Module):
         self.cycles = ChipLatency(core_mapping).calculate() + simulation_length
 
         # Stats
-        self.core_avgs = [None] * len(self.cores)
-        self.chip_avg = None
-
+        self.core_sums = [None] * len(self.cores)
     def update_cores(self):
         for idx, core in enumerate(self.cores):
             core.core_matrix[:,:] = \
@@ -67,11 +65,10 @@ class SpikingCoreFlow(nn.Module):
 
     def update_stats(self, buffers):
         for i in range(len(self.cores)):
-            if self.core_avgs[i] is None:
-                self.core_avgs[i] = torch.mean(buffers[i]).item()
+            if self.core_sums[i] is None:
+                self.core_sums[i] = torch.sum(buffers[i]).item()
             else:
-                self.core_avgs[i] = \
-                    0.9 * self.core_avgs[i] + 0.1 * torch.mean(buffers[i]).item()
+                self.core_sums[i] += torch.sum(buffers[i]).item()
         
         if self.chip_avg is None:
             self.chip_avg = torch.mean(torch.cat(buffers)).item()
