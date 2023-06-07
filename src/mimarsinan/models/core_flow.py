@@ -21,8 +21,7 @@ class CoreFlow(nn.Module):
         self.cycles = ChipLatency(core_mapping).calculate()
 
         # Stats
-        self.core_avgs = [None] * len(self.cores)
-        self.chip_avg = None
+        self.core_sums = [None] * len(self.cores)
 
     def update_cores(self):
         for idx, core in enumerate(self.cores):
@@ -62,17 +61,10 @@ class CoreFlow(nn.Module):
 
     def update_stats(self, buffers):
         for i in range(len(self.cores)):
-            if self.core_avgs[i] is None:
-                self.core_avgs[i] = torch.mean(buffers[i]).item()
+            if self.core_sums[i] is None:
+                self.core_sums[i] = torch.sum(buffers[i]).item()
             else:
-                self.core_avgs[i] = \
-                    0.9 * self.core_avgs[i] + 0.1 * torch.mean(buffers[i]).item()
-        
-        if self.chip_avg is None:
-            self.chip_avg = torch.mean(torch.cat(buffers)).item()
-        else:
-            self.chip_avg = \
-                0.9 * self.chip_avg + 0.1 * torch.mean(torch.cat(buffers)).item()
+                self.core_sums[i] += torch.sum(buffers[i]).item()
     
     def forward(self, x):
         x = x.view(x.shape[0], -1)
