@@ -59,7 +59,7 @@ class BasicTuner:
                 random_mask = torch.rand(param.shape, device=param.device)
                 random_mask = (random_mask < rate).float()
                 return \
-                    random_mask * self._get_previous_parameter_transform()(param) \
+                    random_mask * self._get_new_parameter_transform()(param) \
                     + (1 - random_mask) * self._get_previous_parameter_transform()(param)
             return transform
 
