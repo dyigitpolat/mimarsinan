@@ -31,8 +31,7 @@ class BasicClassificationPipeline:
         self.max_neurons = platform_constraints['max_neurons']
         self.target_tq = platform_constraints['target_tq']
         self.simulation_steps = platform_constraints['simulation_steps']
-        #self.weight_bits = platform_constraints['weight_bits']
-        self.weight_bits = 4
+        self.weight_bits = platform_constraints['weight_bits']
 
         # Data
         self.data_provider = data_provider
@@ -76,31 +75,52 @@ class BasicClassificationPipeline:
         prepare_containing_directory(self.working_directory)
         
     def run(self):
-        print("Pretraining...")
-        pretraining_accuracy = Pretrainer(self, self.pretraining_epochs).run()
+        load_model_from_file = False
 
-        print("Shifting activation...")
-        shift_accuracy = ActivationShifter(
-            self, self.aq_cycle_epochs, self.target_tq, pretraining_accuracy).run()
-        print(f"Accuracy after activation shift: {shift_accuracy}")
-        assert shift_accuracy > pretraining_accuracy * 0.95
+        if not load_model_from_file:
+            print("Pretraining...")
+            pretraining_accuracy = Pretrainer(self, self.pretraining_epochs).run()
 
-        print("Activation quantization...")
-        aq_accuracy = ActivationQuantizationTuner(
-            self, self.aq_cycle_epochs, shift_accuracy).run()
-        print(f"AQ final accuracy: {aq_accuracy}")
-        assert aq_accuracy > shift_accuracy * 0.9
+            print("Shifting activation...")
+            shift_accuracy = ActivationShifter(
+                self, self.aq_cycle_epochs, self.target_tq, pretraining_accuracy).run()
+            print(f"Accuracy after activation shift: {shift_accuracy}")
+            assert shift_accuracy > pretraining_accuracy * 0.95
 
-        print("Normalization fusion...")
-        fn_accuracy = NormalizationFuser(self, aq_accuracy).run()
-        print(f"Fused normalization accuracy: {fn_accuracy}")
-        assert fn_accuracy > aq_accuracy * 0.9
+            print("Activation quantization...")
+            aq_accuracy = ActivationQuantizationTuner(
+                self, self.aq_cycle_epochs, shift_accuracy).run()
+            print(f"AQ final accuracy: {aq_accuracy}")
+            assert aq_accuracy > shift_accuracy * 0.9
 
-        print("Weight quantization...")
-        wq_accuracy = WeightQuantizationTuner(
-            self, self.wq_cycle_epochs, self.weight_bits, fn_accuracy).run()
-        print(f"WQ final accuracy: {wq_accuracy}")
-        assert wq_accuracy > fn_accuracy * 0.9
+            print("Normalization fusion...")
+            fn_accuracy = NormalizationFuser(self, aq_accuracy).run()
+            print(f"Fused normalization accuracy: {fn_accuracy}")
+            assert fn_accuracy > aq_accuracy * 0.9
+
+            print("Weight quantization...")
+            wq_accuracy = WeightQuantizationTuner(
+                self, self.wq_cycle_epochs, self.weight_bits, fn_accuracy).run()
+            print(f"WQ final accuracy: {wq_accuracy}")
+            assert wq_accuracy > fn_accuracy * 0.9
+
+            # Save model to file
+            torch.save(self.model.state_dict(), self.working_directory + "/wq_model.pt")
+
+        else:
+            self.model.fuse_normalization()
+            from mimarsinan.models.layers import CQ_Activation
+            self.model.set_activation(CQ_Activation(self.target_tq))
+
+            # Move model to CPU before loading state dictionary
+            self.model.to(torch.device('cpu'))
+
+            # Load model from file
+            state_dict = torch.load(self.working_directory + "/wq_model.pt", map_location=torch.device('cpu'))
+            self.model.load_state_dict(state_dict)
+
+            # Move model back to original device
+            self.model.to(self.device)
 
         print("Soft core mapping...")
         soft_core_mapping = SoftCoreMapper(self).run()
