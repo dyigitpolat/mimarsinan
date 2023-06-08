@@ -69,12 +69,6 @@ class SpikingCoreFlow(nn.Module):
                 self.core_sums[i] = torch.sum(buffers[i]).item()
             else:
                 self.core_sums[i] += torch.sum(buffers[i]).item()
-        
-        if self.chip_avg is None:
-            self.chip_avg = torch.mean(torch.cat(buffers)).item()
-        else:
-            self.chip_avg = \
-                0.9 * self.chip_avg + 0.1 * torch.mean(torch.cat(buffers)).item()
             
     def to_spikes(self, tensor):
         return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
