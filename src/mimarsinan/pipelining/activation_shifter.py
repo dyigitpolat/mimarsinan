@@ -1,5 +1,4 @@
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.transformations.parameter_transforms.collection import *
 from mimarsinan.models.layers import ShiftedActivation, ClampedReLU
 
 import torch.nn as nn
@@ -26,7 +25,7 @@ class ActivationShifter:
 
     def shift_activation(self, shift_amount):
         self.model.set_activation(
-            ShiftedActivation(ClampedReLU(), shift_amount))
+            ShiftedActivation(self.model.activation, shift_amount))
         
         for perceptron in self.model.get_perceptrons():
 
