@@ -1,8 +1,9 @@
 from mimarsinan.model_training.weight_transform_trainer import WeightTransformTrainer
-from mimarsinan.transformations.parameter_transforms.collection import *
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
+
+import torch
 
 class BasicTuner:
     def __init__(self, pipeline, max_epochs, target_accuracy):
@@ -23,7 +24,7 @@ class BasicTuner:
         self.lr = pipeline.lr
 
         # Adaptation
-        self.name = "Quantization Rate"
+        self.name = "Tuning Rate"
 
         # Trainer
         self.trainer = WeightTransformTrainer(
