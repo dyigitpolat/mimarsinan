@@ -174,6 +174,7 @@ class PatchedPerceptronFlow(nn.Module):
                                              normalization=nn.BatchNorm1d(self.fc_width)))
 
         self.output_layer = Perceptron(num_classes, self.fc_width) 
+        self.activation = nn.LeakyReLU()
 
         self.out = None
 
@@ -185,6 +186,7 @@ class PatchedPerceptronFlow(nn.Module):
             layer.fuse_normalization()
 
     def set_activation(self, activation):
+        self.activation = activation
         for layer in self.get_perceptrons():
             layer.set_activation(activation)
 
