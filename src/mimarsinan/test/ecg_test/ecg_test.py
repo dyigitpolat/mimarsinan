@@ -15,20 +15,19 @@ def test_ecg_patched_perceptron():
         {
             "max_axons": 256, 
             "max_neurons": 256, 
-            "target_tq": 128, 
-            "simulation_steps": 128
+            "target_tq": 64, 
+            "simulation_steps": 64,
+            "weight_bits": 4
         },
         {
             "lr": 0.001, 
-            "pretraining_epochs": 30, 
-            "aq_cycle_epochs": 20, 
-            "wq_cycle_epochs": 20,
-            "aq_cycles": 15,
-            "wq_cycles": 15
+            "pretraining_epochs": 15, 
+            "aq_cycle_epochs": 5, 
+            "wq_cycle_epochs": 5
         },
         reporter,
         "../generated/ecg2/",
-        model_complexity=10
+        model_complexity=2
     )
 
     pipeline.run()
