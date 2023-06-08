@@ -1,7 +1,6 @@
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.transformations.parameter_transforms.collection import *
-from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.models.layers import ClampedReLU, NoisyDropout
+
 class Pretrainer:
     def __init__(self, pipeline, epochs):
         # Dependencies

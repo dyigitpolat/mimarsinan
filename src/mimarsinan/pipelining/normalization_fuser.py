@@ -1,5 +1,4 @@
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.transformations.parameter_transforms.collection import *
 
 class NormalizationFuser:
     def __init__(self, pipeline, target_accuracy):
