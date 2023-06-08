@@ -30,7 +30,7 @@ def test_mnist_patched_perceptron():
         },
         reporter,
         "../generated/mnist2/",
-        model_complexity=5
+        model_complexity=2
     )
 
     pipeline.run()
