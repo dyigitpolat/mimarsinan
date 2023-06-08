@@ -29,9 +29,6 @@ class CoreFlowTuner:
         
         core_flow_trainer.validate()
         core_sums = core_flow.core_sums
-
-        for core in self.mapping.cores:
-            core.threshold = core.threshold * 0.9
         
         cycles = 20
         lr = 0.1
