@@ -15,6 +15,7 @@ class CoreFlowTuner:
         self.target_tq = target_tq
         self.simulation_steps = pipeline.simulation_steps
         self.report_function = pipeline.reporter.report
+        self.quantization_bits = pipeline.weight_bits
 
     def _tune_thresholds(self):
         print("  Tuning thresholds...")
@@ -83,7 +84,7 @@ class CoreFlowTuner:
         core_flow.set_activation(CQ_Activation(self.target_tq))
         print(f"  CQ CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
-        scale = ChipQuantization(bits = 4).quantize(
+        scale = ChipQuantization(bits = self.quantization_bits).quantize(
             self.mapping.cores)
         
         print(f"  scale: {scale}")

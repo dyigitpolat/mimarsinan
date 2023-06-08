@@ -9,9 +9,10 @@ class HardCoreMapper:
         self.axons_per_core = pipeline.max_axons
         self.neurons_per_core = pipeline.max_neurons
         self.wd = pipeline.working_directory
+        self.quantization_bits = pipeline.weight_bits
 
     def run(self):
-        ChipQuantization(bits = 4).calculate_core_thresholds(
+        ChipQuantization(bits = self.quantization_bits).calculate_core_thresholds(
             self.soft_core_mapping.cores)
 
         hard_core_mapping = HardCoreMapping(
