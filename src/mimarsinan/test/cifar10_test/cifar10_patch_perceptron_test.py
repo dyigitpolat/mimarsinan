@@ -16,8 +16,9 @@ def test_cifar10_patched_perceptron():
         {
             "max_axons": 256, 
             "max_neurons": 256, 
-            "target_tq": 512, 
-            "simulation_steps": 512
+            "target_tq": 64, 
+            "simulation_steps": 64,
+            "weight_bits": 4
         },
         {
             "lr": 0.001, 

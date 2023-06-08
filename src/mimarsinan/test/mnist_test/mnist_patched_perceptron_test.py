@@ -16,8 +16,9 @@ def test_mnist_patched_perceptron():
         {
             "max_axons": 256, 
             "max_neurons": 256, 
-            "target_tq": 128, 
-            "simulation_steps": 128
+            "target_tq": 32, 
+            "simulation_steps": 32,
+            "weight_bits": 4
         },
         {
             "lr": 0.001, 
@@ -28,7 +29,8 @@ def test_mnist_patched_perceptron():
             "wq_cycles": 10
         },
         reporter,
-        "../generated/mnist2/"
+        "../generated/mnist2/",
+        model_complexity=5
     )
 
     pipeline.run()
