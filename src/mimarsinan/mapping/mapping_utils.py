@@ -396,6 +396,42 @@ class PatchEmbeddingMapper:
         
         return self.sources
     
+class PerceptronMapper:
+    def __init__(self, source_mapper, perceptron):
+        self.perceptron = perceptron
+        self.source_mapper = source_mapper
+        self.sources = None
+
+    def fuse_normalization(self):
+        if isinstance(self.perceptron.normalization, nn.Identity):
+            layer = self.perceptron.layer
+            w = layer.weight.data
+            b = layer.bias.data if layer.bias is not None else None
+            return w, b
+        
+        assert isinstance(self.perceptron.normalization, nn.BatchNorm1d)
+        assert self.perceptron.normalization.affine
+
+        return get_fused_weights(
+            linear_layer=self.perceptron.layer, 
+            bn_layer=self.perceptron.normalization)
+
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_weights, layer_biases = self.fuse_normalization()
+        layer_weights.detach().cpu().numpy()
+        layer_biases.detach().cpu().numpy()
+
+        layer_sources = self.source_mapper.map(mapping)
+        layer_sources = layer_sources.transpose()
+        layer_sources = map_mm(mapping, layer_sources, layer_weights, layer_biases)
+        layer_sources = layer_sources.transpose()
+
+        self.sources = layer_sources
+        return self.sources
+    
 class ModelRepresentation:
     def __init__(self, output_layer_mapper):
         self.output_layer_mapper = output_layer_mapper
