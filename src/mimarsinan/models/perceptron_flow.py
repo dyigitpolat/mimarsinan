@@ -53,43 +53,6 @@ class Perceptron(nn.Module):
             out = self.regularization(out)
         
         return out
-
-
-class PerceptronMapper:
-    def __init__(self, source_mapper, perceptron):
-        self.perceptron = perceptron
-        self.source_mapper = source_mapper
-        self.sources = None
-
-    def fuse_normalization(self):
-        if isinstance(self.perceptron.normalization, nn.Identity):
-            layer = self.perceptron.layer
-            w = layer.weight.data
-            b = layer.bias.data if layer.bias is not None else None
-            return w, b
-        
-        assert isinstance(self.perceptron.normalization, nn.BatchNorm1d)
-        assert self.perceptron.normalization.affine
-
-        return get_fused_weights(
-            linear_layer=self.perceptron.layer, 
-            bn_layer=self.perceptron.normalization)
-
-    def map(self, mapping):
-        if self.sources is not None:
-            return self.sources
-        
-        layer_weights, layer_biases = self.fuse_normalization()
-        layer_weights.detach().cpu().numpy()
-        layer_biases.detach().cpu().numpy()
-
-        layer_sources = self.source_mapper.map(mapping)
-        layer_sources = layer_sources.transpose()
-        layer_sources = map_mm(mapping, layer_sources, layer_weights, layer_biases)
-        layer_sources = layer_sources.transpose()
-
-        self.sources = layer_sources
-        return self.sources
     
 
 class SimplePerceptronFlow(nn.Module):
@@ -191,7 +154,7 @@ class PatchedPerceptronFlow(nn.Module):
             layer.set_activation(activation)
 
     def set_regularization(self, regularizer):
-        for layer in self.patch_layers + self.fc_layers:
+        for layer in self.get_perceptrons():
             layer.set_regularization(regularizer)
     
     def get_mapper_repr(self):
