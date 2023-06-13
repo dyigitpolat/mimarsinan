@@ -3,8 +3,10 @@ import random
 class BasicConfigurationSampler:
     def __init__(self, configuration_space):
         self.previous_metrics = None
-        self.space = configuration_space
         self.refined_space = None
+
+    def _get_configuration_space(self):
+        raise NotImplementedError
 
     def _sample_from_space(self, space):
         sample = []
@@ -42,6 +44,6 @@ class BasicConfigurationSampler:
             samples.append(self._sample_from_space(self.refined_space))
         
         for _ in range(n - refined_samples_count):
-            samples.append(self._sample_from_space(self.space))
+            samples.append(self._sample_from_space(self._get_configuration_space()))
 
         return samples
