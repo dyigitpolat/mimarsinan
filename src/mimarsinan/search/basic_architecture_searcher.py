@@ -20,20 +20,25 @@ class BasicArchitectureSearcher:
     def _evaluate_configurations(self, configurations):
         metrics = []
         for configuration in configurations:
+            print('-----')
             if self._validate_configuration(configuration):
                 metrics.append(
                     (configuration, self._evaluate_architecture(configuration)))
         return metrics
 
     def get_optimized_model(self):
-        cycles = 10
-        configuration_batch_size = 100
-        for _ in range(cycles):
-            configurations = self._sample_configurations(configuration_batch_size)
+        cycles = 5
+        configuration_batch_size = 5
+        for i in range(cycles):
+            print(i)
 
-            metrics = self._evaluate_configurations(configurations)
+            metrics = []
+            while len(metrics) < configuration_batch_size:
+                configurations = self._sample_configurations(configuration_batch_size)
+                metrics += self._evaluate_configurations(configurations)
             
             self._update_sampler(metrics)
-            best_configuration = max(metrics, key = lambda x: x[1])
+            best_configuration = max(metrics, key = lambda x: x[1])[0]
         
+        print(best_configuration)
         return self._create_model(best_configuration)
