@@ -20,42 +20,49 @@ def recal_bn(network, xloader, recalbn, device):
     return network
 
 
-def get_ntk_n(xloader, networks, recalbn=0, train_mode=False, num_batch=-1):
+def get_ntk_n(xloader, networks, device, recalbn=0, train_mode=False, num_batch=-1):
     # if recalbn > 0:
     #     network = recal_bn(network, xloader, recalbn, device)
     #     if network_2 is not None:
     #         network_2 = recal_bn(network_2, xloader, recalbn, device)
     
     ntks = []
+    # for network in networks:
+    #     network.to("cpu")
+    #     if train_mode:
+    #         network.train()
+    #     else:
+    #         network.eval()
+
     for network in networks:
-        network.to("cpu")
-        if train_mode:
-            network.train()
-        else:
-            network.eval()
+        network.eval()
+        network.to(device)
+
     ######
     grads = [[] for _ in range(len(networks))]
     for i, (inputs, targets) in enumerate(xloader):
+        inputs.to(device)
         if num_batch > 0 and i >= num_batch: break
         for net_idx, network in enumerate(networks):
             network.zero_grad()
-            inputs_ = inputs
+            inputs_ = inputs.to(device)
             logit = network(inputs_)
             if isinstance(logit, tuple):
                 logit = logit[1]  # 201 networks: return features and logits
             for _idx in range(len(inputs_)):
-                logit[_idx:_idx+1].backward(torch.ones_like(logit[_idx:_idx+1]), retain_graph=True)
+                logit[_idx:_idx+1].backward(torch.ones_like(logit[_idx:_idx+1]).to(device), retain_graph=True)
                 grad = []
                 for name, W in network.named_parameters():
                     if 'weight' in name and W.grad is not None:
-                        grad.append(W.grad.view(-1).detach())
-                grads[net_idx].append(torch.cat(grad, -1))
+                        grad.append(W.grad.view(-1).to(device))
+                grads[net_idx].append(torch.cat(grad, -1).to(device))
                 network.zero_grad()
+
     ######
     grads = [torch.stack(_grads, 0) for _grads in grads]
     ntks = [torch.einsum('nc,mc->nm', [_grads, _grads]) for _grads in grads]
     conds = []
     for ntk in ntks:
-        eigenvalues, _ = torch.symeig(ntk)  # ascending
+        eigenvalues = torch.linalg.eigvalsh(ntk, UPLO='U') # ascending
         conds.append(np.nan_to_num((eigenvalues[-1] / eigenvalues[0]).item(), copy=True, nan=100000.0))
     return conds
