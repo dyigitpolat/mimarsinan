@@ -39,10 +39,13 @@ class BasicClassificationPipeline:
         print("Validation data size: ", self.data_provider.get_validation_set_size())
         print("Test data size: ", self.data_provider.get_test_set_size())
 
+
         # Metadata
         self.input_shape = data_provider.get_input_shape()
         self.output_shape = data_provider.get_output_shape()
         if len(self.output_shape) == 0: self.output_shape = (1,)
+        print(f"Input shape: {self.input_shape}")
+        print(f"Output shape: {self.output_shape}")
 
         self.input_size = np.prod(self.input_shape)
         self.output_size = np.prod(self.output_shape)
@@ -53,22 +56,35 @@ class BasicClassificationPipeline:
 
         # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # Model
-        self.model_complexity = model_complexity
-        self.model = PatchedPerceptronFlowBuilder(
-            self.max_axons, self.max_neurons, 
-            self.input_shape, self.num_classes,
-            self.model_complexity).build()
         
         # Training hyper parameters
         self.lr = training_parameters['lr']
         self.pretraining_epochs = training_parameters['pretraining_epochs']
         self.aq_cycle_epochs = training_parameters['aq_cycle_epochs']
         self.wq_cycle_epochs = training_parameters['wq_cycle_epochs']
-        
+
+
         # Loss definitions
         self.loss = BasicClassificationLoss()
+
+        # Model search
+        from mimarsinan.search.mlp_mixer_searcher import MLP_Mixer_Searcher
+        from mimarsinan.search.te_nas_evaluator import TE_NAS_Evaluator
+
+        self.searcher = MLP_Mixer_Searcher(
+            self.input_shape, 
+            self.num_classes, 
+            self.max_axons, 
+            self.max_neurons,
+            TE_NAS_Evaluator(
+                self.data_provider,
+                self.loss,
+                self.lr,
+                self.device))
+
+        # Model
+        print("Searching for a model...")
+        self.model = self.searcher.get_optimized_model()
         
         # File
         self.working_directory = working_directory
