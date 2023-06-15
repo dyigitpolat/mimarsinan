@@ -5,7 +5,7 @@ from mimarsinan.chip_simulation.compile_nevresim import *
 from mimarsinan.chip_simulation.execute_nevresim import *
 
 import numpy as np
-
+import json
 class NevresimDriver:
     nevresim_path = None
 
@@ -22,6 +22,11 @@ class NevresimDriver:
             hard_core_mapping.neurons_per_core,
             leak=0,
             weight_type=self.weight_type)
+        
+        chip_json = self.chip.get_chip_json()
+        # save json str to file
+        with open(generated_files_path + "/chip.json", "w") as f:
+            f.write(chip_json)
         
         self.generated_files_path = generated_files_path
         save_weights_and_chip_code(self.chip, generated_files_path)
