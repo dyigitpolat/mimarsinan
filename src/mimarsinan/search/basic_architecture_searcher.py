@@ -20,7 +20,6 @@ class BasicArchitectureSearcher:
     def _evaluate_configurations(self, configurations):
         metrics = []
         for configuration in configurations:
-            print('-----')
             if self._validate_configuration(configuration):
                 metrics.append(
                     (configuration, self._evaluate_architecture(configuration)))
