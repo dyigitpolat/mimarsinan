@@ -2,6 +2,7 @@ from mimarsinan.search.basic_architecture_searcher import BasicArchitectureSearc
 from mimarsinan.search.mlp_mixer_configuration_sampler import MLP_Mixer_ConfigurationSampler
 from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
 
+import json
 class MLP_Mixer_Searcher(BasicArchitectureSearcher):
     def __init__(self, input_shape, num_classes, max_axons, max_neurons, evaluator):
         super().__init__()
@@ -12,9 +13,20 @@ class MLP_Mixer_Searcher(BasicArchitectureSearcher):
         self.max_neurons = max_neurons
         self.evaluator = evaluator
 
+        self.cache = {}
+
+    def _configuration_to_json(self, configuration):
+        return json.dumps(configuration)
+
     def _evaluate_architecture(self, configuration):
+        key = self._configuration_to_json(configuration)
+        if key in self.cache:
+            return self.cache[key]
+        
         model = self._create_model(configuration)
-        return self.evaluator.evaluate(model)
+        self.cache[key] = self.evaluator.evaluate(model)
+
+        return self.cache[key]
 
     def _create_model(self, configuration):
         div = configuration["input_patch_division"]

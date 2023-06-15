@@ -63,7 +63,6 @@ class BasicClassificationPipeline:
         self.aq_cycle_epochs = training_parameters['aq_cycle_epochs']
         self.wq_cycle_epochs = training_parameters['wq_cycle_epochs']
 
-
         # Loss definitions
         self.loss = BasicClassificationLoss()
 
