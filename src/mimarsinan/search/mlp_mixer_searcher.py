@@ -29,22 +29,33 @@ class MLP_Mixer_Searcher(BasicArchitectureSearcher):
         return self.cache[key]
 
     def _create_model(self, configuration):
-        div = configuration["input_patch_division"]
-        fc_count = configuration["fc_count"]
+        patch_n_1 = configuration["patch_n_1"]
+        patch_m_1 = configuration["patch_m_1"]
+        patch_c_1 = configuration["patch_c_1"]
+        fc_k_1 = configuration["fc_k_1"]
+        fc_w_1 = configuration["fc_w_1"]
 
-        assert self.input_shape[-2] % div == 0, \
+        assert self.input_shape[-2] % patch_n_1 == 0, \
             "mod div != 0"
-        assert self.input_shape[-1] % div == 0, \
+        assert self.input_shape[-1] % patch_m_1 == 0, \
             "mod div != 0"
+        
+        fc_in = patch_n_1 * patch_m_1 * patch_c_1
+        fc_width = fc_w_1
+        patch_height = self.input_shape[-2] // patch_n_1
+        patch_width = self.input_shape[-1] // patch_m_1
+        input_channels = self.input_shape[-3]
+        patch_size = patch_height * patch_width * input_channels
 
-        patch_rows = max(self.input_shape[-2] // div, 1)
-        patch_cols = max(self.input_shape[-1] // div, 1)
+        assert fc_width <= self.max_neurons, f"not enough neurons ({fc_width} > {self.max_neurons})"
+        assert fc_width <= self.max_axons, f"not enough axons ({fc_width} > {self.max_axons})"
+        assert fc_in <= self.max_axons, f"not enough axons ({fc_in} > {self.max_axons})"
+        assert patch_size <= self.max_axons, f"not enough axons ({patch_size} > {self.max_axons})"
 
         perceptron_flow = PerceptronMixer(
             self.input_shape, self.num_classes,
-            self.max_axons - 1, self.max_neurons,
-            patch_cols, 
-            patch_rows, fc_depth=fc_count)
+            patch_n_1, patch_m_1, patch_c_1,
+            fc_w_1, fc_k_1)
     
         return perceptron_flow
 
