@@ -6,8 +6,9 @@ class MLP_Mixer_ConfigurationSampler(BasicConfigurationSampler):
 
     def _get_configuration_space(self):
         return {
-            "input_patch_division": [1, 2, 3, 4, 5],
-            #"mixer_fc_width": [16, 32, 48, 64, 96, 128, 192, 256, 384, 512],
-            "fc_count": [1, 2, 3, 4, 5]
-            #"fc_width": [16, 32, 48, 64, 96, 128, 192, 256, 384, 512]
+            "patch_n_1": [1, 2, 3, 4, 5],
+            "patch_m_1": [1, 2, 3, 4, 5],
+            "patch_c_1": [4, 8, 12, 16, 24, 32, 48, 64, 96, 128],
+            "fc_k_1": [1, 2, 3, 4, 5],
+            "fc_w_1": [16, 32, 48, 64, 96, 128, 192, 256, 384, 512]
         }
