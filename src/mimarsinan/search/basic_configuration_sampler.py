@@ -23,8 +23,9 @@ class BasicConfigurationSampler:
             self.previous_metrics = self.previous_metrics[:length//2]
         else:
             self.previous_metrics = metrics
+            self.previous_metrics.sort(key = lambda x: x[1])
 
-        top_p = 0.1
+        top_p = 0.5
         top_metric_count = int(len(self.previous_metrics) * top_p)
         top_metrics = self.previous_metrics[:top_metric_count]
 
@@ -34,7 +35,8 @@ class BasicConfigurationSampler:
             for key in configuration:
                 if key not in self.refined_space:
                     self.refined_space[key] = []
-                self.refined_space[key].append(configuration[key])
+                if configuration[key] not in self.refined_space[key]:
+                    self.refined_space[key].append(configuration[key])
 
     def sample(self, n):
         samples = []
