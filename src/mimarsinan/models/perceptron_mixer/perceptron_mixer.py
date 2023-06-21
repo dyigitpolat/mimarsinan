@@ -14,7 +14,11 @@ class PerceptronMixer(PerceptronFlow):
         patch_m_1,
         patch_c_1,
         fc_w_1,
-        fc_k_1):
+        fc_k_1,
+        patch_n_2,
+        patch_c_2,
+        fc_w_2,
+        fc_k_2):
         super(PerceptronMixer, self).__init__()
         
         self.input_shape = input_shape
@@ -43,8 +47,26 @@ class PerceptronMixer(PerceptronFlow):
         for _ in range(self.fc_depth - 1):
             self.fc_layers.append(Perceptron(self.fc_width, self.fc_width, 
                                              normalization=nn.BatchNorm1d(self.fc_width)))
+            
+        self.patch_count_2 = patch_n_2
+        self.patch_channels_2 = patch_c_2
+        self.patch_size_2 = self.fc_width // self.patch_count_2
+        
+        self.fc_in_2 = self.patch_count_2 * self.patch_channels_2
+        self.fc_width_2 = fc_w_2
+        self.fc_depth_2 = fc_k_2
 
-        self.output_layer = Perceptron(num_classes, self.fc_width) 
+        self.patch_layers_2 = nn.ModuleList(
+            [Perceptron(self.patch_channels_2, self.patch_size_2) for _ in range(self.patch_count_2)])
+        
+        self.fc_layers_2 = nn.ModuleList()
+        self.fc_layers_2.append(Perceptron(self.fc_width_2, self.fc_in_2,
+                                           normalization=nn.BatchNorm1d(self.fc_width_2)))
+        for _ in range(self.fc_depth_2 - 1):
+            self.fc_layers_2.append(Perceptron(self.fc_width_2, self.fc_width_2, 
+                                             normalization=nn.BatchNorm1d(self.fc_width_2)))
+
+        self.output_layer = Perceptron(num_classes, self.fc_width_2) 
         self.activation = nn.LeakyReLU()
 
         self.out = None
@@ -54,6 +76,8 @@ class PerceptronMixer(PerceptronFlow):
     
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
+
+        # First Mixer
         out = EinopsRearrangeMapper(
             out, 
             'c (h p1) (w p2) -> (h w) (p1 p2 c)', 
@@ -69,11 +93,30 @@ class PerceptronMixer(PerceptronFlow):
 
         for layer in self.fc_layers:
             out = PerceptronMapper(out, layer)
+
+        # Second Mixer
+        out = EinopsRearrangeMapper(
+            out, 
+            '1 (h p1) -> (h) (p1)', 
+            p1=self.patch_size_2)
         
+        patch_mappers = []
+        for idx in range(self.patch_count_2):
+            source = SubscriptMapper(out, idx)
+            source = ReshapeMapper(source, (1, self.patch_size_2))
+            patch_mappers.append(PerceptronMapper(source, self.patch_layers_2[idx]))
+        out = StackMapper(patch_mappers)
+        out = ReshapeMapper(out, (1, self.patch_count_2 * self.patch_channels_2))
+
+        for layer in self.fc_layers_2:
+            out = PerceptronMapper(out, layer)
+        
+        # Output Layer
         out = PerceptronMapper(out, self.output_layer)
         return ModelRepresentation(out)
 
     def forward(self, x):
+        # First Mixer
         out = einops.einops.rearrange(
             x, 
             'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', 
@@ -86,6 +129,21 @@ class PerceptronMixer(PerceptronFlow):
 
         out = out_tensor
         for layer in self.fc_layers:
+            out = layer(out)
+
+        # Second Mixer
+        out = einops.einops.rearrange(
+            out, 
+            'b (h p1) -> b (h) (p1)', 
+            p1=self.patch_size_2)
+        
+        out_tensor = torch.zeros((x.shape[0], self.fc_in_2), device=x.device)
+        for idx in range(self.patch_count_2):
+            length = self.patch_channels_2
+            out_tensor[:, idx*length:(idx+1)*length] = self.patch_layers_2[idx](out[:,idx])
+
+        out = out_tensor
+        for layer in self.fc_layers_2:
             out = layer(out)
 
         out = self.output_layer(out)
