@@ -22,12 +22,14 @@ class BasicArchitectureSearcher:
         for configuration in configurations:
             if self._validate_configuration(configuration):
                 print("evaluating", configuration)
+                score = self._evaluate_architecture(configuration)
                 metrics.append(
                     (configuration, self._evaluate_architecture(configuration)))
+                print("score", score)
         return metrics
 
     def get_optimized_model(self):
-        cycles = 20
+        cycles = 5
         configuration_batch_size = 50
         for i in range(cycles):
             print(i)
