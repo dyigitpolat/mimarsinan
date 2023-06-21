@@ -24,5 +24,5 @@ class TE_NAS_Evaluator:
             self.input_data.to(self.device),
             model,
             self.device)[0]
-        
+
         return 1.0 / ntk_score
