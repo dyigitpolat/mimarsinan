@@ -35,6 +35,11 @@ class MLP_Mixer_Searcher(BasicArchitectureSearcher):
         fc_k_1 = configuration["fc_k_1"]
         fc_w_1 = configuration["fc_w_1"]
 
+        patch_n_2 = configuration["patch_n_2"]
+        patch_c_2 = configuration["patch_c_2"]
+        fc_k_2 = configuration["fc_k_2"]
+        fc_w_2 = configuration["fc_w_2"]
+
         assert self.input_shape[-2] % patch_n_1 == 0, \
             "mod div != 0"
         assert self.input_shape[-1] % patch_m_1 == 0, \
@@ -48,14 +53,26 @@ class MLP_Mixer_Searcher(BasicArchitectureSearcher):
         patch_size = patch_height * patch_width * input_channels
 
         assert fc_width <= self.max_neurons, f"not enough neurons ({fc_width} > {self.max_neurons})"
-        assert fc_width <= self.max_axons, f"not enough axons ({fc_width} > {self.max_axons})"
-        assert fc_in <= self.max_axons, f"not enough axons ({fc_in} > {self.max_axons})"
-        assert patch_size <= self.max_axons, f"not enough axons ({patch_size} > {self.max_axons})"
+        assert fc_width <= self.max_axons - 1, f"not enough axons ({fc_width} > {self.max_axons})"
+        assert fc_in <= self.max_axons - 1, f"not enough axons ({fc_in} > {self.max_axons})"
+        assert patch_size <= self.max_axons - 1, f"not enough axons ({patch_size} > {self.max_axons})"
+
+        fc_width_2 = fc_w_2
+        fc_in_2 = patch_n_2 * patch_c_2
+        patch_size_2 = fc_width // patch_n_2
+
+        assert fc_width % patch_n_2 == 0, \
+            "mod div != 0"
+
+        assert fc_width_2 <= self.max_neurons, f"not enough neurons ({fc_width} > {self.max_neurons})"
+        assert fc_width_2 <= self.max_axons - 1, f"not enough axons ({fc_width} > {self.max_axons})"
+        assert fc_in_2 <= self.max_axons - 1, f"not enough axons ({fc_in} > {self.max_axons})"
+        assert patch_size_2 <= self.max_axons - 1, f"not enough axons ({patch_size} > {self.max_axons})"
 
         perceptron_flow = PerceptronMixer(
             self.input_shape, self.num_classes,
-            patch_n_1, patch_m_1, patch_c_1,
-            fc_w_1, fc_k_1)
+            patch_n_1, patch_m_1, patch_c_1, fc_w_1, fc_k_1,
+            patch_n_2, patch_c_2, fc_w_2, fc_k_2)
     
         return perceptron_flow
 
