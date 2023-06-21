@@ -181,5 +181,5 @@ class NoisyDropout(nn.Module):
         random_mask = (random_mask < self.rate).float()
 
         out = nn.Dropout(self.dropout_p)(x)
-        out = out + self.noise_radius * torch.randn_like(out)
-        return random_mask * out
+        out = out + self.noise_radius * torch.rand_like(out) - 0.5 * self.noise_radius
+        return random_mask * out + (1.0 - random_mask) * x
