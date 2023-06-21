@@ -68,22 +68,18 @@ class BasicClassificationPipeline:
 
         # Model search
         from mimarsinan.search.mlp_mixer_searcher import MLP_Mixer_Searcher
-        from mimarsinan.search.te_nas_evaluator import TE_NAS_Evaluator
+        from mimarsinan.search.small_step_evaluator import SmallStepEvaluator
 
         self.searcher = MLP_Mixer_Searcher(
             self.input_shape, 
             self.num_classes, 
             self.max_axons, 
             self.max_neurons,
-            TE_NAS_Evaluator(
+            SmallStepEvaluator(
                 self.data_provider,
                 self.loss,
                 self.lr,
                 self.device))
-
-        # Model
-        print("Searching for a model...")
-        self.model = self.searcher.get_optimized_model()
         
         # File
         self.working_directory = working_directory
@@ -93,6 +89,9 @@ class BasicClassificationPipeline:
         load_model_from_file = False
 
         if not load_model_from_file:
+            print("Searching for a model...")
+            self.model = self.searcher.get_optimized_model()
+
             print("Pretraining...")
             pretraining_accuracy = Pretrainer(self, self.pretraining_epochs).run()
 
