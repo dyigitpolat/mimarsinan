@@ -1,4 +1,3 @@
-from mimarsinan.pipelining.model_building.patched_perceptron_flow_builder import PatchedPerceptronFlowBuilder
 from mimarsinan.pipelining.pretrainer import Pretrainer
 from mimarsinan.pipelining.activation_shifter import ActivationShifter
 from mimarsinan.pipelining.normalization_fuser import NormalizationFuser
