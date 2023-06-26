@@ -44,9 +44,13 @@ class PerceptronMixer(PerceptronFlow):
         self.fc_layers = nn.ModuleList()
         self.fc_layers.append(Perceptron(self.fc_width, self.fc_in, 
                                          normalization=nn.BatchNorm1d(self.fc_width)))
-        for _ in range(self.fc_depth - 1):
+        for idx in range(self.fc_depth - 1):
+            if idx % 2 == 0:
+                norm = nn.Identity()
+            else:
+                norm = nn.BatchNorm1d(self.fc_width)
             self.fc_layers.append(Perceptron(self.fc_width, self.fc_width, 
-                                             normalization=nn.BatchNorm1d(self.fc_width)))
+                                             normalization=norm))
             
         self.patch_count_2 = patch_n_2
         self.patch_channels_2 = patch_c_2
@@ -62,9 +66,13 @@ class PerceptronMixer(PerceptronFlow):
         self.fc_layers_2 = nn.ModuleList()
         self.fc_layers_2.append(Perceptron(self.fc_width_2, self.fc_in_2,
                                            normalization=nn.BatchNorm1d(self.fc_width_2)))
-        for _ in range(self.fc_depth_2 - 1):
+        for idx in range(self.fc_depth_2 - 1):
+            if idx % 2 == 0:
+                norm = nn.Identity()
+            else:
+                norm = nn.BatchNorm1d(self.fc_width_2)
             self.fc_layers_2.append(Perceptron(self.fc_width_2, self.fc_width_2, 
-                                             normalization=nn.BatchNorm1d(self.fc_width_2)))
+                                             normalization=norm))
 
         self.output_layer = Perceptron(num_classes, self.fc_width_2) 
         self.activation = nn.LeakyReLU()
