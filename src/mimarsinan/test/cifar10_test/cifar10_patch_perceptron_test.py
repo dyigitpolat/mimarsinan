@@ -22,7 +22,7 @@ def test_cifar10_patched_perceptron():
         },
         {
             "lr": 0.001, 
-            "pretraining_epochs": 50, 
+            "pretraining_epochs": 300, 
             "aq_cycle_epochs": 15, 
             "wq_cycle_epochs": 15,
             "aq_cycles": 15,
