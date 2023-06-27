@@ -18,12 +18,10 @@ import torch
 class BasicClassificationPipeline:
     def __init__(self, 
         data_provider,
-        num_classes,
         platform_constraints: dict,
         training_parameters: dict,
         reporter,
-        working_directory,
-        model_complexity=2):
+        working_directory):
 
         # Platform constraints
         self.max_axons = platform_constraints['max_axons']
@@ -38,7 +36,6 @@ class BasicClassificationPipeline:
         print("Validation data size: ", self.data_provider.get_validation_set_size())
         print("Test data size: ", self.data_provider.get_test_set_size())
 
-
         # Metadata
         self.input_shape = data_provider.get_input_shape()
         self.output_shape = data_provider.get_output_shape()
@@ -48,7 +45,7 @@ class BasicClassificationPipeline:
 
         self.input_size = np.prod(self.input_shape)
         self.output_size = np.prod(self.output_shape)
-        self.num_classes = num_classes
+        self.num_classes = data_provider.get_prediction_mode().num_classes
 
         # Reporting
         self.reporter = reporter

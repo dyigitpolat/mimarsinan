@@ -1,5 +1,4 @@
-from mimarsinan.data_handling.data_provider import DataProvider
-
+from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
 import torchvision.transforms as transforms
 import torchvision
 
@@ -35,3 +34,6 @@ class MNIST_DataProvider(DataProvider):
 
     def _get_test_dataset(self):
         return self.test_dataset
+    
+    def get_prediction_mode(self):
+        return ClassificationMode(10)

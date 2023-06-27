@@ -11,7 +11,6 @@ def test_ecg_patched_perceptron():
 
     pipeline = BasicClassificationPipeline(
         data_provider,
-        2,
         {
             "max_axons": 256, 
             "max_neurons": 256, 
@@ -26,8 +25,7 @@ def test_ecg_patched_perceptron():
             "wq_cycle_epochs": 5
         },
         reporter,
-        "../generated/ecg2/",
-        model_complexity=2
+        "../generated/ecg2/"
     )
 
     pipeline.run()

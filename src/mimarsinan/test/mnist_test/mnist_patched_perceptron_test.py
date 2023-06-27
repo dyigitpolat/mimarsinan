@@ -12,7 +12,6 @@ def test_mnist_patched_perceptron():
 
     pipeline = BasicClassificationPipeline(
         mnist_data_provider,
-        10,
         {
             "max_axons": 256, 
             "max_neurons": 256, 
@@ -29,8 +28,7 @@ def test_mnist_patched_perceptron():
             "wq_cycles": 10
         },
         reporter,
-        "../generated/mnist2/",
-        model_complexity=2
+        "../generated/mnist2/"
     )
 
     pipeline.run()
