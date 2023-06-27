@@ -12,7 +12,6 @@ def test_cifar10_patched_perceptron():
 
     pipeline = BasicClassificationPipeline(
         data_provider,
-        10,
         {
             "max_axons": 256, 
             "max_neurons": 256, 
@@ -29,8 +28,7 @@ def test_cifar10_patched_perceptron():
             "wq_cycles": 15
         },
         reporter,
-        "../generated/cifar10_2/",
-        model_complexity=2
+        "../generated/cifar10_2/"
     )
 
     pipeline.run()

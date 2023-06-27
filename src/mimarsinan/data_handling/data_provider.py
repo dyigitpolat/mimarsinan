@@ -1,5 +1,17 @@
 import torch
 
+class ClassificationMode:
+    def __init__(self, num_classes):
+        self.num_classes = num_classes
+
+    def mode(self):
+        return "classification"
+    
+class RegressionMode:
+    def mode(self):
+        return "regression"
+    
+
 class DataProvider:
     datasets_path = "../datasets"
     
@@ -31,6 +43,12 @@ class DataProvider:
         """
         Dataset: Test
         Transformation: None
+        """
+        raise NotImplementedError()
+    
+    def get_prediction_mode(self):
+        """
+        Returns the classification mode
         """
         raise NotImplementedError()
     
