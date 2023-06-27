@@ -4,6 +4,7 @@ class BasicConfigurationSampler:
     def __init__(self):
         self.previous_metrics = None
         self.refined_space = self._get_configuration_space()
+        self.top_metrics = None
 
     def _get_configuration_space(self):
         raise NotImplementedError
@@ -15,10 +16,10 @@ class BasicConfigurationSampler:
 
         return sample
     
-    def _mutate(self, configuration):
+    def _mutate(self, configuration, rate):
         mutator = self._sample_from_space(self._get_configuration_space())
         for key in mutator:
-            if random.random() < 0.2:
+            if random.random() < rate:
                 configuration[key] = mutator[key]
 
     def update(self, metrics):
@@ -31,14 +32,14 @@ class BasicConfigurationSampler:
             self.previous_metrics = metrics
             self.previous_metrics.sort(key = lambda x: x[1])
 
-        top_p = 0.2
+        top_p = 0.1
         top_metric_count = int(len(self.previous_metrics) * top_p)
-        top_metrics = self.previous_metrics[-top_metric_count:]
+        self.top_metrics = self.previous_metrics[-top_metric_count:]
 
-        print("top metrics", top_metrics)
+        print("top metrics", self.top_metrics)
 
         self.refined_space = {}
-        for metric in top_metrics:
+        for metric in self.top_metrics:
             configuration = metric[0]
             for key in configuration:
                 if key not in self.refined_space:
@@ -47,16 +48,31 @@ class BasicConfigurationSampler:
                     self.refined_space[key].append(configuration[key])
 
     def sample(self, n):
-        samples = []
-        refined_samples_p = 0.8
-        refined_samples_count = int(n * refined_samples_p)
+        if self.top_metrics:
+            mutated_top_candidates_p = 0.6
+            samples_from_refined_space_p = 0.3
+        else:
+            mutated_top_candidates_p = 0.0
+            samples_from_refined_space_p = 0.9
 
-        for _ in range(refined_samples_count):
+        mutated_top_candidates_count = int(n * mutated_top_candidates_p)
+        samples_from_refined_space_count = int(n * samples_from_refined_space_p)
+
+        assert mutated_top_candidates_count + samples_from_refined_space_count < n
+        vanilla_samples_count = n - (mutated_top_candidates_count + samples_from_refined_space_count)
+
+        samples = []
+        for _ in range(mutated_top_candidates_count):
+            sample = random.choice(self.top_metrics)[0]
+            self._mutate(sample, 0.5)
+            samples.append(sample)
+
+        for _ in range(samples_from_refined_space_count):
             refined_sample = self._sample_from_space(self.refined_space)
-            self._mutate(refined_sample)
+            self._mutate(refined_sample, 0.5)
             samples.append(refined_sample)
         
-        for _ in range(n - refined_samples_count):
+        for _ in range(n - vanilla_samples_count):
             samples.append(self._sample_from_space(self._get_configuration_space()))
 
         return samples
