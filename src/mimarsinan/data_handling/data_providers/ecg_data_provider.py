@@ -78,4 +78,4 @@ class ECG_DataProvider(DataProvider):
         return self.test_dataset
     
     def get_prediction_mode(self):
-        return ClassificationMode(10)
+        return ClassificationMode(2)
