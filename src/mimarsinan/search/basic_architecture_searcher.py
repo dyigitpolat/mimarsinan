@@ -41,9 +41,10 @@ class BasicArchitectureSearcher:
                 metrics += self._evaluate_configurations(configurations)
             
             self._update_sampler(metrics)
-            best_configuration = max(metrics, key = lambda x: x[1])[0]
+            best_configuration_metric_pair = max(
+                metrics + best_configuration_metric_pair, key = lambda x: x[1])
         
-        return best_configuration
+        return best_configuration_metric_pair[0]
     
     def get_optimized_model(self):
         config = self.get_optimized_configuration()
