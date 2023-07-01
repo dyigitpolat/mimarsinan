@@ -14,6 +14,7 @@ from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 
 import numpy as np
 import torch
+import json
 
 class BasicClassificationPipeline:
     def __init__(self, 
@@ -83,10 +84,18 @@ class BasicClassificationPipeline:
         
     def run(self):
         load_model_from_file = False
+        skip_architecture_search = False
 
         if not load_model_from_file:
-            print("Searching for a model...")
-            self.model = self.searcher.get_optimized_model()
+
+            if not skip_architecture_search:
+                print("Searching for a model...")
+                model_config = self.searcher.get_optimized_configuration()
+                json.dump(model_config, open(self.working_directory + "/model_config.json", "w"))
+            else:
+                model_config = json.load(open(self.working_directory + "/model_config.json", "r"))
+
+            self.model = self.searcher._create_model(model_config)
 
             print("Pretraining...")
             pretraining_accuracy = Pretrainer(self, self.pretraining_epochs).run()
