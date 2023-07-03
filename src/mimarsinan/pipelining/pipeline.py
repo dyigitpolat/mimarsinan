@@ -53,6 +53,18 @@ class Pipeline:
         self.save_cache()
 
     def _find_starting_step_idx(self, step_name):
+        requirements = self._get_all_requirements(step_name)
+        missing_requirements = requirements - set(self.cache.keys())
+
+        if len(missing_requirements) > 0:
+            print(f"Cannot start from '{step_name}' because of missing requirements: {missing_requirements}")
+            starting_step_idx = self._find_latest_possible_step_idx(missing_requirements)
+        else:
+            starting_step_idx = self._get_step_idx(step_name)
+
+        return starting_step_idx
+    
+    def _get_all_requirements(self, step_name):
         requirements = set()
         for name, step in self.steps:
             for requirement in step.requires:
@@ -64,28 +76,28 @@ class Pipeline:
             for entry in step.clears:
                 if entry in requirements:
                     requirements.remove(entry)
+        
+        return requirements
 
-        missing_requirements = requirements - set(self.cache.keys())
-        if len(missing_requirements) > 0:
-            print(f"Cannot start from '{step_name}' because of missing requirements: {missing_requirements}")
-            print(f"Finding the earliest step that can be started from...")
+    def _find_latest_possible_step_idx(self, missing_requirements):
+        print(f"Finding the earliest step that can be started from...")
 
-            starting_step_idx = None
-            for idx, (name, step) in enumerate(self.steps):
-                for promise in step.promises:
-                    if promise in missing_requirements:
-                        missing_requirements.remove(promise)
-                
-                if len(missing_requirements) == 0:
-                    starting_step_idx = idx
-                    print(f"Starting from '{name}'")
-                    break
+        starting_step_idx = None
+        for idx, (name, step) in enumerate(self.steps):
+            for promise in step.promises:
+                if promise in missing_requirements:
+                    missing_requirements.remove(promise)
+            
+            if len(missing_requirements) == 0:
+                starting_step_idx = idx
+                print(f"Starting from '{name}'")
+                break
 
-            assert starting_step_idx is not None
-        else:
-            for idx, (name, step) in enumerate(self.steps):
-                if name == step_name:
-                    starting_step_idx = idx
-                    break
-
+        assert starting_step_idx is not None
         return starting_step_idx
+    
+    def _get_step_idx(self, step_name):
+        for idx, (name, _) in enumerate(self.steps):
+            if name == step_name:
+                return idx
+        return None
