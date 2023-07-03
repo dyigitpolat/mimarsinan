@@ -50,3 +50,24 @@ class PipelineCache:
         for name, (load_store_strategy, filename) in metadata.items():
             strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](filename)
             self.cache[name] = (strategy.load(cache_directory), load_store_strategy)
+
+    def keys(self):
+        return self.cache.keys()
+
+    def __len__(self):
+        return len(self.cache)
+    
+    def __getitem__(self, name):
+        return self.get(name)
+    
+    def __setitem__(self, name, object):
+        self.add(name, object)
+    
+    def __delitem__(self, name):
+        self.remove(name)
+    
+    def __contains__(self, name):
+        return name in self.cache
+    
+    def __iter__(self):
+        return iter(self.cache)
