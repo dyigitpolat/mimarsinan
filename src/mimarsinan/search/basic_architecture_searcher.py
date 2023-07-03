@@ -28,24 +28,22 @@ class BasicArchitectureSearcher:
                 print("score", score)
         return metrics
     
-    def get_optimized_configuration(self):
-        cycles = 5
-        configuration_batch_size = 10
-
+    def get_optimized_configuration(self, cycles = 5, configuration_batch_size = 50):
         for i in range(cycles):
             print(i)
 
             metrics = []
+            best_configuration_metric_pair = (None, 0)
             while len(metrics) < configuration_batch_size:
                 configurations = self._sample_configurations(configuration_batch_size)
                 metrics += self._evaluate_configurations(configurations)
             
             self._update_sampler(metrics)
             best_configuration_metric_pair = max(
-                metrics + best_configuration_metric_pair, key = lambda x: x[1])
+                metrics + [best_configuration_metric_pair], key = lambda x: x[1])
         
         return best_configuration_metric_pair[0]
     
-    def get_optimized_model(self):
-        config = self.get_optimized_configuration()
+    def get_optimized_model(self, cycles = 5, configuration_batch_size = 50):
+        config = self.get_optimized_configuration(cycles, configuration_batch_size)
         return self._create_model(config)
