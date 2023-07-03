@@ -64,10 +64,10 @@ class MLP_Mixer_Searcher(BasicArchitectureSearcher):
         assert fc_width % patch_n_2 == 0, \
             "mod div != 0"
 
-        assert fc_width_2 <= self.max_neurons, f"not enough neurons ({fc_width} > {self.max_neurons})"
-        assert fc_width_2 <= self.max_axons - 1, f"not enough axons ({fc_width} > {self.max_axons})"
-        assert fc_in_2 <= self.max_axons - 1, f"not enough axons ({fc_in} > {self.max_axons})"
-        assert patch_size_2 <= self.max_axons - 1, f"not enough axons ({patch_size} > {self.max_axons})"
+        assert fc_width_2 <= self.max_neurons, f"not enough neurons ({fc_width_2} > {self.max_neurons})"
+        assert fc_width_2 <= self.max_axons - 1, f"not enough axons ({fc_width_2} > {self.max_axons})"
+        assert fc_in_2 <= self.max_axons - 1, f"not enough axons ({fc_in_2} > {self.max_axons})"
+        assert patch_size_2 <= self.max_axons - 1, f"not enough axons ({patch_size_2} > {self.max_axons})"
 
         perceptron_flow = PerceptronMixer(
             self.input_shape, self.num_classes,
