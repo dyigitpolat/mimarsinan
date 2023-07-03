@@ -34,7 +34,7 @@ class PipelineCache:
                 metadata = json.load(f)
         else:
             metadata = {}
-            
+
         for name, (_, load_store_strategy) in self.cache.items():
             filename = f"{name}"
             metadata[name] = (load_store_strategy, filename)
@@ -50,8 +50,11 @@ class PipelineCache:
     def load(self, cache_directory):
         self.cache = {}
 
-        with open(f"{cache_directory}/metadata.json", "r") as f:
-            metadata = json.load(f)
+        if os.path.exists(f"{cache_directory}/metadata.json"):
+            with open(f"{cache_directory}/metadata.json", "r") as f:
+                metadata = json.load(f)
+        else:
+            metadata = {}
         
         for name, (load_store_strategy, filename) in metadata.items():
             filename = f"{name}"
