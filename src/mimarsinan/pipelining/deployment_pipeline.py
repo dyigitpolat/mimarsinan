@@ -1,0 +1,80 @@
+from mimarsinan.pipelining.pipeline import Pipeline
+from mimarsinan.pipelining.pipeline_steps.pretraining_step import PretrainingStep
+from mimarsinan.pipelining.pipeline_steps.architecture_search_step import ArchitectureSearchStep
+from mimarsinan.model_training.training_utilities import BasicClassificationLoss
+
+import numpy as np
+import torch
+
+class DeploymentPipeline(Pipeline):
+    default_deployment_parameters = {
+        'lr': 0.001,
+        'pt_epochs': 10,
+        'aq_epochs': 10,
+        'wq_epochs': 10,
+        'nas_cycles': 5,
+        'nas_batch_size': 50
+    }
+
+    default_platform_constraints = {
+        'max_axons': 256,
+        'max_neurons': 256,
+        'target_tq': 32,
+        'simulation_steps': 32,
+        'weight_bits': 8
+    }
+
+    def __init__(
+        self,
+        data_provider,
+        deployment_parameters,
+        platform_constraints,
+        reporter,
+        working_directory):
+
+        super().__init__(working_directory)
+
+        self.data_provider = data_provider
+        self.reporter = reporter
+
+        self.config = {}
+        self._initialize_config(deployment_parameters, platform_constraints)
+
+        self.loss = BasicClassificationLoss()
+        
+        self.add_pipeline_step("Architecture Search", ArchitectureSearchStep(self))
+        self.add_pipeline_step("Pretraining", PretrainingStep(self))
+        #self.add_pipeline_step("Activation Shifting", ---(self))
+        #self.add_pipeline_step("Activation Quantization", ---(self))
+        #self.add_pipeline_step("Normalization Fusion", ---(self))
+        #self.add_pipeline_step("Weight Quantization", ---(self))
+        #self.add_pipeline_step("Soft Core Mapping", ---(self))
+        #self.add_pipeline_step("Hard Core Mapping", ---(self))
+        #self.add_pipeline_step("CoreFlow Tuning", ---(self))
+        #self.add_pipeline_step("Simulation", ---(self))
+        
+    def _initialize_config(self, deployment_parameters, platform_constraints):
+        self.config.update(self.default_deployment_parameters)
+        self.config.update(deployment_parameters)
+        
+        self.config.update(self.default_platform_constraints)
+        self.config.update(platform_constraints)
+
+        self.config['input_shape'] = self.data_provider.get_input_shape()
+        self.config['output_shape'] = self.data_provider.get_output_shape()
+        if len(self.config['output_shape']) == 0: self.config['output_shape'] = (1,)
+
+        self.config['input_size'] = np.prod(self.config['input_shape'])
+        self.config['output_size'] = np.prod(self.config['output_shape'])
+        self.config['num_classes'] = self.data_provider.get_prediction_mode().num_classes
+
+        self.config['device'] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+
+
+
+
+
+
+
