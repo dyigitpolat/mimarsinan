@@ -29,15 +29,21 @@ class PipelineCache:
         if not os.path.exists(cache_directory):
             os.makedirs(cache_directory)
 
-        metadata = {}
+        if os.path.exists(f"{cache_directory}/metadata.json"):
+            with open(f"{cache_directory}/metadata.json", "r") as f:
+                metadata = json.load(f)
+        else:
+            metadata = {}
+            
         for name, (_, load_store_strategy) in self.cache.items():
-            filename = f"{name}.json"
+            filename = f"{name}"
             metadata[name] = (load_store_strategy, filename)
     
         with open(f"{cache_directory}/metadata.json", "w") as f:
             json.dump(metadata, f)
         
         for name, (object, load_store_strategy) in self.cache.items():
+            filename = f"{name}"
             strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](filename)
             strategy.store(cache_directory, object)
     
@@ -48,6 +54,7 @@ class PipelineCache:
             metadata = json.load(f)
         
         for name, (load_store_strategy, filename) in metadata.items():
+            filename = f"{name}"
             strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](filename)
             self.cache[name] = (strategy.load(cache_directory), load_store_strategy)
 
