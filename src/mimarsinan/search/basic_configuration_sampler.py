@@ -27,13 +27,14 @@ class BasicConfigurationSampler:
             self.previous_metrics += metrics
             self.previous_metrics.sort(key = lambda x: x[1])
             length = len(self.previous_metrics)
-            self.previous_metrics = list(self.previous_metrics[-length//2:])
+            half_length = max(1, length // 2)
+            self.previous_metrics = list(self.previous_metrics[-half_length:])
         else:
             self.previous_metrics = list(metrics)
             self.previous_metrics.sort(key = lambda x: x[1])
 
         top_p = 0.1
-        top_metric_count = int(len(self.previous_metrics) * top_p)
+        top_metric_count = max(1, int(len(self.previous_metrics) * top_p))
         self.top_metrics = list(self.previous_metrics[-top_metric_count:])
 
         print("top metrics", self.top_metrics)
@@ -48,6 +49,8 @@ class BasicConfigurationSampler:
                     self.refined_space[key].append(configuration[key])
 
     def sample(self, n):
+        assert n > 2
+        
         if self.top_metrics:
             mutated_top_candidates_p = 0.6
             samples_from_refined_space_p = 0.3
@@ -58,7 +61,7 @@ class BasicConfigurationSampler:
         mutated_top_candidates_count = int(n * mutated_top_candidates_p)
         samples_from_refined_space_count = int(n * samples_from_refined_space_p)
 
-        assert mutated_top_candidates_count + samples_from_refined_space_count < n
+        assert mutated_top_candidates_count + samples_from_refined_space_count < n, f"{mutated_top_candidates_count} + {samples_from_refined_space_count} >= {n}"
         vanilla_samples_count = n - (mutated_top_candidates_count + samples_from_refined_space_count)
 
         samples = []
