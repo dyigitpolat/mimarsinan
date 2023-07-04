@@ -6,7 +6,7 @@ from mimarsinan.models.layers import ClampedReLU, NoisyDropout
 class PretrainingStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["init_model"]
-        promises = ["pretrained_model", "val_accuracy"]
+        promises = ["pretrained_model", "pt_accuracy"]
         clears = ["init_model"]
         super().__init__(requires, promises, clears, pipeline)
 
@@ -30,6 +30,6 @@ class PretrainingStep(PipelineStep):
         
         
         self.pipeline.cache.add("pretrained_model", model, 'torch_model')
-        self.pipeline.cache.add("val_accuracy", validation_accuracy)
-        
+        self.pipeline.cache.add("pt_accuracy", validation_accuracy)
+
         self.pipeline.cache.remove("init_model")
