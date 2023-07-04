@@ -58,7 +58,7 @@ class Pipeline:
 
         if len(missing_requirements) > 0:
             print(f"Cannot start from '{step_name}' because of missing requirements: {missing_requirements}")
-            starting_step_idx = self._find_latest_possible_step_idx(missing_requirements)
+            starting_step_idx = self._find_latest_possible_step_idx(missing_requirements, step_name)
         else:
             starting_step_idx = self._get_step_idx(step_name)
 
@@ -79,11 +79,16 @@ class Pipeline:
         
         return requirements
 
-    def _find_latest_possible_step_idx(self, missing_requirements):
+    def _find_latest_possible_step_idx(self, missing_requirements, step_name):
         print(f"Finding the earliest step that can be started from...")
 
         starting_step_idx = None
-        for idx, (name, step) in enumerate(self.steps):
+
+        begin_idx = self._get_step_idx(step_name)
+        for idx in range(begin_idx - 1, -1, -1):
+            name = self.steps[idx][0]
+            step = self.steps[idx][1]
+
             for promise in step.promises:
                 if promise in missing_requirements:
                     missing_requirements.remove(promise)
