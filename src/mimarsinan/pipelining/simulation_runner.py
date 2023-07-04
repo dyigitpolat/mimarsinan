@@ -4,10 +4,10 @@ from mimarsinan.chip_simulation.nevresim_driver import NevresimDriver
 import numpy as np
 
 class SimulationRunner:
-    def __init__(self, pipeline, mapping, threshold_scale, simulation_length):
-        self.model = pipeline.model
-        self.input_size = pipeline.input_size
-        self.num_classes = pipeline.num_classes
+    def __init__(self, pipeline, mapping, threshold_scale):
+        self.input_size = pipeline.config["input_size"]
+        self.num_classes = pipeline.config["num_classes"]
+
         self.working_directory = pipeline.working_directory
 
         self.test_input = []
@@ -24,7 +24,7 @@ class SimulationRunner:
 
         self.mapping = mapping
         self.threshold_scale = threshold_scale
-        self.simulation_length = simulation_length
+        self.simulation_length = pipeline.config["simulation_steps"]
 
     def _evaluate_chip_output(self, predictions):
         confusion_matrix = np.zeros(
