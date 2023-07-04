@@ -1,5 +1,6 @@
 import torch
 import json
+import pickle
 
 class LoadStoreStrategy:
     def __init__(self, filename):
@@ -32,3 +33,15 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
 
     def store(self, cache_directory, object):
         torch.save(object, f"{cache_directory}/{self.filename}.pt")
+
+class PickleLoadStoreStrategy(LoadStoreStrategy):
+    def __init__(self, filename):
+        super().__init__(filename)
+
+    def load(self, cache_directory):
+        with open(f"{cache_directory}/{self.filename}.pickle", "rb") as f:
+            return pickle.load(f)
+        
+    def store(self, cache_directory, object):
+        with open(f"{cache_directory}/{self.filename}.pickle", "wb") as f:
+            pickle.dump(object, f)
