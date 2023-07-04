@@ -6,7 +6,8 @@ import os
 class PipelineCache:
     LOAD_STORE_STRATEGIES = {
         "basic": BasicLoadStoreStrategy,
-        "torch_model": TorchModelLoadStoreStrategy
+        "torch_model": TorchModelLoadStoreStrategy,
+        "pickle": PickleLoadStoreStrategy
     }
 
     def __init__(self):
