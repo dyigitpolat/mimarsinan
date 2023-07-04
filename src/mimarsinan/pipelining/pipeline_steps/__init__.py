@@ -4,3 +4,5 @@ from .activation_shift_step import ActivationShiftStep
 from .activation_quantization_step import ActivationQuantizationStep
 from .normalization_fusion_step import NormalizationFusionStep
 from .weight_quantization_step import WeightQuantizationStep
+from .soft_core_mapping_step import SoftCoreMappingStep
+from .hard_core_mapping_step import HardCoreMappingStep
