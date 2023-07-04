@@ -51,8 +51,8 @@ class DeploymentPipeline(Pipeline):
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
         self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
-        #self.add_pipeline_step("CoreFlow Tuning", ---(self))
-        #self.add_pipeline_step("Simulation", ---(self))
+        self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
+        self.add_pipeline_step("Simulation", SimulationStep(self))
         
     def _initialize_config(self, deployment_parameters, platform_constraints):
         self.config.update(self.default_deployment_parameters)

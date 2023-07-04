@@ -27,7 +27,7 @@ class HardCoreMappingStep(PipelineStep):
         hard_core_mapping.map(soft_core_mapping)
 
         HardCoreMappingVisualizer(hard_core_mapping).visualize(
-            self.wd + "/hardcore_mapping.png"
+            self.pipeline.working_directory + "/hardcore_mapping.png"
         )
 
         self.pipeline.cache.add("hard_core_mapping", hard_core_mapping, 'pickle')
