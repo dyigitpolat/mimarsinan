@@ -1,7 +1,7 @@
 from mimarsinan.pipelining.pipeline import Pipeline
-from mimarsinan.pipelining.pipeline_steps.pretraining_step import PretrainingStep
-from mimarsinan.pipelining.pipeline_steps.architecture_search_step import ArchitectureSearchStep
 from mimarsinan.model_training.training_utilities import BasicClassificationLoss
+
+from mimarsinan.pipelining.pipeline_steps import *
 
 import numpy as np
 import torch
@@ -39,14 +39,15 @@ class DeploymentPipeline(Pipeline):
 
         self.config = {}
         self._initialize_config(deployment_parameters, platform_constraints)
+        self._display_config()
 
         self.loss = BasicClassificationLoss()
         
         self.add_pipeline_step("Architecture Search", ArchitectureSearchStep(self))
         self.add_pipeline_step("Pretraining", PretrainingStep(self))
-        #self.add_pipeline_step("Activation Shifting", ---(self))
-        #self.add_pipeline_step("Activation Quantization", ---(self))
-        #self.add_pipeline_step("Normalization Fusion", ---(self))
+        self.add_pipeline_step("Activation Shifting", ActivationShiftStep(self))
+        self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
+        self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
         #self.add_pipeline_step("Weight Quantization", ---(self))
         #self.add_pipeline_step("Soft Core Mapping", ---(self))
         #self.add_pipeline_step("Hard Core Mapping", ---(self))
@@ -69,6 +70,11 @@ class DeploymentPipeline(Pipeline):
         self.config['num_classes'] = self.data_provider.get_prediction_mode().num_classes
 
         self.config['device'] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    def _display_config(self):
+        print("Deployment configuration:")
+        for key, value in self.config.items():
+            print(f"{key}: {value}")
 
 
 
