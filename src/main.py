@@ -9,8 +9,6 @@ from mimarsinan.common.wandb_utils import WandB_Reporter
 from mimarsinan.pipelining.deployment_pipeline import DeploymentPipeline
 
 def main():
-    init()
-
     platform_constraints = {
         "max_axons": 256,
         "max_neurons": 256,
@@ -97,4 +95,5 @@ def run_pipeline(
         pipeline.run_from(step_name=start_step)
 
 if __name__ == "__main__":
+    init()
     main()
