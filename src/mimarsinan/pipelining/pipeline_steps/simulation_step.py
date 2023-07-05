@@ -1,6 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.pipelining.simulation_runner import SimulationRunner
+from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 
 class SimulationStep(PipelineStep):
     def __init__(self, pipeline):
