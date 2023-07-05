@@ -1,4 +1,4 @@
-from mimarsinan.tuners.basic_tuner import BasicTuner
+from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
 from mimarsinan.transformations.parameter_transforms.sequential_transform import SequentialTransform
 from mimarsinan.transformations.weight_clipping import SoftTensorClipping
 from mimarsinan.transformations.weight_quantization import TensorQuantization

@@ -1,6 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.pipelining.pipeline_steps.tuners.core_flow_tuner import CoreFlowTuner
+from mimarsinan.tuning.tuners.core_flow_tuner import CoreFlowTuner
 
 class CoreFlowTuningStep(PipelineStep):
     def __init__(self, pipeline):

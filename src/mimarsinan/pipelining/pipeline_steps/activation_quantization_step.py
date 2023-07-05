@@ -1,6 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.pipelining.pipeline_steps.tuners.activation_quantization_tuner import ActivationQuantizationTuner 
+from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner 
 
 class ActivationQuantizationStep(PipelineStep):
     def __init__(self, pipeline):
