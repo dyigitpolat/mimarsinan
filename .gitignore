@@ -147,3 +147,6 @@ wandb/
 
 # torch
 *.state_dict
+
+# scratch main
+scratch_main.py
