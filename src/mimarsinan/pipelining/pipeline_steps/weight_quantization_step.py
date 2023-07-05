@@ -16,7 +16,7 @@ class WeightQuantizationStep(PipelineStep):
             model = self.pipeline.cache['nf_model'],
             quantization_bits = self.pipeline.config['weight_bits'],
             target_tq = self.pipeline.config['target_tq'],
-            target_accuracy = self.pipeline.cache['nf_accuracy'],
+            target_accuracy = self.pipeline.cache['nf_accuracy'] * 0.99,
             lr = self.pipeline.config['lr'])
         
         validation_accuracy = tuner.run()
