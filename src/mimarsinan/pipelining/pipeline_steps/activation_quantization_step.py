@@ -15,7 +15,7 @@ class ActivationQuantizationStep(PipelineStep):
             max_epochs = self.pipeline.config['aq_epochs'],
             model = self.pipeline.cache['shifted_activation_model'],
             target_tq = self.pipeline.config['target_tq'],
-            target_accuracy = self.pipeline.cache['as_accuracy'],
+            target_accuracy = self.pipeline.cache['as_accuracy'] * 0.99,
             lr = self.pipeline.config['lr'])
         
         validation_accuracy = tuner.run()
