@@ -20,7 +20,7 @@ def main():
 
     deployment_name, data_provider, deployment_parameters = select_deployment_configuration()
 
-    working_directory = f"../generated/{deployment_name}/"
+    working_directory = f"../generated/{deployment_name}_chuping/"
 
     run_pipeline(
         data_provider=data_provider,
