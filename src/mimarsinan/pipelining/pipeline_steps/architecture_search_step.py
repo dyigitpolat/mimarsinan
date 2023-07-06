@@ -1,6 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.search.mlp_mixer_searcher import MLP_Mixer_Searcher
+from mimarsinan.search.small_mlp_mixer_searcher import Small_MLP_Mixer_Searcher
 from mimarsinan.search.small_step_evaluator import SmallStepEvaluator
 
 class ArchitectureSearchStep(PipelineStep):
@@ -12,7 +12,7 @@ class ArchitectureSearchStep(PipelineStep):
         super().__init__(requires, promises, clears, pipeline)
 
     def process(self):
-        searcher = MLP_Mixer_Searcher(
+        searcher = Small_MLP_Mixer_Searcher(
             self.pipeline.config['input_shape'], 
             self.pipeline.config['num_classes'], 
             self.pipeline.config['max_axons'], 
