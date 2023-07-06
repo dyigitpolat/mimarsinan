@@ -3,6 +3,7 @@ from init import *
 from mimarsinan.data_handling.data_providers.mnist_data_provider import MNIST_DataProvider
 from mimarsinan.data_handling.data_providers.cifar10_data_provider import CIFAR10_DataProvider
 from mimarsinan.data_handling.data_providers.ecg_data_provider import ECG_DataProvider
+from mimarsinan.data_handling.data_providers.ecg_2_data_provider import ECG_2_DataProvider
 
 from mimarsinan.common.wandb_utils import WandB_Reporter
 
@@ -58,7 +59,7 @@ def select_deployment_configuration():
 
     elif dataset_selection[0] == 'ecg'[0]:
         deployment_name = "ecg_deployment"
-        data_provider = ECG_DataProvider()
+        data_provider = ECG_2_DataProvider()
         deployment_parameters = {
             "lr": 0.001,
             "pt_epochs": 10,
