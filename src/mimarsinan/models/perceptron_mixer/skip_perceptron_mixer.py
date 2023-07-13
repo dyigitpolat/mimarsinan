@@ -99,9 +99,11 @@ class SkipPerceptronMixer(PerceptronFlow):
         out = StackMapper(patch_mappers)
         out = ReshapeMapper(out, (1, self.patch_count * self.patch_channels))
 
-        skip = out
+        skip = None
         for layer in self.fc_layers:
             out = PerceptronMapper(out, layer)
+            if skip is None:
+                skip = out
         out = AddMapper(out, skip)
 
         # Second Mixer
@@ -118,9 +120,11 @@ class SkipPerceptronMixer(PerceptronFlow):
         out = StackMapper(patch_mappers)
         out = ReshapeMapper(out, (1, self.patch_count_2 * self.patch_channels_2))
 
-        skip = out
+        skip = None
         for layer in self.fc_layers_2:
             out = PerceptronMapper(out, layer)
+            if skip is None:
+                skip = out
         out = AddMapper(out, skip)
         
         # Output Layer
