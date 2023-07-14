@@ -70,7 +70,7 @@ class MLP_Mixer_Searcher(BasicArchitectureSearcher):
         assert fc_in_2 <= self.max_axons - 1, f"not enough axons ({fc_in_2} > {self.max_axons})"
         assert patch_size_2 <= self.max_axons - 1, f"not enough axons ({patch_size_2} > {self.max_axons})"
 
-        perceptron_flow = SkipPerceptronMixer(
+        perceptron_flow = PerceptronMixer(
             self.input_shape, self.num_classes,
             patch_n_1, patch_m_1, patch_c_1, fc_w_1, fc_k_1,
             patch_n_2, patch_c_2, fc_w_2, fc_k_2)
