@@ -29,9 +29,7 @@ class WeightQuantizationTuner(BasicTuner):
         return lambda x: x
     
     def _get_new_parameter_transform(self):
-        top_p_rate = 0.01
         return SequentialTransform([ 
-            SoftTensorClipping(top_p_rate).get_clipped_weights, 
             lambda p: torch.clamp(p, -1, 1),
             TensorQuantization(self.quantization_bits).quantize])
 
