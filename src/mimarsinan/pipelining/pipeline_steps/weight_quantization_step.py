@@ -12,7 +12,6 @@ class WeightQuantizationStep(PipelineStep):
     def process(self):
         tuner = WeightQuantizationTuner(
             self.pipeline,
-            max_epochs = self.pipeline.config['aq_epochs'],
             model = self.pipeline.cache['nf_model'],
             quantization_bits = self.pipeline.config['weight_bits'],
             target_tq = self.pipeline.config['target_tq'],

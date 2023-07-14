@@ -9,9 +9,8 @@ import torch
 class DeploymentPipeline(Pipeline):
     default_deployment_parameters = {
         'lr': 0.001,
-        'pt_epochs': 10,
-        'aq_epochs': 10,
-        'wq_epochs': 10,
+        'training_epochs': 10,
+        'tuner_epochs': 10,
         'nas_cycles': 5,
         'nas_batch_size': 50
     }

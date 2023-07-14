@@ -8,8 +8,7 @@ import torch
 class BasicTuner:
     def __init__(
             self, 
-            pipeline, 
-            max_epochs, 
+            pipeline,  
             model, 
             target_accuracy, 
             lr):
@@ -23,7 +22,7 @@ class BasicTuner:
         self.model = model
         
         # Epochs
-        self.epochs = max_epochs
+        self.epochs = pipeline.config['tuner_epochs']
 
         # Adaptation
         self._prev_acc = target_accuracy
