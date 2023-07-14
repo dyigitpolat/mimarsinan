@@ -7,14 +7,14 @@ import torch.nn as nn
 
 class ActivationShiftStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["pretrained_model", "pt_accuracy"]
+        requires = ["na_model", "na_accuracy"]
         promises = ["shifted_activation_model", "as_accuracy"]
-        clears = ["pretrained_model"]
+        clears = ["na_model"]
         super().__init__(requires, promises, clears, pipeline)
 
 
     def process(self):
-        model = self.pipeline.cache["pretrained_model"]
+        model = self.pipeline.cache["na_model"]
 
         trainer = BasicTrainer(
             model, 
@@ -38,12 +38,12 @@ class ActivationShiftStep(PipelineStep):
         validation_accuracy = trainer.train_until_target_accuracy(
             self.pipeline.config['lr'] / 20, 
             max_epochs=2, 
-            target_accuracy=self.pipeline.cache['pt_accuracy'])
+            target_accuracy=self.pipeline.cache['na_accuracy'])
         
-        assert validation_accuracy > self.pipeline.cache['pt_accuracy'] * 0.9, \
+        assert validation_accuracy > self.pipeline.cache['na_accuracy'] * 0.9, \
             "Activation shift step failed to retain validation accuracy."
         
         self.pipeline.cache.add("shifted_activation_model", model, 'torch_model')
         self.pipeline.cache.add("as_accuracy", validation_accuracy)
         
-        self.pipeline.cache.remove("pretrained_model")
+        self.pipeline.cache.remove("na_model")
