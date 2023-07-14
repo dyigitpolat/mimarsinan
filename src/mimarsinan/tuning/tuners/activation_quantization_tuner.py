@@ -38,10 +38,11 @@ class ActivationQuantizationTuner(BasicTuner):
             SoftTensorClipping(top_p_rate).get_clipped_weights, 
             lambda p: torch.clamp(p, -1, 1) ])
 
-    def _update(self, rate):
+    def _update_and_evaluate(self, rate):
         self.model.set_activation(CQ_Activation_Parametric(self.target_tq, rate, self.base_activation))
         self.trainer.weight_transformation = self._mixed_transform(rate)
         self.trainer.train_n_epochs(self._find_lr() / 2, 1)
+        return self.trainer.validate_train()
 
     def run(self):
         super().run()
