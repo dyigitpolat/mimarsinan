@@ -9,3 +9,4 @@ from .hard_core_mapping_step import HardCoreMappingStep
 from .core_flow_tuning_step import CoreFlowTuningStep
 from .simulation_step import SimulationStep
 from .noise_adaptation_step import NoiseAdaptationStep
+from .clamp_adaptation_step import ClampAdaptationStep
