@@ -3,7 +3,7 @@ class LearningRateExplorer:
                  trainer, model, max_lr, min_lr, 
                  desired_improvement = 0.0, base_accuracy = None):
         self.training_function = trainer.train_one_step
-        self.evaluation_function = trainer.validate
+        self.evaluation_function = trainer.validate_train
         self.model = model
         self.max_lr = max_lr
         self.min_lr = min_lr
@@ -22,7 +22,6 @@ class LearningRateExplorer:
         lr = self.max_lr
         acc = 0
         while acc < target_acc and lr > self.min_lr:
-            print(f"  Trying lr = {lr}")
             self.training_function(lr)
             acc = self.evaluation_function()
             if acc < target_acc:
