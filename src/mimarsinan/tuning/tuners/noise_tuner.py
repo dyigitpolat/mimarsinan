@@ -3,16 +3,15 @@ from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
 from mimarsinan.transformations.parameter_transforms.sequential_transform import SequentialTransform
 from mimarsinan.transformations.weight_clipping import SoftTensorClipping
 
-from mimarsinan.models.layers import CQ_Activation_Parametric, CQ_Activation
+from mimarsinan.models.layers import NoisyDropout
 
 import torch
 
-class ActivationQuantizationTuner(BasicTuner):
+class NoiseTuner(BasicTuner):
     def __init__(self, 
                  pipeline, 
                  max_epochs, 
                  model, 
-                 target_tq, 
                  target_accuracy, 
                  lr):
         
@@ -23,32 +22,26 @@ class ActivationQuantizationTuner(BasicTuner):
             target_accuracy, 
             lr)
 
-        self.target_tq = target_tq
-        self.base_activation = model.activation
-
+        self.lr = lr
+        self.target_noise_amount = 2.0 / (pipeline.config['weight_bits'] ** 2)
     def _get_target_decay(self):
-        return 0.99
+        return 0.999
     
     def _get_previous_parameter_transform(self):
         return lambda x: x
     
     def _get_new_parameter_transform(self):
-        top_p_rate = 0.01
-        return SequentialTransform([ 
-            SoftTensorClipping(top_p_rate).get_clipped_weights, 
-            lambda p: torch.clamp(p, -1, 1) ])
+        return lambda x: x
 
     def _update_and_evaluate(self, rate):
-        self.model.set_activation(CQ_Activation_Parametric(self.target_tq, rate, self.base_activation))
-        self.trainer.weight_transformation = self._mixed_transform(rate)
-        self.trainer.train_n_epochs(self._find_lr() / 2, 1)
+        self.model.set_regularization(NoisyDropout(0.0, rate, self.target_noise_amount))
+        self.trainer.train_one_step(self.lr / 2)
         return self.trainer.validate_train()
 
     def run(self):
         super().run()
         
-        self.model.set_activation(CQ_Activation(self.target_tq))
-        self.trainer.weight_transformation = self._get_new_parameter_transform()
+        self.model.set_regularization(NoisyDropout(0.0, 1.0, self.target_noise_amount))
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self._prev_acc)
 
         return self.trainer.validate()

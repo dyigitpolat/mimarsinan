@@ -65,7 +65,6 @@ class BasicTrainer:
         total = 0
         correct = 0
         with torch.no_grad():
-            self.model.eval()
             _, predicted = self.model(x).max(1)
             total += float(y.size(0))
             correct += float(predicted.eq(y).sum().item())
@@ -76,8 +75,8 @@ class BasicTrainer:
         total = 0
         correct = 0
         with torch.no_grad():
-            self.model.eval()
             for (x, y) in self.test_loader:
+                self.model.eval()
                 x, y = x.to(self.device), y.to(self.device)
                 _, predicted = self.model(x).max(1)
                 total += float(y.size(0))
@@ -94,6 +93,7 @@ class BasicTrainer:
             self.val_iter = iter(self.validation_loader)
             x, y = next(self.val_iter)
 
+        self.model.eval()
         acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
         self._report("Validation accuracy", acc)
         return acc
@@ -105,6 +105,7 @@ class BasicTrainer:
             self.train_iter = iter(self.train_loader)
             x, y = next(self.train_iter)
 
+        self.model.train()
         acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
         self._report("Validation accuracy on train set", acc)
         return acc

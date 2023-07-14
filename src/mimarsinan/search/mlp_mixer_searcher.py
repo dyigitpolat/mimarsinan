@@ -1,6 +1,7 @@
 from mimarsinan.search.basic_architecture_searcher import BasicArchitectureSearcher
 from mimarsinan.search.mlp_mixer_configuration_sampler import MLP_Mixer_ConfigurationSampler
 from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
+from mimarsinan.models.perceptron_mixer.skip_perceptron_mixer import SkipPerceptronMixer
 
 import json
 class MLP_Mixer_Searcher(BasicArchitectureSearcher):

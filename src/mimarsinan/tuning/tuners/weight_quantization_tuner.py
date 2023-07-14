@@ -36,11 +36,11 @@ class WeightQuantizationTuner(BasicTuner):
             lambda p: torch.clamp(p, -1, 1),
             TensorQuantization(self.quantization_bits).quantize])
 
-    def _update(self, rate):
+    def _update_and_evaluate(self, rate):
         self.model.set_activation(CQ_Activation(self.target_tq))
         self.trainer.weight_transformation = self._mixed_transform(rate)
         self.trainer.train_one_step(self.pipeline_lr / 40)
+        return self.trainer.validate_train()
 
     def run(self):
-        self.model.set_regularization(nn.Identity())
         return super().run()
