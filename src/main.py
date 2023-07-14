@@ -1,25 +1,31 @@
 from init import *
 
-from mimarsinan.data_handling.data_providers.mnist_data_provider import MNIST_DataProvider
-from mimarsinan.data_handling.data_providers.cifar10_data_provider import CIFAR10_DataProvider
-from mimarsinan.data_handling.data_providers.ecg_data_provider import ECG_DataProvider
-
 from mimarsinan.common.wandb_utils import WandB_Reporter
-
 from mimarsinan.pipelining.deployment_pipeline import DeploymentPipeline
 
+import sys
+import json
+
 def main():
-    platform_constraints = {
-        "max_axons": 256,
-        "max_neurons": 256,
-        "target_tq": 32,
-        "simulation_steps": 32,
-        "weight_bits": 4
-    }
+    if len(sys.argv) < 2:
+        print("Usage: python main.py <deployment_config_json>")
+        exit(1)
+    
+    deployment_config_path = sys.argv[1]
+    with open(deployment_config_path, 'r') as f:
+        deployment_config = json.load(f)
+    
+    data_provider_path = deployment_config['data_provider_path']
+    data_provider_name = deployment_config['data_provider_name']
 
-    deployment_name, data_provider, deployment_parameters = select_deployment_configuration()
-
-    working_directory = f"../generated/{deployment_name}/"
+    DataProvider = import_class_from_path(
+        data_provider_path, data_provider_name)
+    
+    data_provider = DataProvider()
+    deployment_name = deployment_config['experiment_name']
+    platform_constraints = deployment_config['platform_constraints']
+    deployment_parameters = deployment_config['deployment_parameters']
+    working_directory = deployment_config['generated_files_path']
 
     run_pipeline(
         data_provider=data_provider,
@@ -28,47 +34,6 @@ def main():
         deployment_parameters=deployment_parameters,
         working_directory=working_directory,
         start_step=None)
-    
-def select_deployment_configuration():
-    dataset_selection = input("Select dataset (mnist, cifar10, ecg): ")
-
-    if dataset_selection[0] == 'mnist'[0]:
-        deployment_name = "mnist_deployment"
-        data_provider = MNIST_DataProvider()
-        deployment_parameters = {
-            "lr": 0.001,
-            "pt_epochs": 10,
-            "aq_epochs": 10,
-            "wq_epochs": 10,
-            "nas_cycles": 1,
-            "nas_batch_size": 20
-        }
-
-    elif dataset_selection[0] == 'cifar10'[0]:
-        deployment_name = "cifar10_deployment"
-        data_provider = CIFAR10_DataProvider()
-        deployment_parameters = {
-            "lr": 0.001,
-            "pt_epochs": 50,
-            "aq_epochs": 10,
-            "wq_epochs": 10,
-            "nas_cycles": 1,
-            "nas_batch_size": 20
-        }
-
-    elif dataset_selection[0] == 'ecg'[0]:
-        deployment_name = "ecg_deployment"
-        data_provider = ECG_DataProvider()
-        deployment_parameters = {
-            "lr": 0.001,
-            "pt_epochs": 10,
-            "aq_epochs": 10,
-            "wq_epochs": 10,
-            "nas_cycles": 1,
-            "nas_batch_size": 20
-        }
-
-    return deployment_name, data_provider, deployment_parameters
 
 def run_pipeline(
     data_provider, 
