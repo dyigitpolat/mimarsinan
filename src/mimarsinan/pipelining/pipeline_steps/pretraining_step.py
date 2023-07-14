@@ -25,7 +25,7 @@ class PretrainingStep(PipelineStep):
 
         validation_accuracy = trainer.train_n_epochs(
             self.pipeline.config['lr'], 
-            self.pipeline.config['pt_epochs'])
+            self.pipeline.config['training_epochs'])
         
         
         self.pipeline.cache.add("pretrained_model", model, 'torch_model')
