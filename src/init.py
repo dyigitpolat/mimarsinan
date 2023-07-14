@@ -3,6 +3,15 @@ from mimarsinan.chip_simulation.nevresim_driver import NevresimDriver
 
 import torch
 
+import importlib.util
+
+def import_class_from_path(path_to_module, class_name):
+    spec = importlib.util.spec_from_file_location(class_name, path_to_module)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    class_ = getattr(module, class_name)
+    return class_
+
 def force_cudnn_initialization():
     s = 32
     dev = torch.device('cuda')
@@ -10,5 +19,5 @@ def force_cudnn_initialization():
 
 def init():
     force_cudnn_initialization()
-    NevresimDriver.nevresim_path = "../nevresim/"
-    DataProvider.datasets_path = "../datasets/"
+    NevresimDriver.nevresim_path = "./nevresim/"
+    DataProvider.datasets_path = "./datasets/"

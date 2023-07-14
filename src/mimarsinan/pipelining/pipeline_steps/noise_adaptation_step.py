@@ -12,7 +12,6 @@ class NoiseAdaptationStep(PipelineStep):
     def process(self):
         tuner = NoiseTuner(
             self.pipeline,
-            max_epochs = self.pipeline.config['aq_epochs'],
             model = self.pipeline.cache['pretrained_model'],
             target_accuracy = self.pipeline.cache['pt_accuracy'] * 0.99,
             lr = self.pipeline.config['lr'])
