@@ -44,6 +44,7 @@ class DeploymentPipeline(Pipeline):
         
         self.add_pipeline_step("Architecture Search", ArchitectureSearchStep(self))
         self.add_pipeline_step("Pretraining", PretrainingStep(self))
+        self.add_pipeline_step("Clamp Adaptation", ClampAdaptationStep(self))
         self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
         self.add_pipeline_step("Activation Shifting", ActivationShiftStep(self))
         self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
