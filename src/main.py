@@ -26,6 +26,7 @@ def main():
     platform_constraints = deployment_config['platform_constraints']
     deployment_parameters = deployment_config['deployment_parameters']
     working_directory = deployment_config['generated_files_path']
+    start_step = deployment_config['start_step']
 
     run_pipeline(
         data_provider=data_provider,
@@ -33,7 +34,7 @@ def main():
         platform_constraints=platform_constraints,
         deployment_parameters=deployment_parameters,
         working_directory=working_directory,
-        start_step=None)
+        start_step=start_step)
 
 def run_pipeline(
     data_provider, 
