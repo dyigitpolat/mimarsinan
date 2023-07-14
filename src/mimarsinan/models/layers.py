@@ -89,6 +89,20 @@ class ClampedReLU(nn.Module):
     def forward(self, x):
         return DifferentiableClamp.apply(x, 0.0, 1.0)
     
+class ClampedReLU_Parametric(nn.Module):
+    def __init__(self, rate, base_activation):
+        super(ClampedReLU_Parametric, self).__init__()
+        self.rate = rate
+        self.base_activation = base_activation
+
+    def forward(self, x):
+        random_mask = torch.rand(x.shape, device=x.device)
+        random_mask = (random_mask < self.rate).float()
+
+        return \
+            random_mask * ClampedReLU()(x) \
+            + (1.0 - random_mask) * self.base_activation(x)
+    
 class CQ_Activation(nn.Module):
     def __init__(self, Tq):
         super(CQ_Activation, self).__init__()
