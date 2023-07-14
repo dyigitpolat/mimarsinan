@@ -35,6 +35,12 @@ def generate_core_connection_info(
     
     return Connection(axon_sources)
 
+def to_numpy(tensor_or_array):
+    if isinstance(tensor_or_array, np.ndarray):
+        return tensor_or_array
+    else:
+        return tensor_or_array.detach().cpu().numpy()
+
 class SoftCoreMapping:
     def __init__(self):
         self.cores = []
@@ -72,9 +78,9 @@ class SoftCoreMapping:
             core_matrix = np.zeros([input_axons_count, out_neurons_count])
         else:
             core_matrix = np.zeros([input_axons_count+1, out_neurons_count])
-            core_matrix[-1, :] = fc_biases.flatten().cpu().numpy()
+            core_matrix[-1, :] = to_numpy(fc_biases.flatten())
 
-        core_matrix[:input_axons_count, :] = fc_weights.cpu().numpy().T
+        core_matrix[:input_axons_count, :] = to_numpy(fc_weights).T
 
         for i in range(new_cores_count): 
             spike_sources = []

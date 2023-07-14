@@ -42,7 +42,7 @@ class Perceptron(nn.Module):
         self.normalization = nn.Identity()
 
     def set_regularization(self, regularizer):
-        self.layer.weight_regularizer = regularizer
+        self.regularization = regularizer
 
     def forward(self, x):
         out = self.layer(x)

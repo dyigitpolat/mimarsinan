@@ -50,7 +50,7 @@ class BasicTuner:
     def _get_new_parameter_transform(self):
         raise NotImplementedError() # noisy_clip_decay_whatever
 
-    def _update(self, rate):
+    def _update_and_evaluate(self, rate):
         raise NotImplementedError()
 
     
@@ -74,20 +74,20 @@ class BasicTuner:
     def _adaptation(self, rate):
         self.pipeline.reporter.report(self.name, rate)
 
-        self._update(rate)
+        self._update_and_evaluate(rate)
 
         lr = self._find_lr()
-        acc = self.trainer.train_until_target_accuracy(
+        self.trainer.train_until_target_accuracy(
             lr, self.epochs, self._prev_acc)
         
-        acc = self.trainer.train_n_epochs(lr / 2, 2)
+        self.trainer.train_n_epochs(lr / 2, 2)
         
+        acc = self.trainer.validate_train()
         self._prev_acc = max(self._prev_acc * self._get_target_decay(), acc)
 
     def run(self):
         def evaluate_model(rate):
-            self._update(rate)
-            return self.trainer.validate()
+            return self._update_and_evaluate(rate)
 
         def clone_state():
             return self.model.state_dict()
