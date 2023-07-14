@@ -12,7 +12,6 @@ class ActivationQuantizationStep(PipelineStep):
     def process(self):
         tuner = ActivationQuantizationTuner(
             self.pipeline,
-            max_epochs = self.pipeline.config['aq_epochs'],
             model = self.pipeline.cache['shifted_activation_model'],
             target_tq = self.pipeline.config['target_tq'],
             target_accuracy = self.pipeline.cache['as_accuracy'] * 0.99,
