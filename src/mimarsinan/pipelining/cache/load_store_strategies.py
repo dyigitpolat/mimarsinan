@@ -29,9 +29,10 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
         super().__init__(filename)
 
     def load(self, cache_directory):
-        return torch.load(f"{cache_directory}/{self.filename}.pt")
+        return torch.load(f"{cache_directory}/{self.filename}.pt", map_location=torch.device('cpu'))
 
     def store(self, cache_directory, object):
+        object.cpu()
         torch.save(object, f"{cache_directory}/{self.filename}.pt")
 
 class PickleLoadStoreStrategy(LoadStoreStrategy):
