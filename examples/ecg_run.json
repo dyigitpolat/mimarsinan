@@ -1,0 +1,21 @@
+{
+    "experiment_name": "ecg_deployment_run",
+    "generated_files_path": "./generated/ecg_deployment_run",
+    "data_provider_path": "./src/mimarsinan/data_handling/data_providers/ecg_data_provider.py",
+    "data_provider_name": "ECG_DataProvider",
+    "platform_constraints": {
+        "max_axons": 256,
+        "max_neurons": 256,
+        "target_tq": 32,
+        "simulation_steps": 32,
+        "weight_bits": 4
+    },
+    "deployment_parameters": {
+        "lr": 0.001,
+        "training_epochs": 10,
+        "tuner_epochs": 10,
+        "nas_cycles": 1,
+        "nas_batch_size": 20
+    },
+    "start_step": "Architecture Search"
+}
