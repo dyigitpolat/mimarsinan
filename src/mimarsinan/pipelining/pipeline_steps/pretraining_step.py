@@ -1,7 +1,7 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.models.layers import ClampedReLU, NoisyDropout
+from mimarsinan.models.layers import ClampedReLU
 
 class PretrainingStep(PipelineStep):
     def __init__(self, pipeline):
@@ -22,7 +22,6 @@ class PretrainingStep(PipelineStep):
         trainer.report_function = self.pipeline.reporter.report
         
         model.set_activation(ClampedReLU())
-        model.set_regularization(NoisyDropout(0.5, 0.5, 0.2))
 
         validation_accuracy = trainer.train_n_epochs(
             self.pipeline.config['lr'], 
