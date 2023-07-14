@@ -10,7 +10,6 @@ import torch
 class ActivationQuantizationTuner(BasicTuner):
     def __init__(self, 
                  pipeline, 
-                 max_epochs, 
                  model, 
                  target_tq, 
                  target_accuracy, 
@@ -18,7 +17,6 @@ class ActivationQuantizationTuner(BasicTuner):
         
         super().__init__(
             pipeline, 
-            max_epochs, 
             model, 
             target_accuracy, 
             lr)

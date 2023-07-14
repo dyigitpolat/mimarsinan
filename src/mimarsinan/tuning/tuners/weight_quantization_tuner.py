@@ -11,14 +11,13 @@ import torch
 class WeightQuantizationTuner(BasicTuner):
     def __init__(self, 
                  pipeline, 
-                 max_epochs, 
                  model,
                  quantization_bits, 
                  target_tq,
                  target_accuracy,
                  lr):
         
-        super().__init__(pipeline, max_epochs, model, target_accuracy, lr)
+        super().__init__(pipeline, model, target_accuracy, lr)
 
         self.target_tq = target_tq
         self.quantization_bits = quantization_bits
