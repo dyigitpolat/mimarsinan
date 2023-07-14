@@ -3,6 +3,7 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.layers import ClampedReLU
 
+import torch.nn as nn
 class PretrainingStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["init_model"]
@@ -21,8 +22,7 @@ class PretrainingStep(PipelineStep):
             self.pipeline.loss)
         trainer.report_function = self.pipeline.reporter.report
         
-        model.set_activation(ClampedReLU())
-
+        model.set_activation(nn.LeakyReLU())
         validation_accuracy = trainer.train_n_epochs(
             self.pipeline.config['lr'], 
             self.pipeline.config['training_epochs'])
