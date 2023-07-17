@@ -8,6 +8,9 @@ class SoftTensorClipping:
         self.rate = clipping_rate
 
     def avg_top(self, weight_tensor):
+        if isinstance(weight_tensor, np.ndarray):
+            return transform_np_array(weight_tensor, self.avg_top)
+        
         p = self.rate
         wf = weight_tensor.flatten()
         wf = wf[torch.abs(wf) > 0]
@@ -17,6 +20,9 @@ class SoftTensorClipping:
         return torch.mean(torch.topk(wf, q)[0])
 
     def avg_bottom(self, weight_tensor):
+        if isinstance(weight_tensor, np.ndarray):
+            return transform_np_array(weight_tensor, self.avg_bottom)
+        
         p = self.rate
         wf = weight_tensor.flatten()
         wf = wf[torch.abs(wf) > 0]
