@@ -13,10 +13,9 @@ class ChipQuantization:
     
     def quantize(self, cores):
         self.calculate_core_thresholds(cores)
-        scale = 1.0
-            
-        for core in cores:
-            core.threshold = round(core.threshold)
-            core.core_matrix = self.quantizer.scaled_quantize(core.core_matrix)
 
-        return scale
+        for core in cores:
+            core.core_matrix = self.quantizer.scaled_quantize(core.core_matrix)
+            core.threshold = round(core.threshold)
+
+        return 1.0
