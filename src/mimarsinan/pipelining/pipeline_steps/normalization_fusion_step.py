@@ -1,6 +1,7 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 
 class NormalizationFusionStep(PipelineStep):
     def __init__(self, pipeline):
@@ -21,6 +22,18 @@ class NormalizationFusionStep(PipelineStep):
             self.pipeline.data_provider,
             self.pipeline.loss)
         trainer.report_function = self.pipeline.reporter.report
+
+        trainer.train_until_target_accuracy(
+            LearningRateExplorer(
+                trainer,
+                model,
+                self.pipeline.config['lr'] / 2,
+                self.pipeline.config['lr'] / 1000,
+                0.01
+            ).find_lr_for_tuning(),
+            self.pipeline.config['tuner_epochs'],
+            self.pipeline.cache['aq_accuracy'] * 0.99,
+        )
         validation_accuracy = trainer.validate()
 
         assert validation_accuracy > self.pipeline.cache['aq_accuracy'] * 0.9, \
