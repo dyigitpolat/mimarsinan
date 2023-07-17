@@ -17,6 +17,7 @@ class BasicTuner:
 
         # Targets
         self.target_accuracy = target_accuracy * self._get_target_decay()
+        self.original_target_accuracy = target_accuracy
 
         # Model
         self.model = model
@@ -25,7 +26,6 @@ class BasicTuner:
         self.epochs = pipeline.config['tuner_epochs']
 
         # Adaptation
-        self._prev_acc = target_accuracy
         self.pipeline_lr = lr
         self.lr = lr
 
@@ -69,6 +69,22 @@ class BasicTuner:
                     random_mask * self._get_new_parameter_transform()(param) \
                     + (1 - random_mask) * self._get_previous_parameter_transform()(param)
             return transform
+    
+    def _update_target_accuracy(self, current_accuracy):
+        decayed_target_metric = self.target_accuracy * self._get_target_decay()
+        promoted_current_metric = current_accuracy
+
+        if current_accuracy > self.target_accuracy:
+            promoted_current_metric = max(
+                current_accuracy,
+                0.1 * self.original_target_accuracy + 0.9 * current_accuracy
+            )
+
+        self.target_accuracy = max(
+            decayed_target_metric, 
+            promoted_current_metric)
+        
+        print("Target accuracy: ", self.target_accuracy)
 
     def _adaptation(self, rate):
         self.pipeline.reporter.report(self.name, rate)
@@ -77,12 +93,12 @@ class BasicTuner:
 
         lr = self._find_lr()
         self.trainer.train_until_target_accuracy(
-            lr, self.epochs, self._prev_acc)
+            lr, self.epochs, self.target_accuracy)
         
         self.trainer.train_n_epochs(lr / 2, 2)
         
         acc = self.trainer.validate_train()
-        self._prev_acc = max(self._prev_acc * self._get_target_decay(), acc)
+        self._update_target_accuracy(acc)
 
     def run(self):
         def evaluate_model(rate):
