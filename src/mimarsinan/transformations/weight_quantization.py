@@ -21,6 +21,8 @@ class TensorQuantization:
     def scaled_quantize(self, weights):
         if isinstance(weights, np.ndarray):
             return transform_np_array(weights, self.scaled_quantize)
+        assert torch.max(torch.abs(weights)) <= 1.0, \
+            f"{torch.max(torch.abs(weights))} > 1.0"
         
         scale = self.q_max
         return torch.round(weights * scale)
