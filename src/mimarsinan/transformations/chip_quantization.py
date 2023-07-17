@@ -16,6 +16,7 @@ class ChipQuantization:
 
         for core in cores:
             core.core_matrix = self.quantizer.scaled_quantize(core.core_matrix)
-            core.threshold = round(core.threshold)
+            assert np.max(np.abs(core.core_matrix)) <= self.quantizer.q_max, \
+                f"{np.max(np.abs(core.core_matrix))} > {self.quantizer.q_max}"
 
         return 1.0
