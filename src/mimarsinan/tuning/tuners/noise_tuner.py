@@ -35,6 +35,6 @@ class NoiseTuner(BasicTuner):
         super().run()
         
         self.model.set_regularization(NoisyDropout(0.0, 1.0, self.target_noise_amount))
-        self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self._prev_acc)
+        self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self.target_accuracy)
 
         return self.trainer.validate()
