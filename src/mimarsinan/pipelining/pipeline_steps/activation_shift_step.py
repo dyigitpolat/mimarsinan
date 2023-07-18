@@ -35,15 +35,15 @@ class ActivationShiftStep(PipelineStep):
             else:
                 perceptron.normalization.bias.data += shift_amount
         
-        validation_accuracy = trainer.train_until_target_accuracy(
+        accuracy = trainer.train_until_target_accuracy(
             self.pipeline.config['lr'] / 20, 
             max_epochs=2, 
             target_accuracy=self.pipeline.cache['na_accuracy'])
         
-        assert validation_accuracy > self.pipeline.cache['na_accuracy'] * 0.9, \
+        assert accuracy > self.pipeline.cache['na_accuracy'] * 0.9, \
             "Activation shift step failed to retain validation accuracy."
         
         self.pipeline.cache.add("shifted_activation_model", model, 'torch_model')
-        self.pipeline.cache.add("as_accuracy", validation_accuracy)
+        self.pipeline.cache.add("as_accuracy", accuracy)
         
         self.pipeline.cache.remove("na_model")

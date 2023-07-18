@@ -26,13 +26,13 @@ class PerceptronFusionStep(PipelineStep):
             self.pipeline.data_provider,
             self.pipeline.loss)
         trainer.report_function = self.pipeline.reporter.report
-        validation_accuracy = trainer.validate()
+        accuracy = trainer.validate_train()
 
-        assert validation_accuracy > self.pipeline.cache['nf_accuracy'] * 0.95, \
+        assert accuracy > self.pipeline.cache['nf_accuracy'] * 0.95, \
             "Perceptron fusion step failed to retain validation accuracy."
 
         self.pipeline.cache.add("pf_model", model, 'torch_model')
-        self.pipeline.cache.add("pf_accuracy", validation_accuracy)
+        self.pipeline.cache.add("pf_accuracy", accuracy)
 
         self.pipeline.cache.remove("nf_model")
         

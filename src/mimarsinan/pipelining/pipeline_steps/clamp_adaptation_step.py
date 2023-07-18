@@ -16,13 +16,13 @@ class ClampAdaptationStep(PipelineStep):
             target_accuracy = self.pipeline.cache['pt_accuracy'] * 0.99,
             lr = self.pipeline.config['lr'])
         
-        validation_accuracy = tuner.run()
+        accuracy = tuner.run()
 
-        assert validation_accuracy > self.pipeline.cache['pt_accuracy'] * 0.9, \
+        assert accuracy > self.pipeline.cache['pt_accuracy'] * 0.9, \
             "Clamp adaptation step failed to retain validation accuracy."
 
         self.pipeline.cache.add("ca_model", tuner.model, 'torch_model')
-        self.pipeline.cache.add("ca_accuracy", validation_accuracy)
+        self.pipeline.cache.add("ca_accuracy", accuracy)
 
         self.pipeline.cache.remove("pretrained_model")
 

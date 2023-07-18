@@ -17,13 +17,13 @@ class ActivationQuantizationStep(PipelineStep):
             target_accuracy = self.pipeline.cache['as_accuracy'] * 0.99,
             lr = self.pipeline.config['lr'])
         
-        validation_accuracy = tuner.run()
+        accuracy = tuner.run()
 
-        assert validation_accuracy > self.pipeline.cache['as_accuracy'] * 0.9, \
+        assert accuracy > self.pipeline.cache['as_accuracy'] * 0.9, \
             "Activation quantization step failed to retain validation accuracy."
 
         self.pipeline.cache.add("aq_model", tuner.model, 'torch_model')
-        self.pipeline.cache.add("aq_accuracy", validation_accuracy)
+        self.pipeline.cache.add("aq_accuracy", accuracy)
 
         self.pipeline.cache.remove("shifted_activation_model")
 

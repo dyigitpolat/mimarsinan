@@ -23,5 +23,5 @@ class SmallStepEvaluator:
         self.trainer.model = model.to(self.device)
 
         self.trainer.train_n_epochs(self.lr, 1)
-        return self.trainer.validate()
+        return self.trainer.validate_train()
         

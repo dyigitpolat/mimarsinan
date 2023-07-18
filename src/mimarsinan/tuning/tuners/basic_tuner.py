@@ -119,4 +119,4 @@ class BasicTuner:
 
         adapter.adapt_smoothly(interpolators=[BasicInterpolation(0.0, 1.0)])
         
-        return self.trainer.validate()
+        return self.trainer.validate_train()
