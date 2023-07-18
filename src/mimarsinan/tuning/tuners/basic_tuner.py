@@ -97,7 +97,7 @@ class BasicTuner:
         
         self.trainer.train_n_epochs(lr / 2, 2)
         
-        acc = self.trainer.validate_train()
+        acc = self.trainer.validate()
         self._update_target_accuracy(acc)
 
     def run(self):
@@ -119,4 +119,4 @@ class BasicTuner:
 
         adapter.adapt_smoothly(interpolators=[BasicInterpolation(0.0, 1.0)])
         
-        return self.trainer.validate_train()
+        return self.trainer.validate()
