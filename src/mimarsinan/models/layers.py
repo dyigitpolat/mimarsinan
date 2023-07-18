@@ -28,8 +28,8 @@ class SoftQuantize(nn.Module):
 class DifferentiableClamp(Function):
     @staticmethod
     def forward(ctx, x, a, b):
-        a = torch.tensor(a, device=x.device)
-        b = torch.tensor(b, device=x.device)
+        a = a.clone().detach()
+        b = b.clone().detach()
         ctx.save_for_backward(x, a, b)
         return torch.clamp(x, a, b)
 
