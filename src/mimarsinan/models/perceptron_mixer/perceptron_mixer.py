@@ -80,7 +80,12 @@ class PerceptronMixer(PerceptronFlow):
         self.out = None
 
     def get_perceptrons(self):
-        return self.patch_layers + self.fc_layers + [self.output_layer]
+        return \
+            self.patch_layers + \
+            self.fc_layers + \
+            self.patch_layers_2 + \
+            self.fc_layers_2 + \
+            [self.output_layer]
     
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
