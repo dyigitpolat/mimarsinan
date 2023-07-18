@@ -14,14 +14,29 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
 
         self.tolerance = 0.01
         self.target_decay = 0.999
+
         self.target_metric = 1.0
+        self.original_metric = 1.0
 
     def _adjust_minimum_step(self, step_size, t):
         if step_size < self.min_step:
             self.min_step *= 2.0
 
     def _update_target(self, current_metric):
-        self.target_metric = max(self.target_metric * self.target_decay, current_metric)
+        decayed_target_metric = self.target_metric * self.target_decay
+        promoted_current_metric = current_metric
+
+        if current_metric > self.target_metric:
+            promoted_current_metric = max(
+                current_metric,
+                0.1 * self.original_metric + 0.9 * current_metric
+            )
+
+        self.target_metric = max(
+            decayed_target_metric, 
+            promoted_current_metric)
+        
+        print("target_metric: ", self.target_metric)
 
     def _find_step_size(self, t, interpolators):
         step_size = (1 - t) * 2
@@ -46,6 +61,7 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
         state = self.state_clone_function()
         self.target_metric = \
             self.evaluation_function(*[i(0) for i in interpolators]) * (1 - self.tolerance)
+        self.original_metric = self.target_metric
         self.state_restore_function(state)
 
         t = 0

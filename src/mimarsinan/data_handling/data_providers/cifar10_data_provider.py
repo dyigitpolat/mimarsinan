@@ -10,7 +10,7 @@ class CIFAR10_DataProvider(DataProvider):
         super().__init__()
 
         train_transform = transforms.Compose([
-            # transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
+            transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
             transforms.ToTensor(),
             transforms.Normalize([0, 0, 0], [1, 1, 1])
         ])

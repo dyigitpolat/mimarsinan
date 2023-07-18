@@ -33,6 +33,8 @@ class Pipeline:
             self._run_step(name, step)
 
     def run_from(self, step_name):
+        assert step_name in [name for name, _ in self.steps], f"Step '{step_name}' does not exist in pipeline"
+        
         self.verify()
         starting_step_idx = self._find_starting_step_idx(step_name)
         

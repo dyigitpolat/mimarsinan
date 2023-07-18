@@ -26,7 +26,7 @@ class CoreFlow(nn.Module):
     def update_cores(self):
         for idx, core in enumerate(self.cores):
             core.core_matrix[:,:] = \
-                self.core_params[idx].detach().numpy().transpose()
+                self.core_params[idx].cpu().detach().numpy().transpose()
     
     def get_signal(
             self, x, buffers, core, neuron, is_input, is_off, is_always_on):
