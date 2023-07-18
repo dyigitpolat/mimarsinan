@@ -38,7 +38,7 @@ class WeightQuantizationTuner(BasicTuner):
         self.model.set_activation(CQ_Activation(self.target_tq))
         self.trainer.weight_transformation = self._mixed_transform(rate)
         self.trainer.train_one_step(self.pipeline_lr / 40)
-        return self.trainer.validate_train()
+        return self.trainer.validate()
 
     def run(self):
         return super().run()

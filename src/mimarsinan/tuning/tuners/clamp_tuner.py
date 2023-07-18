@@ -30,11 +30,11 @@ class ClampTuner(BasicTuner):
     def _update_and_evaluate(self, rate):
         self.model.set_activation(ClampedReLU_Parametric(rate, self.base_activation))
         self.trainer.train_one_step(self.lr / 2)
-        return self.trainer.validate_train()
+        return self.trainer.validate()
 
     def run(self):
         super().run()
         self.model.set_activation(ClampedReLU())
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self.target_accuracy)
 
-        return self.trainer.validate_train()
+        return self.trainer.validate()

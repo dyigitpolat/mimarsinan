@@ -36,7 +36,7 @@ class ActivationQuantizationTuner(BasicTuner):
         self.model.set_activation(CQ_Activation_Parametric(self.target_tq, rate, self.base_activation))
         self.trainer.weight_transformation = self._mixed_transform(rate)
         self.trainer.train_n_epochs(self._find_lr() / 2, 1)
-        return self.trainer.validate_train()
+        return self.trainer.validate()
 
     def run(self):
         super().run()
@@ -45,4 +45,4 @@ class ActivationQuantizationTuner(BasicTuner):
         self.trainer.weight_transformation = self._get_new_parameter_transform()
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self.target_accuracy)
 
-        return self.trainer.validate_train()
+        return self.trainer.validate()

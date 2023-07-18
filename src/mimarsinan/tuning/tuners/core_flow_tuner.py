@@ -27,7 +27,7 @@ class CoreFlowTuner:
             None)
         core_flow_trainer.report_function = self.report_function 
         
-        core_flow_trainer.validate_train()
+        core_flow_trainer.validate()
         core_sums = core_flow.core_sums
         
         cycles = 20
@@ -43,7 +43,7 @@ class CoreFlowTuner:
                 None)
             spiking_core_flow_trainer.report_function = self.report_function 
 
-            acc = spiking_core_flow_trainer.validate_train()
+            acc = spiking_core_flow_trainer.validate()
             print(f"    acc: {acc}")
 
             if acc > best_acc:
@@ -78,7 +78,7 @@ class CoreFlowTuner:
             None)
         core_flow_trainer.report_function = self.report_function
         
-        return core_flow_trainer.validate_train()
+        return core_flow_trainer.validate()
 
     def run(self):
         core_flow = CoreFlow(self.input_shape, self.mapping)

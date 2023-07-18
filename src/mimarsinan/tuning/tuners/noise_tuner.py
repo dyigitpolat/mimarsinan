@@ -29,7 +29,7 @@ class NoiseTuner(BasicTuner):
     def _update_and_evaluate(self, rate):
         self.model.set_regularization(NoisyDropout(0.0, rate, self.target_noise_amount))
         self.trainer.train_one_step(self.lr / 2)
-        return self.trainer.validate_train()
+        return self.trainer.validate()
 
     def run(self):
         super().run()
@@ -37,4 +37,4 @@ class NoiseTuner(BasicTuner):
         self.model.set_regularization(NoisyDropout(0.0, 1.0, self.target_noise_amount))
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self.target_accuracy)
 
-        return self.trainer.validate_train()
+        return self.trainer.validate()
