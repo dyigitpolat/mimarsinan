@@ -18,8 +18,7 @@ class SmallStepEvaluator:
         self.steps = 5
 
     def evaluate(self, model):
-        model.set_activation(ClampedReLU())
-        model.set_regularization(NoisyDropout(0.5, 0.5, 0.2))
+        model.set_activation(nn.LeakyReLU())
         
         self.trainer.model = model.to(self.device)
 

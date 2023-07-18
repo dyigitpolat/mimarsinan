@@ -53,7 +53,7 @@ class CoreFlowTuner:
             for idx, core in enumerate(self.mapping.cores):
                 rate_numerator = core_sums[idx]
                 rate_denominator = spiking_core_flow.core_sums[idx] / self.simulation_steps
-                print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
+                #print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
                 
                 if rate_denominator == 0: 
                     print(f"    WARNING: rate_denominator for core {idx} is 0, setting to 0.5")
@@ -61,9 +61,11 @@ class CoreFlowTuner:
 
                 rate = rate_numerator / rate_denominator
                 threshold_delta = core.threshold - (core.threshold / rate) 
+                core.threshold = core.threshold - (threshold_delta * lr) 
 
                 print(f"    core {idx}... rate: {rate}")
-                core.threshold = core.threshold - (threshold_delta * lr) 
+                print(f"    core {idx}... threshold: {core.threshold}")
+                
         
         for idx, core in enumerate(self.mapping.cores):
             core.threshold = best_thresholds[idx]

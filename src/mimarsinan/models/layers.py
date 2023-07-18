@@ -1,43 +1,5 @@
 import torch.nn as nn
 import torch
-
-class Normalizer(nn.Module):
-    def __init__(self):
-        super(Normalizer, self).__init__()
-
-        self.eps = torch.tensor(1e-8)
-        self.running_mean = nn.Parameter(torch.tensor(0.0), requires_grad=False)
-        self.momentum = torch.tensor(0.1)
-
-    def get_factor(self):
-        return (1.0 / (self.running_mean + self.eps)) ** 0.5
-
-    def forward(self, x):
-        abs_mean = torch.mean(x**2)
-
-        m = self.momentum
-        self.running_mean = nn.Parameter(
-            (1 - m)*self.running_mean + m*abs_mean, requires_grad=False)
-        
-        factor = self.get_factor().detach()
-        return x * factor
-    
-class WokeBatchNorm1d(nn.BatchNorm1d):
-    def __init__(self, 
-                 num_features, eps=1e-5, momentum=0.1, affine=True, 
-                 track_running_stats=True):
-        super(WokeBatchNorm1d, self).__init__(
-            num_features, eps, momentum, affine, track_running_stats)
-        
-    def forward(self, x):
-        if len(x.shape) == 2:
-            return nn.BatchNorm1d.forward(self, x)
-        else:
-            x = x.transpose(1, 2)
-            x = nn.BatchNorm1d.forward(self, x)
-            x = x.transpose(1, 2)
-            return x
-    
     
 from torch.autograd import Function
 
@@ -66,8 +28,8 @@ class SoftQuantize(nn.Module):
 class DifferentiableClamp(Function):
     @staticmethod
     def forward(ctx, x, a, b):
-        a = torch.tensor(a, device=x.device)
-        b = torch.tensor(b, device=x.device)
+        a = a.clone().detach()
+        b = b.clone().detach()
         ctx.save_for_backward(x, a, b)
         return torch.clamp(x, a, b)
 
@@ -86,8 +48,13 @@ class DifferentiableClamp(Function):
         return grad_input, None, None
     
 class ClampedReLU(nn.Module):
+    def __init__(self, clamp_min=0.0, clamp_max=1.0):
+        super(ClampedReLU, self).__init__()
+        self.clamp_min = clamp_min
+        self.clamp_max = clamp_max
+
     def forward(self, x):
-        return DifferentiableClamp.apply(x, 0.0, 1.0)
+        return DifferentiableClamp.apply(x, self.clamp_min, self.clamp_max)
     
 class ClampedReLU_Parametric(nn.Module):
     def __init__(self, rate, base_activation):
@@ -96,12 +63,18 @@ class ClampedReLU_Parametric(nn.Module):
         self.base_activation = base_activation
 
     def forward(self, x):
+        base_act = self.base_activation(x)
+        base_max = torch.max(base_act)
+        base_min = torch.min(base_act)
+        clamp_max = (1.0 - self.rate) * base_max + self.rate * 1.0
+        clamp_min = (1.0 - self.rate) * base_min + self.rate * 0.0
+
         random_mask = torch.rand(x.shape, device=x.device)
         random_mask = (random_mask < self.rate).float()
 
         return \
-            random_mask * ClampedReLU()(x) \
-            + (1.0 - random_mask) * self.base_activation(x)
+            random_mask * ClampedReLU(clamp_min, clamp_max)(x) \
+            + (1.0 - random_mask) * base_act
     
 class CQ_Activation(nn.Module):
     def __init__(self, Tq):

@@ -38,11 +38,3 @@ class WeightTransformTrainer(BasicTrainer):
             mode='min', patience=5, factor=0.9, min_lr=lr/100, verbose=True)
         
         return optimizer, scheduler
-    
-    def train_one_step(self, lr):
-        return super().train_one_step(lr)
-    
-    def train_until_target_accuracy(self, lr, max_epochs, target_accuracy):
-        accuracy = super().train_until_target_accuracy(lr, max_epochs, target_accuracy)
-        return accuracy
-
