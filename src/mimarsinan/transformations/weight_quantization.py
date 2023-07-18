@@ -15,7 +15,7 @@ class TensorQuantization:
         if isinstance(weights, np.ndarray):
             return transform_np_array(weights, self.quantize)
         
-        scale = self.q_max
+        scale = self.q_max / torch.max(torch.abs(weights))
         return torch.round(weights * scale) / scale
     
     def scaled_quantize(self, weights):
