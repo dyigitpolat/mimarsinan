@@ -45,4 +45,4 @@ class ActivationQuantizationTuner(BasicTuner):
         self.trainer.weight_transformation = self._get_new_parameter_transform()
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self.target_accuracy)
 
-        return self.trainer.validate()
+        return self.trainer.validate_train()

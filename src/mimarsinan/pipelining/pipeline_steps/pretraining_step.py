@@ -23,12 +23,12 @@ class PretrainingStep(PipelineStep):
         trainer.report_function = self.pipeline.reporter.report
         
         model.set_activation(nn.LeakyReLU())
-        validation_accuracy = trainer.train_n_epochs(
+        accuracy = trainer.train_n_epochs(
             self.pipeline.config['lr'], 
             self.pipeline.config['training_epochs'])
         
         
         self.pipeline.cache.add("pretrained_model", model, 'torch_model')
-        self.pipeline.cache.add("pt_accuracy", validation_accuracy)
+        self.pipeline.cache.add("pt_accuracy", accuracy)
 
         self.pipeline.cache.remove("init_model")

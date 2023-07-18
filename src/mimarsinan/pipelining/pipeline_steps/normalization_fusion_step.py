@@ -34,12 +34,12 @@ class NormalizationFusionStep(PipelineStep):
             self.pipeline.config['tuner_epochs'],
             self.pipeline.cache['aq_accuracy'] * 0.99,
         )
-        validation_accuracy = trainer.validate()
+        accuracy = trainer.validate_train()
 
-        assert validation_accuracy > self.pipeline.cache['aq_accuracy'] * 0.9, \
+        assert accuracy > self.pipeline.cache['aq_accuracy'] * 0.9, \
             "Normalization fusion step failed to retain validation accuracy."
 
         self.pipeline.cache.add("nf_model", model, 'torch_model')
-        self.pipeline.cache.add("nf_accuracy", validation_accuracy)
+        self.pipeline.cache.add("nf_accuracy", accuracy)
 
         self.pipeline.cache.remove("aq_model")

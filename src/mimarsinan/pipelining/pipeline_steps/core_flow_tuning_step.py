@@ -13,10 +13,10 @@ class CoreFlowTuningStep(PipelineStep):
         tuner = CoreFlowTuner(self.pipeline, 
                               self.pipeline.cache['hard_core_mapping'])
         
-        validation_accuracy, threshold_scale = tuner.run()
+        accuracy, threshold_scale = tuner.run()
 
         self.pipeline.cache.add("tuned_hard_core_mapping", tuner.mapping, 'pickle')
-        self.pipeline.cache.add("tuned_cf_accuracy", validation_accuracy)
+        self.pipeline.cache.add("tuned_cf_accuracy", accuracy)
         self.pipeline.cache.add("cf_threshold_scale", threshold_scale)
 
         self.pipeline.cache.remove("hard_core_mapping")
