@@ -118,7 +118,5 @@ class BasicTuner:
         )
 
         adapter.adapt_smoothly(interpolators=[BasicInterpolation(0.0, 1.0)])
-
-        self.trainer._update_and_transform_model()
         
         return self.trainer.validate()
