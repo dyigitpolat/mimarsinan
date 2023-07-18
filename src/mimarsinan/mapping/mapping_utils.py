@@ -254,24 +254,6 @@ class AvgPoolMapper:
 
         self.sources = map_mm(mapping, layer_sources, weights)
         return self.sources 
-    
-class NormalizerMapper:
-    def __init__(self, source_mapper, layer):
-        self.source_mapper = source_mapper
-        self.layer = layer
-        self.sources = None
-
-    def map(self, mapping):
-        if self.sources is not None:
-            return self.sources
-        
-        self.source_mapper.layer.weight.data *= self.layer.get_factor()
-
-        if self.source_mapper.layer.bias is not None:
-            self.source_mapper.layer.bias.data *= self.layer.get_factor()
-
-        self.sources = self.source_mapper.map(mapping)
-        return self.sources
 
 def get_fused_weights(linear_layer, bn_layer):
     l = linear_layer
