@@ -2,6 +2,7 @@ from mimarsinan.model_training.weight_transform_trainer import WeightTransformTr
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
+from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
 
 import torch
 
@@ -16,8 +17,8 @@ class BasicTuner:
         self.pipeline = pipeline
 
         # Targets
-        self.target_accuracy = target_accuracy * self._get_target_decay()
-        self.original_target_accuracy = target_accuracy
+        self.original_target = target_accuracy
+        self.target_adjuster = AdaptationTargetAdjuster(self.original_target, self._get_target_decay())
 
         # Model
         self.model = model
@@ -51,7 +52,9 @@ class BasicTuner:
 
     def _update_and_evaluate(self, rate):
         raise NotImplementedError()
-
+    
+    def _get_target(self):
+        return self.target_adjuster.get_target()
     
     def _find_lr(self):
         return LearningRateExplorer(
@@ -69,22 +72,6 @@ class BasicTuner:
                     random_mask * self._get_new_parameter_transform()(param) \
                     + (1 - random_mask) * self._get_previous_parameter_transform()(param)
             return transform
-    
-    def _update_target_accuracy(self, current_accuracy):
-        decayed_target_metric = self.target_accuracy * self._get_target_decay()
-        promoted_current_metric = current_accuracy
-
-        if current_accuracy > self.target_accuracy:
-            promoted_current_metric = max(
-                current_accuracy,
-                0.1 * self.original_target_accuracy + 0.9 * current_accuracy
-            )
-
-        self.target_accuracy = max(
-            decayed_target_metric, 
-            promoted_current_metric)
-        
-        print("Target accuracy: ", self.target_accuracy)
 
     def _adaptation(self, rate):
         self.pipeline.reporter.report(self.name, rate)
@@ -93,12 +80,12 @@ class BasicTuner:
 
         lr = self._find_lr()
         self.trainer.train_until_target_accuracy(
-            lr, self.epochs, self.target_accuracy)
+            lr, self.epochs, self._get_target())
         
         self.trainer.train_n_epochs(lr / 2, 2)
         
         acc = self.trainer.validate()
-        self._update_target_accuracy(acc)
+        self.target_adjuster.update_target(acc)
 
     def run(self):
         def evaluate_model(rate):
@@ -114,9 +101,9 @@ class BasicTuner:
             self._adaptation,
             clone_state,
             restore_state,
-            evaluate_model
+            evaluate_model,
+            interpolators=[BasicInterpolation(0.0, 1.0)]
         )
-
-        adapter.adapt_smoothly(interpolators=[BasicInterpolation(0.0, 1.0)])
+        adapter.adapt_smoothly()
         
         return self.trainer.validate()
