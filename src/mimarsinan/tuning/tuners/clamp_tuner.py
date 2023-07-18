@@ -35,6 +35,6 @@ class ClampTuner(BasicTuner):
     def run(self):
         super().run()
         self.model.set_activation(ClampedReLU())
-        self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self.target_accuracy)
+        self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self._get_target())
 
         return self.trainer.validate()
