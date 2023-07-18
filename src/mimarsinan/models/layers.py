@@ -48,8 +48,13 @@ class DifferentiableClamp(Function):
         return grad_input, None, None
     
 class ClampedReLU(nn.Module):
+    def __init__(self, clamp_min=0.0, clamp_max=1.0):
+        super(ClampedReLU, self).__init__()
+        self.clamp_min = clamp_min
+        self.clamp_max = clamp_max
+
     def forward(self, x):
-        return DifferentiableClamp.apply(x, 0.0, 1.0)
+        return DifferentiableClamp.apply(x, self.clamp_min, self.clamp_max)
     
 class ClampedReLU_Parametric(nn.Module):
     def __init__(self, rate, base_activation):
@@ -58,12 +63,18 @@ class ClampedReLU_Parametric(nn.Module):
         self.base_activation = base_activation
 
     def forward(self, x):
+        base_act = self.base_activation(x)
+        base_max = torch.max(base_act)
+        base_min = torch.min(base_act)
+        clamp_max = (1.0 - self.rate) * base_max + self.rate * 1.0
+        clamp_min = (1.0 - self.rate) * base_min + self.rate * 0.0
+
         random_mask = torch.rand(x.shape, device=x.device)
         random_mask = (random_mask < self.rate).float()
 
         return \
-            random_mask * ClampedReLU()(x) \
-            + (1.0 - random_mask) * self.base_activation(x)
+            random_mask * ClampedReLU(clamp_min, clamp_max)(x) \
+            + (1.0 - random_mask) * base_act
     
 class CQ_Activation(nn.Module):
     def __init__(self, Tq):
