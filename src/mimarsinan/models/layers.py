@@ -28,8 +28,8 @@ class SoftQuantize(nn.Module):
 class DifferentiableClamp(Function):
     @staticmethod
     def forward(ctx, x, a, b):
-        a = a.clone().detach()
-        b = b.clone().detach()
+        a = torch.tensor(a, device=x.device)
+        b = torch.tensor(b, device=x.device)
         ctx.save_for_backward(x, a, b)
         return torch.clamp(x, a, b)
 
@@ -64,8 +64,8 @@ class ClampedReLU_Parametric(nn.Module):
 
     def forward(self, x):
         base_act = self.base_activation(x)
-        base_max = torch.max(base_act)
-        base_min = torch.min(base_act)
+        base_max = torch.max(base_act).item()
+        base_min = torch.min(base_act).item()
         clamp_max = (1.0 - self.rate) * base_max + self.rate * 1.0
         clamp_min = (1.0 - self.rate) * base_min + self.rate * 0.0
 
