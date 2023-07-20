@@ -7,12 +7,12 @@ def is_input(idx): return idx == -2
 def is_always_on(idx): return idx == -3
 
 class SoftCore:
-    def __init__(self, core_matrix, axon_sources, id):
+    def __init__(self, core_matrix, axon_sources, id, threshold = 1.0):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
 
         self.id = id
-        self.threshold = 1.0
+        self.threshold = threshold
 
     def get_input_count(self):
         return len(self.axon_sources)
