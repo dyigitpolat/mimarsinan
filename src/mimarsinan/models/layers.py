@@ -5,24 +5,25 @@ from torch.autograd import Function
 
 class StaircaseFunction(Function):
     @staticmethod
-    def forward(ctx, x, Tq):
+    def forward(ctx, x, Tq, scale = 1.0):
         #Tq = torch.tensor(Tq)
         #ctx.save_for_backward(x, Tq)
-        return torch.floor(x * Tq) / Tq
+        return torch.floor(x * (Tq/scale)) / (Tq/scale)
 
     @staticmethod
     def backward(ctx, grad_output):
         #x, Tq = ctx.saved_tensors
         grad_input = grad_output.clone()
-        return grad_input, None
+        return grad_input, None, None
 
 class SoftQuantize(nn.Module):
-    def __init__(self, Tq):
+    def __init__(self, Tq, scale = 1.0):
         super(SoftQuantize, self).__init__()
         self.Tq = Tq
+        self.scale = scale
     
     def forward(self, x):
-        return StaircaseFunction.apply(x, self.Tq)
+        return StaircaseFunction.apply(x, self.Tq, self.scale)
     
 
 class DifferentiableClamp(Function):
@@ -66,7 +67,7 @@ class ClampedReLU_Parametric(nn.Module):
         base_act = self.base_activation(x)
         base_max = torch.max(base_act).item()
         base_min = torch.min(base_act).item()
-        clamp_max = (1.0 - self.rate) * base_max + self.rate * 1.0
+        clamp_max = (1.0 - self.rate) * base_max + self.rate * (base_max * 0.9)
         clamp_min = (1.0 - self.rate) * base_min + self.rate * 0.0
 
         random_mask = torch.rand(x.shape, device=x.device)
@@ -77,75 +78,40 @@ class ClampedReLU_Parametric(nn.Module):
             + (1.0 - random_mask) * base_act
     
 class CQ_Activation(nn.Module):
-    def __init__(self, Tq):
+    def __init__(self, Tq, clamp_max=1.0):
         super(CQ_Activation, self).__init__()
         self.Tq = Tq
-        self.soft_quantize = SoftQuantize(Tq)
+        self.soft_quantize = SoftQuantize(Tq, scale=clamp_max)
+        self.clamp_max = clamp_max
     
     def forward(self, x):
-        out = ClampedReLU()(x)
+        out = ClampedReLU(clamp_min=0.0, clamp_max=self.clamp_max)(x)
         out = self.soft_quantize(out)
         return out
     
 class CQ_Activation_Parametric(nn.Module):
-    def __init__(self, Tq, rate, base_activation=None):
+    def __init__(self, Tq, rate, base_activation=None, clamp_max=1.0):
         super(CQ_Activation_Parametric, self).__init__()
         self.Tq = Tq
         self.rate = rate
-        self.soft_quantize = SoftQuantize(Tq)
+        self.soft_quantize = SoftQuantize(Tq, scale=clamp_max)
+        self.clamp_max = clamp_max
+
         if base_activation is None:
-            base_activation = ShiftedActivation(ClampedReLU(), 0.5/Tq)
+            base_activation = ShiftedActivation(
+                ClampedReLU(clamp_min=0.0, clamp_max=clamp_max), 0.5/Tq)
             
         self.base_activation = base_activation
     
     def forward(self, x):
         out_0 = self.base_activation(x)
-        out_1 = ClampedReLU()(x)
+        out_1 = ClampedReLU(clamp_min=0.0, clamp_max=self.clamp_max)(x)
 
         random_mask = torch.rand(x.shape, device=x.device)
         random_mask = (random_mask < self.rate).float()
         return \
             random_mask * self.soft_quantize(out_1) \
             + (1.0 - random_mask) * out_0
-    
-class SmoothStaircaseFunction(Function):
-    @staticmethod
-    def forward(ctx, x, Tq, alpha):
-        h = 1.0 / Tq
-        w = 1.0 / Tq
-        a = torch.tensor(alpha)
-        output = h * (
-            0.5 * (1.0/torch.tanh(a/2)) * 
-            torch.tanh(a * ((x/w-torch.floor(x/w))-0.5)) + 
-            0.5 + torch.floor(x/w))
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        grad_input = grad_output.clone()
-        return grad_input, None, None
-    
-class SmoothStaircase(nn.Module):
-    def __init__(self, Tq, alpha):
-        super(SmoothStaircase, self).__init__()
-        self.Tq = Tq
-        self.alpha = alpha
-    
-    def forward(self, x):
-        return SmoothStaircaseFunction.apply(x, self.Tq, self.alpha)
-
-class CQ_Activation_Soft(nn.Module):
-    def __init__(self, Tq, alpha):
-        super(CQ_Activation_Soft, self).__init__()
-        self.Tq = Tq
-        self.alpha = alpha
-        self.staircase = SmoothStaircase(Tq, alpha)
-    
-    def forward(self, x):
-        out = x - 0.5/self.Tq
-        out = self.staircase(out)
-        out = ClampedReLU()(out)
-        return out
     
 class ShiftedActivation(nn.Module):
     def __init__(self, activation, shift):
@@ -170,3 +136,20 @@ class NoisyDropout(nn.Module):
         out = nn.Dropout(self.dropout_p)(x)
         out = out + self.noise_radius * torch.rand_like(out) - 0.5 * self.noise_radius
         return random_mask * out + (1.0 - random_mask) * x
+    
+class ActivationStats(nn.Module):
+    def __init__(self, base_activation):
+        super(ActivationStats, self).__init__()
+        self.base_activation = base_activation
+        self.register_buffer('mean', torch.zeros(1))
+        self.register_buffer('var', torch.zeros(1))
+        self.register_buffer('max', torch.zeros(1))
+        self.register_buffer('min', torch.zeros(1))
+    
+    def forward(self, x):
+        out = self.base_activation(x)
+        self.mean = torch.mean(out)
+        self.var = torch.var(out)
+        self.max = torch.max(out)
+        self.min = torch.min(out)
+        return out
