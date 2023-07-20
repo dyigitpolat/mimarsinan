@@ -4,7 +4,7 @@ from mimarsinan.chip_simulation.nevresim_driver import NevresimDriver
 import numpy as np
 
 class SimulationRunner:
-    def __init__(self, pipeline, mapping, threshold_scale):
+    def __init__(self, pipeline, mapping):
         self.input_size = pipeline.config["input_size"]
         self.num_classes = pipeline.config["num_classes"]
 
@@ -23,7 +23,6 @@ class SimulationRunner:
             [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
 
         self.mapping = mapping
-        self.threshold_scale = threshold_scale
         self.simulation_length = pipeline.config["simulation_steps"]
 
     def _evaluate_chip_output(self, predictions):
@@ -54,8 +53,7 @@ class SimulationRunner:
             int
         )
 
-        simulation_steps = delay + int(
-            self.threshold_scale * self.simulation_length)
+        simulation_steps = delay + int(self.simulation_length)
         
         predictions = simulation_driver.predict_spiking(
             self.test_data,

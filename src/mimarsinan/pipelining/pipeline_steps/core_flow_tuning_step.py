@@ -5,7 +5,7 @@ from mimarsinan.tuning.tuners.core_flow_tuner import CoreFlowTuner
 class CoreFlowTuningStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["hard_core_mapping"]
-        promises = ["tuned_hard_core_mapping", "tuned_cf_accuracy", "cf_threshold_scale"]
+        promises = ["tuned_hard_core_mapping", "tuned_cf_accuracy"]
         clears = ["hard_core_mapping"]
         super().__init__(requires, promises, clears, pipeline)
 
@@ -13,10 +13,9 @@ class CoreFlowTuningStep(PipelineStep):
         tuner = CoreFlowTuner(self.pipeline, 
                               self.pipeline.cache['hard_core_mapping'])
         
-        accuracy, threshold_scale = tuner.run()
+        accuracy = tuner.run()
 
         self.pipeline.cache.add("tuned_hard_core_mapping", tuner.mapping, 'pickle')
         self.pipeline.cache.add("tuned_cf_accuracy", accuracy)
-        self.pipeline.cache.add("cf_threshold_scale", threshold_scale)
 
         self.pipeline.cache.remove("hard_core_mapping")
