@@ -134,7 +134,10 @@ class BasicTrainer:
             self._report("Training accuracy", training_accuracy)
 
             validation_accuracy = self.validate()
-            if validation_accuracy >= target_accuracy: break
+            if validation_accuracy >= target_accuracy: 
+                self._train_one_epoch(optimizer, scheduler)
+                self._train_one_epoch(optimizer, scheduler)
+                break
         
         self.test()
         return validation_accuracy
