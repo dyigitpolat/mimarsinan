@@ -1,6 +1,5 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.transformations.chip_quantization import ChipQuantization
 from mimarsinan.mapping.softcore_mapping import HardCoreMapping
 from mimarsinan.visualization.hardcore_visualization import HardCoreMappingVisualizer
 
@@ -16,10 +15,6 @@ class HardCoreMappingStep(PipelineStep):
         soft_core_mapping = self.pipeline.cache['soft_core_mapping']
         axons_per_core = self.pipeline.config['max_axons']
         neurons_per_core = self.pipeline.config['max_neurons']
-        quantization_bits = self.pipeline.config['weight_bits']
-
-        ChipQuantization(bits = quantization_bits).calculate_core_thresholds(
-            soft_core_mapping.cores)
 
         hard_core_mapping = HardCoreMapping(
             axons_per_core, neurons_per_core)

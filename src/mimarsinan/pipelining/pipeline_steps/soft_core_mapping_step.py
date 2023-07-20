@@ -2,8 +2,6 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.pipelining.pipeline_steps.perceptron_fusion_step import FusedLinear
 from mimarsinan.mapping.mapping_utils import SoftCoreMapping
-from mimarsinan.model_training.basic_trainer import BasicTrainer
-
 import torch.nn as nn
 class SoftCoreMappingStep(PipelineStep):
 
@@ -39,5 +37,5 @@ class SoftCoreMappingStep(PipelineStep):
 
         soft_core_mapping = SoftCoreMapping()
         soft_core_mapping.map(model.get_mapper_repr())
-        
+
         self.pipeline.cache.add("soft_core_mapping", soft_core_mapping, 'pickle')
