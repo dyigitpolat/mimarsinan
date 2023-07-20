@@ -1,7 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.tuning.tuners.weight_quantization_tuner import WeightQuantizationTuner
-from mimarsinan.models.core_flow import CoreFlow 
 
 class WeightQuantizationStep(PipelineStep):
     def __init__(self, pipeline):
