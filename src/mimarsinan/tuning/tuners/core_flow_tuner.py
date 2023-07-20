@@ -4,6 +4,8 @@ from mimarsinan.models.layers import CQ_Activation
 from mimarsinan.models.core_flow import CoreFlow
 from mimarsinan.models.spiking_core_flow import SpikingCoreFlow
 
+import copy
+
 class CoreFlowTuner:
     def __init__(self, pipeline, mapping):
         self.device = pipeline.config["device"]
@@ -12,15 +14,35 @@ class CoreFlowTuner:
 
         self.mapping = mapping
         self.target_tq = pipeline.config["target_tq"]
-        self.simulation_steps = pipeline.config["simulation_steps"]
+        self.simulation_steps = round(pipeline.config["simulation_steps"])
         self.report_function = pipeline.reporter.report
         self.quantization_bits = pipeline.config["weight_bits"]
 
-    def _tune_thresholds(self):
-        print("  Tuning thresholds...")
+    def run(self):
+        unscaled_quantized_mapping = copy.deepcopy(self.mapping)
+        ChipQuantization(self.quantization_bits).unscaled_quantize(unscaled_quantized_mapping.cores)
 
-        core_flow = CoreFlow(self.input_shape, self.mapping)
-        core_flow.set_activation(CQ_Activation(self.target_tq))
+        core_flow = CoreFlow(self.input_shape, unscaled_quantized_mapping, self.target_tq)
+        print(f"  CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
+
+        quantized_mapping = copy.deepcopy(self.mapping)
+        ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
+
+        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, self.simulation_steps)
+        print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
+
+        self._tune_thresholds(
+            self._get_core_sums(), cycles=20, lr=0.1, mapping=quantized_mapping)
+
+        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, self.simulation_steps)
+        acc = self._validate_core_flow(core_flow)
+        print(f"  Final SpikingCoreFlow Accuracy: {acc}")
+
+        self.mapping = quantized_mapping
+        return acc
+
+    def _get_core_sums(self):
+        core_flow = CoreFlow(self.input_shape, self.mapping, self.target_tq)
         core_flow_trainer = BasicTrainer(
             core_flow, 
             self.device, self.data_provider,
@@ -28,15 +50,15 @@ class CoreFlowTuner:
         core_flow_trainer.report_function = self.report_function 
         
         core_flow_trainer.validate()
-        core_sums = core_flow.core_sums
-        
-        cycles = 20
-        lr = 0.1
+        return core_flow.core_sums
+    
+    def _tune_thresholds(self, core_sums, cycles, lr, mapping):
+        print("  Tuning thresholds...")
         best_acc = 0
         for _ in range(cycles):
             print(f"    Tuning Cycle {_ + 1}/{cycles}")
             
-            spiking_core_flow = SpikingCoreFlow(self.input_shape, self.mapping, self.simulation_steps)
+            spiking_core_flow = SpikingCoreFlow(self.input_shape, mapping, self.simulation_steps)
             spiking_core_flow_trainer = BasicTrainer(
                 spiking_core_flow, 
                 self.device, self.data_provider,
@@ -48,9 +70,9 @@ class CoreFlowTuner:
 
             if acc > best_acc:
                 best_acc = acc
-                best_thresholds = [core.threshold for core in self.mapping.cores]
+                best_thresholds = [core.threshold for core in mapping.cores]
 
-            for idx, core in enumerate(self.mapping.cores):
+            for idx, core in enumerate(mapping.cores):
                 rate_numerator = core_sums[idx]
                 rate_denominator = spiking_core_flow.core_sums[idx] / self.simulation_steps
                 #print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
@@ -67,7 +89,7 @@ class CoreFlowTuner:
                 print(f"    core {idx}... threshold: {core.threshold}")
                 
         
-        for idx, core in enumerate(self.mapping.cores):
+        for idx, core in enumerate(mapping.cores):
             core.threshold = best_thresholds[idx]
             core.threshold = round(core.threshold)
 
@@ -79,25 +101,3 @@ class CoreFlowTuner:
         core_flow_trainer.report_function = self.report_function
         
         return core_flow_trainer.validate()
-
-    def run(self):
-        core_flow = CoreFlow(self.input_shape, self.mapping)
-        core_flow.set_activation(CQ_Activation(self.target_tq))
-        print(f"  CQ CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
-
-        scale = ChipQuantization(bits = self.quantization_bits).quantize(
-            self.mapping.cores)
-        
-        print(f"  scale: {scale}")
-        self.simulation_steps = round(self.simulation_steps)
-        
-        spiking_core_flow = SpikingCoreFlow(self.input_shape, self.mapping, self.simulation_steps)
-        print(f"  Original Spiking CoreFlow Accuracy: {self._validate_core_flow(spiking_core_flow)}")
-        
-        self._tune_thresholds()
-        
-        spiking_core_flow = SpikingCoreFlow(self.input_shape, self.mapping, self.simulation_steps)
-        accuracy = self._validate_core_flow(spiking_core_flow)
-        print(f"  Tuned Spiking CoreFlow Accuracy: {accuracy}")
-
-        return accuracy, scale
