@@ -1,10 +1,12 @@
 from mimarsinan.mapping.chip_latency import *
 
+from mimarsinan.models.layers import CQ_Activation
+
 import torch.nn as nn
 import torch
 
 class CoreFlow(nn.Module):
-    def __init__(self, input_shape, core_mapping):
+    def __init__(self, input_shape, core_mapping, Tq):
         super(CoreFlow, self).__init__()
         self.input_shape = input_shape
 
@@ -17,7 +19,10 @@ class CoreFlow(nn.Module):
                     for core in range(len(self.cores))]
         )
 
-        self.activation = nn.ReLU()
+        self.activations = []
+        for core in self.cores:
+            self.activations.append(CQ_Activation(Tq, core.threshold))
+
         self.cycles = ChipLatency(core_mapping).calculate()
 
         # Stats
@@ -56,9 +61,6 @@ class CoreFlow(nn.Module):
         
         return signal_tensor
     
-    def set_activation(self, activation):
-        self.activation = activation
-
     def update_stats(self, buffers):
         for i in range(len(self.cores)):
             if self.core_sums[i] is None:
@@ -82,7 +84,7 @@ class CoreFlow(nn.Module):
                     x, buffers, self.cores[core_idx].axon_sources)
 
             for core_idx in range(len(self.cores)):
-                buffers[core_idx] = self.activation(
+                buffers[core_idx] = self.activations[core_idx](
                     torch.matmul(
                         self.core_params[core_idx], 
                         input_signals[core_idx].T).T)
