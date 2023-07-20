@@ -1,5 +1,7 @@
 from mimarsinan.mapping.chip_latency import *
 
+from mimarsinan.models.layers import CQ_Activation
+
 import torch.nn as nn
 import torch
 
@@ -22,7 +24,6 @@ class SpikingCoreFlow(nn.Module):
                 self.cores[core].threshold, dtype=torch.float32), requires_grad=False)\
                     for core in range(len(self.cores))])
 
-        self.activation = nn.ReLU()
         self.cycles = ChipLatency(core_mapping).calculate() + simulation_length
 
         # Stats
@@ -59,9 +60,6 @@ class SpikingCoreFlow(nn.Module):
                 spike_source.is_always_on_)
         
         return signal_tensor
-    
-    def set_activation(self, activation):
-        self.activation = activation
 
     def update_stats(self, buffers):
         for i in range(len(self.cores)):
