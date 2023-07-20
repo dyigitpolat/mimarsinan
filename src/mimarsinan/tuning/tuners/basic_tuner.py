@@ -75,14 +75,14 @@ class BasicTuner:
 
     def _adaptation(self, rate):
         self.pipeline.reporter.report(self.name, rate)
-
+        self.pipeline.reporter.report("Adaptation target", self._get_target())
+        
+        self.trainer.weight_transformation = self._mixed_transform(rate)
         self._update_and_evaluate(rate)
 
         lr = self._find_lr()
         self.trainer.train_until_target_accuracy(
             lr, self.epochs, self._get_target())
-        
-        self.trainer.train_n_epochs(lr / 2, 2)
         
         acc = self.trainer.validate()
         self.target_adjuster.update_target(acc)
