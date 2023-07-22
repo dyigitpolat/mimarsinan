@@ -31,7 +31,7 @@ class WeightQuantizationTuner(BasicTuner):
     def _get_new_parameter_transform(self):
         return SequentialTransform([ 
             lambda p: torch.clamp(p, -1, 1),
-            SoftTensorClipping(0.01).get_clipped_weights,
+            SoftTensorClipping(0.1).get_clipped_weights,
             TensorQuantization(self.quantization_bits).quantize])
 
     def _update_and_evaluate(self, rate):
