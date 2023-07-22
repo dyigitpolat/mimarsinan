@@ -17,7 +17,10 @@ class ClampTuner(BasicTuner):
             lr)
 
         self.lr = lr
-        self.base_activation = model.activation
+        self.base_activations = []
+
+        for perceptron in model.get_perceptrons():
+            self.base_activations.append(perceptron.activation)
 
     def _get_target_decay(self):
         return 0.999
@@ -30,7 +33,7 @@ class ClampTuner(BasicTuner):
     
     def _calculate_base_thresholds(self, model):
         for perceptron in model.get_perceptrons():
-            perceptron.set_activation(ActivationStats(self.model.activation))
+            perceptron.set_activation(ActivationStats(perceptron.activation))
 
         self.trainer.validate()
 
@@ -39,6 +42,9 @@ class ClampTuner(BasicTuner):
             print(perceptron.base_threshold)
 
     def _update_and_evaluate(self, rate):
+        for perceptron, activation in zip(self.model.get_perceptrons(), self.base_activations):
+            perceptron.set_activation(ClampedReLU_Parametric(rate, activation))
+
         self.model.set_activation(ClampedReLU_Parametric(rate, self.base_activation))
         self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()

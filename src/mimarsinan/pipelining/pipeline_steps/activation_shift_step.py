@@ -22,14 +22,14 @@ class ActivationShiftStep(PipelineStep):
             self.pipeline.data_provider, 
             self.pipeline.loss)
         trainer.report_function = self.pipeline.reporter.report
-
-
-        shift_amount = 0.5 / self.pipeline.config['target_tq']
         
-        model.set_activation(
-            ShiftedActivation(model.activation, shift_amount))
         
         for perceptron in model.get_perceptrons():
+            shift_amount = 0.5 / (self.pipeline.config['target_tq'] * perceptron.base_threshold)
+
+            perceptron.set_activation(
+                ShiftedActivation(perceptron.activation, shift_amount))
+
             if isinstance(perceptron.normalization, nn.Identity):
                 perceptron.layer.bias.data += shift_amount
             else:

@@ -75,7 +75,6 @@ class PerceptronMixer(PerceptronFlow):
                                              normalization=norm))
 
         self.output_layer = Perceptron(num_classes, self.fc_width_2) 
-        self.activation = nn.LeakyReLU()
 
         self.out = None
 

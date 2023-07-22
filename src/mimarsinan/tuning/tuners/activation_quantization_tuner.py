@@ -20,7 +20,9 @@ class ActivationQuantizationTuner(BasicTuner):
             lr)
 
         self.target_tq = target_tq
-        self.base_activation = model.activation
+        self.base_activations = []
+        for perceptron in model.get_perceptrons():
+            self.base_activations.append(perceptron.activation)
 
     def _get_target_decay(self):
         return 0.99
@@ -33,14 +35,15 @@ class ActivationQuantizationTuner(BasicTuner):
             lambda p: torch.clamp(p, -1, 1) ])
 
     def _update_and_evaluate(self, rate):
-        for perceptron in self.model.get_perceptrons():
+
+        for perceptron, base_activation in zip(self.model.get_perceptrons(), self.base_activations):
             perceptron.set_activation(CQ_Activation_Parametric(
                 self.target_tq, 
                 rate, 
-                self.base_activation, 
+                base_activation, 
                 perceptron.base_threshold))
         
-        self.trainer.train_n_epochs(self._find_lr() / 2, 1)
+        self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
 
     def run(self):
