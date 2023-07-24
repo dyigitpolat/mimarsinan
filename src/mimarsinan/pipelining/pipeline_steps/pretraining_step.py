@@ -22,7 +22,9 @@ class PretrainingStep(PipelineStep):
             self.pipeline.loss)
         trainer.report_function = self.pipeline.reporter.report
         
-        model.set_activation(nn.LeakyReLU())
+        for perceptron in model.get_perceptrons():
+            perceptron.set_activation(nn.LeakyReLU())
+
         accuracy = trainer.train_n_epochs(
             self.pipeline.config['lr'], 
             self.pipeline.config['training_epochs'])
