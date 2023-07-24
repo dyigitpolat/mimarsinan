@@ -45,7 +45,6 @@ class ClampTuner(BasicTuner):
         for perceptron, activation in zip(self.model.get_perceptrons(), self.base_activations):
             perceptron.set_activation(ClampedReLU_Parametric(rate, activation))
 
-        self.model.set_activation(ClampedReLU_Parametric(rate, self.base_activation))
         self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
 
