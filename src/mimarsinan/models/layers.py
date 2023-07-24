@@ -67,7 +67,7 @@ class ClampedReLU_Parametric(nn.Module):
         base_act = self.base_activation(x)
         base_max = torch.max(base_act).item()
         base_min = torch.min(base_act).item()
-        clamp_max = (1.0 - self.rate) * base_max + self.rate * (base_max * 0.9)
+        clamp_max = (1.0 - self.rate) * base_max + self.rate * (base_max * 0.5)
         clamp_min = (1.0 - self.rate) * base_min + self.rate * 0.0
 
         random_mask = torch.rand(x.shape, device=x.device)
@@ -81,12 +81,11 @@ class CQ_Activation(nn.Module):
     def __init__(self, Tq, clamp_max=1.0):
         super(CQ_Activation, self).__init__()
         self.Tq = Tq
-        self.soft_quantize = SoftQuantize(Tq, scale=clamp_max)
         self.clamp_max = clamp_max
     
     def forward(self, x):
         out = ClampedReLU(clamp_min=0.0, clamp_max=self.clamp_max)(x)
-        out = self.soft_quantize(out)
+        out = SoftQuantize(self.Tq, scale=self.clamp_max)(out)
         return out
     
 class CQ_Activation_Parametric(nn.Module):
@@ -153,3 +152,27 @@ class ActivationStats(nn.Module):
         self.max = torch.max(out)
         self.min = torch.min(out)
         return out
+    
+class ScaleActivation(nn.Module):
+    def __init__(self, base_activation, scale):
+        super(ScaleActivation, self).__init__()
+        self.base_activation = base_activation
+        self.scale = scale
+    
+    def forward(self, x):
+        return self.scale * self.base_activation(x)
+    
+class ParametricScaleActivation(nn.Module):
+    def __init__(self, base_activation, scale, rate):
+        super(ParametricScaleActivation, self).__init__()
+        self.base_activation = base_activation
+        self.scale = scale
+        self.rate = rate
+    
+    def forward(self, x):
+        out_0 = self.base_activation(x)
+        out_1 = self.scale * self.base_activation(x)
+
+        return \
+            self.rate * out_1 + (1.0 - self.rate) * out_0
+

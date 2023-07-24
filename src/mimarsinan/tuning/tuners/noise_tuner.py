@@ -1,6 +1,6 @@
 from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
 
-from mimarsinan.models.layers import NoisyDropout
+from mimarsinan.models.layers import NoisyDropout, ScaleActivation
 
 class NoiseTuner(BasicTuner):
     def __init__(self, 
@@ -27,14 +27,23 @@ class NoiseTuner(BasicTuner):
         return lambda x: x
 
     def _update_and_evaluate(self, rate):
-        self.model.set_regularization(NoisyDropout(0.0, rate, self.target_noise_amount))
+        for perceptron in self.model.get_perceptrons():
+            scaled_activation = perceptron.activation
+
+            assert isinstance(scaled_activation, ScaleActivation)
+            scale = scaled_activation.scale
+
+            perceptron.set_regularization(NoisyDropout(0.0, rate, self.target_noise_amount / scale ))
+
         self.trainer.train_one_step(self.lr / 2)
         return self.trainer.validate()
 
     def run(self):
         super().run()
         
-        self.model.set_regularization(NoisyDropout(0.0, 1.0, self.target_noise_amount))
+        for perceptron in self.model.get_perceptrons():
+            perceptron.set_regularization(NoisyDropout(0.0, 1.0, self.target_noise_amount))
+            
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self._get_target())
 
         return self.trainer.validate()
