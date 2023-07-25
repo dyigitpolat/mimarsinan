@@ -38,7 +38,7 @@ class BasicTuner:
             self.model, 
             pipeline.config['device'], 
             pipeline.data_provider, 
-            pipeline.loss, self._mixed_transform(0.001))
+            pipeline.loss, self._mixed_transform(0.0))
         self.trainer.report_function = self.pipeline.reporter.report
 
     def _get_target_decay(self):
@@ -77,7 +77,6 @@ class BasicTuner:
         self.pipeline.reporter.report(self.name, rate)
         self.pipeline.reporter.report("Adaptation target", self._get_target())
         
-        self.trainer.weight_transformation = self._mixed_transform(rate)
         self._update_and_evaluate(rate)
 
         lr = self._find_lr()
