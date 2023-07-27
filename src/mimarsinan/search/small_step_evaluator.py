@@ -18,7 +18,8 @@ class SmallStepEvaluator:
         self.steps = 5
 
     def evaluate(self, model):
-        model.set_activation(nn.LeakyReLU())
+        for perceptron in model.get_perceptrons():
+            perceptron.set_activation(nn.LeakyReLU())
         
         self.trainer.model = model.to(self.device)
 
