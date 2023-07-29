@@ -11,6 +11,9 @@ class ArchitectureSearchStep(PipelineStep):
         clears = []
         super().__init__(requires, promises, clears, pipeline)
 
+    def validate(self):
+        return self.pipeline.get_target_metric()
+
     def process(self):
         searcher = MLP_Mixer_Searcher(
             self.pipeline.config['input_shape'], 

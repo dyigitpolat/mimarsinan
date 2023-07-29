@@ -7,21 +7,24 @@ import torch.nn as nn
 
 class ActivationShiftStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["na_model", "na_accuracy"]
-        promises = ["shifted_activation_model", "as_accuracy"]
+        requires = ["na_model"]
+        promises = ["shifted_activation_model"]
         clears = ["na_model"]
         super().__init__(requires, promises, clears, pipeline)
+        self.trainer = None
 
+    def validate(self):
+        return self.trainer.validate()
 
     def process(self):
         model = self.pipeline.cache["na_model"]
 
-        trainer = BasicTrainer(
+        self.trainer = BasicTrainer(
             model, 
             self.pipeline.config['device'], 
             self.pipeline.data_provider, 
             self.pipeline.loss)
-        trainer.report_function = self.pipeline.reporter.report
+        self.trainer.report_function = self.pipeline.reporter.report
         
         
         for perceptron in model.get_perceptrons():
@@ -35,15 +38,10 @@ class ActivationShiftStep(PipelineStep):
             else:
                 perceptron.normalization.bias.data += shift_amount
         
-        accuracy = trainer.train_until_target_accuracy(
+        self.trainer.train_until_target_accuracy(
             self.pipeline.config['lr'] / 20, 
             max_epochs=2, 
-            target_accuracy=self.pipeline.cache['na_accuracy'])
-        
-        assert accuracy > self.pipeline.cache['na_accuracy'] * 0.9, \
-            "Activation shift step failed to retain validation accuracy."
+            target_accuracy=self.pipeline.get_target_metric())
         
         self.pipeline.cache.add("shifted_activation_model", model, 'torch_model')
-        self.pipeline.cache.add("as_accuracy", accuracy)
-        
         self.pipeline.cache.remove("na_model")

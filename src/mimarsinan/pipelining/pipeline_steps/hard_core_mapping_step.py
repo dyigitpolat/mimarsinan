@@ -11,6 +11,9 @@ class HardCoreMappingStep(PipelineStep):
         clears = []
         super().__init__(requires, promises, clears, pipeline)
 
+    def validate(self):
+        return self.pipeline.get_target_metric()
+
     def process(self):
         soft_core_mapping = self.pipeline.cache['soft_core_mapping']
         axons_per_core = self.pipeline.config['max_axons']

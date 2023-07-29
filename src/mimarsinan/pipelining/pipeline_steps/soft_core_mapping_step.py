@@ -11,6 +11,9 @@ class SoftCoreMappingStep(PipelineStep):
         clears = []
         super().__init__(requires, promises, clears, pipeline)
 
+    def validate(self):
+        return self.pipeline.get_target_metric()
+
     def bring_back_bias(self, fused_linear_layer):
         assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'
         

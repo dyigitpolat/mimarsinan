@@ -4,27 +4,25 @@ from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQua
 
 class ActivationQuantizationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["shifted_activation_model", "as_accuracy"]
-        promises = ["aq_model", "aq_accuracy"]
+        requires = ["shifted_activation_model"]
+        promises = ["aq_model"]
         clears = ["shifted_activation_model"]
         super().__init__(requires, promises, clears, pipeline)
+        self.tuner = None
+
+    def validate(self):
+        return self.tuner.validate()
 
     def process(self):
-        tuner = ActivationQuantizationTuner(
+        self.tuner = ActivationQuantizationTuner(
             self.pipeline,
             model = self.pipeline.cache['shifted_activation_model'],
             target_tq = self.pipeline.config['target_tq'],
-            target_accuracy = self.pipeline.cache['as_accuracy'] * 0.99,
+            target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
-        
-        accuracy = tuner.run()
+        self.tuner.run()
 
-        assert accuracy > self.pipeline.cache['as_accuracy'] * 0.9, \
-            "Activation quantization step failed to retain validation accuracy."
-
-        self.pipeline.cache.add("aq_model", tuner.model, 'torch_model')
-        self.pipeline.cache.add("aq_accuracy", accuracy)
-
+        self.pipeline.cache.add("aq_model", self.tuner.model, 'torch_model')
         self.pipeline.cache.remove("shifted_activation_model")
 
         

@@ -7,10 +7,15 @@ import torch
 
 class PerceptronFusionStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["nf_model", "nf_accuracy"]
-        promises = ["pf_model", "pf_accuracy"]
+        requires = ["nf_model"]
+        promises = ["pf_model"]
         clears = ["nf_model"]
         super().__init__(requires, promises, clears, pipeline)
+
+        self.trainer = None
+
+    def validate(self):
+        return self.trainer.validate()
 
     def process(self):
         model = self.pipeline.cache["nf_model"]
@@ -20,20 +25,14 @@ class PerceptronFusionStep(PipelineStep):
                 perceptron.layer = self.fuse_linear_layer_bias(perceptron.layer)
 
         # Trainer
-        trainer = BasicTrainer(
+        self.trainer = BasicTrainer(
             model, 
             self.pipeline.config['device'], 
             self.pipeline.data_provider,
             self.pipeline.loss)
-        trainer.report_function = self.pipeline.reporter.report
-        accuracy = trainer.validate()
-
-        assert accuracy > self.pipeline.cache['nf_accuracy'] * 0.95, \
-            "Perceptron fusion step failed to retain validation accuracy."
+        self.trainer.report_function = self.pipeline.reporter.report
 
         self.pipeline.cache.add("pf_model", model, 'torch_model')
-        self.pipeline.cache.add("pf_accuracy", accuracy)
-
         self.pipeline.cache.remove("nf_model")
         
     def fuse_linear_layer_bias(self, layer):
