@@ -10,8 +10,10 @@ class Pipeline:
         self.working_directory = working_directory
         prepare_containing_directory(self.working_directory)
 
-        self.target_metric = 1.0
         self.tolerance = 0.95
+
+        self.load_cache()
+        self.set_target_metric(0.0)
 
     def add_pipeline_step(self, name, pipeline_step):
         self.steps.append((name, pipeline_step))
@@ -53,16 +55,22 @@ class Pipeline:
         self.cache.load(self.working_directory)
 
     def get_target_metric(self):
-        return self.target_metric
+        return self.cache['__target_metric']
+    
+    def set_target_metric(self, target_metric):
+        self.cache.add('__target_metric', target_metric)
 
     def _run_step(self, name, step):
         print(f"Running '{name}'...")
+
         previous_metric = self.get_target_metric()
+
         step.run()
+        self.set_target_metric(step.validate())
         self.save_cache()
-        self.target_metric = step.validate()
-        assert self.target_metric >= previous_metric * self.tolerance, \
-            f"[{name}] step failed to retain performance within tolerable limits: {self.target_metric} < {previous_metric} * {self.tolerance}"
+
+        assert self.get_target_metric() >= previous_metric * self.tolerance, \
+            f"[{name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {self.tolerance}) = {previous_metric * self.tolerance}"
 
 
     def _find_starting_step_idx(self, step_name):
