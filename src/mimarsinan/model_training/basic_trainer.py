@@ -50,6 +50,7 @@ class BasicTrainer:
         tracker = AccuracyTracker()
         loss = None
         for (x, y) in self.train_loader:
+            self.model = self.model.to(self.device)
             x, y = x.to(self.device), y.to(self.device)
 
             hook_handle = self.model.register_forward_hook(tracker.create_hook(y))
@@ -65,6 +66,8 @@ class BasicTrainer:
         total = 0
         correct = 0
         with torch.no_grad():
+            self.model = self.model.to(self.device)
+            x, y = x.to(self.device), y.to(self.device)
             _, predicted = self.model(x).max(1)
             total += float(y.size(0))
             correct += float(predicted.eq(y).sum().item())
@@ -77,6 +80,7 @@ class BasicTrainer:
         with torch.no_grad():
             for (x, y) in self.test_loader:
                 self.model.eval()
+                self.model = self.model.to(self.device)
                 x, y = x.to(self.device), y.to(self.device)
                 _, predicted = self.model(x).max(1)
                 total += float(y.size(0))
