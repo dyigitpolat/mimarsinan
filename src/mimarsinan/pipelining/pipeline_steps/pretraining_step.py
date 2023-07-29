@@ -7,30 +7,31 @@ import torch.nn as nn
 class PretrainingStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["init_model"]
-        promises = ["pretrained_model", "pt_accuracy"]
+        promises = ["pretrained_model"]
         clears = ["init_model"]
         super().__init__(requires, promises, clears, pipeline)
 
+        self.trainer = None
+
+    def validate(self):
+        return self.trainer.validate()
 
     def process(self):
         model = self.pipeline.cache["init_model"]
 
-        trainer = BasicTrainer(
+        self.trainer = BasicTrainer(
             model, 
             self.pipeline.config['device'], 
             self.pipeline.data_provider, 
             self.pipeline.loss)
-        trainer.report_function = self.pipeline.reporter.report
+        self.trainer.report_function = self.pipeline.reporter.report
         
         for perceptron in model.get_perceptrons():
             perceptron.set_activation(nn.LeakyReLU())
 
-        accuracy = trainer.train_n_epochs(
+        self.trainer.train_n_epochs(
             self.pipeline.config['lr'], 
             self.pipeline.config['training_epochs'])
         
-        
         self.pipeline.cache.add("pretrained_model", model, 'torch_model')
-        self.pipeline.cache.add("pt_accuracy", accuracy)
-
         self.pipeline.cache.remove("init_model")

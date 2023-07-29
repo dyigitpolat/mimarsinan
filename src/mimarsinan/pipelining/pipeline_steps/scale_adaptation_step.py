@@ -4,26 +4,25 @@ from mimarsinan.tuning.tuners.scale_tuner import ScaleTuner
 
 class ScaleAdaptationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["ca_model", "ca_accuracy"]
-        promises = ["sa_model", "sa_accuracy"]
+        requires = ["ca_model"]
+        promises = ["sa_model"]
         clears = ["ca_model"]
         super().__init__(requires, promises, clears, pipeline)
 
+        self.tuner = None
+    
+    def validate(self):
+        return self.tuner.validate()
+
     def process(self):
-        tuner = ScaleTuner(
+        self.tuner = ScaleTuner(
             self.pipeline,
             model = self.pipeline.cache['ca_model'],
-            target_accuracy = self.pipeline.cache['ca_accuracy'] * 0.99,
+            target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
-        
-        accuracy = tuner.run()
+        self.tuner.run()
 
-        assert accuracy > self.pipeline.cache['ca_accuracy'] * 0.9, \
-            "Scale adaptation step failed to retain validation accuracy."
-
-        self.pipeline.cache.add("sa_model", tuner.model, 'torch_model')
-        self.pipeline.cache.add("sa_accuracy", accuracy)
-
+        self.pipeline.cache.add("sa_model", self.tuner.model, 'torch_model')
         self.pipeline.cache.remove("ca_model")
 
         

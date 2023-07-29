@@ -86,6 +86,9 @@ class BasicTuner:
         acc = self.trainer.validate()
         self.target_adjuster.update_target(acc)
 
+    def validate(self):
+        return self.trainer.validate()
+
     def run(self):
         def evaluate_model(rate):
             return self._update_and_evaluate(rate)

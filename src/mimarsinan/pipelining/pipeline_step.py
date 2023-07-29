@@ -13,4 +13,7 @@ class PipelineStep:
 
     def process(self):
         raise NotImplementedError
+    
+    def validate(self):
+        raise NotImplementedError
 
