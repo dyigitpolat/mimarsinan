@@ -24,6 +24,7 @@ class WeightTransformTrainer(BasicTrainer):
     
     def _backward_pass_on_loss(self, x, y):
         self._update_and_transform_model()
+        self.aux_model = self.aux_model.to(self.device)
         self.aux_model.train()
 
         loss = super()._backward_pass_on_loss(x, y)
