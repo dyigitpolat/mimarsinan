@@ -57,7 +57,6 @@ def run_pipeline(
     if start_step is None:
         pipeline.run()
     else:
-        pipeline.load_cache()
         pipeline.run_from(step_name=start_step)
 
 if __name__ == "__main__":
