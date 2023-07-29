@@ -18,6 +18,8 @@ class CoreFlowTuner:
         self.report_function = pipeline.reporter.report
         self.quantization_bits = pipeline.config["weight_bits"]
 
+        self.accuracy = None
+
     def run(self):
         unscaled_quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).unscaled_quantize(unscaled_quantized_mapping.cores)
@@ -35,11 +37,11 @@ class CoreFlowTuner:
             self._get_core_sums(), cycles=20, lr=0.1, mapping=quantized_mapping)
 
         core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, self.simulation_steps)
-        acc = self.validate(core_flow)
-        print(f"  Final SpikingCoreFlow Accuracy: {acc}")
+        self.accuracy = self._validate_core_flow(core_flow)
+        print(f"  Final SpikingCoreFlow Accuracy: {self.accuracy}")
 
         self.mapping = quantized_mapping
-        return acc
+        return self.accuracy
 
     def _get_core_sums(self):
         core_flow = CoreFlow(self.input_shape, self.mapping, self.target_tq)
@@ -93,7 +95,7 @@ class CoreFlowTuner:
             core.threshold = best_thresholds[idx]
             core.threshold = round(core.threshold)
 
-    def validate(self, core_flow):
+    def _validate_core_flow(self, core_flow):
         core_flow_trainer = BasicTrainer(
             core_flow, 
             self.device, self.data_provider,
@@ -101,3 +103,6 @@ class CoreFlowTuner:
         core_flow_trainer.report_function = self.report_function
         
         return core_flow_trainer.validate()
+    
+    def validate(self):
+        return self.accuracy
