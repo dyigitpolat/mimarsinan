@@ -13,7 +13,8 @@ class Pipeline:
         self.tolerance = 0.95
 
         self.load_cache()
-        self.set_target_metric(0.0)
+        if '__target_metric' not in self.cache.keys():
+            self.set_target_metric(0.0)
 
     def add_pipeline_step(self, name, pipeline_step):
         self.steps.append((name, pipeline_step))
