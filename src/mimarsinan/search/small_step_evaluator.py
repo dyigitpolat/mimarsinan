@@ -1,5 +1,4 @@
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.models.layers import ClampedReLU, NoisyDropout
 
 import torch.nn as nn
 
