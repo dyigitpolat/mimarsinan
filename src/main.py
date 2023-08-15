@@ -2,6 +2,7 @@ from init import *
 
 from mimarsinan.common.wandb_utils import WandB_Reporter
 from mimarsinan.pipelining.deployment_pipeline import DeploymentPipeline
+from mimarsinan.data_handling.imported_data_provider import ImportedDataProvider
 
 import sys
 import json
@@ -17,11 +18,8 @@ def main():
     
     data_provider_path = deployment_config['data_provider_path']
     data_provider_name = deployment_config['data_provider_name']
-
-    DataProvider = import_class_from_path(
-        data_provider_path, data_provider_name)
     
-    data_provider = DataProvider()
+    data_provider = ImportedDataProvider(data_provider_path, data_provider_name)
     deployment_name = deployment_config['experiment_name']
     platform_constraints = deployment_config['platform_constraints']
     deployment_parameters = deployment_config['deployment_parameters']
