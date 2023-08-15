@@ -145,3 +145,27 @@ class BasicTrainer:
         
         self.test()
         return validation_accuracy
+    
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state['train_loader']
+        del state['validation_loader']
+        del state['test_loader']
+        del state['val_iter']
+        del state['train_iter']
+
+        state['model'] = state['model'].cpu()
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.train_loader = self.data_provider.get_training_loader(
+            self.data_provider.get_training_batch_size())
+        self.validation_loader = self.data_provider.get_validation_loader(
+            self.data_provider.get_validation_batch_size())
+        self.test_loader = self.data_provider.get_test_loader(
+            self.data_provider.get_test_batch_size())
+        self.val_iter = iter(self.validation_loader)
+        self.train_iter = iter(self.train_loader)
+
+        self.model = self.model.to(self.device)
