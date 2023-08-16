@@ -4,8 +4,6 @@ from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
 
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-
 import torch
 
 class BasicTuner:
@@ -39,7 +37,7 @@ class BasicTuner:
         self.trainer = WeightTransformTrainer(
             self.model, 
             pipeline.config['device'], 
-            DataLoaderFactory(self.pipeline.data_provider_factory),
+            pipeline.data_provider, 
             pipeline.loss, self._mixed_transform(0.0))
         self.trainer.report_function = self.pipeline.reporter.report
 

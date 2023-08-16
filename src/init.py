@@ -15,6 +15,7 @@ def force_cudnn_initialization():
 
 def init():
     NevresimDriver.nevresim_path = "./nevresim/"
+    DataProvider.datasets_path = "./datasets/"
 
     force_cudnn_initialization()
     configure_multiprocessing()

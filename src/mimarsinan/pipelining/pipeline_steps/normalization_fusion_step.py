@@ -4,8 +4,6 @@ from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.mapping.mapping_utils import *
 
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-
 import torch.nn as nn
 
 class NormalizationFusionStep(PipelineStep):
@@ -27,7 +25,7 @@ class NormalizationFusionStep(PipelineStep):
         self.trainer = BasicTrainer(
             model, 
             self.pipeline.config['device'], 
-            DataLoaderFactory(self.pipeline.data_provider_factory),
+            self.pipeline.data_provider,
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
         

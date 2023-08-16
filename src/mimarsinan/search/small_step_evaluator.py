@@ -1,14 +1,12 @@
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.data_handling.utils import *
 
 import torch.nn as nn
 
 import json
 class SmallStepEvaluator:
-    def __init__(self, data_provider_factory, loss, lr, device, model_builder):
-        self.data_loader_factory = DataLoaderFactory(data_provider_factory, num_workers = 0)
-
+    def __init__(self, data_provider, loss, lr, device, model_builder):
+        self.data_provider = get_multiprocess_friendly_data_provider(data_provider)
         self.loss = loss
         self.lr = lr
         self.device = device
@@ -26,8 +24,7 @@ class SmallStepEvaluator:
     
         trainer = BasicTrainer(
             model.to(self.device),
-            self.device, 
-            self.data_loader_factory,
+            self.device, self.data_provider,
             self.loss)
 
         trainer.train_n_epochs(self.lr, self.steps)
