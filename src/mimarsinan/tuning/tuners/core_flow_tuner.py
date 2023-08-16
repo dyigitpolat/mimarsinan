@@ -4,14 +4,12 @@ from mimarsinan.models.layers import CQ_Activation
 from mimarsinan.models.core_flow import CoreFlow
 from mimarsinan.models.spiking_core_flow import SpikingCoreFlow
 
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-
 import copy
 
 class CoreFlowTuner:
     def __init__(self, pipeline, mapping):
         self.device = pipeline.config["device"]
-        self.data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
+        self.data_provider = pipeline.data_provider
         self.input_shape = pipeline.config["input_shape"]
 
         self.mapping = mapping
@@ -49,7 +47,7 @@ class CoreFlowTuner:
         core_flow = CoreFlow(self.input_shape, self.mapping, self.target_tq)
         core_flow_trainer = BasicTrainer(
             core_flow, 
-            self.device, self.data_loader_factory,
+            self.device, self.data_provider,
             None)
         core_flow_trainer.report_function = self.report_function 
         
@@ -65,7 +63,7 @@ class CoreFlowTuner:
             spiking_core_flow = SpikingCoreFlow(self.input_shape, mapping, self.simulation_steps)
             spiking_core_flow_trainer = BasicTrainer(
                 spiking_core_flow, 
-                self.device, self.data_loader_factory,
+                self.device, self.data_provider,
                 None)
             spiking_core_flow_trainer.report_function = self.report_function 
 
@@ -100,7 +98,7 @@ class CoreFlowTuner:
     def _validate_core_flow(self, core_flow):
         core_flow_trainer = BasicTrainer(
             core_flow, 
-            self.device, self.data_loader_factory,
+            self.device, self.data_provider,
             None)
         core_flow_trainer.report_function = self.report_function
         

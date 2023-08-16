@@ -1,6 +1,5 @@
 from mimarsinan.pipelining.pipeline import Pipeline
 from mimarsinan.model_training.training_utilities import BasicClassificationLoss
-from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 from mimarsinan.pipelining.pipeline_steps import *
 
@@ -26,7 +25,7 @@ class DeploymentPipeline(Pipeline):
 
     def __init__(
         self,
-        data_provider_factory: DataProviderFactory,
+        data_provider,
         deployment_parameters,
         platform_constraints,
         reporter,
@@ -34,7 +33,7 @@ class DeploymentPipeline(Pipeline):
 
         super().__init__(working_directory)
 
-        self.data_provider_factory = data_provider_factory
+        self.data_provider = data_provider
         self.reporter = reporter
 
         self.config = {}
@@ -66,11 +65,13 @@ class DeploymentPipeline(Pipeline):
         self.config.update(self.default_platform_constraints)
         self.config.update(platform_constraints)
 
-        data_provider = self.data_provider_factory.create()
-        self.config['input_shape'] = data_provider.get_input_shape()
+        self.config['input_shape'] = self.data_provider.get_input_shape()
+        self.config['output_shape'] = self.data_provider.get_output_shape()
+        if len(self.config['output_shape']) == 0: self.config['output_shape'] = (1,)
 
         self.config['input_size'] = np.prod(self.config['input_shape'])
-        self.config['num_classes'] = data_provider.get_prediction_mode().num_classes
+        self.config['output_size'] = np.prod(self.config['output_shape'])
+        self.config['num_classes'] = self.data_provider.get_prediction_mode().num_classes
 
         self.config['device'] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

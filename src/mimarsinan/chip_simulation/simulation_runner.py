@@ -1,6 +1,5 @@
 from mimarsinan.mapping.chip_latency import ChipLatency
 from mimarsinan.chip_simulation.nevresim_driver import NevresimDriver
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
 import numpy as np
 
@@ -13,12 +12,8 @@ class SimulationRunner:
 
         self.test_input = []
         self.test_targets = []
-
-        data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
-        data_provider = data_loader_factory.create_data_provider()
-
-        test_loader = data_loader_factory.create_test_loader(
-            data_provider.get_test_batch_size(), data_provider)
+        test_loader = pipeline.data_provider.get_test_loader(
+            pipeline.data_provider.get_test_batch_size())
         
         for xs, ys in test_loader:
             self.test_input.extend(xs)

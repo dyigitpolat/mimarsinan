@@ -3,8 +3,6 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.layers import ClampedReLU
 
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-
 import torch.nn as nn
 class PretrainingStep(PipelineStep):
     def __init__(self, pipeline):
@@ -24,7 +22,7 @@ class PretrainingStep(PipelineStep):
         self.trainer = BasicTrainer(
             model, 
             self.pipeline.config['device'], 
-            DataLoaderFactory(self.pipeline.data_provider_factory),
+            self.pipeline.data_provider, 
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
         
