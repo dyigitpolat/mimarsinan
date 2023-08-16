@@ -6,15 +6,15 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 32,
-        "simulation_steps": 32,
+        "target_tq": 16,
+        "simulation_steps": 16,
         "weight_bits": 4
     },
     "deployment_parameters": {
         "lr": 0.001,
         "training_epochs": 10,
         "tuner_epochs": 10,
-        "nas_cycles": 1,
+        "nas_cycles": 3,
         "nas_batch_size": 20
     },
     "start_step": "Architecture Search"

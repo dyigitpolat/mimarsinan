@@ -17,5 +17,5 @@
         "nas_cycles": 1,
         "nas_batch_size": 20
     },
-    "start_step": "Architecture Search"
+    "start_step": "Pretraining"
 }
