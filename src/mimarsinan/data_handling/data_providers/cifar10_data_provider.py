@@ -6,8 +6,8 @@ import torchvision
 import torch
 
 class CIFAR10_DataProvider(DataProvider):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, datasets_path):
+        super().__init__(datasets_path)
 
         train_transform = transforms.Compose([
             transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),

@@ -2,7 +2,8 @@ from init import *
 
 from mimarsinan.common.wandb_utils import WandB_Reporter
 from mimarsinan.pipelining.deployment_pipeline import DeploymentPipeline
-from mimarsinan.data_handling.imported_data_provider import ImportedDataProvider
+from mimarsinan.data_handling.data_provider_factory import ImportedDataProviderFactory
+
 
 import sys
 import json
@@ -19,7 +20,7 @@ def main():
     data_provider_path = deployment_config['data_provider_path']
     data_provider_name = deployment_config['data_provider_name']
     
-    data_provider = ImportedDataProvider(data_provider_path, data_provider_name)
+    data_provider_factory = ImportedDataProviderFactory(data_provider_path, data_provider_name, "./datasets")
     deployment_name = deployment_config['experiment_name']
     platform_constraints = deployment_config['platform_constraints']
     deployment_parameters = deployment_config['deployment_parameters']
@@ -27,7 +28,7 @@ def main():
     start_step = deployment_config['start_step']
 
     run_pipeline(
-        data_provider=data_provider,
+        data_provider_factory=data_provider_factory,
         deployment_name=deployment_name,
         platform_constraints=platform_constraints,
         deployment_parameters=deployment_parameters,
@@ -35,7 +36,7 @@ def main():
         start_step=start_step)
 
 def run_pipeline(
-    data_provider, 
+    data_provider_factory, 
     deployment_name, 
     platform_constraints, 
     deployment_parameters, 
@@ -45,7 +46,7 @@ def run_pipeline(
     reporter = WandB_Reporter(deployment_name, "deployment")
 
     pipeline = DeploymentPipeline(
-        data_provider=data_provider,
+        data_provider_factory=data_provider_factory,
         deployment_parameters=deployment_parameters,
         platform_constraints=platform_constraints,
         reporter=reporter,
