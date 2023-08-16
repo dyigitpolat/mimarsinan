@@ -19,7 +19,6 @@ class BasicArchitectureSearcher:
         raise NotImplementedError
     
     def _evaluate_configurations(self, configurations):
-        
         for configuration in configurations:
             assert self._get_evaluator().validate(configuration), \
                 f"unexpected error occured, invalid configurations may have been sampled"
@@ -29,7 +28,7 @@ class BasicArchitectureSearcher:
             params = [(self._get_evaluator(), configuration) for configuration in configurations]
             metrics = pool.map(
                 evaluate_configuration_runner, params)
-        
+
         return metrics
     
     def _sample_valid_configurations(self, sample_size_max):
