@@ -9,8 +9,8 @@ import requests
 import os
 
 class ECG_DataProvider(DataProvider):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, datasets_path):
+        super().__init__(datasets_path)
         filename = self._download_data()
         f = np.load(filename)
 
@@ -50,9 +50,9 @@ class ECG_DataProvider(DataProvider):
             
 
     def _augmentation(self, x):
-        shift_amt = np.random.uniform(-0.3, 0.3)
+        shift_amt = np.random.uniform(-0.05, 0.05)
         shift = int(shift_amt * x.shape[1])
-        x = x * np.random.uniform(0.8, 1.3)
+        x = x * np.random.uniform(0.5, 1.0)
         x = torch.clamp(x, min=0, max=1)
         return torch.roll(x, shift, dims=1)
 

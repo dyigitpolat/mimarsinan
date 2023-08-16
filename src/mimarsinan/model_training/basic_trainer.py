@@ -4,17 +4,19 @@ import torch
 
 class BasicTrainer:
     def __init__(
-            self, model, device, data_provider, loss_function):
+            self, model, device, data_loader_factory, loss_function):
         self.model = model.to(device)
         self.device = device
 
-        self.data_provider = data_provider
-        self.train_loader = data_provider.get_training_loader(
-            data_provider.get_training_batch_size())
-        self.validation_loader = data_provider.get_validation_loader(
-            data_provider.get_validation_batch_size())
-        self.test_loader = data_provider.get_test_loader(
-            data_provider.get_test_batch_size())
+        self.data_loader_factory = data_loader_factory
+        self.data_provider = data_loader_factory.create_data_provider()
+
+        self.train_loader = data_loader_factory.create_training_loader(
+            self.data_provider.get_training_batch_size(), self.data_provider)
+        self.validation_loader = data_loader_factory.create_validation_loader(
+            self.data_provider.get_validation_batch_size(), self.data_provider)
+        self.test_loader = data_loader_factory.create_test_loader(
+            self.data_provider.get_test_batch_size(), self.data_provider)
         
         self.report_function = None
         self.loss_function = loss_function
@@ -159,12 +161,17 @@ class BasicTrainer:
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.train_loader = self.data_provider.get_training_loader(
-            self.data_provider.get_training_batch_size())
-        self.validation_loader = self.data_provider.get_validation_loader(
-            self.data_provider.get_validation_batch_size())
-        self.test_loader = self.data_provider.get_test_loader(
-            self.data_provider.get_test_batch_size())
+
+        data_loader_factory = state['data_loader_factory']
+        self.data_provider = data_loader_factory.get_data_provider()
+
+        self.train_loader = data_loader_factory.create_training_loader(
+            self.data_provider.get_training_batch_size(), self.data_provider)
+        self.validation_loader = data_loader_factory.create_validation_loader(
+            self.data_provider.get_validation_batch_size(), self.data_provider)
+        self.test_loader = data_loader_factory.create_test_loader(
+            self.data_provider.get_test_batch_size(), self.data_provider)
+        
         self.val_iter = iter(self.validation_loader)
         self.train_iter = iter(self.train_loader)
 
