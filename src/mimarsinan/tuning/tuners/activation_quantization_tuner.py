@@ -29,12 +29,11 @@ class ActivationQuantizationTuner(BasicTuner):
 
             assert isinstance(scaled_activation, ScaleActivation)
             base_activation = scaled_activation.base_activation
-            scale = scaled_activation.scale
 
             self.base_activations.append(
                 ShiftedActivation(
                     base_activation,
-                    shifted_activation.shift / scale))
+                    shifted_activation.shift))
 
     def _get_target_decay(self):
         return 0.99

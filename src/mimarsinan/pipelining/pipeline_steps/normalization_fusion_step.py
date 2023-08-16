@@ -22,8 +22,6 @@ class NormalizationFusionStep(PipelineStep):
 
     def process(self):
         model = self.pipeline.cache["aq_model"]
-        for perceptron in model.get_perceptrons():
-            self._fuse_normalization(perceptron)
 
         # Trainer
         self.trainer = BasicTrainer(
@@ -32,6 +30,11 @@ class NormalizationFusionStep(PipelineStep):
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
+        
+        for perceptron in model.get_perceptrons():
+            self._fuse_normalization(perceptron)
+
+        print(self.validate())
 
         self.trainer.train_until_target_accuracy(
             LearningRateExplorer(

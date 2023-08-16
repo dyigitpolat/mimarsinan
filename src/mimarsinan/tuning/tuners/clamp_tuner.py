@@ -2,7 +2,6 @@ from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
 
 from mimarsinan.models.layers import ClampedReLU_Parametric, ClampedReLU, ActivationStats
 
-import torch.nn as nn
 class ClampTuner(BasicTuner):
     def __init__(self, 
                  pipeline, 
