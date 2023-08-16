@@ -35,7 +35,7 @@ class NoiseTuner(BasicTuner):
 
             perceptron.set_regularization(NoisyDropout(0.0, rate, self.target_noise_amount / scale ))
 
-        self.trainer.train_one_step(self.lr / 2)
+        self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
 
     def run(self):

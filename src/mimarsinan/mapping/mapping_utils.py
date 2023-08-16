@@ -263,6 +263,10 @@ class PerceptronMapper:
         self.source_mapper = source_mapper
         self.sources = None
 
+        scaled_activation = perceptron.activation
+        assert isinstance(scaled_activation, ScaleActivation)
+        self.scale = scaled_activation.scale
+
     def fuse_normalization(self):
         if isinstance(self.perceptron.normalization, nn.Identity):
             layer = self.perceptron.layer
