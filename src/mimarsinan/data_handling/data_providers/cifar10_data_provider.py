@@ -4,10 +4,14 @@ import torchvision.transforms as transforms
 import torchvision
 
 import torch
+import os
 
 class CIFAR10_DataProvider(DataProvider):
     def __init__(self, datasets_path):
         super().__init__(datasets_path)
+
+        path_str = str(self.datasets_path + '/cifar-10-batches-py')
+        download = not os.path.exists(path_str)
 
         train_transform = transforms.Compose([
             transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
@@ -21,11 +25,11 @@ class CIFAR10_DataProvider(DataProvider):
         ])
 
         training_dataset = torchvision.datasets.CIFAR10(
-            root=self.datasets_path, train=True, download=True,
+            root=self.datasets_path, train=True, download=download,
             transform=train_transform)
         
         validation_dataset = torchvision.datasets.CIFAR10(
-            root=self.datasets_path, train=True, download=True,
+            root=self.datasets_path, train=True, download=download,
             transform=test_validation_transform)
         
         training_validation_split = 0.99
@@ -37,7 +41,7 @@ class CIFAR10_DataProvider(DataProvider):
             validation_dataset, range(training_length, len(training_dataset)))
 
         self.test_dataset = torchvision.datasets.CIFAR10(
-            root=self.datasets_path, train=False, download=True,
+            root=self.datasets_path, train=False, download=download,
             transform=test_validation_transform)
 
     def _get_training_dataset(self):
