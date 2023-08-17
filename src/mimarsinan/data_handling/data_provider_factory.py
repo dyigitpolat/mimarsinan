@@ -12,6 +12,8 @@ class ImportedDataProviderFactory(DataProviderFactory):
         self._dataprovider_class_path = dataprovider_path
         self._dataprovider_class_name = dataprovider_class_name
 
+        (lambda factory: factory.create())(self) # warm up run
+
     def create(self) -> DataProvider:
         def _import_class_from_path(path_to_module, class_name):
             spec = importlib.util.spec_from_file_location(class_name, path_to_module)
