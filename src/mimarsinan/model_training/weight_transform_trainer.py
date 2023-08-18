@@ -1,5 +1,4 @@
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.model_training.training_utilities import AccuracyTracker
 
 import torch
 import copy
