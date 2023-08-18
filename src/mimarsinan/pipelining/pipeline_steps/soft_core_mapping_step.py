@@ -3,10 +3,11 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.pipeline_steps.perceptron_fusion_step import FusedLinear
 from mimarsinan.mapping.mapping_utils import SoftCoreMapping
 import torch.nn as nn
+
 class SoftCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
-        requires = ["wq_model"]
+        requires = ["nf_model"]
         promises = ["soft_core_mapping"]
         clears = []
         super().__init__(requires, promises, clears, pipeline)
@@ -32,7 +33,7 @@ class SoftCoreMappingStep(PipelineStep):
         return new_layer
 
     def process(self):
-        model = self.pipeline.cache['wq_model']
+        model = self.pipeline.cache['nf_model']
 
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):

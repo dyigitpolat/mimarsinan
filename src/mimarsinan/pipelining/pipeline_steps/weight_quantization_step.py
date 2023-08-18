@@ -1,6 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.tuning.tuners.weight_quantization_tuner import WeightQuantizationTuner
+from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import NormalizationAwarePerceptronQuantizationTuner
 
 class WeightQuantizationStep(PipelineStep):
     def __init__(self, pipeline):
@@ -15,7 +15,7 @@ class WeightQuantizationStep(PipelineStep):
         return self.tuner.validate()
 
     def process(self):
-        self.tuner = WeightQuantizationTuner(
+        self.tuner = NormalizationAwarePerceptronQuantizationTuner(
             self.pipeline,
             model = self.pipeline.cache["pf_model"],
             quantization_bits = self.pipeline.config['weight_bits'],
