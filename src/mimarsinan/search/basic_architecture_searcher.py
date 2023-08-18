@@ -3,8 +3,8 @@ import torch.multiprocessing as mp
 import copy
 
 class BasicArchitectureSearcher:
-    def __init__(self):
-        pass
+    def __init__(self, nas_workers):
+        self._nas_workers = nas_workers
 
     def _get_evaluator(self, configuration):
         raise NotImplementedError
@@ -24,7 +24,7 @@ class BasicArchitectureSearcher:
                 f"unexpected error occured, invalid configurations may have been sampled"
 
         print(f"evaluating {len(configurations)} configurations")
-        with mp.Pool(processes = 10) as pool:
+        with mp.Pool(processes = self._nas_workers) as pool:
             params = [(self._get_evaluator(), configuration) for configuration in configurations]
             metrics = pool.map(
                 evaluate_configuration_runner, params)

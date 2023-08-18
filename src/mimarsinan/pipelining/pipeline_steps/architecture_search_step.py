@@ -10,7 +10,7 @@ class ArchitectureSearchStep(PipelineStep):
 
     def __init__(self, pipeline):
         requires = []
-        promises = ["model_config"]
+        promises = ["model_config", "model_builder"]
         clears = []
         super().__init__(requires, promises, clears, pipeline)
 
@@ -18,18 +18,21 @@ class ArchitectureSearchStep(PipelineStep):
         return self.pipeline.get_target_metric()
 
     def process(self):
+        builder = PerceptronMixerBuilder(
+            self.pipeline.config['device'],
+            self.pipeline.config['input_shape'], 
+            self.pipeline.config['num_classes'], 
+            self.pipeline.config['max_axons'], 
+            self.pipeline.config['max_neurons'])
+        
         searcher = MLP_Mixer_Searcher(
             SmallStepEvaluator(
                 self.pipeline.data_provider_factory,
                 self.pipeline.loss,
                 self.pipeline.config['lr'],
                 self.pipeline.config['device'],
-                PerceptronMixerBuilder(
-                    self.pipeline.config['input_shape'], 
-                    self.pipeline.config['num_classes'], 
-                    self.pipeline.config['max_axons'], 
-                    self.pipeline.config['max_neurons'])
-            )
+                builder),
+            self.pipeline.config['nas_workers']
         )
     
         model_config = searcher.get_optimized_configuration(
@@ -37,4 +40,5 @@ class ArchitectureSearchStep(PipelineStep):
             self.pipeline.config['nas_batch_size']
         )
 
+        self.pipeline.cache.add("model_builder", builder, 'pickle')
         self.pipeline.cache.add("model_config", model_config)

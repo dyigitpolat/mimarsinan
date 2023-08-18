@@ -4,7 +4,7 @@ from mimarsinan.models.builders import PerceptronMixerBuilder
 
 class ModelBuildingStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = []
+        requires = ["model_config", "model_builder"]
         promises = ["init_model"]
         clears = []
         super().__init__(requires, promises, clears, pipeline)
@@ -13,11 +13,7 @@ class ModelBuildingStep(PipelineStep):
         return self.pipeline.get_target_metric()
 
     def process(self):
-        builder = PerceptronMixerBuilder(
-            self.pipeline.config['input_shape'], 
-            self.pipeline.config['num_classes'], 
-            self.pipeline.config['max_axons'], 
-            self.pipeline.config['max_neurons'])
+        builder = self.pipeline.cache.get('model_builder')
 
         init_model = builder.build(self.pipeline.cache.get("model_config"))
-        self.pipeline.cache.add("init_model", init_model, "torch_model")
+        self.pipeline.cache.add("init_model", (init_model), "torch_model")

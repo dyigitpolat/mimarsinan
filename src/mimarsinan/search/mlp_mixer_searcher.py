@@ -5,8 +5,8 @@ from mimarsinan.models.perceptron_mixer.skip_perceptron_mixer import SkipPercept
 
 import json
 class MLP_Mixer_Searcher(BasicArchitectureSearcher):
-    def __init__(self, evaluator):
-        super().__init__()
+    def __init__(self, evaluator, nas_workers):
+        super().__init__(nas_workers)
         self.configuration_sampler = MLP_Mixer_ConfigurationSampler()
         self.evaluator = evaluator
     
