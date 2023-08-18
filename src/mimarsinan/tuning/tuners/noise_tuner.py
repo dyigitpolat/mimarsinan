@@ -42,7 +42,12 @@ class NoiseTuner(BasicTuner):
         super().run()
         
         for perceptron in self.model.get_perceptrons():
-            perceptron.set_regularization(NoisyDropout(0.0, 1.0, self.target_noise_amount))
+            scaled_activation = perceptron.activation
+
+            assert isinstance(scaled_activation, ScaleActivation)
+            scale = scaled_activation.scale
+
+            perceptron.set_regularization(NoisyDropout(0.0, 1.0, self.target_noise_amount / scale))
             
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self._get_target())
 
