@@ -8,6 +8,7 @@ import einops
 class PerceptronMixer(PerceptronFlow):
     def __init__(
         self, 
+        device,
         input_shape,
         num_classes,
         patch_n_1,
@@ -19,7 +20,7 @@ class PerceptronMixer(PerceptronFlow):
         patch_c_2,
         fc_w_2,
         fc_k_2):
-        super(PerceptronMixer, self).__init__()
+        super(PerceptronMixer, self).__init__(device)
         
         self.input_shape = input_shape
         self.input_channels = input_shape[-3]
