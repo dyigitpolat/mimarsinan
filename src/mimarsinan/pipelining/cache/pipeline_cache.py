@@ -39,14 +39,14 @@ class PipelineCache:
         for name, (_, load_store_strategy) in self.cache.items():
             filename = f"{name}"
             metadata[name] = (load_store_strategy, filename)
-    
-        with open(f"{cache_directory}/metadata.json", "w") as f:
-            json.dump(metadata, f)
         
         for name, (object, load_store_strategy) in self.cache.items():
             filename = f"{name}"
             strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](filename)
             strategy.store(cache_directory, object)
+        
+        with open(f"{cache_directory}/metadata.json", "w") as f:
+            json.dump(metadata, f)
     
     def load(self, cache_directory):
         self.cache = {}
