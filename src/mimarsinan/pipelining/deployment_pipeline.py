@@ -13,7 +13,9 @@ class DeploymentPipeline(Pipeline):
         'training_epochs': 10,
         'tuner_epochs': 10,
         'nas_cycles': 5,
-        'nas_batch_size': 50
+        'nas_batch_size': 50,
+        'nas_workers': 1,
+        'degradation_tolerance': 0.95
     }
 
     default_platform_constraints = {
@@ -51,9 +53,9 @@ class DeploymentPipeline(Pipeline):
         self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
         self.add_pipeline_step("Activation Shifting", ActivationShiftStep(self))
         self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
-        self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
         self.add_pipeline_step("Perceptron Fusion", PerceptronFusionStep(self))
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
+        self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
         self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
         self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
@@ -73,6 +75,8 @@ class DeploymentPipeline(Pipeline):
         self.config['num_classes'] = data_provider.get_prediction_mode().num_classes
 
         self.config['device'] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.tolerance = self.config['degradation_tolerance']
 
     def _display_config(self):
         print("Deployment configuration:")
