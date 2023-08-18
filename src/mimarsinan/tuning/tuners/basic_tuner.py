@@ -42,6 +42,9 @@ class BasicTuner:
             DataLoaderFactory(self.pipeline.data_provider_factory),
             pipeline.loss, self._mixed_transform(0.0))
         self.trainer.report_function = self.pipeline.reporter.report
+    
+    def _get_trainer(self):
+        return self.trainer
 
     def _get_target_decay(self):
         raise NotImplementedError() # 0.99
@@ -60,7 +63,7 @@ class BasicTuner:
     
     def _find_lr(self):
         return LearningRateExplorer(
-            self.trainer, 
+            self._get_trainer(), 
             self.model, 
             self.pipeline_lr / 20, 
             self.pipeline_lr / 1000, 
@@ -82,14 +85,14 @@ class BasicTuner:
         self._update_and_evaluate(rate)
 
         lr = self._find_lr()
-        self.trainer.train_until_target_accuracy(
+        self._get_trainer().train_until_target_accuracy(
             lr, self.epochs, self._get_target())
         
-        acc = self.trainer.validate()
+        acc = self._get_trainer().validate()
         self.target_adjuster.update_target(acc)
 
     def validate(self):
-        return self.trainer.validate()
+        return self._get_trainer().validate()
 
     def run(self):
         def evaluate_model(rate):
@@ -110,4 +113,4 @@ class BasicTuner:
         )
         adapter.adapt_smoothly()
         
-        return self.trainer.validate()
+        return self._get_trainer().validate()
