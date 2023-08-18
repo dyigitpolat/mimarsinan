@@ -67,7 +67,7 @@ class ClampedReLU_Parametric(nn.Module):
         base_act = self.base_activation(x)
         base_max = torch.max(base_act).item()
         base_min = torch.min(base_act).item()
-        clamp_max = (1.0 - self.rate) * base_max + self.rate * (base_max * 0.5)
+        clamp_max = (1.0 - self.rate) * base_max + self.rate * 0.9
         clamp_min = (1.0 - self.rate) * base_min + self.rate * 0.0
 
         random_mask = torch.rand(x.shape, device=x.device)
