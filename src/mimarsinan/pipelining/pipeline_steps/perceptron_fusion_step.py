@@ -8,9 +8,9 @@ import torch
 
 class PerceptronFusionStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["nf_model"]
+        requires = ["aq_model"]
         promises = ["pf_model"]
-        clears = ["nf_model"]
+        clears = ["aq_model"]
         super().__init__(requires, promises, clears, pipeline)
 
         self.trainer = None
@@ -19,7 +19,7 @@ class PerceptronFusionStep(PipelineStep):
         return self.trainer.validate()
 
     def process(self):
-        model = self.pipeline.cache["nf_model"]
+        model = self.pipeline.cache["aq_model"]
         
         for perceptron in model.get_perceptrons():
             if perceptron.layer.bias is not None:
@@ -34,7 +34,7 @@ class PerceptronFusionStep(PipelineStep):
         self.trainer.report_function = self.pipeline.reporter.report
 
         self.pipeline.cache.add("pf_model", model, 'torch_model')
-        self.pipeline.cache.remove("nf_model")
+        self.pipeline.cache.remove("aq_model")
         
     def fuse_linear_layer_bias(self, layer):
         assert isinstance(layer, nn.Linear), 'Input layer must be an instance of nn.Linear'
@@ -48,7 +48,7 @@ class PerceptronFusionStep(PipelineStep):
         
         # Create a new layer with the new weights
         out_features, in_features = new_weights.shape
-        fused_layer = FusedLinear(in_features - 1, out_features)
+        fused_layer = FusedLinear(in_features - 1, out_features).to(self.pipeline.config['device'])
         fused_layer.linear.weight.data = new_weights
 
         return fused_layer
@@ -58,6 +58,8 @@ class FusedLinear(nn.Module):
     def __init__(self, input_features, output_features):
         super(FusedLinear, self).__init__()
         self.linear = nn.Linear(input_features + 1, output_features, bias=False)
+        self.weight = self.linear.weight
+        self.bias = self.linear.bias
 
     def forward(self, x):
         # Add an extra dimension for 2D inputs (i.e., make it 3D)
