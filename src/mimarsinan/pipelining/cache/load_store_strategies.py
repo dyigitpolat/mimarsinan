@@ -29,11 +29,16 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
         super().__init__(filename)
 
     def load(self, cache_directory):
-        return torch.load(f"{cache_directory}/{self.filename}.pt", map_location=torch.device('cpu'))
+        (object, device) = torch.load(f"{cache_directory}/{self.filename}.pt", map_location=torch.device('cpu'))
+        return object.to(device)
 
     def store(self, cache_directory, object):
+        # assert hasattr(object, "device"), \
+        #     "only models with 'device' attribute can be stored"
+        
+        device = object.device
         object.cpu()
-        torch.save(object, f"{cache_directory}/{self.filename}.pt")
+        torch.save((object, device), f"{cache_directory}/{self.filename}.pt")
 
 class PickleLoadStoreStrategy(LoadStoreStrategy):
     def __init__(self, filename):
