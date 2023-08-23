@@ -23,6 +23,5 @@ class ScaleAdaptationStep(PipelineStep):
         self.tuner.run()
 
         self.pipeline.cache.add("sa_model", self.tuner.model, 'torch_model')
-        self.pipeline.cache.remove("ca_model")
 
         

@@ -34,7 +34,6 @@ class PerceptronFusionStep(PipelineStep):
         self.trainer.report_function = self.pipeline.reporter.report
 
         self.pipeline.cache.add("pf_model", model, 'torch_model')
-        self.pipeline.cache.remove("aq_model")
         
     def fuse_linear_layer_bias(self, layer):
         assert isinstance(layer, nn.Linear), 'Input layer must be an instance of nn.Linear'

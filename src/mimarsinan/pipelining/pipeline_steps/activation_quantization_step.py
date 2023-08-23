@@ -23,6 +23,5 @@ class ActivationQuantizationStep(PipelineStep):
         self.tuner.run()
 
         self.pipeline.cache.add("aq_model", self.tuner.model, 'torch_model')
-        self.pipeline.cache.remove("shifted_activation_model")
 
         

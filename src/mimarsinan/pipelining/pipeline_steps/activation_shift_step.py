@@ -46,4 +46,3 @@ class ActivationShiftStep(PipelineStep):
             target_accuracy=self.pipeline.get_target_metric())
         
         self.pipeline.cache.add("shifted_activation_model", model, 'torch_model')
-        self.pipeline.cache.remove("na_model")

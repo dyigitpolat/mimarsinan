@@ -8,6 +8,8 @@ class PipelineStep:
     def run(self):
         assert all([requirement in self.pipeline.cache for requirement in self.requires])
         self.process()
+        for entry in self.clears:
+            self.pipeline.cache.remove(entry)
         assert all([promise in self.pipeline.cache for promise in self.promises])
         assert all([entry not in self.pipeline.cache for entry in self.clears])
 
