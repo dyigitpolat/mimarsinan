@@ -19,7 +19,7 @@ class ActivationShiftStep(PipelineStep):
         return self.trainer.validate()
 
     def process(self):
-        model = self.pipeline.cache["na_model"]
+        model = self.get_entry("na_model")
 
         self.trainer = BasicTrainer(
             model, 
@@ -45,4 +45,4 @@ class ActivationShiftStep(PipelineStep):
             max_epochs=2, 
             target_accuracy=self.pipeline.get_target_metric())
         
-        self.pipeline.cache.add("shifted_activation_model", model, 'torch_model')
+        self.add_entry("shifted_activation_model", model, 'torch_model')

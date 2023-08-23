@@ -17,9 +17,9 @@ class NoiseAdaptationStep(PipelineStep):
     def process(self):
         self.tuner = NoiseTuner(
             self.pipeline,
-            model = self.pipeline.cache['sa_model'],
+            model = self.get_entry('sa_model'),
             target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
         self.tuner.run()
 
-        self.pipeline.cache.add("na_model", self.tuner.model, 'torch_model')
+        self.add_entry("na_model", self.tuner.model, 'torch_model')

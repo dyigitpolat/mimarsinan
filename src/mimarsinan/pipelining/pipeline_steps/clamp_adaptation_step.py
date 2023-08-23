@@ -17,11 +17,11 @@ class ClampAdaptationStep(PipelineStep):
     def process(self):
         self.tuner = ClampTuner(
             self.pipeline,
-            model = self.pipeline.cache['pretrained_model'],
+            model = self.get_entry('pretrained_model'),
             target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
         self.tuner.run()
 
-        self.pipeline.cache.add("ca_model", self.tuner.model, 'torch_model')
+        self.add_entry("ca_model", self.tuner.model, 'torch_model')
 
         

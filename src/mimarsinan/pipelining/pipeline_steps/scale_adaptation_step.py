@@ -17,11 +17,11 @@ class ScaleAdaptationStep(PipelineStep):
     def process(self):
         self.tuner = ScaleTuner(
             self.pipeline,
-            model = self.pipeline.cache['ca_model'],
+            model = self.get_entry('ca_model'),
             target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
         self.tuner.run()
 
-        self.pipeline.cache.add("sa_model", self.tuner.model, 'torch_model')
+        self.add_entry("sa_model", self.tuner.model, 'torch_model')
 
         

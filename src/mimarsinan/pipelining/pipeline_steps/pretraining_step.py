@@ -19,7 +19,7 @@ class PretrainingStep(PipelineStep):
         return self.trainer.validate()
 
     def process(self):
-        model = self.pipeline.cache["init_model"]
+        model = self.get_entry("init_model")
 
         self.trainer = BasicTrainer(
             model, 
@@ -35,4 +35,4 @@ class PretrainingStep(PipelineStep):
             self.pipeline.config['lr'], 
             self.pipeline.config['training_epochs'])
         
-        self.pipeline.cache.add("pretrained_model", model, 'torch_model')
+        self.add_entry("pretrained_model", model, 'torch_model')

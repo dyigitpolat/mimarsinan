@@ -13,7 +13,7 @@ class ModelBuildingStep(PipelineStep):
         return self.pipeline.get_target_metric()
 
     def process(self):
-        builder = self.pipeline.cache.get('model_builder')
+        builder = self.get_entry('model_builder')
 
-        init_model = builder.build(self.pipeline.cache.get("model_config"))
-        self.pipeline.cache.add("init_model", (init_model), "torch_model")
+        init_model = builder.build(self.get_entry("model_config"))
+        self.add_entry("init_model", (init_model), "torch_model")

@@ -6,7 +6,7 @@ from mimarsinan.visualization.hardcore_visualization import HardCoreMappingVisua
 class HardCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
-        requires = ["soft_core_mapping"]
+        requires = ["tuned_soft_core_mapping"]
         promises = ["hard_core_mapping"]
         clears = []
         super().__init__(requires, promises, clears, pipeline)
@@ -15,7 +15,7 @@ class HardCoreMappingStep(PipelineStep):
         return self.pipeline.get_target_metric()
 
     def process(self):
-        soft_core_mapping = self.pipeline.cache['soft_core_mapping']
+        soft_core_mapping = self.get_entry('soft_core_mapping')
         axons_per_core = self.pipeline.config['max_axons']
         neurons_per_core = self.pipeline.config['max_neurons']
 
@@ -28,4 +28,4 @@ class HardCoreMappingStep(PipelineStep):
             self.pipeline.working_directory + "/hardcore_mapping.png"
         )
 
-        self.pipeline.cache.add("hard_core_mapping", hard_core_mapping, 'pickle')
+        self.add_entry("hard_core_mapping", hard_core_mapping, 'pickle')
