@@ -16,12 +16,10 @@ class ActivationQuantizationStep(PipelineStep):
     def process(self):
         self.tuner = ActivationQuantizationTuner(
             self.pipeline,
-            model = self.pipeline.cache['shifted_activation_model'],
+            model = self.get_entry('shifted_activation_model'),
             target_tq = self.pipeline.config['target_tq'],
             target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
         self.tuner.run()
 
-        self.pipeline.cache.add("aq_model", self.tuner.model, 'torch_model')
-
-        
+        self.add_entry("aq_model", self.tuner.model, 'torch_model')

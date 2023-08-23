@@ -18,4 +18,12 @@ class PipelineStep:
     
     def validate(self):
         raise NotImplementedError
+    
+    def get_entry(self, key):
+        assert key in self.requires, f"You cannot retrieve a non-required entry ({key}) from the cache."
+        return self.pipeline.cache[key]
+    
+    def add_entry(self, key, object, load_store_strategy = "basic"):
+        assert key in self.promises, f"You cannot add a non-promised entry ({key}) to the cache."
+        self.pipeline.cache.add(key, object, load_store_strategy)
 

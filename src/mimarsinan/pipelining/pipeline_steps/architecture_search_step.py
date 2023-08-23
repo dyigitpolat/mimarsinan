@@ -40,5 +40,5 @@ class ArchitectureSearchStep(PipelineStep):
             self.pipeline.config['nas_batch_size']
         )
 
-        self.pipeline.cache.add("model_builder", builder, 'pickle')
-        self.pipeline.cache.add("model_config", model_config)
+        self.add_entry("model_builder", builder, 'pickle')
+        self.add_entry("model_config", model_config)

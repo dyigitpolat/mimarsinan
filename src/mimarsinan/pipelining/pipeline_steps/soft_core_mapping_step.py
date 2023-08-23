@@ -33,7 +33,7 @@ class SoftCoreMappingStep(PipelineStep):
         return new_layer
 
     def process(self):
-        model = self.pipeline.cache['nf_model']
+        model = self.get_entry('nf_model')
 
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):
@@ -42,4 +42,4 @@ class SoftCoreMappingStep(PipelineStep):
         soft_core_mapping = SoftCoreMapping()
         soft_core_mapping.map(model.get_mapper_repr())
 
-        self.pipeline.cache.add("soft_core_mapping", soft_core_mapping, 'pickle')
+        self.add_entry("soft_core_mapping", soft_core_mapping, 'pickle')
