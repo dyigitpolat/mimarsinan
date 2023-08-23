@@ -36,4 +36,3 @@ class PretrainingStep(PipelineStep):
             self.pipeline.config['training_epochs'])
         
         self.pipeline.cache.add("pretrained_model", model, 'torch_model')
-        self.pipeline.cache.remove("init_model")

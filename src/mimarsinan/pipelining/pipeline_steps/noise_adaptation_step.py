@@ -23,4 +23,3 @@ class NoiseAdaptationStep(PipelineStep):
         self.tuner.run()
 
         self.pipeline.cache.add("na_model", self.tuner.model, 'torch_model')
-        self.pipeline.cache.remove("sa_model")
