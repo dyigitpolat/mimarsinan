@@ -15,7 +15,7 @@ class HardCoreMappingStep(PipelineStep):
         return self.pipeline.get_target_metric()
 
     def process(self):
-        soft_core_mapping = self.get_entry('soft_core_mapping')
+        soft_core_mapping = self.get_entry('tuned_soft_core_mapping')
         axons_per_core = self.pipeline.config['max_axons']
         neurons_per_core = self.pipeline.config['max_neurons']
 
