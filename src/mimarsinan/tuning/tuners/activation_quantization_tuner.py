@@ -25,10 +25,7 @@ class ActivationQuantizationTuner(BasicTuner):
             shifted_activation = perceptron.activation
 
             assert isinstance(shifted_activation, ShiftedActivation)
-            scaled_activation = shifted_activation.activation
-
-            assert isinstance(scaled_activation, ScaleActivation)
-            base_activation = scaled_activation.base_activation
+            base_activation = shifted_activation.activation
 
             self.base_activations.append(
                 ShiftedActivation(
@@ -45,15 +42,13 @@ class ActivationQuantizationTuner(BasicTuner):
         return lambda x: x
 
     def _update_and_evaluate(self, rate):
-
         for perceptron, base_activation in zip(self.model.get_perceptrons(), self.base_activations):
             perceptron.set_activation(
-                ScaleActivation(CQ_Activation_Parametric(
+                CQ_Activation_Parametric(
                     self.target_tq, 
                     rate, 
                     base_activation, 
-                    perceptron.base_threshold), 
-                scale = 1.0 / perceptron.base_threshold))
+                    perceptron.base_threshold))
         
         self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
@@ -62,9 +57,7 @@ class ActivationQuantizationTuner(BasicTuner):
         super().run()
         for perceptron in self.model.get_perceptrons():
             perceptron.set_activation(
-                ScaleActivation(
-                    CQ_Activation(self.target_tq, perceptron.base_threshold), 
-                    scale = 1.0 / perceptron.base_threshold))
+                    CQ_Activation(self.target_tq, perceptron.base_threshold))
         
         self.trainer.weight_transformation = self._get_new_parameter_transform()
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self._get_target())

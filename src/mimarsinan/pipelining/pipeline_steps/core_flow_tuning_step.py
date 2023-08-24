@@ -4,9 +4,9 @@ from mimarsinan.tuning.tuners.core_flow_tuner import CoreFlowTuner
 
 class CoreFlowTuningStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["hard_core_mapping"]
-        promises = ["tuned_hard_core_mapping"]
-        clears = ["hard_core_mapping"]
+        requires = ["soft_core_mapping"]
+        promises = ["tuned_soft_core_mapping", "scaled_simulation_length"]
+        clears = ["soft_core_mapping"]
         super().__init__(requires, promises, clears, pipeline)
         
         self.tuner = None
@@ -16,8 +16,8 @@ class CoreFlowTuningStep(PipelineStep):
 
     def process(self):
         self.tuner = CoreFlowTuner(
-            self.pipeline, self.pipeline.cache['hard_core_mapping'])
-        self.tuner.run()
+            self.pipeline, self.get_entry('soft_core_mapping'))
+        scaled_simulation_length = self.tuner.run()
 
-        self.pipeline.cache.add("tuned_hard_core_mapping", self.tuner.mapping, 'pickle')
-        self.pipeline.cache.remove("hard_core_mapping")
+        self.add_entry("scaled_simulation_length", scaled_simulation_length)
+        self.add_entry("tuned_soft_core_mapping", self.tuner.mapping, 'pickle')
