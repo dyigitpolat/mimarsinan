@@ -5,7 +5,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 import numpy as np
 
 class SimulationRunner:
-    def __init__(self, pipeline, mapping):
+    def __init__(self, pipeline, mapping, simulation_length):
         self.input_size = pipeline.config["input_size"]
         self.num_classes = pipeline.config["num_classes"]
 
@@ -28,7 +28,7 @@ class SimulationRunner:
             [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
 
         self.mapping = mapping
-        self.simulation_length = pipeline.config["simulation_steps"]
+        self.simulation_length = simulation_length
 
     def _evaluate_chip_output(self, predictions):
         confusion_matrix = np.zeros(
