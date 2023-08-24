@@ -5,19 +5,26 @@ class ChipQuantization:
     def __init__(self, bits):
         self.quantizer = TensorQuantization(bits)
 
+    def verify_quantization(self, core):
+        scale = self.quantizer.q_max / np.max(np.abs(core.core_matrix))
+        assert np.allclose(
+            core.core_matrix * scale, np.round(core.core_matrix * scale),
+            atol=1e-3, rtol=1e-3)
+
+        assert np.max(np.abs(np.round(core.core_matrix * scale))) == self.quantizer.q_max, \
+            f"{np.max(np.abs(np.round(core.core_matrix * scale)))} > {self.quantizer.q_max}"
+
+
     def unscaled_quantize(self, cores):
         for core in cores:
             core.core_matrix = self.quantizer.quantize(core.core_matrix)
             
     def quantize(self, cores):
         for core in cores:
+            self.verify_quantization(core)
             threshold_scale = np.max(np.abs(core.core_matrix))
-
-            core.core_matrix /= threshold_scale
-            core.core_matrix = self.quantizer.scaled_quantize(core.core_matrix)
-            
-            assert np.max(np.abs(core.core_matrix)) == self.quantizer.q_max, \
-                f"{np.max(np.abs(core.core_matrix))} > {self.quantizer.q_max}"
-            
             core.threshold /= threshold_scale
+
+            core.core_matrix *= self.quantizer.q_max / threshold_scale
+            core.core_matrix = np.round(core.core_matrix)
             
