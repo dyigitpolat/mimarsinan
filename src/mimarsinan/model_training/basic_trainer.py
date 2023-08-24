@@ -11,18 +11,39 @@ class BasicTrainer:
         self.data_loader_factory = data_loader_factory
         self.data_provider = data_loader_factory.create_data_provider()
 
+        self.training_batch_size = self.data_provider.get_training_batch_size()
+        self.validation_batch_size = self.data_provider.get_validation_batch_size()
+        self.test_batch_size = self.data_provider.get_test_batch_size()
+
         self.train_loader = data_loader_factory.create_training_loader(
-            self.data_provider.get_training_batch_size(), self.data_provider)
+            self.training_batch_size, self.data_provider)
         self.validation_loader = data_loader_factory.create_validation_loader(
-            self.data_provider.get_validation_batch_size(), self.data_provider)
+            self.validation_batch_size, self.data_provider)
         self.test_loader = data_loader_factory.create_test_loader(
-            self.data_provider.get_test_batch_size(), self.data_provider)
+            self.test_batch_size, self.data_provider)
         
         self.report_function = None
         self.loss_function = loss_function
 
         self.val_iter = iter(self.validation_loader)
         self.train_iter = iter(self.train_loader)
+
+    def set_training_batch_size(self, batch_size):
+        self.training_batch_size = batch_size
+        self.train_loader = self.data_loader_factory.create_training_loader(
+            self.training_batch_size, self.data_provider)
+        self.train_iter = iter(self.train_loader)
+    
+    def set_validation_batch_size(self, batch_size):
+        self.validation_batch_size = batch_size
+        self.validation_loader = self.data_loader_factory.create_validation_loader(
+            self.validation_batch_size, self.data_provider)
+        self.val_iter = iter(self.validation_loader)
+
+    def set_test_batch_size(self, batch_size):
+        self.test_batch_size = batch_size
+        self.test_loader = self.data_loader_factory.create_test_loader(
+            self.test_batch_size, self.data_provider)
 
     def _report(self, metric_name, metric_value):
         if self.report_function is not None:
@@ -166,11 +187,11 @@ class BasicTrainer:
         self.data_provider = data_loader_factory.get_data_provider()
 
         self.train_loader = data_loader_factory.create_training_loader(
-            self.data_provider.get_training_batch_size(), self.data_provider)
+            self.training_batch_size, self.data_provider)
         self.validation_loader = data_loader_factory.create_validation_loader(
-            self.data_provider.get_validation_batch_size(), self.data_provider)
+            self.validation_batch_size, self.data_provider)
         self.test_loader = data_loader_factory.create_test_loader(
-            self.data_provider.get_test_batch_size(), self.data_provider)
+            self.test_batch_size, self.data_provider)
         
         self.val_iter = iter(self.validation_loader)
         self.train_iter = iter(self.train_loader)
