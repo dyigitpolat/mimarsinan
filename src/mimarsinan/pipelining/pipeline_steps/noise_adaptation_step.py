@@ -4,9 +4,9 @@ from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 
 class NoiseAdaptationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["sa_model"]
+        requires = ["ca_model"]
         promises = ["na_model"]
-        clears = ["sa_model"]
+        clears = ["ca_model"]
         super().__init__(requires, promises, clears, pipeline)
 
         self.tuner = None
@@ -17,7 +17,7 @@ class NoiseAdaptationStep(PipelineStep):
     def process(self):
         self.tuner = NoiseTuner(
             self.pipeline,
-            model = self.get_entry('sa_model'),
+            model = self.get_entry('ca_model'),
             target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
         self.tuner.run()

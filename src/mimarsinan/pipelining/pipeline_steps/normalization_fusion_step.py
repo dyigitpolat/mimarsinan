@@ -23,7 +23,7 @@ class NormalizationFusionStep(PipelineStep):
         return self.trainer.validate()
 
     def process(self):
-        model = self.pipeline.cache["wq_model"]
+        model = self.get_entry("wq_model")
 
         # Trainer
         self.trainer = BasicTrainer(
@@ -38,8 +38,7 @@ class NormalizationFusionStep(PipelineStep):
 
         print(self.validate())
 
-        self.pipeline.cache.add("nf_model", model, 'torch_model')
-        self.pipeline.cache.remove("wq_model")
+        self.add_entry("nf_model", model, 'torch_model')
 
     def bring_back_bias(self, fused_linear_layer):
         assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'
@@ -60,7 +59,7 @@ class NormalizationFusionStep(PipelineStep):
 
     def _fuse_normalization(self, perceptron):
         if isinstance(perceptron.layer, FusedLinear):
-                perceptron.layer = self.bring_back_bias(perceptron.layer)
+            perceptron.layer = self.bring_back_bias(perceptron.layer)
 
         if isinstance(perceptron.normalization, nn.Identity):
             return
@@ -82,9 +81,8 @@ class NormalizationFusionStep(PipelineStep):
         perceptron.layer = nn.Linear(
             perceptron.input_features, 
             perceptron.output_channels, bias=True)
+        
         perceptron.layer.weight.data = w
-
-        if b is not None:
-            perceptron.layer.bias.data = b
+        perceptron.layer.bias.data = b
 
         perceptron.normalization = nn.Identity()

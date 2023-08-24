@@ -202,10 +202,10 @@ def get_fused_weights(linear_layer, bn_layer):
     bn = bn_layer
 
     w = l.weight.data
-    b = l.bias.data if l.bias is not None else torch.zeros(w.shape[0])
+    b = l.bias.data if l.bias is not None else torch.zeros(w.shape[0]).to(w.device)
 
-    new_w = l.weight.data.clone()
-    new_b = l.bias.data.clone()
+    new_w = w.clone()
+    new_b = b.clone()
 
     gamma = bn.weight.data
     beta = bn.bias.data
@@ -262,10 +262,6 @@ class PerceptronMapper:
         self.perceptron = perceptron
         self.source_mapper = source_mapper
         self.sources = None
-
-        scaled_activation = perceptron.activation
-        assert isinstance(scaled_activation, ScaleActivation)
-        self.scale = scaled_activation.scale
 
     def fuse_normalization(self):
         if isinstance(self.perceptron.normalization, nn.Identity):
