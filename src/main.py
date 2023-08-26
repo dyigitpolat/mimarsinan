@@ -1,7 +1,8 @@
 from init import *
 
 from mimarsinan.common.wandb_utils import WandB_Reporter
-from mimarsinan.pipelining.deployment_pipeline import DeploymentPipeline
+from mimarsinan.pipelining.nas_deployment_pipeline import NASDeploymentPipeline
+from mimarsinan.pipelining.vanilla_deployment_pipeline import VanillaDeploymentPipeline
 from mimarsinan.data_handling.data_provider_factory import ImportedDataProviderFactory
 
 
@@ -27,7 +28,13 @@ def main():
     working_directory = deployment_config['generated_files_path']
     start_step = deployment_config['start_step']
 
+    if 'pipeline_mode' in deployment_config:
+        pipeline_mode = deployment_config['pipeline_mode']
+    else:
+        pipeline_mode = "nas"
+
     run_pipeline(
+        pipeline_mode=pipeline_mode,
         data_provider_factory=data_provider_factory,
         deployment_name=deployment_name,
         platform_constraints=platform_constraints,
@@ -36,6 +43,7 @@ def main():
         start_step=start_step)
 
 def run_pipeline(
+    pipeline_mode,
     data_provider_factory, 
     deployment_name, 
     platform_constraints, 
@@ -43,9 +51,14 @@ def run_pipeline(
     working_directory,
     start_step = None):
 
+    deployment_mode_map = {
+        "nas": NASDeploymentPipeline,
+        "vanilla": VanillaDeploymentPipeline
+    }
+
     reporter = WandB_Reporter(deployment_name, "deployment")
 
-    pipeline = DeploymentPipeline(
+    pipeline = deployment_mode_map[pipeline_mode] (
         data_provider_factory=data_provider_factory,
         deployment_parameters=deployment_parameters,
         platform_constraints=platform_constraints,
