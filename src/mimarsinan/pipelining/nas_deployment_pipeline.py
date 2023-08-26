@@ -7,7 +7,7 @@ from mimarsinan.pipelining.pipeline_steps import *
 import numpy as np
 import torch
 
-class DeploymentPipeline(Pipeline):
+class NASDeploymentPipeline(Pipeline):
     default_deployment_parameters = {
         'lr': 0.001,
         'training_epochs': 10,
