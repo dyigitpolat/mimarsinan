@@ -1,6 +1,6 @@
 {
-    "experiment_name": "ecg_deployment_run",
-    "generated_files_path": "./generated/ecg_deployment_run",
+    "experiment_name": "ecg_w4",
+    "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/ecg_data_provider.py",
     "data_provider_name": "ECG_DataProvider",
     "platform_constraints": {
@@ -15,7 +15,9 @@
         "training_epochs": 10,
         "tuner_epochs": 10,
         "nas_cycles": 1,
-        "nas_batch_size": 20
+        "nas_batch_size": 20,
+        "nas_workers": 10
     },
+    "nas_workers": 10,
     "start_step": "Pretraining"
 }
