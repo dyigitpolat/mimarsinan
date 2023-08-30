@@ -4,7 +4,7 @@ from mimarsinan.tuning.tuners.scale_tuner import ScaleTuner
 
 class ScaleAdaptationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = []
+        requires = ["model"]
         promises = []
         updates = ["model"]
         clears = []

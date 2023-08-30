@@ -8,7 +8,7 @@ import torch
 
 class PerceptronFusionStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = []
+        requires = ["model"]
         promises = []
         updates = ["model"]
         clears = []
