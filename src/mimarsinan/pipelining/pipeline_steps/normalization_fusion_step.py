@@ -12,10 +12,11 @@ import torch.nn as nn
 
 class NormalizationFusionStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["wq_model"]
-        promises = ["nf_model"]
-        clears = ["wq_model"]
-        super().__init__(requires, promises, clears, pipeline)
+        requires = ["model"]
+        promises = []
+        updates = ["model"]
+        clears = []
+        super().__init__(requires, promises, updates, clears, pipeline)
 
         self.trainer = None
 
@@ -23,7 +24,7 @@ class NormalizationFusionStep(PipelineStep):
         return self.trainer.validate()
 
     def process(self):
-        model = self.get_entry("wq_model")
+        model = self.get_entry("model")
 
         # Trainer
         self.trainer = BasicTrainer(
@@ -38,7 +39,7 @@ class NormalizationFusionStep(PipelineStep):
 
         print(self.validate())
 
-        self.add_entry("nf_model", model, 'torch_model')
+        self.update_entry("model", model, 'torch_model')
 
     def bring_back_bias(self, fused_linear_layer):
         assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'

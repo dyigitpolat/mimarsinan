@@ -9,17 +9,18 @@ import torch.nn as nn
 
 class ActivationShiftStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["na_model"]
-        promises = ["shifted_activation_model"]
-        clears = ["na_model"]
-        super().__init__(requires, promises, clears, pipeline)
+        requires = []
+        promises = []
+        updates = ["model"]
+        clears = []
+        super().__init__(requires, promises, updates, clears, pipeline)
         self.trainer = None
 
     def validate(self):
         return self.trainer.validate()
 
     def process(self):
-        model = self.get_entry("na_model")
+        model = self.get_entry("model")
 
         self.trainer = BasicTrainer(
             model, 
@@ -45,4 +46,4 @@ class ActivationShiftStep(PipelineStep):
             max_epochs=2, 
             target_accuracy=self.pipeline.get_target_metric())
         
-        self.add_entry("shifted_activation_model", model, 'torch_model')
+        self.update_entry("model", model, 'torch_model')

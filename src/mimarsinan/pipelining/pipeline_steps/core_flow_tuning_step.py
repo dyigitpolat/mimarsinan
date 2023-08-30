@@ -6,8 +6,9 @@ class CoreFlowTuningStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["soft_core_mapping"]
         promises = ["tuned_soft_core_mapping", "scaled_simulation_length"]
+        updates = []
         clears = ["soft_core_mapping"]
-        super().__init__(requires, promises, clears, pipeline)
+        super().__init__(requires, promises, updates, clears, pipeline)
         
         self.tuner = None
 

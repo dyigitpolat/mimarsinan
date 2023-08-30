@@ -8,8 +8,9 @@ class HardCoreMappingStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["tuned_soft_core_mapping"]
         promises = ["hard_core_mapping"]
+        updates = []
         clears = []
-        super().__init__(requires, promises, clears, pipeline)
+        super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
         return self.pipeline.get_target_metric()
