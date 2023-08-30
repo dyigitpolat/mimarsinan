@@ -13,3 +13,4 @@ from .clamp_adaptation_step import ClampAdaptationStep
 from .perceptron_fusion_step import PerceptronFusionStep
 from .scale_adaptation_step import ScaleAdaptationStep
 from .model_building_step import ModelBuildingStep
+from .vanilla_model_configuration import VanillaModelConfigurationStep
