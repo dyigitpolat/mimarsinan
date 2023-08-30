@@ -9,7 +9,7 @@ import torch.nn as nn
 
 class ActivationShiftStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = []
+        requires = ["model"]
         promises = []
         updates = ["model"]
         clears = []
