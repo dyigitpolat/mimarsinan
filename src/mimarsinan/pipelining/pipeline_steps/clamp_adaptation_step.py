@@ -4,7 +4,7 @@ from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 
 class ClampAdaptationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = []
+        requires = ["model"]
         promises = []
         updates = ["model"]
         clears = []

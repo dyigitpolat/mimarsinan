@@ -4,7 +4,7 @@ from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 
 class NoiseAdaptationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = []
+        requires = ["model"]
         promises = []
         updates = ["model"]
         clears = []
