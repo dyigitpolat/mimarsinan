@@ -72,17 +72,14 @@ class Pipeline:
         self.cache.load(self.working_directory)
 
     def get_entry(self, client_step, key):
-        print(f"Getting '{key}' from '{client_step.name}'...")
         real_key = self._translate_key(client_step.name, key)
         return self.cache.get(real_key)
     
     def add_entry(self, client_step, key, object, load_store_strategy = "basic"):
-        print(f"Adding '{key}' to '{client_step.name}'...")
         real_key = self._create_real_key(client_step.name, key)
         self.cache.add(real_key, object, load_store_strategy)
 
     def update_entry(self, client_step, key, object, load_store_strategy = "basic"):
-        print(f"Updating '{key}' in '{client_step.name}'...")
         old_real_key = self._translate_key(client_step.name, key)
         new_real_key = self._create_real_key(client_step.name, key)
 
@@ -90,7 +87,6 @@ class Pipeline:
         self.cache.add(new_real_key, object, load_store_strategy)
 
     def remove_entry(self, client_step, key):
-        print(f"Removing '{key}' from '{client_step.name}'...")
         real_key = self._translate_key(client_step.name, key)
         self.cache.remove(real_key)
 
@@ -154,6 +150,11 @@ class Pipeline:
             if name == step_name:
                 break
 
+            for entry in step.updates:
+                real_entry = self._translate_key(step.name, entry)
+                if real_entry in requirements:
+                    requirements.remove(real_entry)
+
             for entry in step.clears:
                 real_entry = self._create_real_key(step.name, entry)
                 if real_entry in requirements:
@@ -175,6 +176,11 @@ class Pipeline:
                 real_promise = self._create_real_key(step.name, promise)
                 if real_promise in missing_requirements:
                     missing_requirements.remove(real_promise)
+
+            for entry in step.updates:
+                real_entry = self._create_real_key(step.name, entry)
+                if real_entry in missing_requirements:
+                    missing_requirements.remove(real_entry)
             
             if len(missing_requirements) == 0:
                 starting_step_idx = idx
