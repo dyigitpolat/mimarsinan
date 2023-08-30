@@ -8,10 +8,11 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 import torch.nn as nn
 class PretrainingStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["init_model"]
-        promises = ["pretrained_model"]
-        clears = ["init_model"]
-        super().__init__(requires, promises, clears, pipeline)
+        requires = ["model"]
+        promises = []
+        updates = ["model"]
+        clears = []
+        super().__init__(requires, promises, updates, clears, pipeline)
 
         self.trainer = None
 
@@ -19,7 +20,7 @@ class PretrainingStep(PipelineStep):
         return self.trainer.validate()
 
     def process(self):
-        model = self.get_entry("init_model")
+        model = self.get_entry("model")
 
         self.trainer = BasicTrainer(
             model, 
@@ -35,4 +36,4 @@ class PretrainingStep(PipelineStep):
             self.pipeline.config['lr'], 
             self.pipeline.config['training_epochs'])
         
-        self.add_entry("pretrained_model", model, 'torch_model')
+        self.update_entry("model", model, 'torch_model')

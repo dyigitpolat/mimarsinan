@@ -6,6 +6,7 @@ class Pipeline:
     def __init__(self, working_directory) -> None:
         self.steps = []
         self.cache = PipelineCache()
+        self.key_translations = {} # key_translations[step_name][virtual_entry_key] : real_entry_key
 
         self.working_directory = working_directory
         prepare_containing_directory(self.working_directory)
@@ -19,6 +20,19 @@ class Pipeline:
     def add_pipeline_step(self, name, pipeline_step):
         self.steps.append((name, pipeline_step))
         self.verify()
+
+    def set_up_requirements(self):
+        latest_promises = {}
+        for _, step in self.steps:
+            for promise in step.promises:
+                latest_promises[promise] = step.name
+
+            self.key_translations[step.name] = {}
+            for requirement in step.requires:
+                self.key_translations[step.name][requirement] = self._create_real_key(latest_promises[requirement], requirement)
+
+            for entry in step.updates:
+                latest_promises[entry] = step.name
 
     def verify(self):
         mock_cache = set()
@@ -34,6 +48,7 @@ class Pipeline:
                     mock_cache.remove(entry)
 
     def run(self):
+        self.set_up_requirements()
         self.verify()
         for name, step in self.steps:
             self._run_step(name, step)
@@ -41,6 +56,7 @@ class Pipeline:
     def run_from(self, step_name):
         assert step_name in [name for name, _ in self.steps], f"Step '{step_name}' does not exist in pipeline"
         
+        self.set_up_requirements()
         self.verify()
         starting_step_idx = self._find_starting_step_idx(step_name)
         
@@ -55,24 +71,67 @@ class Pipeline:
     def load_cache(self):
         self.cache.load(self.working_directory)
 
+    def get_entry(self, client_step, key):
+        print(f"Getting '{key}' from '{client_step.name}'...")
+        real_key = self._translate_key(client_step.name, key)
+        return self.cache.get(real_key)
+    
+    def add_entry(self, client_step, key, object, load_store_strategy = "basic"):
+        print(f"Adding '{key}' to '{client_step.name}'...")
+        real_key = self._create_real_key(client_step.name, key)
+        self.cache.add(real_key, object, load_store_strategy)
+
+    def update_entry(self, client_step, key, object, load_store_strategy = "basic"):
+        print(f"Updating '{key}' in '{client_step.name}'...")
+        old_real_key = self._translate_key(client_step.name, key)
+        new_real_key = self._create_real_key(client_step.name, key)
+
+        self.cache.remove(old_real_key)
+        self.cache.add(new_real_key, object, load_store_strategy)
+
+    def remove_entry(self, client_step, key):
+        print(f"Removing '{key}' from '{client_step.name}'...")
+        real_key = self._translate_key(client_step.name, key)
+        self.cache.remove(real_key)
+
     def get_target_metric(self):
         return self.cache['__target_metric']
     
     def set_target_metric(self, target_metric):
         self.cache.add('__target_metric', target_metric)
 
+    def _create_real_key(self, client_step_name, key):
+        return client_step_name + '.' + key
+
+    def _translate_key(self, client_step_name, key):
+        return self.key_translations[client_step_name][key]
+
     def _run_step(self, name, step):
         print(f"Running '{name}'...")
-
         previous_metric = self.get_target_metric()
+
+        assert all([self._translate_key(step.name, requirement) in self.cache for requirement in step.requires]), \
+            f"Pipeline error: Some requirements are not found in the cache."
 
         step.run()
         self.set_target_metric(step.validate())
         self.save_cache()
 
-        assert self.get_target_metric() >= previous_metric * self.tolerance, \
-            f"[{name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {self.tolerance}) = {previous_metric * self.tolerance}"
+        for entry in step.clears:
+            self.cache.remove(self._create_real_key(step.name, entry))
 
+        assert all([self._create_real_key(step.name, promise) in self.cache for promise in step.promises]), \
+            f"Pipeline error: Some promised entries were not added."
+        assert all([self._create_real_key(step.name, entry) not in self.cache for entry in step.clears]), \
+            f"Pipeline error: Some cleared entries were not removed."
+        
+        assert all([self._translate_key(step.name, entry) not in self.cache for entry in step.updates]), \
+            f"Pipeline error: Old values of some updated entries are still in the cache."
+        assert all([self._create_real_key(step.name, entry) in self.cache for entry in step.updates]), \
+            f"Pipeline error: New values of some updated entries are not found in the cache."
+        
+        assert self.get_target_metric() >= previous_metric * self.tolerance, \
+            f"[{step.name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {self.tolerance}) = {previous_metric * self.tolerance}"
 
     def _find_starting_step_idx(self, step_name):
         requirements = self._get_all_requirements(step_name)
@@ -90,14 +149,15 @@ class Pipeline:
         requirements = set()
         for name, step in self.steps:
             for requirement in step.requires:
-                requirements.add(requirement)
+                requirements.add(self._translate_key(step.name, requirement))
             
             if name == step_name:
                 break
 
             for entry in step.clears:
-                if entry in requirements:
-                    requirements.remove(entry)
+                real_entry = self._create_real_key(step.name, entry)
+                if real_entry in requirements:
+                    requirements.remove(real_entry)
         
         return requirements
 
@@ -112,8 +172,9 @@ class Pipeline:
             step = self.steps[idx][1]
 
             for promise in step.promises:
-                if promise in missing_requirements:
-                    missing_requirements.remove(promise)
+                real_promise = self._create_real_key(step.name, promise)
+                if real_promise in missing_requirements:
+                    missing_requirements.remove(real_promise)
             
             if len(missing_requirements) == 0:
                 starting_step_idx = idx

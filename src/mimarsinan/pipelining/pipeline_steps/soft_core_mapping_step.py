@@ -7,10 +7,11 @@ import torch.nn as nn
 class SoftCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
-        requires = ["nf_model"]
+        requires = ["model"]
         promises = ["soft_core_mapping"]
+        updates = []
         clears = []
-        super().__init__(requires, promises, clears, pipeline)
+        super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
         return self.pipeline.get_target_metric()
@@ -33,7 +34,7 @@ class SoftCoreMappingStep(PipelineStep):
         return new_layer
 
     def process(self):
-        model = self.get_entry('nf_model')
+        model = self.get_entry('model')
 
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):

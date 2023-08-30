@@ -6,8 +6,9 @@ class SimulationStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["hard_core_mapping", "scaled_simulation_length"]
         promises = []
+        updates = []
         clears = []
-        super().__init__(requires, promises, clears, pipeline)
+        super().__init__(requires, promises, updates, clears, pipeline)
 
         self.accuracy = None
 

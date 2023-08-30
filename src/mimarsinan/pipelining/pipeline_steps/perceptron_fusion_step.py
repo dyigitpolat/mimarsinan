@@ -8,10 +8,11 @@ import torch
 
 class PerceptronFusionStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["aq_model"]
-        promises = ["pf_model"]
-        clears = ["aq_model"]
-        super().__init__(requires, promises, clears, pipeline)
+        requires = []
+        promises = []
+        updates = ["model"]
+        clears = []
+        super().__init__(requires, promises, updates, clears, pipeline)
 
         self.trainer = None
 
@@ -19,7 +20,7 @@ class PerceptronFusionStep(PipelineStep):
         return self.trainer.validate()
 
     def process(self):
-        model = self.get_entry("aq_model")
+        model = self.get_entry("model")
         
         for perceptron in model.get_perceptrons():
             if perceptron.layer.bias is not None:
@@ -33,7 +34,7 @@ class PerceptronFusionStep(PipelineStep):
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
 
-        self.add_entry("pf_model", model, 'torch_model')
+        self.update_entry("model", model, 'torch_model')
         
     def fuse_linear_layer_bias(self, layer):
         assert isinstance(layer, nn.Linear), 'Input layer must be an instance of nn.Linear'

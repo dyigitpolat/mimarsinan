@@ -11,8 +11,9 @@ class ArchitectureSearchStep(PipelineStep):
     def __init__(self, pipeline):
         requires = []
         promises = ["model_config", "model_builder"]
+        updates = []
         clears = []
-        super().__init__(requires, promises, clears, pipeline)
+        super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
         return self.pipeline.get_target_metric()
