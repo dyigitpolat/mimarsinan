@@ -91,7 +91,7 @@ class HardCoreMapping:
             tolerance = 0.01
             if hardcore.threshold is not None:
                 threshold_diff = abs(core.threshold - hardcore.threshold)
-                diff_rate = threshold_diff / hardcore.threshold
+                diff_rate = threshold_diff / (hardcore.threshold + 1)
             else:
                 diff_rate = 0.0
 
