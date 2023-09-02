@@ -207,10 +207,10 @@ def get_fused_weights(linear_layer, bn_layer):
     new_w = w.clone()
     new_b = b.clone()
 
-    gamma = bn.weight.data
-    beta = bn.bias.data
-    var = bn.running_var.data
-    mean = bn.running_mean.data
+    gamma = bn.weight.data.to(w.device)
+    beta = bn.bias.data.to(w.device)
+    var = bn.running_var.data.to(w.device)
+    mean = bn.running_mean.data.to(w.device)
     u = gamma / torch.sqrt(var + bn.eps)
 
     new_w[:,:] = w * u.unsqueeze(1)
