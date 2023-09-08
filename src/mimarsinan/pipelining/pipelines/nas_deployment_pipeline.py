@@ -55,6 +55,7 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
         #self.add_pipeline_step("Perceptron Fusion", PerceptronFusionStep(self))
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
+        self.add_pipeline_step("Quantization Verification", QuantizationVerificationStep(self))
         self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
         self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
