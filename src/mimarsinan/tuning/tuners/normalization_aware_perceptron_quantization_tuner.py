@@ -11,15 +11,16 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
                  target_accuracy,
                  lr):
         
+        for perceptron in model.get_perceptrons():
+            if not isinstance(perceptron.normalization, nn.Identity):
+                for param in perceptron.normalization.parameters():
+                    param.requires_grad = False
+
         super().__init__(pipeline, model, target_accuracy, lr)
 
         self.target_tq = target_tq
         self.quantization_bits = quantization_bits
         
-        for perceptron in self.model.get_perceptrons():
-            if not isinstance(perceptron.normalization, nn.Identity):
-                for param in perceptron.normalization.parameters():
-                    param.requires_grad = False
 
         from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer
         for idx, perceptron in enumerate(self.model.get_perceptrons()):
@@ -32,12 +33,12 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
         return lambda x: x
     
     def _get_new_perceptron_transform(self):
-        return NormalizationAwarePerceptronQuantization(self.quantization_bits).transform
+        return NormalizationAwarePerceptronQuantization(
+            self.quantization_bits, self.pipeline.config['device']).transform
 
     def _update_and_evaluate(self, rate):
-        self.trainer.weight_transformation = self._mixed_transform(rate)
-        self.trainer.train_one_step(self._find_lr())
-
+        self.trainer.perceptron_transformation = self._mixed_transform(rate)
+        #self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
 
     def run(self):
