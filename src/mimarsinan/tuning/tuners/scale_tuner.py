@@ -16,10 +16,6 @@ class ScaleTuner(BasicTuner):
             lr)
 
         self.lr = lr
-        # self.base_activations = []
-
-        # for perceptron in model.get_perceptrons():
-        #     self.base_activations.append(perceptron.activation)
         self.adaptation_manager = adaptation_manager
 
     def _get_target_decay(self):
@@ -32,9 +28,6 @@ class ScaleTuner(BasicTuner):
         return lambda x: x
 
     def _update_and_evaluate(self, rate):
-        # for perceptron, activation in zip(self.model.get_perceptrons(), self.base_activations):
-        #     perceptron.set_activation(ParametricScaleActivation(activation, 1.0 / perceptron.base_threshold, rate))
-
         self.adaptation_manager.scale_rate = rate
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(perceptron)
@@ -44,9 +37,4 @@ class ScaleTuner(BasicTuner):
 
     def run(self):
         super().run()
-
-        # for perceptron, activation in zip(self.model.get_perceptrons(), self.base_activations):
-        #     perceptron.set_activation(ScaleActivation(activation, 1.0 / perceptron.base_threshold))
-
-        # self.trainer.train_until_target_accuracy(self._find_lr(), self.epochs, self._get_target())
         return self.trainer.validate()

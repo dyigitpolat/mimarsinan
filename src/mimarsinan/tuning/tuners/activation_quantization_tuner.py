@@ -20,18 +20,8 @@ class ActivationQuantizationTuner(BasicTuner):
             lr)
 
         self.target_tq = target_tq
-        # self.base_activations = []
-        # for perceptron in model.get_perceptrons():
-        #     shifted_activation = perceptron.activation
-
-        #     assert isinstance(shifted_activation, ShiftedActivation)
-        #     base_activation = shifted_activation.activation
-
-        #     self.base_activations.append(
-        #         ShiftedActivation(
-        #             base_activation,
-        #             shifted_activation.shift))
         self.adaptation_manager = adaptation_manager
+        self.adaptation_manager.shift_amount = 0.0
 
     def _get_target_decay(self):
         return 0.99
@@ -43,13 +33,6 @@ class ActivationQuantizationTuner(BasicTuner):
         return lambda x: x
 
     def _update_and_evaluate(self, rate):
-        # for perceptron, base_activation in zip(self.model.get_perceptrons(), self.base_activations):
-        #     perceptron.set_activation(
-        #         CQ_Activation_Parametric(
-        #             self.target_tq, 
-        #             rate, 
-        #             base_activation, 
-        #             perceptron.base_threshold))
         self.adaptation_manager.quantization_rate = rate
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(perceptron)
@@ -59,11 +42,5 @@ class ActivationQuantizationTuner(BasicTuner):
 
     def run(self):
         super().run()
-        # for perceptron in self.model.get_perceptrons():
-        #     perceptron.set_activation(
-        #             CQ_Activation(self.target_tq, perceptron.base_threshold))
-        
-        # self.trainer.weight_transformation = self._get_new_parameter_transform()
-        # self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self._get_target())
 
         return self.trainer.validate()
