@@ -1,7 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.models.layers import ShiftedActivation
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
@@ -9,9 +8,9 @@ import torch.nn as nn
 
 class ActivationShiftStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["model"]
+        requires = ["model", "adaptation_manager"]
         promises = []
-        updates = ["model"]
+        updates = ["model", "adaptation_manager"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
         self.trainer = None
@@ -29,12 +28,15 @@ class ActivationShiftStep(PipelineStep):
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
         
-        
+        adaptation_manager = self.get_entry('adaptation_manager')
         for perceptron in model.get_perceptrons():
             shift_amount = 0.5 / (self.pipeline.config['target_tq'] * perceptron.base_threshold)
 
-            perceptron.set_activation(
-                ShiftedActivation(perceptron.activation, shift_amount))
+            adaptation_manager.shift_amount = shift_amount
+            adaptation_manager.update_activation(perceptron)
+
+            # perceptron.set_activation(
+            #     ShiftedActivation(perceptron.activation, shift_amount))
 
             if isinstance(perceptron.normalization, nn.Identity):
                 perceptron.layer.bias.data += shift_amount
@@ -46,4 +48,5 @@ class ActivationShiftStep(PipelineStep):
             max_epochs=2, 
             target_accuracy=self.pipeline.get_target_metric())
         
+        self.update_entry("adaptation_manager", adaptation_manager, "pickle")
         self.update_entry("model", model, 'torch_model')

@@ -5,26 +5,16 @@ from torch.autograd import Function
 
 class StaircaseFunction(Function):
     @staticmethod
-    def forward(ctx, x, Tq, scale = 1.0):
+    def forward(ctx, x, Tq):
         #Tq = torch.tensor(Tq)
         #ctx.save_for_backward(x, Tq)
-        return torch.floor(x * (Tq/scale)) / (Tq/scale)
+        return torch.floor(x * Tq) / Tq
 
     @staticmethod
     def backward(ctx, grad_output):
         #x, Tq = ctx.saved_tensors
         grad_input = grad_output.clone()
         return grad_input, None, None
-
-class SoftQuantize(nn.Module):
-    def __init__(self, Tq, scale = 1.0):
-        super(SoftQuantize, self).__init__()
-        self.Tq = Tq
-        self.scale = scale
-    
-    def forward(self, x):
-        return StaircaseFunction.apply(x, self.Tq, self.scale)
-    
 
 class DifferentiableClamp(Function):
     @staticmethod
@@ -47,80 +37,6 @@ class DifferentiableClamp(Function):
     
         grad_input = grad_output * grad
         return grad_input, None, None
-    
-class ClampedReLU(nn.Module):
-    def __init__(self, clamp_min=0.0, clamp_max=1.0):
-        super(ClampedReLU, self).__init__()
-        self.clamp_min = clamp_min
-        self.clamp_max = clamp_max
-
-    def forward(self, x):
-        return DifferentiableClamp.apply(x, self.clamp_min, self.clamp_max)
-    
-class ClampedReLU_Parametric(nn.Module):
-    def __init__(self, rate, base_activation):
-        super(ClampedReLU_Parametric, self).__init__()
-        self.rate = rate
-        self.base_activation = base_activation
-
-    def forward(self, x):
-        base_act = self.base_activation(x)
-        base_max = torch.max(base_act).item()
-        base_min = torch.min(base_act).item()
-        
-        clamp_max = base_max
-        clamp_min = (1.0 - self.rate) * base_min + self.rate * 0.0
-
-        random_mask = torch.rand(x.shape, device=x.device)
-        random_mask = (random_mask < self.rate).float()
-
-        return \
-            random_mask * ClampedReLU(clamp_min, clamp_max)(x) \
-            + (1.0 - random_mask) * base_act
-    
-class CQ_Activation(nn.Module):
-    def __init__(self, Tq, clamp_max=1.0):
-        super(CQ_Activation, self).__init__()
-        self.Tq = Tq
-        self.clamp_max = clamp_max
-    
-    def forward(self, x):
-        out = ClampedReLU(clamp_min=0.0, clamp_max=self.clamp_max)(x)
-        out = SoftQuantize(self.Tq, scale=self.clamp_max)(out)
-        return out
-    
-class CQ_Activation_Parametric(nn.Module):
-    def __init__(self, Tq, rate, base_activation=None, clamp_max=1.0):
-        super(CQ_Activation_Parametric, self).__init__()
-        self.Tq = Tq
-        self.rate = rate
-        self.soft_quantize = SoftQuantize(Tq, scale=clamp_max)
-        self.clamp_max = clamp_max
-
-        if base_activation is None:
-            base_activation = ShiftedActivation(
-                ClampedReLU(clamp_min=0.0, clamp_max=clamp_max), 0.5/Tq)
-            
-        self.base_activation = base_activation
-    
-    def forward(self, x):
-        out_0 = self.base_activation(x)
-        out_1 = ClampedReLU(clamp_min=0.0, clamp_max=self.clamp_max)(x)
-
-        random_mask = torch.rand(x.shape, device=x.device)
-        random_mask = (random_mask < self.rate).float()
-        return \
-            random_mask * self.soft_quantize(out_1) \
-            + (1.0 - random_mask) * out_0
-    
-class ShiftedActivation(nn.Module):
-    def __init__(self, activation, shift):
-        super(ShiftedActivation, self).__init__()
-        self.activation = activation
-        self.shift = shift
-    
-    def forward(self, x):
-        return self.activation(x - self.shift)
     
 class NoisyDropout(nn.Module):
     def __init__(self, dropout_p, rate, noise_radius):
@@ -154,26 +70,95 @@ class ActivationStats(nn.Module):
         self.min = torch.min(out)
         return out
     
-class ScaleActivation(nn.Module):
-    def __init__(self, base_activation, scale):
-        super(ScaleActivation, self).__init__()
-        self.base_activation = base_activation
+    
+class ShiftDecorator:
+    def __init__(self, shift):
+        self.shift = shift
+    
+    def input_transform(self, x):
+        return x - self.shift
+    
+    def output_transform(self, x):
+        return nn.Identity()(x)
+    
+class ScaleDecorator:
+    def __init__(self, scale):
         self.scale = scale
     
-    def forward(self, x):
-        return self.scale * self.base_activation(x)
+    def input_transform(self, x):
+        return nn.Identity()(x)
     
-class ParametricScaleActivation(nn.Module):
-    def __init__(self, base_activation, scale, rate):
-        super(ParametricScaleActivation, self).__init__()
-        self.base_activation = base_activation
-        self.scale = scale
+    def output_transform(self, x):
+        return self.scale * x
+    
+class ClampDecorator:
+    def __init__(self, clamp_min, clamp_max):
+        self.clamp_min = clamp_min
+        self.clamp_max = clamp_max
+    
+    def input_transform(self, x):
+        return nn.Identity()(x)
+    
+    def output_transform(self, x):
+        return DifferentiableClamp.apply(x, self.clamp_min, self.clamp_max)
+    
+class QuantizeDecorator:
+    def __init__(self, Tq):
+        self.Tq = Tq
+
+    def input_transform(self, x):
+        return nn.Identity()(x)
+    
+    def output_transform(self, x):
+        return StaircaseFunction.apply(x, self.Tq)
+    
+class RandomMaskAdjustmentStrategy:
+    def adjust(self, base, target, rate):
+        random_mask = torch.rand(base.shape, device=base.device)
+        random_mask = (random_mask < rate).float()
+        return random_mask * target + (1.0 - random_mask) * base
+
+class RateAdjustedDecorator:
+    def __init__(self, rate, decorator, adjustment_strategy):
         self.rate = rate
+        self.decorator = decorator
+        self.adjustment_strategy = adjustment_strategy
+    
+    def input_transform(self, x):
+        return self.adjustment_strategy.adjust(x, self.decorator.input_transform(x), self.rate)
+    
+    def output_transform(self, x):\
+        return self.adjustment_strategy.adjust(x, self.decorator.output_transform(x), self.rate)
+    
+class DecoratedActivation(nn.Module):
+    def __init__(self, base_activation, decorator):
+        super(DecoratedActivation, self).__init__()
+        self.base_activation = base_activation
+        self.decorator = decorator
     
     def forward(self, x):
-        out_0 = self.base_activation(x)
-        out_1 = self.scale * self.base_activation(x)
+        out = self.decorator.input_transform(x)
+        out = self.base_activation(out)
+        out = self.decorator.output_transform(out)
+        return out
 
-        return \
-            self.rate * out_1 + (1.0 - self.rate) * out_0
+class TransformedActivation(nn.Module):
+    def __init__(self, base_activation, decorators):
+        super(TransformedActivation, self).__init__()
+        self.act = base_activation
+        for decorator in decorators:
+            self.act = DecoratedActivation(self.act, decorator)
 
+    def forward(self, x):
+        return self.act(x)
+    
+class CQ_Activation(nn.Module):
+    def __init__(self, Tq, clamp_max=1.0):
+        super(CQ_Activation, self).__init__()
+        self.Tq = Tq
+        self.clamp_max = clamp_max
+    
+    def forward(self, x):
+        out = TransformedActivation(nn.ReLU(), 
+            [ClampDecorator(0.0, self.clamp_max), QuantizeDecorator(self.Tq)])(x)
+        return out

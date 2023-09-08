@@ -4,9 +4,9 @@ from mimarsinan.tuning.tuners.scale_tuner import ScaleTuner
 
 class ScaleAdaptationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["model"]
+        requires = ["model", "adaptation_manager"]
         promises = []
-        updates = ["model"]
+        updates = ["model", "adaptation_manager"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
 
@@ -20,9 +20,11 @@ class ScaleAdaptationStep(PipelineStep):
             self.pipeline,
             model = self.get_entry('model'),
             target_accuracy = self.pipeline.get_target_metric(),
-            lr = self.pipeline.config['lr'])
+            lr = self.pipeline.config['lr'],
+            adaptation_manager = self.get_entry('adaptation_manager'))
         self.tuner.run()
 
+        self.update_entry("adaptation_manager", self.tuner.adaptation_manager, "pickle")
         self.update_entry("model", self.tuner.model, 'torch_model')
 
         

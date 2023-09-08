@@ -18,7 +18,9 @@ class Perceptron(nn.Module):
         self.activation = nn.LeakyReLU()
 
         self.regularization = nn.Identity()
+        
         self.base_threshold = 1.0
+        self.base_activation = nn.LeakyReLU()
     
     def set_activation(self, activation):
         self.activation = activation

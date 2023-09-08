@@ -1,6 +1,6 @@
 from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
 
-from mimarsinan.models.layers import NoisyDropout, ScaleActivation
+from mimarsinan.models.layers import NoisyDropout
 
 class NoiseTuner(BasicTuner):
     def __init__(self, 
