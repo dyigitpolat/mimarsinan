@@ -17,6 +17,7 @@ class QuantizationVerificationStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
         self.tuner = None
+        self.q_max = ( 2 ** (self.pipeline.config['weight_bits'] - 1) ) - 1
     
     def validate(self):
         return self.trainer.validate()
@@ -40,7 +41,7 @@ class QuantizationVerificationStep(PipelineStep):
                 
                 w_max = torch.max(torch.abs(fused_w))
                 b_max = torch.max(torch.abs(fused_b))
-                scale_param = 7 / max(w_max, b_max)
+                scale_param = self.q_max / max(w_max, b_max)
                 
                 assert torch.allclose(fused_w * scale_param, torch.round(fused_w * scale_param),
                                       rtol=1e-03, atol=1e-03)
@@ -52,14 +53,14 @@ class QuantizationVerificationStep(PipelineStep):
                     print("no bn, no bias")
 
                     max_w = perceptron.layer.weight.data.abs().max()
-                    scale_param = 7 / max_w
+                    scale_param = self.q_max / max_w
                     assert torch.allclose(perceptron.layer.weight.data * scale_param, torch.round(perceptron.layer.weight.data * scale_param),
                                           rtol=1e-03, atol=1e-03)
                 else:
                     print("no bn")
                     max_w = torch.max(torch.abs(perceptron.layer.weight.data))
                     max_b = torch.max(torch.abs(perceptron.layer.bias.data))
-                    scale_param = 7 / max(max_w, max_b)
+                    scale_param = self.q_max / max(max_w, max_b)
                     q_w = perceptron.layer.weight.data * scale_param
                     q_b = perceptron.layer.bias.data * scale_param
 
