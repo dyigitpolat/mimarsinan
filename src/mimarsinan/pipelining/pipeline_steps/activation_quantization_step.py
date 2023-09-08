@@ -4,9 +4,9 @@ from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQua
 
 class ActivationQuantizationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["model"]
+        requires = ["model", "adaptation_manager"]
         promises = []
-        updates = ["model"]
+        updates = ["model", "adaptation_manager"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
         self.tuner = None
@@ -20,7 +20,9 @@ class ActivationQuantizationStep(PipelineStep):
             model = self.get_entry('model'),
             target_tq = self.pipeline.config['target_tq'],
             target_accuracy = self.pipeline.get_target_metric(),
-            lr = self.pipeline.config['lr'])
+            lr = self.pipeline.config['lr'], 
+            adaptation_manager = self.get_entry('adaptation_manager'))
         self.tuner.run()
 
+        self.update_entry("adaptation_manager", self.tuner.adaptation_manager, "pickle")
         self.update_entry("model", self.tuner.model, 'torch_model')

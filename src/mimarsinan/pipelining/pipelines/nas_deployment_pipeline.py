@@ -49,7 +49,7 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("Pretraining", PretrainingStep(self))
         self.add_pipeline_step("Clamp Adaptation", ClampAdaptationStep(self))
-        #self.add_pipeline_step("Scale Adaptation", ScaleAdaptationStep(self))
+        self.add_pipeline_step("Scale Adaptation", ScaleAdaptationStep(self))
         self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
         self.add_pipeline_step("Activation Shifting", ActivationShiftStep(self))
         self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
