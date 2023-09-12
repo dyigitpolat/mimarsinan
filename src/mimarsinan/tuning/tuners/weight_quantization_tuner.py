@@ -23,10 +23,6 @@ class WeightQuantizationTuner(BasicTuner):
         self.target_tq = target_tq
         self.quantization_bits = quantization_bits
 
-        from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer
-        for idx, perceptron in enumerate(self.model.get_perceptrons()):
-            ActivationFunctionVisualizer(perceptron.activation, -3, 3, 0.001).plot(f"./generated/_wqt{idx}.png")
-
     def _get_target_decay(self):
         return 0.999
     
