@@ -54,23 +54,6 @@ class NoisyDropout(nn.Module):
         out = out + self.noise_radius * torch.rand_like(out) - 0.5 * self.noise_radius
         return random_mask * out + (1.0 - random_mask) * x
     
-class ActivationStats(nn.Module):
-    def __init__(self, base_activation):
-        super(ActivationStats, self).__init__()
-        self.base_activation = base_activation
-        self.register_buffer('mean', torch.zeros(1))
-        self.register_buffer('var', torch.zeros(1))
-        self.register_buffer('max', torch.zeros(1))
-        self.register_buffer('min', torch.zeros(1))
-    
-    def forward(self, x):
-        out = self.base_activation(x)
-        self.mean = torch.mean(out)
-        self.var = torch.var(out)
-        self.max = torch.max(out)
-        self.min = torch.min(out)
-        return out
-    
 class StatsDecorator:
     def __init__(self):
         self.in_mean = None
