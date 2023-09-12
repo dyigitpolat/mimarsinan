@@ -17,6 +17,8 @@ class Pipeline:
         if '__target_metric' not in self.cache.keys():
             self.set_target_metric(0.0)
 
+        self.post_step_hook = None
+
     def add_pipeline_step(self, name, pipeline_step):
         self.steps.append((name, pipeline_step))
         self.verify()
@@ -96,6 +98,9 @@ class Pipeline:
     def set_target_metric(self, target_metric):
         self.cache.add('__target_metric', target_metric)
 
+    def register_post_step_hook(self, hook):
+        self.post_step_hook = hook
+
     def _create_real_key(self, client_step_name, key):
         return client_step_name + '.' + key
 
@@ -128,6 +133,9 @@ class Pipeline:
         
         assert self.get_target_metric() >= previous_metric * self.tolerance, \
             f"[{step.name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {self.tolerance}) = {previous_metric * self.tolerance}"
+
+        if self.post_step_hook is not None:
+            self.post_step_hook(step)
 
     def _find_starting_step_idx(self, step_name):
         requirements = self._get_all_requirements(step_name)
