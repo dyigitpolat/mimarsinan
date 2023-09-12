@@ -1,3 +1,4 @@
+from torch import Tensor
 import torch.nn as nn
 import torch
     
@@ -69,6 +70,33 @@ class ActivationStats(nn.Module):
         self.max = torch.max(out)
         self.min = torch.min(out)
         return out
+    
+class StatsDecorator:
+    def __init__(self):
+        self.in_mean = None
+        self.in_var = None
+        self.in_max = None
+        self.in_min = None
+
+        self.out_mean = None
+        self.out_var = None
+        self.out_max = None
+        self.out_min = None
+    
+    def input_transform(self, x):
+        self.in_mean = torch.mean(x).item()
+        self.in_var = torch.var(x).item()
+        self.in_max = torch.max(x).item()
+        self.in_min = torch.min(x).item()
+        return nn.Identity()(x)
+    
+    def output_transform(self, x):
+        self.out_mean = torch.mean(x).item
+        self.out_var = torch.var(x).item()
+        self.out_max = torch.max(x).item()
+        self.out_min = torch.min(x).item()
+        return nn.Identity()(x)
+
     
     
 class ShiftDecorator:
@@ -148,6 +176,12 @@ class TransformedActivation(nn.Module):
         self.act = base_activation
         for decorator in decorators:
             self.act = DecoratedActivation(self.act, decorator)
+
+        self.stats_decorator = StatsDecorator()
+        self.act = DecoratedActivation(self.act, self.stats_decorator)
+
+    def get_stats(self):
+        return self.stats_decorator
 
     def forward(self, x):
         return self.act(x)
