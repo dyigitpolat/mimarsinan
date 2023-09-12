@@ -2,10 +2,14 @@ from mimarsinan.pipelining.pipeline import Pipeline
 from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
+from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer
+
 from mimarsinan.pipelining.pipeline_steps import *
 
 import numpy as np
 import torch
+
+import os
 
 class NASDeploymentPipeline(Pipeline):
     default_deployment_parameters = {
@@ -61,6 +65,8 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
         self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
         self.add_pipeline_step("Simulation", SimulationStep(self))
+
+        self.register_post_step_hook(self._visualize_activations)
         
     def _initialize_config(self, deployment_parameters, platform_constraints):
         self.config.update(self.default_deployment_parameters)
@@ -83,6 +89,15 @@ class NASDeploymentPipeline(Pipeline):
         print("Deployment configuration:")
         for key, value in self.config.items():
             print(f"{key}: {value}")
+
+    def _visualize_activations(self, step):
+        if 'model' in step.promises or 'model' in step.updates:
+            path = self.working_directory + f"/{step.name}_act/"
+            os.makedirs(path, exist_ok=True)
+
+            model = self.cache.get(self._create_real_key(step.name, 'model'))
+            for idx, perceptron in enumerate(model.get_perceptrons()):
+                ActivationFunctionVisualizer(perceptron.activation, -3, 3, 0.001).plot(f"{path}/p_{idx}.png")
 
 
 
