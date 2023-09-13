@@ -17,7 +17,7 @@ class ClampAdaptationStep(PipelineStep):
         return self.tuner.validate()
 
     def process(self):
-        adaptation_manager = AdaptationManager(self.pipeline.config)
+        adaptation_manager = AdaptationManager()
 
         self.tuner = ClampTuner(
             self.pipeline,
