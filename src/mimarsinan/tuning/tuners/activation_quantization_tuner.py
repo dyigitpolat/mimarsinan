@@ -21,10 +21,9 @@ class ActivationQuantizationTuner(BasicTuner):
 
         self.target_tq = target_tq
         self.adaptation_manager = adaptation_manager
-        self.adaptation_manager.shift_amount = 0.0
 
     def _get_target_decay(self):
-        return 0.99
+        return 0.999
     
     def _get_previous_parameter_transform(self):
         return lambda x: x
@@ -35,7 +34,7 @@ class ActivationQuantizationTuner(BasicTuner):
     def _update_and_evaluate(self, rate):
         self.adaptation_manager.quantization_rate = rate
         for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(perceptron)
+            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
         
         self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
