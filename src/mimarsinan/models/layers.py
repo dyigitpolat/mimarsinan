@@ -114,14 +114,15 @@ class ClampDecorator:
         return DifferentiableClamp.apply(x, self.clamp_min, self.clamp_max)
     
 class QuantizeDecorator:
-    def __init__(self, Tq):
-        self.Tq = Tq
+    def __init__(self, levels_before_c, c):
+        self.levels_before_c = levels_before_c
+        self.c = c
 
     def input_transform(self, x):
         return nn.Identity()(x)
     
     def output_transform(self, x):
-        return StaircaseFunction.apply(x, self.Tq)
+        return StaircaseFunction.apply(x, self.levels_before_c / self.c)
     
 class RandomMaskAdjustmentStrategy:
     def adjust(self, base, target, rate):
@@ -140,6 +141,21 @@ class RateAdjustedDecorator:
     
     def output_transform(self, x):\
         return self.adjustment_strategy.adjust(x, self.decorator.output_transform(x), self.rate)
+
+
+class NestedDecoration: 
+    def __init__(self, decorators):
+        self.decorators = decorators
+
+    def input_transform(self, x):
+        for decorator in reversed(self.decorators):
+            x = decorator.input_transform(x)
+        return x
+    
+    def output_transform(self, x):
+        for decorator in self.decorators:
+            x = decorator.output_transform(x)
+        return x
     
 class DecoratedActivation(nn.Module):
     def __init__(self, base_activation, decorator):
@@ -169,13 +185,3 @@ class TransformedActivation(nn.Module):
     def forward(self, x):
         return self.act(x)
     
-class CQ_Activation(nn.Module):
-    def __init__(self, Tq, clamp_max=1.0):
-        super(CQ_Activation, self).__init__()
-        self.Tq = Tq
-        self.clamp_max = clamp_max
-    
-    def forward(self, x):
-        out = TransformedActivation(nn.ReLU(), 
-            [ClampDecorator(0.0, self.clamp_max), QuantizeDecorator(self.Tq)])(x)
-        return out
