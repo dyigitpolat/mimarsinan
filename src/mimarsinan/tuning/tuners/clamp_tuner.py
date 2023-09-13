@@ -18,7 +18,7 @@ class ClampTuner(BasicTuner):
         self.adaptation_manager = adaptation_manager
 
         for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(perceptron)
+            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
     def _get_target_decay(self):
         return 0.999
@@ -33,7 +33,7 @@ class ClampTuner(BasicTuner):
         if stats.in_max is None:
             return 1.0
         
-        clamp_limit = 1.0
+        clamp_limit = 0.1 + stats.in_max * 0.9
         return clamp_limit * rate + (1.0 - rate) * stats.in_max
 
     def _update_and_evaluate(self, rate):
@@ -41,7 +41,7 @@ class ClampTuner(BasicTuner):
         for perceptron in self.model.get_perceptrons():
             perceptron.base_threshold = \
                 self._calculate_base_threshold(perceptron.activation.get_stats(), rate)
-            self.adaptation_manager.update_activation(perceptron)
+            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
