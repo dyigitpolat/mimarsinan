@@ -29,7 +29,7 @@ class ScaleTuner(BasicTuner):
     def _update_and_evaluate(self, rate):
         self.adaptation_manager.scale_rate = rate
         for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(perceptron)
+            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
