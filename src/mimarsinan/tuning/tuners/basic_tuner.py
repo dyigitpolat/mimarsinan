@@ -112,7 +112,8 @@ class BasicTuner:
             clone_state,
             restore_state,
             evaluate_model,
-            interpolators=[BasicInterpolation(0.0, 1.0)]
+            interpolators=[BasicInterpolation(0.0, 1.0),],
+            target_metric=self._get_target()
         )
         adapter.adapt_smoothly()
         
