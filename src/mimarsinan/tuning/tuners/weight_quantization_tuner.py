@@ -2,11 +2,7 @@ from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
 from mimarsinan.transformations.parameter_transforms.sequential_transform import SequentialTransform
 from mimarsinan.transformations.weight_quantization import TensorQuantization
 from mimarsinan.transformations.weight_clipping import SoftTensorClipping
-from mimarsinan.pipelining.pipeline_steps.perceptron_fusion_step import FusedLinear
 
-from mimarsinan.models.layers import CQ_Activation, ScaleActivation
-
-import torch.nn as nn
 import torch
 
 class WeightQuantizationTuner(BasicTuner):
