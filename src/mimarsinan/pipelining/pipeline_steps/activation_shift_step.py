@@ -1,8 +1,8 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 
 import torch.nn as nn
 
@@ -30,10 +30,10 @@ class ActivationShiftStep(PipelineStep):
         
         adaptation_manager = self.get_entry('adaptation_manager')
         for perceptron in model.get_perceptrons():
-            shift_amount = 0.5 / (self.pipeline.config['target_tq'] * perceptron.base_threshold)
+            shift_amount = calculate_activation_shift(self.pipeline.config["target_tq"], perceptron.base_threshold)
 
             adaptation_manager.shift_rate = 1.0
-            adaptation_manager.update_activation(perceptron)
+            adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
             if isinstance(perceptron.normalization, nn.Identity):
                 perceptron.layer.bias.data += shift_amount
