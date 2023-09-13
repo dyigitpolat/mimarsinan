@@ -1,6 +1,6 @@
 from mimarsinan.mapping.chip_latency import *
 
-from mimarsinan.models.layers import CQ_Activation
+from mimarsinan.models.layers import TransformedActivation, QuantizeDecorator, ClampDecorator, ScaleDecorator
 
 import torch.nn as nn
 import torch
@@ -21,8 +21,14 @@ class CoreFlow(nn.Module):
 
         self.activations = []
         for core in self.cores:
-            self.activations.append(
-                CQ_Activation(Tq, 1.0))
+            cq_activation = TransformedActivation(
+                nn.ReLU(),
+                [
+                    QuantizeDecorator(Tq, core.threshold),
+                    ClampDecorator(0.0, core.threshold)
+                ])
+            self.activations.append(cq_activation)
+                
 
         self.cycles = ChipLatency(core_mapping).calculate()
 
@@ -63,7 +69,7 @@ class CoreFlow(nn.Module):
         return signal_tensor
     
     def update_stats(self, buffers):
-        for i in range(len(self.cores)):
+        for i, core in enumerate(self.cores):
             if self.core_sums[i] is None:
                 self.core_sums[i] = torch.sum(buffers[i]).item()
             else:
