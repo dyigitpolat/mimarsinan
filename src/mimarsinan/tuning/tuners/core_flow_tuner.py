@@ -1,6 +1,5 @@
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.transformations.chip_quantization import ChipQuantization
-from mimarsinan.models.layers import CQ_Activation
 from mimarsinan.models.core_flow import CoreFlow
 from mimarsinan.models.spiking_core_flow import SpikingCoreFlow
 
@@ -48,7 +47,9 @@ class CoreFlowTuner:
         self._tune_thresholds(
             self._get_core_sums(non_quantized_mapping), cycles=20, lr=0.1, mapping=quantized_mapping)
         
-        quantization_scale = self._calculate_quantization_scale(quantized_mapping)
+        # quantization_scale = self._calculate_quantization_scale(quantized_mapping)
+        # self._quantize_thresholds(quantized_mapping, quantization_scale)
+        quantization_scale = 1.0
         self._quantize_thresholds(quantized_mapping, quantization_scale)
 
         scaled_simulation_steps = math.ceil(self.simulation_steps * quantization_scale)
@@ -74,13 +75,15 @@ class CoreFlowTuner:
         print("  Tuning thresholds...")
         best_acc = 0
         
-        base_thresholds = [core.threshold for core in mapping.cores]
+        base_thresholds = [float(core.threshold) for core in mapping.cores]
+        import numpy as np
+        base_scales = [np.max(np.abs(core.core_matrix)) for core in mapping.cores]
         for _ in range(cycles):
             print(f"    Tuning Cycle {_ + 1}/{cycles}")
             
             spiking_core_flow = SpikingCoreFlow(self.input_shape, mapping, self.simulation_steps)
             spiking_core_flow_trainer = BasicTrainer(
-                spiking_core_flow, 
+            spiking_core_flow, 
                 self.device, self.data_loader_factory,
                 None)
             spiking_core_flow_trainer.report_function = self.report_function 
@@ -93,8 +96,8 @@ class CoreFlowTuner:
                 best_thresholds = [core.threshold for core in mapping.cores]
 
             for idx, core in enumerate(mapping.cores):
-                rate_numerator = core_sums[idx] / base_thresholds[idx]
-                rate_denominator = spiking_core_flow.core_sums[idx] / (spiking_core_flow.thresholds[idx].item() * self.simulation_steps)
+                rate_numerator = core_sums[idx] # / (base_thresholds[idx] / base_scales[idx])
+                rate_denominator = spiking_core_flow.core_sums[idx] / (self.simulation_steps)
                 #print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
                 
                 if rate_denominator == 0: 
@@ -102,11 +105,12 @@ class CoreFlowTuner:
                     rate_denominator = 0.5
 
                 rate = rate_numerator / rate_denominator
-                threshold_delta = core.threshold - (core.threshold / rate) 
-                core.threshold = core.threshold - (threshold_delta * lr) 
+                target_threshold = core.threshold / rate
+                updated_threshold = (1 - lr) * core.threshold + (lr) * target_threshold
+                core.threshold = updated_threshold
 
-                print(f"    core {idx}... core_sum        : {core_sums[idx] / base_thresholds[idx]}")
-                print(f"    core {idx}... spiking_core_sum: {spiking_core_flow.core_sums[idx] / (spiking_core_flow.thresholds[idx].item() * self.simulation_steps)}")
+                print(f"    core {idx}... core_sum        : {rate_numerator}")
+                print(f"    core {idx}... spiking_core_sum: {rate_denominator}")
                 print(f"    core {idx}... rate: {rate}")
                 print(f"    core {idx}... threshold: {core.threshold}")
                 

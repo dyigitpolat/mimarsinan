@@ -32,11 +32,8 @@ class ActivationShiftStep(PipelineStep):
         for perceptron in model.get_perceptrons():
             shift_amount = 0.5 / (self.pipeline.config['target_tq'] * perceptron.base_threshold)
 
-            adaptation_manager.shift_amount = shift_amount
+            adaptation_manager.shift_rate = 1.0
             adaptation_manager.update_activation(perceptron)
-
-            # perceptron.set_activation(
-            #     ShiftedActivation(perceptron.activation, shift_amount))
 
             if isinstance(perceptron.normalization, nn.Identity):
                 perceptron.layer.bias.data += shift_amount

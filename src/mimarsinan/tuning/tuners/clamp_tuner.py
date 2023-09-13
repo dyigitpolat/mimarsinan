@@ -1,7 +1,5 @@
 from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
 
-from mimarsinan.models.layers import ActivationStats
-
 class ClampTuner(BasicTuner):
     def __init__(self, 
                  pipeline, 
@@ -19,6 +17,9 @@ class ClampTuner(BasicTuner):
         self.lr = lr
         self.adaptation_manager = adaptation_manager
 
+        for perceptron in self.model.get_perceptrons():
+            self.adaptation_manager.update_activation(perceptron)
+
     def _get_target_decay(self):
         return 0.999
     
@@ -28,19 +29,18 @@ class ClampTuner(BasicTuner):
     def _get_new_parameter_transform(self):
         return lambda x: x
     
-    def _calculate_base_thresholds(self, model):
-        for perceptron in model.get_perceptrons():
-            perceptron.set_activation(ActivationStats(perceptron.activation))
-
-        self.trainer.validate()
-
-        for perceptron in model.get_perceptrons():
-            perceptron.base_threshold = 1.0
-            print(perceptron.base_threshold)
+    def _calculate_base_threshold(self, stats, rate):
+        if stats.in_max is None:
+            return 1.0
+        
+        clamp_limit = 1.0
+        return clamp_limit * rate + (1.0 - rate) * stats.in_max
 
     def _update_and_evaluate(self, rate):
         self.adaptation_manager.clamp_rate = rate
         for perceptron in self.model.get_perceptrons():
+            perceptron.base_threshold = \
+                self._calculate_base_threshold(perceptron.activation.get_stats(), rate)
             self.adaptation_manager.update_activation(perceptron)
 
         self.trainer.train_one_step(self._find_lr())
