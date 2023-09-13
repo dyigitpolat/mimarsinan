@@ -71,13 +71,6 @@ class NormalizationFusionStep(PipelineStep):
         perceptron.to(self.pipeline.config['device'])
         w, b = get_fused_weights(
             linear_layer=perceptron.layer, bn_layer=perceptron.normalization)
-        
-        # scaled_activation = perceptron.activation
-        # assert isinstance(scaled_activation, ScaleActivation)
-        # scale = scaled_activation.scale
-
-        # w = w / (scale ** 0.5)
-        # b = b / (scale ** 0.5)
 
         perceptron.layer = nn.Linear(
             perceptron.input_features, 
