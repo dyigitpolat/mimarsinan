@@ -1,5 +1,4 @@
 from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
-import torch.nn as nn
 
 class ScaleTuner(BasicTuner):
     def __init__(self, 

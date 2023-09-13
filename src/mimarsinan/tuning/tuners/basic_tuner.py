@@ -45,6 +45,9 @@ class BasicTuner:
     
     def _get_trainer(self):
         return self.trainer
+    
+    def _get_model(self):
+        return self.model
 
     def _get_target_decay(self):
         raise NotImplementedError() # 0.99
@@ -64,7 +67,7 @@ class BasicTuner:
     def _find_lr(self):
         return LearningRateExplorer(
             self._get_trainer(), 
-            self.model, 
+            self._get_model(), 
             self.pipeline_lr / 20, 
             self.pipeline_lr / 1000, 
             0.01).find_lr_for_tuning()
@@ -99,10 +102,10 @@ class BasicTuner:
             return self._update_and_evaluate(rate)
 
         def clone_state():
-            return self.model.state_dict()
+            return self._get_model().state_dict()
 
         def restore_state(state):
-            self.model.load_state_dict(state)
+            self._get_model().load_state_dict(state)
 
         adapter = SmartSmoothAdaptation (
             self._adaptation,

@@ -1,6 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.tuning.tuners.scale_tuner import ScaleTuner 
+from mimarsinan.tuning.tuners.scale_tuner import ScaleTuner
 
 class ScaleAdaptationStep(PipelineStep):
     def __init__(self, pipeline):
@@ -26,5 +26,4 @@ class ScaleAdaptationStep(PipelineStep):
 
         self.update_entry("adaptation_manager", self.tuner.adaptation_manager, "pickle")
         self.update_entry("model", self.tuner.model, 'torch_model')
-
         

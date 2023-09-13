@@ -22,7 +22,7 @@ class CoreFlow(nn.Module):
         self.activations = []
         for core in self.cores:
             self.activations.append(
-                CQ_Activation(Tq, core.threshold))
+                CQ_Activation(Tq, 1.0))
 
         self.cycles = ChipLatency(core_mapping).calculate()
 
