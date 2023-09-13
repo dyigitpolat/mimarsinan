@@ -5,7 +5,7 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
     def __init__(
         self, adaptation_function, 
         state_clone_function, state_restore_function,
-        evaluation_function, interpolators):
+        evaluation_function, interpolators, target_metric):
 
         super().__init__(adaptation_function, interpolators)
         self.state_clone_function = state_clone_function
@@ -14,8 +14,7 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
         self.min_step = 0.01
         self.tolerance = 0.01
 
-        self.original_target = \
-            self.evaluation_function(*[i(0) for i in self.interpolators])
+        self.original_target = target_metric
         self.target_adjuster = AdaptationTargetAdjuster(self.original_target)
 
     def _adjust_minimum_step(self, step_size, t):
