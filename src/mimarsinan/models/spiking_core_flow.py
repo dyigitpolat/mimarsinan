@@ -1,7 +1,5 @@
 from mimarsinan.mapping.chip_latency import *
 
-from mimarsinan.models.layers import CQ_Activation
-
 import torch.nn as nn
 import torch
 
