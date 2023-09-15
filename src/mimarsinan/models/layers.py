@@ -185,3 +185,18 @@ class TransformedActivation(nn.Module):
     def forward(self, x):
         return self.act(x)
     
+class FrozenStatsNormalization(nn.Module):
+    def __init__(self, normalization):
+        super(FrozenStatsNormalization, self).__init__()
+        self.normalization = normalization
+        self.running_mean = normalization.running_mean.clone().detach()
+        self.running_var = normalization.running_var.clone().detach()
+        self.weight = normalization.weight
+        self.bias = normalization.bias
+        self.eps = normalization.eps
+        
+
+        self.affine = normalization.affine
+    
+    def forward(self, x):
+        return self.normalization(x)

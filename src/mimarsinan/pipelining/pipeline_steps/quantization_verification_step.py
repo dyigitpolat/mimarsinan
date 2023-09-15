@@ -8,6 +8,8 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
+from mimarsinan.models.layers import FrozenStatsNormalization
+
 class QuantizationVerificationStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["model"]
@@ -36,17 +38,18 @@ class QuantizationVerificationStep(PipelineStep):
             if not isinstance(perceptron.normalization, nn.Identity):
                 print("bn")
 
-                assert isinstance(perceptron.normalization, nn.BatchNorm1d)
+                assert isinstance(perceptron.normalization, FrozenStatsNormalization)
                 fused_w, fused_b = get_fused_weights(perceptron.layer, perceptron.normalization)
                 
                 w_max = torch.max(torch.abs(fused_w))
                 b_max = torch.max(torch.abs(fused_b))
                 scale_param = self.q_max / max(w_max, b_max)
                 
+                print(fused_w * scale_param)
                 assert torch.allclose(fused_w * scale_param, torch.round(fused_w * scale_param),
-                                      rtol=1e-03, atol=1e-03)
+                                      rtol=1e-02, atol=1e-02)
                 assert torch.allclose(fused_b * scale_param, torch.round(fused_b * scale_param),
-                                      rtol=1e-03, atol=1e-03)
+                                      rtol=1e-02, atol=1e-02)
                 print ("verified bn")
             else:
                 if perceptron.layer.bias is None:

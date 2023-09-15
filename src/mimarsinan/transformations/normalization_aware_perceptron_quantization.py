@@ -1,5 +1,7 @@
 from mimarsinan.transformations.transformation_utils import *
 from mimarsinan.mapping.mapping_utils import get_fused_weights
+from mimarsinan.transformations.weight_clipping import get_clipped_w_b
+from mimarsinan.models.layers import FrozenStatsNormalization
 
 import torch.nn as nn
 import torch
@@ -18,7 +20,7 @@ class NormalizationAwarePerceptronQuantization:
             self._verify_fuse_quantization(out_perceptron)
             return out_perceptron
 
-        assert isinstance(perceptron.normalization, nn.BatchNorm1d)
+        assert isinstance(perceptron.normalization, FrozenStatsNormalization)
 
         u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
         fused_w, fused_b = get_fused_weights(perceptron.layer, perceptron.normalization)
