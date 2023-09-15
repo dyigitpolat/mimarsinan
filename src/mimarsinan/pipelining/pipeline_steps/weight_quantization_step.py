@@ -3,6 +3,9 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import NormalizationAwarePerceptronQuantizationTuner
+from mimarsinan.models.layers import FrozenStatsNormalization
+
+import torch.nn as nn
 
 class WeightQuantizationStep(PipelineStep):
     def __init__(self, pipeline):
@@ -16,34 +19,26 @@ class WeightQuantizationStep(PipelineStep):
         self.trainer = None
     
     def validate(self):
-        return self.trainer.validate()
+        return self.tuner.validate()
 
     def process(self):
-        # self.tuner = NormalizationAwarePerceptronQuantizationTuner(
-        #     self.pipeline,
-        #     model = self.get_entry("model"),
-        #     quantization_bits = self.pipeline.config['weight_bits'],
-        #     target_tq = self.pipeline.config['target_tq'],
-        #     target_accuracy = self.pipeline.get_target_metric(),
-        #     lr = self.pipeline.config['lr'])
-        # self.tuner.run()
+        model = self.get_entry("model")
 
-        self.trainer = BasicTrainer(
-            self.get_entry("model"),
-            self.pipeline.config['device'], 
-            DataLoaderFactory(self.pipeline.data_provider_factory),
-            self.pipeline.loss)
-        self.trainer.report_function = self.pipeline.reporter.report
+        for perceptron in model.get_perceptrons():
+            if not isinstance(perceptron.normalization, nn.Identity):
+                for param in perceptron.normalization.parameters():
+                    param.requires_grad = False
 
-        for _ in range(10):
-            self.trainer.train_until_target_accuracy(
-                self.pipeline.config['lr'] / 20, 
-                max_epochs=2, 
-                target_accuracy=self.pipeline.get_target_metric())
+                perceptron.normalization = \
+                    FrozenStatsNormalization(perceptron.normalization)
 
-            from mimarsinan.transformations.normalization_aware_perceptron_quantization import NormalizationAwarePerceptronQuantization
-            for perceptron in self.get_entry("model").get_perceptrons():
-                perceptron.layer = NormalizationAwarePerceptronQuantization(
-                    self.pipeline.config['weight_bits'], self.pipeline.config['device']).transform(perceptron).layer
-
-        self.update_entry("model", self.get_entry("model"), 'torch_model')
+        self.tuner = NormalizationAwarePerceptronQuantizationTuner(
+            self.pipeline,
+            model = model,
+            quantization_bits = self.pipeline.config['weight_bits'],
+            target_tq = self.pipeline.config['target_tq'],
+            target_accuracy = self.pipeline.get_target_metric(),
+            lr = self.pipeline.config['lr'])
+        self.tuner.run()
+        
+        self.update_entry("model", model, 'torch_model')

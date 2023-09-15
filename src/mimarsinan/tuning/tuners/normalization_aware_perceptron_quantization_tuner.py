@@ -1,7 +1,8 @@
 from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
 from mimarsinan.transformations.normalization_aware_perceptron_quantization import NormalizationAwarePerceptronQuantization
 
-import torch.nn as nn
+import copy
+
 class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
     def __init__(self, 
                  pipeline, 
@@ -10,11 +11,6 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
                  target_tq,
                  target_accuracy,
                  lr):
-        
-        for perceptron in model.get_perceptrons():
-            if not isinstance(perceptron.normalization, nn.Identity):
-                for param in perceptron.normalization.parameters():
-                    param.requires_grad = False
 
         super().__init__(pipeline, model, target_accuracy, lr)
 
@@ -25,7 +21,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
         return 0.999
     
     def _get_previous_perceptron_transform(self):
-        return lambda x: x
+        return lambda perceptron: copy.deepcopy(perceptron)
     
     def _get_new_perceptron_transform(self):
         return NormalizationAwarePerceptronQuantization(

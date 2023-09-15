@@ -65,7 +65,7 @@ class NormalizationFusionStep(PipelineStep):
         if isinstance(perceptron.normalization, nn.Identity):
             return
 
-        assert isinstance(perceptron.normalization, nn.BatchNorm1d)
+        assert isinstance(perceptron.normalization, FrozenStatsNormalization)
         assert perceptron.normalization.affine
 
         perceptron.to(self.pipeline.config['device'])
@@ -76,7 +76,7 @@ class NormalizationFusionStep(PipelineStep):
             perceptron.input_features, 
             perceptron.output_channels, bias=True)
         
-        perceptron.layer.weight.data = w
-        perceptron.layer.bias.data = b
+        perceptron.layer.weight.data = w 
+        perceptron.layer.bias.data = b 
 
         perceptron.normalization = nn.Identity()

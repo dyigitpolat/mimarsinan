@@ -270,7 +270,7 @@ class PerceptronMapper:
             b = layer.bias.data if layer.bias is not None else None
             return w, b
         
-        assert isinstance(self.perceptron.normalization, nn.BatchNorm1d)
+        assert isinstance(self.perceptron.normalization, FrozenStatsNormalization)
         assert self.perceptron.normalization.affine
 
         return get_fused_weights(
