@@ -1,6 +1,5 @@
 from mimarsinan.transformations.transformation_utils import *
 from mimarsinan.mapping.mapping_utils import get_fused_weights
-from mimarsinan.transformations.weight_clipping import get_clipped_w_b
 from mimarsinan.models.layers import FrozenStatsNormalization
 
 import torch.nn as nn
