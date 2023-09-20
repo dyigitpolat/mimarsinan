@@ -1,2 +1,2 @@
-def calculate_activation_shift(quantization_level, base_threshold):
-    return (base_threshold * 0.5) / (quantization_level)
+def calculate_activation_shift(quantization_level, activation_scale):
+    return (activation_scale * 0.5) / (quantization_level)

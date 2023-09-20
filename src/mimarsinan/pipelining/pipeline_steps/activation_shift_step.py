@@ -30,7 +30,7 @@ class ActivationShiftStep(PipelineStep):
         
         adaptation_manager = self.get_entry('adaptation_manager')
         for perceptron in model.get_perceptrons():
-            shift_amount = calculate_activation_shift(self.pipeline.config["target_tq"], perceptron.base_threshold)
+            shift_amount = calculate_activation_shift(self.pipeline.config["target_tq"], perceptron.activation_scale)
 
             adaptation_manager.shift_rate = 1.0
             adaptation_manager.update_activation(self.pipeline.config, perceptron)

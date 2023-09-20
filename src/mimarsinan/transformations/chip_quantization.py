@@ -23,8 +23,13 @@ class ChipQuantization:
         for core in cores:
             self.verify_quantization(core)
             threshold_scale = np.max(np.abs(core.core_matrix))
-            core.threshold = self.quantizer.q_max
+
+            print(core.threshold, threshold_scale)
+            activation_scale = core.threshold * self.quantizer.q_max * 0.95
+            adjusted_threshold = activation_scale / threshold_scale
+            mixed_threshold = 0.9 * activation_scale + 0.1 * adjusted_threshold
+            core.threshold = mixed_threshold * 0.95
+            print(core.threshold)
 
             core.core_matrix *= self.quantizer.q_max / threshold_scale
             core.core_matrix = np.round(core.core_matrix)
-            
