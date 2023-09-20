@@ -34,12 +34,17 @@ class BasicArchitectureSearcher:
     def _sample_valid_configurations(self, sample_size_max):
         configurations = []
 
+        total_sample_size = 0
         while len(configurations) < sample_size_max:
             sampled_configurations = self._sample_configurations(sample_size_max)
 
             for configuration in sampled_configurations:
                 if self._get_evaluator().validate(configuration):
                     configurations.append(copy.deepcopy(configuration))
+
+            total_sample_size += sample_size_max
+            assert total_sample_size < 10000 * sample_size_max, \
+                f"unexpected error occured, cannot sample valid configurations"
 
         return configurations
     
