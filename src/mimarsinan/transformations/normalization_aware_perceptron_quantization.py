@@ -43,8 +43,9 @@ class NormalizationAwarePerceptronQuantization:
         bn = bn_layer
         gamma = bn.weight.data
         beta = bn.bias.data
-        var = bn.running_var.data
-        mean = bn.running_mean.data
+        var = bn.running_var.data.to(gamma.device)
+        mean = bn.running_mean.data.to(gamma.device)
+
         u = gamma / torch.sqrt(var + bn.eps)
 
         return u, beta, mean
