@@ -25,25 +25,25 @@ class AdaptationManager(nn.Module):
     def get_rate_adjusted_clamp_decorator(self, perceptron):
         return RateAdjustedDecorator(
             self.clamp_rate, 
-            ClampDecorator(0.0, perceptron.base_threshold), 
+            ClampDecorator(0.0, perceptron.activation_scale), 
             RandomMaskAdjustmentStrategy())
 
     def get_rate_adjusted_scale_decorator(self, perceptron):
         return RateAdjustedDecorator(
             self.scale_rate, 
-            ScaleDecorator(1.0 / perceptron.base_threshold), 
+            ScaleDecorator(1.0 / perceptron.activation_scale), 
             RandomMaskAdjustmentStrategy())
     
     def get_shift_decorator(self, pipeline_config, perceptron):
-        shift_amount = calculate_activation_shift(pipeline_config["target_tq"], perceptron.base_threshold) * self.shift_rate
+        shift_amount = calculate_activation_shift(pipeline_config["target_tq"], perceptron.activation_scale) * self.shift_rate
         return ShiftDecorator(shift_amount)
     
     def get_rate_adjusted_quantization_decorator(self, pipeline_config, perceptron):
-        shift_back_amount = -calculate_activation_shift(pipeline_config["target_tq"], perceptron.base_threshold) * self.shift_rate
+        shift_back_amount = -calculate_activation_shift(pipeline_config["target_tq"], perceptron.activation_scale) * self.shift_rate
 
         return RateAdjustedDecorator(
             self.quantization_rate, 
             NestedDecoration(
                 [ShiftDecorator(shift_back_amount), 
-                QuantizeDecorator(pipeline_config["target_tq"], perceptron.base_threshold)]),
+                QuantizeDecorator(pipeline_config["target_tq"], perceptron.activation_scale)]),
             RandomMaskAdjustmentStrategy())

@@ -292,7 +292,7 @@ class PerceptronMapper:
             layer_sources, 
             layer_weights, 
             layer_biases, 
-            self.perceptron.base_threshold)
+            self.perceptron.activation_scale)
         layer_sources = layer_sources.transpose()
 
         self.sources = layer_sources
