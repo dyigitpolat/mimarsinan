@@ -58,7 +58,7 @@ class SoftCoreMapping:
         output_shape, # 
         fc_weights,
         fc_biases = None,
-        threshold = 1.0): # 
+        activation_scale = 1.0): # 
 
         w_rows = fc_weights.shape[-2]
         w_cols = fc_weights.shape[-1]
@@ -101,7 +101,7 @@ class SoftCoreMapping:
             
             assert len(spike_sources) == core_matrix.shape[0]
             self.cores.append(
-                SoftCore(core_matrix, spike_sources.copy(), len(self.cores), threshold))
+                SoftCore(core_matrix, spike_sources.copy(), len(self.cores), activation_scale))
 
         layer_sources = []
         core_offset = len(self.cores) - new_cores_count
@@ -111,14 +111,14 @@ class SoftCoreMapping:
         
         return np.array(layer_sources)
 
-def map_mm(mapping, layer_sources, layer_weights, layer_biases = None, threshold = 1.0):
+def map_mm(mapping, layer_sources, layer_weights, layer_biases = None, activation_scale = 1.0):
     layer_output_shape = np.array([layer_weights.shape[-2], layer_sources.shape[-1]])
     return mapping.map_fc(
         layer_sources, 
         layer_output_shape, 
         layer_weights,
         layer_biases,
-        threshold)   
+        activation_scale)   
 
 class InputMapper:
     def __init__(self, input_shape):
