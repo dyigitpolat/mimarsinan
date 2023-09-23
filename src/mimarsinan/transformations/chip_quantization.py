@@ -25,10 +25,7 @@ class ChipQuantization:
             threshold_scale = np.max(np.abs(core.core_matrix))
 
             print(core.threshold, threshold_scale)
-            activation_scale = core.threshold * self.quantizer.q_max * 0.95
-            adjusted_threshold = activation_scale / threshold_scale
-            mixed_threshold = 0.9 * activation_scale + 0.1 * adjusted_threshold
-            core.threshold = mixed_threshold * 0.95
+            core.threshold *= self.quantizer.q_max / threshold_scale
             print(core.threshold)
 
             core.core_matrix *= self.quantizer.q_max / threshold_scale

@@ -31,28 +31,24 @@ class CoreFlowTuner:
 
     def run(self):
         non_quantized_mapping = copy.deepcopy(self.mapping)
+        core_flow = CoreFlow(self.input_shape, non_quantized_mapping, self.target_tq)
+        print(f"  CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         unscaled_quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).unscaled_quantize(unscaled_quantized_mapping.cores)
-
         core_flow = CoreFlow(self.input_shape, unscaled_quantized_mapping, self.target_tq)
         print(f"  CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
-
         core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, self.simulation_steps)
         print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         self._tune_thresholds(
-            self._get_core_sums(non_quantized_mapping), cycles=20, lr=0.1, mapping=quantized_mapping)
+            self._get_core_sums(unscaled_quantized_mapping), cycles=10, lr=0.2, mapping=quantized_mapping)
         
-        # quantization_scale = self._calculate_quantization_scale(quantized_mapping)
-        # self._quantize_thresholds(quantized_mapping, quantization_scale)
-        quantization_scale = 1.0
-        self._quantize_thresholds(quantized_mapping, quantization_scale)
-
-        scaled_simulation_steps = math.ceil(self.simulation_steps * quantization_scale)
+        self._quantize_thresholds(quantized_mapping, 1.0)
+        scaled_simulation_steps = math.ceil(self.simulation_steps)
         core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, scaled_simulation_steps)
         self.accuracy = self._validate_core_flow(core_flow)
         print(f"  Final SpikingCoreFlow Accuracy: {self.accuracy}")
@@ -69,15 +65,17 @@ class CoreFlowTuner:
         core_flow_trainer.report_function = self.report_function 
         
         core_flow_trainer.validate()
+
+        for core, core_sum in zip(mapping.cores, core_flow.core_sums):
+            core_sum /= core.threshold
+        
         return core_flow.core_sums
     
     def _tune_thresholds(self, core_sums, cycles, lr, mapping):
         print("  Tuning thresholds...")
         best_acc = 0
         
-        base_thresholds = [float(core.threshold) for core in mapping.cores]
         import numpy as np
-        base_scales = [np.max(np.abs(core.core_matrix)) for core in mapping.cores]
         for _ in range(cycles):
             print(f"    Tuning Cycle {_ + 1}/{cycles}")
             
@@ -96,7 +94,7 @@ class CoreFlowTuner:
                 best_thresholds = [core.threshold for core in mapping.cores]
 
             for idx, core in enumerate(mapping.cores):
-                rate_numerator = core_sums[idx] # / (base_thresholds[idx] / base_scales[idx])
+                rate_numerator = core_sums[idx]
                 rate_denominator = spiking_core_flow.core_sums[idx] / (self.simulation_steps)
                 #print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
                 
@@ -117,29 +115,6 @@ class CoreFlowTuner:
         
         for idx, core in enumerate(mapping.cores):
             core.threshold = best_thresholds[idx]
-    
-    def _calculate_quantization_scale(self, mapping):
-        found = False
-        tolerance = 1 / (2 * self.simulation_steps)
-        scale = 1 + tolerance
-        search_precision = tolerance / 200
-
-        print("    Calculating quantization scale...")
-        while not found:
-            thresholds = [core.threshold for core in mapping.cores]
-            scaled_thresholds = [threshold * scale for threshold in thresholds]
-
-            found = True
-            for scaled_threshold in scaled_thresholds:
-                error = abs(1 - (round(scaled_threshold) / (scaled_threshold)))
-                if error > tolerance:
-                    found = False
-
-            scale += search_precision
-        
-        print("    Scale = ", scale)
-        
-        return scale
 
     def _quantize_thresholds(self, mapping, quantization_scale):
         for core in mapping.cores:
