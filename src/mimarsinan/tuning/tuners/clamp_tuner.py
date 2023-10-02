@@ -33,8 +33,8 @@ class ClampTuner(BasicTuner):
         if stats.in_max is None:
             return 1.0
         
-        clamp_limit = 0.5 + stats.in_max * 0.5
-        #clamp_limit = 1.0
+        # clamp_limit = 0.5 + stats.in_max * 0.5
+        clamp_limit = 1.0
         return clamp_limit * rate + (1.0 - rate) * stats.in_max
 
     def _update_and_evaluate(self, rate):
