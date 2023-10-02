@@ -3,6 +3,7 @@ from init import *
 from mimarsinan.common.wandb_utils import WandB_Reporter
 from mimarsinan.pipelining.pipelines.nas_deployment_pipeline import NASDeploymentPipeline
 from mimarsinan.pipelining.pipelines.vanilla_deployment_pipeline import VanillaDeploymentPipeline
+from mimarsinan.pipelining.pipelines.cq_pipeline import CQPipeline
 from mimarsinan.data_handling.data_provider_factory import ImportedDataProviderFactory
 
 
@@ -55,7 +56,8 @@ def run_pipeline(
 
     deployment_mode_map = {
         "nas": NASDeploymentPipeline,
-        "vanilla": VanillaDeploymentPipeline
+        "vanilla": VanillaDeploymentPipeline,
+        "cq": CQPipeline
     }
 
     reporter = WandB_Reporter(deployment_name, "deployment")
