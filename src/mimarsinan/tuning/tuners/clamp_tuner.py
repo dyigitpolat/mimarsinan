@@ -48,6 +48,7 @@ class ClampTuner(BasicTuner):
         return self.trainer.validate()
 
     def run(self):
+        self.trainer.validate()
         super().run()
         
         return self.trainer.validate()
