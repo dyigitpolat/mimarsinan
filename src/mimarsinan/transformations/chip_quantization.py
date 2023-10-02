@@ -11,7 +11,7 @@ class ChipQuantization:
             core.core_matrix * scale, np.round(core.core_matrix * scale),
             atol=1e-3, rtol=1e-3)
 
-        assert np.max(np.abs(np.round(core.core_matrix * scale))) == self.quantizer.q_max, \
+        assert np.max(np.abs(np.round(core.core_matrix * scale))) <= self.quantizer.q_max, \
             f"{np.max(np.abs(np.round(core.core_matrix * scale)))} > {self.quantizer.q_max}"
 
 
