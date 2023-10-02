@@ -16,7 +16,7 @@ class NoiseTuner(BasicTuner):
             lr)
 
         self.lr = lr
-        self.target_noise_amount = 2.0 / (pipeline.config['weight_bits'] ** 2)
+        self.target_noise_amount = 2.0 / pipeline.config['target_tq']
     def _get_target_decay(self):
         return 0.999
     
