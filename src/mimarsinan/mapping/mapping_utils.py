@@ -198,6 +198,11 @@ class StackMapper:
         return self.sources
 
 def get_fused_weights(linear_layer, bn_layer):
+    if isinstance(bn_layer, nn.Identity):
+        w = linear_layer.weight.data
+        b = linear_layer.bias.data if linear_layer.bias is not None else torch.zeros(w.shape[0]).to(w.device)
+        return w.clone(), b.clone()
+    
     l = linear_layer
     bn = bn_layer
 
