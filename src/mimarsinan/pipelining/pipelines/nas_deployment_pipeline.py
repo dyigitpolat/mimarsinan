@@ -2,7 +2,10 @@ from mimarsinan.pipelining.pipeline import Pipeline
 from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
+from mimarsinan.models.layers import TransformedActivation
+
 from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer
+from mimarsinan.visualization.histogram_visualization import HistogramVisualizer
 
 from mimarsinan.pipelining.pipeline_steps import *
 
@@ -66,7 +69,11 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
         self.add_pipeline_step("Simulation", SimulationStep(self))
 
-        self.register_post_step_hook(self._visualize_activations)
+        def post_step_hook(step):
+            self._visualize_activations(step)
+            self._visualize_activation_histograms(step)
+
+        self.register_post_step_hook(post_step_hook)
         
     def _initialize_config(self, deployment_parameters, platform_constraints):
         self.config.update(self.default_deployment_parameters)
@@ -98,6 +105,21 @@ class NASDeploymentPipeline(Pipeline):
             model = self.cache.get(self._create_real_key(step.name, 'model'))
             for idx, perceptron in enumerate(model.get_perceptrons()):
                 ActivationFunctionVisualizer(perceptron.activation, -3, 3, 0.001).plot(f"{path}/p_{idx}.png")
+
+    def _visualize_activation_histograms(self, step):
+        if 'model' in step.promises or 'model' in step.updates:
+            path = self.working_directory + f"/{step.name}_act_hist/"
+            os.makedirs(path, exist_ok=True)
+
+            model = self.cache.get(self._create_real_key(step.name, 'model'))
+            for idx, perceptron in enumerate(model.get_perceptrons()):
+                if(isinstance(perceptron.activation, TransformedActivation)):
+                    hist = perceptron.activation.get_stats().in_hist
+                    bin_edges = perceptron.activation.get_stats().in_hist_bin_edges
+                    
+                    HistogramVisualizer(hist, bin_edges, -10, 10).plot(f"{path}/p_{idx}.png")
+
+
 
 
 
