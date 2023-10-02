@@ -41,14 +41,14 @@ class CoreFlowTuner:
 
         quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
-        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, self.simulation_steps)
+        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps * self._get_step_scale(quantized_mapping)))
         print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         self._tune_thresholds(
-            self._get_core_sums(unscaled_quantized_mapping), cycles=10, lr=0.2, mapping=quantized_mapping)
+            self._get_core_sums(unscaled_quantized_mapping), cycles=10, lr=0.5, mapping=quantized_mapping)
         
         self._quantize_thresholds(quantized_mapping, 1.0)
-        scaled_simulation_steps = math.ceil(self.simulation_steps)
+        scaled_simulation_steps = math.ceil(self.simulation_steps* self._get_step_scale(quantized_mapping))
         core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, scaled_simulation_steps)
         self.accuracy = self._validate_core_flow(core_flow)
         print(f"  Final SpikingCoreFlow Accuracy: {self.accuracy}")
@@ -71,6 +71,11 @@ class CoreFlowTuner:
         
         return core_flow.core_sums
     
+    def _get_step_scale(self, mapping):
+        max_thresh = max([core.threshold for core in mapping.cores])
+        return max_thresh / 7.0
+
+    
     def _tune_thresholds(self, core_sums, cycles, lr, mapping):
         print("  Tuning thresholds...")
         best_acc = 0
@@ -79,7 +84,8 @@ class CoreFlowTuner:
         for _ in range(cycles):
             print(f"    Tuning Cycle {_ + 1}/{cycles}")
             
-            spiking_core_flow = SpikingCoreFlow(self.input_shape, mapping, self.simulation_steps)
+            step_scale = self._get_step_scale(mapping)
+            spiking_core_flow = SpikingCoreFlow(self.input_shape, mapping, int(self.simulation_steps * step_scale))
             spiking_core_flow_trainer = BasicTrainer(
             spiking_core_flow, 
                 self.device, self.data_loader_factory,
@@ -95,7 +101,7 @@ class CoreFlowTuner:
 
             for idx, core in enumerate(mapping.cores):
                 rate_numerator = core_sums[idx]
-                rate_denominator = spiking_core_flow.core_sums[idx] / (self.simulation_steps)
+                rate_denominator = spiking_core_flow.core_sums[idx] / int(self.simulation_steps * step_scale)
                 #print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
                 
                 if rate_denominator == 0: 
