@@ -61,16 +61,26 @@ class StatsDecorator:
         self.in_max = None
         self.in_min = None
 
+        self.in_hist = None
+        self.in_hist_bin_edges = None
+
         self.out_mean = None
         self.out_var = None
         self.out_max = None
         self.out_min = None
+
+        self.out_hist = None
+        self.out_hist_bin_edges = None
     
     def input_transform(self, x):
         self.in_mean = torch.mean(x).item()
         self.in_var = torch.var(x).item()
         self.in_max = torch.max(x).item()
         self.in_min = torch.min(x).item()
+
+        self.in_hist = torch.histc(x.flatten(), bins=1000, min=self.in_min, max=self.in_max).tolist()
+        self.in_hist_bin_edges = torch.linspace(self.in_min, self.in_max, steps=1001).tolist()
+
         return nn.Identity()(x)
     
     def output_transform(self, x):
@@ -78,6 +88,9 @@ class StatsDecorator:
         self.out_var = torch.var(x).item()
         self.out_max = torch.max(x).item()
         self.out_min = torch.min(x).item()
+        
+        self.out_hist_bin_edges = torch.linspace(self.out_min, self.out_max, steps=1001).tolist()
+
         return nn.Identity()(x)
 
     
@@ -188,8 +201,6 @@ class TransformedActivation(nn.Module):
 class FrozenStatsNormalization(nn.Module):
     def __init__(self, normalization):
         super(FrozenStatsNormalization, self).__init__()
-        self.normalization = normalization
-
         self.running_mean = normalization.running_mean.clone().detach()
         self.running_var = normalization.running_var.clone().detach()
         self.weight = normalization.weight
@@ -199,4 +210,6 @@ class FrozenStatsNormalization(nn.Module):
         self.affine = normalization.affine
     
     def forward(self, x):
-        return self.normalization(x)
+        # batch norm with frozen params
+        return nn.functional.batch_norm(
+            x, self.running_mean, self.running_var, self.weight, self.bias, False, 0, self.eps)
