@@ -22,3 +22,20 @@ import torch.nn as nn
 class BasicClassificationLoss:
     def __call__(self, model, x, y):
         return nn.CrossEntropyLoss()(model(x), y)
+    
+
+from mimarsinan.mapping.mapping_utils import get_fused_weights
+import torch
+class NormalizationAwareClassificationLoss:
+    def __call__(self, model, x, y):
+
+        norm_loss = 0.0
+        for perceptron in model.get_perceptrons():
+            w, b = get_fused_weights(perceptron.layer, perceptron.normalization)
+
+            max_w = torch.max(torch.abs(w))
+            max_b = torch.max(torch.abs(b))
+
+            norm_loss += (torch.abs(1.0 - max_w) + torch.abs(1.0 - max_b))
+
+        return nn.CrossEntropyLoss()(model(x), y) + norm_loss
