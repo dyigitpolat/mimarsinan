@@ -1,6 +1,6 @@
 from mimarsinan.mapping.chip_latency import *
 
-from mimarsinan.models.layers import TransformedActivation, QuantizeDecorator, ClampDecorator, ScaleDecorator
+from mimarsinan.models.layers import TransformedActivation, QuantizeDecorator, ClampDecorator, ShiftDecorator
 
 import torch.nn as nn
 import torch
@@ -19,11 +19,13 @@ class CoreFlow(nn.Module):
                     for core in range(len(self.cores))]
         )
 
+        self.Tq = Tq
         self.activations = []
         for core in self.cores:
             cq_activation = TransformedActivation(
                 nn.ReLU(),
                 [
+                    ShiftDecorator(1.0 / self.Tq),
                     QuantizeDecorator(Tq, core.activation_scale),
                     ClampDecorator(0.0, core.activation_scale)
                 ])
