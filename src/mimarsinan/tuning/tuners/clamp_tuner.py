@@ -28,20 +28,10 @@ class ClampTuner(BasicTuner):
     
     def _get_new_parameter_transform(self):
         return lambda x: x
-    
-    def _calculate_activation_scale(self, stats, rate):
-        if stats.in_max is None:
-            return 1.0
-        
-        # clamp_limit = 0.5 + stats.in_max * 0.5
-        clamp_limit = 1.0
-        return clamp_limit * rate + (1.0 - rate) * stats.in_max
 
     def _update_and_evaluate(self, rate):
         self.adaptation_manager.clamp_rate = rate
         for perceptron in self.model.get_perceptrons():
-            perceptron.activation_scale = \
-                self._calculate_activation_scale(perceptron.activation.get_stats(), rate)
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         self.trainer.train_one_step(self._find_lr())
