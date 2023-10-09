@@ -73,23 +73,29 @@ class StatsDecorator:
         self.out_hist_bin_edges = None
     
     def input_transform(self, x):
-        self.in_mean = torch.mean(x).item()
-        self.in_var = torch.var(x).item()
-        self.in_max = torch.max(x).item()
-        self.in_min = torch.min(x).item()
 
-        self.in_hist = torch.histc(x.flatten(), bins=1000, min=self.in_min, max=self.in_max).tolist()
-        self.in_hist_bin_edges = torch.linspace(self.in_min, self.in_max, steps=1001).tolist()
+
+        if(len(x.shape) > 1):
+            self.in_mean = torch.mean(x).item()
+            self.in_var = torch.var(x).item()
+            self.in_max = torch.max(x).item()
+            self.in_min = torch.min(x).item()
+
+            self.in_hist = torch.histc(x.flatten(), bins=100, min=self.in_min, max=self.in_max)
+            self.in_hist_bin_edges = torch.linspace(self.in_min, self.in_max, steps=101)
 
         return nn.Identity()(x)
     
     def output_transform(self, x):
-        self.out_mean = torch.mean(x).item
-        self.out_var = torch.var(x).item()
-        self.out_max = torch.max(x).item()
-        self.out_min = torch.min(x).item()
         
-        self.out_hist_bin_edges = torch.linspace(self.out_min, self.out_max, steps=1001).tolist()
+        if(len(x.shape) > 1):
+            self.out_mean = torch.mean(x).item()
+            self.out_var = torch.var(x).item()
+            self.out_max = torch.max(x).item()
+            self.out_min = torch.min(x).item()
+
+            self.out_hist = torch.histc(x.flatten(), bins=100, min=self.out_min, max=self.out_max)
+            self.out_hist_bin_edges = torch.linspace(self.out_min, self.out_max, steps=101)
 
         return nn.Identity()(x)
 
@@ -100,7 +106,7 @@ class ShiftDecorator:
         self.shift = shift
     
     def input_transform(self, x):
-        return x - self.shift
+        return torch.sub(x, self.shift)
     
     def output_transform(self, x):
         return nn.Identity()(x)
@@ -210,6 +216,11 @@ class FrozenStatsNormalization(nn.Module):
         self.affine = normalization.affine
     
     def forward(self, x):
+        self.weight = self.weight.to(x.device)
+        self.bias = self.bias.to(x.device)
+        self.running_mean = self.running_mean.to(x.device)
+        self.running_var = self.running_var.to(x.device)
+        
         # batch norm with frozen params
         return nn.functional.batch_norm(
             x, self.running_mean, self.running_var, self.weight, self.bias, False, 0, self.eps)
