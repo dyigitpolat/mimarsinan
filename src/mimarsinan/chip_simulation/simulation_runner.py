@@ -50,6 +50,7 @@ class SimulationRunner:
     def run(self):
         delay = ChipLatency(self.mapping).calculate()
         print(f"  delay: {delay}")
+        print(f"  simulation length: {self.simulation_length}")
 
         simulation_driver = NevresimDriver(
             self.input_size,
