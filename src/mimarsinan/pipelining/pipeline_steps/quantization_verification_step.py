@@ -41,9 +41,7 @@ class QuantizationVerificationStep(PipelineStep):
                 assert isinstance(perceptron.normalization, FrozenStatsNormalization)
                 fused_w, fused_b = get_fused_weights(perceptron.layer, perceptron.normalization)
                 
-                w_max = torch.max(torch.abs(fused_w))
-                b_max = torch.max(torch.abs(fused_b))
-                scale_param = self.q_max / max(w_max, b_max)
+                scale_param = self.q_max
                 
                 print(fused_w * scale_param)
                 assert torch.allclose(fused_w * scale_param, torch.round(fused_w * scale_param),
@@ -54,16 +52,13 @@ class QuantizationVerificationStep(PipelineStep):
             else:
                 if perceptron.layer.bias is None:
                     print("no bn, no bias")
-
-                    max_w = perceptron.layer.weight.data.abs().max()
-                    scale_param = self.q_max / max_w
+                    
+                    scale_param = self.q_max
                     assert torch.allclose(perceptron.layer.weight.data * scale_param, torch.round(perceptron.layer.weight.data * scale_param),
                                           rtol=1e-03, atol=1e-03)
                 else:
                     print("no bn")
-                    max_w = torch.max(torch.abs(perceptron.layer.weight.data))
-                    max_b = torch.max(torch.abs(perceptron.layer.bias.data))
-                    scale_param = self.q_max / max(max_w, max_b)
+                    scale_param = self.q_max
                     q_w = perceptron.layer.weight.data * scale_param
                     q_b = perceptron.layer.bias.data * scale_param
 
