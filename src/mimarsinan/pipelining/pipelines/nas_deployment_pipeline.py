@@ -56,11 +56,11 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("Pretraining", PretrainingStep(self))
         self.add_pipeline_step("Clamp Adaptation", ClampAdaptationStep(self))
-        #self.add_pipeline_step("Scale Adaptation", ScaleAdaptationStep(self))
         self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
         self.add_pipeline_step("Activation Shifting", ActivationShiftStep(self))
         self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
-        #self.add_pipeline_step("Perceptron Fusion", PerceptronFusionStep(self))
+        self.add_pipeline_step("Scale Adaptation", ScaleAdaptationStep(self))
+        self.add_pipeline_step("Parameter Scale Adaptation", ParameterScaleAdaptationStep(self))
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
         self.add_pipeline_step("Quantization Verification", QuantizationVerificationStep(self))
         self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
@@ -114,10 +114,50 @@ class NASDeploymentPipeline(Pipeline):
             model = self.cache.get(self._create_real_key(step.name, 'model'))
             for idx, perceptron in enumerate(model.get_perceptrons()):
                 if(isinstance(perceptron.activation, TransformedActivation)):
-                    hist = perceptron.activation.get_stats().in_hist
-                    bin_edges = perceptron.activation.get_stats().in_hist_bin_edges
-                    
-                    HistogramVisualizer(hist, bin_edges, -10, 10).plot(f"{path}/p_{idx}.png")
+                    hist = perceptron.activation.get_stats().in_hist.tolist()
+                    bin_edges = perceptron.activation.get_stats().in_hist_bin_edges.tolist()
+
+                    trimmed_hist, trimmed_edges = self._trim_histogram(hist, bin_edges)
+
+                    rob_max = self._find_robust_max(trimmed_hist, trimmed_edges)
+                    HistogramVisualizer(trimmed_hist, trimmed_edges, -10, 10, v_line = rob_max).plot(f"{path}/h_{idx}.png")
+
+
+    def _trim_histogram(self, hist, bin_edges):
+        index_cross_zero = -1
+
+        print(len(hist), len(bin_edges))
+        for idx, edge in enumerate(bin_edges):
+            if(edge > 0):
+                index_cross_zero = idx
+                break
+        
+        clamped_histogram = hist[index_cross_zero:]
+        clamped_edges = bin_edges[index_cross_zero:]
+
+        print(len(clamped_histogram), len(clamped_edges))
+
+        for idx, _ in enumerate(clamped_histogram):
+            clamped_histogram[idx] *= clamped_edges[idx]
+        
+        return clamped_histogram, clamped_edges
+
+    def _find_robust_max(self, hist, bin_edges):
+        hist_sum = 0
+        for value in hist:
+            hist_sum += value
+
+        rate = 0.8
+        current_sum = 0
+
+        for idx, value in enumerate(reversed(hist)):
+            current_sum += value
+            print(idx, current_sum / hist_sum)
+            if(current_sum / hist_sum > (1.0 - rate)):
+                print(idx, bin_edges[-idx+1])
+                return bin_edges[-idx+1]
+            
+        return bin_edges[-1]
 
 
 
