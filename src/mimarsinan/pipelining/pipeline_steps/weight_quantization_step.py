@@ -16,7 +16,6 @@ class WeightQuantizationStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
         self.tuner = None
-        self.trainer = None
     
     def validate(self):
         return self.tuner.validate()
@@ -31,7 +30,7 @@ class WeightQuantizationStep(PipelineStep):
 
                 perceptron.normalization = \
                     FrozenStatsNormalization(perceptron.normalization)
-
+                
         self.tuner = NormalizationAwarePerceptronQuantizationTuner(
             self.pipeline,
             model = model,
@@ -39,6 +38,7 @@ class WeightQuantizationStep(PipelineStep):
             target_tq = self.pipeline.config['target_tq'],
             target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
+
         self.tuner.run()
         
         self.update_entry("model", model, 'torch_model')

@@ -1,4 +1,3 @@
-from mimarsinan.mapping.mapping_utils import get_fused_weights
 import torch
 import torch.nn as nn
         
@@ -8,7 +7,7 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
-from mimarsinan.models.layers import FrozenStatsNormalization
+from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
 class QuantizationVerificationStep(PipelineStep):
     def __init__(self, pipeline):
@@ -33,37 +32,21 @@ class QuantizationVerificationStep(PipelineStep):
         self.trainer.report_function = self.pipeline.reporter.report
 
         for perceptron in self.get_entry("model").get_perceptrons():
-            assert isinstance(perceptron.layer, nn.Linear) or isinstance(perceptron.layer, nn.Identity)
+            perceptron.to(self.pipeline.config['device'])
 
-            if not isinstance(perceptron.normalization, nn.Identity):
-                print("bn")
+            _fused_w = PerceptronTransformer().get_effective_weight(perceptron)
+            _fused_b = PerceptronTransformer().get_effective_bias(perceptron)
 
-                assert isinstance(perceptron.normalization, FrozenStatsNormalization)
-                fused_w, fused_b = get_fused_weights(perceptron.layer, perceptron.normalization)
-                
-                scale_param = self.q_max
-                
-                print(fused_w * scale_param)
-                assert torch.allclose(fused_w * scale_param, torch.round(fused_w * scale_param),
-                                      rtol=1e-02, atol=1e-02)
-                assert torch.allclose(fused_b * scale_param, torch.round(fused_b * scale_param),
-                                      rtol=1e-02, atol=1e-02)
-                print ("verified bn")
-            else:
-                if perceptron.layer.bias is None:
-                    print("no bn, no bias")
-                    
-                    scale_param = self.q_max
-                    assert torch.allclose(perceptron.layer.weight.data * scale_param, torch.round(perceptron.layer.weight.data * scale_param),
-                                          rtol=1e-03, atol=1e-03)
-                else:
-                    print("no bn")
-                    scale_param = self.q_max
-                    q_w = perceptron.layer.weight.data * scale_param
-                    q_b = perceptron.layer.bias.data * scale_param
+            w_max = torch.max(torch.abs(_fused_w))
+            b_max = torch.max(torch.abs(_fused_b))
+            p_max = max(w_max, b_max)
 
-                    assert torch.allclose(q_w, torch.round(q_w),
-                                          rtol=1e-03, atol=1e-03)
-                    assert torch.allclose(q_b, torch.round(q_b),
-                                          rtol=1e-03, atol=1e-03)
-                print ("verified non")
+            param_scale = self.q_max / p_max
+
+            assert torch.allclose(
+                _fused_w * param_scale, torch.round(_fused_w * param_scale),
+                atol=1e-3, rtol=1e-3), f"{_fused_w * param_scale}"
+
+            assert torch.allclose(
+                _fused_b * param_scale, torch.round(_fused_b * param_scale),
+                atol=1e-3, rtol=1e-3), f"{_fused_b * param_scale}"
