@@ -19,7 +19,7 @@ class NormalizationAwarePerceptronQuantization:
             self._verify_fuse_quantization(out_perceptron)
             return out_perceptron
 
-        assert isinstance(perceptron.normalization, FrozenStatsNormalization)
+        # assert isinstance(perceptron.normalization, FrozenStatsNormalization)
 
         u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
         fused_w, fused_b = get_fused_weights(perceptron.layer, perceptron.normalization)
@@ -70,9 +70,7 @@ class NormalizationAwarePerceptronQuantization:
         else:
             _fused_w, _fused_b = get_fused_weights(perceptron.layer, perceptron.normalization)
 
-        w_max = torch.max(torch.abs(_fused_w))
-        b_max = torch.max(torch.abs(_fused_b))
-        param_scale = self.q_max / max(w_max, b_max)
+        param_scale = self.q_max
 
         assert torch.allclose(
             _fused_w * param_scale, torch.round(_fused_w * param_scale),
@@ -83,17 +81,26 @@ class NormalizationAwarePerceptronQuantization:
             atol=1e-3, rtol=1e-3), f"{_fused_b * param_scale}"
         
     def _get_quantized_param(self, param):
-        param_max = torch.max(torch.abs(param))
-        param_scale = self.q_max / param_max
-        q_param = torch.round(param * param_scale) / param_scale
+        p_max = torch.max(torch.abs(param))
+        adjusted_scale = (1.0 / p_max)
+        s_param = param * adjusted_scale
+
+        param_scale = self.q_max
+        q_param = torch.round(s_param * param_scale) / param_scale
         return q_param
         
     def _get_quantized_params(self, w, b):
         w_max = torch.max(torch.abs(w))
         b_max = torch.max(torch.abs(b))
-        param_scale = self.q_max / max(w_max, b_max)
-        q_w = torch.round(w * param_scale) / param_scale
-        q_b = torch.round(b * param_scale) / param_scale
+        p_max = max(w_max, b_max)
+        adjusted_scale = (1.0 / p_max)
+
+        s_w = w * adjusted_scale
+        s_b = b * adjusted_scale
+
+        param_scale = self.q_max
+        q_w = torch.round(s_w * param_scale) / param_scale
+        q_b = torch.round(s_b * param_scale) / param_scale
         return q_w, q_b
         
     def _get_transformed_parameters(self, fused_w, fused_b, u, beta, mean):
