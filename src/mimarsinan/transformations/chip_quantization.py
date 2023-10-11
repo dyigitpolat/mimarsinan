@@ -24,7 +24,7 @@ class ChipQuantization:
             self.verify_quantization(core)
 
             print(core.threshold)
-            core.threshold *= self.quantizer.q_max 
+            core.threshold *= self.quantizer.q_max
             print(core.threshold)
 
             core.core_matrix *= self.quantizer.q_max
