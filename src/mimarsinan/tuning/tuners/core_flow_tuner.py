@@ -32,12 +32,12 @@ class CoreFlowTuner:
     def run(self):
         non_quantized_mapping = copy.deepcopy(self.mapping)
         core_flow = CoreFlow(self.input_shape, non_quantized_mapping, self.target_tq)
-        print(f"  CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
+        print(f"  Non-Quantized CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         unscaled_quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).unscaled_quantize(unscaled_quantized_mapping.cores)
         core_flow = CoreFlow(self.input_shape, unscaled_quantized_mapping, self.target_tq)
-        print(f"  CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
+        print(f"  Quantized CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
@@ -72,20 +72,26 @@ class CoreFlowTuner:
         return core_flow.core_sums
     
     def _get_step_scale(self, mapping):
+        # return 1.0
         max_thresh = max([core.threshold for core in mapping.cores])
-        return max_thresh / 7.0
+        return max_thresh / ((self.quantization_bits - 1) ** 2)
 
     
     def _tune_thresholds(self, core_sums, cycles, lr, mapping):
         print("  Tuning thresholds...")
         best_acc = 0
+
+        core_sums_mean = 0
+        for core_sum in core_sums:
+            core_sums_mean += core_sum
+        core_sums_mean /= len(core_sums)
         
         import numpy as np
         for _ in range(cycles):
             print(f"    Tuning Cycle {_ + 1}/{cycles}")
             
             step_scale = self._get_step_scale(mapping)
-            spiking_core_flow = SpikingCoreFlow(self.input_shape, mapping, int(self.simulation_steps * step_scale))
+            spiking_core_flow = SpikingCoreFlow(self.input_shape, mapping, math.ceil(self.simulation_steps * step_scale))
             spiking_core_flow_trainer = BasicTrainer(
             spiking_core_flow, 
                 self.device, self.data_loader_factory,
@@ -93,6 +99,12 @@ class CoreFlowTuner:
             spiking_core_flow_trainer.report_function = self.report_function 
 
             acc = spiking_core_flow_trainer.validate()
+
+            spike_sum_mean = 0
+            for core_sum in spiking_core_flow.core_sums:
+                spike_sum_mean += core_sum / math.ceil(self.simulation_steps * step_scale)
+            spike_sum_mean /= len(spiking_core_flow.core_sums)
+
             print(f"    acc: {acc}")
 
             if acc > best_acc:
@@ -100,8 +112,8 @@ class CoreFlowTuner:
                 best_thresholds = [core.threshold for core in mapping.cores]
 
             for idx, core in enumerate(mapping.cores):
-                rate_numerator = core_sums[idx]
-                rate_denominator = spiking_core_flow.core_sums[idx] / int(self.simulation_steps * step_scale)
+                rate_numerator = 1.1 * core_sums[idx] / core_sums_mean
+                rate_denominator = (spiking_core_flow.core_sums[idx] / math.ceil(self.simulation_steps * step_scale)) / spike_sum_mean
                 #print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
                 
                 if rate_denominator == 0: 
