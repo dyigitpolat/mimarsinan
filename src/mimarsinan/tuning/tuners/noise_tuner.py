@@ -7,7 +7,8 @@ class NoiseTuner(BasicTuner):
                  pipeline, 
                  model, 
                  target_accuracy, 
-                 lr):
+                 lr,
+                 adaptation_manager):
         
         super().__init__(
             pipeline, 
@@ -17,6 +18,9 @@ class NoiseTuner(BasicTuner):
 
         self.lr = lr
         self.target_noise_amount = 2.0 / pipeline.config['target_tq']
+
+        self.adaptation_manager = adaptation_manager
+
     def _get_target_decay(self):
         return 0.999
     
@@ -28,17 +32,14 @@ class NoiseTuner(BasicTuner):
 
     def _update_and_evaluate(self, rate):
         for perceptron in self.model.get_perceptrons():
-            perceptron.set_regularization(NoisyDropout(0.0, rate, self.target_noise_amount * perceptron.activation_scale))
+            self.adaptation_manager.noise_rate = rate
+            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
 
     def run(self):
         super().run()
-        
-        for perceptron in self.model.get_perceptrons():
-            perceptron.set_regularization(NoisyDropout(0.0, 1.0, self.target_noise_amount * perceptron.activation_scale))
-            
         self.trainer.train_until_target_accuracy(self._find_lr() / 2, self.epochs, self._get_target())
 
         return self.trainer.validate()
