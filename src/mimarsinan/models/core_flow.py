@@ -25,7 +25,6 @@ class CoreFlow(nn.Module):
             cq_activation = TransformedActivation(
                 nn.ReLU(),
                 [
-                    ShiftDecorator(1.0 / self.Tq),
                     QuantizeDecorator(Tq, core.activation_scale),
                     ClampDecorator(0.0, core.activation_scale)
                 ])
