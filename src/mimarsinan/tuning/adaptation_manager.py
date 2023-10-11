@@ -51,6 +51,6 @@ class AdaptationManager(nn.Module):
         return RateAdjustedDecorator(
             self.quantization_rate, 
             NestedDecoration(
-                [ShiftDecorator(shift_back_amount * 0.0), 
+                [ShiftDecorator(shift_back_amount), 
                 QuantizeDecorator(pipeline_config["target_tq"], perceptron.activation_scale)]),
             RandomMaskAdjustmentStrategy())
