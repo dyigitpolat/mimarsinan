@@ -1,5 +1,5 @@
 from mimarsinan.pipelining.pipeline import Pipeline
-from mimarsinan.model_training.training_utilities import BasicClassificationLoss, NormalizationAwareClassificationLoss
+from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer
