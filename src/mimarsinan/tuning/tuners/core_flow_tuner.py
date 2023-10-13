@@ -45,7 +45,7 @@ class CoreFlowTuner:
         print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         self._tune_thresholds(
-            self._get_core_sums(unscaled_quantized_mapping), cycles=10, lr=0.5, mapping=quantized_mapping)
+            self._get_core_sums(unscaled_quantized_mapping), cycles=10, lr=1.0, mapping=quantized_mapping)
         
         self._quantize_thresholds(quantized_mapping, 1.0)
         scaled_simulation_steps = math.ceil(self.simulation_steps* self._get_step_scale(quantized_mapping))
@@ -112,7 +112,7 @@ class CoreFlowTuner:
                 best_thresholds = [core.threshold for core in mapping.cores]
 
             for idx, core in enumerate(mapping.cores):
-                rate_numerator = 1.1 * core_sums[idx] / core_sums_mean
+                rate_numerator = core_sums[idx] / core_sums_mean
                 rate_denominator = (spiking_core_flow.core_sums[idx] / math.ceil(self.simulation_steps * step_scale)) / spike_sum_mean
                 #print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
                 
