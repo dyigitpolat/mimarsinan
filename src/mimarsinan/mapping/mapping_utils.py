@@ -3,6 +3,8 @@ from mimarsinan.models.layers import *
 from mimarsinan.mapping.softcore_mapping import *
 from mimarsinan.transformations.weight_quantization import *
 
+from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+
 import einops
 import numpy as np
 
@@ -196,33 +198,7 @@ class StackMapper:
         
         self.sources = layer_sources
         return self.sources
-
-def get_fused_weights(linear_layer, bn_layer):
-    if isinstance(bn_layer, nn.Identity):
-        w = linear_layer.weight.data
-        b = linear_layer.bias.data if linear_layer.bias is not None else torch.zeros(w.shape[0]).to(w.device)
-        return w.clone(), b.clone()
     
-    l = linear_layer
-    bn = bn_layer
-
-    w = l.weight.data
-    b = l.bias.data if l.bias is not None else torch.zeros(w.shape[0]).to(w.device)
-
-    new_w = w.clone()
-    new_b = b.clone()
-
-    gamma = bn.weight.data.to(w.device)
-    beta = bn.bias.data.to(w.device)
-    var = bn.running_var.data.to(w.device)
-    mean = bn.running_mean.data.to(w.device)
-    u = gamma / torch.sqrt(var + bn.eps)
-
-    new_w[:,:] = w * u.unsqueeze(1)
-    new_b[:] = (b - mean) * u + beta
-    
-    return new_w, new_b
-
 class AddMapper:
     def __init__(self, source_mapper_a, source_mapper_b):
         self.source_mapper_a = source_mapper_a
@@ -268,25 +244,13 @@ class PerceptronMapper:
         self.source_mapper = source_mapper
         self.sources = None
 
-    def fuse_normalization(self):
-        if isinstance(self.perceptron.normalization, nn.Identity):
-            layer = self.perceptron.layer
-            w = layer.weight.data
-            b = layer.bias.data if layer.bias is not None else None
-            return w, b
-        
-        assert isinstance(self.perceptron.normalization, FrozenStatsNormalization)
-        assert self.perceptron.normalization.affine
-
-        return get_fused_weights(
-            linear_layer=self.perceptron.layer, 
-            bn_layer=self.perceptron.normalization)
-
     def map(self, mapping):
         if self.sources is not None:
             return self.sources
         
-        layer_weights, layer_biases = self.fuse_normalization()
+        layer_weights = PerceptronTransformer().get_effective_weight(self.perceptron)
+        layer_biases = PerceptronTransformer().get_effective_bias(self.perceptron)
+
         layer_weights.detach().cpu().numpy()
         layer_biases.detach().cpu().numpy()
 
