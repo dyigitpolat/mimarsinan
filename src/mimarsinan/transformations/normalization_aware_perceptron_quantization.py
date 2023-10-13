@@ -23,10 +23,15 @@ class NormalizationAwarePerceptronQuantization:
         b_max = torch.max(torch.abs(b))
         p_max = max(w_max, b_max)
 
-        scale = self.q_max / p_max
+        natural_scale = 1.0 / p_max
+        target_scale = 1.0
+        adjusted_scale = target_scale * self.rate + natural_scale * (1.0 - self.rate)
+        adjusted_clamp = 1.0 * self.rate + p_max * (1.0 - self.rate)
         def quantize_param(param):
-            return torch.round(param * scale) / scale
-
+            scaled_param = param * adjusted_scale
+            clipped_param = torch.clamp(scaled_param, -adjusted_clamp, adjusted_clamp)
+            return torch.round(clipped_param * self.q_max) / (self.q_max)
+        
         PerceptronTransformer().apply_effective_parameter_transform(out_perceptron, quantize_param) 
 
         self._verify_fuse_quantization(out_perceptron)
@@ -37,17 +42,13 @@ class NormalizationAwarePerceptronQuantization:
 
         _fused_w = PerceptronTransformer().get_effective_weight(perceptron)
         _fused_b = PerceptronTransformer().get_effective_bias(perceptron)
-
-        w_max = torch.max(torch.abs(_fused_w))
-        b_max = torch.max(torch.abs(_fused_b))
-        p_max = max(w_max, b_max)
-
-        param_scale = self.q_max / p_max
+        
+        q_scale = self.q_max
 
         assert torch.allclose(
-            _fused_w * param_scale, torch.round(_fused_w * param_scale),
-            atol=1e-3, rtol=1e-3), f"{_fused_w * param_scale}"
+            _fused_w * q_scale, torch.round(_fused_w * q_scale),
+            atol=1e-3, rtol=1e-3), f"{_fused_w * q_scale}"
 
         assert torch.allclose(
-            _fused_b * param_scale, torch.round(_fused_b * param_scale),
-            atol=1e-3, rtol=1e-3), f"{_fused_b * param_scale}"
+            _fused_b * q_scale, torch.round(_fused_b * q_scale),
+            atol=1e-3, rtol=1e-3), f"{_fused_b * q_scale}"

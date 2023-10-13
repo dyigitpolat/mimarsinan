@@ -37,11 +37,7 @@ class QuantizationVerificationStep(PipelineStep):
             _fused_w = PerceptronTransformer().get_effective_weight(perceptron)
             _fused_b = PerceptronTransformer().get_effective_bias(perceptron)
 
-            w_max = torch.max(torch.abs(_fused_w))
-            b_max = torch.max(torch.abs(_fused_b))
-            p_max = max(w_max, b_max)
-
-            param_scale = self.q_max / p_max
+            param_scale = self.q_max# / p_max
 
             assert torch.allclose(
                 _fused_w * param_scale, torch.round(_fused_w * param_scale),
