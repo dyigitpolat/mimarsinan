@@ -16,6 +16,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
 
         self.target_tq = target_tq
         self.quantization_bits = quantization_bits
+        self.rate = 0.0
 
     def _get_target_decay(self):
         return 0.999
@@ -25,9 +26,10 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
     
     def _get_new_perceptron_transform(self):
         return NormalizationAwarePerceptronQuantization(
-            self.quantization_bits, self.pipeline.config['device']).transform
+            self.quantization_bits, self.pipeline.config['device'], self.rate).transform
 
     def _update_and_evaluate(self, rate):
+        self.rate = rate
         self.trainer.perceptron_transformation = self._mixed_transform(rate)
         self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
