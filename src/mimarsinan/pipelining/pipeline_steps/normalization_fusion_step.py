@@ -1,12 +1,11 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
-from mimarsinan.mapping.mapping_utils import *
-
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
-from mimarsinan.pipelining.pipeline_steps.perceptron_fusion_step import FusedLinear
+from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+
+
 
 import torch.nn as nn
 
@@ -35,48 +34,19 @@ class NormalizationFusionStep(PipelineStep):
         self.trainer.report_function = self.pipeline.reporter.report
         
         for perceptron in model.get_perceptrons():
-            self._fuse_normalization(perceptron)
+            perceptron.to(self.pipeline.config['device'])
+            w = PerceptronTransformer().get_effective_weight(perceptron)
+            b = PerceptronTransformer().get_effective_bias(perceptron)
+
+            perceptron.layer = nn.Linear(
+                perceptron.input_features, 
+                perceptron.output_channels, bias=True)
+            
+            perceptron.layer.weight.data = w 
+            perceptron.layer.bias.data = b 
+
+            perceptron.normalization = nn.Identity()
 
         print(self.validate())
 
         self.update_entry("model", model, 'torch_model')
-
-    def bring_back_bias(self, fused_linear_layer):
-        assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'
-        
-        # Get the weights from the existing layer
-        weights = fused_linear_layer.linear.weight.data
-        
-        # Split the weights back into the main weights and the bias
-        main_weights, bias = weights[:, :-1], weights[:, -1]
-
-        # Create a new layer with the main weights and bias
-        out_features, in_features = main_weights.shape
-        new_layer = nn.Linear(in_features, out_features)
-        new_layer.weight.data = main_weights
-        new_layer.bias.data = bias
-
-        return new_layer
-
-    def _fuse_normalization(self, perceptron):
-        if isinstance(perceptron.layer, FusedLinear):
-            perceptron.layer = self.bring_back_bias(perceptron.layer)
-
-        if isinstance(perceptron.normalization, nn.Identity):
-            return
-
-        assert isinstance(perceptron.normalization, FrozenStatsNormalization)
-        assert perceptron.normalization.affine
-
-        perceptron.to(self.pipeline.config['device'])
-        w, b = get_fused_weights(
-            linear_layer=perceptron.layer, bn_layer=perceptron.normalization)
-
-        perceptron.layer = nn.Linear(
-            perceptron.input_features, 
-            perceptron.output_channels, bias=True)
-        
-        perceptron.layer.weight.data = w 
-        perceptron.layer.bias.data = b 
-
-        perceptron.normalization = nn.Identity()
