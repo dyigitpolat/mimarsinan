@@ -21,9 +21,6 @@ class SmallStepEvaluator:
         return json.dumps(configuration)
     
     def _evaluate_model(self, model):
-        for perceptron in model.get_perceptrons():
-            perceptron.set_activation(nn.LeakyReLU())
-    
         trainer = BasicTrainer(
             model.to(self.device),
             self.device, 
