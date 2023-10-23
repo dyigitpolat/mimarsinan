@@ -27,9 +27,6 @@ class PretrainingStep(PipelineStep):
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
-        
-        for perceptron in model.get_perceptrons():
-            perceptron.set_activation(nn.LeakyReLU())
 
         self.trainer.train_n_epochs(
             self.pipeline.config['lr'], 
