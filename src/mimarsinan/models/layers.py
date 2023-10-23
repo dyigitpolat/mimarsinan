@@ -76,10 +76,10 @@ class StatsDecorator:
 
 
         if(len(x.shape) > 1):
-            self.in_mean = torch.mean(x).item()
-            self.in_var = torch.var(x).item()
-            self.in_max = torch.max(x).item()
-            self.in_min = torch.min(x).item()
+            self.in_mean = torch.mean(x)
+            self.in_var = torch.var(x)
+            self.in_max = torch.max(x)
+            self.in_min = torch.min(x)
 
             self.in_hist = torch.histc(x.flatten(), bins=100, min=self.in_min, max=self.in_max)
             self.in_hist_bin_edges = torch.linspace(self.in_min, self.in_max, steps=101)
@@ -89,10 +89,10 @@ class StatsDecorator:
     def output_transform(self, x):
         
         if(len(x.shape) > 1):
-            self.out_mean = torch.mean(x).item()
-            self.out_var = torch.var(x).item()
-            self.out_max = torch.max(x).item()
-            self.out_min = torch.min(x).item()
+            self.out_mean = torch.mean(x)
+            self.out_var = torch.var(x)
+            self.out_max = torch.max(x)
+            self.out_min = torch.min(x)
 
             self.out_hist = torch.histc(x.flatten(), bins=100, min=self.out_min, max=self.out_max)
             self.out_hist_bin_edges = torch.linspace(self.out_min, self.out_max, steps=101)
@@ -191,18 +191,27 @@ class DecoratedActivation(nn.Module):
 class TransformedActivation(nn.Module):
     def __init__(self, base_activation, decorators):
         super(TransformedActivation, self).__init__()
-        self.act = base_activation
-        for decorator in decorators:
-            self.act = DecoratedActivation(self.act, decorator)
+        self.base_activation = base_activation
+        self.decorators = decorators
+        self._update_activation()
+    
+    def decorate(self, decorator):
+        self.decorators.append(decorator)
+        self._update_activation()
 
-        self.stats_decorator = StatsDecorator()
-        self.act = DecoratedActivation(self.act, self.stats_decorator)
-
-    def get_stats(self):
-        return self.stats_decorator
+    def pop_decorator(self):
+        popped_decorator = self.decorators.pop()
+        self._update_activation()
+        return popped_decorator
 
     def forward(self, x):
         return self.act(x)
+    
+    def _update_activation(self):
+        self.act = self.base_activation
+        for decorator in self.decorators:
+            self.act = DecoratedActivation(self.act, decorator)
+        
     
 class FrozenStatsNormalization(nn.Module):
     def __init__(self, normalization):
