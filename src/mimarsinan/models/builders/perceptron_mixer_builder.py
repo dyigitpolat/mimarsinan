@@ -1,12 +1,15 @@
 from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
+from mimarsinan.tuning.adaptation_manager import AdaptationManager
 
+import torch.nn as nn
 class PerceptronMixerBuilder:
-    def __init__(self, device, input_shape, num_classes, max_axons, max_neurons):
+    def __init__(self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config):
         self.device = device
         self.input_shape = input_shape
         self.num_classes = num_classes
         self.max_axons = max_axons
         self.max_neurons = max_neurons
+        self.pipeline_config = pipeline_config
 
     def validate(self, configuration):
         patch_n_1 = configuration["patch_n_1"]
@@ -68,5 +71,10 @@ class PerceptronMixerBuilder:
             self.input_shape, self.num_classes,
             patch_n_1, patch_m_1, patch_c_1, fc_w_1, fc_k_1,
             patch_n_2, patch_c_2, fc_w_2, fc_k_2)
-    
+        
+        adaptation_manager = AdaptationManager()
+        for perceptron in perceptron_flow.get_perceptrons():
+            perceptron.base_activation = nn.GELU()
+            adaptation_manager.update_activation(self.pipeline_config, perceptron)
+
         return perceptron_flow
