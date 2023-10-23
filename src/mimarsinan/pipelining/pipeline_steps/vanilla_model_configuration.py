@@ -24,7 +24,8 @@ class VanillaModelConfigurationStep(PipelineStep):
             self.pipeline.config['input_shape'], 
             self.pipeline.config['num_classes'], 
             self.pipeline.config['max_axons'], 
-            self.pipeline.config['max_neurons'])
+            self.pipeline.config['max_neurons'],
+            self.pipeline.config)
     
         model_config = self.pipeline.config['model_config']
 
