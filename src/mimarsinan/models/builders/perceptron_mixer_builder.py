@@ -74,7 +74,7 @@ class PerceptronMixerBuilder:
         
         adaptation_manager = AdaptationManager()
         for perceptron in perceptron_flow.get_perceptrons():
-            perceptron.base_activation = nn.GELU()
+            perceptron.base_activation = nn.LeakyReLU()
             adaptation_manager.update_activation(self.pipeline_config, perceptron)
 
         return perceptron_flow
