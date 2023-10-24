@@ -81,8 +81,8 @@ class StatsDecorator:
             self.in_max = torch.max(x)
             self.in_min = torch.min(x)
 
-            self.in_hist = torch.histc(x.flatten(), bins=100, min=self.in_min, max=self.in_max)
-            self.in_hist_bin_edges = torch.linspace(self.in_min, self.in_max, steps=101)
+            self.in_hist = torch.histc(x.flatten(), bins=100, min=self.in_min.item(), max=self.in_max.item())
+            self.in_hist_bin_edges = torch.linspace(self.in_mi.item(), self.in_max.item(), steps=101)
 
         return nn.Identity()(x)
     
@@ -94,8 +94,8 @@ class StatsDecorator:
             self.out_max = torch.max(x)
             self.out_min = torch.min(x)
 
-            self.out_hist = torch.histc(x.flatten(), bins=100, min=self.out_min, max=self.out_max)
-            self.out_hist_bin_edges = torch.linspace(self.out_min, self.out_max, steps=101)
+            self.out_hist = torch.histc(x.flatten(), bins=100, min=self.out_min.item(), max=self.out_max.item())
+            self.out_hist_bin_edges = torch.linspace(self.out_min.item(), self.out_max.item(), steps=101)
 
         return nn.Identity()(x)
 
