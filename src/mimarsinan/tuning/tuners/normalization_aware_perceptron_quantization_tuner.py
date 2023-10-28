@@ -19,7 +19,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
         self.rate = 0.0
 
     def _get_target_decay(self):
-        return 0.999
+        return 0.99
     
     def _get_previous_perceptron_transform(self):
         return lambda perceptron: copy.deepcopy(perceptron)
