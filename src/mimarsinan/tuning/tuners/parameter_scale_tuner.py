@@ -42,11 +42,13 @@ class ParameterScaleTuner(PerceptronTuner):
             scale = 1.0 / p_max
 
             adjusted_scale = scale * self.rate + 1.0 * (1.0 - self.rate)
+
+            if not isinstance(perceptron.normalization, nn.Identity):
+                perceptron.normalization.running_mean *= adjusted_scale
+                perceptron.normalization.running_var *= (adjusted_scale ** 2)
+
             PerceptronTransformer().apply_effective_parameter_transform(perceptron, lambda x: x * adjusted_scale)
             
-            # if not isinstance(perceptron.normalization, nn.Identity):
-            #     perceptron.normalization.running_mean *= adjusted_scale
-            #     perceptron.normalization.running_var *= (adjusted_scale ** 2)
 
             return perceptron.to(self.device)
         
