@@ -1,8 +1,11 @@
 from mimarsinan.pipelining.pipeline import Pipeline
-from mimarsinan.model_training.training_utilities import BasicClassificationLoss
+from mimarsinan.model_training.training_utilities import *
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 from mimarsinan.models.layers import TransformedActivation
+
+from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
 from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer
 from mimarsinan.visualization.histogram_visualization import HistogramVisualizer
@@ -50,17 +53,17 @@ class NASDeploymentPipeline(Pipeline):
         self._initialize_config(deployment_parameters, platform_constraints)
         self._display_config()
 
-        self.loss = BasicClassificationLoss()
+        self.loss = CustomClassificationLoss()
         
         self.add_pipeline_step("Architecture Search", ArchitectureSearchStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("Pretraining", PretrainingStep(self))
         self.add_pipeline_step("Clamp Adaptation", ClampAdaptationStep(self))
-        self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
+        #self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
         self.add_pipeline_step("Activation Shifting", ActivationShiftStep(self))
         self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
-        self.add_pipeline_step("Scale Adaptation", ScaleAdaptationStep(self))
-        self.add_pipeline_step("Parameter Scale Adaptation", ParameterScaleAdaptationStep(self))
+        #self.add_pipeline_step("Scale Adaptation", ScaleAdaptationStep(self))
+        #self.add_pipeline_step("Parameter Scale Adaptation", ParameterScaleAdaptationStep(self))
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
         self.add_pipeline_step("Quantization Verification", QuantizationVerificationStep(self))
         self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
@@ -112,15 +115,26 @@ class NASDeploymentPipeline(Pipeline):
             os.makedirs(path, exist_ok=True)
 
             model = self.cache.get(self._create_real_key(step.name, 'model'))
+
+            for perceptron in model.get_perceptrons():
+                perceptron.activation.decorate(StatsDecorator())
+
+            BasicTrainer(
+                    model, 
+                    self.config['device'], 
+                    DataLoaderFactory(self.data_provider_factory),
+                    self.loss).validate()
+
             for idx, perceptron in enumerate(model.get_perceptrons()):
-                if(isinstance(perceptron.activation, TransformedActivation)):
-                    hist = perceptron.activation.get_stats().in_hist.tolist()
-                    bin_edges = perceptron.activation.get_stats().in_hist_bin_edges.tolist()
+                stats = perceptron.activation.pop_decorator()
 
-                    trimmed_hist, trimmed_edges = self._trim_histogram(hist, bin_edges)
+                hist = stats.in_hist.tolist()
+                bin_edges = stats.in_hist_bin_edges.tolist()
 
-                    rob_max = self._find_robust_max(trimmed_hist, trimmed_edges)
-                    HistogramVisualizer(trimmed_hist, trimmed_edges, -10, 10, v_line = rob_max).plot(f"{path}/h_{idx}.png")
+                trimmed_hist, trimmed_edges = self._trim_histogram(hist, bin_edges)
+
+                rob_max = self._find_robust_max(trimmed_hist, trimmed_edges)
+                HistogramVisualizer(hist[-(len(trimmed_hist)):], trimmed_edges, -10, 10, v_line = rob_max).plot(f"{path}/h_{idx}.png")
 
 
     def _trim_histogram(self, hist, bin_edges):
