@@ -87,6 +87,7 @@ class SoftCoreMapping:
 
         for i in range(new_cores_count): 
             spike_sources = []
+            propagation_dependency = None
             for j in range(input_axons_count):
                 source_core = input_tensor_sources[j, i].core_
                 source_neuron = input_tensor_sources[j, i].neuron_
@@ -97,10 +98,33 @@ class SoftCoreMapping:
                     source_neuron,
                     source_is_input,
                     source_is_off))
+                
+                propagation_dependency = source_core
             
             if(fc_biases is not None):
-                spike_sources.append(SpikeSource(-3, 0, False, False, True))
-            
+                if is_input(propagation_dependency):
+                    spike_sources.append(SpikeSource(propagation_dependency, 0, False, False, True))
+                else:
+                    propagation_neuron = self._create_propagation_neuron_for(propagation_dependency)
+                    spike_sources.append(
+                        SpikeSource(
+                            propagation_dependency, propagation_neuron, False, False, False))
+
+            print("dep: ", propagation_dependency)
+
+            # append propagation indicator axon source
+            if is_input(propagation_dependency):
+                spike_sources.append(SpikeSource(propagation_dependency, 0, False, False, True))
+            else:
+                propagation_neuron = self._create_propagation_neuron_for(propagation_dependency)
+                spike_sources.append(
+                    SpikeSource(
+                        propagation_dependency, propagation_neuron, False, False, False))
+                
+            # append propagation indicator axon
+            core_matrix = np.concatenate(
+                [core_matrix, np.zeros([1, core_matrix.shape[1]])], axis=0)
+
             assert len(spike_sources) == core_matrix.shape[0]
             self.cores.append(
                 SoftCore(core_matrix, spike_sources.copy(), len(self.cores), activation_scale))
@@ -112,6 +136,19 @@ class SoftCoreMapping:
                 [SpikeSource(core_offset + core_idx, neuron_idx) for core_idx in range(o_cols)])
         
         return np.array(layer_sources)
+    
+    def _create_propagation_neuron_for(self, core_idx):
+        core_matrix = self.cores[core_idx].core_matrix
+
+        extended_core_matrix = np.concatenate(
+            [core_matrix, np.zeros([core_matrix.shape[0], 1])], axis=1)
+        extended_core_matrix[-1, -1] = self.cores[core_idx].threshold * 1.0001
+
+        self.cores[core_idx].core_matrix = extended_core_matrix
+
+        propagation_neuron_idx = extended_core_matrix.shape[1] - 1
+        return propagation_neuron_idx
+
 
 def map_mm(mapping, layer_sources, layer_weights, layer_biases = None, activation_scale = 1.0):
     layer_output_shape = np.array([layer_weights.shape[-2], layer_sources.shape[-1]])
