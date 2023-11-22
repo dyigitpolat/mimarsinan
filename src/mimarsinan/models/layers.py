@@ -20,8 +20,9 @@ class StaircaseFunction(Function):
 class DifferentiableClamp(Function):
     @staticmethod
     def forward(ctx, x, a, b):
-        a = torch.tensor(a, device=x.device)
-        b = torch.tensor(b, device=x.device)
+        a = a.clone().detach().to(x.device)
+        b = b.clone().detach().to(x.device)
+    
         ctx.save_for_backward(x, a, b)
         return torch.clamp(x, a, b)
 
@@ -106,6 +107,7 @@ class ShiftDecorator:
         self.shift = shift
     
     def input_transform(self, x):
+        self.shift = self.shift.to(x.device)
         return torch.sub(x, self.shift)
     
     def output_transform(self, x):
@@ -119,6 +121,7 @@ class ScaleDecorator:
         return nn.Identity()(x)
     
     def output_transform(self, x):
+        self.scale = self.scale.to(x.device)
         return self.scale * x
     
 class ClampDecorator:
@@ -130,6 +133,8 @@ class ClampDecorator:
         return nn.Identity()(x)
     
     def output_transform(self, x):
+        self.clamp_min = self.clamp_min.to(x.device)
+        self.clamp_max = self.clamp_max.to(x.device)
         return DifferentiableClamp.apply(x, self.clamp_min, self.clamp_max)
     
 class QuantizeDecorator:
@@ -141,6 +146,8 @@ class QuantizeDecorator:
         return nn.Identity()(x)
     
     def output_transform(self, x):
+        self.levels_before_c = self.levels_before_c.to(x.device)
+        self.c = self.c.to(x.device)
         return StaircaseFunction.apply(x, self.levels_before_c / self.c)
     
 class RandomMaskAdjustmentStrategy:

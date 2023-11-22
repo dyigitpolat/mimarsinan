@@ -26,13 +26,13 @@ class AdaptationManager(nn.Module):
         
         target_noise_amount = 2.0 / pipeline_config['target_tq']
         perceptron.set_regularization(
-            NoisyDropout(0.0, self.noise_rate, target_noise_amount * perceptron.activation_scale)
+            NoisyDropout(torch.tensor(0.0), self.noise_rate, target_noise_amount * perceptron.activation_scale)
         )
 
     def get_rate_adjusted_clamp_decorator(self, perceptron):
         return RateAdjustedDecorator(
             self.clamp_rate, 
-            ClampDecorator(0.0, perceptron.activation_scale), 
+            ClampDecorator(torch.tensor(0.0), perceptron.activation_scale), 
             RandomMaskAdjustmentStrategy())
 
     def get_rate_adjusted_scale_decorator(self, perceptron):
@@ -52,5 +52,5 @@ class AdaptationManager(nn.Module):
             self.quantization_rate, 
             NestedDecoration(
                 [ShiftDecorator(shift_back_amount), 
-                QuantizeDecorator(pipeline_config["target_tq"], perceptron.activation_scale)]),
+                QuantizeDecorator(torch.tensor(pipeline_config["target_tq"]), perceptron.activation_scale)]),
             RandomMaskAdjustmentStrategy())
