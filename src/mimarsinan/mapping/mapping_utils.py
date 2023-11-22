@@ -60,7 +60,8 @@ class SoftCoreMapping:
         output_shape, # 
         fc_weights,
         fc_biases = None,
-        activation_scale = 1.0): # 
+        activation_scale = torch.tensor(1.0), 
+        parameter_scale = torch.tensor(1.0)): # 
 
         w_rows = fc_weights.shape[-2]
         w_cols = fc_weights.shape[-1]
@@ -103,7 +104,7 @@ class SoftCoreMapping:
             
             assert len(spike_sources) == core_matrix.shape[0]
             self.cores.append(
-                SoftCore(core_matrix, spike_sources.copy(), len(self.cores), activation_scale))
+                SoftCore(core_matrix, spike_sources.copy(), len(self.cores), activation_scale, parameter_scale))
 
         layer_sources = []
         core_offset = len(self.cores) - new_cores_count
@@ -113,14 +114,15 @@ class SoftCoreMapping:
         
         return np.array(layer_sources)
 
-def map_mm(mapping, layer_sources, layer_weights, layer_biases = None, activation_scale = 1.0):
+def map_mm(mapping, layer_sources, layer_weights, layer_biases = None, activation_scale = torch.tensor(1.0), parameter_scale = torch.tensor(1.0)):
     layer_output_shape = np.array([layer_weights.shape[-2], layer_sources.shape[-1]])
     return mapping.map_fc(
         layer_sources, 
         layer_output_shape, 
         layer_weights,
         layer_biases,
-        activation_scale)   
+        activation_scale,
+        parameter_scale)   
 
 class InputMapper:
     def __init__(self, input_shape):
@@ -261,7 +263,8 @@ class PerceptronMapper:
             layer_sources, 
             layer_weights, 
             layer_biases, 
-            self.perceptron.activation_scale)
+            self.perceptron.activation_scale,
+            self.perceptron.parameter_scale)
         layer_sources = layer_sources.transpose()
 
         self.sources = layer_sources
