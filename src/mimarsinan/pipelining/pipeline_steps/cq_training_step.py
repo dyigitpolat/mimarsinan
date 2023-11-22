@@ -6,6 +6,7 @@ from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner 
 from mimarsinan.models.layers import FrozenStatsNormalization
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 
+import torch
 import torch.nn as nn
 
 class FullCQNormalizationAwarePerceptronQuantizationTuner(NormalizationAwarePerceptronQuantizationTuner):
@@ -30,7 +31,7 @@ class FullCQNormalizationAwarePerceptronQuantizationTuner(NormalizationAwarePerc
         adaptation_manager.clamp_rate = 1.0
 
         for perceptron in self.model.get_perceptrons():
-            perceptron.activation_scale = 1.0
+            perceptron.activation_scale = torch.tensor(1.0)
             adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         return super()._update_and_evaluate(rate)

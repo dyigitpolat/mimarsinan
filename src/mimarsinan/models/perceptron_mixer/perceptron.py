@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 
 class Perceptron(nn.Module):
     def __init__(
@@ -19,8 +20,9 @@ class Perceptron(nn.Module):
 
         self.regularization = nn.Identity()
         
-        self.parameter_scale = 1.0
-        self.activation_scale = 1.0
+        self.register_buffer('parameter_scale', torch.tensor(1.0))
+        self.register_buffer('activation_scale', torch.tensor(1.0))
+
         self.base_activation = nn.LeakyReLU()
 
     
