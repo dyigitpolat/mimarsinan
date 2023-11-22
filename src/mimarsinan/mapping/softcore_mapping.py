@@ -1,5 +1,6 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 
+import torch
 import numpy as np
 
 def is_off(idx): return idx == -1
@@ -7,12 +8,13 @@ def is_input(idx): return idx == -2
 def is_always_on(idx): return idx == -3
 
 class SoftCore:
-    def __init__(self, core_matrix, axon_sources, id, activation_scale = 1.0):
+    def __init__(self, core_matrix, axon_sources, id, activation_scale = torch.tensor(1.0), parameter_scale = torch.tensor(1.0)):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
 
         self.id = id
         self.activation_scale = activation_scale
+        self.parameter_scale = parameter_scale
         self.threshold = 1.0
 
     def get_input_count(self):
@@ -32,6 +34,8 @@ class HardCore:
         self.available_axons = axons_per_core
         self.available_neurons = neurons_per_core
 
+        self.activation_scale = None
+        self.parameter_scale = None
         self.threshold = None
     
         self.unusable_space = 0
@@ -61,6 +65,12 @@ class HardCore:
 
         if self.threshold is None:
             self.threshold = softcore.threshold
+
+        if self.activation_scale is None:
+            self.activation_scale = softcore.activation_scale
+
+        if self.parameter_scale is None:
+            self.parameter_scale = softcore.parameter_scale
 
         self.unusable_space += \
             (neuron_offset * softcore.get_input_count()) + \
