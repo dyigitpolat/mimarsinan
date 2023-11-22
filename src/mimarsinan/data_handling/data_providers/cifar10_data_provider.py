@@ -15,13 +15,13 @@ class CIFAR10_DataProvider(DataProvider):
 
         train_transform = transforms.Compose([
             transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
-            transforms.ToTensor(),
-            transforms.Normalize([0, 0, 0], [1, 1, 1])
+            transforms.ToTensor()
+            #transforms.Normalize([0, 0, 0], [1, 1, 1])
         ])
 
         test_validation_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([0, 0, 0], [1, 1, 1])
+            transforms.ToTensor()
+            #transforms.Normalize([0, 0, 0], [1, 1, 1])
         ])
 
         training_dataset = torchvision.datasets.CIFAR10(
