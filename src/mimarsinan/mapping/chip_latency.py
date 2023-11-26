@@ -39,5 +39,14 @@ class ChipLatency:
         
     def calculate(self):
         self.memo = {}
-        return max([
+        result = max([
             self.get_delay_for(source) for source in self.mapping.output_sources])
+        
+        for key in self.memo:
+            core_idx, neuron_idx = key
+            self.mapping.cores[core_idx].latency = self.memo[key] - 1
+        
+        for core in self.mapping.cores:
+            print(core.latency)
+
+        return result
