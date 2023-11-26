@@ -17,6 +17,8 @@ class SoftCore:
         self.parameter_scale = parameter_scale
         self.threshold = 1.0
 
+        self.latency = None
+
     def get_input_count(self):
         return len(self.axon_sources)
     
