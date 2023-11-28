@@ -32,8 +32,10 @@ class SpikingCoreFlow(nn.Module):
                 self.core_params[idx].detach().numpy().transpose()
     
     def get_signal(
-            self, x, buffers, core, neuron, is_input, is_off, is_always_on):
-        
+            self, x, buffers, core, neuron, is_input, is_off, is_always_on, cycle):
+        if cycle < self.cores[core].latency:
+            return torch.zeros_like(x[:, 0])
+
         if is_input:
             return x[:, neuron]
         
@@ -45,7 +47,7 @@ class SpikingCoreFlow(nn.Module):
         
         return buffers[core][:, neuron]
     
-    def get_signal_tensor(self, x, buffers, sources):
+    def get_signal_tensor(self, x, buffers, sources, cycle):
         signal_tensor = torch.empty(x.shape[0], len(sources), device=x.device)
         for idx, spike_source in enumerate(sources):
             signal_tensor[:, idx] = self.get_signal(
@@ -55,7 +57,8 @@ class SpikingCoreFlow(nn.Module):
                 spike_source.neuron_, 
                 spike_source.is_input_, 
                 spike_source.is_off_, 
-                spike_source.is_always_on_)
+                spike_source.is_always_on_,
+                cycle)
         
         return signal_tensor
 
@@ -83,11 +86,12 @@ class SpikingCoreFlow(nn.Module):
                 torch.zeros(x.shape[0], core.get_output_count(), device=x.device))
         
         output_signals = torch.zeros(x.shape[0], len(self.output_sources), device=x.device)
-        for _ in range(self.cycles):
+        for cycle in range(self.cycles):
             for core_idx in range(len(self.cores)):
                 input_signals[core_idx] = self.get_signal_tensor(
                     self.to_spikes(x), 
-                    buffers, self.cores[core_idx].axon_sources)
+                    buffers, self.cores[core_idx].axon_sources,
+                    cycle)
 
             for core_idx in range(len(self.cores)):
                 memb = membrane_potentials[core_idx]
@@ -101,6 +105,6 @@ class SpikingCoreFlow(nn.Module):
                 memb[memb > self.thresholds[core_idx]] = 0.0
         
             self.update_stats(buffers)
-            output_signals += self.get_signal_tensor(self.to_spikes(x), buffers, self.output_sources)
+            output_signals += self.get_signal_tensor(self.to_spikes(x), buffers, self.output_sources, cycle)
             
         return output_signals
