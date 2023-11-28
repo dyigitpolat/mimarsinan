@@ -17,12 +17,11 @@ class PerceptronTransformTrainer(BasicTrainer):
             temp_aux_perceptron = copy.deepcopy(aux_perceptron).to(self.device)
             self.perceptron_transformation(temp_aux_perceptron)
 
-            # TODO: This is a hack. We should avoid this.
-            aux_perceptron.set_parameter_scale(temp_aux_perceptron.parameter_scale)
-            aux_perceptron.set_activation_scale(temp_aux_perceptron.activation_scale)
-
-            perceptron.set_parameter_scale(temp_aux_perceptron.parameter_scale)
-            perceptron.set_activation_scale(temp_aux_perceptron.activation_scale)
+            # Handle non-grad params
+            for param, aux_param, temp_aux_param in zip(perceptron.parameters(), aux_perceptron.parameters(), temp_aux_perceptron.parameters()):
+                if not param.requires_grad:
+                    aux_param.data = temp_aux_param.data
+                    param.data = temp_aux_param.data
 
             perceptron.layer.weight.data = temp_aux_perceptron.layer.weight.data
             if perceptron.layer.bias is not None:
