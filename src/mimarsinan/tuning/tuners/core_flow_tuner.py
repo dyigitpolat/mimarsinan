@@ -41,7 +41,7 @@ class CoreFlowTuner:
 
         quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
-        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps * self._get_step_scale(quantized_mapping)))
+        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps))
         print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         self._tune_thresholds(
