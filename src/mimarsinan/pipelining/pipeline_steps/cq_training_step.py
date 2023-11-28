@@ -31,7 +31,7 @@ class FullCQNormalizationAwarePerceptronQuantizationTuner(NormalizationAwarePerc
         adaptation_manager.clamp_rate = 1.0
 
         for perceptron in self.model.get_perceptrons():
-            perceptron.activation_scale = torch.tensor(1.0)
+            perceptron.set_activation_scale(1.0)
             adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         return super()._update_and_evaluate(rate)
