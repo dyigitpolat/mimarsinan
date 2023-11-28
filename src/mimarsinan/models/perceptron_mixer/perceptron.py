@@ -20,12 +20,21 @@ class Perceptron(nn.Module):
 
         self.regularization = nn.Identity()
         
-        self.register_buffer('parameter_scale', torch.tensor(1.0))
-        self.register_buffer('activation_scale', torch.tensor(1.0))
+        self.parameter_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
+        self.activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
         self.base_activation = nn.LeakyReLU()
 
+    def set_parameter_scale(self, new_scale):
+        if isinstance(new_scale, float):
+            new_scale = torch.tensor(new_scale)
+        self.parameter_scale.data = new_scale.data
     
+    def set_activation_scale(self, new_scale):
+        if isinstance(new_scale, float):
+            new_scale = torch.tensor(new_scale)
+        self.activation_scale.data = new_scale.data
+
     def set_activation(self, activation):
         self.activation = activation
 
