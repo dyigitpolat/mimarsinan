@@ -2,7 +2,7 @@ from mimarsinan.pipelining.pipeline import Pipeline
 from mimarsinan.model_training.training_utilities import *
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
-from mimarsinan.models.layers import TransformedActivation
+from mimarsinan.models.layers import StatsDecorator
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
