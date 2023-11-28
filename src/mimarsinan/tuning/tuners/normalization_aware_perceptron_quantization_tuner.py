@@ -22,7 +22,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
         return 0.99
     
     def _get_previous_perceptron_transform(self):
-        return lambda perceptron: copy.deepcopy(perceptron)
+        return lambda perceptron: None
     
     def _get_new_perceptron_transform(self):
         return NormalizationAwarePerceptronQuantization(
