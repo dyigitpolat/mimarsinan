@@ -2,6 +2,7 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.pipelining.pipeline_steps.perceptron_fusion_step import FusedLinear
 from mimarsinan.mapping.mapping_utils import SoftCoreMapping
+from mimarsinan.mapping.chip_latency import ChipLatency
 import torch.nn as nn
 
 class SoftCoreMappingStep(PipelineStep):
@@ -42,5 +43,6 @@ class SoftCoreMappingStep(PipelineStep):
 
         soft_core_mapping = SoftCoreMapping()
         soft_core_mapping.map(model.get_mapper_repr())
+        ChipLatency(soft_core_mapping).calculate()
 
         self.add_entry("soft_core_mapping", soft_core_mapping, 'pickle')
