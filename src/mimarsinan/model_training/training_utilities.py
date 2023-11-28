@@ -26,13 +26,13 @@ class BasicClassificationLoss:
 import torch
 
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
-from mimarsinan.models.layers import StatsDecorator
+from mimarsinan.models.layers import SavedTensorDecorator
 
 class CustomClassificationLoss:
     def __call__(self, model, x, y):
 
         for perceptron in model.get_perceptrons():
-            perceptron.activation.decorate(StatsDecorator())
+            perceptron.activation.decorate(SavedTensorDecorator())
 
         model_out = model(x)
         classification_loss = nn.CrossEntropyLoss()(model_out, y)
@@ -40,8 +40,8 @@ class CustomClassificationLoss:
         act_loss = 0.0
         for perceptron in model.get_perceptrons():
             stats = perceptron.activation.pop_decorator()
-            mean = stats.in_mean
-            var = stats.in_var
+            mean = stats.latest_input.mean()
+            var = stats.latest_input.var()
             act_loss += torch.dist(mean, torch.zeros_like(mean)) + torch.dist(var, torch.ones_like(var) / 2)
 
         # param_loss = 0.0
