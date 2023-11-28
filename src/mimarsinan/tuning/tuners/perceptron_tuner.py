@@ -127,12 +127,10 @@ class PerceptronTuner:
             + (1 - random_mask) * prev_param
             
     def _mixed_perceptron_transform(self, perceptron, rate):
-        out_perceptron = copy.deepcopy(perceptron).to(self.device)
+        temp_prev_perceptron = copy.deepcopy(perceptron).to(self.device)
 
-        prev_perceptron = self._get_previous_perceptron_transform()(perceptron)
-        new_perceptron = self._get_new_perceptron_transform()(perceptron)
-        
-        for param, prev_param, new_param in zip(out_perceptron.parameters(), prev_perceptron.parameters(), new_perceptron.parameters()):
-            param.data[:] = self._mix_params(prev_param.data, new_param.data, rate)
-        
-        return out_perceptron.to(self.device)
+        self._get_previous_perceptron_transform()(temp_prev_perceptron)
+        self._get_new_perceptron_transform()(perceptron)
+
+        for param, prev_param in zip(perceptron.parameters(), temp_prev_perceptron.parameters()):
+            param.data = self._mix_params(prev_param.data, param.data, rate)
