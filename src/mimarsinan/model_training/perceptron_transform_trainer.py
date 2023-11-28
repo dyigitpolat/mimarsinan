@@ -14,14 +14,23 @@ class PerceptronTransformTrainer(BasicTrainer):
     
     def _update_and_transform_model(self):
         for perceptron, aux_perceptron in zip(self.model.get_perceptrons(), self.aux_model.get_perceptrons()):
-            transformed_perceptron = self.perceptron_transformation(aux_perceptron).to(self.device)
-            perceptron.layer.weight.data = transformed_perceptron.layer.weight.data
+            temp_aux_perceptron = copy.deepcopy(aux_perceptron).to(self.device)
+            self.perceptron_transformation(temp_aux_perceptron)
+
+            # TODO: This is a hack. We should avoid this.
+            aux_perceptron.set_parameter_scale(temp_aux_perceptron.parameter_scale)
+            aux_perceptron.set_activation_scale(temp_aux_perceptron.activation_scale)
+
+            perceptron.set_parameter_scale(temp_aux_perceptron.parameter_scale)
+            perceptron.set_activation_scale(temp_aux_perceptron.activation_scale)
+
+            perceptron.layer.weight.data = temp_aux_perceptron.layer.weight.data
             if perceptron.layer.bias is not None:
-                perceptron.layer.bias.data = transformed_perceptron.layer.bias.data
+                perceptron.layer.bias.data = temp_aux_perceptron.layer.bias.data
 
             if not isinstance(perceptron.normalization, nn.Identity):
-                perceptron.normalization.weight.data = transformed_perceptron.normalization.weight.data
-                perceptron.normalization.bias.data = transformed_perceptron.normalization.bias.data
+                perceptron.normalization.weight.data = temp_aux_perceptron.normalization.weight.data
+                perceptron.normalization.bias.data = temp_aux_perceptron.normalization.bias.data
 
     def _transfer_gradients_to_aux(self):
         for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
