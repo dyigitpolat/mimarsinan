@@ -55,6 +55,24 @@ class NoisyDropout(nn.Module):
         out = out + self.noise_radius * torch.rand_like(out) - 0.5 * self.noise_radius
         return random_mask * out + (1.0 - random_mask) * x
     
+class SavedTensorDecorator(nn.Module):
+    def __init__(self):
+        super(SavedTensorDecorator, self).__init__()
+        self.latest_input = None
+        self.latest_output = None
+    
+    def input_transform(self, x):
+        if(len(x.shape) > 1):
+            self.latest_input = x
+            
+        return nn.Identity()(x)
+    
+    def output_transform(self, x):
+        if(len(x.shape) > 1):
+            self.latest_output = x
+
+        return nn.Identity()(x)
+    
 class StatsDecorator:
     def __init__(self):
         self.in_mean = None
