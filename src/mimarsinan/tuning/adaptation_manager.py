@@ -24,7 +24,7 @@ class AdaptationManager(nn.Module):
         perceptron.set_activation(
             TransformedActivation(perceptron.base_activation, decorators))
         
-        target_noise_amount = 2.0 / pipeline_config['target_tq']
+        target_noise_amount = 1.0 / pipeline_config['target_tq']
         perceptron.set_regularization(
             NoisyDropout(torch.tensor(0.0), self.noise_rate, target_noise_amount * perceptron.activation_scale)
         )
