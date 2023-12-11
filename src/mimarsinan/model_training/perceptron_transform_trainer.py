@@ -4,6 +4,14 @@ import copy
 import torch
 import torch.nn as nn
 
+def _copy_param(param_to, param_from):
+
+    with torch.no_grad():
+        if len(param_to.shape) == 0:
+            param_to.data = param_from.data
+        else:
+            param_to.data[:] = param_from.data[:]
+
 class PerceptronTransformTrainer(BasicTrainer):
     def __init__(
             self, model, device, data_provider_factory, loss_function, perceptron_transformation):
@@ -14,28 +22,27 @@ class PerceptronTransformTrainer(BasicTrainer):
     
     def _update_and_transform_model(self):
         for perceptron, aux_perceptron in zip(self.model.get_perceptrons(), self.aux_model.get_perceptrons()):
-            temp_aux_perceptron = copy.deepcopy(aux_perceptron).to(self.device)
-            self.perceptron_transformation(temp_aux_perceptron)
+            temp = copy.deepcopy(aux_perceptron).to(self.device)
+            self.perceptron_transformation(temp)
 
             # Handle non-grad params
-            for param, aux_param, temp_aux_param in zip(perceptron.parameters(), aux_perceptron.parameters(), temp_aux_perceptron.parameters()):
-                if not param.requires_grad:
-                    aux_param.data = temp_aux_param.data
-                    param.data = temp_aux_param.data
+            for aux_param, temp_param in zip(aux_perceptron.parameters(), temp.parameters()):
+                if not aux_param.requires_grad:
+                    _copy_param(aux_param, temp_param)
 
-            perceptron.layer.weight.data = temp_aux_perceptron.layer.weight.data
-            if perceptron.layer.bias is not None:
-                perceptron.layer.bias.data = temp_aux_perceptron.layer.bias.data
+            for param, temp_param in zip(perceptron.parameters(), temp.parameters()):
+                _copy_param(param, temp_param)
 
             if not isinstance(perceptron.normalization, nn.Identity):
-                perceptron.normalization.weight.data = temp_aux_perceptron.normalization.weight.data
-                perceptron.normalization.bias.data = temp_aux_perceptron.normalization.bias.data
+                perceptron.normalization.running_mean.data[:] = temp.normalization.running_mean.data[:]
+                perceptron.normalization.running_var.data[:] = temp.normalization.running_var.data[:]
+
 
     def _transfer_gradients_to_aux(self):
         for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
             if param.requires_grad:
                 aux_param.grad = param.grad
-    
+
     def _backward_pass_on_loss(self, x, y):
         self._update_and_transform_model()
         self.aux_model = self.aux_model.to(self.device)
@@ -47,7 +54,7 @@ class PerceptronTransformTrainer(BasicTrainer):
         return loss
     
     def _get_optimizer_and_scheduler(self, lr):
-        optimizer = torch.optim.Adam(self.aux_model.parameters(), lr = lr)
+        optimizer = torch.optim.Adam(self.aux_model.parameters(), lr = lr, weight_decay = lr/10)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, 
             mode='min', patience=5, factor=0.9, min_lr=lr/100, verbose=True)
