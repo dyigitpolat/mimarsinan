@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 class ChipLatency:
     def __init__(self, mapping):
         self.mapping = mapping
@@ -42,8 +44,12 @@ class ChipLatency:
         result = max([
             self.get_delay_for(source) for source in self.mapping.output_sources])
         
+        latencies = defaultdict(int)
         for key in self.memo:
             core_idx, neuron_idx = key
-            self.mapping.cores[core_idx].latency = self.memo[key] - 1
+            latencies[core_idx] = max(latencies[core_idx], self.memo[key] - 1)
+        
+        for core_idx in latencies:
+            self.mapping.cores[core_idx].latency = latencies[core_idx]
 
         return result
