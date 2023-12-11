@@ -21,7 +21,7 @@ class HardCoreMappingVisualizer:
             i_x = i % cols
 
             axs[i_y][i_x].imshow(np.abs(core.core_matrix), cmap='YlOrRd')
-            axs[i_y][i_x].set_title(f'Core {i+1}', fontsize=12)
+            axs[i_y][i_x].set_title(f'Core {i+1}, L={core.latency}', fontsize=12)
 
         fig.tight_layout()
 
