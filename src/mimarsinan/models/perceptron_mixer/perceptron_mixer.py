@@ -21,6 +21,8 @@ class PerceptronMixer(PerceptronFlow):
         fc_w_2,
         fc_k_2):
         super(PerceptronMixer, self).__init__(device)
+
+        self.input_activation = nn.Identity()
         
         self.input_shape = input_shape
         self.input_channels = input_shape[-3]
@@ -134,6 +136,8 @@ class PerceptronMixer(PerceptronFlow):
             x, 
             'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', 
             p1=self.patch_height, p2=self.patch_width)
+        
+        out = self.input_activation(out)
         
         out_tensor = torch.zeros((x.shape[0], self.fc_in), device=x.device)
         for idx in range(self.patch_count):
