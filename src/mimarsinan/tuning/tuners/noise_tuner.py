@@ -1,8 +1,6 @@
-from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
+from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
 
-from mimarsinan.models.layers import NoisyDropout
-
-class NoiseTuner(BasicTuner):
+class NoiseTuner(PerceptronTuner):
     def __init__(self, 
                  pipeline, 
                  model, 
@@ -17,18 +15,17 @@ class NoiseTuner(BasicTuner):
             lr)
 
         self.lr = lr
-        self.target_noise_amount = 2.0 / pipeline.config['target_tq']
 
         self.adaptation_manager = adaptation_manager
 
     def _get_target_decay(self):
-        return 0.999
+        return 0.95
     
-    def _get_previous_parameter_transform(self):
-        return lambda x: x
+    def _get_previous_perceptron_transform(self, rate):
+        return lambda perceptron: None
     
-    def _get_new_parameter_transform(self):
-        return lambda x: x
+    def _get_new_perceptron_transform(self, rate):
+        return lambda perceptron: None
 
     def _update_and_evaluate(self, rate):
         for perceptron in self.model.get_perceptrons():
