@@ -45,7 +45,7 @@ class CoreFlowTuner:
         print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
         self._tune_thresholds(
-            self._get_core_sums(unscaled_quantized_mapping), cycles=10, lr=0.3, mapping=quantized_mapping)
+            self._get_core_sums(unscaled_quantized_mapping), cycles=10, lr=0.2, mapping=quantized_mapping)
         
         self._quantize_thresholds(quantized_mapping, 1.0)
         scaled_simulation_steps = math.ceil(self.simulation_steps)
