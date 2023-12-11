@@ -35,19 +35,19 @@ class PerceptronTransformer:
         effective_weight = self.get_effective_weight(perceptron)
         
         if isinstance(perceptron.normalization, nn.Identity):
-            perceptron.layer.weight.data = weight_transform(effective_weight)
+            perceptron.layer.weight.data[:] = weight_transform(effective_weight)
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            perceptron.layer.weight.data = weight_transform(effective_weight) / u.unsqueeze(1)
+            perceptron.layer.weight.data[:] = weight_transform(effective_weight) / u.unsqueeze(1)
 
     def apply_effective_bias_transform(self, perceptron, bias_transform):
         effective_bias = self.get_effective_bias(perceptron)
         
         if isinstance(perceptron.normalization, nn.Identity):
-            perceptron.layer.bias.data = bias_transform(effective_bias)
+            perceptron.layer.bias.data[:] = bias_transform(effective_bias)
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            perceptron.layer.bias.data = ((bias_transform(effective_bias) - beta) / u) + mean
+            perceptron.layer.bias.data[:] = ((bias_transform(effective_bias) - beta) / u) + mean
 
     def _get_u_beta_mean(self, bn_layer):
         bn = bn_layer
