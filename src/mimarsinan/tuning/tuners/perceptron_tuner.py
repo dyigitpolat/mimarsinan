@@ -6,6 +6,7 @@ from mimarsinan.model_training.perceptron_transform_trainer import PerceptronTra
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
+import torch.nn as nn
 import torch
 import copy
 
@@ -59,6 +60,7 @@ class PerceptronTuner:
 
         def restore_state(state):
             self._get_model().load_state_dict(state)
+            self._get_trainer().aux_model.load_state_dict(state)
 
         adapter = SmartSmoothAdaptation (
             self._adaptation,
@@ -84,10 +86,10 @@ class PerceptronTuner:
     def _update_and_evaluate(self, rate):
         raise NotImplementedError()
     
-    def _get_previous_perceptron_transform(self):
+    def _get_previous_perceptron_transform(self, rate):
         raise NotImplementedError() # clip_decay_whatever
 
-    def _get_new_perceptron_transform(self):
+    def _get_new_perceptron_transform(self, rate):
         raise NotImplementedError() # noisy_clip_decay_whatever
     
     def _get_target(self):
@@ -104,6 +106,7 @@ class PerceptronTuner:
     def _adaptation(self, rate):
         self.pipeline.reporter.report(self.name, rate)
         self.pipeline.reporter.report("Adaptation target", self._get_target())
+        self.trainer.perceptron_transformation = self._mixed_transform(rate)
         
         self._update_and_evaluate(rate)
 
@@ -129,8 +132,11 @@ class PerceptronTuner:
     def _mixed_perceptron_transform(self, perceptron, rate):
         temp_prev_perceptron = copy.deepcopy(perceptron).to(self.device)
 
-        self._get_previous_perceptron_transform()(temp_prev_perceptron)
-        self._get_new_perceptron_transform()(perceptron)
+        self._get_previous_perceptron_transform(rate)(temp_prev_perceptron)
+        self._get_new_perceptron_transform(rate)(perceptron)
 
         for param, prev_param in zip(perceptron.parameters(), temp_prev_perceptron.parameters()):
-            param.data = self._mix_params(prev_param.data, param.data, rate)
+            if len(param.shape) == 0:
+                param.data = self._mix_params(prev_param.data, param.data, rate)
+            else:
+                param.data[:] = self._mix_params(prev_param.data[:], param.data[:], rate)
