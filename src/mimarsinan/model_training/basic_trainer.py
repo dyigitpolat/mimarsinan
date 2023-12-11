@@ -50,7 +50,7 @@ class BasicTrainer:
             self.report_function(metric_name, metric_value)
 
     def _get_optimizer_and_scheduler(self, lr):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr = lr)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr = lr, weight_decay = lr/10)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, 
             mode='min', patience=5, factor=0.9, min_lr=lr/100, verbose=True)
