@@ -1,10 +1,9 @@
-from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
-
-from mimarsinan.transformations.parameter_transforms.sequential_transform import SequentialTransform
+from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
+from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
 import torch
 
-class ActivationQuantizationTuner(BasicTuner):
+class ActivationQuantizationTuner(PerceptronTuner):
     def __init__(self, 
                  pipeline, 
                  model, 
@@ -25,11 +24,11 @@ class ActivationQuantizationTuner(BasicTuner):
     def _get_target_decay(self):
         return 0.999
     
-    def _get_previous_parameter_transform(self):
-        return lambda x: x
+    def _get_previous_perceptron_transform(self, rate):
+        return lambda p: None
     
-    def _get_new_parameter_transform(self):
-        return lambda x: x
+    def _get_new_perceptron_transform(self, rate):
+        return lambda p: None
 
     def _update_and_evaluate(self, rate):
         self.adaptation_manager.quantization_rate = rate
