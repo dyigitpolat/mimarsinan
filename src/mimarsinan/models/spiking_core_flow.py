@@ -33,8 +33,6 @@ class SpikingCoreFlow(nn.Module):
     
     def get_signal(
             self, x, buffers, core, neuron, is_input, is_off, is_always_on, cycle):
-        if cycle < self.cores[core].latency:
-            return torch.zeros_like(x[:, 0])
 
         if is_input:
             return x[:, neuron]
@@ -94,15 +92,16 @@ class SpikingCoreFlow(nn.Module):
                     cycle)
 
             for core_idx in range(len(self.cores)):
-                memb = membrane_potentials[core_idx]
+                if cycle >= self.cores[core_idx].latency:
+                    memb = membrane_potentials[core_idx]
 
-                memb += \
-                    torch.matmul(
-                        self.core_params[core_idx], 
-                        input_signals[core_idx].T).T
-                
-                buffers[core_idx] = (memb > self.thresholds[core_idx]).float()
-                memb[memb > self.thresholds[core_idx]] = 0.0
+                    memb += \
+                        torch.matmul(
+                            self.core_params[core_idx], 
+                            input_signals[core_idx].T).T
+                    
+                    buffers[core_idx] = (memb > self.thresholds[core_idx]).float()
+                    memb[memb > self.thresholds[core_idx]] = 0.0
         
             self.update_stats(buffers)
             output_signals += self.get_signal_tensor(self.to_spikes(x), buffers, self.output_sources, cycle)
