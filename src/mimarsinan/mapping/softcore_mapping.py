@@ -39,6 +39,7 @@ class HardCore:
         self.activation_scale = None
         self.parameter_scale = None
         self.threshold = None
+        self.latency = None
     
         self.unusable_space = 0
 
@@ -73,6 +74,9 @@ class HardCore:
 
         if self.parameter_scale is None:
             self.parameter_scale = softcore.parameter_scale
+        
+        if self.latency is None:
+            self.latency = softcore.latency
 
         self.unusable_space += \
             (neuron_offset * softcore.get_input_count()) + \
@@ -111,7 +115,8 @@ class HardCoreMapping:
             return \
                 diff_rate <= tolerance and \
                 core.get_input_count() <= hardcore.available_axons and \
-                core.get_output_count() <= hardcore.available_neurons
+                core.get_output_count() <= hardcore.available_neurons and \
+                (core.latency == hardcore.latency or hardcore.latency is None)
         
         def get_first_core_that_can_map(cores):
             for core in cores:
