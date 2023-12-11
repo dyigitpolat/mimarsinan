@@ -7,6 +7,7 @@ from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
 import torch.nn as nn
+import torch
 
 class ActivationShiftStep(PipelineStep):
     def __init__(self, pipeline):
@@ -39,10 +40,6 @@ class ActivationShiftStep(PipelineStep):
 
             PerceptronTransformer().apply_effective_bias_transform(perceptron, lambda b: b + shift_amount)
         
-        self.trainer.train_until_target_accuracy(
-            self.pipeline.config['lr'] / 20, 
-            max_epochs=2, 
-            target_accuracy=self.pipeline.get_target_metric())
         
         self.update_entry("adaptation_manager", adaptation_manager, "pickle")
         self.update_entry("model", model, 'torch_model')
