@@ -34,18 +34,13 @@ class CoreFlowTuner:
         core_flow = CoreFlow(self.input_shape, non_quantized_mapping, self.target_tq)
         print(f"  Non-Quantized CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
-        unscaled_quantized_mapping = copy.deepcopy(self.mapping)
-        ChipQuantization(self.quantization_bits).unscaled_quantize(unscaled_quantized_mapping.cores)
-        core_flow = CoreFlow(self.input_shape, unscaled_quantized_mapping, self.target_tq)
-        print(f"  Quantized CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
-
         quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
         core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps))
         print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
-        self._tune_thresholds(
-            self._get_core_sums(unscaled_quantized_mapping), cycles=10, lr=0.2, mapping=quantized_mapping)
+        # self._tune_thresholds(
+        #     self._get_core_sums(non_quantized_mapping), cycles=20, lr=0.2, mapping=quantized_mapping)
         
         self._quantize_thresholds(quantized_mapping, 1.0)
         scaled_simulation_steps = math.ceil(self.simulation_steps)
@@ -65,9 +60,6 @@ class CoreFlowTuner:
         core_flow_trainer.report_function = self.report_function 
         
         core_flow_trainer.validate()
-
-        for core, core_sum in zip(mapping.cores, core_flow.core_sums):
-            core_sum /= core.threshold
         
         return core_flow.core_sums
 
@@ -105,24 +97,37 @@ class CoreFlowTuner:
                 best_acc = acc
                 best_thresholds = [core.threshold for core in mapping.cores]
 
+            max_error_rate = 0
+            max_threshold = max([core.threshold for core in mapping.cores])
+            min_threshold = min([core.threshold for core in mapping.cores])
             for idx, core in enumerate(mapping.cores):
                 rate_numerator = core_sums[idx] / core_sums_mean
                 rate_denominator = (spiking_core_flow.core_sums[idx] / self.simulation_steps) / spike_sum_mean
                 #print(f"    core {idx}... rate_numerator: {rate_numerator}, rate_denominator: {rate_denominator}")
                 
                 if rate_denominator == 0: 
-                    print(f"    WARNING: rate_denominator for core {idx} is 0, setting to 0.5")
-                    rate_denominator = 0.5
+                    print(f"    WARNING: rate_denominator for core {idx} is 0, setting to 0.5 / T")
+                    rate_denominator = (0.5 / self.simulation_steps) * rate_numerator
 
                 rate = rate_numerator / rate_denominator
-                target_threshold = core.threshold / rate
+                if rate > 1:
+                    clipped_rate = min(rate, 2.0)
+                if rate < 1:
+                    clipped_rate = max(rate, 0.5)
+
+                target_threshold = (core.threshold / clipped_rate)
                 updated_threshold = (1 - lr) * core.threshold + (lr) * target_threshold
                 core.threshold = updated_threshold
+                
+                max_threshold = max(max_threshold, core.threshold)
+                min_threshold = min(min_threshold, core.threshold)
+                max_error_rate = max(max_error_rate, rate, 1/rate)
 
-                print(f"    core {idx}... core_sum        : {rate_numerator}")
-                print(f"    core {idx}... spiking_core_sum: {rate_denominator}")
-                print(f"    core {idx}... rate: {rate}")
-                print(f"    core {idx}... threshold: {core.threshold}")
+            print(f"max error rate: {max_error_rate}")
+            print("Core sums mean: ", core_sums_mean)
+            print("Spike sums mean: ", spike_sum_mean)
+            print("Max threshold: ", max_threshold)
+            print("Min threshold: ", min_threshold)
                 
         
         for idx, core in enumerate(mapping.cores):
