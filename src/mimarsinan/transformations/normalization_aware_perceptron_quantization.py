@@ -23,6 +23,12 @@ class NormalizationAwarePerceptronQuantization:
         p_max = max(w_max, b_max)
 
         scale = self.q_max * (1.0 / p_max)
+
+        # do magick here:
+        scale_09 = scale * 0.9
+        scale_09_r = max(torch.floor(scale_09), 1.0)
+        scale = scale_09_r / 0.9 # end magick
+
         perceptron.set_parameter_scale(scale)
         def quantize_param(param):
             scaled_param = param * scale
