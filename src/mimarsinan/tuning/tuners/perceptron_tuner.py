@@ -60,7 +60,7 @@ class PerceptronTuner:
 
         def restore_state(state):
             self._get_model().load_state_dict(state)
-            self._get_trainer().aux_model.load_state_dict(state)
+            #self._get_trainer().aux_model.load_state_dict(state)
 
         adapter = SmartSmoothAdaptation (
             self._adaptation,
