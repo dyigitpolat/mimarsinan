@@ -33,7 +33,7 @@ class ClampTuner(PerceptronTuner):
     def _get_new_perceptron_transform(self, rate):
         return lambda p: None
     
-    def _calculate_activation_scales(self, adaptation_manager, validator):
+    def _calculate_activation_scales(self, adaptation_manager, validator, rate):
         for perceptron in self.model.get_perceptrons():
             adaptation_manager.update_activation(self.pipeline.config, perceptron)
             perceptron.activation.decorate(SavedTensorDecorator())
@@ -56,17 +56,17 @@ class ClampTuner(PerceptronTuner):
             cumulative_hist = activation_hist.cumsum(0)
             cumulative_hist /= hist_sum
 
-            rate = 0.8
+            clip_rate = 0.8
             
             # # find the index of the bin which first exceeds the rate
-            index = (cumulative_hist > rate).flatten().nonzero()[0]
+            index = (cumulative_hist > clip_rate).flatten().nonzero()[0]
             act_scale = bin_edges[index].item()
 
-            target_act_scale = act_scale * (1.0 - self.transform_rate) + self.transform_rate
+            target_act_scale = act_scale * (1.0 - rate) + rate
             perceptron.set_activation_scale(target_act_scale)
 
     def _update_and_evaluate(self, rate):
-        self._calculate_activation_scales(self.adaptation_manager, self.trainer)
+        self._calculate_activation_scales(self.adaptation_manager, self.trainer, rate)
 
         self.adaptation_manager.clamp_rate = rate
         for perceptron in self.model.get_perceptrons():
