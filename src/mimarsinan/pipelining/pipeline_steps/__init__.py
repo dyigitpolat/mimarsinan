@@ -11,9 +11,7 @@ from .simulation_step import SimulationStep
 from .noise_adaptation_step import NoiseAdaptationStep
 from .clamp_adaptation_step import ClampAdaptationStep
 from .perceptron_fusion_step import PerceptronFusionStep
-from .scale_adaptation_step import ScaleAdaptationStep
 from .model_building_step import ModelBuildingStep
 from .vanilla_model_configuration import VanillaModelConfigurationStep
 from .quantization_verification_step import QuantizationVerificationStep
 from .cq_training_step import CQTrainingStep
-from .parameter_scale_adaptation_step import ParameterScaleAdaptationStep
