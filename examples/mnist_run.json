@@ -1,7 +1,7 @@
 {
     "pipeline_mode": "nas",
 
-    "experiment_name": "mnist_w4",
+    "experiment_name": "mnist",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
@@ -9,8 +9,8 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 16,
-        "simulation_steps": 16,
+        "target_tq": 8,
+        "simulation_steps": 64,
         "weight_bits": 4
     },
 
@@ -23,5 +23,5 @@
         "nas_workers": 10
     },
 
-    "start_step": "Model Building"
+    "start_step": null
 }
