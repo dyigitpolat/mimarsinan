@@ -60,6 +60,7 @@ class SimulationRunner:
         )
 
         simulation_steps = delay + int(self.simulation_length)
+        print(f"  total simulation steps: {simulation_steps}")
         
         predictions = simulation_driver.predict_spiking(
             self.test_data,
