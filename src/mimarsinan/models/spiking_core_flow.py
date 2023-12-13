@@ -13,7 +13,7 @@ class SpikingCoreFlow(nn.Module):
         self.output_sources = core_mapping.output_sources
         self.core_params = nn.ParameterList(
             [nn.Parameter(torch.tensor(
-                self.cores[core].core_matrix.transpose(), dtype=torch.float32))\
+                self.cores[core].core_matrix.transpose(), dtype=torch.float32, requires_grad=False))\
                     for core in range(len(self.cores))]
         )
         
@@ -101,9 +101,12 @@ class SpikingCoreFlow(nn.Module):
                             input_signals[core_idx].T).T
                     
                     buffers[core_idx] = (memb > self.thresholds[core_idx]).float()
+
+                    # novena reset
                     memb[memb > self.thresholds[core_idx]] = 0.0
         
             self.update_stats(buffers)
             output_signals += self.get_signal_tensor(self.to_spikes(x), buffers, self.output_sources, cycle)
             
+        print("total spikes: ", torch.sum(output_signals).item())
         return output_signals
