@@ -38,7 +38,6 @@ class WeightQuantizationStep(PipelineStep):
             target_tq = self.pipeline.config['target_tq'],
             target_accuracy = self.pipeline.get_target_metric(),
             lr = self.pipeline.config['lr'])
-
         self.tuner.run()
         
         self.update_entry("model", model, 'torch_model')
