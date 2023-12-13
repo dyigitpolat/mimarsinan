@@ -10,7 +10,7 @@ import numpy as np
 
 def generate_core_weights(
     neurons_count, axons_count, weight_tensor, outs, 
-    thresh, bias_tensor = None):
+    thresh, latency, bias_tensor = None):
     
     neurons: list[Neuron] = []
     for idx in range(neurons_count):
@@ -27,7 +27,7 @@ def generate_core_weights(
         
         neurons.append(Neuron(neuron_ws, thresh, bias))
     
-    return Core(neurons)
+    return Core(neurons, latency)
 
 def generate_core_connection_info(
     axons_count, ins, core, is_input_core):
@@ -286,7 +286,8 @@ def hard_cores_to_chip(input_size, hardcore_mapping, axons_per_core, neurons_per
             axons_per_core, 
             hardcore.core_matrix.transpose(),
             neurons_per_core,
-            hardcore.threshold)
+            hardcore.threshold,
+            hardcore.latency)
         for hardcore in hardcore_mapping.cores
     ]
 

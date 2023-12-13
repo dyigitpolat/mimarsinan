@@ -47,7 +47,8 @@ class Neuron:
         return result
 
 class Core:
-    def __init__(self, neurons_list):
+    def __init__(self, neurons_list, latency):
+        self.latency: int = latency
         self.neurons: list[Neuron] = neurons_list
 
     def get_string(self, idx) -> str:
@@ -55,7 +56,7 @@ class Core:
         for i, neuron in enumerate(self.neurons):
             result += "    neurons[{}] = Neu{{{{ {} }}}};\n".format(i,neuron.get_string())
         
-        result += "    cores[{}] = Core{{neurons}};\n".format(idx)
+        result += "    cores[{}] = Core{{neurons, {}}};\n".format(idx, self.latency)
         return result
 
 class ChipModel:
@@ -168,6 +169,7 @@ consteval auto generate_chip()
     def get_weights_string(self):
         result = "";
         for core in self.cores:
+            result += str(core.latency) + ' '
             for neuron in core.neurons:
                 result += str(self.weight_type(neuron.thresh)) + ' '
                 result += str(self.weight_type(neuron.bias)) + ' '
@@ -184,6 +186,7 @@ consteval auto generate_chip()
             "output_size": int(self.output_size), 
             "leak": self.weight_type(self.leak), 
             "core_parameters": [],
+            "core_latencies": [],
             "core_connections": [],
             "output_buffer": []}
 
@@ -196,6 +199,9 @@ consteval auto generate_chip()
                     "weights": [self.weight_type(w) for w in neuron.weights]
                 })
             result["core_parameters"].append(core_params)
+
+        for core in self.cores:
+            result["core_latencies"].append(core.latency)
         
         for con in self.connections:
             result["core_connections"].append([])
@@ -244,11 +250,11 @@ consteval auto generate_chip()
             self.connections.append(Connection(src_list))
 
         self.cores = []
-        for core in data["core_parameters"]:
+        for core, latency in zip(data["core_parameters"], data["core_latencies"]):
             neurons = []
             for neuron in core:
                 neurons.append(Neuron(neuron["weights"], neuron["threshold"], neuron["bias"]))
-            self.cores.append(Core(neurons))
+            self.cores.append(Core(neurons, latency))
 
         self.output_buffer = []
         for out in data["output_buffer"]:
