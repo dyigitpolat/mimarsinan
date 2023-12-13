@@ -71,7 +71,9 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("Simulation", SimulationStep(self))
 
         def post_step_hook(step):
+            print("Visualizing activations...")
             self._visualize_activations(step)
+            print("Visualizing activation histograms...")
             self._visualize_activation_histograms(step)
 
         self.register_post_step_hook(post_step_hook)
@@ -138,7 +140,6 @@ class NASDeploymentPipeline(Pipeline):
     def _trim_histogram(self, hist, bin_edges):
         index_cross_zero = -1
 
-        print(len(hist), len(bin_edges))
         for idx, edge in enumerate(bin_edges):
             if(edge > 0):
                 index_cross_zero = idx
@@ -146,8 +147,6 @@ class NASDeploymentPipeline(Pipeline):
         
         clamped_histogram = hist[index_cross_zero:]
         clamped_edges = bin_edges[index_cross_zero:]
-
-        print(len(clamped_histogram), len(clamped_edges))
 
         for idx, _ in enumerate(clamped_histogram):
             clamped_histogram[idx] *= clamped_edges[idx]
@@ -164,9 +163,7 @@ class NASDeploymentPipeline(Pipeline):
 
         for idx, value in enumerate(reversed(hist)):
             current_sum += value
-            print(idx, current_sum / hist_sum)
             if(current_sum / hist_sum > (1.0 - rate)):
-                print(idx, bin_edges[-idx+1])
                 return bin_edges[-idx+1]
             
         return bin_edges[-1]
