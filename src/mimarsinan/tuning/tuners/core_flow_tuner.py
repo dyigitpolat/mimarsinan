@@ -139,7 +139,7 @@ class CoreFlowTuner:
 
     def _validate_core_flow(self, core_flow):
         self.core_flow_trainer.model = core_flow.to(self.device)
-        return self.core_flow_trainer.validate()
+        return self.core_flow_trainer.test()
     
     def validate(self):
         return self.accuracy
