@@ -1,23 +1,23 @@
 {
-    "experiment_name": "cifar10_w30",
+    "experiment_name": "cifar10",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar10_data_provider.py",
     "data_provider_name": "CIFAR10_DataProvider",
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 32,
-        "simulation_steps": 32,
-        "weight_bits": 30,
+        "target_tq": 16,
+        "simulation_steps": 128,
+        "weight_bits": 4,
         "degradation_tolerance": 0.9
     },
     "deployment_parameters": {
         "lr": 0.001,
-        "training_epochs": 10,
+        "training_epochs": 40,
         "tuner_epochs": 10,
-        "nas_cycles": 3,
-        "nas_batch_size": 20,
-        "nas_workers": 5
+        "nas_cycles": 5,
+        "nas_batch_size": 10,
+        "nas_workers": 3
     },
-    "start_step": "Soft Core Mapping"
+    "start_step": "Architecture Search"
 }
