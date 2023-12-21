@@ -16,15 +16,15 @@ class AdaptationManager(nn.Module):
 
     def update_activation(self, pipeline_config, perceptron):
         decorators = [
+            self.get_rate_adjusted_clamp_decorator(perceptron),
             self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron),
             self.get_shift_decorator(pipeline_config, perceptron),
-            self.get_rate_adjusted_clamp_decorator(perceptron),
             self.get_rate_adjusted_scale_decorator(perceptron)]
 
         perceptron.set_activation(
             TransformedActivation(perceptron.base_activation, decorators))
         
-        target_noise_amount = 1.0 / pipeline_config['target_tq']
+        target_noise_amount = 2.0 / (pipeline_config['target_tq'] + 3)
         perceptron.set_regularization(
             NoisyDropout(torch.tensor(0.0), self.noise_rate, target_noise_amount * perceptron.activation_scale)
         )
