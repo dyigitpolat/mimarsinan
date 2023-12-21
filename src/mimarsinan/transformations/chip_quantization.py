@@ -25,7 +25,7 @@ class ChipQuantization:
 
             print("act scale = ", core.activation_scale.item())
             print("param scale = ", core.parameter_scale.item())
-            core.threshold = core.parameter_scale.item() * 0.9
+            core.threshold = core.parameter_scale.item() * 0.99
             print(core.threshold)
 
             core.core_matrix *= core.parameter_scale.item()
