@@ -74,13 +74,6 @@ class PerceptronMixerBuilder:
             patch_n_1, patch_m_1, patch_c_1, fc_w_1, fc_k_1,
             patch_n_2, patch_c_2, fc_w_2, fc_k_2)
         
-        perceptron_flow.input_activation = TransformedActivation(
-            base_activation = perceptron_flow.input_activation,
-            decorators = [
-                ClampDecorator(torch.tensor(0.0), torch.tensor(1.0)),
-                QuantizeDecorator(torch.tensor(self.pipeline_config["target_tq"]), torch.tensor(1.0))
-            ])
-        
         adaptation_manager = AdaptationManager()
         for perceptron in perceptron_flow.get_perceptrons():
             perceptron.base_activation = nn.LeakyReLU()
