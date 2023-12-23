@@ -11,7 +11,7 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
         self.state_clone_function = state_clone_function
         self.state_restore_function = state_restore_function
         self.evaluation_function = evaluation_function
-        self.min_step = 0.01
+        self.min_step = 0.001
         self.tolerance = 0.01
 
         self.original_target = target_metric
