@@ -25,14 +25,15 @@ class NormalizationAwarePerceptronQuantization:
         scale = self.q_max * (1.0 / p_max)
 
         # do magick here:
-        scale_09 = scale * 0.99
-        scale_09_r = max(torch.floor(scale_09), 1.0)
-        scale = scale_09_r / 0.99 # end magick
+        # scale_09 = scale * 0.99
+        # scale_09_r = max(torch.floor(scale_09), 1.0)
+        # scale = scale_09_r / 0.99 # end magick
 
+        scale = torch.round(scale)
         perceptron.set_parameter_scale(scale)
         def quantize_param(param):
             scaled_param = param * scale
-            quantized_param = torch.round(scaled_param)
+            quantized_param = torch.minimum(torch.round(scaled_param), torch.tensor(self.q_max))
             rescaled_param = quantized_param / (scale)
             return rescaled_param
         
