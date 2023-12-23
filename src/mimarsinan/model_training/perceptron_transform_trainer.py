@@ -23,6 +23,11 @@ class PerceptronTransformTrainer(BasicTrainer):
     def _update_and_transform_model(self):
         for perceptron, aux_perceptron in zip(self.model.get_perceptrons(), self.aux_model.get_perceptrons()):
             temp = copy.deepcopy(aux_perceptron).to(self.device)
+
+            if not isinstance(perceptron.normalization, nn.Identity):
+                temp.normalization.running_mean.data[:] = perceptron.normalization.running_mean.data[:]
+                temp.normalization.running_var.data[:] = perceptron.normalization.running_var.data[:]
+
             self.perceptron_transformation(temp)
 
             # Handle non-grad params
@@ -32,11 +37,6 @@ class PerceptronTransformTrainer(BasicTrainer):
 
             for param, temp_param in zip(perceptron.parameters(), temp.parameters()):
                 _copy_param(param, temp_param)
-
-            if not isinstance(perceptron.normalization, nn.Identity):
-                perceptron.normalization.running_mean.data[:] = temp.normalization.running_mean.data[:]
-                perceptron.normalization.running_var.data[:] = temp.normalization.running_var.data[:]
-
 
     def _transfer_gradients_to_aux(self):
         for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
@@ -54,10 +54,9 @@ class PerceptronTransformTrainer(BasicTrainer):
         return loss
     
     def _get_optimizer_and_scheduler(self, lr):
-        optimizer = torch.optim.Adam(self.aux_model.parameters(), lr = lr, weight_decay = lr/10)
+        optimizer = torch.optim.Adam(self.aux_model.parameters(), lr = lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, 
             mode='min', patience=5, factor=0.9, min_lr=lr/100, verbose=True)
         
         return optimizer, scheduler
-
