@@ -11,8 +11,11 @@ class ChipQuantization:
             core.core_matrix * scale, np.round(core.core_matrix * scale),
             atol=1e-3, rtol=1e-3)
 
-        assert np.max(np.abs(np.round(core.core_matrix * scale))) <= self.quantizer.q_max, \
-            f"{np.max(np.abs(np.round(core.core_matrix * scale)))} > {self.quantizer.q_max}"
+        assert np.max(np.round(core.core_matrix * scale)) <= self.quantizer.q_max, \
+            f"{np.max(np.round(core.core_matrix * scale))} > {self.quantizer.q_max}"
+        
+        assert np.min(np.round(core.core_matrix * scale)) >= self.quantizer.q_min, \
+            f"{np.min(np.round(core.core_matrix * scale))} < {self.quantizer.q_min}"
 
 
     def unscaled_quantize(self, cores):
@@ -25,7 +28,7 @@ class ChipQuantization:
 
             print("act scale = ", core.activation_scale.item())
             print("param scale = ", core.parameter_scale.item())
-            core.threshold = core.parameter_scale.item() * 0.99
+            core.threshold = core.parameter_scale.item()
             print(core.threshold)
 
             core.core_matrix *= core.parameter_scale.item()
