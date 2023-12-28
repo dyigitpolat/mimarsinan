@@ -22,6 +22,11 @@ class PerceptronTransformTrainer(BasicTrainer):
     
     def _update_and_transform_model(self):
         for perceptron, aux_perceptron in zip(self.model.get_perceptrons(), self.aux_model.get_perceptrons()):
+            # Transfer non-grad params
+            for aux_param, param in zip(aux_perceptron.parameters(), perceptron.parameters()):
+                if not aux_param.requires_grad:
+                    _copy_param(aux_param, param)
+
             temp = copy.deepcopy(aux_perceptron).to(self.device)
 
             if not isinstance(perceptron.normalization, nn.Identity):
