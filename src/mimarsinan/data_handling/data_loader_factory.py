@@ -3,7 +3,7 @@ from mimarsinan.data_handling.data_provider import DataProvider
 import torch
 
 class DataLoaderFactory:
-    def __init__(self, data_provider_factory, num_workers=4):
+    def __init__(self, data_provider_factory, num_workers=0):
         self._data_provider_factory = data_provider_factory
         self._num_workers = num_workers
 
