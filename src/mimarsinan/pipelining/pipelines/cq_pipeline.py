@@ -52,6 +52,7 @@ class CQPipeline(Pipeline):
         self.add_pipeline_step("Architecture Search", ArchitectureSearchStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("CQ Training", CQTrainingStep(self))
+        self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
         self.add_pipeline_step("Quantization Verification", QuantizationVerificationStep(self))
         self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
