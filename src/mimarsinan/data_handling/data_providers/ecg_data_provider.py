@@ -1,8 +1,5 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
 
-import torchvision.transforms as transforms
-import torchvision
-
 import torch
 import numpy as np
 import requests
@@ -16,11 +13,35 @@ class ECG_DataProvider(DataProvider):
 
         train_x = torch.FloatTensor(f['x_train']).reshape(-1, 1, 180, 1)
         train_y = torch.LongTensor(f['y_train'])
-        print(f"training class distribution: {np.unique(train_y, return_counts=True)}")
+
+        train_x_new = []
+        train_y_new = []
+        c0_count = 0
+        c1_count = 0
+        for idx, y in enumerate(train_y):
+            if y == 1:
+                c1_count += 1
+                train_x_new.append(train_x[idx])
+                train_y_new.append(y)
+        
+        for idx, y in enumerate(train_y):
+            if y == 0:
+                if c0_count < c1_count:
+                    c0_count += 1
+                    train_x_new.append(train_x[idx])
+                    train_y_new.append(y)
+
+        train_x = torch.stack(train_x_new)
+        train_y = torch.stack(train_y_new)
+
+        # shuffle for validation
+        torch.random.manual_seed(42)
+        shuffle_indices = torch.randperm(len(train_x))
+        train_x = train_x[shuffle_indices]
+        train_y = train_y[shuffle_indices]
 
         test_x = torch.FloatTensor(f['x_test']).reshape(-1, 1, 180, 1)
         test_y = torch.LongTensor(f['y_test'])
-        print(f"test class distribution: {np.unique(test_y, return_counts=True)}")
 
         class AugmentedDataset(torch.utils.data.Dataset):
             def __init__(self, x, y, transform):
@@ -32,34 +53,45 @@ class ECG_DataProvider(DataProvider):
                 return len(self.x)
 
             def __getitem__(self, idx):
-                return self.transform(self.x[idx]), self.y[idx]
+                return self.transform(self.x[idx], self.y[idx]), self.y[idx]
         
         training_dataset = AugmentedDataset(train_x, train_y, self._augmentation)
         validation_dataset = torch.utils.data.TensorDataset(train_x, train_y)
 
-        training_validation_split = 0.99
+        training_validation_split = 0.95
+        length = len(training_dataset)
         training_length = int(len(training_dataset) * training_validation_split)
 
         self.training_dataset = torch.utils.data.Subset(
             training_dataset, range(0, training_length))
         
         self.validation_dataset = torch.utils.data.Subset(
-            validation_dataset, range(training_length, len(training_dataset)))
+            validation_dataset, range(training_length, length))
         
         self.test_dataset = torch.utils.data.TensorDataset(test_x, test_y)
             
 
-    def _augmentation(self, x):
-        shift_amt = np.random.uniform(-0.05, 0.05)
-        shift = int(shift_amt * x.shape[1])
-        x = x * np.random.uniform(0.5, 1.0)
-        x = torch.clamp(x, min=0, max=1)
-        return torch.roll(x, shift, dims=1)
+    def _augmentation(self, x, y):
+        x = x.clone()
+
+        y = y.unsqueeze(-1)
+        for idx, x_i in enumerate(x):
+            shift_amt = np.random.uniform(-0.1, 0.1)
+            shift = int(shift_amt * x_i.shape[-2])
+
+            x[idx] = x[idx] * np.random.uniform(0.9, 1.2)
+
+            x[idx] = torch.clamp(x[idx], min=0, max=1)
+            x[idx] = torch.roll(x[idx], shift, dims=1)
+
+            x[idx] = x[idx] * np.random.uniform(0.9, 1.0)
+        
+        return x
 
     def _download_data(self):
-        filename = self.datasets_path + "/ecg/ecg_data_normalized_smoked_two_classes.npz"
-        url = "https://github.com/dyigitpolat/mimarsinan/releases/download/data/ecg_data_normalized_smoked_two_classes.npz"
-        
+        filename = self.datasets_path + "/ecg/raw_ecg_shuffled_normalized.npz"
+        url = "https://github.com/dyigitpolat/mimarsinan/releases/download/intrapatient_data_normalized/raw_ecg_shuffled_normalized.npz"
+
         if not os.path.exists(filename):
             print("Downloading ECG data...")
             os.makedirs(self.datasets_path + "/ecg/", exist_ok=True)
