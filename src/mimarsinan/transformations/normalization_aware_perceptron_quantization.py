@@ -34,6 +34,7 @@ class NormalizationAwarePerceptronQuantization:
         def quantize_param(param):
             scaled_param = param * scale
             quantized_param = torch.minimum(torch.round(scaled_param), torch.tensor(self.q_max))
+            quantized_param = torch.maximum(quantized_param, torch.tensor(self.q_min))
             rescaled_param = quantized_param / (scale)
             return rescaled_param
         
