@@ -19,3 +19,5 @@ class ActivationFunctionVisualizer:
         plt.plot(self.x.cpu(), self.y.cpu())
         plt.savefig(filename)
         plt.clf()
+
+        plt.close()
