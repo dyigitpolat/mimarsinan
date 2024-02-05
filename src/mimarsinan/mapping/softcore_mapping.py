@@ -8,11 +8,12 @@ def is_input(idx): return idx == -2
 def is_always_on(idx): return idx == -3
 
 class SoftCore:
-    def __init__(self, core_matrix, axon_sources, id, activation_scale = torch.tensor(1.0), parameter_scale = torch.tensor(1.0)):
+    def __init__(self, core_matrix, axon_sources, id, activation_scale = torch.tensor(1.0), parameter_scale = torch.tensor(1.0), input_activation_scale = torch.tensor(1.0)):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
 
         self.id = id
+        self.input_activation_scale = input_activation_scale
         self.activation_scale = activation_scale
         self.parameter_scale = parameter_scale
         self.threshold = 1.0
@@ -36,6 +37,7 @@ class HardCore:
         self.available_axons = axons_per_core
         self.available_neurons = neurons_per_core
 
+        self.input_activation_scale = None
         self.activation_scale = None
         self.parameter_scale = None
         self.threshold = None
@@ -68,6 +70,9 @@ class HardCore:
 
         if self.threshold is None:
             self.threshold = softcore.threshold
+
+        if self.input_activation_scale is None:
+            self.input_activation_scale = softcore.input_activation_scale
 
         if self.activation_scale is None:
             self.activation_scale = softcore.activation_scale
@@ -105,7 +110,7 @@ class HardCoreMapping:
                 
     def map(self, softcore_mapping):
         def is_mapping_possible(core, hardcore):
-            tolerance = 0.01
+            tolerance = 0.2
             if hardcore.threshold is not None:
                 threshold_diff = abs(core.threshold - hardcore.threshold)
                 diff_rate = threshold_diff / (hardcore.threshold + 1)
