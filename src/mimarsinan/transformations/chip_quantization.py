@@ -17,7 +17,6 @@ class ChipQuantization:
         assert np.min(np.round(core.core_matrix * scale)) >= self.quantizer.q_min, \
             f"{np.min(np.round(core.core_matrix * scale))} < {self.quantizer.q_min}"
 
-
     def unscaled_quantize(self, cores):
         for core in cores:
             core.core_matrix = self.quantizer.quantize(core.core_matrix)
@@ -25,10 +24,8 @@ class ChipQuantization:
     def quantize(self, cores):
         for core in cores:
             self.verify_quantization(core)
-
-            print("act scale = ", core.activation_scale.item())
-            print("param scale = ", core.parameter_scale.item())
             core.threshold = core.parameter_scale.item()
+            core.threshold *= core.activation_scale.item() / core.input_activation_scale.item()
             print(core.threshold)
 
             core.core_matrix *= core.parameter_scale.item()
