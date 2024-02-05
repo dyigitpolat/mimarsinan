@@ -24,3 +24,5 @@ class HistogramVisualizer:
 
         plt.savefig(filename)
         plt.clf()
+        
+        plt.close()

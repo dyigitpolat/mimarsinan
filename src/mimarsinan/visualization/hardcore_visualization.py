@@ -26,5 +26,6 @@ class HardCoreMappingVisualizer:
         fig.tight_layout()
 
         plt.savefig(filename)
+        plt.close()
 
     
