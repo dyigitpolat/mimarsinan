@@ -43,6 +43,9 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
         self._adjust_minimum_step(step_size, t)
 
         print("current_metric: ", current_metric)
+        if step_size > 1.0: 
+            step_size = 1.0
+            
         return step_size
 
     def adapt_smoothly(self, max_cycles = None):
