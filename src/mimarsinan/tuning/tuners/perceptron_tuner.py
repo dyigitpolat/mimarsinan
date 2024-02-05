@@ -53,14 +53,15 @@ class PerceptronTuner:
 
     def run(self):
         def evaluate_model(rate):
+            self.trainer.perceptron_transformation = self._mixed_transform(rate)
             return self._update_and_evaluate(rate)
 
         def clone_state():
-            return self._get_model().state_dict()
+            return (self._get_trainer().aux_model.state_dict(), self._get_trainer().model.state_dict())
 
         def restore_state(state):
-            self._get_model().load_state_dict(state)
-            #self._get_trainer().aux_model.load_state_dict(state)
+            self._get_trainer().aux_model.load_state_dict(state[0])
+            self._get_trainer().model.load_state_dict(state[1])
 
         adapter = SmartSmoothAdaptation (
             self._adaptation,
@@ -96,6 +97,7 @@ class PerceptronTuner:
         return self.target_adjuster.get_target()
     
     def _find_lr(self):
+        return self.pipeline_lr / 200
         return LearningRateExplorer(
             self._get_trainer(), 
             self._get_model(), 
@@ -123,11 +125,14 @@ class PerceptronTuner:
             lambda perceptron: self._mixed_perceptron_transform(perceptron, rate))
     
     def _mix_params(self, prev_param, new_param, rate):
+        new_param_ = new_param 
+        prev_param_ = prev_param
+
         random_mask = torch.rand(prev_param.shape, device=prev_param.device)
         random_mask = (random_mask < rate).float()
         return \
-            random_mask * new_param \
-            + (1 - random_mask) * prev_param
+            random_mask * new_param_\
+            + (1 - random_mask) * prev_param_
             
     def _mixed_perceptron_transform(self, perceptron, rate):
         temp_prev_perceptron = copy.deepcopy(perceptron).to(self.device)
