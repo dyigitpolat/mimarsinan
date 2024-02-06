@@ -176,6 +176,7 @@ class BasicTrainer:
         del state['test_loader']
         del state['val_iter']
         del state['train_iter']
+        del state['data_provider']
 
         state['model'] = state['model'].cpu()
         return state
@@ -184,7 +185,7 @@ class BasicTrainer:
         self.__dict__.update(state)
 
         data_loader_factory = state['data_loader_factory']
-        self.data_provider = data_loader_factory.get_data_provider()
+        self.data_provider = data_loader_factory.create_data_provider()
 
         self.train_loader = data_loader_factory.create_training_loader(
             self.training_batch_size, self.data_provider)
