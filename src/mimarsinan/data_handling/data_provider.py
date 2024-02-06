@@ -72,3 +72,6 @@ class DataProvider:
     
     def get_output_shape(self):
         return self.get_prediction_mode().num_classes
+    
+    def is_mp_safe(self):
+        return True

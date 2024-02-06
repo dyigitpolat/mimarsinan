@@ -1,13 +1,22 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
 
+from torch.utils.data import Dataset
+
 import torch
 import numpy as np
 import requests
 import os
-
+    
 class ECG_DataProvider(DataProvider):
     def __init__(self, datasets_path):
         super().__init__(datasets_path)
+        
+        training_dataset, validation_dataset, test_dataset = self._load_data()
+        self.training_dataset = training_dataset
+        self.validation_dataset = validation_dataset
+        self.test_dataset = test_dataset
+
+    def _load_data(self):
         filename = self._download_data()
         f = np.load(filename)
 
@@ -43,35 +52,37 @@ class ECG_DataProvider(DataProvider):
         test_x = torch.FloatTensor(f['x_test']).reshape(-1, 1, 180, 1)
         test_y = torch.LongTensor(f['y_test'])
 
-        class AugmentedDataset(torch.utils.data.Dataset):
-            def __init__(self, x, y, transform):
-                self.x = x
-                self.y = y
+        class AugmentedDataset(Dataset):
+            def __init__(self, tensor_dataset, transform):
+                self.tensor_dataset = tensor_dataset
                 self.transform = transform
 
             def __len__(self):
-                return len(self.x)
+                return len(self.tensor_dataset)
 
             def __getitem__(self, idx):
-                return self.transform(self.x[idx], self.y[idx]), self.y[idx]
-        
-        training_dataset = AugmentedDataset(train_x, train_y, self._augmentation)
+                x, y = self.tensor_dataset[idx]
+                return self.transform(x, y), y
+
+        training_dataset = AugmentedDataset(torch.utils.data.TensorDataset(train_x, train_y), ECG_DataProvider._augmentation)
         validation_dataset = torch.utils.data.TensorDataset(train_x, train_y)
 
         training_validation_split = 0.95
         length = len(training_dataset)
         training_length = int(len(training_dataset) * training_validation_split)
 
-        self.training_dataset = torch.utils.data.Subset(
+        training_dataset = torch.utils.data.Subset(
             training_dataset, range(0, training_length))
         
-        self.validation_dataset = torch.utils.data.Subset(
+        validation_dataset = torch.utils.data.Subset(
             validation_dataset, range(training_length, length))
         
-        self.test_dataset = torch.utils.data.TensorDataset(test_x, test_y)
-            
+        test_dataset = torch.utils.data.TensorDataset(test_x, test_y)
 
-    def _augmentation(self, x, y):
+        return training_dataset, validation_dataset, test_dataset
+
+    @staticmethod
+    def _augmentation(x, y):
         x = x.clone()
 
         y = y.unsqueeze(-1)
@@ -111,3 +122,6 @@ class ECG_DataProvider(DataProvider):
     
     def get_prediction_mode(self):
         return ClassificationMode(2)
+    
+    def is_mp_safe(self):
+        return False
