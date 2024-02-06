@@ -4,13 +4,11 @@ from mimarsinan.search.mlp_mixer_searcher import MLP_Mixer_Searcher
 from mimarsinan.search.small_step_evaluator import SmallStepEvaluator
 from mimarsinan.models.builders import PerceptronMixerBuilder
 
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
 class ArchitectureSearchStep(PipelineStep):
 
     def __init__(self, pipeline):
         requires = []
-        promises = ["model_config", "model_builder", "adaptation_manager"]
+        promises = ["model_config", "model_builder"]
         updates = []
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
@@ -42,6 +40,5 @@ class ArchitectureSearchStep(PipelineStep):
             self.pipeline.config['nas_batch_size']
         )
 
-        self.add_entry("adaptation_manager", AdaptationManager(), 'pickle')
         self.add_entry("model_builder", builder, 'pickle')
         self.add_entry("model_config", model_config)
