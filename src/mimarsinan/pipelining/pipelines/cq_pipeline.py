@@ -16,9 +16,6 @@ class CQPipeline(Pipeline):
         'lr': 0.001,
         'training_epochs': 10,
         'tuner_epochs': 10,
-        'nas_cycles': 5,
-        'nas_batch_size': 50,
-        'nas_workers': 1,
         'degradation_tolerance': 0.95
     }
 
@@ -48,8 +45,8 @@ class CQPipeline(Pipeline):
         self._display_config()
 
         self.loss = BasicClassificationLoss()
-        
-        self.add_pipeline_step("Architecture Search", ArchitectureSearchStep(self))
+
+        self.add_pipeline_step("Model Definition", ModelDefinitionStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("CQ Training", CQTrainingStep(self))
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))

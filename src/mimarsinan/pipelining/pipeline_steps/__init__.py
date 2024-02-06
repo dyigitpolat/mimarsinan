@@ -15,3 +15,4 @@ from .model_building_step import ModelBuildingStep
 from .vanilla_model_configuration import VanillaModelConfigurationStep
 from .quantization_verification_step import QuantizationVerificationStep
 from .cq_training_step import CQTrainingStep
+from .model_definition_step import ModelDefinitionStep
