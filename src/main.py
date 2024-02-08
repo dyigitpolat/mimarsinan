@@ -31,7 +31,7 @@ def main():
     if 'pipeline_mode' in deployment_config:
         pipeline_mode = deployment_config['pipeline_mode']
     else:
-        pipeline_mode = "nas"
+        pipeline_mode = "phased"
     
     working_directory = \
         deployment_config['generated_files_path'] + "/" + deployment_name + "_" + pipeline_mode + "_deployment_run"
@@ -55,7 +55,7 @@ def run_pipeline(
     start_step = None):
 
     deployment_mode_map = {
-        "nas": NASDeploymentPipeline,
+        "phased": NASDeploymentPipeline,
         "vanilla": VanillaDeploymentPipeline,
         "cq": CQPipeline
     }
