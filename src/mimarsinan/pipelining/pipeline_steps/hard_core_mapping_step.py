@@ -10,16 +10,20 @@ from mimarsinan.models.spiking_core_flow import SpikingCoreFlow
 class HardCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
-        requires = ["tuned_soft_core_mapping"]
+        requires = ["tuned_soft_core_mapping", "model"]
         promises = ["hard_core_mapping"]
         updates = []
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
 
+        self.preprocessor = None
+
     def validate(self):
         return self.pipeline.get_target_metric()
 
     def process(self):
+        self.preprocessor = self.get_entry("model").get_preprocessor()
+        
         soft_core_mapping = self.get_entry('tuned_soft_core_mapping')
         axons_per_core = self.pipeline.config['max_axons']
         neurons_per_core = self.pipeline.config['max_neurons']
@@ -37,7 +41,7 @@ class HardCoreMappingStep(PipelineStep):
             SpikingCoreFlow(
                 self.pipeline.config["input_shape"], 
                 hard_core_mapping, 
-                self.pipeline.config["simulation_steps"]), 
+                self.pipeline.config["simulation_steps"], self.preprocessor), 
             self.pipeline.config["device"], 
             DataLoaderFactory(self.pipeline.data_provider_factory), None).test())
 

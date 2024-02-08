@@ -7,8 +7,6 @@ def prepare_containing_directory(filename):
 
 def input_to_file(
     input, target, filename:str):
-    if os.path.isfile(filename):
-        return
 
     result = ""
     result += str(target) + ' '

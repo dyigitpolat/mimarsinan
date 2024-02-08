@@ -17,7 +17,7 @@ class ActivationQuantizationTuner(PerceptronTuner):
 
         self.target_tq = target_tq
         self.adaptation_manager = adaptation_manager
-        self.base_input_activation = model.input_activation
+        self.base_input_activation = model.get_input_activation()
 
     def _get_target_decay(self):
         return 0.99

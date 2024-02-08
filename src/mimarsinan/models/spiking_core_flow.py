@@ -4,9 +4,11 @@ import torch.nn as nn
 import torch
 
 class SpikingCoreFlow(nn.Module):
-    def __init__(self, input_shape, core_mapping, simulation_length):
+    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor):
         super(SpikingCoreFlow, self).__init__()
         self.input_shape = input_shape
+
+        self.preprocessor = preprocessor
 
         self.core_mapping = core_mapping
         self.cores = core_mapping.cores
@@ -71,6 +73,8 @@ class SpikingCoreFlow(nn.Module):
         return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
     
     def forward(self, x):
+        x = self.preprocessor(x)
+        
         x = x.view(x.shape[0], -1)
 
         buffers = []

@@ -5,7 +5,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 import numpy as np
 
 class SimulationRunner:
-    def __init__(self, pipeline, mapping, simulation_length):
+    def __init__(self, pipeline, mapping, simulation_length, preprocessor):
         self.input_size = pipeline.config["input_size"]
         self.num_classes = pipeline.config["num_classes"]
 
@@ -21,7 +21,7 @@ class SimulationRunner:
             data_provider.get_test_batch_size(), data_provider)
         
         for xs, ys in test_loader:
-            self.test_input.extend(xs)
+            self.test_input.extend(preprocessor(xs).detach())
             self.test_targets.extend(ys)
             
         self.test_data = \
