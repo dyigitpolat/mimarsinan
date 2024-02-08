@@ -27,13 +27,13 @@ class CQTrainingStep(PipelineStep):
     def process(self):
         model = self.get_entry("model")
 
-        model.input_activation = TransformedActivation(
-            base_activation = model.input_activation,
+        model.set_input_activation( TransformedActivation(
+            base_activation = model.get_input_activation(),
             decorators = [
                 NoiseDecorator(1.0, 2.0 / (self.pipeline.config['target_tq'] + 3)),
                 ClampDecorator(torch.tensor(0.0), torch.tensor(1.0)),
                 QuantizeDecorator(torch.tensor(self.pipeline.config["target_tq"]), torch.tensor(1.0))
-            ])
+            ]))
 
         adaptation_manager = AdaptationManager()
         adaptation_manager.scale_rate = 0.0

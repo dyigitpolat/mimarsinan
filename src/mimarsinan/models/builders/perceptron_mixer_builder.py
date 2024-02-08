@@ -1,9 +1,30 @@
 from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
-from mimarsinan.models.layers import TransformedActivation, ClampDecorator, QuantizeDecorator
+from mimarsinan.models.supermodel import Supermodel
 
 import torch.nn as nn
 import torch
+class Transduction(nn.Module):
+    def __init__(self, device, input_shape):
+        super(Transduction, self).__init__()
+
+        input_size = input_shape[-3] * input_shape[-2] * input_shape[-1]
+        self.fc1 = nn.Linear(input_size, input_size, device=device)
+        self.bn = nn.BatchNorm1d(input_size)
+
+    def forward(self, x):
+        shape = x.shape
+        x = x.view(x.shape[0], -1)
+
+        x = self.fc1(x)
+        x = nn.GELU()(x)
+        x = self.bn(x)
+        x = nn.ReLU()(x)
+        x = torch.min(x, torch.tensor(1.0, device=x.device))
+        x = x.view(shape)
+
+        return x
+    
 class PerceptronMixerBuilder:
     def __init__(self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config):
         self.device = device
@@ -67,16 +88,19 @@ class PerceptronMixerBuilder:
         fc_w_2 = configuration["fc_w_2"]
 
         self.validate(configuration)
-
+            
+        preprocessor = Transduction(self.device, self.input_shape)
         perceptron_flow = PerceptronMixer(
             self.device,
             self.input_shape, self.num_classes,
             patch_n_1, patch_m_1, patch_c_1, fc_w_1, fc_k_1,
             patch_n_2, patch_c_2, fc_w_2, fc_k_2)
         
+        supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow)
+        
         adaptation_manager = AdaptationManager()
-        for perceptron in perceptron_flow.get_perceptrons():
+        for perceptron in supermodel.get_perceptrons():
             perceptron.base_activation = nn.LeakyReLU()
             adaptation_manager.update_activation(self.pipeline_config, perceptron)
 
-        return perceptron_flow
+        return supermodel

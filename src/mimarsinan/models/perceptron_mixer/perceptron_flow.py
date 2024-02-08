@@ -10,3 +10,9 @@ class PerceptronFlow(nn.Module):
     
     def get_mapper_repr(self):
         raise NotImplementedError
+    
+    def get_input_activation(self):
+        raise NotImplementedError
+    
+    def set_input_activation(self, activation):
+        raise NotImplementedError

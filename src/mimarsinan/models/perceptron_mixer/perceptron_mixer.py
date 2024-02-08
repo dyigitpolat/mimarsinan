@@ -81,6 +81,12 @@ class PerceptronMixer(PerceptronFlow):
 
         self.out = None
 
+    def get_input_activation(self):
+        return self.input_activation
+    
+    def set_input_activation(self, activation):
+        self.input_activation = activation
+
     def get_perceptrons(self):
         return \
             self.patch_layers + \

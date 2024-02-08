@@ -6,9 +6,11 @@ import torch.nn as nn
 import torch
 
 class CoreFlow(nn.Module):
-    def __init__(self, input_shape, core_mapping, Tq):
+    def __init__(self, input_shape, core_mapping, Tq, preprocessor):
         super(CoreFlow, self).__init__()
         self.input_shape = input_shape
+
+        self.preprocessor = preprocessor
 
         self.core_mapping = core_mapping
         self.cores = core_mapping.cores
@@ -84,6 +86,8 @@ class CoreFlow(nn.Module):
                 self.core_sums[i] += torch.sum(buffers[i]).item()
     
     def forward(self, x):
+        x = self.preprocessor(x)
+
         x = x.view(x.shape[0], -1)
         x = self.input_act(x)
 
