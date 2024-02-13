@@ -1,15 +1,24 @@
+from mimarsinan.models.layers import TransformedActivation, ClampDecorator, QuantizeDecorator, NoiseDecorator
+
 import torch.nn as nn
 import torch
-
 class Supermodel(nn.Module):
-    def __init__(self, device, input_shape, num_classes, preprocessor, perceptron_flow):
+    def __init__(self, device, input_shape, num_classes, preprocessor, perceptron_flow, Tq):
         super(Supermodel, self).__init__()
         self.device = device
         self.preprocessor = preprocessor
         self.perceptron_flow = perceptron_flow
 
+        self.in_act = TransformedActivation(
+            base_activation = nn.Identity(),
+            decorators = [
+                ClampDecorator(torch.tensor(0.0), torch.tensor(1.0)),
+                QuantizeDecorator(torch.tensor(Tq), torch.tensor(1.0))
+            ])
+
     def forward(self, x):
         out = self.preprocessor(x)
+        out = self.in_act(out)
         out = self.perceptron_flow(out)
         return out
     
