@@ -31,13 +31,14 @@ class WeightQuantizationStep(PipelineStep):
                 perceptron.normalization = \
                     FrozenStatsNormalization(perceptron.normalization)
                 
-        self.tuner = NormalizationAwarePerceptronQuantizationTuner(
-            self.pipeline,
-            model = model,
-            quantization_bits = self.pipeline.config['weight_bits'],
-            target_tq = self.pipeline.config['target_tq'],
-            target_accuracy = self.pipeline.get_target_metric(),
-            lr = self.pipeline.config['lr'])
-        self.tuner.run()
+        bits = self.pipeline.config['weight_bits']
+        for i in range(bits // 2, -1, -1):
+            self.tuner = NormalizationAwarePerceptronQuantizationTuner(
+                self.pipeline,
+                model = model,
+                quantization_bits = self.pipeline.config['weight_bits'] + i,
+                target_accuracy = self.pipeline.get_target_metric(),
+                lr = self.pipeline.config['lr'])
+            self.tuner.run()
         
         self.update_entry("model", model, 'torch_model')

@@ -6,13 +6,11 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
                  pipeline, 
                  model,
                  quantization_bits, 
-                 target_tq,
                  target_accuracy,
                  lr):
 
         super().__init__(pipeline, model, target_accuracy, lr)
 
-        self.target_tq = target_tq
         self.quantization_bits = quantization_bits
 
     def _get_target_decay(self):
