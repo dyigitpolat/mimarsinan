@@ -3,25 +3,24 @@ from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.supermodel import Supermodel
 
 import torch.nn as nn
-import torch
 class Transduction(nn.Module):
     def __init__(self, device, input_shape):
         super(Transduction, self).__init__()
 
-        input_size = input_shape[-3] * input_shape[-2] * input_shape[-1]
-        self.fc1 = nn.Linear(input_size, input_size, device=device)
-        self.bn = nn.BatchNorm1d(input_size)
+        self.input_bn = nn.BatchNorm2d(input_shape[-3], device=device)
+        self.conv1 = nn.Conv2d(input_shape[-3], input_shape[-3], kernel_size=3, stride=1, padding=1, device=device)
+        self.conv2 = nn.Conv2d(input_shape[-3], input_shape[-3], kernel_size=3, stride=1, padding=1, device=device)
+        self.bn = nn.BatchNorm2d(input_shape[-3], device=device)
 
     def forward(self, x):
         shape = x.shape
-        x = x.view(x.shape[0], -1)
 
-        x = self.fc1(x)
+        x = self.input_bn(x)
+        x = self.conv1(x)
+        x = nn.GELU()(x)
+        x = self.conv2(x)
         x = nn.GELU()(x)
         x = self.bn(x)
-        x = nn.ReLU()(x)
-        x = torch.min(x, torch.tensor(1.0, device=x.device))
-        x = x.view(shape)
 
         return x
     
@@ -96,7 +95,7 @@ class PerceptronMixerBuilder:
             patch_n_1, patch_m_1, patch_c_1, fc_w_1, fc_k_1,
             patch_n_2, patch_c_2, fc_w_2, fc_k_2)
         
-        supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow)
+        supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
         
         adaptation_manager = AdaptationManager()
         for perceptron in supermodel.get_perceptrons():
