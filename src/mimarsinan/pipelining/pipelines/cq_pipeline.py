@@ -46,7 +46,7 @@ class CQPipeline(Pipeline):
 
         self.loss = BasicClassificationLoss()
 
-        self.add_pipeline_step("Model Definition", ModelDefinitionStep(self))
+        self.add_pipeline_step("Model Configuration", ModelConfigurationStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("CQ Training", CQTrainingStep(self))
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))

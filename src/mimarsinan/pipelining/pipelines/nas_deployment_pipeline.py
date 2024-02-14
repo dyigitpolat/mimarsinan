@@ -55,7 +55,7 @@ class NASDeploymentPipeline(Pipeline):
 
         self.loss = BasicClassificationLoss()
         
-        self.add_pipeline_step("Architecture Search", ArchitectureSearchStep(self))
+        self.add_pipeline_step("Model Configuration", ModelConfigurationStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("Pretraining", PretrainingStep(self))
         self.add_pipeline_step("Clamp Adaptation", ClampAdaptationStep(self))

@@ -1,4 +1,3 @@
-from .architecture_search_step import ArchitectureSearchStep
 from .pretraining_step import PretrainingStep
 from .activation_shift_step import ActivationShiftStep
 from .activation_quantization_step import ActivationQuantizationStep
@@ -12,7 +11,6 @@ from .noise_adaptation_step import NoiseAdaptationStep
 from .clamp_adaptation_step import ClampAdaptationStep
 from .perceptron_fusion_step import PerceptronFusionStep
 from .model_building_step import ModelBuildingStep
-from .vanilla_model_configuration import VanillaModelConfigurationStep
 from .quantization_verification_step import QuantizationVerificationStep
 from .cq_training_step import CQTrainingStep
-from .model_definition_step import ModelDefinitionStep
+from .model_configuration_step import ModelConfigurationStep

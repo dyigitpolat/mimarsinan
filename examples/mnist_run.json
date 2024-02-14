@@ -1,7 +1,7 @@
 {
-    "pipeline_mode": "nas",
+    "pipeline_mode": "phased",
 
-    "experiment_name": "mnist",
+    "experiment_name": "mnist_4",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
@@ -9,19 +9,27 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 8,
+        "target_tq": 16,
         "simulation_steps": 64,
         "weight_bits": 4
     },
 
     "deployment_parameters": {
         "lr": 0.001,
-        "training_epochs": 10,
+        "training_epochs": 40,
         "tuner_epochs": 10,
-        "nas_cycles": 3,
-        "nas_batch_size": 20,
-        "nas_workers": 10
+
+        "configuration_mode": "user",
+        "model_type": "mlp_mixer",
+
+        "nas_cycles": 2,
+        "nas_batch_size": 4,
+        "nas_workers": 2,
+           
+        "model_config": {
+            "patch_n_1": 4, "patch_m_1": 4, "patch_c_1": 12, "fc_k_1": 1, "fc_w_1": 128, "patch_n_2": 1, "patch_c_2": 192, "fc_k_2": 3, "fc_w_2": 32
+        }
     },
 
-    "start_step": null
+    "start_step": "CoreFlow Tuning"
 }
