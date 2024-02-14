@@ -52,7 +52,7 @@ class VanillaDeploymentPipeline(Pipeline):
 
         self.loss = BasicClassificationLoss()
         
-        self.add_pipeline_step("Model Configuration", VanillaModelConfigurationStep(self))
+        self.add_pipeline_step("Model Configuration", ModelConfigurationStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("Pretraining", PretrainingStep(self))
         self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))

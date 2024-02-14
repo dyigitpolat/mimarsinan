@@ -1,12 +1,14 @@
 {
-    "experiment_name": "cifar10",
+    "pipeline_mode": "phased",
+
+    "experiment_name": "cifar10_conv_nas",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar10_data_provider.py",
     "data_provider_name": "CIFAR10_DataProvider",
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 16,
+        "target_tq": 8,
         "simulation_steps": 128,
         "weight_bits": 4,
         "degradation_tolerance": 0.9
@@ -15,9 +17,19 @@
         "lr": 0.001,
         "training_epochs": 40,
         "tuner_epochs": 10,
+
+        "configuration_mode": "nas",
+        "model_type": "mlp_mixer",
+
         "nas_cycles": 5,
-        "nas_batch_size": 10,
-        "nas_workers": 3
+        "nas_batch_size": 40,
+        "nas_workers": 20,
+           
+        "model_config": {
+            "configuration": {
+                "patch_n_1": 4, "patch_m_1": 4, "patch_c_1": 12, "fc_k_1": 1, "fc_w_1": 128, "patch_n_2": 1, "patch_c_2": 192, "fc_k_2": 3, "fc_w_2": 32
+            }
+        }
     },
-    "start_step": "Architecture Search"
+    "start_step": "CoreFlow Tuning"
 }
