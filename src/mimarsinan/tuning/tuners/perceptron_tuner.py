@@ -57,7 +57,9 @@ class PerceptronTuner:
             return self._update_and_evaluate(rate)
 
         def clone_state():
-            return (self._get_trainer().aux_model.state_dict(), self._get_trainer().model.state_dict())
+            return (
+                copy.deepcopy(self._get_trainer().aux_model.state_dict()), 
+                copy.deepcopy(self._get_trainer().model.state_dict()))
 
         def restore_state(state):
             self._get_trainer().aux_model.load_state_dict(state[0])
@@ -97,13 +99,28 @@ class PerceptronTuner:
         return self.target_adjuster.get_target()
     
     def _find_lr(self):
+        # if (self.lr_once):
+        #     return self.lr_once
+        
+        # def clone_state():
+        #     return (
+        #         copy.deepcopy(self._get_trainer().aux_model.state_dict()), 
+        #         copy.deepcopy(self._get_trainer().model.state_dict()))
+
+        # def restore_state(state):
+        #     self._get_trainer().aux_model.load_state_dict(state[0])
+        #     self._get_trainer().model.load_state_dict(state[1])
+
+        # self.lr_once = LearningRateExplorer(
+        #     clone_state,
+        #     restore_state,
+        #     self._get_trainer(),
+        #     self._get_model(), 
+        #     self.pipeline_lr, 
+        #     self.pipeline_lr / 10000, 
+        #     -0.01).find_lr_for_tuning()
+        
         return self.pipeline_lr / 200
-        return LearningRateExplorer(
-            self._get_trainer(), 
-            self._get_model(), 
-            self.pipeline_lr / 20, 
-            self.pipeline_lr / 1000, 
-            0.01).find_lr_for_tuning()
 
     def _adaptation(self, rate):
         self.pipeline.reporter.report(self.name, rate)
