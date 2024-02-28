@@ -14,7 +14,7 @@ def compile_simulator(generated_files_path, nevresim_path):
     if verify_clang_version(cc_command) == False:
         return None
 
-    simulator_filename = "../bin/simulator"
+    simulator_filename = "./bin/simulator"
     prepare_containing_directory(simulator_filename)
 
     cmd = [
