@@ -50,10 +50,9 @@ class BasicTrainer:
             self.report_function(metric_name, metric_value)
 
     def _get_optimizer_and_scheduler(self, lr):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr = lr, weight_decay = lr/10)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, 
-            mode='min', patience=5, factor=0.9, min_lr=lr/100, verbose=True)
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr = lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0 = 5, T_mult = 2, eta_min = lr * 1e-3)
 
         return optimizer, scheduler
 
@@ -82,7 +81,11 @@ class BasicTrainer:
             
             self._report("Training loss", loss)
         
-        scheduler.step(loss)
+        if isinstance(scheduler, torch.optim.lr_scheduler.CosineAnnealingWarmRestarts):
+            scheduler.step()
+        else:
+            scheduler.step(loss)
+
         return tracker.get_accuracy()
     
     def _validate_on_loader(self, x, y):

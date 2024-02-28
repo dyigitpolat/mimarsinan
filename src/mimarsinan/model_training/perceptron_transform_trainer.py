@@ -59,9 +59,9 @@ class PerceptronTransformTrainer(BasicTrainer):
         return loss
     
     def _get_optimizer_and_scheduler(self, lr):
-        optimizer = torch.optim.Adam(self.aux_model.parameters(), lr = lr)
+        optimizer = torch.optim.AdamW(self.aux_model.parameters(), lr = lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, 
-            mode='min', patience=5, factor=0.9, min_lr=lr/100, verbose=True)
+            mode='min', patience=2, factor=0.9, min_lr=lr/100, verbose=True)
         
         return optimizer, scheduler
