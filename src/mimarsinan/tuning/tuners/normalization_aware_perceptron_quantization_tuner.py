@@ -30,7 +30,9 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
         return transform
 
     def _update_and_evaluate(self, rate):
-        self.trainer.train_one_step(self._find_lr())
+        iters = 10
+        for _ in range(iters):
+            self.trainer.train_one_step(self._find_lr())
         return self.trainer.validate()
 
     def run(self):
