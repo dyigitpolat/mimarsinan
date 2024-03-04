@@ -24,8 +24,7 @@ class ChipQuantization:
     def quantize(self, cores):
         for core in cores:
             self.verify_quantization(core)
-            core.threshold = core.parameter_scale.item() * 0.5
-            #core.threshold *= core.activation_scale.item() / core.input_activation_scale.item()
+            core.threshold = core.parameter_scale.item()
             print(core.threshold)
 
             core.core_matrix *= core.parameter_scale.item()
