@@ -52,7 +52,7 @@ class BasicTrainer:
     def _get_optimizer_and_scheduler(self, lr):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr = lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0 = 5, T_mult = 2, eta_min = lr * 1e-3)
+            optimizer, T_0 = 5, T_mult = 1, eta_min = lr * 1e-3)
 
         return optimizer, scheduler
 
