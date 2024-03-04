@@ -1,8 +1,10 @@
 from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.supermodel import Supermodel
+from mimarsinan.models.layers import TransformedActivation, ClampDecorator
 
 import torch.nn as nn
+import torch
 class Transduction(nn.Module):
     def __init__(self, device, input_shape):
         super(Transduction, self).__init__()
@@ -10,18 +12,20 @@ class Transduction(nn.Module):
         self.input_bn = nn.BatchNorm2d(input_shape[-3], device=device)
         self.conv1 = nn.Conv2d(input_shape[-3], input_shape[-3], kernel_size=3, stride=1, padding=1, device=device)
         self.conv2 = nn.Conv2d(input_shape[-3], input_shape[-3], kernel_size=3, stride=1, padding=1, device=device)
-        self.bn = nn.BatchNorm2d(input_shape[-3], device=device)
+        self.in_act = TransformedActivation(
+            base_activation = nn.Identity(),
+            decorators = [
+                ClampDecorator(torch.tensor(0.0), torch.tensor(1.0))
+            ])
 
     def forward(self, x):
-        shape = x.shape
-
-        x = self.input_bn(x)
-        x = self.conv1(x)
-        x = nn.GELU()(x)
-        x = self.conv2(x)
-        x = nn.GELU()(x)
-        x = self.bn(x)
-
+        # x = self.input_bn(x)
+        # x = self.conv1(x)
+        # x = nn.GELU()(x)
+        # x = self.conv2(x)
+        # x = nn.GELU()(x)
+        
+        x = self.in_act(x)
         return x
     
 class PerceptronMixerBuilder:
