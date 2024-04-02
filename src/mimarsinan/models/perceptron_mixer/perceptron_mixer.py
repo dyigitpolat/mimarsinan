@@ -41,23 +41,23 @@ class PerceptronMixer(PerceptronFlow):
         self.patch_count = self.patch_rows * self.patch_cols
 
 
-        self.patch_layer = Perceptron(self.patch_channels, self.patch_size, normalization=nn.BatchNorm1d(self.patch_count)) 
+        self.patch_layer = Perceptron(self.patch_channels, self.patch_size)#, normalization=nn.BatchNorm1d(self.patch_count)) 
 
         self.patch_layers_list = nn.ModuleList()
         self.patch_layers_list_2 = nn.ModuleList()
         self.fc_layers_list = nn.ModuleList()
         self.fc_layers_list_2 = nn.ModuleList()
 
-        self.mixer_count = 1
+        self.mixer_count = 2
 
         XX = fc_w_1
         YY = fc_w_2
         for mixer_idx in range(self.mixer_count):
-            self.patch_layers_list.append(Perceptron(XX, self.patch_count))
+            self.patch_layers_list.append(Perceptron(XX, self.patch_count, normalization=nn.LazyBatchNorm1d(), name="tok_mixer_{}".format(mixer_idx)))
             self.fc_layers_list.append(Perceptron(self.patch_count, XX))
 
-            self.patch_layers_list_2.append(Perceptron(YY, self.patch_channels))
-            self.fc_layers_list_2.append(Perceptron(self.patch_channels, YY, normalization=nn.BatchNorm1d(self.patch_count)))
+            self.patch_layers_list_2.append(Perceptron(YY, self.patch_channels, normalization=nn.LazyBatchNorm1d(), name="ch_mixer_{}".format(mixer_idx)))
+            self.fc_layers_list_2.append(Perceptron(self.patch_channels, YY))
 
         self.output_layer = Perceptron(num_classes, self.patch_count * self.patch_channels) 
 
@@ -108,8 +108,12 @@ class PerceptronMixer(PerceptronFlow):
             for idx in range(self.patch_channels):
                 source = SubscriptMapper(out, idx)
                 source = ReshapeMapper(source, (1, self.patch_count))
+
+                res_source = source
                 source = PerceptronMapper(source, self.patch_layers_list[mixer_idx])
-                patch_mappers.append(PerceptronMapper(source, self.fc_layers_list[mixer_idx]))
+                source = PerceptronMapper(source, self.fc_layers_list[mixer_idx])
+                #patch_mappers.append(AddMapper(source, res_source)) #res
+                patch_mappers.append(source)
 
             out = StackMapper(patch_mappers)
             out = ReshapeMapper(out, (1, self.patch_count * self.patch_channels))
@@ -123,8 +127,12 @@ class PerceptronMixer(PerceptronFlow):
             for idx in range(self.patch_count):
                 source = SubscriptMapper(out, idx)
                 source = ReshapeMapper(source, (1, self.patch_channels))
+                
+                res_source = source
                 source = PerceptronMapper(source, self.patch_layers_list_2[mixer_idx])
-                patch_mappers.append(PerceptronMapper(source, self.fc_layers_list_2[mixer_idx]))
+                source = PerceptronMapper(source, self.fc_layers_list_2[mixer_idx])
+                #patch_mappers.append(AddMapper(source, res_source)) #res
+                patch_mappers.append(source)
 
             out = StackMapper(patch_mappers)
             out = ReshapeMapper(out, (1, self.patch_count * self.patch_channels))
@@ -158,15 +166,23 @@ class PerceptronMixer(PerceptronFlow):
         for mixer_idx in range(self.mixer_count):
             # Token Mixer
             out = einops.einops.rearrange(out, 'b np cp -> b cp np', np=self.patch_count, cp=self.patch_channels)
-            mlp1_fc1 = self.patch_layers_list[mixer_idx]
-            mlp1_fc2 = self.fc_layers_list[mixer_idx]
-            out = mlp1_fc2(mlp1_fc1(out))
+            out = einops.einops.rearrange(out, 'b cp np -> (b cp) np', np=self.patch_count, cp=self.patch_channels)
+            #res = out
+            out = self.patch_layers_list[mixer_idx](out)
+            out = self.fc_layers_list[mixer_idx](out) #+ res
+            # print("shape c w1", self.patch_layers_list[mixer_idx].layer.weight.shape)
+            # print("shape c w2", self.fc_layers_list[mixer_idx].layer.weight.shape)
+            out = einops.einops.rearrange(out, '(b cp) np -> b cp np', np=self.patch_count, cp=self.patch_channels)
 
             # Channel Mixer
             out = einops.einops.rearrange(out, 'b cp np -> b np cp', np=self.patch_count, cp=self.patch_channels)
-            mlp2_fc1 = self.patch_layers_list_2[mixer_idx]
-            mlp2_fc2 = self.fc_layers_list_2[mixer_idx]
-            out = mlp2_fc2(mlp2_fc1(out))
+            out = einops.einops.rearrange(out, 'b np cp -> (b np) cp', np=self.patch_count, cp=self.patch_channels)
+            #res = out
+            out = self.patch_layers_list_2[mixer_idx](out)
+            out = self.fc_layers_list_2[mixer_idx](out)
+            # print("shape t w1", self.patch_layers_list_2[mixer_idx].layer.weight.shape)
+            # print("shape t w2", self.fc_layers_list_2[mixer_idx].layer.weight.shape)
+            out = einops.einops.rearrange(out, '(b np) cp -> b np cp', np=self.patch_count, cp=self.patch_channels)
         
         out = einops.einops.rearrange(out, 'b np cp -> b (np cp)', np=self.patch_count, cp=self.patch_channels)
         out = self.output_layer(out)
