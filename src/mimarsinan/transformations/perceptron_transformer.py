@@ -17,7 +17,7 @@ class PerceptronTransformer:
             return perceptron.layer.weight.data
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            return perceptron.layer.weight.data * u.unsqueeze(1)
+            return perceptron.layer.weight.data * u.unsqueeze(-1)
         
     def get_effective_bias(self, perceptron):
         if perceptron.layer.bias is None:
