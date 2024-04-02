@@ -44,12 +44,11 @@ def to_numpy(tensor_or_array):
         return tensor_or_array.detach().cpu().numpy()
 
 class SoftCoreMapping:
-    def __init__(self):
+    def __init__(self, q_max = 1.0):
         self.cores = []
         self.output_sources = []
 
-        self.max_neurons = 64
-        self.max_axons = 64
+        self.q_max = q_max
         pass
 
     def map(self, model_representation):
@@ -105,7 +104,7 @@ class SoftCoreMapping:
             
             assert len(spike_sources) == core_matrix.shape[0]
             self.cores.append(
-                SoftCore(core_matrix, spike_sources.copy(), len(self.cores), activation_scale, parameter_scale, input_activation_scale))
+                SoftCore(core_matrix.copy(), spike_sources.copy(), len(self.cores), activation_scale, parameter_scale, input_activation_scale))
 
         layer_sources = []
         core_offset = len(self.cores) - new_cores_count
@@ -174,6 +173,24 @@ class ReshapeMapper:
         self.sources = self.source_mapper.map(mapping).reshape(self.output_shape)
         return self.sources
     
+class DelayMapper:
+    def __init__(self, source_mapper, delay):
+        self.source_mapper = source_mapper
+        self.delay = delay
+        self.sources = None
+    
+    def map(self, mapping):
+        if self.sources is not None:
+            return self.sources
+        
+        layer_sources = self.source_mapper.map(mapping)
+        for _ in range(self.delay):
+            # passthrough
+            layer_sources = map_mm(mapping, layer_sources, np.eye(layer_sources.shape[-2]), parameter_scale=torch.tensor(mapping.q_max))
+
+        self.sources = layer_sources
+        return self.sources
+    
 class EinopsRearrangeMapper:
     def __init__(self, source_mapper, einops_str, *einops_args, **einops_kwargs):
         self.source_mapper = source_mapper
@@ -231,7 +248,7 @@ class AddMapper:
         layer_sources = np.concatenate([layer_sources_a, layer_sources_b], axis=0)
         weights = np.concatenate([np.eye(x_rows), np.eye(x_rows)], axis=0).transpose()
 
-        self.sources = map_mm(mapping, layer_sources, weights)
+        self.sources = map_mm(mapping, layer_sources, weights, parameter_scale=torch.tensor(mapping.q_max))
         return self.sources
 
 class SubscriptMapper:
@@ -284,9 +301,13 @@ class PerceptronMapper:
 class ModelRepresentation:
     def __init__(self, output_layer_mapper):
         self.output_layer_mapper = output_layer_mapper
+        self.pytorch_module = nn.Identity()
 
     def map(self, mapping):
         return self.output_layer_mapper.map(mapping)
+    
+    def construct_pytorch_module(self, module, next):
+        return self.output_layer_mapper.construct_pytorch_module(self.pytorch_module)
 
 def hard_cores_to_chip(input_size, hardcore_mapping, axons_per_core, neurons_per_core, leak, weight_type):
     output_sources = hardcore_mapping.output_sources
