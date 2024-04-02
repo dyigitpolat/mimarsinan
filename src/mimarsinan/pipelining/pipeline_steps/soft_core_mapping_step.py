@@ -40,7 +40,9 @@ class SoftCoreMappingStep(PipelineStep):
 
         self._calculate_input_activation_scales(model, validator, 1.0)
 
-        soft_core_mapping = SoftCoreMapping()
+        bits = self.pipeline.config['weight_bits']
+        q_max = (2 ** (bits - 1)) - 1
+        soft_core_mapping = SoftCoreMapping(q_max = q_max)
         soft_core_mapping.map(model.get_mapper_repr())
         ChipLatency(soft_core_mapping).calculate()
 
