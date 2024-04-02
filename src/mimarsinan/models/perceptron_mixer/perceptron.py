@@ -5,9 +5,10 @@ class Perceptron(nn.Module):
     def __init__(
         self, 
         output_channels, input_features, bias=True,
-        normalization = nn.Identity()):
+        normalization = nn.Identity(), name="Perceptron"):
 
         super(Perceptron, self).__init__()
+        self.name = name
         
         self.input_features = input_features
         self.output_channels = output_channels
