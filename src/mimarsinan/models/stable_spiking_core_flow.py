@@ -18,7 +18,7 @@ class StableSpikingCoreFlow(nn.Module):
                 self.cores[core].core_matrix.transpose(), dtype=torch.float32, requires_grad=False))\
                     for core in range(len(self.cores))]
         )
-        
+
         self.thresholds = nn.ParameterList(
             [nn.Parameter(torch.tensor(
                 self.cores[core].threshold, dtype=torch.float32), requires_grad=False)\
@@ -31,6 +31,7 @@ class StableSpikingCoreFlow(nn.Module):
         self.core_sums = [None] * len(self.cores)
 
         self.spike_rates = []
+        self.total_spikes = 0
     
     def get_signal(
             self, spike_train_cache, batch_size, device, core, neuron, is_input, is_off, is_always_on, cycle):
@@ -134,6 +135,9 @@ class StableSpikingCoreFlow(nn.Module):
 
     def get_core_spike_rates(self):
         return self.spike_rates
+    
+    def get_total_spikes(self):
+        return self.total_spikes
 
     def forward(self, x):
         x = self.preprocessor(x)
@@ -165,5 +169,7 @@ class StableSpikingCoreFlow(nn.Module):
                 spike_train_cache[core_idx]).item() / (self.simulation_length * batch_size * self.cores[core_idx].get_output_count())
             self.spike_rates.append(rate)
 
-        print("total spikes: ", torch.sum(output_signals).item())
+        self.total_spikes = torch.sum(output_signals).item()
+        print("total spikes: ", self.total_spikes)
+
         return output_signals
