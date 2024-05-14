@@ -91,7 +91,7 @@ class PerceptronMixerBuilder:
         fc_k_2 = configuration["fc_k_2"]
         fc_w_2 = configuration["fc_w_2"]
 
-        self.validate(configuration)
+        #self.validate(configuration)
             
         preprocessor = Transduction(self.device, self.input_shape)
         perceptron_flow = PerceptronMixer(
@@ -105,6 +105,14 @@ class PerceptronMixerBuilder:
         adaptation_manager = AdaptationManager()
         for perceptron in supermodel.get_perceptrons():
             perceptron.base_activation = nn.LeakyReLU()
+            # perceptron.base_activation = TransformedActivation(
+            # nn.LeakyReLU(),
+            # [
+            #     ClampDecorator(torch.tensor(0.0), torch.tensor(1.0))
+            # ])
             adaptation_manager.update_activation(self.pipeline_config, perceptron)
+
+            assert perceptron.layer.weight.shape[0] <= self.max_neurons, f"not enough neurons ({perceptron.layer.weight.shape[0]} > {self.max_neurons})"
+            assert perceptron.layer.weight.shape[1] <= self.max_axons - 1, f"not enough axons ({perceptron.layer.weight.shape[1]} > {self.max_axons})"
 
         return supermodel
