@@ -48,20 +48,22 @@ class PerceptronTransformTrainer(BasicTrainer):
             if param.requires_grad:
                 aux_param.grad = param.grad
 
-    def _backward_pass_on_loss(self, x, y):
+    def _backward_pass_on_loss(self, x, y, scaler):
         self._update_and_transform_model()
         self.aux_model = self.aux_model.to(self.device)
         self.aux_model.train()
 
-        loss = super()._backward_pass_on_loss(x, y)
+        loss = super()._backward_pass_on_loss(x, y, scaler)
 
         self._transfer_gradients_to_aux()
         return loss
     
-    def _get_optimizer_and_scheduler(self, lr):
-        optimizer = torch.optim.AdamW(self.aux_model.parameters(), lr = lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, 
-            mode='min', patience=2, factor=0.9, min_lr=lr/100, verbose=True)
+    def _get_optimizer_and_scheduler(self, lr, epochs):
+        optimizer = torch.optim.Adam(
+            self.aux_model.parameters(), lr = lr, weight_decay=0, betas=(self.beta1, self.beta2))
         
-        return optimizer, scheduler
+        identity_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer, lr_lambda = lambda epoch: 1)
+        scheduler = identity_scheduler
+        
+        return optimizer, scheduler, torch.cuda.amp.GradScaler()

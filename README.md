@@ -16,6 +16,8 @@ a pipeline for ***m***odeling ***i***n-***m***emory ***ar***chitectures for
 - clang 15
 
 ## setup
+- install warmup_scheduler
+    `pip install git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git`
 - to clone nevresim simulator, you need to run: \
     `git submodule update --init --recursive`
 - to install clang:
