@@ -34,7 +34,7 @@ class ActivationQuantizationTuner(PerceptronTuner):
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
         
-        self.trainer.train_one_step(self._find_lr())
+        self.trainer.train_one_step(0)
         return self.trainer.validate()
 
     def run(self):
