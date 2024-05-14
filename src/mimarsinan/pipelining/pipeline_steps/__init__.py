@@ -14,3 +14,6 @@ from .model_building_step import ModelBuildingStep
 from .quantization_verification_step import QuantizationVerificationStep
 from .cq_training_step import CQTrainingStep
 from .model_configuration_step import ModelConfigurationStep
+from .activation_analysis_step import ActivationAnalysisStep
+from .scale_adaptation_step import ScaleAdaptationStep
+from .scale_fusion_step import ScaleFusionStep
