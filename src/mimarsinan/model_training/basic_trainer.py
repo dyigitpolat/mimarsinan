@@ -1,5 +1,6 @@
 from mimarsinan.model_training.training_utilities import AccuracyTracker
 
+import warmup_scheduler
 import torch
 
 class BasicTrainer:
@@ -28,6 +29,9 @@ class BasicTrainer:
         self.val_iter = iter(self.validation_loader)
         self.train_iter = iter(self.train_loader)
 
+        self.beta1 = 0.9
+        self.beta2 = 0.99
+
     def set_training_batch_size(self, batch_size):
         self.training_batch_size = batch_size
         self.train_loader = self.data_loader_factory.create_training_loader(
@@ -49,26 +53,35 @@ class BasicTrainer:
         if self.report_function is not None:
             self.report_function(metric_name, metric_value)
 
-    def _get_optimizer_and_scheduler(self, lr):
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr = lr)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0 = 5, T_mult = 1, eta_min = lr * 1e-3)
+    def _get_optimizer_and_scheduler(self, lr, epochs):
+        optimizer = torch.optim.Adam(
+            self.model.parameters(), lr = lr, betas = (self.beta1, self.beta2), weight_decay=5e-5)
+        
+        if epochs > 0:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max = epochs, eta_min = lr * 1e-3)
+        else:
+            scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
 
-        return optimizer, scheduler
+        return optimizer, scheduler, torch.cuda.amp.GradScaler()
 
-    def _backward_pass_on_loss(self, x, y):
+    def _backward_pass_on_loss(self, x, y, scaler):
         self.model.train()
-        loss = self.loss_function(self.model, x, y)
-        loss.backward()
+        with torch.cuda.amp.autocast():
+            loss = self.loss_function(self.model, x, y)
+        scaler.scale(loss).backward()
         return loss
     
-    def _optimize(self, x, y, optimizer):
+    def _optimize(self, x, y, optimizer, scaler):
         optimizer.zero_grad()
-        loss = self._backward_pass_on_loss(x, y)
-        optimizer.step()
+        loss = self._backward_pass_on_loss(x, y, scaler)
+        #TODO: clip grad
+        scaler.step(optimizer)
+        scaler.update()
+
         return loss
 
-    def _train_one_epoch(self, optimizer, scheduler):
+    def _train_one_epoch(self, optimizer, scheduler, scaler):
         tracker = AccuracyTracker()
         loss = None
         for (x, y) in self.train_loader:
@@ -76,16 +89,13 @@ class BasicTrainer:
             x, y = x.to(self.device), y.to(self.device)
 
             hook_handle = self.model.register_forward_hook(tracker.create_hook(y))
-            loss = self._optimize(x, y, optimizer)
+            loss = self._optimize(x, y, optimizer, scaler)
             hook_handle.remove()
             
             self._report("Training loss", loss)
         
-        if isinstance(scheduler, torch.optim.lr_scheduler.CosineAnnealingWarmRestarts):
-            scheduler.step()
-        else:
-            scheduler.step(loss)
-
+        scheduler.step()
+        self._report("LR", optimizer.param_groups[0]["lr"])
         return tracker.get_accuracy()
     
     def _validate_on_loader(self, x, y):
@@ -141,7 +151,7 @@ class BasicTrainer:
         return acc
 
     def train_one_step(self, lr):
-        optimizer, _ = self._get_optimizer_and_scheduler(lr)
+        optimizer, _, scaler = self._get_optimizer_and_scheduler(lr, epochs=0)
         try:
             x, y = next(self.train_iter)
         except StopIteration:
@@ -149,24 +159,26 @@ class BasicTrainer:
             x, y = next(self.train_iter)
             
         x, y = x.to(self.device), y.to(self.device)
-        self._optimize(x, y, optimizer)
+        self._optimize(x, y, optimizer, scaler)
     
-    def train_n_epochs(self, lr, epochs):
-        return self.train_until_target_accuracy(lr, epochs, 1.0)
+    def train_n_epochs(self, lr, epochs, warmup_epochs = 0):
+        return self.train_until_target_accuracy(lr, epochs, 1.0, warmup_epochs)
 
-    def train_until_target_accuracy(self, lr, max_epochs, target_accuracy):
-        self._report("LR", lr)
-        optimizer, scheduler = self._get_optimizer_and_scheduler(lr)
+    def train_until_target_accuracy(self, lr, max_epochs, target_accuracy, warmup_epochs):
+        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler(lr, max_epochs)
+
+        if warmup_epochs > 0:
+            scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=warmup_epochs, after_scheduler=scheduler)
 
         validation_accuracy = 0
-        for _ in range(max_epochs):
-            training_accuracy = self._train_one_epoch(optimizer, scheduler)
+        for _ in range(max_epochs + warmup_epochs):
+            training_accuracy = self._train_one_epoch(optimizer, scheduler, scaler)
             self._report("Training accuracy", training_accuracy)
 
             validation_accuracy = self.validate()
             if validation_accuracy >= target_accuracy: 
-                self._train_one_epoch(optimizer, scheduler)
-                self._train_one_epoch(optimizer, scheduler)
+                self._train_one_epoch(optimizer, scheduler, scaler)
+                self._train_one_epoch(optimizer, scheduler, scaler)
                 break
         
         self.test()
