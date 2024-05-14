@@ -22,12 +22,6 @@ class CoreFlow(nn.Module):
         )
 
         self.Tq = Tq
-        self.input_act = TransformedActivation(
-            nn.ReLU(),
-            [
-                ClampDecorator(torch.tensor(0.0), torch.tensor(1.0)),
-                QuantizeDecorator(torch.tensor(Tq), torch.tensor(1.0))
-            ])
         
         self.activations = []
         for core in self.cores:
@@ -87,9 +81,7 @@ class CoreFlow(nn.Module):
     
     def forward(self, x):
         x = self.preprocessor(x)
-
         x = x.view(x.shape[0], -1)
-        x = self.input_act(x)
 
         buffers = []
         input_signals = []
