@@ -39,7 +39,9 @@ class ActivationShiftStep(PipelineStep):
             adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
             PerceptronTransformer().apply_effective_bias_transform(perceptron, lambda b: b + shift_amount)
+            #PerceptronTransformer().apply_effective_bias_transform_to_norm(perceptron, lambda b: b + shift_amount)
         
+        print(self.validate())
         
         self.update_entry("adaptation_manager", adaptation_manager, "pickle")
         self.update_entry("model", model, 'torch_model')

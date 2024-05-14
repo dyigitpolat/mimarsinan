@@ -4,12 +4,13 @@ from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import NormalizationAwarePerceptronQuantizationTuner
 from mimarsinan.models.layers import FrozenStatsNormalization
+from mimarsinan.models.layers import FrozenStatsMaxValueScaler
 
 import torch.nn as nn
 
 class WeightQuantizationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["model"]
+        requires = ["model", "adaptation_manager"]
         promises = []
         updates = ["model"]
         clears = []
@@ -31,14 +32,33 @@ class WeightQuantizationStep(PipelineStep):
                 perceptron.normalization = \
                     FrozenStatsNormalization(perceptron.normalization)
                 
+                #perceptron.base_scaler = FrozenStatsMaxValueScaler(perceptron.base_scaler)
+                
         bits = self.pipeline.config['weight_bits']
-        
+        target = self.pipeline.get_target_metric()
+        lr = self.pipeline.config['lr'] * 1e-3
+
+        # start_bits = 8 if bits < 8 else bits+1
+        # for bits_ in range(start_bits, bits-1, -1):
+        #     print(f"Quantizing to {bits_} bits")
+        #     self.tuner = NormalizationAwarePerceptronQuantizationTuner(
+        #         self.pipeline,
+        #         model = model,
+        #         quantization_bits = bits_, 
+        #         target_accuracy = target,
+        #         lr = lr,
+        #         adaptation_manager = self.get_entry("adaptation_manager"))
+        #     self.tuner.run()
+        #     target = self.tuner.validate()
+        #     lr *= 0.8
+
         self.tuner = NormalizationAwarePerceptronQuantizationTuner(
             self.pipeline,
             model = model,
             quantization_bits = bits, 
-            target_accuracy = self.pipeline.get_target_metric(),
-            lr = self.pipeline.config['lr'])
+            target_accuracy = target,
+            lr = lr,
+            adaptation_manager = self.get_entry("adaptation_manager"))
         self.tuner.run()
-        
+    
         self.update_entry("model", model, 'torch_model')
