@@ -6,7 +6,6 @@ from mimarsinan.pipelining.pipelines.vanilla_deployment_pipeline import VanillaD
 from mimarsinan.pipelining.pipelines.cq_pipeline import CQPipeline
 from mimarsinan.data_handling.data_provider_factory import ImportedDataProviderFactory
 
-
 import sys
 import json
 
@@ -27,6 +26,7 @@ def main():
     platform_constraints = deployment_config['platform_constraints']
     deployment_parameters = deployment_config['deployment_parameters']
     start_step = deployment_config['start_step']
+    target_metric_override = deployment_config.get('target_metric_override')
 
     if 'pipeline_mode' in deployment_config:
         pipeline_mode = deployment_config['pipeline_mode']
@@ -43,7 +43,8 @@ def main():
         platform_constraints=platform_constraints,
         deployment_parameters=deployment_parameters,
         working_directory=working_directory,
-        start_step=start_step)
+        start_step=start_step,
+        target_metric_override=target_metric_override)
 
 def run_pipeline(
     pipeline_mode,
@@ -52,7 +53,8 @@ def run_pipeline(
     platform_constraints, 
     deployment_parameters, 
     working_directory,
-    start_step = None):
+    start_step = None,
+    target_metric_override = None):
 
     deployment_mode_map = {
         "phased": NASDeploymentPipeline,
@@ -69,6 +71,9 @@ def run_pipeline(
         reporter=reporter,
         working_directory=working_directory
     )
+
+    if target_metric_override is not None:
+        pipeline.set_target_metric(target_metric_override)
     
     if start_step is None:
         pipeline.run()
