@@ -14,6 +14,7 @@ class WandB_Reporter:
 
         self.report_timestamps = {}
         self.reporting_intervals = {}
+        self.prefix = ""
 
     def console_log(self, metric_name, metric_value):
         if metric_name not in self.report_timestamps:
@@ -36,5 +37,5 @@ class WandB_Reporter:
                 self.reporting_intervals[metric_name] *= 0.75
 
     def report(self, metric_name, metric_value, step = None):
-        wandb.log({metric_name: metric_value}, step = step)
-        self.console_log(metric_name, metric_value)
+        wandb.log({self.prefix + " " + metric_name: metric_value}, step = step)
+        self.console_log(self.prefix + " " + metric_name, metric_value)
