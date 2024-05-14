@@ -18,8 +18,10 @@ class Pipeline:
             self.set_target_metric(0.0)
 
         self.post_step_hook = None
+        self.pre_step_hook = None
 
     def add_pipeline_step(self, name, pipeline_step):
+        pipeline_step.name = name
         self.steps.append((name, pipeline_step))
         self.verify()
 
@@ -101,6 +103,9 @@ class Pipeline:
     def register_post_step_hook(self, hook):
         self.post_step_hook = hook
 
+    def register_pre_step_hook(self, hook):
+        self.pre_step_hook = hook
+
     def _create_real_key(self, client_step_name, key):
         return client_step_name + '.' + key
 
@@ -109,6 +114,10 @@ class Pipeline:
 
     def _run_step(self, name, step):
         print(f"Running '{name}'...")
+
+        if self.pre_step_hook is not None:
+            self.pre_step_hook(step)
+
         previous_metric = self.get_target_metric()
 
         assert all([self._translate_key(step.name, requirement) in self.cache for requirement in step.requires]), \
