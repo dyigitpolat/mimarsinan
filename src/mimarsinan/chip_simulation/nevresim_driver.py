@@ -10,9 +10,11 @@ class NevresimDriver:
     nevresim_path = None
 
     def __init__(
-        self, input_buffer_size, hard_core_mapping, generated_files_path, weight_type):
+        self, input_buffer_size, hard_core_mapping, generated_files_path, weight_type, spike_generation_mode = "Stochastic", firing_mode = "Default"):
         assert NevresimDriver.nevresim_path is not None, "nevresim path is not set."
 
+        self.spike_generation_mode = spike_generation_mode
+        self.firing_mode = firing_mode
         self.weight_type = weight_type
 
         self.chip = hard_cores_to_chip(
@@ -43,10 +45,10 @@ class NevresimDriver:
             predictions[i] = np.argmax(output_array[i])
         return predictions
     
-    def _prepare_simulator(self, max_input_count, simulation_length):
+    def _prepare_simulator(self, max_input_count, simulation_length, spike_generation_mode, firing_mode):
         generate_main_function(
             self.generated_files_path, max_input_count, self.chip.output_size, simulation_length,
-            main_cpp_template, get_config("Stochastic", "Novena", self.weight_type.__name__))
+            main_cpp_template, get_config(spike_generation_mode, firing_mode, self.weight_type.__name__))
         
         self.simulator_filename = \
             compile_simulator(self.generated_files_path, NevresimDriver.nevresim_path)
@@ -61,7 +63,7 @@ class NevresimDriver:
         
         save_inputs_to_files(self.generated_files_path, input_loader, max_input_count)
         
-        self._prepare_simulator(max_input_count, simulation_length)
+        self._prepare_simulator(max_input_count, simulation_length, self.spike_generation_mode, self.firing_mode)
         simulator_output = execute_simulator(self.simulator_filename, max_input_count, num_proc)
         
         return self._simulator_output_to_predictions(simulator_output, self.chip.output_size)

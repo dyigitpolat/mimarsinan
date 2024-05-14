@@ -6,6 +6,9 @@ import numpy as np
 
 class SimulationRunner:
     def __init__(self, pipeline, mapping, simulation_length, preprocessor):
+        self.spike_generation_mode = pipeline.config["spike_generation_mode"]
+        self.firing_mode = pipeline.config["firing_mode"]
+        
         self.input_size = pipeline.config["input_size"]
         self.num_classes = pipeline.config["num_classes"]
 
@@ -56,7 +59,9 @@ class SimulationRunner:
             self.input_size,
             self.mapping,
             self.working_directory,
-            int
+            int,
+            spike_generation_mode="Stochastic",
+            firing_mode="Default"
         )
 
         simulation_steps = delay + int(self.simulation_length)
