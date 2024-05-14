@@ -13,6 +13,8 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 import torch.nn as nn
 import torch
 
+import numpy as np
+
 class SoftCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
@@ -45,6 +47,13 @@ class SoftCoreMappingStep(PipelineStep):
         soft_core_mapping = SoftCoreMapping(q_max = q_max)
         soft_core_mapping.map(model.get_mapper_repr())
         ChipLatency(soft_core_mapping).calculate()
+
+        for core in soft_core_mapping.cores:
+
+            scale = core.parameter_scale.cpu().numpy()
+            assert np.allclose(
+                core.core_matrix * scale, np.round(core.core_matrix * scale),
+                atol=1e-3, rtol=1e-3), f"{core.core_matrix * scale}"
 
         self.add_entry("soft_core_mapping", soft_core_mapping, 'pickle')
     

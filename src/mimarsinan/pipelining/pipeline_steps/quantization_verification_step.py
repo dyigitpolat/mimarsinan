@@ -32,12 +32,15 @@ class QuantizationVerificationStep(PipelineStep):
         self.trainer.report_function = self.pipeline.reporter.report
 
         for perceptron in self.get_entry("model").get_perceptrons():
+            print(perceptron.parameter_scale)
+            print(perceptron.scale_factor)
+
             perceptron.to(self.pipeline.config['device'])
 
             _fused_w = PerceptronTransformer().get_effective_weight(perceptron)
             _fused_b = PerceptronTransformer().get_effective_bias(perceptron)
 
-            param_scale = self.q_max * perceptron.parameter_scale
+            param_scale = perceptron.parameter_scale
 
             assert torch.allclose(
                 _fused_w * param_scale, torch.round(_fused_w * param_scale),

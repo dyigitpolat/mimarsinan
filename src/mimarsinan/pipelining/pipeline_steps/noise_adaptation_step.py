@@ -20,7 +20,7 @@ class NoiseAdaptationStep(PipelineStep):
             self.pipeline,
             model = self.get_entry('model'),
             target_accuracy = self.pipeline.get_target_metric(),
-            lr = self.pipeline.config['lr'], 
+            lr = self.pipeline.config['lr'] * 1e-3, 
             adaptation_manager = self.get_entry('adaptation_manager'))
         self.tuner.run()
 

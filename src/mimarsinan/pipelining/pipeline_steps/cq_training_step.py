@@ -44,6 +44,7 @@ class CQTrainingStep(PipelineStep):
 
         self.trainer.train_n_epochs(
             self.pipeline.config['lr'], 
-            self.pipeline.config['training_epochs'])
+            self.pipeline.config['training_epochs'],
+            warmup_epochs=5)
         
         self.update_entry("model", model, 'torch_model')
