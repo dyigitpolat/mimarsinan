@@ -4,10 +4,13 @@ from mimarsinan.models.core_flow import CoreFlow
 from mimarsinan.models.spiking_core_flow import SpikingCoreFlow
 from mimarsinan.models.stable_spiking_core_flow import StableSpikingCoreFlow
 
+from mimarsinan.mapping.chip_latency import *
+
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
 import copy
 import math
+import random
 
 class CoreFlowTuner:
     def __init__(self, pipeline, mapping, preprocessor):
@@ -45,8 +48,11 @@ class CoreFlowTuner:
         stable_core_flow = StableSpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor)
         print(f"  Original StableSpikingCoreFlow Accuracy: {self._validate_core_flow(stable_core_flow)}")
 
+
+        max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
         self._tune_thresholds(
-            stable_core_flow.get_core_spike_rates(), tuning_cycles=20, lr=0.5, core_flow_model=core_flow)
+            stable_core_flow.get_core_spike_rates(), 
+            tuning_cycles=10, lr=0.1, core_flow_model=core_flow)
         
         final_mapping = copy.deepcopy(core_flow.core_mapping)
         core_flow = SpikingCoreFlow(self.input_shape, final_mapping, int(self.simulation_steps), self.preprocessor)
@@ -67,24 +73,44 @@ class CoreFlowTuner:
         print(stable_spike_rates)
         print(core_flow_model.get_core_spike_rates())
 
-        thresholds = [core.threshold for core in core_flow_model.cores]
+        thresholds = [round(core.threshold * 0.99) for core in core_flow_model.cores]
+
+        acc = 0
+        max_acc = 0
+        lr_ = lr
         for i in range(tuning_cycles):
-            print("acc: ", self._validate_core_flow(core_flow_model))
+            acc = self._validate_core_flow(core_flow_model)
+            print("lr: ", lr_)
+
+            print("acc: ", acc)
 
             print(f"  Tuning cycle {i+1}/{tuning_cycles}...")
             self._update_core_thresholds(
-                stable_spike_rates, lr, core_flow_model, thresholds)
-
+                stable_spike_rates, lr_, core_flow_model, thresholds)
+            lr_ *= 0.9
 
     def _update_core_thresholds(self, stable_spike_rates, lr, core_flow_model, thresholds):
+        perturbations = []
         for core_id, core in enumerate(core_flow_model.cores):
             core_spike_rate = core_flow_model.get_core_spike_rates()[core_id]
             target_spike_rate = stable_spike_rates[core_id]
-            thresholds[core_id] *= (1 + lr * (core_spike_rate - target_spike_rate))
+            new_thresh = thresholds[core_id] * (1 + (core_spike_rate - target_spike_rate) * lr)
+            thresholds[core_id] = new_thresh
+            perturbations.append(core_spike_rate - target_spike_rate)
 
             core.threshold = round(thresholds[core_id])
+            if core.threshold <= 0:
+                core.threshold = 1
         
-        print("  Updated thresholds: ", [core.threshold for core in core_flow_model.cores])
+        for pert, core in zip(perturbations, core_flow_model.cores):
+            if pert > 0.01:
+                self.print_colorful("blue", f"{core.threshold} ")
+            elif pert < -0.01:
+                self.print_colorful("red", f"{core.threshold} ")
+            else:
+                self.print_colorful("green", f"{core.threshold} ")
+        print()
+
         core_flow_model.refresh_thresholds()
 
     def _quantize_thresholds(self, mapping, quantization_scale):
@@ -101,3 +127,16 @@ class CoreFlowTuner:
     
     def validate(self):
         return self.accuracy
+    
+    def print_colorful(self, color, text):
+        colors = {
+            "red": "\033[91m",
+            "green": "\033[92m",
+            "yellow": "\033[93m",
+            "blue": "\033[94m",
+            "purple": "\033[95m",
+            "cyan": "\033[96m"
+        }
+        if color not in colors:
+            raise ValueError(f"Invalid color: {color}. Choose from: {', '.join(colors.keys())}")
+        print(f"{colors[color]}{text}\033[0m", end="")
