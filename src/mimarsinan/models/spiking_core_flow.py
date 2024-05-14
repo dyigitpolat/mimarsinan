@@ -29,6 +29,11 @@ class SpikingCoreFlow(nn.Module):
 
         # Stats
         self.core_avgs = None
+        self.total_spikes = 0
+
+    def set_simulation_length(self, simulation_length):
+        self.cycles = ChipLatency(self.core_mapping).calculate() + simulation_length
+        self.simulation_length = simulation_length
         
     def update_cores(self):
         for idx, core in enumerate(self.cores):
@@ -76,8 +81,18 @@ class SpikingCoreFlow(nn.Module):
 
     def get_core_spike_rates(self):
         return self.core_avgs
-            
+    
+    def get_total_spikes(self):
+        return self.total_spikes
+    
+    def to_lif_spikes(self, tensor, membrane_potentials, threshold):
+        membrane_potentials += tensor
+        spikes = (membrane_potentials > threshold).float()
+        membrane_potentials[spikes == 1] -= threshold
+        return spikes
+
     def to_spikes(self, tensor):
+        #return tensor
         return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
     
     def forward(self, x):
@@ -90,6 +105,8 @@ class SpikingCoreFlow(nn.Module):
         buffers = []
         input_signals = []
         membrane_potentials = []
+        input_membrane_potentials = torch.zeros(
+            x.shape[0], x.shape[1], device=x.device)
         for core in self.cores:
             buffers.append(torch.zeros(x.shape[0], core.get_output_count(), device=x.device))
             input_signals.append(
@@ -99,9 +116,11 @@ class SpikingCoreFlow(nn.Module):
         
         output_signals = torch.zeros(x.shape[0], len(self.output_sources), device=x.device)
         for cycle in range(self.cycles):
+            #input_spikes = self.to_lif_spikes(x, input_membrane_potentials, 1.0)
+            input_spikes = self.to_spikes(x)
             for core_idx in range(len(self.cores)):
                 input_signals[core_idx] = self.get_signal_tensor(
-                    self.to_spikes(x), 
+                    input_spikes, 
                     buffers, self.cores[core_idx].axon_sources,
                     cycle)
 
@@ -117,10 +136,14 @@ class SpikingCoreFlow(nn.Module):
                     buffers[core_idx] = (memb > self.thresholds[core_idx]).float()
 
                     # novena reset
-                    memb[memb > self.thresholds[core_idx]] = 0.0
+                    # memb[memb > self.thresholds[core_idx]] = 0.0
+                    
+                    # subtract reset
+                    memb[memb > self.thresholds[core_idx]] -= self.thresholds[core_idx]
         
             self.update_stats(buffers, x.shape[0])
-            output_signals += self.get_signal_tensor(self.to_spikes(x), buffers, self.output_sources, cycle)
+            output_signals += self.get_signal_tensor(input_spikes, buffers, self.output_sources, cycle)
             
-        print("total spikes: ", torch.sum(output_signals).item())
+        self.total_spikes = torch.sum(output_signals).item()
+        print("total spikes: ", self.total_spikes)
         return output_signals
