@@ -269,3 +269,39 @@ class FrozenStatsNormalization(nn.Module):
         # batch norm with frozen params
         return nn.functional.batch_norm(
             x, self.running_mean, self.running_var, self.weight, self.bias, False, 0, self.eps)
+    
+
+class MaxValueScaler(nn.Module):
+    def __init__(self):
+        super(MaxValueScaler, self).__init__()
+        self.max_value = nn.Parameter(torch.tensor(1.0), requires_grad=False)
+    
+    def forward(self, x):
+        max_x = torch.max(x)
+        
+        if self.training:
+            self.max_value.data = 0.1 * max_x + 0.9 * self.max_value
+
+        return x / self.max_value
+    
+class AnyDecorator:
+    def __init__(self, any_module):
+        self.module = any_module
+    
+    def input_transform(self, x):
+        return nn.Identity()(x)
+    
+    def output_transform(self, x):
+        return self.module(x)
+    
+class MixAdjustmentStrategy:
+    def adjust(self, base, target, rate):
+        return rate * target + (1.0 - rate) * base
+    
+class FrozenStatsMaxValueScaler(nn.Module):
+    def __init__(self, scaler: MaxValueScaler):
+        super(FrozenStatsMaxValueScaler, self).__init__()
+        self.max_value = scaler.max_value.clone().detach()
+    
+    def forward(self, x):
+        return x / self.max_value
