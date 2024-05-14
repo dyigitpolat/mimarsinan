@@ -41,7 +41,8 @@ class PerceptronMixer(PerceptronFlow):
         self.patch_count = self.patch_rows * self.patch_cols
 
 
-        self.patch_layer = Perceptron(self.patch_channels, self.patch_size)#, normalization=nn.BatchNorm1d(self.patch_count)) 
+        self.patch_layer = Perceptron(self.patch_channels, self.patch_size, normalization=nn.LazyBatchNorm1d() ) 
+        self.patch_layer_CONV = nn.Conv2d(self.input_channels, self.patch_channels, kernel_size=self.patch_height, stride=self.patch_height)
 
         self.patch_layers_list = nn.ModuleList()
         self.patch_layers_list_2 = nn.ModuleList()
@@ -59,7 +60,12 @@ class PerceptronMixer(PerceptronFlow):
             self.patch_layers_list_2.append(Perceptron(YY, self.patch_channels, normalization=nn.LazyBatchNorm1d(), name="ch_mixer_{}".format(mixer_idx)))
             self.fc_layers_list_2.append(Perceptron(self.patch_channels, YY))
 
-        self.output_layer = Perceptron(num_classes, self.patch_count * self.patch_channels) 
+
+        # self.cls_patch_count = 8
+        # self.cls_patch_size = self.patch_channels * self.patch_count // self.cls_patch_count
+        # self.cls_patch_layer = Perceptron(self.patch_channels, self.cls_patch_size, normalization=nn.LazyBatchNorm1d())
+        
+        self.output_layer = Perceptron(num_classes, self.patch_count * self.patch_channels, normalization=nn.LazyBatchNorm1d() )
 
         self.out = None
 
@@ -156,12 +162,22 @@ class PerceptronMixer(PerceptronFlow):
 
         # Patcher:
         out = einops.einops.rearrange(
-            x, 
+            out, 
             'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', 
             p1=self.patch_height, p2=self.patch_width)
         
         # Patchwise MLP
+
+        out = einops.einops.rearrange(out, 'b np ps -> (b np) ps', np=self.patch_count, ps=self.patch_size)
         out = self.patch_layer(out)
+        out = einops.einops.rearrange(out, '(b np) cp -> b np cp', np=self.patch_count, cp=self.patch_channels)
+
+        # out = self.patch_layer_CONV(out)
+        # out = einops.einops.rearrange(
+        #     out, 
+        #     'b c h w -> b (h w) c')
+        
+
         
         for mixer_idx in range(self.mixer_count):
             # Token Mixer
