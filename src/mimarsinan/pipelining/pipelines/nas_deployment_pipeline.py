@@ -53,18 +53,29 @@ class NASDeploymentPipeline(Pipeline):
         self._initialize_config(deployment_parameters, platform_constraints)
         self._display_config()
 
+        #self.loss = CustomClassificationLoss()
         self.loss = BasicClassificationLoss()
         
         self.add_pipeline_step("Model Configuration", ModelConfigurationStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("Pretraining", PretrainingStep(self))
+        self.add_pipeline_step("Activation Analysis", ActivationAnalysisStep(self))
         self.add_pipeline_step("Clamp Adaptation", ClampAdaptationStep(self))
-        self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
+
+        self.add_pipeline_step("Scale Fusion", ScaleFusionStep(self))
         self.add_pipeline_step("Activation Shifting", ActivationShiftStep(self))
+        self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
+
+        self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
         self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
+
+        #self.add_pipeline_step("Activation Analysis 2", ActivationAnalysisStep(self))
+
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
         self.add_pipeline_step("Quantization Verification", QuantizationVerificationStep(self))
-        self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
+        # self.add_pipeline_step("Scale Adaptation", ScaleAdaptationStep(self))
+        # self.add_pipeline_step("Scale Fusion", ScaleFusionStep(self))
+
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
         self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
         self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
@@ -76,7 +87,15 @@ class NASDeploymentPipeline(Pipeline):
             print("Visualizing activation histograms...")
             self._visualize_activation_histograms(step)
 
+        current_step_idx = 0
+        def pre_step_hook(step):
+            nonlocal current_step_idx
+            current_step_idx += 1
+
+            self.reporter.prefix = str(current_step_idx) + ". " + step.name
+
         self.register_post_step_hook(post_step_hook)
+        self.register_pre_step_hook(pre_step_hook)
         
     def _initialize_config(self, deployment_parameters, platform_constraints):
         self.config.update(self.default_deployment_parameters)
@@ -118,6 +137,7 @@ class NASDeploymentPipeline(Pipeline):
 
             for perceptron in model.get_perceptrons():
                 perceptron.activation.decorate(StatsDecorator())
+                perceptron.activation.decorate(SavedTensorDecorator())
 
             BasicTrainer(
                     model, 
@@ -126,6 +146,8 @@ class NASDeploymentPipeline(Pipeline):
                     self.loss).validate()
 
             for idx, perceptron in enumerate(model.get_perceptrons()):
+                saved_tensor = perceptron.activation.pop_decorator()
+                assert isinstance(saved_tensor, SavedTensorDecorator)
                 stats = perceptron.activation.pop_decorator()
 
                 hist = stats.in_hist.tolist()
@@ -135,6 +157,15 @@ class NASDeploymentPipeline(Pipeline):
 
                 rob_max = self._find_robust_max(trimmed_hist, trimmed_edges)
                 HistogramVisualizer(hist[-(len(trimmed_hist)):], trimmed_edges, -10, 10, v_line = rob_max).plot(f"{path}/h_{idx}.png")
+
+                flat_acts = saved_tensor.latest_output.view(-1)  # flatten to 1D
+                sorted_acts, _ = torch.sort(flat_acts)  # sort ascending
+                cumsum_acts = torch.cumsum(sorted_acts, dim=0)  # cumulative sum
+                norm_cumsum = cumsum_acts / cumsum_acts[-1]  # normalize by total sum
+                threshold_idx = torch.searchsorted(norm_cumsum, 0.8)  # index of first value >= 0.99
+                threshold = sorted_acts[threshold_idx].cpu()  # value at that index
+
+                HistogramVisualizer(hist[-(len(trimmed_hist)):], trimmed_edges, -10, 10, v_line = threshold).plot(f"{path}/h_claude_{idx}.png")
 
 
     def _trim_histogram(self, hist, bin_edges):
