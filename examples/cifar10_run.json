@@ -1,7 +1,7 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "cifar10_basic_loss",
+    "experiment_name": "cifar10_x",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar10_data_provider.py",
     "data_provider_name": "CIFAR10_DataProvider",
@@ -9,8 +9,8 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 64,
-        "simulation_steps": 64,
+        "target_tq": 128,
+        "simulation_steps": 128,
         "weight_bits": 8
     },
 
@@ -38,9 +38,12 @@
             "patch_c_2": 128, 
             "fc_k_2": 1, 
             "fc_w_2": 64
-        }
+        },
+
+        "spike_generation_mode": "Stochastic",
+        "firing_mode": "Default"
     },
 
     "target_metric_override": null,
-    "start_step": "Activation Shifting"
+    "start_step": "CoreFlow Tuning"
 }
