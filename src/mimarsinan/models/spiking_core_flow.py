@@ -24,7 +24,8 @@ class SpikingCoreFlow(nn.Module):
                 self.cores[core].threshold, dtype=torch.float32), requires_grad=False)\
                     for core in range(len(self.cores))])
 
-        self.cycles = ChipLatency(core_mapping).calculate() + simulation_length
+        self.latency = ChipLatency(core_mapping).calculate()
+        self.cycles = self.latency + simulation_length
         self.simulation_length = simulation_length
 
         # Stats
@@ -32,7 +33,7 @@ class SpikingCoreFlow(nn.Module):
         self.total_spikes = 0
 
     def set_simulation_length(self, simulation_length):
-        self.cycles = ChipLatency(self.core_mapping).calculate() + simulation_length
+        self.cycles = self.latency + simulation_length
         self.simulation_length = simulation_length
         
     def update_cores(self):

@@ -52,7 +52,7 @@ class CoreFlowTuner:
         max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
         self._tune_thresholds(
             stable_core_flow.get_core_spike_rates(), 
-            tuning_cycles=10, lr=0.1, core_flow_model=core_flow)
+            tuning_cycles=3, lr=0.9, core_flow_model=core_flow)
         
         final_mapping = copy.deepcopy(core_flow.core_mapping)
         core_flow = SpikingCoreFlow(self.input_shape, final_mapping, int(self.simulation_steps), self.preprocessor)
@@ -73,34 +73,40 @@ class CoreFlowTuner:
         print(stable_spike_rates)
         print(core_flow_model.get_core_spike_rates())
 
-        thresholds = [round(core.threshold * 0.99) for core in core_flow_model.cores]
+        thresholds = [round(core.threshold) for core in core_flow_model.cores]
 
         acc = 0
         max_acc = 0
         lr_ = lr
-        for i in range(tuning_cycles):
-            acc = self._validate_core_flow(core_flow_model)
-            print("lr: ", lr_)
+        for L in range(core_flow_model.latency):
+            lr_ = lr
+            for i in range(tuning_cycles):
+                acc = self._validate_core_flow(core_flow_model)
+                print("lr: ", lr_)
 
-            print("acc: ", acc)
+                print("acc: ", acc)
 
-            print(f"  Tuning cycle {i+1}/{tuning_cycles}...")
-            self._update_core_thresholds(
-                stable_spike_rates, lr_, core_flow_model, thresholds)
-            lr_ *= 0.9
+                print(f"  Tuning cycle {i+1}/{tuning_cycles}...")
+                self._update_core_thresholds(
+                    stable_spike_rates, lr_, core_flow_model, thresholds, L)
+                
+                lr_ *= 0.9
 
-    def _update_core_thresholds(self, stable_spike_rates, lr, core_flow_model, thresholds):
+    def _update_core_thresholds(self, stable_spike_rates, lr, core_flow_model, thresholds, L):
         perturbations = []
         for core_id, core in enumerate(core_flow_model.cores):
             core_spike_rate = core_flow_model.get_core_spike_rates()[core_id]
             target_spike_rate = stable_spike_rates[core_id]
-            new_thresh = thresholds[core_id] * (1 + (core_spike_rate - target_spike_rate) * lr)
-            thresholds[core_id] = new_thresh
-            perturbations.append(core_spike_rate - target_spike_rate)
+            perturbation = abs(1.0 - (core_spike_rate / target_spike_rate))
+            perturbations.append(perturbation)
 
-            core.threshold = round(thresholds[core_id])
-            if core.threshold <= 0:
-                core.threshold = 1
+            if L == core.latency:
+                new_thresh = thresholds[core_id] * (1 + perturbation * lr)
+                thresholds[core_id] = new_thresh
+
+                core.threshold = round(thresholds[core_id])
+                if core.threshold <= 0:
+                    core.threshold = 1
         
         for pert, core in zip(perturbations, core_flow_model.cores):
             if pert > 0.01:
