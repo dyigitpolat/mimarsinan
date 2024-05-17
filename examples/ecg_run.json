@@ -8,14 +8,14 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 5,
-        "simulation_steps": 10,
+        "target_tq": 8,
+        "simulation_steps": 16,
         "weight_bits": 4,
         "degradation_tolerance": 0.8
     },
     "deployment_parameters": {
         "lr": 0.001,
-        "training_epochs": 30,
+        "training_epochs": 10,
         "tuner_epochs": 1,
 
         "model_definition": {

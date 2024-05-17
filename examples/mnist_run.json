@@ -1,7 +1,7 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "mnist_T32_B4_basic",
+    "experiment_name": "mnist_T32_B4",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
@@ -9,9 +9,9 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 32,
-        "simulation_steps": 32,
-        "weight_bits": 4
+        "target_tq": 128,
+        "simulation_steps": 128,
+        "weight_bits": 8
     },
 
     "deployment_parameters": {
@@ -45,5 +45,5 @@
     },
 
     "target_metric_override": null,
-    "start_step": null
+    "start_step": "CoreFlow Tuning"
 }
