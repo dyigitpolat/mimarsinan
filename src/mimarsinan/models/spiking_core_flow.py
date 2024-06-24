@@ -25,7 +25,7 @@ class SpikingCoreFlow(nn.Module):
                     for core in range(len(self.cores))])
         
         self.firing_mode = firing_mode
-        assert firing_mode in ["default", "novena"]
+        assert firing_mode in ["Default", "Novena"]
 
         self.latency = ChipLatency(core_mapping).calculate()
         self.cycles = self.latency + simulation_length
@@ -140,11 +140,11 @@ class SpikingCoreFlow(nn.Module):
                     buffers[core_idx] = (memb > self.thresholds[core_idx]).float()
 
                     # novena reset
-                    if self.firing_mode == "novena":
+                    if self.firing_mode == "Novena":
                         memb[memb > self.thresholds[core_idx]] = 0.0
                     
                     # subtract reset
-                    if self.firing_mode == "default":
+                    if self.firing_mode == "Default":
                         memb[memb > self.thresholds[core_idx]] -= self.thresholds[core_idx]
         
             self.update_stats(buffers, x.shape[0])
