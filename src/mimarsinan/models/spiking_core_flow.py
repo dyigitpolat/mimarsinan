@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch
 
 class SpikingCoreFlow(nn.Module):
-    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor):
+    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor, firing_mode):
         super(SpikingCoreFlow, self).__init__()
         self.input_shape = input_shape
 
@@ -23,6 +23,9 @@ class SpikingCoreFlow(nn.Module):
             [nn.Parameter(torch.tensor(
                 self.cores[core].threshold, dtype=torch.float32), requires_grad=False)\
                     for core in range(len(self.cores))])
+        
+        self.firing_mode = firing_mode
+        assert firing_mode in ["default", "novena"]
 
         self.latency = ChipLatency(core_mapping).calculate()
         self.cycles = self.latency + simulation_length
@@ -137,10 +140,12 @@ class SpikingCoreFlow(nn.Module):
                     buffers[core_idx] = (memb > self.thresholds[core_idx]).float()
 
                     # novena reset
-                    # memb[memb > self.thresholds[core_idx]] = 0.0
+                    if self.firing_mode == "novena":
+                        memb[memb > self.thresholds[core_idx]] = 0.0
                     
                     # subtract reset
-                    memb[memb > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+                    if self.firing_mode == "default":
+                        memb[memb > self.thresholds[core_idx]] -= self.thresholds[core_idx]
         
             self.update_stats(buffers, x.shape[0])
             output_signals += self.get_signal_tensor(input_spikes, buffers, self.output_sources, cycle)

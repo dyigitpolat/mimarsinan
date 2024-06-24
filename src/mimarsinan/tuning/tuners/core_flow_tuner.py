@@ -33,6 +33,8 @@ class CoreFlowTuner:
         # self.core_flow_trainer.set_validation_batch_size(100)
         self.core_flow_trainer.report_function = self.report_function
 
+        self.firing_mode = pipeline.config["firing_mode"]
+
         self.accuracy = None
 
     def run(self):
@@ -42,25 +44,25 @@ class CoreFlowTuner:
 
         quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
-        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor)
+        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode)
         print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
-        stable_core_flow = StableSpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor)
+        stable_core_flow = StableSpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode)
         print(f"  Original StableSpikingCoreFlow Accuracy: {self._validate_core_flow(stable_core_flow)}")
 
 
         max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
         self._tune_thresholds(
             stable_core_flow.get_core_spike_rates(), 
-            tuning_cycles=3, lr=0.9, core_flow_model=core_flow)
+            tuning_cycles=10, lr=0.1, core_flow_model=core_flow)
         
         final_mapping = copy.deepcopy(core_flow.core_mapping)
-        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, int(self.simulation_steps), self.preprocessor)
+        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode)
         print(f"  Original 2 SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
         
         self._quantize_thresholds(final_mapping, 1.0)
-        scaled_simulation_steps = math.ceil(self.simulation_steps)
-        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, scaled_simulation_steps, self.preprocessor)
+        scaled_simulation_steps = self.simulation_steps
+        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, scaled_simulation_steps, self.preprocessor, self.firing_mode)
         self.accuracy = self._test_core_flow(core_flow)
         print(f"  Final SpikingCoreFlow Accuracy: {self.accuracy}")
 
@@ -78,21 +80,19 @@ class CoreFlowTuner:
         acc = 0
         max_acc = 0
         lr_ = lr
-        for L in range(core_flow_model.latency):
-            lr_ = lr
-            for i in range(tuning_cycles):
-                acc = self._validate_core_flow(core_flow_model)
-                print("lr: ", lr_)
+        for i in range(tuning_cycles):
+            acc = self._validate_core_flow(core_flow_model)
+            print("lr: ", lr_)
 
-                print("acc: ", acc)
+            print("acc: ", acc)
 
-                print(f"  Tuning cycle {i+1}/{tuning_cycles}...")
-                self._update_core_thresholds(
-                    stable_spike_rates, lr_, core_flow_model, thresholds, L)
-                
-                lr_ *= 0.9
+            print(f"  Tuning cycle {i+1}/{tuning_cycles}...")
+            self._update_core_thresholds(
+                stable_spike_rates, lr_, core_flow_model, thresholds)
+            
+            lr_ *= 0.99
 
-    def _update_core_thresholds(self, stable_spike_rates, lr, core_flow_model, thresholds, L):
+    def _update_core_thresholds(self, stable_spike_rates, lr, core_flow_model, thresholds):
         perturbations = []
         for core_id, core in enumerate(core_flow_model.cores):
             core_spike_rate = core_flow_model.get_core_spike_rates()[core_id]
@@ -100,13 +100,12 @@ class CoreFlowTuner:
             perturbation = abs(1.0 - (core_spike_rate / target_spike_rate))
             perturbations.append(perturbation)
 
-            if L == core.latency:
-                new_thresh = thresholds[core_id] * (1 + perturbation * lr)
-                thresholds[core_id] = new_thresh
+            new_thresh = thresholds[core_id] * (1 + perturbation * lr)
+            thresholds[core_id] = new_thresh
 
-                core.threshold = round(thresholds[core_id])
-                if core.threshold <= 0:
-                    core.threshold = 1
+            core.threshold = round(thresholds[core_id])
+            if core.threshold <= 0:
+                core.threshold = 1
         
         for pert, core in zip(perturbations, core_flow_model.cores):
             if pert > 0.01:
