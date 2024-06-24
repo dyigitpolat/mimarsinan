@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch
 
 class StableSpikingCoreFlow(nn.Module):
-    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor):
+    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor, firing_mode):
         super(StableSpikingCoreFlow, self).__init__()
         self.input_shape = input_shape
 
@@ -23,6 +23,9 @@ class StableSpikingCoreFlow(nn.Module):
             [nn.Parameter(torch.tensor(
                 self.cores[core].threshold, dtype=torch.float32), requires_grad=False)\
                     for core in range(len(self.cores))])
+        
+        self.firing_mode = firing_mode
+        assert firing_mode in ["default", "novena"]
 
         self.simulation_length = simulation_length
         self.cycles = ChipLatency(core_mapping).calculate() + simulation_length
@@ -107,10 +110,12 @@ class StableSpikingCoreFlow(nn.Module):
             avg_values += val / self.simulation_length
 
             # novena reset
-            # membrane_potentials[membrane_potentials > self.thresholds[core_idx]] = 0.0
+            if self.firing_mode == "novena":
+                membrane_potentials[membrane_potentials > self.thresholds[core_idx]] = 0.0
 
-            # # normal reset
-            membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+            # normal reset
+            if self.firing_mode == "default":
+                membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
 
         ideal_out_spikes = \
             torch.zeros(self.simulation_length, batch_size, core.get_output_count(), device=device)
