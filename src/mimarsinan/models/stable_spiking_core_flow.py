@@ -25,7 +25,7 @@ class StableSpikingCoreFlow(nn.Module):
                     for core in range(len(self.cores))])
         
         self.firing_mode = firing_mode
-        assert firing_mode in ["default", "novena"]
+        assert firing_mode in ["Default", "Novena"]
 
         self.simulation_length = simulation_length
         self.cycles = ChipLatency(core_mapping).calculate() + simulation_length
@@ -110,11 +110,11 @@ class StableSpikingCoreFlow(nn.Module):
             avg_values += val / self.simulation_length
 
             # novena reset
-            if self.firing_mode == "novena":
+            if self.firing_mode == "Novena":
                 membrane_potentials[membrane_potentials > self.thresholds[core_idx]] = 0.0
 
             # normal reset
-            if self.firing_mode == "default":
+            if self.firing_mode == "Default":
                 membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
 
         ideal_out_spikes = \
