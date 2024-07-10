@@ -1,4 +1,4 @@
-from mimarsinan.models.layers import MaxValueScaler
+from mimarsinan.models.layers import MaxValueScaler, LeakyGradReLU
 
 
 import torch.nn as nn
@@ -26,7 +26,7 @@ class Perceptron(nn.Module):
         self.scale_factor = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
         self.input_activation = nn.Identity()
-        self.activation = nn.LeakyReLU()
+        self.activation = LeakyGradReLU()
 
         self.regularization = nn.Identity()
         
@@ -34,7 +34,7 @@ class Perceptron(nn.Module):
         self.input_activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
         self.activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
-        self.base_activation = nn.LeakyReLU()
+        self.base_activation = LeakyGradReLU()
 
     def set_parameter_scale(self, new_scale):
         if isinstance(new_scale, float):

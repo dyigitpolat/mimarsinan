@@ -80,12 +80,14 @@ if __name__ == "__main__":
             self.layer = nn.Linear(input_size, output_size)
             self.normalization = nn.BatchNorm1d(output_size)
             self.scale_factor = 0.3169
+            self.shift_amt = 0.0
             self.act = nn.LeakyReLU()
         
         def forward(self, x):
             out = self.layer(x)
+            print(out.shape)
             out = self.normalization(out)
-            return self.act(out)
+            return self.act(out + self.shift_amt)
         
 
     with torch.no_grad():
@@ -124,7 +126,7 @@ if __name__ == "__main__":
 
 
         # test case : with normalization transform norm
-        print("TEST CASE")
+        print("TEST CASE with norm, and transform norm")
         perceptron = Perceptron(10, 5)
         perceptron.eval()
 
@@ -139,6 +141,7 @@ if __name__ == "__main__":
         perceptron.normalization.running_mean.data = torch.randn_like(perceptron.normalization.running_mean.data)
         perceptron.normalization.running_var.data = torch.abs(torch.randn_like(perceptron.normalization.running_var.data))
 
+        perceptron_transformer.apply_effective_weight_transform(perceptron, lambda x: x * 0.42 + 0.69)
         perceptron_transformer.apply_effective_bias_transform_to_norm(perceptron, lambda x: x * 0.42 + 0.69)
         out_1 = perceptron(rand_input)
 
@@ -167,6 +170,34 @@ if __name__ == "__main__":
         perceptron.layer.weight.data = torch.randn_like(perceptron.layer.weight.data)
         perceptron.layer.bias.data = torch.randn_like(perceptron.layer.bias.data)
         perceptron_transformer.apply_effective_parameter_transform(perceptron, lambda x: x * 0.42 + 0.69)
+        out_1 = perceptron(rand_input)
+
+        # fused
+        w, b = perceptron_transformer.get_effective_parameters(perceptron)
+        perceptron.layer.weight.data = w
+        perceptron.layer.bias.data = b
+        perceptron.normalization = nn.Identity()
+        inp = rand_input / perceptron.scale_factor
+        out_2 = perceptron(inp) * perceptron.scale_factor
+
+        # test
+        print(out_1)
+        print(out_2)
+
+        ###
+        # test case 2 : without normalization apply to norm
+        print("TEST CASE without norm apply to norm")
+        perceptron = Perceptron(10, 5)
+        perceptron.normalization = nn.Identity()
+        perceptron.eval()
+
+        # non-fused
+        rand_input = torch.rand(size=(1, 10))
+        perceptron.layer.weight.data = torch.randn_like(perceptron.layer.weight.data)
+        perceptron.layer.bias.data = torch.randn_like(perceptron.layer.bias.data)
+
+        perceptron_transformer.apply_effective_weight_transform(perceptron, lambda x: x * 0.42 + 0.69)
+        perceptron_transformer.apply_effective_bias_transform_to_norm(perceptron, lambda x: x * 0.42 + 0.69)
         out_1 = perceptron(rand_input)
 
         # fused
@@ -230,5 +261,108 @@ if __name__ == "__main__":
         print(out_1)
         print(out_2)
 
+        # shift test 
+        print("TEST CASE shift")
+        perceptron = Perceptron(10, 5)
+        perceptron.normalization = nn.Identity()
+        perceptron.scale_factor = 1.0
+        perceptron.eval()
+
+        rand_input = torch.rand(size=(1, 10))
+
+        # non-fused
+        perceptron.layer.weight.data = torch.randn_like(perceptron.layer.weight.data)
+        perceptron.layer.bias.data = torch.randn_like(perceptron.layer.bias.data)
+
+        out_1 = perceptron(rand_input)
+
+        shift_amt = 0.9876
+        perceptron.shift_amt = -shift_amt
+        perceptron.layer.bias.data[:] = perceptron.layer.bias.data[:] + shift_amt
+
+        out_2 = perceptron(rand_input)
+
+        print(out_1)
+        print(out_2)
+
+        # shift test norm
+        print("TEST CASE shift norm")
+        perceptron = Perceptron(10, 5)
+        perceptron.scale_factor = 1.0
+        perceptron.eval()
+
+        rand_input = torch.rand(size=(1, 10))
+
+        # non-fused
+        perceptron.layer.weight.data = torch.randn_like(perceptron.layer.weight.data)
+        perceptron.layer.bias.data = torch.randn_like(perceptron.layer.bias.data)
+        perceptron.normalization.weight.data = torch.randn_like(perceptron.normalization.weight.data)
+        perceptron.normalization.bias.data = torch.randn_like(perceptron.normalization.bias.data)
+        perceptron.normalization.running_mean.data = torch.randn_like(perceptron.normalization.running_mean.data)
+        perceptron.normalization.running_var.data = torch.abs(torch.randn_like(perceptron.normalization.running_var.data))
+
+        out_1 = perceptron(rand_input)
+
+        shift_amt = 0.9876
+        perceptron.shift_amt = -shift_amt
+        PerceptronTransformer().apply_effective_bias_transform(perceptron, lambda b: b + shift_amt)
+
+        out_3 = perceptron(rand_input)
+
+
+        w, b = PerceptronTransformer().get_effective_parameters(perceptron)
+        perceptron.layer.weight.data = w
+        perceptron.layer.bias.data = b
+        perceptron.normalization = nn.Identity()
+        
+        out_2 = perceptron(rand_input)
+
+        print(out_1)
+        print(out_2)
+        print(out_3)
+
+
+
+        # adjust norm test func
+        print("TEST CASE adjust norm test func")
+        def _adjust_normalization_stats(norm, scale):
+            
+            # Adjust running mean
+            norm.running_mean.data[:] *= scale
+            
+            # Adjust running variance
+            norm.running_var.data[:] *= scale**2
+
+        norm = nn.BatchNorm1d(5)
+        norm.weight.data = torch.randn_like(norm.weight.data)
+        norm.bias.data = torch.randn_like(norm.bias.data)
+        norm.running_mean.data = torch.randn_like(norm.running_mean.data)
+        norm.running_var.data = torch.abs(torch.randn_like(norm.running_var.data))
+
+        random_input = torch.randn(2, 5) + 5.0
+        scale = 3
+
+        old = torch.functional.F.batch_norm(random_input, norm.running_mean, norm.running_var, norm.weight, norm.bias, False, 0.0, norm.eps)
+        _adjust_normalization_stats(norm, scale)
+        new = torch.functional.F.batch_norm(random_input * scale, norm.running_mean, norm.running_var, norm.weight, norm.bias, False, 0.0, norm.eps)
+
+        print("Old", old)
+        print("New", new)
+
+
+        # adjust norm test module
+        print("TEST CASE adjust norm test func")
+        random_input = torch.randn(2, 5) + 5.0
+        scale = 3
+
+        norm.eval()
+        old = norm(random_input)
+        _adjust_normalization_stats(norm, scale)
+
+        norm.eval()
+        new = norm(torch.tensor(random_input.numpy()* scale) )
+
+        print("Old", old)
+        print("New", new)
 
 

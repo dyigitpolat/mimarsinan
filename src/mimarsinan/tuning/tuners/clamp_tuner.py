@@ -22,7 +22,7 @@ class ClampTuner(PerceptronTuner):
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
     def _get_target_decay(self):
-        return 0.999
+        return 0.99
     
     def _get_previous_perceptron_transform(self, _):
         return lambda p: None
@@ -30,13 +30,13 @@ class ClampTuner(PerceptronTuner):
     def _get_new_perceptron_transform(self, _):
         return lambda p: None
     
-    def _calculate_activation_scales(self, in_max):
-        for perceptron in self.model.get_perceptrons():
-            perceptron.set_scale_factor(in_max)
-            perceptron.set_activation_scale(in_max)
+    def _calculate_activation_scales(self, scales):
+        for perceptron, act_scale in zip(self.model.get_perceptrons(), scales):
+            #perceptron.set_scale_factor(act_scale)
+            perceptron.set_activation_scale(act_scale)
 
     def _update_and_evaluate(self, rate):
-        self._calculate_activation_scales(max(self.activation_scales))
+        self._calculate_activation_scales(self.activation_scales)
 
         self.adaptation_manager.clamp_rate = rate
         for perceptron in self.model.get_perceptrons():

@@ -48,6 +48,9 @@ class StableSpikingCoreFlow(nn.Module):
         if is_always_on:
             return torch.ones(batch_size, device=device)
         
+        if core not in spike_train_cache:
+            return torch.zeros(batch_size, device=device)
+        
         return spike_train_cache[core][cycle][:, neuron]
     
     def get_signal_tensor(self, spike_train_cache, batch_size, device, sources, cycle):
@@ -109,13 +112,15 @@ class StableSpikingCoreFlow(nn.Module):
             # average
             avg_values += val / self.simulation_length
 
-            # novena reset
-            if self.firing_mode == "Novena":
-                membrane_potentials[membrane_potentials > self.thresholds[core_idx]] = 0.0
+            # # novena reset
+            # if self.firing_mode == "Novena":
+            #     membrane_potentials[membrane_potentials > self.thresholds[core_idx]] = 0.0
 
-            # normal reset
-            if self.firing_mode == "Default":
-                membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+            # # normal reset
+            # if self.firing_mode == "Default":
+            #     membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+
+            membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
 
         ideal_out_spikes = \
             torch.zeros(self.simulation_length, batch_size, core.get_output_count(), device=device)
@@ -130,11 +135,15 @@ class StableSpikingCoreFlow(nn.Module):
             # fire
             ideal_out_spikes[cycle] = (ideal_membrane_potentials > self.thresholds[core_idx]).float()
 
-            # # normal reset
-            ideal_membrane_potentials[ideal_membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+            # # default reset
+            # if self.firing_mode == "Default":
+            #     ideal_membrane_potentials[ideal_membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
 
-            # novena reset
-            # ideal_membrane_potentials[ideal_membrane_potentials > self.thresholds[core_idx]] = 0
+            # # novena reset
+            # if self.firing_mode == "Novena":
+            #     ideal_membrane_potentials[ideal_membrane_potentials > self.thresholds[core_idx]] = 0
+
+            ideal_membrane_potentials[ideal_membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
 
         spike_train_cache[core_idx] = ideal_out_spikes
 
@@ -170,6 +179,10 @@ class StableSpikingCoreFlow(nn.Module):
 
         self.spike_rates = []
         for core_idx in range(len(self.cores)):
+            if core_idx not in spike_train_cache:
+                self.spike_rates.append(0.0)
+                continue
+
             rate = torch.sum(
                 spike_train_cache[core_idx]).item() / (self.simulation_length * batch_size * self.cores[core_idx].get_output_count())
             self.spike_rates.append(rate)

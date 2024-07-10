@@ -1,7 +1,7 @@
 {
-    "pipeline_mode": "phased",
+    "pipeline_mode": "cq",
 
-    "experiment_name": "mnist_T32_B4",
+    "experiment_name": "mnist_cq",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
@@ -9,17 +9,17 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 128,
-        "simulation_steps": 128,
-        "weight_bits": 8
+        "target_tq": 32,
+        "simulation_steps": 32,
+        "weight_bits": 4
     },
 
     "deployment_parameters": {
         "lr": 0.001,
-        "training_epochs": 20,
-        "tuner_epochs": 10,
+        "training_epochs": 10,
+        "tuner_epochs": 3,
 
-        "degradation_tolerance": 0.9,
+        "degradation_tolerance": 0.1,
 
         "configuration_mode": "user",
         "model_type": "mlp_mixer",

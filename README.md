@@ -12,6 +12,7 @@ a pipeline for ***m***odeling ***i***n-***m***emory ***ar***chitectures for
     - wandb
     - matplotlib
 
+- CUDA
 - nevresim
 - clang 15
 
@@ -21,5 +22,5 @@ a pipeline for ***m***odeling ***i***n-***m***emory ***ar***chitectures for
 - to clone nevresim simulator, you need to run: \
     `git submodule update --init --recursive`
 - to install clang:
-    - `bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"`
+    - `sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"`
     - `sudo apt-get install libc++-17-dev libc++abi-17-dev`
