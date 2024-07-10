@@ -42,8 +42,8 @@ class AdaptationManager(nn.Module):
     def get_rate_adjusted_clamp_decorator(self, perceptron):
         return RateAdjustedDecorator(
             self.clamp_rate, 
-            ClampDecorator(torch.tensor(0.0), perceptron.activation_scale), 
-            MixAdjustmentStrategy())
+            ClampDecorator(torch.tensor(0), perceptron.activation_scale), 
+            NestedAdjustmentStrategy([RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]))
 
     # def get_rate_adjusted_scale_decorator(self, perceptron):
     #     return RateAdjustedDecorator(
@@ -63,7 +63,8 @@ class AdaptationManager(nn.Module):
             NestedDecoration(
                 [ShiftDecorator(shift_back_amount), 
                 QuantizeDecorator(torch.tensor(pipeline_config["target_tq"]), perceptron.activation_scale)]),
-            RandomMaskAdjustmentStrategy())
+            NestedAdjustmentStrategy([RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]))
+            #RandomMaskAdjustmentStrategy())
     
     # def get_rate_adjusted_scale_decorator(self, perceptron):
     #     return RateAdjustedDecorator(

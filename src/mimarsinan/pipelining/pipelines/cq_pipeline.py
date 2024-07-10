@@ -49,6 +49,7 @@ class CQPipeline(Pipeline):
         self.add_pipeline_step("Model Configuration", ModelConfigurationStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
         self.add_pipeline_step("CQ Training", CQTrainingStep(self))
+        #self.add_pipeline_step("Activation Analysis", ActivationAnalysisStep(self))
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
         self.add_pipeline_step("Quantization Verification", QuantizationVerificationStep(self))
         self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
@@ -82,6 +83,7 @@ class CQPipeline(Pipeline):
             print(f"{key}: {value}")
 
     def _visualize_activations(self, step):
+        pass
         if 'model' in step.promises or 'model' in step.updates:
             path = self.working_directory + f"/{step.name}_act/"
             os.makedirs(path, exist_ok=True)

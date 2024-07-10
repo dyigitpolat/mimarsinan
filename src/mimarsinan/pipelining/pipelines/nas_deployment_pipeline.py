@@ -62,19 +62,23 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("Activation Analysis", ActivationAnalysisStep(self))
         self.add_pipeline_step("Clamp Adaptation", ClampAdaptationStep(self))
 
+        self.add_pipeline_step("Input Activation Analysis", InputActivationAnalysisStep(self))
         self.add_pipeline_step("Scale Fusion", ScaleFusionStep(self))
+        
         self.add_pipeline_step("Activation Shifting", ActivationShiftStep(self))
-        self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
 
-        self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
         self.add_pipeline_step("Activation Quantization", ActivationQuantizationStep(self))
 
-        #self.add_pipeline_step("Activation Analysis 2", ActivationAnalysisStep(self))
+        # self.add_pipeline_step("Input Activation Analysis 2", InputActivationAnalysisStep(self))
+        # self.add_pipeline_step("Scale Fusion 2", ScaleFusionStep(self))
+
+        self.add_pipeline_step("Noise Adaptation", NoiseAdaptationStep(self))
 
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
+        self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
+        
+
         self.add_pipeline_step("Quantization Verification", QuantizationVerificationStep(self))
-        # self.add_pipeline_step("Scale Adaptation", ScaleAdaptationStep(self))
-        # self.add_pipeline_step("Scale Fusion", ScaleFusionStep(self))
 
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
         self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
@@ -82,10 +86,11 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("Simulation", SimulationStep(self))
 
         def post_step_hook(step):
-            print("Visualizing activations...")
-            self._visualize_activations(step)
-            print("Visualizing activation histograms...")
-            self._visualize_activation_histograms(step)
+            pass
+        # print("Visualizing activations...")
+        # self._visualize_activations(step)
+        # print("Visualizing activation histograms...")
+        # self._visualize_activation_histograms(step)
 
         current_step_idx = 0
         def pre_step_hook(step):

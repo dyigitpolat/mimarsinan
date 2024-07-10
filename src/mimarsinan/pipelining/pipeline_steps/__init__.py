@@ -17,3 +17,5 @@ from .model_configuration_step import ModelConfigurationStep
 from .activation_analysis_step import ActivationAnalysisStep
 from .scale_adaptation_step import ScaleAdaptationStep
 from .scale_fusion_step import ScaleFusionStep
+from .input_activation_analysis_step import InputActivationAnalysisStep
+from .fine_tuning_step import FineTuningStep

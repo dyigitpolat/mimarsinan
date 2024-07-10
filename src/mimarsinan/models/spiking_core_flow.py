@@ -129,7 +129,7 @@ class SpikingCoreFlow(nn.Module):
                     cycle)
 
             for core_idx in range(len(self.cores)):
-                if cycle >= self.cores[core_idx].latency:
+                if (self.cores[core_idx].latency is not None) and cycle >= self.cores[core_idx].latency:
                     memb = membrane_potentials[core_idx]
 
                     memb += \

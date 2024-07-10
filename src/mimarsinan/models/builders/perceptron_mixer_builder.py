@@ -1,7 +1,7 @@
 from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.supermodel import Supermodel
-from mimarsinan.models.layers import TransformedActivation, ClampDecorator
+from mimarsinan.models.layers import TransformedActivation, ClampDecorator, LeakyGradReLU
 
 import torch.nn as nn
 import torch
@@ -104,7 +104,7 @@ class PerceptronMixerBuilder:
         
         adaptation_manager = AdaptationManager()
         for perceptron in supermodel.get_perceptrons():
-            perceptron.base_activation = nn.LeakyReLU()
+            perceptron.base_activation = LeakyGradReLU()
             # perceptron.base_activation = TransformedActivation(
             # nn.LeakyReLU(),
             # [

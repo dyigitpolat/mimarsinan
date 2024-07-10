@@ -4,6 +4,28 @@ import torch
     
 from torch.autograd import Function
 
+class LeakyGradReLUFunction(Function):
+    @staticmethod
+    def forward(ctx, input, negative_slope=1e-8):
+        ctx.save_for_backward(input)
+        ctx.negative_slope = negative_slope
+        return torch.where(input > 0, input, 0.0)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, = ctx.saved_tensors
+        grad_input = grad_output.clone()
+        grad_input[input < 0] *= ctx.negative_slope
+        return grad_input, None
+
+class LeakyGradReLU(nn.Module): 
+    def __init__(self, negative_slope=1e-8):
+        super(LeakyGradReLU, self).__init__()
+        self.negative_slope = negative_slope
+    
+    def forward(self, x):
+        return LeakyGradReLUFunction.apply(x, self.negative_slope)
+
 class StaircaseFunction(Function):
     @staticmethod
     def forward(ctx, x, Tq):
@@ -184,6 +206,15 @@ class RandomMaskAdjustmentStrategy:
         random_mask = torch.rand(base.shape, device=base.device)
         random_mask = (random_mask < rate).float()
         return random_mask * target + (1.0 - random_mask) * base
+
+class NestedAdjustmentStrategy:
+    def __init__(self, strategies):
+        self.strategies = strategies
+    
+    def adjust(self, base, target, rate):
+        for strategy in self.strategies:
+            target = strategy.adjust(base, target, rate)
+        return target
 
 class RateAdjustedDecorator:
     def __init__(self, rate, decorator, adjustment_strategy):
