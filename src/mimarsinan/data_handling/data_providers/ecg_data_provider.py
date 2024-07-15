@@ -120,6 +120,9 @@ class ECG_DataProvider(DataProvider):
     def _get_test_dataset(self):
         return self.test_dataset
     
+    def get_test_batch_size(self):
+        return 10000
+    
     def get_prediction_mode(self):
         return ClassificationMode(2)
     
