@@ -46,6 +46,7 @@ class NevresimDriver:
         return predictions
     
     def _prepare_simulator(self, max_input_count, simulation_length, spike_generation_mode, firing_mode):
+        print("firing mode: ", firing_mode)
         generate_main_function(
             self.generated_files_path, max_input_count, self.chip.output_size, simulation_length,
             main_cpp_template, get_config(spike_generation_mode, firing_mode, self.weight_type.__name__))
