@@ -39,6 +39,7 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
             next_t = t + step_size
             current_metric = self.evaluation_function(*[i(next_t) for i in self.interpolators])
             print("current_metric_: ", current_metric)
+            
             self.state_restore_function(state)
 
         self._adjust_minimum_step(step_size, t)
@@ -56,7 +57,9 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
             step_size = self._find_step_size(t)
             t += step_size
             interpolated_params = [i(t) for i in self.interpolators]
+            print("START ADAPTATION")
             self.adaptation_function(*interpolated_params)
+            print("END ADAPTATION")
             self.target_adjuster.update_target(self.evaluation_function(*interpolated_params))
             cycles += 1
 
