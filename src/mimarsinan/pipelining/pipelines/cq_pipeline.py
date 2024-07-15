@@ -1,5 +1,5 @@
 from mimarsinan.pipelining.pipeline import Pipeline
-from mimarsinan.model_training.training_utilities import BasicClassificationLoss
+from mimarsinan.model_training.training_utilities import BasicClassificationLoss, CustomClassificationLoss
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer
@@ -45,14 +45,17 @@ class CQPipeline(Pipeline):
         self._display_config()
 
         self.loss = BasicClassificationLoss()
+        #self.loss = CustomClassificationLoss()
 
         self.add_pipeline_step("Model Configuration", ModelConfigurationStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
+        
         self.add_pipeline_step("CQ Training", CQTrainingStep(self))
-        #self.add_pipeline_step("Activation Analysis", ActivationAnalysisStep(self))
+        self.add_pipeline_step("Activation Analysis", ActivationAnalysisStep(self))
         self.add_pipeline_step("Weight Quantization", WeightQuantizationStep(self))
         self.add_pipeline_step("Quantization Verification", QuantizationVerificationStep(self))
         self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
+
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
         self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
         self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
@@ -83,7 +86,6 @@ class CQPipeline(Pipeline):
             print(f"{key}: {value}")
 
     def _visualize_activations(self, step):
-        pass
         if 'model' in step.promises or 'model' in step.updates:
             path = self.working_directory + f"/{step.name}_act/"
             os.makedirs(path, exist_ok=True)
