@@ -1,7 +1,7 @@
-from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
+from mimarsinan.tuning.tuners.perceptron_transform_tuner import PerceptronTransformTuner
 from mimarsinan.transformations.normalization_aware_perceptron_quantization import NormalizationAwarePerceptronQuantization
 
-class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
+class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     def __init__(self, 
                  pipeline, 
                  model,
@@ -30,23 +30,8 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTuner):
                 ).transform(perceptron)
         
         return transform
-    
-    # def _mix_params(self, prev_param, new_param, rate):
-    #     new_param_ = new_param 
-    #     prev_param_ = prev_param
-
-    #     return \
-    #         rate * new_param_\
-    #         + (1 - rate) * prev_param_
 
     def _update_and_evaluate(self, rate):
-        # iters = 10
-        # for _ in range(iters):
-        #     self.trainer.train_one_step(self._find_lr())
-
-        # self.adaptation_manager.noise_rate = 1.0
-        # for perceptron in self.model.get_perceptrons():
-        #     self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
         self.trainer.train_one_step(0)
         return self.trainer.validate()
 
