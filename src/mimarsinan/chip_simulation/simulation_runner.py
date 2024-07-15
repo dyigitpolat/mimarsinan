@@ -61,7 +61,7 @@ class SimulationRunner:
             self.working_directory,
             int,
             spike_generation_mode="Stochastic",
-            firing_mode="Default"
+            firing_mode=self.firing_mode
         )
 
         simulation_steps = delay + int(self.simulation_length)
