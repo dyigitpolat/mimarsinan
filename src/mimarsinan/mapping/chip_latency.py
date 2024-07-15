@@ -50,6 +50,7 @@ class ChipLatency:
             latencies[core_idx] = max(latencies[core_idx], self.memo[key] - 1)
         
         for core_idx in latencies:
-            self.mapping.cores[core_idx].latency = latencies[core_idx]
+            if core_idx >= 0:
+                self.mapping.cores[core_idx].latency = latencies[core_idx]
 
         return result
