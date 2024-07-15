@@ -42,7 +42,7 @@ class AdaptationManager(nn.Module):
     def get_rate_adjusted_clamp_decorator(self, perceptron):
         return RateAdjustedDecorator(
             self.clamp_rate, 
-            ClampDecorator(torch.tensor(0), perceptron.activation_scale), 
+            ClampDecorator(torch.tensor(0.0), perceptron.activation_scale), 
             NestedAdjustmentStrategy([RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]))
 
     # def get_rate_adjusted_scale_decorator(self, perceptron):
