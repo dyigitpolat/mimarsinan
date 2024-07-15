@@ -20,12 +20,6 @@ class NoiseTuner(PerceptronTuner):
 
     def _get_target_decay(self):
         return 0.95
-    
-    def _get_previous_perceptron_transform(self, rate):
-        return lambda perceptron: None
-    
-    def _get_new_perceptron_transform(self, rate):
-        return lambda perceptron: None
 
     def _update_and_evaluate(self, rate):
         for perceptron in self.model.get_perceptrons():

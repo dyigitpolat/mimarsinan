@@ -24,12 +24,6 @@ class ClampTuner(PerceptronTuner):
     def _get_target_decay(self):
         return 0.99
     
-    def _get_previous_perceptron_transform(self, _):
-        return lambda p: None
-    
-    def _get_new_perceptron_transform(self, _):
-        return lambda p: None
-    
     def _calculate_activation_scales(self, scales):
         for perceptron, act_scale in zip(self.model.get_perceptrons(), scales):
             #perceptron.set_scale_factor(act_scale)

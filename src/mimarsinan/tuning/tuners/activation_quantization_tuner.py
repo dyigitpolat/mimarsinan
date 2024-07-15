@@ -21,15 +21,8 @@ class ActivationQuantizationTuner(PerceptronTuner):
 
     def _get_target_decay(self):
         return 0.99
-    
-    def _get_previous_perceptron_transform(self, rate):
-        return lambda p: None
-    
-    def _get_new_perceptron_transform(self, rate):
-        return lambda p: None
 
     def _update_and_evaluate(self, rate):
-        
         self.adaptation_manager.quantization_rate = rate
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
