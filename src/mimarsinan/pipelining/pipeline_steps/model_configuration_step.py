@@ -3,6 +3,7 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.search.mlp_mixer_searcher import MLP_Mixer_Searcher
 from mimarsinan.search.small_step_evaluator import SmallStepEvaluator
 from mimarsinan.models.builders import PerceptronMixerBuilder
+from mimarsinan.models.builders import SimpleMLPBuilder
 
 class ModelConfigurationStep(PipelineStep):
 
@@ -19,27 +20,40 @@ class ModelConfigurationStep(PipelineStep):
     def process(self):
         builders = {
             "mlp_mixer": PerceptronMixerBuilder(
-            self.pipeline.config['device'],
-            self.pipeline.config['input_shape'], 
-            self.pipeline.config['num_classes'], 
-            self.pipeline.config['max_axons'], 
-            self.pipeline.config['max_neurons'],
-            self.pipeline.config)
+                self.pipeline.config['device'],
+                self.pipeline.config['input_shape'], 
+                self.pipeline.config['num_classes'], 
+                self.pipeline.config['max_axons'], 
+                self.pipeline.config['max_neurons'],
+                self.pipeline.config),
+            "simple_mlp": SimpleMLPBuilder(
+                self.pipeline.config['device'],
+                self.pipeline.config['input_shape'],
+                self.pipeline.config['num_classes'],
+                self.pipeline.config['max_axons'],
+                self.pipeline.config['max_neurons'],
+                self.pipeline.config
+            )
         }
-        
         builder = builders[self.pipeline.config['model_type']]
-        configuration_mode = self.pipeline.config['configuration_mode']
 
-        if configuration_mode == "nas":
-            searcher = MLP_Mixer_Searcher(
+        searchers = {
+            "mlp_mixer": MLP_Mixer_Searcher(
                 SmallStepEvaluator(
                     self.pipeline.data_provider_factory,
                     self.pipeline.loss,
                     self.pipeline.config['lr'],
                     self.pipeline.config['device'],
-                    builder),
+                    builders["mlp_mixer"]),
                 self.pipeline.config['nas_workers']
-            )
+            ),
+            "simple_mlp": None # Not implemented
+        }
+        
+        configuration_mode = self.pipeline.config['configuration_mode']
+
+        if configuration_mode == "nas":
+            searcher = searchers[self.pipeline.config['model_type']]
         
             model_config = searcher.get_optimized_configuration(
                 self.pipeline.config['nas_cycles'],
