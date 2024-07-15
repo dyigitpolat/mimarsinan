@@ -8,6 +8,7 @@ from mimarsinan.data_handling.data_provider_factory import ImportedDataProviderF
 
 import sys
 import json
+import os
 
 def main():
     if len(sys.argv) < 2:
@@ -35,6 +36,12 @@ def main():
     
     working_directory = \
         deployment_config['generated_files_path'] + "/" + deployment_name + "_" + pipeline_mode + "_deployment_run"
+    
+    # save deployment config to working directory /_RUN_CONFIG/config.json
+    os.makedirs(working_directory + "/_RUN_CONFIG", exist_ok=True)
+    with open(working_directory + "/_RUN_CONFIG/config.json", 'w') as f:
+        json.dump(deployment_config, f, indent=4)
+
 
     run_pipeline(
         pipeline_mode=pipeline_mode,
