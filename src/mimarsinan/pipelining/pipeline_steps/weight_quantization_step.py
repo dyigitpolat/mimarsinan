@@ -36,7 +36,7 @@ class WeightQuantizationStep(PipelineStep):
                 
         bits = self.pipeline.config['weight_bits']
         target = self.pipeline.get_target_metric()
-        lr = self.pipeline.config['lr'] * 0.01
+        lr = self.pipeline.config['lr'] * 1e-3
 
         # start_bits = 5 if bits < 5 else 0
         # for bits_ in range(start_bits, bits-1, -1):
