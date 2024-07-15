@@ -12,6 +12,9 @@ class HardCoreMappingVisualizer:
         cols = int(math.ceil(len(self.mapping.cores) / rows))
         fig, axs = plt.subplots(nrows=rows, ncols=cols, figsize=(10, 10))
 
+        if rows == 1:
+            axs = [axs]  # Convert to a list of Axes objects
+
         for i_y in range(rows):
             for i_x in range(cols):
                 axs[i_y][i_x].axis('off')
