@@ -10,7 +10,7 @@ from math import ceil
 
 class CoreFlowTuningStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["soft_core_mapping", "model"]
+        requires = ["soft_core_mapping", "activation_scales", "model"]
         promises = ["tuned_soft_core_mapping", "scaled_simulation_length"]
         updates = []
         clears = ["soft_core_mapping"]
@@ -24,10 +24,10 @@ class CoreFlowTuningStep(PipelineStep):
 
     def process(self):
         model = self.get_entry('model')
-        # scale = model.get_perceptrons()[0].scale_factor
-        # scale = max(self.get_entry('activation_scales'))
-        # print(model.get_perceptrons()[0].scale_factor)
-        # print(max(self.get_entry('activation_scales')))
+        scale = model.get_perceptrons()[0].scale_factor
+        scale = max(self.get_entry('activation_scales'))
+        print(model.get_perceptrons()[0].scale_factor)
+        print(max(self.get_entry('activation_scales')))
         
         self.preprocessor = nn.Sequential(
             model.get_preprocessor(),
