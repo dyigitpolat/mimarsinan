@@ -81,6 +81,18 @@ class PerceptronMixer(PerceptronFlow):
 
         return perceptrons
     
+    def get_perceptron_groups(self):
+        groups = []
+        groups.append([self.patch_layer])
+        for idx in range(self.mixer_count):
+            groups.append([self.patch_layers_list[idx]])
+            groups.append([self.fc_layers_list[idx]])
+            groups.append([self.patch_layers_list_2[idx]])
+            groups.append([self.fc_layers_list_2[idx]])
+        groups.append([self.output_layer])
+
+        return groups
+    
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
 

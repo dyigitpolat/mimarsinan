@@ -8,6 +8,9 @@ class PerceptronFlow(nn.Module):
     def get_perceptrons(self):
         raise NotImplementedError
     
+    def get_perceptron_groups(self):
+        raise NotImplementedError
+    
     def get_mapper_repr(self):
         raise NotImplementedError
     

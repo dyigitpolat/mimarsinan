@@ -1,7 +1,7 @@
 {
-    "pipeline_mode": "cq",
+    "pipeline_mode": "phased",
 
-    "experiment_name": "mnist_chip1024_w8",
+    "experiment_name": "mnist_chip1024_w8_sf",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
@@ -11,12 +11,12 @@
         "max_neurons": 1024,
         "target_tq": 16,
         "simulation_steps": 16,
-        "weight_bits": 8
+        "weight_bits": 5
     },
 
     "deployment_parameters": {
         "lr": 0.001,
-        "training_epochs": 20,
+        "training_epochs": 10,
         "tuner_epochs": 3,
 
         "degradation_tolerance": 0.1,
@@ -38,5 +38,5 @@
     },
 
     "target_metric_override": null,
-    "start_step": "CoreFlow Tuning"
+    "start_step": "Weight Quantization"
 }

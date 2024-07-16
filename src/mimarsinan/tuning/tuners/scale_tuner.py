@@ -1,6 +1,6 @@
 from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
 
-from mimarsinan.models.layers import SavedTensorDecorator
+from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
 import torch
 
@@ -11,7 +11,8 @@ class ScaleTuner(PerceptronTuner):
                  target_accuracy, 
                  lr,
                  adaptation_manager,
-                 activation_scales):
+                 in_scales,
+                 out_scales):
         
         super().__init__(
             pipeline, 
@@ -20,48 +21,29 @@ class ScaleTuner(PerceptronTuner):
             lr)
 
         self.lr = lr
+        self.in_scales = in_scales
+        self.out_scales = out_scales
         self.adaptation_manager = adaptation_manager
-        self.activation_scales = activation_scales
-
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
     def _get_target_decay(self):
         return 0.99
-    
-    def _get_previous_perceptron_transform(self, _):
-        return lambda p: None
-    
-    def _get_new_perceptron_transform(self, _):
-        return lambda p: None
-
-    def _update_activation_scales(self):
-
-        for perceptron in self.model.get_perceptrons():
-            perceptron.activation.decorate(SavedTensorDecorator())
-
-        self.trainer.validate()
-
-        for perceptron in self.model.get_perceptrons():
-            saved_tensor = perceptron.activation.pop_decorator()
-            flat_acts = saved_tensor.latest_output.view(-1)  # flatten to 1D
-            sorted_acts, _ = torch.sort(flat_acts)  # sort ascending
-            cumsum_acts = torch.cumsum(sorted_acts, dim=0)  # cumulative sum
-            norm_cumsum = cumsum_acts / cumsum_acts[-1]  # normalize by total sum
-            threshold_idx = torch.searchsorted(norm_cumsum, 0.99)  # index of first value >= 0.99
-
-            prev_act = perceptron.activation_scale
-            perceptron.set_activation_scale(prev_act * sorted_acts[threshold_idx].item())
-
 
     def _update_and_evaluate(self, rate):
-        #self._update_activation_scales()
+        for g_idx, perceptron_group in enumerate(self.model.perceptron_flow.get_perceptron_groups()):
+            for perceptron in perceptron_group:
+                scale = self.out_scales[g_idx]
+                in_scale = self.in_scales[g_idx]
 
-        self.adaptation_manager.scale_rate = rate
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+                t = scale * (1-rate) + rate
+                perceptron.set_scale_factor(t)
+                perceptron.set_activation_scale(t)
 
-        self.trainer.train_one_step(0)
+                self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+
+                PerceptronTransformer().apply_effective_bias_transform(perceptron, lambda p: (p / scale) * rate + p * (1-rate))
+                PerceptronTransformer().apply_effective_weight_transform(perceptron, lambda p: (p * in_scale / scale) * rate + p * (1-rate))
+
+        self.trainer.train_one_step(self.lr)
         return self.trainer.validate()
 
     def run(self):

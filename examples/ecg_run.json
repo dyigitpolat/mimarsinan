@@ -1,7 +1,7 @@
 {
-    "pipeline_mode": "cq",
+    "pipeline_mode": "phased",
 
-    "experiment_name": "ecg_long_training_255_T8_e2",
+    "experiment_name": "ecg_novena",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/ecg_data_provider.py",
     "data_provider_name": "ECG_DataProvider",
@@ -29,7 +29,7 @@
         "nas_workers": 2,
            
         "model_config": {
-            "mlp_width": 255,
+            "mlp_width": 128,
             "extra_layers": 2
         },
 
