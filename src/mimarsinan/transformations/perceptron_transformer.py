@@ -14,10 +14,10 @@ class PerceptronTransformer:
 
     def get_effective_weight(self, perceptron):
         if isinstance(perceptron.normalization, nn.Identity):
-            return perceptron.layer.weight.data
+            return perceptron.input_scale * perceptron.layer.weight.data / perceptron.activation_scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            return (perceptron.layer.weight.data * u.unsqueeze(-1))
+            return perceptron.input_scale * (perceptron.layer.weight.data * u.unsqueeze(-1)) / perceptron.activation_scale
         
     def get_effective_bias(self, perceptron):
         if perceptron.layer.bias is None:
@@ -26,28 +26,28 @@ class PerceptronTransformer:
             layer_bias = perceptron.layer.bias.data
 
         if isinstance(perceptron.normalization, nn.Identity):
-            return layer_bias / perceptron.scale_factor
+            return layer_bias / perceptron.activation_scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            return ((layer_bias - mean) * u + beta) / perceptron.scale_factor
+            return ((layer_bias - mean) * u + beta) / perceptron.activation_scale
         
     def apply_effective_weight_transform(self, perceptron, weight_transform):
         effective_weight = self.get_effective_weight(perceptron)
         
         if isinstance(perceptron.normalization, nn.Identity):
-            perceptron.layer.weight.data[:] = weight_transform(effective_weight)
+            perceptron.layer.weight.data[:] = (weight_transform(effective_weight) * perceptron.activation_scale) / perceptron.input_scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            perceptron.layer.weight.data[:] = (weight_transform(effective_weight) / u.unsqueeze(-1))
+            perceptron.layer.weight.data[:] = ((weight_transform(effective_weight) * perceptron.activation_scale) / perceptron.input_scale) / u.unsqueeze(-1)
 
     def apply_effective_bias_transform(self, perceptron, bias_transform):
         effective_bias = self.get_effective_bias(perceptron)
         
         if isinstance(perceptron.normalization, nn.Identity):
-            perceptron.layer.bias.data[:] = bias_transform(effective_bias) * perceptron.scale_factor
+            perceptron.layer.bias.data[:] = bias_transform(effective_bias) * perceptron.activation_scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            perceptron.layer.bias.data[:] = (((bias_transform(effective_bias) - beta * perceptron.scale_factor) / u) + mean)
+            perceptron.layer.bias.data[:] = (((bias_transform(effective_bias) * perceptron.activation_scale - beta) / u) + mean)
 
 
     def apply_effective_bias_transform_to_norm(self, perceptron, bias_transform):

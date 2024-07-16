@@ -41,6 +41,13 @@ class SimpleMLP(PerceptronFlow):
     def get_perceptrons(self):
         return self.perceptrons
     
+    def get_perceptron_groups(self):
+        groups = []
+        for p in self.perceptrons:
+            groups.append([p])
+
+        return groups
+    
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
         out = EinopsRearrangeMapper(out, 'c h w -> 1 (c h w)')

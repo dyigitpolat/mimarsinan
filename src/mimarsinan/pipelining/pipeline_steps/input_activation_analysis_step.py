@@ -10,8 +10,8 @@ import torch
 class InputActivationAnalysisStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["model"]
-        promises = ["input_activation_scales", "output_activation_scales"]
-        updates = []
+        promises = []
+        updates = ["model"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
 
@@ -29,24 +29,24 @@ class InputActivationAnalysisStep(PipelineStep):
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
 
-        for perceptron in model.get_perceptrons():
-            perceptron.input_activation = TransformedActivation(nn.Identity(), [SavedTensorDecorator()])
-            perceptron.activation.decorate(SavedTensorDecorator())
-
         self.trainer.validate()
 
-        activation_scales = []
-        output_activation_scales = []
-        for perceptron in model.get_perceptrons():
-            saved_tensor = perceptron.input_activation.pop_decorator()
-            saved_tensor_out = perceptron.activation.pop_decorator()
-            activation_scales.append(torch.max(saved_tensor.latest_input.view(-1)).item())
-            output_activation_scales.append(torch.max(saved_tensor_out.latest_input.view(-1)).item())
+        in_scales = [1.0]
+        scales = []
+        for g_idx, perceptron_group in enumerate(model.perceptron_flow.get_perceptron_groups()):
+            total_scale = 0.0
+            for perceptron in perceptron_group:
+                total_scale += perceptron.activation_scale.item()
 
-        print(activation_scales)
+            s = total_scale / len(perceptron_group)
+            in_scales.append(s)
+            scales.append(s)
 
-        self.add_entry("input_activation_scales", activation_scales)
-        self.add_entry("output_activation_scales", output_activation_scales)
-
+        for g_idx, perceptron_group in enumerate(model.perceptron_flow.get_perceptron_groups()):
+            for perceptron in perceptron_group:
+                perceptron.set_input_scale(in_scales[g_idx])
+                
+        print(scales)
+        self.update_entry("model", model, 'torch_model')
 
         

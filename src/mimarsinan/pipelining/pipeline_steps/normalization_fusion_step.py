@@ -3,6 +3,7 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
+from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 from mimarsinan.models.layers import TransformedActivation, ClampDecorator, QuantizeDecorator, ScaleDecorator
 
@@ -13,7 +14,7 @@ import torch
 
 class NormalizationFusionStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["model"]
+        requires = ["model", "adaptation_manager"]
         promises = []
         updates = ["model"]
         clears = []
@@ -26,6 +27,7 @@ class NormalizationFusionStep(PipelineStep):
 
     def process(self):
         model = self.get_entry("model")
+        adaptation_manager = self.get_entry("adaptation_manager")
 
         # Trainer
         self.trainer = BasicTrainer(
@@ -51,6 +53,10 @@ class NormalizationFusionStep(PipelineStep):
             perceptron.layer.bias.data = b 
 
             perceptron.normalization = nn.Identity()
+
+            perceptron.set_activation_scale(1.0)
+            perceptron.set_input_scale(1.0)
+            adaptation_manager.update_activation(self.pipeline.config, perceptron)
         
         print(self.validate())
 
