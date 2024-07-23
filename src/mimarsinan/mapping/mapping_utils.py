@@ -44,12 +44,14 @@ def to_numpy(tensor_or_array):
         return tensor_or_array.detach().cpu().numpy()
 
 class SoftCoreMapping:
-    def __init__(self, q_max = 1.0):
+    def __init__(self, q_max = 1.0, firing_mode = "Default"):
         self.cores = []
         self.output_sources = []
 
         self.q_max = q_max
-        pass
+        self.firing_mode = firing_mode
+        
+        assert firing_mode in ["Default", "Novena"]
 
     def map(self, model_representation):
         self.output_sources = np.array(model_representation.map(self)).flatten().tolist()
