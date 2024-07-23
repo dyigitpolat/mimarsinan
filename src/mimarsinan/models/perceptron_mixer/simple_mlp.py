@@ -20,15 +20,21 @@ class SimpleMLP(PerceptronFlow):
         self.input_shape = input_shape
         self.input_width = input_shape[-3] * input_shape[-2] * input_shape[-1]
 
-        network_shape = [self.input_width] + ([mlp_width] * extra_layers) + [num_classes]
+        network_shape = [self.input_width, 192, 64, 192, num_classes]
+        has_norm = [True, False, True, False]
 
         self.perceptrons = nn.ModuleList()
         for i in range(len(network_shape) - 1):
+            if has_norm[i]:
+                norm = nn.LazyBatchNorm1d()
+            else:
+                norm = nn.Identity()
+                
             self.perceptrons.append(
                 Perceptron(
                     output_channels=network_shape[i+1], 
                     input_features=network_shape[i], 
-                    normalization=nn.LazyBatchNorm1d()
+                    normalization=norm
                 )
             )
 

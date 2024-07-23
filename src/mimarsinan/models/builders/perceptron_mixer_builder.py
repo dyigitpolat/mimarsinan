@@ -105,11 +105,7 @@ class PerceptronMixerBuilder:
         adaptation_manager = AdaptationManager()
         for perceptron in supermodel.get_perceptrons():
             perceptron.base_activation = LeakyGradReLU()
-            # perceptron.base_activation = TransformedActivation(
-            # nn.LeakyReLU(),
-            # [
-            #     ClampDecorator(torch.tensor(0.0), torch.tensor(1.0))
-            # ])
+            #perceptron.base_activation = nn.LeakyReLU()
             adaptation_manager.update_activation(self.pipeline_config, perceptron)
 
             assert perceptron.layer.weight.shape[0] <= self.max_neurons, f"not enough neurons ({perceptron.layer.weight.shape[0]} > {self.max_neurons})"
