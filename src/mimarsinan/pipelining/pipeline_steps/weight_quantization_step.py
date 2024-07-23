@@ -38,19 +38,7 @@ class WeightQuantizationStep(PipelineStep):
         target = self.pipeline.get_target_metric()
         lr = self.pipeline.config['lr'] * 1e-3
 
-        # start_bits = 5 if bits < 5 else 0
-        # for bits_ in range(start_bits, bits-1, -1):
-        #     print(f"Quantizing to {bits_} bits")
-        #     self.tuner = NormalizationAwarePerceptronQuantizationTuner(
-        #         self.pipeline,
-        #         model = model,
-        #         quantization_bits = bits_, 
-        #         target_accuracy = target,
-        #         lr = lr,
-        #         adaptation_manager = self.get_entry("adaptation_manager"))
-        #     self.tuner.run()
-        #     target = self.tuner.validate()
-
+        print(f"Quantizing to {bits} bits")
         self.tuner = NormalizationAwarePerceptronQuantizationTuner(
             self.pipeline,
             model = model,
