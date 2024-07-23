@@ -60,7 +60,7 @@ class PerceptronMixer(PerceptronFlow):
             self.patch_layers_list_2.append(Perceptron(YY, self.patch_channels, normalization=nn.LazyBatchNorm1d(), name="ch_mixer_{}".format(mixer_idx)))
             self.fc_layers_list_2.append(Perceptron(self.patch_channels, YY))
         
-        self.output_layer = Perceptron(num_classes, self.patch_count * self.patch_channels, normalization=nn.LazyBatchNorm1d() )
+        self.output_layer = Perceptron(num_classes, self.patch_count * self.patch_channels)
 
         self.out = None
 
@@ -125,7 +125,7 @@ class PerceptronMixer(PerceptronFlow):
                 res_source = source
                 source = PerceptronMapper(source, self.patch_layers_list[mixer_idx])
                 source = PerceptronMapper(source, self.fc_layers_list[mixer_idx])
-                #patch_mappers.append(AddMapper(source, res_source)) #res
+                #patch_mappers.append(AddMapper(source, DelayMapper(res_source, 1))) #res
                 patch_mappers.append(source)
 
             out = StackMapper(patch_mappers)
@@ -144,7 +144,7 @@ class PerceptronMixer(PerceptronFlow):
                 res_source = source
                 source = PerceptronMapper(source, self.patch_layers_list_2[mixer_idx])
                 source = PerceptronMapper(source, self.fc_layers_list_2[mixer_idx])
-                #patch_mappers.append(AddMapper(source, res_source)) #res
+                #patch_mappers.append(AddMapper(source, DelayMapper(res_source, 1))) #res
                 patch_mappers.append(source)
 
             out = StackMapper(patch_mappers)
@@ -182,7 +182,7 @@ class PerceptronMixer(PerceptronFlow):
             # Token Mixer
             out = einops.einops.rearrange(out, 'b np cp -> b cp np', np=self.patch_count, cp=self.patch_channels)
             out = einops.einops.rearrange(out, 'b cp np -> (b cp) np', np=self.patch_count, cp=self.patch_channels)
-            #res = out
+            res = out
             out = self.patch_layers_list[mixer_idx](out)
             out = self.fc_layers_list[mixer_idx](out) #+ res
             out = einops.einops.rearrange(out, '(b cp) np -> b cp np', np=self.patch_count, cp=self.patch_channels)
@@ -190,9 +190,9 @@ class PerceptronMixer(PerceptronFlow):
             # Channel Mixer
             out = einops.einops.rearrange(out, 'b cp np -> b np cp', np=self.patch_count, cp=self.patch_channels)
             out = einops.einops.rearrange(out, 'b np cp -> (b np) cp', np=self.patch_count, cp=self.patch_channels)
-            #res = out
+            res = out
             out = self.patch_layers_list_2[mixer_idx](out)
-            out = self.fc_layers_list_2[mixer_idx](out)
+            out = self.fc_layers_list_2[mixer_idx](out) #+ res
             out = einops.einops.rearrange(out, '(b np) cp -> b np cp', np=self.patch_count, cp=self.patch_channels)
         
         out = einops.einops.rearrange(out, 'b np cp -> b (np cp)', np=self.patch_count, cp=self.patch_channels)

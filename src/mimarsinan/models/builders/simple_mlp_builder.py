@@ -36,6 +36,7 @@ class SimpleMLPBuilder:
         supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
         for perceptron in supermodel.get_perceptrons():
             perceptron.base_activation = LeakyGradReLU()
+            #perceptron.base_activation = nn.LeakyReLU()
             adaptation_manager.update_activation(self.pipeline_config, perceptron)
 
             assert perceptron.layer.weight.shape[0] <= self.max_neurons, f"not enough neurons ({perceptron.layer.weight.shape[0]} > {self.max_neurons})"

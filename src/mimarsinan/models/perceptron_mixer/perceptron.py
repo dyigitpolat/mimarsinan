@@ -27,6 +27,7 @@ class Perceptron(nn.Module):
 
         self.input_activation = nn.Identity()
         self.activation = LeakyGradReLU()
+        #self.activation = nn.LeakyReLU()
 
         self.regularization = nn.Identity()
         
@@ -36,6 +37,7 @@ class Perceptron(nn.Module):
         self.input_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
         self.base_activation = LeakyGradReLU()
+        #self.base_activation = nn.LeakyReLU()
 
     def set_parameter_scale(self, new_scale):
         if isinstance(new_scale, float):
