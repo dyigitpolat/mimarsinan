@@ -1,7 +1,7 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "ecg_novena",
+    "experiment_name": "ecg_fresh",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/ecg_data_provider.py",
     "data_provider_name": "ECG_DataProvider",
@@ -16,7 +16,7 @@
 
     "deployment_parameters": {
         "lr": 0.001,
-        "training_epochs": 20,
+        "training_epochs": 100,
         "tuner_epochs": 5,
 
         "degradation_tolerance": 0.9,
@@ -29,8 +29,8 @@
         "nas_workers": 2,
            
         "model_config": {
-            "mlp_width": 128,
-            "extra_layers": 2
+            "mlp_width": 192,
+            "extra_layers": 3
         },
 
         "spike_generation_mode": "Stochastic",
