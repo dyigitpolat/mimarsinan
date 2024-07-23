@@ -44,7 +44,7 @@ class SoftCoreMappingStep(PipelineStep):
 
         bits = self.pipeline.config['weight_bits']
         q_max = (2 ** (bits - 1)) - 1
-        soft_core_mapping = SoftCoreMapping(q_max = q_max)
+        soft_core_mapping = SoftCoreMapping(q_max = q_max, firing_mode=self.pipeline.config['firing_mode'])
         soft_core_mapping.map(model.get_mapper_repr())
         ChipLatency(soft_core_mapping).calculate()
 
