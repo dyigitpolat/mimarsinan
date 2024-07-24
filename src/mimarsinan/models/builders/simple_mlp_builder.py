@@ -31,7 +31,7 @@ class SimpleMLPBuilder:
     def build(self, configuration):
         preprocessor = InputCQ(self.device, self.input_shape)
 
-        perceptron_flow = SimpleMLP(self.device, self.input_shape, self.num_classes, configuration['mlp_width'], configuration['extra_layers'])
+        perceptron_flow = SimpleMLP(self.device, self.input_shape, self.num_classes, configuration['mlp_width_1'], configuration['mlp_width_2'])
         adaptation_manager = AdaptationManager()
         supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
         for perceptron in supermodel.get_perceptrons():
