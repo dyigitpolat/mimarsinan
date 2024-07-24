@@ -1,17 +1,17 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "cifar10_192",
+    "experiment_name": "cifar10_1024",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar10_data_provider.py",
     "data_provider_name": "CIFAR10_DataProvider",
 
     "platform_constraints": {
-        "max_axons": 256,
-        "max_neurons": 256,
+        "max_axons": 1024,
+        "max_neurons": 1024,
         "target_tq": 16,
         "simulation_steps": 16,
-        "weight_bits": 4
+        "weight_bits": 8
     },
 
     "deployment_parameters": {
@@ -29,15 +29,15 @@
         "nas_workers": 2,
            
         "model_config": {
-            "patch_n_1": 4, 
-            "patch_m_1": 4, 
-            "patch_c_1": 15, 
+            "patch_n_1": 2, 
+            "patch_m_1": 2, 
+            "patch_c_1": 128, 
             "fc_k_1": 1, 
-            "fc_w_1": 192, 
+            "fc_w_1": 256, 
             "patch_n_2": 1, 
-            "patch_c_2": 32, 
+            "patch_c_2": 128, 
             "fc_k_2": 1, 
-            "fc_w_2": 192
+            "fc_w_2": 64
         },
 
         "spike_generation_mode": "Stochastic",
