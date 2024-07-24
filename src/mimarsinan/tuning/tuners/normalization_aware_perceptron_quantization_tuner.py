@@ -31,10 +31,10 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
         
         return transform
     
-    def _mix_params(self, prev_param, new_param, rate):
-        return \
-            rate * super()._mix_params(prev_param, new_param, rate) \
-            + (1 - rate) * prev_param
+    # def _mix_params(self, prev_param, new_param, rate):
+    #     return \
+    #         rate * super()._mix_params(prev_param, new_param, rate) \
+    #         + (1 - rate) * prev_param
 
     def _update_and_evaluate(self, rate):
         self.trainer.train_one_step(0)
