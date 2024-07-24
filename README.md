@@ -6,6 +6,7 @@ a pipeline for ***m***odeling ***i***n-***m***emory ***ar***chitectures for
 ## requirements
 - python 3.10
     - nni
+    - numpy
     - torch
     - torchvision
     - einops
