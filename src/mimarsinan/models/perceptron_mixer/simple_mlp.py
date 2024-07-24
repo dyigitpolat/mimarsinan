@@ -11,8 +11,8 @@ class SimpleMLP(PerceptronFlow):
         device,
         input_shape,
         num_classes,
-        mlp_width, 
-        extra_layers):
+        mlp_width_1, 
+        mlp_width_2):
         super(SimpleMLP, self).__init__(device)
 
         self.input_activation = nn.Identity()
@@ -20,7 +20,9 @@ class SimpleMLP(PerceptronFlow):
         self.input_shape = input_shape
         self.input_width = input_shape[-3] * input_shape[-2] * input_shape[-1]
 
-        network_shape = [self.input_width, 192, 64, 192, num_classes]
+        w1 = mlp_width_1
+        w2 = mlp_width_2
+        network_shape = [self.input_width, w1, w2, w1, num_classes]
         has_norm = [True, False, True, False]
 
         self.perceptrons = nn.ModuleList()
