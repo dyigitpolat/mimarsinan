@@ -100,6 +100,8 @@ class SpikingCoreFlow(nn.Module):
         return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
     
     def forward(self, x):
+        print("thresholds: ", [t.item() for t in self.thresholds])
+        
         x = self.preprocessor(x)
         
         x = x.view(x.shape[0], -1)
