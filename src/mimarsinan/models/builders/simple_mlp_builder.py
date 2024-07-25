@@ -2,17 +2,18 @@ from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
 from mimarsinan.models.perceptron_mixer.simple_mlp import SimpleMLP
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.supermodel import Supermodel
-from mimarsinan.models.layers import TransformedActivation, ClampDecorator, LeakyGradReLU
+from mimarsinan.models.layers import TransformedActivation, ClampDecorator, LeakyGradReLU, QuantizeDecorator
 
 import torch.nn as nn
 import torch
 class InputCQ(nn.Module):
-    def __init__(self, device, input_shape):
+    def __init__(self, device, input_shape, Tq):
         super(InputCQ, self).__init__()
         self.in_act = TransformedActivation(
             base_activation = nn.Identity(),
             decorators = [
-                ClampDecorator(torch.tensor(0.0), torch.tensor(1.0))
+                ClampDecorator(torch.tensor(0.0), torch.tensor(1.0)),
+                QuantizeDecorator(torch.tensor(Tq), torch.tensor(1.0))
             ])
 
     def forward(self, x):
@@ -29,7 +30,7 @@ class SimpleMLPBuilder:
         self.pipeline_config = pipeline_config
 
     def build(self, configuration):
-        preprocessor = InputCQ(self.device, self.input_shape)
+        preprocessor = InputCQ(self.device, self.input_shape, self.pipeline_config["target_tq"])
 
         perceptron_flow = SimpleMLP(self.device, self.input_shape, self.num_classes, configuration['mlp_width_1'], configuration['mlp_width_2'])
         adaptation_manager = AdaptationManager()
