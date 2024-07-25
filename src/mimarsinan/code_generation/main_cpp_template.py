@@ -7,6 +7,7 @@ main_cpp_template = \
 #include "simulator/spike_generation/stochastic_spike_generator.hpp"
 #include "simulator/spike_generation/deterministic_spike_generator.hpp"
 #include "simulator/spike_generation/front_loaded_spike_generator.hpp"
+#include "simulator/spike_generation/uniform_spike_generator.hpp"
 #include "simulator/execution/spiking_execution.hpp"
 #include "simulator/execution/real_valued_execution.hpp"
 #include "simulator/compute_policy/spiking_compute.hpp"

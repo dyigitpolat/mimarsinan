@@ -28,7 +28,7 @@ class SpikingCoreFlow(nn.Module):
         assert firing_mode in ["Default", "Novena"]
 
         self.spike_mode = spike_mode
-        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded"]
+        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform"]
 
         self.latency = ChipLatency(core_mapping).calculate()
         self.cycles = self.latency + simulation_length
@@ -106,6 +106,27 @@ class SpikingCoreFlow(nn.Module):
 
     def to_deterministic_spikes(self, tensor, threshold = 0.5):
         return (tensor > threshold).float()
+
+    def to_uniform_spikes(self, tensor, cycle):
+        T = self.simulation_length
+        
+        # Compute N for all elements in the tensor at once
+        N = torch.round(tensor * T).to(torch.long)
+        
+        # Create a mask for edge cases
+        mask = (N != 0) & (N != T) & (cycle < T)
+        
+        # Compute spacing for all elements
+        spacing = T / N.float()
+        
+        # Compute the result for non-edge cases
+        result = mask & (torch.floor(cycle / spacing) < N) & (torch.floor(cycle % spacing) == 0)
+        
+        # Handle edge cases
+        result = result.float()
+        result[N == T] = 1.0
+        
+        return result
     
     def to_spikes(self, tensor, cycle):
         if self.spike_mode == "Stochastic":
@@ -114,6 +135,8 @@ class SpikingCoreFlow(nn.Module):
             return self.to_deterministic_spikes(tensor)
         elif self.spike_mode == "FrontLoaded":
             return self.to_front_loaded_spikes(tensor, cycle)
+        elif self.spike_mode == "Uniform":
+            return self.to_uniform_spikes(tensor, cycle)
         else:
             raise ValueError("Invalid spike mode: " + self.spike_mode)
 
