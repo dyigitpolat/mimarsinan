@@ -60,16 +60,17 @@ class SimulationRunner:
             self.mapping,
             self.working_directory,
             int,
-            spike_generation_mode="Stochastic",
+            spike_generation_mode=self.spike_generation_mode,
             firing_mode=self.firing_mode
         )
 
-        simulation_steps = delay + int(self.simulation_length)
+        simulation_steps = int(self.simulation_length)
         print(f"  total simulation steps: {simulation_steps}")
         
         predictions = simulation_driver.predict_spiking(
             self.test_data,
-            simulation_steps)
+            simulation_steps,
+            delay)
 
         print("Evaluating simulator output...")
         accuracy = self._evaluate_chip_output(predictions)

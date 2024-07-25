@@ -78,8 +78,10 @@ class StableSpikingCoreFlow(nn.Module):
         print(shape)
         spikes = torch.zeros(shape, device=x.device)
         for t in range(self.simulation_length):
-            # spikes[t] = self.to_spikes(x)
-            spikes[t] = x
+            #spikes[t] = self.to_spikes(x) # stochastic
+            #spikes[t] = torch.round(x * self.simulation_length) > t # front loaded
+            spikes[t] = x # ideal input
+
         
         return spikes
     

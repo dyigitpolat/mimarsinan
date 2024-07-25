@@ -45,10 +45,10 @@ class NevresimDriver:
             predictions[i] = np.argmax(output_array[i])
         return predictions
     
-    def _prepare_simulator(self, max_input_count, simulation_length, spike_generation_mode, firing_mode):
+    def _prepare_simulator(self, max_input_count, simulation_length, latency, spike_generation_mode, firing_mode):
         print("firing mode: ", firing_mode)
         generate_main_function(
-            self.generated_files_path, max_input_count, self.chip.output_size, simulation_length,
+            self.generated_files_path, max_input_count, self.chip.output_size, simulation_length, latency,
             main_cpp_template, get_config(spike_generation_mode, firing_mode, self.weight_type.__name__))
         
         self.simulator_filename = \
@@ -57,14 +57,14 @@ class NevresimDriver:
         if self.simulator_filename is None:
             raise Exception("Compilation failed.")
 
-    def predict_spiking(self, input_loader, simulation_length, max_input_count=None, num_proc=50):
+    def predict_spiking(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=50):
         if max_input_count is None:
             max_input_count = len(input_loader)
             print("  Max input count:", max_input_count)
         
         save_inputs_to_files(self.generated_files_path, input_loader, max_input_count)
         
-        self._prepare_simulator(max_input_count, simulation_length, self.spike_generation_mode, self.firing_mode)
+        self._prepare_simulator(max_input_count, simulation_length, latency, self.spike_generation_mode, self.firing_mode)
         simulator_output = execute_simulator(self.simulator_filename, max_input_count, num_proc)
         
         return self._simulator_output_to_predictions(simulator_output, self.chip.output_size)

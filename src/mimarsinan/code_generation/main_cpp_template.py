@@ -6,6 +6,7 @@ main_cpp_template = \
 
 #include "simulator/spike_generation/stochastic_spike_generator.hpp"
 #include "simulator/spike_generation/deterministic_spike_generator.hpp"
+#include "simulator/spike_generation/front_loaded_spike_generator.hpp"
 #include "simulator/execution/spiking_execution.hpp"
 #include "simulator/execution/real_valued_execution.hpp"
 #include "simulator/compute_policy/spiking_compute.hpp"
@@ -23,7 +24,7 @@ void test_main(int start, int end)
     static constinit auto chip = 
         generate_chip<SpikingCompute<{4}FirePolicy>, weight_t>();
 
-    using exec = SpikingExecution<{2}, {6}, {3}SpikeGenerator, weight_t, {4}FirePolicy>;
+    using exec = SpikingExecution<{2}, {7}, {6}, {3}SpikeGenerator, weight_t, {4}FirePolicy>;
 
     load_weights<weight_t>(
         chip, "{0}/weights/chip_weights.txt");

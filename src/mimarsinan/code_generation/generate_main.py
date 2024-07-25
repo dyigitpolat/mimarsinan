@@ -14,6 +14,7 @@ def generate_main_function(
     input_count,
     output_count,
     simulation_length,
+    latency,
     cpp_code_template = main_cpp_template,
     simulation_config = get_config()):
     print("Generating main function code...")
@@ -26,7 +27,8 @@ def generate_main_function(
             simulation_config["spike_gen_mode"],
             simulation_config["firing_mode"],
             simulation_config["weight_type"],
-            output_count)
+            output_count, 
+            latency)
 
     main_cpp_filename = "{}/main/main.cpp".format(generated_files_path)
 
