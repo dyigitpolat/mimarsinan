@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch
 
 class SpikingCoreFlow(nn.Module):
-    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor, firing_mode):
+    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor, firing_mode, spike_mode):
         super(SpikingCoreFlow, self).__init__()
         self.input_shape = input_shape
 
@@ -26,6 +26,9 @@ class SpikingCoreFlow(nn.Module):
         
         self.firing_mode = firing_mode
         assert firing_mode in ["Default", "Novena"]
+
+        self.spike_mode = spike_mode
+        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded"]
 
         self.latency = ChipLatency(core_mapping).calculate()
         self.cycles = self.latency + simulation_length
@@ -95,10 +98,25 @@ class SpikingCoreFlow(nn.Module):
         membrane_potentials[spikes == 1] -= threshold
         return spikes
 
-    def to_spikes(self, tensor):
-        #return tensor
+    def to_stochastic_spikes(self, tensor):
         return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
     
+    def to_front_loaded_spikes(self, tensor, cycle):
+        return torch.round(tensor * self.simulation_length) > cycle
+
+    def to_deterministic_spikes(self, tensor, threshold = 0.5):
+        return (tensor > threshold).float()
+    
+    def to_spikes(self, tensor, cycle):
+        if self.spike_mode == "Stochastic":
+            return self.to_stochastic_spikes(tensor)
+        elif self.spike_mode == "Deterministic":
+            return self.to_deterministic_spikes(tensor)
+        elif self.spike_mode == "FrontLoaded":
+            return self.to_front_loaded_spikes(tensor, cycle)
+        else:
+            raise ValueError("Invalid spike mode: " + self.spike_mode)
+
     def forward(self, x):
         print("thresholds: ", [t.item() for t in self.thresholds])
         
@@ -122,8 +140,7 @@ class SpikingCoreFlow(nn.Module):
         
         output_signals = torch.zeros(x.shape[0], len(self.output_sources), device=x.device)
         for cycle in range(self.cycles):
-            #input_spikes = self.to_lif_spikes(x, input_membrane_potentials, 1.0)
-            input_spikes = self.to_spikes(x)
+            input_spikes = self.to_spikes(x, cycle)
             for core_idx in range(len(self.cores)):
                 input_signals[core_idx] = self.get_signal_tensor(
                     input_spikes, 
