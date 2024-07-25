@@ -19,12 +19,9 @@ class SimpleMLPBuilder:
     def build(self, configuration):
         preprocessor = InputCQ(self.pipeline_config["target_tq"])
 
-        # channel expansion
-        expanded_input_shape = (self.input_shape[0] * 3, self.input_shape[1], self.input_shape[2])
-
-        perceptron_flow = SimpleMLP(self.device, expanded_input_shape, self.num_classes, configuration['mlp_width_1'], configuration['mlp_width_2'])
+        perceptron_flow = SimpleMLP(self.device, self.input_shape, self.num_classes, configuration['mlp_width_1'], configuration['mlp_width_2'])
         adaptation_manager = AdaptationManager()
-        supermodel = Supermodel(self.device, expanded_input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
+        supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
         for perceptron in supermodel.get_perceptrons():
             perceptron.base_activation = LeakyGradReLU()
             adaptation_manager.update_activation(self.pipeline_config, perceptron)
