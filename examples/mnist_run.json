@@ -1,7 +1,7 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "mnist_mixer_sf_res",
+    "experiment_name": "mnist",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
@@ -9,9 +9,9 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 32,
-        "simulation_steps": 32,
-        "weight_bits": 8
+        "target_tq": 8,
+        "simulation_steps": 8,
+        "weight_bits": 4
     },
 
     "deployment_parameters": {
@@ -40,8 +40,8 @@
             "fc_w_2": 32
         },
 
-        "spike_generation_mode": "Stochastic",
-        "firing_mode": "Default"
+        "spike_generation_mode": "FrontLoaded",
+        "firing_mode": "Novena"
     },
 
     "target_metric_override": null,

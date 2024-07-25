@@ -40,7 +40,7 @@
             "fc_w_2": 64
         },
 
-        "spike_generation_mode": "Stochastic",
+        "spike_generation_mode": "FrontLoaded",
         "firing_mode": "Default"
     },
 
