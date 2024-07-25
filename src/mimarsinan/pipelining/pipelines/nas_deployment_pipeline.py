@@ -89,7 +89,7 @@ class NASDeploymentPipeline(Pipeline):
             self.reporter.prefix = str(current_step_idx) + ". " + step.name
 
         #self.register_post_step_hook(post_step_hook)
-        #self.register_pre_step_hook(pre_step_hook)
+        self.register_pre_step_hook(pre_step_hook)
         
     def _initialize_config(self, deployment_parameters, platform_constraints):
         self.config.update(self.default_deployment_parameters)
