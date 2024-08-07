@@ -1,8 +1,8 @@
 from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.supermodel import Supermodel
-from mimarsinan.models.layers import LeakyGradReLU
 from mimarsinan.models.preprocessing.input_cq import InputCQ
+
+import torch.nn as nn
 
 class PerceptronMixerBuilder:
     def __init__(self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config):
@@ -78,12 +78,7 @@ class PerceptronMixerBuilder:
         
         supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
         
-        adaptation_manager = AdaptationManager()
         for perceptron in supermodel.get_perceptrons():
-            perceptron.base_activation = LeakyGradReLU()
-            #perceptron.base_activation = nn.LeakyReLU()
-            adaptation_manager.update_activation(self.pipeline_config, perceptron)
-
             assert perceptron.layer.weight.shape[0] <= self.max_neurons, f"not enough neurons ({perceptron.layer.weight.shape[0]} > {self.max_neurons})"
             assert perceptron.layer.weight.shape[1] <= self.max_axons - 1, f"not enough axons ({perceptron.layer.weight.shape[1]} > {self.max_axons})"
 
