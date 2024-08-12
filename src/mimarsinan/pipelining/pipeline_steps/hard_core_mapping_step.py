@@ -1,6 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+from mimarsinan.mapping.softcore_mapping import HardCoreMapping, HardCore
 from mimarsinan.visualization.hardcore_visualization import HardCoreMappingVisualizer
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
@@ -25,17 +25,24 @@ class HardCoreMappingStep(PipelineStep):
         self.preprocessor = self.get_entry("model").get_preprocessor()
         
         soft_core_mapping = self.get_entry('tuned_soft_core_mapping')
-        axons_per_core = self.pipeline.config['max_axons']
-        neurons_per_core = self.pipeline.config['max_neurons']
 
-        hard_core_mapping = HardCoreMapping(
-            axons_per_core, neurons_per_core)
+        # support heterogeneous hardware cores
+        available_hardware_cores = []
+        for core_type in self.pipeline.config['cores']:
+            for _ in range(core_type['count']):
+                hard_core = HardCore(core_type['max_axons'], core_type['max_neurons'])
+                available_hardware_cores.append(hard_core)
+                
+
+        hard_core_mapping = HardCoreMapping(available_hardware_cores)
         
         hard_core_mapping.map(soft_core_mapping)
+        print("Hard Core Mapping done.")
 
         HardCoreMappingVisualizer(hard_core_mapping).visualize(
             self.pipeline.working_directory + "/hardcore_mapping.png"
         )
+        print("Hard Core Mapping visualized.")
 
         print("Hard Core Mapping Test:", BasicTrainer(
             SpikingCoreFlow(
