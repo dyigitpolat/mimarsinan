@@ -1,17 +1,25 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "mnist1024",
+    "experiment_name": "mnist_th",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
 
     "platform_constraints": {
+        "cores": [
+            {
+                "max_axons": 1024,
+                "max_neurons": 1024,
+                "count": 4
+            }
+        ],
+
         "max_axons": 1024,
         "max_neurons": 1024,
-        "target_tq": 2,
-        "simulation_steps": 4,
-        "weight_bits": 4
+        "target_tq": 16,
+        "simulation_steps": 16,
+        "weight_bits": 6
     },
 
     "deployment_parameters": {
@@ -29,14 +37,17 @@
         "nas_workers": 2,
            
         "model_config": {
+            "base_activation": "ReLU",
+
             "mlp_width_1": 512,
             "mlp_width_2": 256
         },
 
-        "spike_generation_mode": "FrontLoaded",
-        "firing_mode": "Novena"
+        "spike_generation_mode": "Uniform",
+        "firing_mode": "Default",
+        "thresholding_mode": "<="
     },
 
     "target_metric_override": null,
-    "start_step": null
+    "start_step": "CoreFlow Tuning"
 }

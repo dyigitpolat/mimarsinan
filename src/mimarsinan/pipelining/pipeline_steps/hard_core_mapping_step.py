@@ -50,7 +50,8 @@ class HardCoreMappingStep(PipelineStep):
                 hard_core_mapping, 
                 self.pipeline.config["simulation_steps"], self.preprocessor,
                 self.pipeline.config["firing_mode"],
-                self.pipeline.config["spike_generation_mode"]), 
+                self.pipeline.config["spike_generation_mode"],
+                self.pipeline.config["thresholding_mode"]), 
             self.pipeline.config["device"], 
             DataLoaderFactory(self.pipeline.data_provider_factory), None).test())
 

@@ -35,6 +35,7 @@ class CoreFlowTuner:
 
         self.firing_mode = pipeline.config["firing_mode"]
         self.spike_mode = pipeline.config["spike_generation_mode"]
+        self.thresholding_mode = pipeline.config["thresholding_mode"]
 
         self.accuracy = None
 
@@ -45,25 +46,30 @@ class CoreFlowTuner:
 
         quantized_mapping = copy.deepcopy(self.mapping)
         ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
-        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.spike_mode)
+        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.spike_mode, self.thresholding_mode)
         print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
 
-        stable_core_flow = StableSpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode)
+        stable_core_flow = StableSpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.thresholding_mode)
         print(f"  Original StableSpikingCoreFlow Accuracy: {self._validate_core_flow(stable_core_flow)}")
 
 
-        max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
-        self._tune_thresholds(
-            stable_core_flow.get_core_spike_rates(), 
-            tuning_cycles=40, lr=1.0, core_flow_model=core_flow)
+        # max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
+        # self._tune_thresholds(
+        #     stable_core_flow.get_core_spike_rates(), 
+        #     tuning_cycles=40, lr=1.0, core_flow_model=core_flow)
+
+        thresholds = [round(core.threshold) for core in core_flow.cores]
+        for core_id, core in enumerate(core_flow.cores):
+            core.threshold = thresholds[core_id]
+            core_flow.refresh_thresholds()
         
         final_mapping = copy.deepcopy(core_flow.core_mapping)
-        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.spike_mode)
+        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.spike_mode, self.thresholding_mode)
         print(f"  Original 2 SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
         
         self._quantize_thresholds(final_mapping, 1.0)
         scaled_simulation_steps = self.simulation_steps
-        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, scaled_simulation_steps, self.preprocessor, self.firing_mode, self.spike_mode)
+        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, scaled_simulation_steps, self.preprocessor, self.firing_mode, self.spike_mode, self.thresholding_mode)
         self.accuracy = self._test_core_flow(core_flow)
         print(f"  Final SpikingCoreFlow Accuracy: {self.accuracy}")
 
@@ -114,7 +120,7 @@ class CoreFlowTuner:
         current_perturbations = []
         for core_id, core in enumerate(core_flow_model.cores):
             core_spike_rate = core_flow_model.get_core_spike_rates()[core_id] + 0.01
-            target_spike_rate = random.uniform(0.995, 1.01) * stable_spike_rates[core_id] + 0.01
+            target_spike_rate = random.uniform(0.99, 1.02) * stable_spike_rates[core_id] + 0.01
             perturbation = target_spike_rate - core_spike_rate
             perturbations[core_id] = perturbation
             current_perturbations.append(perturbation)

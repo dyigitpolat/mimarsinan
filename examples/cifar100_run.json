@@ -1,7 +1,7 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "cifar100_1024_lr",
+    "experiment_name": "cifar100_1024_latest",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar100_data_provider.py",
     "data_provider_name": "CIFAR100_DataProvider",
@@ -9,20 +9,16 @@
     "platform_constraints": {
         "cores": [
             {
-                "max_axons": 1025,
-                "max_neurons": 129,
-                "count": 50
+                "max_axons": 2500,
+                "max_neurons": 600,
+                "count": 100
             },
             {
-                "max_axons": 129,
-                "max_neurons": 1025,
-                "count": 50
-            },
-            {
-                "max_axons": 1025,
-                "max_neurons": 1025,
-                "count": 10
-            }],
+                "max_axons": 600,
+                "max_neurons": 2500,
+                "count": 100
+            }
+        ],
 
         "max_axons": 2049,
         "max_neurons": 2049,
@@ -51,11 +47,7 @@
             "patch_n_1": 8, 
             "patch_m_1": 8, 
             "patch_c_1": 32, 
-            "fc_k_1": 1, 
             "fc_w_1": 512, 
-            "patch_n_2": 1, 
-            "patch_c_2": 64, 
-            "fc_k_2": 1, 
             "fc_w_2": 255
         },
 
@@ -64,5 +56,5 @@
     },
 
     "target_metric_override": null,
-    "start_step": "Hard Core Mapping"
+    "start_step": null
 }

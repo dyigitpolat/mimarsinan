@@ -32,7 +32,6 @@ class InputActivationAnalysisStep(PipelineStep):
         self.trainer.validate()
 
         in_scales = [1.0]
-        scales = []
         for g_idx, perceptron_group in enumerate(model.perceptron_flow.get_perceptron_groups()):
             total_scale = 0.0
             for perceptron in perceptron_group:
@@ -40,13 +39,12 @@ class InputActivationAnalysisStep(PipelineStep):
 
             s = total_scale / len(perceptron_group)
             in_scales.append(s)
-            scales.append(s)
 
         for g_idx, perceptron_group in enumerate(model.perceptron_flow.get_perceptron_groups()):
             for perceptron in perceptron_group:
                 perceptron.set_input_scale(in_scales[g_idx])
                 
-        print(scales)
+        print(in_scales)
         self.update_entry("model", model, 'torch_model')
 
         
