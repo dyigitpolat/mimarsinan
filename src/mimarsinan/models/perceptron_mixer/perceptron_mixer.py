@@ -11,15 +11,7 @@ class PerceptronMixer(PerceptronFlow):
         device,
         input_shape,
         num_classes,
-        patch_n_1,
-        patch_m_1,
-        patch_c_1,
-        fc_w_1,
-        fc_k_1,
-        patch_n_2,
-        patch_c_2,
-        fc_w_2,
-        fc_k_2):
+        patch_n_1, patch_m_1, patch_c_1, fc_w_1, fc_w_2):
         super(PerceptronMixer, self).__init__(device)
 
         self.input_activation = nn.Identity()
@@ -30,9 +22,6 @@ class PerceptronMixer(PerceptronFlow):
         self.patch_rows = patch_n_1
         self.patch_cols = patch_m_1
         self.patch_channels = patch_c_1
-
-        self.fc_depth = fc_k_1
-        self.fc_depth_2 = fc_k_2
 
         self.patch_height = input_shape[-2] // self.patch_rows
         self.patch_width = input_shape[-1] // self.patch_cols
