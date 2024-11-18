@@ -1,17 +1,30 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "mnist",
+    "experiment_name": "mnist_adder_fix_fresh",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
 
     "platform_constraints": {
-        "max_axons": 256,
-        "max_neurons": 256,
-        "target_tq": 8,
-        "simulation_steps": 8,
-        "weight_bits": 4
+        "cores": [
+            {
+                "max_axons": 1025,
+                "max_neurons": 257,
+                "count": 5
+            },
+            {
+                "max_axons": 513,
+                "max_neurons": 513,
+                "count": 100
+            }
+        ],
+
+        "max_axons": 2049,
+        "max_neurons": 2049,
+        "target_tq": 16,
+        "simulation_steps": 16,
+        "weight_bits": 8
     },
 
     "deployment_parameters": {
@@ -29,19 +42,18 @@
         "nas_workers": 2,
            
         "model_config": {
+            "base_activation": "LeakyReLU",
+            
             "patch_n_1": 4, 
             "patch_m_1": 4, 
-            "patch_c_1": 15, 
-            "fc_k_1": 1, 
-            "fc_w_1": 32, 
-            "patch_n_2": 1, 
-            "patch_c_2": 32, 
-            "fc_k_2": 1, 
-            "fc_w_2": 32
+            "patch_c_1": 32, 
+            "fc_w_1": 64, 
+            "fc_w_2": 64
         },
 
-        "spike_generation_mode": "FrontLoaded",
-        "firing_mode": "Novena"
+        "spike_generation_mode": "Uniform",
+        "firing_mode": "Default",
+        "thresholding_mode": "<="
     },
 
     "target_metric_override": null,

@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch
 
 class StableSpikingCoreFlow(nn.Module):
-    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor, firing_mode):
+    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor, firing_mode, thresholding_mode):
         super(StableSpikingCoreFlow, self).__init__()
         self.input_shape = input_shape
 
@@ -26,6 +26,9 @@ class StableSpikingCoreFlow(nn.Module):
         
         self.firing_mode = firing_mode
         assert firing_mode in ["Default", "Novena"]
+
+        self.thresholding_mode = thresholding_mode
+        assert thresholding_mode in ["<", "<="]
 
         self.simulation_length = simulation_length
         self.cycles = ChipLatency(core_mapping).calculate() + simulation_length
@@ -86,6 +89,7 @@ class StableSpikingCoreFlow(nn.Module):
         return spikes
     
     def _process_core(self, batch_size, spike_train_cache, core, core_idx, device):
+        ops = { "<": lambda x, y: x < y, "<=": lambda x, y: x <= y }
         
         membrane_potentials = \
             torch.zeros(batch_size, core.get_output_count(), device=device)
@@ -122,7 +126,8 @@ class StableSpikingCoreFlow(nn.Module):
             # if self.firing_mode == "Default":
             #     membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
 
-            membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+            #membrane_potentials[membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+            membrane_potentials[ops[self.thresholding_mode](self.thresholds[core_idx], membrane_potentials)] -= self.thresholds[core_idx]
 
         ideal_out_spikes = \
             torch.zeros(self.simulation_length, batch_size, core.get_output_count(), device=device)
@@ -135,7 +140,8 @@ class StableSpikingCoreFlow(nn.Module):
             ideal_membrane_potentials += avg_values
         
             # fire
-            ideal_out_spikes[cycle] = (ideal_membrane_potentials > self.thresholds[core_idx]).float()
+            
+            ideal_out_spikes[cycle] = (ops[self.thresholding_mode](self.thresholds[core_idx], ideal_membrane_potentials)).float()
 
             # # default reset
             # if self.firing_mode == "Default":
@@ -145,7 +151,7 @@ class StableSpikingCoreFlow(nn.Module):
             # if self.firing_mode == "Novena":
             #     ideal_membrane_potentials[ideal_membrane_potentials > self.thresholds[core_idx]] = 0
 
-            ideal_membrane_potentials[ideal_membrane_potentials > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+            ideal_membrane_potentials[ops[self.thresholding_mode](self.thresholds[core_idx], ideal_membrane_potentials)] -= self.thresholds[core_idx]
 
         spike_train_cache[core_idx] = ideal_out_spikes
 

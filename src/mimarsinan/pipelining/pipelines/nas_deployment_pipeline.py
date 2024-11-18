@@ -73,7 +73,7 @@ class NASDeploymentPipeline(Pipeline):
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
         self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
         self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
-        self.add_pipeline_step("Simulation", SimulationStep(self))
+        #self.add_pipeline_step("Simulation", SimulationStep(self))
 
         def post_step_hook(step):
             print("Visualizing activations...")

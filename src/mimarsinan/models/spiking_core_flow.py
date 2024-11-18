@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch
 
 class SpikingCoreFlow(nn.Module):
-    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor, firing_mode, spike_mode):
+    def __init__(self, input_shape, core_mapping, simulation_length, preprocessor, firing_mode, spike_mode, thresholding_mode):
         super(SpikingCoreFlow, self).__init__()
         self.input_shape = input_shape
 
@@ -29,6 +29,9 @@ class SpikingCoreFlow(nn.Module):
 
         self.spike_mode = spike_mode
         assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform"]
+
+        self.thresholding_mode = thresholding_mode
+        assert thresholding_mode in ["<", "<="]
 
         self.latency = ChipLatency(core_mapping).calculate()
         self.cycles = self.latency + simulation_length
@@ -149,6 +152,10 @@ class SpikingCoreFlow(nn.Module):
 
         self.core_avgs = [0.0] * len(self.cores)
 
+
+        # thresholding selection
+        ops = { "<": lambda x, y: x < y, "<=": lambda x, y: x <= y }
+
         buffers = []
         input_signals = []
         membrane_potentials = []
@@ -183,11 +190,11 @@ class SpikingCoreFlow(nn.Module):
 
                     # novena reset
                     if self.firing_mode == "Novena":
-                        memb[memb > self.thresholds[core_idx]] = 0.0
-                    
+                        memb[ops[self.thresholding_mode](self.thresholds[core_idx], memb)] = 0.0
+
                     # subtract reset
                     if self.firing_mode == "Default":
-                        memb[memb > self.thresholds[core_idx]] -= self.thresholds[core_idx]
+                        memb[ops[self.thresholding_mode](self.thresholds[core_idx], memb)] -= self.thresholds[core_idx]
         
             self.update_stats(buffers, x.shape[0])
             output_signals += self.get_signal_tensor(input_spikes, buffers, self.output_sources, cycle)

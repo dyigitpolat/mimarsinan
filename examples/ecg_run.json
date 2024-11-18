@@ -1,7 +1,7 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "ecg192-64",
+    "experiment_name": "ecg255-192_16",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/ecg_data_provider.py",
     "data_provider_name": "ECG_DataProvider",
@@ -9,7 +9,7 @@
     "platform_constraints": {
         "max_axons": 256,
         "max_neurons": 256,
-        "target_tq": 12,
+        "target_tq": 16,
         "simulation_steps": 16,
         "weight_bits": 4
     },
@@ -29,11 +29,11 @@
         "nas_workers": 2,
            
         "model_config": {
-            "mlp_width_1": 192,
-            "mlp_width_2": 64
+            "mlp_width_1": 255,
+            "mlp_width_2": 192
         },
 
-        "spike_generation_mode": "Uniform",
+        "spike_generation_mode": "Stochastic",
         "firing_mode": "Default"
     },
 

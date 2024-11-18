@@ -1,14 +1,28 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "cifar10_1024",
+    "experiment_name": "cifar10_1024_latest_RES",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar10_data_provider.py",
     "data_provider_name": "CIFAR10_DataProvider",
 
     "platform_constraints": {
-        "max_axons": 1024,
-        "max_neurons": 1024,
+        "cores": [
+            {
+                "max_axons": 2500,
+                "max_neurons": 600,
+                "count": 100
+            },
+            {
+                "max_axons": 600,
+                "max_neurons": 2500,
+                "count": 100
+            }
+        ],
+
+        "max_axons": 2049,
+        "max_neurons": 2049,
+
         "target_tq": 16,
         "simulation_steps": 16,
         "weight_bits": 8
@@ -29,19 +43,18 @@
         "nas_workers": 2,
            
         "model_config": {
-            "patch_n_1": 2, 
-            "patch_m_1": 2, 
-            "patch_c_1": 128, 
-            "fc_k_1": 1, 
-            "fc_w_1": 256, 
-            "patch_n_2": 1, 
-            "patch_c_2": 128, 
-            "fc_k_2": 1, 
-            "fc_w_2": 64
+            "base_activation": "LeakyReLU",
+            
+            "patch_n_1": 8, 
+            "patch_m_1": 8, 
+            "patch_c_1": 32, 
+            "fc_w_1": 512, 
+            "fc_w_2": 255
         },
 
-        "spike_generation_mode": "FrontLoaded",
-        "firing_mode": "Default"
+        "spike_generation_mode": "Uniform",
+        "firing_mode": "Default",
+        "thresholding_mode": "<"
     },
 
     "target_metric_override": null,
