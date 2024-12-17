@@ -53,15 +53,16 @@ class CoreFlowTuner:
         print(f"  Original StableSpikingCoreFlow Accuracy: {self._validate_core_flow(stable_core_flow)}")
 
 
-        # max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
-        # self._tune_thresholds(
-        #     stable_core_flow.get_core_spike_rates(), 
-        #     tuning_cycles=40, lr=1.0, core_flow_model=core_flow)
+        max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
+        self._tune_thresholds(
+            stable_core_flow.get_core_spike_rates(), 
+            tuning_cycles=20, lr=1.0, core_flow_model=core_flow)
 
         thresholds = [round(core.threshold) for core in core_flow.cores]
         for core_id, core in enumerate(core_flow.cores):
             core.threshold = thresholds[core_id]
-            core_flow.refresh_thresholds()
+            
+        core_flow.refresh_thresholds()
         
         final_mapping = copy.deepcopy(core_flow.core_mapping)
         core_flow = SpikingCoreFlow(self.input_shape, final_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.spike_mode, self.thresholding_mode)
@@ -121,19 +122,31 @@ class CoreFlowTuner:
         for core_id, core in enumerate(core_flow_model.cores):
             core_spike_rate = core_flow_model.get_core_spike_rates()[core_id] + 0.01
             target_spike_rate = random.uniform(0.99, 1.02) * stable_spike_rates[core_id] + 0.01
+            
             perturbation = target_spike_rate - core_spike_rate
             perturbations[core_id] = perturbation
             current_perturbations.append(perturbation)
 
+        total_perturbation_per_latency_group = {}
         for core_id, core in enumerate(core_flow_model.cores):
-            if core.latency - 1 in latency_groups:
-                for other_id in latency_groups[core.latency - 1]:
-                    perturbations[other_id] += perturbations[core_id] * 0.1
+            if core.latency not in total_perturbation_per_latency_group:
+                total_perturbation_per_latency_group[core.latency] = 0
+            total_perturbation_per_latency_group[core.latency] += perturbations[core_id]
+
+        average_perturbation_per_latency_group = {}
+        for latency, total_perturbation in total_perturbation_per_latency_group.items():
+            average_perturbation_per_latency_group[latency] = total_perturbation / len(latency_groups[latency])
+        
+        for core_id, core in enumerate(core_flow_model.cores):
+            latency = core.latency
+            if latency + 1 in average_perturbation_per_latency_group:
+                perturbations[core_id] += average_perturbation_per_latency_group[latency + 1] * 0.5
 
         scale = max([abs(p) for p in current_perturbations])
         for core_id, core in enumerate(core_flow_model.cores):
+            #perturbation = average_perturbation_per_latency_group[core.latency]
             perturbation = perturbations[core_id]
-            perturbation = max(-0.99, min(0.99, perturbation))
+            perturbation = max(-0.90, min(1.10, perturbation))
 
             new_thresh = thresholds[core_id] * (1 - perturbation * lr)
             thresholds[core_id] = new_thresh
@@ -147,9 +160,7 @@ class CoreFlowTuner:
                 self.print_colorful("gray", f"{core.threshold} ")
                 continue
 
-            if abs(pert) > 0.03:
-                self.print_colorful("gray", f"{core.threshold} ")
-            elif pert < -0.02:
+            if pert < -0.02:
                 self.print_colorful("blue", f"{core.threshold} ")
             elif pert > 0.02:
                 self.print_colorful("red", f"{core.threshold} ")

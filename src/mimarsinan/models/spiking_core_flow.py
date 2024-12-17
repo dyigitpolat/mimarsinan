@@ -85,9 +85,10 @@ class SpikingCoreFlow(nn.Module):
         
         return signal_tensor
 
-    def update_stats(self, buffers, batch_size):
+    def update_stats(self, buffers, batch_size, cycle):
         for i in range(len(self.cores)):
-            self.core_avgs[i] += torch.sum(buffers[i]).item() / (self.simulation_length * batch_size * self.cores[i].get_output_count())
+            if (self.cores[i].latency is not None) and cycle >= self.cores[i].latency and cycle < self.simulation_length + self.cores[i].latency:
+                self.core_avgs[i] += torch.sum(buffers[i]).item() / (self.simulation_length * batch_size * self.cores[i].get_output_count())
 
     def get_core_spike_rates(self):
         return self.core_avgs
@@ -169,6 +170,8 @@ class SpikingCoreFlow(nn.Module):
                 torch.zeros(x.shape[0], core.get_output_count(), device=x.device))
         
         output_signals = torch.zeros(x.shape[0], len(self.output_sources), device=x.device)
+
+        # print(f"threshold:", self.thresholds[10].item())
         for cycle in range(self.cycles):
             input_spikes = self.to_spikes(x, cycle)
             for core_idx in range(len(self.cores)):
@@ -178,7 +181,7 @@ class SpikingCoreFlow(nn.Module):
                     cycle)
 
             for core_idx in range(len(self.cores)):
-                if (self.cores[core_idx].latency is not None) and cycle >= self.cores[core_idx].latency:
+                if (self.cores[core_idx].latency is not None) and cycle >= self.cores[core_idx].latency and cycle < self.simulation_length + self.cores[core_idx].latency:
                     memb = membrane_potentials[core_idx]
 
                     memb += \
@@ -186,7 +189,12 @@ class SpikingCoreFlow(nn.Module):
                             self.core_params[core_idx], 
                             input_signals[core_idx].T).T
                     
-                    buffers[core_idx] = (memb > self.thresholds[core_idx]).float()
+
+                    #buffers[core_idx] = (memb > self.thresholds[core_idx]).float()
+                    buffers[core_idx] = (ops[self.thresholding_mode](self.thresholds[core_idx], memb)).float()
+
+                    # if(core_idx == 10):
+                    #     print(f"({memb[core_idx].flatten()[24]} : {buffers[core_idx].flatten()[24]})", end=" ")
 
                     # novena reset
                     if self.firing_mode == "Novena":
@@ -196,9 +204,10 @@ class SpikingCoreFlow(nn.Module):
                     if self.firing_mode == "Default":
                         memb[ops[self.thresholding_mode](self.thresholds[core_idx], memb)] -= self.thresholds[core_idx]
         
-            self.update_stats(buffers, x.shape[0])
+            self.update_stats(buffers, x.shape[0], cycle)
             output_signals += self.get_signal_tensor(input_spikes, buffers, self.output_sources, cycle)
-            
+        
+        # print()
         self.total_spikes = torch.sum(output_signals).item()
         print("total spikes: ", self.total_spikes)
         return output_signals
