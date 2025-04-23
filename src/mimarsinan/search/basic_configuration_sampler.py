@@ -1,4 +1,5 @@
 import random 
+import copy
 
 class BasicConfigurationSampler:
     def __init__(self):
@@ -28,14 +29,14 @@ class BasicConfigurationSampler:
             self.previous_metrics.sort(key = lambda x: x[1])
             length = len(self.previous_metrics)
             half_length = max(1, length // 2)
-            self.previous_metrics = list(self.previous_metrics[-half_length:]).copy()
+            self.previous_metrics = copy.deepcopy((self.previous_metrics[-half_length:]))
         else:
-            self.previous_metrics = list(metrics).copy()
+            self.previous_metrics = copy.deepcopy((metrics))
             self.previous_metrics.sort(key = lambda x: x[1])
 
         top_p = 0.1
         top_metric_count = max(1, int(len(self.previous_metrics) * top_p))
-        self.top_metrics = list(self.previous_metrics[-top_metric_count:]).copy()
+        self.top_metrics = copy.deepcopy((self.previous_metrics[-top_metric_count:]))
 
         print("top metrics", self.top_metrics)
 

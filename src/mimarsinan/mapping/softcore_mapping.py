@@ -62,6 +62,11 @@ class HardCore:
             axon_offset : axon_offset+softcore.get_input_count(), 
             neuron_offset : neuron_offset+softcore.get_output_count()] \
                 = softcore.core_matrix
+
+        # print(f"prev threshold: {self.threshold}")
+        # print(f"softcore threshold: {softcore.threshold}")
+        # self.threshold = (self.threshold * neuron_offset + softcore.threshold * softcore.get_output_count()) / (neuron_offset + softcore.get_output_count())
+        # print(f"new threshold: {self.threshold}")
         
         self.axon_sources.extend(softcore.axon_sources)
 
@@ -109,7 +114,7 @@ class HardCoreMapping:
                 
     def map(self, softcore_mapping):
         def is_mapping_possible(core, hardcore):
-            tolerance = 0.2
+            tolerance = 0.1
             if hardcore.threshold is not None:
                 threshold_diff = abs(core.threshold - hardcore.threshold)
                 diff_rate = threshold_diff / (hardcore.threshold + 1)
