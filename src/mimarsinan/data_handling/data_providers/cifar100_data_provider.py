@@ -1,4 +1,5 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
+from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 
 import torchvision.transforms as transforms
 import torchvision
@@ -6,6 +7,7 @@ import torchvision
 import torch
 import os
 
+@BasicDataProviderFactory.register("CIFAR100_DataProvider")
 class CIFAR100_DataProvider(DataProvider):
     def __init__(self, datasets_path):
         super().__init__(datasets_path)

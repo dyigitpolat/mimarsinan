@@ -1,4 +1,5 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
+from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 
 from torch.utils.data import Dataset
 
@@ -7,6 +8,7 @@ import numpy as np
 import requests
 import os
     
+@BasicDataProviderFactory.register("ECG_DataProvider")
 class ECG_DataProvider(DataProvider):
     def __init__(self, datasets_path):
         super().__init__(datasets_path)

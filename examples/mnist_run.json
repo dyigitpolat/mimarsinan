@@ -57,5 +57,5 @@
     },
 
     "target_metric_override": null,
-    "start_step": "CoreFlow Tuning"
+    "start_step": null
 }

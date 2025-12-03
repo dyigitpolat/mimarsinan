@@ -4,7 +4,8 @@ from mimarsinan.common.wandb_utils import WandB_Reporter
 from mimarsinan.pipelining.pipelines.nas_deployment_pipeline import NASDeploymentPipeline
 from mimarsinan.pipelining.pipelines.vanilla_deployment_pipeline import VanillaDeploymentPipeline
 from mimarsinan.pipelining.pipelines.cq_pipeline import CQPipeline
-from mimarsinan.data_handling.data_provider_factory import ImportedDataProviderFactory
+from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
+import mimarsinan.data_handling.data_providers
 
 import sys
 import json
@@ -19,9 +20,8 @@ def main():
     with open(deployment_config_path, 'r') as f:
         deployment_config = json.load(f)
     
-    data_provider_path = deployment_config['data_provider_path']
     data_provider_name = deployment_config['data_provider_name']
-    data_provider_factory = ImportedDataProviderFactory(data_provider_path, data_provider_name, "./datasets")
+    data_provider_factory = BasicDataProviderFactory(data_provider_name, "./datasets")
 
     deployment_name = deployment_config['experiment_name']
     platform_constraints = deployment_config['platform_constraints']
