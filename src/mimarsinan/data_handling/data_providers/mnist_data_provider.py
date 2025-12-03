@@ -1,9 +1,11 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
+from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 import torchvision.transforms as transforms
 import torchvision
 
 import torch
 
+@BasicDataProviderFactory.register("MNIST_DataProvider")
 class MNIST_DataProvider(DataProvider):
     def __init__(self, datasets_path):
         super().__init__(datasets_path)
