@@ -105,9 +105,9 @@ class CoreFlowTuner:
 
             print(f"  Tuning cycle {i+1}/{tuning_cycles}...")
             self._update_core_thresholds(
-                stable_spike_rates, lr_, core_flow_model, thresholds, perturbations, latency_groups)
+                stable_spike_rates, lr_, core_flow_model, thresholds, perturbations, latency_groups, i, tuning_cycles)
             
-            lr_ *= math.pow(0.1, 1 / tuning_cycles)
+            lr_ *= math.pow(0.8, 1 / tuning_cycles)
 
             if acc > max_acc:
                 max_acc = acc
@@ -117,14 +117,23 @@ class CoreFlowTuner:
             core.threshold = best_thresholds[core_id]
             core_flow_model.refresh_thresholds()
 
-    def _update_core_thresholds(self, stable_spike_rates, lr, core_flow_model, thresholds, perturbations, latency_groups):
+    def _update_core_thresholds(self, stable_spike_rates, lr, core_flow_model, thresholds, perturbations, latency_groups, cycle, total_cycles):
         current_perturbations = []
         for core_id, core in enumerate(core_flow_model.cores):
             core_spike_rate = core_flow_model.get_core_spike_rates()[core_id] + 0.01
-            noise = random.uniform(-0.01, 0.02) * lr
-            target_spike_rate = noise * stable_spike_rates[core_id] + 0.01
+            target_spike_rate = (random.uniform(0.99, 1.02) * stable_spike_rates[core_id] + 0.01) * 1.05
             
             perturbation = target_spike_rate - core_spike_rate
+
+            i = core.latency
+            N = core_flow_model.latency
+            k = cycle
+            K = total_cycles
+            t = k/(K-1)
+            multiplier = (1 - i/(N-1)) * (1 - t) + (i/(N-1)) * t
+            print(f"multiplier: {multiplier}, i: {i}")
+            perturbation *= multiplier
+
             perturbations[core_id] = perturbation
             current_perturbations.append(perturbation)
 
@@ -137,24 +146,17 @@ class CoreFlowTuner:
         average_perturbation_per_latency_group = {}
         for latency, total_perturbation in total_perturbation_per_latency_group.items():
             average_perturbation_per_latency_group[latency] = total_perturbation / len(latency_groups[latency])
-
-        # max_perturbation_per_latency_group = {}
-        # for core_id, core in enumerate(core_flow_model.cores):
-        #     if core.latency not in max_perturbation_per_latency_group:
-        #         max_perturbation_per_latency_group[core.latency] = 0
-            
-        #     if abs(perturbations[core_id]) > abs(max_perturbation_per_latency_group[core.latency]):
-        #         max_perturbation_per_latency_group[core.latency] = perturbations[core_id]
+        
+        for core_id, core in enumerate(core_flow_model.cores):
+            latency = core.latency
+            if latency + 1 in average_perturbation_per_latency_group:
+                perturbations[core_id] += average_perturbation_per_latency_group[latency + 1] * 0.5
 
         scale = max([abs(p) for p in current_perturbations])
         for core_id, core in enumerate(core_flow_model.cores):
             #perturbation = average_perturbation_per_latency_group[core.latency]
-            # if core.latency + 1 in average_perturbation_per_latency_group:
-            #     perturbation = average_perturbation_per_latency_group[core.latency + 1] + perturbations[core_id]
-            # else:
-            #     perturbation = perturbations[core_id]
             perturbation = perturbations[core_id]
-            #perturbation = max(-0.90, min(1.10, perturbation))
+            perturbation = max(-0.90, min(1.10, perturbation))
 
             new_thresh = thresholds[core_id] * (1 - perturbation * lr)
             thresholds[core_id] = new_thresh
@@ -168,9 +170,9 @@ class CoreFlowTuner:
                 self.print_colorful("gray", f"{core.threshold} ")
                 continue
 
-            if pert < -0.005:
+            if pert < -0.02:
                 self.print_colorful("blue", f"{core.threshold} ")
-            elif pert > 0.005:
+            elif pert > 0.02:
                 self.print_colorful("red", f"{core.threshold} ")
             else:
                 self.print_colorful("green", f"{core.threshold} ")

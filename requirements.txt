@@ -1,0 +1,7 @@
+nni
+numpy
+torch
+torchvision
+einops
+wandb
+matplotlib
