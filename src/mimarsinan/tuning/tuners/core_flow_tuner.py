@@ -56,7 +56,7 @@ class CoreFlowTuner:
         max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
         self._tune_thresholds(
             stable_core_flow.get_core_spike_rates(), 
-            tuning_cycles=20, lr=1.0, core_flow_model=core_flow)
+            tuning_cycles=2, lr=1.0, core_flow_model=core_flow)
 
         thresholds = [round(core.threshold) for core in core_flow.cores]
         for core_id, core in enumerate(core_flow.cores):
