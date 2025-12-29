@@ -33,7 +33,8 @@ class NASDeploymentPipeline(Pipeline):
         'max_neurons': 256,
         'target_tq': 32,
         'simulation_steps': 32,
-        'weight_bits': 8
+        'weight_bits': 8,
+        'allow_axon_tiling': False,
     }
 
     def __init__(

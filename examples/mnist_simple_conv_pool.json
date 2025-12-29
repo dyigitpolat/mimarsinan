@@ -1,0 +1,70 @@
+{
+    "pipeline_mode": "phased",
+
+    "experiment_name": "mnist_simple_conv_pool",
+    "generated_files_path": "./generated",
+    "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
+    "data_provider_name": "MNIST_DataProvider",
+
+    "platform_constraints": {
+        "cores": [
+            {
+                "max_axons": 256,
+                "max_neurons": 256,
+                "count": 200
+            }
+        ],
+
+        "max_axons": 256,
+        "max_neurons": 256,
+
+        "target_tq": 16,
+        "simulation_steps": 16,
+        "weight_bits": 8,
+
+        "allow_axon_tiling": false
+    },
+
+    "deployment_parameters": {
+        "lr": 0.001,
+        "training_epochs": 3,
+        "tuner_epochs": 1,
+
+        "degradation_tolerance": 0.1,
+
+        "configuration_mode": "user",
+        "model_type": "simple_conv",
+
+        "nas_cycles": 1,
+        "nas_batch_size": 4,
+        "nas_workers": 1,
+
+        "model_config": {
+            "base_activation": "LeakyReLU",
+
+            "conv_out_channels": 3,
+            "conv_kernel_size": 3,
+            "conv_stride": 4,
+            "conv_padding": 1,
+            "conv_dilation": 1,
+            "conv_bias": true,
+            "use_batchnorm": true,
+
+            "use_pool": true,
+            "pool_kernel_size": 2,
+            "pool_stride": 2,
+            "pool_padding": 0
+        },
+
+        "spike_generation_mode": "Uniform",
+        "firing_mode": "Default",
+        "thresholding_mode": "<="
+    },
+
+    "target_metric_override": null,
+    "start_step": "Normalization Fusion"
+}
+
+
+
+

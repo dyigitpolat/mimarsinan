@@ -64,14 +64,10 @@ class SimpleMLP(PerceptronFlow):
         self._input_activation_mapper.module = activation
 
     def get_perceptrons(self):
-        return self.perceptrons
+        return self._mapper_repr.get_perceptrons()
 
     def get_perceptron_groups(self):
-        groups = []
-        for p in self.perceptrons:
-            groups.append([p])
-
-        return groups
+        return self._mapper_repr.get_perceptron_groups()
 
     def get_mapper_repr(self):
         return self._mapper_repr

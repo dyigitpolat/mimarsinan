@@ -8,7 +8,19 @@ def is_input(idx): return idx == -2
 def is_always_on(idx): return idx == -3
 
 class SoftCore:
-    def __init__(self, core_matrix, axon_sources, id, activation_scale = torch.tensor(1.0), parameter_scale = torch.tensor(1.0), input_activation_scale = torch.tensor(1.0)):
+    def __init__(
+        self,
+        core_matrix,
+        axon_sources,
+        id,
+        activation_scale=torch.tensor(1.0),
+        parameter_scale=torch.tensor(1.0),
+        input_activation_scale=torch.tensor(1.0),
+        *,
+        name: str | None = None,
+        psum_group_id: int | None = None,
+        psum_role: str | None = None,
+    ):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
 
@@ -17,6 +29,11 @@ class SoftCore:
         self.activation_scale = activation_scale
         self.parameter_scale = parameter_scale
         self.threshold = 1.0
+
+        # Optional debug/IR metadata
+        self.name = name
+        self.psum_group_id = psum_group_id
+        self.psum_role = psum_role
 
         self.latency = None
 

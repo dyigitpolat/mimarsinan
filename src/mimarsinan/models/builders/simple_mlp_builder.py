@@ -18,8 +18,10 @@ class SimpleMLPBuilder:
 
         perceptron_flow = SimpleMLP(self.device, self.input_shape, self.num_classes, configuration['mlp_width_1'], configuration['mlp_width_2'])
         supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
+        allow_axon_tiling = bool(self.pipeline_config.get("allow_axon_tiling", False))
         for perceptron in supermodel.get_perceptrons():
-            assert perceptron.layer.weight.shape[0] <= self.max_neurons, f"not enough neurons ({perceptron.layer.weight.shape[0]} > {self.max_neurons})"
-            assert perceptron.layer.weight.shape[1] <= self.max_axons - 1, f"not enough axons ({perceptron.layer.weight.shape[1]} > {self.max_axons})"
+            if not allow_axon_tiling:
+                assert perceptron.layer.weight.shape[1] <= self.max_axons - 1, \
+                    f"not enough axons ({perceptron.layer.weight.shape[1]} > {self.max_axons - 1})"
 
         return supermodel

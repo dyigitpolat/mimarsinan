@@ -1,2 +1,4 @@
 from .perceptron_mixer_builder import PerceptronMixerBuilder
 from .simple_mlp_builder import SimpleMLPBuilder
+from .simple_conv_builder import SimpleConvBuilder
+from .vgg16_builder import VGG16Builder
