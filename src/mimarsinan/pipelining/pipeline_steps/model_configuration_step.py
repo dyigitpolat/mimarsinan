@@ -4,6 +4,8 @@ from mimarsinan.search.mlp_mixer_searcher import MLP_Mixer_Searcher
 from mimarsinan.search.small_step_evaluator import SmallStepEvaluator
 from mimarsinan.models.builders import PerceptronMixerBuilder
 from mimarsinan.models.builders import SimpleMLPBuilder
+from mimarsinan.models.builders import SimpleConvBuilder
+from mimarsinan.models.builders import VGG16Builder
 
 class ModelConfigurationStep(PipelineStep):
 
@@ -33,6 +35,22 @@ class ModelConfigurationStep(PipelineStep):
                 self.pipeline.config['max_axons'],
                 self.pipeline.config['max_neurons'],
                 self.pipeline.config
+            ),
+            "simple_conv": SimpleConvBuilder(
+                self.pipeline.config['device'],
+                self.pipeline.config['input_shape'],
+                self.pipeline.config['num_classes'],
+                self.pipeline.config['max_axons'],
+                self.pipeline.config['max_neurons'],
+                self.pipeline.config
+            ),
+            "vgg16": VGG16Builder(
+                self.pipeline.config['device'],
+                self.pipeline.config['input_shape'],
+                self.pipeline.config['num_classes'],
+                self.pipeline.config['max_axons'],
+                self.pipeline.config['max_neurons'],
+                self.pipeline.config
             )
         }
         builder = builders[self.pipeline.config['model_type']]
@@ -47,7 +65,9 @@ class ModelConfigurationStep(PipelineStep):
                     builders["mlp_mixer"]),
                 self.pipeline.config['nas_workers']
             ),
-            "simple_mlp": None # Not implemented
+            "simple_mlp": None, # Not implemented
+            "simple_conv": None, # Not implemented
+            "vgg16": None,      # Not implemented
         }
         
         configuration_mode = self.pipeline.config['configuration_mode']
