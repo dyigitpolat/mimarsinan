@@ -405,7 +405,7 @@ def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):
     if compute_ops:
         raise ValueError(
             f"Cannot convert IRGraph to SoftCoreMapping: graph contains {len(compute_ops)} "
-            f"ComputeOp nodes. Use UnifiedCoreFlow for simulation instead."
+            f"ComputeOp nodes. Use SpikingUnifiedCoreFlow / SpikingHybridCoreFlow for simulation instead."
         )
     
     # Create an empty SoftCoreMapping and populate it

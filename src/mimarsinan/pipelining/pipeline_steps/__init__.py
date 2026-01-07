@@ -4,6 +4,7 @@ from .activation_quantization_step import ActivationQuantizationStep
 from .normalization_fusion_step import NormalizationFusionStep
 from .weight_quantization_step import WeightQuantizationStep
 from .soft_core_mapping_step import SoftCoreMappingStep
+from .core_quantization_verification_step import CoreQuantizationVerificationStep
 from .hard_core_mapping_step import HardCoreMappingStep
 from .core_flow_tuning_step import CoreFlowTuningStep
 from .simulation_step import SimulationStep

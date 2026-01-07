@@ -17,17 +17,29 @@ class SimpleConvBuilder:
     def build(self, configuration):
         cfg = dict(configuration or {})
 
+        # First conv layer params
         conv_out_channels = int(cfg.get("conv_out_channels", 3))
         conv_kernel_size = cfg.get("conv_kernel_size", 3)
         conv_stride = cfg.get("conv_stride", 4)
         conv_padding = cfg.get("conv_padding", 1)
         conv_dilation = cfg.get("conv_dilation", 1)
         conv_bias = bool(cfg.get("conv_bias", True))
+        
+        # Second conv layer params
+        conv2_out_channels = cfg.get("conv2_out_channels", None)  # defaults to conv_out_channels
+        conv2_kernel_size = cfg.get("conv2_kernel_size", 3)
+        conv2_stride = cfg.get("conv2_stride", 1)
+        conv2_padding = cfg.get("conv2_padding", 1)
+        conv2_dilation = cfg.get("conv2_dilation", 1)
+        
         use_batchnorm = bool(cfg.get("use_batchnorm", True))
         use_pool = bool(cfg.get("use_pool", False))
         pool_kernel_size = cfg.get("pool_kernel_size", 2)
         pool_stride = cfg.get("pool_stride", 2)
         pool_padding = cfg.get("pool_padding", 0)
+        
+        # FC hidden layer size
+        fc_hidden_features = cfg.get("fc_hidden_features", None)
 
         preprocessor = InputCQ(self.pipeline_config["target_tq"])
         perceptron_flow = SimpleConvMapper(
@@ -40,11 +52,17 @@ class SimpleConvBuilder:
             conv_padding=conv_padding,
             conv_dilation=conv_dilation,
             conv_bias=conv_bias,
+            conv2_out_channels=conv2_out_channels,
+            conv2_kernel_size=conv2_kernel_size,
+            conv2_stride=conv2_stride,
+            conv2_padding=conv2_padding,
+            conv2_dilation=conv2_dilation,
             use_pool=use_pool,
             pool_kernel_size=pool_kernel_size,
             pool_stride=pool_stride,
             pool_padding=pool_padding,
             use_batchnorm=use_batchnorm,
+            fc_hidden_features=fc_hidden_features,
             max_axons=self.max_axons,
             max_neurons=self.max_neurons,
             name="simple_conv",

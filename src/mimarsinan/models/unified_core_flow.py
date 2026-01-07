@@ -1,223 +1,20 @@
 """
 UnifiedCoreFlow: Simulation that supports both neural cores and compute ops.
 
-This module extends CoreFlow to handle IRGraph with mixed NeuralCore and ComputeOp nodes,
-enabling simulation of networks that include non-neural operations like pooling.
+This module provides a spiking simulator for the unified IRGraph (NeuralCore + ComputeOp),
+including correct sync-barrier semantics for ComputeOps (rate -> op -> respike).
 """
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
-from mimarsinan.models.layers import (
-    ClampDecorator,
-    QuantizeDecorator,
-    TransformedActivation,
-)
-
-
-class UnifiedCoreFlow(nn.Module):
-    """
-    Execute an IRGraph that may contain both NeuralCore and ComputeOp nodes.
-
-    This is a generalization of CoreFlow that can simulate:
-    1. Crossbar-based neural cores (NeuralCore)
-    2. Non-neural compute operations (ComputeOp) like pooling
-
-    Execution proceeds in topological order (nodes are assumed pre-sorted).
-    """
-
-    def __init__(
-        self,
-        input_shape,
-        ir_graph: IRGraph,
-        Tq: int,
-        preprocessor: nn.Module,
-    ):
-        super().__init__()
-
-        self.input_shape = input_shape
-        self.ir_graph = ir_graph
-        self.nodes = ir_graph.nodes
-        self.output_sources = ir_graph.output_sources
-        self.Tq = Tq
-        self.preprocessor = preprocessor
-
-        # Register neural core parameters
-        self.neural_core_params = nn.ParameterList()
-        self.neural_core_ids = []  # Map param index -> node id
-        self.activations = nn.ModuleList()
-
-        for node in self.nodes:
-            if isinstance(node, NeuralCore):
-                # Store transposed weight matrix as a parameter
-                weight = torch.tensor(
-                    node.core_matrix.T,
-                    dtype=torch.float32,
-                )
-                self.neural_core_params.append(nn.Parameter(weight, requires_grad=False))
-                self.neural_core_ids.append(node.id)
-
-                # Build activation for this core
-                activation = TransformedActivation(
-                    nn.ReLU(),
-                    [
-                        ClampDecorator(torch.tensor(0.0), node.activation_scale),
-                        QuantizeDecorator(torch.tensor(Tq), node.activation_scale),
-                    ],
-                )
-                self.activations.append(activation)
-
-        # Build ID -> param index map
-        self._id_to_param_idx = {
-            nid: idx for idx, nid in enumerate(self.neural_core_ids)
-        }
-
-        # Compute cycles (simplified: 1 cycle per layer depth)
-        # In practice, you'd compute latency based on chip characteristics.
-        self.cycles = self._compute_cycles()
-
-    def _compute_cycles(self) -> int:
-        """Compute the number of simulation cycles needed."""
-        # Simple heuristic: max depth of the graph + 1
-        # A proper implementation would use ChipLatency.
-        return len(self.nodes) + 1
-
-    def _gather_signal(
-        self,
-        source: IRSource,
-        input_flat: torch.Tensor,
-        buffers: Dict[int, torch.Tensor],
-    ) -> torch.Tensor:
-        """Gather a single signal from a source."""
-        batch_size = input_flat.shape[0]
-
-        if source.is_off():
-            return torch.zeros(batch_size, device=input_flat.device)
-        elif source.is_input():
-            return input_flat[:, source.index]
-        elif source.is_always_on():
-            return torch.ones(batch_size, device=input_flat.device)
-        else:
-            return buffers[source.node_id][:, source.index]
-
-    def _gather_signals(
-        self,
-        sources: List[IRSource],
-        input_flat: torch.Tensor,
-        buffers: Dict[int, torch.Tensor],
-    ) -> torch.Tensor:
-        """Gather multiple signals into a tensor."""
-        batch_size = input_flat.shape[0]
-        result = torch.zeros(batch_size, len(sources), device=input_flat.device)
-
-        for idx, src in enumerate(sources):
-            result[:, idx] = self._gather_signal(src, input_flat, buffers)
-
-        return result
-
-    def _execute_neural_core(
-        self,
-        node: NeuralCore,
-        input_flat: torch.Tensor,
-        buffers: Dict[int, torch.Tensor],
-    ) -> torch.Tensor:
-        """Execute a neural core (crossbar computation)."""
-        # Gather inputs
-        sources = list(node.input_sources.flatten())
-        inputs = self._gather_signals(sources, input_flat, buffers)
-
-        # Get weight matrix
-        param_idx = self._id_to_param_idx[node.id]
-        weight = self.neural_core_params[param_idx]
-
-        # Compute: weight @ inputs.T -> (neurons, batch) -> transpose -> (batch, neurons)
-        out = torch.matmul(weight, inputs.T).T
-
-        # Apply activation
-        out = self.activations[param_idx](out)
-
-        return out
-
-    def _execute_compute_op(
-        self,
-        node: ComputeOp,
-        input_flat: torch.Tensor,
-        buffers: Dict[int, torch.Tensor],
-    ) -> torch.Tensor:
-        """Execute a compute operation."""
-        # Gather inputs
-        sources = list(node.input_sources.flatten())
-        inputs = self._gather_signals(sources, input_flat, buffers)
-
-        # Reshape if spatial operation
-        if node.input_shape is not None and len(node.input_shape) >= 2:
-            x = inputs.view(inputs.shape[0], *node.input_shape)
-        else:
-            x = inputs
-
-        # Execute the operation
-        if node.op_type == "max_pool2d":
-            y = F.max_pool2d(
-                x,
-                kernel_size=node.params.get("kernel_size", 2),
-                stride=node.params.get("stride", None),
-                padding=node.params.get("padding", 0),
-            )
-        elif node.op_type == "avg_pool2d":
-            y = F.avg_pool2d(
-                x,
-                kernel_size=node.params.get("kernel_size", 2),
-                stride=node.params.get("stride", None),
-                padding=node.params.get("padding", 0),
-            )
-        elif node.op_type == "adaptive_avg_pool2d":
-            y = F.adaptive_avg_pool2d(x, node.params.get("output_size", (1, 1)))
-        elif node.op_type == "flatten":
-            y = x
-        elif node.op_type == "identity":
-            y = x
-        else:
-            raise NotImplementedError(f"ComputeOp type '{node.op_type}' not implemented")
-
-        # Flatten output to (B, N)
-        return y.view(y.shape[0], -1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Execute the IR graph.
-
-        Args:
-            x: Input tensor.
-
-        Returns:
-            Output tensor.
-        """
-        x = self.preprocessor(x)
-        x = x.view(x.shape[0], -1)  # Flatten to (B, input_size)
-
-        # Buffer to store each node's output
-        buffers: Dict[int, torch.Tensor] = {}
-
-        # Execute nodes in order
-        for node in self.nodes:
-            if isinstance(node, NeuralCore):
-                buffers[node.id] = self._execute_neural_core(node, x, buffers)
-            elif isinstance(node, ComputeOp):
-                buffers[node.id] = self._execute_compute_op(node, x, buffers)
-            else:
-                raise TypeError(f"Unknown node type: {type(node)}")
-
-        # Gather outputs
-        output_sources = list(self.output_sources.flatten())
-        output = self._gather_signals(output_sources, x, buffers)
-
-        return output
+from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore
+from mimarsinan.mapping.ir_source_spans import IRSourceSpan, compress_ir_sources
 
 
 class SpikingUnifiedCoreFlow(nn.Module):
@@ -275,6 +72,13 @@ class SpikingUnifiedCoreFlow(nn.Module):
         # Identify synchronization points (ComputeOps that break the spiking flow)
         self._sync_points = [i for i, n in enumerate(self.nodes) if isinstance(n, ComputeOp)]
 
+        # Precompute range-compressed source spans for faster gather.
+        self._input_spans: Dict[int, list[IRSourceSpan]] = {}
+        for node in self.nodes:
+            flat = list(node.input_sources.flatten())
+            self._input_spans[int(node.id)] = compress_ir_sources(flat)
+        self._output_spans: list[IRSourceSpan] = compress_ir_sources(list(self.output_sources.flatten()))
+
     # ---------------------------------------------------------------------
     # Spike generation (must match SpikingCoreFlow semantics)
     # ---------------------------------------------------------------------
@@ -318,74 +122,59 @@ class SpikingUnifiedCoreFlow(nn.Module):
             return self.to_uniform_spikes(tensor, cycle)
         raise ValueError("Invalid spike mode: " + str(self.spike_mode))
 
-    # ---------------------------------------------------------------------
-    # IRSource helpers
-    # ---------------------------------------------------------------------
-    def _get_spike_train_for_source(
+    def _fill_signal_tensor_from_spans(
         self,
+        out: torch.Tensor,
+        *,
         spike_train_cache: Dict[int, torch.Tensor],
         input_spike_train: torch.Tensor,
         batch_size: int,
         device: torch.device,
-        src: IRSource,
+        spans: list[IRSourceSpan],
         cycle: int,
-    ) -> torch.Tensor:
+    ) -> None:
         """
-        Return spike vector (B,) for the given source at the given cycle.
+        Fill `out` (B, N) from compressed IRSource spans for the given cycle.
         """
-        if src.is_input():
-            return input_spike_train[cycle][:, src.index]
-        if src.is_off():
-            return torch.zeros(batch_size, device=device)
-        if src.is_always_on():
-            return torch.ones(batch_size, device=device)
-        return spike_train_cache[src.node_id][cycle][:, src.index]
+        out.zero_()
+        for sp in spans:
+            d0 = int(sp.dst_start)
+            d1 = int(sp.dst_end)
+            if sp.kind == "off":
+                continue
+            if sp.kind == "on":
+                out[:, d0:d1].fill_(1.0)
+                continue
+            if sp.kind == "input":
+                out[:, d0:d1] = input_spike_train[cycle][:, int(sp.src_start):int(sp.src_end)]
+                continue
+            # node
+            out[:, d0:d1] = spike_train_cache[int(sp.src_node_id)][cycle][:, int(sp.src_start):int(sp.src_end)]
 
-    def _get_signal_tensor(
+    def _fill_rate_tensor_from_spans(
         self,
+        out_rates: torch.Tensor,
+        *,
         spike_train_cache: Dict[int, torch.Tensor],
         input_spike_train: torch.Tensor,
-        batch_size: int,
-        device: torch.device,
-        sources: torch.Tensor | list[IRSource],
-        cycle: int,
-    ) -> torch.Tensor:
+        spans: list[IRSourceSpan],
+    ) -> None:
         """
-        Return (B, len(sources)) spikes for the given cycle.
+        Fill `out_rates` (B, N) from compressed IRSource spans by averaging spikes over T.
         """
-        if not isinstance(sources, list):
-            sources = list(sources)
-        signal_tensor = torch.empty(batch_size, len(sources), device=device)
-        for idx, src in enumerate(sources):
-            signal_tensor[:, idx] = self._get_spike_train_for_source(
-                spike_train_cache, input_spike_train, batch_size, device, src, cycle
-            )
-        return signal_tensor
-
-    def _rates_for_sources(
-        self,
-        spike_train_cache: Dict[int, torch.Tensor],
-        input_spike_train: torch.Tensor,
-        batch_size: int,
-        device: torch.device,
-        sources: list[IRSource],
-    ) -> torch.Tensor:
-        """
-        Convert a list of sources into a (B, len(sources)) rate tensor in [0,1]
-        by averaging spikes over the full simulation window (sync barrier).
-        """
-        T = self.simulation_length
-        rates = torch.empty(batch_size, len(sources), device=device)
-        for idx, src in enumerate(sources):
-            if src.is_input():
-                rates[:, idx] = input_spike_train[:, :, src.index].float().mean(dim=0)
-            elif src.is_off():
-                rates[:, idx] = 0.0
-            elif src.is_always_on():
-                rates[:, idx] = 1.0
-            else:
-                rates[:, idx] = spike_train_cache[src.node_id][:, :, src.index].float().mean(dim=0)
-        return rates
+        out_rates.zero_()
+        for sp in spans:
+            d0 = int(sp.dst_start)
+            d1 = int(sp.dst_end)
+            if sp.kind == "off":
+                continue
+            if sp.kind == "on":
+                out_rates[:, d0:d1].fill_(1.0)
+                continue
+            if sp.kind == "input":
+                out_rates[:, d0:d1] = input_spike_train[:, :, int(sp.src_start):int(sp.src_end)].float().mean(dim=0)
+                continue
+            out_rates[:, d0:d1] = spike_train_cache[int(sp.src_node_id)][:, :, int(sp.src_start):int(sp.src_end)].float().mean(dim=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -413,6 +202,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         # Compute spike trains for all nodes in topological order.
         # spike_train_cache[node_id] = (T, B, out_dim)
         spike_train_cache: Dict[int, torch.Tensor] = {}
+        self._last_core_spike_counts: Dict[int, float] = {}
 
         ops = {"<": torch.lt, "<=": torch.le}
 
@@ -422,20 +212,31 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 weight = self.neural_core_params[param_idx]  # (neurons, axons)
                 threshold = self.thresholds[param_idx]
 
-                sources = list(node.input_sources.flatten())
+                spans = self._input_spans[int(node.id)]
+                in_dim = int(len(node.input_sources.flatten()))
                 out_dim = int(node.core_matrix.shape[1])
 
                 memb = torch.zeros(batch_size, out_dim, device=device)
                 out_train = torch.zeros(T, batch_size, out_dim, device=device)
+                inp = torch.zeros(batch_size, in_dim, device=device)
+                total_spikes = 0.0
 
                 for cycle in range(T):
-                    inp = self._get_signal_tensor(
-                        spike_train_cache, input_spike_train, batch_size, device, sources, cycle
-                    )  # (B, axons)
+                    # Range-based gather (fast path)
+                    self._fill_signal_tensor_from_spans(
+                        inp,
+                        spike_train_cache=spike_train_cache,
+                        input_spike_train=input_spike_train,
+                        batch_size=batch_size,
+                        device=device,
+                        spans=spans,
+                        cycle=cycle,
+                    )
 
                     memb += torch.matmul(weight, inp.T).T
                     fired = ops[self.thresholding_mode](threshold, memb)
                     out_train[cycle] = fired.float()
+                    total_spikes += fired.float().sum().item()
 
                     if self.firing_mode == "Novena":
                         memb[fired] = 0.0
@@ -443,13 +244,20 @@ class SpikingUnifiedCoreFlow(nn.Module):
                         memb[fired] -= threshold
 
                 spike_train_cache[node.id] = out_train
+                # Store average spike rate per neuron per timestep
+                self._last_core_spike_counts[node.id] = total_spikes / (batch_size * out_dim * T + 1e-9)
 
             elif isinstance(node, ComputeOp):
                 # SYNC BARRIER: convert upstream spikes -> rates, apply op, respike.
-                sources = list(node.input_sources.flatten())
-                in_rates = self._rates_for_sources(
-                    spike_train_cache, input_spike_train, batch_size, device, sources
-                )  # (B, N)
+                spans = self._input_spans[int(node.id)]
+                in_dim = int(len(node.input_sources.flatten()))
+                in_rates = torch.zeros(batch_size, in_dim, device=device)
+                self._fill_rate_tensor_from_spans(
+                    in_rates,
+                    spike_train_cache=spike_train_cache,
+                    input_spike_train=input_spike_train,
+                    spans=spans,
+                )
 
                 if node.input_shape is not None:
                     x_rates = in_rates.view(batch_size, *node.input_shape)
@@ -495,14 +303,213 @@ class SpikingUnifiedCoreFlow(nn.Module):
         output_sources = list(self.output_sources.flatten())
         output_signals = torch.zeros(batch_size, len(output_sources), device=device)
         for cycle in range(T):
-            output_signals += self._get_signal_tensor(
-                spike_train_cache, input_spike_train, batch_size, device, output_sources, cycle
-            )
+            # Range-based output gather (adds into output_signals)
+            for sp in self._output_spans:
+                d0 = int(sp.dst_start)
+                d1 = int(sp.dst_end)
+                if sp.kind == "off":
+                    continue
+                if sp.kind == "on":
+                    output_signals[:, d0:d1] += 1.0
+                    continue
+                if sp.kind == "input":
+                    output_signals[:, d0:d1] += input_spike_train[cycle][:, int(sp.src_start):int(sp.src_end)]
+                    continue
+                output_signals[:, d0:d1] += spike_train_cache[int(sp.src_node_id)][cycle][:, int(sp.src_start):int(sp.src_end)]
 
         self.total_spikes = torch.sum(output_signals).item()
         return output_signals
 
-    # Legacy helpers removed: the unified implementation above operates on full
-    # spike trains and handles ComputeOps as explicit sync barriers.
+    def get_core_spike_rates(self) -> list[float]:
+        """
+        Get the average firing rate for each neural core.
+        
+        Must be called after a forward pass. Returns a list of rates (one per neural core)
+        in the order they appear in the graph.
+        """
+        if not hasattr(self, '_last_core_spike_counts'):
+            raise RuntimeError("get_core_spike_rates called before forward pass")
+        
+        rates = []
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                rates.append(self._last_core_spike_counts.get(node.id, 0.0))
+        return rates
+
+    def get_cores(self) -> list[NeuralCore]:
+        """Return list of neural cores in graph order."""
+        return [n for n in self.nodes if isinstance(n, NeuralCore)]
+
+    def refresh_thresholds(self) -> None:
+        """
+        Sync thresholds from ir_graph.nodes to the registered parameters.
+        
+        Call this after modifying node.threshold directly.
+        """
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                param_idx = self._id_to_param_idx[node.id]
+                self.thresholds[param_idx].data.fill_(float(node.threshold))
+
+
+class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
+    """
+    Stable (deterministic) version of SpikingUnifiedCoreFlow.
+    
+    Uses deterministic/front-loaded spike generation for consistent spike rates
+    that can be used as tuning targets for the regular spiking flow.
+    """
+
+    def __init__(
+        self,
+        input_shape,
+        ir_graph: IRGraph,
+        simulation_length: int,
+        preprocessor: nn.Module,
+        firing_mode: str = "Default",
+        thresholding_mode: str = "<",
+    ):
+        # Force deterministic spike mode for stability
+        super().__init__(
+            input_shape,
+            ir_graph,
+            simulation_length,
+            preprocessor,
+            firing_mode,
+            spike_mode="Uniform",  # Uniform is deterministic and stable
+            thresholding_mode=thresholding_mode,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Execute stable spiking simulation and track per-core spike counts.
+        """
+        x = self.preprocessor(x)
+        x = x.view(x.shape[0], -1)
+
+        batch_size = x.shape[0]
+        device = x.device
+
+        T = self.simulation_length
+
+        # Generate input spike train (T, B, in)
+        input_spike_train = torch.zeros(T, batch_size, x.shape[1], device=device)
+        for cycle in range(T):
+            input_spike_train[cycle] = self.to_spikes(x, cycle)
+
+        spike_train_cache: Dict[int, torch.Tensor] = {}
+        self._last_core_spike_counts = {}
+
+        ops = {"<": torch.lt, "<=": torch.le}
+
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                param_idx = self._id_to_param_idx[node.id]
+                weight = self.neural_core_params[param_idx]
+                threshold = self.thresholds[param_idx]
+
+                spans = self._input_spans[int(node.id)]
+                in_dim = int(len(node.input_sources.flatten()))
+                out_dim = int(node.core_matrix.shape[1])
+
+                memb = torch.zeros(batch_size, out_dim, device=device)
+                out_train = torch.zeros(T, batch_size, out_dim, device=device)
+                inp = torch.zeros(batch_size, in_dim, device=device)
+                total_spikes = 0.0
+
+                for cycle in range(T):
+                    self._fill_signal_tensor_from_spans(
+                        inp,
+                        spike_train_cache=spike_train_cache,
+                        input_spike_train=input_spike_train,
+                        batch_size=batch_size,
+                        device=device,
+                        spans=spans,
+                        cycle=cycle,
+                    )
+
+                    memb += torch.matmul(weight, inp.T).T
+                    fired = ops[self.thresholding_mode](threshold, memb)
+                    out_train[cycle] = fired.float()
+                    total_spikes += fired.float().sum().item()
+
+                    if self.firing_mode == "Novena":
+                        memb[fired] = 0.0
+                    elif self.firing_mode == "Default":
+                        memb[fired] -= threshold
+
+                spike_train_cache[node.id] = out_train
+                # Store average spike rate per neuron per timestep
+                self._last_core_spike_counts[node.id] = total_spikes / (batch_size * out_dim * T + 1e-9)
+
+            elif isinstance(node, ComputeOp):
+                # Same sync barrier logic as parent
+                spans = self._input_spans[int(node.id)]
+                in_dim = int(len(node.input_sources.flatten()))
+                in_rates = torch.zeros(batch_size, in_dim, device=device)
+                self._fill_rate_tensor_from_spans(
+                    in_rates,
+                    spike_train_cache=spike_train_cache,
+                    input_spike_train=input_spike_train,
+                    spans=spans,
+                )
+
+                if node.input_shape is not None:
+                    x_rates = in_rates.view(batch_size, *node.input_shape)
+                else:
+                    x_rates = in_rates
+
+                if node.op_type == "max_pool2d":
+                    y_rates = F.max_pool2d(
+                        x_rates,
+                        kernel_size=node.params.get("kernel_size", 2),
+                        stride=node.params.get("stride", None),
+                        padding=node.params.get("padding", 0),
+                    )
+                elif node.op_type == "avg_pool2d":
+                    y_rates = F.avg_pool2d(
+                        x_rates,
+                        kernel_size=node.params.get("kernel_size", 2),
+                        stride=node.params.get("stride", None),
+                        padding=node.params.get("padding", 0),
+                    )
+                elif node.op_type == "adaptive_avg_pool2d":
+                    y_rates = F.adaptive_avg_pool2d(x_rates, node.params.get("output_size", (1, 1)))
+                elif node.op_type in ("flatten", "identity"):
+                    y_rates = x_rates
+                else:
+                    raise NotImplementedError(
+                        f"ComputeOp '{node.op_type}' not implemented in StableSpikingUnifiedCoreFlow"
+                    )
+
+                y_rates = y_rates.view(batch_size, -1).clamp(0.0, 1.0)
+
+                out_train = torch.zeros(T, batch_size, y_rates.shape[1], device=device)
+                for cycle in range(T):
+                    out_train[cycle] = self.to_spikes(y_rates, cycle)
+
+                spike_train_cache[node.id] = out_train
+            else:
+                raise TypeError(f"Unknown node type: {type(node)}")
+
+        # Gather output spike counts
+        output_sources = list(self.output_sources.flatten())
+        output_signals = torch.zeros(batch_size, len(output_sources), device=device)
+        for cycle in range(T):
+            for sp in self._output_spans:
+                d0 = int(sp.dst_start)
+                d1 = int(sp.dst_end)
+                if sp.kind == "off":
+                    continue
+                if sp.kind == "on":
+                    output_signals[:, d0:d1] += 1.0
+                    continue
+                if sp.kind == "input":
+                    output_signals[:, d0:d1] += input_spike_train[cycle][:, int(sp.src_start):int(sp.src_end)]
+                    continue
+                output_signals[:, d0:d1] += spike_train_cache[int(sp.src_node_id)][cycle][:, int(sp.src_start):int(sp.src_end)]
+
+        self.total_spikes = torch.sum(output_signals).item()
+        return output_signals
 
 

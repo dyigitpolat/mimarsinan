@@ -78,9 +78,11 @@ class SoftCoreMapping:
         assert firing_mode in ["Default", "Novena"]
         
         self._psum_group_counter = 0
+        self._output_source_spans = None
 
     def map(self, model_representation):
         self.output_sources = np.array(model_representation.map(self)).flatten().tolist()
+        self._output_source_spans = None
 
     def map_fc(self, 
         input_tensor_sources,  # 
@@ -335,6 +337,15 @@ class SoftCoreMapping:
             a = b
 
         return np.concatenate(mapped, axis=0)
+
+    def get_output_source_spans(self):
+        """
+        Range-compressed view of output_sources for fast simulation / compact inspection.
+        """
+        if self._output_source_spans is None:
+            from mimarsinan.mapping.spike_source_spans import compress_spike_sources
+            self._output_source_spans = compress_spike_sources(self.output_sources)
+        return self._output_source_spans
 
 def map_mm(
     mapping, 

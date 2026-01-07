@@ -10,6 +10,8 @@ from mimarsinan.mapping.chip_latency import ChipLatency
 from mimarsinan.mapping.hybrid_hardcore_mapping import HybridHardCoreMapping, HybridStage
 from mimarsinan.mapping.ir import ComputeOp
 
+from mimarsinan.mapping.spike_source_spans import SpikeSourceSpan, compress_spike_sources
+
 
 class SpikingHybridCoreFlow(nn.Module):
     """
@@ -112,6 +114,28 @@ class SpikingHybridCoreFlow(nn.Module):
                 out[:, idx] = buffers[src.core_][:, src.neuron_]
         return out
 
+    def _fill_signal_tensor_from_spans(
+        self,
+        out: torch.Tensor,
+        *,
+        input_spikes: torch.Tensor,
+        buffers: list[torch.Tensor],
+        spans: list[SpikeSourceSpan],
+    ) -> None:
+        out.zero_()
+        for sp in spans:
+            d0 = int(sp.dst_start)
+            d1 = int(sp.dst_end)
+            if sp.kind == "off":
+                continue
+            if sp.kind == "on":
+                out[:, d0:d1].fill_(1.0)
+                continue
+            if sp.kind == "input":
+                out[:, d0:d1] = input_spikes[:, int(sp.src_start):int(sp.src_end)]
+                continue
+            out[:, d0:d1] = buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+
     def _run_neural_segment(
         self,
         stage: HybridStage,
@@ -135,6 +159,18 @@ class SpikingHybridCoreFlow(nn.Module):
         cores = mapping.cores
         output_sources = mapping.output_sources
 
+        # Precompute span views (per core + outputs) for this mapping (cheap cache on objects)
+        axon_spans = []
+        for c in cores:
+            if hasattr(c, "get_axon_source_spans"):
+                axon_spans.append(c.get_axon_source_spans())
+            else:
+                axon_spans.append(compress_spike_sources(c.axon_sources))
+        if hasattr(mapping, "get_output_source_spans"):
+            output_spans = mapping.get_output_source_spans()
+        else:
+            output_spans = compress_spike_sources(list(output_sources.flatten()))
+
         # Pre-pack core weights and thresholds.
         core_params = [
             torch.tensor(core.core_matrix.T, dtype=torch.float32, device=device)
@@ -153,19 +189,20 @@ class SpikingHybridCoreFlow(nn.Module):
         output_counts = torch.zeros(batch_size, len(output_sources), device=device)
 
         zeros_in = torch.zeros(batch_size, input_size, device=device)
+        input_signals = [
+            torch.zeros(batch_size, core.get_input_count(), device=device) for core in cores
+        ]
 
         for cycle in range(cycles):
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
 
             # Gather all core inputs from previous-cycle buffers (sync update).
-            input_signals = []
             for core_idx, core in enumerate(cores):
-                input_signals.append(
-                    self._get_signal_tensor(
-                        input_spikes=input_spikes,
-                        buffers=buffers,
-                        sources=core.axon_sources,
-                    )
+                self._fill_signal_tensor_from_spans(
+                    input_signals[core_idx],
+                    input_spikes=input_spikes,
+                    buffers=buffers,
+                    spans=axon_spans[core_idx],
                 )
 
             # Update all cores.
@@ -187,11 +224,19 @@ class SpikingHybridCoreFlow(nn.Module):
                     memb_i[fired] -= thresholds[core_idx]
 
             # Accumulate stage outputs (spike counts).
-            output_counts += self._get_signal_tensor(
-                input_spikes=input_spikes,
-                buffers=buffers,
-                sources=output_sources,
-            )
+            # Range-based output gather (adds into output_counts)
+            for sp in output_spans:
+                d0 = int(sp.dst_start)
+                d1 = int(sp.dst_end)
+                if sp.kind == "off":
+                    continue
+                if sp.kind == "on":
+                    output_counts[:, d0:d1] += 1.0
+                    continue
+                if sp.kind == "input":
+                    output_counts[:, d0:d1] += input_spikes[:, int(sp.src_start):int(sp.src_end)]
+                    continue
+                output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
 
         return output_counts
 
