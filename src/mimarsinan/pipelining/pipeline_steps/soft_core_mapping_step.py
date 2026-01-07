@@ -1,10 +1,8 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.pipelining.pipeline_steps.perceptron_fusion_step import FusedLinear
-from mimarsinan.mapping.mapping_utils import SoftCoreMapping
 from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.mapping.ir import ir_graph_to_soft_core_mapping
-from mimarsinan.mapping.chip_latency import ChipLatency
+from mimarsinan.mapping.ir_latency import IRLatency
 from mimarsinan.models.layers import SavedTensorDecorator
 from mimarsinan.models.layers import TransformedActivation
 
@@ -16,14 +14,14 @@ from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
 import torch.nn as nn
 import torch
 
-import numpy as np
 import os
 
 class SoftCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
         requires = ["model"]
-        promises = ["soft_core_mapping", "ir_graph"]
+        # Unified-only: this step produces the unified IRGraph (NeuralCore + ComputeOp).
+        promises = ["ir_graph"]
         updates = []
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
@@ -85,6 +83,11 @@ class SoftCoreMappingStep(PipelineStep):
         )
         
         ir_graph = ir_mapping.map(model.get_mapper_repr())
+        
+        # Calculate latencies for all neural cores in the IR graph
+        max_latency = IRLatency(ir_graph).calculate()
+        print(f"[SoftCoreMappingStep] IR Graph max latency: {max_latency}")
+        
         self.add_entry("ir_graph", ir_graph, 'pickle')
 
         # Write a detailed IRGraph visualization (NeuralCore + ComputeOp),
@@ -123,80 +126,38 @@ class SoftCoreMappingStep(PipelineStep):
         except Exception as e:
             print(f"[SoftCoreMappingStep] IRGraph visualization failed (non-fatal): {e}")
         
-        # Check if graph has ComputeOps (non-neural operations)
+        # Log summary
         compute_ops = ir_graph.get_compute_ops()
         neural_cores = ir_graph.get_neural_cores()
-        
         print(f"[SoftCoreMappingStep] IR Graph: {len(neural_cores)} neural cores, {len(compute_ops)} compute ops")
-        
         if compute_ops:
-            # Graph contains non-neural ops - use unified simulation path
             print(f"[SoftCoreMappingStep] Model contains {len(compute_ops)} non-neural operations:")
             for op in compute_ops:
                 print(f"  - {op.name}: {op.op_type}")
-            print("[SoftCoreMappingStep] Will use UnifiedCoreFlow for simulation.")
 
-            # Also report a *soft-core* spiking simulation result at this stage (pre-tuning),
-            # so it's easy to compare before/after CoreFlow Tuning.
-            try:
-                preprocessor = nn.Sequential(model.get_preprocessor(), model.in_act)
-                flow = SpikingUnifiedCoreFlow(
-                    self.pipeline.config["input_shape"],
-                    ir_graph,
-                    int(self.pipeline.config["simulation_steps"]),
-                    preprocessor,
-                    self.pipeline.config["firing_mode"],
-                    self.pipeline.config["spike_generation_mode"],
-                    self.pipeline.config["thresholding_mode"],
-                )
-                acc = BasicTrainer(
-                    flow,
-                    self.pipeline.config["device"],
-                    DataLoaderFactory(self.pipeline.data_provider_factory),
-                    None,
-                ).test()
-                print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
-            except Exception as e:
-                print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
-            
-            # Store a marker that this is a unified IR graph
-            # For HardCoreMapping compatibility, we can only map the neural cores
-            # The compute ops will be handled separately during simulation
-            soft_core_mapping = None  # Cannot produce SoftCoreMapping with ComputeOps
-        else:
-            # Neural-only graph - convert to SoftCoreMapping for backward compatibility
-            soft_core_mapping = ir_graph_to_soft_core_mapping(ir_graph)
-            ChipLatency(soft_core_mapping).calculate()
-
-            for core in soft_core_mapping.cores:
-                scale = core.parameter_scale.cpu().numpy()
-                assert np.allclose(
-                    core.core_matrix * scale, np.round(core.core_matrix * scale),
-                    atol=1e-3, rtol=1e-3), f"{core.core_matrix * scale}"
-
-            # Write a detailed SoftCoreMapping visualization (actual mapped cores + connectivity).
-            try:
-                from mimarsinan.visualization.mapping_graphviz import (
-                    try_render_dot,
-                    write_softcore_mapping_dot,
-                )
-
-                out_dot = os.path.join(self.pipeline.working_directory, "softcore_mapping.dot")
-                write_softcore_mapping_dot(
-                    soft_core_mapping,
-                    out_dot,
-                    title=f"SoftCoreMapping: {getattr(model, 'name', type(model).__name__)}",
-                    cluster_by_psum_group=True,
-                )
-                rendered = try_render_dot(out_dot, formats=("svg", "png"))
-                if rendered:
-                    print(f"[SoftCoreMappingStep] Wrote SoftCoreMapping visualization: {out_dot} (+ {', '.join(rendered)})")
-                else:
-                    print(f"[SoftCoreMappingStep] Wrote SoftCoreMapping visualization: {out_dot} (render skipped: graphviz 'dot' not found)")
-            except Exception as e:
-                print(f"[SoftCoreMappingStep] SoftCoreMapping visualization failed (non-fatal): {e}")
-
-        self.add_entry("soft_core_mapping", soft_core_mapping, 'pickle')
+        # Always report a *soft-core* spiking simulation result at this stage (pre-tuning),
+        # so it's easy to compare before/after CoreFlow Tuning. Works for both neural-only
+        # graphs and graphs containing ComputeOps (sync barriers handled in SpikingUnifiedCoreFlow).
+        try:
+            preprocessor = nn.Sequential(model.get_preprocessor(), model.in_act)
+            flow = SpikingUnifiedCoreFlow(
+                self.pipeline.config["input_shape"],
+                ir_graph,
+                int(self.pipeline.config["simulation_steps"]),
+                preprocessor,
+                self.pipeline.config["firing_mode"],
+                self.pipeline.config["spike_generation_mode"],
+                self.pipeline.config["thresholding_mode"],
+            )
+            acc = BasicTrainer(
+                flow,
+                self.pipeline.config["device"],
+                DataLoaderFactory(self.pipeline.data_provider_factory),
+                None,
+            ).test()
+            print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
+        except Exception as e:
+            print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
     
     def _calculate_input_activation_scales(self, model, validator, rate):
         for perceptron in model.get_perceptrons():

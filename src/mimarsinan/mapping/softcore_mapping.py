@@ -36,12 +36,25 @@ class SoftCore:
         self.psum_role = psum_role
 
         self.latency = None
+        self._axon_source_spans = None
 
     def get_input_count(self):
         return len(self.axon_sources)
     
     def get_output_count(self):
         return self.core_matrix.shape[-1]
+
+    def get_axon_source_spans(self):
+        """
+        Return a range-compressed representation of axon_sources suitable for fast simulation.
+
+        Note: This is a cached *view*; it must be invalidated if axon_sources are mutated.
+        SoftCore axon_sources are typically immutable after construction.
+        """
+        if self._axon_source_spans is None:
+            from mimarsinan.mapping.spike_source_spans import compress_spike_sources
+            self._axon_source_spans = compress_spike_sources(self.axon_sources)
+        return self._axon_source_spans
     
 class HardCore:
     def __init__(self, axons_per_core, neurons_per_core):
@@ -61,6 +74,7 @@ class HardCore:
         self.latency = None
     
         self.unusable_space = 0
+        self._axon_source_spans = None
 
     def get_input_count(self):
         return self.axons_per_core
@@ -86,6 +100,7 @@ class HardCore:
         # print(f"new threshold: {self.threshold}")
         
         self.axon_sources.extend(softcore.axon_sources)
+        self._axon_source_spans = None  # invalidate cached spans
 
         self.available_axons -= softcore.get_input_count()
         self.available_neurons -= softcore.get_output_count()
@@ -109,6 +124,18 @@ class HardCore:
             (neuron_offset * softcore.get_input_count()) + \
             (axon_offset * softcore.get_output_count())
 
+    def get_axon_source_spans(self):
+        """
+        Range-compressed view of axon_sources for fast simulation.
+
+        HardCore axon_sources are built incrementally during packing; this view is cached and
+        automatically invalidated on add_softcore().
+        """
+        if self._axon_source_spans is None:
+            from mimarsinan.mapping.spike_source_spans import compress_spike_sources
+            self._axon_source_spans = compress_spike_sources(self.axon_sources)
+        return self._axon_source_spans
+
 class HardCoreMapping:
     def __init__(self, chip_cores):
         self.unused_cores = chip_cores
@@ -118,6 +145,7 @@ class HardCoreMapping:
         self.neuron_mapping = {}
 
         self.unusable_space = 0
+        self._output_source_spans = None
 
     def merge_softcore_into(self, hardcore, softcore):
         prev_output_count = hardcore.neurons_per_core - hardcore.available_neurons
@@ -138,11 +166,20 @@ class HardCoreMapping:
             else:
                 diff_rate = 0.0
 
+            # Latency check: both must have same latency value
+            # If hardcore is empty (latency=None), any core can start it
+            # If hardcore has a latency, core must have the SAME latency (not None)
+            if hardcore.latency is None:
+                latency_ok = True  # Empty hardcore can accept any core
+            else:
+                # Hardcore has a latency - core must match exactly
+                latency_ok = (core.latency is not None and core.latency == hardcore.latency)
+
             return \
                 diff_rate <= tolerance and \
                 core.get_input_count() <= hardcore.available_axons and \
                 core.get_output_count() <= hardcore.available_neurons and \
-                (core.latency == hardcore.latency or hardcore.latency is None)
+                latency_ok
 
         def update_unusable_space(hardcore):
             available_axons = hardcore.available_axons
@@ -202,13 +239,25 @@ class HardCoreMapping:
             
         for hardcore in self.cores:
             remap_sources(hardcore.axon_sources)
+            hardcore._axon_source_spans = None
                 
         self.output_sources = np.array(softcore_mapping.output_sources)
         remap_sources(self.output_sources)
+        self._output_source_spans = None
 
         for hardcore in self.cores:
             axon_count = len(hardcore.axon_sources)
             for _ in range(hardcore.axons_per_core - axon_count):
                 hardcore.axon_sources.append(
                     SpikeSource(-1, 0, is_input=False, is_off=True))
+            hardcore._axon_source_spans = None
+
+    def get_output_source_spans(self):
+        """
+        Range-compressed view of the final mapping outputs.
+        """
+        if self._output_source_spans is None:
+            from mimarsinan.mapping.spike_source_spans import compress_spike_sources
+            self._output_source_spans = compress_spike_sources(self.output_sources.flatten().tolist())
+        return self._output_source_spans
                     

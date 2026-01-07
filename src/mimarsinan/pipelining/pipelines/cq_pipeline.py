@@ -58,6 +58,7 @@ class CQPipeline(Pipeline):
         self.add_pipeline_step("Normalization Fusion", NormalizationFusionStep(self))
 
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
+        self.add_pipeline_step("Core Quantization Verification", CoreQuantizationVerificationStep(self))
         self.add_pipeline_step("CoreFlow Tuning", CoreFlowTuningStep(self))
         self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
         self.add_pipeline_step("Simulation", SimulationStep(self))
