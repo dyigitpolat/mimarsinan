@@ -10,8 +10,8 @@ import os
     
 @BasicDataProviderFactory.register("ECG_DataProvider")
 class ECG_DataProvider(DataProvider):
-    def __init__(self, datasets_path):
-        super().__init__(datasets_path)
+    def __init__(self, datasets_path, *, seed: int | None = 0):
+        super().__init__(datasets_path, seed=seed)
         
         training_dataset, validation_dataset, test_dataset = self._load_data()
         self.training_dataset = training_dataset
@@ -45,9 +45,10 @@ class ECG_DataProvider(DataProvider):
         train_x = torch.stack(train_x_new)
         train_y = torch.stack(train_y_new)
 
-        # shuffle for validation
-        torch.random.manual_seed(42)
-        shuffle_indices = torch.randperm(len(train_x))
+        # Shuffle for validation (deterministic without touching global RNG state)
+        g = torch.Generator()
+        g.manual_seed(int(self.seed if self.seed is not None else 42))
+        shuffle_indices = torch.randperm(len(train_x), generator=g)
         train_x = train_x[shuffle_indices]
         train_y = train_y[shuffle_indices]
 

@@ -1,7 +1,6 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.tuning.tuners.scale_tuner import ScaleTuner 
-from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 from mimarsinan.models.layers import TransformedActivation, ClampDecorator, QuantizeDecorator, ScaleDecorator
 
 from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer

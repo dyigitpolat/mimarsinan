@@ -222,7 +222,42 @@ class IRMapping:
 
         out_features = fc_weights.shape[0]
         in_features = fc_weights.shape[1]
-        input_count = input_tensor_sources.flatten().shape[0]
+        src_arr = np.array(input_tensor_sources, dtype=object)
+
+        # Support mapping a *batch* of independent FC applications:
+        # input sources shape (in_features, core_count) -> output sources shape (out_features, core_count)
+        if src_arr.ndim == 2:
+            # Allow callers to pass transposed: (core_count, in_features)
+            if src_arr.shape[0] != in_features and src_arr.shape[1] == in_features:
+                src_arr = src_arr.T
+
+            if src_arr.shape[0] != in_features:
+                raise ValueError(
+                    f"IRMapping.map_fc: input sources first dim must match in_features "
+                    f"({src_arr.shape} vs in_features={in_features})"
+                )
+
+            core_count = int(src_arr.shape[1])
+            outputs = []
+            for i in range(core_count):
+                col_sources = np.array(src_arr[:, i], dtype=object).flatten()
+                outputs.append(
+                    self.map_fc(
+                        col_sources,
+                        np.array([out_features, 1]),
+                        fc_weights,
+                        fc_biases,
+                        activation_scale,
+                        parameter_scale,
+                        input_activation_scale,
+                        name=(f"{name}_col{i}" if name else None),
+                    ).flatten()
+                )
+
+            out = np.stack(outputs, axis=1)  # (out_features, core_count)
+            return out.reshape(tuple(output_shape))
+
+        input_count = src_arr.flatten().shape[0]
 
         # Check axon limits
         if self.max_axons is not None and in_features > self.max_axons - 1:

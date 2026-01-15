@@ -1,5 +1,4 @@
 from mimarsinan.pipelining.pipeline import Pipeline
-from mimarsinan.model_training.training_utilities import BasicClassificationLoss, CustomClassificationLoss
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 from mimarsinan.visualization.activation_function_visualization import ActivationFunctionVisualizer
@@ -42,11 +41,10 @@ class CQPipeline(Pipeline):
         self.reporter = reporter
 
         self.config = {}
-        self._initialize_config(deployment_parameters, platform_constraints)
+        data_provider = self.data_provider_factory.create()
+        self.loss = data_provider.create_loss()
+        self._initialize_config(deployment_parameters, platform_constraints, data_provider=data_provider)
         self._display_config()
-
-        self.loss = BasicClassificationLoss()
-        #self.loss = CustomClassificationLoss()
 
         self.add_pipeline_step("Model Configuration", ModelConfigurationStep(self))
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
@@ -65,14 +63,15 @@ class CQPipeline(Pipeline):
 
         self.register_post_step_hook(self._visualize_activations)
         
-    def _initialize_config(self, deployment_parameters, platform_constraints):
+    def _initialize_config(self, deployment_parameters, platform_constraints, *, data_provider=None):
         self.config.update(self.default_deployment_parameters)
         self.config.update(deployment_parameters)
         
         self.config.update(self.default_platform_constraints)
         self.config.update(platform_constraints)
 
-        data_provider = self.data_provider_factory.create()
+        if data_provider is None:
+            data_provider = self.data_provider_factory.create()
         self.config['input_shape'] = data_provider.get_input_shape()
 
         self.config['input_size'] = np.prod(self.config['input_shape'])
