@@ -9,8 +9,8 @@ import os
 
 @BasicDataProviderFactory.register("CIFAR10_DataProvider")
 class CIFAR10_DataProvider(DataProvider):
-    def __init__(self, datasets_path):
-        super().__init__(datasets_path)
+    def __init__(self, datasets_path, *, seed: int | None = 0):
+        super().__init__(datasets_path, seed=seed)
 
         path_str = str(self.datasets_path + '/cifar-10-batches-py')
         download = not os.path.exists(path_str)

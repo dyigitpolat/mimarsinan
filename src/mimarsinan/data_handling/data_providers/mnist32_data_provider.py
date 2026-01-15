@@ -15,8 +15,8 @@ class MNIST32_DataProvider(DataProvider):
       32 -> 16 -> 8 -> 4 -> 2 -> 1
     """
 
-    def __init__(self, datasets_path):
-        super().__init__(datasets_path)
+    def __init__(self, datasets_path, *, seed: int | None = 0):
+        super().__init__(datasets_path, seed=seed)
 
         tfm = transforms.Compose(
             [
@@ -35,7 +35,9 @@ class MNIST32_DataProvider(DataProvider):
         validation_length = base_training_length - training_length
 
         self.training_dataset, self.validation_dataset = torch.utils.data.random_split(
-            base_training_dataset, (training_length, validation_length)
+            base_training_dataset,
+            (training_length, validation_length),
+            generator=self._get_split_generator(),
         )
 
         self.test_dataset = torchvision.datasets.MNIST(

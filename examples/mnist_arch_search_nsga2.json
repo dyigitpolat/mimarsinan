@@ -1,0 +1,64 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "mnist_arch_search_nsga2",
+  "generated_files_path": "./generated",
+  "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
+  "data_provider_name": "MNIST_DataProvider",
+
+  "platform_constraints": {
+    "mode": "auto",
+    "auto": {
+      "fixed": {
+        "target_tq": 16,
+        "simulation_steps": 16,
+        "weight_bits": 8,
+        "allow_axon_tiling": false
+      },
+      "search_space": {
+        "num_core_types": 2,
+        "core_type_counts": [200, 200],
+        "core_axons_bounds": [64, 1024],
+        "core_neurons_bounds": [64, 1024],
+        "max_threshold_groups": 3
+      }
+    }
+  },
+
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 1,
+    "tuner_epochs": 1,
+    "nas_cycles": 5,
+    "nas_batch_size": 5,
+    "nas_workers": 1,
+
+    "degradation_tolerance": 0.1,
+
+    "configuration_mode": "nas",
+    "model_type": "mlp_mixer",
+
+    "arch_search": {
+      "pop_size": 8,
+      "generations": 15,
+      "seed": 42,
+
+      "patch_channels_options": [16, 32, 48, 64, 96, 128],
+      "fc_w1_options": [32, 64, 96, 128],
+      "fc_w2_options": [32, 64, 96, 128],
+
+      "warmup_fraction": 0.1,
+      "training_batch_size": 1024
+    },
+
+    "spike_generation_mode": "Uniform",
+    "firing_mode": "Default",
+    "thresholding_mode": "<="
+  },
+
+  "target_metric_override": null,
+  "start_step": "Architecture Search",
+  "stop_step": "Architecture Search"
+}
+
+

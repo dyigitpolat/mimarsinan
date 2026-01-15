@@ -647,9 +647,11 @@ class PerceptronMapper(Mapper):
         layer_biases = PerceptronTransformer().get_effective_bias(self.perceptron)
 
         layer_sources = self.source_mapper.map_to_ir(ir_mapping)
-        layer_sources = layer_sources.flatten()  # Flatten for FC mapping
-        
-        output_shape = np.array([layer_weights.shape[0], 1])
+        layer_sources = layer_sources.transpose()
+
+        # Keep the same semantics as the legacy SoftCoreMapping path:
+        # sources shape (in_features, core_count) -> map_fc -> (out_features, core_count)
+        output_shape = np.array([layer_weights.shape[0], layer_sources.shape[-1]])
         layer_sources = ir_mapping.map_fc(
             layer_sources,
             output_shape,
@@ -658,10 +660,10 @@ class PerceptronMapper(Mapper):
             self.perceptron.activation_scale,
             self.perceptron.parameter_scale,
             self.perceptron.input_activation_scale,
-            name=getattr(self.perceptron, 'name', None),
+            name=getattr(self.perceptron, "name", None),
         )
-        
-        return layer_sources
+
+        return layer_sources.transpose()
 
     def _forward_impl(self, x):
         return self.perceptron(x)

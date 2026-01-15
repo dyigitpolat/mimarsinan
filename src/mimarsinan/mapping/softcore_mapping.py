@@ -7,6 +7,8 @@ def is_off(idx): return idx == -1
 def is_input(idx): return idx == -2
 def is_always_on(idx): return idx == -3
 
+from mimarsinan.mapping.core_packing import greedy_pack_softcores
+
 class SoftCore:
     def __init__(
         self,
@@ -147,12 +149,11 @@ class HardCoreMapping:
         self.unusable_space = 0
         self._output_source_spans = None
 
-    def merge_softcore_into(self, hardcore, softcore):
+    def merge_softcore_into(self, target_core_idx: int, hardcore, softcore):
         prev_output_count = hardcore.neurons_per_core - hardcore.available_neurons
         hardcore.add_softcore(softcore)
         
         for soft_neuron_idx in range(softcore.get_output_count()):
-            target_core_idx = len(self.cores) - 1
             target_neuron_idx = prev_output_count + soft_neuron_idx
             self.neuron_mapping[(softcore.id, soft_neuron_idx)] = \
                 (target_core_idx, target_neuron_idx)
@@ -181,55 +182,18 @@ class HardCoreMapping:
                 core.get_output_count() <= hardcore.available_neurons and \
                 latency_ok
 
-        def update_unusable_space(hardcore):
-            available_axons = hardcore.available_axons
-            available_neurons = hardcore.available_neurons
-            wasted_space = \
-                (hardcore.neurons_per_core * available_axons) + \
-                ((hardcore.axons_per_core - available_axons) * available_neurons)
-            self.unusable_space += wasted_space + hardcore.unusable_space   
-
-        def pick_suitable_hardcore(softcore, hardcores):
-            for hardcore in hardcores:
-                if is_mapping_possible(softcore, hardcore):
-                    return hardcore
-            return None 
-        
-        def pick_best_softcore(unmapped_cores):
-            unmapped_cores.sort(key=lambda core: core.get_input_count(), reverse=True)
-            core_a = unmapped_cores[0]
-            unmapped_cores.sort(key=lambda core: core.get_output_count(), reverse=True)
-            core_b = unmapped_cores[0]
-            
-            core = None
-            if core_a is None and core_b is None: core = None
-            elif core_a is None: core = core_b
-            elif core_b is None: core = core_a
-            else:
-                if core_a.get_input_count() > core_b.get_output_count():
-                    core = core_a
-                else:
-                    core = core_b
-
-            return core
-        
         unmapped_cores = [core for core in softcore_mapping.cores]
-        while len(unmapped_cores) > 0:
-            core = pick_best_softcore(unmapped_cores)
-            hardcore = pick_suitable_hardcore(core, self.cores)
 
-            if hardcore is None:
-                assert len(self.unused_cores) > 0, "No more hard cores available"
-                new_hardcore = pick_suitable_hardcore(core, self.unused_cores)
-                if new_hardcore is None:
-                    raise Exception("No more hard cores available")
-                self.cores.append(new_hardcore)
-                self.unused_cores.remove(new_hardcore)
-                hardcore = self.cores[-1]
-                update_unusable_space(self.cores[-1])
+        def place(core_idx: int, hardcore, softcore):
+            self.merge_softcore_into(core_idx, hardcore, softcore)
 
-            self.merge_softcore_into(hardcore, core)
-            unmapped_cores.remove(core)
+        greedy_pack_softcores(
+            softcores=unmapped_cores,
+            used_hardcores=self.cores,
+            unused_hardcores=self.unused_cores,
+            is_mapping_possible=is_mapping_possible,
+            place=place,
+        )
 
         def remap_sources(sources):
             for source in sources:

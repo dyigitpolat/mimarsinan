@@ -8,7 +8,7 @@ import einops
 
 class PerceptronMixer(PerceptronFlow):
     def __init__(
-        self,
+        self, 
         device,
         input_shape,
         num_classes,
@@ -21,7 +21,7 @@ class PerceptronMixer(PerceptronFlow):
         super(PerceptronMixer, self).__init__(device)
 
         self.input_activation = nn.Identity()
-
+        
         self.input_shape = input_shape
         self.input_channels = input_shape[-3]
 
@@ -78,7 +78,7 @@ class PerceptronMixer(PerceptronFlow):
                 )
             )
             self.fc_layers_list_2.append(Perceptron(self.patch_channels, YY))
-
+        
         self.output_layer = Perceptron(
             num_classes, self.patch_count * self.patch_channels
         )
@@ -123,17 +123,17 @@ class PerceptronMixer(PerceptronFlow):
 
     def get_input_activation(self):
         return self.input_activation
-
+    
     def set_input_activation(self, activation):
         self.input_activation = activation
         self._input_activation_mapper.module = activation
 
     def get_perceptrons(self):
         return self._mapper_repr.get_perceptrons()
-
+    
     def get_perceptron_groups(self):
         return self._mapper_repr.get_perceptron_groups()
-
+    
     def get_mapper_repr(self):
         return self._mapper_repr
 

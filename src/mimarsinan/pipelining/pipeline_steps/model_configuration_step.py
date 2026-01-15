@@ -1,7 +1,10 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.search.mlp_mixer_searcher import MLP_Mixer_Searcher
 from mimarsinan.search.small_step_evaluator import SmallStepEvaluator
+from mimarsinan.search.mlp_mixer_configuration_sampler import MLP_Mixer_ConfigurationSampler
+from mimarsinan.search.optimizers.sampler_optimizer import SamplerOptimizer
+from mimarsinan.search.problems.evaluator_problem import EvaluatorProblem
+from mimarsinan.search.results import ObjectiveSpec
 from mimarsinan.models.builders import PerceptronMixerBuilder
 from mimarsinan.models.builders import SimpleMLPBuilder
 from mimarsinan.models.builders import SimpleConvBuilder
@@ -54,31 +57,39 @@ class ModelConfigurationStep(PipelineStep):
             )
         }
         builder = builders[self.pipeline.config['model_type']]
-
-        searchers = {
-            "mlp_mixer": MLP_Mixer_Searcher(
-                SmallStepEvaluator(
-                    self.pipeline.data_provider_factory,
-                    self.pipeline.loss,
-                    self.pipeline.config['lr'],
-                    self.pipeline.config['device'],
-                    builders["mlp_mixer"]),
-                self.pipeline.config['nas_workers']
-            ),
-            "simple_mlp": None, # Not implemented
-            "simple_conv": None, # Not implemented
-            "vgg16": None,      # Not implemented
-        }
         
         configuration_mode = self.pipeline.config['configuration_mode']
 
         if configuration_mode == "nas":
-            searcher = searchers[self.pipeline.config['model_type']]
-        
-            model_config = searcher.get_optimized_configuration(
-                self.pipeline.config['nas_cycles'],
-                self.pipeline.config['nas_batch_size']
+            if self.pipeline.config["model_type"] != "mlp_mixer":
+                raise NotImplementedError(
+                    f"NAS configuration_mode only implemented for model_type='mlp_mixer' "
+                    f"(got {self.pipeline.config['model_type']})"
+                )
+
+            sampler = MLP_Mixer_ConfigurationSampler()
+            evaluator = SmallStepEvaluator(
+                self.pipeline.data_provider_factory,
+                self.pipeline.loss,
+                self.pipeline.config["lr"],
+                self.pipeline.config["device"],
+                builders["mlp_mixer"],
             )
+
+            problem = EvaluatorProblem(
+                evaluator=evaluator,
+                objective=ObjectiveSpec(name="accuracy", goal="max"),
+            )
+
+            optimizer = SamplerOptimizer(
+                sampler=sampler,
+                cycles=int(self.pipeline.config["nas_cycles"]),
+                batch_size=int(self.pipeline.config["nas_batch_size"]),
+                workers=int(self.pipeline.config["nas_workers"]),
+            )
+
+            result = optimizer.optimize(problem)
+            model_config = result.best.configuration
         elif configuration_mode == "user":
             model_config = self.pipeline.config['model_config']
         else:

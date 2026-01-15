@@ -6,18 +6,58 @@ class ClassificationMode:
 
     def mode(self):
         return "classification"
+
+    def create_loss(self):
+        """
+        Create the appropriate loss function for this prediction mode.
+
+        The returned object must be callable as: loss(model, x, y) -> torch.Tensor
+        (see BasicTrainer usage).
+        """
+        # Lazy import to avoid importing training code when only inspecting datasets.
+        from mimarsinan.model_training.training_utilities import BasicClassificationLoss
+        return BasicClassificationLoss()
     
 class RegressionMode:
     def mode(self):
         return "regression"
+
+    def create_loss(self):
+        """
+        Default regression loss.
+
+        Note: Regression training/metrics are not yet fully generalized in BasicTrainer
+        (validate/test currently assume classification accuracy). This loss is provided
+        for future expansion and for evaluators that use only the loss.
+        """
+        import torch.nn as nn
+
+        class _MSELossWrapper:
+            def __call__(self, model, x, y):
+                return nn.MSELoss()(model(x), y)
+
+        return _MSELossWrapper()
     
 
 class DataProvider:
-    def __init__(self, datasets_path):
+    def __init__(self, datasets_path, *, seed: int | None = 0):
         self.datasets_path = datasets_path
+        self.seed = int(seed) if seed is not None else None
 
         self._input_shape = None
         self._output_shape = None
+
+    def _get_split_generator(self):
+        """
+        Torch generator to make dataset splits deterministic.
+
+        Providers that use torch.utils.data.random_split should pass this generator to it.
+        """
+        if self.seed is None:
+            return None
+        g = torch.Generator()
+        g.manual_seed(int(self.seed))
+        return g
 
     def _get_training_dataset(self):
         """
@@ -45,6 +85,12 @@ class DataProvider:
         Returns the classification mode
         """
         raise NotImplementedError()
+
+    def create_loss(self):
+        """
+        Convenience helper: create the loss function for this provider based on its prediction mode.
+        """
+        return self.get_prediction_mode().create_loss()
     
     def get_training_batch_size(self):
         return self.get_training_set_size() // 100
