@@ -3,6 +3,7 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.pipeline_steps.perceptron_fusion_step import FusedLinear
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir_latency import IRLatency
+from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.models.layers import SavedTensorDecorator
 from mimarsinan.models.layers import TransformedActivation
 
@@ -10,7 +11,7 @@ from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
 
-
+import numpy as np
 import torch.nn as nn
 import torch
 
@@ -83,7 +84,23 @@ class SoftCoreMappingStep(PipelineStep):
         )
         
         ir_graph = ir_mapping.map(model.get_mapper_repr())
-        
+
+        # Apply chip quantization to NeuralCores: scale weights by parameter_scale,
+        # round to integers, and set threshold = parameter_scale.
+        # This ensures the IR is chip-ready and gives CoreFlowTuner meaningful
+        # integer thresholds to tune (instead of being stuck at 1.0).
+        for node in ir_graph.nodes:
+            if isinstance(node, NeuralCore):
+                ps = float(
+                    node.parameter_scale.item()
+                    if hasattr(node.parameter_scale, "item")
+                    else node.parameter_scale
+                )
+                if abs(ps) > 1e-12:
+                    node.core_matrix = np.round(node.core_matrix * ps)
+                    node.threshold = ps
+                    node.parameter_scale = torch.tensor(1.0)
+
         # Calculate latencies for all neural cores in the IR graph
         max_latency = IRLatency(ir_graph).calculate()
         print(f"[SoftCoreMappingStep] IR Graph max latency: {max_latency}")

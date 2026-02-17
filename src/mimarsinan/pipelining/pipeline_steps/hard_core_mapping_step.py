@@ -23,7 +23,7 @@ class HardCoreMappingStep(PipelineStep):
     def __init__(self, pipeline):
         # Unified-only: always compile the tuned IRGraph into a HybridHardCoreMapping.
         # For neural-only graphs this will simply be a single neural segment.
-        requires = ["model", "ir_graph", "scaled_simulation_length"]
+        requires = ["model", "ir_graph", "scaled_simulation_length", "platform_constraints_resolved"]
         promises = ["hard_core_mapping"]
         updates = []
         clears = []
@@ -36,10 +36,11 @@ class HardCoreMappingStep(PipelineStep):
         model = self.get_entry("model")
         ir_graph = self.get_entry('ir_graph')
         sim_len = int(self.get_entry("scaled_simulation_length"))
+        platform_constraints = self.get_entry("platform_constraints_resolved")
 
         hybrid_mapping = build_hybrid_hard_core_mapping(
             ir_graph=ir_graph,
-            cores_config=self.pipeline.config["cores"],
+            cores_config=platform_constraints["cores"],
         )
         print(
             f"[HardCoreMappingStep] Hybrid program: {len(hybrid_mapping.get_neural_segments())} neural segments, "
