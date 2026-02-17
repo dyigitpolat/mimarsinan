@@ -12,6 +12,7 @@ from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
 from mimarsinan.models.builders.perceptron_mixer_builder import PerceptronMixerBuilder
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
+from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.results import ObjectiveSpec
 
@@ -60,6 +61,13 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
     accuracy_seed: int = 0
     warmup_fraction: float = 0.10
     training_batch_size: Optional[int] = None
+
+    # Accuracy evaluator selection: "fast" (1-epoch) or "extrapolating" (curve-fit)
+    accuracy_evaluator: str = "extrapolating"
+    # Extra knobs for the extrapolating evaluator
+    extrapolation_num_train_epochs: int = 1
+    extrapolation_num_checkpoints: int = 5
+    extrapolation_target_epochs: int = 10
 
     # Internal cache: key -> objectives dict
     _cache: Dict[str, Dict[str, float]] = field(default_factory=dict, init=False)
@@ -301,15 +309,29 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
                 return obj
 
             # Accuracy objective
-            acc_eval = FastAccuracyEvaluator(
-                data_provider_factory=self.data_provider_factory,
-                device=self.device,
-                lr=float(self.lr),
-                warmup_fraction=float(self.warmup_fraction),
-                num_workers=0,
-                training_batch_size=self.training_batch_size,
-                seed=int(self.accuracy_seed),
-            )
+            if self.accuracy_evaluator == "extrapolating":
+                acc_eval = ExtrapolatingAccuracyEvaluator(
+                    data_provider_factory=self.data_provider_factory,
+                    device=self.device,
+                    lr=float(self.lr),
+                    num_train_epochs=int(self.extrapolation_num_train_epochs),
+                    num_checkpoints=int(self.extrapolation_num_checkpoints),
+                    target_epochs=int(self.extrapolation_target_epochs),
+                    warmup_fraction=float(self.warmup_fraction),
+                    num_workers=0,
+                    training_batch_size=self.training_batch_size,
+                    seed=int(self.accuracy_seed),
+                )
+            else:
+                acc_eval = FastAccuracyEvaluator(
+                    data_provider_factory=self.data_provider_factory,
+                    device=self.device,
+                    lr=float(self.lr),
+                    warmup_fraction=float(self.warmup_fraction),
+                    num_workers=0,
+                    training_batch_size=self.training_batch_size,
+                    seed=int(self.accuracy_seed),
+                )
             accuracy = float(acc_eval.evaluate(model))
 
             obj = {
