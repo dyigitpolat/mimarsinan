@@ -1,5 +1,6 @@
 nni
 numpy
+scipy
 torch
 torchvision
 einops
