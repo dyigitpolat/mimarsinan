@@ -138,7 +138,7 @@ class CoreFlowTuner:
         best_thresholds = thresholds.copy()
         max_acc = 0.0
         
-        tuning_cycles = 2
+        tuning_cycles = 5
         lr = 1.0
 
         print("  Tuning thresholds...")
