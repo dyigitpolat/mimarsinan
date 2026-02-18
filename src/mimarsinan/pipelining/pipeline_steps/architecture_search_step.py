@@ -254,7 +254,13 @@ class ArchitectureSearchStep(PipelineStep):
 
     def __init__(self, pipeline):
         requires = []
-        promises = ["model_config", "model_builder", "platform_constraints_resolved", "architecture_search_result"]
+        promises = [
+            "model_config",
+            "model_builder",
+            "platform_constraints_resolved",
+            "architecture_search_result",
+            "scaled_simulation_length",
+        ]
         updates = []
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
@@ -323,6 +329,8 @@ class ArchitectureSearchStep(PipelineStep):
                 },
             )
             self.add_entry("architecture_search_result", {"mode": "user"})
+            sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
+            self.add_entry("scaled_simulation_length", sim_steps)
             return
 
         if configuration_mode != "nas":
@@ -452,5 +460,7 @@ class ArchitectureSearchStep(PipelineStep):
         self.add_entry("model_config", model_config)
         self.add_entry("platform_constraints_resolved", platform_constraints)
         self.add_entry("architecture_search_result", result_json)
+        sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
+        self.add_entry("scaled_simulation_length", sim_steps)
 
 

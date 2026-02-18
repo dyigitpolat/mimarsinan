@@ -1,0 +1,60 @@
+{
+    "pipeline_mode": "vanilla",
+
+    "experiment_name": "mnist_ttfs",
+    "generated_files_path": "./generated",
+    "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
+    "data_provider_name": "MNIST_DataProvider",
+
+    "platform_constraints": {
+        "cores": [
+            {
+                "max_axons": 257,
+                "max_neurons": 257,
+                "count": 200
+            }
+        ],
+
+        "max_axons": 257,
+        "max_neurons": 257,
+
+        "target_tq": 32,
+        "simulation_steps": 32,
+        "weight_bits": 8,
+
+        "allow_axon_tiling": false
+    },
+
+    "deployment_parameters": {
+        "lr": 0.001,
+        "training_epochs": 10,
+        "tuner_epochs": 3,
+
+        "degradation_tolerance": 0.1,
+
+        "spiking_mode": "ttfs",
+        "weight_quantization": true,
+        "activation_quantization": true,
+
+        "configuration_mode": "user",
+        "model_type": "mlp_mixer",
+
+        "model_config": {
+            "base_activation": "LeakyReLU",
+
+            "patch_n_1": 4,
+            "patch_m_1": 4,
+            "patch_c_1": 16,
+            "fc_w_1": 32,
+            "fc_w_2": 32
+        },
+
+        "spike_generation_mode": "TTFS",
+        "firing_mode": "TTFS",
+        "thresholding_mode": "<="
+    },
+
+    "target_metric_override": null,
+    "start_step": null
+}
+

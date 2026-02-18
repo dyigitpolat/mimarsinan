@@ -50,7 +50,7 @@ class IRMapping:
         self.max_neurons = max_neurons
         self.allow_axon_tiling = bool(allow_axon_tiling)
 
-        assert firing_mode in ["Default", "Novena"]
+        assert firing_mode in ["Default", "Novena", "TTFS"]
 
         self._next_node_id = 0
         self._psum_group_counter = 0
