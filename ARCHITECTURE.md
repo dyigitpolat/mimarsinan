@@ -103,10 +103,8 @@ mimarsinan/
 │       │   ├── pipeline.py         # Pipeline class (engine)
 │       │   ├── pipeline_step.py    # PipelineStep base class
 │       │   ├── cache/              # PipelineCache + load/store strategies
-│       │   ├── pipelines/          # Concrete pipeline definitions
-│       │   │   ├── nas_deployment_pipeline.py    # "phased" mode
-│       │   │   ├── vanilla_deployment_pipeline.py # "vanilla" mode
-│       │   │   └── cq_pipeline.py                # "cq" mode
+│       │   ├── pipelines/
+│       │   │   └── deployment_pipeline.py  # Unified configurable pipeline
 │       │   └── pipeline_steps/     # Individual step implementations
 │       ├── models/                 # Neural network model definitions
 │       │   ├── layers.py           # Perceptron, activations, decorators
@@ -181,8 +179,8 @@ The JSON configuration specifies:
 |-----|-------------|
 | `data_provider_name` | Registered dataset name (e.g. `"mnist"`, `"cifar10"`) |
 | `experiment_name` | Name for WandB logging and output directory |
-| `pipeline_mode` | `"phased"`, `"vanilla"`, or `"cq"` |
-| `deployment_parameters` | Hyperparameters (LR, epochs, model config, etc.) |
+| `pipeline_mode` | `"vanilla"` or `"phased"` (selects a preset; see §4.4) |
+| `deployment_parameters` | Hyperparameters, spiking mode, quantization flags (see §4.4) |
 | `platform_constraints` | Hardware constraints (max_axons, max_neurons, weight_bits, target_tq) |
 | `start_step` | Step name to resume from (uses cached state) |
 | `stop_step` | Optional step name to stop after |
@@ -271,49 +269,54 @@ The cache is saved to the working directory after each step completes, enabling 
 
 ### 4.4 Pipeline Modes
 
-Three concrete pipelines are available:
+A single `DeploymentPipeline` class (`pipelines/deployment_pipeline.py`) assembles steps dynamically from two orthogonal configuration axes:
 
-#### NASDeploymentPipeline (`"phased"`)
+| Axis | Values | Description |
+|------|--------|-------------|
+| **Pipeline mode** (`pipeline_mode`) | `"vanilla"`, `"phased"` | How much transformation to apply |
+| **Spiking mode** (`spiking_mode` in `deployment_parameters`) | `"rate"`, `"ttfs"` | SNN activation strategy |
 
-The full pipeline with Neural Architecture Search:
+**Pipeline mode** selects a preset that enables step groups:
 
-```
-Architecture Search → Model Building → Pretraining
-→ Activation Analysis → Clamp Adaptation → Input Activation Analysis
-→ Activation Shifting → Activation Quantization → Weight Quantization
-→ Quantization Verification → Normalization Fusion
-→ Soft Core Mapping → Core Quantization Verification
-→ CoreFlow Tuning → Hard Core Mapping
-```
+- **`"vanilla"`** — Pretraining + direct mapping.  Suitable for ANNs, rate-coded SNNs, or TTFS SNNs.
+- **`"phased"`** — Pretraining + activation quantization + weight quantization.  The full transformation chain for rate-coded quantised SNN platforms.
 
-This pipeline uses a pre/post step hook system for WandB reporting and optional visualization (activation function plots, histograms).
+**Spiking mode** controls which SNN simulation strategy is used:
 
-#### VanillaDeploymentPipeline (`"vanilla"`)
+- **`"rate"`** — Rate-coded SNN.  CoreFlow tuning step is included to adjust spiking thresholds.
+- **`"ttfs"`** — Time-to-first-spike SNN.  Analytical ReLU↔TTFS mapping; no threshold tuning needed.
 
-A simplified pipeline without architecture search or activation tuning:
+Two quantization flags (booleans in `deployment_parameters`) provide fine-grained control:
+
+| Flag | What it enables |
+|------|-----------------|
+| `activation_quantization` | Activation Analysis → Clamp Adaptation → Input Activation Analysis → Activation Shifting → Activation Quantization.  Configured via `target_tq`. |
+| `weight_quantization` | Weight Quantization → Quantization Verification.  Configured via `weight_bits`. |
+
+Preset defaults are applied with `setdefault`, so explicit values in `deployment_parameters` always win.
+
+**Example: vanilla + TTFS + weight quantization:**
 
 ```
 Model Configuration → Model Building → Pretraining
+→ Weight Quantization → Quantization Verification
+→ Normalization Fusion → Soft Core Mapping
+→ Core Quantization Verification → Hard Core Mapping → Simulation
+```
+
+**Example: phased + rate (full quantisation chain):**
+
+```
+Model Configuration → Model Building → Pretraining
+→ Activation Analysis → Clamp Adaptation → Input Activation Analysis
+→ Activation Shifting → Activation Quantization
+→ Weight Quantization → Quantization Verification
 → Normalization Fusion → Soft Core Mapping
 → Core Quantization Verification → CoreFlow Tuning
 → Hard Core Mapping → Simulation
 ```
 
-Uses user-provided model configuration directly.
-
-#### CQPipeline (`"cq"`)
-
-A pipeline using CQ (Clamp-Quantize) training:
-
-```
-Model Configuration → Model Building → CQ Training
-→ Activation Analysis → Weight Quantization → Quantization Verification
-→ Normalization Fusion → Soft Core Mapping
-→ Core Quantization Verification → CoreFlow Tuning
-→ Hard Core Mapping → Simulation
-```
-
-Includes post-step hooks for activation visualization.
+Either mode works with `configuration_mode: "nas"` (replaces Model Configuration with Architecture Search).
 
 ---
 
@@ -454,6 +457,8 @@ Verifies that all `NeuralCore` weight matrices in the IR graph are properly quan
 - **Requires**: `model`, `ir_graph`
 - **Updates**: `ir_graph`
 - **Promises**: `scaled_simulation_length`
+
+Included only for rate-coded spiking mode; TTFS uses analytical thresholds.
 
 Uses `CoreFlowTuner` to adjust thresholds of `NeuralCore`s in the IR graph. The tuner:
 
@@ -854,11 +859,12 @@ A specialized tuner that adjusts `NeuralCore` thresholds in the IR graph to opti
 
 A PyTorch-based spiking simulator for `IRGraph`:
 
-- Implements membrane potential dynamics with configurable firing modes (`"Default"`, `"Novena"`)
-- Supports multiple spike generation modes (`"Stochastic"`, `"Deterministic"`, `"FrontLoaded"`, `"Uniform"`)
+- Implements membrane potential dynamics with configurable firing modes (`"Default"`, `"Novena"`, `"TTFS"`)
+- Supports multiple spike generation modes (`"Stochastic"`, `"Deterministic"`, `"FrontLoaded"`, `"Uniform"`, `"TTFS"`)
 - Handles `ComputeOp`s as sync barriers: converts spike counts to rates, applies the operation, converts back to spikes
 - Uses range-compressed `IRSourceSpan`s for efficient input gathering
 - Supports both `"<"` and `"<="` thresholding modes
+- **TTFS mode**: Uses analytical spike-time computation (ReLU↔TTFS equivalence) instead of integrate-and-fire dynamics.  Each neuron fires at most once; output spike times encode ReLU activation values.
 
 ### 11.2 Nevresim (C++ Simulator)
 
@@ -1044,14 +1050,17 @@ ChipModel
                         └────────┬────────┘    AdaptationManager
                                  │
            ┌─────────────────────▼─────────────────────┐
-           │         Training & Tuning Phase            │
-           │                                             │
-           │  Pretrain → Analyze → Clamp → Shift         │
-           │  → Quantize Activations → Quantize Weights  │
-           │  → Verify → Fuse Normalization               │
-           │                                             │
-           │  Throughout: AdaptationManager controls      │
-           │  decorator rates on perceptron activations   │
+           │         Training & Quantisation Phase         │
+           │         (steps enabled via config flags)      │
+           │                                               │
+           │  Pretrain                                     │
+           │  ┌─ if activation_quantization ──────────┐    │
+           │  │ Analyze → Clamp → Shift → Act Quant   │    │
+           │  └───────────────────────────────────────┘    │
+           │  ┌─ if weight_quantization ──────────────┐    │
+           │  │ Weight Quant → Verification            │    │
+           │  └───────────────────────────────────────┘    │
+           │  Fuse Normalization                           │
            └─────────────────────┬─────────────────────┘
                                  │
                     ┌────────────▼────────────┐
