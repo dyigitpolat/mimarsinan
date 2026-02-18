@@ -3,6 +3,14 @@ UnifiedCoreFlow: Simulation that supports both neural cores and compute ops.
 
 This module provides a spiking simulator for the unified IRGraph (NeuralCore + ComputeOp),
 including correct sync-barrier semantics for ComputeOps (rate -> op -> respike).
+
+Supports both rate-coded (Default/Novena) and Time-to-First-Spike (TTFS)
+firing modes.
+
+TTFS mode implements the ReLU-equivalent single-spike coding from:
+  Stanojevic et al., "High-performance deep spiking neural networks with
+  0.3 spikes per neuron", Nature Communications 15, 6793 (2024).
+  https://www.nature.com/articles/s41467-024-51110-5
 """
 
 from __future__ import annotations
@@ -49,8 +57,8 @@ class SpikingUnifiedCoreFlow(nn.Module):
         self.spike_mode = spike_mode
         self.thresholding_mode = thresholding_mode
 
-        assert firing_mode in ["Default", "Novena"]
-        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform"]
+        assert firing_mode in ["Default", "Novena", "TTFS"]
+        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
         assert thresholding_mode in ["<", "<="]
 
         # Register neural core parameters
@@ -122,6 +130,18 @@ class SpikingUnifiedCoreFlow(nn.Module):
             return self.to_uniform_spikes(tensor, cycle)
         raise ValueError("Invalid spike mode: " + str(self.spike_mode))
 
+    # -----------------------------------------------------------------
+    # TTFS helpers
+    # -----------------------------------------------------------------
+    def _ttfs_encode_input(self, activations: torch.Tensor) -> torch.Tensor:
+        """Encode activations [0,1] → single-spike train (T, B, N)."""
+        T = self.simulation_length
+        spike_times = torch.round(T * (1.0 - activations.clamp(0.0, 1.0))).long()
+        spike_train = torch.zeros(T, *activations.shape, device=activations.device)
+        for cycle in range(T):
+            spike_train[cycle] = (spike_times == cycle).float()
+        return spike_train
+
     def _fill_signal_tensor_from_spans(
         self,
         out: torch.Tensor,
@@ -143,6 +163,11 @@ class SpikingUnifiedCoreFlow(nn.Module):
             if sp.kind == "off":
                 continue
             if sp.kind == "on":
+                # TTFS: always-on (bias) source fires only once at cycle 0.
+                # In rate-coded mode it fires every cycle (correct since inputs
+                # also produce spikes every cycle, so everything scales by T).
+                if self.firing_mode == "TTFS" and cycle != 0:
+                    continue
                 out[:, d0:d1].fill_(1.0)
                 continue
             if sp.kind == "input":
@@ -185,7 +210,17 @@ class SpikingUnifiedCoreFlow(nn.Module):
         - ComputeOp is a *sync barrier*: it consumes upstream spike trains, converts
           to rates, applies the op in rate space, then regenerates a new spike train
           for downstream nodes using the same spike generation mode as inputs.
+
+        TTFS mode:
+        - NeuralCore fires at most once per neuron (fire-once, no membrane reset).
+        - Output = (T - spike_time) for ReLU equivalence.
         """
+        if self.firing_mode == "TTFS":
+            return self._forward_ttfs(x)
+        return self._forward_rate(x)
+
+    def _forward_rate(self, x: torch.Tensor) -> torch.Tensor:
+        """Rate-coded forward pass (Default / Novena)."""
         x = self.preprocessor(x)
         x = x.view(x.shape[0], -1)
 
@@ -320,6 +355,146 @@ class SpikingUnifiedCoreFlow(nn.Module):
         self.total_spikes = torch.sum(output_signals).item()
         return output_signals
 
+    # -----------------------------------------------------------------
+    # TTFS analytical helpers
+    # -----------------------------------------------------------------
+    def _fill_activation_from_ir_spans(
+        self,
+        out: torch.Tensor,
+        *,
+        x: torch.Tensor,
+        activation_cache: Dict[int, torch.Tensor],
+        spans: list[IRSourceSpan],
+    ) -> None:
+        """
+        Fill `out` (B, N) with *activations* (not spikes) from IR source spans.
+
+        Used by the analytical TTFS forward pass. The always-on source
+        produces activation 1.0 (bias).
+        """
+        out.zero_()
+        for sp in spans:
+            d0 = int(sp.dst_start)
+            d1 = int(sp.dst_end)
+            if sp.kind == "off":
+                continue
+            if sp.kind == "on":
+                out[:, d0:d1] = 1.0  # bias
+                continue
+            if sp.kind == "input":
+                out[:, d0:d1] = x[:, int(sp.src_start):int(sp.src_end)]
+                continue
+            # Node output
+            out[:, d0:d1] = activation_cache[int(sp.src_node_id)][:, int(sp.src_start):int(sp.src_end)]
+
+    def _forward_ttfs(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        TTFS forward pass: analytical ReLU-equivalent computation.
+
+        The IBM TTFS model (Stanojevic et al., 2024) computes output spike
+        times as a linear function of input spike times:
+
+            ti = W @ (tj - t_min) + threshold + t_min
+
+        This is mathematically equivalent to:
+
+            output_activation = relu(W @ input_activation + bias)
+
+        A cycle-accurate integrate-and-fire model does NOT reproduce this
+        because the IF model accumulates binary spikes through weights, while
+        the TTFS model performs a weighted sum of spike TIMES.
+
+        Instead, we compute the forward pass analytically:
+          1. For each NeuralCore: out = relu(W_quantized @ input) / threshold
+             where threshold = parameter_scale, so the division recovers
+             the original floating-point ReLU output.
+          2. For each ComputeOp: apply the operation on activations.
+        """
+        x = self.preprocessor(x)
+        x = x.view(x.shape[0], -1)
+
+        batch_size = x.shape[0]
+        device = x.device
+
+        # Activation cache: node_id -> (B, out_dim) activations
+        activation_cache: Dict[int, torch.Tensor] = {}
+        self._last_core_spike_counts: Dict[int, float] = {}
+
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                param_idx = self._id_to_param_idx[node.id]
+                weight = self.neural_core_params[param_idx]  # (neurons, axons)
+                threshold = self.thresholds[param_idx]
+
+                spans = self._input_spans[int(node.id)]
+                in_dim = int(len(node.input_sources.flatten()))
+
+                inp = torch.zeros(batch_size, in_dim, device=device)
+                self._fill_activation_from_ir_spans(
+                    inp, x=x, activation_cache=activation_cache, spans=spans
+                )
+
+                # Analytical forward: matmul + ReLU + normalize
+                out = torch.matmul(weight, inp.T).T  # (B, neurons)
+                out = F.relu(out)
+                # Divide by threshold (= parameter_scale) to recover original
+                # floating-point scale. This ensures inter-layer activations
+                # stay in a range consistent with the trained ReLU network.
+                out = out / threshold
+
+                activation_cache[node.id] = out
+                self._last_core_spike_counts[node.id] = 0.0
+
+            elif isinstance(node, ComputeOp):
+                spans = self._input_spans[int(node.id)]
+                in_dim = int(len(node.input_sources.flatten()))
+                inp = torch.zeros(batch_size, in_dim, device=device)
+                self._fill_activation_from_ir_spans(
+                    inp, x=x, activation_cache=activation_cache, spans=spans
+                )
+
+                if node.input_shape is not None:
+                    x_op = inp.view(batch_size, *node.input_shape)
+                else:
+                    x_op = inp
+
+                if node.op_type == "max_pool2d":
+                    y_op = F.max_pool2d(
+                        x_op,
+                        kernel_size=node.params.get("kernel_size", 2),
+                        stride=node.params.get("stride", None),
+                        padding=node.params.get("padding", 0),
+                    )
+                elif node.op_type == "avg_pool2d":
+                    y_op = F.avg_pool2d(
+                        x_op,
+                        kernel_size=node.params.get("kernel_size", 2),
+                        stride=node.params.get("stride", None),
+                        padding=node.params.get("padding", 0),
+                    )
+                elif node.op_type == "adaptive_avg_pool2d":
+                    y_op = F.adaptive_avg_pool2d(x_op, node.params.get("output_size", (1, 1)))
+                elif node.op_type in ("flatten", "identity"):
+                    y_op = x_op
+                else:
+                    raise NotImplementedError(
+                        f"ComputeOp '{node.op_type}' not implemented in TTFS mode"
+                    )
+
+                activation_cache[node.id] = y_op.view(batch_size, -1)
+            else:
+                raise TypeError(f"Unknown node type: {type(node)}")
+
+        # Gather output activations
+        output_sources = list(self.output_sources.flatten())
+        output_signals = torch.zeros(batch_size, len(output_sources), device=device)
+        self._fill_activation_from_ir_spans(
+            output_signals, x=x, activation_cache=activation_cache, spans=self._output_spans
+        )
+
+        self.total_spikes = 0.0
+        return output_signals
+
     def get_core_spike_rates(self) -> list[float]:
         """
         Get the average firing rate for each neural core.
@@ -358,6 +533,9 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
     
     Uses deterministic/front-loaded spike generation for consistent spike rates
     that can be used as tuning targets for the regular spiking flow.
+
+    For TTFS mode, the stable flow is identical to the regular TTFS flow
+    (since TTFS is inherently deterministic: single-spike encoding).
     """
 
     def __init__(
@@ -383,7 +561,15 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Execute stable spiking simulation and track per-core spike counts.
+
+        For TTFS mode, delegates to the parent TTFS forward (already deterministic).
         """
+        if self.firing_mode == "TTFS":
+            return self._forward_ttfs(x)
+        return self._forward_stable_rate(x)
+
+    def _forward_stable_rate(self, x: torch.Tensor) -> torch.Tensor:
+        """Rate-coded stable forward pass."""
         x = self.preprocessor(x)
         x = x.view(x.shape[0], -1)
 

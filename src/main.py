@@ -1,9 +1,9 @@
 from init import *
 
 from mimarsinan.common.wandb_utils import WandB_Reporter
-from mimarsinan.pipelining.pipelines.nas_deployment_pipeline import NASDeploymentPipeline
-from mimarsinan.pipelining.pipelines.vanilla_deployment_pipeline import VanillaDeploymentPipeline
-from mimarsinan.pipelining.pipelines.cq_pipeline import CQPipeline
+from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+    DeploymentPipeline,
+)
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 import mimarsinan.data_handling.data_providers
 
@@ -94,20 +94,19 @@ def run_pipeline(
     stop_step = None,
     target_metric_override = None):
 
-    deployment_mode_map = {
-        "phased": NASDeploymentPipeline,
-        "vanilla": VanillaDeploymentPipeline,
-        "cq": CQPipeline
-    }
+    # Merge pipeline_mode preset into a copy of deployment_parameters
+    # so that explicit user values always win over preset defaults.
+    merged_params = dict(deployment_parameters)
+    DeploymentPipeline.apply_preset(pipeline_mode, merged_params)
 
     reporter = WandB_Reporter(deployment_name, "deployment")
 
-    pipeline = deployment_mode_map[pipeline_mode] (
+    pipeline = DeploymentPipeline(
         data_provider_factory=data_provider_factory,
-        deployment_parameters=deployment_parameters,
+        deployment_parameters=merged_params,
         platform_constraints=platform_constraints,
         reporter=reporter,
-        working_directory=working_directory
+        working_directory=working_directory,
     )
 
     if target_metric_override is not None:

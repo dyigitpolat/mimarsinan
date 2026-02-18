@@ -11,10 +11,28 @@ from mimarsinan.models.builders import SimpleConvBuilder
 from mimarsinan.models.builders import VGG16Builder
 
 class ModelConfigurationStep(PipelineStep):
+    """
+    Resolve model configuration and platform constraints from pipeline config.
+
+    In ``"user"`` configuration_mode the model config is taken directly from
+    ``pipeline.config['model_config']``.  In ``"nas"`` mode a lightweight
+    sampler-based search is performed (for the full NSGA-II / Kedi joint
+    search, use ``ArchitectureSearchStep`` instead).
+
+    This step also emits ``platform_constraints_resolved`` and a default
+    ``scaled_simulation_length`` so that downstream mapping / simulation
+    steps always have them, regardless of which training or spiking-mode
+    steps are included in the pipeline.
+    """
 
     def __init__(self, pipeline):
         requires = []
-        promises = ["model_config", "model_builder"]
+        promises = [
+            "model_config",
+            "model_builder",
+            "platform_constraints_resolved",
+            "scaled_simulation_length",
+        ]
         updates = []
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
@@ -97,3 +115,25 @@ class ModelConfigurationStep(PipelineStep):
 
         self.add_entry("model_builder", builder, 'pickle')
         self.add_entry("model_config", model_config)
+
+        # --- Emit resolved platform constraints ---
+        cores_config = self.pipeline.config.get("cores")
+        if cores_config is None:
+            cores_config = [
+                {
+                    "max_axons": int(self.pipeline.config["max_axons"]),
+                    "max_neurons": int(self.pipeline.config["max_neurons"]),
+                    "count": 1000,  # generous default
+                }
+            ]
+        self.add_entry("platform_constraints_resolved", {
+            "cores": cores_config,
+            "max_axons": int(self.pipeline.config.get("max_axons", 256)),
+            "max_neurons": int(self.pipeline.config.get("max_neurons", 256)),
+        })
+
+        # --- Emit default simulation length ---
+        # CoreFlowTuningStep will override this if present in the pipeline;
+        # otherwise the raw config value is used (e.g. for TTFS pipelines).
+        sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
+        self.add_entry("scaled_simulation_length", sim_steps)

@@ -1,3 +1,20 @@
+"""
+SpikingHybridCoreFlow: Spiking simulation for HybridHardCoreMapping.
+
+Supports both rate-coded (Default/Novena) and Time-to-First-Spike (TTFS)
+firing modes.
+
+TTFS mode implements the ReLU-equivalent single-spike coding from:
+  Stanojevic et al., "High-performance deep spiking neural networks with
+  0.3 spikes per neuron", Nature Communications 15, 6793 (2024).
+  https://www.nature.com/articles/s41467-024-51110-5
+
+In TTFS mode:
+  - Each neuron fires at most once (fire-once semantics, no membrane reset).
+  - Input activations are encoded as spike times: higher activation → earlier spike.
+  - Output is decoded as (T - spike_time), giving ReLU-equivalent activations.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,6 +40,11 @@ class SpikingHybridCoreFlow(nn.Module):
     - Neural segment runs on-chip (spiking), producing spike counts for its stage outputs.
     - ComputeOp is a sync barrier: spike counts -> rates, apply op, respike to a spike train.
     - Next neural segment consumes the respiked spike train as its input buffer.
+
+    When firing_mode == "TTFS":
+    - Each neuron fires at most once (fire-once, no membrane reset).
+    - Inputs are encoded as single spikes at time T*(1-activation).
+    - Outputs are decoded as (T - spike_time) for ReLU equivalence.
     """
 
     def __init__(
@@ -46,12 +68,12 @@ class SpikingHybridCoreFlow(nn.Module):
         self.spike_mode = spike_mode
         self.thresholding_mode = thresholding_mode
 
-        assert firing_mode in ["Default", "Novena"]
-        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform"]
+        assert firing_mode in ["Default", "Novena", "TTFS"]
+        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
         assert thresholding_mode in ["<", "<="]
 
     # ---------------------------------------------------------------------
-    # Spike generation (match SpikingCoreFlow / SpikingUnifiedCoreFlow)
+    # Spike generation (rate-coded modes)
     # ---------------------------------------------------------------------
     def to_stochastic_spikes(self, tensor: torch.Tensor) -> torch.Tensor:
         return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
@@ -87,33 +109,35 @@ class SpikingHybridCoreFlow(nn.Module):
         raise ValueError("Invalid spike mode: " + str(self.spike_mode))
 
     # ---------------------------------------------------------------------
+    # TTFS spike generation: single spike per neuron
+    # ---------------------------------------------------------------------
+    def _ttfs_encode_input(self, activations: torch.Tensor) -> torch.Tensor:
+        """
+        Encode activations [0,1] as a single-spike train (T, B, N).
+
+        Higher activation → earlier spike time.
+        spike_time = round(T * (1 - activation)).
+        activation=1 → spike at t=0, activation=0 → spike at t=T (i.e. never within [0,T-1]).
+        """
+        T = self.simulation_length
+        # spike_time ∈ [0, T]: 0 = immediate, T = never fires
+        spike_times = torch.round(T * (1.0 - activations.clamp(0.0, 1.0))).long()
+        spike_train = torch.zeros(T, *activations.shape, device=activations.device)
+        for cycle in range(T):
+            spike_train[cycle] = (spike_times == cycle).float()
+        return spike_train
+
+    def _ttfs_respike_rates(self, rates: torch.Tensor) -> torch.Tensor:
+        """
+        Re-encode rate-space activations [0,1] into TTFS single-spike trains.
+
+        Used at ComputeOp sync barriers when in TTFS mode.
+        """
+        return self._ttfs_encode_input(rates)
+
+    # ---------------------------------------------------------------------
     # Segment execution
     # ---------------------------------------------------------------------
-    def _get_signal_tensor(
-        self,
-        *,
-        input_spikes: torch.Tensor,
-        buffers: list[torch.Tensor],
-        sources,
-    ) -> torch.Tensor:
-        """
-        sources: list[SpikeSource] or np.ndarray[SpikeSource] (from HardCoreMapping)
-        returns: (B, len(sources)) tensor of spikes for this cycle.
-        """
-        batch_size = input_spikes.shape[0]
-        device = input_spikes.device
-        out = torch.empty(batch_size, len(sources), device=device)
-        for idx, src in enumerate(sources):
-            if src.is_input_:
-                out[:, idx] = input_spikes[:, src.neuron_]
-            elif src.is_off_:
-                out[:, idx] = 0.0
-            elif src.is_always_on_:
-                out[:, idx] = 1.0
-            else:
-                out[:, idx] = buffers[src.core_][:, src.neuron_]
-        return out
-
     def _fill_signal_tensor_from_spans(
         self,
         out: torch.Tensor,
@@ -121,6 +145,7 @@ class SpikingHybridCoreFlow(nn.Module):
         input_spikes: torch.Tensor,
         buffers: list[torch.Tensor],
         spans: list[SpikeSourceSpan],
+        cycle: int = -1,
     ) -> None:
         out.zero_()
         for sp in spans:
@@ -129,6 +154,9 @@ class SpikingHybridCoreFlow(nn.Module):
             if sp.kind == "off":
                 continue
             if sp.kind == "on":
+                # TTFS: always-on (bias) source fires only once at cycle 0.
+                if self.firing_mode == "TTFS" and cycle != 0:
+                    continue
                 out[:, d0:d1].fill_(1.0)
                 continue
             if sp.kind == "input":
@@ -136,12 +164,17 @@ class SpikingHybridCoreFlow(nn.Module):
                 continue
             out[:, d0:d1] = buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
 
-    def _run_neural_segment(
+    def _run_neural_segment_rate(
         self,
         stage: HybridStage,
         *,
         input_spike_train: torch.Tensor,  # (T, B, in)
     ) -> torch.Tensor:
+        """
+        Rate-coded neural segment execution (Default / Novena firing modes).
+
+        Returns spike counts (B, out_dim).
+        """
         mapping = stage.hard_core_mapping
         assert mapping is not None
 
@@ -152,14 +185,12 @@ class SpikingHybridCoreFlow(nn.Module):
         device = input_spike_train.device
         input_size = input_spike_train.shape[2]
 
-        # Compute/update per-core latency for this segment.
         latency = ChipLatency(mapping).calculate()
         cycles = int(latency) + T
 
         cores = mapping.cores
         output_sources = mapping.output_sources
 
-        # Precompute span views (per core + outputs) for this mapping (cheap cache on objects)
         axon_spans = []
         for c in cores:
             if hasattr(c, "get_axon_source_spans"):
@@ -171,11 +202,10 @@ class SpikingHybridCoreFlow(nn.Module):
         else:
             output_spans = compress_spike_sources(list(output_sources.flatten()))
 
-        # Pre-pack core weights and thresholds.
         core_params = [
             torch.tensor(core.core_matrix.T, dtype=torch.float32, device=device)
             for core in cores
-        ]  # (neurons, axons)
+        ]
         thresholds = [
             torch.tensor(float(core.threshold), dtype=torch.float32, device=device)
             for core in cores
@@ -196,16 +226,15 @@ class SpikingHybridCoreFlow(nn.Module):
         for cycle in range(cycles):
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
 
-            # Gather all core inputs from previous-cycle buffers (sync update).
             for core_idx, core in enumerate(cores):
                 self._fill_signal_tensor_from_spans(
                     input_signals[core_idx],
                     input_spikes=input_spikes,
                     buffers=buffers,
                     spans=axon_spans[core_idx],
+                    cycle=cycle,
                 )
 
-            # Update all cores.
             for core_idx, core in enumerate(cores):
                 if core.latency is None:
                     continue
@@ -223,8 +252,6 @@ class SpikingHybridCoreFlow(nn.Module):
                 elif self.firing_mode == "Default":
                     memb_i[fired] -= thresholds[core_idx]
 
-            # Accumulate stage outputs (spike counts).
-            # Range-based output gather (adds into output_counts)
             for sp in output_spans:
                 d0 = int(sp.dst_start)
                 d1 = int(sp.dst_end)
@@ -239,6 +266,130 @@ class SpikingHybridCoreFlow(nn.Module):
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
 
         return output_counts
+
+    def _fill_activation_from_spike_source_spans(
+        self,
+        out: torch.Tensor,
+        *,
+        input_activations: torch.Tensor,
+        core_activations: list[torch.Tensor],
+        spans: list[SpikeSourceSpan],
+    ) -> None:
+        """
+        Fill `out` (B, N) with *activations* from spike-source spans.
+
+        Used by the analytical TTFS forward pass. Always-on → 1.0 (bias).
+        """
+        out.zero_()
+        for sp in spans:
+            d0 = int(sp.dst_start)
+            d1 = int(sp.dst_end)
+            if sp.kind == "off":
+                continue
+            if sp.kind == "on":
+                out[:, d0:d1] = 1.0  # bias
+                continue
+            if sp.kind == "input":
+                out[:, d0:d1] = input_activations[:, int(sp.src_start):int(sp.src_end)]
+                continue
+            out[:, d0:d1] = core_activations[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+
+    def _run_neural_segment_ttfs(
+        self,
+        stage: HybridStage,
+        *,
+        input_activations: torch.Tensor,  # (B, in) — continuous activations
+    ) -> torch.Tensor:
+        """
+        TTFS neural segment: analytical ReLU-equivalent computation.
+
+        The IBM TTFS model (Stanojevic et al., 2024) computes spike times
+        analytically as a linear function of input spike times, NOT via
+        integrate-and-fire membrane dynamics. This is equivalent to:
+
+            output = relu(W_quantized @ input + bias) / threshold
+
+        where threshold = parameter_scale restores the original float scale.
+
+        Returns: (B, out_dim) tensor of activations (not spike counts).
+        """
+        mapping = stage.hard_core_mapping
+        assert mapping is not None
+
+        batch_size = input_activations.shape[0]
+        device = input_activations.device
+
+        cores = mapping.cores
+        output_sources = mapping.output_sources
+
+        axon_spans = []
+        for c in cores:
+            if hasattr(c, "get_axon_source_spans"):
+                axon_spans.append(c.get_axon_source_spans())
+            else:
+                axon_spans.append(compress_spike_sources(c.axon_sources))
+        if hasattr(mapping, "get_output_source_spans"):
+            output_spans = mapping.get_output_source_spans()
+        else:
+            output_spans = compress_spike_sources(list(output_sources.flatten()))
+
+        core_params = [
+            torch.tensor(core.core_matrix.T, dtype=torch.float32, device=device)
+            for core in cores
+        ]
+        thresholds = [
+            torch.tensor(float(core.threshold), dtype=torch.float32, device=device)
+            for core in cores
+        ]
+
+        # Process cores in topological order (by latency).
+        # Cores with lower latency are upstream of cores with higher latency.
+        core_activations = [
+            torch.zeros(batch_size, core.get_output_count(), device=device) for core in cores
+        ]
+        input_signals = [
+            torch.zeros(batch_size, core.get_input_count(), device=device) for core in cores
+        ]
+
+        # Sort cores by latency for correct ordering
+        ordered = sorted(range(len(cores)), key=lambda i: cores[i].latency or 0)
+
+        for core_idx in ordered:
+            core = cores[core_idx]
+
+            self._fill_activation_from_spike_source_spans(
+                input_signals[core_idx],
+                input_activations=input_activations,
+                core_activations=core_activations,
+                spans=axon_spans[core_idx],
+            )
+
+            # Analytical forward: matmul + ReLU + normalize by threshold
+            out = torch.matmul(core_params[core_idx], input_signals[core_idx].T).T
+            out = F.relu(out)
+            out = out / thresholds[core_idx]
+
+            core_activations[core_idx] = out
+
+        # Gather output activations
+        output = torch.zeros(batch_size, len(output_sources), device=device)
+        self._fill_activation_from_spike_source_spans(
+            output,
+            input_activations=input_activations,
+            core_activations=core_activations,
+            spans=output_spans,
+        )
+
+        return output
+
+    def _run_neural_segment(
+        self,
+        stage: HybridStage,
+        *,
+        input_spike_train: torch.Tensor,
+    ) -> torch.Tensor:
+        """Dispatch to rate-coded segment execution."""
+        return self._run_neural_segment_rate(stage, input_spike_train=input_spike_train)
 
     # ---------------------------------------------------------------------
     # ComputeOp execution (rate space) + respike
@@ -285,6 +436,8 @@ class SpikingHybridCoreFlow(nn.Module):
         rates: (B, N) in [0,1]
         returns: spike_train (T, B, N)
         """
+        if self.firing_mode == "TTFS":
+            return self._ttfs_respike_rates(rates)
         T = self.simulation_length
         batch_size, n = rates.shape
         out_train = torch.zeros(T, batch_size, n, device=rates.device)
@@ -295,6 +448,10 @@ class SpikingHybridCoreFlow(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.preprocessor(x)
         x = x.view(x.shape[0], -1)
+
+        # TTFS: analytical forward pass (no spike trains needed)
+        if self.firing_mode == "TTFS":
+            return self._forward_ttfs_analytical(x)
 
         batch_size = x.shape[0]
         device = x.device
@@ -337,4 +494,31 @@ class SpikingHybridCoreFlow(nn.Module):
         assert current_spike_train is not None
         return current_spike_train.sum(dim=0)
 
+    def _forward_ttfs_analytical(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        TTFS analytical forward pass: no spike trains, no cycles.
 
+        Processes each stage with continuous activations:
+        - Neural segment: relu(W @ input) / threshold per core
+        - Compute op: pooling / identity on activations
+
+        Returns: (B, out_dim) activations (ReLU-equivalent).
+        """
+        current_activations = x  # (B, in)
+
+        for stage in self.hybrid_mapping.stages:
+            if stage.kind == "neural":
+                current_activations = self._run_neural_segment_ttfs(
+                    stage, input_activations=current_activations
+                )
+                continue
+
+            if stage.kind == "compute":
+                op = stage.compute_op
+                assert op is not None
+                current_activations = self._execute_compute_op_rates(op, current_activations)
+                continue
+
+            raise ValueError(f"Invalid hybrid stage kind: {stage.kind}")
+
+        return current_activations

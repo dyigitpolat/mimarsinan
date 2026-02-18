@@ -1,1 +1,1 @@
-Always activate the virtual environment before running and testing code. 
+Always activate the virtual environment before running and testing code. Always consult ARCHITECTURE.md before implementing features. 
