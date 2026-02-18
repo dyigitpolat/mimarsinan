@@ -140,8 +140,10 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
             core_types.append({"max_axons": ax, "max_neurons": neu, "count": int(self.core_type_counts[t])})
 
-        max_axons = max(int(ct["max_axons"]) for ct in core_types)
-        max_neurons = max(int(ct["max_neurons"]) for ct in core_types)
+        # Tile to the SMALLEST core type so softcores can pack into ANY core,
+        # maximising utilisation of heterogeneous hardware.
+        min_axons = min(int(ct["max_axons"]) for ct in core_types)
+        min_neurons = min(int(ct["max_neurons"]) for ct in core_types)
 
         model_config = {
             "base_activation": "LeakyReLU",
@@ -154,8 +156,8 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
         platform_constraints = {
             "cores": core_types,
-            "max_axons": int(max_axons),
-            "max_neurons": int(max_neurons),
+            "max_axons": int(min_axons),
+            "max_neurons": int(min_neurons),
             "target_tq": int(self.target_tq),
             "weight_bits": 8,
             "allow_axon_tiling": bool(self.allow_axon_tiling),
@@ -207,6 +209,46 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
             return bool(self._quick_validate(configuration))
         except Exception:
             return False
+
+    def constraint_violation(self, configuration: Dict[str, Any]) -> float:
+        """Continuous constraint violation for pymoo's constraint-domination.
+
+        Returns 0.0 when feasible, a positive value proportional to how far
+        the configuration is from satisfying the axon/neuron constraints.
+        """
+        try:
+            mc = configuration["model_config"]
+            pc_m = int(mc["patch_m_1"])
+            pr = int(mc["patch_n_1"])
+
+            h = int(self.input_shape[-2])
+            w = int(self.input_shape[-1])
+
+            # Divisibility — hard to quantify, use a large step penalty
+            if h % pr != 0 or w % pc_m != 0:
+                return 1e6
+
+            patch_h = h // pr
+            patch_w = w // pc_m
+            in_ch = int(self.input_shape[-3])
+            patch_size = patch_h * patch_w * in_ch
+            patch_count = pr * pc_m
+            patch_channels = int(mc["patch_c_1"])
+
+            max_in_features = max(
+                patch_size,
+                patch_count,
+                int(mc["fc_w_1"]),
+                patch_channels,
+                int(mc["fc_w_2"]),
+                patch_count * patch_channels,
+            )
+
+            max_axons = int(configuration["platform_constraints"]["max_axons"])
+            violation = float(max_in_features - (max_axons - 1))
+            return max(0.0, violation)
+        except Exception:
+            return 1e6
 
     def evaluate(self, configuration: Dict[str, Any]) -> Dict[str, float]:
         key = _json_key(configuration)
@@ -284,6 +326,7 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
                 max_neurons=int(pcfg["max_neurons"]),
                 allow_axon_tiling=bool(pcfg.get("allow_axon_tiling", False)),
                 threshold_groups=threshold_groups,
+                threshold_seed=int(self.accuracy_seed),
             )
             softcores = layout_mapper.collect_layout_softcores(model.get_mapper_repr())
 

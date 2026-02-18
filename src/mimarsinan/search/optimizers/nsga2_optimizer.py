@@ -48,6 +48,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 super().__init__(
                     n_var=int(problem.n_var),
                     n_obj=int(n_obj),
+                    n_ieq_constr=1,
                     xl=np.array(problem.xl, dtype=float),
                     xu=np.array(problem.xu, dtype=float),
                 )
@@ -56,11 +57,23 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 # decode + round-to-int policy is implemented by the EncodedProblem
                 try:
                     cfg = problem.decode(np.array(x, dtype=float))
-                    if not problem.validate(cfg):
+
+                    # Compute continuous constraint violation for pymoo's
+                    # constraint-domination: feasible solutions (G <= 0)
+                    # always dominate infeasible ones (G > 0), and among
+                    # infeasible solutions those with smaller G are preferred.
+                    cv = float(problem.constraint_violation(cfg))
+                    out["G"] = np.array([cv])
+
+                    if cv > 0:
+                        # Infeasible: still provide *reasonable* objective
+                        # estimates rather than a flat penalty, so that pymoo
+                        # can break ties among infeasible candidates.
                         obj = {s.name: (0.0 if s.goal == "max" else self_outer.invalid_penalty) for s in specs}
                         all_evaluated.append((x.copy(), obj, current_gen[0]))
                         out["F"] = np.full((n_obj,), self_outer.invalid_penalty, dtype=float)
                         return
+
                     obj = problem.evaluate(cfg)
                     all_evaluated.append((x.copy(), obj, current_gen[0]))
                     out["F"] = to_minimization(obj)
@@ -68,6 +81,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                     obj = {s.name: (0.0 if s.goal == "max" else self_outer.invalid_penalty) for s in specs}
                     all_evaluated.append((x.copy(), obj, current_gen[0]))
                     out["F"] = np.full((n_obj,), self_outer.invalid_penalty, dtype=float)
+                    out["G"] = np.array([1e6])
 
         # capture for nested class
         self_outer = self

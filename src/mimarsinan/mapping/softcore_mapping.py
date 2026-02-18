@@ -149,6 +149,20 @@ class HardCoreMapping:
         self.unusable_space = 0
         self._output_source_spans = None
 
+    @property
+    def axons_per_core(self) -> int:
+        """Max axon dimension across all used cores (for nevresim uniform padding)."""
+        if not self.cores:
+            return 0
+        return max(int(hc.axons_per_core) for hc in self.cores)
+
+    @property
+    def neurons_per_core(self) -> int:
+        """Max neuron dimension across all used cores (for nevresim uniform padding)."""
+        if not self.cores:
+            return 0
+        return max(int(hc.neurons_per_core) for hc in self.cores)
+
     def merge_softcore_into(self, target_core_idx: int, hardcore, softcore):
         prev_output_count = hardcore.neurons_per_core - hardcore.available_neurons
         hardcore.add_softcore(softcore)

@@ -53,6 +53,7 @@ class CoreFlowTuner:
         self.firing_mode = pipeline.config["firing_mode"]
         self.spike_mode = pipeline.config["spike_generation_mode"]
         self.thresholding_mode = pipeline.config["thresholding_mode"]
+        self.spiking_mode = pipeline.config.get("spiking_mode", "rate")
 
         self.preprocessor = preprocessor
         self.ir_graph = copy.deepcopy(ir_graph)
@@ -67,6 +68,7 @@ class CoreFlowTuner:
             self.preprocessor,
             self.firing_mode,
             self.thresholding_mode,
+            spiking_mode=self.spiking_mode,
         )
 
     def _make_spiking_flow(self) -> SpikingUnifiedCoreFlow:
@@ -78,6 +80,7 @@ class CoreFlowTuner:
             self.firing_mode,
             self.spike_mode,
             self.thresholding_mode,
+            spiking_mode=self.spiking_mode,
         )
 
     def _validate(self, flow) -> float:

@@ -118,7 +118,12 @@ mimarsinan/
 │       │   ├── ir_mapping.py       # ModelRepresentation → IRGraph
 │       │   ├── mapping_utils.py    # Mapper classes + SoftCoreMapping
 │       │   ├── softcore_mapping.py # SoftCore, HardCore, HardCoreMapping
-│       │   └── hybrid_hardcore_mapping.py  # Hybrid neural+compute mapping
+│       │   ├── core_packing.py     # Generic best-fit greedy bin-packing
+│       │   ├── hybrid_hardcore_mapping.py  # Hybrid neural+compute mapping
+│       │   └── layout/             # Shape-only layout estimation for search
+│       │       ├── layout_ir_mapping.py  # Collect LayoutSoftCoreSpecs from mapper graph
+│       │       ├── layout_packer.py      # Pack layout softcores into layout hardcores
+│       │       └── layout_types.py       # LayoutSoftCoreSpec, LayoutHardCoreType, etc.
 │       ├── tuning/                 # Training-aware tuning subsystem
 │       │   ├── adaptation_manager.py       # Manages activation decorators
 │       │   ├── smart_smooth_adaptation.py  # Gradual adaptation framework
@@ -274,7 +279,7 @@ A single `DeploymentPipeline` class (`pipelines/deployment_pipeline.py`) assembl
 | Axis | Values | Description |
 |------|--------|-------------|
 | **Pipeline mode** (`pipeline_mode`) | `"vanilla"`, `"phased"` | How much transformation to apply |
-| **Spiking mode** (`spiking_mode` in `deployment_parameters`) | `"rate"`, `"ttfs"` | SNN activation strategy |
+| **Spiking mode** (`spiking_mode` in `deployment_parameters`) | `"rate"`, `"ttfs"`, `"ttfs_quantized"` | SNN activation strategy |
 
 **Pipeline mode** selects a preset that enables step groups:
 
@@ -284,7 +289,10 @@ A single `DeploymentPipeline` class (`pipelines/deployment_pipeline.py`) assembl
 **Spiking mode** controls which SNN simulation strategy is used:
 
 - **`"rate"`** — Rate-coded SNN.  CoreFlow tuning step is included to adjust spiking thresholds.
-- **`"ttfs"`** — Time-to-first-spike SNN.  Analytical ReLU↔TTFS mapping; no threshold tuning needed.
+- **`"ttfs"`** — Time-to-first-spike SNN (continuous / analytical).  Analytical ReLU↔TTFS mapping; no threshold tuning needed.
+- **`"ttfs_quantized"`** — Time-to-first-spike SNN (cycle-based / time-step quantised).  True cycle-based simulation (Approach B) with fire-once semantics and `S` discrete time steps per layer.
+
+For both TTFS variants, `firing_mode` and `spike_generation_mode` are automatically set to `"TTFS"` and validated — the analytical vs cycle-based distinction is controlled exclusively by `spiking_mode`. If a config JSON explicitly sets `firing_mode` or `spike_generation_mode` to a value inconsistent with the TTFS spiking mode, a `ValueError` is raised at pipeline initialisation.
 
 Two quantization flags (booleans in `deployment_parameters`) provide fine-grained control:
 
@@ -327,7 +335,7 @@ Either mode works with `configuration_mode: "nas"` (replaces Model Configuration
 **File**: `pipeline_steps/architecture_search_step.py`
 
 - **Requires**: (none)
-- **Promises**: `model_config`, `model_builder`, `platform_constraints_resolved`, `architecture_search_result`
+- **Promises**: `model_config`, `model_builder`, `platform_constraints_resolved`, `architecture_search_result`, `scaled_simulation_length`
 
 Operates in two modes based on `configuration_mode`:
 
@@ -336,7 +344,9 @@ Operates in two modes based on `configuration_mode`:
 
 Objectives: `hard_cores_used`, `avg_unused_area_per_core`, `total_params`, `accuracy`.
 
-The step produces a `PerceptronMixerBuilder` and the resolved platform constraints (including `cores` — a list of core types with `{count, max_axons, max_neurons}`).
+The step produces a `PerceptronMixerBuilder` and the resolved platform constraints (including `cores` — a list of core types with `{count, max_axons, max_neurons}`). The builder is created directly from the search-resolved constraints; **no side-effect writes** are made to `pipeline.config`. Downstream steps read hardware dimensions from the cached `platform_constraints_resolved` entry.
+
+After the search completes, the step **validates the best candidate**: if the search failed to find any feasible configuration, a `RuntimeError` is raised with the constraint violation details, rather than silently passing an infeasible config to later steps.
 
 ### 5.2 Model Building
 
@@ -431,16 +441,17 @@ Fuses BatchNorm layers into preceding linear layers by computing effective weigh
 
 **File**: `pipeline_steps/soft_core_mapping_step.py`
 
-- **Requires**: `model`
+- **Requires**: `model`, `platform_constraints_resolved`
 - **Promises**: `ir_graph`
 
 This critical step converts the PyTorch model into an `IRGraph`:
 
 1. Extracts the `ModelRepresentation` (mapper graph) from the model
-2. Creates an `IRMapping` with hardware constraints (`max_axons`, `max_neurons`, `allow_axon_tiling`)
-3. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
-4. Generates Graphviz visualizations of the IR graph
-5. Runs a soft-core spiking simulation for early verification
+2. Reads `max_axons`, `max_neurons`, and `allow_axon_tiling` from the `platform_constraints_resolved` cache entry (produced by Architecture Search)
+3. Creates an `IRMapping` with these hardware constraints
+4. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
+5. Generates Graphviz visualizations of the IR graph
+6. Runs a soft-core spiking simulation for early verification
 
 ### 5.13 Core Quantization Verification
 
@@ -458,7 +469,7 @@ Verifies that all `NeuralCore` weight matrices in the IR graph are properly quan
 - **Updates**: `ir_graph`
 - **Promises**: `scaled_simulation_length`
 
-Included only for rate-coded spiking mode; TTFS uses analytical thresholds.
+Included only for rate-coded spiking mode; TTFS modes use analytical or cycle-based thresholds and do not require tuning.
 
 Uses `CoreFlowTuner` to adjust thresholds of `NeuralCore`s in the IR graph. The tuner:
 
@@ -471,17 +482,18 @@ Uses `CoreFlowTuner` to adjust thresholds of `NeuralCore`s in the IR graph. The 
 
 **File**: `pipeline_steps/hard_core_mapping_step.py`
 
-- **Requires**: `model`, `ir_graph`, `scaled_simulation_length`
+- **Requires**: `model`, `ir_graph`, `scaled_simulation_length`, `platform_constraints_resolved`
 - **Promises**: `hard_core_mapping`
 
 Converts the `IRGraph` into a `HybridHardCoreMapping`:
 
 1. Segments the IR graph at `ComputeOp` boundaries
-2. Converts each neural segment to a `SoftCoreMapping` → `HardCoreMapping`
-3. Packs `SoftCore`s into physical `HardCore`s using greedy bin-packing
-4. Produces the final deployable hybrid program
-5. Runs hard-core spiking simulation for verification
-6. Generates extensive Graphviz visualizations
+2. Allocates a **single shared pool** of hardware cores from the `cores_config` (see §9.3)
+3. Converts each neural segment to a `SoftCoreMapping` → `HardCoreMapping`, drawing cores from the shared pool
+4. Packs `SoftCore`s into physical `HardCore`s using **best-fit** greedy bin-packing (smallest feasible core first)
+5. Produces the final deployable hybrid program
+6. Runs hard-core spiking simulation for verification
+7. Generates extensive Graphviz visualizations
 
 ### 5.16 Simulation
 
@@ -489,7 +501,7 @@ Converts the `IRGraph` into a `HybridHardCoreMapping`:
 
 - **Requires**: `model`, `hard_core_mapping`, `scaled_simulation_length`
 
-Runs a full chip simulation using the `NevresimDriver` (C++ simulator). Prepares input data, executes the simulator binary, and evaluates classification accuracy.
+Runs a full chip simulation using the `NevresimDriver` (C++ simulator). For single-segment mappings (`HardCoreMapping`), a single nevresim invocation is used. For multi-segment `HybridHardCoreMapping`s, the `SimulationRunner` orchestrates per-segment nevresim calls with host-side `ComputeOp` execution between them (see §11.3).
 
 ---
 
@@ -718,6 +730,8 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
   - **Axon tiling**: Splits axons across cores (partial sums) when `axons > max_axons` and `allow_axon_tiling` is enabled
   - **Partial sum accumulation**: Creates `psum_role="partial_pos"/"partial_neg"` cores and an `"accum"` core
 
+**Heterogeneous tiling**: When multiple core types exist, `max_axons` and `max_neurons` are set to the **minimum** across all core types. This ensures softcores are small enough to pack into *any* core type, maximising utilisation of heterogeneous hardware.
+
 ---
 
 ## 9. Hardware Mapping
@@ -735,17 +749,22 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
 
 ### 9.2 HardCore and HardCoreMapping
 
-**File**: `mapping/softcore_mapping.py`
+**Files**: `mapping/softcore_mapping.py`, `mapping/core_packing.py`
 
 `HardCore` represents a physical core on the chip with fixed capacity:
 - `axons_per_core`, `neurons_per_core` — Capacity
 - `available_axons`, `available_neurons` — Remaining capacity
 
-`HardCoreMapping` packs `SoftCore`s into `HardCore`s using **greedy bin-packing**:
+`HardCoreMapping` packs `SoftCore`s into `HardCore`s using the generic `greedy_pack_softcores` algorithm (`core_packing.py`):
 1. Sort soft cores by neuron count (descending)
-2. For each soft core, find the first hardware core with enough capacity
-3. Place the soft core, update axon sources to point to hardware core positions
-4. Track the mapping `(soft_core_id, soft_neuron) → (hard_core_idx, hard_neuron)`
+2. For each soft core, first try to fit it into an already-used hardware core
+3. If no used core has room, pick the **smallest unused core** that can accept the softcore (**best-fit** strategy), which improves utilisation of heterogeneous core pools
+4. Place the soft core, update axon sources to point to hardware core positions
+5. Track the mapping `(soft_core_id, soft_neuron) → (hard_core_idx, hard_neuron)`
+
+The same `greedy_pack_softcores` function is used by both the real `HardCoreMapping` and the layout-only `pack_layout` (architecture search), ensuring consistent packing behaviour.
+
+`HardCoreMapping` also exposes `axons_per_core` and `neurons_per_core` properties that return the **maximum** axon and neuron counts among its cores. These are used to determine the uniform dimensions for nevresim code generation (see §11.2).
 
 ### 9.3 HybridHardCoreMapping
 
@@ -763,10 +782,11 @@ HybridHardCoreMapping
 ```
 
 Built by `build_hybrid_hard_core_mapping(ir_graph, cores_config)`:
-1. Walks the IR graph, grouping consecutive `NeuralCore`s
-2. At each `ComputeOp`, flushes the current neural segment into a `HardCoreMapping`
-3. The `ComputeOp`'s `input_sources` become the segment's output sources
-4. External source references are remapped to segment-local inputs
+1. Allocates a **single shared pool** of hardware cores from `cores_config` upfront; all segments draw from this same pool, ensuring the total core budget is respected across the entire hybrid program
+2. Walks the IR graph, grouping consecutive `NeuralCore`s
+3. At each `ComputeOp`, flushes the current neural segment into a `HardCoreMapping` (packed from the shared pool)
+4. The `ComputeOp`'s `input_sources` become the segment's output sources
+5. External source references are remapped to segment-local inputs
 
 ---
 
@@ -864,7 +884,9 @@ A PyTorch-based spiking simulator for `IRGraph`:
 - Handles `ComputeOp`s as sync barriers: converts spike counts to rates, applies the operation, converts back to spikes
 - Uses range-compressed `IRSourceSpan`s for efficient input gathering
 - Supports both `"<"` and `"<="` thresholding modes
-- **TTFS mode**: Uses analytical spike-time computation (ReLU↔TTFS equivalence) instead of integrate-and-fire dynamics.  Each neuron fires at most once; output spike times encode ReLU activation values.
+- Dispatches between rate-coded and TTFS forward paths based on `spiking_mode` (not `firing_mode`)
+- **TTFS continuous** (`spiking_mode="ttfs"`): Analytical spike-time computation — `relu(W @ x + b) / θ` per core in topological order. Equivalent to standard ReLU; no time-stepping.
+- **TTFS quantized** (`spiking_mode="ttfs_quantized"`): True cycle-based simulation (Approach B). The outermost loop is `for cycle in range(total_cycles)` with per-core latency-gated processing. Each core's S-step window runs Phase 1 (initial charge: `V = W @ x`) then Phase 2 (constant ramp `V += θ/S`, fire-once: `a = (S − k) / S`).
 
 ### 11.2 Nevresim (C++ Simulator)
 
@@ -872,21 +894,34 @@ A PyTorch-based spiking simulator for `IRGraph`:
 
 For final verification, the framework generates C++ code and runs it through the `nevresim` simulator:
 
-1. **Code Generation** (`cpp_chip_model.py`): Converts `HardCoreMapping` to `ChipModel` → generates C++ structs (`SpikeSource`, `Neuron`, `Core`, `ChipModel`)
+1. **Code Generation** (`cpp_chip_model.py`): Converts `HardCoreMapping` to `ChipModel` → generates C++ structs (`SpikeSource`, `Neuron`, `Core`, `ChipModel`). When a segment contains heterogeneous `HardCore` sizes, individual core matrices and axon sources are **padded** to the segment's maximum dimensions (`HardCoreMapping.axons_per_core`, `neurons_per_core`) so that nevresim receives uniform core geometry.
 2. **Template Instantiation** (`generate_main.py`): Generates `main.cpp` from a template with simulation parameters
-3. **Compilation** (`compile_nevresim.py`): Compiles with Clang C++20 and `-O3`
+3. **Compilation** (`compile_nevresim.py`): Compiles with C++20 (`-std=c++20 -O3`). Prefers Clang ≥ 17; falls back to `g++-11` when no suitable Clang is found.
 4. **Execution** (`execute_nevresim.py`): Runs the binary in parallel processes, collects output
+
+`NevresimDriver` provides two entry points:
+- `predict_spiking(data_loader, ...)` — Standard batch evaluation from a `DataLoader`
+- `predict_spiking_raw(input_data, ...)` — Lower-level entry for per-segment simulation, accepting `(input_tensor, target)` tuples directly (used by `SimulationRunner` for multi-segment hybrid mapping)
 
 ### 11.3 SimulationRunner
 
 **File**: `chip_simulation/simulation_runner.py`
 
-Orchestrates the end-to-end simulation:
+Orchestrates the end-to-end simulation. Supports two modes:
+
+**Single-segment** (`HardCoreMapping`):
 1. Preprocesses test data through the model's preprocessor and input activation
 2. Saves inputs to files
 3. Calculates chip latency
-4. Runs the `NevresimDriver`
+4. Runs a single `NevresimDriver` invocation
 5. Parses simulator output and computes accuracy
+
+**Multi-segment** (`HybridHardCoreMapping`):
+1. Preprocesses test data as above
+2. Iterates through hybrid stages in order:
+   - **Neural stages**: Instantiates a per-segment `NevresimDriver`, runs `predict_spiking_raw`, converts output to input for the next stage (for TTFS modes the output is already real-valued activations; for rate-coded modes it is spike counts normalised by `simulation_length`)
+   - **Compute stages**: Executes the `ComputeOp` on the host using PyTorch — converts spike counts to rates, applies the operation (e.g., max_pool2d, avg_pool2d), and converts rates back to spike counts
+3. Evaluates final classification accuracy from the last stage's output
 
 ---
 
@@ -902,6 +937,7 @@ A clean, protocol-based search framework:
 SearchProblem[ConfigT]  ←  Protocol
   ├── objectives: Sequence[ObjectiveSpec]   # name + goal (min/max)
   ├── validate(config) → bool               # Fast feasibility check
+  ├── constraint_violation(config) → float  # Continuous violation (≤0 feasible, >0 infeasible)
   ├── evaluate(config) → Dict[str, float]   # Compute objective values
   └── meta(config) → Dict[str, Any]         # Optional metadata
 
@@ -920,15 +956,18 @@ EncodedProblem[ConfigT] extends SearchProblem
   └── decode(x) → ConfigT
 ```
 
+The `constraint_violation` method returns 0.0 when `validate()` passes (default). Subclasses override it to return a **continuous** violation metric (e.g., how many axons exceed the limit) so that evolutionary optimizers can guide the search toward feasibility rather than treating all infeasible candidates equally.
+
 ### 12.2 NSGA-II Optimizer
 
 **File**: `search/optimizers/nsga2_optimizer.py`
 
 Uses `pymoo`'s NSGA-II implementation. Handles:
 - Encoding/decoding via `EncodedProblem.decode()`
-- Invalid candidate penalty (`1e18`)
+- **Native constraint handling** via pymoo's `G` output: calls `problem.constraint_violation()` and populates `n_ieq_constr=1` inequality constraint. pymoo's constraint-domination principle ensures: (a) feasible solutions always dominate infeasible ones, (b) among infeasible solutions those with smaller violation are preferred. This guides the search toward feasible regions even when the initial random population is entirely infeasible.
+- Invalid candidate penalty (`1e18`) for objective values when infeasible
 - Pareto front extraction
-- Best candidate selection
+- Best candidate selection (accuracy-first, then cores, unused area, params)
 
 ### 12.3 Kedi Optimizer (LLM-based)
 
@@ -947,9 +986,16 @@ An innovative LLM-based optimizer that uses agentic reasoning:
 
 Jointly optimizes:
 - **Architecture parameters**: `patch_rows`, `patch_cols`, `patch_channels`, `fc_w1`, `fc_w2`
-- **Hardware core-type dimensions**: Number of core types, axon/neuron counts per type, threshold grouping
+- **Hardware core-type dimensions**: Number of core types (heterogeneous), axon/neuron counts per type, threshold grouping
 
 Objectives: `hard_cores_used` (min), `avg_unused_area_per_core` (min), `total_params` (min), `accuracy` (max).
+
+Key design decisions:
+
+- **Tiling to minimum core type**: `decode()` computes `max_axons = min(cores[*].max_axons)` and `max_neurons = min(cores[*].max_neurons)`. Softcores are sized to fit the *smallest* core type, so they can pack into any core type. Larger cores simply hold more softcores, improving utilisation.
+- **Continuous constraint violation**: `constraint_violation()` returns `max(0, max_in_features - (max_axons - 1))`, giving NSGA-II a smooth gradient toward feasibility (see §12.2).
+- **Layout-only hardware estimation**: Each candidate is evaluated by collecting shape-only `LayoutSoftCoreSpec`s via `LayoutIRMapping` (which computes inter-core latencies and assigns latency-stratified random threshold groups using a deterministic `threshold_seed`) and then packing them via `pack_layout` using the same best-fit algorithm as real mapping.
+- **Quick validation**: `_quick_validate()` checks patch divisibility and axon/neuron feasibility without building the full model.
 
 ---
 
@@ -1029,7 +1075,13 @@ ChipModel
 - `is_off` — Disconnected (zero)
 - `is_always_on` — Constant 1
 
-**`generate_main.py`** instantiates a C++ template with simulation parameters (input count, simulation length, spike generation mode, firing mode, latency).
+**`generate_main.py`** instantiates a C++ template with simulation parameters (input count, simulation length, spike generation mode, firing mode, latency). C++ chip and execution policy selection is dispatched by `spiking_mode`:
+
+| `spiking_mode` | C++ Compute Policy | C++ Execution Policy |
+|---|---|---|
+| `"ttfs"` | `TTFSAnalyticalCompute` | `TTFSContinuousExecution` (single-pass) |
+| `"ttfs_quantized"` | `TTFSQuantizedCompute<S>` | `TTFSExecution<S>` (single-pass, neuron-internal cycle loop) |
+| `"rate"` (Default/Novena) | `SpikingCompute<FirePolicy>` | `SpikingExecution` (cycle-based) |
 
 ---
 
@@ -1198,6 +1250,6 @@ python src/main.py configs/your_config.json
 ### Key Environment Requirements
 - Python 3.10+
 - CUDA-capable GPU (strongly recommended)
-- Clang C++20 compiler with libc++ (for nevresim simulation)
+- C++20 compiler: Clang ≥ 17 (preferred) or `g++-11` (fallback) — required for `std::ranges` support in nevresim
 - Dependencies: `torch`, `torchvision`, `einops`, `numpy`, `wandb`, `pymoo`, `matplotlib`, `plotly`
 

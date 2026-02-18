@@ -40,7 +40,7 @@ def _build_kedi_config_schema(
     core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
     core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
     max_threshold_groups = arch_cfg.get("max_threshold_groups", 3)
-    
+
     return {
         "model_config": {
             "base_activation": "LeakyReLU (fixed)",
@@ -51,9 +51,21 @@ def _build_kedi_config_schema(
             "fc_w_2": f"integer from {fc_w2}",
         },
         "platform_constraints": {
-            "cores": f"list of {num_core_types} objects, each with max_axons (int {core_axons_bounds[0]}-{core_axons_bounds[1]}, multiple of 8), max_neurons (int {core_neurons_bounds[0]}-{core_neurons_bounds[1]}, multiple of 8), count (fixed: {core_type_counts})",
-            "max_axons": "max of all cores' max_axons (computed from cores)",
-            "max_neurons": "max of all cores' max_neurons (computed from cores)",
+            "cores": (
+                f"list of {num_core_types} objects, each with max_axons "
+                f"(int {core_axons_bounds[0]}-{core_axons_bounds[1]}, multiple of 8), "
+                f"max_neurons (int {core_neurons_bounds[0]}-{core_neurons_bounds[1]}, "
+                f"multiple of 8), count (fixed: {core_type_counts}). "
+                f"Different core types may have different sizes (heterogeneous)."
+            ),
+            "max_axons": (
+                "MIN of all cores' max_axons (computed automatically). "
+                "This is the tiling limit -- softcores are sized to fit the smallest core type."
+            ),
+            "max_neurons": (
+                "MIN of all cores' max_neurons (computed automatically). "
+                "This is the tiling limit -- softcores are sized to fit the smallest core type."
+            ),
             "target_tq": f"{target_tq} (fixed)",
             "weight_bits": "8 (fixed)",
             "allow_axon_tiling": "false (fixed)",
@@ -68,27 +80,39 @@ def _build_kedi_example_config(
     target_tq: int,
 ) -> Dict[str, Any]:
     """Build an example configuration for Kedi optimizer LLM.
-    
+
     IMPORTANT: The example must be VALID, satisfying all constraints.
     Key constraint: patch_n_1 * patch_m_1 * patch_c_1 <= max_axons - 1
+    where max_axons = min of all cores' max_axons (tiling limit).
     """
     num_core_types = arch_cfg.get("num_core_types", 2)
     core_type_counts = arch_cfg.get("core_type_counts", [200, 200])
-    
-    # Use a VALID configuration:
+
+    # Example with heterogeneous cores: a small type and a large type.
     # patch_n_1=2, patch_m_1=2, patch_c_1=64 gives 2*2*64=256
-    # So max_axons must be >= 257, we use 512 to be safe
+    # min_axons must be >= 257, we use 512 for the small type.
     patch_n = 2  # divides 28
     patch_m = 2  # divides 28
     patch_c = 64
-    max_axons = 512  # 2*2*64 = 256 < 511 ✓
-    max_neurons = 512
-    
-    cores = [
-        {"max_axons": max_axons, "max_neurons": max_neurons, "count": core_type_counts[i]}
-        for i in range(num_core_types)
+
+    # Heterogeneous: small cores (512) and large cores (1024)
+    small_axons, small_neurons = 512, 512
+    large_axons, large_neurons = 1024, 1024
+
+    core_dims = [
+        (small_axons, small_neurons),
+        (large_axons, large_neurons),
     ]
-    
+
+    cores = []
+    for i in range(num_core_types):
+        ax, neu = core_dims[i % len(core_dims)]
+        cores.append({"max_axons": ax, "max_neurons": neu, "count": core_type_counts[i]})
+
+    # Tiling limit = min across core types
+    min_axons = min(c["max_axons"] for c in cores)
+    min_neurons = min(c["max_neurons"] for c in cores)
+
     return {
         "model_config": {
             "base_activation": "LeakyReLU",
@@ -100,8 +124,8 @@ def _build_kedi_example_config(
         },
         "platform_constraints": {
             "cores": cores,
-            "max_axons": max_axons,
-            "max_neurons": max_neurons,
+            "max_axons": min_axons,
+            "max_neurons": min_neurons,
             "target_tq": target_tq,
             "weight_bits": 8,
             "allow_axon_tiling": False,
@@ -163,29 +187,30 @@ CRITICAL CONSTRAINTS:
    - Valid patch_n_1 options: {_divisors(h)}
    - Valid patch_m_1 options: {_divisors(w)}
 
-2. MAX_AXONS CONSTRAINT (most important!):
+2. TILING CONSTRAINT (most important!):
+   Softcores are tiled to fit the SMALLEST core type. The tiling limit is
+   max_axons = min(cores[*].max_axons) and max_neurons = min(cores[*].max_neurons).
    The largest layer input must fit in max_axons - 1.
-   
+
    Calculate: patch_count = patch_n_1 * patch_m_1
    The LARGEST input is: patch_count * patch_c_1
-   
+
    RULE: (patch_n_1 * patch_m_1 * patch_c_1) <= max_axons - 1
-   
+
    Examples:
-   - patch_n_1=7, patch_m_1=7, patch_c_1=16: 7*7*16 = 784 → needs max_axons >= 785
-   - patch_n_1=4, patch_m_1=4, patch_c_1=32: 4*4*32 = 512 → needs max_axons >= 513
-   - patch_n_1=2, patch_m_1=2, patch_c_1=64: 2*2*64 = 256 → needs max_axons >= 257
-   - patch_n_1=2, patch_m_1=2, patch_c_1=128: 2*2*128 = 512 → needs max_axons >= 513
-   
-   IMPORTANT: If patch_count is large (many small patches), you need LARGER cores!
-   Small patches (patch_n_1=1 or 2) with high patch_c_1 need moderate max_axons.
-   Large patches (patch_n_1=7, 14, 28) with even small patch_c_1 need VERY LARGE max_axons!
+   - patch_n_1=7, patch_m_1=7, patch_c_1=16: 7*7*16 = 784 -> needs max_axons >= 785
+   - patch_n_1=4, patch_m_1=4, patch_c_1=32: 4*4*32 = 512 -> needs max_axons >= 513
+   - patch_n_1=2, patch_m_1=2, patch_c_1=64: 2*2*64 = 256 -> needs max_axons >= 257
 
-3. Core dimensions: max_axons and max_neurons must be multiples of 8, between 64 and 1024.
+3. HETEROGENEOUS CORES:
+   Different core types may have different max_axons/max_neurons.
+   Softcores are sized for the smallest core, so they can pack into ANY core type.
+   Larger cores simply hold more softcores, improving utilization.
+   The max_axons/max_neurons in platform_constraints must equal the MIN across all cores.
 
-4. threshold_groups: integer from 1 to 3.
+4. Core dimensions: each core's max_axons and max_neurons must be multiples of 8, between 64 and 1024.
 
-5. The max_axons in platform_constraints must equal the maximum max_axons from all cores.
+5. threshold_groups: integer from 1 to 3.
 """
             
             return KediOptimizer(
@@ -445,16 +470,36 @@ class ArchitectureSearchStep(PipelineStep):
             print(f"[ArchitectureSearchStep] Visualization failed (non-fatal): {e}")
 
         best_cfg = result.best.configuration
+        if not best_cfg:
+            raise RuntimeError(
+                "[ArchitectureSearchStep] Architecture search produced no candidates. "
+                "Consider increasing pop_size or generations, or relaxing the search bounds."
+            )
+
+        if not problem.validate(best_cfg):
+            cv = problem.constraint_violation(best_cfg)
+            raise RuntimeError(
+                f"[ArchitectureSearchStep] Architecture search failed to find a feasible "
+                f"configuration (constraint violation = {cv:.1f}).  "
+                f"Best candidate: {best_cfg}.  "
+                f"Consider increasing pop_size/generations, widening core_axons_bounds, "
+                f"or reducing the number of core types."
+            )
+
         model_config = best_cfg["model_config"]
         platform_constraints = best_cfg["platform_constraints"]
 
-        # Apply selected platform constraints to pipeline config so downstream mapping uses them
-        self.pipeline.config["cores"] = platform_constraints["cores"]
-        self.pipeline.config["max_axons"] = int(platform_constraints["max_axons"])
-        self.pipeline.config["max_neurons"] = int(platform_constraints["max_neurons"])
-        self.pipeline.config["allow_axon_tiling"] = bool(platform_constraints.get("allow_axon_tiling", False))
-
-        builder = _make_builder()
+        # Build the model builder using the search-resolved constraints (no
+        # side-effect writes to pipeline.config -- downstream steps read from
+        # the cached platform_constraints_resolved entry instead).
+        builder = PerceptronMixerBuilder(
+            self.pipeline.config["device"],
+            self.pipeline.config["input_shape"],
+            self.pipeline.config["num_classes"],
+            int(platform_constraints["max_axons"]),
+            int(platform_constraints["max_neurons"]),
+            {**self.pipeline.config, **platform_constraints},
+        )
 
         self.add_entry("model_builder", builder, "pickle")
         self.add_entry("model_config", model_config)
