@@ -36,6 +36,10 @@
         "weight_quantization": true,
         "activation_quantization": true,
 
+        "spike_generation_mode": "TTFS",
+        "firing_mode": "TTFS",
+        "thresholding_mode": "<=",
+
         "configuration_mode": "user",
         "model_type": "mlp_mixer",
 
@@ -47,11 +51,7 @@
             "patch_c_1": 16,
             "fc_w_1": 32,
             "fc_w_2": 32
-        },
-
-        "spike_generation_mode": "TTFS",
-        "firing_mode": "TTFS",
-        "thresholding_mode": "<="
+        }
     },
 
     "target_metric_override": null,

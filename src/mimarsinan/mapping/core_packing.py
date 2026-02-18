@@ -9,8 +9,19 @@ class SoftCoreLike(Protocol):
     def get_output_count(self) -> int: ...
 
 
+class HardCoreLike(Protocol):
+    def get_input_count(self) -> int: ...
+
+    def get_output_count(self) -> int: ...
+
+
 SoftT = TypeVar("SoftT", bound=SoftCoreLike)
-HardT = TypeVar("HardT")
+HardT = TypeVar("HardT", bound=HardCoreLike)
+
+
+def _capacity(hc: HardCoreLike) -> int:
+    """Total capacity (area) of a hardware core."""
+    return int(hc.get_input_count()) * int(hc.get_output_count())
 
 
 def pick_best_softcore(unmapped_cores: List[SoftT]) -> SoftT:
@@ -48,6 +59,10 @@ def greedy_pack_softcores(
     - real HardCoreMapping (parameterized mapping)
     - layout-only packer (shape-only evaluation for search)
 
+    Uses a **best-fit** strategy when selecting an unused core: among all
+    feasible unused cores, pick the *smallest* one (by capacity).  This
+    improves utilisation of heterogeneous core pools.
+
     This mutates:
     - used_hardcores (may append newly allocated hardcores)
     - unused_hardcores (removes allocated hardcores)
@@ -67,15 +82,20 @@ def greedy_pack_softcores(
             if not unused_hardcores:
                 raise RuntimeError("No more hard cores available")
 
-            # pick the first unused core that can accept this softcore as the first placement
+            # Best-fit: pick the smallest unused core that can accept this softcore.
             chosen_unused = None
+            chosen_cap = float("inf")
             for hc in unused_hardcores:
                 if is_mapping_possible(core, hc):
-                    chosen_unused = hc
-                    break
+                    cap = _capacity(hc)
+                    if cap < chosen_cap:
+                        chosen_unused = hc
+                        chosen_cap = cap
 
             if chosen_unused is None:
-                raise RuntimeError("No more hard cores available (no unused core type can fit this softcore)")
+                raise RuntimeError(
+                    "No more hard cores available (no unused core type can fit this softcore)"
+                )
 
             used_hardcores.append(chosen_unused)
             unused_hardcores.remove(chosen_unused)
@@ -83,5 +103,3 @@ def greedy_pack_softcores(
 
         place(target_idx, used_hardcores[target_idx], core)
         softcores.remove(core)
-
-

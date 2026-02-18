@@ -60,6 +60,7 @@ class HardCoreMappingStep(PipelineStep):
                 self.pipeline.config["firing_mode"],
                 self.pipeline.config["spike_generation_mode"],
                 self.pipeline.config["thresholding_mode"],
+                spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
             )
             acc = BasicTrainer(
                 flow,

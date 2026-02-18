@@ -19,7 +19,7 @@ import os
 class SoftCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
-        requires = ["model"]
+        requires = ["model", "platform_constraints_resolved"]
         # Unified-only: this step produces the unified IRGraph (NeuralCore + ComputeOp).
         promises = ["ir_graph"]
         updates = []
@@ -31,6 +31,11 @@ class SoftCoreMappingStep(PipelineStep):
 
     def process(self):
         model = self.get_entry('model')
+        platform_constraints = self.get_entry("platform_constraints_resolved")
+
+        resolved_max_axons = platform_constraints.get("max_axons")
+        resolved_max_neurons = platform_constraints.get("max_neurons")
+        resolved_allow_axon_tiling = bool(platform_constraints.get("allow_axon_tiling", False))
 
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):
@@ -53,9 +58,9 @@ class SoftCoreMappingStep(PipelineStep):
                 model.get_mapper_repr(),
                 out_dot,
                 input_shape=tuple(self.pipeline.config["input_shape"]),
-                max_axons=int(self.pipeline.config["max_axons"]),
-                max_neurons=int(self.pipeline.config["max_neurons"]),
-                allow_axon_tiling=bool(self.pipeline.config.get("allow_axon_tiling", False)),
+                max_axons=int(resolved_max_axons),
+                max_neurons=int(resolved_max_neurons),
+                allow_axon_tiling=resolved_allow_axon_tiling,
                 device=flowchart_device,
             )
             print(f"[SoftCoreMappingStep] Wrote flowchart DOT: {out_dot}")
@@ -77,9 +82,9 @@ class SoftCoreMappingStep(PipelineStep):
         ir_mapping = IRMapping(
             q_max=q_max,
             firing_mode=self.pipeline.config["firing_mode"],
-            max_axons=self.pipeline.config.get("max_axons"),
-            max_neurons=self.pipeline.config.get("max_neurons"),
-            allow_axon_tiling=self.pipeline.config.get("allow_axon_tiling", False),
+            max_axons=resolved_max_axons,
+            max_neurons=resolved_max_neurons,
+            allow_axon_tiling=resolved_allow_axon_tiling,
         )
         
         ir_graph = ir_mapping.map(model.get_mapper_repr())
@@ -164,6 +169,7 @@ class SoftCoreMappingStep(PipelineStep):
                 self.pipeline.config["firing_mode"],
                 self.pipeline.config["spike_generation_mode"],
                 self.pipeline.config["thresholding_mode"],
+                spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
             )
             acc = BasicTrainer(
                 flow,

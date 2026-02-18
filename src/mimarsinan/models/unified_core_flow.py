@@ -7,10 +7,21 @@ including correct sync-barrier semantics for ComputeOps (rate -> op -> respike).
 Supports both rate-coded (Default/Novena) and Time-to-First-Spike (TTFS)
 firing modes.
 
-TTFS mode implements the ReLU-equivalent single-spike coding from:
+TTFS mode implements the B1-model from:
   Stanojevic et al., "High-performance deep spiking neural networks with
   0.3 spikes per neuron", Nature Communications 15, 6793 (2024).
   https://www.nature.com/articles/s41467-024-51110-5
+
+Two TTFS deployment modes (selected via ``firing_mode``):
+
+  * **TTFS** (continuous) — exact analytical ``ReLU(W @ x + b) / θ``.
+  * **TTFS_Quantized** — true cycle-based simulation (Approach B).
+    Each core is simulated for *S = simulation_length* discrete time steps:
+
+      Phase 1:  V = W @ x  (charge accumulated from incoming spikes)
+      Phase 2:  for k in 0..S-1:
+                    if V ≥ θ and not fired → fire, a = (S−k)/S
+                    V += θ/S              (constant ramp, B=1)
 """
 
 from __future__ import annotations
@@ -35,6 +46,8 @@ class SpikingUnifiedCoreFlow(nn.Module):
     rates are converted back to spikes.
     """
 
+    _TTFS_SPIKING_MODES = {"ttfs", "ttfs_quantized"}
+
     def __init__(
         self,
         input_shape,
@@ -44,6 +57,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         firing_mode: str = "Default",
         spike_mode: str = "Uniform",
         thresholding_mode: str = "<",
+        spiking_mode: str = "rate",
     ):
         super().__init__()
 
@@ -56,6 +70,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         self.firing_mode = firing_mode
         self.spike_mode = spike_mode
         self.thresholding_mode = thresholding_mode
+        self.spiking_mode = spiking_mode
 
         assert firing_mode in ["Default", "Novena", "TTFS"]
         assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
@@ -166,7 +181,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 # TTFS: always-on (bias) source fires only once at cycle 0.
                 # In rate-coded mode it fires every cycle (correct since inputs
                 # also produce spikes every cycle, so everything scales by T).
-                if self.firing_mode == "TTFS" and cycle != 0:
+                if self.spiking_mode in self._TTFS_SPIKING_MODES and cycle != 0:
                     continue
                 out[:, d0:d1].fill_(1.0)
                 continue
@@ -211,11 +226,12 @@ class SpikingUnifiedCoreFlow(nn.Module):
           to rates, applies the op in rate space, then regenerates a new spike train
           for downstream nodes using the same spike generation mode as inputs.
 
-        TTFS mode:
-        - NeuralCore fires at most once per neuron (fire-once, no membrane reset).
-        - Output = (T - spike_time) for ReLU equivalence.
+        TTFS modes:
+        - **TTFS** (continuous): analytical ``relu(W @ x + b) / θ``.
+        - **TTFS_Quantized**: true cycle-based simulation (Phase 1 + Phase 2
+          time-stepping with fire-once semantics).
         """
-        if self.firing_mode == "TTFS":
+        if self.spiking_mode in self._TTFS_SPIKING_MODES:
             return self._forward_ttfs(x)
         return self._forward_rate(x)
 
@@ -389,99 +405,55 @@ class SpikingUnifiedCoreFlow(nn.Module):
 
     def _forward_ttfs(self, x: torch.Tensor) -> torch.Tensor:
         """
-        TTFS forward pass: analytical ReLU-equivalent computation.
-
-        The IBM TTFS model (Stanojevic et al., 2024) computes output spike
-        times as a linear function of input spike times:
-
-            ti = W @ (tj - t_min) + threshold + t_min
-
-        This is mathematically equivalent to:
-
-            output_activation = relu(W @ input_activation + bias)
-
-        A cycle-accurate integrate-and-fire model does NOT reproduce this
-        because the IF model accumulates binary spikes through weights, while
-        the TTFS model performs a weighted sum of spike TIMES.
-
-        Instead, we compute the forward pass analytically:
-          1. For each NeuralCore: out = relu(W_quantized @ input) / threshold
-             where threshold = parameter_scale, so the division recovers
-             the original floating-point ReLU output.
-          2. For each ComputeOp: apply the operation on activations.
+        TTFS forward pass — dispatches to continuous or quantized.
         """
         x = self.preprocessor(x)
         x = x.view(x.shape[0], -1)
 
+        if self.spiking_mode == "ttfs_quantized":
+            return self._forward_ttfs_quantized(x)
+        return self._forward_ttfs_continuous(x)
+
+    # -----------------------------------------------------------------
+    # TTFS continuous (analytical)
+    # -----------------------------------------------------------------
+    def _forward_ttfs_continuous(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Exact analytical TTFS: ``relu(W @ x + b) / θ`` per core.
+
+        Single-pass over nodes in topological order.  ComputeOps are
+        applied directly on activations.
+        """
         batch_size = x.shape[0]
         device = x.device
 
-        # Activation cache: node_id -> (B, out_dim) activations
         activation_cache: Dict[int, torch.Tensor] = {}
         self._last_core_spike_counts: Dict[int, float] = {}
 
         for node in self.nodes:
             if isinstance(node, NeuralCore):
                 param_idx = self._id_to_param_idx[node.id]
-                weight = self.neural_core_params[param_idx]  # (neurons, axons)
+                weight = self.neural_core_params[param_idx]
                 threshold = self.thresholds[param_idx]
 
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
-
                 inp = torch.zeros(batch_size, in_dim, device=device)
                 self._fill_activation_from_ir_spans(
                     inp, x=x, activation_cache=activation_cache, spans=spans
                 )
 
-                # Analytical forward: matmul + ReLU + normalize
-                out = torch.matmul(weight, inp.T).T  # (B, neurons)
+                out = torch.matmul(weight, inp.T).T
                 out = F.relu(out)
-                # Divide by threshold (= parameter_scale) to recover original
-                # floating-point scale. This ensures inter-layer activations
-                # stay in a range consistent with the trained ReLU network.
                 out = out / threshold
 
                 activation_cache[node.id] = out
                 self._last_core_spike_counts[node.id] = 0.0
 
             elif isinstance(node, ComputeOp):
-                spans = self._input_spans[int(node.id)]
-                in_dim = int(len(node.input_sources.flatten()))
-                inp = torch.zeros(batch_size, in_dim, device=device)
-                self._fill_activation_from_ir_spans(
-                    inp, x=x, activation_cache=activation_cache, spans=spans
+                activation_cache[node.id] = self._execute_compute_op_ttfs(
+                    node, x, batch_size, device, activation_cache
                 )
-
-                if node.input_shape is not None:
-                    x_op = inp.view(batch_size, *node.input_shape)
-                else:
-                    x_op = inp
-
-                if node.op_type == "max_pool2d":
-                    y_op = F.max_pool2d(
-                        x_op,
-                        kernel_size=node.params.get("kernel_size", 2),
-                        stride=node.params.get("stride", None),
-                        padding=node.params.get("padding", 0),
-                    )
-                elif node.op_type == "avg_pool2d":
-                    y_op = F.avg_pool2d(
-                        x_op,
-                        kernel_size=node.params.get("kernel_size", 2),
-                        stride=node.params.get("stride", None),
-                        padding=node.params.get("padding", 0),
-                    )
-                elif node.op_type == "adaptive_avg_pool2d":
-                    y_op = F.adaptive_avg_pool2d(x_op, node.params.get("output_size", (1, 1)))
-                elif node.op_type in ("flatten", "identity"):
-                    y_op = x_op
-                else:
-                    raise NotImplementedError(
-                        f"ComputeOp '{node.op_type}' not implemented in TTFS mode"
-                    )
-
-                activation_cache[node.id] = y_op.view(batch_size, -1)
             else:
                 raise TypeError(f"Unknown node type: {type(node)}")
 
@@ -494,6 +466,166 @@ class SpikingUnifiedCoreFlow(nn.Module):
 
         self.total_spikes = 0.0
         return output_signals
+
+    # -----------------------------------------------------------------
+    # TTFS quantized (cycle-based, Approach B)
+    # -----------------------------------------------------------------
+    def _forward_ttfs_quantized(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Cycle-based TTFS quantized forward pass (Approach B).
+
+        Structured identically to ``_forward_rate``: the outer loop is
+        ``for cycle in range(total_cycles)`` with per-node scheduling.
+
+        Each NeuralCore gets a non-overlapping S-step window based on
+        a *finish-time* schedule that accounts for ComputeOps::
+
+            NeuralCore window: [finish_at[id] − S, finish_at[id])
+            ComputeOp:         executes once at finish_at[id]
+
+        Within a NeuralCore's window:
+
+          Phase 1 (k == 0): ``V = W @ x``  (charge from incoming activations)
+          Phase 2 (every k): fire-once check, then ``V += θ/S`` (ramp)
+        """
+        batch_size = x.shape[0]
+        device = x.device
+        S = self.simulation_length
+
+        # ── Schedule: compute finish_at for each node ────────────────
+        # NeuralCore: takes S cycles after its inputs are ready.
+        # ComputeOp:  instantaneous (finish == start).
+        finish_at: Dict[int, int] = {}
+        for node in self.nodes:
+            max_ready = 0
+            for sp in self._input_spans[int(node.id)]:
+                if sp.kind == "node":
+                    src_id = int(sp.src_node_id)
+                    max_ready = max(max_ready, finish_at.get(src_id, 0))
+            if isinstance(node, NeuralCore):
+                finish_at[node.id] = max_ready + S
+            else:
+                finish_at[node.id] = max_ready  # ComputeOp: instantaneous
+
+        total_cycles = max(finish_at.values()) if finish_at else S
+
+        # ── State for NeuralCores ────────────────────────────────────
+        activation_cache: Dict[int, torch.Tensor] = {}
+        self._last_core_spike_counts: Dict[int, float] = {}
+        memb: Dict[int, torch.Tensor] = {}
+        fired: Dict[int, torch.Tensor] = {}
+
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                out_dim = node.core_matrix.shape[1]
+                memb[node.id] = torch.zeros(batch_size, out_dim, device=device)
+                fired[node.id] = torch.zeros(batch_size, out_dim,
+                                             dtype=torch.bool, device=device)
+                activation_cache[node.id] = torch.zeros(batch_size, out_dim, device=device)
+                self._last_core_spike_counts[node.id] = 0.0
+
+        compute_op_done: set = set()
+
+        # ── Main cycle loop ──────────────────────────────────────────
+        for cycle in range(total_cycles):
+            for node in self.nodes:
+                if isinstance(node, NeuralCore):
+                    core_start = finish_at[node.id] - S
+                    if not (cycle >= core_start and cycle < finish_at[node.id]):
+                        continue
+
+                    k = cycle - core_start
+                    param_idx = self._id_to_param_idx[node.id]
+                    weight = self.neural_core_params[param_idx]
+                    threshold = self.thresholds[param_idx]
+
+                    if k == 0:
+                        # Phase 1: gather inputs, compute initial charge.
+                        spans = self._input_spans[int(node.id)]
+                        in_dim = int(len(node.input_sources.flatten()))
+                        inp = torch.zeros(batch_size, in_dim, device=device)
+                        self._fill_activation_from_ir_spans(
+                            inp, x=x, activation_cache=activation_cache, spans=spans
+                        )
+                        memb[node.id] = torch.matmul(weight, inp.T).T
+
+                    # Phase 2: fire-once check + constant ramp.
+                    ramp = threshold / S
+                    can_fire = (~fired[node.id]) & (memb[node.id] >= threshold)
+                    activation_cache[node.id][can_fire] = float(S - k) / S
+                    fired[node.id] = fired[node.id] | can_fire
+                    memb[node.id] = memb[node.id] + ramp
+
+                elif isinstance(node, ComputeOp):
+                    if node.id in compute_op_done:
+                        continue
+                    # Execute once when the schedule says this node is ready.
+                    if cycle < finish_at[node.id]:
+                        continue
+                    activation_cache[node.id] = self._execute_compute_op_ttfs(
+                        node, x, batch_size, device, activation_cache
+                    )
+                    compute_op_done.add(node.id)
+                else:
+                    raise TypeError(f"Unknown node type: {type(node)}")
+
+        # Gather output activations
+        output_sources = list(self.output_sources.flatten())
+        output_signals = torch.zeros(batch_size, len(output_sources), device=device)
+        self._fill_activation_from_ir_spans(
+            output_signals, x=x, activation_cache=activation_cache, spans=self._output_spans
+        )
+
+        self.total_spikes = 0.0
+        return output_signals
+
+    # -----------------------------------------------------------------
+    # TTFS ComputeOp helper (shared by continuous + quantized)
+    # -----------------------------------------------------------------
+    def _execute_compute_op_ttfs(
+        self,
+        node: ComputeOp,
+        x: torch.Tensor,
+        batch_size: int,
+        device: torch.device,
+        activation_cache: Dict[int, torch.Tensor],
+    ) -> torch.Tensor:
+        """Execute a ComputeOp in activation space (TTFS modes)."""
+        spans = self._input_spans[int(node.id)]
+        in_dim = int(len(node.input_sources.flatten()))
+        inp = torch.zeros(batch_size, in_dim, device=device)
+        self._fill_activation_from_ir_spans(
+            inp, x=x, activation_cache=activation_cache, spans=spans
+        )
+
+        if node.input_shape is not None:
+            x_op = inp.view(batch_size, *node.input_shape)
+        else:
+            x_op = inp
+
+        if node.op_type == "max_pool2d":
+            y_op = F.max_pool2d(
+                x_op,
+                kernel_size=node.params.get("kernel_size", 2),
+                stride=node.params.get("stride", None),
+                padding=node.params.get("padding", 0),
+            )
+        elif node.op_type == "avg_pool2d":
+            y_op = F.avg_pool2d(
+                x_op,
+                kernel_size=node.params.get("kernel_size", 2),
+                stride=node.params.get("stride", None),
+                padding=node.params.get("padding", 0),
+            )
+        elif node.op_type == "adaptive_avg_pool2d":
+            y_op = F.adaptive_avg_pool2d(x_op, node.params.get("output_size", (1, 1)))
+        elif node.op_type in ("flatten", "identity"):
+            y_op = x_op
+        else:
+            raise NotImplementedError(
+                f"ComputeOp '{node.op_type}' not implemented in TTFS mode"
+            )
+        return y_op.view(batch_size, -1)
 
     def get_core_spike_rates(self) -> list[float]:
         """
@@ -546,6 +678,7 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
         preprocessor: nn.Module,
         firing_mode: str = "Default",
         thresholding_mode: str = "<",
+        spiking_mode: str = "rate",
     ):
         # Force deterministic spike mode for stability
         super().__init__(
@@ -556,15 +689,16 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
             firing_mode,
             spike_mode="Uniform",  # Uniform is deterministic and stable
             thresholding_mode=thresholding_mode,
+            spiking_mode=spiking_mode,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Execute stable spiking simulation and track per-core spike counts.
 
-        For TTFS mode, delegates to the parent TTFS forward (already deterministic).
+        For TTFS modes, delegates to the parent TTFS forward (already deterministic).
         """
-        if self.firing_mode == "TTFS":
+        if self.spiking_mode in self._TTFS_SPIKING_MODES:
             return self._forward_ttfs(x)
         return self._forward_stable_rate(x)
 

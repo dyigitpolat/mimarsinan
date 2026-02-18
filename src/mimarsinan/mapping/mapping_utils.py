@@ -1733,28 +1733,46 @@ class ModelRepresentation:
         return values[self.output_layer_mapper]
 
 def hard_cores_to_chip(input_size, hardcore_mapping, axons_per_core, neurons_per_core, leak, weight_type):
+    """
+    Convert a HardCoreMapping into a ChipModel for nevresim.
+
+    When the mapping contains heterogeneous core sizes, each core's weight
+    matrix and axon-source list are padded with zeros / off-sources to the
+    uniform ``axons_per_core`` x ``neurons_per_core`` dimensions required by
+    the C++ template.
+    """
     output_sources = hardcore_mapping.output_sources
 
-    hardcores = [
-        generate_core_weights(
-            neurons_per_core, 
-            axons_per_core, 
-            hardcore.core_matrix.transpose(),
-            neurons_per_core,
-            hardcore.threshold,
-            hardcore.latency)
-        for hardcore in hardcore_mapping.cores
-    ]
+    hardcores = []
+    for hardcore in hardcore_mapping.cores:
+        # ``outs`` = actual neuron count for this core (may be smaller
+        # than the uniform target when the pool is heterogeneous).
+        outs = int(hardcore.neurons_per_core)
+        hardcores.append(
+            generate_core_weights(
+                neurons_per_core,
+                axons_per_core,
+                hardcore.core_matrix.transpose(),
+                outs,
+                hardcore.threshold,
+                hardcore.latency,
+            )
+        )
 
-    hardcore_connections = \
-        [ Connection(hardcore.axon_sources) for hardcore in hardcore_mapping.cores ]
-        
+    hardcore_connections = []
+    for hardcore in hardcore_mapping.cores:
+        # Pad axon_sources to the uniform target size.
+        axon_sources = list(hardcore.axon_sources)
+        while len(axon_sources) < axons_per_core:
+            axon_sources.append(SpikeSource(-1, 0, is_input=False, is_off=True))
+        hardcore_connections.append(Connection(axon_sources))
+
     chip = ChipModel(
         axons_per_core, neurons_per_core, len(hardcores), input_size,
-        len(output_sources), leak, hardcore_connections, output_sources, hardcores, 
+        len(output_sources), leak, hardcore_connections, output_sources, hardcores,
         weight_type
     )
 
     chip.load_from_json(chip.get_chip_json()) # sanity check
-    
+
     return chip

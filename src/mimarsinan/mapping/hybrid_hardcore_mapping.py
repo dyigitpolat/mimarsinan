@@ -121,6 +121,28 @@ def _remap_external_sources_to_segment_inputs(
     return IRGraph(nodes=new_nodes, output_sources=np.array(output_sources, dtype=object))
 
 
+def _flush_neural_segment(
+    *,
+    current_neural: list[NeuralCore],
+    output_sources: np.ndarray,
+    shared_pool: list[HardCore],
+    name: str,
+) -> HybridStage:
+    """Pack a neural segment using cores drawn from *shared_pool*."""
+    seg_graph = _remap_external_sources_to_segment_inputs(
+        nodes=current_neural,
+        output_sources=output_sources,
+    )
+    soft = ir_graph_to_soft_core_mapping(seg_graph)
+
+    # HardCoreMapping receives the shared pool; cores consumed here are
+    # removed from the pool so subsequent segments cannot reuse them.
+    hard = HardCoreMapping(shared_pool)
+    hard.map(soft)
+
+    return HybridStage(kind="neural", name=name, hard_core_mapping=hard)
+
+
 def build_hybrid_hard_core_mapping(
     *,
     ir_graph: IRGraph,
@@ -130,9 +152,15 @@ def build_hybrid_hard_core_mapping(
     Compile a unified IRGraph into a HybridHardCoreMapping:
     - consecutive NeuralCore nodes are grouped into a segment and packed to HardCoreMapping
     - ComputeOp nodes become sync-barrier stages
+
+    A **single** pool of hardware cores is allocated upfront and shared
+    across all neural segments so the total core budget is respected.
     """
 
     stages: list[HybridStage] = []
+
+    # Single shared pool for all segments
+    shared_pool: list[HardCore] = _make_available_hardware_cores(cores_config)
 
     current_neural: list[NeuralCore] = []
     for node in ir_graph.nodes:
@@ -143,20 +171,13 @@ def build_hybrid_hard_core_mapping(
         if isinstance(node, ComputeOp):
             # Flush neural segment (if any): outputs are the ComputeOp inputs (barrier interface).
             if current_neural:
-                seg_graph = _remap_external_sources_to_segment_inputs(
-                    nodes=current_neural,
+                stage = _flush_neural_segment(
+                    current_neural=current_neural,
                     output_sources=node.input_sources,
+                    shared_pool=shared_pool,
+                    name=f"neural_segment_until:{node.name}",
                 )
-                soft = ir_graph_to_soft_core_mapping(seg_graph)
-                hard = HardCoreMapping(_make_available_hardware_cores(cores_config))
-                hard.map(soft)
-                stages.append(
-                    HybridStage(
-                        kind="neural",
-                        name=f"neural_segment_until:{node.name}",
-                        hard_core_mapping=hard,
-                    )
-                )
+                stages.append(stage)
                 current_neural = []
 
             # Add compute barrier stage.
@@ -167,18 +188,15 @@ def build_hybrid_hard_core_mapping(
 
     # Flush final neural segment: outputs are the IRGraph outputs.
     if current_neural:
-        seg_graph = _remap_external_sources_to_segment_inputs(
-            nodes=current_neural,
+        stage = _flush_neural_segment(
+            current_neural=current_neural,
             output_sources=ir_graph.output_sources,
+            shared_pool=shared_pool,
+            name="neural_segment_final",
         )
-        soft = ir_graph_to_soft_core_mapping(seg_graph)
-        hard = HardCoreMapping(_make_available_hardware_cores(cores_config))
-        hard.map(soft)
-        stages.append(HybridStage(kind="neural", name="neural_segment_final", hard_core_mapping=hard))
+        stages.append(stage)
 
     if not stages:
         raise ValueError("Cannot build HybridHardCoreMapping: IRGraph has no stages.")
 
     return HybridHardCoreMapping(stages=stages)
-
-

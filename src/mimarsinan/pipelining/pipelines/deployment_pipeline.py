@@ -133,10 +133,28 @@ class DeploymentPipeline(Pipeline):
         self.tolerance = self.config["degradation_tolerance"]
 
         # Spiking-mode defaults.
-        if self.config.get("spiking_mode") == "ttfs":
+        # The user only needs to set ``spiking_mode``; firing_mode,
+        # spike_generation_mode and thresholding_mode are derived automatically.
+        #   "ttfs"           → analytical / continuous TTFS (Python + C++)
+        #   "ttfs_quantized" → cycle-based quantised TTFS  (Python + C++)
+        #   anything else    → rate-coded (Default)
+        spiking = self.config.get("spiking_mode", "rate")
+        if spiking in ("ttfs", "ttfs_quantized"):
             self.config.setdefault("firing_mode", "TTFS")
             self.config.setdefault("spike_generation_mode", "TTFS")
             self.config.setdefault("thresholding_mode", "<=")
+
+            # Guard: TTFS spiking modes require TTFS firing / spike generation.
+            if self.config["firing_mode"] != "TTFS":
+                raise ValueError(
+                    f"spiking_mode='{spiking}' requires firing_mode='TTFS', "
+                    f"got '{self.config['firing_mode']}'"
+                )
+            if self.config["spike_generation_mode"] != "TTFS":
+                raise ValueError(
+                    f"spiking_mode='{spiking}' requires spike_generation_mode='TTFS', "
+                    f"got '{self.config['spike_generation_mode']}'"
+                )
         else:
             self.config.setdefault("firing_mode", "Default")
             self.config.setdefault("spike_generation_mode", "Deterministic")
