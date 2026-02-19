@@ -12,7 +12,7 @@ from pymoo.termination import get_termination
 
 from mimarsinan.search.optimizers.base import SearchOptimizer
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
-from mimarsinan.search.results import Candidate, SearchResult
+from mimarsinan.search.results import Candidate, SearchResult, select_minimax_rank
 
 
 @dataclass
@@ -132,15 +132,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 metadata={"x": x.tolist(), "generation": gen, "is_pareto": is_pareto}
             ))
 
-        # Selection rule: maximize accuracy, then minimize cores, unused/core, params (as per plan).
-        def _sort_key(c: Candidate[Dict[str, Any]]):
-            acc = float(c.objectives.get("accuracy", 0.0))
-            cores = float(c.objectives.get("hard_cores_used", self.invalid_penalty))
-            unused = float(c.objectives.get("avg_unused_area_per_core", self.invalid_penalty))
-            params = float(c.objectives.get("total_params", self.invalid_penalty))
-            return (-acc, cores, unused, params)
-
-        best = min(pareto, key=_sort_key) if pareto else Candidate(configuration={}, objectives={}, metadata={})
+        best = select_minimax_rank(pareto, specs) or Candidate(configuration={}, objectives={}, metadata={})
 
         history = []
         if getattr(res, "history", None):

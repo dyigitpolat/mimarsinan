@@ -60,7 +60,7 @@ class FastAccuracyEvaluator:
         )
 
         use_amp = self.device.type == "cuda"
-        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
         total_batches = max(1, len(train_loader))
         warmup_batches = max(1, int(total_batches * float(self.warmup_fraction)))
@@ -79,7 +79,7 @@ class FastAccuracyEvaluator:
                 pg["lr"] = lr_now
 
             optimizer.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with torch.amp.autocast("cuda", enabled=use_amp):
                 loss = loss_fn(model, x, y)
             scaler.scale(loss).backward()
             scaler.step(optimizer)

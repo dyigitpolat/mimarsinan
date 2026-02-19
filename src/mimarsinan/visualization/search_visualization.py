@@ -47,8 +47,7 @@ def plot_history_best_metrics(result_json: Dict[str, Any], out_path: str) -> Non
     # Pull series if present
     series = {
         "accuracy": [b.get("accuracy") for b in bests],
-        "hard_cores_used": [b.get("hard_cores_used") for b in bests],
-        "avg_unused_area_per_core": [b.get("avg_unused_area_per_core") for b in bests],
+        "wasted_area": [b.get("wasted_area") for b in bests],
         "total_params": [b.get("total_params") for b in bests],
     }
 
@@ -82,8 +81,7 @@ def plot_history_metrics_separate(result_json: Dict[str, Any], out_dir: str) -> 
 
     metrics = [
         ("accuracy", "accuracy (max)"),
-        ("hard_cores_used", "hard_cores_used (min)"),
-        ("avg_unused_area_per_core", "avg_unused_area_per_core (min)"),
+        ("wasted_area", "wasted_area (min)"),
         ("total_params", "total_params (min)"),
     ]
 
@@ -129,18 +127,15 @@ def plot_default_pareto_scatters(result_json: Dict[str, Any], out_dir: str) -> N
     if not pareto:
         return
 
-    cores = [_safe_float(c.get("objectives", {}).get("hard_cores_used")) for c in pareto]
-    unused = [_safe_float(c.get("objectives", {}).get("avg_unused_area_per_core")) for c in pareto]
+    wasted = [_safe_float(c.get("objectives", {}).get("wasted_area")) for c in pareto]
     params = [_safe_float(c.get("objectives", {}).get("total_params")) for c in pareto]
     acc = [_safe_float(c.get("objectives", {}).get("accuracy")) for c in pareto]
 
     # Filter out obvious penalty values so plots remain readable.
     PENALTY_CUTOFF = 1e17
     for i in range(len(pareto)):
-        if cores[i] is not None and cores[i] >= PENALTY_CUTOFF:
-            cores[i] = None
-        if unused[i] is not None and unused[i] >= PENALTY_CUTOFF:
-            unused[i] = None
+        if wasted[i] is not None and wasted[i] >= PENALTY_CUTOFF:
+            wasted[i] = None
         if params[i] is not None and params[i] >= PENALTY_CUTOFF:
             params[i] = None
 
@@ -154,26 +149,15 @@ def plot_default_pareto_scatters(result_json: Dict[str, Any], out_dir: str) -> N
             ys.append(float(y))
         return xs, ys
 
-    xs, ys = _pairs(cores, acc)
+    xs, ys = _pairs(wasted, acc)
     if xs:
         plot_scatter(
             xs=xs,
             ys=ys,
-            xlabel="hard_cores_used (min)",
+            xlabel="wasted_area (min)",
             ylabel="accuracy (max)",
-            title="Pareto: cores vs accuracy",
-            out_path=os.path.join(out_dir, "scatter_cores_vs_acc.png"),
-        )
-
-    xs, ys = _pairs(cores, unused)
-    if xs:
-        plot_scatter(
-            xs=xs,
-            ys=ys,
-            xlabel="hard_cores_used (min)",
-            ylabel="avg_unused_area_per_core (min)",
-            title="Pareto: cores vs unused/core",
-            out_path=os.path.join(out_dir, "scatter_cores_vs_unused.png"),
+            title="Pareto: wasted area vs accuracy",
+            out_path=os.path.join(out_dir, "scatter_wasted_vs_acc.png"),
         )
 
     xs, ys = _pairs(params, acc)
@@ -185,6 +169,17 @@ def plot_default_pareto_scatters(result_json: Dict[str, Any], out_dir: str) -> N
             ylabel="accuracy (max)",
             title="Pareto: params vs accuracy",
             out_path=os.path.join(out_dir, "scatter_params_vs_acc.png"),
+        )
+
+    xs, ys = _pairs(wasted, params)
+    if xs:
+        plot_scatter(
+            xs=xs,
+            ys=ys,
+            xlabel="wasted_area (min)",
+            ylabel="total_params (min)",
+            title="Pareto: wasted area vs params",
+            out_path=os.path.join(out_dir, "scatter_wasted_vs_params.png"),
         )
 
 
@@ -246,34 +241,31 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
             norm = [(1.0 - v) if v is not None else None for v in norm]
         return norm
 
-    cores = _pareto_series("hard_cores_used")
-    unused = _pareto_series("avg_unused_area_per_core")
+    wasted = _pareto_series("wasted_area")
     params = _pareto_series("total_params")
     acc = _pareto_series("accuracy")
 
-    n_cores = _normalize(cores, goal=goal_by_name.get("hard_cores_used"))
-    n_unused = _normalize(unused, goal=goal_by_name.get("avg_unused_area_per_core"))
+    n_wasted = _normalize(wasted, goal=goal_by_name.get("wasted_area"))
     n_params = _normalize(params, goal=goal_by_name.get("total_params"))
     n_acc = _normalize(acc, goal=goal_by_name.get("accuracy"))
 
     triplets = [
-        ("cores", n_cores, "unused/core", n_unused, "accuracy", n_acc, "params", n_params),
-        ("cores", n_cores, "params", n_params, "accuracy", n_acc, "unused/core", n_unused),
-        ("params", n_params, "unused/core", n_unused, "accuracy", n_acc, "cores", n_cores),
-        ("cores", n_cores, "params", n_params, "unused/core", n_unused, "accuracy", n_acc),
+        ("wasted_area", n_wasted, "params", n_params, "accuracy", n_acc, "accuracy", n_acc),
+        ("params", n_params, "accuracy", n_acc, "wasted_area", n_wasted, "wasted_area", n_wasted),
+        ("wasted_area", n_wasted, "accuracy", n_acc, "params", n_params, "params", n_params),
     ]
 
     views = [(22, 45), (22, 135), (22, 225), (22, 315)]
 
-    # Layout: 8 rows x 4 cols
-    # - rows 0-1: history 2x2
-    # - rows 2-3: 2D pareto 2x2
-    # - rows 4-7: 3D triplets, one row per triplet, 4 views per row
-    fig = plt.figure(figsize=(20, 26))
+    # Layout: 5 rows x 4 cols
+    # - row 0: history 1x3
+    # - row 1: 2D pareto 1x3
+    # - rows 2-4: 3D triplets, one row per triplet, 4 views per row
+    fig = plt.figure(figsize=(20, 22))
     gs = fig.add_gridspec(
-        nrows=8,
+        nrows=5,
         ncols=4,
-        height_ratios=[1.2, 1.2, 1.2, 1.2, 1.6, 1.6, 1.6, 1.6],
+        height_ratios=[1.2, 1.2, 1.6, 1.6, 1.6],
         hspace=0.45,
         wspace=0.25,
     )
@@ -281,15 +273,14 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
     fig.suptitle("NSGA-II Search Report (single file)", fontsize=14, y=0.995)
 
     # History block
-    hist_gs = gs[0:2, 0:4].subgridspec(2, 2, hspace=0.35, wspace=0.25)
+    hist_gs = gs[0, 0:4].subgridspec(1, 3, wspace=0.25)
     hist_metrics = [
         ("accuracy", "accuracy (max)"),
-        ("hard_cores_used", "hard_cores_used (min)"),
-        ("avg_unused_area_per_core", "avg_unused_area_per_core (min)"),
+        ("wasted_area", "wasted_area (min)"),
         ("total_params", "total_params (min)"),
     ]
     for i, (k, label) in enumerate(hist_metrics):
-        ax = fig.add_subplot(hist_gs[i // 2, i % 2])
+        ax = fig.add_subplot(hist_gs[0, i])
         ys = _hist_series(k)
         ax.set_title(f"History: {k}", fontsize=11)
         if gens and not all(y is None for y in ys):
@@ -299,15 +290,14 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
         ax.grid(True, alpha=0.25)
 
     # 2D Pareto block
-    p2_gs = gs[2:4, 0:4].subgridspec(2, 2, hspace=0.35, wspace=0.25)
+    p2_gs = gs[1, 0:4].subgridspec(1, 3, wspace=0.25)
     p2 = [
-        ("hard_cores_used (min)", cores, "accuracy (max)", acc, "Pareto: cores vs accuracy"),
-        ("hard_cores_used (min)", cores, "avg_unused_area_per_core (min)", unused, "Pareto: cores vs unused/core"),
+        ("wasted_area (min)", wasted, "accuracy (max)", acc, "Pareto: wasted area vs accuracy"),
         ("total_params (min)", params, "accuracy (max)", acc, "Pareto: params vs accuracy"),
-        ("total_params (min)", params, "hard_cores_used (min)", cores, "Pareto: params vs cores"),
+        ("wasted_area (min)", wasted, "total_params (min)", params, "Pareto: wasted area vs params"),
     ]
     for i, (xl, xv, yl, yv, title) in enumerate(p2):
-        ax = fig.add_subplot(p2_gs[i // 2, i % 2])
+        ax = fig.add_subplot(p2_gs[0, i])
         xs, ys = _pairs(xv, yv)
         ax.scatter(xs, ys, s=14, alpha=0.8)
         ax.set_title(title, fontsize=11)
@@ -335,7 +325,7 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
         # create 4 views in this row
         last_sc = None
         for col_idx, (elev, azim) in enumerate(views):
-            ax = fig.add_subplot(gs[4 + row_idx, col_idx], projection="3d")
+            ax = fig.add_subplot(gs[2 + row_idx, col_idx], projection="3d")
             sc = ax.scatter(X, Y, Z, c=C, s=14, alpha=0.9, cmap="viridis")
             last_sc = sc
 

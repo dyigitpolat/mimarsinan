@@ -1,7 +1,7 @@
 {
-  "seed": 0,
+  "seed": 32,
   "pipeline_mode": "phased",
-  "experiment_name": "mnist_arch_search_nsga2_ttfs",
+  "experiment_name": "2_mnist_arch_search_nsga2_ttfs",
   "generated_files_path": "./generated",
   "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
   "data_provider_name": "MNIST_DataProvider",
@@ -27,7 +27,7 @@
 
   "deployment_parameters": {
     "lr": 0.001,
-    "training_epochs": 1,
+    "training_epochs": 10,
     "tuner_epochs": 1,
     "nas_cycles": 5,
     "nas_batch_size": 5,
@@ -40,8 +40,8 @@
 
     "arch_search": {
       "pop_size": 8,
-      "generations": 15,
-      "seed": 42,
+      "generations": 5,
+      "seed": 32,
 
       "patch_channels_options": [16, 32, 48, 64, 96, 128],
       "fc_w1_options": [32, 64, 96, 128],
@@ -66,7 +66,7 @@
   },
 
   "target_metric_override": null,
-  "start_step": "Hard Core Mapping",
+  "start_step": null,
   "stop_step": null
 }
 

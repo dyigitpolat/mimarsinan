@@ -342,7 +342,7 @@ Operates in two modes based on `configuration_mode`:
 - **`"user"`**: Uses the model config and core topology from `deployment_parameters` directly.
 - **`"nas"`**: Runs multi-objective optimization (NSGA-II or Kedi) via a `JointPerceptronMixerArchHwProblem` that jointly optimizes architecture parameters and hardware core-type dimensions.
 
-Objectives: `hard_cores_used`, `avg_unused_area_per_core`, `total_params`, `accuracy`.
+Objectives: `accuracy` (max), `wasted_area` (min), `total_params` (min).
 
 The step produces a `PerceptronMixerBuilder` and the resolved platform constraints (including `cores` — a list of core types with `{count, max_axons, max_neurons}`). The builder is created directly from the search-resolved constraints; **no side-effect writes** are made to `pipeline.config`. Downstream steps read hardware dimensions from the cached `platform_constraints_resolved` entry.
 
@@ -988,7 +988,7 @@ Jointly optimizes:
 - **Architecture parameters**: `patch_rows`, `patch_cols`, `patch_channels`, `fc_w1`, `fc_w2`
 - **Hardware core-type dimensions**: Number of core types (heterogeneous), axon/neuron counts per type, threshold grouping
 
-Objectives: `hard_cores_used` (min), `avg_unused_area_per_core` (min), `total_params` (min), `accuracy` (max).
+Objectives: `accuracy` (max), `wasted_area` (min), `total_params` (min).
 
 Key design decisions:
 

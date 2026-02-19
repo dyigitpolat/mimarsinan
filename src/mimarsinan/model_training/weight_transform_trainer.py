@@ -38,4 +38,4 @@ class WeightTransformTrainer(BasicTrainer):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max = epochs, eta_min = lr * 1e-3)
         
-        return optimizer, scheduler, torch.cuda.amp.GradScaler()
+        return optimizer, scheduler, torch.amp.GradScaler("cuda")
