@@ -24,6 +24,46 @@ def _capacity(hc: HardCoreLike) -> int:
     return int(hc.get_input_count()) * int(hc.get_output_count())
 
 
+def _placement_waste(soft: SoftCoreLike, hard: HardCoreLike) -> int:
+    """
+    Estimate the area wasted by placing *soft* into *hard*.
+
+    In diagonal packing each softcore occupies a block of axons × neurons
+    along the diagonal.  The dead zone for a single placement is the
+    L-shaped region that neither the softcore nor any future placement
+    can use::
+
+        waste = (h_a − s_a) · s_n + s_a · (h_n − s_n)
+              = h_a · s_n + s_a · h_n − 2 · s_a · s_n
+
+    This naturally penalises aspect-ratio mismatches: a softcore that is
+    narrow in axons but wide in neurons will score much lower on a
+    narrow-axon core type than on a square core of the same total area.
+    """
+    s_a = int(soft.get_input_count())
+    s_n = int(soft.get_output_count())
+    h_a = int(hard.get_input_count())
+    h_n = int(hard.get_output_count())
+    return h_a * s_n + s_a * h_n - 2 * s_a * s_n
+
+
+def _remaining_capacity(soft: SoftCoreLike, hard: HardCoreLike) -> int:
+    """
+    Remaining usable area after placing *soft* into *hard*.
+
+    Uses ``available_axons`` / ``available_neurons`` when present (used
+    cores), otherwise falls back to the full core dimensions (unused cores).
+
+    A lower value indicates a tighter fit — the softcore fills up the
+    remaining space more completely, reducing fragmentation.
+    """
+    avail_a = getattr(hard, "available_axons", int(hard.get_input_count()))
+    avail_n = getattr(hard, "available_neurons", int(hard.get_output_count()))
+    s_a = int(soft.get_input_count())
+    s_n = int(soft.get_output_count())
+    return (avail_a - s_a) * (avail_n - s_n)
+
+
 def pick_best_softcore(unmapped_cores: List[SoftT]) -> SoftT:
     """
     Heuristic used by the existing HardCoreMapping:
@@ -59,9 +99,17 @@ def greedy_pack_softcores(
     - real HardCoreMapping (parameterized mapping)
     - layout-only packer (shape-only evaluation for search)
 
-    Uses a **best-fit** strategy when selecting an unused core: among all
-    feasible unused cores, pick the *smallest* one (by capacity).  This
-    improves utilisation of heterogeneous core pools.
+    **Used-core selection** — among all feasible already-allocated cores,
+    pick the one with the minimum *remaining capacity* after placement.
+    This concentrates softcores into tightly-fitting cores, leaving other
+    used cores available for differently-shaped softcores.
+
+    **Unused-core selection** — among all feasible un-allocated cores,
+    pick the one with the minimum *placement waste*.  The waste metric
+    ``h_a · s_n + s_a · h_n − 2 · s_a · s_n`` naturally penalises
+    aspect-ratio mismatches, so a narrow-axon/wide-neuron softcore will
+    prefer a similarly-shaped hardware core over a square one of the same
+    total area.
 
     This mutates:
     - used_hardcores (may append newly allocated hardcores)
@@ -72,25 +120,30 @@ def greedy_pack_softcores(
     while softcores:
         core = pick_softcore(softcores)
 
+        # --- Try used cores: pick the one with the tightest fit. ---
         target_idx = None
+        best_remaining = float("inf")
         for idx, hc in enumerate(used_hardcores):
             if is_mapping_possible(core, hc):
-                target_idx = idx
-                break
+                rem = _remaining_capacity(core, hc)
+                if rem < best_remaining:
+                    best_remaining = rem
+                    target_idx = idx
 
         if target_idx is None:
+            # --- No used core fits: allocate an unused core. ---
             if not unused_hardcores:
                 raise RuntimeError("No more hard cores available")
 
-            # Best-fit: pick the smallest unused core that can accept this softcore.
+            # Best-fit by placement waste (aspect-ratio-aware).
             chosen_unused = None
-            chosen_cap = float("inf")
+            chosen_waste = float("inf")
             for hc in unused_hardcores:
                 if is_mapping_possible(core, hc):
-                    cap = _capacity(hc)
-                    if cap < chosen_cap:
+                    waste = _placement_waste(core, hc)
+                    if waste < chosen_waste:
                         chosen_unused = hc
-                        chosen_cap = cap
+                        chosen_waste = waste
 
             if chosen_unused is None:
                 raise RuntimeError(

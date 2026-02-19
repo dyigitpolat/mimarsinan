@@ -757,8 +757,8 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
 
 `HardCoreMapping` packs `SoftCore`s into `HardCore`s using the generic `greedy_pack_softcores` algorithm (`core_packing.py`):
 1. Sort soft cores by neuron count (descending)
-2. For each soft core, first try to fit it into an already-used hardware core
-3. If no used core has room, pick the **smallest unused core** that can accept the softcore (**best-fit** strategy), which improves utilisation of heterogeneous core pools
+2. For each soft core, try to fit it into an already-used hardware core.  Among all feasible used cores, pick the one with the minimum **remaining capacity** after placement `(avail_a − s_a) × (avail_n − s_n)`, concentrating softcores into tightly-fitting cores and leaving others available for differently-shaped softcores.
+3. If no used core has room, pick an unused core using **wasted-area minimisation**: the waste metric `h_a · s_n + s_a · h_n − 2 · s_a · s_n` (the L-shaped dead zone from diagonal packing) naturally penalises aspect-ratio mismatches, so a narrow-axon/wide-neuron softcore will prefer a similarly-shaped hardware core over a square one of the same total area.
 4. Place the soft core, update axon sources to point to hardware core positions
 5. Track the mapping `(soft_core_id, soft_neuron) → (hard_core_idx, hard_neuron)`
 
