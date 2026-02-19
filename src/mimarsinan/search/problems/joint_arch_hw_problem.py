@@ -29,10 +29,9 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
     - hardware core-type dimensions + threshold grouping approximation
 
     Produces objectives:
-    - hard_cores_used (min)
-    - avg_unused_area_per_core (min)
-    - total_params (min)
     - accuracy (max)
+    - wasted_area (min) — total unused area across all used hardware cores
+    - total_params (min)
     """
 
     data_provider_factory: Any
@@ -75,10 +74,9 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
     @property
     def objectives(self) -> Sequence[ObjectiveSpec]:
         return (
-            ObjectiveSpec("hard_cores_used", "min"),
-            ObjectiveSpec("avg_unused_area_per_core", "min"),
-            ObjectiveSpec("total_params", "min"),
             ObjectiveSpec("accuracy", "max"),
+            ObjectiveSpec("wasted_area", "min"),
+            ObjectiveSpec("total_params", "min"),
         )
 
     @property
@@ -260,10 +258,9 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
         if not self.validate(configuration):
             obj = {
-                "hard_cores_used": large,
-                "avg_unused_area_per_core": large,
-                "total_params": large,
                 "accuracy": 0.0,
+                "wasted_area": large,
+                "total_params": large,
             }
             self._cache[key] = obj
             return obj
@@ -310,10 +307,9 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
             if not init_ok:
                 obj = {
-                    "hard_cores_used": large,
-                    "avg_unused_area_per_core": large,
-                    "total_params": large,
                     "accuracy": 0.0,
+                    "wasted_area": large,
+                    "total_params": large,
                 }
                 self._cache[key] = obj
                 return obj
@@ -343,10 +339,9 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
             if not pack.feasible:
                 obj = {
-                    "hard_cores_used": large,
-                    "avg_unused_area_per_core": large,
-                    "total_params": total_params,
                     "accuracy": 0.0,
+                    "wasted_area": large,
+                    "total_params": total_params,
                 }
                 self._cache[key] = obj
                 return obj
@@ -378,19 +373,17 @@ class JointPerceptronMixerArchHwProblem(EncodedProblem[Dict[str, Any]]):
             accuracy = float(acc_eval.evaluate(model))
 
             obj = {
-                "hard_cores_used": float(pack.cores_used),
-                "avg_unused_area_per_core": float(pack.avg_unused_area_per_core),
-                "total_params": float(total_params),
                 "accuracy": float(accuracy),
+                "wasted_area": float(pack.unused_area_total),
+                "total_params": float(total_params),
             }
             self._cache[key] = obj
             return obj
         except Exception:
             obj = {
-                "hard_cores_used": large,
-                "avg_unused_area_per_core": large,
-                "total_params": large,
                 "accuracy": 0.0,
+                "wasted_area": large,
+                "total_params": large,
             }
             self._cache[key] = obj
             return obj

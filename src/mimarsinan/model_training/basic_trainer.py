@@ -63,11 +63,11 @@ class BasicTrainer:
         else:
             scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
 
-        return optimizer, scheduler, torch.cuda.amp.GradScaler()
+        return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
     def _backward_pass_on_loss(self, x, y, scaler):
         self.model.train()
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast("cuda"):
             loss = self.loss_function(self.model, x, y)
         scaler.scale(loss).backward()
         return loss

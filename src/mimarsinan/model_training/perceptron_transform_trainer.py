@@ -80,4 +80,4 @@ class PerceptronTransformTrainer(BasicTrainer):
             optimizer, lr_lambda = lambda epoch: 1)
         scheduler = identity_scheduler
         
-        return optimizer, scheduler, torch.cuda.amp.GradScaler(enabled=False)
+        return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
