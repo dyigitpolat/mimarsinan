@@ -34,13 +34,14 @@ def _build_chip_and_exec_decl(
             f"    using exec = TTFSContinuousExecution;"
         )
     elif spiking_mode == "ttfs_quantized":
-        # Quantised TTFS — single-pass sweep, each neuron internally
-        # steps through S discrete time steps (Phase 1 + Phase 2).
+        # Quantised TTFS — outer cycle loop of (Latency+1)*S cycles.
+        # Each neuron is stateful: Phase 1 (initial charge) on first
+        # active cycle, Phase 2 (fire-once + ramp) on subsequent cycles.
         return (
             f"static constinit auto chip = \n"
             f"        generate_chip<TTFSQuantizedCompute<{simulation_length}>, {weight_type}>();\n"
             f"\n"
-            f"    using exec = TTFSExecution<{simulation_length}>;"
+            f"    using exec = TTFSExecution<{simulation_length}, {latency}>;"
         )
     else:
         # Rate-coded modes (Default, Novena).
