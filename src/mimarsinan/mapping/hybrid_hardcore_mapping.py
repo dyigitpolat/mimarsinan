@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import List, Literal, Sequence
 
 import numpy as np
@@ -10,19 +11,36 @@ from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCo
 from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
 
 
+_FINAL_OUTPUT_SENTINEL = -999
+
+
+@dataclass
+class SegmentIOSlice:
+    """Maps a contiguous slice of a neural segment's I/O buffer to a state-buffer entry."""
+    node_id: int
+    offset: int
+    size: int
+
+
 @dataclass
 class HybridStage:
     """
     A single stage in a hybrid runtime program.
 
     - "neural": A HardCoreMapping that can be executed on the chip runtime.
-    - "compute": A ComputeOp that must be executed as a sync barrier (rate -> op -> respike).
+    - "compute": A ComputeOp that must be executed as a sync barrier.
+
+    Neural stages carry ``input_map`` / ``output_map`` metadata so the
+    runtime can assemble the segment's input from a global state buffer
+    and store the segment's output back into that buffer.
     """
 
     kind: Literal["neural", "compute"]
     name: str
     hard_core_mapping: HardCoreMapping | None = None
     compute_op: ComputeOp | None = None
+    input_map: list[SegmentIOSlice] = field(default_factory=list)
+    output_map: list[SegmentIOSlice] = field(default_factory=list)
 
 
 @dataclass
@@ -34,9 +52,13 @@ class HybridHardCoreMapping:
 
     Each neural segment can be packed/codegen'ed as a standalone chip program.
     ComputeOps represent host-side (or auxiliary) computation between chip runs.
+
+    ``output_sources`` mirrors the original IRGraph output_sources so the
+    runtime can assemble the final network output from the state buffer.
     """
 
     stages: List[HybridStage]
+    output_sources: np.ndarray = field(default_factory=lambda: np.array([], dtype=object))
 
     def get_compute_ops(self) -> List[ComputeOp]:
         return [s.compute_op for s in self.stages if s.kind == "compute" and s.compute_op is not None]
@@ -60,48 +82,64 @@ def _remap_external_sources_to_segment_inputs(
     *,
     nodes: list[NeuralCore],
     output_sources: np.ndarray,
-) -> IRGraph:
+) -> tuple[IRGraph, list[SegmentIOSlice]]:
     """
-    Build a neural-only IRGraph for a segment.
+    Build a neural-only IRGraph for a segment with support for
+    multiple external source nodes (skip connections).
 
-    Any IRSource references to nodes outside this segment are rewritten to
-    segment-local inputs (IRSource(node_id=-2, index=...)).
+    External IRSource references (node_id >= 0, not in this segment) are
+    remapped to segment-local inputs (IRSource(node_id=-2, index=...)).
+    Multiple external nodes are packed into a composite input buffer::
 
-    Current supported assumption (by design, for clean staging):
-    - External references must come from at most ONE upstream node_id (typically the
-      immediate preceding ComputeOp).
+        [original_input 0..max_orig] [ext_A 0..sA-1] [ext_B 0..sB-1] ...
+
+    Returns
+    -------
+    segment_graph : IRGraph
+        Neural-only graph with remapped sources.
+    input_map : list[SegmentIOSlice]
+        Describes how to assemble the composite input buffer from the
+        global state buffer at runtime.
     """
-
     node_ids = {n.id for n in nodes}
 
-    external_node_ids: set[int] = set()
-    for n in nodes:
-        for src in n.input_sources.flatten():
-            if isinstance(src, IRSource) and src.node_id >= 0 and src.node_id not in node_ids:
-                external_node_ids.add(src.node_id)
-
-    # Output sources must be satisfiable from this segment.
     for src in output_sources.flatten():
         if isinstance(src, IRSource) and src.node_id >= 0 and src.node_id not in node_ids:
             raise ValueError(
-                "Hybrid segment construction error: segment output_sources reference a node "
-                f"outside the segment (node_id={src.node_id})."
+                "Segment output_sources reference external node "
+                f"(node_id={src.node_id})."
             )
 
-    if len(external_node_ids) > 1:
-        # This implies a skip-connection / multi-input staging requirement. We can support this
-        # later by introducing explicit segment-IO packing, but keep the runtime clean for now.
-        raise NotImplementedError(
-            "Hybrid staging currently supports external inputs from a single upstream node_id "
-            f"(got {sorted(external_node_ids)})."
-        )
+    max_input_idx = -1
+    for n in nodes:
+        for src in n.input_sources.flatten():
+            if isinstance(src, IRSource) and src.is_input():
+                max_input_idx = max(max_input_idx, src.index)
 
-    external_node_id = next(iter(external_node_ids), None)
+    external_max_idx: dict[int, int] = {}
+    for n in nodes:
+        for src in n.input_sources.flatten():
+            if isinstance(src, IRSource) and src.node_id >= 0 and src.node_id not in node_ids:
+                external_max_idx[src.node_id] = max(
+                    external_max_idx.get(src.node_id, 0), src.index
+                )
+
+    input_map: list[SegmentIOSlice] = []
+    current_offset = (max_input_idx + 1) if max_input_idx >= 0 else 0
+
+    if max_input_idx >= 0:
+        input_map.append(SegmentIOSlice(node_id=-2, offset=0, size=max_input_idx + 1))
+
+    offsets: dict[int, int] = {}
+    for ext_id in sorted(external_max_idx.keys()):
+        size = external_max_idx[ext_id] + 1
+        offsets[ext_id] = current_offset
+        input_map.append(SegmentIOSlice(node_id=ext_id, offset=current_offset, size=size))
+        current_offset += size
 
     def remap_src(src: IRSource) -> IRSource:
         if src.node_id >= 0 and src.node_id not in node_ids:
-            # Preserve index: this is critical for ComputeOp -> next neural segment wiring.
-            return IRSource(node_id=-2, index=int(src.index))
+            return IRSource(node_id=-2, index=offsets[src.node_id] + src.index)
         return src
 
     new_nodes: list[NeuralCore] = []
@@ -111,36 +149,63 @@ def _remap_external_sources_to_segment_inputs(
         n2.input_sources = np.array(flat, dtype=object).reshape(n.input_sources.shape)
         new_nodes.append(n2)
 
-    # If there was an external node id, sanity-check that all such references were remapped.
-    if external_node_id is not None:
-        for n in new_nodes:
-            for src in n.input_sources.flatten():
-                if isinstance(src, IRSource) and src.node_id == external_node_id:
-                    raise AssertionError("Internal error: external source remapping incomplete.")
-
-    return IRGraph(nodes=new_nodes, output_sources=np.array(output_sources, dtype=object))
+    graph = IRGraph(
+        nodes=new_nodes,
+        output_sources=np.array(output_sources, dtype=object),
+    )
+    return graph, input_map
 
 
 def _flush_neural_segment(
     *,
     current_neural: list[NeuralCore],
-    output_sources: np.ndarray,
+    consumed_by: dict[int, set[int]],
     shared_pool: list[HardCore],
     name: str,
 ) -> HybridStage:
-    """Pack a neural segment using cores drawn from *shared_pool*."""
-    seg_graph = _remap_external_sources_to_segment_inputs(
+    """Pack a neural segment using cores drawn from *shared_pool*.
+
+    ``consumed_by`` is the pre-scanned map of *node_id → set of consumer
+    node_ids* over the full IR graph.  It is used to determine which
+    segment-internal nodes need to appear in the segment's output buffer
+    (i.e. those consumed by any node *outside* this segment).
+    """
+    segment_node_ids = {n.id for n in current_neural}
+
+    output_nodes: list[NeuralCore] = []
+    for n in current_neural:
+        consumers = consumed_by.get(n.id, set())
+        if any(c not in segment_node_ids for c in consumers):
+            output_nodes.append(n)
+
+    output_sources_list: list[IRSource] = []
+    output_map: list[SegmentIOSlice] = []
+    current_offset = 0
+    for n in output_nodes:
+        out_size = n.get_output_count()
+        output_map.append(SegmentIOSlice(node_id=n.id, offset=current_offset, size=out_size))
+        for idx in range(out_size):
+            output_sources_list.append(IRSource(node_id=n.id, index=idx))
+        current_offset += out_size
+
+    output_sources = np.array(output_sources_list, dtype=object)
+
+    seg_graph, input_map = _remap_external_sources_to_segment_inputs(
         nodes=current_neural,
         output_sources=output_sources,
     )
     soft = ir_graph_to_soft_core_mapping(seg_graph)
 
-    # HardCoreMapping receives the shared pool; cores consumed here are
-    # removed from the pool so subsequent segments cannot reuse them.
     hard = HardCoreMapping(shared_pool)
     hard.map(soft)
 
-    return HybridStage(kind="neural", name=name, hard_core_mapping=hard)
+    return HybridStage(
+        kind="neural",
+        name=name,
+        hard_core_mapping=hard,
+        input_map=input_map,
+        output_map=output_map,
+    )
 
 
 def build_hybrid_hard_core_mapping(
@@ -149,17 +214,27 @@ def build_hybrid_hard_core_mapping(
     cores_config: Sequence[dict],
 ) -> HybridHardCoreMapping:
     """
-    Compile a unified IRGraph into a HybridHardCoreMapping:
-    - consecutive NeuralCore nodes are grouped into a segment and packed to HardCoreMapping
-    - ComputeOp nodes become sync-barrier stages
+    Compile a unified IRGraph into a HybridHardCoreMapping.
+
+    Supports skip connections / residual paths through a state-buffer
+    approach: each neural stage carries ``input_map`` / ``output_map``
+    metadata so the runtime can maintain a ``Dict[int, Tensor]`` state
+    buffer keyed by original IR node_id.
 
     A **single** pool of hardware cores is allocated upfront and shared
     across all neural segments so the total core budget is respected.
     """
 
-    stages: list[HybridStage] = []
+    consumed_by: dict[int, set[int]] = defaultdict(set)
+    for node in ir_graph.nodes:
+        for src in node.input_sources.flatten():
+            if isinstance(src, IRSource) and src.node_id >= 0:
+                consumed_by[src.node_id].add(node.id)
+    for src in ir_graph.output_sources.flatten():
+        if isinstance(src, IRSource) and src.node_id >= 0:
+            consumed_by[src.node_id].add(_FINAL_OUTPUT_SENTINEL)
 
-    # Single shared pool for all segments
+    stages: list[HybridStage] = []
     shared_pool: list[HardCore] = _make_available_hardware_cores(cores_config)
 
     current_neural: list[NeuralCore] = []
@@ -169,28 +244,25 @@ def build_hybrid_hard_core_mapping(
             continue
 
         if isinstance(node, ComputeOp):
-            # Flush neural segment (if any): outputs are the ComputeOp inputs (barrier interface).
             if current_neural:
                 stage = _flush_neural_segment(
                     current_neural=current_neural,
-                    output_sources=node.input_sources,
+                    consumed_by=consumed_by,
                     shared_pool=shared_pool,
                     name=f"neural_segment_until:{node.name}",
                 )
                 stages.append(stage)
                 current_neural = []
 
-            # Add compute barrier stage.
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=copy.deepcopy(node)))
             continue
 
         raise TypeError(f"Unknown IR node type in hybrid compilation: {type(node)}")
 
-    # Flush final neural segment: outputs are the IRGraph outputs.
     if current_neural:
         stage = _flush_neural_segment(
             current_neural=current_neural,
-            output_sources=ir_graph.output_sources,
+            consumed_by=consumed_by,
             shared_pool=shared_pool,
             name="neural_segment_final",
         )
@@ -199,4 +271,7 @@ def build_hybrid_hard_core_mapping(
     if not stages:
         raise ValueError("Cannot build HybridHardCoreMapping: IRGraph has no stages.")
 
-    return HybridHardCoreMapping(stages=stages)
+    return HybridHardCoreMapping(
+        stages=stages,
+        output_sources=ir_graph.output_sources.copy(),
+    )

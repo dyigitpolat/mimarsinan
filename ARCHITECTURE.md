@@ -57,6 +57,7 @@
     - [CoreFlowTuner](#105-coreflowtuner)
 11. [Spiking Simulation](#11-spiking-simulation)
     - [SpikingUnifiedCoreFlow](#111-spikingunifiedcoreflow)
+    - [SpikingHybridCoreFlow](#111b-spikinghybridcoreflow)
     - [Nevresim (C++ Simulator)](#112-nevresim-c-simulator)
     - [SimulationRunner](#113-simulationrunner)
 12. [Architecture Search](#12-architecture-search)
@@ -109,8 +110,12 @@ mimarsinan/
 │       ├── models/                 # Neural network model definitions
 │       │   ├── layers.py           # Perceptron, activations, decorators
 │       │   ├── supermodel.py       # Top-level model wrapper
-│       │   ├── perceptron_mixer/   # MLP-Mixer-style architecture
+│       │   ├── perceptron_mixer/   # Model architectures
+│       │   │   ├── perceptron_mixer.py   # MLP-Mixer architecture
+│       │   │   └── vision_transformer.py # Vision Transformer (ViT) architecture
 │       │   ├── builders/           # Model builder classes
+│       │   │   ├── perceptron_mixer_builder.py
+│       │   │   └── vit_builder.py  # VisionTransformer builder
 │       │   ├── unified_core_flow.py # Spiking simulation for IRGraph
 │       │   └── hybrid_core_flow.py  # Spiking simulation for HybridMapping
 │       ├── mapping/                # Model → hardware mapping
@@ -185,7 +190,7 @@ The JSON configuration specifies:
 | `data_provider_name` | Registered dataset name (e.g. `"mnist"`, `"cifar10"`) |
 | `experiment_name` | Name for WandB logging and output directory |
 | `pipeline_mode` | `"vanilla"` or `"phased"` (selects a preset; see §4.4) |
-| `deployment_parameters` | Hyperparameters, spiking mode, quantization flags (see §4.4) |
+| `deployment_parameters` | Hyperparameters, spiking mode, quantization flags, `max_simulation_samples` (see §4.4, §5.16) |
 | `platform_constraints` | Hardware constraints (max_axons, max_neurons, weight_bits, target_tq) |
 | `start_step` | Step name to resume from (uses cached state) |
 | `stop_step` | Optional step name to stop after |
@@ -290,7 +295,7 @@ A single `DeploymentPipeline` class (`pipelines/deployment_pipeline.py`) assembl
 
 - **`"rate"`** — Rate-coded SNN.  CoreFlow tuning step is included to adjust spiking thresholds.
 - **`"ttfs"`** — Time-to-first-spike SNN (continuous / analytical).  Analytical ReLU↔TTFS mapping; no threshold tuning needed.
-- **`"ttfs_quantized"`** — Time-to-first-spike SNN (cycle-based / time-step quantised).  True cycle-based simulation (Approach B) with fire-once semantics and `S` discrete time steps per layer.
+- **`"ttfs_quantized"`** — Time-to-first-spike SNN (time-step quantised).  Analytical closed-form computation with fire-once semantics and `S` discrete time steps per layer. Spike times are computed exactly and quantized to the nearest discrete step.
 
 For both TTFS variants, `firing_mode` and `spike_generation_mode` are automatically set to `"TTFS"` and validated — the analytical vs cycle-based distinction is controlled exclusively by `spiking_mode`. If a config JSON explicitly sets `firing_mode` or `spike_generation_mode` to a value inconsistent with the TTFS spiking mode, a `ValueError` is raised at pipeline initialisation.
 
@@ -340,7 +345,7 @@ Either mode works with `configuration_mode: "nas"` (replaces Model Configuration
 Operates in two modes based on `configuration_mode`:
 
 - **`"user"`**: Uses the model config and core topology from `deployment_parameters` directly.
-- **`"nas"`**: Runs multi-objective optimization (NSGA-II or Kedi) via a `JointPerceptronMixerArchHwProblem` that jointly optimizes architecture parameters and hardware core-type dimensions.
+- **`"nas"`**: Runs multi-objective optimization (NSGA-II or Kedi) via a `JointArchHwProblem` that jointly optimizes architecture parameters and hardware core-type dimensions. The problem is model-agnostic; model-specific search spaces, config assemblers, and validation functions are injected as parameters.
 
 Objectives: `accuracy` (max), `wasted_area` (min), `total_params` (min).
 
@@ -435,7 +440,14 @@ Verifies that all perceptron effective weights and biases are correctly quantize
 - **Requires**: `model`, `adaptation_manager`
 - **Updates**: `model`
 
-Fuses BatchNorm layers into preceding linear layers by computing effective weights and biases via `PerceptronTransformer`, then replacing the normalization with `nn.Identity()`. After fusion, the model is fine-tuned to recover any accuracy loss.
+Fuses BatchNorm layers into preceding linear layers. Only `Perceptron`s whose `normalization` is a `BatchNorm1d` (not `nn.Identity()`) are processed. The fusion folds BatchNorm parameters directly into `Perceptron.layer.weight.data` and `Perceptron.layer.bias.data`:
+
+```
+W_fused = diag(γ / √(σ² + ε)) @ W
+b_fused = γ * (b - μ) / √(σ² + ε) + β
+```
+
+Scaling factors (`activation_scale`, `input_scale`, `parameter_scale`) are **not modified**, ensuring mathematical equivalence — the fused network produces identical outputs to the pre-fusion network. After fusion, the normalization is replaced with `nn.Identity()`. LayerNorm and post-activation normalizations are not fusable and are skipped.
 
 ### 5.12 Soft Core Mapping
 
@@ -447,11 +459,12 @@ Fuses BatchNorm layers into preceding linear layers by computing effective weigh
 This critical step converts the PyTorch model into an `IRGraph`:
 
 1. Extracts the `ModelRepresentation` (mapper graph) from the model
-2. Reads `max_axons`, `max_neurons`, and `allow_axon_tiling` from the `platform_constraints_resolved` cache entry (produced by Architecture Search)
+2. Reads `max_axons`, `max_neurons`, and `allow_axon_tiling` from the `platform_constraints_resolved` cache entry (produced by Architecture Search). When heterogeneous `cores` are present, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types — this allows softcores as large as the biggest core type, relying on the greedy packer's scarcity-aware metric (§9.2) to place them correctly
 3. Creates an `IRMapping` with these hardware constraints
 4. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
-5. Generates Graphviz visualizations of the IR graph
-6. Runs a soft-core spiking simulation for early verification
+5. Optionally quantizes weights (rounds `core_matrix *= parameter_scale` to integers) only when `weight_quantization` is enabled
+6. Generates Graphviz visualizations (full render skipped for graphs with >500 nodes; DOT file always written)
+7. Runs a soft-core spiking simulation for early verification
 
 ### 5.13 Core Quantization Verification
 
@@ -459,7 +472,7 @@ This critical step converts the PyTorch model into an `IRGraph`:
 
 - **Requires**: `ir_graph`
 
-Verifies that all `NeuralCore` weight matrices in the IR graph are properly quantized: `core_matrix * parameter_scale` must produce integers within the allowed range for the specified `weight_bits`.
+Conditionally included in the pipeline only when `weight_quantization` is enabled. Verifies that all `NeuralCore` weight matrices in the IR graph are properly quantized: `core_matrix * parameter_scale` must produce integers within the allowed range for the specified `weight_bits`.
 
 ### 5.14 CoreFlow Tuning
 
@@ -502,6 +515,10 @@ Converts the `IRGraph` into a `HybridHardCoreMapping`:
 - **Requires**: `model`, `hard_core_mapping`, `scaled_simulation_length`
 
 Runs a full chip simulation using the `NevresimDriver` (C++ simulator). For single-segment mappings (`HardCoreMapping`), a single nevresim invocation is used. For multi-segment `HybridHardCoreMapping`s, the `SimulationRunner` orchestrates per-segment nevresim calls with host-side `ComputeOp` execution between them (see §11.3).
+
+Key configuration parameters:
+- **`max_simulation_samples`** (in `deployment_parameters`): When set to a positive value less than the test set size, the runner randomly subsamples that many test examples (using the pipeline seed for reproducibility), reducing simulation wall time for large datasets.
+- **`weight_quantization`**: Controls the C++ weight type — `int` when quantization is enabled, `float` when disabled. This ensures non-quantized models (e.g., ViT) retain floating-point precision through the C++ simulation.
 
 ---
 
@@ -552,7 +569,27 @@ Where:
 - **Channel Mixer**: Mixes across channels via two `Perceptron`s
 - **Output Projection**: Flattens and projects to class logits
 
-Critically, the `PerceptronMixer` constructs a **mapper graph** (chain of `Mapper` objects) that serves as the single source of truth for both:
+**`VisionTransformer`** (`perceptron_mixer/vision_transformer.py`) implements a Vision Transformer (ViT) architecture:
+
+```
+Input → Patch Embedding (Conv2D) → CLS Prepend → Positional Embedding
+  → [LayerNorm → MHSA → Add (residual) → LayerNorm → FFN → Add (residual)] × N
+  → Final LayerNorm → CLS Select → Classification Head
+```
+
+Where:
+- **Patch Embedding**: `Conv2DPerceptronMapper` with `use_batchnorm=True` (the only fusable normalization in the model)
+- **CLS Token**: A `ConstantPrependMapper` that prepends a learnable class token (`concat_constant` ComputeOp)
+- **Positional Embedding**: A `ConstantAddMapper` that adds learned position embeddings (`add_constant` ComputeOp)
+- **Layer Normalization**: `LayerNormMapper` emitting `layer_norm` ComputeOps (not fusable)
+- **Multi-Head Self-Attention**: `MultiHeadAttentionComputeMapper` wrapping Q/K/V projections (`PerceptronMapper`s), attention computation (`multi_head_attention` ComputeOp), and output projection
+- **FFN**: Two `PerceptronMapper`s with GELU activation between them
+- **Residual Connections**: `AddMapper` emitting `add` ComputeOps, creating skip connections in the IR graph
+- **CLS Select**: `SelectMapper` extracting the CLS token output (`select` ComputeOp)
+
+All `Perceptron`s except the patch embedding use `normalization=nn.Identity()`, since LayerNorm is handled via ComputeOps. The model is parametrizable for architecture search: `embed_dim`, `num_heads`, `depth`, `mlp_ratio`, `patch_size` are all configurable.
+
+Both `PerceptronMixer` and `VisionTransformer` construct a **mapper graph** (DAG of `Mapper` objects) that serves as the single source of truth for both:
 1. The PyTorch forward pass
 2. The hardware mapping
 
@@ -608,6 +645,7 @@ Key custom functions:
 Builders are created during Architecture Search and cached for later use:
 
 - `PerceptronMixerBuilder` — Builds `Supermodel(preprocessor=InputCQ, perceptron_flow=PerceptronMixer)`
+- `VitBuilder` — Builds `Supermodel(preprocessor=InputCQ, perceptron_flow=VisionTransformer)`
 - `SimpleMlpBuilder` — Simple multi-layer perceptron
 - `SimpleConvBuilder` — Convolutional model
 - `VGG16Builder` — VGG-16 architecture
@@ -629,19 +667,25 @@ The mapper graph is a DAG of `Mapper` objects that mirrors the model's computati
 
 ```
 Mapper (abstract base)
-├── InputMapper              — Marks the input tensor
-├── ModuleMapper             — Wraps an arbitrary nn.Module
-├── PerceptronMapper         — Maps a Perceptron to NeuralCores
-├── Conv2DPerceptronMapper   — Conv2d as im2col + matmul
-├── Conv1DPerceptronMapper   — Conv1d as im2col + matmul
-├── EinopsRearrangeMapper    — Tensor rearrangement
-├── MergeLeadingDimsMapper   — (B, N, D) → (B*N, D)
-├── SplitLeadingDimMapper    — (B*N, D) → (B, N, D)
-├── Ensure2DMapper           — Reshapes to (B, D)
-├── ReshapeMapper            — Generic reshape
-├── StackMapper              — Concatenates multiple mapper outputs
-├── AddMapper                — Element-wise addition
-├── PoolingMapper            — MaxPool2d, AvgPool2d, AdaptiveAvgPool2d
+├── InputMapper                        — Marks the input tensor
+├── ModuleMapper                       — Wraps an arbitrary nn.Module
+├── PerceptronMapper                   — Maps a Perceptron to NeuralCores
+├── Conv2DPerceptronMapper             — Conv2d as im2col + matmul
+├── Conv1DPerceptronMapper             — Conv1d as im2col + matmul
+├── EinopsRearrangeMapper              — Tensor rearrangement
+├── MergeLeadingDimsMapper             — (B, N, D) → (B*N, D)
+├── SplitLeadingDimMapper              — (B*N, D) → (B, N, D)
+├── Ensure2DMapper                     — Reshapes to (B, D)
+├── ReshapeMapper                      — Generic reshape
+├── StackMapper                        — Concatenates multiple mapper outputs
+├── AddMapper                          — Element-wise addition → "add" ComputeOp
+├── ConstantAddMapper                  — Adds a learnable constant → "add_constant" ComputeOp
+├── ConstantPrependMapper              — Prepends a learnable constant → "concat_constant" ComputeOp
+├── SelectMapper                       — Selects a slice of the token sequence → "select" ComputeOp
+├── DropoutMapper                      — Dropout (identity during eval/mapping)
+├── LayerNormMapper                    — Layer normalization → "layer_norm" ComputeOp
+├── MultiHeadAttentionComputeMapper    — MHSA: Q/K/V projections + "multi_head_attention" ComputeOp + output projection
+├── PoolingMapper                      — MaxPool2d, AvgPool2d, AdaptiveAvgPool2d
 └── (others)
 ```
 
@@ -712,8 +756,12 @@ Key fields:
 
 Non-neural operations that cannot be mapped to crossbar cores:
 
-- `max_pool2d`, `avg_pool2d`, `adaptive_avg_pool2d`, `flatten`, `identity`
-- Store `input_shape` and `output_shape` for spatial reshaping
+- **Spatial pooling**: `max_pool2d`, `avg_pool2d`, `adaptive_avg_pool2d`
+- **Shape manipulation**: `flatten`, `identity`
+- **Transformer ops**: `layer_norm`, `multi_head_attention`, `add`, `add_constant`, `concat_constant`, `select`, `gelu`
+- Store `input_shape`, `output_shape`, and operation-specific `params` (e.g., `num_heads`, `embed_dim` for MHSA; `weight`, `bias`, `eps` for LayerNorm; learnable tensors for `add_constant` and `concat_constant`)
+
+Each ComputeOp implements `execute(input_tensor)` and `execute_on_gathered(flat_input)`. The latter accepts a flat `(B, N)` tensor from the spiking simulation, dispatches to the appropriate `_exec_*` method (which handles any internal reshaping), and returns a flat output. For spatial operations (`max_pool2d`, `avg_pool2d`, etc.), the method reshapes internally using the stored `input_shape`.
 
 In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike counts are converted to rates, the operation is applied, and rates are converted back to spikes.
 
@@ -730,7 +778,7 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
   - **Axon tiling**: Splits axons across cores (partial sums) when `axons > max_axons` and `allow_axon_tiling` is enabled
   - **Partial sum accumulation**: Creates `psum_role="partial_pos"/"partial_neg"` cores and an `"accum"` core
 
-**Heterogeneous tiling**: When multiple core types exist, `max_axons` and `max_neurons` are set to the **minimum** across all core types. This ensures softcores are small enough to pack into *any* core type, maximising utilisation of heterogeneous hardware.
+**Heterogeneous tiling**: When multiple core types exist, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types. This allows softcores as large as the biggest core type. The greedy packer's scarcity-aware placement metric (§9.2) then ensures flexible softcores (those that fit multiple core types) are directed toward more abundant types, preserving scarce large-capacity types for softcores that strictly require them.
 
 ---
 
@@ -758,7 +806,7 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
 `HardCoreMapping` packs `SoftCore`s into `HardCore`s using the generic `greedy_pack_softcores` algorithm (`core_packing.py`):
 1. Sort soft cores by neuron count (descending)
 2. For each soft core, try to fit it into an already-used hardware core.  Among all feasible used cores, pick the one with the minimum **remaining capacity** after placement `(avail_a − s_a) × (avail_n − s_n)`, concentrating softcores into tightly-fitting cores and leaving others available for differently-shaped softcores.
-3. If no used core has room, pick an unused core using **wasted-area minimisation**: the waste metric `h_a · s_n + s_a · h_n − 2 · s_a · s_n` (the L-shaped dead zone from diagonal packing) naturally penalises aspect-ratio mismatches, so a narrow-axon/wide-neuron softcore will prefer a similarly-shaped hardware core over a square one of the same total area.
+3. If no used core has room, pick an unused core using a **scarcity-aware** metric: `waste / abundance`, where `waste` is the L-shaped dead zone `h_a · s_n + s_a · h_n − 2 · s_a · s_n` and `abundance` is the count of remaining unused cores of that type. This directs flexible softcores (those fitting multiple core types) toward more abundant types, preserving scarce types for dimensionally-constrained softcores that can only fit a specific type. Without this, greedy waste minimisation can exhaust scarce types early, causing later placements to fail.
 4. Place the soft core, update axon sources to point to hardware core positions
 5. Track the mapping `(soft_core_id, soft_neuron) → (hard_core_idx, hard_neuron)`
 
@@ -770,23 +818,36 @@ The same `greedy_pack_softcores` function is used by both the real `HardCoreMapp
 
 **File**: `mapping/hybrid_hardcore_mapping.py`
 
-The deployable program representation:
+The deployable program representation, supporting skip connections and complex data flow (e.g., transformer residual connections) via a **state-buffer** approach:
 
 ```
 HybridHardCoreMapping
 ├── stages: List[HybridStage]
-    ├── HybridStage(kind="neural", hard_core_mapping=HardCoreMapping)
-    ├── HybridStage(kind="compute", compute_op=ComputeOp)  # Sync barrier
-    ├── HybridStage(kind="neural", hard_core_mapping=HardCoreMapping)
-    └── ...
+│   ├── HybridStage(kind="neural", hard_core_mapping, input_slices, output_slices)
+│   ├── HybridStage(kind="compute", compute_op, input_slices, output_slices)
+│   ├── HybridStage(kind="neural", ...)
+│   └── ...
+├── state_buffer_size: int          # Total entries in global state buffer
+└── output_slices: List[SegmentIOSlice]  # Final output extraction
 ```
+
+**State buffer design**: A global dictionary maps `node_id → activations`. Each `HybridStage` declares its I/O via `SegmentIOSlice` dataclasses:
+
+```
+SegmentIOSlice(node_id, seg_offset, seg_count)
+```
+
+- **Input slices**: Which state-buffer entries feed into this stage's local input buffer
+- **Output slices**: Which of this stage's outputs are written back to the state buffer
+
+This allows skip connections: a residual `AddMapper`'s ComputeOp reads two state-buffer entries (the pre-block output and the block output) that may have been produced by non-adjacent stages.
 
 Built by `build_hybrid_hard_core_mapping(ir_graph, cores_config)`:
 1. Allocates a **single shared pool** of hardware cores from `cores_config` upfront; all segments draw from this same pool, ensuring the total core budget is respected across the entire hybrid program
-2. Walks the IR graph, grouping consecutive `NeuralCore`s
+2. Walks the IR graph in topological order, grouping consecutive `NeuralCore`s
 3. At each `ComputeOp`, flushes the current neural segment into a `HardCoreMapping` (packed from the shared pool)
-4. The `ComputeOp`'s `input_sources` become the segment's output sources
-5. External source references are remapped to segment-local inputs
+4. External source references (from earlier stages or the original input) are resolved via the state buffer
+5. Each stage's `input_slices` and `output_slices` are computed to wire the state buffer correctly
 
 ---
 
@@ -881,12 +942,25 @@ A PyTorch-based spiking simulator for `IRGraph`:
 
 - Implements membrane potential dynamics with configurable firing modes (`"Default"`, `"Novena"`, `"TTFS"`)
 - Supports multiple spike generation modes (`"Stochastic"`, `"Deterministic"`, `"FrontLoaded"`, `"Uniform"`, `"TTFS"`)
-- Handles `ComputeOp`s as sync barriers: converts spike counts to rates, applies the operation, converts back to spikes
+- Handles `ComputeOp`s as sync barriers: converts spike counts to rates, applies the operation via `node.execute_on_gathered(flat_rates)`, converts back to spikes
 - Uses range-compressed `IRSourceSpan`s for efficient input gathering
 - Supports both `"<"` and `"<="` thresholding modes
 - Dispatches between rate-coded and TTFS forward paths based on `spiking_mode` (not `firing_mode`)
 - **TTFS continuous** (`spiking_mode="ttfs"`): Analytical spike-time computation — `relu(W @ x + b) / θ` per core in topological order. Equivalent to standard ReLU; no time-stepping.
-- **TTFS quantized** (`spiking_mode="ttfs_quantized"`): True cycle-based simulation (Approach B). The outermost loop is `for cycle in range(total_cycles)` with per-core latency-gated processing. Each core's S-step window runs Phase 1 (initial charge: `V = W @ x`) then Phase 2 (constant ramp `V += θ/S`, fire-once: `a = (S − k) / S`).
+- **TTFS quantized** (`spiking_mode="ttfs_quantized"`): **Analytical closed-form** computation (not cycle-based). For each neuron: `t_exact = θ / (W @ x + b)`, then quantized to the nearest discrete time step `k = round((t_exact − t_min) / Δt)`, clamped to `[0, S−1]`. The output activation is `(S − k) / S`. Non-firing neurons (where `W @ x + b ≤ 0`) are masked to output 0. This matches the nevresim C++ TTFS quantized behaviour exactly while being orders of magnitude faster than cycle-based simulation.
+
+### 11.1b SpikingHybridCoreFlow
+
+**File**: `models/hybrid_core_flow.py`
+
+A PyTorch-based spiking simulator for `HybridHardCoreMapping`, using the state-buffer approach:
+
+- Maintains a global `state_buffer: Dict[int, Tensor]` keyed by IR node IDs
+- Iterates through `HybridStage`s in order:
+  - **Neural stages**: Assembles the local input from state-buffer entries via `input_slices`, runs through `NeuralCore`s, writes outputs back via `output_slices`
+  - **Compute stages**: Gathers inputs from the state buffer, executes the `ComputeOp`, writes the result back
+- Supports both rate-coded and TTFS (continuous + analytical quantized) forward paths
+- The analytical TTFS quantized path mirrors `SpikingUnifiedCoreFlow`'s closed-form computation
 
 ### 11.2 Nevresim (C++ Simulator)
 
@@ -894,7 +968,7 @@ A PyTorch-based spiking simulator for `IRGraph`:
 
 For final verification, the framework generates C++ code and runs it through the `nevresim` simulator:
 
-1. **Code Generation** (`cpp_chip_model.py`): Converts `HardCoreMapping` to `ChipModel` → generates C++ structs (`SpikeSource`, `Neuron`, `Core`, `ChipModel`). When a segment contains heterogeneous `HardCore` sizes, individual core matrices and axon sources are **padded** to the segment's maximum dimensions (`HardCoreMapping.axons_per_core`, `neurons_per_core`) so that nevresim receives uniform core geometry.
+1. **Code Generation** (`cpp_chip_model.py`): Converts `HardCoreMapping` to `ChipModel` → generates C++ structs (`SpikeSource`, `Neuron`, `Core`, `ChipModel`). When a segment contains heterogeneous `HardCore` sizes, individual core matrices and axon sources are **padded** to the segment's maximum dimensions (`HardCoreMapping.axons_per_core`, `neurons_per_core`) so that nevresim receives uniform core geometry. The `ChipModel` is parameterized by `weight_type` (`int` or `float`): when `weight_quantization` is disabled, weights are written as floating-point values and the C++ template instantiates with `float` weight arithmetic.
 2. **Template Instantiation** (`generate_main.py`): Generates `main.cpp` from a template with simulation parameters
 3. **Compilation** (`compile_nevresim.py`): Compiles with C++20 (`-std=c++20 -O3`). Prefers Clang ≥ 17; falls back to `g++-11` when no suitable Clang is found.
 4. **Execution** (`execute_nevresim.py`): Runs the binary in parallel processes, collects output
@@ -917,11 +991,14 @@ Orchestrates the end-to-end simulation. Supports two modes:
 5. Parses simulator output and computes accuracy
 
 **Multi-segment** (`HybridHardCoreMapping`):
-1. Preprocesses test data as above
-2. Iterates through hybrid stages in order:
-   - **Neural stages**: Instantiates a per-segment `NevresimDriver`, runs `predict_spiking_raw`, converts output to input for the next stage (for TTFS modes the output is already real-valued activations; for rate-coded modes it is spike counts normalised by `simulation_length`)
-   - **Compute stages**: Executes the `ComputeOp` on the host using PyTorch — converts spike counts to rates, applies the operation (e.g., max_pool2d, avg_pool2d), and converts rates back to spike counts
-3. Evaluates final classification accuracy from the last stage's output
+1. Preprocesses test data as above; flattens input images to `(N, features)` for consistency with the state buffer
+2. Optionally subsamples test data to `max_simulation_samples` (seeded) for faster execution
+3. Determines `weight_type` (`int` when `weight_quantization` is enabled, `float` otherwise) and passes it to each `NevresimDriver` — this ensures non-quantized models retain floating-point weight precision through C++ simulation
+4. Maintains a NumPy state buffer (`Dict[int, np.ndarray]`) mirroring the PyTorch state-buffer approach
+5. Iterates through hybrid stages in order:
+   - **Neural stages**: Assembles segment input from the state buffer via `input_slices`, instantiates a per-segment `NevresimDriver` with the correct `weight_type`, runs `predict_spiking_raw`, writes outputs back via `output_slices`
+   - **Compute stages**: Gathers inputs from the state buffer, executes the `ComputeOp` on the host using PyTorch, writes the result back
+6. Extracts final outputs via `output_slices` and evaluates classification accuracy
 
 ---
 
@@ -984,15 +1061,17 @@ An innovative LLM-based optimizer that uses agentic reasoning:
 
 **File**: `search/problems/joint_arch_hw_problem.py`
 
+A **model-agnostic** joint architecture and hardware co-search problem. Model-specific concerns (search spaces, config assemblers, validation functions) are injected as parameters, allowing the same problem class to handle PerceptronMixer, VisionTransformer, or any future architecture.
+
 Jointly optimizes:
-- **Architecture parameters**: `patch_rows`, `patch_cols`, `patch_channels`, `fc_w1`, `fc_w2`
+- **Architecture parameters**: Model-specific (e.g., `patch_rows/cols/channels`, `fc_w1/w2` for MLP-Mixer; `embed_dim`, `num_heads`, `depth`, `mlp_ratio`, `patch_size` for ViT)
 - **Hardware core-type dimensions**: Number of core types (heterogeneous), axon/neuron counts per type, threshold grouping
 
 Objectives: `accuracy` (max), `wasted_area` (min), `total_params` (min).
 
 Key design decisions:
 
-- **Tiling to minimum core type**: `decode()` computes `max_axons = min(cores[*].max_axons)` and `max_neurons = min(cores[*].max_neurons)`. Softcores are sized to fit the *smallest* core type, so they can pack into any core type. Larger cores simply hold more softcores, improving utilisation.
+- **Tiling to maximum core type**: `decode()` computes `max_axons = max(cores[*].max_axons)` and `max_neurons = max(cores[*].max_neurons)`. Softcores can be as large as the biggest core type; the scarcity-aware packer (§9.2) handles heterogeneous placement.
 - **Continuous constraint violation**: `constraint_violation()` returns `max(0, max_in_features - (max_axons - 1))`, giving NSGA-II a smooth gradient toward feasibility (see §12.2).
 - **Layout-only hardware estimation**: Each candidate is evaluated by collecting shape-only `LayoutSoftCoreSpec`s via `LayoutIRMapping` (which computes inter-core latencies and assigns latency-stratified random threshold groups using a deterministic `threshold_seed`) and then packing them via `pack_layout` using the same best-fit algorithm as real mapping.
 - **Quick validation**: `_quick_validate()` checks patch divisibility and axon/neuron feasibility without building the full model.
@@ -1208,11 +1287,12 @@ Module dependency rules:
 
 ### Adding a New Model Architecture
 
-1. Create a new `PerceptronFlow` subclass in `models/perceptron_mixer/`
-2. Build the computation using the `Mapper` graph (mappers from `mapping/mapping_utils.py`)
+1. Create a new `PerceptronFlow` subclass in `models/perceptron_mixer/` (see `VisionTransformer` as an example of a complex architecture with non-neural operations)
+2. Build the computation using the `Mapper` graph (mappers from `mapping/mapping_utils.py`). For operations that cannot be mapped to crossbar cores (e.g., LayerNorm, attention, element-wise add), use the appropriate `ComputeOp`-emitting mappers (`LayerNormMapper`, `MultiHeadAttentionComputeMapper`, `AddMapper`, etc.)
 3. Implement `get_perceptrons()`, `get_perceptron_groups()`, `get_mapper_repr()`
 4. Create a builder in `models/builders/` with a `build(configuration)` method
 5. Register the builder in the architecture search step if using NAS
+6. Use `normalization=nn.Identity()` for `Perceptron`s where normalization is handled externally (e.g., via `LayerNormMapper`); only use `use_batchnorm=True` where BatchNorm fusion (§5.11) is desired
 
 ### Adding a New Data Provider
 
@@ -1232,10 +1312,10 @@ Module dependency rules:
 
 ### Adding a New ComputeOp Type
 
-1. Add the operation name to `ComputeOp.execute()` in `mapping/ir.py`
-2. Implement the `_exec_{op_type}` method
-3. Handle it in `SpikingUnifiedCoreFlow` (`models/unified_core_flow.py`) for spiking simulation
-4. Create the appropriate `PoolingMapper` or custom `Mapper` in `mapping_utils.py`
+1. Add the operation name to `ComputeOp._dispatch()` in `mapping/ir.py`
+2. Implement the `_exec_{op_type}(flat_input, batch_size)` method — receives flat `(B, N)` tensor, reshapes internally as needed, returns flat output
+3. Both `SpikingUnifiedCoreFlow` and `SpikingHybridCoreFlow` use `node.execute_on_gathered()` generically, so no changes are needed in the simulators unless the operation requires special spiking semantics
+4. Create the appropriate `Mapper` subclass in `mapping_utils.py` that emits the new ComputeOp via `ir_mapping.add_compute_op()`
 
 ### Running the Pipeline
 

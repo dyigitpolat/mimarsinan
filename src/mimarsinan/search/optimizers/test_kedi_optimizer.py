@@ -3,7 +3,7 @@ Test script for KediOptimizer.
 
 This script tests the Kedi optimizer with a simple mock problem
 to verify the implementation works correctly before using it
-with the full JointPerceptronMixerArchHwProblem.
+with the full JointArchHwProblem.
 """
 
 from __future__ import annotations
