@@ -392,10 +392,74 @@ def write_ir_graph_summary_dot(
         f.write("\n".join(lines))
 
 
+def _embed_svg_images(svg_path: str) -> None:
+    """
+    Post-process a rendered SVG to embed referenced raster images (PNG/JPG/…)
+    as base64 data URIs.  This makes the SVG fully self-contained so it renders
+    correctly in browsers, Cursor's preview pane, and any other SVG viewer
+    without needing access to the local filesystem.
+
+    Non-image ``xlink:href`` / ``href`` values (e.g. links to other SVGs) are
+    left unchanged — only ``<image …>`` elements have their sources inlined.
+    """
+    import re as _re
+    import base64
+    import mimetypes
+
+    svg_dir = os.path.dirname(os.path.abspath(svg_path))
+
+    with open(svg_path, "r", encoding="utf-8") as fh:
+        content = fh.read()
+
+    def _resolve(raw_path: str) -> str:
+        """Return the absolute path for *raw_path* (which may be abs or relative)."""
+        if os.path.isabs(raw_path):
+            return raw_path
+        return os.path.join(svg_dir, raw_path)
+
+    def _to_data_uri(abs_path: str) -> str | None:
+        try:
+            with open(abs_path, "rb") as fh:
+                data = fh.read()
+            mime = mimetypes.guess_type(abs_path)[0] or "image/png"
+            b64 = base64.b64encode(data).decode("ascii")
+            return f"data:{mime};base64,{b64}"
+        except OSError:
+            return None
+
+    def _replace_image_href(m: "re.Match[str]") -> str:
+        """Replace the href inside an <image …> tag with a data URI."""
+        full_tag = m.group(0)
+        href_m = _re.search(r'(xlink:href|href)="([^"]*)"', full_tag)
+        if href_m is None:
+            return full_tag
+        attr, raw_path = href_m.group(1), href_m.group(2)
+        if raw_path.startswith("data:"):
+            return full_tag  # already embedded
+        abs_path = _resolve(raw_path)
+        data_uri = _to_data_uri(abs_path)
+        if data_uri is None:
+            return full_tag  # file not found – leave as-is
+        return full_tag.replace(
+            f'{attr}="{raw_path}"',
+            f'{attr}="{data_uri}"',
+            1,
+        )
+
+    # Only touch <image …> elements; leave <a xlink:href="…"> links alone.
+    content = _re.sub(r"<image\b[^>]*>", _replace_image_href, content, flags=_re.DOTALL)
+
+    with open(svg_path, "w", encoding="utf-8") as fh:
+        fh.write(content)
+
+
 def try_render_dot(dot_path: str, *, formats: Iterable[str] = ("svg",)) -> list[str]:
     """
     Best-effort rendering of a .dot file to images using the system `dot` binary.
     Returns the written output paths (may be empty).
+    SVG outputs are post-processed to embed any referenced raster images as
+    base64 data URIs, making the SVG fully self-contained for browsers and
+    SVG viewers (including Cursor's preview pane).
     """
     dot_bin = shutil.which("dot")
     if dot_bin is None:
@@ -413,6 +477,8 @@ def try_render_dot(dot_path: str, *, formats: Iterable[str] = ("svg",)) -> list[
                 capture_output=True,
                 text=True,
             )
+            if fmt == "svg":
+                _embed_svg_images(out_path)
             out_paths.append(out_path)
         except Exception:
             # Non-fatal: keep .dot as the source of truth.
