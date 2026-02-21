@@ -141,6 +141,7 @@ def test_ttfs_encoding():
         firing_mode="TTFS",
         spike_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     activations = torch.tensor([[0.0, 0.25, 0.5, 0.75, 1.0]])
@@ -202,6 +203,7 @@ def test_ttfs_unified_core_flow():
         firing_mode="TTFS",
         spike_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     with torch.no_grad():
@@ -257,6 +259,7 @@ def test_ttfs_hybrid_core_flow():
         preprocessor=nn.Identity(),
         firing_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     with torch.no_grad():
@@ -326,6 +329,7 @@ def test_ttfs_quantized():
         firing_mode="TTFS",
         spike_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     with torch.no_grad():
@@ -353,6 +357,7 @@ def test_ttfs_quantized():
         preprocessor=nn.Identity(),
         firing_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     with torch.no_grad():
@@ -393,6 +398,7 @@ def test_ttfs_fire_once():
         firing_mode="TTFS",
         spike_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     x = torch.rand(4, in_dim)
@@ -433,6 +439,7 @@ def test_unified_vs_hybrid_ttfs():
         firing_mode="TTFS",
         spike_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     cores_config = [{"max_axons": 256, "max_neurons": 256, "count": 10}]
@@ -447,6 +454,7 @@ def test_unified_vs_hybrid_ttfs():
         preprocessor=nn.Identity(),
         firing_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     with torch.no_grad():
@@ -526,6 +534,7 @@ def test_ttfs_realistic_mixed_weights():
         firing_mode="TTFS",
         spike_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     with torch.no_grad():
@@ -579,7 +588,7 @@ def test_ttfs_pipeline_artifacts():
     with open(ir_pickle, 'rb') as f:
         ir_graph = pickle.load(f)
 
-    loaded = torch.load(model_pt, map_location='cpu')
+    loaded = torch.load(model_pt, map_location='cpu', weights_only=False)
     # Pipeline saves (model, device) tuple
     model = loaded[0] if isinstance(loaded, tuple) else loaded
 
@@ -604,6 +613,7 @@ def test_ttfs_pipeline_artifacts():
         firing_mode="TTFS",
         spike_mode="TTFS",
         thresholding_mode="<=",
+        spiking_mode="ttfs",
     )
 
     # Create a small batch of test inputs

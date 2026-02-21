@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from typing import Callable, List, Protocol, TypeVar
 
 
@@ -105,17 +106,21 @@ def greedy_pack_softcores(
     used cores available for differently-shaped softcores.
 
     **Unused-core selection** — among all feasible un-allocated cores,
-    pick the one with the minimum *placement waste*.  The waste metric
-    ``h_a · s_n + s_a · h_n − 2 · s_a · s_n`` naturally penalises
-    aspect-ratio mismatches, so a narrow-axon/wide-neuron softcore will
-    prefer a similarly-shaped hardware core over a square one of the same
-    total area.
+    pick the one with the minimum *scarcity-adjusted waste*.  The raw
+    waste ``h_a · s_n + s_a · h_n − 2 · s_a · s_n`` is divided by the
+    number of remaining instances of that core type.  This naturally
+    preserves scarce hardware types for softcores that have no
+    alternative, while still preferring shape-matched types when
+    abundance is equal.
 
     This mutates:
     - used_hardcores (may append newly allocated hardcores)
     - unused_hardcores (removes allocated hardcores)
     - softcores (removes packed softcores)
     """
+
+    def _core_type_key(hc: HardT) -> tuple[int, int]:
+        return (int(hc.get_input_count()), int(hc.get_output_count()))
 
     while softcores:
         core = pick_softcore(softcores)
@@ -135,19 +140,27 @@ def greedy_pack_softcores(
             if not unused_hardcores:
                 raise RuntimeError("No more hard cores available")
 
-            # Best-fit by placement waste (aspect-ratio-aware).
+            type_counts = Counter(_core_type_key(hc) for hc in unused_hardcores)
+
             chosen_unused = None
-            chosen_waste = float("inf")
+            chosen_score = float("inf")
             for hc in unused_hardcores:
                 if is_mapping_possible(core, hc):
                     waste = _placement_waste(core, hc)
-                    if waste < chosen_waste:
+                    abundance = type_counts[_core_type_key(hc)]
+                    score = waste / max(abundance, 1)
+                    if score < chosen_score:
                         chosen_unused = hc
-                        chosen_waste = waste
+                        chosen_score = score
 
             if chosen_unused is None:
+                s_a = int(core.get_input_count())
+                s_n = int(core.get_output_count())
+                avail = {k: v for k, v in type_counts.items()}
                 raise RuntimeError(
-                    "No more hard cores available (no unused core type can fit this softcore)"
+                    f"No more hard cores available: softcore ({s_a} axons, "
+                    f"{s_n} neurons) does not fit any unused type. "
+                    f"Remaining types: {avail}"
                 )
 
             used_hardcores.append(chosen_unused)

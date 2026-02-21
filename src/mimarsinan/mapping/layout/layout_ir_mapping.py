@@ -151,10 +151,39 @@ class LayoutIRMapping:
     # Public mapping interface (called by Mapper.map_to_ir)
     # ------------------------------------------------------------------
 
-    def add_compute_op(self, *args, **kwargs):
-        raise NotImplementedError(
-            "LayoutIRMapping does not support ComputeOp yet (layout-only MNIST PoC)."
-        )
+    def add_compute_op(
+        self,
+        input_sources: np.ndarray,
+        op_type: str,
+        params=None,
+        input_shape=None,
+        output_shape=None,
+        name: str | None = None,
+    ) -> np.ndarray:
+        """
+        ComputeOps don't produce layout softcores (they execute on the host).
+        We still need to return correctly-shaped placeholder sources so that
+        downstream NeuralCore mappers can be layout-estimated.
+        """
+        if output_shape is not None:
+            output_size = 1
+            for d in output_shape:
+                output_size *= d
+        else:
+            output_size = int(np.array(input_sources, dtype=object).flatten().shape[0])
+
+        # Use a sentinel node_id (-100) to tag ComputeOp-originated sources.
+        # These placeholders carry no layout information, but they allow the
+        # mapper graph traversal to continue and reach downstream NeuralCores.
+        from mimarsinan.mapping.ir import IRSource
+        output_sources = np.array([
+            IRSource(node_id=-100, index=i) for i in range(output_size)
+        ])
+
+        if output_shape is not None:
+            output_sources = output_sources.reshape(output_shape)
+
+        return output_sources
 
     def add_neural_core(
         self,

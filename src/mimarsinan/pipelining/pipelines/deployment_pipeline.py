@@ -212,10 +212,11 @@ class DeploymentPipeline(Pipeline):
             "Normalization Fusion", NormalizationFusionStep(self)
         )
         self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
-        self.add_pipeline_step(
-            "Core Quantization Verification",
-            CoreQuantizationVerificationStep(self),
-        )
+        if wt_q:
+            self.add_pipeline_step(
+                "Core Quantization Verification",
+                CoreQuantizationVerificationStep(self),
+            )
 
         # ── CoreFlow Tuning (rate-coded only) ───────────────────────────
         if spiking == "rate":

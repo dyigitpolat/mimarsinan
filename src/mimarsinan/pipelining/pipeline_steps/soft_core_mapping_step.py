@@ -33,8 +33,13 @@ class SoftCoreMappingStep(PipelineStep):
         model = self.get_entry('model')
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
-        resolved_max_axons = platform_constraints.get("max_axons")
-        resolved_max_neurons = platform_constraints.get("max_neurons")
+        cores = platform_constraints.get("cores", [])
+        if cores:
+            resolved_max_axons = max(ct["max_axons"] for ct in cores)
+            resolved_max_neurons = max(ct["max_neurons"] for ct in cores)
+        else:
+            resolved_max_axons = platform_constraints.get("max_axons")
+            resolved_max_neurons = platform_constraints.get("max_neurons")
         resolved_allow_axon_tiling = bool(platform_constraints.get("allow_axon_tiling", False))
 
         for perceptron in model.get_perceptrons():
@@ -91,19 +96,21 @@ class SoftCoreMappingStep(PipelineStep):
 
         # Apply chip quantization to NeuralCores: scale weights by parameter_scale,
         # round to integers, and set threshold = parameter_scale.
-        # This ensures the IR is chip-ready and gives CoreFlowTuner meaningful
-        # integer thresholds to tune (instead of being stuck at 1.0).
-        for node in ir_graph.nodes:
-            if isinstance(node, NeuralCore):
-                ps = float(
-                    node.parameter_scale.item()
-                    if hasattr(node.parameter_scale, "item")
-                    else node.parameter_scale
-                )
-                if abs(ps) > 1e-12:
-                    node.core_matrix = np.round(node.core_matrix * ps)
-                    node.threshold = ps
-                    node.parameter_scale = torch.tensor(1.0)
+        # Only performed when weight quantization was enabled — otherwise the
+        # weights are unquantized floats and rounding would destroy precision.
+        wt_q = bool(self.pipeline.config.get("weight_quantization", False))
+        if wt_q:
+            for node in ir_graph.nodes:
+                if isinstance(node, NeuralCore):
+                    ps = float(
+                        node.parameter_scale.item()
+                        if hasattr(node.parameter_scale, "item")
+                        else node.parameter_scale
+                    )
+                    if abs(ps) > 1e-12:
+                        node.core_matrix = np.round(node.core_matrix * ps)
+                        node.threshold = ps
+                        node.parameter_scale = torch.tensor(1.0)
 
         # Calculate latencies for all neural cores in the IR graph
         max_latency = IRLatency(ir_graph).calculate()
@@ -111,8 +118,9 @@ class SoftCoreMappingStep(PipelineStep):
         
         self.add_entry("ir_graph", ir_graph, 'pickle')
 
-        # Write a detailed IRGraph visualization (NeuralCore + ComputeOp),
-        # including compressed connectivity ranges and op metadata.
+        # Write IRGraph visualizations.  For large graphs (>500 nodes) only
+        # the compact summary is rendered; the full per-node DOT is written
+        # but not passed through graphviz (which can take minutes on 1000+ nodes).
         try:
             from mimarsinan.visualization.mapping_graphviz import (
                 try_render_dot,
@@ -120,19 +128,24 @@ class SoftCoreMappingStep(PipelineStep):
                 write_ir_graph_summary_dot,
             )
 
+            node_count = len(ir_graph.nodes)
+            large_graph = node_count > 500
+
             out_dot = os.path.join(self.pipeline.working_directory, "ir_graph.dot")
             write_ir_graph_dot(
                 ir_graph,
                 out_dot,
                 title=f"IRGraph: {getattr(model, 'name', type(model).__name__)}",
             )
-            rendered = try_render_dot(out_dot, formats=("svg", "png"))
-            if rendered:
-                print(f"[SoftCoreMappingStep] Wrote IRGraph visualization: {out_dot} (+ {', '.join(rendered)})")
+            if large_graph:
+                print(f"[SoftCoreMappingStep] Wrote IRGraph DOT: {out_dot} (render skipped: {node_count} nodes)")
             else:
-                print(f"[SoftCoreMappingStep] Wrote IRGraph visualization: {out_dot} (render skipped: graphviz 'dot' not found)")
+                rendered = try_render_dot(out_dot, formats=("svg", "png"))
+                if rendered:
+                    print(f"[SoftCoreMappingStep] Wrote IRGraph visualization: {out_dot} (+ {', '.join(rendered)})")
+                else:
+                    print(f"[SoftCoreMappingStep] Wrote IRGraph visualization: {out_dot} (render skipped: graphviz 'dot' not found)")
 
-            # Also write a summarized IR graph visualization (layer stacks).
             out_sum = os.path.join(self.pipeline.working_directory, "ir_graph_summary.dot")
             write_ir_graph_summary_dot(
                 ir_graph,

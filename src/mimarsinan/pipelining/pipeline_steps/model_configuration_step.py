@@ -9,6 +9,7 @@ from mimarsinan.models.builders import PerceptronMixerBuilder
 from mimarsinan.models.builders import SimpleMLPBuilder
 from mimarsinan.models.builders import SimpleConvBuilder
 from mimarsinan.models.builders import VGG16Builder
+from mimarsinan.models.builders import VitBuilder
 
 class ModelConfigurationStep(PipelineStep):
     """
@@ -72,6 +73,14 @@ class ModelConfigurationStep(PipelineStep):
                 self.pipeline.config['max_axons'],
                 self.pipeline.config['max_neurons'],
                 self.pipeline.config
+            ),
+            "vit": VitBuilder(
+                self.pipeline.config['device'],
+                self.pipeline.config['input_shape'],
+                self.pipeline.config['num_classes'],
+                self.pipeline.config['max_axons'],
+                self.pipeline.config['max_neurons'],
+                self.pipeline.config
             )
         }
         builder = builders[self.pipeline.config['model_type']]
@@ -126,10 +135,14 @@ class ModelConfigurationStep(PipelineStep):
                     "count": 1000,  # generous default
                 }
             ]
+
+        effective_max_axons = max(ct["max_axons"] for ct in cores_config)
+        effective_max_neurons = max(ct["max_neurons"] for ct in cores_config)
+
         self.add_entry("platform_constraints_resolved", {
             "cores": cores_config,
-            "max_axons": int(self.pipeline.config.get("max_axons", 256)),
-            "max_neurons": int(self.pipeline.config.get("max_neurons", 256)),
+            "max_axons": int(effective_max_axons),
+            "max_neurons": int(effective_max_neurons),
         })
 
         # --- Emit default simulation length ---
