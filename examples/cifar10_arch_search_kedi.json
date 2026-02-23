@@ -1,0 +1,86 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "cifar10_arch_search_kedi",
+  "generated_files_path": "./generated",
+  "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar10_data_provider.py",
+  "data_provider_name": "CIFAR10_DataProvider",
+
+  "platform_constraints": {
+    "mode": "auto",
+    "auto": {
+      "fixed": {
+        "target_tq": 16,
+        "simulation_steps": 16,
+        "weight_bits": 8,
+        "allow_axon_tiling": false
+      },
+      "search_space": {
+        "num_core_types": 2,
+        "core_type_counts": [150, 150],
+        "core_axons_bounds": [128, 2048],
+        "core_neurons_bounds": [128, 2048],
+        "max_threshold_groups": 4
+      }
+    }
+  },
+
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 1,
+    "tuner_epochs": 1,
+    "nas_cycles": 5,
+    "nas_batch_size": 5,
+    "nas_workers": 1,
+
+    "degradation_tolerance": 0.1,
+
+    "configuration_mode": "nas",
+    "model_type": "mlp_mixer",
+
+    "arch_search": {
+      "_comment": "Kedi LLM-based optimizer for CIFAR-10 architecture search",
+      
+      "optimizer": "kedi",
+      
+      "kedi_model": "openai:gpt-4o",
+      "kedi_adapter": "pydantic",
+      
+      "pop_size": 10,
+      "generations": 6,
+      "candidates_per_batch": 5,
+      "max_regen_rounds": 10,
+      "max_failed_examples": 5,
+      
+      "seed": 42,
+
+      "patch_rows_options": [1, 2, 4, 8, 16, 32],
+      "patch_cols_options": [1, 2, 4, 8, 16, 32],
+      "patch_channels_options": [32, 64, 96, 128, 192, 256],
+      "fc_w1_options": [64, 128, 192, 256, 384, 512],
+      "fc_w2_options": [64, 128, 192, 256, 384, 512],
+
+      "warmup_fraction": 0.1,
+      "training_batch_size": 512,
+
+      "accuracy_evaluator": "extrapolating",
+      "extrapolation_num_train_epochs": 1,
+      "extrapolation_num_checkpoints": 5,
+      "extrapolation_target_epochs": 10,
+      
+      "constraints_description": "Multi-objective architecture search for PerceptronMixer on CIFAR-10 (32x32x3 images):\n\nOBJECTIVES:\n- accuracy: MAXIMIZE (higher is better, aim for >70%)\n- hard_cores_used: MINIMIZE (fewer hardware cores)\n- avg_unused_area_per_core: MINIMIZE (better utilization)\n- total_params: MINIMIZE (smaller model)\n\nCONFIGURATION SCHEMA:\n{\n  \"model_config\": {\n    \"base_activation\": \"LeakyReLU\",\n    \"patch_n_1\": int (divisor of 32),\n    \"patch_m_1\": int (divisor of 32),\n    \"patch_c_1\": int (from patch_channels_options),\n    \"fc_w_1\": int (from fc_w1_options),\n    \"fc_w_2\": int (from fc_w2_options)\n  },\n  \"platform_constraints\": {\n    \"cores\": [{\"max_axons\": int, \"max_neurons\": int, \"count\": int}, ...],\n    \"max_axons\": int (128-2048, multiple of 8),\n    \"max_neurons\": int (128-2048, multiple of 8),\n    \"target_tq\": 16,\n    \"weight_bits\": 8,\n    \"allow_axon_tiling\": false\n  },\n  \"threshold_groups\": int (1-4)\n}\n\nCONSTRAINTS:\n1. patch_n_1 and patch_m_1 must divide 32 (valid: 1, 2, 4, 8, 16, 32)\n2. CIFAR-10 is harder than MNIST - larger patch_c_1 and fc_w values help accuracy\n3. Larger models need more cores - balance accuracy vs hardware\n4. Core dimensions must be multiples of 8 between 128 and 2048"
+    },
+
+    "spike_generation_mode": "Uniform",
+    "firing_mode": "Default",
+    "thresholding_mode": "<="
+  },
+
+  "target_metric_override": null,
+  "start_step": "Architecture Search",
+  "stop_step": "Architecture Search"
+}
+
+
+
+

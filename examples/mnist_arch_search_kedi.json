@@ -1,0 +1,84 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "mnist_arch_search_kedi",
+  "generated_files_path": "./generated",
+  "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
+  "data_provider_name": "MNIST_DataProvider",
+
+  "platform_constraints": {
+    "mode": "auto",
+    "auto": {
+      "fixed": {
+        "target_tq": 16,
+        "simulation_steps": 16,
+        "weight_bits": 8,
+        "allow_axon_tiling": false
+      },
+      "search_space": {
+        "num_core_types": 2,
+        "core_type_counts": [200, 200],
+        "core_axons_bounds": [64, 1024],
+        "core_neurons_bounds": [64, 1024],
+        "max_threshold_groups": 3
+      }
+    }
+  },
+
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 1,
+    "tuner_epochs": 1,
+    "nas_cycles": 5,
+    "nas_batch_size": 5,
+    "nas_workers": 1,
+
+    "degradation_tolerance": 0.1,
+
+    "configuration_mode": "nas",
+    "model_type": "mlp_mixer",
+
+    "arch_search": {
+      "_comment": "Kedi LLM-based multi-objective optimizer configuration",
+      
+      "optimizer": "kedi",
+      
+      "kedi_model": "deepseek:deepseek-chat",
+      "kedi_adapter": "pydantic",
+      
+      "pop_size": 8,
+      "generations": 5,
+      "candidates_per_batch": 5,
+      "max_regen_rounds": 10,
+      "max_failed_examples": 5,
+      
+      "seed": 42,
+
+      "patch_channels_options": [16, 32, 48, 64, 96, 128],
+      "fc_w1_options": [32, 64, 96, 128],
+      "fc_w2_options": [32, 64, 96, 128],
+
+      "warmup_fraction": 0.1,
+      "training_batch_size": 1024,
+
+      "accuracy_evaluator": "extrapolating",
+      "extrapolation_num_train_epochs": 1,
+      "extrapolation_num_checkpoints": 5,
+      "extrapolation_target_epochs": 10,
+      
+      "constraints_description": "The configuration must satisfy:\n1. patch_n_1 and patch_m_1 must divide the input dimensions (28x28 for MNIST)\n2. Valid patch row/col options are divisors of 28: [1, 2, 4, 7, 14, 28]\n3. The model's largest layer input must fit within max_axons\n4. Core dimensions (max_axons, max_neurons) must be multiples of 8 between 64 and 1024\n5. threshold_groups must be between 1 and 3\n6. Aim for high accuracy while minimizing hardware cores and unused area"
+    },
+
+    "spike_generation_mode": "Uniform",
+    "firing_mode": "Default",
+    "thresholding_mode": "<="
+  },
+
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}
+
+
+
+

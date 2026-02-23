@@ -2,12 +2,18 @@ main_cpp_template_debug_spikes = \
 """
 #include "generate_chip.hpp"
 #include "simulator/compute_policy/fire_policy/novena_fire.hpp"
+#include "simulator/compute_policy/fire_policy/ttfs_fire.hpp"
 #include "_tests/all.hpp"
 
 #include "simulator/spike_generation/stochastic_spike_generator.hpp"
+#include "simulator/spike_generation/ttfs_spike_generator.hpp"
 #include "simulator/execution/spiking_execution.hpp"
+#include "simulator/execution/ttfs_execution.hpp"
+#include "simulator/execution/ttfs_continuous_execution.hpp"
 #include "simulator/compute_policy/spiking_compute.hpp"
 #include "simulator/compute_policy/real_valued_compute.hpp"
+#include "simulator/compute_policy/ttfs_analytical_compute.hpp"
+#include "simulator/compute_policy/ttfs_quantized_compute.hpp"
 #include "simulator/compute_policy/fire_policy/novena_fire.hpp"
 
 #include <cstdlib>
@@ -31,7 +37,7 @@ void test_main(int start, int end)
         for(int j = 0; j < {2}; ++j)
         {{  
             auto [input, target] = load_input_n("{0}/inputs/", idx);
-            auto buffer = chip.template execute<exec>(input);
+            auto buffer = chip.execute<exec>(input);
             for(int neuron{{}}; auto i : buffer)
             {{
                 if(i) std::cout << neuron << ' ';

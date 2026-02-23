@@ -29,7 +29,7 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
         super().__init__(filename)
 
     def load(self, cache_directory):
-        (object, device) = torch.load(f"{cache_directory}/{self.filename}.pt", map_location=torch.device('cpu'))
+        (object, device) = torch.load(f"{cache_directory}/{self.filename}.pt", map_location=torch.device('cpu'), weights_only=False)
         return object.to(device)
 
     def store(self, cache_directory, object):

@@ -51,13 +51,15 @@ class Pipeline:
                 if entry in mock_cache:
                     mock_cache.remove(entry)
 
-    def run(self):
+    def run(self, *, stop_step: str | None = None):
         self.set_up_requirements()
         self.verify()
         for name, step in self.steps:
             self._run_step(name, step)
+            if stop_step is not None and name == stop_step:
+                break
 
-    def run_from(self, step_name):
+    def run_from(self, step_name, *, stop_step: str | None = None):
         assert step_name in [name for name, _ in self.steps], f"Step '{step_name}' does not exist in pipeline"
         
         self.set_up_requirements()
@@ -68,6 +70,8 @@ class Pipeline:
             if idx < starting_step_idx:
                 continue
             self._run_step(name, step)
+            if stop_step is not None and name == stop_step:
+                break
 
     def save_cache(self):
         self.cache.store(self.working_directory)

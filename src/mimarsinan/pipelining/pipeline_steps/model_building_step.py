@@ -3,6 +3,7 @@ from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.layers import LeakyGradReLU
 
 import torch.nn as nn
+import torch
 
 class ModelBuildingStep(PipelineStep):
     def __init__(self, pipeline):
@@ -39,6 +40,19 @@ class ModelBuildingStep(PipelineStep):
         adaptation_manager = AdaptationManager()
         for perceptron in init_model.get_perceptrons():
             self.set_activation(self.get_entry("model_config"), perceptron, adaptation_manager)
+
+        # Warmup forward pass to initialize any Lazy modules (e.g. LazyBatchNorm1d),
+        # so subsequent transformations / mapping that touch normalization parameters
+        # won't crash if the pipeline is resumed from a later step.
+        try:
+            init_model.eval()
+            with torch.no_grad():
+                input_shape = tuple(self.pipeline.config["input_shape"])
+                dummy = torch.zeros((1, *input_shape))
+                _ = init_model(dummy)
+        except Exception as e:
+            # Warmup is a best-effort initialization step; do not fail model building.
+            print(f"[ModelBuildingStep] Warmup forward failed: {e}")
 
         self.add_entry("adaptation_manager", adaptation_manager, 'pickle')
         self.add_entry("model", (init_model), "torch_model")

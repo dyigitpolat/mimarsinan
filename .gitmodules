@@ -1,3 +1,6 @@
 [submodule "nevresim"]
 	path = nevresim
 	url = https://github.com/dyigitpolat/nevresim.git
+[submodule "kedi"]
+	path = kedi
+	url = https://github.com/kedi-lang/kedi.git

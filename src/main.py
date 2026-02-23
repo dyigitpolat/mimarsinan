@@ -1,10 +1,11 @@
 from init import *
 
 from mimarsinan.common.wandb_utils import WandB_Reporter
-from mimarsinan.pipelining.pipelines.nas_deployment_pipeline import NASDeploymentPipeline
-from mimarsinan.pipelining.pipelines.vanilla_deployment_pipeline import VanillaDeploymentPipeline
-from mimarsinan.pipelining.pipelines.cq_pipeline import CQPipeline
-from mimarsinan.data_handling.data_provider_factory import ImportedDataProviderFactory
+from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+    DeploymentPipeline,
+)
+from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
+import mimarsinan.data_handling.data_providers
 
 import sys
 import json
@@ -19,14 +20,42 @@ def main():
     with open(deployment_config_path, 'r') as f:
         deployment_config = json.load(f)
     
-    data_provider_path = deployment_config['data_provider_path']
     data_provider_name = deployment_config['data_provider_name']
-    data_provider_factory = ImportedDataProviderFactory(data_provider_path, data_provider_name, "./datasets")
+    seed = deployment_config.get("seed", 0)
+    data_provider_factory = BasicDataProviderFactory(data_provider_name, "./datasets", seed=seed)
 
     deployment_name = deployment_config['experiment_name']
-    platform_constraints = deployment_config['platform_constraints']
     deployment_parameters = deployment_config['deployment_parameters']
+
+    # Backward compatible platform constraints protocol:
+    # - Legacy: platform_constraints is the flat dict used by pipelines
+    # - New: {"mode": "user"|"auto", "user": {...}, "auto": {"fixed": {...}, "search_space": {...}}}
+    platform_constraints_raw = deployment_config["platform_constraints"]
+    if isinstance(platform_constraints_raw, dict) and "mode" in platform_constraints_raw:
+        mode = platform_constraints_raw.get("mode", "user")
+        if mode == "user":
+            # Prefer explicit user block; otherwise, treat remaining keys as the user dict.
+            platform_constraints = platform_constraints_raw.get(
+                "user",
+                {k: v for k, v in platform_constraints_raw.items() if k != "mode"},
+            )
+        elif mode == "auto":
+            auto = platform_constraints_raw.get("auto", {}) or {}
+            fixed = auto.get("fixed", {}) or {}
+            search_space = auto.get("search_space", {}) or {}
+
+            # Merge hardware search-space hints into deployment_parameters.arch_search (if not already provided).
+            arch_cfg = deployment_parameters.setdefault("arch_search", {})
+            for k, v in search_space.items():
+                arch_cfg.setdefault(k, v)
+
+            platform_constraints = fixed
+        else:
+            raise ValueError(f"Invalid platform_constraints.mode: {mode}")
+    else:
+        platform_constraints = platform_constraints_raw
     start_step = deployment_config['start_step']
+    stop_step = deployment_config.get("stop_step")
     target_metric_override = deployment_config.get('target_metric_override')
 
     if 'pipeline_mode' in deployment_config:
@@ -51,6 +80,7 @@ def main():
         deployment_parameters=deployment_parameters,
         working_directory=working_directory,
         start_step=start_step,
+        stop_step=stop_step,
         target_metric_override=target_metric_override)
 
 def run_pipeline(
@@ -61,31 +91,31 @@ def run_pipeline(
     deployment_parameters, 
     working_directory,
     start_step = None,
+    stop_step = None,
     target_metric_override = None):
 
-    deployment_mode_map = {
-        "phased": NASDeploymentPipeline,
-        "vanilla": VanillaDeploymentPipeline,
-        "cq": CQPipeline
-    }
+    # Merge pipeline_mode preset into a copy of deployment_parameters
+    # so that explicit user values always win over preset defaults.
+    merged_params = dict(deployment_parameters)
+    DeploymentPipeline.apply_preset(pipeline_mode, merged_params)
 
     reporter = WandB_Reporter(deployment_name, "deployment")
 
-    pipeline = deployment_mode_map[pipeline_mode] (
+    pipeline = DeploymentPipeline(
         data_provider_factory=data_provider_factory,
-        deployment_parameters=deployment_parameters,
+        deployment_parameters=merged_params,
         platform_constraints=platform_constraints,
         reporter=reporter,
-        working_directory=working_directory
+        working_directory=working_directory,
     )
 
     if target_metric_override is not None:
         pipeline.set_target_metric(target_metric_override)
     
     if start_step is None:
-        pipeline.run()
+        pipeline.run(stop_step=stop_step)
     else:
-        pipeline.run_from(step_name=start_step)
+        pipeline.run_from(step_name=start_step, stop_step=stop_step)
 
 if __name__ == "__main__":
     init()

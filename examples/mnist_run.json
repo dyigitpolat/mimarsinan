@@ -1,7 +1,7 @@
 {
     "pipeline_mode": "phased",
 
-    "experiment_name": "mnist_adder_fix_0",
+    "experiment_name": "mnist_16_32_bits8",
     "generated_files_path": "./generated",
     "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
@@ -11,11 +11,11 @@
             {
                 "max_axons": 1025,
                 "max_neurons": 257,
-                "count": 5
+                "count": 100
             },
             {
-                "max_axons": 513,
-                "max_neurons": 513,
+                "max_axons": 257,
+                "max_neurons": 1025,
                 "count": 100
             }
         ],
@@ -23,7 +23,7 @@
         "max_axons": 2049,
         "max_neurons": 2049,
         "target_tq": 16,
-        "simulation_steps": 16,
+        "simulation_steps": 32,
         "weight_bits": 8
     },
 

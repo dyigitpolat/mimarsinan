@@ -1,4 +1,7 @@
 import json
+from dataclasses import dataclass
+from typing import List
+
 
 class SpikeSource:
     def __init__(self, core, neuron, is_input = False, is_off = False, is_always_on = False):
@@ -20,15 +23,89 @@ class SpikeSource:
         
         return "Src{" + str(self.core_) + "," + str(self.neuron_) + "}"
 
+
+@dataclass
+class CodegenSpan:
+    """A contiguous range of axon sources from a single origin."""
+    core_str: str   # C++ expression: "in", "off", "on", or a core id string
+    start: int
+    count: int
+
+    def get_string(self) -> str:
+        return f"Span{{{self.core_str}, {self.start}, {self.count}}}"
+
+
+def _compress_sources_to_spans(sources: List[SpikeSource]) -> List[CodegenSpan]:
+    """
+    Run-length encode a list of SpikeSource into contiguous CodegenSpans.
+    
+    Consecutive sources from the same core with sequential neuron indices
+    are merged.  For off/on sources, any consecutive run is merged regardless
+    of neuron indices.
+    """
+    if not sources:
+        return []
+
+    spans: List[CodegenSpan] = []
+    i = 0
+    n = len(sources)
+
+    while i < n:
+        src = sources[i]
+
+        if src.is_off_:
+            core_str, start = "off", 0
+        elif src.is_input_:
+            core_str, start = "in", int(src.neuron_)
+        elif src.is_always_on_:
+            core_str, start = "on", 0
+        else:
+            core_str, start = str(int(src.core_)), int(src.neuron_)
+
+        count = 1
+        prev_neuron = start
+        j = i + 1
+        while j < n:
+            nxt = sources[j]
+            if src.is_off_ and nxt.is_off_:
+                pass
+            elif src.is_always_on_ and nxt.is_always_on_:
+                pass
+            elif (src.is_input_ and nxt.is_input_
+                  and int(nxt.neuron_) == prev_neuron + 1):
+                prev_neuron = int(nxt.neuron_)
+            elif (not src.is_off_ and not src.is_input_ and not src.is_always_on_
+                  and not nxt.is_off_ and not nxt.is_input_ and not nxt.is_always_on_
+                  and int(nxt.core_) == int(src.core_)
+                  and int(nxt.neuron_) == prev_neuron + 1):
+                prev_neuron = int(nxt.neuron_)
+            else:
+                break
+            count += 1
+            j += 1
+
+        spans.append(CodegenSpan(core_str=core_str, start=start, count=count))
+        i += count
+
+    return spans
+
+
 class Connection:
     def __init__(self, axon_sources_list):
         self.axon_sources: list[SpikeSource] = axon_sources_list
+        self._spans: list[CodegenSpan] | None = None
+
+    def get_spans(self) -> list[CodegenSpan]:
+        if self._spans is None:
+            self._spans = _compress_sources_to_spans(self.axon_sources)
+        return self._spans
 
     def get_string(self, idx) -> str:
+        spans = self.get_spans()
         result = ""
-        for i, source in enumerate(self.axon_sources):
-            result += "    cons[{}].sources_[{}] = {};\n" .format(idx, i, source.get_string())
-        
+        for i, span in enumerate(spans):
+            result += "    cons[{}].spans_[{}] = {};\n".format(idx, i, span.get_string())
+        result += "    cons[{}].span_count_ = {};\n".format(idx, len(spans))
         return result
 
 class Neuron:
@@ -76,7 +153,14 @@ class ChipModel:
         self.output_buffer: list[SpikeSource] = output_list
         self.cores: list[Core] = cores_list
 
+    def _max_spans_per_core(self) -> int:
+        if not self.connections:
+            return 1
+        return max(len(con.get_spans()) for con in self.connections)
+
     def get_string(self) -> str:
+        max_spans = self._max_spans_per_core()
+
         result = "" 
 
         result += """
@@ -90,7 +174,7 @@ class ChipModel:
 namespace nevresim
 {
 
-template <typename Con, typename Src, size_t core_count, size_t in, size_t off, size_t on>
+template <typename Con, typename Span, size_t core_count, size_t in, size_t off, size_t on>
 consteval auto generate_connections()
 {
     std::array<Con, core_count> cons; 
@@ -125,6 +209,7 @@ consteval auto generate_chip()
     constexpr std::size_t core_count{{{2}}};
     constexpr std::size_t input_size{{{3}}};
     constexpr std::size_t output_size{{{4}}};
+    constexpr std::size_t max_spans_per_core{{{6}}};
     constexpr MembraneLeak<weight_t> leak{{{5}}};
 
     using Cfg = nevresim::ChipConfiguration<
@@ -134,12 +219,14 @@ consteval auto generate_chip()
         core_count,
         input_size,
         output_size,
+        max_spans_per_core,
         leak
     >;
 
     using Map = nevresim::Mapping<Cfg>;
     using Src = nevresim::SpikeSource;
-    using Con = nevresim::CoreConnection<axon_count>;
+    using Span = nevresim::SourceSpan;
+    using Con = nevresim::CoreSpanConnection<max_spans_per_core>;
 
     constexpr nevresim::core_id_t in = nevresim::k_input_buffer_id;
     constexpr nevresim::core_id_t off = nevresim::k_no_connection;
@@ -148,7 +235,7 @@ consteval auto generate_chip()
     using Chip = nevresim::Chip<
         Cfg, 
         Map{{
-            generate_connections<Con, Src, core_count, in, off, on>(),
+            generate_connections<Con, Span, core_count, in, off, on>(),
             generate_outputs<Src, output_size>()}}, 
         ComputePolicy>;
 
@@ -162,7 +249,8 @@ consteval auto generate_chip()
             self.core_count,
             self.input_size,
             self.output_size,
-            self.leak
+            self.leak,
+            max_spans,
         )
         return result
 
@@ -219,7 +307,7 @@ consteval auto generate_chip()
             result["output_buffer"].append({
                 "is_input": bool(out.is_input_),
                 "is_off": bool(out.is_off_),
-                "is_on": bool(src.is_always_on_),
+                "is_on": bool(out.is_always_on_),
                 "source_core": int(out.core_),
                 "source_neuron": int(out.neuron_)
             })
@@ -264,9 +352,4 @@ consteval auto generate_chip()
                     out["source_neuron"],
                     out["is_input"], 
                     out["is_off"],
-                    src["is_on"]))
-
-        
-
-
-
+                    out["is_on"]))

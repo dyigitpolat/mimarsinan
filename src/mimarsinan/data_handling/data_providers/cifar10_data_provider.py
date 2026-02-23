@@ -1,4 +1,5 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
+from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 
 import torchvision.transforms as transforms
 import torchvision
@@ -6,9 +7,10 @@ import torchvision
 import torch
 import os
 
+@BasicDataProviderFactory.register("CIFAR10_DataProvider")
 class CIFAR10_DataProvider(DataProvider):
-    def __init__(self, datasets_path):
-        super().__init__(datasets_path)
+    def __init__(self, datasets_path, *, seed: int | None = 0):
+        super().__init__(datasets_path, seed=seed)
 
         path_str = str(self.datasets_path + '/cifar-10-batches-py')
         download = not os.path.exists(path_str)
