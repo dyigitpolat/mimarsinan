@@ -1,0 +1,272 @@
+```
+# Kedi Multi-Objective Optimizer Template
+# This file provides the Kedi DSL procedures for LLM-based optimization.
+# It can be used standalone or integrated with the KediOptimizer Python class.
+
+from typing import List, Dict, Any, Optional, Sequence
+from dataclasses import dataclass
+import json
+import random
+
+@dataclass
+class ObjectiveSpec:
+    """Specification for an optimization objective."""
+    name: str
+    goal: str  # "min" or "max"
+
+@dataclass
+class CandidateResult:
+    """Result of evaluating a candidate configuration."""
+    configuration: Dict[str, Any]
+    objectives: Dict[str, float]
+    is_valid: bool
+    error_message: Optional[str] = None
+    insight: str = ""
+
+def prettify_configuration(config: Dict[str, Any]) -> str:
+    """Format configuration for display."""
+    return json.dumps(config, indent=2, sort_keys=True)
+
+def prettify_objectives(objectives: Sequence[ObjectiveSpec]) -> str:
+    """Format objectives for LLM context."""
+    lines = ["OBJECTIVES:"]
+    for spec in objectives:
+        goal_desc = "higher is better" if spec.goal == "max" else "lower is better"
+        lines.append(f"  - {spec.name}: {goal_desc}")
+    return "\n".join(lines)
+
+def prettify_results(results: List[CandidateResult], objectives: Sequence[ObjectiveSpec]) -> str:
+    """Format results for LLM prompts."""
+    lines = []
+    for i, result in enumerate(results, 1):
+        lines.append(f"--- Candidate {i} ---")
+        lines.append(f"Configuration: {prettify_configuration(result.configuration)}")
+        if result.is_valid:
+            obj_strs = []
+            for spec in objectives:
+                val = result.objectives.get(spec.name, 0.0)
+                goal_arrow = "↑" if spec.goal == "max" else "↓"
+                obj_strs.append(f"{spec.name}={val:.4f}{goal_arrow}")
+            lines.append(f"Objectives: {', '.join(obj_strs)}")
+        else:
+            lines.append(f"Status: INVALID - {result.error_message}")
+        if result.insight:
+            lines.append(f"Insight: {result.insight}")
+        lines.append("")
+    return "\n".join(lines)
+
+def dominates(a: Dict[str, float], b: Dict[str, float], objectives: Sequence[ObjectiveSpec]) -> bool:
+    """Check Pareto dominance."""
+    dominated_in_all = True
+    better_in_one = False
+    for spec in objectives:
+        val_a = a.get(spec.name, 0.0)
+        val_b = b.get(spec.name, 0.0)
+        if spec.goal == "max":
+            if val_a < val_b:
+                dominated_in_all = False
+            elif val_a > val_b:
+                better_in_one = True
+        else:
+            if val_a > val_b:
+                dominated_in_all = False
+            elif val_a < val_b:
+                better_in_one = True
+    return dominated_in_all and better_in_one
+
+def compute_pareto_front(results: List[CandidateResult], objectives: Sequence[ObjectiveSpec]) -> List[CandidateResult]:
+    """Compute Pareto front."""
+    valid = [r for r in results if r.is_valid]
+    pareto = []
+    for i, candidate in enumerate(valid):
+        dominated = False
+        for j, other in enumerate(valid):
+            if i != j and dominates(other.objectives, candidate.objectives, objectives):
+                dominated = True
+                break
+        if not dominated:
+            pareto.append(candidate)
+    return pareto
+```
+
+# Type definitions for the optimizer
+~CandidateConfig(configuration: `Dict[str, Any]`)
+~CandidateList(candidates: `List[Dict[str, Any]]`)
+~InsightList(insights: `List[str]`)
+
+# ============================================================================
+# Core Optimization Procedures
+# ============================================================================
+
+# Generate initial diverse candidates
+@generate_initial_candidates(search_space_desc: str, n_candidates: int, objectives_desc: str) -> list:
+    `print(f"[KEDI] Generating {n_candidates} initial candidates")`
+    
+    You are an optimization expert. Generate diverse initial candidates for a multi-objective optimization problem.\n\n\
+    <search_space_desc>\n\n\
+    <objectives_desc>\n\n\
+    Generate exactly <n_candidates> different configuration candidates that:\n\
+    1. Are diverse and explore different regions of the search space\n\
+    2. Are likely to be valid (satisfy any constraints)\n\
+    3. Trade off between different objectives\n\n\
+    Provide your reasoning first, then the configurations as a JSON list.\n\n\
+    [thought_process]: Your strategy for generating diverse, valid initial candidates.\n\
+    [candidates: list]: A JSON list of exactly <n_candidates> configuration dictionaries.
+    
+    = `candidates`
+
+
+# Generate failure insights for invalid candidates
+@generate_failure_insights(failed_results_str: str, search_space_desc: str, n_failed: int) -> list:
+    `print(f"[KEDI] Generating insights for {n_failed} failed candidates")`
+    
+    You are an optimization expert. Analyze why these candidates failed and provide specific insights.\n\n\
+    <search_space_desc>\n\n\
+    FAILED CANDIDATES:\n\
+    <failed_results_str>\n\n\
+    For each failed candidate, provide a specific insight about:\n\
+    1. What constraint or requirement it violated\n\
+    2. How to fix it in future candidates\n\n\
+    [insights: list]: A JSON list of exactly <n_failed> insight strings, one for each failed candidate in order.
+    
+    = `insights`
+
+
+# Generate constraint instructions from failures
+@generate_constraint_instruction(failed_results_str: str, search_space_desc: str) -> str:
+    `print("[KEDI] Generating constraint instruction from failures")`
+    
+    You are an optimization expert. Based on these failed candidates, create a consolidated set of constraint instructions.\n\n\
+    <search_space_desc>\n\n\
+    FAILED CANDIDATES AND INSIGHTS:\n\
+    <failed_results_str>\n\n\
+    Create a clear, actionable set of instructions that future candidates should follow to avoid these failures.\n\n\
+    [constraint_instruction: str]: A detailed paragraph describing how to satisfy constraints when proposing configurations.
+    
+    = `constraint_instruction`
+
+
+# Update constraint instructions with new failures
+@update_constraint_instruction(previous_instruction: str, failed_results_str: str, search_space_desc: str) -> str:
+    `print("[KEDI] Updating constraint instruction")`
+    
+    You are an optimization expert. Update the constraint instructions based on new failures.\n\n\
+    PREVIOUS CONSTRAINT INSTRUCTIONS:\n\
+    <previous_instruction>\n\n\
+    NEW FAILED CANDIDATES:\n\
+    <failed_results_str>\n\n\
+    Update the constraint instructions to incorporate insights from these new failures.\n\n\
+    [updated_instruction: str]: An updated, comprehensive set of constraint instructions.
+    
+    = `updated_instruction`
+
+
+# Regenerate candidates using failure insights
+@regenerate_candidates(failed_results_str: str, n_candidates: int, search_space_desc: str, constraint_instruction: str, performance_insights: str) -> list:
+    `print(f"[KEDI] Regenerating {n_candidates} candidates using failure insights")`
+    
+    You are an optimization expert. Previous candidates failed validation. Learn from the failures and generate better candidates.\n\n\
+    <search_space_desc>\n\n\
+    FAILED CANDIDATES AND THEIR ISSUES:\n\
+    <failed_results_str>\n\n\
+    CONSTRAINT COMPLIANCE INSTRUCTIONS:\n\
+    <constraint_instruction>\n\n\
+    PERFORMANCE INSIGHTS:\n\
+    <performance_insights>\n\n\
+    Generate exactly <n_candidates> NEW configuration candidates that:\n\
+    1. Address the issues from the failed candidates\n\
+    2. Follow the constraint instructions\n\
+    3. Are likely to be valid\n\n\
+    [thought_process]: How you are addressing the failures in these new candidates.\n\
+    [candidates: list]: A JSON list of exactly <n_candidates> configuration dictionaries.
+    
+    = `candidates`
+
+
+# Generate performance insights from valid results
+@generate_performance_insights(stats_str: str, search_space_desc: str) -> str:
+    `print("[KEDI] Generating performance insights")`
+    
+    You are an optimization expert. Analyze the performance patterns and provide insights for generating better candidates.\n\n\
+    <search_space_desc>\n\n\
+    PERFORMANCE STATISTICS:\n\
+    <stats_str>\n\n\
+    Analyze:\n\
+    1. What patterns make configurations perform well?\n\
+    2. What trade-offs exist between objectives?\n\
+    3. What configuration choices lead to good overall performance?\n\n\
+    [performance_insights: str]: A detailed analysis of what makes configurations perform well and how to generate better candidates.
+    
+    = `performance_insights`
+
+
+# Update performance insights with new results
+@update_performance_insights(previous_insights: str, pareto_str: str, total_valid: int, pareto_size: int) -> str:
+    `print("[KEDI] Updating performance insights")`
+    
+    You are an optimization expert. Update the performance insights based on new results.\n\n\
+    PREVIOUS INSIGHTS:\n\
+    <previous_insights>\n\n\
+    CURRENT TOP PARETO CONFIGURATIONS:\n\
+    <pareto_str>\n\n\
+    TOTAL VALID CANDIDATES: <total_valid>\n\
+    PARETO FRONT SIZE: <pareto_size>\n\n\
+    Update the insights with any new patterns or observations.\n\n\
+    [updated_insights: str]: Updated performance insights incorporating the new results.
+    
+    = `updated_insights`
+
+
+# Generate offspring from Pareto front
+@generate_offspring(pareto_str: str, n_candidates: int, search_space_desc: str, constraint_instruction: str, performance_insights: str) -> list:
+    `print(f"[KEDI] Generating {n_candidates} offspring from Pareto front")`
+    
+    You are an optimization expert. Generate offspring candidates based on high-quality Pareto-optimal configurations.\n\n\
+    <search_space_desc>\n\n\
+    PARETO-OPTIMAL CONFIGURATIONS (best performers so far):\n\
+    <pareto_str>\n\n\
+    CONSTRAINT COMPLIANCE INSTRUCTIONS:\n\
+    <constraint_instruction>\n\n\
+    PERFORMANCE INSIGHTS:\n\
+    <performance_insights>\n\n\
+    Generate exactly <n_candidates> NEW configuration candidates that:\n\
+    1. Build upon the patterns in the Pareto configurations\n\
+    2. Explore new trade-offs between objectives\n\
+    3. Follow the constraint instructions\n\
+    4. Try to improve on existing solutions\n\n\
+    [thought_process]: How you are creating offspring that build on and improve the Pareto configurations.\n\
+    [candidates: list]: A JSON list of exactly <n_candidates> configuration dictionaries.
+    
+    = `candidates`
+
+
+# Regenerate offspring using both Pareto front and failure insights
+@regenerate_offspring(failed_results_str: str, pareto_str: str, n_candidates: int, search_space_desc: str, constraint_instruction: str, performance_insights: str) -> list:
+    `print(f"[KEDI] Regenerating {n_candidates} offspring using Pareto and failure insights")`
+    
+    You are an optimization expert. Some offspring candidates failed. Learn from the failures while using the Pareto front as guidance.\n\n\
+    <search_space_desc>\n\n\
+    PARETO-OPTIMAL CONFIGURATIONS (reference for valid, high-quality solutions):\n\
+    <pareto_str>\n\n\
+    FAILED OFFSPRING AND THEIR ISSUES:\n\
+    <failed_results_str>\n\n\
+    CONSTRAINT COMPLIANCE INSTRUCTIONS:\n\
+    <constraint_instruction>\n\n\
+    PERFORMANCE INSIGHTS:\n\
+    <performance_insights>\n\n\
+    Generate exactly <n_candidates> NEW configuration candidates that:\n\
+    1. Address the issues from the failed candidates\n\
+    2. Stay close to the Pareto configurations (which are known to be valid)\n\
+    3. Follow the constraint instructions\n\
+    4. Try to improve on existing solutions\n\n\
+    [thought_process]: How you are fixing the failures while building on Pareto patterns.\n\
+    [candidates: list]: A JSON list of exactly <n_candidates> configuration dictionaries.
+    
+    = `candidates`
+
+
+# No main execution - this is a library template
+
+
+
+

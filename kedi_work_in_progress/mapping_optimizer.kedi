@@ -1,0 +1,298 @@
+```
+from mapping_core import *
+from mapping_optimizer_2 import (
+    sample_failed_for_constraint,
+    prettify_results,
+    is_valid,
+    report_valid_results,
+    dominates,
+    compute_pareto_front,
+    compute_performance_stats,
+    evolve_mappings_impl,
+    export_pareto_to_json,
+)
+from typing import List, Tuple, Optional
+
+import logfire
+
+try:
+    logfire.configure()
+    logfire.instrument_pydantic_ai()
+except Exception:
+    pass
+
+import os
+
+#print last 10 digits of open ai api key in env
+print(f"open ai api key being used: ...{os.getenv('OPENAI_API_KEY')[-10:]}")
+```
+#[bundle_path] = /workspaces/moham/output_eval6/medea/WL_C.3_M.64_R.7_S.7_N.1_P.112_Q.112_Wstride.2_Hstride.2_Wdilation.1_Hdilation.1/simba/pareto/medea.bundle.0.yaml
+#[bundle_path] = /workspaces/moham/output_moham_full_multi_objective/medea/WL_C.3_M.1_R.224_S.224_N.1_P.112_Q.112_Wstride.2_Hstride.2_Wdilation.1_Hdilation.1/simba/pareto/medea.bundle.051.yaml
+#[bundle_path] = /workspaces/moham/output_moham_full_multi_objective/medea/WL_C.256_M.256_R.3_S.3_N.1_P.14_Q.14_Wstride.2_Hstride.2_Wdilation.1_Hdilation.1/simba/pareto/medea.bundle.119.yaml
+#[bundle_path] = /workspaces/moham/output_moham_full_multi_objective/medea/WL_C.512_M.512_R.3_S.3_N.1_P.7_Q.7_Wstride.2_Hstride.2_Wdilation.1_Hdilation.1/simba/pareto/medea.bundle.113.yaml
+#[bundle_path] = /workspaces/moham/output_moham_full_multi_objective/medea/WL_C.2048_M.512_R.1_S.1_N.1_P.7_Q.7_Wstride.1_Hstride.1_Wdilation.1_Hdilation.1/simba/pareto/medea.bundle.100.yaml
+[bundle_path] = /workspaces/moham/output_moham_full_multi_objective/medea/WL_C.64_M.256_R.1_S.1_N.1_P.56_Q.56_Wstride.1_Hstride.1_Wdilation.1_Hdilation.1/simba/pareto/medea.bundle.077.yaml
+#assert file exists
+`assert os.path.exists(bundle_path), f"Bundle file {bundle_path} does not exist"`
+
+`print(f"Bundle file {bundle_path} exists")`
+`print(f"Workload name: {bundle_path.split('/')[-4]}")`
+
+[population_size: int] = `8`
+[num_generations: int] = `5`
+[candidates_per_batch: int] = `5`
+[max_failed_examples_for_constraint: int] = `5`  # Max failed examples to use for constraint instruction
+
+```
+# Assert that max_failed_examples_for_constraint >= candidates_per_batch
+assert max_failed_examples_for_constraint >= candidates_per_batch, \
+    f"max_failed_examples_for_constraint ({max_failed_examples_for_constraint}) must be >= candidates_per_batch ({candidates_per_batch})"
+```
+
+# Initial candidate generation (Step 1)
+@generate_initial_mappings(architecture: Architecture, workload: Workload, base_mapping: Mapping, n_candidates: int) -> list[MappingRecommendation]:
+    `print(f"[TRACE] @generate_initial_mappings called with n_candidates={n_candidates}")`
+    [prettified_architecture] = `prettify_architecture(architecture)`
+    [prettified_constraints] = `prettify_constraints(workload, architecture)`
+    [prettified_mapping] = `prettify_mapping(base_mapping)`
+
+    Given the architecture:\n<prettified_architecture>... and \n\n\
+    The constraints:\n<prettified_constraints>... and \n\n\
+    The current base mapping:\n<prettified_mapping>\n\n\
+    Firstly, provide [thought_process] explaining your strategy for generating diverse initial solutions. A mental draft for creating high-quality and valid mappings. \n\n\
+    Provide [mappings: list[MappingRecommendation]] as a list of exactly <n_candidates> COMPLETE mappings that are different from the base mapping and that satisfy the constraints.
+
+    = `mappings`
+
+
+@generate_failure_insights_batch(failed_results: list[MappingResult], architecture: Architecture, workload: Workload) -> list[str]:
+    `print(f"[TRACE] @generate_failure_insights_batch called with {len(failed_results)} failed results")`
+    [prettified_architecture] = `prettify_architecture(architecture)`
+    [prettified_constraints] = `prettify_constraints(workload, architecture)`
+
+    Given the architecture: <prettified_architecture>... and \n\n\
+    The constraints: <prettified_constraints>... and \n\n\
+    The failed mappings and their outcomes: \n\n\
+    <`prettify_results(failed_results)`>... \n\n\
+    [insights: list[str]] is a list of exactly <`len(failed_results)`> paragraphs each being different list items: one per failed mapping in the same order as above, describing in detail why each mapping was invalid and how to fix it.
+    = `insights`
+
+
+# Regeneration using failure insights (Steps 2, 7)
+@regenerate_mappings(insight_mappings: list[MappingResult], architecture: Architecture, workload: Workload, base_mapping: Mapping, target_count: int, constraint_instruction: str, performance_insights: str) -> list[MappingRecommendation]:
+    `print(f"[TRACE] @regenerate_mappings called with target_count={target_count}, {len(insight_mappings)} failed mappings")`
+    [prettified_architecture] = `prettify_architecture(architecture)`
+    [prettified_constraints] = `prettify_constraints(workload, architecture)`
+    [prettified_base_mapping] = `prettify_mapping(base_mapping)`
+
+    Given the architecture: <prettified_architecture>... and \n\n\
+    The constraints: <prettified_constraints>... and \n\n\
+    A known VALID base mapping that satisfies all constraints:\n\n\
+    <prettified_base_mapping>\n\n\
+    The previously failed mappings with their outcomes and insights: \n\n\
+    <`prettify_results(insight_mappings)`>... \n\n\
+    Constraint-compliance instructions <constraint_instruction> \n\n\
+    Performance insights (if any): { <performance_insights> }\n\n\
+    Firstly, provide [thought_process] explaining your strategy for generating diverse initial solutions. A mental draft for creating high-quality and valid mappings. \n\n\
+    [mappings: list[MappingRecommendation]] is a list of exactly <target_count> COMPLETE and VALID mappings that satisfy the constraints and address the previous failures.
+    = `mappings`
+
+
+# Step 3.5 / 7.5: consolidate / update constraint-compliance instructions
+@generate_constraint_instruction(failed_results: list[MappingResult], architecture: Architecture, workload: Workload) -> str:
+    `print(f"[TRACE] @generate_constraint_instruction called with {len(failed_results)} failed results")`
+    [prettified_architecture] = `prettify_architecture(architecture)`
+    [prettified_constraints] = `prettify_constraints(workload, architecture)`
+
+    Given the architecture: <prettified_architecture>... and \n\n\
+    The constraints: <prettified_constraints>... and \n\n\
+    The failed mappings and their insights: \n\n\
+    <`prettify_results(failed_results)`>... \n\n\
+    [constraint_instruction: str] is a detailed paragraph describing how to satisfy the constraints when proposing mappings.
+    = `constraint_instruction`
+
+
+@update_constraint_instruction(previous_instruction: str, new_failed_results: list[MappingResult], architecture: Architecture, workload: Workload) -> str:
+    `print(f"[TRACE] @update_constraint_instruction called with {len(new_failed_results)} new failed results")`
+    [prettified_constraints] = `prettify_constraints(workload, architecture)`
+
+    Given the constraints: <prettified_constraints>... and \n\n\
+    The previous constraint-compliance instruction: <previous_instruction>... and \n\n\
+    The new failed mappings and their insights: \n\n\
+    <`prettify_results(new_failed_results)`>... \n\n\
+    [updated_instruction: str] is an updated constraint-compliance instruction that incorporates insights from these failures.
+    = `updated_instruction`
+
+
+
+
+# Steps 5 / 8: performance insights
+@generate_performance_insights(all_valid_results: list[MappingResult], architecture: Architecture, workload: Workload) -> str:
+    `print(f"[TRACE] @generate_performance_insights called with {len(all_valid_results)} total valid results")`
+    [stats: dict] = `compute_performance_stats(all_valid_results)`
+    
+    [prettified_architecture] = `prettify_architecture(architecture)`
+    [prettified_workload] = `prettify_workload(workload)`
+    
+    Given the architecture: <prettified_architecture>... and \n\n\
+    The workload: <prettified_workload>... and \n\n\
+    \n\n\
+    Best Energy mapping:\n\n\
+    <`prettify_results([stats['best_energy_mr']])`>...\n\n\
+    Best Cycles mapping:\n\n\
+    <`prettify_results([stats['best_cycles_mr']])`>...\n\n\
+    Best Area mapping:\n\n\
+    <`prettify_results([stats['best_area_mr']])`>...\n\n\
+    \n\n\
+    Top 3 Pareto-optimal mappings:\n\n\
+    <`prettify_results([mr for mr, m in stats['top_3_pareto']])`>...\n\n\
+    \n\n\
+    Worst Energy mapping:\n\n\
+    <`prettify_results([stats['worst_energy_mr']])`>...\n\n\
+    Worst Cycles mapping:\n\n\
+    <`prettify_results([stats['worst_cycles_mr']])`>...\n\n\
+    Worst Area mapping:\n\n\
+    <`prettify_results([stats['worst_area_mr']])`>...\n\n\
+    \n\n\
+    Bottom 3 most dominated mappings (worst performers):\n\n\
+    <`prettify_results([mr for mr, m in stats['bottom_3_dominated']]) if stats['bottom_3_dominated'] else "N/A"`>...\n\n\
+    \n\n\
+    [performance_insights: str] is a detailed explanation analyzing why the best mappings perform well across different objectives and what patterns emerge from the Pareto front.\n\
+    Performance insights should act as a guide for generating high-quality mappings.
+    = `performance_insights`
+
+
+@update_performance_insights(previous_insights: str, all_valid_results: list[MappingResult], architecture: Architecture, workload: Workload) -> str:
+    `print(f"[TRACE] @update_performance_insights called with {len(all_valid_results)} total valid results")`
+    [stats: dict] = `compute_performance_stats(all_valid_results)`
+    
+    [prettified_workload] = `prettify_workload(workload)`
+    
+    Given the workload: <prettified_workload>... and \n\n\
+    \n\n\
+    Best Energy mapping:\n\n\
+    <`prettify_results([stats['best_energy_mr']])`>...\n\n\
+    Best Cycles mapping:\n\n\
+    <`prettify_results([stats['best_cycles_mr']])`>...\n\n\
+    Best Area mapping:\n\n\
+    <`prettify_results([stats['best_area_mr']])`>...\n\n\
+    \n\n\
+    Top 3 Pareto-optimal mappings:\n\n\
+    <`prettify_results([mr for mr, m in stats['top_3_pareto']])`>...\n\n\
+    \n\n\
+    Worst Energy mapping:\n\n\
+    <`prettify_results([stats['worst_energy_mr']])`>...\n\n\
+    Worst Cycles mapping:\n\n\
+    <`prettify_results([stats['worst_cycles_mr']])`>...\n\n\
+    Worst Area mapping:\n\n\
+    <`prettify_results([stats['worst_area_mr']])`>...\n\n\
+    \n\n\
+    Bottom 3 most dominated mappings (worst performers):\n\n\
+    <`prettify_results([mr for mr, m in stats['bottom_3_dominated']]) if stats['bottom_3_dominated'] else "N/A"`>...\n\n\
+    \n\n\
+    Previous performance insights: { <previous_insights> }\n\n\
+    [updated_performance_insights: str] is a refined explanation of why the better mappings perform well and how to use this when proposing mappings, building on previous insights.\n\ 
+    Performance insights should act as a guide for generating high-quality mappings.
+    = `updated_performance_insights`
+
+
+# Step 6: generate new candidates using Pareto + insights
+@generate_offspring_mappings(architecture: Architecture, workload: Workload, example_pareto_mapping: Mapping, pareto_results: list[MappingResult], performance_insights: str, constraint_instruction: str, n_candidates: int) -> list[MappingRecommendation]:
+    `print(f"[TRACE] @generate_offspring_mappings called with n_candidates={n_candidates}, {len(pareto_results)} pareto")`
+    [prettified_architecture] = `prettify_architecture(architecture)`
+    [prettified_constraints] = `prettify_constraints(workload, architecture)`
+    [prettified_example_mapping] = `prettify_mapping(example_pareto_mapping)`
+
+    Given the architecture: <prettified_architecture>... and \n\n\
+    The constraints: <prettified_constraints>... and \n\n\
+    An example Pareto-optimal mapping from the previous generation: <prettified_example_mapping>\n\n\
+    The high-quality mappings and their metrics: \n\n\
+    <`prettify_results(pareto_results)`>... \n\n\
+    Constraint-compliance instructions: <constraint_instruction>\n\n\
+    Performance insights: <performance_insights>\n\n\
+    Firstly, provide [thought_process] explaining your strategy for generating diverse offspring solutions. A mental draft for creating high-quality and valid mappings. \n\n\
+    [mappings: list[MappingRecommendation]] is a list of exactly <n_candidates> COMPLETE mappings that follow the constraint and performance instructions while exploring new trade-offs.\n\ 
+    New mappings must meet constraints and be high-quality across all objectives such as energy, cycles, and area.
+    = `mappings`
+
+
+# Regenerate offspring using failure insights
+@regenerate_offspring_mappings(insight_mappings: list[MappingResult], architecture: Architecture, workload: Workload, example_pareto_mapping: Mapping, pareto_results: list[MappingResult], target_count: int, constraint_instruction: str, performance_insights: str) -> list[MappingRecommendation]:
+    `print(f"[TRACE] @regenerate_offspring_mappings called with target_count={target_count}, {len(insight_mappings)} failed mappings")`
+    [prettified_architecture] = `prettify_architecture(architecture)`
+    [prettified_constraints] = `prettify_constraints(workload, architecture)`
+    [prettified_example_mapping] = `prettify_mapping(example_pareto_mapping)`
+
+    Given the architecture: <prettified_architecture>... and \n\n\
+    The constraints: <prettified_constraints>... and \n\n\
+    An example Pareto-optimal mapping from the previous generation: <prettified_example_mapping>\n\n\
+    The high-quality mappings and their metrics: \n\n\
+    <`prettify_results(pareto_results)`>... \n\n\
+    The previously failed mappings with their outcomes and insights: \n\n\
+    <`prettify_results(insight_mappings)`>... \n\n\
+    Constraint-compliance instructions: <constraint_instruction> \n\n\
+    Performance insights: <performance_insights>\n\n\
+    Firstly, provide [thought_process] explaining your strategy for generating diverse offspring solutions that address the previous failures. A mental draft for creating high-quality and valid mappings. \n\n\
+    [mappings: list[MappingRecommendation]] is a list of exactly <target_count> COMPLETE and VALID mappings that satisfy the constraints, address the previous failures, and follow the performance insights.\n\ 
+    New mappings must meet constraints and be high-quality across all objectives such as energy, cycles, and area.
+    = `mappings`
+
+
+# Core evolutionary loop implementing steps 1–9
+@evolve_mappings(architecture: Architecture, workload: Workload, base_mapping: Mapping, base_result: EvaluationOutcome, population_size: int, num_generations: int, candidates_per_batch: int) -> list[MappingResult]:
+    `print(f"[TRACE] @evolve_mappings called with population_size={population_size}, num_generations={num_generations}, candidates_per_batch={candidates_per_batch}")`
+    = ```
+    return evolve_mappings_impl(
+        architecture,
+        workload,
+        base_mapping,
+        base_result,
+        population_size,
+        num_generations,
+        candidates_per_batch,
+        max_failed_examples_for_constraint,
+        generate_initial_mappings,
+        regenerate_mappings,
+        generate_failure_insights_batch,
+        generate_constraint_instruction,
+        update_constraint_instruction,
+        generate_performance_insights,
+        update_performance_insights,
+        generate_offspring_mappings,
+        regenerate_offspring_mappings,
+    )
+    ```
+
+
+~Bundle(workload: Workload, architecture: Architecture, mapping: Mapping)
+
+[bundle: Bundle] = `Bundle(*parse_bundle(bundle_path))`
+[workload: Workload] = `bundle.workload`
+[architecture: Architecture] = `bundle.architecture`
+[mapping: Mapping] = `bundle.mapping`
+
+`print("Evaluating base mapping from bundle...")`
+[base_result: EvaluationOutcome] = `evaluate_mapping(workload, architecture, mapping)`
+```
+if isinstance(base_result, Metrics):
+    print("Base mapping is VALID")
+    print(f"Metrics: {base_result.to_string()}")
+else:
+    print("Base mapping is INVALID")
+    print(base_result.to_string())
+print()
+```
+
+[final_results: list[MappingResult]] = `evolve_mappings(architecture, workload, mapping, base_result, population_size, num_generations, candidates_per_batch)`
+
+```
+# Export Pareto front to JSON with workload name
+import os
+workload_name = bundle_path.split('/')[-4]
+output_json_path = f"pareto_front_llm_{workload_name}.json"
+export_pareto_to_json(final_results, output_json_path)
+```
+
+= done
+
+

@@ -1,190 +1,221 @@
-from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.transformations.chip_quantization import ChipQuantization
-from mimarsinan.models.core_flow import CoreFlow
-from mimarsinan.models.spiking_core_flow import SpikingCoreFlow
-from mimarsinan.models.stable_spiking_core_flow import StableSpikingCoreFlow
+"""
+CoreFlowTuner: Threshold tuning for unified IRGraph-based workflow.
 
-from mimarsinan.mapping.chip_latency import *
+This tuner adjusts thresholds of NeuralCore nodes in an IRGraph to optimize
+spiking simulation accuracy by minimizing the difference between stable 
+(deterministic) spike rates and regular event-based spike rates.
+"""
 
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from __future__ import annotations
 
 import copy
 import math
 import random
+from dataclasses import dataclass
+from typing import Dict
+
+import torch.nn as nn
+
+from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow, StableSpikingUnifiedCoreFlow
+from mimarsinan.mapping.ir import NeuralCore
+
+
+@dataclass
+class CoreFlowTuningResult:
+    tuned_ir_graph: object
+    scaled_simulation_length: int
+    best_validation_accuracy: float
+
 
 class CoreFlowTuner:
-    def __init__(self, pipeline, mapping, preprocessor):
+    """
+    Threshold tuner that minimizes the difference between stable spiking 
+    network spike rates and regular event-based network spike rates.
+    
+    The algorithm:
+    1. Run StableSpikingUnifiedCoreFlow to get target spike rates per core
+    2. Run SpikingUnifiedCoreFlow to get current spike rates per core
+    3. Adjust thresholds to minimize the difference
+    4. Repeat for a few tuning cycles
+    """
+
+    def __init__(self, pipeline, ir_graph, preprocessor: nn.Module):
+        self.pipeline = pipeline
         self.device = pipeline.config["device"]
         self.data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
-        self.input_shape = pipeline.config["input_shape"]
-
-        self.preprocessor = preprocessor
-
-        self.mapping = mapping
-        self.target_tq = pipeline.config["target_tq"]
-        self.simulation_steps = round(pipeline.config["simulation_steps"])
         self.report_function = pipeline.reporter.report
-        self.quantization_bits = pipeline.config["weight_bits"]
 
-        self.core_flow_trainer = BasicTrainer(
-            CoreFlow(self.input_shape, self.mapping, self.target_tq, self.preprocessor), 
-            self.device, self.data_loader_factory,
-            None)
-        # self.core_flow_trainer.set_validation_batch_size(100)
-        self.core_flow_trainer.report_function = self.report_function
+        self.input_shape = pipeline.config["input_shape"]
+        self.simulation_steps = int(round(pipeline.config["simulation_steps"]))
 
         self.firing_mode = pipeline.config["firing_mode"]
         self.spike_mode = pipeline.config["spike_generation_mode"]
         self.thresholding_mode = pipeline.config["thresholding_mode"]
+        self.spiking_mode = pipeline.config.get("spiking_mode", "rate")
+
+        self.preprocessor = preprocessor
+        self.ir_graph = copy.deepcopy(ir_graph)
 
         self.accuracy = None
 
-    def run(self):
-        non_quantized_mapping = copy.deepcopy(self.mapping)
-        core_flow = CoreFlow(self.input_shape, non_quantized_mapping, self.target_tq, self.preprocessor)
-        print(f"  Non-Quantized CoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
+    def _make_stable_flow(self) -> StableSpikingUnifiedCoreFlow:
+        return StableSpikingUnifiedCoreFlow(
+            self.input_shape,
+            self.ir_graph,
+            self.simulation_steps,
+            self.preprocessor,
+            self.firing_mode,
+            self.thresholding_mode,
+            spiking_mode=self.spiking_mode,
+        )
 
-        quantized_mapping = copy.deepcopy(self.mapping)
-        ChipQuantization(self.quantization_bits).quantize(quantized_mapping.cores)
-        core_flow = SpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.spike_mode, self.thresholding_mode)
-        print(f"  Original SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
+    def _make_spiking_flow(self) -> SpikingUnifiedCoreFlow:
+        return SpikingUnifiedCoreFlow(
+            self.input_shape,
+            self.ir_graph,
+            self.simulation_steps,
+            self.preprocessor,
+            self.firing_mode,
+            self.spike_mode,
+            self.thresholding_mode,
+            spiking_mode=self.spiking_mode,
+        )
 
-        stable_core_flow = StableSpikingCoreFlow(self.input_shape, quantized_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.thresholding_mode)
-        print(f"  Original StableSpikingCoreFlow Accuracy: {self._validate_core_flow(stable_core_flow)}")
-
-
-        max_lr = max([core.threshold for core in stable_core_flow.cores]) / 10
-        self._tune_thresholds(
-            stable_core_flow.get_core_spike_rates(), 
-            tuning_cycles=20, lr=1.0, core_flow_model=core_flow)
-
-        thresholds = [round(core.threshold) for core in core_flow.cores]
-        for core_id, core in enumerate(core_flow.cores):
-            core.threshold = thresholds[core_id]
-            
-        core_flow.refresh_thresholds()
-        
-        final_mapping = copy.deepcopy(core_flow.core_mapping)
-        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, int(self.simulation_steps), self.preprocessor, self.firing_mode, self.spike_mode, self.thresholding_mode)
-        print(f"  Original 2 SpikingCoreFlow Accuracy: {self._validate_core_flow(core_flow)}")
-        
-        self._quantize_thresholds(final_mapping, 1.0)
-        scaled_simulation_steps = self.simulation_steps
-        core_flow = SpikingCoreFlow(self.input_shape, final_mapping, scaled_simulation_steps, self.preprocessor, self.firing_mode, self.spike_mode, self.thresholding_mode)
-        self.accuracy = self._test_core_flow(core_flow)
-        print(f"  Final SpikingCoreFlow Accuracy: {self.accuracy}")
-
-        self.mapping = final_mapping
-        return scaled_simulation_steps
-
+    def _validate(self, flow) -> float:
+        trainer = BasicTrainer(flow.to(self.device), self.device, self.data_loader_factory, None)
+        trainer.report_function = self.report_function
+        return trainer.validate()
     
-    def _tune_thresholds(self, stable_spike_rates, tuning_cycles, lr, core_flow_model):
+    def _test(self, flow) -> float:
+        trainer = BasicTrainer(flow.to(self.device), self.device, self.data_loader_factory, None)
+        trainer.report_function = self.report_function
+        return trainer.test()
+
+    def run(
+        self,
+        *,
+        threshold_scales=None,
+        simulation_lengths=None,
+        coordinate_descent_passes: int = 1,
+    ) -> CoreFlowTuningResult:
+        """
+        Run threshold tuning using spike rate matching algorithm.
+        """
+        # Get neural cores from the graph
+        cores = [n for n in self.ir_graph.nodes if isinstance(n, NeuralCore)]
+        if not cores:
+            print("  CoreFlowTuner: No neural cores to tune")
+            return CoreFlowTuningResult(
+                tuned_ir_graph=self.ir_graph,
+                scaled_simulation_length=self.simulation_steps,
+                best_validation_accuracy=self._validate(self._make_spiking_flow()),
+            )
+
+        # Build latency groups for propagation
+        latency_groups: Dict[int, list[int]] = {}
+        for idx, core in enumerate(cores):
+            lat = core.latency if core.latency is not None else 0
+            if lat not in latency_groups:
+                latency_groups[lat] = []
+            latency_groups[lat].append(idx)
+
+        max_latency = max(latency_groups.keys()) if latency_groups else 1
+
+        # Step 1: Get stable spike rates as targets
+        stable_flow = self._make_stable_flow().to(self.device)
+        stable_acc = self._validate(stable_flow)
+        print(f"  Stable SpikingUnifiedCoreFlow Accuracy: {stable_acc}")
+        
+        # Spike rates are collected during validation forward passes
+        stable_spike_rates = stable_flow.get_core_spike_rates()
+        print(f"  Stable spike rates (first 5): {stable_spike_rates[:min(5, len(stable_spike_rates))]}")
+
+        # Step 2: Get current spiking flow
+        spiking_flow = self._make_spiking_flow().to(self.device)
+        print(f"  Initial SpikingUnifiedCoreFlow Accuracy: {self._validate(spiking_flow)}")
+
+        # Step 3: Tune thresholds to match stable spike rates
+        thresholds = [float(core.threshold) for core in cores]
+        best_thresholds = thresholds.copy()
+        max_acc = 0.0
+        
+        tuning_cycles = 5
+        lr = 1.0
+
         print("  Tuning thresholds...")
-        print(stable_spike_rates)
-        print(core_flow_model.get_core_spike_rates())
-
-        latency_groups = {}
-        for idx, core in enumerate(core_flow_model.cores):
-            if core.latency not in latency_groups:
-                latency_groups[core.latency] = []
+        for cycle in range(tuning_cycles):
+            # Get current spike rates
+            current_spike_rates = spiking_flow.get_core_spike_rates()
             
-            latency_groups[core.latency].append(idx)
-
-        thresholds = [round(0.99 * core.threshold) for core in core_flow_model.cores]
-        best_thresholds = [t for t in thresholds]
-
-        acc = 0
-        max_acc = 0
-        perturbations = [None for _ in core_flow_model.cores]
-        lr_ = lr
-        for i in range(tuning_cycles):
-            acc = self._validate_core_flow(core_flow_model)
-            print("lr: ", lr_)
-
-            print("acc: ", acc)
-
-            print(f"  Tuning cycle {i+1}/{tuning_cycles}...")
-            self._update_core_thresholds(
-                stable_spike_rates, lr_, core_flow_model, thresholds, perturbations, latency_groups)
+            acc = self._validate(spiking_flow)
+            print(f"  Tuning cycle {cycle+1}/{tuning_cycles}, acc: {acc}")
             
-            lr_ *= math.pow(0.8, 1 / tuning_cycles)
-
             if acc > max_acc:
                 max_acc = acc
-                best_thresholds = [core.threshold for core in core_flow_model.cores]
+                best_thresholds = [float(core.threshold) for core in cores]
 
-        for core_id, core in enumerate(core_flow_model.cores):
-            core.threshold = best_thresholds[core_id]
-            core_flow_model.refresh_thresholds()
+            # Compute perturbations for each core
+            perturbations = []
+            for core_idx, core in enumerate(cores):
+                current_rate = current_spike_rates[core_idx] + 0.01
+                target_rate = (random.uniform(0.99, 1.02) * stable_spike_rates[core_idx] + 0.01) * 1.05
+                
+                perturbation = target_rate - current_rate
 
-    def _update_core_thresholds(self, stable_spike_rates, lr, core_flow_model, thresholds, perturbations, latency_groups):
-        current_perturbations = []
-        for core_id, core in enumerate(core_flow_model.cores):
-            core_spike_rate = core_flow_model.get_core_spike_rates()[core_id] + 0.01
-            target_spike_rate = random.uniform(0.99, 1.02) * stable_spike_rates[core_id] + 0.01
+                # Scale perturbation based on latency position and tuning progress
+                core_lat = core.latency if core.latency is not None else 0
+                if max_latency > 1 and tuning_cycles > 1:
+                    t = cycle / (tuning_cycles - 1)
+                    multiplier = (1 - core_lat / (max_latency)) * (1 - t) + (core_lat / max_latency) * t
+                else:
+                    multiplier = 1.0
+                perturbation *= multiplier
+
+                perturbations.append(perturbation)
+
+            # Average perturbation per latency group
+            avg_perturbation_per_group = {}
+            for lat, indices in latency_groups.items():
+                total = sum(perturbations[i] for i in indices)
+                avg_perturbation_per_group[lat] = total / len(indices)
+
+            # Propagate perturbations from later layers
+            for core_idx, core in enumerate(cores):
+                core_lat = core.latency if core.latency is not None else 0
+                if core_lat + 1 in avg_perturbation_per_group:
+                    perturbations[core_idx] += avg_perturbation_per_group[core_lat + 1] * 0.5
+
+            # Apply perturbations to thresholds
+            for core_idx, core in enumerate(cores):
+                pert = max(-0.90, min(1.10, perturbations[core_idx]))
+                thresholds[core_idx] = thresholds[core_idx] * (1 - pert * lr)
+                core.threshold = max(1.0, round(thresholds[core_idx]))
+
+            # Refresh thresholds in the flow
+            spiking_flow.refresh_thresholds()
             
-            perturbation = target_spike_rate - core_spike_rate
-            perturbations[core_id] = perturbation
-            current_perturbations.append(perturbation)
+            lr *= math.pow(0.8, 1 / tuning_cycles)
 
-        total_perturbation_per_latency_group = {}
-        for core_id, core in enumerate(core_flow_model.cores):
-            if core.latency not in total_perturbation_per_latency_group:
-                total_perturbation_per_latency_group[core.latency] = 0
-            total_perturbation_per_latency_group[core.latency] += perturbations[core_id]
+        # Restore best thresholds
+        for core_idx, core in enumerate(cores):
+            core.threshold = max(1.0, round(best_thresholds[core_idx]))
 
-        average_perturbation_per_latency_group = {}
-        for latency, total_perturbation in total_perturbation_per_latency_group.items():
-            average_perturbation_per_latency_group[latency] = total_perturbation / len(latency_groups[latency])
-        
-        for core_id, core in enumerate(core_flow_model.cores):
-            latency = core.latency
-            if latency + 1 in average_perturbation_per_latency_group:
-                perturbations[core_id] += average_perturbation_per_latency_group[latency + 1] * 0.5
+        # Step 4: Final quantization and test
+        spiking_flow = self._make_spiking_flow().to(self.device)
+        self.accuracy = self._test(spiking_flow)
+        print(f"  Final SpikingUnifiedCoreFlow Accuracy: {self.accuracy}")
 
-        scale = max([abs(p) for p in current_perturbations])
-        for core_id, core in enumerate(core_flow_model.cores):
-            #perturbation = average_perturbation_per_latency_group[core.latency]
-            perturbation = perturbations[core_id]
-            perturbation = max(-0.90, min(1.10, perturbation))
+        return CoreFlowTuningResult(
+            tuned_ir_graph=self.ir_graph,
+            scaled_simulation_length=self.simulation_steps,
+            best_validation_accuracy=self.accuracy,
+        )
 
-            new_thresh = thresholds[core_id] * (1 - perturbation * lr)
-            thresholds[core_id] = new_thresh
-
-            core.threshold = round(thresholds[core_id])
-            if core.threshold <= 0:
-                core.threshold = 1
-        
-        for pert, core in zip(perturbations, core_flow_model.cores):
-            if pert is None:
-                self.print_colorful("gray", f"{core.threshold} ")
-                continue
-
-            if pert < -0.02:
-                self.print_colorful("blue", f"{core.threshold} ")
-            elif pert > 0.02:
-                self.print_colorful("red", f"{core.threshold} ")
-            else:
-                self.print_colorful("green", f"{core.threshold} ")
-        print()
-
-        core_flow_model.refresh_thresholds()
-
-    def _quantize_thresholds(self, mapping, quantization_scale):
-        for core in mapping.cores:
-            core.threshold = round(core.threshold * quantization_scale)
-
-    def _validate_core_flow(self, core_flow):
-        self.core_flow_trainer.model = core_flow.to(self.device)
-        return self.core_flow_trainer.validate()
-
-    def _test_core_flow(self, core_flow):
-        self.core_flow_trainer.model = core_flow.to(self.device)
-        return self.core_flow_trainer.test()
-    
     def validate(self):
         return self.accuracy
-    
+
     def print_colorful(self, color, text):
         colors = {
             "red": "\033[91m",

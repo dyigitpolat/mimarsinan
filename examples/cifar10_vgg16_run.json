@@ -1,0 +1,58 @@
+{
+    "pipeline_mode": "phased",
+
+    "experiment_name": "cifar10_vgg16_mapper",
+    "generated_files_path": "./generated",
+    "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar10_data_provider.py",
+    "data_provider_name": "CIFAR10_DataProvider",
+
+    "platform_constraints": {
+        "cores": [
+            {
+                "max_axons": 50000,
+                "max_neurons": 600,
+                "count": 100
+            },
+            {
+                "max_axons": 600,
+                "max_neurons": 50000,
+                "count": 100
+            }
+        ],
+
+        "max_axons": 50000,
+        "max_neurons": 50000,
+
+        "target_tq": 16,
+        "simulation_steps": 16,
+        "weight_bits": 8
+    },
+
+    "deployment_parameters": {
+        "lr": 0.001,
+        "training_epochs": 100,
+        "tuner_epochs": 10,
+
+        "degradation_tolerance": 0.1,
+
+        "configuration_mode": "user",
+        "model_type": "vgg16",
+
+        "nas_cycles": 2,
+        "nas_batch_size": 4,
+        "nas_workers": 2,
+
+        "model_config": {
+            "base_activation": "ReLU"
+        },
+
+        "spike_generation_mode": "Uniform",
+        "firing_mode": "Default",
+        "thresholding_mode": "<"
+    },
+
+    "target_metric_override": null,
+    "start_step": null
+}
+
+

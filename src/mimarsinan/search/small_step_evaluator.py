@@ -32,7 +32,13 @@ class SmallStepEvaluator:
     
     def validate(self, configuration):
         try:
-            self.model_builder.validate(configuration)
+            # Prefer a lightweight validate() if the builder provides it; otherwise,
+            # fall back to a best-effort build() to catch structural errors (e.g. invalid
+            # patch sizes for einops rearrange).
+            if hasattr(self.model_builder, "validate"):
+                self.model_builder.validate(configuration)
+            else:
+                _ = self.model_builder.build(configuration)
             return True
         except Exception as e:
             return False
