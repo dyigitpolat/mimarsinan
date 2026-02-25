@@ -8,3 +8,6 @@ wandb
 matplotlib
 pymoo
 plotly
+fastapi
+uvicorn[standard]
+websockets

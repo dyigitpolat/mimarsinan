@@ -26,7 +26,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
     # Penalty for invalid candidates (used when validate() fails or evaluate() throws)
     invalid_penalty: float = 1e18
 
-    def optimize(self, problem: EncodedProblem[Dict[str, Any]]) -> SearchResult[Dict[str, Any]]:
+    def optimize(self, problem: EncodedProblem[Dict[str, Any]], reporter=None) -> SearchResult[Dict[str, Any]]:
         specs = list(problem.objectives)
         n_obj = len(specs)
         if n_obj == 0:
@@ -89,11 +89,25 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
         algo = NSGA2(pop_size=int(self.pop_size), eliminate_duplicates=bool(self.eliminate_duplicates))
         termination = get_termination("n_gen", int(self.generations))
 
-        # Callback to track generation
         from pymoo.core.callback import Callback
+        _reporter = reporter
+        _specs = specs
+
         class GenCallback(Callback):
             def notify(self, algorithm):
                 current_gen[0] = algorithm.n_gen
+                if _reporter is None:
+                    return
+                try:
+                    _reporter("Search generation", algorithm.n_gen)
+                    F = np.array(algorithm.opt.get("F"))
+                    for i, spec in enumerate(_specs):
+                        v = float(np.min(F[:, i]))
+                        val = -v if spec.goal == "max" else v
+                        _reporter(f"Search best {spec.name}", val)
+                    _reporter("Search Pareto size", len(F))
+                except Exception:
+                    pass
 
         res = minimize(
             _PymooProblem(),

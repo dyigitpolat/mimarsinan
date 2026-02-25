@@ -140,6 +140,8 @@ class IRMapping:
         parameter_scale: torch.Tensor = torch.tensor(1.0),
         input_activation_scale: torch.Tensor = torch.tensor(1.0),
         name: str | None = None,
+        normalization_type: str | None = None,
+        activation_type: str | None = None,
     ) -> np.ndarray:
         """
         Add a NeuralCore node to the graph.
@@ -188,6 +190,8 @@ class IRMapping:
             activation_scale=activation_scale,
             parameter_scale=parameter_scale,
             input_activation_scale=input_activation_scale,
+            normalization_type=normalization_type,
+            activation_type=activation_type,
         )
         self.nodes.append(neural_core)
 
@@ -208,6 +212,8 @@ class IRMapping:
         parameter_scale: torch.Tensor = torch.tensor(1.0),
         input_activation_scale: torch.Tensor = torch.tensor(1.0),
         name: str | None = None,
+        normalization_type: str | None = None,
+        activation_type: str | None = None,
     ) -> np.ndarray:
         """
         Map a fully-connected layer to IR nodes.
@@ -252,6 +258,8 @@ class IRMapping:
                         parameter_scale,
                         input_activation_scale,
                         name=(f"{name}_col{i}" if name else None),
+                        normalization_type=normalization_type,
+                        activation_type=activation_type,
                     ).flatten()
                 )
 
@@ -275,6 +283,8 @@ class IRMapping:
                 parameter_scale,
                 input_activation_scale,
                 name,
+                normalization_type,
+                activation_type,
             )
 
         # Check neuron limits and tile output channels if needed
@@ -287,6 +297,8 @@ class IRMapping:
                 parameter_scale,
                 input_activation_scale,
                 name,
+                normalization_type,
+                activation_type,
             )
 
         # Simple case: single core
@@ -298,6 +310,8 @@ class IRMapping:
             parameter_scale=parameter_scale,
             input_activation_scale=input_activation_scale,
             name=name,
+            normalization_type=normalization_type,
+            activation_type=activation_type,
         )
 
     def _map_fc_output_tiled(
@@ -309,6 +323,8 @@ class IRMapping:
         parameter_scale: torch.Tensor,
         input_activation_scale: torch.Tensor,
         name: str | None,
+        normalization_type: str | None,
+        activation_type: str | None,
     ) -> np.ndarray:
         """Tile output channels across multiple cores."""
         out_features = weights.shape[0]
@@ -330,6 +346,8 @@ class IRMapping:
                 parameter_scale=parameter_scale,
                 input_activation_scale=input_activation_scale,
                 name=f"{name}_tile_{start}_{end}" if name else None,
+                normalization_type=normalization_type,
+                activation_type=activation_type,
             )
             output_sources_list.append(tile_sources)
             start = end
@@ -345,6 +363,8 @@ class IRMapping:
         parameter_scale: torch.Tensor,
         input_activation_scale: torch.Tensor,
         name: str | None,
+        normalization_type: str | None,
+        activation_type: str | None,
     ) -> np.ndarray:
         """
         Map FC with axon tiling using partial sums.
@@ -395,6 +415,8 @@ class IRMapping:
                     parameter_scale=parameter_scale,
                     input_activation_scale=input_activation_scale,
                     name=f"{name}_psum_pos_t{tile_idx}_o{out_start}" if name else None,
+                    normalization_type=normalization_type,
+                    activation_type=activation_type,
                 )
 
                 # Negative partial (absolute values)
@@ -406,6 +428,8 @@ class IRMapping:
                     parameter_scale=parameter_scale,
                     input_activation_scale=input_activation_scale,
                     name=f"{name}_psum_neg_t{tile_idx}_o{out_start}" if name else None,
+                    normalization_type=normalization_type,
+                    activation_type=activation_type,
                 )
 
                 partial_sources.append((pos_sources, neg_sources))
@@ -443,6 +467,8 @@ class IRMapping:
                 parameter_scale=parameter_scale,
                 input_activation_scale=input_activation_scale,
                 name=f"{name}_psum_accum_o{out_start}" if name else None,
+                normalization_type=normalization_type,
+                activation_type=activation_type,
             )
 
             mapped.append(acc_sources)

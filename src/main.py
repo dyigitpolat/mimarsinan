@@ -92,7 +92,8 @@ def run_pipeline(
     working_directory,
     start_step = None,
     stop_step = None,
-    target_metric_override = None):
+    target_metric_override = None,
+    gui_port = 8501):
 
     # Merge pipeline_mode preset into a copy of deployment_parameters
     # so that explicit user values always win over preset defaults.
@@ -109,6 +110,20 @@ def run_pipeline(
         working_directory=working_directory,
     )
 
+    # Start the browser-based monitoring GUI
+    gui_started = False
+    try:
+        from mimarsinan.gui import start_gui
+        from mimarsinan.gui.composite_reporter import CompositeReporter
+
+        gui = start_gui(pipeline, port=gui_port)
+        pipeline.reporter = CompositeReporter([reporter, gui.reporter])
+        pipeline.register_pre_step_hook(gui.on_step_start)
+        pipeline.register_post_step_hook(gui.on_step_end)
+        gui_started = True
+    except Exception as e:
+        print(f"[GUI] Failed to start monitoring GUI (non-fatal): {e}")
+
     if target_metric_override is not None:
         pipeline.set_target_metric(target_metric_override)
     
@@ -116,6 +131,23 @@ def run_pipeline(
         pipeline.run(stop_step=stop_step)
     else:
         pipeline.run_from(step_name=start_step, stop_step=stop_step)
+
+    # Finish WandB reporting explicitly to avoid hanging
+    try:
+        reporter.finish()
+    except Exception:
+        pass  # Non-fatal: WandB may not be running
+
+    # Keep the process (and GUI server) alive until user confirms exit
+    if gui_started:
+        print("\n────────────────────────────────────────")
+        print("Pipeline complete. GUI server still running.")
+        print("Press Enter to exit and close the GUI...")
+        print("────────────────────────────────────────")
+        try:
+            input()
+        except (KeyboardInterrupt, EOFError):
+            pass  # Graceful exit on Ctrl+C or EOF
 
 if __name__ == "__main__":
     init()
