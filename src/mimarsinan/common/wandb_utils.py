@@ -1,5 +1,19 @@
+from __future__ import annotations
+
+from typing import Any, Protocol, runtime_checkable
+
 import wandb
 import time
+
+
+@runtime_checkable
+class Reporter(Protocol):
+    prefix: str
+
+    def report(self, metric_name: str, metric_value: Any, step: int | None = None) -> None: ...
+
+    def console_log(self, metric_name: str, metric_value: Any) -> None: ...
+
 
 class WandB_Reporter:
     initialized = False
@@ -39,3 +53,6 @@ class WandB_Reporter:
     def report(self, metric_name, metric_value, step = None):
         wandb.log({self.prefix + " " + metric_name: metric_value}, step = step)
         self.console_log(self.prefix + " " + metric_name, metric_value)
+
+    def finish(self):
+        wandb.finish()

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mimarsinan Pipeline Monitor</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:center;gap:12px">
+    <h1>Mimarsinan Pipeline Monitor</h1>
+    <span id="conn-dot" class="status-dot disconnected"></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <span style="color:var(--text-muted);font-size:12px" id="current-step-name">Initializing...</span>
+    <span id="elapsed-time" class="elapsed-badge" style="display:none"></span>
+    <span style="color:var(--text-secondary);font-size:13px;font-weight:600" id="progress-text">0 / 0</span>
+    <button id="auto-follow-btn" class="follow-btn active">Following</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Pipeline progress bar -->
+  <div id="pipeline-bar" class="pipeline-bar">
+    <div class="empty-state" style="width:100%;padding:12px">Loading pipeline steps...</div>
+  </div>
+
+  <!-- Overview grid -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">Target Metric Across Steps</div>
+      <div class="card-body no-pad"><div id="chart-metric-progression"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">Step Timing</div>
+      <div class="card-body no-pad"><div id="chart-step-timing"></div></div>
+    </div>
+  </div>
+
+  <!-- Config card -->
+  <div class="card" style="margin-bottom:24px">
+    <div class="card-header">Pipeline Configuration</div>
+    <div class="card-body" id="config-body">
+      <div class="empty-state">Loading config...</div>
+    </div>
+  </div>
+
+  <!-- Step detail panel -->
+  <div id="step-detail" class="step-detail">
+    <div class="empty-state">Select a pipeline step above to view details</div>
+  </div>
+
+</div>
+
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

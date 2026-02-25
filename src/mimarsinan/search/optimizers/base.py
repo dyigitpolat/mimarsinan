@@ -14,7 +14,7 @@ class SearchOptimizer(Generic[ConfigT]):
     Search backend interface.
     """
 
-    def optimize(self, problem: SearchProblem[ConfigT]) -> SearchResult[ConfigT]:
+    def optimize(self, problem: SearchProblem[ConfigT], reporter=None) -> SearchResult[ConfigT]:
         raise NotImplementedError
 
 

@@ -553,7 +553,9 @@ class ArchitectureSearchStep(PipelineStep):
 
         print(f"[ArchitectureSearchStep] Using {optimizer_type} optimizer")
 
-        result = optimizer.optimize(problem)
+        _reporter = getattr(self.pipeline, "reporter", None)
+        _report_fn = getattr(_reporter, "report", None) if _reporter else None
+        result = optimizer.optimize(problem, reporter=_report_fn)
         result_json = _search_result_to_jsonable(result)
 
         try:

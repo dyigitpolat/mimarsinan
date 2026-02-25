@@ -122,6 +122,8 @@ class NeuralCore(IRNode):
     # Metadata for debugging/visualization
     psum_group_id: int | None = None
     psum_role: str | None = None  # "partial_pos", "partial_neg", "accum"
+    normalization_type: str | None = None
+    activation_type: str | None = None
 
     def get_input_count(self) -> int:
         return self.core_matrix.shape[0]

@@ -67,6 +67,8 @@
     - [JointArchHwProblem](#124-jointarchhwproblem)
 13. [Data Handling](#13-data-handling)
 14. [Visualization](#14-visualization)
+    - [Static Visualizations](#141-static-visualizations)
+    - [Browser-Based Pipeline Monitor (GUI)](#142-browser-based-pipeline-monitor-gui)
 15. [Code Generation](#15-code-generation)
 16. [Key Data Flow Diagram](#16-key-data-flow-diagram)
 17. [Dependency Graph](#17-dependency-graph)
@@ -165,10 +167,21 @@ mimarsinan/
 │       │   ├── histogram_visualization.py
 │       │   ├── hardcore_visualization.py
 │       │   └── search_visualization.py
+│       ├── gui/                    # Browser-based pipeline monitoring GUI
+│       │   ├── __init__.py         # start_gui(), GUIHandle (hook registration)
+│       │   ├── data_collector.py   # Thread-safe metric/snapshot store
+│       │   ├── reporter.py         # GUIReporter (Reporter protocol impl)
+│       │   ├── composite_reporter.py # Dispatches to multiple reporters
+│       │   ├── server.py           # FastAPI + WebSocket server (daemon thread)
+│       │   ├── snapshot.py         # Pure snapshot extractors (model, IR, HW, search)
+│       │   └── static/             # Frontend SPA (ES modules + Plotly.js)
+│       │       ├── index.html
+│       │       ├── style.css
+│       │       └── js/             # Modular JS: main, util, overview, tabs
 │       └── common/                 # Shared utilities
 │           ├── file_utils.py
 │           ├── build_utils.py
-│           └── wandb_utils.py      # Weights & Biases reporter
+│           └── wandb_utils.py      # Weights & Biases reporter + Reporter protocol
 ```
 
 ---
@@ -205,6 +218,18 @@ Platform constraints support two modes:
 - **`"user"` mode**: Constraints are directly specified as a flat dict.
 - **`"auto"` mode**: Constraints split into `fixed` (passed to pipeline) and `search_space` (merged into `deployment_parameters.arch_search` for architecture search to explore).
 
+### GUI Integration
+
+`run_pipeline()` automatically starts a browser-based monitoring GUI on port 8501 (configurable via `gui_port`). The integration follows a non-invasive design:
+
+1. A `GUIHandle` is created via `start_gui(pipeline)`, which spawns a FastAPI/Uvicorn server in a daemon thread
+2. The pipeline's `reporter` is wrapped in a `CompositeReporter` that dispatches metrics to both WandB and the GUI's `DataCollector`
+3. Pre/post-step hooks are registered on the pipeline to track step lifecycle and extract rich snapshots after each step
+4. When the pipeline completes, WandB is explicitly finished via `reporter.finish()` to avoid process hangs
+5. The process then waits for user input (Enter key) before exiting, keeping the GUI server alive for post-run inspection
+
+If the GUI fails to start (e.g., port conflict, missing dependencies), a warning is printed and the pipeline continues without monitoring.
+
 ### Initialization (`src/init.py`)
 
 Before pipeline execution, `init()` configures:
@@ -235,6 +260,7 @@ The `Pipeline` class is the orchestration engine. It:
 - `set_up_requirements()` — Builds the key translation table mapping virtual keys to real cache keys
 - `verify()` — Checks that every `requires` has been `promises`d by a prior step
 - `_run_step()` — Executes one step: checks requirements, runs `step.run()`, calls `step.validate()`, saves cache, asserts contracts, checks performance tolerance
+- `register_pre_step_hook(fn)` / `register_post_step_hook(fn)` — Registers callbacks invoked before/after each step. Multiple hooks can be registered; they are called in order. Used by the GUI to track step lifecycle and extract snapshots
 
 **Key design: Namespaced cache keys.** Each cache entry is stored under `"{step_name}.{key}"`. When step B requires `"model"` which was promised by step A, the pipeline translates B's virtual key `"model"` to the real key `"A.model"`. When B *updates* `"model"`, the old entry `"A.model"` is removed and replaced with `"B.model"`.
 
@@ -1109,6 +1135,8 @@ The factory uses a **class-level registry** pattern: providers self-register via
 
 ## 14. Visualization
 
+### 14.1 Static Visualizations
+
 **Directory**: `visualization/`
 
 | Module | Purpose |
@@ -1125,6 +1153,44 @@ The `mapping_graphviz` module is particularly extensive, providing:
 - **Summary views**: Group NeuralCores into "layer stacks" for readability
 - **Hybrid combined views**: Multi-stage program overview with embedded thumbnails
 - Automatic SVG/PNG rendering via the system `dot` binary
+
+### 14.2 Browser-Based Pipeline Monitor (GUI)
+
+**Directory**: `gui/`
+
+A real-time browser-based dashboard that launches automatically with every pipeline run, providing live monitoring and post-run inspection.
+
+**Architecture** (isolated from the core pipeline via clean interfaces):
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `GUIHandle` | `__init__.py` | Facade: creates collector, reporter, and step hooks |
+| `DataCollector` | `data_collector.py` | Thread-safe in-memory store for metrics, step lifecycle, and snapshots. Broadcasts updates to WebSocket listeners |
+| `GUIReporter` | `reporter.py` | Implements the `Reporter` protocol; forwards `report()` calls to `DataCollector` |
+| `CompositeReporter` | `composite_reporter.py` | Dispatches `report()`/`console_log()` to multiple reporters (WandB + GUI) |
+| `server.py` | `server.py` | FastAPI application with REST endpoints (`/api/pipeline`, `/api/steps/{name}`) and a WebSocket (`/ws`) for real-time push. Runs in a daemon thread via Uvicorn |
+| `snapshot.py` | `snapshot.py` | Pure functions that extract JSON-serializable snapshots from pipeline artifacts: model weights/stats, IR graph topology with latency-tier grouping, hardware mapping with per-core heatmaps and connectivity, search results, adaptation rates |
+
+**Frontend** (`static/`): A single-page application built with ES modules and Plotly.js. Modularized into focused files:
+
+| Module | Responsibility |
+|--------|---------------|
+| `js/main.js` | State management, WebSocket, refresh loop |
+| `js/util.js` | HTML helpers, Plotly safe-wrapper with `uirevision` for zoom/pan persistence |
+| `js/overview.js` | Pipeline bar, target metric progression, step timing charts |
+| `js/step-detail.js` | Step detail panel, tab routing, metrics tab |
+| `js/model-tab.js` | Model layer stats, weight distributions |
+| `js/ir-graph-tab.js` | Hierarchical latency-tier DAG with 3D stacked blocks (PlotNeuralNet/NN-SVG style, left-to-right). Always-collapsed tiers in the SVG; clicking a tier opens a stacked detail panel below showing groups as clickable cards, then clicking a group drills into core/op details beneath |
+| `js/hardware-tab.js` | Stage flow with proportional inline heatmaps, vertical input buffer (left), horizontal output buffer (bottom). Click-to-overlay span connectivity: input spans on core left edge (axon side), output spans on core bottom edge (neuron side), midpoint arrowheads, hover brightens all span elements |
+| `js/search-tab.js` | Pareto front, search history, candidate tables |
+| `js/scales-tab.js` | Activation/parameter scales, adaptation rates, quantization staircase |
+
+**Key design decisions:**
+- **Non-invasive integration**: The GUI attaches to the existing `Reporter` protocol and pipeline hooks; no core pipeline code is modified beyond adding hook registration support
+- **Thread-safe**: `DataCollector` uses a lock; the FastAPI server runs in its own daemon thread and event loop
+- **Snapshot extraction**: `snapshot.py` contains pure functions that accept pipeline artifacts and return JSON-safe dicts. Failures are logged at debug level and never crash the pipeline
+- **Zoom/pan persistence**: All Plotly charts use `uirevision: 'persist'` on layout and axes to preserve user interactions across data updates
+- **Stable DOM**: The detail panel only rebuilds when structural data changes (step name, status, snapshot keys), not on every metric or duration update
 
 ---
 
@@ -1230,8 +1296,10 @@ data_handling ◄──── model_training ◄──── tuning ◄───
                          ▼              ▼              ▼
                     transformations  visualization  chip_simulation
                                                        │
-                                                       ▼
-                                                    nevresim (C++)
+                                        gui ◄───       ▼
+                                        │    └── nevresim (C++)
+                                        ▼
+                                      common
 ```
 
 Module dependency rules:
@@ -1240,6 +1308,7 @@ Module dependency rules:
 - `mapping` depends on `models` (for Perceptron), `transformations`, and `code_generation` (for SpikeSource)
 - `tuning` depends on `model_training` and `models`
 - `chip_simulation` depends on `code_generation` and `mapping`
+- `gui` depends on `common` (for `Reporter` protocol), reads pipeline artifacts (model, IR graph, hardware mapping, search results) via pure snapshot functions; integrated at the entry-point level (`main.py`), not within the pipeline engine
 - `data_handling` and `common` are leaf dependencies
 
 ---
@@ -1331,5 +1400,5 @@ python src/main.py configs/your_config.json
 - Python 3.10+
 - CUDA-capable GPU (strongly recommended)
 - C++20 compiler: Clang ≥ 17 (preferred) or `g++-11` (fallback) — required for `std::ranges` support in nevresim
-- Dependencies: `torch`, `torchvision`, `einops`, `numpy`, `wandb`, `pymoo`, `matplotlib`, `plotly`
+- Dependencies: `torch`, `torchvision`, `einops`, `numpy`, `wandb`, `pymoo`, `matplotlib`, `plotly`, `fastapi`, `uvicorn`, `websockets`
 

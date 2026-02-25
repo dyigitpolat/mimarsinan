@@ -1,7 +1,7 @@
 {
   "seed": 32,
   "pipeline_mode": "phased",
-  "experiment_name": "2_mnist_arch_search_nsga2_ttfs",
+  "experiment_name": "1gui_mnist_arch_search_nsga2_ttfs",
   "generated_files_path": "./generated",
   "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
   "data_provider_name": "MNIST_DataProvider",
@@ -68,7 +68,7 @@
   },
 
   "target_metric_override": null,
-  "start_step": "Simulation",
+  "start_step": "Soft Core Mapping",
   "stop_step": null
 }
 

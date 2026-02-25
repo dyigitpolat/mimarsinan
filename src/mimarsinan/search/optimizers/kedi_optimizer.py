@@ -125,12 +125,13 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             output_schema=output_schema,
         )
     
-    def optimize(self, problem: SearchProblem[ConfigT]) -> SearchResult[ConfigT]:
+    def optimize(self, problem: SearchProblem[ConfigT], reporter=None) -> SearchResult[ConfigT]:
         """
         Run the LLM-based multi-objective optimization.
         
         Args:
             problem: The search problem to optimize
+            reporter: Optional callable(name, value) for per-generation reporting
             
         Returns:
             SearchResult containing Pareto front and all evaluated candidates
@@ -196,6 +197,13 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             "failed_count": len(gen1_failed),
             "pareto_size": len(pareto),
         })
+        if reporter:
+            try:
+                reporter("Search generation", 1)
+                reporter("Search valid count", len(gen1_valid))
+                reporter("Search Pareto size", len(pareto))
+            except Exception:
+                pass
         
         prev_pareto = pareto
         
@@ -242,6 +250,13 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                 "failed_count": len(gen_failed),
                 "pareto_size": len(pareto),
             })
+            if reporter:
+                try:
+                    reporter("Search generation", gen)
+                    reporter("Search valid count", len(gen_valid))
+                    reporter("Search Pareto size", len(pareto))
+                except Exception:
+                    pass
             
             prev_pareto = pareto
         
