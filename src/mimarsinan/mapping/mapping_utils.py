@@ -27,19 +27,19 @@ def generate_core_weights(
     
     neurons: list[Neuron] = []
     for idx in range(neurons_count):
-        if(idx < outs):
-            neuron_ws = [w for w in weight_tensor[idx]]
-
-            for _ in range(axons_count - weight_tensor[idx].shape[0]):
-                neuron_ws.append(int(0))
+        if idx < outs:
+            row = weight_tensor[idx]
+            pad = axons_count - row.shape[0]
+            neuron_ws = row.tolist() + ([0] * pad) if pad > 0 else row.tolist()
         else:
-            neuron_ws = [int(0) for _ in range(axons_count)]
+            neuron_ws = [0] * axons_count
 
         bias = 0.0
-        if(bias_tensor is not None) and (idx < outs): bias = bias_tensor[idx]
-        
+        if (bias_tensor is not None) and (idx < outs):
+            bias = bias_tensor[idx]
+
         neurons.append(Neuron(neuron_ws, thresh, bias))
-    
+
     return Core(neurons, latency)
 
 def generate_core_connection_info(

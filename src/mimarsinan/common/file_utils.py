@@ -8,16 +8,11 @@ def prepare_containing_directory(filename):
 def input_to_file(
     input, target, filename:str):
 
-    result = ""
-    result += str(target) + ' '
-    result += '1' + ' '
-    result += str(len(input)) + ' '
-    for x_i in input.tolist():
-        result += str(x_i) + ' '
-
-    f = open(filename, "w")
-    f.write(result)
-    f.close()
+    values = input.tolist()
+    parts = [str(target), '1', str(len(values))]
+    parts.extend(str(x_i) for x_i in values)
+    with open(filename, "w") as f:
+        f.write(' '.join(parts) + ' ')
 
 
 def save_inputs_to_files(generated_files_path, loader, input_count):
@@ -33,8 +28,9 @@ def save_inputs_to_files(generated_files_path, loader, input_count):
             "{}{}.txt".format(input_files_path, batch_idx))
         
 
-def save_weights_and_chip_code(chip, generated_files_path):
-    print("Saving trained weights and chip generation code...")
+def save_weights_and_chip_code(chip, generated_files_path, verbose=True):
+    if verbose:
+        print("Saving trained weights and chip generation code...")
 
     weight_file_path = "{}/weights/".format(generated_files_path)
     chip_file_path = "{}/chip/".format(generated_files_path)

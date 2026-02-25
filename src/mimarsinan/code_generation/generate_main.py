@@ -73,8 +73,10 @@ def generate_main_function(
     latency,
     cpp_code_template=main_cpp_template,
     simulation_config=get_config(),
+    verbose=True,
 ):
-    print("Generating main function code...")
+    if verbose:
+        print("Generating main function code...")
 
     chip_exec_decl = _build_chip_and_exec_decl(
         spiking_mode=simulation_config["spiking_mode"],

@@ -1,19 +1,25 @@
+import os
 import subprocess
 import time
 
-def execute_simulator(simulator_filename, input_count, num_proc = 4):
+
+def execute_simulator(simulator_filename, input_count, num_proc=4):
+    """Run the nevresim binary. Supports both absolute and relative paths."""
     print("Executing simulator...")
 
     start_time = time.time()
+
+    # Use path as-is when absolute; prepend ./ for relative paths
+    executable = simulator_filename if os.path.isabs(simulator_filename) else "./{}".format(simulator_filename)
 
     pipes = []
     for i in range(num_proc):
         start = i * input_count // num_proc
         end = (i + 1) * input_count // num_proc
-        if(i == num_proc - 1):
+        if i == num_proc - 1:
             end = input_count
 
-        cmd = ["./{}".format(simulator_filename), str(start), str(end)]
+        cmd = [executable, str(start), str(end)]
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
         pipes.append(p)
 
