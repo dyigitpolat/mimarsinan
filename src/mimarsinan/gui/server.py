@@ -90,16 +90,48 @@ def create_app(collector: DataCollector) -> FastAPI:
     return app
 
 
-def start_server(collector: DataCollector, host: str = "0.0.0.0", port: int = 8501) -> threading.Thread:
-    """Start the FastAPI server in a background daemon thread."""
+def _port_is_free(host: str, port: int) -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host if host != "0.0.0.0" else "127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def start_server(
+    collector: DataCollector,
+    host: str = "0.0.0.0",
+    port: int = 8501,
+    max_port_attempts: int = 20,
+) -> threading.Thread:
+    """Start the FastAPI server in a background daemon thread.
+
+    If *port* is already in use, tries successive ports up to
+    *port + max_port_attempts - 1* before giving up.
+    """
     import uvicorn
+
+    chosen_port = port
+    for offset in range(max_port_attempts):
+        candidate = port + offset
+        if _port_is_free(host, candidate):
+            chosen_port = candidate
+            break
+    else:
+        logger.warning(
+            "All ports %d–%d busy; falling back to %d (may fail)",
+            port, port + max_port_attempts - 1, port,
+        )
+        chosen_port = port
 
     app = create_app(collector)
 
     config = uvicorn.Config(
         app,
         host=host,
-        port=port,
+        port=chosen_port,
         log_level="warning",
         access_log=False,
     )
@@ -112,6 +144,6 @@ def start_server(collector: DataCollector, host: str = "0.0.0.0", port: int = 85
 
     thread = threading.Thread(target=_run, daemon=True, name="gui-server")
     thread.start()
-    logger.info("GUI server started on http://%s:%d", host, port)
-    print(f"\n  Pipeline Monitor GUI: http://localhost:{port}\n")
+    logger.info("GUI server started on http://%s:%d", host, chosen_port)
+    print(f"\n  Pipeline Monitor GUI: http://localhost:{chosen_port}\n")
     return thread
