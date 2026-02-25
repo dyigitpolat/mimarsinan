@@ -102,11 +102,12 @@ class Connection:
 
     def get_string(self, idx) -> str:
         spans = self.get_spans()
-        result = ""
-        for i, span in enumerate(spans):
-            result += "    cons[{}].spans_[{}] = {};\n".format(idx, i, span.get_string())
-        result += "    cons[{}].span_count_ = {};\n".format(idx, len(spans))
-        return result
+        parts = [
+            f"    cons[{idx}].spans_[{i}] = {span.get_string()};\n"
+            for i, span in enumerate(spans)
+        ]
+        parts.append(f"    cons[{idx}].span_count_ = {len(spans)};\n")
+        return ''.join(parts)
 
 class Neuron:
     def __init__(self, weights_list, thresh = 1.0, bias = 0.0):
@@ -115,13 +116,7 @@ class Neuron:
         self.bias: float = bias
 
     def get_string(self) -> str:
-        result = ""
-        for i, w in enumerate(self.weights):
-            result += str(w)
-            if(i < len(self.weights) - 1):
-                result += ","
-        
-        return result
+        return ','.join(str(w) for w in self.weights)
 
 class Core:
     def __init__(self, neurons_list, latency):
@@ -129,12 +124,12 @@ class Core:
         self.neurons: list[Neuron] = neurons_list
 
     def get_string(self, idx) -> str:
-        result = ""
-        for i, neuron in enumerate(self.neurons):
-            result += "    neurons[{}] = Neu{{{{ {} }}}};\n".format(i,neuron.get_string())
-        
-        result += "    cores[{}] = Core{{neurons, {}}};\n".format(idx, self.latency)
-        return result
+        parts = [
+            f"    neurons[{i}] = Neu{{{{ {neuron.get_string()} }}}};\n"
+            for i, neuron in enumerate(self.neurons)
+        ]
+        parts.append(f"    cores[{idx}] = Core{{neurons, {self.latency}}};\n")
+        return ''.join(parts)
 
 class ChipModel:
     def __init__(
@@ -161,9 +156,9 @@ class ChipModel:
     def get_string(self) -> str:
         max_spans = self._max_spans_per_core()
 
-        result = "" 
+        parts: list[str] = []
 
-        result += """
+        parts.append("""
 #pragma once
 
 #include "common/constants.hpp"
@@ -179,11 +174,11 @@ consteval auto generate_connections()
 {
     std::array<Con, core_count> cons; 
         
-"""
+""")
 
         for i, con in enumerate(self.connections):
-            result += con.get_string(i)
-        result += """
+            parts.append(con.get_string(i))
+        parts.append("""
     return cons;
 }
 
@@ -192,11 +187,11 @@ consteval auto generate_outputs()
 {
     std::array<Src, output_size> outs;
     
-"""
+""")
 
         for i, out in enumerate(self.output_buffer):
-            result += "    outs[{}] = {};\n".format(i, out.get_string())
-        result += """
+            parts.append(f"    outs[{i}] = {out.get_string()};\n")
+        parts.append("""
     return outs;
 }}
 
@@ -251,19 +246,19 @@ consteval auto generate_chip()
             self.output_size,
             self.leak,
             max_spans,
-        )
-        return result
+        ))
+        return ''.join(parts)
 
     def get_weights_string(self):
-        result = "";
+        wt = self.weight_type
+        parts: list[str] = []
         for core in self.cores:
-            result += str(core.latency) + ' '
+            parts.append(str(core.latency))
             for neuron in core.neurons:
-                result += str(self.weight_type(neuron.thresh)) + ' '
-                result += str(self.weight_type(neuron.bias)) + ' '
-                for w in neuron.weights:
-                    result += str(self.weight_type(w)) + ' '
-        return result
+                parts.append(str(wt(neuron.thresh)))
+                parts.append(str(wt(neuron.bias)))
+                parts.extend(str(wt(w)) for w in neuron.weights)
+        return ' '.join(parts) + ' '
 
     def get_chip_json(self):
         result = { 

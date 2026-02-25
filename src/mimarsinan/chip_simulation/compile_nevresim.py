@@ -2,15 +2,28 @@ import subprocess
 from mimarsinan.common.file_utils import *
 from mimarsinan.common.build_utils import find_cpp20_compiler
 
-def compile_simulator(generated_files_path, nevresim_path):
-    print("Compiling nevresim for mapped chip...")
-    
+def compile_simulator(generated_files_path, nevresim_path, output_path=None, verbose=True):
+    """Compile the nevresim simulator.
+
+    Args:
+        generated_files_path: Directory containing main.cpp and chip code.
+        nevresim_path: Path to nevresim include directory.
+        output_path: Optional path for the compiled binary. When None, uses ./bin/simulator.
+        verbose: When False, suppress per-compile progress messages (for batch parallel compile).
+
+    Returns:
+        Path to the compiled binary, or None on failure.
+    """
+    if verbose:
+        print("Compiling nevresim for mapped chip...")
+
     cc_command, family = find_cpp20_compiler()
     if cc_command is None:
         print("No C++20-capable compiler found.")
         return None
 
-    print(f"  Using compiler: {cc_command} (family={family})")
+    if verbose:
+        print(f"  Using compiler: {cc_command} (family={family})")
 
     cpp_standard = "c++20"
     optimization_flag = "-O3"
@@ -22,7 +35,7 @@ def compile_simulator(generated_files_path, nevresim_path):
     else:
         step_limit_option = f"-fconstexpr-steps={step_limit}"
 
-    simulator_filename = "./bin/simulator"
+    simulator_filename = output_path if output_path is not None else "./bin/simulator"
     prepare_containing_directory(simulator_filename)
 
     cmd = [
@@ -43,8 +56,9 @@ def compile_simulator(generated_files_path, nevresim_path):
     cmd += ["-o", simulator_filename]
 
     p = subprocess.Popen(cmd)
-    if( p.wait() == 0 ):
-        print("Compilation outcome:", simulator_filename)
+    if p.wait() == 0:
+        if verbose:
+            print("Compilation outcome:", simulator_filename)
         return simulator_filename
     else:
         print("Compilation failed.")

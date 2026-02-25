@@ -68,7 +68,7 @@
   },
 
   "target_metric_override": null,
-  "start_step": "Soft Core Mapping",
+  "start_step": "Simulation",
   "stop_step": null
 }
 
