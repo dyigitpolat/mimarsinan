@@ -36,6 +36,13 @@ class ActivationShiftStep(PipelineStep):
             print(perceptron.activation_scale)
             print(perceptron.scale_factor)
             shift_amount = calculate_activation_shift(self.pipeline.config["target_tq"], perceptron.activation_scale)
+            # Add to effective bias so that pre-activation (BN/layer output) increases by shift_amount,
+            # so the ShiftDecorator's subtraction cancels. Effective bias is in normalized space
+            # (pre_activation / activation_scale), so we add shift_amount / activation_scale.
+            act_scale = perceptron.activation_scale
+            if torch.is_tensor(act_scale):
+                act_scale = act_scale.to(shift_amount.device) if torch.is_tensor(shift_amount) else act_scale
+            effective_bias_shift = shift_amount / act_scale
 
             adaptation_manager.shift_rate = 1.0
             adaptation_manager.update_activation(self.pipeline.config, perceptron)
@@ -46,7 +53,7 @@ class ActivationShiftStep(PipelineStep):
             # else:
             #     perceptron.normalization.running_mean.data[:] = perceptron.normalization.running_mean.data[:] + shift_amount
             
-            PerceptronTransformer().apply_effective_bias_transform(perceptron, lambda b: b + shift_amount)
+            PerceptronTransformer().apply_effective_bias_transform(perceptron, lambda b: b + effective_bias_shift)
             #PerceptronTransformer().apply_effective_bias_transform_to_norm(perceptron, lambda b: b + shift_amount)
         
         self.trainer.train_until_target_accuracy(
