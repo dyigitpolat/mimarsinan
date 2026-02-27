@@ -33,13 +33,18 @@ class ModelBuildingStep(PipelineStep):
         
         adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
+    def _is_supermodel(self, model):
+        return hasattr(model, "get_perceptrons") and hasattr(model, "get_mapper_repr")
+
     def process(self):
         builder = self.get_entry('model_builder')
         init_model = builder.build(self.get_entry("model_config"))
 
         adaptation_manager = AdaptationManager()
-        for perceptron in init_model.get_perceptrons():
-            self.set_activation(self.get_entry("model_config"), perceptron, adaptation_manager)
+
+        if self._is_supermodel(init_model):
+            for perceptron in init_model.get_perceptrons():
+                self.set_activation(self.get_entry("model_config"), perceptron, adaptation_manager)
 
         # Warmup forward pass to initialize any Lazy modules (e.g. LazyBatchNorm1d),
         # so subsequent transformations / mapping that touch normalization parameters
@@ -51,7 +56,6 @@ class ModelBuildingStep(PipelineStep):
                 dummy = torch.zeros((1, *input_shape))
                 _ = init_model(dummy)
         except Exception as e:
-            # Warmup is a best-effort initialization step; do not fail model building.
             print(f"[ModelBuildingStep] Warmup forward failed: {e}")
 
         self.add_entry("adaptation_manager", adaptation_manager, 'pickle')

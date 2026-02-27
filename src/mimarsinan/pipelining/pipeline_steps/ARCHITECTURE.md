@@ -24,6 +24,8 @@ in the deployment pipeline.
 | `core_flow_tuning_step.py` | `CoreFlowTuningStep` | Tuning |
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping |
 | `simulation_step.py` | `SimulationStep` | Verification |
+| `torch_mapping_step.py` | `TorchMappingStep` | Model conversion (torch_* types) |
+| `weight_preloading_step.py` | `WeightPreloadingStep` | Load pretrained weights (replaces Pretraining) |
 
 ## Dependencies
 

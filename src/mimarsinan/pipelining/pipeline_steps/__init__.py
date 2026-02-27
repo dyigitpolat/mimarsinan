@@ -15,3 +15,5 @@ from .core_quantization_verification_step import CoreQuantizationVerificationSte
 from .core_flow_tuning_step import CoreFlowTuningStep
 from .hard_core_mapping_step import HardCoreMappingStep
 from .simulation_step import SimulationStep
+from .torch_mapping_step import TorchMappingStep
+from .weight_preloading_step import WeightPreloadingStep

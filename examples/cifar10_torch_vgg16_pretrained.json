@@ -1,0 +1,59 @@
+{
+    "pipeline_mode": "vanilla",
+
+    "experiment_name": "cifar10_torch_vgg16_pretrained",
+    "generated_files_path": "./generated",
+    "data_provider_name": "CIFAR10_DataProvider",
+
+    "platform_constraints": {
+        "cores": [
+            {
+                "max_axons": 50000,
+                "max_neurons": 600,
+                "count": 100
+            },
+            {
+                "max_axons": 600,
+                "max_neurons": 50000,
+                "count": 100
+            }
+        ],
+
+        "max_axons": 50000,
+        "max_neurons": 50000,
+
+        "target_tq": 16,
+        "simulation_steps": 16,
+        "weight_bits": 8
+    },
+
+    "deployment_parameters": {
+        "lr": 0.0001,
+        "training_epochs": 10,
+        "tuner_epochs": 5,
+
+        "degradation_tolerance": 0.1,
+
+        "configuration_mode": "user",
+        "model_type": "torch_vgg16",
+
+        "weight_source": "torchvision",
+        "finetune_epochs": 5,
+        "finetune_lr": 0.0001,
+
+        "model_config": {
+            "base_activation": "ReLU"
+        },
+
+        "spiking_mode": "ttfs",
+        "weight_quantization": false,
+        "activation_quantization": false,
+
+        "spike_generation_mode": "TTFS",
+        "firing_mode": "TTFS",
+        "thresholding_mode": "<="
+    },
+
+    "target_metric_override": null,
+    "start_step": null
+}

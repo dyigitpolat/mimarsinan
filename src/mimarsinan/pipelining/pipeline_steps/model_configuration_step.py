@@ -10,6 +10,10 @@ from mimarsinan.models.builders import SimpleMLPBuilder
 from mimarsinan.models.builders import SimpleConvBuilder
 from mimarsinan.models.builders import VGG16Builder
 from mimarsinan.models.builders import VitBuilder
+from mimarsinan.models.builders import TorchVGG16Builder
+from mimarsinan.models.builders import TorchViTBuilder
+from mimarsinan.models.builders import TorchSqueezeNet11Builder
+from mimarsinan.models.builders import TorchCustomBuilder
 
 class ModelConfigurationStep(PipelineStep):
     """
@@ -42,46 +46,28 @@ class ModelConfigurationStep(PipelineStep):
         return self.pipeline.get_target_metric()
 
     def process(self):
+        common_args = (
+            self.pipeline.config['device'],
+            self.pipeline.config['input_shape'],
+            self.pipeline.config['num_classes'],
+            self.pipeline.config['max_axons'],
+            self.pipeline.config['max_neurons'],
+            self.pipeline.config,
+        )
+
         builders = {
-            "mlp_mixer": PerceptronMixerBuilder(
-                self.pipeline.config['device'],
-                self.pipeline.config['input_shape'], 
-                self.pipeline.config['num_classes'], 
-                self.pipeline.config['max_axons'], 
-                self.pipeline.config['max_neurons'],
-                self.pipeline.config),
-            "simple_mlp": SimpleMLPBuilder(
-                self.pipeline.config['device'],
-                self.pipeline.config['input_shape'],
-                self.pipeline.config['num_classes'],
-                self.pipeline.config['max_axons'],
-                self.pipeline.config['max_neurons'],
-                self.pipeline.config
+            "mlp_mixer": PerceptronMixerBuilder(*common_args),
+            "simple_mlp": SimpleMLPBuilder(*common_args),
+            "simple_conv": SimpleConvBuilder(*common_args),
+            "vgg16": VGG16Builder(*common_args),
+            "vit": VitBuilder(*common_args),
+            "torch_vgg16": TorchVGG16Builder(*common_args),
+            "torch_vit": TorchViTBuilder(*common_args),
+            "torch_squeezenet11": TorchSqueezeNet11Builder(*common_args),
+            "torch_custom": TorchCustomBuilder(
+                *common_args,
+                model_factory=self.pipeline.config.get("model_factory"),
             ),
-            "simple_conv": SimpleConvBuilder(
-                self.pipeline.config['device'],
-                self.pipeline.config['input_shape'],
-                self.pipeline.config['num_classes'],
-                self.pipeline.config['max_axons'],
-                self.pipeline.config['max_neurons'],
-                self.pipeline.config
-            ),
-            "vgg16": VGG16Builder(
-                self.pipeline.config['device'],
-                self.pipeline.config['input_shape'],
-                self.pipeline.config['num_classes'],
-                self.pipeline.config['max_axons'],
-                self.pipeline.config['max_neurons'],
-                self.pipeline.config
-            ),
-            "vit": VitBuilder(
-                self.pipeline.config['device'],
-                self.pipeline.config['input_shape'],
-                self.pipeline.config['num_classes'],
-                self.pipeline.config['max_axons'],
-                self.pipeline.config['max_neurons'],
-                self.pipeline.config
-            )
         }
         builder = builders[self.pipeline.config['model_type']]
         
