@@ -15,7 +15,6 @@ specific transformations while maintaining accuracy.
 | `normalization_aware_perceptron_quantization_tuner.py` | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights with normalization awareness |
 | `core_flow_tuner.py` | `CoreFlowTuner` | Adjusts spiking thresholds on IR graph (rate-coded mode only) |
 | `noise_tuner.py` | `NoiseTuner` | Introduces training noise |
-| `scale_tuner.py` | `ScaleTuner` | Adjusts activation scaling factors |
 
 ## Tuner Hierarchy
 
@@ -24,8 +23,7 @@ BasicTuner (WeightTransformTrainer)
 PerceptronTuner (BasicTrainer, per-perceptron)
 ├── ClampTuner
 ├── ActivationQuantizationTuner
-├── NoiseTuner
-└── ScaleTuner
+└── NoiseTuner
 PerceptronTransformTuner (PerceptronTransformTrainer)
 └── NormalizationAwarePerceptronQuantizationTuner
 CoreFlowTuner (operates on IRGraph, not model)

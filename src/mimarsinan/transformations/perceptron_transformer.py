@@ -12,12 +12,22 @@ class PerceptronTransformer:
         self.apply_effective_weight_transform(perceptron, parameter_transform)
         self.apply_effective_bias_transform(perceptron, parameter_transform)
 
+    def _get_input_scale(self, perceptron):
+        """Return broadcastable input scale: per-channel tensor or scalar 1.0."""
+        pis = getattr(perceptron, 'per_input_scales', None)
+        if pis is not None:
+            pis = pis.to(perceptron.layer.weight.data.device)
+            extra = perceptron.layer.weight.data.dim() - 2  # 0 for FC, 2 for Conv2D
+            return pis.view(1, -1, *([1] * extra))
+        return 1.0
+
     def get_effective_weight(self, perceptron):
+        scale = self._get_input_scale(perceptron)
         if isinstance(perceptron.normalization, nn.Identity):
-            return perceptron.input_scale * perceptron.layer.weight.data / perceptron.activation_scale
+            return scale * perceptron.layer.weight.data / perceptron.activation_scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            return perceptron.input_scale * (perceptron.layer.weight.data * u.unsqueeze(-1)) / perceptron.activation_scale
+            return scale * (perceptron.layer.weight.data * u.unsqueeze(-1)) / perceptron.activation_scale
         
     def get_effective_bias(self, perceptron):
         if perceptron.layer.bias is None:
@@ -33,12 +43,13 @@ class PerceptronTransformer:
         
     def apply_effective_weight_transform(self, perceptron, weight_transform):
         effective_weight = self.get_effective_weight(perceptron)
+        scale = self._get_input_scale(perceptron)
         
         if isinstance(perceptron.normalization, nn.Identity):
-            perceptron.layer.weight.data[:] = (weight_transform(effective_weight) * perceptron.activation_scale) / perceptron.input_scale
+            perceptron.layer.weight.data[:] = (weight_transform(effective_weight) * perceptron.activation_scale) / scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            perceptron.layer.weight.data[:] = ((weight_transform(effective_weight) * perceptron.activation_scale) / perceptron.input_scale) / u.unsqueeze(-1)
+            perceptron.layer.weight.data[:] = ((weight_transform(effective_weight) * perceptron.activation_scale) / scale) / u.unsqueeze(-1)
 
     def apply_effective_bias_transform(self, perceptron, bias_transform):
         effective_bias = self.get_effective_bias(perceptron)

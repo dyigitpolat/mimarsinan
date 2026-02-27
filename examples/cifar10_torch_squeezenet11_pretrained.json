@@ -1,6 +1,6 @@
 {
     "pipeline_mode": "phased",
-    "experiment_name": "0_cifar10_torch_squeezenet11_pretrained",
+    "experiment_name": "Y_AQ_cifar10_torch_squeezenet11_pretrained",
     "generated_files_path": "./generated",
     "data_provider_name": "CIFAR10_DataProvider",
     "platform_constraints": {
@@ -18,8 +18,8 @@
         ],
         "max_axons": 2048,
         "max_neurons": 2048,
-        "target_tq": 16,
-        "simulation_steps": 16,
+        "target_tq": 64,
+        "simulation_steps": 64,
         "weight_bits": 8
     },
     "deployment_parameters": {
@@ -35,7 +35,7 @@
         "model_config": {
             "base_activation": "ReLU"
         },
-        "spiking_mode": "ttfs",
+        "spiking_mode": "ttfs_quantized",
         "weight_quantization": false,
         "activation_quantization": true,
         "spike_generation_mode": "TTFS",
@@ -46,5 +46,5 @@
     },
 
     "target_metric_override": null,
-    "start_step": "Input Activation Analysis"
+    "start_step": null
 }

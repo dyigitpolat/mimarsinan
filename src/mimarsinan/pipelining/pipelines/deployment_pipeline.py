@@ -15,9 +15,8 @@ Spiking mode  (``spiking_mode`` in ``deployment_parameters``)
 Quantization flags  (booleans in ``deployment_parameters``)
   ``activation_quantization``
       Enables the activation quantization chain: Activation Analysis →
-      Clamp Adaptation → Input Activation Analysis → Activation Shifting
-      → Activation Quantization.  Configured via ``target_tq``.
-      Currently supported for rate-coded only.
+      Clamp Adaptation → Activation Shifting → Activation Quantization.
+      Configured via ``target_tq``.
   ``weight_quantization``
       Enables weight quantization + verification.
       Configured via ``weight_bits``.
@@ -40,7 +39,6 @@ import torch
 _ACTIVATION_QUANTIZATION_STEPS: list[tuple[str, type]] = [
     ("Activation Analysis",       ActivationAnalysisStep),
     ("Clamp Adaptation",          ClampAdaptationStep),
-    ("Input Activation Analysis", InputActivationAnalysisStep),
     ("Activation Shifting",       ActivationShiftStep),
     ("Activation Quantization",   ActivationQuantizationStep),
 ]

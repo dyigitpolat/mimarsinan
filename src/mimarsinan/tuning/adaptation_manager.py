@@ -15,11 +15,13 @@ class AdaptationManager(nn.Module):
         self.noise_rate = 0.0
 
     def update_activation(self, pipeline_config, perceptron):
+        use_ttfs = pipeline_config.get("spiking_mode", "rate") in ("ttfs", "ttfs_quantized")
         decorators = [
             self.get_rate_adjusted_clamp_decorator(perceptron),
             self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron),
-            self.get_shift_decorator(pipeline_config, perceptron),]
-            #self.get_rate_adjusted_scale_decorator(perceptron)]
+        ]
+        if not use_ttfs:
+            decorators.append(self.get_shift_decorator(pipeline_config, perceptron))
 
         perceptron.set_activation(
             TransformedActivation(perceptron.base_activation, decorators))
@@ -56,7 +58,16 @@ class AdaptationManager(nn.Module):
         return ShiftDecorator(shift_amount)
     
     def get_rate_adjusted_quantization_decorator(self, pipeline_config, perceptron):
-        shift_back_amount = -calculate_activation_shift(pipeline_config["target_tq"], perceptron.activation_scale) * self.shift_rate
+        # For TTFS: shift the other way — use shift_back = -shift so ReLU sees (x + shift) → staircase(ReLU(x + shift)).
+        # For rate: shift_back = -shift * shift_rate to undo the outer shift.
+        use_ttfs = pipeline_config.get("spiking_mode", "rate") in ("ttfs", "ttfs_quantized")
+        shift = calculate_activation_shift(
+            pipeline_config["target_tq"], perceptron.activation_scale
+        )
+        if use_ttfs:
+            shift_back_amount = -shift  # ReLU gets (x - (-shift)) = (x + shift)
+        else:
+            shift_back_amount = -shift * self.shift_rate
 
         return RateAdjustedDecorator(
             self.quantization_rate, 

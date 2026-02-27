@@ -203,7 +203,7 @@ The JSON configuration specifies:
 | `data_provider_name` | Registered dataset name (e.g. `"mnist"`, `"cifar10"`) |
 | `experiment_name` | Name for WandB logging and output directory |
 | `pipeline_mode` | `"vanilla"` or `"phased"` (selects a preset; see §4.4) |
-| `deployment_parameters` | Hyperparameters, spiking mode, quantization flags, `max_simulation_samples` (see §4.4, §5.16) |
+| `deployment_parameters` | Hyperparameters, spiking mode, quantization flags, `max_simulation_samples` (see §4.4, §5.15) |
 | `platform_constraints` | Hardware constraints (max_axons, max_neurons, weight_bits, target_tq) |
 | `start_step` | Step name to resume from (uses cached state) |
 | `stop_step` | Optional step name to stop after |
@@ -415,16 +415,7 @@ Decorates each perceptron's activation with a `SavedTensorDecorator`, runs valid
 
 Uses `ClampTuner` to gradually introduce clamping to each perceptron's activation, guided by the previously computed activation scales. The `SmartSmoothAdaptation` framework ensures the clamping is applied incrementally to minimize accuracy loss.
 
-### 5.6 Input Activation Analysis
-
-**File**: `pipeline_steps/input_activation_analysis_step.py`
-
-- **Requires**: `model`, `adaptation_manager`
-- **Updates**: `model`
-
-Computes input activation scales for each perceptron group (layer) by averaging the `activation_scale` of perceptrons in the preceding group. Sets `input_scale` on each perceptron, which affects how the effective weights are computed during mapping.
-
-### 5.7 Activation Shifting
+### 5.6 Activation Shifting
 
 **File**: `pipeline_steps/activation_shift_step.py`
 
@@ -433,7 +424,7 @@ Computes input activation scales for each perceptron group (layer) by averaging 
 
 Shifts activation functions so they align with quantization levels. Computes a shift amount based on `target_tq` and `activation_scale`, applies it to biases via `PerceptronTransformer.apply_effective_bias_transform`, and trains to recover accuracy.
 
-### 5.8 Activation Quantization
+### 5.7 Activation Quantization
 
 **File**: `pipeline_steps/activation_quantization_step.py`
 
@@ -442,16 +433,16 @@ Shifts activation functions so they align with quantization levels. Computes a s
 
 Uses `ActivationQuantizationTuner` to gradually quantize activations to `target_tq` levels. The tuner uses `SmartSmoothAdaptation` to incrementally increase quantization strength while maintaining accuracy.
 
-### 5.9 Weight Quantization
+### 5.8 Weight Quantization
 
 **File**: `pipeline_steps/weight_quantization_step.py`
 
 - **Requires**: `model`, `adaptation_manager`
 - **Updates**: `model`
 
-Freezes normalization layer statistics, then uses `NormalizationAwarePerceptronQuantizationTuner` to quantize weights to `weight_bits` precision. The quantization is normalization-aware: it computes effective weights (fusing normalization) before quantizing.
+Calls `compute_per_source_scales` first so that `per_input_scales` is available during quantization (effective-weight calibration depends on it). Freezes normalization layer statistics, then uses `NormalizationAwarePerceptronQuantizationTuner` to quantize weights to `weight_bits` precision. The quantization is normalization-aware: it computes effective weights (fusing normalization) before quantizing.
 
-### 5.10 Quantization Verification
+### 5.9 Quantization Verification
 
 **File**: `pipeline_steps/quantization_verification_step.py`
 
@@ -459,7 +450,7 @@ Freezes normalization layer statistics, then uses `NormalizationAwarePerceptronQ
 
 Verifies that all perceptron effective weights and biases are correctly quantized: `w * parameter_scale` must be close to integer values within tolerance. This is a sanity check before mapping.
 
-### 5.11 Normalization Fusion
+### 5.10 Normalization Fusion
 
 **File**: `pipeline_steps/normalization_fusion_step.py`
 
@@ -473,9 +464,9 @@ W_fused = diag(γ / √(σ² + ε)) @ W
 b_fused = γ * (b - μ) / √(σ² + ε) + β
 ```
 
-Scaling factors (`activation_scale`, `input_scale`, `parameter_scale`) are **not modified**, ensuring mathematical equivalence — the fused network produces identical outputs to the pre-fusion network. After fusion, the normalization is replaced with `nn.Identity()`. LayerNorm and post-activation normalizations are not fusable and are skipped.
+Scaling factors (`activation_scale`, `parameter_scale`) are **not modified**, ensuring mathematical equivalence — the fused network produces identical outputs to the pre-fusion network. After fusion, the normalization is replaced with `nn.Identity()`. LayerNorm and post-activation normalizations are not fusable and are skipped.
 
-### 5.12 Soft Core Mapping
+### 5.11 Soft Core Mapping
 
 **File**: `pipeline_steps/soft_core_mapping_step.py`
 
@@ -492,7 +483,7 @@ This critical step converts the PyTorch model into an `IRGraph`:
 6. Generates Graphviz visualizations (full render skipped for graphs with >500 nodes; DOT file always written)
 7. Runs a soft-core spiking simulation for early verification
 
-### 5.13 Core Quantization Verification
+### 5.12 Core Quantization Verification
 
 **File**: `pipeline_steps/core_quantization_verification_step.py`
 
@@ -500,7 +491,7 @@ This critical step converts the PyTorch model into an `IRGraph`:
 
 Conditionally included in the pipeline only when `weight_quantization` is enabled. Verifies that all `NeuralCore` weight matrices in the IR graph are properly quantized: `core_matrix * parameter_scale` must produce integers within the allowed range for the specified `weight_bits`.
 
-### 5.14 CoreFlow Tuning
+### 5.13 CoreFlow Tuning
 
 **File**: `pipeline_steps/core_flow_tuning_step.py`
 
@@ -517,7 +508,7 @@ Uses `CoreFlowTuner` to adjust thresholds of `NeuralCore`s in the IR graph. The 
 3. Iteratively adjusts thresholds to match stable and event-based behaviors
 4. Determines the optimal `scaled_simulation_length` for the chip
 
-### 5.15 Hard Core Mapping
+### 5.14 Hard Core Mapping
 
 **File**: `pipeline_steps/hard_core_mapping_step.py`
 
@@ -534,7 +525,7 @@ Converts the `IRGraph` into a `HybridHardCoreMapping`:
 6. Runs hard-core spiking simulation for verification
 7. Generates extensive Graphviz visualizations
 
-### 5.16 Simulation
+### 5.15 Simulation
 
 **File**: `pipeline_steps/simulation_step.py`
 
@@ -573,8 +564,8 @@ Key parameters stored on each `Perceptron`:
 |-----------|---------|
 | `activation_scale` | Output clamping range; also determines spike threshold |
 | `parameter_scale` | Quantization scale for weights and biases |
-| `input_scale` | Scale of inputs from the previous layer |
-| `input_activation_scale` | Used during IR mapping for input normalization |
+| `per_input_scales` | Per-input-channel scale tensor (set at mapping time by `compute_per_source_scales`) |
+| `input_activation_scale` | Observed input activation range (diagnostic) |
 
 ### 6.2 PerceptronFlow and PerceptronMixer
 
@@ -935,7 +926,6 @@ All tuners extend `BasicTuner`, which uses `SmartSmoothAdaptation`:
 | `ClampTuner` | Introduces activation clamping |
 | `ActivationQuantizationTuner` | Quantizes activations to Tq levels |
 | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights (normalization-aware) |
-| `ScaleTuner` | Adjusts scaling factors |
 | `NoiseTuner` | Introduces training noise |
 | `CoreFlowTuner` | Tunes spiking thresholds (operates on IRGraph, not model) |
 
@@ -1332,8 +1322,8 @@ Module dependency rules:
 ### Scale and Quantization Conventions
 - `activation_scale`: The clamping range for a perceptron's output (ReLU output is clamped to `[0, activation_scale]`)
 - `parameter_scale`: `weight * parameter_scale ≈ integer` after weight quantization
-- `input_scale`: Propagated from the previous layer's `activation_scale`
-- Effective weight: `(input_scale * layer.weight * normalization_factor) / activation_scale`
+- `per_input_scales`: 1-D tensor set at mapping time; each element is the source's `activation_scale` for that input channel
+- Effective weight: `(per_input_scales[j] * layer.weight[i,j] * normalization_factor) / activation_scale`
 - Effective bias: `(layer.bias - running_mean) * normalization_factor + beta) / activation_scale`
 
 ### Cache Strategy Selection
@@ -1361,7 +1351,7 @@ Module dependency rules:
 3. Implement `get_perceptrons()`, `get_perceptron_groups()`, `get_mapper_repr()`
 4. Create a builder in `models/builders/` with a `build(configuration)` method
 5. Register the builder in the architecture search step if using NAS
-6. Use `normalization=nn.Identity()` for `Perceptron`s where normalization is handled externally (e.g., via `LayerNormMapper`); only use `use_batchnorm=True` where BatchNorm fusion (§5.11) is desired
+6. Use `normalization=nn.Identity()` for `Perceptron`s where normalization is handled externally (e.g., via `LayerNormMapper`); only use `use_batchnorm=True` where BatchNorm fusion (§5.10) is desired
 
 ### Adding a Native PyTorch Model (torch_mapping)
 
