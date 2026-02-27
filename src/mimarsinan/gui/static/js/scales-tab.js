@@ -7,7 +7,6 @@ export function renderActivationsTab(scales, model, container) {
   const layers = model?.layers || [];
   const hasAct = layers.some(l => l.activation_scale != null);
   const hasParam = layers.some(l => l.parameter_scale != null);
-  const hasInput = layers.some(l => l.input_scale != null);
 
   if (!hasScales && !hasAct && !hasParam) {
     container.innerHTML = '<div class="empty-state">No activation or scale data available.<br><span style="font-size:12px;color:var(--text-muted)">Scales are computed during the Activation Analysis step.</span></div>';
@@ -16,18 +15,17 @@ export function renderActivationsTab(scales, model, container) {
 
   let html = '';
   if (hasScales) html += '<div class="card" style="margin-bottom:20px"><div class="card-header">Activation Scales (from Analysis)</div><div class="card-body"><div id="act-s" style="min-height:200px"></div></div></div>';
-  if (hasAct || hasParam || hasInput) {
+  if (hasAct || hasParam) {
     html += '<div class="grid-2" style="margin-bottom:20px">';
     if (hasAct) html += '<div class="card"><div class="card-header">Layer Activation Scales</div><div class="card-body"><div id="act-la" style="min-height:200px"></div></div></div>';
     if (hasParam) html += '<div class="card"><div class="card-header">Layer Parameter Scales</div><div class="card-body"><div id="act-lp" style="min-height:200px"></div></div></div>';
     html += '</div>';
-    if (hasInput) html += '<div class="card" style="margin-bottom:20px"><div class="card-header">Layer Input Scales</div><div class="card-body"><div id="act-li" style="min-height:200px"></div></div></div>';
   }
   if (layers.length > 0 && (hasAct || hasParam)) {
-    html += '<div class="card"><div class="card-header">Scale Values Table</div><div class="card-body scrollable"><table class="data-table"><thead><tr><th>Layer</th><th>Act Scale</th><th>Param Scale</th><th>Input Scale</th></tr></thead><tbody>';
+    html += '<div class="card"><div class="card-header">Scale Values Table</div><div class="card-body scrollable"><table class="data-table"><thead><tr><th>Layer</th><th>Act Scale</th><th>Param Scale</th></tr></thead><tbody>';
     for (const l of layers) {
-      if (l.activation_scale == null && l.parameter_scale == null && l.input_scale == null) continue;
-      html += `<tr><td>L${l.index}</td><td>${l.activation_scale != null ? l.activation_scale.toFixed(4) : '-'}</td><td>${l.parameter_scale != null ? l.parameter_scale.toFixed(4) : '-'}</td><td>${l.input_scale != null ? l.input_scale.toFixed(4) : '-'}</td></tr>`;
+      if (l.activation_scale == null && l.parameter_scale == null) continue;
+      html += `<tr><td>L${l.index}</td><td>${l.activation_scale != null ? l.activation_scale.toFixed(4) : '-'}</td><td>${l.parameter_scale != null ? l.parameter_scale.toFixed(4) : '-'}</td></tr>`;
     }
     html += '</tbody></table></div></div>';
   }
@@ -36,7 +34,6 @@ export function renderActivationsTab(scales, model, container) {
   if (hasScales) safeReact('act-s', [{ x: scales.map((_, i) => `L${i}`), y: scales, type: 'bar', marker: { color: '#ff9800' } }], { height: 260, yaxis: { title: 'Scale' } });
   if (hasAct) { const f = layers.filter(l => l.activation_scale != null); safeReact('act-la', [{ x: f.map(l => `L${l.index}`), y: f.map(l => l.activation_scale), type: 'bar', marker: { color: '#4caf50' } }], { height: 260, yaxis: { title: 'Activation Scale' } }); }
   if (hasParam) { const f = layers.filter(l => l.parameter_scale != null); safeReact('act-lp', [{ x: f.map(l => `L${l.index}`), y: f.map(l => l.parameter_scale), type: 'bar', marker: { color: '#9c27b0' } }], { height: 260, yaxis: { title: 'Param Scale' } }); }
-  if (hasInput) { const f = layers.filter(l => l.input_scale != null); safeReact('act-li', [{ x: f.map(l => `L${l.index}`), y: f.map(l => l.input_scale), type: 'bar', marker: { color: '#00bcd4' } }], { height: 260, yaxis: { title: 'Input Scale' } }); }
 }
 
 // ── Adaptation tab ───────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ the IR into physical hardware cores.
 | `hybrid_hardcore_mapping.py` | `HybridHardCoreMapping`, `HybridStage`, `SegmentIOSlice`, `build_hybrid_hard_core_mapping` | Multi-segment deployable program with state-buffer I/O |
 | `chip_latency.py` | `ChipLatency` | Calculates chip simulation latency from core graph |
 | `ir_latency.py` | `IRLatency` | Computes per-node latency tiers in the IR graph |
+| `per_source_scales.py` | `compute_per_source_scales` | Traverses mapper graph to set per-input-channel `per_input_scales` on each perceptron; handles branching (concat) and dimension-rearranging mappers (falls back to mean when channel counts don't align) |
 | `ir_source_spans.py` | `IRSourceSpan`, `compress_ir_sources` | Range-compressed IR source representations for efficient simulation |
 | `spike_source_spans.py` | `SpikeSourceSpan`, `compress_spike_sources` | Range-compressed spike source representations |
 
@@ -41,6 +42,7 @@ the IR into physical hardware cores.
 
 ## Exported API (\_\_init\_\_.py)
 
-Core IR types, mapping classes, and packing utilities. `mapping_utils` (the large
-mapper hierarchy) is intentionally **not** re-exported at the package level due to
-its size and star-import patterns; import directly from `mapping.mapping_utils`.
+Core IR types, mapping classes, packing utilities, and `compute_per_source_scales`.
+`mapping_utils` (the large mapper hierarchy) is intentionally **not** re-exported at
+the package level due to its size and star-import patterns; import directly from
+`mapping.mapping_utils`.

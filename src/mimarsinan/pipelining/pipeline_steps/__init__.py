@@ -4,7 +4,6 @@ from .model_building_step import ModelBuildingStep
 from .pretraining_step import PretrainingStep
 from .activation_analysis_step import ActivationAnalysisStep
 from .clamp_adaptation_step import ClampAdaptationStep
-from .input_activation_analysis_step import InputActivationAnalysisStep
 from .activation_shift_step import ActivationShiftStep
 from .activation_quantization_step import ActivationQuantizationStep
 from .weight_quantization_step import WeightQuantizationStep

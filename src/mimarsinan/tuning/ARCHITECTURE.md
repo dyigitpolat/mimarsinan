@@ -7,7 +7,7 @@ while maintaining model accuracy through smooth adaptation.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `adaptation_manager.py` | `AdaptationManager` | Manages decorator rates (clamp, shift, quantization) on perceptron activations |
+| `adaptation_manager.py` | `AdaptationManager` | Manages decorator rates (clamp, shift, quantization); for TTFS omits standalone shift decorator but nests shift inside QuantizeDecorator |
 | `smart_smooth_adaptation.py` | `SmartSmoothAdaptation` | Framework for gradually applying transformations with accuracy recovery |
 | `basic_smooth_adaptation.py` | `BasicSmoothAdaptation` | Basic step-based adaptation (base for SmartSmoothAdaptation) |
 | `basic_interpolation.py` | `BasicInterpolation` | Linear interpolation utilities for adaptation schedules |

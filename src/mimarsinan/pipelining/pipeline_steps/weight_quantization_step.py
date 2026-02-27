@@ -24,6 +24,9 @@ class WeightQuantizationStep(PipelineStep):
     def process(self):
         model = self.get_entry("model")
 
+        from mimarsinan.mapping.per_source_scales import compute_per_source_scales
+        compute_per_source_scales(model.get_mapper_repr())
+
         for perceptron in model.get_perceptrons():
             if not isinstance(perceptron.normalization, nn.Identity):
                 for param in perceptron.normalization.parameters():

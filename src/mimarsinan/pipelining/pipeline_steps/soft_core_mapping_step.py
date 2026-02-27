@@ -80,6 +80,34 @@ class SoftCoreMappingStep(PipelineStep):
 
         self._calculate_input_activation_scales(model, validator, 1.0)
 
+        from mimarsinan.mapping.per_source_scales import compute_per_source_scales
+        compute_per_source_scales(model.get_mapper_repr())
+
+        act_q = bool(self.pipeline.config.get("activation_quantization", False))
+
+        # TTFS shift compensation for ttfs_quantized only.
+        #
+        # The training staircase is floor((V + shift)*tq)/tq while the
+        # ttfs_quantized simulation computes floor(V*tq)/tq — the shift
+        # (= 0.5*act_scale/tq) from the QuantizeDecorator's nested
+        # ShiftDecorator is missing.  Baking it into the effective bias
+        # aligns the two staircases exactly.
+        #
+        # For ttfs (continuous) this is NOT applied: the simulation uses
+        # bare relu(V)/threshold without an upper clamp, so the extra
+        # shift would push some outputs above 1.0 and overflow into
+        # downstream layers.  The ttfs_quantized formula naturally clamps
+        # via k_fire.clamp(0, S-1).
+        if self.pipeline.config.get("spiking_mode", "rate") == "ttfs_quantized" and act_q:
+            from mimarsinan.tuning.shift_calculation import calculate_activation_shift
+            from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+            tq = self.pipeline.config["target_tq"]
+            for perceptron in model.get_perceptrons():
+                shift = calculate_activation_shift(tq, perceptron.activation_scale)
+                bias_shift = shift / perceptron.activation_scale
+                PerceptronTransformer().apply_effective_bias_transform(
+                    perceptron, lambda b, s=bias_shift: b + s)
+
         bits = self.pipeline.config['weight_bits']
         q_max = (2 ** (bits - 1)) - 1
         

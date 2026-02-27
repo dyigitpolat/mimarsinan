@@ -1,7 +1,7 @@
 {
   "seed": 32,
   "pipeline_mode": "phased",
-  "experiment_name": "1gui_mnist_arch_search_nsga2_ttfs",
+  "experiment_name": "X_AQ_gui_mnist_arch_search_nsga2_ttfs",
   "generated_files_path": "./generated",
   "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
   "data_provider_name": "MNIST_DataProvider",
@@ -10,8 +10,8 @@
     "mode": "auto",
     "auto": {
       "fixed": {
-        "target_tq": 32,
-        "simulation_steps": 32,
+        "target_tq": 8,
+        "simulation_steps": 8,
         "weight_bits": 8,
         "allow_axon_tiling": false
       },
@@ -56,8 +56,8 @@
       "extrapolation_target_epochs": 10
     },
 
-    "spiking_mode": "ttfs",
-    "weight_quantization": true,
+    "spiking_mode": "ttfs_quantized",
+    "weight_quantization": false,
     "activation_quantization": true,
 
     "spike_generation_mode": "TTFS",
@@ -68,7 +68,7 @@
   },
 
   "target_metric_override": null,
-  "start_step": "Simulation",
+  "start_step": null,
   "stop_step": null
 }
 

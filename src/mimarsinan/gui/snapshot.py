@@ -78,7 +78,6 @@ def snapshot_model(model: Any) -> dict:
 
         layer_info["activation_scale"] = _safe_scalar(p, "activation_scale")
         layer_info["parameter_scale"] = _safe_scalar(p, "parameter_scale")
-        layer_info["input_scale"] = _safe_scalar(p, "input_scale")
 
         layers.append(layer_info)
 
@@ -119,7 +118,6 @@ def _get_model_perceptrons(model: Any) -> list:
                     wrapper = type("_Wrapper", (), {"layer": child, "name": f"linear_{i}"})()
                     wrapper.activation_scale = None
                     wrapper.parameter_scale = None
-                    wrapper.input_scale = None
                     linear_layers.append(wrapper)
             if linear_layers:
                 return linear_layers
