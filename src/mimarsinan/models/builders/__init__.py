@@ -3,3 +3,7 @@ from .simple_mlp_builder import SimpleMLPBuilder
 from .simple_conv_builder import SimpleConvBuilder
 from .vgg16_builder import VGG16Builder
 from .vit_builder import VitBuilder
+from .torch_vgg16_builder import TorchVGG16Builder
+from .torch_vit_builder import TorchViTBuilder
+from .torch_squeezenet11_builder import TorchSqueezeNet11Builder
+from .torch_custom_builder import TorchCustomBuilder

@@ -194,8 +194,17 @@ class DeploymentPipeline(Pipeline):
         # ── Model Building ──────────────────────────────────────────────
         self.add_pipeline_step("Model Building", ModelBuildingStep(self))
 
-        # ── Pretraining ─────────────────────────────────────────────────
-        self.add_pipeline_step("Pretraining", PretrainingStep(self))
+        # ── Pretraining / Weight Preloading ────────────────────────────
+        if self.config.get("weight_source"):
+            self.add_pipeline_step(
+                "Weight Preloading", WeightPreloadingStep(self)
+            )
+        else:
+            self.add_pipeline_step("Pretraining", PretrainingStep(self))
+
+        # ── Torch Mapping (native PyTorch models only) ──────────────────
+        if self.config.get("model_type", "").startswith("torch_"):
+            self.add_pipeline_step("Torch Mapping", TorchMappingStep(self))
 
         # ── Activation Quantization ─────────────────────────────────────
         if act_q:

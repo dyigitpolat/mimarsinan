@@ -29,3 +29,4 @@ purpose, components, dependencies, and exported API.
 | `visualization/` | Graphviz, matplotlib, Plotly visualizations |
 | `gui/` | Browser-based pipeline monitoring dashboard |
 | `model_evaluation/` | Training-free evaluation metrics |
+| `torch_mapping/` | Convert native PyTorch models to Mapper DAG / Supermodel |

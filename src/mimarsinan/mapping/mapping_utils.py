@@ -630,6 +630,36 @@ class AddMapper(Mapper):
         a, b = x
         return a + b
 
+
+class ConcatMapper(Mapper):
+    """Mapper for torch.cat: concatenates multiple source tensors along a dimension."""
+
+    def __init__(self, source_mappers, dim: int = 1, name: str = "Concat"):
+        super().__init__()
+        self._source_mappers_list = list(source_mappers)
+        self.dim = dim
+        self._name = name
+
+    def get_source_mappers(self):
+        return [m for m in self._source_mappers_list if m is not None]
+
+    def _map(self, mapping):
+        layer_sources_list = []
+        for mapper in self.get_source_mappers():
+            layer_sources_list.append(mapper.map(mapping))
+        return np.concatenate(layer_sources_list, axis=0)
+
+    def _map_to_ir(self, ir_mapping):
+        layer_sources_list = []
+        for mapper in self.get_source_mappers():
+            layer_sources_list.append(mapper.map_to_ir(ir_mapping))
+        return np.concatenate(layer_sources_list, axis=0)
+
+    def _forward_impl(self, x):
+        # `x` is a tuple of tensors from dependency mappers (same order as source_mappers).
+        return torch.cat(tuple(x), dim=self.dim)
+
+
 class SubscriptMapper(Mapper):
     def __init__(self, source_mapper, index):
         super(SubscriptMapper, self).__init__(source_mapper)

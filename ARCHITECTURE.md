@@ -1363,6 +1363,23 @@ Module dependency rules:
 5. Register the builder in the architecture search step if using NAS
 6. Use `normalization=nn.Identity()` for `Perceptron`s where normalization is handled externally (e.g., via `LayerNormMapper`); only use `use_batchnorm=True` where BatchNorm fusion (§5.11) is desired
 
+### Adding a Native PyTorch Model (torch_mapping)
+
+Instead of hand-building a `PerceptronFlow` + Mapper graph, you can use a standard
+PyTorch `nn.Module` and let the `torch_mapping` module convert it automatically:
+
+1. Create a builder in `models/builders/` whose `build()` returns a plain `nn.Module`
+   (not a `Supermodel`).  See `TorchVGG16Builder` or `TorchCustomBuilder` as examples.
+2. Register the builder in `ModelConfigurationStep` with a `"torch_*"` model type name.
+3. The pipeline will automatically insert `TorchMappingStep` after Pretraining, which
+   traces the trained model with `torch.fx`, validates representability, converts to a
+   Mapper DAG with Perceptron wrappers, and wraps everything in a `Supermodel`.
+4. The conversion transfers trained weights and absorbs BatchNorm / activation into
+   Perceptrons.  The resulting Supermodel is compatible with all downstream pipeline
+   steps (normalization fusion, quantization, core mapping, etc.).
+5. Use `check_representability()` from `torch_mapping` to verify your model before
+   running the full pipeline.
+
 ### Adding a New Data Provider
 
 1. Create a new file in `data_handling/data_providers/`
