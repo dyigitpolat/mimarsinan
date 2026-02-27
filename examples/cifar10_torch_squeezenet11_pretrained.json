@@ -46,5 +46,5 @@
     },
 
     "target_metric_override": null,
-    "start_step": "Simulation"
+    "start_step": "Input Activation Analysis"
 }
