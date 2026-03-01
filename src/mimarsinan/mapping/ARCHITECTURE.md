@@ -7,8 +7,8 @@ the IR into physical hardware cores.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `ir.py` | `IRSource`, `IRNode`, `NeuralCore`, `ComputeOp`, `IRGraph` | Unified IR: directed graph of neural cores and compute operations |
-| `ir_mapping.py` | `IRMapping` | Converts `ModelRepresentation` (mapper graph) to `IRGraph`; handles output/axon tiling |
+| `ir.py` | `IRSource`, `IRNode`, `NeuralCore`, `ComputeOp`, `IRGraph`, `WeightBank` | Unified IR: directed graph of neural cores and compute operations. `WeightBank` stores shared weights for conv-style layers; `NeuralCore` can either own its `core_matrix` or reference a bank via `weight_bank_id`. |
+| `ir_mapping.py` | `IRMapping` | Converts `ModelRepresentation` (mapper graph) to `IRGraph`; handles output/axon tiling. Provides `register_weight_bank()` and `add_shared_neural_core()` for conv-style shared-weight mapping. |
 | `mapping_utils.py` | `Mapper`, `ModelRepresentation`, `SoftCoreMapping`, `PerceptronMapper`, `Conv2DPerceptronMapper`, ... | Mapper hierarchy: dual-purpose DAG for forward pass and hardware mapping |
 | `softcore_mapping.py` | `SoftCore`, `HardCore`, `HardCoreMapping` | Logical-to-physical core representations and packing |
 | `core_packing.py` | `greedy_pack_softcores` | Generic best-fit greedy bin-packing algorithm |
@@ -42,7 +42,7 @@ the IR into physical hardware cores.
 
 ## Exported API (\_\_init\_\_.py)
 
-Core IR types, mapping classes, packing utilities, and `compute_per_source_scales`.
+Core IR types (including `WeightBank`), mapping classes, packing utilities, and `compute_per_source_scales`.
 `mapping_utils` (the large mapper hierarchy) is intentionally **not** re-exported at
 the package level due to its size and star-import patterns; import directly from
 `mapping.mapping_utils`.

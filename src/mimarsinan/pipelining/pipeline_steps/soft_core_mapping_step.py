@@ -126,19 +126,47 @@ class SoftCoreMappingStep(PipelineStep):
         # round to integers, and set threshold = parameter_scale.
         # Only performed when weight quantization was enabled — otherwise the
         # weights are unquantized floats and rounding would destroy precision.
+        #
+        # For bank-backed cores (conv layers) quantization is applied once to
+        # each WeightBank, avoiding redundant work and keeping the single
+        # source of truth.
         wt_q = bool(self.pipeline.config.get("weight_quantization", False))
         if wt_q:
+            from mimarsinan.mapping.ir import WeightBank
+            quantized_banks: set[int] = set()
+            for bank_id, bank in ir_graph.weight_banks.items():
+                ps = float(
+                    bank.parameter_scale.item()
+                    if hasattr(bank.parameter_scale, "item")
+                    else bank.parameter_scale
+                )
+                if abs(ps) > 1e-12:
+                    bank.core_matrix = np.round(bank.core_matrix * ps)
+                    bank.parameter_scale = torch.tensor(1.0)
+                    quantized_banks.add(bank_id)
+
             for node in ir_graph.nodes:
                 if isinstance(node, NeuralCore):
-                    ps = float(
-                        node.parameter_scale.item()
-                        if hasattr(node.parameter_scale, "item")
-                        else node.parameter_scale
-                    )
-                    if abs(ps) > 1e-12:
-                        node.core_matrix = np.round(node.core_matrix * ps)
-                        node.threshold = ps
-                        node.parameter_scale = torch.tensor(1.0)
+                    if node.has_weight_bank():
+                        if node.weight_bank_id in quantized_banks:
+                            bank = ir_graph.weight_banks[node.weight_bank_id]
+                            ps_val = float(
+                                node.parameter_scale.item()
+                                if hasattr(node.parameter_scale, "item")
+                                else node.parameter_scale
+                            )
+                            node.threshold = ps_val
+                            node.parameter_scale = torch.tensor(1.0)
+                    else:
+                        ps = float(
+                            node.parameter_scale.item()
+                            if hasattr(node.parameter_scale, "item")
+                            else node.parameter_scale
+                        )
+                        if abs(ps) > 1e-12:
+                            node.core_matrix = np.round(node.core_matrix * ps)
+                            node.threshold = ps
+                            node.parameter_scale = torch.tensor(1.0)
 
         # Calculate latencies for all neural cores in the IR graph
         max_latency = IRLatency(ir_graph).calculate()

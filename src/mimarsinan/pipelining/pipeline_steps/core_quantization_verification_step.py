@@ -50,7 +50,7 @@ class CoreQuantizationVerificationStep(PipelineStep):
                 failures.append(f"{core.name}: parameter_scale is 0")
                 continue
 
-            scaled = core.core_matrix * scale
+            scaled = core.get_core_matrix(ir_graph) * scale
             rounded = np.round(scaled)
 
             maxv = float(np.max(rounded))

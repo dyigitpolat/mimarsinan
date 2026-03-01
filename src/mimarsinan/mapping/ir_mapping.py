@@ -19,6 +19,7 @@ from mimarsinan.mapping.ir import (
     IRNode,
     IRSource,
     NeuralCore,
+    WeightBank,
     spike_source_to_ir_source,
 )
 
@@ -55,6 +56,8 @@ class IRMapping:
 
         self._next_node_id = 0
         self._psum_group_counter = 0
+        self._next_bank_id = 0
+        self._weight_banks: Dict[int, WeightBank] = {}
 
     def _allocate_node_id(self) -> int:
         """Allocate a unique node ID."""
@@ -62,17 +65,60 @@ class IRMapping:
         self._next_node_id += 1
         return node_id
 
+    def register_weight_bank(
+        self,
+        weights: np.ndarray | torch.Tensor,
+        biases: np.ndarray | torch.Tensor | None = None,
+        activation_scale: torch.Tensor = torch.tensor(1.0),
+        parameter_scale: torch.Tensor = torch.tensor(1.0),
+        input_activation_scale: torch.Tensor = torch.tensor(1.0),
+    ) -> int:
+        """Register a shared weight bank and return its ID.
+
+        The bank stores a ``core_matrix`` in the standard IR layout
+        ``(axons, neurons)``.  If ``biases`` is provided the matrix
+        includes an extra "always-on" axon row for the bias, matching
+        the convention of ``add_neural_core``.
+        """
+        bank_id = self._next_bank_id
+        self._next_bank_id += 1
+
+        w = self._to_numpy(weights)  # (out_features, in_features)
+        in_features = w.shape[1]
+        out_features = w.shape[0]
+
+        if biases is not None:
+            b = self._to_numpy(biases).flatten()
+            core_matrix = np.zeros((in_features + 1, out_features), dtype=float)
+            core_matrix[:in_features, :] = w.T
+            core_matrix[-1, :] = b
+        else:
+            core_matrix = np.zeros((in_features, out_features), dtype=float)
+            core_matrix[:, :] = w.T
+
+        self._weight_banks[bank_id] = WeightBank(
+            id=bank_id,
+            core_matrix=core_matrix,
+            activation_scale=activation_scale,
+            parameter_scale=parameter_scale,
+            input_activation_scale=input_activation_scale,
+        )
+        return bank_id
+
     def map(self, model_representation) -> IRGraph:
         """
         Map a ModelRepresentation to an IRGraph.
 
         This traverses the mapper graph and produces IR nodes for each mapper.
         """
-        # Use the unified mapping interface
         output_sources = model_representation.map_to_ir(self)
         self.output_sources = output_sources
 
-        return IRGraph(nodes=self.nodes.copy(), output_sources=output_sources)
+        return IRGraph(
+            nodes=self.nodes.copy(),
+            output_sources=output_sources,
+            weight_banks=dict(self._weight_banks),
+        )
 
     def add_compute_op(
         self,
@@ -200,6 +246,72 @@ class IRMapping:
             IRSource(node_id=node_id, index=i) for i in range(out_features)
         ])
 
+        return output_sources
+
+    def add_shared_neural_core(
+        self,
+        input_sources: np.ndarray,
+        weight_bank_id: int,
+        has_bias: bool = True,
+        weight_row_slice: tuple[int, int] | None = None,
+        name: str | None = None,
+        normalization_type: str | None = None,
+        activation_type: str | None = None,
+    ) -> np.ndarray:
+        """Add a NeuralCore that references a shared ``WeightBank``.
+
+        No weight matrix is copied; only the bank ID, input wiring, and
+        an optional output-channel slice are stored.
+
+        Args:
+            input_sources: Patch sources (without bias axon — it is added
+                automatically when ``has_bias`` is True).
+            weight_bank_id: ID returned by ``register_weight_bank``.
+            has_bias: Whether the bank's core_matrix includes a bias row
+                (an always-on source is appended to ``input_sources``).
+            weight_row_slice: ``(start, end)`` slice along the neuron
+                (column) axis of the bank's core_matrix.  ``None`` means
+                use the full bank.
+            name: Optional debug name.
+
+        Returns:
+            Array of ``IRSource`` pointing to this core's outputs.
+        """
+        node_id = self._allocate_node_id()
+
+        bank = self._weight_banks[weight_bank_id]
+
+        ir_input_sources = self._convert_sources(input_sources)
+        ir_input_list = list(ir_input_sources.flatten())
+
+        if has_bias:
+            ir_input_list.append(IRSource(node_id=-3, index=0))
+
+        out_features = bank.core_matrix.shape[1]
+        if weight_row_slice is None:
+            weight_row_slice = (0, out_features)
+        else:
+            out_features = weight_row_slice[1] - weight_row_slice[0]
+
+        neural_core = NeuralCore(
+            id=node_id,
+            name=name or f"neural_core_{node_id}",
+            input_sources=np.array(ir_input_list),
+            core_matrix=None,
+            threshold=1.0,
+            activation_scale=bank.activation_scale,
+            parameter_scale=bank.parameter_scale,
+            input_activation_scale=bank.input_activation_scale,
+            weight_bank_id=weight_bank_id,
+            weight_row_slice=weight_row_slice,
+            normalization_type=normalization_type,
+            activation_type=activation_type,
+        )
+        self.nodes.append(neural_core)
+
+        output_sources = np.array([
+            IRSource(node_id=node_id, index=i) for i in range(out_features)
+        ])
         return output_sources
 
     def map_fc(

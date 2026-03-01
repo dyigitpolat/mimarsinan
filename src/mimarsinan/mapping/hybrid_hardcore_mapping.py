@@ -82,6 +82,7 @@ def _remap_external_sources_to_segment_inputs(
     *,
     nodes: list[NeuralCore],
     output_sources: np.ndarray,
+    weight_banks: dict | None = None,
 ) -> tuple[IRGraph, list[SegmentIOSlice]]:
     """
     Build a neural-only IRGraph for a segment with support for
@@ -101,6 +102,8 @@ def _remap_external_sources_to_segment_inputs(
         Describes how to assemble the composite input buffer from the
         global state buffer at runtime.
     """
+    if weight_banks is None:
+        weight_banks = {}
     node_ids = {n.id for n in nodes}
 
     for src in output_sources.flatten():
@@ -152,6 +155,7 @@ def _remap_external_sources_to_segment_inputs(
     graph = IRGraph(
         nodes=new_nodes,
         output_sources=np.array(output_sources, dtype=object),
+        weight_banks=weight_banks,
     )
     return graph, input_map
 
@@ -161,6 +165,7 @@ def _flush_neural_segment(
     current_neural: list[NeuralCore],
     consumed_by: dict[int, set[int]],
     shared_pool: list[HardCore],
+    weight_banks: dict,
     name: str,
 ) -> HybridStage:
     """Pack a neural segment using cores drawn from *shared_pool*.
@@ -193,6 +198,7 @@ def _flush_neural_segment(
     seg_graph, input_map = _remap_external_sources_to_segment_inputs(
         nodes=current_neural,
         output_sources=output_sources,
+        weight_banks=weight_banks,
     )
     soft = ir_graph_to_soft_core_mapping(seg_graph)
 
@@ -249,6 +255,7 @@ def build_hybrid_hard_core_mapping(
                     current_neural=current_neural,
                     consumed_by=consumed_by,
                     shared_pool=shared_pool,
+                    weight_banks=ir_graph.weight_banks,
                     name=f"neural_segment_until:{node.name}",
                 )
                 stages.append(stage)
@@ -264,6 +271,7 @@ def build_hybrid_hard_core_mapping(
             current_neural=current_neural,
             consumed_by=consumed_by,
             shared_pool=shared_pool,
+            weight_banks=ir_graph.weight_banks,
             name="neural_segment_final",
         )
         stages.append(stage)

@@ -6,6 +6,7 @@ from mimarsinan.mapping.ir import (
     NeuralCore,
     ComputeOp,
     IRGraph,
+    WeightBank,
 )
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.softcore_mapping import SoftCore, HardCore, HardCoreMapping
