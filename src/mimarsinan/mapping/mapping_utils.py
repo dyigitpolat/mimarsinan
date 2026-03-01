@@ -1310,7 +1310,13 @@ class Conv2DPerceptronMapper(Mapper):
         return mapped_sources.reshape(self.out_channels, h_out, w_out)
 
     def _map_to_ir(self, ir_mapping):
-        """Map to IR using NeuralCore nodes (im2col + matmul)."""
+        """Map to IR using shared-weight NeuralCore nodes (im2col + matmul).
+
+        A single ``WeightBank`` stores the conv kernel; each spatial
+        position creates a lightweight bank-backed ``NeuralCore`` that
+        only stores its unique input wiring.  This avoids duplicating the
+        kernel matrix ``h_out * w_out`` times.
+        """
         input_sources = self.source_mapper.map_to_ir(ir_mapping)
 
         if len(input_sources.shape) != 3:
@@ -1332,7 +1338,6 @@ class Conv2DPerceptronMapper(Mapper):
         h_out = (h_in + 2 * p_h - d_h * (k_h - 1) - 1) // s_h + 1
         w_out = (w_in + 2 * p_w - d_w * (k_w - 1) - 1) // s_w + 1
 
-        # Pad input sources with "off" sources
         IRSource = _get_ir_types()
         off_source = IRSource(node_id=-1, index=0)
         if p_h > 0 or p_w > 0:
@@ -1344,26 +1349,41 @@ class Conv2DPerceptronMapper(Mapper):
                 constant_values=off_source,
             )
 
-        # Get effective weights from the perceptron
         full_w = PerceptronTransformer().get_effective_weight(self.perceptron)
         full_b = PerceptronTransformer().get_effective_bias(self.perceptron)
 
-        # For conv, we create one core per spatial position, all sharing weights.
-        # Each core processes one patch (receptive field) and outputs out_channels values.
-        # Total cores = h_out * w_out, each with patch_size inputs and out_channels outputs.
-        
-        patch_size = self.in_channels * k_h * k_w
-        num_positions = h_out * w_out
-        
-        # Collect output sources for all positions
-        all_output_sources = []  # List of (out_channels,) arrays
-        
+        has_bias = full_b is not None
+
+        if self.max_neurons is None:
+            group_sizes = [self.out_channels]
+        else:
+            group_sizes = _chunk_sizes(self.out_channels, int(self.max_neurons))
+
+        # Register one weight bank per output-channel group.
+        bank_ids: list[int] = []
+        start_idx = 0
+        for g in group_sizes:
+            end_idx = start_idx + g
+            w_slice = full_w[start_idx:end_idx, :]
+            b_slice = full_b[start_idx:end_idx] if has_bias else None
+
+            bank_id = ir_mapping.register_weight_bank(
+                weights=w_slice,
+                biases=b_slice,
+                activation_scale=self.perceptron.activation_scale,
+                parameter_scale=self.perceptron.parameter_scale,
+                input_activation_scale=self.perceptron.input_activation_scale,
+            )
+            bank_ids.append(bank_id)
+            start_idx = end_idx
+
+        all_output_sources = []
+
         for oh in range(h_out):
             for ow in range(w_out):
                 h_start = oh * s_h
                 w_start = ow * s_w
 
-                # Build patch sources for this position
                 patch_sources = []
                 for c in range(self.in_channels):
                     for kh in range(k_h):
@@ -1371,42 +1391,23 @@ class Conv2DPerceptronMapper(Mapper):
                             r = h_start + kh * d_h
                             c_idx = w_start + kw * d_w
                             patch_sources.append(input_sources[c, r, c_idx])
-                
-                patch_sources = np.array(patch_sources)  # (patch_size,)
 
-                # Slice weights if grouping is required by hardware constraints
-                if self.max_neurons is None:
-                    group_sizes = [self.out_channels]
-                else:
-                    group_sizes = _chunk_sizes(self.out_channels, int(self.max_neurons))
+                patch_sources = np.array(patch_sources)
 
                 position_outputs = []
-                start_idx = 0
-                for g_idx, g in enumerate(group_sizes):
-                    end_idx = start_idx + g
-
-                    w_slice = full_w[start_idx:end_idx, :]
-                    b_slice = full_b[start_idx:end_idx] if full_b is not None else None
-
-                    # Create neural core for this position and group
-                    core_outputs = ir_mapping.add_neural_core(
+                for g_idx, bank_id in enumerate(bank_ids):
+                    core_outputs = ir_mapping.add_shared_neural_core(
                         input_sources=patch_sources,
-                        weights=w_slice,
-                        biases=b_slice,
-                        activation_scale=self.perceptron.activation_scale,
-                        parameter_scale=self.perceptron.parameter_scale,
-                        input_activation_scale=self.perceptron.input_activation_scale,
+                        weight_bank_id=bank_id,
+                        has_bias=has_bias,
                         name=f"{self.name}_pos{oh}_{ow}_g{g_idx}",
                     )
                     position_outputs.append(core_outputs)
-                    start_idx = end_idx
 
                 all_output_sources.append(np.concatenate(position_outputs))
 
-        # Reshape: (num_positions, out_channels) -> (out_channels, h_out, w_out)
-        # First stack to (num_positions, out_channels), then reshape
-        output_array = np.stack(all_output_sources, axis=0)  # (h_out*w_out, out_channels)
-        output_array = output_array.T  # (out_channels, h_out*w_out)
+        output_array = np.stack(all_output_sources, axis=0)
+        output_array = output_array.T
         return output_array.reshape(self.out_channels, h_out, w_out)
 
 

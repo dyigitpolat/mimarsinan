@@ -188,7 +188,7 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
         }
 
         if isinstance(node, NeuralCore):
-            mat = node.core_matrix
+            mat = node.get_core_matrix(ir_graph)
             group_key = _layer_key_from_node_name(node.name)
             info["layer_group"] = group_key
             info["axons"] = int(mat.shape[0])

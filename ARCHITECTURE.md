@@ -731,7 +731,7 @@ Each mapper's `map_to_ir()` method:
 3. Creates `NeuralCore`s and/or `ComputeOp`s in the IR
 4. Returns output source arrays for downstream mappers
 
-For convolutions, `Conv2DPerceptronMapper._map_to_ir()` implements the im2col transformation: it creates one `NeuralCore` per spatial position (and per output channel group), with input sources wired to the correct input positions.
+For convolutions, `Conv2DPerceptronMapper._map_to_ir()` implements the im2col transformation: it registers one `WeightBank` per output-channel group and creates one bank-backed `NeuralCore` per spatial position.  Each core shares the bank's weight matrix and differs only in its input wiring (receptive field position).  This avoids O(h_out × w_out) weight replication in the IR and in simulation.
 
 ---
 
@@ -764,10 +764,25 @@ Computation: output = ReLU(core_matrix @ input)
 ```
 
 Key fields:
-- `core_matrix: np.ndarray` — shape `(axons, neurons)`, the weight matrix
+- `core_matrix: np.ndarray | None` — shape `(axons, neurons)`, the weight matrix.  `None` when using a shared weight bank.
 - `threshold: float` — Spiking threshold (tuned by CoreFlowTuner)
 - `activation_scale`, `parameter_scale`, `input_activation_scale` — Scaling factors
 - `psum_group_id`, `psum_role` — For partial-sum decomposition when a layer exceeds hardware limits
+- `weight_bank_id: int | None` — If set, this core references a `WeightBank` stored on the `IRGraph` instead of owning its `core_matrix`.
+- `weight_row_slice: tuple[int,int] | None` — Optional neuron-axis slice into the bank's matrix (for output-channel tiling).
+
+**Weight ownership modes:**
+1. *Owned weights* (FC layers): `core_matrix` is a concrete array, `weight_bank_id` is `None`.
+2. *Shared weights* (conv layers): `weight_bank_id` references a `WeightBank` on the `IRGraph`; `core_matrix` is `None`.  Use `get_core_matrix(graph)` to resolve.
+
+### 8.2b WeightBank
+
+A shared weight matrix stored once on the `IRGraph` and referenced by many `NeuralCore`s.  This avoids O(h_out × w_out) weight replication for convolutional layers.
+
+Key fields:
+- `id: int`
+- `core_matrix: np.ndarray` — shape `(axons, neurons)`, same layout as NeuralCore
+- `activation_scale`, `parameter_scale`, `input_activation_scale`
 
 ### 8.3 ComputeOp
 
@@ -788,7 +803,9 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
 
 `IRMapping` converts a `ModelRepresentation` to an `IRGraph`:
 
-- `add_neural_core(...)` — Creates a `NeuralCore` with source wiring
+- `add_neural_core(...)` — Creates a `NeuralCore` with source wiring (owned weights)
+- `add_shared_neural_core(...)` — Creates a bank-backed `NeuralCore` that references a `WeightBank` instead of storing its own `core_matrix`
+- `register_weight_bank(...)` — Stores a shared weight matrix and returns its `bank_id`
 - `add_compute_op(...)` — Creates a `ComputeOp`
 - `map_fc(...)` — Maps a fully-connected layer, handling:
   - **Output tiling**: Splits neurons across multiple cores when `neurons > max_neurons`

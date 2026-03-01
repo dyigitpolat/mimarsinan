@@ -7,6 +7,11 @@ This IR supports both:
 
 The IR enables simulation and hardware mapping of networks that mix
 perceptron-based layers with non-neural operations.
+
+Weight banks allow convolution-style layers to share a single weight matrix
+across many NeuralCores (one per spatial position) without duplicating the
+matrix in memory.  See ``WeightBank``, ``NeuralCore.weight_bank_id``, and
+``IRGraph.weight_banks``.
 """
 
 from __future__ import annotations
@@ -18,6 +23,33 @@ from typing import Any, Dict, List, Literal, Sequence, Tuple
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+
+# ---------------------------------------------------------------------------
+# WeightBank: Shared weight storage for conv-style layers
+# ---------------------------------------------------------------------------
+@dataclass
+class WeightBank:
+    """
+    A single stored weight matrix (and optional bias) shared by multiple
+    NeuralCores.
+
+    Convolution layers map to many cores that differ only in their input
+    wiring (receptive field position) but share the same kernel weights.
+    Storing one ``WeightBank`` per conv layer and letting each core
+    *reference* it (via ``NeuralCore.weight_bank_id``) avoids duplicating
+    the kernel ``h_out * w_out`` times in the IR and in simulation.
+
+    The ``core_matrix`` stored here has the same layout as
+    ``NeuralCore.core_matrix``: shape ``(axons, neurons)`` — i.e. the
+    transposed weight matrix with an optional bias row appended as the
+    last axon.
+    """
+    id: int
+    core_matrix: np.ndarray  # (axons, neurons) — the shared weight block
+    activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
+    parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
+    input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
 
 
 # ---------------------------------------------------------------------------
@@ -111,13 +143,27 @@ class NeuralCore(IRNode):
     Computes: activation(matmul(core_matrix, inputs))
 
     This is the hardware-mappable primitive for spiking neural network chips.
+
+    **Weight ownership modes (mutually exclusive):**
+
+    1. *Owned weights* (default / FC layers): ``core_matrix`` is a concrete
+       ``np.ndarray`` and ``weight_bank_id`` is ``None``.
+    2. *Shared weights* (conv layers): ``weight_bank_id`` references a
+       ``WeightBank`` stored on the owning ``IRGraph``.  ``core_matrix``
+       is ``None``; use ``get_core_matrix(graph)`` to resolve the actual
+       matrix.  Optional ``weight_row_slice`` restricts to a subset of
+       the bank's rows (output-channel tiling).
     """
-    core_matrix: np.ndarray  # shape: (axons, neurons)
+    core_matrix: np.ndarray | None = None  # (axons, neurons); None when using a bank
     threshold: float = 1.0
     activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     latency: int | None = None
+
+    # Shared-weight support
+    weight_bank_id: int | None = None
+    weight_row_slice: tuple[int, int] | None = None  # (start, end) neuron slice into the bank
 
     # Metadata for debugging/visualization
     psum_group_id: int | None = None
@@ -125,11 +171,57 @@ class NeuralCore(IRNode):
     normalization_type: str | None = None
     activation_type: str | None = None
 
+    # ------------------------------------------------------------------
+    # Weight resolution
+    # ------------------------------------------------------------------
+    def has_weight_bank(self) -> bool:
+        return self.weight_bank_id is not None
+
+    def get_core_matrix(self, graph: "IRGraph | None" = None) -> np.ndarray:
+        """Return the effective core matrix, resolving weight-bank references.
+
+        For owned-weight cores this simply returns ``self.core_matrix``.
+        For shared-weight cores ``graph`` must be provided so the bank can
+        be looked up.
+        """
+        if self.core_matrix is not None:
+            return self.core_matrix
+
+        if graph is None:
+            raise ValueError(
+                f"NeuralCore {self.name} (id={self.id}) references weight_bank_id="
+                f"{self.weight_bank_id} but no IRGraph was provided for resolution."
+            )
+
+        bank = graph.get_weight_bank(self.weight_bank_id)
+        if bank is None:
+            raise KeyError(
+                f"NeuralCore {self.name} references weight_bank_id={self.weight_bank_id} "
+                f"which does not exist in the graph."
+            )
+
+        mat = bank.core_matrix
+        if self.weight_row_slice is not None:
+            start, end = self.weight_row_slice
+            mat = mat[:, start:end]
+        return mat
+
+    # ------------------------------------------------------------------
+
     def get_input_count(self) -> int:
-        return self.core_matrix.shape[0]
+        return int(len(self.input_sources.flatten()))
 
     def get_output_count(self) -> int:
-        return self.core_matrix.shape[1]
+        if self.core_matrix is not None:
+            return self.core_matrix.shape[1]
+        # Bank-backed: output count from the slice or the full bank
+        if self.weight_row_slice is not None:
+            return self.weight_row_slice[1] - self.weight_row_slice[0]
+        # Fallback — should not normally be reached without a graph
+        raise ValueError(
+            f"Cannot determine output count for bank-backed core {self.name} "
+            f"without a concrete core_matrix or weight_row_slice."
+        )
 
     def execute(
         self,
@@ -139,17 +231,20 @@ class NeuralCore(IRNode):
         """Execute crossbar computation: W @ x + activation."""
         inputs = self.gather_inputs(input_tensor, buffers)
 
-        # Core matrix stored as (axons, neurons), we need (neurons, axons) for matmul
+        mat = self.core_matrix
+        if mat is None:
+            raise RuntimeError(
+                f"NeuralCore {self.name}: cannot execute without a resolved "
+                f"core_matrix.  Call get_core_matrix(graph) first or use "
+                f"SpikingUnifiedCoreFlow which resolves weight banks."
+            )
         weight = torch.tensor(
-            self.core_matrix.T,
+            mat.T,
             dtype=torch.float32,
             device=input_tensor.device,
         )
-        # inputs: (batch, axons), weight: (neurons, axons)
-        # output: (batch, neurons)
         out = torch.matmul(inputs, weight.T)
 
-        # Apply ReLU-style activation (can be customized via activation_scale)
         out = F.relu(out)
         out = torch.clamp(out, 0.0, self.activation_scale.item())
 
@@ -364,9 +459,20 @@ class IRGraph:
     Unified IR graph containing both neural cores and compute operations.
 
     The graph is topologically sorted for execution order.
+
+    ``weight_banks`` stores shared weight matrices referenced by
+    bank-backed ``NeuralCore`` nodes (see ``WeightBank``).
     """
     nodes: List[IRNode]
     output_sources: np.ndarray  # Array of IRSource for final outputs
+    weight_banks: Dict[int, WeightBank] = field(default_factory=dict)
+
+    def __getattr__(self, name: str):
+        # Backward compat: old pickles lack weight_banks
+        if name == "weight_banks":
+            self.weight_banks = {}
+            return self.weight_banks
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute {name!r}")
 
     def get_neural_cores(self) -> List[NeuralCore]:
         """Return all neural core nodes."""
@@ -382,6 +488,14 @@ class IRGraph:
             if node.id == node_id:
                 return node
         return None
+
+    def get_weight_bank(self, bank_id: int) -> WeightBank | None:
+        """Look up a weight bank by its ID."""
+        return self.weight_banks.get(bank_id)
+
+    def resolve_core_matrix(self, core: NeuralCore) -> np.ndarray:
+        """Convenience: resolve the effective core matrix for any NeuralCore."""
+        return core.get_core_matrix(self)
 
     def validate(self) -> List[str]:
         """
@@ -406,6 +520,15 @@ class IRGraph:
                 continue
             if src.node_id >= 0 and src.node_id not in node_ids:
                 errors.append(f"Output references non-existent node {src.node_id}")
+
+        # Validate weight bank references
+        for node in self.nodes:
+            if isinstance(node, NeuralCore) and node.weight_bank_id is not None:
+                if node.weight_bank_id not in self.weight_banks:
+                    errors.append(
+                        f"NeuralCore {node.id} ({node.name}) references "
+                        f"weight_bank_id={node.weight_bank_id} which does not exist"
+                    )
 
         return errors
 
@@ -491,16 +614,22 @@ def ir_source_to_spike_source(ir_source: IRSource):
         return SpikeSource(ir_source.node_id, ir_source.index, is_input=False, is_off=False)
 
 
-def neural_core_to_soft_core(neural_core: NeuralCore):
-    """Convert a NeuralCore to a SoftCore."""
+def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = None):
+    """Convert a NeuralCore to a SoftCore.
+
+    For bank-backed cores ``graph`` must be provided so the weight matrix
+    can be materialized from the referenced ``WeightBank``.
+    """
     from mimarsinan.mapping.softcore_mapping import SoftCore
-    
+
     axon_sources = [
         ir_source_to_spike_source(src) for src in neural_core.input_sources.flatten()
     ]
-    
+
+    core_matrix = neural_core.get_core_matrix(graph)
+
     return SoftCore(
-        core_matrix=neural_core.core_matrix,
+        core_matrix=core_matrix,
         axon_sources=axon_sources,
         id=neural_core.id,
         activation_scale=neural_core.activation_scale,
@@ -518,6 +647,10 @@ def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):
     
     NOTE: This only works for neural-only graphs (no ComputeOp nodes).
     Raises ValueError if the graph contains ComputeOps.
+
+    Bank-backed NeuralCores are materialized (the shared weight matrix is
+    copied into each SoftCore) so downstream packing and codegen see one
+    concrete matrix per core.
     """
     from mimarsinan.mapping.mapping_utils import SoftCoreMapping
     
@@ -528,17 +661,15 @@ def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):
             f"ComputeOp nodes. Use SpikingUnifiedCoreFlow / SpikingHybridCoreFlow for simulation instead."
         )
     
-    # Create an empty SoftCoreMapping and populate it
     soft_core_mapping = SoftCoreMapping()
     
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
-            soft_core = neural_core_to_soft_core(node)
+            soft_core = neural_core_to_soft_core(node, graph=ir_graph)
             soft_core.threshold = node.threshold
             soft_core.latency = node.latency
             soft_core_mapping.cores.append(soft_core)
     
-    # Convert output sources
     soft_core_mapping.output_sources = [
         ir_source_to_spike_source(src) for src in ir_graph.output_sources.flatten()
     ]

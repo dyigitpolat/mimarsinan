@@ -1,6 +1,6 @@
 {
     "pipeline_mode": "phased",
-    "experiment_name": "Y_AQ_cifar10_torch_squeezenet11_pretrained",
+    "experiment_name": "Z_AQ_cifar10_torch_squeezenet11_pretrained",
     "generated_files_path": "./generated",
     "data_provider_name": "CIFAR10_DataProvider",
     "platform_constraints": {
@@ -46,5 +46,5 @@
     },
 
     "target_metric_override": null,
-    "start_step": null
+    "start_step": "Soft Core Mapping"
 }

@@ -33,7 +33,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore
+from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore, WeightBank
 from mimarsinan.mapping.ir_source_spans import IRSourceSpan, compress_ir_sources
 
 
@@ -45,6 +45,12 @@ class SpikingUnifiedCoreFlow(nn.Module):
     Non-neural operations (ComputeOp) act as synchronization points where
     spike counts are converted to rates, the operation is applied, and
     rates are converted back to spikes.
+
+    **Shared-weight optimisation:** When the IR graph contains
+    ``WeightBank``s (e.g. from conv layers), a single ``nn.Parameter`` is
+    registered per bank instead of per core.  Bank-backed cores look up
+    their weight via ``_bank_params`` instead of ``neural_core_params``,
+    avoiding O(h_out * w_out) memory duplication.
     """
 
     _TTFS_SPIKING_MODES = {"ttfs", "ttfs_quantized"}
@@ -77,21 +83,66 @@ class SpikingUnifiedCoreFlow(nn.Module):
         assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
         assert thresholding_mode in ["<", "<="]
 
-        # Register neural core parameters
+        # --- Weight bank parameters (shared across many cores) ----------
+        self._bank_params = nn.ParameterDict()
+        for bank_id, bank in ir_graph.weight_banks.items():
+            # Stored as (neurons, axons) for matmul convenience
+            w = torch.tensor(bank.core_matrix.T, dtype=torch.float32)
+            self._bank_params[str(bank_id)] = nn.Parameter(w, requires_grad=False)
+
+        # --- Per-core parameters (only for cores that OWN their weights) -
         self.neural_core_params = nn.ParameterList()
         self.thresholds = nn.ParameterList()
         self.neural_core_ids = []
 
+        self._id_to_param_idx: Dict[int, int] = {}
+        self._id_to_bank: Dict[int, tuple[str, tuple[int, int] | None]] = {}
+
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                weight = torch.tensor(node.core_matrix.T, dtype=torch.float32)
-                self.neural_core_params.append(nn.Parameter(weight, requires_grad=False))
+                self.neural_core_ids.append(node.id)
                 self.thresholds.append(
                     nn.Parameter(torch.tensor(node.threshold, dtype=torch.float32), requires_grad=False)
                 )
-                self.neural_core_ids.append(node.id)
+                thresh_idx = len(self.thresholds) - 1
 
-        self._id_to_param_idx = {nid: idx for idx, nid in enumerate(self.neural_core_ids)}
+                if node.has_weight_bank():
+                    self._id_to_bank[node.id] = (
+                        str(node.weight_bank_id),
+                        node.weight_row_slice,
+                    )
+                    self._id_to_param_idx[node.id] = thresh_idx
+                else:
+                    weight = torch.tensor(node.core_matrix.T, dtype=torch.float32)
+                    self.neural_core_params.append(nn.Parameter(weight, requires_grad=False))
+                    owned_idx = len(self.neural_core_params) - 1
+                    self._id_to_param_idx[node.id] = thresh_idx
+                    self._id_to_bank[node.id] = None  # type: ignore[assignment]
+
+        # Build fast lookup: node_id -> (owned_param_index | None)
+        self._id_to_owned_param: Dict[int, int] = {}
+        owned_counter = 0
+        for node in self.nodes:
+            if isinstance(node, NeuralCore) and not node.has_weight_bank():
+                self._id_to_owned_param[node.id] = owned_counter
+                owned_counter += 1
+
+        # Build threshold index cache (sequential order of neural cores)
+        self._threshold_idx_cache: Dict[int, int] = {}
+        thresh_counter = 0
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                self._threshold_idx_cache[node.id] = thresh_counter
+                thresh_counter += 1
+
+        # Precompute output dims for each neural core (avoids needing graph at forward time)
+        self._id_to_out_dim: Dict[int, int] = {}
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                self._id_to_out_dim[node.id] = node.get_output_count() if node.core_matrix is not None else (
+                    (node.weight_row_slice[1] - node.weight_row_slice[0]) if node.weight_row_slice else
+                    ir_graph.weight_banks[node.weight_bank_id].core_matrix.shape[1]
+                )
 
         # Identify synchronization points (ComputeOps that break the spiking flow)
         self._sync_points = [i for i, n in enumerate(self.nodes) if isinstance(n, ComputeOp)]
@@ -145,6 +196,32 @@ class SpikingUnifiedCoreFlow(nn.Module):
         if self.spike_mode == "Uniform":
             return self.to_uniform_spikes(tensor, cycle)
         raise ValueError("Invalid spike mode: " + str(self.spike_mode))
+
+    # -----------------------------------------------------------------
+    # Weight resolution
+    # -----------------------------------------------------------------
+    def _get_weight(self, node: NeuralCore) -> torch.Tensor:
+        """Return the (neurons, axons) weight tensor for *node*.
+
+        For owned-weight cores this indexes ``neural_core_params``.
+        For bank-backed cores this slices from ``_bank_params``.
+        """
+        bank_info = self._id_to_bank.get(node.id)
+        if bank_info is not None:
+            bank_key, row_slice = bank_info
+            w = self._bank_params[bank_key]  # (neurons_full, axons)
+            if row_slice is not None:
+                start, end = row_slice
+                w = w[start:end, :]
+            return w
+
+        owned_idx = self._id_to_owned_param[node.id]
+        return self.neural_core_params[owned_idx]
+
+    def _get_threshold_idx(self, node: NeuralCore) -> int:
+        """Return the index into ``self.thresholds`` for *node*."""
+        # Thresholds are appended in node order; use a sequential scan cache.
+        return self._threshold_idx_cache[node.id]
 
     # -----------------------------------------------------------------
     # TTFS helpers
@@ -260,13 +337,13 @@ class SpikingUnifiedCoreFlow(nn.Module):
 
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                param_idx = self._id_to_param_idx[node.id]
-                weight = self.neural_core_params[param_idx]  # (neurons, axons)
-                threshold = self.thresholds[param_idx]
+                weight = self._get_weight(node)  # (neurons, axons)
+                t_idx = self._get_threshold_idx(node)
+                threshold = self.thresholds[t_idx]
 
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
-                out_dim = int(node.core_matrix.shape[1])
+                out_dim = self._id_to_out_dim[node.id]
 
                 memb = torch.zeros(batch_size, out_dim, device=device)
                 out_train = torch.zeros(T, batch_size, out_dim, device=device)
@@ -274,7 +351,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 total_spikes = 0.0
 
                 for cycle in range(T):
-                    # Range-based gather (fast path)
                     self._fill_signal_tensor_from_spans(
                         inp,
                         spike_train_cache=spike_train_cache,
@@ -296,11 +372,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
                         memb[fired] -= threshold
 
                 spike_train_cache[node.id] = out_train
-                # Store average spike rate per neuron per timestep
                 self._last_core_spike_counts[node.id] = total_spikes / (batch_size * out_dim * T + 1e-9)
 
             elif isinstance(node, ComputeOp):
-                # SYNC BARRIER: convert upstream spikes -> rates, apply op, respike.
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
                 in_rates = torch.zeros(batch_size, in_dim, device=device)
@@ -404,9 +478,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
 
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                param_idx = self._id_to_param_idx[node.id]
-                weight = self.neural_core_params[param_idx]
-                threshold = self.thresholds[param_idx]
+                weight = self._get_weight(node)
+                t_idx = self._get_threshold_idx(node)
+                threshold = self.thresholds[t_idx]
 
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
@@ -429,7 +503,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
             else:
                 raise TypeError(f"Unknown node type: {type(node)}")
 
-        # Gather output activations
         output_sources = list(self.output_sources.flatten())
         output_signals = torch.zeros(batch_size, len(output_sources), device=device)
         self._fill_activation_from_ir_spans(
@@ -468,9 +541,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
 
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                param_idx = self._id_to_param_idx[node.id]
-                weight = self.neural_core_params[param_idx]
-                threshold = self.thresholds[param_idx]
+                weight = self._get_weight(node)
+                t_idx = self._get_threshold_idx(node)
+                threshold = self.thresholds[t_idx]
 
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
@@ -553,8 +626,8 @@ class SpikingUnifiedCoreFlow(nn.Module):
         """
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                param_idx = self._id_to_param_idx[node.id]
-                self.thresholds[param_idx].data.fill_(float(node.threshold))
+                t_idx = self._get_threshold_idx(node)
+                self.thresholds[t_idx].data.fill_(float(node.threshold))
 
 
 class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
@@ -622,13 +695,13 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
 
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                param_idx = self._id_to_param_idx[node.id]
-                weight = self.neural_core_params[param_idx]
-                threshold = self.thresholds[param_idx]
+                weight = self._get_weight(node)
+                t_idx = self._get_threshold_idx(node)
+                threshold = self.thresholds[t_idx]
 
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
-                out_dim = int(node.core_matrix.shape[1])
+                out_dim = self._id_to_out_dim[node.id]
 
                 memb = torch.zeros(batch_size, out_dim, device=device)
                 out_train = torch.zeros(T, batch_size, out_dim, device=device)
@@ -657,11 +730,9 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
                         memb[fired] -= threshold
 
                 spike_train_cache[node.id] = out_train
-                # Store average spike rate per neuron per timestep
                 self._last_core_spike_counts[node.id] = total_spikes / (batch_size * out_dim * T + 1e-9)
 
             elif isinstance(node, ComputeOp):
-                # Same sync barrier logic as parent
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
                 in_rates = torch.zeros(batch_size, in_dim, device=device)

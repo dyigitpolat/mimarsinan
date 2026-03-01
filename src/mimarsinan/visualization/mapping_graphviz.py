@@ -254,8 +254,9 @@ def write_ir_graph_summary_dot(
             for n in nodes:
                 if not isinstance(n, NeuralCore):
                     continue
-                ax = int(n.core_matrix.shape[0])
-                neu = int(n.core_matrix.shape[1])
+                _mat = n.get_core_matrix(ir_graph)
+                ax = int(_mat.shape[0])
+                neu = int(_mat.shape[1])
                 shapes[(ax, neu)] = shapes.get((ax, neu), 0) + 1
                 if n.psum_role is not None:
                     roles[str(n.psum_role)] = roles.get(str(n.psum_role), 0) + 1
@@ -519,9 +520,10 @@ def write_ir_graph_dot(
     for node in ir_graph.nodes:
         nid = f"n{int(node.id)}"
         if isinstance(node, NeuralCore):
-            ax = int(node.core_matrix.shape[0])
-            neu = int(node.core_matrix.shape[1])
-            nnz = int(np.count_nonzero(node.core_matrix))
+            _mat = node.get_core_matrix(ir_graph)
+            ax = int(_mat.shape[0])
+            neu = int(_mat.shape[1])
+            nnz = int(np.count_nonzero(_mat))
             total = int(ax * neu)
             rows = [
                 ("id", str(node.id)),
