@@ -11,6 +11,7 @@ class AdaptationManager(nn.Module):
         self.shift_rate = 0.0
         self.quantization_rate = 0.0
         self.scale_rate = 0.0
+        self.pruning_rate = 0.0
 
         self.noise_rate = 0.0
 

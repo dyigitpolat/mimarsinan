@@ -6,6 +6,7 @@ from .activation_analysis_step import ActivationAnalysisStep
 from .clamp_adaptation_step import ClampAdaptationStep
 from .activation_shift_step import ActivationShiftStep
 from .activation_quantization_step import ActivationQuantizationStep
+from .pruning_adaptation_step import PruningAdaptationStep
 from .weight_quantization_step import WeightQuantizationStep
 from .quantization_verification_step import QuantizationVerificationStep
 from .normalization_fusion_step import NormalizationFusionStep
@@ -16,3 +17,4 @@ from .hard_core_mapping_step import HardCoreMappingStep
 from .simulation_step import SimulationStep
 from .torch_mapping_step import TorchMappingStep
 from .weight_preloading_step import WeightPreloadingStep
+

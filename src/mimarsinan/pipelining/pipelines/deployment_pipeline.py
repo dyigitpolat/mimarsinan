@@ -43,6 +43,10 @@ _ACTIVATION_QUANTIZATION_STEPS: list[tuple[str, type]] = [
     ("Activation Quantization",   ActivationQuantizationStep),
 ]
 
+_PRUNING_STEPS: list[tuple[str, type]] = [
+    ("Pruning Adaptation",        PruningAdaptationStep),
+]
+
 _WEIGHT_QUANTIZATION_STEPS: list[tuple[str, type]] = [
     ("Weight Quantization",       WeightQuantizationStep),
     ("Quantization Verification", QuantizationVerificationStep),
@@ -178,6 +182,8 @@ class DeploymentPipeline(Pipeline):
         spiking = self.config.get("spiking_mode", "rate")
         act_q = self.config.get("activation_quantization", False)
         wt_q = self.config.get("weight_quantization", False)
+        pruning = self.config.get("pruning", False)
+        pruning_fraction = float(self.config.get("pruning_fraction", 0.0))
 
         # ── Configuration ───────────────────────────────────────────────
         if config_mode == "nas":
@@ -207,6 +213,11 @@ class DeploymentPipeline(Pipeline):
         # ── Activation Quantization ─────────────────────────────────────
         if act_q:
             for name, cls in _ACTIVATION_QUANTIZATION_STEPS:
+                self.add_pipeline_step(name, cls(self))
+
+        # ── Pruning ─────────────────────────────────────────────────────
+        if pruning and pruning_fraction > 0:
+            for name, cls in _PRUNING_STEPS:
                 self.add_pipeline_step(name, cls(self))
 
         # ── Weight Quantization ─────────────────────────────────────────

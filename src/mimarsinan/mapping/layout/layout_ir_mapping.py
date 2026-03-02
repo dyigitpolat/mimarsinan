@@ -30,6 +30,7 @@ class LayoutIRMapping:
     allow_axon_tiling: bool = False
     threshold_groups: int = 1
     threshold_seed: int = 0
+    pruning_fraction: float = 0.0
 
     def __post_init__(self):
         self.max_axons = int(self.max_axons)
@@ -215,6 +216,8 @@ class LayoutIRMapping:
         parameter_scale=None,
         input_activation_scale=None,
         name: Optional[str] = None,
+        normalization_type: Optional[str] = None,
+        activation_type: Optional[str] = None,
     ) -> np.ndarray:
         # Only shapes matter
         out_features = int(getattr(fc_weights, "shape", [0, 0])[0])
@@ -296,7 +299,33 @@ class LayoutIRMapping:
 
         After the graph is fully built the latency tags and threshold groups are
         computed and assigned.
+
+        If ``pruning_fraction > 0``, applies 80% of the user-provided fraction
+        as a random dimension reduction to each softcore to estimate post-pruning
+        core sizes (overestimating actual sizes for safety).
         """
         _ = model_representation.map_to_ir(self)
         self._finalize_softcores()
-        return list(self.layout_softcores)
+
+        softcores = list(self.layout_softcores)
+
+        # Apply pruning estimation
+        if self.pruning_fraction > 0:
+            effective = self.pruning_fraction * 0.8
+            rng = random.Random(self.threshold_seed + 7919)  # distinct from threshold RNG
+            pruned = []
+            for sc in softcores:
+                in_reduce = int(math.floor(sc.input_count * effective))
+                out_reduce = int(math.floor(sc.output_count * effective))
+                new_in = max(1, sc.input_count - in_reduce)
+                new_out = max(1, sc.output_count - out_reduce)
+                pruned.append(LayoutSoftCoreSpec(
+                    input_count=new_in,
+                    output_count=new_out,
+                    threshold_group_id=sc.threshold_group_id,
+                    latency_tag=sc.latency_tag,
+                    name=sc.name,
+                ))
+            softcores = pruned
+
+        return softcores

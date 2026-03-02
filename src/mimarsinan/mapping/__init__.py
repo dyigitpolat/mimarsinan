@@ -20,3 +20,5 @@ from mimarsinan.mapping.hybrid_hardcore_mapping import (
 from mimarsinan.mapping.chip_latency import ChipLatency
 from mimarsinan.mapping.ir_latency import IRLatency
 from mimarsinan.mapping.per_source_scales import compute_per_source_scales
+from mimarsinan.mapping.ir_pruning import prune_ir_graph
+

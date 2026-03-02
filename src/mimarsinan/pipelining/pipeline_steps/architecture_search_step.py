@@ -539,6 +539,7 @@ class ArchitectureSearchStep(PipelineStep):
             extrapolation_num_train_epochs=extrapolation_num_train_epochs,
             extrapolation_num_checkpoints=extrapolation_num_checkpoints,
             extrapolation_target_epochs=extrapolation_target_epochs,
+            pruning_fraction=float(self.pipeline.config.get("pruning_fraction", 0.0)),
         )
 
         optimizer = _create_optimizer(

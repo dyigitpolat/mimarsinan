@@ -55,10 +55,13 @@ class PerceptronTransformTrainer(BasicTrainer):
     def _transfer_gradients_to_aux(self):
         for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
             if aux_param.requires_grad and param.grad is not None:
+                grad = param.grad.clone()
+                # Replace NaN/Inf gradients with zero to prevent aux_model corruption
+                grad = torch.nan_to_num(grad, nan=0.0, posinf=0.0, neginf=0.0)
                 if aux_param.grad is None:
-                    aux_param.grad = param.grad.clone()
-                
-                aux_param.grad.copy_(param.grad.clone())
+                    aux_param.grad = grad
+                else:
+                    aux_param.grad.copy_(grad)
 
     def _backward_pass_on_loss(self, x, y, scaler):
         with torch.no_grad():

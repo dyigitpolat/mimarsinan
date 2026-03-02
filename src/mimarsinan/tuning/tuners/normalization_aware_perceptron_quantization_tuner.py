@@ -37,7 +37,13 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     #         + (1 - rate) * prev_param
 
     def _update_and_evaluate(self, rate):
-        self.trainer.train_one_step(0)
+        # Apply the current perceptron transformation to self.model (from
+        # aux_model) WITHOUT running an optimizer step.  The old approach
+        # used train_one_step(lr=0), but PyTorch Adam corrupts parameters
+        # when gradients contain NaN even at lr=0.
+        import torch
+        with torch.no_grad():
+            self.trainer._update_and_transform_model()
         return self.trainer.validate()
 
     def run(self):

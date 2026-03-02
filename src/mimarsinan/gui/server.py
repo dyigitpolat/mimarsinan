@@ -9,12 +9,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 if TYPE_CHECKING:
@@ -25,8 +26,46 @@ logger = logging.getLogger("mimarsinan.gui")
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
+class _SafeJSONEncoder(json.JSONEncoder):
+    """JSON encoder that converts NaN / Inf to ``null``."""
+
+    def default(self, o: Any) -> Any:  # noqa: D401
+        return super().default(o)
+
+    def encode(self, o: Any) -> str:
+        return super().encode(_sanitize(o))
+
+
+def _sanitize(obj: Any) -> Any:
+    """Recursively replace non-finite floats with ``None``."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
+class _SafeJSONResponse(JSONResponse):
+    """JSONResponse that silently converts NaN/Inf to null."""
+
+    def render(self, content: Any) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            cls=_SafeJSONEncoder,
+        ).encode("utf-8")
+
+
 def create_app(collector: DataCollector) -> FastAPI:
-    app = FastAPI(title="Mimarsinan Pipeline Monitor", docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="Mimarsinan Pipeline Monitor",
+        docs_url=None,
+        redoc_url=None,
+        default_response_class=_SafeJSONResponse,
+    )
 
     @app.middleware("http")
     async def _no_cache_static(request: Request, call_next):

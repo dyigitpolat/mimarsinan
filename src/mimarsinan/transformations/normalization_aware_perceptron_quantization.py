@@ -22,6 +22,9 @@ class NormalizationAwarePerceptronQuantization:
         b_max = torch.max(torch.abs(b))
         p_max = max(w_max, b_max)
 
+        # Guard against zero/near-zero p_max (e.g. after pruning zeroes weights)
+        p_max = max(p_max, 1e-12)
+
         scale = self.q_max * (1.0 / p_max)
 
         # do magick here:
