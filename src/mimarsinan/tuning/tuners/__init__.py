@@ -14,3 +14,5 @@ from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
 from mimarsinan.tuning.tuners.perceptron_transform_tuner import (
     PerceptronTransformTuner,
 )
+from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+

@@ -108,6 +108,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     extrapolation_num_train_epochs: int = 1
     extrapolation_num_checkpoints: int = 5
     extrapolation_target_epochs: int = 10
+    pruning_fraction: float = 0.0
 
     _cache: Dict[str, Dict[str, float]] = field(default_factory=dict, init=False)
 
@@ -295,6 +296,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
                 allow_axon_tiling=bool(pcfg.get("allow_axon_tiling", False)),
                 threshold_groups=threshold_groups,
                 threshold_seed=int(self.accuracy_seed),
+                pruning_fraction=float(self.pruning_fraction),
             )
             softcores = layout_mapper.collect_layout_softcores(model.get_mapper_repr())
 

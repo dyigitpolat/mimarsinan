@@ -150,3 +150,4 @@ wandb/
 
 # scratch main
 scratch_main.py
+data/

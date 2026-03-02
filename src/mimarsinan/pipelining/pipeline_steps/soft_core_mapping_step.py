@@ -171,6 +171,12 @@ class SoftCoreMappingStep(PipelineStep):
         # Calculate latencies for all neural cores in the IR graph
         max_latency = IRLatency(ir_graph).calculate()
         print(f"[SoftCoreMappingStep] IR Graph max latency: {max_latency}")
+
+        # Compact the IR graph by removing zeroed rows/columns when pruning was applied
+        if self.pipeline.config.get("pruning", False):
+            from mimarsinan.mapping.ir_pruning import prune_ir_graph
+            ir_graph = prune_ir_graph(ir_graph)
+            print(f"[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
         
         self.add_entry("ir_graph", ir_graph, 'pickle')
 

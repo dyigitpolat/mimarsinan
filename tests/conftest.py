@@ -206,6 +206,7 @@ def default_config():
         "target_tq": 4,
         "weight_bits": 8,
         "training_epochs": 1,
+        "tuner_epochs": 1,
         "lr": 0.001,
         "weight_quantization": False,
         "activation_quantization": False,
@@ -214,6 +215,8 @@ def default_config():
         "firing_mode": "Default",
         "spike_generation_mode": "Deterministic",
         "max_simulation_samples": -1,
+        "input_shape": (1, 8, 8),
+        "num_classes": 4,
     }
 
 

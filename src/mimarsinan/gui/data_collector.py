@@ -230,6 +230,19 @@ class DataCollector:
 
     def _broadcast(self, message: dict) -> None:
         import asyncio
+        import math
+
+        def _ws_sanitize(obj):
+            """Recursively replace non-finite floats with None."""
+            if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+                return None
+            if isinstance(obj, dict):
+                return {k: _ws_sanitize(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_ws_sanitize(v) for v in obj]
+            return obj
+
+        safe_message = _ws_sanitize(message)
 
         with self._lock:
             listeners = list(self._ws_listeners)
@@ -239,7 +252,7 @@ class DataCollector:
                 loop = ws._loop if hasattr(ws, "_loop") else None
                 if loop is not None and loop.is_running():
                     asyncio.run_coroutine_threadsafe(
-                        ws.send_json(message), loop
+                        ws.send_json(safe_message), loop
                     )
                 else:
                     dead.append(ws)
@@ -254,13 +267,22 @@ class DataCollector:
 
 
 def _to_json_safe(value: Any) -> Any:
-    """Convert tensors / numpy values to plain Python types."""
+    """Convert tensors / numpy values to plain Python types.
+
+    Also replaces NaN/Inf with ``None`` so the result is always
+    JSON-serialisable.
+    """
+    import math
+
     if hasattr(value, "item"):
-        return value.item()
-    if hasattr(value, "tolist"):
-        return value.tolist()
+        value = value.item()
+    elif hasattr(value, "tolist"):
+        value = value.tolist()
+
     try:
-        float(value)
-        return float(value)
+        f = float(value)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return f
     except (TypeError, ValueError):
         return str(value)

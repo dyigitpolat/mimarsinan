@@ -1,74 +1,89 @@
 {
   "seed": 32,
   "pipeline_mode": "phased",
-  "experiment_name": "X_AQ_gui_mnist_arch_search_nsga2_ttfs",
+  "experiment_name": "0X_AQ_gui_mnist_arch_search_nsga2_ttfs",
   "generated_files_path": "./generated",
   "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
   "data_provider_name": "MNIST_DataProvider",
-
   "platform_constraints": {
     "mode": "auto",
     "auto": {
       "fixed": {
-        "target_tq": 8,
-        "simulation_steps": 8,
+        "target_tq": 32,
+        "simulation_steps": 32,
         "weight_bits": 8,
         "allow_axon_tiling": false
       },
       "search_space": {
         "num_core_types": 2,
-        "core_type_counts": [200, 200],
-        "core_axons_bounds": [64, 1024],
-        "core_neurons_bounds": [64, 1024],
+        "core_type_counts": [
+          200,
+          200
+        ],
+        "core_axons_bounds": [
+          64,
+          1024
+        ],
+        "core_neurons_bounds": [
+          64,
+          1024
+        ],
         "max_threshold_groups": 3
       }
     }
   },
-
   "deployment_parameters": {
     "lr": 0.001,
     "training_epochs": 10,
-    "tuner_epochs": 1,
+    "tuner_epochs": 5,
     "nas_cycles": 5,
     "nas_batch_size": 5,
     "nas_workers": 1,
-
     "degradation_tolerance": 0.1,
-
     "configuration_mode": "nas",
     "model_type": "mlp_mixer",
-
     "arch_search": {
       "pop_size": 8,
       "generations": 5,
       "seed": 32,
-
-      "patch_channels_options": [16, 32, 48, 64, 96, 128],
-      "fc_w1_options": [32, 64, 96, 128],
-      "fc_w2_options": [32, 64, 96, 128],
-
+      "patch_channels_options": [
+        16,
+        32,
+        48,
+        64,
+        96,
+        128
+      ],
+      "fc_w1_options": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "fc_w2_options": [
+        32,
+        64,
+        96,
+        128
+      ],
       "warmup_fraction": 0.1,
       "training_batch_size": 1024,
-
       "accuracy_evaluator": "extrapolating",
       "extrapolation_num_train_epochs": 1,
       "extrapolation_num_checkpoints": 5,
       "extrapolation_target_epochs": 10
     },
-
     "spiking_mode": "ttfs_quantized",
-    "weight_quantization": false,
+    "weight_quantization": true,
     "activation_quantization": true,
-
     "spike_generation_mode": "TTFS",
     "firing_mode": "TTFS",
     "thresholding_mode": "<=",
-
-    "max_simulation_samples": 100
+    "max_simulation_samples": 100,
+    "pruning": true,
+    "pruning_fraction": 0.05
   },
-
-  "target_metric_override": null,
-  "start_step": null,
+  "target_metric_override": 0.95,
+  "start_step": "Pruning Adaptation",
   "stop_step": null
 }
-

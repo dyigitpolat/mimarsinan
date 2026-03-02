@@ -1,4 +1,4 @@
-"""Model transformations: weight quantization, normalization fusion, perceptron transforms."""
+"""Model transformations: weight quantization, normalization fusion, perceptron transforms, pruning."""
 
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 from mimarsinan.transformations.weight_quantization import TensorQuantization
@@ -6,3 +6,5 @@ from mimarsinan.transformations.normalization_aware_perceptron_quantization impo
     NormalizationAwarePerceptronQuantization,
 )
 from mimarsinan.transformations.transformation_utils import transform_np_array
+from mimarsinan.transformations.pruning import compute_pruning_masks, apply_pruning_masks
+
