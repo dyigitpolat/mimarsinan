@@ -1,12 +1,5 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.visualization.hardcore_visualization import HardCoreMappingVisualizer
-from mimarsinan.visualization.mapping_graphviz import (
-    try_render_dot,
-    write_hybrid_hardcore_mapping_dots,
-    write_hybrid_hardcore_mapping_combined_dot,
-)
-
 from mimarsinan.mapping.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
 )
@@ -73,48 +66,56 @@ class HardCoreMappingStep(PipelineStep):
             print(f"[HardCoreMappingStep] Hard-core simulation test failed (non-fatal): {e}")
 
         # Visualize the hybrid program (stage-level) + each neural segment's HardCoreMapping.
-        try:
-            artifacts = write_hybrid_hardcore_mapping_dots(
-                hybrid_mapping,
-                self.pipeline.working_directory,
-                basename="hybrid_hardcore_mapping",
-            )
+        if self.pipeline.config.get("generate_visualizations", False):
+          try:
+              from mimarsinan.visualization.hardcore_visualization import HardCoreMappingVisualizer
+              from mimarsinan.visualization.mapping_graphviz import (
+                  try_render_dot,
+                  write_hybrid_hardcore_mapping_dots,
+                  write_hybrid_hardcore_mapping_combined_dot,
+              )
 
-            # Also emit per-segment weight heatmaps for quick inspection.
-            heatmaps = []
-            for i, seg in enumerate(hybrid_mapping.get_neural_segments()):
-                heat_path = self.pipeline.working_directory + f"/hybrid_segment{i}_hardcore_heatmap.png"
-                HardCoreMappingVisualizer(seg).visualize(heat_path)
-                heatmaps.append(heat_path)
+              artifacts = write_hybrid_hardcore_mapping_dots(
+                  hybrid_mapping,
+                  self.pipeline.working_directory,
+                  basename="hybrid_hardcore_mapping",
+              )
 
-            rendered = try_render_dot(artifacts.program_dot, formats=("svg", "png"))
-            if rendered:
-                print(f"[HardCoreMappingStep] Wrote hybrid program visualization: {artifacts.program_dot} (+ {', '.join(rendered)})")
-            else:
-                print(f"[HardCoreMappingStep] Wrote hybrid program visualization: {artifacts.program_dot} (render skipped: graphviz 'dot' not found)")
+              # Also emit per-segment weight heatmaps for quick inspection.
+              heatmaps = []
+              for i, seg in enumerate(hybrid_mapping.get_neural_segments()):
+                  heat_path = self.pipeline.working_directory + f"/hybrid_segment{i}_hardcore_heatmap.png"
+                  HardCoreMappingVisualizer(seg).visualize(heat_path)
+                  heatmaps.append(heat_path)
 
-            segment_pngs = []
-            for i, seg_dot in enumerate(artifacts.segment_dots):
-                rendered_seg = try_render_dot(seg_dot, formats=("svg", "png"))
-                if rendered_seg:
-                    print(f"[HardCoreMappingStep] Wrote hybrid segment {i} visualization: {seg_dot} (+ {', '.join(rendered_seg)})")
-                else:
-                    print(f"[HardCoreMappingStep] Wrote hybrid segment {i} visualization: {seg_dot} (render skipped: graphviz 'dot' not found)")
-                segment_pngs.append(os.path.splitext(seg_dot)[0] + ".png")
+              rendered = try_render_dot(artifacts.program_dot, formats=("svg", "png"))
+              if rendered:
+                  print(f"[HardCoreMappingStep] Wrote hybrid program visualization: {artifacts.program_dot} (+ {', '.join(rendered)})")
+              else:
+                  print(f"[HardCoreMappingStep] Wrote hybrid program visualization: {artifacts.program_dot} (render skipped: graphviz 'dot' not found)")
 
-            # Combined overview (program connectivity + ComputeOps + thumbnails: connectivity + heatmaps).
-            combined_dot = self.pipeline.working_directory + "/hybrid_hardcore_mapping_combined.dot"
-            write_hybrid_hardcore_mapping_combined_dot(
-                hybrid_mapping,
-                combined_dot,
-                segment_graph_pngs=segment_pngs,
-                segment_heatmap_pngs=heatmaps,
-                title=f"Hybrid mapping: {getattr(model, 'name', type(model).__name__)}",
-            )
-            rendered_combined = try_render_dot(combined_dot, formats=("svg", "png"))
-            if rendered_combined:
-                print(f"[HardCoreMappingStep] Wrote hybrid combined overview: {combined_dot} (+ {', '.join(rendered_combined)})")
-            else:
-                print(f"[HardCoreMappingStep] Wrote hybrid combined overview: {combined_dot} (render skipped: graphviz 'dot' not found)")
-        except Exception as e:
-            print(f"[HardCoreMappingStep] Hybrid mapping visualization failed (non-fatal): {e}")
+              segment_pngs = []
+              for i, seg_dot in enumerate(artifacts.segment_dots):
+                  rendered_seg = try_render_dot(seg_dot, formats=("svg", "png"))
+                  if rendered_seg:
+                      print(f"[HardCoreMappingStep] Wrote hybrid segment {i} visualization: {seg_dot} (+ {', '.join(rendered_seg)})")
+                  else:
+                      print(f"[HardCoreMappingStep] Wrote hybrid segment {i} visualization: {seg_dot} (render skipped: graphviz 'dot' not found)")
+                  segment_pngs.append(os.path.splitext(seg_dot)[0] + ".png")
+
+              # Combined overview (program connectivity + ComputeOps + thumbnails: connectivity + heatmaps).
+              combined_dot = self.pipeline.working_directory + "/hybrid_hardcore_mapping_combined.dot"
+              write_hybrid_hardcore_mapping_combined_dot(
+                  hybrid_mapping,
+                  combined_dot,
+                  segment_graph_pngs=segment_pngs,
+                  segment_heatmap_pngs=heatmaps,
+                  title=f"Hybrid mapping: {getattr(model, 'name', type(model).__name__)}",
+              )
+              rendered_combined = try_render_dot(combined_dot, formats=("svg", "png"))
+              if rendered_combined:
+                  print(f"[HardCoreMappingStep] Wrote hybrid combined overview: {combined_dot} (+ {', '.join(rendered_combined)})")
+              else:
+                  print(f"[HardCoreMappingStep] Wrote hybrid combined overview: {combined_dot} (render skipped: graphviz 'dot' not found)")
+          except Exception as e:
+              print(f"[HardCoreMappingStep] Hybrid mapping visualization failed (non-fatal): {e}")

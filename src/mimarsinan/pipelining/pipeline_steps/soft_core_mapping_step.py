@@ -46,31 +46,29 @@ class SoftCoreMappingStep(PipelineStep):
             if isinstance(perceptron.layer, FusedLinear):
                 perceptron.layer = self.bring_back_bias(perceptron.layer)
 
-        # Always emit a mapper/hardware flowchart for debugging, even if mapping will fail
-        # later due to unsupported non-spiking ops (e.g., pooling).
-        try:
-            from mimarsinan.visualization.softcore_flowchart import write_softcore_flowchart_dot
+        if self.pipeline.config.get("generate_visualizations", False):
+          # Emit a mapper/hardware flowchart for debugging.
+          try:
+              from mimarsinan.visualization.softcore_flowchart import write_softcore_flowchart_dot
 
-            # Use the model's actual parameter device for the dummy forward trace.
-            # Pipeline config may be CUDA even if the cached model is currently on CPU.
-            try:
-                flowchart_device = next(model.parameters()).device
-            except StopIteration:
-                flowchart_device = self.pipeline.config["device"]
+              try:
+                  flowchart_device = next(model.parameters()).device
+              except StopIteration:
+                  flowchart_device = self.pipeline.config["device"]
 
-            out_dot = os.path.join(self.pipeline.working_directory, "softcore_flowchart.dot")
-            write_softcore_flowchart_dot(
-                model.get_mapper_repr(),
-                out_dot,
-                input_shape=tuple(self.pipeline.config["input_shape"]),
-                max_axons=int(resolved_max_axons),
-                max_neurons=int(resolved_max_neurons),
-                allow_axon_tiling=resolved_allow_axon_tiling,
-                device=flowchart_device,
-            )
-            print(f"[SoftCoreMappingStep] Wrote flowchart DOT: {out_dot}")
-        except Exception as e:
-            print(f"[SoftCoreMappingStep] Flowchart generation failed (non-fatal): {e}")
+              out_dot = os.path.join(self.pipeline.working_directory, "softcore_flowchart.dot")
+              write_softcore_flowchart_dot(
+                  model.get_mapper_repr(),
+                  out_dot,
+                  input_shape=tuple(self.pipeline.config["input_shape"]),
+                  max_axons=int(resolved_max_axons),
+                  max_neurons=int(resolved_max_neurons),
+                  allow_axon_tiling=resolved_allow_axon_tiling,
+                  device=flowchart_device,
+              )
+              print(f"[SoftCoreMappingStep] Wrote flowchart DOT: {out_dot}")
+          except Exception as e:
+              print(f"[SoftCoreMappingStep] Flowchart generation failed (non-fatal): {e}")
         
         validator = BasicTrainer(
             model, 
@@ -180,47 +178,46 @@ class SoftCoreMappingStep(PipelineStep):
         
         self.add_entry("ir_graph", ir_graph, 'pickle')
 
-        # Write IRGraph visualizations.  For large graphs (>500 nodes) only
-        # the compact summary is rendered; the full per-node DOT is written
-        # but not passed through graphviz (which can take minutes on 1000+ nodes).
-        try:
-            from mimarsinan.visualization.mapping_graphviz import (
-                try_render_dot,
-                write_ir_graph_dot,
-                write_ir_graph_summary_dot,
-            )
+        if self.pipeline.config.get("generate_visualizations", False):
+          # Write IRGraph visualizations.
+          try:
+              from mimarsinan.visualization.mapping_graphviz import (
+                  try_render_dot,
+                  write_ir_graph_dot,
+                  write_ir_graph_summary_dot,
+              )
 
-            node_count = len(ir_graph.nodes)
-            large_graph = node_count > 500
+              node_count = len(ir_graph.nodes)
+              large_graph = node_count > 500
 
-            out_dot = os.path.join(self.pipeline.working_directory, "ir_graph.dot")
-            write_ir_graph_dot(
-                ir_graph,
-                out_dot,
-                title=f"IRGraph: {getattr(model, 'name', type(model).__name__)}",
-            )
-            if large_graph:
-                print(f"[SoftCoreMappingStep] Wrote IRGraph DOT: {out_dot} (render skipped: {node_count} nodes)")
-            else:
-                rendered = try_render_dot(out_dot, formats=("svg", "png"))
-                if rendered:
-                    print(f"[SoftCoreMappingStep] Wrote IRGraph visualization: {out_dot} (+ {', '.join(rendered)})")
-                else:
-                    print(f"[SoftCoreMappingStep] Wrote IRGraph visualization: {out_dot} (render skipped: graphviz 'dot' not found)")
+              out_dot = os.path.join(self.pipeline.working_directory, "ir_graph.dot")
+              write_ir_graph_dot(
+                  ir_graph,
+                  out_dot,
+                  title=f"IRGraph: {getattr(model, 'name', type(model).__name__)}",
+              )
+              if large_graph:
+                  print(f"[SoftCoreMappingStep] Wrote IRGraph DOT: {out_dot} (render skipped: {node_count} nodes)")
+              else:
+                  rendered = try_render_dot(out_dot, formats=("svg", "png"))
+                  if rendered:
+                      print(f"[SoftCoreMappingStep] Wrote IRGraph visualization: {out_dot} (+ {', '.join(rendered)})")
+                  else:
+                      print(f"[SoftCoreMappingStep] Wrote IRGraph visualization: {out_dot} (render skipped: graphviz 'dot' not found)")
 
-            out_sum = os.path.join(self.pipeline.working_directory, "ir_graph_summary.dot")
-            write_ir_graph_summary_dot(
-                ir_graph,
-                out_sum,
-                title=f"IRGraph: {getattr(model, 'name', type(model).__name__)}",
-            )
-            rendered_sum = try_render_dot(out_sum, formats=("svg", "png"))
-            if rendered_sum:
-                print(f"[SoftCoreMappingStep] Wrote IRGraph summary: {out_sum} (+ {', '.join(rendered_sum)})")
-            else:
-                print(f"[SoftCoreMappingStep] Wrote IRGraph summary: {out_sum} (render skipped: graphviz 'dot' not found)")
-        except Exception as e:
-            print(f"[SoftCoreMappingStep] IRGraph visualization failed (non-fatal): {e}")
+              out_sum = os.path.join(self.pipeline.working_directory, "ir_graph_summary.dot")
+              write_ir_graph_summary_dot(
+                  ir_graph,
+                  out_sum,
+                  title=f"IRGraph: {getattr(model, 'name', type(model).__name__)}",
+              )
+              rendered_sum = try_render_dot(out_sum, formats=("svg", "png"))
+              if rendered_sum:
+                  print(f"[SoftCoreMappingStep] Wrote IRGraph summary: {out_sum} (+ {', '.join(rendered_sum)})")
+              else:
+                  print(f"[SoftCoreMappingStep] Wrote IRGraph summary: {out_sum} (render skipped: graphviz 'dot' not found)")
+          except Exception as e:
+              print(f"[SoftCoreMappingStep] IRGraph visualization failed (non-fatal): {e}")
         
         # Log summary
         compute_ops = ir_graph.get_compute_ops()
