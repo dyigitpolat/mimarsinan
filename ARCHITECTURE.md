@@ -1416,7 +1416,7 @@ Module dependency rules:
 3. Implement `get_perceptrons()`, `get_perceptron_groups()`, `get_mapper_repr()`
 4. Create a builder in `models/builders/` with a `build(configuration)` method
 5. Register the builder in the architecture search step if using NAS
-6. Use `normalization=nn.Identity()` for `Perceptron`s where normalization is handled externally (e.g., via `LayerNormMapper`); only use `use_batchnorm=True` where BatchNorm fusion (§5.10) is desired
+6. Use `normalization=nn.Identity()` for `Perceptron`s where normalization is handled externally (e.g., via `LayerNormMapper`); only use `use_batchnorm=True` where BatchNorm fusion (§5.12) is desired
 
 ### Adding a Native PyTorch Model (torch_mapping)
 
