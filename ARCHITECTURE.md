@@ -23,14 +23,15 @@
    - [Input Activation Analysis](#56-input-activation-analysis)
    - [Activation Shifting](#57-activation-shifting)
    - [Activation Quantization](#58-activation-quantization)
-   - [Weight Quantization](#59-weight-quantization)
-   - [Quantization Verification](#510-quantization-verification)
-   - [Normalization Fusion](#511-normalization-fusion)
-   - [Soft Core Mapping](#512-soft-core-mapping)
-   - [Core Quantization Verification](#513-core-quantization-verification)
-   - [CoreFlow Tuning](#514-coreflow-tuning)
-   - [Hard Core Mapping](#515-hard-core-mapping)
-   - [Simulation](#516-simulation)
+   - [Pruning Adaptation](#59-pruning-adaptation)
+   - [Weight Quantization](#510-weight-quantization)
+   - [Quantization Verification](#511-quantization-verification)
+   - [Normalization Fusion](#512-normalization-fusion)
+   - [Soft Core Mapping](#513-soft-core-mapping)
+   - [Core Quantization Verification](#514-core-quantization-verification)
+   - [CoreFlow Tuning](#515-coreflow-tuning)
+   - [Hard Core Mapping](#516-hard-core-mapping)
+   - [Simulation](#517-simulation)
 6. [Model Subsystem](#6-model-subsystem)
    - [Perceptron](#61-perceptron)
    - [PerceptronFlow and PerceptronMixer](#62-perceptronflow-and-perceptronmixer)
@@ -123,6 +124,7 @@ mimarsinan/
 │       ├── mapping/                # Model → hardware mapping
 │       │   ├── ir.py               # Unified IR (IRGraph, NeuralCore, ComputeOp)
 │       │   ├── ir_mapping.py       # ModelRepresentation → IRGraph
+│       │   ├── ir_pruning.py       # Post-pruning IR compaction (remove zeroed rows/cols)
 │       │   ├── mapping_utils.py    # Mapper classes + SoftCoreMapping
 │       │   ├── softcore_mapping.py # SoftCore, HardCore, HardCoreMapping
 │       │   ├── core_packing.py     # Generic best-fit greedy bin-packing
@@ -203,13 +205,16 @@ The JSON configuration specifies:
 | `data_provider_name` | Registered dataset name (e.g. `"mnist"`, `"cifar10"`) |
 | `experiment_name` | Name for WandB logging and output directory |
 | `pipeline_mode` | `"vanilla"` or `"phased"` (selects a preset; see §4.4) |
-| `deployment_parameters` | Hyperparameters, spiking mode, quantization flags, `max_simulation_samples` (see §4.4, §5.15) |
+| `deployment_parameters` | Hyperparameters, spiking mode, quantization flags, `max_simulation_samples` (see §4.4, §5.17) |
 | `platform_constraints` | Hardware constraints (max_axons, max_neurons, weight_bits, target_tq) |
 | `start_step` | Step name to resume from (uses cached state) |
 | `stop_step` | Optional step name to stop after |
 | `target_metric_override` | Override the pipeline's tracked accuracy target |
 | `generated_files_path` | Base output directory |
 | `seed` | Random seed for reproducibility |
+| `pruning` | Boolean; enables the Pruning Adaptation step (see §5.9) |
+| `pruning_fraction` | Float (0–1); fraction of least-significant rows/columns to prune (e.g. `0.05`) |
+| `generate_visualizations` | Boolean (default `false`); enables SVG/PNG visualization output in Soft Core and Hard Core mapping steps |
 
 ### Platform Constraints Protocol
 
@@ -332,6 +337,12 @@ Two quantization flags (booleans in `deployment_parameters`) provide fine-graine
 | `activation_quantization` | Activation Analysis → Clamp Adaptation → Input Activation Analysis → Activation Shifting → Activation Quantization.  Configured via `target_tq`. |
 | `weight_quantization` | Weight Quantization → Quantization Verification.  Configured via `weight_bits`. |
 
+An additional pruning flag controls dimension reduction:
+
+| Flag | What it enables |
+|------|-----------------|
+| `pruning` + `pruning_fraction` | Pruning Adaptation (between activation quantization and weight quantization). Gradually zeros the least-significant rows/columns. Configured via `pruning_fraction` (0–1). |
+
 Preset defaults are applied with `setdefault`, so explicit values in `deployment_parameters` always win.
 
 **Example: vanilla + TTFS + weight quantization:**
@@ -353,6 +364,18 @@ Model Configuration → Model Building → Pretraining
 → Normalization Fusion → Soft Core Mapping
 → Core Quantization Verification → CoreFlow Tuning
 → Hard Core Mapping → Simulation
+```
+
+**Example: phased + TTFS + pruning + weight quantization:**
+
+```
+Model Configuration → Model Building → Pretraining
+→ Activation Analysis → Clamp Adaptation → Input Activation Analysis
+→ Activation Shifting → Activation Quantization
+→ Pruning Adaptation
+→ Weight Quantization → Quantization Verification
+→ Normalization Fusion → Soft Core Mapping
+→ Core Quantization Verification → Hard Core Mapping → Simulation
 ```
 
 Either mode works with `configuration_mode: "nas"` (replaces Model Configuration with Architecture Search).
@@ -433,7 +456,23 @@ Shifts activation functions so they align with quantization levels. Computes a s
 
 Uses `ActivationQuantizationTuner` to gradually quantize activations to `target_tq` levels. The tuner uses `SmartSmoothAdaptation` to incrementally increase quantization strength while maintaining accuracy.
 
-### 5.8 Weight Quantization
+### 5.9 Pruning Adaptation
+
+**File**: `pipeline_steps/pruning_adaptation_step.py`
+
+- **Requires**: `model`, `adaptation_manager`
+- **Updates**: `model`, `adaptation_manager`
+
+Conditionally included when `pruning` is enabled and `pruning_fraction > 0`. Uses `PruningTuner` (extends `PerceptronTuner`) to gradually zero the least-significant rows and columns of each perceptron's weight matrix:
+
+1. Computes row/column significance masks based on absolute weight magnitude sums
+2. Identifies the bottom `pruning_fraction` rows and columns as pruning candidates
+3. Uses `SmartSmoothAdaptation` to progressively scale candidate weights toward zero (at adaptation rate `r`, weights are multiplied by `1 − r`)
+4. When adaptation completes (`r = 1.0`), pruned rows/columns are fully zeroed
+
+The zeroed structure is later physically removed from the IR graph by `ir_pruning.prune_ir_graph()` during Soft Core Mapping, which compacts `NeuralCore` weight matrices and rewires source references.
+
+### 5.10 Weight Quantization
 
 **File**: `pipeline_steps/weight_quantization_step.py`
 
@@ -442,7 +481,7 @@ Uses `ActivationQuantizationTuner` to gradually quantize activations to `target_
 
 Calls `compute_per_source_scales` first so that `per_input_scales` is available during quantization (effective-weight calibration depends on it). Freezes normalization layer statistics, then uses `NormalizationAwarePerceptronQuantizationTuner` to quantize weights to `weight_bits` precision. The quantization is normalization-aware: it computes effective weights (fusing normalization) before quantizing.
 
-### 5.9 Quantization Verification
+### 5.11 Quantization Verification
 
 **File**: `pipeline_steps/quantization_verification_step.py`
 
@@ -450,7 +489,7 @@ Calls `compute_per_source_scales` first so that `per_input_scales` is available 
 
 Verifies that all perceptron effective weights and biases are correctly quantized: `w * parameter_scale` must be close to integer values within tolerance. This is a sanity check before mapping.
 
-### 5.10 Normalization Fusion
+### 5.12 Normalization Fusion
 
 **File**: `pipeline_steps/normalization_fusion_step.py`
 
@@ -466,7 +505,7 @@ b_fused = γ * (b - μ) / √(σ² + ε) + β
 
 Scaling factors (`activation_scale`, `parameter_scale`) are **not modified**, ensuring mathematical equivalence — the fused network produces identical outputs to the pre-fusion network. After fusion, the normalization is replaced with `nn.Identity()`. LayerNorm and post-activation normalizations are not fusable and are skipped.
 
-### 5.11 Soft Core Mapping
+### 5.13 Soft Core Mapping
 
 **File**: `pipeline_steps/soft_core_mapping_step.py`
 
@@ -480,10 +519,10 @@ This critical step converts the PyTorch model into an `IRGraph`:
 3. Creates an `IRMapping` with these hardware constraints
 4. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
 5. Optionally quantizes weights (rounds `core_matrix *= parameter_scale` to integers) only when `weight_quantization` is enabled
-6. Generates Graphviz visualizations (full render skipped for graphs with >500 nodes; DOT file always written)
+6. Optionally generates Graphviz visualizations when `generate_visualizations` is enabled in the config (disabled by default)
 7. Runs a soft-core spiking simulation for early verification
 
-### 5.12 Core Quantization Verification
+### 5.14 Core Quantization Verification
 
 **File**: `pipeline_steps/core_quantization_verification_step.py`
 
@@ -491,7 +530,7 @@ This critical step converts the PyTorch model into an `IRGraph`:
 
 Conditionally included in the pipeline only when `weight_quantization` is enabled. Verifies that all `NeuralCore` weight matrices in the IR graph are properly quantized: `core_matrix * parameter_scale` must produce integers within the allowed range for the specified `weight_bits`.
 
-### 5.13 CoreFlow Tuning
+### 5.15 CoreFlow Tuning
 
 **File**: `pipeline_steps/core_flow_tuning_step.py`
 
@@ -508,7 +547,7 @@ Uses `CoreFlowTuner` to adjust thresholds of `NeuralCore`s in the IR graph. The 
 3. Iteratively adjusts thresholds to match stable and event-based behaviors
 4. Determines the optimal `scaled_simulation_length` for the chip
 
-### 5.14 Hard Core Mapping
+### 5.16 Hard Core Mapping
 
 **File**: `pipeline_steps/hard_core_mapping_step.py`
 
@@ -523,9 +562,9 @@ Converts the `IRGraph` into a `HybridHardCoreMapping`:
 4. Packs `SoftCore`s into physical `HardCore`s using **best-fit** greedy bin-packing (smallest feasible core first)
 5. Produces the final deployable hybrid program
 6. Runs hard-core spiking simulation for verification
-7. Generates extensive Graphviz visualizations
+7. Optionally generates Graphviz visualizations when `generate_visualizations` is enabled in the config (disabled by default)
 
-### 5.15 Simulation
+### 5.17 Simulation
 
 **File**: `pipeline_steps/simulation_step.py`
 
@@ -942,9 +981,12 @@ All tuners extend `BasicTuner`, which uses `SmartSmoothAdaptation`:
 |-------|---------|
 | `ClampTuner` | Introduces activation clamping |
 | `ActivationQuantizationTuner` | Quantizes activations to Tq levels |
+| `PruningTuner` | Gradually zeros least-significant weight rows/columns |
 | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights (normalization-aware) |
 | `NoiseTuner` | Introduces training noise |
 | `CoreFlowTuner` | Tunes spiking thresholds (operates on IRGraph, not model) |
+
+`PruningTuner` extends `PerceptronTuner` and applies pruning masks (from `transformations/pruning.py`) that scale the bottom `pruning_fraction` of rows and columns by `(1 − rate)`. The zeroed structure is later compacted from the IR graph by `ir_pruning.prune_ir_graph()` (see §8.4).
 
 Each tuner defines:
 - `_update_and_evaluate(rate)` — Apply transformation at given rate and evaluate
@@ -1161,6 +1203,8 @@ The `mapping_graphviz` module is particularly extensive, providing:
 - **Hybrid combined views**: Multi-stage program overview with embedded thumbnails
 - Automatic SVG/PNG rendering via the system `dot` binary
 
+**Note:** Visualization generation in Soft Core and Hard Core mapping steps is disabled by default for performance. Set `"generate_visualizations": true` in the config JSON to enable DOT/SVG/PNG output.
+
 ### 14.2 Browser-Based Pipeline Monitor (GUI)
 
 **Directory**: `gui/`
@@ -1195,6 +1239,7 @@ A real-time browser-based dashboard that launches automatically with every pipel
 **Key design decisions:**
 - **Non-invasive integration**: The GUI attaches to the existing `Reporter` protocol and pipeline hooks; no core pipeline code is modified beyond adding hook registration support
 - **Thread-safe**: `DataCollector` uses a lock; the FastAPI server runs in its own daemon thread and event loop
+- **NaN/Inf safety**: All JSON responses use a custom `_SafeJSONResponse` that recursively replaces non-finite floats with `null`, preventing `ValueError: Out of range float values are not JSON compliant` crashes when training metrics contain NaN or Inf
 - **Snapshot extraction**: `snapshot.py` contains pure functions that accept pipeline artifacts and return JSON-safe dicts. Failures are logged at debug level and never crash the pipeline
 - **Zoom/pan persistence**: All Plotly charts use `uirevision: 'persist'` on layout and axes to preserve user interactions across data updates
 - **Stable DOM**: The detail panel only rebuilds when structural data changes (step name, status, snapshot keys), not on every metric or duration update
@@ -1260,6 +1305,9 @@ ChipModel
            │  Pretrain                                     │
            │  ┌─ if activation_quantization ──────────┐    │
            │  │ Analyze → Clamp → Shift → Act Quant   │    │
+           │  └───────────────────────────────────────┘    │
+           │  ┌─ if pruning ─────────────────────────┐    │
+           │  │ Pruning Adaptation                    │    │
            │  └───────────────────────────────────────┘    │
            │  ┌─ if weight_quantization ──────────────┐    │
            │  │ Weight Quant → Verification            │    │
