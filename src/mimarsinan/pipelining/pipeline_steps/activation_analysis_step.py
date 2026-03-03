@@ -6,6 +6,29 @@ from mimarsinan.models.layers import SavedTensorDecorator
 
 import torch
 
+# Epsilon below which activations are treated as pruned (zero) and excluded.
+PRUNED_THRESHOLD = 1e-9
+
+
+def scale_from_activations(flat_acts, pruned_threshold=PRUNED_THRESHOLD):
+    """Compute 99th-percentile (by cumulative sum) scale from activations.
+
+    Only non-pruned activations (above pruned_threshold) are included so that
+    post-pruning statistics are not skewed and clamping does not over-degrade.
+    """
+    active_mask = flat_acts > pruned_threshold
+    active_acts = flat_acts[active_mask]
+
+    if active_acts.numel() == 0:
+        return max(flat_acts.max().item(), 1.0) if flat_acts.numel() > 0 else 1.0
+
+    sorted_acts, _ = torch.sort(active_acts)
+    cumsum_acts = torch.cumsum(sorted_acts, dim=0)
+    norm_cumsum = cumsum_acts / cumsum_acts[-1]
+    threshold_idx = torch.searchsorted(norm_cumsum, 0.99)
+    return sorted_acts[threshold_idx].item()
+
+
 class ActivationAnalysisStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["model"]
@@ -36,14 +59,8 @@ class ActivationAnalysisStep(PipelineStep):
         activation_scales = []
         for perceptron in model.get_perceptrons():
             saved_tensor = perceptron.activation.pop_decorator()
-
-            flat_acts = saved_tensor.latest_output.view(-1)  # flatten to 1D
-            sorted_acts, _ = torch.sort(flat_acts)  # sort ascending
-            cumsum_acts = torch.cumsum(sorted_acts, dim=0)  # cumulative sum
-            norm_cumsum = cumsum_acts / cumsum_acts[-1]  # normalize by total sum
-            threshold_idx = torch.searchsorted(norm_cumsum, 0.99)  # index of first value >= 0.99
-
-            activation_scales.append(sorted_acts[threshold_idx].item())
+            flat_acts = saved_tensor.latest_output.view(-1)
+            activation_scales.append(scale_from_activations(flat_acts))
 
         print(activation_scales)
 

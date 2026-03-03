@@ -56,9 +56,10 @@ class TestPruningTuner:
         assert tuner is not None
         assert tuner.pruning_fraction == 0.25
 
-    def test_update_evaluate_at_rate_one(self):
+    def test_apply_pruning_at_rate_one_zeros_weights(self):
         """At rate=1.0, pruned weights should be zeroed."""
         from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.transformations.pruning import apply_pruning_masks
 
         mock = MockPipeline()
         ce = nn.CrossEntropyLoss()
@@ -74,22 +75,32 @@ class TestPruningTuner:
             adaptation_manager=am,
             pruning_fraction=0.5,
         )
-        original_weights = [p.layer.weight.data.clone() for p in model.get_perceptrons()]
-        tuner._update_and_evaluate(1.0)
 
-        # At least some weights should differ from original (should be zeroed)
-        any_changed = False
-        for orig, p in zip(original_weights, model.get_perceptrons()):
-            if not torch.allclose(orig, p.layer.weight.data):
-                any_changed = True
-                # Some weights should now be zero
-                assert (p.layer.weight.data == 0.0).any(), \
-                    "Some weights should be zeroed at rate=1.0"
-        assert any_changed, "At least one perceptron should have changed weights"
+        perceptrons = model.get_perceptrons()
+        # Manually set up importance (normally done in run())
+        for p in perceptrons:
+            w = p.layer.weight.data
+            tuner.base_row_imp.append(w.abs().sum(dim=1))
+            tuner.base_col_imp.append(w.abs().sum(dim=0))
 
-    def test_update_evaluate_at_rate_zero_preserves_weights(self):
+        original_weights = [p.layer.weight.data.clone() for p in perceptrons]
+        row_masks, col_masks = tuner._get_masks(1.0)
+
+        for i, p in enumerate(perceptrons):
+            apply_pruning_masks(p, row_masks[i], col_masks[i], 1.0,
+                                original_weights[i], None)
+
+        # At rate=1.0, pruned weights should be exactly zero
+        any_zeroed = False
+        for p in perceptrons:
+            if (p.layer.weight.data == 0.0).any():
+                any_zeroed = True
+        assert any_zeroed, "At least some weights should be zeroed at rate=1.0"
+
+    def test_apply_pruning_at_rate_zero_preserves_weights(self):
         """At rate=0.0, weights should be unchanged."""
         from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.transformations.pruning import apply_pruning_masks
 
         mock = MockPipeline()
         ce = nn.CrossEntropyLoss()
@@ -105,9 +116,20 @@ class TestPruningTuner:
             adaptation_manager=am,
             pruning_fraction=0.5,
         )
-        original_weights = [p.layer.weight.data.clone() for p in model.get_perceptrons()]
-        tuner._update_and_evaluate(0.0)
 
-        for orig, p in zip(original_weights, model.get_perceptrons()):
+        perceptrons = model.get_perceptrons()
+        for p in perceptrons:
+            w = p.layer.weight.data
+            tuner.base_row_imp.append(w.abs().sum(dim=1))
+            tuner.base_col_imp.append(w.abs().sum(dim=0))
+
+        original_weights = [p.layer.weight.data.clone() for p in perceptrons]
+        row_masks, col_masks = tuner._get_masks(1.0)
+
+        for i, p in enumerate(perceptrons):
+            apply_pruning_masks(p, row_masks[i], col_masks[i], 0.0,
+                                original_weights[i], None)
+
+        for orig, p in zip(original_weights, perceptrons):
             assert torch.allclose(orig, p.layer.weight.data), \
                 "Weights should be unchanged at rate=0.0"

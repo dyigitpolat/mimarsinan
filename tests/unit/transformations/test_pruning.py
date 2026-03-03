@@ -8,6 +8,7 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.layers import LeakyGradReLU
 from mimarsinan.transformations.pruning import (
     compute_pruning_masks,
+    compute_all_pruning_masks,
     apply_pruning_masks,
 )
 
@@ -96,9 +97,12 @@ class TestApplyPruningMasks:
     def test_rate_zero_no_change(self):
         p = self._make_perceptron()
         original_weights = p.layer.weight.data.clone()
+        original_bias = p.layer.bias.data.clone() if p.layer.bias is not None else None
         row_mask = torch.tensor([True, False, True, False])
         col_mask = torch.tensor([True, False, True, False])
-        apply_pruning_masks(p, row_mask, col_mask, rate=0.0)
+        apply_pruning_masks(p, row_mask, col_mask, rate=0.0,
+                           original_weight=original_weights,
+                           original_bias=original_bias)
         assert torch.allclose(p.layer.weight.data, original_weights), \
             "Rate=0 should not change weights"
 
@@ -106,9 +110,13 @@ class TestApplyPruningMasks:
         p = self._make_perceptron()
         with torch.no_grad():
             p.layer.weight.data.fill_(1.0)
+        original_weights = p.layer.weight.data.clone()
+        original_bias = p.layer.bias.data.clone() if p.layer.bias is not None else None
         row_mask = torch.tensor([True, False, True, True])  # row 1 pruned
         col_mask = torch.tensor([True, True, True, True])   # no cols pruned
-        apply_pruning_masks(p, row_mask, col_mask, rate=1.0)
+        apply_pruning_masks(p, row_mask, col_mask, rate=1.0,
+                           original_weight=original_weights,
+                           original_bias=original_bias)
         # Row 1 should be zeroed
         assert (p.layer.weight.data[1] == 0.0).all(), "Pruned row should be zeroed at rate=1"
         # Other rows should be unchanged
@@ -120,9 +128,13 @@ class TestApplyPruningMasks:
         p = self._make_perceptron()
         with torch.no_grad():
             p.layer.weight.data.fill_(1.0)
+        original_weights = p.layer.weight.data.clone()
+        original_bias = p.layer.bias.data.clone() if p.layer.bias is not None else None
         row_mask = torch.tensor([True, True, True, True])   # no rows pruned
         col_mask = torch.tensor([True, False, True, True])  # col 1 pruned
-        apply_pruning_masks(p, row_mask, col_mask, rate=1.0)
+        apply_pruning_masks(p, row_mask, col_mask, rate=1.0,
+                           original_weight=original_weights,
+                           original_bias=original_bias)
         # Col 1 should be zeroed
         assert (p.layer.weight.data[:, 1] == 0.0).all(), "Pruned col should be zeroed at rate=1"
         # Other cols should be unchanged
@@ -134,9 +146,13 @@ class TestApplyPruningMasks:
         p = self._make_perceptron()
         with torch.no_grad():
             p.layer.weight.data.fill_(1.0)
+        original_weights = p.layer.weight.data.clone()
+        original_bias = p.layer.bias.data.clone() if p.layer.bias is not None else None
         row_mask = torch.tensor([True, False, True, True])  # row 1 pruned
         col_mask = torch.tensor([True, True, True, True])   # no cols pruned
-        apply_pruning_masks(p, row_mask, col_mask, rate=0.3)
+        apply_pruning_masks(p, row_mask, col_mask, rate=0.3,
+                           original_weight=original_weights,
+                           original_bias=original_bias)
         # Row 1 should be multiplied by (1 - 0.3) = 0.7
         expected = 0.7
         assert torch.allclose(p.layer.weight.data[1], torch.full((4,), expected)), \
@@ -149,9 +165,13 @@ class TestApplyPruningMasks:
         p = self._make_perceptron()
         with torch.no_grad():
             p.layer.weight.data.fill_(1.0)
+        original_weights = p.layer.weight.data.clone()
+        original_bias = p.layer.bias.data.clone() if p.layer.bias is not None else None
         row_mask = torch.tensor([True, False, True, True])  # row 1 pruned
         col_mask = torch.tensor([True, False, True, True])  # col 1 pruned
-        apply_pruning_masks(p, row_mask, col_mask, rate=1.0)
+        apply_pruning_masks(p, row_mask, col_mask, rate=1.0,
+                           original_weight=original_weights,
+                           original_bias=original_bias)
         # Weight at [1,1] should be 0 (both pruned)
         assert p.layer.weight.data[1, 1].item() == 0.0
         # Weight at [0,1] should be 0 (col pruned)
@@ -160,3 +180,90 @@ class TestApplyPruningMasks:
         assert p.layer.weight.data[1, 0].item() == 0.0
         # Weight at [0,0] should be 1 (neither pruned)
         assert p.layer.weight.data[0, 0].item() == 1.0
+
+    def test_absolute_scaling_is_idempotent(self):
+        """Calling apply_pruning_masks multiple times at the same rate
+        should not compound the scaling — it should be idempotent."""
+        p = self._make_perceptron()
+        with torch.no_grad():
+            p.layer.weight.data.fill_(1.0)
+        original_weights = p.layer.weight.data.clone()
+        original_bias = p.layer.bias.data.clone() if p.layer.bias is not None else None
+        row_mask = torch.tensor([True, False, True, True])
+        col_mask = torch.tensor([True, True, True, True])
+
+        # Apply three times at rate=0.5
+        for _ in range(3):
+            apply_pruning_masks(p, row_mask, col_mask, rate=0.5,
+                               original_weight=original_weights,
+                               original_bias=original_bias)
+
+        # Row 1 should be 0.5 (not 0.5^3 = 0.125)
+        expected = 0.5
+        assert torch.allclose(p.layer.weight.data[1], torch.full((4,), expected)), \
+            f"Multiple calls should be idempotent: expected {expected}"
+
+
+class TestComputeAllPruningMasks:
+    def _make_perceptron(self, out_features, in_features):
+        p = Perceptron(out_features, in_features)
+        p.base_activation = LeakyGradReLU()
+        p.activation = LeakyGradReLU()
+        return p
+
+    def test_cross_layer_propagation(self):
+        """When layer 0 prunes rows, the corresponding columns of layer 1
+        should also be pruned (assuming matching dimensions)."""
+        p0 = self._make_perceptron(4, 8)
+        p1 = self._make_perceptron(4, 4)  # in_features == p0.out_features
+
+        with torch.no_grad():
+            # Layer 0: rows 0,1 are small → will be pruned at 50%
+            p0.layer.weight.data = torch.tensor([
+                [0.01] * 8,  # row 0: tiny
+                [0.02] * 8,  # row 1: tiny
+                [1.00] * 8,  # row 2: large
+                [2.00] * 8,  # row 3: large
+            ])
+            # Layer 1: all columns have similar weight
+            p1.layer.weight.data = torch.ones(4, 4)
+
+        masks = compute_all_pruning_masks([p0, p1], pruning_fraction=0.5)
+
+        # Layer 0 row mask: rows 0,1 pruned
+        assert not masks[0][0][0].item()
+        assert not masks[0][0][1].item()
+
+        # Layer 1 col mask: cols 0,1 should be pruned (propagated from p0's row pruning)
+        assert not masks[1][1][0].item(), "Col 0 of layer 1 should be pruned (propagated)"
+        assert not masks[1][1][1].item(), "Col 1 of layer 1 should be pruned (propagated)"
+
+    def test_no_propagation_dimension_mismatch(self):
+        """When dimensions don't match, no cross-layer propagation occurs."""
+        p0 = self._make_perceptron(4, 8)
+        p1 = self._make_perceptron(4, 16)  # in_features != p0.out_features
+
+        masks_independent = [
+            compute_pruning_masks(p0, 0.5),
+            compute_pruning_masks(p1, 0.5),
+        ]
+        masks_cross = compute_all_pruning_masks([p0, p1], pruning_fraction=0.5)
+
+        # With dimension mismatch, cross-layer masks should equal independent masks
+        assert torch.equal(masks_independent[1][1], masks_cross[1][1])
+
+    def test_guarantees_minimum_pruning(self):
+        """Each layer must prune at least N% of its own rows and columns."""
+        p0 = self._make_perceptron(8, 16)
+        p1 = self._make_perceptron(8, 8)
+
+        masks = compute_all_pruning_masks([p0, p1], pruning_fraction=0.25)
+
+        # Layer 0: at least 25% rows pruned = 2 rows
+        assert (~masks[0][0]).sum().item() >= 2
+        # Layer 0: at least 25% cols pruned = 4 cols
+        assert (~masks[0][1]).sum().item() >= 4
+        # Layer 1: at least 25% rows pruned = 2 rows
+        assert (~masks[1][0]).sum().item() >= 2
+        # Layer 1: cols pruned >= 25% (may be more due to propagation)
+        assert (~masks[1][1]).sum().item() >= 2

@@ -1,7 +1,7 @@
 {
   "seed": 32,
   "pipeline_mode": "phased",
-  "experiment_name": "0X_AQ_gui_mnist_arch_search_nsga2_ttfs",
+  "experiment_name": "00X_AQ_gui_mnist_arch_search_nsga2_ttfs",
   "generated_files_path": "./generated",
   "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
   "data_provider_name": "MNIST_DataProvider",
@@ -81,9 +81,9 @@
     "thresholding_mode": "<=",
     "max_simulation_samples": 100,
     "pruning": true,
-    "pruning_fraction": 0.05
+    "pruning_fraction": 0.1
   },
   "target_metric_override": 0.95,
-  "start_step": "Pruning Adaptation",
+  "start_step": "Activation Analysis",
   "stop_step": null
 }

@@ -5,7 +5,10 @@ import torch
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
-from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import ActivationAnalysisStep
+from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import (
+    ActivationAnalysisStep,
+    scale_from_activations,
+)
 
 
 class TestActivationAnalysisStep:
@@ -112,3 +115,26 @@ class TestActivationAnalysisStep:
         step.run()
         scales = mock_pipeline.cache["ActivationAnalysis.activation_scales"]
         assert len(scales) == 1
+
+    def test_scale_from_activations_all_zeros_returns_fallback(self):
+        """When all activations are pruned (zero), scale is fallback 1.0."""
+        flat = torch.zeros(1000)
+        assert scale_from_activations(flat) == 1.0
+
+    def test_scale_from_activations_only_non_pruned_used(self):
+        """Scale is computed from non-pruned activations only, not skewed by zeros."""
+        # Many zeros (pruned) + a few large values: scale should reflect the large values.
+        flat = torch.cat([torch.zeros(900), torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0])])
+        scale = scale_from_activations(flat)
+        # 99th percentile of cumsum over [1,2,3,4,5]: cumsum = [1,3,6,10,15], norm = [1/15, ...],
+        # searchsorted(0.99) gives index 4, so scale = 5.0
+        assert scale == 5.0
+
+    def test_scale_from_activations_mixed_pruned_uses_active_only(self):
+        """With many zeros (pruned), scale is computed from non-zero activations only."""
+        torch.manual_seed(42)
+        flat = torch.cat([torch.zeros(950), torch.rand(50) * 0.5 + 0.5])
+        scale = scale_from_activations(flat)
+        # All 50 active values are in [0.5, 1.0], so scale should be in that range
+        assert scale >= 0.5
+        assert scale <= 1.0

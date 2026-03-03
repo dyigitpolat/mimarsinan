@@ -210,14 +210,14 @@ class DeploymentPipeline(Pipeline):
         if self.config.get("model_type", "").startswith("torch_"):
             self.add_pipeline_step("Torch Mapping", TorchMappingStep(self))
 
-        # ── Activation Quantization ─────────────────────────────────────
-        if act_q:
-            for name, cls in _ACTIVATION_QUANTIZATION_STEPS:
-                self.add_pipeline_step(name, cls(self))
-
         # ── Pruning ─────────────────────────────────────────────────────
         if pruning and pruning_fraction > 0:
             for name, cls in _PRUNING_STEPS:
+                self.add_pipeline_step(name, cls(self))
+
+        # ── Activation Quantization ─────────────────────────────────────
+        if act_q:
+            for name, cls in _ACTIVATION_QUANTIZATION_STEPS:
                 self.add_pipeline_step(name, cls(self))
 
         # ── Weight Quantization ─────────────────────────────────────────
