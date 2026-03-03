@@ -34,6 +34,61 @@ def prune_ir_graph(ir_graph: IRGraph, zero_threshold: float = 1e-8) -> IRGraph:
 
     graph = copy.deepcopy(ir_graph)
 
+    # Pre-Phase: Recursive Topological Pruning
+    # Iterate until convergence:
+    # 1. Any row connected to an 'off' source (-1) is dead -> zero out the row in core_matrix
+    # 2. Any column not read by any downstream node or output is dead -> zero out the column
+    changed = True
+    while changed:
+        changed = False
+
+        # 1. Forward dead connections
+        # If an input source is off (-1), its contribution is always 0.
+        for node in graph.nodes:
+            if not isinstance(node, NeuralCore) or node.core_matrix is None:
+                continue
+            
+            flat_src = node.input_sources.flatten()
+            for i, src in enumerate(flat_src):
+                if getattr(src, "node_id", getattr(src, "core_", None)) == -1:
+                    # If the row is not already all zeros, zero it out and flag change
+                    if np.any(np.abs(node.core_matrix[i, :]) > zero_threshold):
+                        node.core_matrix[i, :] = 0.0
+                        changed = True
+
+        # 2. Backward dead connections
+        # Find all neurons that are actually read by something
+        read_sources = set()
+        
+        # Read by output
+        for src in graph.output_sources.flatten():
+            node_id = getattr(src, "node_id", getattr(src, "core_", None))
+            idx = getattr(src, "index", getattr(src, "neuron_", None))
+            if node_id >= 0:
+                read_sources.add((node_id, idx))
+                
+        # Read by other nodes
+        for node in graph.nodes:
+            if not hasattr(node, "input_sources"):
+                continue
+            for src in node.input_sources.flatten():
+                node_id = getattr(src, "node_id", getattr(src, "core_", None))
+                idx = getattr(src, "index", getattr(src, "neuron_", None))
+                if node_id >= 0:
+                    read_sources.add((node_id, idx))
+                    
+        # Zero out unread columns
+        for node in graph.nodes:
+            if not isinstance(node, NeuralCore) or node.core_matrix is None:
+                continue
+            
+            n_neurons = node.core_matrix.shape[1]
+            for j in range(n_neurons):
+                if (node.id, j) not in read_sources:
+                    if np.any(np.abs(node.core_matrix[:, j]) > zero_threshold):
+                        node.core_matrix[:, j] = 0.0
+                        changed = True
+
     # Phase 1: identify pruned columns per core and build reindex maps
     # Maps: node_id -> {old_neuron_idx -> new_neuron_idx}  (for kept neurons)
     # Maps: node_id -> set of pruned neuron indices

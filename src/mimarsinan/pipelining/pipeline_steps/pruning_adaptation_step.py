@@ -30,7 +30,7 @@ class PruningAdaptationStep(PipelineStep):
             self.pipeline,
             model=model,
             target_accuracy=self.pipeline.get_target_metric(),
-            lr=self.pipeline.config["lr"] * 1e-3,
+            lr=self.pipeline.config["lr"],
             adaptation_manager=adaptation_manager,
             pruning_fraction=pruning_fraction,
         )

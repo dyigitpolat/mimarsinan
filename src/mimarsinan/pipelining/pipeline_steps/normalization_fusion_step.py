@@ -46,12 +46,21 @@ class NormalizationFusionStep(PipelineStep):
             fused_W = W * u.unsqueeze(-1)
             fused_b = (b - mean) * u + beta
 
+            # Preserve pruning buffers before replacing the layer
+            saved_buffers = {}
+            for buf_name, buf_val in perceptron.layer.named_buffers():
+                saved_buffers[buf_name] = buf_val.clone()
+
             perceptron.layer = nn.Linear(
                 perceptron.input_features, 
                 perceptron.output_channels, bias=True)
             
             perceptron.layer.weight.data = fused_W
             perceptron.layer.bias.data = fused_b
+
+            # Re-register preserved buffers
+            for buf_name, buf_val in saved_buffers.items():
+                perceptron.layer.register_buffer(buf_name, buf_val)
 
             perceptron.normalization = nn.Identity()
         

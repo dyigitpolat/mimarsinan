@@ -427,7 +427,7 @@ Trains the model from scratch using `BasicTrainer` for `training_epochs` with a 
 - **Requires**: `model`
 - **Promises**: `activation_scales`
 
-Decorates each perceptron's activation with a `SavedTensorDecorator`, runs validation, and computes activation scales based on the 80th percentile of the cumulative sum of sorted activations. These scales determine the clamping range for each perceptron.
+Decorates each perceptron's activation with a `SavedTensorDecorator`, runs validation, and computes activation scales based on the 99th percentile of the cumulative sum of sorted activations. Only non-pruned activations (above a small threshold) are included so that post-pruning statistics are not skewed and clamping does not over-degrade accuracy. These scales determine the clamping range for each perceptron.
 
 ### 5.5 Clamp Adaptation
 
