@@ -9,6 +9,80 @@ def is_always_on(idx): return idx == -3
 
 from mimarsinan.mapping.core_packing import greedy_pack_softcores
 
+def compact_soft_core_mapping(cores, output_sources):
+    """Remove pruned rows and columns from each soft core using pruning maps and reindex spans.
+
+    Uses pruned_row_mask and pruned_col_mask on each SoftCore (set from IR pruning);
+    does not use parameter values to detect zeros. Modifies each core's core_matrix
+    and axon_sources in place, and replaces output_sources so neuron indices match
+    the compacted layout.
+    """
+    reindex_maps = {}  # core_id -> {old_neuron_idx: new_neuron_idx}
+
+    for core in cores:
+        mat = np.asarray(core.core_matrix, dtype=np.float64)
+        n_axons, n_neurons = mat.shape
+        pruned_row_mask = getattr(core, "pruned_row_mask", None)
+        pruned_col_mask = getattr(core, "pruned_col_mask", None)
+
+        if (
+            pruned_row_mask is not None
+            and pruned_col_mask is not None
+            and len(pruned_row_mask) == n_axons
+            and len(pruned_col_mask) == n_neurons
+        ):
+            keep_rows = [r for r in range(n_axons) if not pruned_row_mask[r]]
+            keep_cols = [c for c in range(n_neurons) if not pruned_col_mask[c]]
+        else:
+            keep_rows = list(range(n_axons))
+            keep_cols = list(range(n_neurons))
+
+        if len(keep_rows) < n_axons or len(keep_cols) < n_neurons:
+            if keep_rows and keep_cols:
+                core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
+                core.axon_sources = [core.axon_sources[r] for r in keep_rows]
+            else:
+                core.core_matrix = np.zeros((1, 1), dtype=np.float64)
+                core.axon_sources = [SpikeSource(-1, 0, False, True)]
+            remap = {old_idx: new_idx for new_idx, old_idx in enumerate(keep_cols)}
+            reindex_maps[core.id] = remap
+        else:
+            reindex_maps[core.id] = {j: j for j in range(n_neurons)}
+
+        core._axon_source_spans = None
+
+    # Apply reindex to all axon_sources
+    for core in cores:
+        new_sources = []
+        for s in core.axon_sources:
+            if s.is_off_:
+                new_sources.append(s)
+            elif s.is_input_ or s.is_always_on_:
+                new_sources.append(s)
+            else:
+                cid, nidx = int(s.core_), int(s.neuron_)
+                if cid in reindex_maps and nidx in reindex_maps[cid]:
+                    new_sources.append(SpikeSource(cid, reindex_maps[cid][nidx], False, False))
+                else:
+                    new_sources.append(SpikeSource(-1, 0, False, True))
+        core.axon_sources = new_sources
+        core._axon_source_spans = None
+
+    # Rebuild output_sources: keep order, reindex or drop pruned neuron refs
+    new_out = []
+    for s in output_sources:
+        if s.is_off_:
+            continue
+        if s.is_input_ or s.is_always_on_:
+            new_out.append(s)
+        else:
+            cid, nidx = int(s.core_), int(s.neuron_)
+            if cid in reindex_maps and nidx in reindex_maps[cid]:
+                new_out.append(SpikeSource(cid, reindex_maps[cid][nidx], False, False))
+    output_sources.clear()
+    output_sources.extend(new_out)
+
+
 class SoftCore:
     def __init__(
         self,

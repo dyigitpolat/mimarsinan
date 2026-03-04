@@ -9,8 +9,12 @@
  *   Level 2: Detail panel for a selected group
  *
  * Features: ctrl+wheel zoom, scroll both axes, auto-expand small tiers,
- * group-level edges when tiers are expanded, clickable nodes. */
+ * group-level edges when tiers are expanded, clickable nodes.
+ * Perceptron (group) detail includes soft-core pre/post pruning heatmaps,
+ * with weight banks reused to avoid redundant visualizations. */
 import { esc, safeReact, plotHistogram } from './util.js';
+
+// Heatmap images are generated on the backend; frontend only displays heatmap_image (data URI).
 
 window._irGraphState = window._irGraphState || { selectedTier: null, detailGroup: null, selectedEdge: null };
 
@@ -516,6 +520,41 @@ function buildGroupDetail(g, nodeById, irGraph) {
     }
     html += '</tbody></table>';
   }
+
+  // Soft-core weight heatmaps (backend-rendered images only; one per weight bank or owned core)
+  const weightBanks = irGraph.weight_banks || {};
+  const heatmapGroups = new Map(); // key -> { title, coreIds, postImageUri, preImageUri? }
+  for (const c of cores) {
+    const bankId = c.weight_bank_id != null ? c.weight_bank_id : null;
+    const key = bankId != null ? `bank-${bankId}` : `core-${c.id}`;
+    if (heatmapGroups.has(key)) {
+      heatmapGroups.get(key).coreIds.push(c.id);
+      heatmapGroups.get(key).coreNames.push(c.name);
+      continue;
+    }
+    const postUri = bankId != null ? weightBanks[bankId]?.heatmap_image : c.heatmap_image;
+    if (!postUri) continue;
+    const entry = {
+      title: bankId != null ? `Weight bank ${bankId}` : `Core ${c.id}`,
+      coreIds: [c.id],
+      coreNames: [c.name],
+      postImageUri: postUri,
+      preImageUri: c.pre_pruning_heatmap_image || null,
+    };
+    heatmapGroups.set(key, entry);
+  }
+  for (const [, entry] of heatmapGroups) {
+    if (entry.coreIds.length > 1) entry.title += ` (${entry.coreIds.length} cores)`;
+    html += '<div class="ir-softcore-heatmap-card" style="margin-top:16px">';
+    html += `<div class="section-label" style="margin-bottom:8px">${esc(entry.title)} — soft-core weight heatmap</div>`;
+    html += '<div class="ir-softcore-heatmaps" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">';
+    if (entry.preImageUri) {
+      html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Pre-pruning</div><img src="${entry.preImageUri}" alt="Pre-pruning" class="ir-softcore-heatmap-img" style="max-width:280px;height:auto;display:block;border:1px solid #2e3140;border-radius:4px"></div>`;
+    }
+    html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Post-pruning</div><img src="${entry.postImageUri}" alt="Post-pruning" class="ir-softcore-heatmap-img" style="max-width:280px;height:auto;display:block;border:1px solid #2e3140;border-radius:4px"></div>`;
+    html += '</div></div>';
+  }
+
   if (ops.length > 0) {
     html += `<div style="margin-top:${cores.length > 0 ? '12px' : '0'}"><table class="data-table compact"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Input</th><th>Output</th><th>Params</th></tr></thead><tbody>`;
     for (const o of ops) {

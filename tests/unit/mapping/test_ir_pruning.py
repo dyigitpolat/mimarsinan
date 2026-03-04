@@ -132,3 +132,49 @@ class TestPruneIRGraph:
         graph = IRGraph(nodes=[], output_sources=np.array([], dtype=object))
         pruned = prune_ir_graph(graph)
         assert len(pruned.nodes) == 0
+
+    def test_sets_pre_pruning_snapshot_for_gui(self):
+        """When rows/cols are pruned, nodes get pre_pruning_heatmap and masks for soft-core viz."""
+        w = np.array([
+            [1.0, 0.0, 3.0],
+            [0.0, 0.0, 0.0],
+            [4.0, 0.0, 6.0],
+        ], dtype=np.float32)
+        src = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
+        core = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
+        out_src = _make_source_array([(0, 0), (0, 1), (0, 2)])
+        graph = IRGraph(nodes=[core], output_sources=out_src)
+
+        pruned = prune_ir_graph(graph)
+        pruned_core = pruned.nodes[0]
+        assert pruned_core.pre_pruning_heatmap is not None
+        assert isinstance(pruned_core.pre_pruning_heatmap, list)
+        assert pruned_core.pruned_row_mask is not None
+        assert pruned_core.pruned_col_mask is not None
+        assert len(pruned_core.pruned_row_mask) == 3
+        assert len(pruned_core.pruned_col_mask) == 3
+        assert pruned_core.pruned_row_mask[1] is True
+        assert pruned_core.pruned_col_mask[1] is True
+
+    def test_propagative_pruning_expands_pruned_set(self):
+        """A row that only feeds pruned columns is pruned by propagation.
+        Cols 2,3 are below threshold (tiny values from row 3); row 3 only feeds those cols -> pruned."""
+        thresh = 1e-8
+        tiny = 1e-10  # below thresh so cols 2,3 count as zero
+        w = np.array([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, tiny, tiny],
+        ], dtype=np.float64)
+        src = _make_source_array([(-2, 0), (-2, 1), (-2, 2), (-3, 0)])
+        core = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1e-8, latency=0)
+        out_src = _make_source_array([(0, 0), (0, 1), (0, 2), (0, 3)])
+        graph = IRGraph(nodes=[core], output_sources=out_src)
+
+        pruned = prune_ir_graph(graph, zero_threshold=thresh)
+        pruned_core = pruned.nodes[0]
+        # zero_cols = {2,3}, zero_rows = {2}. Row 3 only feeds {2,3} -> pruned by propagation.
+        assert pruned_core.core_matrix.shape == (2, 2), "Propagation should prune row 2 and 3, cols 2 and 3"
+        assert pruned_core.core_matrix[0, 0] == 1.0 and pruned_core.core_matrix[1, 1] == 1.0
+        assert len(pruned_core.input_sources.flatten()) == 2

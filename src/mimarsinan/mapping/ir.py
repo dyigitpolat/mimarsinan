@@ -171,6 +171,11 @@ class NeuralCore(IRNode):
     normalization_type: str | None = None
     activation_type: str | None = None
 
+    # Pre-pruning snapshot for GUI (set by ir_pruning before compacting)
+    pre_pruning_heatmap: list | None = None  # full matrix (axons, neurons) as list of lists for soft-core viz
+    pruned_row_mask: list | None = None  # bool per original row (True = pruned)
+    pruned_col_mask: list | None = None  # bool per original column (True = pruned)
+
     # ------------------------------------------------------------------
     # Weight resolution
     # ------------------------------------------------------------------
@@ -619,6 +624,10 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
 
     For bank-backed cores ``graph`` must be provided so the weight matrix
     can be materialized from the referenced ``WeightBank``.
+
+    When the node has pruning masks (pruned_row_mask, pruned_col_mask) and the
+    matrix shape matches their lengths, they are attached to the SoftCore so
+    compaction uses the pruning maps instead of parameter values.
     """
     from mimarsinan.mapping.softcore_mapping import SoftCore
 
@@ -627,8 +636,14 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
     ]
 
     core_matrix = neural_core.get_core_matrix(graph)
+    pruned_row_mask = getattr(neural_core, "pruned_row_mask", None)
+    pruned_col_mask = getattr(neural_core, "pruned_col_mask", None)
+    # Only attach masks when they match current matrix (full pre-compaction layout)
+    if pruned_row_mask is not None and pruned_col_mask is not None:
+        if len(pruned_row_mask) != core_matrix.shape[0] or len(pruned_col_mask) != core_matrix.shape[1]:
+            pruned_row_mask = pruned_col_mask = None
 
-    return SoftCore(
+    soft = SoftCore(
         core_matrix=core_matrix,
         axon_sources=axon_sources,
         id=neural_core.id,
@@ -639,6 +654,10 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         psum_group_id=neural_core.psum_group_id,
         psum_role=neural_core.psum_role,
     )
+    if pruned_row_mask is not None and pruned_col_mask is not None:
+        soft.pruned_row_mask = pruned_row_mask
+        soft.pruned_col_mask = pruned_col_mask
+    return soft
 
 
 def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):

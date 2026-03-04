@@ -170,7 +170,12 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
     Nodes receive a ``topo_order`` field (their index in the topologically
     sorted ``ir_graph.nodes``) so that the frontend can interleave ComputeOps
     at their correct position in the data flow.
+
+    Weight banks are emitted once (heatmap image per bank) so the frontend can
+    avoid redundant soft-core heatmap visualizations. Heatmap images are
+    generated on the backend; only image data URIs are sent, not weight matrices.
     """
+    from mimarsinan.gui.heatmap_renderer import render_heatmap_png_data_uri
     from mimarsinan.mapping.ir import NeuralCore, ComputeOp
 
     nodes_info: list[dict] = []
@@ -178,6 +183,18 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
 
     neural_cores = []
     compute_ops = []
+
+    # Emit one heatmap image per weight bank (backend-rendered, no raw matrices)
+    weight_banks: dict = {}
+    try:
+        for bank_id, bank in getattr(ir_graph, "weight_banks", {}).items():
+            try:
+                uri = render_heatmap_png_data_uri(bank.core_matrix)
+                weight_banks[int(bank_id)] = {"heatmap_image": uri}
+            except Exception:
+                logger.debug("Failed to render heatmap for weight bank %s", bank_id, exc_info=True)
+    except Exception:
+        pass
 
     for topo_idx, node in enumerate(ir_graph.nodes):
         info: dict = {
@@ -209,6 +226,26 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
                 "histogram": _histogram(mat),
             }
             info["psum_role"] = node.psum_role
+            if node.weight_bank_id is not None:
+                info["weight_bank_id"] = int(node.weight_bank_id)
+            else:
+                try:
+                    info["heatmap_image"] = render_heatmap_png_data_uri(mat)
+                except Exception:
+                    logger.debug("Failed to render heatmap for core %s", node.id, exc_info=True)
+                pre = getattr(node, "pre_pruning_heatmap", None)
+                row_mask = getattr(node, "pruned_row_mask", None)
+                col_mask = getattr(node, "pruned_col_mask", None)
+                if pre is not None and row_mask is not None and col_mask is not None:
+                    try:
+                        pre_arr = np.array(pre, dtype=np.float64)
+                        info["pre_pruning_heatmap_image"] = render_heatmap_png_data_uri(
+                            pre_arr,
+                            pruned_row_mask=row_mask,
+                            pruned_col_mask=col_mask,
+                        )
+                    except Exception:
+                        logger.debug("Failed to render pre-pruning heatmap for core %s", node.id, exc_info=True)
             neural_cores.append(info)
         else:
             info["layer_group"] = node.name
@@ -267,6 +304,7 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
         "edges": deduped_edges,
         "groups": groups,
         "group_edges": group_edges,
+        "weight_banks": weight_banks,
         "threshold_distribution": _histogram(np.array(thresholds)) if thresholds else None,
         "latency_distribution": _histogram(np.array(latencies)) if latencies else None,
         "axon_counts": axon_counts,
@@ -391,32 +429,6 @@ def _deduplicate_edges(edges: list[dict]) -> list[dict]:
 # Hardware mapping snapshot
 # ---------------------------------------------------------------------------
 
-def _downsample_matrix(mat: np.ndarray, max_size: int = 96) -> list:
-    """Downsample a 2D matrix to at most max_size x max_size.
-
-    Uses a max-abs representative in each block so non-zero utilized
-    weights remain visible even when large unused padded regions exist.
-    """
-    h, w = mat.shape
-    if h == 0 or w == 0:
-        return [[0.0]]
-    bh = max(1, int(np.ceil(h / max_size)))
-    bw = max(1, int(np.ceil(w / max_size)))
-    new_h = (h + bh - 1) // bh
-    new_w = (w + bw - 1) // bw
-    out = np.zeros((new_h, new_w))
-    for i in range(new_h):
-        for j in range(new_w):
-            block = mat[i * bh:min((i + 1) * bh, h), j * bw:min((j + 1) * bw, w)]
-            flat = block.reshape(-1)
-            if flat.size == 0:
-                out[i, j] = 0.0
-            else:
-                idx = int(np.argmax(np.abs(flat)))
-                out[i, j] = float(flat[idx])
-    return out.tolist()
-
-
 def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
     """Extract detailed inter-core connectivity spans from axon_sources.
 
@@ -500,16 +512,18 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
                     "neurons_per_core": core.neurons_per_core,
                     "used_axons": used_axons,
                     "used_neurons": used_neurons,
-                    "display_axons": used_axons if used_axons > 0 else core.axons_per_core,
-                    "display_neurons": used_neurons if used_neurons > 0 else core.neurons_per_core,
+                    "display_axons": core.axons_per_core,
+                    "display_neurons": core.neurons_per_core,
                     "utilization": utilization,
                     "threshold": float(core.threshold) if core.threshold is not None else None,
                     "latency": core.latency,
                 }
                 try:
-                    core_d["heatmap"] = _downsample_matrix(core.core_matrix)
+                    from mimarsinan.gui.heatmap_renderer import render_heatmap_png_data_uri as _render_heatmap
+                    # Use full core matrix so heatmap aspect matches the hardware core cell (no stretching).
+                    core_d["heatmap_image"] = _render_heatmap(core.core_matrix)
                 except Exception:
-                    pass
+                    logger.debug("Failed to render heatmap for core %d", ci, exc_info=True)
                 cores_detail.append(core_d)
                 all_core_utils.append(core_d)
             stage_info["num_cores"] = len(hcm.cores)

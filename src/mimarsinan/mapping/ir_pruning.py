@@ -8,6 +8,9 @@ from the IR graph:
 2. Removes all-zero columns (neurons) from core_matrix.
 3. Rewires downstream sources that referenced pruned neurons to off.
 4. Reindexes remaining neuron references.
+
+Before compacting, stores pre-pruning heatmap and row/col masks on each
+NeuralCore for GUI visualization (soft-core pre/post pruning views).
 """
 
 from __future__ import annotations
@@ -89,11 +92,11 @@ def prune_ir_graph(ir_graph: IRGraph, zero_threshold: float = 1e-8) -> IRGraph:
                         node.core_matrix[:, j] = 0.0
                         changed = True
 
-    # Phase 1: identify pruned columns per core and build reindex maps
-    # Maps: node_id -> {old_neuron_idx -> new_neuron_idx}  (for kept neurons)
-    # Maps: node_id -> set of pruned neuron indices
+    # Phase 1: identify pruned rows/columns with forward/backward propagation per core
+    # (receiving axonal targets and producing neuronal sources have propagative effects)
     reindex_maps: Dict[int, Dict[int, int]] = {}
     pruned_neurons: Dict[int, Set[int]] = {}
+    pruned_rows: Dict[int, Set[int]] = {}
 
     for node in graph.nodes:
         if not isinstance(node, NeuralCore):
@@ -102,15 +105,46 @@ def prune_ir_graph(ir_graph: IRGraph, zero_threshold: float = 1e-8) -> IRGraph:
             continue
 
         mat = node.core_matrix  # (axons, neurons)
-        n_neurons = mat.shape[1]
+        n_axons, n_neurons = mat.shape
 
-        # Find all-zero columns
-        col_abs = np.abs(mat).sum(axis=0)
-        zero_cols = set(int(i) for i in range(n_neurons) if col_abs[i] < zero_threshold)
+        zero_rows = set(
+            i for i in range(n_axons)
+            if np.abs(mat[i, :]).sum() < zero_threshold
+        )
+        zero_cols = set(
+            j for j in range(n_neurons)
+            if np.abs(mat[:, j]).sum() < zero_threshold
+        )
+        # Use a small epsilon for "has connection" so propagation can prune rows that only
+        # feed below-threshold columns (which can still have tiny entries).
+        conn_eps = min(1e-12, zero_threshold * 1e-4)
+        changed = True
+        while changed:
+            changed = False
+            for i in range(n_axons):
+                if i in zero_rows:
+                    continue
+                non_zero_cols = set(
+                    j for j in range(n_neurons)
+                    if np.abs(mat[i, j]) >= conn_eps
+                )
+                if non_zero_cols and non_zero_cols <= zero_cols:
+                    zero_rows.add(i)
+                    changed = True
+            for j in range(n_neurons):
+                if j in zero_cols:
+                    continue
+                non_zero_rows = set(
+                    i for i in range(n_axons)
+                    if np.abs(mat[i, j]) >= conn_eps
+                )
+                if non_zero_rows and non_zero_rows <= zero_rows:
+                    zero_cols.add(j)
+                    changed = True
 
         pruned_neurons[node.id] = zero_cols
+        pruned_rows[node.id] = zero_rows
 
-        # Build reindex map: old index -> new index for kept columns
         new_idx = 0
         remap = {}
         for old_idx in range(n_neurons):
@@ -141,6 +175,18 @@ def prune_ir_graph(ir_graph: IRGraph, zero_threshold: float = 1e-8) -> IRGraph:
     if graph.output_sources.size:
         graph.output_sources = _rewire_sources(graph.output_sources)
 
+    # Before compacting: store pre-pruning heatmap and masks for GUI (soft-core viz)
+    for node in graph.nodes:
+        if not isinstance(node, NeuralCore) or node.core_matrix is None:
+            continue
+        mat = node.core_matrix
+        n_axons, n_neurons = mat.shape
+        zero_cols = pruned_neurons.get(node.id, set())
+        zero_rows_set = pruned_rows.get(node.id, set())
+        node.pre_pruning_heatmap = np.copy(mat).tolist()
+        node.pruned_col_mask = [j in zero_cols for j in range(n_neurons)]
+        node.pruned_row_mask = [r in zero_rows_set for r in range(n_axons)]
+
     # Phase 3: physically remove zeroed columns from core matrices
     for node in graph.nodes:
         if not isinstance(node, NeuralCore):
@@ -166,8 +212,8 @@ def prune_ir_graph(ir_graph: IRGraph, zero_threshold: float = 1e-8) -> IRGraph:
 
         mat = node.core_matrix
         n_axons = mat.shape[0]
-        row_abs = np.abs(mat).sum(axis=1)
-        keep_rows = [int(r) for r in range(n_axons) if row_abs[r] >= zero_threshold]
+        zero_rows_set = pruned_rows.get(node.id, set())
+        keep_rows = [int(r) for r in range(n_axons) if r not in zero_rows_set]
 
         if len(keep_rows) < n_axons:
             flat_src = node.input_sources.flatten()
@@ -180,5 +226,53 @@ def prune_ir_graph(ir_graph: IRGraph, zero_threshold: float = 1e-8) -> IRGraph:
                 # All rows pruned — keep a 1-row zero matrix
                 node.core_matrix = mat[:1, :] * 0.0
                 node.input_sources = np.array([flat_src[0]], dtype=object)
+
+    # Phase 5: set pruning maps on bank-backed cores from each weight bank
+    # (banks are not compacted; masks let soft-core compaction drop rows/cols when materializing)
+    # Use forward/backward propagation: pruned rows (axons) and pruned cols (neurons) have
+    # propagative effects — a row that only feeds pruned cols is dead; a col that only
+    # receives from pruned rows is dead. Iterate until fixpoint.
+    weight_banks = getattr(graph, "weight_banks", None) or {}
+    for bank_id, bank in weight_banks.items():
+        mat = bank.core_matrix
+        n_axons, n_neurons = mat.shape
+        zero_rows: Set[int] = set(
+            i for i in range(n_axons)
+            if np.abs(mat[i, :]).sum() < zero_threshold
+        )
+        zero_cols: Set[int] = set(
+            j for j in range(n_neurons)
+            if np.abs(mat[:, j]).sum() < zero_threshold
+        )
+        conn_eps = min(1e-12, zero_threshold * 1e-4)
+        changed = True
+        while changed:
+            changed = False
+            for i in range(n_axons):
+                if i in zero_rows:
+                    continue
+                non_zero_cols = set(
+                    j for j in range(n_neurons)
+                    if np.abs(mat[i, j]) >= conn_eps
+                )
+                if non_zero_cols and non_zero_cols <= zero_cols:
+                    zero_rows.add(i)
+                    changed = True
+            for j in range(n_neurons):
+                if j in zero_cols:
+                    continue
+                non_zero_rows = set(
+                    i for i in range(n_axons)
+                    if np.abs(mat[i, j]) >= conn_eps
+                )
+                if non_zero_rows and non_zero_rows <= zero_rows:
+                    zero_cols.add(j)
+                    changed = True
+        pruned_row_mask = [i in zero_rows for i in range(n_axons)]
+        pruned_col_mask = [j in zero_cols for j in range(n_neurons)]
+        for node in graph.nodes:
+            if isinstance(node, NeuralCore) and getattr(node, "weight_bank_id", None) == bank_id:
+                node.pruned_row_mask = pruned_row_mask
+                node.pruned_col_mask = pruned_col_mask
 
     return graph

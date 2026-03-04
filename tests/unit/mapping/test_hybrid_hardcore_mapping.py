@@ -9,6 +9,7 @@ from mimarsinan.mapping.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
     HybridHardCoreMapping,
 )
+from mimarsinan.mapping.softcore_mapping import compact_soft_core_mapping
 
 
 def _make_two_core_ir():
@@ -93,3 +94,45 @@ class TestBuildHybridHardCoreMapping:
         ]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
         assert len(hm.get_neural_segments()) >= 1
+
+
+class TestCompactSoftCoreMapping:
+    """Compaction uses pruning maps (pruned_row_mask, pruned_col_mask), not parameter values."""
+
+    def test_compacts_using_pruning_maps(self):
+        # Pruning maps: row 1 and col 2 pruned (True = pruned)
+        pruned_row_mask = [False, True, False, False]
+        pruned_col_mask = [False, False, True, False]
+        mat = np.ones((4, 4), dtype=np.float64)
+        from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+        from mimarsinan.mapping.softcore_mapping import SoftCore
+
+        sources = [
+            SpikeSource(-2, 0), SpikeSource(-2, 1), SpikeSource(-2, 2), SpikeSource(-2, 3),
+        ]
+        core = SoftCore(core_matrix=mat.copy(), axon_sources=sources, id=0)
+        core.pruned_row_mask = pruned_row_mask
+        core.pruned_col_mask = pruned_col_mask
+        cores = [core]
+        output_sources = [
+            SpikeSource(0, 0), SpikeSource(0, 1), SpikeSource(0, 2), SpikeSource(0, 3),
+        ]
+        compact_soft_core_mapping(cores, output_sources)
+
+        assert cores[0].core_matrix.shape == (3, 3)
+        assert len(cores[0].axon_sources) == 3
+        assert len(output_sources) == 3
+
+    def test_no_compaction_when_masks_absent(self):
+        mat = np.ones((2, 2), dtype=np.float64) * 0.5
+        from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+        from mimarsinan.mapping.softcore_mapping import SoftCore
+
+        sources = [SpikeSource(-2, 0), SpikeSource(-2, 1)]
+        core = SoftCore(core_matrix=mat.copy(), axon_sources=sources, id=0)
+        cores = [core]
+        output_sources = [SpikeSource(0, 0), SpikeSource(0, 1)]
+        compact_soft_core_mapping(cores, output_sources)
+
+        assert cores[0].core_matrix.shape == (2, 2)
+        assert len(output_sources) == 2

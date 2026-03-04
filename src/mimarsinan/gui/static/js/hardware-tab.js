@@ -74,6 +74,23 @@ function nodeTag(nodeId) {
   return `n${nodeId}`;
 }
 
+function buildCoreDetailPanelHtml(segIdx, core) {
+  const pct = (core.utilization * 100).toFixed(1);
+  let html = '<div class="hw-core-detail-panel">';
+  if (core.heatmap_image) {
+    html += `<img src="${core.heatmap_image.replace(/"/g, '&quot;')}" alt="Core ${core.core_index} heatmap" class="hw-core-detail-heatmap">`;
+  }
+  html += '<table class="data-table compact">';
+  html += `<tr><td>Segment</td><td>${segIdx}</td></tr>`;
+  html += `<tr><td>Core index</td><td>${core.core_index}</td></tr>`;
+  html += `<tr><td>Utilization</td><td>${pct}%</td></tr>`;
+  html += `<tr><td>Dimensions</td><td>${core.axons_per_core} axons × ${core.neurons_per_core} neurons</td></tr>`;
+  html += `<tr><td>Used</td><td>${core.used_axons ?? '—'} / ${core.used_neurons ?? '—'}</td></tr>`;
+  html += `<tr><td>Threshold</td><td>${core.threshold != null ? core.threshold.toFixed(4) : '—'}</td></tr>`;
+  html += '</table></div>';
+  return html;
+}
+
 // ── Stage flow with consistent layout + side-based connectivity ──────────
 function renderStageFlow(hw) {
   const el = document.getElementById('hw-stage-flow');
@@ -85,13 +102,15 @@ function renderStageFlow(hw) {
 
   function render() {
     let html = '<div class="stage-flow">';
+    html += '<div class="stage-flow-row">';
+    html += '<div class="stage-flow-column">';
     for (let si = 0; si < hw.stages.length; si++) {
       const stage = hw.stages[si];
       if (stage.kind === 'neural') {
         const segIdx = stage.segment_index ?? stage.index;
         const isExp = expanded.has(segIdx);
         const avgUtil = stage.cores ? (stage.cores.reduce((s, c) => s + c.utilization, 0) / stage.cores.length * 100).toFixed(1) : '0.0';
-        html += `<div class="stage-block neural" data-seg="${segIdx}">
+        let blockHtml = `<div class="stage-block neural" data-seg="${segIdx}">
           <div class="stage-block-header" onclick="window._hwToggle(${segIdx})">
             <span class="stage-expand">${isExp ? '&#9660;' : '&#9654;'}</span>
             <span class="stage-block-title">Segment ${segIdx}</span>
@@ -100,9 +119,16 @@ function renderStageFlow(hw) {
           </div>
           <div class="stage-block-name" onclick="window._hwToggle(${segIdx})">${esc(stage.name)}</div>`;
         if (isExp && stage.cores) {
-          html += buildSegmentDetail(stage, segIdx, selectedCore[segIdx], globalLayout);
+          blockHtml += buildSegmentDetail(stage, segIdx, selectedCore[segIdx], globalLayout);
         }
-        html += '</div>';
+        blockHtml += '</div>';
+        if (selectedCore[segIdx] != null && stage.cores) {
+          const core = stage.cores.find(c => c.core_index === selectedCore[segIdx]);
+          if (core) {
+            blockHtml = '<div class="stage-block-with-detail">' + blockHtml + buildCoreDetailPanelHtml(segIdx, core) + '</div>';
+          }
+        }
+        html += blockHtml;
       } else {
         const shapeStr = [];
         if (stage.input_shape) shapeStr.push(`In: [${stage.input_shape.join(', ')}]`);
@@ -116,6 +142,8 @@ function renderStageFlow(hw) {
       }
       if (si < hw.stages.length - 1) html += '<div class="stage-connector">&#8595;</div>';
     }
+    html += '</div>'; // end stage-flow-column
+    html += '</div>'; // end stage-flow-row
     html += '</div>';
     el.innerHTML = html;
 
@@ -142,8 +170,16 @@ function renderStageFlow(hw) {
 
   window._hwToggle = (si) => { expanded.has(si) ? expanded.delete(si) : expanded.add(si); selectedCore[si] = null; selectedSpan[si] = null; render(); };
   window._hwCoreClick = (segIdx, ci) => {
-    if (selectedCore[segIdx] === ci) { selectedCore[segIdx] = null; selectedSpan[segIdx] = null; }
-    else { selectedCore[segIdx] = ci; selectedSpan[segIdx] = null; }
+    if (selectedCore[segIdx] === ci) {
+      selectedCore[segIdx] = null;
+      selectedSpan[segIdx] = null;
+    } else {
+      // Only one segment has a selection at a time so the detail panel shows this segment's core
+      for (const k of Object.keys(selectedCore)) selectedCore[k] = null;
+      for (const k of Object.keys(selectedSpan)) selectedSpan[k] = null;
+      selectedCore[segIdx] = ci;
+      selectedSpan[segIdx] = null;
+    }
     render();
   };
   window._hwSpanClick = (segIdx, spanKey) => {
@@ -190,60 +226,75 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
     html += '</div></div>';
   }
 
+  // Group cores by type (axons × neurons)
+  const coresByDim = new Map();
+  for (const c of cores) {
+    const key = `${c.axons_per_core}x${c.neurons_per_core}`;
+    if (!coresByDim.has(key)) coresByDim.set(key, []);
+    coresByDim.get(key).push(c);
+  }
+  const groupOrder = globalLayout
+    ? globalLayout.map(g => `${g.axons}x${g.neurons}`)
+    : [...coresByDim.keys()];
+
+  html += `<div class="hw-core-grid-wrap" id="hw-grid-wrap-${segIdx}">`;
   html += `<div class="hw-core-grid" id="hw-grid-${segIdx}">`;
 
-  if (globalLayout) {
-    // Group actual segment cores by their dimension key
-    const coresByDim = new Map();
-    for (const c of cores) {
-      const key = `${c.axons_per_core}x${c.neurons_per_core}`;
-      if (!coresByDim.has(key)) coresByDim.set(key, []);
-      coresByDim.get(key).push(c);
-    }
-    for (const grp of globalLayout) {
-      const key = `${grp.axons}x${grp.neurons}`;
-      const pool = coresByDim.get(key) || [];
-      for (let i = 0; i < grp.count; i++) {
-        const actualCore = i < pool.length ? pool[i] : null;
+  const ID_WIDTH = 20;
+  const UTIL_HEIGHT = 14;
+  const GRID_GAP = 6;
+  // Conservative: stage block 700px − padding − input buffer − scrollbar/margin so grid doesn't overflow
+  const SEG_VIEW_WIDTH = 580;
 
-        const wPx = Math.max(MIN_PX, Math.round((grp.neurons / maxDim) * MAX_PX));
-        const hPx = Math.max(MIN_PX, Math.round((grp.axons / maxDim) * MAX_PX));
-
-        if (actualCore) {
-          const pct = (actualCore.utilization * 100).toFixed(0);
-          const selCls = selCoreIdx === actualCore.core_index ? ' hw-core-selected' : '';
-          html += `<div class="hw-core${selCls}" id="hc-${segIdx}-${actualCore.core_index}" style="width:${wPx}px;height:${hPx}px" onclick="window._hwCoreClick(${segIdx},${actualCore.core_index})" title="Core ${actualCore.core_index}: ${actualCore.used_axons}/${actualCore.axons_per_core}ax × ${actualCore.used_neurons}/${actualCore.neurons_per_core}n, util=${pct}%">`;
-          if (actualCore.heatmap) {
-            const hmUrl = getHeatmapDataUrl(segIdx, actualCore);
-            html += `<img class="hw-core-canvas" src="${hmUrl}" draggable="false">`;
-          }
-          html += `<span class="hw-core-label">${actualCore.core_index}</span>`;
-          html += `<span class="hw-core-util">${pct}%</span>`;
-          html += '</div>';
-        } else {
-          html += `<div class="hw-core hw-core-empty" style="width:${wPx}px;height:${hPx}px" title="Unused slot (${grp.axons}×${grp.neurons})">`;
-          html += `<span class="hw-core-label" style="opacity:0.3">—</span>`;
-          html += '</div>';
-        }
-      }
+  function emitCoreCell(core, wPx, hPx, isPlaceholder) {
+    const cellW = ID_WIDTH + 4 + wPx;
+    const cellH = hPx + UTIL_HEIGHT;
+    const cellStyle = `width:${cellW}px;height:${cellH}px`;
+    if (isPlaceholder) {
+      return `<div class="hw-core-cell" style="${cellStyle}" title="Unused slot">
+        <span class="hw-core-id">—</span>
+        <div class="hw-core-cell-main"><div class="hw-core hw-core-empty" style="width:${wPx}px;height:${hPx}px"></div><span class="hw-core-util">—</span></div>
+      </div>`;
     }
-  } else {
-    for (const core of cores) {
-      const wPx = Math.max(MIN_PX, Math.round((core.neurons_per_core / maxDim) * MAX_PX));
-      const hPx = Math.max(MIN_PX, Math.round((core.axons_per_core / maxDim) * MAX_PX));
-      const pct = (core.utilization * 100).toFixed(0);
-      const selCls = selCoreIdx === core.core_index ? ' hw-core-selected' : '';
-      html += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}" style="width:${wPx}px;height:${hPx}px" onclick="window._hwCoreClick(${segIdx},${core.core_index})" title="Core ${core.core_index}: ${core.used_axons}/${core.axons_per_core}ax × ${core.used_neurons}/${core.neurons_per_core}n, util=${pct}%">`;
-      if (core.heatmap) {
-        const hmUrl = getHeatmapDataUrl(segIdx, core);
-        html += `<img class="hw-core-canvas" src="${hmUrl}" draggable="false">`;
-      }
-      html += `<span class="hw-core-label">${core.core_index}</span>`;
-      html += `<span class="hw-core-util">${pct}%</span>`;
-      html += '</div>';
+    const pct = (core.utilization * 100).toFixed(0);
+    const selCls = selCoreIdx === core.core_index ? ' hw-core-selected' : '';
+    let cell = `<div class="hw-core-cell" style="${cellStyle}" onclick="window._hwCoreClick(${segIdx},${core.core_index})" title="Core ${core.core_index}: ${core.used_axons}/${core.axons_per_core}ax × ${core.used_neurons}/${core.neurons_per_core}n, util=${pct}%">`;
+    cell += `<span class="hw-core-id">${core.core_index}</span>`;
+    cell += '<div class="hw-core-cell-main">';
+    cell += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}">`;
+    if (core.heatmap_image) {
+      cell += `<img class="hw-core-canvas" src="${core.heatmap_image}" style="max-width:${wPx}px;max-height:${hPx}px;width:auto;height:auto;display:block;object-fit:contain" draggable="false">`;
     }
+    cell += '</div>';
+    cell += `<span class="hw-core-util">${pct}%</span>`;
+    cell += '</div></div>';
+    return cell;
   }
+
+  for (const key of groupOrder) {
+    const [axStr, nStr] = key.split('x');
+    const ax = parseInt(axStr, 10);
+    const n = parseInt(nStr, 10);
+    const pool = coresByDim.get(key) || [];
+    const grpCount = globalLayout ? (globalLayout.find(g => `${g.axons}x${g.neurons}` === key)?.count ?? pool.length) : pool.length;
+    const wPx = Math.max(MIN_PX, Math.round((n / maxDim) * MAX_PX));
+    const hPx = Math.max(MIN_PX, Math.round((ax / maxDim) * MAX_PX));
+    const cellW = ID_WIDTH + 4 + wPx;
+    const cellH = hPx + UTIL_HEIGHT;
+    const numCols = Math.max(1, Math.floor((SEG_VIEW_WIDTH + GRID_GAP) / (cellW + GRID_GAP)));
+
+    html += '<div class="hw-core-group">';
+    html += `<div class="hw-core-group-label">${ax}×${n}</div>`;
+    html += `<div class="hw-core-group-cores" style="grid-template-columns:repeat(${numCols},${cellW}px);grid-auto-rows:${cellH}px">`;
+    for (let i = 0; i < grpCount; i++) {
+      const actualCore = i < pool.length ? pool[i] : null;
+      html += emitCoreCell(actualCore, wPx, hPx, !actualCore);
+    }
+    html += '</div></div>';
+  }
+
   html += '</div>'; // end hw-core-grid
+  html += '</div>'; // end hw-core-grid-wrap
 
   html += '</div>'; // end hw-segment-row-inner
 
@@ -282,7 +333,9 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   });
 
   const stage = hw.stages.find(s => s.kind === 'neural' && (s.segment_index ?? s.index) === segIdx);
-  if (!stage || !stage.connectivity) return;
+  if (!stage) return;
+
+  if (!stage.connectivity) return;
 
   const spans = stage.connectivity;
   const incoming = spans.filter(sp => sp.dst_core === selCoreIdx && sp.kind !== 'off');
@@ -624,90 +677,4 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   }
 }
 
-// ── Pre-rendered heatmap data URLs ───────────────────────────────────────
-const _heatmapUrlCache = new Map();
-
-function getHeatmapDataUrl(segIdx, core) {
-  const key = `${segIdx}-${core.core_index}`;
-  if (_heatmapUrlCache.has(key)) return _heatmapUrlCache.get(key);
-  const url = renderHeatmapDataUrl(core.heatmap, core);
-  _heatmapUrlCache.set(key, url);
-  return url;
-}
-
-function renderHeatmapDataUrl(heatmap, core) {
-  const rows = heatmap.length, cols = heatmap[0]?.length || 0;
-  if (rows === 0 || cols === 0) return '';
-
-  let maxAbs = 0;
-  for (let r = 0; r < rows; r++)
-    for (let c = 0; c < cols; c++)
-      maxAbs = Math.max(maxAbs, Math.abs(Number(heatmap[r][c]) || 0));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = cols;
-  canvas.height = rows;
-  const ctx = canvas.getContext('2d');
-
-  if (maxAbs < 1e-12) {
-    ctx.fillStyle = '#2b303c';
-    ctx.fillRect(0, 0, cols, rows);
-    ctx.fillStyle = '#6b6e7a';
-    ctx.font = `${Math.max(8, Math.round(rows / 6))}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const hasUsed = (core.used_axons || 0) > 0 && (core.used_neurons || 0) > 0;
-    ctx.fillText(hasUsed ? 'all-zero' : 'empty', cols / 2, rows / 2);
-    return canvas.toDataURL('image/png');
-  }
-
-  const allAbs = [];
-  for (let r = 0; r < rows; r++)
-    for (let c = 0; c < cols; c++)
-      allAbs.push(Math.abs(Number(heatmap[r][c]) || 0));
-  allAbs.sort((a, b) => a - b);
-  const p98Idx = Math.max(0, Math.floor(allAbs.length * 0.98));
-  const scaleAbs = Math.max(allAbs[p98Idx] || maxAbs, maxAbs * 0.05, 1e-12);
-
-  const img = ctx.createImageData(cols, rows);
-  const data = img.data;
-  let k = 0;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const raw = Number(heatmap[r][c]) || 0;
-      const v = raw / scaleAbs;
-      const [rr, gg, bb] = heatColor(Math.max(-1, Math.min(1, v)));
-      data[k++] = rr;
-      data[k++] = gg;
-      data[k++] = bb;
-      data[k++] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-
-  // Draw used sub-region boundary directly onto the heatmap image.
-  const totalAxons = Math.max(1, core.axons_per_core || rows);
-  const totalNeurons = Math.max(1, core.neurons_per_core || cols);
-  const usedAxons = Math.max(0, Math.min(core.used_axons ?? totalAxons, totalAxons));
-  const usedNeurons = Math.max(0, Math.min(core.used_neurons ?? totalNeurons, totalNeurons));
-  const usedW = (usedNeurons / totalNeurons) * cols;
-  const usedH = (usedAxons / totalAxons) * rows;
-  if (usedW > 0 && usedH > 0 && (usedW < cols || usedH < rows)) {
-    ctx.strokeStyle = 'rgba(231, 235, 244, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, Math.max(0, usedW - 1), Math.max(0, usedH - 1));
-  }
-
-  return canvas.toDataURL('image/png');
-}
-
-function heatColor(v) {
-  // Modern gradient: dark blue -> cyan -> yellow (positive), dark blue -> purple (negative). Gamma for mid-tones.
-  const t = Math.max(0, Math.min(1, Math.abs(v)));
-  const tt = Math.pow(t, 0.7);
-  if (v >= 0) {
-    return [Math.round(90 + tt * 165), Math.round(96 + tt * 140), Math.round(110 - tt * 110)];
-  } else {
-    return [Math.round(90 - tt * 60), Math.round(96 - tt * 40), Math.round(110 + tt * 145)];
-  }
-}
+// Heatmap images are generated on the backend; frontend displays heatmap_image (data URI) only.
