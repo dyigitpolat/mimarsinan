@@ -39,6 +39,7 @@ class CoreQuantizationVerificationStep(PipelineStep):
             return
 
         failures = []
+        scale_tol = 1e-6
         for core in cores:
             ps = core.parameter_scale
             try:
@@ -48,6 +49,11 @@ class CoreQuantizationVerificationStep(PipelineStep):
 
             if scale == 0.0:
                 failures.append(f"{core.name}: parameter_scale is 0")
+                continue
+            if abs(scale - 1.0) > scale_tol:
+                failures.append(
+                    f"{core.name}: parameter_scale={scale} (expected 1.0 after chip quantization)"
+                )
                 continue
 
             scaled = core.get_core_matrix(ir_graph) * scale

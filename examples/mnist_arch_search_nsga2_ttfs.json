@@ -79,11 +79,11 @@
     "spike_generation_mode": "TTFS",
     "firing_mode": "TTFS",
     "thresholding_mode": "<=",
-    "max_simulation_samples": 100,
+    "max_simulation_samples": 500,
     "pruning": true,
     "pruning_fraction": 0.1
   },
   "target_metric_override": 0.95,
-  "start_step": "Soft Core Mapping",
+  "start_step": "Simulation",
   "stop_step": null
 }
