@@ -21,4 +21,5 @@ from mimarsinan.mapping.chip_latency import ChipLatency
 from mimarsinan.mapping.ir_latency import IRLatency
 from mimarsinan.mapping.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.ir_pruning import prune_ir_graph
+from mimarsinan.mapping.pruning_propagation import compute_propagated_pruned_rows_cols
 

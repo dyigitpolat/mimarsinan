@@ -15,6 +15,8 @@ the IR into physical hardware cores.
 | `hybrid_hardcore_mapping.py` | `HybridHardCoreMapping`, `HybridStage`, `SegmentIOSlice`, `build_hybrid_hard_core_mapping` | Multi-segment deployable program with state-buffer I/O |
 | `chip_latency.py` | `ChipLatency` | Calculates chip simulation latency from core graph |
 | `ir_latency.py` | `IRLatency` | Computes per-node latency tiers in the IR graph |
+| `ir_pruning.py` | `prune_ir_graph`, `get_initial_pruning_masks_from_model` | Eliminates zeroed/pruned rows and columns from the IR; uses model pruning maps when available (else zero-threshold); propagative pruning delegated to `pruning_propagation`. |
+| `pruning_propagation.py` | `compute_propagated_pruned_rows_cols` | Single place for propagative pruning fixpoint (row only feeds pruned cols, col only receives from pruned rows); used by `ir_pruning` for owned-weight cores and weight banks. |
 | `per_source_scales.py` | `compute_per_source_scales` | Traverses mapper graph to set per-input-channel `per_input_scales` on each perceptron; handles branching (concat) and dimension-rearranging mappers (falls back to mean when channel counts don't align) |
 | `ir_source_spans.py` | `IRSourceSpan`, `compress_ir_sources` | Range-compressed IR source representations for efficient simulation |
 | `spike_source_spans.py` | `SpikeSourceSpan`, `compress_spike_sources` | Range-compressed spike source representations |
@@ -42,7 +44,7 @@ the IR into physical hardware cores.
 
 ## Exported API (\_\_init\_\_.py)
 
-Core IR types (including `WeightBank`), mapping classes, packing utilities, and `compute_per_source_scales`.
+Core IR types (including `WeightBank`), mapping classes, packing utilities, `compute_per_source_scales`, `prune_ir_graph`, and `compute_propagated_pruned_rows_cols`.
 `mapping_utils` (the large mapper hierarchy) is intentionally **not** re-exported at
 the package level due to its size and star-import patterns; import directly from
 `mapping.mapping_utils`.

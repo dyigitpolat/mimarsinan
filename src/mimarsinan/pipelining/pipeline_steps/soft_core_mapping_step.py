@@ -182,10 +182,16 @@ class SoftCoreMappingStep(PipelineStep):
         max_latency = IRLatency(ir_graph).calculate()
         print(f"[SoftCoreMappingStep] IR Graph max latency: {max_latency}")
 
-        # Compact the IR graph by removing zeroed rows/columns when pruning was applied
+        # Compact the IR graph by removing zeroed rows/columns when pruning was applied.
+        # Use model pruning masks when available so compaction is driven by maps, not parameter values.
         if self.pipeline.config.get("pruning", False):
-            from mimarsinan.mapping.ir_pruning import prune_ir_graph
-            ir_graph = prune_ir_graph(ir_graph)
+            from mimarsinan.mapping.ir_pruning import prune_ir_graph, get_initial_pruning_masks_from_model
+            initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_graph)
+            ir_graph = prune_ir_graph(
+                ir_graph,
+                initial_pruned_per_node=initial_node if initial_node else None,
+                initial_pruned_per_bank=initial_bank if initial_bank else None,
+            )
             print(f"[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
         
         self.add_entry("ir_graph", ir_graph, 'pickle')
