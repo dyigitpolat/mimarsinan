@@ -8,7 +8,7 @@ from typing import List, Literal, Sequence
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore, ir_graph_to_soft_core_mapping
-from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
+from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping, compact_soft_core_mapping
 
 
 _FINAL_OUTPUT_SENTINEL = -999
@@ -184,14 +184,9 @@ def _flush_neural_segment(
             output_nodes.append(n)
 
     output_sources_list: list[IRSource] = []
-    output_map: list[SegmentIOSlice] = []
-    current_offset = 0
     for n in output_nodes:
-        out_size = n.get_output_count()
-        output_map.append(SegmentIOSlice(node_id=n.id, offset=current_offset, size=out_size))
-        for idx in range(out_size):
+        for idx in range(n.get_output_count()):
             output_sources_list.append(IRSource(node_id=n.id, index=idx))
-        current_offset += out_size
 
     output_sources = np.array(output_sources_list, dtype=object)
 
@@ -201,6 +196,21 @@ def _flush_neural_segment(
         weight_banks=weight_banks,
     )
     soft = ir_graph_to_soft_core_mapping(seg_graph)
+
+    # Compact soft cores: remove all-zero rows/columns and reindex spans so
+    # hardware mapping shows only utilized structure (pruning reflected).
+    compact_soft_core_mapping(soft.cores, soft.output_sources)
+
+    # Rebuild output_map from compacted output sizes
+    output_map = []
+    current_offset = 0
+    output_core_ids = [n.id for n in output_nodes]
+    core_by_id = {c.id: c for c in soft.cores}
+    for nid in output_core_ids:
+        core = core_by_id.get(nid)
+        size = core.get_output_count() if core else 0
+        output_map.append(SegmentIOSlice(node_id=nid, offset=current_offset, size=size))
+        current_offset += size
 
     hard = HardCoreMapping(shared_pool)
     hard.map(soft)

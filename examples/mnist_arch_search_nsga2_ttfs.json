@@ -84,6 +84,6 @@
     "pruning_fraction": 0.1
   },
   "target_metric_override": 0.95,
-  "start_step": "Activation Analysis",
+  "start_step": "Soft Core Mapping",
   "stop_step": null
 }

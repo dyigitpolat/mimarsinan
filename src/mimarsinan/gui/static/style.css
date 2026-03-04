@@ -175,7 +175,23 @@ body {
 }
 .ir-detail-close:hover { color: var(--text-primary); }
 /* ═══════════ Hardware — Stage Flow ═══════════ */
-.stage-flow { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 12px 0; }
+.stage-flow { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 12px 0; width: 100%; }
+.stage-flow-row {
+  display: flex; flex-direction: row; justify-content: center; align-items: stretch; gap: 16px;
+  width: 100%; min-height: 0;
+}
+.stage-flow-column {
+  display: flex; flex-direction: column; align-items: center; gap: 0;
+  flex: 0 0 auto; min-width: 0;
+}
+.stage-block-with-detail {
+  display: flex; flex-direction: row; align-items: stretch; gap: 12px;
+  width: fit-content; max-width: 100%;
+}
+/* Keep segment block same width as when alone (content-sized), don't expand to 700px on click */
+.stage-block-with-detail .stage-block {
+  flex: 0 0 auto; width: fit-content; max-width: 700px; min-width: 0;
+}
 .stage-block {
   width: 100%; max-width: 700px;
   border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: box-shadow 0.2s;
@@ -189,52 +205,86 @@ body {
 .stage-block-info { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
 .stage-block-name { padding: 0 14px 8px; font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .stage-connector { display: flex; justify-content: center; padding: 3px 0; color: var(--text-muted); font-size: 14px; }
-.stage-detail { border-top: 1px solid var(--border); padding: 12px 14px; }
+.stage-detail { border-top: 1px solid var(--border); padding: 12px 14px; overflow: auto; min-width: 0; }
 .hw-segment-layout { display: flex; align-items: stretch; gap: 6px; position: relative; }
 .hw-segment-col {
   display: flex; flex-direction: column; gap: 6px;
-  position: relative; width: fit-content; max-width: 100%;
+  position: relative; min-width: 0; max-width: 100%; overflow: auto;
 }
 .hw-segment-row-inner {
   display: flex; flex-direction: row; align-items: stretch; gap: 6px;
-  position: relative; width: fit-content; max-width: 100%;
+  position: relative; min-width: 0; max-width: 100%;
 }
 
-/* ── Hardware core grid (proportional sizing + inline heatmaps + overlay) ── */
-.hw-core-grid {
-  display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end;
+/* ── Hardware core grid: grouped by type, scrollable ── */
+.hw-core-grid-wrap {
+  min-width: 0; max-width: 100%; overflow: auto;
   position: relative;
-  flex: 0 0 auto;
-  width: fit-content;
-  max-width: 100%;
+}
+.hw-core-grid {
+  display: flex; flex-direction: column; gap: 10px;
+  position: relative; width: fit-content; min-width: 0;
+}
+.hw-core-group {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.hw-core-group-label {
+  font-size: 9px; font-weight: 600; color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.hw-core-group-cores {
+  display: grid;
+  gap: 6px;
+  align-items: start;
+  /* grid-template-columns and grid-auto-rows set inline per group */
+}
+.hw-core-cell {
+  display: flex; flex-direction: row; align-items: flex-start; gap: 4px;
+  cursor: pointer;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.hw-core-cell .hw-core-id {
+  flex-shrink: 0; font-size: 9px; font-weight: 600; color: var(--text-muted);
+  width: 20px; text-align: right; padding-top: 2px;
+}
+.hw-core-cell-main {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  flex-shrink: 0;
+}
+.hw-core-cell .hw-core-util {
+  font-size: 8px; font-weight: 600; color: var(--text-primary);
+  flex-shrink: 0;
+  text-align: center;
+  width: 100%;
 }
 .hw-core {
   position: relative; border-radius: 3px; border: 1.5px solid var(--border);
-  cursor: pointer; overflow: hidden; display: flex; flex-direction: column;
-  align-items: center; justify-content: flex-end;
+  overflow: hidden; flex-shrink: 0;
+  display: inline-block;
+  box-sizing: border-box;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.hw-core:hover { border-color: var(--accent); }
+.hw-core-cell:hover .hw-core { border-color: var(--accent); }
 .hw-core-selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent-dim); z-index: 1; }
 .hw-core-canvas {
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  pointer-events: none; border-radius: 2px;
-  object-fit: fill; image-rendering: auto;
-}
-.hw-core-label {
-  position: relative; z-index: 1;
-  font-size: 8px; color: var(--text-muted); line-height: 1;
-  text-shadow: 0 0 3px rgba(0,0,0,0.8);
-}
-.hw-core-util {
-  position: relative; z-index: 1;
-  font-size: 10px; font-weight: 600; color: var(--text-primary); line-height: 1.2;
-  text-shadow: 0 0 3px rgba(0,0,0,0.8);
+  display: block; vertical-align: top; pointer-events: none; border-radius: 2px;
+  image-rendering: auto; object-fit: contain;
 }
 
 /* ── Empty core placeholder ── */
 .hw-core-empty {
   background: var(--bg-primary); border-style: dashed !important; opacity: 0.45;
+}
+
+/* ── Soft-core (IR) heatmap images: preserve aspect, no stretching ── */
+.ir-softcore-heatmap-img {
+  object-fit: contain; max-width: 280px; max-height: 280px; width: auto; height: auto; display: block;
 }
 
 /* ── Buffer lines (input/output) ── */
@@ -322,6 +372,25 @@ body {
   font-size: 12px; font-weight: 600; color: var(--text-primary);
 }
 .hw-edge-popover .data-table { margin: 6px 0; font-size: 11px; }
+
+/* Core detail panel: next to Segment blocks (same height as flow) */
+.hw-core-detail-panel {
+  flex: 0 0 auto; min-width: 220px; max-width: 320px;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 12px; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: auto;
+}
+.hw-core-detail-heatmap {
+  display: block; max-width: 100%; max-height: 240px; width: auto; height: auto;
+  object-fit: contain; border-radius: 4px; border: 1px solid var(--border);
+  align-self: flex-start;
+}
+.hw-core-detail-panel .data-table { margin: 0; font-size: 11px; }
+.hw-core-detail-placeholder {
+  color: var(--text-muted); font-size: 12px; text-align: center;
+  padding: 24px 12px;
+}
 
 /* ── Shared connectivity chips ── */
 .conn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 11px; }

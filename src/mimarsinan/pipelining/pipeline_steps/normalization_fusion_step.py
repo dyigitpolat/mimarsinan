@@ -11,7 +11,7 @@ import torch
 class NormalizationFusionStep(PipelineStep):
     def __init__(self, pipeline):
         requires = ["model"]
-        promises = []
+        promises = ["fused_model"]
         updates = ["model"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
@@ -63,7 +63,8 @@ class NormalizationFusionStep(PipelineStep):
                 perceptron.layer.register_buffer(buf_name, buf_val)
 
             perceptron.normalization = nn.Identity()
-        
+
         print(self.validate())
 
         self.update_entry("model", model, 'torch_model')
+        self.add_entry("fused_model", model, 'torch_model')

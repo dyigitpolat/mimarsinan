@@ -470,7 +470,7 @@ Conditionally included when `pruning` is enabled and `pruning_fraction > 0`. Use
 3. Uses `SmartSmoothAdaptation` to progressively scale candidate weights toward zero (at adaptation rate `r`, weights are multiplied by `1 − r`)
 4. When adaptation completes (`r = 1.0`), pruned rows/columns are fully zeroed
 
-The zeroed structure is later physically removed from the IR graph by `ir_pruning.prune_ir_graph()` during Soft Core Mapping, which compacts `NeuralCore` weight matrices and rewires source references.
+The zeroed structure is later physically removed from the IR graph by `ir_pruning.prune_ir_graph()` during Soft Core Mapping, which compacts `NeuralCore` weight matrices and rewires source references. Before compacting, each node receives `pre_pruning_heatmap`, `pruned_row_mask`, and `pruned_col_mask` for GUI soft-core pre/post pruning visualizations.
 
 ### 5.10 Weight Quantization
 

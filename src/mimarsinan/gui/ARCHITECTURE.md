@@ -13,6 +13,7 @@ providing live monitoring and post-run inspection.
 | `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (WandB + GUI) |
 | `server.py` | `start_server` | FastAPI + Uvicorn server in a daemon thread |
 | `snapshot.py` | `build_step_snapshot` | Pure functions extracting JSON-safe snapshots from pipeline artifacts |
+| `heatmap_renderer.py` | `render_heatmap_png_data_uri` | Renders weight matrices as PNG data URIs for GUI; no raw matrices sent to frontend |
 
 ### Frontend (`static/`)
 
@@ -22,8 +23,8 @@ scales tabs).
 
 ## Dependencies
 
-- **Internal**: `common.wandb_utils` (`Reporter` protocol), `mapping.ir` (for snapshots), `mapping.spike_source_spans`.
-- **External**: `fastapi`, `uvicorn`, `websockets`.
+- **Internal**: `common.wandb_utils` (`Reporter` protocol), `mapping.ir` (for snapshots), `mapping.spike_source_spans`, `gui.heatmap_renderer` (for snapshot heatmaps).
+- **External**: `fastapi`, `uvicorn`, `websockets`, `matplotlib` (heatmap rendering).
 
 ## Dependents
 

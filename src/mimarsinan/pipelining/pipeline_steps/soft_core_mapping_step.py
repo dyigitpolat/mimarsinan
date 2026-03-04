@@ -19,7 +19,8 @@ import os
 class SoftCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
-        requires = ["model", "platform_constraints_resolved"]
+        # Require fused_model (only produced by Normalization Fusion) so we never load an unfused model.
+        requires = ["fused_model", "platform_constraints_resolved"]
         # Unified-only: this step produces the unified IRGraph (NeuralCore + ComputeOp).
         promises = ["ir_graph"]
         updates = []
@@ -30,7 +31,7 @@ class SoftCoreMappingStep(PipelineStep):
         return self.pipeline.get_target_metric()
 
     def process(self):
-        model = self.get_entry('model')
+        model = self.get_entry("fused_model")
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
         cores = platform_constraints.get("cores", [])
