@@ -121,51 +121,62 @@ class SoftCoreMappingStep(PipelineStep):
         
         ir_graph = ir_mapping.map(model.get_mapper_repr())
 
-        # Apply chip quantization to NeuralCores: scale weights by parameter_scale,
-        # round to integers, and set threshold = parameter_scale.
-        # Only performed when weight quantization was enabled — otherwise the
-        # weights are unquantized floats and rounding would destroy precision.
+        # Apply chip quantization to NeuralCores: scale weights into [q_min, q_max],
+        # round to integers, and set parameter_scale = 1.0. Always run when
+        # weight_bits is set so the IR is deployable and verification passes.
+        # When weight_quantization is True use the model's parameter_scale;
+        # when False derive scale from the actual matrix so round(W*scale) stays in range.
         #
-        # For bank-backed cores (conv layers) quantization is applied once to
-        # each WeightBank, avoiding redundant work and keeping the single
-        # source of truth.
+        # For bank-backed cores quantization is applied once per WeightBank.
         wt_q = bool(self.pipeline.config.get("weight_quantization", False))
-        if wt_q:
-            from mimarsinan.mapping.ir import WeightBank
-            quantized_banks: set[int] = set()
-            for bank_id, bank in ir_graph.weight_banks.items():
-                ps = float(
-                    bank.parameter_scale.item()
-                    if hasattr(bank.parameter_scale, "item")
-                    else bank.parameter_scale
-                )
-                if abs(ps) > 1e-12:
-                    bank.core_matrix = np.round(bank.core_matrix * ps)
-                    bank.parameter_scale = torch.tensor(1.0)
-                    quantized_banks.add(bank_id)
+        q_min = -(2 ** (bits - 1))
+        eps = 1e-12
+        from mimarsinan.mapping.ir import WeightBank
+        quantized_banks: set[int] = set()
+        bank_scale_used: dict[int, float] = {}
+        for bank_id, bank in ir_graph.weight_banks.items():
+            ps = float(
+                bank.parameter_scale.item()
+                if hasattr(bank.parameter_scale, "item")
+                else bank.parameter_scale
+            )
+            if wt_q and abs(ps) > eps:
+                scale = ps
+            else:
+                w_max = float(np.max(np.abs(bank.core_matrix)))
+                w_max = max(w_max, eps)
+                scale = q_max / w_max
+            W_q = np.round(bank.core_matrix * scale).astype(np.float64)
+            W_q = np.clip(W_q, q_min, q_max)
+            bank.core_matrix = W_q
+            bank.parameter_scale = torch.tensor(1.0)
+            quantized_banks.add(bank_id)
+            bank_scale_used[bank_id] = scale
 
-            for node in ir_graph.nodes:
-                if isinstance(node, NeuralCore):
-                    if node.has_weight_bank():
-                        if node.weight_bank_id in quantized_banks:
-                            bank = ir_graph.weight_banks[node.weight_bank_id]
-                            ps_val = float(
-                                node.parameter_scale.item()
-                                if hasattr(node.parameter_scale, "item")
-                                else node.parameter_scale
-                            )
-                            node.threshold = ps_val
-                            node.parameter_scale = torch.tensor(1.0)
+        for node in ir_graph.nodes:
+            if isinstance(node, NeuralCore):
+                if node.has_weight_bank():
+                    if node.weight_bank_id in quantized_banks:
+                        scale_used = bank_scale_used[node.weight_bank_id]
+                        node.threshold = scale_used
+                        node.parameter_scale = torch.tensor(1.0)
+                else:
+                    ps = float(
+                        node.parameter_scale.item()
+                        if hasattr(node.parameter_scale, "item")
+                        else node.parameter_scale
+                    )
+                    if wt_q and abs(ps) > eps:
+                        scale = ps
                     else:
-                        ps = float(
-                            node.parameter_scale.item()
-                            if hasattr(node.parameter_scale, "item")
-                            else node.parameter_scale
-                        )
-                        if abs(ps) > 1e-12:
-                            node.core_matrix = np.round(node.core_matrix * ps)
-                            node.threshold = ps
-                            node.parameter_scale = torch.tensor(1.0)
+                        w_max = float(np.max(np.abs(node.core_matrix)))
+                        w_max = max(w_max, eps)
+                        scale = q_max / w_max
+                    W_q = np.round(node.core_matrix * scale).astype(np.float64)
+                    W_q = np.clip(W_q, q_min, q_max)
+                    node.core_matrix = W_q
+                    node.threshold = scale
+                    node.parameter_scale = torch.tensor(1.0)
 
         # Calculate latencies for all neural cores in the IR graph
         max_latency = IRLatency(ir_graph).calculate()
