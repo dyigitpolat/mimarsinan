@@ -178,3 +178,26 @@ class TestPruneIRGraph:
         assert pruned_core.core_matrix.shape == (2, 2), "Propagation should prune row 2 and 3, cols 2 and 3"
         assert pruned_core.core_matrix[0, 0] == 1.0 and pruned_core.core_matrix[1, 1] == 1.0
         assert len(pruned_core.input_sources.flatten()) == 2
+
+    def test_initial_pruned_per_node_drives_compaction(self):
+        """When initial_pruned_per_node is provided, those masks are used and propagated."""
+        w = np.array([
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+            [7.0, 8.0, 9.0],
+        ], dtype=np.float64)
+        src = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
+        core = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
+        out_src = _make_source_array([(0, 0), (0, 1), (0, 2)])
+        graph = IRGraph(nodes=[core], output_sources=out_src)
+        # Prune row 1 and col 2 by model mask (True = pruned)
+        row_mask = [False, True, False]
+        col_mask = [False, False, True]
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={0: (row_mask, col_mask)},
+        )
+        pruned_core = pruned.nodes[0]
+        assert pruned_core.core_matrix.shape == (2, 2)
+        assert pruned_core.core_matrix[0, 0] == 1.0 and pruned_core.core_matrix[0, 1] == 2.0
+        assert pruned_core.core_matrix[1, 0] == 7.0 and pruned_core.core_matrix[1, 1] == 8.0
