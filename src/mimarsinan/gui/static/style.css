@@ -107,6 +107,7 @@ body {
 
 /* ═══════════ Tabs ═══════════ */
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.tabs.main-tabs { margin-bottom: 20px; }
 .tab-btn {
   background: none; border: none; padding: 10px 16px;
   color: var(--text-muted); font-size: 13px; cursor: pointer;
@@ -114,6 +115,10 @@ body {
 }
 .tab-btn:hover { color: var(--text-primary); }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-btn.new-tab:not(.active) { border-bottom-color: var(--success); }
+.tab-btn.edited-tab:not(.active) { border-bottom-color: var(--warning); }
+.main-tab-content { display: none; }
+.main-tab-content.active { display: block; }
 
 .scrollable { max-height: 400px; overflow-y: auto; }
 .empty-state { text-align: center; padding: 48px 24px; color: var(--text-muted); font-size: 14px; }
@@ -381,12 +386,47 @@ body {
   border: 1px solid var(--border); border-radius: var(--radius);
   overflow: auto;
 }
+.hw-core-detail-heatmap-wrap {
+  position: relative; display: inline-block; max-width: 100%; align-self: flex-start;
+}
 .hw-core-detail-heatmap {
   display: block; max-width: 100%; max-height: 240px; width: auto; height: auto;
   object-fit: contain; border-radius: 4px; border: 1px solid var(--border);
-  align-self: flex-start;
+  pointer-events: none; /* let overlay regions receive clicks */
+}
+.hw-core-detail-heatmap-region {
+  position: absolute; pointer-events: auto; cursor: pointer;
+  border: 1px solid rgba(91, 138, 245, 0.5); border-radius: 2px;
+  box-sizing: border-box; transition: background 0.15s, border-color 0.15s;
+}
+.hw-core-detail-heatmap-region:hover {
+  background: rgba(91, 138, 245, 0.2); border-color: var(--accent);
 }
 .hw-core-detail-panel .data-table { margin: 0; font-size: 11px; }
+
+/* Software core detail pane (to the right of hardware core detail) */
+.hw-softcore-detail-panel {
+  flex: 0 0 auto; min-width: 220px; max-width: 320px;
+  display: flex; flex-direction: column;
+  padding: 0; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: auto;
+}
+.hw-softcore-detail-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; background: var(--bg-hover); border-bottom: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; color: var(--text-primary);
+}
+.hw-softcore-detail-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.hw-softcore-name {
+  font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0;
+}
+.hw-softcore-detail-panel .data-table { margin: 0; font-size: 11px; }
+.hw-softcore-heatmap-wrap { margin-top: 8px; }
+.hw-softcore-heatmap {
+  display: block; max-width: 100%; max-height: 200px; width: auto; height: auto;
+  object-fit: contain; border-radius: 4px; border: 1px solid var(--border);
+}
 .hw-core-detail-placeholder {
   color: var(--text-muted); font-size: 12px; text-align: center;
   padding: 24px 12px;

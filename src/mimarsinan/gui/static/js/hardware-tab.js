@@ -1,7 +1,7 @@
 /* Hardware mapping tab — consistent layout, side-based connectivity, buffer lines. */
 import { esc, safeReact, plotHistogram } from './util.js';
 
-export function renderHardwareTab(hw, container) {
+export function renderHardwareTab(hw, container, irGraph) {
   if (!hw) { container.innerHTML = '<div class="empty-state">No hardware mapping data</div>'; return; }
 
   let html = `
@@ -28,7 +28,7 @@ export function renderHardwareTab(hw, container) {
   }
 
   container.innerHTML = html;
-  renderStageFlow(hw);
+  renderStageFlow(hw, irGraph);
   if (hw.utilization_histogram) plotHistogram('hw-util', hw.utilization_histogram, 'Utilization', '#4caf50');
   renderSegUtilChart(hw);
 }
@@ -74,11 +74,24 @@ function nodeTag(nodeId) {
   return `n${nodeId}`;
 }
 
-function buildCoreDetailPanelHtml(segIdx, core) {
+function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
   const pct = (core.utilization * 100).toFixed(1);
   let html = '<div class="hw-core-detail-panel">';
   if (core.heatmap_image) {
+    html += '<div class="hw-core-detail-heatmap-wrap">';
     html += `<img src="${core.heatmap_image.replace(/"/g, '&quot;')}" alt="Core ${core.core_index} heatmap" class="hw-core-detail-heatmap">`;
+    const placements = core.mapped_placements || [];
+    const aTotal = Math.max(1, core.axons_per_core);
+    const nTotal = Math.max(1, core.neurons_per_core);
+    for (const pl of placements) {
+      const top = (pl.axon_offset / aTotal) * 100;
+      const left = (pl.neuron_offset / nTotal) * 100;
+      const height = (pl.axons / aTotal) * 100;
+      const width = (pl.neurons / nTotal) * 100;
+      const nodeId = pl.ir_node_id;
+      html += `<div class="hw-core-detail-heatmap-region" style="top:${top}%;left:${left}%;width:${width}%;height:${height}%" data-ir-node-id="${nodeId}" onclick="event.stopPropagation(); window._hwSoftCoreClick(${segIdx}, ${nodeId})" title="Software core n${nodeId}"> </div>`;
+    }
+    html += '</div>';
   }
   html += '<table class="data-table compact">';
   html += `<tr><td>Segment</td><td>${segIdx}</td></tr>`;
@@ -91,13 +104,51 @@ function buildCoreDetailPanelHtml(segIdx, core) {
   return html;
 }
 
+function buildSoftCoreDetailPanelHtml(nodeId, irGraph) {
+  if (!irGraph || !irGraph.nodes) return '';
+  const node = irGraph.nodes.find(n => n.id === nodeId || n.id === parseInt(nodeId, 10));
+  if (!node) return '<div class="hw-softcore-detail-panel"><div class="hw-softcore-detail-header">Unknown node</div></div>';
+  const isNeural = node.type === 'neural_core';
+  let html = '<div class="hw-softcore-detail-panel">';
+  html += '<div class="hw-softcore-detail-header">';
+  html += `<span>Software core n${node.id}</span>`;
+  html += '<button class="ir-detail-close" onclick="window._hwSoftCoreClose()" title="Close">✕</button>';
+  html += '</div><div class="hw-softcore-detail-body">';
+  html += `<p class="hw-softcore-name" title="${esc(node.name)}">${esc(node.name || node.layer_group || `n${node.id}`)}</p>`;
+  if (isNeural) {
+    html += '<table class="data-table compact">';
+    html += `<tr><td>ID</td><td>${node.id}</td></tr>`;
+    html += `<tr><td>Axons</td><td>${node.axons ?? '—'}</td></tr>`;
+    html += `<tr><td>Neurons</td><td>${node.neurons ?? '—'}</td></tr>`;
+    html += `<tr><td>Threshold</td><td>${node.threshold != null ? Number(node.threshold).toFixed(4) : '—'}</td></tr>`;
+    html += `<tr><td>Latency</td><td>${node.latency ?? '—'}</td></tr>`;
+    html += `<tr><td>Activation scale</td><td>${node.activation_scale != null ? Number(node.activation_scale).toFixed(4) : '—'}</td></tr>`;
+    html += `<tr><td>Parameter scale</td><td>${node.parameter_scale != null ? Number(node.parameter_scale).toFixed(4) : '—'}</td></tr>`;
+    html += `<tr><td>Sparsity</td><td>${node.weight_stats ? (node.weight_stats.sparsity * 100).toFixed(1) + '%' : '—'}</td></tr>`;
+    html += '</table>';
+    if (node.heatmap_image) {
+      html += `<div class="hw-softcore-heatmap-wrap"><img src="${node.heatmap_image.replace(/"/g, '&quot;')}" alt="Core heatmap" class="hw-softcore-heatmap"></div>`;
+    }
+  } else {
+    html += '<table class="data-table compact">';
+    html += `<tr><td>ID</td><td>${node.id}</td></tr>`;
+    html += `<tr><td>Type</td><td>${esc(node.op_type || '—')}</td></tr>`;
+    html += `<tr><td>Input shape</td><td>${node.input_shape ? node.input_shape.join('×') : '—'}</td></tr>`;
+    html += `<tr><td>Output shape</td><td>${node.output_shape ? node.output_shape.join('×') : '—'}</td></tr>`;
+    html += '</table>';
+  }
+  html += '</div></div>';
+  return html;
+}
+
 // ── Stage flow with consistent layout + side-based connectivity ──────────
-function renderStageFlow(hw) {
+function renderStageFlow(hw, irGraph) {
   const el = document.getElementById('hw-stage-flow');
   if (!el) return;
   const expanded = new Set();
   const selectedCore = {};
   const selectedSpan = {};
+  let selectedSoftCore = null;
   const globalLayout = computeGlobalLayout(hw);
 
   function render() {
@@ -125,7 +176,11 @@ function renderStageFlow(hw) {
         if (selectedCore[segIdx] != null && stage.cores) {
           const core = stage.cores.find(c => c.core_index === selectedCore[segIdx]);
           if (core) {
-            blockHtml = '<div class="stage-block-with-detail">' + blockHtml + buildCoreDetailPanelHtml(segIdx, core) + '</div>';
+            let detailHtml = buildCoreDetailPanelHtml(segIdx, core, irGraph);
+            if (selectedSoftCore != null) {
+              detailHtml += buildSoftCoreDetailPanelHtml(selectedSoftCore, irGraph);
+            }
+            blockHtml = '<div class="stage-block-with-detail">' + blockHtml + detailHtml + '</div>';
           }
         }
         html += blockHtml;
@@ -168,18 +223,28 @@ function renderStageFlow(hw) {
     }
   }
 
-  window._hwToggle = (si) => { expanded.has(si) ? expanded.delete(si) : expanded.add(si); selectedCore[si] = null; selectedSpan[si] = null; render(); };
+  window._hwToggle = (si) => { expanded.has(si) ? expanded.delete(si) : expanded.add(si); selectedCore[si] = null; selectedSpan[si] = null; selectedSoftCore = null; render(); };
   window._hwCoreClick = (segIdx, ci) => {
     if (selectedCore[segIdx] === ci) {
       selectedCore[segIdx] = null;
       selectedSpan[segIdx] = null;
+      selectedSoftCore = null;
     } else {
       // Only one segment has a selection at a time so the detail panel shows this segment's core
       for (const k of Object.keys(selectedCore)) selectedCore[k] = null;
       for (const k of Object.keys(selectedSpan)) selectedSpan[k] = null;
       selectedCore[segIdx] = ci;
       selectedSpan[segIdx] = null;
+      selectedSoftCore = null;
     }
+    render();
+  };
+  window._hwSoftCoreClick = (segIdx, nodeId) => {
+    selectedSoftCore = nodeId;
+    render();
+  };
+  window._hwSoftCoreClose = () => {
+    selectedSoftCore = null;
     render();
   };
   window._hwSpanClick = (segIdx, spanKey) => {

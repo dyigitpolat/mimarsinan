@@ -25,3 +25,7 @@ a pipeline for ***m***odeling ***i***n-***m***emory ***ar***chitectures for
 - to install clang:
     - `sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"`
     - `sudo apt-get install libc++-17-dev libc++abi-17-dev`
+
+## docs
+- DeepWiki: [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dyigitpolat/mimarsinan)
+- [Architecture Guide](ARCHITECTURE.md)

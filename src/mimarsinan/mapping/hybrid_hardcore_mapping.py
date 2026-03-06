@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import List, Literal, Sequence
@@ -188,18 +189,67 @@ def _flush_neural_segment(
         for idx in range(n.get_output_count()):
             output_sources_list.append(IRSource(node_id=n.id, index=idx))
 
+    if output_nodes and not output_sources_list:
+        raise ValueError(
+            "Segment has output_nodes but 0 output refs (all get_output_count() are 0). "
+            "Output layer was over-pruned; at least one output neuron must remain."
+        )
+
     output_sources = np.array(output_sources_list, dtype=object)
 
+    if os.environ.get("PRUNING_INVESTIGATION") and current_neural:
+        n0 = current_neural[0]
+        r0 = getattr(n0, "pruned_row_mask", None)
+        c0 = getattr(n0, "pruned_col_mask", None)
+        print(
+            f"[PRUNING_INVESTIGATION] _flush_neural_segment before segment build: "
+            f"first node_id={n0.id} pruned_row_mask len={len(r0) if r0 else 0} "
+            f"pruned_col_mask len={len(c0) if c0 else 0}"
+        )
     seg_graph, input_map = _remap_external_sources_to_segment_inputs(
         nodes=current_neural,
         output_sources=output_sources,
         weight_banks=weight_banks,
     )
+    if os.environ.get("PRUNING_INVESTIGATION") and seg_graph.nodes:
+        n0_seg = seg_graph.nodes[0]
+        r0_seg = getattr(n0_seg, "pruned_row_mask", None)
+        c0_seg = getattr(n0_seg, "pruned_col_mask", None)
+        print(
+            f"[PRUNING_INVESTIGATION] _flush_neural_segment after segment build: "
+            f"first node_id={n0_seg.id} pruned_row_mask len={len(r0_seg) if r0_seg else 0} "
+            f"pruned_col_mask len={len(c0_seg) if c0_seg else 0}"
+        )
     soft = ir_graph_to_soft_core_mapping(seg_graph)
+
+    # [PRUNING_INVESTIGATION] Log soft core shapes and mask presence before compaction
+    if os.environ.get("PRUNING_INVESTIGATION"):
+        for core in soft.cores:
+            mat = np.asarray(core.core_matrix, dtype=np.float64)
+            n_axons, n_neurons = mat.shape
+            row_mask = getattr(core, "pruned_row_mask", None)
+            col_mask = getattr(core, "pruned_col_mask", None)
+            row_ok = row_mask is not None and len(row_mask) == n_axons
+            col_ok = col_mask is not None and len(col_mask) == n_neurons
+            print(
+                f"[PRUNING_INVESTIGATION] _flush_neural_segment before compact: "
+                f"core_id={core.id} shape={mat.shape} "
+                f"pruned_row_mask present={row_mask is not None} len_match={row_ok} "
+                f"pruned_col_mask present={col_mask is not None} len_match={col_ok}"
+            )
 
     # Compact soft cores: remove all-zero rows/columns and reindex spans so
     # hardware mapping shows only utilized structure (pruning reflected).
     compact_soft_core_mapping(soft.cores, soft.output_sources)
+
+    # [PRUNING_INVESTIGATION] Log soft core shapes after compaction
+    if os.environ.get("PRUNING_INVESTIGATION"):
+        for core in soft.cores:
+            mat = np.asarray(core.core_matrix, dtype=np.float64)
+            print(
+                f"[PRUNING_INVESTIGATION] _flush_neural_segment after compact: "
+                f"core_id={core.id} shape={mat.shape}"
+            )
 
     # Rebuild output_map from compacted output sizes
     output_map = []

@@ -23,6 +23,7 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
     name: detail.name,
     status: detail.status,
     snapKeys: detail.snapshot ? Object.keys(detail.snapshot).sort() : [],
+    snapshotKeyKinds: detail.snapshot_key_kinds ? Object.keys(detail.snapshot_key_kinds).sort() : [],
     metricNames: Object.keys(getStepMetrics(stepName, state)).sort(),
   });
 
@@ -50,14 +51,18 @@ export function updateLiveCharts(stepName, state) {
   if (!activeTab || activeTab.dataset.tab !== 'metrics') return;
   const metrics = getStepMetrics(stepName, state);
   if (Object.keys(metrics).length === 0) return;
+  const stepStartTime = state.pipeline?.steps?.find(s => s.name === stepName)?.start_time;
+  const stepStartSec = stepStartTime != null ? (stepStartTime > 1e12 ? stepStartTime / 1000 : stepStartTime) : null;
   const groups = groupMetricsByCategory(Object.keys(metrics));
   for (const [group, metricNames] of Object.entries(groups)) {
     const el = document.getElementById(`mc-${cssId(group)}`);
     if (!el || !el.data) return;
-    Plotly.react(el, metricNames.map(name => ({
-      y: (metrics[name] || []).map(p => p.value), x: (metrics[name] || []).map((_, i) => i),
-      name, type: 'scatter', mode: 'lines', line: { width: 1.5 },
-    })), el.layout, { displayModeBar: false, responsive: true });
+    const traces = metricNames.map(name => {
+      const points = metrics[name] || [];
+      const x = stepStartSec != null ? points.map(p => (p.timestamp - stepStartSec)) : points.map((_, i) => i);
+      return { x, y: points.map(p => p.value), name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
+    });
+    Plotly.react(el, traces, el.layout, { displayModeBar: false, responsive: true });
   }
 }
 
@@ -104,9 +109,11 @@ function renderTabs(tabs, detail, metrics, state) {
   const content = document.getElementById('step-tab-content');
   if (!tabBar || !content) return;
 
-  tabBar.innerHTML = tabs.map(t =>
-    `<button class="tab-btn ${state.activeTab === t ? 'active' : ''}" data-tab="${t}">${TAB_LABELS[t] || t}</button>`
-  ).join('');
+  const kinds = detail.snapshot_key_kinds || {};
+  tabBar.innerHTML = tabs.map(t => {
+    const kindClass = kinds[t] === 'new' ? ' new-tab' : (kinds[t] === 'edited' ? ' edited-tab' : '');
+    return `<button class="tab-btn${kindClass} ${state.activeTab === t ? 'active' : ''}" data-tab="${t}">${TAB_LABELS[t] || t}</button>`;
+  }).join('');
 
   tabBar.onclick = (e) => {
     const btn = e.target.closest('.tab-btn');
@@ -121,11 +128,12 @@ function renderTabs(tabs, detail, metrics, state) {
 
 function renderTabContent(tab, detail, metrics, container) {
   const snap = detail.snapshot || {};
+  const stepStartTime = detail.start_time != null ? (detail.start_time > 1e12 ? detail.start_time / 1000 : detail.start_time) : null;
   switch (tab) {
-    case 'metrics': renderMetricsTab(metrics, container); break;
+    case 'metrics': renderMetricsTab(metrics, container, stepStartTime); break;
     case 'model': renderModelTab(snap.model, container); break;
     case 'ir_graph': renderIRGraphTab(snap.ir_graph, container); break;
-    case 'hardware': renderHardwareTab(snap.hard_core_mapping, container); break;
+    case 'hardware': renderHardwareTab(snap.hard_core_mapping, container, snap.ir_graph); break;
     case 'search': renderSearchTab(snap.search_result, container); break;
     case 'activations': renderActivationsTab(snap.activation_scales, snap.model, container); break;
     case 'adaptation': renderAdaptationTab(snap.adaptation_manager, snap.model, metrics, container); break;
@@ -136,7 +144,7 @@ function renderTabContent(tab, detail, metrics, container) {
 }
 
 // ── Metrics tab ──────────────────────────────────────────────────────────
-function renderMetricsTab(metrics, container) {
+function renderMetricsTab(metrics, container, stepStartTime) {
   const names = Object.keys(metrics);
   if (names.length === 0) { container.innerHTML = '<div class="empty-state">No metrics recorded</div>'; return; }
   const groups = groupMetricsByCategory(names);
@@ -145,16 +153,17 @@ function renderMetricsTab(metrics, container) {
     html += `<div class="card"><div class="card-header">${esc(group)}</div><div class="card-body"><div id="mc-${cssId(group)}" style="min-height:200px"></div></div></div>`;
   html += '</div>';
   container.innerHTML = html;
-  for (const [group, metricNames] of Object.entries(groups)) plotMetricGroup(group, metricNames, metrics);
+  for (const [group, metricNames] of Object.entries(groups)) plotMetricGroup(group, metricNames, metrics, stepStartTime);
 }
 
-function plotMetricGroup(group, metricNames, metrics) {
+function plotMetricGroup(group, metricNames, metrics, stepStartTime) {
   const el = document.getElementById(`mc-${cssId(group)}`);
   if (!el) return;
-  safeReact(el, metricNames.map(name => ({
-    y: (metrics[name] || []).map(p => p.value), x: (metrics[name] || []).map((_, i) => i),
-    name, type: 'scatter', mode: 'lines', line: { width: 1.5 },
-  })), { showlegend: metricNames.length > 1, legend: { font: { size: 10 }, x: 0, y: 1 }, height: 240 });
+  safeReact(el, metricNames.map(name => {
+    const points = metrics[name] || [];
+    const x = stepStartTime != null ? points.map(p => (p.timestamp - stepStartTime)) : points.map((_, i) => i);
+    return { x, y: points.map(p => p.value), name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
+  }), { showlegend: metricNames.length > 1, legend: { font: { size: 10 }, x: 0, y: 1 }, height: 240, xaxis: { title: stepStartTime != null ? 'Elapsed (s)' : 'Index' } });
 }
 
 function groupMetricsByCategory(names) {

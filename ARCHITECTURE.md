@@ -705,6 +705,7 @@ Builders are created during Architecture Search and cached for later use:
 - `SimpleMlpBuilder` — Simple multi-layer perceptron
 - `SimpleConvBuilder` — Convolutional model
 - `VGG16Builder` — VGG-16 architecture
+- `TorchSequentialLinearBuilder` — Sequential n-linear PyTorch MLP (torch 2 repr flow)
 
 Each builder's `build(configuration)` method takes a model config dict and returns a `Supermodel`.
 
@@ -852,6 +853,18 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
   - **Partial sum accumulation**: Creates `psum_role="partial_pos"/"partial_neg"` cores and an `"accum"` core
 
 **Heterogeneous tiling**: When multiple core types exist, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types. This allows softcores as large as the biggest core type. The greedy packer's scarcity-aware placement metric (§9.2) then ensures flexible softcores (those that fit multiple core types) are directed toward more abundant types, preserving scarce large-capacity types for softcores that strictly require them.
+
+### 8.5 Mapping contracts (pruned IR and simulation)
+
+After pruning (`prune_ir_graph`), the **pruned IR graph is the single source of truth** for simulation. No separate "unpruned" view is used for inference; `SpikingUnifiedCoreFlow` is built from the same `ir_graph` instance that was pruned.
+
+**Dimension and index contracts** (enforced in `SpikingUnifiedCoreFlow.__init__` via `_assert_mapping_contracts`):
+
+- For every `NeuralCore` in the pruned graph: `len(node.input_sources.flatten()) == core_matrix.shape[0]` (axons) and `core_matrix.shape[1] == node.get_output_count()` (neurons).
+- All `input_sources` and `output_sources` indices refer to **compacted** (post-pruning) dimensions.
+- Every `output_sources` entry must reference a valid `(node_id, index)` with `index in [0, node.get_output_count())`.
+
+Violations raise `ValueError` with a clear message so the pipeline fails fast instead of producing wrong accuracy.
 
 ---
 

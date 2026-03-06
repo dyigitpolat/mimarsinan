@@ -59,6 +59,14 @@ class Pipeline:
             if stop_step is not None and name == stop_step:
                 break
 
+    def get_resolved_start_step(self, step_name: str) -> str:
+        """Return the step name the pipeline would actually start from (e.g. when dependencies are missing)."""
+        assert step_name in [name for name, _ in self.steps], f"Step '{step_name}' does not exist in pipeline"
+        self.set_up_requirements()
+        self.verify()
+        starting_step_idx = self._find_starting_step_idx(step_name)
+        return self.steps[starting_step_idx][0]
+
     def run_from(self, step_name, *, stop_step: str | None = None):
         assert step_name in [name for name, _ in self.steps], f"Step '{step_name}' does not exist in pipeline"
         

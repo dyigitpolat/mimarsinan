@@ -31,29 +31,37 @@
     <div class="empty-state" style="width:100%;padding:12px">Loading pipeline steps...</div>
   </div>
 
-  <!-- Overview grid -->
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-header">Target Metric Across Steps</div>
-      <div class="card-body no-pad"><div id="chart-metric-progression"></div></div>
+  <!-- Top-level tabs -->
+  <div class="tabs main-tabs" id="main-tabs">
+    <button class="tab-btn active" data-main-tab="overview">Overview</button>
+    <button class="tab-btn" data-main-tab="config">Configuration</button>
+  </div>
+
+  <!-- Overview pane (default) -->
+  <div id="main-tab-overview" class="main-tab-content active">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">Target Metric Across Steps</div>
+        <div class="card-body no-pad"><div id="chart-metric-progression"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">Step Timing</div>
+        <div class="card-body no-pad"><div id="chart-step-timing"></div></div>
+      </div>
     </div>
-    <div class="card">
-      <div class="card-header">Step Timing</div>
-      <div class="card-body no-pad"><div id="chart-step-timing"></div></div>
+    <div id="step-detail" class="step-detail">
+      <div class="empty-state">Select a pipeline step above to view details</div>
     </div>
   </div>
 
-  <!-- Config card -->
-  <div class="card" style="margin-bottom:24px">
-    <div class="card-header">Pipeline Configuration</div>
-    <div class="card-body" id="config-body">
-      <div class="empty-state">Loading config...</div>
+  <!-- Configuration pane -->
+  <div id="main-tab-config" class="main-tab-content">
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-header">Pipeline Configuration</div>
+      <div class="card-body" id="config-body">
+        <div class="empty-state">Loading config...</div>
+      </div>
     </div>
-  </div>
-
-  <!-- Step detail panel -->
-  <div id="step-detail" class="step-detail">
-    <div class="empty-state">Select a pipeline step above to view details</div>
   </div>
 
 </div>

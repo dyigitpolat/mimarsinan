@@ -228,24 +228,26 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
             info["psum_role"] = node.psum_role
             if node.weight_bank_id is not None:
                 info["weight_bank_id"] = int(node.weight_bank_id)
-            else:
+            # Emit per-core heatmap for every NeuralCore (owned and bank-backed)
+            try:
+                info["heatmap_image"] = render_heatmap_png_data_uri(mat)
+            except Exception:
+                logger.debug("Failed to render heatmap for core %s", node.id, exc_info=True)
+            pre = getattr(node, "pre_pruning_heatmap", None)
+            # Use pre-compaction masks for red markings when present (non–bank-backed cores after ir_pruning)
+            row_mask = getattr(node, "pre_pruning_row_mask", None) or getattr(node, "pruned_row_mask", None)
+            col_mask = getattr(node, "pre_pruning_col_mask", None) or getattr(node, "pruned_col_mask", None)
+            if pre is not None and row_mask is not None and col_mask is not None:
                 try:
-                    info["heatmap_image"] = render_heatmap_png_data_uri(mat)
-                except Exception:
-                    logger.debug("Failed to render heatmap for core %s", node.id, exc_info=True)
-                pre = getattr(node, "pre_pruning_heatmap", None)
-                row_mask = getattr(node, "pruned_row_mask", None)
-                col_mask = getattr(node, "pruned_col_mask", None)
-                if pre is not None and row_mask is not None and col_mask is not None:
-                    try:
-                        pre_arr = np.array(pre, dtype=np.float64)
+                    pre_arr = np.array(pre, dtype=np.float64)
+                    if pre_arr.shape[0] == len(row_mask) and pre_arr.shape[1] == len(col_mask):
                         info["pre_pruning_heatmap_image"] = render_heatmap_png_data_uri(
                             pre_arr,
                             pruned_row_mask=row_mask,
                             pruned_col_mask=col_mask,
                         )
-                    except Exception:
-                        logger.debug("Failed to render pre-pruning heatmap for core %s", node.id, exc_info=True)
+                except Exception:
+                    logger.debug("Failed to render pre-pruning heatmap for core %s", node.id, exc_info=True)
             neural_cores.append(info)
         else:
             info["layer_group"] = node.name
@@ -524,6 +526,18 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
                     core_d["heatmap_image"] = _render_heatmap(core.core_matrix)
                 except Exception:
                     logger.debug("Failed to render heatmap for core %d", ci, exc_info=True)
+                placements = getattr(hcm, "soft_core_placements_per_hard_core", None)
+                if placements is None:
+                    raise ValueError(
+                        "Hard core mapping is missing soft-core traceability data "
+                        "(soft_core_placements_per_hard_core). Re-run the Hard Core Mapping step to regenerate the mapping."
+                    )
+                if ci >= len(placements):
+                    raise ValueError(
+                        f"Hard core mapping traceability inconsistent: core index {ci} has no placement list "
+                        "(soft_core_placements_per_hard_core). Re-run the Hard Core Mapping step."
+                    )
+                core_d["mapped_placements"] = list(placements[ci])
                 cores_detail.append(core_d)
                 all_core_utils.append(core_d)
             stage_info["num_cores"] = len(hcm.cores)
@@ -746,45 +760,102 @@ def snapshot_adaptation_manager(manager: Any) -> dict:
 # Pipeline cache snapshot dispatcher
 # ---------------------------------------------------------------------------
 
-def build_step_snapshot(pipeline: Any, step_name: str) -> dict:
+# Map cache virtual key (step contract) to snapshot key (GUI tab).
+# Multiple cache keys can map to the same snapshot key (e.g. fused_model -> model).
+_CACHE_KEY_TO_SNAPSHOT_KEY: dict[str, str] = {
+    "model": "model",
+    "fused_model": "model",
+    "ir_graph": "ir_graph",
+    "hard_core_mapping": "hard_core_mapping",
+    "architecture_search_result": "search_result",
+    "adaptation_manager": "adaptation_manager",
+    "activation_scales": "activation_scales",
+    "platform_constraints_resolved": "platform_constraints",
+}
+
+
+def build_step_snapshot(
+    pipeline: Any,
+    step_name: str,
+    step: Any = None,
+) -> tuple[dict, dict[str, str]]:
     """Build a rich snapshot from the pipeline cache after a step completes.
 
-    Inspects the cache for known entries and extracts visualizable data.
-    Safe to call even if entries are missing.
+    If *step* is provided (or resolved from pipeline.steps by step_name), only
+    snapshot entries for cache keys that the step promises or updates are
+    included, and a second dict gives the "kind" per snapshot key: "new" for
+    promises, "edited" for updates. Otherwise all known cache entries are
+    included and snapshot_key_kinds is empty.
+
+    Returns:
+        (snapshot_dict, snapshot_key_kinds) where snapshot_key_kinds maps
+        snapshot key to "new" or "edited".
     """
     snapshot: dict = {"step_name": step_name}
+    snapshot_key_kinds: dict[str, str] = {}
     cache = pipeline.cache
+
+    if step is None:
+        for name, s in pipeline.steps:
+            if name == step_name:
+                step = s
+                break
+
+    allowed_cache_keys: set[str] | None = None
+    if step is not None:
+        allowed_cache_keys = set(getattr(step, "promises", ())) | set(
+            getattr(step, "updates", ())
+        )
 
     for key in cache.keys():
         short = key.split(".", 1)[-1] if "." in key else key
+        if allowed_cache_keys is not None and short not in allowed_cache_keys:
+            continue
+        snapshot_key = _CACHE_KEY_TO_SNAPSHOT_KEY.get(short)
+        if snapshot_key is None:
+            continue
 
-        if short == "model":
+        kind = "new" if (step is not None and short in getattr(step, "promises", ())) else "edited"
+        if step is not None and short in getattr(step, "updates", ()):
+            kind = "edited"
+
+        if short in ("model", "fused_model"):
             try:
                 snapshot["model"] = snapshot_model(cache.get(key))
+                if step is not None:
+                    snapshot_key_kinds["model"] = kind
             except Exception:
                 logger.debug("Failed to snapshot model from key %r", key, exc_info=True)
 
         elif short == "ir_graph":
             try:
                 snapshot["ir_graph"] = snapshot_ir_graph(cache.get(key))
+                if step is not None:
+                    snapshot_key_kinds["ir_graph"] = kind
             except Exception:
                 logger.debug("Failed to snapshot ir_graph from key %r", key, exc_info=True)
 
         elif short == "hard_core_mapping":
             try:
                 snapshot["hard_core_mapping"] = snapshot_hard_core_mapping(cache.get(key))
+                if step is not None:
+                    snapshot_key_kinds["hard_core_mapping"] = kind
             except Exception:
                 logger.debug("Failed to snapshot hard_core_mapping from key %r", key, exc_info=True)
 
         elif short == "architecture_search_result":
             try:
                 snapshot["search_result"] = snapshot_search_result(cache.get(key))
+                if step is not None:
+                    snapshot_key_kinds["search_result"] = kind
             except Exception:
                 logger.debug("Failed to snapshot search_result from key %r", key, exc_info=True)
 
         elif short == "adaptation_manager":
             try:
                 snapshot["adaptation_manager"] = snapshot_adaptation_manager(cache.get(key))
+                if step is not None:
+                    snapshot_key_kinds["adaptation_manager"] = kind
             except Exception:
                 logger.debug("Failed to snapshot adaptation_manager from key %r", key, exc_info=True)
 
@@ -792,14 +863,29 @@ def build_step_snapshot(pipeline: Any, step_name: str) -> dict:
             try:
                 scales = cache.get(key)
                 snapshot["activation_scales"] = [_t(s) for s in scales]
+                if step is not None:
+                    snapshot_key_kinds["activation_scales"] = kind
             except Exception:
                 logger.debug("Failed to snapshot activation_scales from key %r", key, exc_info=True)
 
         elif short == "platform_constraints_resolved":
             try:
                 snapshot["platform_constraints"] = _safe_dict(cache.get(key))
+                if step is not None:
+                    snapshot_key_kinds["platform_constraints"] = kind
             except Exception:
                 logger.debug("Failed to snapshot platform_constraints from key %r", key, exc_info=True)
+
+    # Hardware tab needs ir_graph to show soft-core detail pane when clicking heatmap regions
+    if "hard_core_mapping" in snapshot and "ir_graph" not in snapshot:
+        for key in cache.keys():
+            short = key.split(".", 1)[-1] if "." in key else key
+            if short == "ir_graph":
+                try:
+                    snapshot["ir_graph"] = snapshot_ir_graph(cache.get(key))
+                    break
+                except Exception:
+                    logger.debug("Failed to snapshot ir_graph for hardware tab from key %r", key, exc_info=True)
 
     cache_keys = [k.split(".", 1)[-1] if "." in k else k for k in cache.keys() if not k.startswith("__")]
     has_rich_data = any(k in snapshot for k in ("model", "ir_graph", "hard_core_mapping", "search_result"))
@@ -809,7 +895,7 @@ def build_step_snapshot(pipeline: Any, step_name: str) -> dict:
             "cache_entries": ", ".join(sorted(set(cache_keys))) or "none",
         }
 
-    return snapshot
+    return snapshot, snapshot_key_kinds
 
 
 def _safe_dict(obj: Any) -> Any:

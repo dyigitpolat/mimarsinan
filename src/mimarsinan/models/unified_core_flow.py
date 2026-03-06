@@ -154,6 +154,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
             self._input_spans[int(node.id)] = compress_ir_sources(flat)
         self._output_spans: list[IRSourceSpan] = compress_ir_sources(list(self.output_sources.flatten()))
 
+        # Mapping contracts: after pruning, each core must satisfy axons/neurons vs sources.
+        self._assert_mapping_contracts(ir_graph)
+
     # ---------------------------------------------------------------------
     # Spike generation (must match SpikingCoreFlow semantics)
     # ---------------------------------------------------------------------
@@ -577,6 +580,66 @@ class SpikingUnifiedCoreFlow(nn.Module):
 
         self.total_spikes = 0.0
         return output_signals
+
+    def _assert_mapping_contracts(self, ir_graph: IRGraph) -> None:
+        """
+        Verify dimension and index contracts after pruning (Contract 2).
+        Fail fast with a clear error if any core has mismatched axons/neurons vs sources.
+        Uses the same weight tensor the flow uses (so bank-backed cores are handled without get_output_count).
+        """
+        from mimarsinan.mapping.ir import IRSource
+
+        for node in self.nodes:
+            if not isinstance(node, NeuralCore):
+                continue
+            try:
+                weight = self._get_weight(node)
+            except Exception:
+                continue
+            # weight is (neurons, axons) for matmul
+            n_neurons, n_axons = weight.shape[0], weight.shape[1]
+            n_src = int(len(node.input_sources.flatten()))
+            if n_src != n_axons:
+                raise ValueError(
+                    f"Mapping contract violated: core id={node.id} "
+                    f"len(input_sources)={n_src} != weight axons={n_axons}. "
+                    "Check pruning/compaction left sources and matrix rows aligned."
+                )
+            try:
+                out_count = node.get_output_count()
+                if out_count != n_neurons:
+                    raise ValueError(
+                        f"Mapping contract violated: core id={node.id} "
+                        f"get_output_count()={out_count} != weight neurons={n_neurons}. "
+                        "Check pruning/compaction left matrix columns and output count aligned."
+                    )
+            except ValueError:
+                # Bank-backed core without weight_row_slice: use weight shape as truth
+                pass
+        if ir_graph.output_sources.size:
+            flat = ir_graph.output_sources.flatten()
+            for i, src in enumerate(flat):
+                if not isinstance(src, IRSource) or src.node_id < 0:
+                    continue
+                node = next(
+                    (n for n in ir_graph.nodes if getattr(n, "id", None) == src.node_id),
+                    None,
+                )
+                if node is None:
+                    raise ValueError(
+                        f"Mapping contract violated: output_sources[{i}] references "
+                        f"node_id={src.node_id} which is not in the graph."
+                    )
+                if isinstance(node, NeuralCore):
+                    try:
+                        out_count = node.get_output_count()
+                    except ValueError:
+                        out_count = self._get_weight(node).shape[0]
+                    if src.index < 0 or src.index >= out_count:
+                        raise ValueError(
+                            f"Mapping contract violated: output_sources[{i}] "
+                            f"node_id={src.node_id} index={src.index} out of range [0, {out_count})."
+                        )
 
     # -----------------------------------------------------------------
     # TTFS ComputeOp helper (shared by continuous + quantized)

@@ -7,3 +7,4 @@ from .torch_vgg16_builder import TorchVGG16Builder
 from .torch_vit_builder import TorchViTBuilder
 from .torch_squeezenet11_builder import TorchSqueezeNet11Builder
 from .torch_custom_builder import TorchCustomBuilder
+from .torch_sequential_linear_builder import TorchSequentialLinearBuilder

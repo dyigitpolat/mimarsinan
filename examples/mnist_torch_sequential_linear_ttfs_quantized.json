@@ -1,0 +1,46 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "0000mnist_torch_sequential_linear_ttfs_quantized",
+  "generated_files_path": "./generated",
+  "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
+  "data_provider_name": "MNIST_DataProvider",
+
+  "platform_constraints": {
+    "cores": [
+      { "max_axons": 256, "max_neurons": 256, "count": 150 },
+      { "max_axons": 512, "max_neurons": 512, "count": 100 },
+      { "max_axons": 1024, "max_neurons": 1024, "count": 50 }
+    ],
+    "max_axons": 1024,
+    "max_neurons": 1024,
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8,
+    "allow_axon_tiling": false
+  },
+
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 10,
+    "tuner_epochs": 3,
+    "degradation_tolerance": 0.95,
+    "configuration_mode": "user",
+    "model_type": "torch_sequential_linear",
+    "model_config": {
+      "hidden_dims": [512, 256, 128]
+    },
+    "spiking_mode": "ttfs_quantized",
+    "weight_quantization": false,
+    "activation_quantization": false,
+    "pruning": true,
+    "pruning_fraction": 0.1,
+    "spike_generation_mode": "TTFS",
+    "firing_mode": "TTFS",
+    "thresholding_mode": "<="
+  },
+
+  "target_metric_override": null,
+  "start_step": "Normalization Fusion",
+  "stop_step": null
+}

@@ -110,13 +110,21 @@ def run_pipeline(
         working_directory=working_directory,
     )
 
+    # Resolve actual start step (may be earlier if dependencies are missing)
+    resolved_start_step = None
+    if start_step is not None:
+        try:
+            resolved_start_step = pipeline.get_resolved_start_step(start_step)
+        except Exception:
+            resolved_start_step = start_step
+
     # Start the browser-based monitoring GUI
     gui_started = False
     try:
         from mimarsinan.gui import start_gui
         from mimarsinan.gui.composite_reporter import CompositeReporter
 
-        gui = start_gui(pipeline, port=gui_port)
+        gui = start_gui(pipeline, port=gui_port, start_step=resolved_start_step)
         pipeline.reporter = CompositeReporter([reporter, gui.reporter])
         pipeline.register_pre_step_hook(gui.on_step_start)
         pipeline.register_post_step_hook(gui.on_step_end)

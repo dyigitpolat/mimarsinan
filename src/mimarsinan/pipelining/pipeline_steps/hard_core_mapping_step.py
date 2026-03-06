@@ -31,6 +31,19 @@ class HardCoreMappingStep(PipelineStep):
         sim_len = int(self.get_entry("scaled_simulation_length"))
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
+        if os.environ.get("PRUNING_INVESTIGATION"):
+            from mimarsinan.mapping.ir import NeuralCore
+            neural = [n for n in ir_graph.nodes if isinstance(n, NeuralCore)]
+            for node in neural[:5]:
+                r = getattr(node, "pruned_row_mask", None)
+                c = getattr(node, "pruned_col_mask", None)
+                print(
+                    f"[PRUNING_INVESTIGATION] HardCoreMappingStep ir_graph input node_id={node.id} "
+                    f"pruned_row_mask len={len(r) if r else 0} pruned_col_mask len={len(c) if c else 0}"
+                )
+            if len(neural) > 5:
+                print(f"[PRUNING_INVESTIGATION] HardCoreMappingStep ... ({len(neural)} neural nodes total)")
+
         hybrid_mapping = build_hybrid_hard_core_mapping(
             ir_graph=ir_graph,
             cores_config=platform_constraints["cores"],
