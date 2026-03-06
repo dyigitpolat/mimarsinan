@@ -17,7 +17,10 @@ def compact_soft_core_mapping(cores, output_sources):
     and axon_sources in place, and replaces output_sources so neuron indices match
     the compacted layout.
     """
+    import os
     reindex_maps = {}  # core_id -> {old_neuron_idx: new_neuron_idx}
+    n_compacted = 0
+    n_skipped = 0
 
     for core in cores:
         mat = np.asarray(core.core_matrix, dtype=np.float64)
@@ -34,10 +37,18 @@ def compact_soft_core_mapping(cores, output_sources):
             keep_rows = [r for r in range(n_axons) if not pruned_row_mask[r]]
             keep_cols = [c for c in range(n_neurons) if not pruned_col_mask[c]]
         else:
+            if os.environ.get("PRUNING_INVESTIGATION"):
+                print(
+                    f"[PRUNING_INVESTIGATION] compact_soft_core_mapping skip compaction: "
+                    f"core_id={getattr(core,'id',None)} shape=({n_axons},{n_neurons}) "
+                    f"pruned_row_mask={'missing' if pruned_row_mask is None else f'len={len(pruned_row_mask)}'} "
+                    f"pruned_col_mask={'missing' if pruned_col_mask is None else f'len={len(pruned_col_mask)}'}"
+                )
             keep_rows = list(range(n_axons))
             keep_cols = list(range(n_neurons))
 
         if len(keep_rows) < n_axons or len(keep_cols) < n_neurons:
+            n_compacted += 1
             if keep_rows and keep_cols:
                 core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
                 core.axon_sources = [core.axon_sources[r] for r in keep_rows]
@@ -47,6 +58,7 @@ def compact_soft_core_mapping(cores, output_sources):
             remap = {old_idx: new_idx for new_idx, old_idx in enumerate(keep_cols)}
             reindex_maps[core.id] = remap
         else:
+            n_skipped += 1
             reindex_maps[core.id] = {j: j for j in range(n_neurons)}
 
         core._axon_source_spans = None
@@ -69,6 +81,9 @@ def compact_soft_core_mapping(cores, output_sources):
         core._axon_source_spans = None
 
     # Rebuild output_sources: keep order, reindex or drop pruned neuron refs
+    had_output_refs = any(
+        not s.is_off_ for s in output_sources
+    )
     new_out = []
     for s in output_sources:
         if s.is_off_:
@@ -79,8 +94,20 @@ def compact_soft_core_mapping(cores, output_sources):
             cid, nidx = int(s.core_), int(s.neuron_)
             if cid in reindex_maps and nidx in reindex_maps[cid]:
                 new_out.append(SpikeSource(cid, reindex_maps[cid][nidx], False, False))
+    if had_output_refs and len(new_out) == 0:
+        raise ValueError(
+            "compact_soft_core_mapping: all output_sources were dropped by compaction "
+            "(every output neuron was pruned). At least one output must remain; check pruning masks "
+            "and initial mask assignment (e.g. 1:1 vs tiled layer matching)."
+        )
     output_sources.clear()
     output_sources.extend(new_out)
+
+    if os.environ.get("PRUNING_INVESTIGATION"):
+        print(
+            f"[PRUNING_INVESTIGATION] compact_soft_core_mapping summary: "
+            f"n_compacted={n_compacted} n_skipped={n_skipped} total={len(cores)}"
+        )
 
 
 class SoftCore:
@@ -219,6 +246,9 @@ class HardCoreMapping:
         self.cores = []
         self.output_sources = []
         self.neuron_mapping = {}
+        # hard→soft traceability: list indexed by hard core index; each element is a list of
+        # placement dicts: {"ir_node_id", "axon_offset", "neuron_offset", "axons", "neurons"}
+        self.soft_core_placements_per_hard_core = []
 
         self.unusable_space = 0
         self._output_source_spans = None
@@ -238,9 +268,24 @@ class HardCoreMapping:
         return max(int(hc.neurons_per_core) for hc in self.cores)
 
     def merge_softcore_into(self, target_core_idx: int, hardcore, softcore):
+        axon_offset = hardcore.axons_per_core - hardcore.available_axons
+        neuron_offset = hardcore.neurons_per_core - hardcore.available_neurons
+        axons = softcore.get_input_count()
+        neurons = softcore.get_output_count()
+
         prev_output_count = hardcore.neurons_per_core - hardcore.available_neurons
         hardcore.add_softcore(softcore)
-        
+
+        while len(self.soft_core_placements_per_hard_core) <= target_core_idx:
+            self.soft_core_placements_per_hard_core.append([])
+        self.soft_core_placements_per_hard_core[target_core_idx].append({
+            "ir_node_id": softcore.id,
+            "axon_offset": axon_offset,
+            "neuron_offset": neuron_offset,
+            "axons": axons,
+            "neurons": neurons,
+        })
+
         for soft_neuron_idx in range(softcore.get_output_count()):
             target_neuron_idx = prev_output_count + soft_neuron_idx
             self.neuron_mapping[(softcore.id, soft_neuron_idx)] = \

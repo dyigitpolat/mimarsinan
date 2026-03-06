@@ -41,6 +41,12 @@ class ChipLatency:
         
     def calculate(self):
         self.memo = {}
+        if len(self.mapping.output_sources) == 0:
+            raise ValueError(
+                "ChipLatency.calculate: mapping has no output_sources (empty list). "
+                "This usually means all output neurons were pruned or compaction removed every output ref. "
+                "Check IR pruning and soft-core compaction."
+            )
         result = max([
             self.get_delay_for(source) for source in self.mapping.output_sources])
         

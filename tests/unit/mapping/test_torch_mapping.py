@@ -84,6 +84,21 @@ class ResidualBlock(nn.Module):
         return self.head(out)
 
 
+class SequentialWithFlatten(nn.Module):
+    """Sequential with nn.Flatten (call_module) as used by TorchSequentialLinearBuilder."""
+    def __init__(self, input_size=784, hidden=64, num_classes=10):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(input_size, hidden),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden, num_classes),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class UnsupportedModel(nn.Module):
     """Contains an LSTM which is unsupported."""
     def __init__(self):
@@ -160,6 +175,12 @@ class TestRepresentability:
         summary = report.summary()
         assert "Representable: True" in summary
 
+    def test_sequential_with_nn_flatten_representable(self):
+        """nn.Flatten (call_module) is supported and represented as ReshapeMapper."""
+        model = SequentialWithFlatten(input_size=784, hidden=64, num_classes=10)
+        report = check_representability(model, input_shape=(1, 28, 28))
+        assert report.is_representable
+
 
 # ── Tests: Conversion ────────────────────────────────────────────────────────
 
@@ -191,6 +212,19 @@ class TestConversion:
             for p in perceptrons
         )
         assert has_bn, "At least one Perceptron should have absorbed BatchNorm"
+
+    def test_convert_sequential_with_nn_flatten(self):
+        """Conversion of Sequential(Flatten, Linear, ReLU, Linear) as from TorchSequentialLinearBuilder."""
+        model = SequentialWithFlatten(input_size=784, hidden=64, num_classes=10)
+        supermodel = convert_torch_model(
+            model, input_shape=(1, 28, 28), num_classes=10
+        )
+        assert supermodel is not None
+        perceptrons = supermodel.get_perceptrons()
+        assert len(perceptrons) == 2
+        x = torch.randn(2, 1, 28, 28)
+        out = supermodel(x)
+        assert out.shape == (2, 10)
 
     def test_convert_conv_net(self):
         model = SimpleConvNet(in_channels=1, num_classes=10)

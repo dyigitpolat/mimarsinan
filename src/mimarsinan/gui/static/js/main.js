@@ -1,7 +1,7 @@
 /* Mimarsinan Pipeline Monitor — Entry point.
  * State management, WebSocket, refresh loop, pipeline bar. */
-import { esc, fmtDuration } from './util.js';
-import { renderPipelineBar, renderOverviewCards } from './overview.js';
+import { esc, fmtDuration, elapsedFromStepStart } from './util.js';
+import { renderPipelineBar, renderOverviewCards, renderConfig } from './overview.js';
 import { refreshStepDetail, updateLiveCharts } from './step-detail.js';
 
 // ── Global state ─────────────────────────────────────────────────────────
@@ -9,6 +9,7 @@ const state = {
   pipeline: null,
   selectedStep: null,
   activeTab: null,
+  activeMainTab: 'overview',
   autoFollow: true,
   ws: null,
   metricBuffers: {},
@@ -22,6 +23,7 @@ async function fetchJSON(url) { return (await fetch(url)).json(); }
 // ── Init ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   setupPipelineBarClicks();
+  setupMainTabs();
   document.getElementById('auto-follow-btn').addEventListener('click', toggleAutoFollow);
   await refreshPipeline();
   connectWebSocket();
@@ -41,6 +43,7 @@ async function refreshPipeline() {
     state.pipeline = await fetchJSON('/api/pipeline');
     renderPipelineBar(state.pipeline, state.selectedStep);
     renderOverviewCards(state.pipeline);
+    if (state.activeMainTab === 'config') renderConfig(state.pipeline?.config);
 
     if (state.autoFollow && state.pipeline.current_step) {
       const cur = state.pipeline.current_step;
@@ -103,8 +106,31 @@ function updateElapsedTimer() {
   const running = (state.pipeline.steps || []).find(s => s.status === 'running');
   const el = document.getElementById('elapsed-time');
   if (!el) return;
-  if (running?.start_time) { el.textContent = fmtDuration(Date.now() / 1000 - running.start_time); el.style.display = 'inline'; }
-  else el.style.display = 'none';
+  if (running?.start_time != null) {
+    const elapsed = elapsedFromStepStart(running.start_time);
+    el.textContent = fmtDuration(elapsed);
+    el.style.display = 'inline';
+  } else el.style.display = 'none';
+}
+
+function setupMainTabs() {
+  const tabBar = document.getElementById('main-tabs');
+  const overviewPane = document.getElementById('main-tab-overview');
+  const configPane = document.getElementById('main-tab-config');
+  if (!tabBar || !overviewPane || !configPane) return;
+  tabBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn[data-main-tab]');
+    if (!btn) return;
+    const tab = btn.dataset.mainTab;
+    if (tab !== 'overview' && tab !== 'config') return;
+    state.activeMainTab = tab;
+    tabBar.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mainTab === tab);
+    });
+    overviewPane.classList.toggle('active', tab === 'overview');
+    configPane.classList.toggle('active', tab === 'config');
+    if (tab === 'config') renderConfig(state.pipeline?.config);
+  });
 }
 
 function setupPipelineBarClicks() {

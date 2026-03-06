@@ -133,3 +133,32 @@ class TestPruningTuner:
         for orig, p in zip(original_weights, perceptrons):
             assert torch.allclose(orig, p.layer.weight.data), \
                 "Weights should be unchanged at rate=0.0"
+
+    def test_first_layer_columns_and_last_layer_rows_exempt_at_rate_one(self):
+        """At rate=1.0, first layer column mask and last layer row mask must be all True
+        (input-buffer and output-buffer dimensions are never pruned)."""
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+
+        mock = MockPipeline()
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+
+        tuner = PruningTuner(
+            pipeline=mock,
+            model=model,
+            target_accuracy=0.0,
+            lr=0.001,
+            adaptation_manager=am,
+            pruning_fraction=1.0,
+        )
+
+        perceptrons = model.get_perceptrons()
+        for p in perceptrons:
+            w = p.layer.weight.data
+            tuner.base_row_imp.append(w.abs().sum(dim=1))
+            tuner.base_col_imp.append(w.abs().sum(dim=0))
+
+        row_masks, col_masks = tuner._get_masks(1.0)
+
+        assert col_masks[0].all(), "First layer column mask must be all True (input-buffer exempt)"
+        assert row_masks[-1].all(), "Last layer row mask must be all True (output-buffer exempt)"

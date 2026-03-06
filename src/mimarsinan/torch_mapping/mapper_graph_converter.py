@@ -149,6 +149,8 @@ class MapperGraphConverter:
             self._convert_dropout(node, mod, source)
         elif isinstance(mod, nn.Identity):
             self._node_to_mapper[node] = source
+        elif isinstance(mod, nn.Flatten):
+            self._convert_flatten_module(node, source)
         elif isinstance(mod, (nn.ReLU, nn.LeakyReLU)):
             mapper = ModuleMapper(source, mod)
             self._node_to_mapper[node] = mapper
@@ -487,6 +489,16 @@ class MapperGraphConverter:
 
     def _convert_flatten_func(self, node: fx.Node) -> None:
         source = self._get_source_mapper(node)
+        out_shape = self._get_output_shape(node)
+        if out_shape is not None and len(out_shape) == 2:
+            flat_shape = (out_shape[-1],)
+            mapper = ReshapeMapper(source, flat_shape)
+        else:
+            mapper = source
+        self._node_to_mapper[node] = mapper
+
+    def _convert_flatten_module(self, node: fx.Node, source) -> None:
+        """Convert nn.Flatten (call_module) to ReshapeMapper, same semantics as _convert_flatten_func."""
         out_shape = self._get_output_shape(node)
         if out_shape is not None and len(out_shape) == 2:
             flat_shape = (out_shape[-1],)

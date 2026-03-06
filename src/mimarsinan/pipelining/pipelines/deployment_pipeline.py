@@ -214,6 +214,9 @@ class DeploymentPipeline(Pipeline):
         if pruning and pruning_fraction > 0:
             for name, cls in _PRUNING_STEPS:
                 self.add_pipeline_step(name, cls(self))
+            print(f"[DeploymentPipeline] Pruning enabled: pruning={pruning}, pruning_fraction={pruning_fraction}; PruningAdaptationStep added.")
+        else:
+            print(f"[DeploymentPipeline] Pruning not in pipeline: pruning={pruning}, pruning_fraction={pruning_fraction}")
 
         # ── Activation Quantization ─────────────────────────────────────
         if act_q:

@@ -1,5 +1,5 @@
 /* Pipeline bar + overview charts (target metric, step timing, config). */
-import { esc, fmtDuration, safeReact, emptyAnnotation } from './util.js';
+import { esc, fmtDuration, elapsedFromStepStart, safeReact, emptyAnnotation } from './util.js';
 
 // ── Pipeline bar ─────────────────────────────────────────────────────────
 export function renderPipelineBar(pipeline, selectedStep) {
@@ -34,7 +34,6 @@ export function renderOverviewCards(pipeline) {
 
   renderMetricProgression(steps);
   renderStepTiming(steps);
-  renderConfig(pipeline.config);
 }
 
 function renderMetricProgression(steps) {
@@ -55,7 +54,7 @@ function renderStepTiming(steps) {
   const timed = [];
   for (const s of steps) {
     if (s.duration != null) timed.push({ name: s.name, duration: s.duration, running: false });
-    else if (s.status === 'running' && s.start_time) timed.push({ name: s.name, duration: now - s.start_time, running: true });
+    else if (s.status === 'running' && s.start_time != null) timed.push({ name: s.name, duration: elapsedFromStepStart(s.start_time, now), running: true });
   }
   const anno = timed.length === 0 ? emptyAnnotation('No timing data yet') : [];
   const traces = timed.length > 0 ? [{
@@ -71,7 +70,7 @@ function renderStepTiming(steps) {
   });
 }
 
-function renderConfig(config) {
+export function renderConfig(config) {
   const el = document.getElementById('config-body');
   if (!el || !config) return;
   const priority = ['spiking_mode', 'pipeline_mode', 'configuration_mode', 'activation_quantization',

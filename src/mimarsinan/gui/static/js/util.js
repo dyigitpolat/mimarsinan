@@ -10,9 +10,17 @@ export function esc(s) {
 export function cssId(s) { return s.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); }
 
 export function fmtDuration(sec) {
-  if (sec < 60) return sec.toFixed(1) + 's';
-  if (sec < 3600) return Math.floor(sec / 60) + 'm ' + Math.floor(sec % 60) + 's';
-  return Math.floor(sec / 3600) + 'h ' + Math.floor((sec % 3600) / 60) + 'm';
+  const s = Math.max(0, Number(sec));
+  if (s < 60) return s.toFixed(1) + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + Math.floor(s % 60) + 's';
+  return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+}
+
+/** Elapsed seconds from step start; startTime from API (seconds or ms), nowSec = Date.now()/1000. */
+export function elapsedFromStepStart(startTime, nowSec = Date.now() / 1000) {
+  if (startTime == null || typeof startTime !== 'number') return 0;
+  const startSec = startTime > 1e12 ? startTime / 1000 : startTime;
+  return Math.max(0, nowSec - startSec);
 }
 
 export function fmtNum(n) {

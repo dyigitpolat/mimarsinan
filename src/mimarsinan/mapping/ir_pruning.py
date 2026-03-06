@@ -21,12 +21,112 @@ NeuralCore for GUI visualization (soft-core pre/post pruning views).
 from __future__ import annotations
 
 import copy
+import os
 from typing import Dict, List, Sequence, Set, Tuple
 
 import numpy as np
 
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
+from collections import defaultdict
+
+from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.pruning_propagation import compute_propagated_pruned_rows_cols
+
+
+def get_neural_segments(ir_graph: IRGraph) -> List[List[NeuralCore]]:
+    """Split IR graph into neural segments (same boundaries as hybrid hard core mapping).
+
+    Segments are contiguous NeuralCore lists between ComputeOp nodes.
+    Returns list of segments, each segment a list of NeuralCore nodes.
+    """
+    segments: List[List[NeuralCore]] = []
+    current: List[NeuralCore] = []
+    for node in ir_graph.nodes:
+        if isinstance(node, NeuralCore):
+            current.append(node)
+            continue
+        if isinstance(node, ComputeOp):
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        raise TypeError(f"Unknown IR node type in segment split: {type(node)}")
+    if current:
+        segments.append(current)
+    return segments
+
+
+def compute_segment_io_exemption(
+    ir_graph: IRGraph,
+) -> Tuple[Dict[int, Set[int]], Dict[int, Set[int]]]:
+    """Compute per-node segment input-buffer rows and output-buffer columns by IR sources.
+
+    Input-buffer row: axon row i is exempt if input_sources[i] is segment input
+    (IRSource node_id == -2 or node_id not in this segment).
+    Output-buffer column: neuron column j is exempt if (node_id, j) feeds segment output
+    (in graph.output_sources or consumed by a node outside this segment).
+
+    Returns:
+        (input_buffer_rows, output_buffer_cols): each dict maps node_id -> set of indices
+        that must not be pruned for that node.
+    """
+    segments = get_neural_segments(ir_graph)
+    consumed_by: Dict[int, Set[int]] = defaultdict(set)
+    for node in ir_graph.nodes:
+        if not hasattr(node, "input_sources"):
+            continue
+        for src in node.input_sources.flatten():
+            if isinstance(src, IRSource) and src.node_id >= 0:
+                consumed_by[src.node_id].add(node.id)
+    for src in ir_graph.output_sources.flatten():
+        if isinstance(src, IRSource) and src.node_id >= 0:
+            consumed_by[src.node_id].add(-999)  # final output sentinel
+
+    input_buffer_rows: Dict[int, Set[int]] = {}
+    output_buffer_cols: Dict[int, Set[int]] = {}
+
+    for segment in segments:
+        segment_ids = {n.id for n in segment}
+        for node in segment:
+            if not isinstance(node, NeuralCore) or not hasattr(node, "input_sources"):
+                continue
+            flat_src = node.input_sources.flatten()
+            in_buf = set()
+            for i, src in enumerate(flat_src):
+                if isinstance(src, IRSource):
+                    if src.node_id == -2:
+                        in_buf.add(i)
+                    elif src.node_id >= 0 and src.node_id not in segment_ids:
+                        in_buf.add(i)
+            if node.id not in input_buffer_rows:
+                input_buffer_rows[node.id] = set()
+            input_buffer_rows[node.id] |= in_buf
+
+        for node in segment:
+            if not isinstance(node, NeuralCore):
+                continue
+            n_neurons = node.core_matrix.shape[1] if node.core_matrix is not None else None
+            if n_neurons is None and getattr(node, "weight_row_slice", None) is not None:
+                start, end = node.weight_row_slice
+                n_neurons = end - start
+            if n_neurons is None:
+                continue
+            out_buf = set()
+            consumers = consumed_by.get(node.id, set())
+            has_external_consumer = any(c not in segment_ids for c in consumers if c != -999)
+            for j in range(n_neurons):
+                is_output = False
+                if ir_graph.output_sources.size:
+                    for src in ir_graph.output_sources.flatten():
+                        if isinstance(src, IRSource) and src.node_id == node.id and src.index == j:
+                            is_output = True
+                            break
+                if is_output or has_external_consumer:
+                    out_buf.add(j)
+            if node.id not in output_buffer_cols:
+                output_buffer_cols[node.id] = set()
+            output_buffer_cols[node.id] |= out_buf
+
+    return input_buffer_rows, output_buffer_cols
 
 
 def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
@@ -50,6 +150,9 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
     except Exception:
         return initial_pruned_per_node, initial_pruned_per_bank
     if len(neural_cores) != len(perceptrons):
+        # Tiled IR: do not use model masks — node-to-perceptron order is not guaranteed to match
+        # get_perceptrons(), so wrong assignment would over-prune and drop accuracy. Use only
+        # zero-threshold pruning in prune_ir_graph for tiled graphs.
         return initial_pruned_per_node, initial_pruned_per_bank
     for i, (node, p) in enumerate(zip(neural_cores, perceptrons)):
         layer = getattr(p, "layer", None)
@@ -65,7 +168,9 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             row_pruned = prune_bias.detach().cpu().numpy()  # (out_f,) True = pruned
         else:
             row_pruned = pm.any(dim=1).cpu().numpy()
-        col_pruned = pm.any(dim=0).cpu().numpy()  # (in_f,) True = pruned
+        # Column j is pruned only if the tuner pruned that input dimension (then (i,j) is True
+        # for all i). Using any(dim=0) would incorrectly mark all columns when any row is pruned.
+        col_pruned = pm.all(dim=0).cpu().numpy()  # (in_f,) True = pruned
         # IR: (axons, neurons) = (in_f+1, out_f) with bias row last
         n_axons = in_f + 1
         n_neurons = out_f
@@ -78,7 +183,21 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             continue
         ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)] + [False]
         ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]
-        initial_pruned_per_node[node.id] = (ir_row_mask, ir_col_mask)
+        # Truncate to node shape for consistency (row/col length must match matrix).
+        row_mask = (list(ir_row_mask) + [False] * nr)[:nr]
+        col_mask = (list(ir_col_mask) + [False] * nc)[:nc]
+        initial_pruned_per_node[node.id] = (row_mask, col_mask)
+    if os.environ.get("PRUNING_INVESTIGATION"):
+        print(
+            f"[PRUNING_INVESTIGATION] get_initial_pruning_masks branch=1:1 "
+            f"neural_cores={len(neural_cores)} perceptrons={len(perceptrons)} "
+            f"initial_pruned_per_node_count={len(initial_pruned_per_node)}"
+        )
+        for idx, (nid, (row_m, col_m)) in enumerate(list(initial_pruned_per_node.items())[:3]):
+            print(
+                f"[PRUNING_INVESTIGATION]   node_id={nid} row_len={len(row_m)} row_pruned={sum(row_m)} "
+                f"col_len={len(col_m)} col_pruned={sum(col_m)}"
+            )
     return initial_pruned_per_node, initial_pruned_per_bank
 
 
@@ -173,6 +292,9 @@ def prune_ir_graph(
 
     # Phase 1: identify pruned rows/columns with forward/backward propagation per core
     # (centralized in compute_propagated_pruned_rows_cols)
+    # Segment I/O exemption: never prune rows that are segment input or cols that are segment output.
+    input_buffer_rows, output_buffer_cols = compute_segment_io_exemption(graph)
+
     reindex_maps: Dict[int, Dict[int, int]] = {}
     pruned_neurons: Dict[int, Set[int]] = {}
     pruned_rows: Dict[int, Set[int]] = {}
@@ -188,16 +310,40 @@ def prune_ir_graph(
         n_axons, n_neurons = mat.shape
 
         init = init_node.get(node.id)
-        if init is not None and len(init[0]) == n_axons and len(init[1]) == n_neurons:
-            zero_rows, zero_cols = _masks_to_sets(init[0], init[1])
+        if init is not None:
+            # Slice (or pad with False) to node shape so 129 vs 127 etc. do not propagate.
+            init_row = list(init[0][:n_axons]) + [False] * max(0, n_axons - len(init[0]))
+            init_col = list(init[1][:n_neurons]) + [False] * max(0, n_neurons - len(init[1]))
+            if len(init_row) == n_axons and len(init_col) == n_neurons:
+                zero_rows, zero_cols = _masks_to_sets(init_row, init_col)
+                zero_rows -= input_buffer_rows.get(node.id, set())
+                zero_cols -= output_buffer_cols.get(node.id, set())
+                zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+                    mat,
+                    zero_threshold=zero_threshold,
+                    initial_zero_rows=zero_rows,
+                    initial_zero_cols=zero_cols,
+                )
+            else:
+                zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
+                zero_rows -= input_buffer_rows.get(node.id, set())
+                zero_cols -= output_buffer_cols.get(node.id, set())
+                zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+                    mat,
+                    zero_threshold=zero_threshold,
+                    initial_zero_rows=zero_rows,
+                    initial_zero_cols=zero_cols,
+                )
+        else:
+            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
+            zero_rows -= input_buffer_rows.get(node.id, set())
+            zero_cols -= output_buffer_cols.get(node.id, set())
             zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
                 mat,
                 zero_threshold=zero_threshold,
                 initial_zero_rows=zero_rows,
                 initial_zero_cols=zero_cols,
             )
-        else:
-            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
 
         pruned_neurons[node.id] = zero_cols
         pruned_rows[node.id] = zero_rows
@@ -209,6 +355,38 @@ def prune_ir_graph(
                 remap[old_idx] = new_idx
                 new_idx += 1
         reindex_maps[node.id] = remap
+
+    # Output nodes: only zero-threshold pruning (no structural/mask-based column pruning).
+    # This preserves all non-zero output dimensions and avoids wrong mask/propagation collapsing the classifier.
+    # Still apply segment I/O exemption so segment output columns are never pruned.
+    if graph.output_sources.size:
+        output_node_ids = {
+            src.node_id for src in graph.output_sources.flatten()
+            if isinstance(src, IRSource) and src.node_id >= 0
+        }
+        for node in graph.nodes:
+            if not isinstance(node, NeuralCore) or node.core_matrix is None or node.id not in output_node_ids:
+                continue
+            mat = node.core_matrix
+            n_neurons = mat.shape[1]
+            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold=zero_threshold)
+            zero_rows -= input_buffer_rows.get(node.id, set())
+            zero_cols -= output_buffer_cols.get(node.id, set())
+            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+                mat,
+                zero_threshold=zero_threshold,
+                initial_zero_rows=zero_rows,
+                initial_zero_cols=zero_cols,
+            )
+            pruned_neurons[node.id] = zero_cols
+            pruned_rows[node.id] = zero_rows
+            new_idx = 0
+            remap = {}
+            for old_idx in range(n_neurons):
+                if old_idx not in zero_cols:
+                    remap[old_idx] = new_idx
+                    new_idx += 1
+            reindex_maps[node.id] = remap
 
     # Phase 2: rewire all sources (input_sources of all nodes + output_sources)
     def _rewire_sources(sources: np.ndarray) -> np.ndarray:
@@ -231,6 +409,18 @@ def prune_ir_graph(
 
     if graph.output_sources.size:
         graph.output_sources = _rewire_sources(graph.output_sources)
+
+    # Fail fast if all output neurons were pruned (would cause empty output_sources after compaction)
+    if graph.output_sources.size:
+        flat = graph.output_sources.flatten()
+        if all(
+            isinstance(s, IRSource) and s.node_id < 0
+            for s in flat
+        ):
+            raise ValueError(
+                "prune_ir_graph: all output_sources were rewired to pruned (node_id<0). "
+                "At least one output neuron must remain; check initial pruning masks and propagation."
+            )
 
     # Before compacting: store pre-pruning heatmap and masks for GUI (soft-core viz)
     for node in graph.nodes:
@@ -284,9 +474,25 @@ def prune_ir_graph(
                 node.core_matrix = mat[:1, :] * 0.0
                 node.input_sources = np.array([flat_src[0]], dtype=object)
 
+    # After Phase 4: align mask lengths with post-compaction matrix for non–bank-backed cores.
+    # (Bank-backed nodes get masks in Phase 5.) Post-compaction there are no pruned rows/cols left.
+    # Save pre-compaction masks for GUI (pre_pruning_heatmap_image red markings) before overwriting.
+    for node in graph.nodes:
+        if not isinstance(node, NeuralCore) or node.core_matrix is None:
+            continue
+        if getattr(node, "weight_bank_id", None) is not None:
+            continue
+        mat = node.core_matrix
+        n_axons_new, n_neurons_new = mat.shape[0], mat.shape[1]
+        if node.pruned_row_mask is not None and node.pruned_col_mask is not None:
+            node.pre_pruning_row_mask = list(node.pruned_row_mask)
+            node.pre_pruning_col_mask = list(node.pruned_col_mask)
+        node.pruned_row_mask = [False] * n_axons_new
+        node.pruned_col_mask = [False] * n_neurons_new
+
     # Phase 5: set pruning maps on bank-backed cores from each weight bank
     # (banks are not compacted; masks let soft-core compaction drop rows/cols when materializing)
-    # Uses same propagative helper as Phase 1.
+    # Uses same propagative helper as Phase 1. Apply segment I/O exemption at bank level.
     weight_banks = getattr(graph, "weight_banks", None) or {}
     init_bank = (initial_pruned_per_bank or {})
     for bank_id, bank in weight_banks.items():
@@ -295,6 +501,21 @@ def prune_ir_graph(
         init = init_bank.get(bank_id)
         if init is not None and len(init[0]) == n_axons and len(init[1]) == n_neurons:
             zero_rows, zero_cols = _masks_to_sets(init[0], init[1])
+            bank_exempt_rows = set()
+            bank_exempt_cols = set()
+            for node in graph.nodes:
+                if not isinstance(node, NeuralCore) or getattr(node, "weight_bank_id", None) != bank_id:
+                    continue
+                bank_exempt_rows |= input_buffer_rows.get(node.id, set())
+                if node.weight_row_slice is not None:
+                    start, end = node.weight_row_slice
+                    for j in output_buffer_cols.get(node.id, set()):
+                        if j < end - start:
+                            bank_exempt_cols.add(start + j)
+                else:
+                    bank_exempt_cols |= output_buffer_cols.get(node.id, set())
+            zero_rows -= bank_exempt_rows
+            zero_cols -= bank_exempt_cols
             zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
                 mat,
                 zero_threshold=zero_threshold,
@@ -303,11 +524,40 @@ def prune_ir_graph(
             )
         else:
             zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
+            bank_exempt_rows = set()
+            bank_exempt_cols = set()
+            for node in graph.nodes:
+                if not isinstance(node, NeuralCore) or getattr(node, "weight_bank_id", None) != bank_id:
+                    continue
+                bank_exempt_rows |= input_buffer_rows.get(node.id, set())
+                if node.weight_row_slice is not None:
+                    start, end = node.weight_row_slice
+                    for j in output_buffer_cols.get(node.id, set()):
+                        if j < end - start:
+                            bank_exempt_cols.add(start + j)
+                else:
+                    bank_exempt_cols |= output_buffer_cols.get(node.id, set())
+            zero_rows -= bank_exempt_rows
+            zero_cols -= bank_exempt_cols
+            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+                mat,
+                zero_threshold=zero_threshold,
+                initial_zero_rows=zero_rows,
+                initial_zero_cols=zero_cols,
+            )
         pruned_row_mask = [i in zero_rows for i in range(n_axons)]
-        pruned_col_mask = [j in zero_cols for j in range(n_neurons)]
+        pruned_col_mask_full = [j in zero_cols for j in range(n_neurons)]
         for node in graph.nodes:
-            if isinstance(node, NeuralCore) and getattr(node, "weight_bank_id", None) == bank_id:
-                node.pruned_row_mask = pruned_row_mask
-                node.pruned_col_mask = pruned_col_mask
+            if not isinstance(node, NeuralCore) or getattr(node, "weight_bank_id", None) != bank_id:
+                continue
+            # Per-node effective matrix shape (same as get_core_matrix will return)
+            if node.weight_row_slice is not None:
+                start, end = node.weight_row_slice
+                node.pre_pruning_heatmap = np.copy(bank.core_matrix[:, start:end]).tolist()
+                node.pruned_col_mask = pruned_col_mask_full[start:end]
+            else:
+                node.pre_pruning_heatmap = np.copy(bank.core_matrix).tolist()
+                node.pruned_col_mask = pruned_col_mask_full
+            node.pruned_row_mask = pruned_row_mask
 
     return graph

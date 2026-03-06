@@ -76,6 +76,7 @@ _COMPUTE_OP_MODULES: set[type] = {
     nn.Dropout,
     nn.Dropout2d,
     nn.Identity,
+    nn.Flatten,
 }
 
 # Modules that get absorbed into the preceding Perceptron

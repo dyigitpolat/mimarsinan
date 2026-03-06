@@ -7,12 +7,13 @@ providing live monitoring and post-run inspection.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `__init__.py` | `GUIHandle`, `start_gui` | Facade: creates collector, reporter, registers step hooks |
+| `__init__.py` | `GUIHandle`, `start_gui` | Facade: creates collector, reporter; optional `start_step` backfills skipped steps from cache for browsing |
 | `data_collector.py` | `DataCollector` | Thread-safe in-memory store; broadcasts updates via WebSocket |
 | `reporter.py` | `GUIReporter` | Implements `Reporter` protocol; forwards metrics to `DataCollector` |
 | `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (WandB + GUI) |
 | `server.py` | `start_server` | FastAPI + Uvicorn server in a daemon thread |
-| `snapshot.py` | `build_step_snapshot` | Pure functions extracting JSON-safe snapshots from pipeline artifacts |
+| `snapshot.py` | `build_step_snapshot` | Pure functions extracting JSON-safe snapshots; step-specific tabs and new/edited kinds |
+| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted` | Load/save step state to `_GUI_STATE/steps.json` for backfill |
 | `heatmap_renderer.py` | `render_heatmap_png_data_uri` | Renders weight matrices as PNG data URIs for GUI; no raw matrices sent to frontend |
 
 ### Frontend (`static/`)

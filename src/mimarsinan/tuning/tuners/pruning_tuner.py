@@ -59,6 +59,8 @@ class PruningTuner(PerceptronTuner):
             out_f, in_f = p.layer.weight.data.shape
             
             k_r = int(math.floor(rate * self.pruning_fraction * out_f))
+            if i == n_layers - 1:
+                k_r = 0  # Last layer: do not prune rows (output-buffer neurons)
             rm = torch.ones(out_f, dtype=torch.bool, device=self.device)
             if k_r > 0:
                 _, idx = self.base_row_imp[i].sort()
@@ -66,6 +68,8 @@ class PruningTuner(PerceptronTuner):
             row_masks.append(rm)
             
             k_c = int(math.floor(rate * self.pruning_fraction * in_f))
+            if i == 0:
+                k_c = 0  # First layer: do not prune columns (input-buffer axons)
             cm = torch.ones(in_f, dtype=torch.bool, device=self.device)
             if k_c > 0:
                 _, idx = self.base_col_imp[i].sort()

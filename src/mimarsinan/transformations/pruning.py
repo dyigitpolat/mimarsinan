@@ -215,6 +215,14 @@ def compute_all_pruning_masks(perceptrons, pruning_fraction, activation_stats=No
             row_mask, col_mask = compute_pruning_masks(p, pruning_fraction)
         masks.append((row_mask, col_mask))
 
+    # Exempt input-buffer (first layer columns) and output-buffer (last layer rows)
+    n = len(perceptrons)
+    if n > 0:
+        first_row, first_col = masks[0]
+        masks[0] = (first_row, torch.ones_like(first_col, dtype=torch.bool, device=first_col.device))
+        last_row, last_col = masks[-1]
+        masks[-1] = (torch.ones_like(last_row, dtype=torch.bool, device=last_row.device), last_col)
+
     # Phase 2: propagate row pruning as additional column pruning
     for i in range(len(perceptrons) - 1):
         prev_row_mask = masks[i][0]  # output neurons of layer i
