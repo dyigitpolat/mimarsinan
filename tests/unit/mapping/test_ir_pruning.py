@@ -499,8 +499,78 @@ class TestGetInitialPruningMasksFromModel:
                 f"node_id={node.id} pruned_col_mask length must match matrix cols"
             )
 
+    def test_provenance_single_core_gets_mask(self):
+        """When a neural core has perceptron_index set, get_initial_pruning_masks_from_model uses that perceptron's masks."""
+        # One core (3 axons, 2 neurons) with perceptron_index=0
+        src = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
+        core = NeuralCore(
+            id=0,
+            name="c0",
+            input_sources=src,
+            core_matrix=np.ones((3, 2), dtype=np.float64),
+            threshold=1.0,
+            latency=0,
+            perceptron_index=0,
+        )
+        graph = IRGraph(nodes=[core], output_sources=_make_source_array([(0, 0), (0, 1)]))
+        # Perceptron (2, 2): prune row 0 and col 1
+        p = _make_mock_perceptron(2, 2, row_pruned_indices=[0], col_pruned_indices=[1])
+        model = SimpleNamespace(get_perceptrons=lambda: [p])
 
-class TestNeuralCoreToSoftCoreMaskMismatch:
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(model, graph)
+        assert len(initial_node) == 1
+        assert 0 in initial_node
+        row_mask, col_mask = initial_node[0]
+        assert len(row_mask) == 3 and len(col_mask) == 2
+        # IR: row_mask = [col_pruned[0], col_pruned[1], bias=False] -> [False, True, False]
+        assert row_mask == [False, True, False]
+        # col_mask = row_pruned[0], row_pruned[1] -> [True, False]
+        assert col_mask == [True, False]
+
+    def test_provenance_tiled_two_cores_get_sliced_masks(self):
+        """When two cores have same perceptron_index and perceptron_output_slice, masks are sliced per core."""
+        # Perceptron (32, 56): 32 outputs, 56 inputs. Two tiles of 16 neurons each.
+        n_axons = 57  # 56 + bias
+        src = _make_source_array([(-2, k) for k in range(56)] + [(-3, 0)])
+        core0 = NeuralCore(
+            id=0,
+            name="tile_0_16",
+            input_sources=src,
+            core_matrix=np.ones((n_axons, 16), dtype=np.float64),
+            threshold=1.0,
+            latency=0,
+            perceptron_index=0,
+            perceptron_output_slice=(0, 16),
+        )
+        core1 = NeuralCore(
+            id=1,
+            name="tile_16_32",
+            input_sources=src,
+            core_matrix=np.ones((n_axons, 16), dtype=np.float64),
+            threshold=1.0,
+            latency=0,
+            perceptron_index=0,
+            perceptron_output_slice=(16, 32),
+        )
+        graph = IRGraph(nodes=[core0, core1], output_sources=_make_source_array([(1, j) for j in range(16)]))
+        # Perceptron: prune rows 0,1 and cols 10,20
+        p = _make_mock_perceptron(32, 56, row_pruned_indices=[0, 1], col_pruned_indices=[10, 20])
+        model = SimpleNamespace(get_perceptrons=lambda: [p])
+
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(model, graph)
+        assert len(initial_node) == 2
+        assert 0 in initial_node and 1 in initial_node
+        r0, c0 = initial_node[0]
+        r1, c1 = initial_node[1]
+        assert len(r0) == n_axons and len(c0) == 16
+        assert len(r1) == n_axons and len(c1) == 16
+        # Row mask (axons): col_pruned[0..55] + bias -> index 10 and 20 True
+        assert r0[10] is True and r0[20] is True
+        assert r1[10] is True and r1[20] is True
+        # Col mask tile 0: row_pruned[0:16] -> indices 0,1 True
+        assert c0[0] is True and c0[1] is True
+        # Col mask tile 1: row_pruned[16:32] -> none pruned in this slice (rows 0,1 are in first tile)
+        assert sum(c1) == 0
     """neural_core_to_soft_core must raise when mask length != matrix shape (no silent drop)."""
 
     def test_raises_when_row_mask_length_mismatch(self):

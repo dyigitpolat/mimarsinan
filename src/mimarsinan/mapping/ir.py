@@ -50,6 +50,8 @@ class WeightBank:
     activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
+    # Pruning provenance: index into model.get_perceptrons() when this bank backs a single perceptron
+    perceptron_index: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +166,11 @@ class NeuralCore(IRNode):
     # Shared-weight support
     weight_bank_id: int | None = None
     weight_row_slice: tuple[int, int] | None = None  # (start, end) neuron slice into the bank
+
+    # Pruning provenance: index into model.get_perceptrons(); slice of perceptron output dim for tiled FC
+    perceptron_index: int | None = None
+    perceptron_output_slice: tuple[int, int] | None = None  # (start, end) for owned tiled cores
+    perceptron_input_slice: tuple[int, int] | None = None  # (start, end) for axon dimension (e.g. psum tiles)
 
     # Metadata for debugging/visualization
     psum_group_id: int | None = None
