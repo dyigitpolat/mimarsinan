@@ -1,9 +1,9 @@
 """PruningTuner: structured pruning using SmartSmoothAdaptation.
 
-This tuner computes activation-based significance masks once at the beginning,
-then smoothly shrinks the targeted pruned weights towards zero over the course
-of the adaptation process. Unpruned weights are left free to train and heal
-the network capacity loss.
+This tuner recomputes activation-based significance (row/column importance) at
+the start of each adaptation cycle, then smoothly shrinks the targeted pruned
+weights towards zero for that cycle. Unpruned weights are left free to train
+and heal the network capacity loss.
 """
 import math
 import copy
@@ -82,6 +82,30 @@ class PruningTuner(PerceptronTuner):
                 col_masks[i+1] &= row_masks[i]
         return row_masks, col_masks
 
+    def _refresh_pruning_importance(self):
+        """Recompute activation-based row/column importance for the current model.
+        Called at the start of each adaptation cycle so the pruning set is fresh.
+        """
+        perceptrons = self.model.get_perceptrons()
+        activation_stats = _collect_activation_stats(
+            self.model,
+            self.trainer.validation_loader,
+            self.device,
+            num_batches=5,
+        )
+        self.base_row_imp.clear()
+        self.base_col_imp.clear()
+        for i, p in enumerate(perceptrons):
+            w = p.layer.weight.data
+            if activation_stats[i]["output_importance"] is not None:
+                self.base_row_imp.append(activation_stats[i]["output_importance"].clone())
+            else:
+                self.base_row_imp.append(w.abs().sum(dim=1))
+            if activation_stats[i]["input_importance"] is not None:
+                self.base_col_imp.append(activation_stats[i]["input_importance"].clone())
+            else:
+                self.base_col_imp.append(w.abs().sum(dim=0))
+
     def _register_hooks(self, target_row_masks, target_col_masks, rate):
         hooks = []
         for i, p in enumerate(self.model.get_perceptrons()):
@@ -111,35 +135,12 @@ class PruningTuner(PerceptronTuner):
             hooks.append(p.layer.register_forward_pre_hook(make_hook(p.layer, prune_mask, target_w, b_mask, target_b)))
         return hooks
 
-    def run(self):
+    def run(self, max_cycles=None):
         perceptrons = self.model.get_perceptrons()
         n_layers = len(perceptrons)
 
         initial_acc = self.trainer.validate()
         print(f"[PruningTuner] Initial accuracy: {initial_acc:.4f}")
-        print(f"[PruningTuner] Collecting activation statistics to rank importance...")
-
-        activation_stats = _collect_activation_stats(
-            self.model,
-            self.trainer.validation_loader,
-            self.device,
-            num_batches=5,
-        )
-
-        for i, p in enumerate(perceptrons):
-            w = p.layer.weight.data
-            
-            if activation_stats[i]['output_importance'] is not None:
-                self.base_row_imp.append(activation_stats[i]['output_importance'].clone())
-            else:
-                self.base_row_imp.append(w.abs().sum(dim=1))
-                
-            if activation_stats[i]['input_importance'] is not None:
-                self.base_col_imp.append(activation_stats[i]['input_importance'].clone())
-            else:
-                self.base_col_imp.append(w.abs().sum(dim=0))
-
-        target_row_masks, target_col_masks = self._get_masks(1.0)
 
         self.original_weights = []
         self.original_biases = []
@@ -151,51 +152,46 @@ class PruningTuner(PerceptronTuner):
                 self.original_biases.append(None)
 
         def _update_and_eval(rate):
-            rate = min(max(rate, 0.0), 1.0) # Clamp overshoot bug
+            rate = min(max(rate, 0.0), 1.0)  # Clamp overshoot bug
+            target_row_masks, target_col_masks = self._get_masks(rate)
             for i, p in enumerate(perceptrons):
                 apply_pruning_masks(p, target_row_masks[i], target_col_masks[i], rate, self.original_weights[i], self.original_biases[i])
-            
-            # Evaluate shock recoverability using a tiny optimization step
             hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
             self.trainer.train_one_step(self.lr / 2.0)
             for hook in hooks:
                 hook.remove()
-                
-            # Snap them back to mathematically perfect exact zeroes after optimizer touched them
             for i, p in enumerate(perceptrons):
                 apply_pruning_masks(p, target_row_masks[i], target_col_masks[i], rate, self.original_weights[i], self.original_biases[i])
-
             return self.trainer.validate()
 
         def _adaptation(rate):
             rate = min(max(rate, 0.0), 1.0)
             self.pipeline.reporter.report("Tuning Rate", rate)
-            
             _update_and_eval(rate)
-            
+            target_row_masks, target_col_masks = self._get_masks(rate)
             hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
             self.trainer.train_until_target_accuracy(self.lr, self.epochs, self.target_adjuster.get_target(), 0)
             for hook in hooks:
                 hook.remove()
-                
             _update_and_eval(rate)
-            
             acc = self.trainer.validate()
             self.target_adjuster.update_target(acc)
 
+        before_cycle = lambda: self._refresh_pruning_importance()
         adapter = SmartSmoothAdaptation(
             _adaptation,
             lambda: copy.deepcopy(self.model.state_dict()),
             lambda state: self.model.load_state_dict(state),
             _update_and_eval,
             [BasicInterpolation(0.0, 1.0)],
-            self.target_adjuster.get_target()
+            self.target_adjuster.get_target(),
+            before_cycle=before_cycle,
         )
         adapter.tolerance = 0.05
-        
+
         print(f"[PruningTuner] Starting fractional discrete adaptation...")
-        adapter.adapt_smoothly()
-            
+        adapter.adapt_smoothly(max_cycles=max_cycles)
+
         _update_and_eval(1.0)
         
         final_acc = self.trainer.validate()

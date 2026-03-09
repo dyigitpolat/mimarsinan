@@ -3,9 +3,11 @@ from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuste
 
 class SmartSmoothAdaptation(BasicSmoothAdaptation):
     def __init__(
-        self, adaptation_function, 
+        self, adaptation_function,
         state_clone_function, state_restore_function,
-        evaluation_function, interpolators, target_metric):
+        evaluation_function, interpolators, target_metric,
+        before_cycle=None,
+    ):
 
         super().__init__(adaptation_function, interpolators)
         self.state_clone_function = state_clone_function
@@ -16,6 +18,7 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
 
         self.original_target = target_metric
         self.target_adjuster = AdaptationTargetAdjuster(self.original_target)
+        self.before_cycle = before_cycle
 
     def _adjust_minimum_step(self, step_size, t):
         halfway = (1 - t) / 2
@@ -54,6 +57,8 @@ class SmartSmoothAdaptation(BasicSmoothAdaptation):
         t = 0
         cycles = 0
         while t < 1 and (not max_cycles or cycles < max_cycles):
+            if self.before_cycle is not None:
+                self.before_cycle()
             step_size = self._find_step_size(t)
             t += step_size
             interpolated_params = [i(t) for i in self.interpolators]

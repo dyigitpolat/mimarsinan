@@ -230,25 +230,48 @@ class TestPruneIRGraph:
         assert len(pruned_core.pruned_col_mask) == pruned_core.core_matrix.shape[1]
 
     def test_output_node_columns_never_pruned(self):
-        """Nodes that feed output_sources never have their columns pruned (all output dims preserved)."""
-        # Output core 0: 3 neurons; mask would mark all 3 columns pruned
+        """When output node has all columns marked pruned by model mask, segment exemption keeps them (no prune, no raise)."""
         w = np.array([[1.0, 0.1, 5.0], [2.0, 0.2, 6.0]], dtype=np.float64)
         src = _make_source_array([(-2, 0), (-3, 0)])
         core = NeuralCore(id=0, name="out", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
         out_src = _make_source_array([(0, 0), (0, 1), (0, 2)])
         graph = IRGraph(nodes=[core], output_sources=out_src)
         row_mask = [False, False]
-        col_mask = [True, True, True]  # would prune all columns
+        col_mask = [True, True, True]
         pruned = prune_ir_graph(
             graph,
             initial_pruned_per_node={0: (row_mask, col_mask)},
         )
         flat = pruned.output_sources.flatten()
         valid = sum(1 for s in flat if getattr(s, "node_id", -1) >= 0)
-        assert valid == 3, "Output node must keep all output refs"
+        assert valid == 3, "Segment output exemption keeps all output columns; no refs rewired to off"
         pruned_core = pruned.nodes[0]
-        assert pruned_core.core_matrix.shape[1] == 3, "Output core must keep all columns"
+        assert pruned_core.core_matrix.shape[1] == 3
         np.testing.assert_allclose(pruned_core.core_matrix, w)
+
+    def test_output_layer_respects_model_mask_pruned_column_removed_and_rewired(self):
+        """When model mask prunes a non-output column, it is removed and downstream is rewired; output columns stay exempt."""
+        # Two cores: core0 feeds core1 (output). Mask prunes core0 column 1 only; core1 output cols stay exempt.
+        w0 = np.array([[1.0, 0.5, 3.0], [2.0, 0.5, 4.0], [0.1, 0.1, 0.1]], dtype=np.float64)
+        src0 = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
+        core0 = NeuralCore(id=0, name="c0", input_sources=src0, core_matrix=w0.copy(), threshold=1.0, latency=0)
+        w1 = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]], dtype=np.float64)
+        src1 = _make_source_array([(0, 0), (0, 1), (0, 2), (-3, 0)])
+        core1 = NeuralCore(id=1, name="out", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
+        out_src = _make_source_array([(1, 0), (1, 1)])
+        graph = IRGraph(nodes=[core0, core1], output_sources=out_src)
+        row_mask0 = [False, False, False]
+        col_mask0 = [False, True, False]
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={0: (row_mask0, col_mask0)},
+        )
+        pruned_core0 = pruned.nodes[0]
+        assert pruned_core0.core_matrix.shape == (3, 2), "Column 1 removed -> 2 columns"
+        np.testing.assert_allclose(pruned_core0.core_matrix[:, 0], w0[:, 0])
+        flat1 = pruned.nodes[1].input_sources.flatten()
+        assert flat1[1].is_off(), "Source that was (0,1) should be off"
+        assert flat1[2].node_id == 0 and flat1[2].index == 1, "Source that was (0,2) should rewire to (0,1)"
 
     def test_bank_backed_node_gets_sliced_masks_and_pre_pruning_heatmap(self):
         """Bank-backed node with weight_row_slice gets per-node masks and pre_pruning_heatmap matching effective matrix."""
@@ -552,9 +575,9 @@ class TestSegmentIOExemption:
         col_mask = [True, True]
         pruned = prune_ir_graph(graph, initial_pruned_per_node={0: (row_mask, col_mask)})
         pruned_core = pruned.nodes[0]
-        # Output nodes are overridden to zero-threshold-only in prune_ir_graph; exemption still applied so nothing pruned -> (3, 2)
-        assert pruned_core.core_matrix.shape == (3, 2)
-        np.testing.assert_allclose(pruned_core.core_matrix, w)
+        # Exemption keeps rows 0,1 (input) and cols 0,1 (output). Only bias row 2 pruned -> (2, 2).
+        assert pruned_core.core_matrix.shape == (2, 2)
+        np.testing.assert_allclose(pruned_core.core_matrix, w[:2, :])
 
     def test_segment_io_exemption_two_layer_first_input_rows_exempt(self):
         """Two nodes in one segment: first node input rows exempt, last node output cols exempt."""
@@ -572,12 +595,11 @@ class TestSegmentIOExemption:
         assert out_buf[1] == {0, 1}, "Node 1 feeds output_sources"
         row_mask0 = [True, True, True]
         col_mask0 = [True, True]
-        row_mask1 = [True, True, True]
-        col_mask1 = [True, True]
+        # Do not pass init for output node 1 so segment exemption keeps its output cols; only test node 0.
         pruned = prune_ir_graph(
             graph,
-            initial_pruned_per_node={0: (row_mask0, col_mask0), 1: (row_mask1, col_mask1)},
+            initial_pruned_per_node={0: (row_mask0, col_mask0)},
         )
         # Node 0: input rows 0,1 exempt so 3 rows kept; output_buf empty so cols can be pruned -> (3, 1) or similar
-        # Node 1 (output node): overridden to zero-threshold + exemption; output_buf {0,1} so both cols kept -> (3, 2)
+        # Node 1 (output node): no init, so zero-threshold + exemption; output_buf {0,1} so both cols kept -> (3, 2)
         assert pruned.nodes[1].core_matrix.shape == (3, 2)

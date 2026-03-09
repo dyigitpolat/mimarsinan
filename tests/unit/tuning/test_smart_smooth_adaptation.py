@@ -71,3 +71,29 @@ class TestSmartSmoothAdaptation:
         )
         ssa.adapt_smoothly(max_cycles=10)
         assert len(step_sizes) > 0
+
+    def test_before_cycle_called_once_per_cycle(self):
+        """before_cycle callback should be invoked at the start of each adaptation cycle."""
+        before_cycle_calls = []
+
+        def before_cycle():
+            before_cycle_calls.append(1)
+
+        def adapt_fn(rate):
+            pass
+
+        def evaluate(rate):
+            # Return low metric so step_size is halved and we get multiple cycles
+            return 0.1
+
+        ssa = SmartSmoothAdaptation(
+            adapt_fn,
+            lambda: None,
+            lambda s: None,
+            evaluate,
+            [lambda t: t],
+            0.9,
+            before_cycle=before_cycle,
+        )
+        ssa.adapt_smoothly(max_cycles=3)
+        assert len(before_cycle_calls) == 3, "before_cycle should be called once per cycle"
