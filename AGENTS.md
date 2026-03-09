@@ -1,5 +1,12 @@
 Always activate the virtual environment (env) before running and testing code.
 
+Run the deployment pipeline from the **project root** using **`run.py`**.
+
+# Discipline 
+- Always implement contained unit tests covering the entire design hierarchy BEFORE adding, removing or editing any code. The tests dictate software design and implementation. 
+- Always run tests after changing the code. 
+- Do not remove assertions or silence the checks to match potentially incorrect code. 
+
 ## Architecture Documentation
 
 Before modifying any code, **read the `ARCHITECTURE.md` files** relevant to the
@@ -33,10 +40,4 @@ an `__init__.py`. When creating new subdirectories with Python files:
 2. Add an `ARCHITECTURE.md` following the same format as sibling directories.
 3. Keep `__init__.py` exports conservative — only re-export symbols that other
    modules actually import.
-
-
-# Discipline 
-- Always implement contained unit tests covering the entire design hierarchy BEFORE adding, removing or editing any code. The tests dictate software design and implementation. 
-- Always run tests after changing the code. 
-- Do not remove assertions or silence the checks to match potentially incorrect code. 
 

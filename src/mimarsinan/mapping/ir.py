@@ -16,7 +16,6 @@ matrix in memory.  See ``WeightBank``, ``NeuralCore.weight_bank_id``, and
 
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Sequence, Tuple
@@ -642,20 +641,6 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
     pruned_row_mask = getattr(neural_core, "pruned_row_mask", None)
     pruned_col_mask = getattr(neural_core, "pruned_col_mask", None)
     # Only attach masks when they match current matrix (full pre-compaction layout)
-    if os.environ.get("PRUNING_INVESTIGATION"):
-        cm_shape = core_matrix.shape
-        r_len = len(pruned_row_mask) if pruned_row_mask is not None else 0
-        c_len = len(pruned_col_mask) if pruned_col_mask is not None else 0
-        match = (
-            pruned_row_mask is not None
-            and pruned_col_mask is not None
-            and len(pruned_row_mask) == cm_shape[0]
-            and len(pruned_col_mask) == cm_shape[1]
-        )
-        print(
-            f"[PRUNING_INVESTIGATION] neural_core_to_soft_core node_id={neural_core.id} "
-            f"core_matrix.shape={cm_shape} pruned_row_mask len={r_len} pruned_col_mask len={c_len} attach={match}"
-        )
     if pruned_row_mask is not None and pruned_col_mask is not None:
         if len(pruned_row_mask) != core_matrix.shape[0] or len(pruned_col_mask) != core_matrix.shape[1]:
             raise ValueError(

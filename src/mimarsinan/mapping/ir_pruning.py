@@ -21,7 +21,6 @@ NeuralCore for GUI visualization (soft-core pre/post pruning views).
 from __future__ import annotations
 
 import copy
-import os
 from typing import Dict, List, Sequence, Set, Tuple
 
 import numpy as np
@@ -187,17 +186,6 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
         row_mask = (list(ir_row_mask) + [False] * nr)[:nr]
         col_mask = (list(ir_col_mask) + [False] * nc)[:nc]
         initial_pruned_per_node[node.id] = (row_mask, col_mask)
-    if os.environ.get("PRUNING_INVESTIGATION"):
-        print(
-            f"[PRUNING_INVESTIGATION] get_initial_pruning_masks branch=1:1 "
-            f"neural_cores={len(neural_cores)} perceptrons={len(perceptrons)} "
-            f"initial_pruned_per_node_count={len(initial_pruned_per_node)}"
-        )
-        for idx, (nid, (row_m, col_m)) in enumerate(list(initial_pruned_per_node.items())[:3]):
-            print(
-                f"[PRUNING_INVESTIGATION]   node_id={nid} row_len={len(row_m)} row_pruned={sum(row_m)} "
-                f"col_len={len(col_m)} col_pruned={sum(col_m)}"
-            )
     return initial_pruned_per_node, initial_pruned_per_bank
 
 
@@ -294,6 +282,12 @@ def prune_ir_graph(
     # (centralized in compute_propagated_pruned_rows_cols)
     # Segment I/O exemption: never prune rows that are segment input or cols that are segment output.
     input_buffer_rows, output_buffer_cols = compute_segment_io_exemption(graph)
+    output_node_ids = set()
+    if graph.output_sources.size:
+        output_node_ids = {
+            src.node_id for src in graph.output_sources.flatten()
+            if isinstance(src, IRSource) and src.node_id >= 0
+        }
 
     reindex_maps: Dict[int, Dict[int, int]] = {}
     pruned_neurons: Dict[int, Set[int]] = {}
@@ -308,6 +302,10 @@ def prune_ir_graph(
 
         mat = node.core_matrix  # (axons, neurons)
         n_axons, n_neurons = mat.shape
+        # For output nodes with model mask we still apply segment output exemption so we do not
+        # prune output columns by mask (model "pruned" outputs are often scaled by (1-rate), not zero,
+        # so pruning them in the IR would zero them and worsen equivalence).
+        exempt_out_cols = output_buffer_cols.get(node.id, set())
 
         init = init_node.get(node.id)
         if init is not None:
@@ -317,7 +315,7 @@ def prune_ir_graph(
             if len(init_row) == n_axons and len(init_col) == n_neurons:
                 zero_rows, zero_cols = _masks_to_sets(init_row, init_col)
                 zero_rows -= input_buffer_rows.get(node.id, set())
-                zero_cols -= output_buffer_cols.get(node.id, set())
+                zero_cols -= exempt_out_cols
                 zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
                     mat,
                     zero_threshold=zero_threshold,
@@ -356,9 +354,9 @@ def prune_ir_graph(
                 new_idx += 1
         reindex_maps[node.id] = remap
 
-    # Output nodes: only zero-threshold pruning (no structural/mask-based column pruning).
-    # This preserves all non-zero output dimensions and avoids wrong mask/propagation collapsing the classifier.
-    # Still apply segment I/O exemption so segment output columns are never pruned.
+    # Output nodes: merge Phase 1 (model masks) with value-based pruning so we never
+    # un-prune a column the model pruned, while still pruning numerically zero columns.
+    # This aligns IR output-layer pruning with the fused model and fixes equivalence.
     if graph.output_sources.size:
         output_node_ids = {
             src.node_id for src in graph.output_sources.flatten()
@@ -369,15 +367,12 @@ def prune_ir_graph(
                 continue
             mat = node.core_matrix
             n_neurons = mat.shape[1]
-            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold=zero_threshold)
-            zero_rows -= input_buffer_rows.get(node.id, set())
-            zero_cols -= output_buffer_cols.get(node.id, set())
-            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
-                mat,
-                zero_threshold=zero_threshold,
-                initial_zero_rows=zero_rows,
-                initial_zero_cols=zero_cols,
-            )
+            zero_rows_phase1 = pruned_rows.get(node.id, set())
+            zero_cols_phase1 = pruned_neurons.get(node.id, set())
+            zero_rows_v, zero_cols_v = compute_propagated_pruned_rows_cols(mat, zero_threshold=zero_threshold)
+            zero_rows_v -= input_buffer_rows.get(node.id, set())
+            zero_cols_v -= output_buffer_cols.get(node.id, set())
+            zero_rows, zero_cols = zero_rows_phase1 | zero_rows_v, zero_cols_phase1 | zero_cols_v
             pruned_neurons[node.id] = zero_cols
             pruned_rows[node.id] = zero_rows
             new_idx = 0

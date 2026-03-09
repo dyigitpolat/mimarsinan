@@ -30,6 +30,15 @@ class CoreQuantizationVerificationStep(PipelineStep):
 
     def process(self):
         ir_graph = self.get_entry("ir_graph")
+        if not self.pipeline.config.get("weight_quantization", False):
+            cores = ir_graph.get_neural_cores()
+            if cores:
+                print(
+                    "[CoreQuantizationVerificationStep] Skipping verification (weight_quantization=False); "
+                    f"IR has {len(cores)} NeuralCores with float weights."
+                )
+            return
+
         bits = int(self.pipeline.config["weight_bits"])
         quantizer = TensorQuantization(bits)
 

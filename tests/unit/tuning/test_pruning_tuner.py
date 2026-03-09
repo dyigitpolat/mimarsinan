@@ -4,6 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 import copy
+from unittest.mock import patch
 
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
@@ -162,3 +163,32 @@ class TestPruningTuner:
 
         assert col_masks[0].all(), "First layer column mask must be all True (input-buffer exempt)"
         assert row_masks[-1].all(), "Last layer row mask must be all True (output-buffer exempt)"
+
+    def test_refresh_pruning_importance_called_per_cycle(self):
+        """When run(max_cycles=N) is used, activation stats (importance) should be collected at least N times."""
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.transformations.pruning import _collect_activation_stats
+
+        mock = MockPipeline()
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+        tuner = PruningTuner(
+            pipeline=mock,
+            model=model,
+            target_accuracy=0.99,
+            lr=0.001,
+            adaptation_manager=am,
+            pruning_fraction=0.25,
+        )
+        # Low validation (0.5) so adapter takes small steps and runs 3 cycles before t>=1
+        tuner.trainer = type("T", (), {"validate": lambda self: 0.5, "train_one_step": lambda self, lr: None, "train_until_target_accuracy": lambda self, *a: None})()
+        tuner.trainer.validation_loader = [(torch.randn(2, 1, 8, 8), torch.zeros(2, dtype=torch.long))]
+        collect_calls = []
+
+        def counting_collect(*args, **kwargs):
+            collect_calls.append(1)
+            return _collect_activation_stats(*args, **kwargs)
+
+        with patch("mimarsinan.tuning.tuners.pruning_tuner._collect_activation_stats", side_effect=counting_collect):
+            tuner.run(max_cycles=3)
+        assert len(collect_calls) >= 3, "Activation stats should be collected at least once per cycle (3 cycles)"

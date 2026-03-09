@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "0000mnist_torch_sequential_linear_ttfs_quantized",
+  "experiment_name": "0000xmnist_torch_sequential_linear_ttfs_quantized",
   "generated_files_path": "./generated",
   "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
   "data_provider_name": "MNIST_DataProvider",
@@ -31,16 +31,16 @@
       "hidden_dims": [512, 256, 128]
     },
     "spiking_mode": "ttfs_quantized",
-    "weight_quantization": false,
-    "activation_quantization": false,
+    "weight_quantization": true,
+    "activation_quantization": true,
     "pruning": true,
-    "pruning_fraction": 0.1,
+    "pruning_fraction": 0.9,
     "spike_generation_mode": "TTFS",
     "firing_mode": "TTFS",
     "thresholding_mode": "<="
   },
 
   "target_metric_override": null,
-  "start_step": "Normalization Fusion",
+  "start_step": null,
   "stop_step": null
 }

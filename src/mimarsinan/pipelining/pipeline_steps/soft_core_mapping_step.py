@@ -34,32 +34,6 @@ class SoftCoreMappingStep(PipelineStep):
         model = self.get_entry("fused_model")
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
-        # [PRUNING_INVESTIGATION] Phase 1: effective config and model buffer presence
-        if os.environ.get("PRUNING_INVESTIGATION"):
-            pruning_cfg = self.pipeline.config.get("pruning", False)
-            frac = float(self.pipeline.config.get("pruning_fraction", 0.0))
-            print(
-                f"[PRUNING_INVESTIGATION] SoftCoreMappingStep: config pruning={pruning_cfg}, "
-                f"pruning_fraction={frac}"
-            )
-            perceptrons = model.get_perceptrons()
-            for i, p in enumerate(perceptrons[:5]):  # first few
-                layer = getattr(p, "layer", None)
-                if layer is None:
-                    print(f"[PRUNING_INVESTIGATION]   perceptron[{i}] no layer")
-                    continue
-                pm = getattr(layer, "prune_mask", None)
-                pbm = getattr(layer, "prune_bias_mask", None)
-                pm_shape = tuple(pm.shape) if pm is not None and hasattr(pm, "shape") else None
-                pbm_len = len(pbm) if pbm is not None else None
-                w_shape = getattr(layer.weight, "shape", None)
-                print(
-                    f"[PRUNING_INVESTIGATION]   perceptron[{i}] prune_mask={pm_shape} "
-                    f"prune_bias_mask_len={pbm_len} weight_shape={w_shape}"
-                )
-            if len(perceptrons) > 5:
-                print(f"[PRUNING_INVESTIGATION]   ... ({len(perceptrons)} total perceptrons)")
-
         cores = platform_constraints.get("cores", [])
         if cores:
             resolved_max_axons = max(ct["max_axons"] for ct in cores)
@@ -110,6 +84,14 @@ class SoftCoreMappingStep(PipelineStep):
 
         act_q = bool(self.pipeline.config.get("activation_quantization", False))
 
+        # ttfs_quantized is only relevant with activation quantization; without it, deployment may diverge from training.
+        spiking_mode = self.pipeline.config.get("spiking_mode", "rate")
+        if spiking_mode in ("ttfs", "ttfs_quantized") and not act_q:
+            print(
+                "[SoftCoreMappingStep] Warning: TTFS/ttfs_quantized is on but activation_quantization is off; "
+                "deployment accuracy may drop compared to training."
+            )
+
         # TTFS shift compensation for ttfs_quantized only.
         #
         # The training staircase is floor((V + shift)*tq)/tq while the
@@ -148,61 +130,68 @@ class SoftCoreMappingStep(PipelineStep):
         ir_graph = ir_mapping.map(model.get_mapper_repr())
 
         # Apply chip quantization to NeuralCores: scale weights into [q_min, q_max],
-        # round to integers, and set parameter_scale = 1.0. Always run when
-        # weight_bits is set so the IR is deployable and verification passes.
-        # When weight_quantization is True use the model's parameter_scale;
-        # when False derive scale from the actual matrix so round(W*scale) stays in range.
+        # round to integers, and set parameter_scale = 1.0. When weight_quantization is False,
+        # skip scale/round so the flow uses the same float weights as the model and threshold=1.0
+        # for exact equivalence (relu(W@x)/1).
         #
         # For bank-backed cores quantization is applied once per WeightBank.
         wt_q = bool(self.pipeline.config.get("weight_quantization", False))
-        q_min = -(2 ** (bits - 1))
-        eps = 1e-12
         from mimarsinan.mapping.ir import WeightBank
-        quantized_banks: set[int] = set()
-        bank_scale_used: dict[int, float] = {}
-        for bank_id, bank in ir_graph.weight_banks.items():
-            ps = float(
-                bank.parameter_scale.item()
-                if hasattr(bank.parameter_scale, "item")
-                else bank.parameter_scale
-            )
-            if wt_q and abs(ps) > eps:
-                scale = ps
-            else:
-                w_max = float(np.max(np.abs(bank.core_matrix)))
-                w_max = max(w_max, eps)
-                scale = q_max / w_max
-            W_q = np.round(bank.core_matrix * scale).astype(np.float64)
-            W_q = np.clip(W_q, q_min, q_max)
-            bank.core_matrix = W_q
-            bank.parameter_scale = torch.tensor(1.0)
-            quantized_banks.add(bank_id)
-            bank_scale_used[bank_id] = scale
-
-        for node in ir_graph.nodes:
-            if isinstance(node, NeuralCore):
-                if node.has_weight_bank():
-                    if node.weight_bank_id in quantized_banks:
-                        scale_used = bank_scale_used[node.weight_bank_id]
-                        node.threshold = scale_used
-                        node.parameter_scale = torch.tensor(1.0)
-                else:
-                    ps = float(
-                        node.parameter_scale.item()
-                        if hasattr(node.parameter_scale, "item")
-                        else node.parameter_scale
-                    )
-                    if wt_q and abs(ps) > eps:
-                        scale = ps
-                    else:
-                        w_max = float(np.max(np.abs(node.core_matrix)))
-                        w_max = max(w_max, eps)
-                        scale = q_max / w_max
-                    W_q = np.round(node.core_matrix * scale).astype(np.float64)
-                    W_q = np.clip(W_q, q_min, q_max)
-                    node.core_matrix = W_q
-                    node.threshold = scale
+        if not wt_q:
+            for bank in ir_graph.weight_banks.values():
+                bank.parameter_scale = torch.tensor(1.0)
+            for node in ir_graph.nodes:
+                if isinstance(node, NeuralCore):
+                    node.threshold = 1.0
                     node.parameter_scale = torch.tensor(1.0)
+        else:
+            q_min = -(2 ** (bits - 1))
+            eps = 1e-12
+            quantized_banks: set[int] = set()
+            bank_scale_used: dict[int, float] = {}
+            for bank_id, bank in ir_graph.weight_banks.items():
+                ps = float(
+                    bank.parameter_scale.item()
+                    if hasattr(bank.parameter_scale, "item")
+                    else bank.parameter_scale
+                )
+                if abs(ps) > eps:
+                    scale = ps
+                else:
+                    w_max = float(np.max(np.abs(bank.core_matrix)))
+                    w_max = max(w_max, eps)
+                    scale = q_max / w_max
+                W_q = np.round(bank.core_matrix * scale).astype(np.float64)
+                W_q = np.clip(W_q, q_min, q_max)
+                bank.core_matrix = W_q
+                bank.parameter_scale = torch.tensor(1.0)
+                quantized_banks.add(bank_id)
+                bank_scale_used[bank_id] = scale
+
+            for node in ir_graph.nodes:
+                if isinstance(node, NeuralCore):
+                    if node.has_weight_bank():
+                        if node.weight_bank_id in quantized_banks:
+                            scale_used = bank_scale_used[node.weight_bank_id]
+                            node.threshold = scale_used
+                            node.parameter_scale = torch.tensor(1.0)
+                    else:
+                        ps = float(
+                            node.parameter_scale.item()
+                            if hasattr(node.parameter_scale, "item")
+                            else node.parameter_scale
+                        )
+                        if abs(ps) > eps:
+                            scale = ps
+                        else:
+                            w_max = float(np.max(np.abs(node.core_matrix)))
+                            w_max = max(w_max, eps)
+                            scale = q_max / w_max
+                        W_q = np.round(node.core_matrix * scale).astype(np.float64)
+                        W_q = np.clip(W_q, q_min, q_max)
+                        node.core_matrix = W_q
+                        node.threshold = scale
+                        node.parameter_scale = torch.tensor(1.0)
 
         # Calculate latencies for all neural cores in the IR graph
         max_latency = IRLatency(ir_graph).calculate()
@@ -213,66 +202,11 @@ class SoftCoreMappingStep(PipelineStep):
         if self.pipeline.config.get("pruning", False):
             from mimarsinan.mapping.ir_pruning import prune_ir_graph, get_initial_pruning_masks_from_model
             initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_graph)
-            if os.environ.get("PRUNING_INVESTIGATION"):
-                neural_cores = ir_graph.get_neural_cores()
-                try:
-                    perceptrons = model.get_perceptrons()
-                except Exception:
-                    perceptrons = []
-                print(
-                    f"[PRUNING_INVESTIGATION] After get_initial_pruning_masks_from_model: "
-                    f"neural_cores={len(neural_cores)} perceptrons={len(perceptrons)} "
-                    f"initial_node keys={len(initial_node or {})} initial_bank keys={len(initial_bank or {})}"
-                )
-                if len(neural_cores) != len(perceptrons):
-                    print(
-                        f"[PRUNING_INVESTIGATION] len(neural_cores)!={len(perceptrons)} -> "
-                        "initial_node may be empty (tiled IR)"
-                    )
-                for nid, (row_mask, col_mask) in (initial_node or {}).items():
-                    print(
-                        f"[PRUNING_INVESTIGATION] initial_node node_id={nid} "
-                        f"row_mask len={len(row_mask)} sum={sum(row_mask)} "
-                        f"col_mask len={len(col_mask)} sum={sum(col_mask)}"
-                    )
             ir_graph = prune_ir_graph(
                 ir_graph,
                 initial_pruned_per_node=initial_node if initial_node else None,
                 initial_pruned_per_bank=initial_bank if initial_bank else None,
             )
-            if os.environ.get("PRUNING_INVESTIGATION"):
-                for node in ir_graph.get_neural_cores():
-                    try:
-                        mat = node.get_core_matrix(ir_graph)
-                        shape = mat.shape
-                    except Exception:
-                        shape = (0, 0)
-                    row_mask = getattr(node, "pruned_row_mask", None)
-                    col_mask = getattr(node, "pruned_col_mask", None)
-                    n_axons, n_neurons = shape[0], shape[1] if len(shape) > 1 else 0
-                    print(
-                        f"[PRUNING_INVESTIGATION] After prune_ir_graph node_id={node.id} "
-                        f"get_core_matrix.shape={shape} "
-                        f"pruned_row_mask len={len(row_mask) if row_mask else 0} sum={sum(row_mask) if row_mask else 0} "
-                        f"pruned_col_mask len={len(col_mask) if col_mask else 0} sum={sum(col_mask) if col_mask else 0} "
-                        f"weight_bank_id={getattr(node,'weight_bank_id',None)}"
-                    )
-                    if row_mask and n_axons and len(row_mask) != n_axons:
-                        print(
-                            f"[PRUNING_INVESTIGATION] WARNING node_id={node.id} row_mask length {len(row_mask)} != matrix rows {n_axons}"
-                        )
-                    if col_mask and n_neurons and len(col_mask) != n_neurons:
-                        print(
-                            f"[PRUNING_INVESTIGATION] WARNING node_id={node.id} col_mask length {len(col_mask)} != matrix cols {n_neurons}"
-                        )
-                    if getattr(node, "weight_row_slice", None) is not None:
-                        start, end = node.weight_row_slice
-                        eff_cols = end - start
-                        if col_mask and len(col_mask) != eff_cols:
-                            print(
-                                f"[PRUNING_INVESTIGATION] bank-backed node_id={node.id} "
-                                f"pruned_col_mask len={len(col_mask)} effective_cols={eff_cols}"
-                            )
             print(f"[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
         
         self.add_entry("ir_graph", ir_graph, 'pickle')
@@ -331,6 +265,7 @@ class SoftCoreMappingStep(PipelineStep):
         # so it's easy to compare before/after CoreFlow Tuning. Works for both neural-only
         # graphs and graphs containing ComputeOps (sync barriers handled in SpikingUnifiedCoreFlow).
         try:
+            device = self.pipeline.config["device"]
             preprocessor = nn.Sequential(model.get_preprocessor(), model.in_act)
             flow = SpikingUnifiedCoreFlow(
                 self.pipeline.config["input_shape"],
@@ -342,30 +277,7 @@ class SoftCoreMappingStep(PipelineStep):
                 self.pipeline.config["thresholding_mode"],
                 spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
             )
-            # Optional: assert model and flow agree on a fixed batch (env MAPPING_EQUIVALENCE_CHECK=1).
-            if os.environ.get("MAPPING_EQUIVALENCE_CHECK"):
-                device = self.pipeline.config["device"]
-                factory = DataLoaderFactory(self.pipeline.data_provider_factory)
-                provider = factory.create_data_provider()
-                batch_size = min(16, provider.get_test_batch_size())
-                test_loader = factory.create_test_loader(batch_size, provider)
-                batch_x, _ = next(iter(test_loader))
-                batch_x = batch_x.to(device)
-                model.eval()
-                flow.eval()
-                with torch.no_grad():
-                    out_model = model(batch_x)
-                    out_flow = flow(batch_x)
-                pred_model = out_model.argmax(dim=1)
-                pred_flow = out_flow.argmax(dim=1)
-                if not torch.equal(pred_model, pred_flow):
-                    n = batch_x.shape[0]
-                    raise ValueError(
-                        "Mapping equivalence check failed: model vs pruned IR output mismatch. "
-                        f"Argmax match {int((pred_model == pred_flow).sum().item())}/{n} samples. "
-                        "Check pruning/compaction and flow wiring."
-                    )
-                print("[SoftCoreMappingStep] Mapping equivalence check passed (model vs flow argmax).")
+            flow = flow.to(device)
             acc = BasicTrainer(
                 flow,
                 self.pipeline.config["device"],

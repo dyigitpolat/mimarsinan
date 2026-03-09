@@ -37,13 +37,6 @@ def compact_soft_core_mapping(cores, output_sources):
             keep_rows = [r for r in range(n_axons) if not pruned_row_mask[r]]
             keep_cols = [c for c in range(n_neurons) if not pruned_col_mask[c]]
         else:
-            if os.environ.get("PRUNING_INVESTIGATION"):
-                print(
-                    f"[PRUNING_INVESTIGATION] compact_soft_core_mapping skip compaction: "
-                    f"core_id={getattr(core,'id',None)} shape=({n_axons},{n_neurons}) "
-                    f"pruned_row_mask={'missing' if pruned_row_mask is None else f'len={len(pruned_row_mask)}'} "
-                    f"pruned_col_mask={'missing' if pruned_col_mask is None else f'len={len(pruned_col_mask)}'}"
-                )
             keep_rows = list(range(n_axons))
             keep_cols = list(range(n_neurons))
 
@@ -102,12 +95,6 @@ def compact_soft_core_mapping(cores, output_sources):
         )
     output_sources.clear()
     output_sources.extend(new_out)
-
-    if os.environ.get("PRUNING_INVESTIGATION"):
-        print(
-            f"[PRUNING_INVESTIGATION] compact_soft_core_mapping summary: "
-            f"n_compacted={n_compacted} n_skipped={n_skipped} total={len(cores)}"
-        )
 
 
 class SoftCore:

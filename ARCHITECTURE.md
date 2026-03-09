@@ -465,10 +465,10 @@ Uses `ActivationQuantizationTuner` to gradually quantize activations to `target_
 
 Conditionally included when `pruning` is enabled and `pruning_fraction > 0`. Uses `PruningTuner` (extends `PerceptronTuner`) to gradually zero the least-significant rows and columns of each perceptron's weight matrix:
 
-1. Computes row/column significance masks based on absolute weight magnitude sums
-2. Identifies the bottom `pruning_fraction` rows and columns as pruning candidates
-3. Uses `SmartSmoothAdaptation` to progressively scale candidate weights toward zero (at adaptation rate `r`, weights are multiplied by `1 − r`)
-4. When adaptation completes (`r = 1.0`), pruned rows/columns are fully zeroed
+1. At the **start of each adaptation cycle**, recomputes row/column significance (activation-based when available, else weight L1); the pruning candidate set is thus refreshed every cycle rather than fixed for the whole run.
+2. Identifies the bottom `pruning_fraction` rows and columns as pruning candidates for that cycle.
+3. Uses `SmartSmoothAdaptation` (with a per-cycle callback to refresh importance) to progressively scale candidate weights toward zero (at adaptation rate `r`, weights are multiplied by `1 − r`).
+4. When adaptation completes (`r = 1.0`), pruned rows/columns are fully zeroed.
 
 The zeroed structure is later physically removed from the IR graph by `ir_pruning.prune_ir_graph()` during Soft Core Mapping, which compacts `NeuralCore` weight matrices and rewires source references. Before compacting, each node receives `pre_pruning_heatmap`, `pruned_row_mask`, and `pruned_col_mask` for GUI soft-core pre/post pruning visualizations.
 
@@ -983,6 +983,7 @@ The framework includes:
 - Binary search for step size
 - State save/restore (clone/restore model state)
 - Target adjustment (dynamically adjusts expected accuracy based on observed degradation)
+- Optional `before_cycle` callback: when provided, it is invoked at the start of each adaptation cycle (before finding the step size), so tuners can refresh internal state (e.g. PruningTuner recomputes row/column importance).
 
 ### 10.4 Tuner Hierarchy
 
@@ -999,7 +1000,7 @@ All tuners extend `BasicTuner`, which uses `SmartSmoothAdaptation`:
 | `NoiseTuner` | Introduces training noise |
 | `CoreFlowTuner` | Tunes spiking thresholds (operates on IRGraph, not model) |
 
-`PruningTuner` extends `PerceptronTuner` and applies pruning masks (from `transformations/pruning.py`) that scale the bottom `pruning_fraction` of rows and columns by `(1 − rate)`. The zeroed structure is later compacted from the IR graph by `ir_pruning.prune_ir_graph()` (see §8.4).
+`PruningTuner` extends `PerceptronTuner` and applies pruning masks (from `transformations/pruning.py`) that scale the bottom `pruning_fraction` of rows and columns by `(1 − rate)`. It uses `SmartSmoothAdaptation`'s `before_cycle` callback to recompute activation-based row/column importance at the start of each cycle, so the pruning candidate set is updated every cycle rather than fixed once. The zeroed structure is later compacted from the IR graph by `ir_pruning.prune_ir_graph()` (see §8.4).
 
 Each tuner defines:
 - `_update_and_evaluate(rate)` — Apply transformation at given rate and evaluate
