@@ -3,7 +3,6 @@
 
     "experiment_name": "mnist_th",
     "generated_files_path": "./generated",
-    "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist_data_provider.py",
     "data_provider_name": "MNIST_DataProvider",
 
     "platform_constraints": {

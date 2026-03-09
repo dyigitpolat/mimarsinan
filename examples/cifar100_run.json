@@ -3,7 +3,6 @@
 
     "experiment_name": "cifar100_1024_latest",
     "generated_files_path": "./generated",
-    "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar100_data_provider.py",
     "data_provider_name": "CIFAR100_DataProvider",
 
     "platform_constraints": {
