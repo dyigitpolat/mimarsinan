@@ -72,6 +72,7 @@ class IRMapping:
         activation_scale: torch.Tensor = torch.tensor(1.0),
         parameter_scale: torch.Tensor = torch.tensor(1.0),
         input_activation_scale: torch.Tensor = torch.tensor(1.0),
+        perceptron_index: int | None = None,
     ) -> int:
         """Register a shared weight bank and return its ID.
 
@@ -79,6 +80,8 @@ class IRMapping:
         ``(axons, neurons)``.  If ``biases`` is provided the matrix
         includes an extra "always-on" axon row for the bias, matching
         the convention of ``add_neural_core``.
+
+        perceptron_index: Optional index into model.get_perceptrons() for pruning provenance.
         """
         bank_id = self._next_bank_id
         self._next_bank_id += 1
@@ -102,6 +105,7 @@ class IRMapping:
             activation_scale=activation_scale,
             parameter_scale=parameter_scale,
             input_activation_scale=input_activation_scale,
+            perceptron_index=perceptron_index,
         )
         return bank_id
 
@@ -188,6 +192,9 @@ class IRMapping:
         name: str | None = None,
         normalization_type: str | None = None,
         activation_type: str | None = None,
+        perceptron_index: int | None = None,
+        perceptron_output_slice: tuple[int, int] | None = None,
+        perceptron_input_slice: tuple[int, int] | None = None,
     ) -> np.ndarray:
         """
         Add a NeuralCore node to the graph.
@@ -238,6 +245,9 @@ class IRMapping:
             input_activation_scale=input_activation_scale,
             normalization_type=normalization_type,
             activation_type=activation_type,
+            perceptron_index=perceptron_index,
+            perceptron_output_slice=perceptron_output_slice,
+            perceptron_input_slice=perceptron_input_slice,
         )
         self.nodes.append(neural_core)
 
@@ -257,6 +267,7 @@ class IRMapping:
         name: str | None = None,
         normalization_type: str | None = None,
         activation_type: str | None = None,
+        perceptron_index: int | None = None,
     ) -> np.ndarray:
         """Add a NeuralCore that references a shared ``WeightBank``.
 
@@ -306,6 +317,7 @@ class IRMapping:
             weight_row_slice=weight_row_slice,
             normalization_type=normalization_type,
             activation_type=activation_type,
+            perceptron_index=perceptron_index,
         )
         self.nodes.append(neural_core)
 
@@ -326,6 +338,7 @@ class IRMapping:
         name: str | None = None,
         normalization_type: str | None = None,
         activation_type: str | None = None,
+        perceptron_index: int | None = None,
     ) -> np.ndarray:
         """
         Map a fully-connected layer to IR nodes.
@@ -372,6 +385,7 @@ class IRMapping:
                         name=(f"{name}_col{i}" if name else None),
                         normalization_type=normalization_type,
                         activation_type=activation_type,
+                        perceptron_index=perceptron_index,
                     ).flatten()
                 )
 
@@ -397,6 +411,7 @@ class IRMapping:
                 name,
                 normalization_type,
                 activation_type,
+                perceptron_index,
             )
 
         # Check neuron limits and tile output channels if needed
@@ -411,6 +426,7 @@ class IRMapping:
                 name,
                 normalization_type,
                 activation_type,
+                perceptron_index,
             )
 
         # Simple case: single core
@@ -424,6 +440,7 @@ class IRMapping:
             name=name,
             normalization_type=normalization_type,
             activation_type=activation_type,
+            perceptron_index=perceptron_index,
         )
 
     def _map_fc_output_tiled(
@@ -437,6 +454,7 @@ class IRMapping:
         name: str | None,
         normalization_type: str | None,
         activation_type: str | None,
+        perceptron_index: int | None,
     ) -> np.ndarray:
         """Tile output channels across multiple cores."""
         out_features = weights.shape[0]
@@ -460,6 +478,8 @@ class IRMapping:
                 name=f"{name}_tile_{start}_{end}" if name else None,
                 normalization_type=normalization_type,
                 activation_type=activation_type,
+                perceptron_index=perceptron_index,
+                perceptron_output_slice=(start, end),
             )
             output_sources_list.append(tile_sources)
             start = end
@@ -477,6 +497,7 @@ class IRMapping:
         name: str | None,
         normalization_type: str | None,
         activation_type: str | None,
+        perceptron_index: int | None,
     ) -> np.ndarray:
         """
         Map FC with axon tiling using partial sums.
@@ -529,6 +550,9 @@ class IRMapping:
                     name=f"{name}_psum_pos_t{tile_idx}_o{out_start}" if name else None,
                     normalization_type=normalization_type,
                     activation_type=activation_type,
+                    perceptron_index=perceptron_index,
+                    perceptron_output_slice=(out_start, out_end),
+                    perceptron_input_slice=(in_start, in_end),
                 )
 
                 # Negative partial (absolute values)
@@ -542,6 +566,9 @@ class IRMapping:
                     name=f"{name}_psum_neg_t{tile_idx}_o{out_start}" if name else None,
                     normalization_type=normalization_type,
                     activation_type=activation_type,
+                    perceptron_index=perceptron_index,
+                    perceptron_output_slice=(out_start, out_end),
+                    perceptron_input_slice=(in_start, in_end),
                 )
 
                 partial_sources.append((pos_sources, neg_sources))
@@ -581,6 +608,8 @@ class IRMapping:
                 name=f"{name}_psum_accum_o{out_start}" if name else None,
                 normalization_type=normalization_type,
                 activation_type=activation_type,
+                perceptron_index=perceptron_index,
+                perceptron_output_slice=(out_start, out_end),
             )
 
             mapped.append(acc_sources)

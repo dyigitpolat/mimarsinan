@@ -127,7 +127,10 @@ class SoftCoreMappingStep(PipelineStep):
             allow_axon_tiling=resolved_allow_axon_tiling,
         )
         
-        ir_graph = ir_mapping.map(model.get_mapper_repr())
+        mapper_repr = model.get_mapper_repr()
+        if hasattr(mapper_repr, "assign_perceptron_indices"):
+            mapper_repr.assign_perceptron_indices()
+        ir_graph = ir_mapping.map(mapper_repr)
 
         # Apply chip quantization to NeuralCores: scale weights into [q_min, q_max],
         # round to integers, and set parameter_scale = 1.0. When weight_quantization is False,
@@ -202,10 +205,31 @@ class SoftCoreMappingStep(PipelineStep):
         if self.pipeline.config.get("pruning", False):
             from mimarsinan.mapping.ir_pruning import prune_ir_graph, get_initial_pruning_masks_from_model
             initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_graph)
+            # Optional diagnostic: confirm pruning provenance when tiled
+            try:
+                perceptrons = model.get_perceptrons()
+                neural_cores = ir_graph.get_neural_cores()
+                n_banks = len(getattr(ir_graph, "weight_banks", {}))
+                print(
+                    f"[SoftCoreMappingStep] Pruning: perceptrons={len(perceptrons)} neural_cores={len(neural_cores)} "
+                    f"weight_banks={n_banks} initial_pruned_per_node={len(initial_node or {})} "
+                    f"initial_pruned_per_bank={len(initial_bank or {})}"
+                )
+                if len(initial_node or {}) == 0 and len(initial_bank or {}) == 0 and len(neural_cores) != len(perceptrons):
+                    print(
+                        "[SoftCoreMappingStep] Pruning: no model masks applied (neural_cores != perceptrons; "
+                        "ensure mapper assigns perceptron_index for tiled IR)."
+                    )
+            except Exception:
+                pass
+            propagate_with_model_masks = self.pipeline.config.get(
+                "pruning_propagate_with_model_masks", False
+            )
             ir_graph = prune_ir_graph(
                 ir_graph,
                 initial_pruned_per_node=initial_node if initial_node else None,
                 initial_pruned_per_bank=initial_bank if initial_bank else None,
+                propagate_when_using_model_masks=propagate_with_model_masks,
             )
             print(f"[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
         

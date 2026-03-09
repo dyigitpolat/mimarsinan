@@ -218,6 +218,7 @@ class LayoutIRMapping:
         name: Optional[str] = None,
         normalization_type: Optional[str] = None,
         activation_type: Optional[str] = None,
+        **kwargs: Any,
     ) -> np.ndarray:
         # Only shapes matter
         out_features = int(getattr(fc_weights, "shape", [0, 0])[0])

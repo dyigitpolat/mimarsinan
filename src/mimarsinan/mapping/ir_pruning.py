@@ -131,14 +131,17 @@ def compute_segment_io_exemption(
 def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
     """Collect pruning masks from the model for use as initial sets in prune_ir_graph.
 
-    Walks model.get_perceptrons() and IR neural cores in order. When counts match
-    (1:1, no tiling), converts each layer's prune_mask / prune_bias_mask to IR
-    convention (row_mask, col_mask) with True = pruned.
+    When IR nodes or weight banks have perceptron_index set (pruning provenance from
+    mapping), uses that perceptron's prune_mask / prune_bias_mask and slices them
+    to match the node or bank shape (including tiled output/input slices). Otherwise
+    when neural_cores count equals perceptrons count (1:1), falls back to order-based
+    assignment. When counts differ and no provenance is set, returns empty so only
+    value-based pruning is used.
 
     Returns:
         (initial_pruned_per_node, initial_pruned_per_bank). Per-node dict maps
-        node_id -> (row_mask_list, col_mask_list). Per-bank is left empty unless
-        we have a way to map banks to perceptrons (future).
+        node_id -> (row_mask_list, col_mask_list). Per-bank maps bank_id -> (row_mask, col_mask).
+        Masks use IR convention: (axons, neurons) with True = pruned; bias row is last axon.
     """
     import torch
     initial_pruned_per_node: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] = {}
@@ -148,18 +151,15 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
         perceptrons = model.get_perceptrons()
     except Exception:
         return initial_pruned_per_node, initial_pruned_per_bank
-    if len(neural_cores) != len(perceptrons):
-        # Tiled IR: do not use model masks — node-to-perceptron order is not guaranteed to match
-        # get_perceptrons(), so wrong assignment would over-prune and drop accuracy. Use only
-        # zero-threshold pruning in prune_ir_graph for tiled graphs.
-        return initial_pruned_per_node, initial_pruned_per_bank
-    for i, (node, p) in enumerate(zip(neural_cores, perceptrons)):
+
+    def _perceptron_masks(p):
+        """Get (row_pruned, col_pruned) for a perceptron; row = output dim, col = input dim."""
         layer = getattr(p, "layer", None)
         if layer is None:
-            continue
+            return None, None
         prune_mask = getattr(layer, "prune_mask", None)
         if prune_mask is None or not isinstance(prune_mask, torch.Tensor):
-            continue
+            return None, None
         pm = prune_mask.detach()
         out_f, in_f = pm.shape[0], pm.shape[1]
         prune_bias = getattr(layer, "prune_bias_mask", None)
@@ -167,25 +167,85 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             row_pruned = prune_bias.detach().cpu().numpy()  # (out_f,) True = pruned
         else:
             row_pruned = pm.any(dim=1).cpu().numpy()
-        # Column j is pruned only if the tuner pruned that input dimension (then (i,j) is True
-        # for all i). Using any(dim=0) would incorrectly mark all columns when any row is pruned.
         col_pruned = pm.all(dim=0).cpu().numpy()  # (in_f,) True = pruned
-        # IR: (axons, neurons) = (in_f+1, out_f) with bias row last
-        n_axons = in_f + 1
-        n_neurons = out_f
+        return row_pruned, col_pruned
+
+    # 1) Build masks from provenance (perceptron_index + slices) when set
+    for node in neural_cores:
+        idx = getattr(node, "perceptron_index", None)
+        if idx is None:
+            continue
+        if idx < 0 or idx >= len(perceptrons):
+            continue
+        row_pruned, col_pruned = _perceptron_masks(perceptrons[idx])
+        if row_pruned is None:
+            continue
+        out_slice = getattr(node, "perceptron_output_slice", None)
+        in_slice = getattr(node, "perceptron_input_slice", None)
+        if out_slice is not None:
+            start, end = out_slice
+            row_pruned = row_pruned[start:end]
+        if in_slice is not None:
+            start, end = in_slice
+            col_pruned = col_pruned[start:end]
+        # IR: (axons, neurons) = (in_f+1 with bias last, out_f)
+        in_f = len(col_pruned)
+        out_f = len(row_pruned)
         try:
             mat = node.get_core_matrix(ir_graph)
             nr, nc = mat.shape
-            if nr != n_axons or nc != n_neurons:
-                continue
         except Exception:
+            continue
+        # Bias row is last axon
+        ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)]
+        if nr > in_f:
+            ir_row_mask.append(False)  # bias
+        ir_row_mask = (ir_row_mask + [False] * nr)[:nr]
+        ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]
+        ir_col_mask = (ir_col_mask + [False] * nc)[:nc]
+        if len(ir_row_mask) == nr and len(ir_col_mask) == nc:
+            initial_pruned_per_node[node.id] = (ir_row_mask, ir_col_mask)
+
+    # 2) Weight banks with perceptron_index
+    for bank_id, bank in getattr(ir_graph, "weight_banks", {}).items():
+        idx = getattr(bank, "perceptron_index", None)
+        if idx is None:
+            continue
+        if idx < 0 or idx >= len(perceptrons):
+            continue
+        row_pruned, col_pruned = _perceptron_masks(perceptrons[idx])
+        if row_pruned is None:
+            continue
+        mat = bank.core_matrix
+        n_axons, n_neurons = mat.shape
+        # Bank layout (axons, neurons) = (in_f+1, out_f); perceptron (out_f, in_f)
+        in_f = n_axons - 1
+        out_f = n_neurons
+        if len(col_pruned) != in_f or len(row_pruned) != out_f:
             continue
         ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)] + [False]
         ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]
-        # Truncate to node shape for consistency (row/col length must match matrix).
-        row_mask = (list(ir_row_mask) + [False] * nr)[:nr]
-        col_mask = (list(ir_col_mask) + [False] * nc)[:nc]
-        initial_pruned_per_node[node.id] = (row_mask, col_mask)
+        if len(ir_row_mask) == n_axons and len(ir_col_mask) == n_neurons:
+            initial_pruned_per_bank[bank_id] = (ir_row_mask, ir_col_mask)
+
+    # 3) Fallback: 1:1 order-based (no provenance)
+    if len(initial_pruned_per_node) == 0 and len(initial_pruned_per_bank) == 0 and len(neural_cores) == len(perceptrons):
+        for i, (node, p) in enumerate(zip(neural_cores, perceptrons)):
+            row_pruned, col_pruned = _perceptron_masks(p)
+            if row_pruned is None:
+                continue
+            in_f, out_f = len(col_pruned), len(row_pruned)
+            try:
+                mat = node.get_core_matrix(ir_graph)
+                nr, nc = mat.shape
+                if nr != in_f + 1 or nc != out_f:
+                    continue
+            except Exception:
+                continue
+            ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)] + [False]
+            ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]
+            initial_pruned_per_node[node.id] = (ir_row_mask, ir_col_mask)
+
     return initial_pruned_per_node, initial_pruned_per_bank
 
 
@@ -204,13 +264,19 @@ def prune_ir_graph(
     *,
     initial_pruned_per_node: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
     initial_pruned_per_bank: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
+    propagate_when_using_model_masks: bool = False,
 ) -> IRGraph:
     """Remove zeroed rows and columns from all NeuralCores in the IR graph.
 
     When initial_pruned_per_node or initial_pruned_per_bank are provided,
-    uses those masks (True = pruned) as the initial pruned set, then runs
-    propagative fixpoint. Otherwise infers initial set from matrix values
-    below zero_threshold.
+    uses those masks (True = pruned) as the initial pruned set. If
+    propagate_when_using_model_masks is False (default), no propagative
+    fixpoint is run for those nodes/banks, so pruning matches the model
+    exactly and improves equivalence. If True, or when no model masks
+    are provided, runs propagative fixpoint (rows that only feed pruned
+    cols, cols that only receive from pruned rows). When no initial
+    masks are provided, infers initial set from matrix values below
+    zero_threshold.
 
     Returns a new IRGraph with compacted cores and rewired sources.
     """
@@ -316,22 +382,24 @@ def prune_ir_graph(
                 zero_rows, zero_cols = _masks_to_sets(init_row, init_col)
                 zero_rows -= input_buffer_rows.get(node.id, set())
                 zero_cols -= exempt_out_cols
-                zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
-                    mat,
-                    zero_threshold=zero_threshold,
-                    initial_zero_rows=zero_rows,
-                    initial_zero_cols=zero_cols,
-                )
+                if propagate_when_using_model_masks:
+                    zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+                        mat,
+                        zero_threshold=zero_threshold,
+                        initial_zero_rows=zero_rows,
+                        initial_zero_cols=zero_cols,
+                    )
             else:
                 zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
                 zero_rows -= input_buffer_rows.get(node.id, set())
                 zero_cols -= output_buffer_cols.get(node.id, set())
-                zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
-                    mat,
-                    zero_threshold=zero_threshold,
-                    initial_zero_rows=zero_rows,
-                    initial_zero_cols=zero_cols,
-                )
+                if propagate_when_using_model_masks:
+                    zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+                        mat,
+                        zero_threshold=zero_threshold,
+                        initial_zero_rows=zero_rows,
+                        initial_zero_cols=zero_cols,
+                    )
         else:
             zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
             zero_rows -= input_buffer_rows.get(node.id, set())
@@ -511,12 +579,13 @@ def prune_ir_graph(
                     bank_exempt_cols |= output_buffer_cols.get(node.id, set())
             zero_rows -= bank_exempt_rows
             zero_cols -= bank_exempt_cols
-            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
-                mat,
-                zero_threshold=zero_threshold,
-                initial_zero_rows=zero_rows,
-                initial_zero_cols=zero_cols,
-            )
+            if propagate_when_using_model_masks:
+                zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+                    mat,
+                    zero_threshold=zero_threshold,
+                    initial_zero_rows=zero_rows,
+                    initial_zero_cols=zero_cols,
+                )
         else:
             zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
             bank_exempt_rows = set()

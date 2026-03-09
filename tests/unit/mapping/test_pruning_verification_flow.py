@@ -775,6 +775,96 @@ class TestMappingEquivalence:
             f"vs flow {pred_flow.tolist()}"
         )
 
+    def test_model_flow_equivalence_without_propagation(self, device):
+        """
+        With propagate_when_using_model_masks=False, pruned IR matches model masks
+        exactly (no extra propagation). Model and flow must yield same argmax.
+        """
+        in_dim, d1, d2, d3, out_dim = 64, 32, 16, 10, 5
+        batch_size = 10
+        seed = 42
+        pruning_fraction = 0.1
+        simulation_steps = 32
+
+        model = _MinimalFourLayerFlow(device, in_dim, d1, d2, d3, out_dim, seed=seed)
+        perceptrons = model.get_perceptrons()
+        masks = compute_all_pruning_masks(perceptrons, pruning_fraction)
+        _zero_weights_by_masks(model, masks)
+        _set_prune_buffers(model, masks)
+
+        ir_raw = _run_ir_mapping(model)
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_raw)
+        ir_graph = prune_ir_graph(
+            ir_raw,
+            initial_pruned_per_node=initial_node or None,
+            initial_pruned_per_bank=initial_bank or None,
+            propagate_when_using_model_masks=False,
+        )
+
+        flow = SpikingUnifiedCoreFlow(
+            input_shape=(1, in_dim),
+            ir_graph=ir_graph,
+            simulation_length=simulation_steps,
+            preprocessor=nn.Identity(),
+            firing_mode="TTFS",
+            spike_mode="TTFS",
+            thresholding_mode="<=",
+            spiking_mode="ttfs_quantized",
+        ).to(device)
+
+        torch.manual_seed(seed + 1)
+        x = torch.randn(batch_size, in_dim, device=device)
+
+        model.eval()
+        flow.eval()
+        with torch.no_grad():
+            out_model = model(x)
+            out_flow = flow(x)
+
+        pred_model = out_model.argmax(dim=1)
+        pred_flow = out_flow.argmax(dim=1)
+        match = (pred_model == pred_flow).all().item()
+        assert match, (
+            f"Without propagation: model vs flow argmax mismatch: model {pred_model.tolist()} "
+            f"vs flow {pred_flow.tolist()}"
+        )
+
+    def test_propagation_prunes_at_least_as_much(self, device):
+        """
+        With propagate_when_using_model_masks=True, the pruned IR has total core size
+        <= total core size when False (propagation only adds more pruned rows/cols).
+        """
+        in_dim, d1, d2, d3, out_dim = 48, 24, 12, 8, 5
+        model = _MinimalFourLayerFlow(device, in_dim, d1, d2, d3, out_dim)
+        perceptrons = model.get_perceptrons()
+        masks = compute_all_pruning_masks(perceptrons, 0.12)
+        _zero_weights_by_masks(model, masks)
+        _set_prune_buffers(model, masks)
+
+        ir_raw = _run_ir_mapping(model)
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_raw)
+
+        ir_no_prop = prune_ir_graph(
+            ir_raw,
+            initial_pruned_per_node=initial_node or None,
+            initial_pruned_per_bank=initial_bank or None,
+            propagate_when_using_model_masks=False,
+        )
+        ir_with_prop = prune_ir_graph(
+            copy.deepcopy(ir_raw),
+            initial_pruned_per_node=initial_node or None,
+            initial_pruned_per_bank=initial_bank or None,
+            propagate_when_using_model_masks=True,
+        )
+
+        shapes_no = _get_ir_core_shapes(ir_no_prop)
+        shapes_prop = _get_ir_core_shapes(ir_with_prop)
+        total_no = sum(s[0] * s[1] for s in shapes_no)
+        total_prop = sum(s[0] * s[1] for s in shapes_prop)
+        assert total_prop <= total_no, (
+            f"With propagation total size ({total_prop}) should be <= without ({total_no})"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Multi-layer (and Squeezenet) tests

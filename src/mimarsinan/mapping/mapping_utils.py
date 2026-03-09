@@ -733,6 +733,7 @@ class PerceptronMapper(Mapper):
             name=getattr(self.perceptron, "name", None),
             normalization_type=normalization_type,
             activation_type=activation_type,
+            perceptron_index=getattr(self, "perceptron_index", None),
         )
 
         return layer_sources.transpose()
@@ -1373,6 +1374,7 @@ class Conv2DPerceptronMapper(Mapper):
                 activation_scale=self.perceptron.activation_scale,
                 parameter_scale=self.perceptron.parameter_scale,
                 input_activation_scale=self.perceptron.input_activation_scale,
+                perceptron_index=getattr(self, "perceptron_index", None),
             )
             bank_ids.append(bank_id)
             start_idx = end_idx
@@ -1401,6 +1403,7 @@ class Conv2DPerceptronMapper(Mapper):
                         weight_bank_id=bank_id,
                         has_bias=has_bias,
                         name=f"{self.name}_pos{oh}_{ow}_g{g_idx}",
+                        perceptron_index=getattr(self, "perceptron_index", None),
                     )
                     position_outputs.append(core_outputs)
 
@@ -1783,6 +1786,25 @@ class ModelRepresentation:
         for group in self.get_perceptron_groups():
             perceptrons.extend(group)
         return perceptrons
+
+    def assign_perceptron_indices(self):
+        """
+        Set perceptron_index on each mapper that owns perceptrons, in the same
+        order as get_perceptrons(), so that map_to_ir can pass pruning provenance
+        to the IR (tiled FC and weight banks).
+        """
+        self._ensure_exec_graph()
+        idx = 0
+        for node in self._exec_order:
+            if not hasattr(node, "owned_perceptron_groups"):
+                continue
+            node.perceptron_index = idx
+            for group in node.owned_perceptron_groups():
+                seen = set()
+                for p in group:
+                    if id(p) not in seen:
+                        seen.add(id(p))
+                        idx += 1
 
     def __call__(self, x):
         """
