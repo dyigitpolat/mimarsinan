@@ -4,7 +4,6 @@
 
   "experiment_name": "0cifar10_vit_user",
   "generated_files_path": "./generated",
-  "data_provider_path": "./src/mimarsinan/data_handling/data_providers/cifar10_data_provider.py",
   "data_provider_name": "CIFAR10_DataProvider",
 
   "platform_constraints": {

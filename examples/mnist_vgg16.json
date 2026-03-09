@@ -3,7 +3,6 @@
 
     "experiment_name": "mnist_vgg16_mapper",
     "generated_files_path": "./generated",
-    "data_provider_path": "./src/mimarsinan/data_handling/data_providers/mnist32_data_provider.py",
     "data_provider_name": "MNIST32_DataProvider",
 
     "platform_constraints": {
