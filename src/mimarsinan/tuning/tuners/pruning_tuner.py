@@ -5,7 +5,6 @@ the start of each adaptation cycle, then smoothly shrinks the targeted pruned
 weights towards zero for that cycle. Unpruned weights are left free to train
 and heal the network capacity loss.
 """
-import math
 import copy
 import torch
 
@@ -13,6 +12,7 @@ from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
 from mimarsinan.transformations.pruning import (
     _collect_activation_stats,
     apply_pruning_masks,
+    compute_masks_from_importance,
 )
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
@@ -51,36 +51,15 @@ class PruningTuner(PerceptronTuner):
     def _get_masks(self, rate):
         perceptrons = self.model.get_perceptrons()
         n_layers = len(perceptrons)
-        
-        row_masks = []
-        col_masks = []
-        
-        for i, p in enumerate(perceptrons):
-            out_f, in_f = p.layer.weight.data.shape
-            
-            k_r = int(math.floor(rate * self.pruning_fraction * out_f))
-            if i == n_layers - 1:
-                k_r = 0  # Last layer: do not prune rows (output-buffer neurons)
-            rm = torch.ones(out_f, dtype=torch.bool, device=self.device)
-            if k_r > 0:
-                _, idx = self.base_row_imp[i].sort()
-                rm[idx[:k_r]] = False
-            row_masks.append(rm)
-            
-            k_c = int(math.floor(rate * self.pruning_fraction * in_f))
-            if i == 0:
-                k_c = 0  # First layer: do not prune columns (input-buffer axons)
-            cm = torch.ones(in_f, dtype=torch.bool, device=self.device)
-            if k_c > 0:
-                _, idx = self.base_col_imp[i].sort()
-                cm[idx[:k_c]] = False
-            col_masks.append(cm)
-            
-        # Cross-layer propagation
-        for i in range(n_layers - 1):
-            if row_masks[i].shape[0] == col_masks[i+1].shape[0]:
-                col_masks[i+1] &= row_masks[i]
-        return row_masks, col_masks
+        return compute_masks_from_importance(
+            perceptrons,
+            rate,
+            self.pruning_fraction,
+            self.base_row_imp,
+            self.base_col_imp,
+            exempt_input_layers={0},
+            exempt_output_layers={n_layers - 1} if n_layers > 0 else set(),
+        )
 
     def _refresh_pruning_importance(self):
         """Recompute activation-based row/column importance for the current model.
@@ -203,14 +182,17 @@ class PruningTuner(PerceptronTuner):
             pruned_cols = (~col_masks[i]).sum().item()
             print(f"[PruningTuner] Perceptron {i}: rows {pruned_rows}/{row_masks[i].shape[0]} pruned, cols {pruned_cols}/{col_masks[i].shape[0]} pruned")
         
-        # Register pruning masks as persistent buffers for downstream tuners
+        # Register 1D pruning masks as persistent buffers for IR pruning (lossless; no 2D recovery).
         for i, p in enumerate(perceptrons):
             rm = row_masks[i]
             cm = col_masks[i]
-            prune_mask = ((~rm).unsqueeze(1) | (~cm).unsqueeze(0)).clone()
-            p.layer.register_buffer('prune_mask', prune_mask)
+            # True = pruned (same convention as get_initial_pruning_masks_from_model)
+            p.layer.register_buffer("prune_row_mask", (~rm).clone())  # out_f
+            p.layer.register_buffer("prune_col_mask", (~cm).clone())  # in_f
+            # Legacy 2D/bias for any code that still reads them
+            p.layer.register_buffer("prune_mask", ((~rm).unsqueeze(1) | (~cm).unsqueeze(0)).clone())
             if p.layer.bias is not None:
-                p.layer.register_buffer('prune_bias_mask', (~rm).clone())
+                p.layer.register_buffer("prune_bias_mask", (~rm).clone())
 
         return final_acc
 

@@ -222,14 +222,10 @@ class SoftCoreMappingStep(PipelineStep):
                     )
             except Exception:
                 pass
-            propagate_with_model_masks = self.pipeline.config.get(
-                "pruning_propagate_with_model_masks", False
-            )
             ir_graph = prune_ir_graph(
                 ir_graph,
                 initial_pruned_per_node=initial_node if initial_node else None,
                 initial_pruned_per_bank=initial_bank if initial_bank else None,
-                propagate_when_using_model_masks=propagate_with_model_masks,
             )
             print(f"[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
         

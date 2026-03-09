@@ -153,10 +153,20 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
         return initial_pruned_per_node, initial_pruned_per_bank
 
     def _perceptron_masks(p):
-        """Get (row_pruned, col_pruned) for a perceptron; row = output dim, col = input dim."""
+        """Get (row_pruned, col_pruned) for a perceptron; row = output dim, col = input dim.
+        Prefer 1D buffers (lossless); fall back to legacy prune_mask/prune_bias_mask."""
         layer = getattr(p, "layer", None)
         if layer is None:
             return None, None
+        # Prefer 1D buffers when present (lossless)
+        prune_row = getattr(layer, "prune_row_mask", None)
+        prune_col = getattr(layer, "prune_col_mask", None)
+        if prune_row is not None and isinstance(prune_row, torch.Tensor) and prune_row.dim() == 1:
+            if prune_col is not None and isinstance(prune_col, torch.Tensor) and prune_col.dim() == 1:
+                row_pruned = prune_row.detach().cpu().numpy()
+                col_pruned = prune_col.detach().cpu().numpy()
+                return row_pruned, col_pruned
+        # Legacy: recover from 2D prune_mask
         prune_mask = getattr(layer, "prune_mask", None)
         if prune_mask is None or not isinstance(prune_mask, torch.Tensor):
             return None, None
@@ -167,7 +177,7 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             row_pruned = prune_bias.detach().cpu().numpy()  # (out_f,) True = pruned
         else:
             row_pruned = pm.any(dim=1).cpu().numpy()
-        col_pruned = pm.all(dim=0).cpu().numpy()  # (in_f,) True = pruned
+        col_pruned = pm.all(dim=0).cpu().numpy()  # (in_f,) True = pruned (lossy when all rows pruned)
         return row_pruned, col_pruned
 
     # 1) Build masks from provenance (perceptron_index + slices) when set
@@ -258,24 +268,43 @@ def _masks_to_sets(
     return zero_rows, zero_cols
 
 
+def _collect_bank_exemptions(
+    graph: IRGraph,
+    bank_id: int,
+    input_buffer_rows: Dict[int, Set[int]],
+    output_buffer_cols: Dict[int, Set[int]],
+) -> Tuple[Set[int], Set[int]]:
+    """Collect segment I/O exemption sets for all nodes sharing a weight bank."""
+    exempt_rows: Set[int] = set()
+    exempt_cols: Set[int] = set()
+    for node in graph.nodes:
+        if not isinstance(node, NeuralCore) or getattr(node, "weight_bank_id", None) != bank_id:
+            continue
+        exempt_rows |= input_buffer_rows.get(node.id, set())
+        if node.weight_row_slice is not None:
+            start, end = node.weight_row_slice
+            for j in output_buffer_cols.get(node.id, set()):
+                if j < end - start:
+                    exempt_cols.add(start + j)
+        else:
+            exempt_cols |= output_buffer_cols.get(node.id, set())
+    return exempt_rows, exempt_cols
+
+
 def prune_ir_graph(
     ir_graph: IRGraph,
     zero_threshold: float = 1e-8,
     *,
     initial_pruned_per_node: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
     initial_pruned_per_bank: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
-    propagate_when_using_model_masks: bool = False,
 ) -> IRGraph:
     """Remove zeroed rows and columns from all NeuralCores in the IR graph.
 
     When initial_pruned_per_node or initial_pruned_per_bank are provided,
-    uses those masks (True = pruned) as the initial pruned set. If
-    propagate_when_using_model_masks is False (default), no propagative
-    fixpoint is run for those nodes/banks, so pruning matches the model
-    exactly and improves equivalence. If True, or when no model masks
-    are provided, runs propagative fixpoint (rows that only feed pruned
-    cols, cols that only receive from pruned rows). When no initial
-    masks are provided, infers initial set from matrix values below
+    uses those masks (True = pruned) as the initial pruned set. Propagation
+    always runs: rows that only feed pruned cols and cols that only receive
+    from pruned rows are pruned, with segment I/O indices exempt. When no
+    initial masks are provided, infers initial set from matrix values below
     zero_threshold.
 
     Returns a new IRGraph with compacted cores and rewired sources.
@@ -289,71 +318,43 @@ def prune_ir_graph(
 
     graph = copy.deepcopy(ir_graph)
 
-    # Pre-Phase: Recursive Topological Pruning
-    # Iterate until convergence:
-    # 1. Any row connected to an 'off' source (-1) is dead -> zero out the row in core_matrix
-    # 2. Any column not read by any downstream node or output is dead -> zero out the column
-    changed = True
-    while changed:
-        changed = False
-
-        # 1. Forward dead connections
-        # If an input source is off (-1), its contribution is always 0.
-        for node in graph.nodes:
-            if not isinstance(node, NeuralCore) or node.core_matrix is None:
-                continue
-            
-            flat_src = node.input_sources.flatten()
-            for i, src in enumerate(flat_src):
-                if getattr(src, "node_id", getattr(src, "core_", None)) == -1:
-                    # If the row is not already all zeros, zero it out and flag change
-                    if np.any(np.abs(node.core_matrix[i, :]) > zero_threshold):
-                        node.core_matrix[i, :] = 0.0
-                        changed = True
-
-        # 2. Backward dead connections
-        # Find all neurons that are actually read by something
-        read_sources = set()
-        
-        # Read by output
-        for src in graph.output_sources.flatten():
+    # Pre-Phase: record dead structure without mutating core_matrix.
+    # Rows with input source -1 are dead; columns not read by any consumer are dead.
+    # Phase 1 will merge these with model-mask or value-based zeros.
+    read_sources: Set[Tuple[int, int]] = set()
+    for src in graph.output_sources.flatten():
+        node_id = getattr(src, "node_id", getattr(src, "core_", None))
+        idx = getattr(src, "index", getattr(src, "neuron_", None))
+        if node_id >= 0:
+            read_sources.add((node_id, idx))
+    for node in graph.nodes:
+        if not hasattr(node, "input_sources"):
+            continue
+        for src in node.input_sources.flatten():
             node_id = getattr(src, "node_id", getattr(src, "core_", None))
             idx = getattr(src, "index", getattr(src, "neuron_", None))
             if node_id >= 0:
                 read_sources.add((node_id, idx))
-                
-        # Read by other nodes
-        for node in graph.nodes:
-            if not hasattr(node, "input_sources"):
-                continue
-            for src in node.input_sources.flatten():
-                node_id = getattr(src, "node_id", getattr(src, "core_", None))
-                idx = getattr(src, "index", getattr(src, "neuron_", None))
-                if node_id >= 0:
-                    read_sources.add((node_id, idx))
-                    
-        # Zero out unread columns
-        for node in graph.nodes:
-            if not isinstance(node, NeuralCore) or node.core_matrix is None:
-                continue
-            
-            n_neurons = node.core_matrix.shape[1]
-            for j in range(n_neurons):
-                if (node.id, j) not in read_sources:
-                    if np.any(np.abs(node.core_matrix[:, j]) > zero_threshold):
-                        node.core_matrix[:, j] = 0.0
-                        changed = True
 
-    # Phase 1: identify pruned rows/columns with forward/backward propagation per core
-    # (centralized in compute_propagated_pruned_rows_cols)
-    # Segment I/O exemption: never prune rows that are segment input or cols that are segment output.
-    input_buffer_rows, output_buffer_cols = compute_segment_io_exemption(graph)
-    output_node_ids = set()
-    if graph.output_sources.size:
-        output_node_ids = {
-            src.node_id for src in graph.output_sources.flatten()
-            if isinstance(src, IRSource) and src.node_id >= 0
+    prephase_dead_rows: Dict[int, Set[int]] = {}
+    prephase_dead_cols: Dict[int, Set[int]] = {}
+    for node in graph.nodes:
+        if not isinstance(node, NeuralCore) or node.core_matrix is None:
+            continue
+        flat_src = node.input_sources.flatten()
+        dead_r = {
+            i for i, src in enumerate(flat_src)
+            if getattr(src, "node_id", getattr(src, "core_", None)) == -1
         }
+        n_neurons = node.core_matrix.shape[1]
+        dead_c = {j for j in range(n_neurons) if (node.id, j) not in read_sources}
+        if dead_r:
+            prephase_dead_rows[node.id] = dead_r
+        if dead_c:
+            prephase_dead_cols[node.id] = dead_c
+
+    # Phase 1: identify pruned rows/columns with exemption-aware propagation per core.
+    input_buffer_rows, output_buffer_cols = compute_segment_io_exemption(graph)
 
     reindex_maps: Dict[int, Dict[int, int]] = {}
     pruned_neurons: Dict[int, Set[int]] = {}
@@ -368,48 +369,38 @@ def prune_ir_graph(
 
         mat = node.core_matrix  # (axons, neurons)
         n_axons, n_neurons = mat.shape
-        # For output nodes with model mask we still apply segment output exemption so we do not
-        # prune output columns by mask (model "pruned" outputs are often scaled by (1-rate), not zero,
-        # so pruning them in the IR would zero them and worsen equivalence).
-        exempt_out_cols = output_buffer_cols.get(node.id, set())
+        exempt_r = frozenset(input_buffer_rows.get(node.id, set()))
+        exempt_c = frozenset(output_buffer_cols.get(node.id, set()))
 
         init = init_node.get(node.id)
         if init is not None:
-            # Slice (or pad with False) to node shape so 129 vs 127 etc. do not propagate.
             init_row = list(init[0][:n_axons]) + [False] * max(0, n_axons - len(init[0]))
             init_col = list(init[1][:n_neurons]) + [False] * max(0, n_neurons - len(init[1]))
             if len(init_row) == n_axons and len(init_col) == n_neurons:
-                zero_rows, zero_cols = _masks_to_sets(init_row, init_col)
-                zero_rows -= input_buffer_rows.get(node.id, set())
-                zero_cols -= exempt_out_cols
-                if propagate_when_using_model_masks:
-                    zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
-                        mat,
-                        zero_threshold=zero_threshold,
-                        initial_zero_rows=zero_rows,
-                        initial_zero_cols=zero_cols,
-                    )
+                init_rows, init_cols = _masks_to_sets(init_row, init_col)
             else:
-                zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
-                zero_rows -= input_buffer_rows.get(node.id, set())
-                zero_cols -= output_buffer_cols.get(node.id, set())
-                if propagate_when_using_model_masks:
-                    zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
-                        mat,
-                        zero_threshold=zero_threshold,
-                        initial_zero_rows=zero_rows,
-                        initial_zero_cols=zero_cols,
-                    )
+                init_rows, init_cols = None, None
         else:
-            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
-            zero_rows -= input_buffer_rows.get(node.id, set())
-            zero_cols -= output_buffer_cols.get(node.id, set())
-            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
-                mat,
-                zero_threshold=zero_threshold,
-                initial_zero_rows=zero_rows,
-                initial_zero_cols=zero_cols,
-            )
+            init_rows, init_cols = None, None
+
+        # Merge pre-phase dead structure (never mutate matrix before this)
+        pre_r = prephase_dead_rows.get(node.id, set())
+        pre_c = prephase_dead_cols.get(node.id, set())
+        if init_rows is not None:
+            init_rows = init_rows | pre_r
+            init_cols = init_cols | pre_c
+        else:
+            init_rows = pre_r if pre_r else None
+            init_cols = pre_c if pre_c else None
+
+        zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+            mat,
+            zero_threshold=zero_threshold,
+            initial_zero_rows=init_rows,
+            initial_zero_cols=init_cols,
+            exempt_rows=exempt_r,
+            exempt_cols=exempt_c,
+        )
 
         pruned_neurons[node.id] = zero_cols
         pruned_rows[node.id] = zero_rows
@@ -422,36 +413,7 @@ def prune_ir_graph(
                 new_idx += 1
         reindex_maps[node.id] = remap
 
-    # Output nodes: merge Phase 1 (model masks) with value-based pruning so we never
-    # un-prune a column the model pruned, while still pruning numerically zero columns.
-    # This aligns IR output-layer pruning with the fused model and fixes equivalence.
-    if graph.output_sources.size:
-        output_node_ids = {
-            src.node_id for src in graph.output_sources.flatten()
-            if isinstance(src, IRSource) and src.node_id >= 0
-        }
-        for node in graph.nodes:
-            if not isinstance(node, NeuralCore) or node.core_matrix is None or node.id not in output_node_ids:
-                continue
-            mat = node.core_matrix
-            n_neurons = mat.shape[1]
-            zero_rows_phase1 = pruned_rows.get(node.id, set())
-            zero_cols_phase1 = pruned_neurons.get(node.id, set())
-            zero_rows_v, zero_cols_v = compute_propagated_pruned_rows_cols(mat, zero_threshold=zero_threshold)
-            zero_rows_v -= input_buffer_rows.get(node.id, set())
-            zero_cols_v -= output_buffer_cols.get(node.id, set())
-            zero_rows, zero_cols = zero_rows_phase1 | zero_rows_v, zero_cols_phase1 | zero_cols_v
-            pruned_neurons[node.id] = zero_cols
-            pruned_rows[node.id] = zero_rows
-            new_idx = 0
-            remap = {}
-            for old_idx in range(n_neurons):
-                if old_idx not in zero_cols:
-                    remap[old_idx] = new_idx
-                    new_idx += 1
-            reindex_maps[node.id] = remap
-
-    # Phase 2: rewire all sources (input_sources of all nodes + output_sources)
+    # Phase 2: rewire all sources
     def _rewire_sources(sources: np.ndarray) -> np.ndarray:
         """Rewire source references: pruned neurons -> off, others -> reindexed."""
         flat = sources.flatten()
@@ -465,6 +427,11 @@ def prune_ir_graph(
                     flat[i] = IRSource(node_id=-1, index=0)
                 elif src.node_id in reindex_maps and src.index in reindex_maps[src.node_id]:
                     flat[i] = IRSource(node_id=src.node_id, index=reindex_maps[src.node_id][src.index])
+                elif src.node_id in reindex_maps:
+                    raise ValueError(
+                        f"prune_ir_graph: source index {src.index} for node_id {src.node_id} is neither "
+                        "pruned nor in reindex map; bookkeeping error upstream."
+                    )
         return flat.reshape(sources.shape)
 
     for node in graph.nodes:
@@ -562,52 +529,27 @@ def prune_ir_graph(
         mat = bank.core_matrix
         n_axons, n_neurons = mat.shape
         init = init_bank.get(bank_id)
+        bank_exempt_rows, bank_exempt_cols = _collect_bank_exemptions(
+            graph, bank_id, input_buffer_rows, output_buffer_cols
+        )
+        exempt_r = frozenset(bank_exempt_rows)
+        exempt_c = frozenset(bank_exempt_cols)
         if init is not None and len(init[0]) == n_axons and len(init[1]) == n_neurons:
             zero_rows, zero_cols = _masks_to_sets(init[0], init[1])
-            bank_exempt_rows = set()
-            bank_exempt_cols = set()
-            for node in graph.nodes:
-                if not isinstance(node, NeuralCore) or getattr(node, "weight_bank_id", None) != bank_id:
-                    continue
-                bank_exempt_rows |= input_buffer_rows.get(node.id, set())
-                if node.weight_row_slice is not None:
-                    start, end = node.weight_row_slice
-                    for j in output_buffer_cols.get(node.id, set()):
-                        if j < end - start:
-                            bank_exempt_cols.add(start + j)
-                else:
-                    bank_exempt_cols |= output_buffer_cols.get(node.id, set())
-            zero_rows -= bank_exempt_rows
-            zero_cols -= bank_exempt_cols
-            if propagate_when_using_model_masks:
-                zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
-                    mat,
-                    zero_threshold=zero_threshold,
-                    initial_zero_rows=zero_rows,
-                    initial_zero_cols=zero_cols,
-                )
-        else:
-            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(mat, zero_threshold)
-            bank_exempt_rows = set()
-            bank_exempt_cols = set()
-            for node in graph.nodes:
-                if not isinstance(node, NeuralCore) or getattr(node, "weight_bank_id", None) != bank_id:
-                    continue
-                bank_exempt_rows |= input_buffer_rows.get(node.id, set())
-                if node.weight_row_slice is not None:
-                    start, end = node.weight_row_slice
-                    for j in output_buffer_cols.get(node.id, set()):
-                        if j < end - start:
-                            bank_exempt_cols.add(start + j)
-                else:
-                    bank_exempt_cols |= output_buffer_cols.get(node.id, set())
-            zero_rows -= bank_exempt_rows
-            zero_cols -= bank_exempt_cols
             zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
                 mat,
                 zero_threshold=zero_threshold,
                 initial_zero_rows=zero_rows,
                 initial_zero_cols=zero_cols,
+                exempt_rows=exempt_r,
+                exempt_cols=exempt_c,
+            )
+        else:
+            zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+                mat,
+                zero_threshold=zero_threshold,
+                exempt_rows=exempt_r,
+                exempt_cols=exempt_c,
             )
         pruned_row_mask = [i in zero_rows for i in range(n_axons)]
         pruned_col_mask_full = [j in zero_cols for j in range(n_neurons)]
