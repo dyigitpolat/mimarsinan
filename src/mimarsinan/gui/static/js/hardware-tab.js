@@ -78,7 +78,8 @@ function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
   const pct = (core.utilization * 100).toFixed(1);
   let html = '<div class="hw-core-detail-panel">';
   if (core.heatmap_image) {
-    html += '<div class="hw-core-detail-heatmap-wrap">';
+    const ar = Math.max(1, core.neurons_per_core) / Math.max(1, core.axons_per_core);
+    html += `<div class="hw-core-detail-heatmap-wrap" style="aspect-ratio: ${ar}; max-height: 240px">`;
     html += `<img src="${core.heatmap_image.replace(/"/g, '&quot;')}" alt="Core ${core.core_index} heatmap" class="hw-core-detail-heatmap">`;
     const placements = core.mapped_placements || [];
     const aTotal = Math.max(1, core.axons_per_core);
@@ -118,16 +119,80 @@ function buildSoftCoreDetailPanelHtml(nodeId, irGraph) {
   if (isNeural) {
     html += '<table class="data-table compact">';
     html += `<tr><td>ID</td><td>${node.id}</td></tr>`;
-    html += `<tr><td>Axons</td><td>${node.axons ?? '—'}</td></tr>`;
-    html += `<tr><td>Neurons</td><td>${node.neurons ?? '—'}</td></tr>`;
+    const preAx = node.pre_pruning_axons;
+    const preNu = node.pre_pruning_neurons;
+    const postAx = node.axons ?? '—';
+    const postNu = node.neurons ?? '—';
+    if (preAx != null && preNu != null) {
+      html += `<tr><td>Pre-pruning</td><td>${preAx}×${preNu}</td></tr>`;
+      html += `<tr><td>Post-pruning</td><td>${postAx}×${postNu}</td></tr>`;
+    } else {
+      html += `<tr><td>Axons</td><td>${postAx}</td></tr>`;
+      html += `<tr><td>Neurons</td><td>${postNu}</td></tr>`;
+    }
     html += `<tr><td>Threshold</td><td>${node.threshold != null ? Number(node.threshold).toFixed(4) : '—'}</td></tr>`;
     html += `<tr><td>Latency</td><td>${node.latency ?? '—'}</td></tr>`;
     html += `<tr><td>Activation scale</td><td>${node.activation_scale != null ? Number(node.activation_scale).toFixed(4) : '—'}</td></tr>`;
     html += `<tr><td>Parameter scale</td><td>${node.parameter_scale != null ? Number(node.parameter_scale).toFixed(4) : '—'}</td></tr>`;
     html += `<tr><td>Sparsity</td><td>${node.weight_stats ? (node.weight_stats.sparsity * 100).toFixed(1) + '%' : '—'}</td></tr>`;
     html += '</table>';
-    if (node.heatmap_image) {
-      html += `<div class="hw-softcore-heatmap-wrap"><img src="${node.heatmap_image.replace(/"/g, '&quot;')}" alt="Core heatmap" class="hw-softcore-heatmap"></div>`;
+    if (node.heatmap_image || node.pre_pruning_heatmap_image) {
+      const HW_SOFT_MAX = 200;
+      const MIN_HEATMAP_VIEW_WIDTH = 80;
+      const MIN_HEATMAP_VIEW_HEIGHT = 80;
+      const maxLong = Math.max(
+        preAx ?? 0, preNu ?? 0,
+        node.axons ?? 0, node.neurons ?? 0,
+        1
+      );
+      function softHeatmapSizePre(axons, neurons) {
+        if (!axons || !neurons || maxLong < 1) return { w: HW_SOFT_MAX, h: HW_SOFT_MAX };
+        let w = Math.round((neurons / maxLong) * HW_SOFT_MAX);
+        let h = Math.round((axons / maxLong) * HW_SOFT_MAX);
+        if (w < MIN_HEATMAP_VIEW_WIDTH && w <= h) {
+          w = MIN_HEATMAP_VIEW_WIDTH;
+          h = Math.round((axons / neurons) * w);
+        } else if (h < MIN_HEATMAP_VIEW_HEIGHT && h <= w) {
+          h = MIN_HEATMAP_VIEW_HEIGHT;
+          w = Math.round((neurons / axons) * h);
+        }
+        w = Math.max(2, w);
+        h = Math.max(2, h);
+        return { w, h };
+      }
+      function softHeatmapSizePost(postAxons, postNeurons, preSz, preAxons, preNeurons) {
+        if (preSz && preAxons && preNeurons) {
+          const scaleW = preSz.w / preNeurons;
+          const scaleH = preSz.h / preAxons;
+          return {
+            w: Math.max(2, Math.round(postNeurons * scaleW)),
+            h: Math.max(2, Math.round(postAxons * scaleH)),
+          };
+        }
+        let w = Math.round((postNeurons / maxLong) * HW_SOFT_MAX);
+        let h = Math.round((postAxons / maxLong) * HW_SOFT_MAX);
+        w = Math.max(2, w);
+        h = Math.max(2, h);
+        return { w, h };
+      }
+      html += '<div class="hw-softcore-heatmaps" style="margin-top:10px">';
+      html += '<div class="section-label" style="font-size:10px;margin-bottom:6px;color:var(--text-muted)">Weight heatmap</div>';
+      html += '<div class="hw-softcore-heatmaps-scroll" style="max-height:320px;max-width:100%;overflow:auto">';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start">';
+      let preSz = null;
+      if (node.pre_pruning_heatmap_image) {
+        const preLabel = (preAx != null && preNu != null) ? ` (${preAx}×${preNu})` : '';
+        preSz = (preAx != null && preNu != null) ? softHeatmapSizePre(preAx, preNu) : { w: HW_SOFT_MAX, h: HW_SOFT_MAX };
+        html += `<div class="hw-softcore-heatmap-wrap"><div class="section-label" style="font-size:9px;margin-bottom:2px">Pre-pruning${preLabel}</div><img src="${node.pre_pruning_heatmap_image.replace(/"/g, '&quot;')}" alt="Pre-pruning" class="hw-softcore-heatmap" style="width:${preSz.w}px;height:${preSz.h}px;object-fit:fill"></div>`;
+      }
+      if (node.heatmap_image) {
+        const postAxNum = node.axons ?? 0;
+        const postNuNum = node.neurons ?? 0;
+        const postLabel = (postAxNum && postNuNum) ? ` (${postAxNum}×${postNuNum})` : '';
+        const postSz = softHeatmapSizePost(postAxNum, postNuNum, preSz, preAx ?? 0, preNu ?? 0);
+        html += `<div class="hw-softcore-heatmap-wrap"><div class="section-label" style="font-size:9px;margin-bottom:2px">Post-pruning${postLabel}</div><img src="${node.heatmap_image.replace(/"/g, '&quot;')}" alt="Post-pruning" class="hw-softcore-heatmap" style="width:${postSz.w}px;height:${postSz.h}px;object-fit:fill"></div>`;
+      }
+      html += '</div></div></div>';
     }
   } else {
     html += '<table class="data-table compact">';
@@ -256,6 +321,13 @@ function renderStageFlow(hw, irGraph) {
   render();
 }
 
+// Maximum pixel length for the longest dimension among all core types in the segment.
+// Every core is scaled relative to this: the core type with the largest dimension
+// (max over all axons_per_core and neurons_per_core) gets this size on that dimension.
+const MAX_CORE_DISPLAY_PX = 200;  /* ~2.5× previous (80) so mini-view heatmaps are larger */
+// Minimum pixel size per dimension so very small cores remain visible; relative sizes are preserved.
+const MIN_CORE_DISPLAY_PX = 8;
+
 // ── Segment detail with consistent global layout ─────────────────────────
 function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
   const cores = stage.cores;
@@ -271,8 +343,8 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
   const maxNeurons = globalLayout
     ? Math.max(...globalLayout.map(g => g.neurons))
     : Math.max(...cores.map(c => c.neurons_per_core));
-  const maxDim = Math.max(maxAxons, maxNeurons, 1);
-  const MAX_PX = 80, MIN_PX = 24;
+  // Longest dimension across all core types; the core with this dimension gets MAX_CORE_DISPLAY_PX.
+  const maxDimension = Math.max(maxAxons, maxNeurons, 1);
 
   let html = '<div class="stage-detail" onclick="event.stopPropagation()">';
   html += `<div class="hw-segment-col" id="hw-layout-${segIdx}">`;
@@ -310,15 +382,22 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
   const GRID_GAP = 6;
   // Conservative: stage block 700px − padding − input buffer − scrollbar/margin so grid doesn't overflow
   const SEG_VIEW_WIDTH = 580;
+  // Core cell sizes: long axis = (maxDimension scale) * MAX_CORE_DISPLAY_PX; other axis from exact aspect n/ax
+  // so the mini-view frame matches the backend heatmap dimensions exactly (no size mismatch).
 
-  function emitCoreCell(core, wPx, hPx, isPlaceholder) {
-    const cellW = ID_WIDTH + 4 + wPx;
-    const cellH = hPx + UTIL_HEIGHT;
+  function emitCoreCell(core, ax, n, actualW, actualH, isPlaceholder) {
+    const cellW = ID_WIDTH + 4 + actualW;
+    const cellH = actualH + UTIL_HEIGHT;
     const cellStyle = `width:${cellW}px;height:${cellH}px`;
+    // Exact aspect width/height = neurons/axons to match backend heatmap; one dimension fixed, other from aspect-ratio.
+    const ar = Math.max(0.01, n / ax);
+    const coreStyle = ax >= n
+      ? `height:${actualH}px;width:auto;aspect-ratio:${ar}`
+      : `width:${actualW}px;height:auto;aspect-ratio:${ar}`;
     if (isPlaceholder) {
       return `<div class="hw-core-cell" style="${cellStyle}" title="Unused slot">
         <span class="hw-core-id">—</span>
-        <div class="hw-core-cell-main"><div class="hw-core hw-core-empty" style="width:${wPx}px;height:${hPx}px"></div><span class="hw-core-util">—</span></div>
+        <div class="hw-core-cell-main"><div class="hw-core hw-core-empty" style="${coreStyle}"></div><span class="hw-core-util">—</span></div>
       </div>`;
     }
     const pct = (core.utilization * 100).toFixed(0);
@@ -326,9 +405,9 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
     let cell = `<div class="hw-core-cell" style="${cellStyle}" onclick="window._hwCoreClick(${segIdx},${core.core_index})" title="Core ${core.core_index}: ${core.used_axons}/${core.axons_per_core}ax × ${core.used_neurons}/${core.neurons_per_core}n, util=${pct}%">`;
     cell += `<span class="hw-core-id">${core.core_index}</span>`;
     cell += '<div class="hw-core-cell-main">';
-    cell += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}">`;
+    cell += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}" style="${coreStyle}">`;
     if (core.heatmap_image) {
-      cell += `<img class="hw-core-canvas" src="${core.heatmap_image}" style="max-width:${wPx}px;max-height:${hPx}px;width:auto;height:auto;display:block;object-fit:contain" draggable="false">`;
+      cell += `<img class="hw-core-canvas" src="${core.heatmap_image}" style="width:100%;height:100%;display:block;object-fit:fill" draggable="false">`;
     }
     cell += '</div>';
     cell += `<span class="hw-core-util">${pct}%</span>`;
@@ -342,10 +421,12 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
     const n = parseInt(nStr, 10);
     const pool = coresByDim.get(key) || [];
     const grpCount = globalLayout ? (globalLayout.find(g => `${g.axons}x${g.neurons}` === key)?.count ?? pool.length) : pool.length;
-    const wPx = Math.max(MIN_PX, Math.round((n / maxDim) * MAX_PX));
-    const hPx = Math.max(MIN_PX, Math.round((ax / maxDim) * MAX_PX));
-    const cellW = ID_WIDTH + 4 + wPx;
-    const cellH = hPx + UTIL_HEIGHT;
+    // Scale long axis to MAX_CORE_DISPLAY_PX; derive the other from exact aspect n/ax so frame matches heatmap.
+    const longPx = Math.max(MIN_CORE_DISPLAY_PX, Math.round((Math.max(ax, n) / maxDimension) * MAX_CORE_DISPLAY_PX));
+    const actualW = ax >= n ? Math.round(longPx * (n / ax)) : longPx;
+    const actualH = ax >= n ? longPx : Math.round(longPx * (ax / n));
+    const cellW = ID_WIDTH + 4 + actualW;
+    const cellH = actualH + UTIL_HEIGHT;
     const numCols = Math.max(1, Math.floor((SEG_VIEW_WIDTH + GRID_GAP) / (cellW + GRID_GAP)));
 
     html += '<div class="hw-core-group">';
@@ -353,7 +434,7 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
     html += `<div class="hw-core-group-cores" style="grid-template-columns:repeat(${numCols},${cellW}px);grid-auto-rows:${cellH}px">`;
     for (let i = 0; i < grpCount; i++) {
       const actualCore = i < pool.length ? pool[i] : null;
-      html += emitCoreCell(actualCore, wPx, hPx, !actualCore);
+      html += emitCoreCell(actualCore, ax, n, actualW, actualH, !actualCore);
     }
     html += '</div></div>';
   }
@@ -391,6 +472,9 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   const grid = document.getElementById(`hw-grid-${segIdx}`);
   if (!layout || !grid) return;
   layout.style.position = 'relative';
+  const rowInner = layout.querySelector('.hw-segment-row-inner');
+  if (!rowInner) return;
+  rowInner.style.position = 'relative';
   layout.querySelectorAll('.hw-conn-overlay').forEach(n => n.remove());
   layout.querySelectorAll('.hw-edge-popover').forEach(n => n.remove());
   layout.querySelectorAll('.hw-buffer-segment-active-in, .hw-buffer-segment-active-out').forEach(n => {
@@ -407,13 +491,15 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   const outgoing = spans.filter(sp => sp.src_core === selCoreIdx && sp.kind !== 'off');
   if (incoming.length === 0 && outgoing.length === 0) return;
 
-  const contRect = layout.getBoundingClientRect();
+  // Use the row that contains cores/buffers as the coordinate frame so the overlay aligns when scrolling.
+  const contRect = rowInner.getBoundingClientRect();
   if (contRect.width === 0 || contRect.height === 0) return;
   const coreByIdx = new Map();
   if (stage.cores) for (const c of stage.cores) coreByIdx.set(c.core_index, c);
   const totalInput = Math.max(stage.input_map?.reduce((s, m) => s + m.size, 0) || 0, 1);
   const totalOutput = Math.max(stage.output_map?.reduce((s, m) => s + m.size, 0) || 0, 1);
 
+  // All overlay coordinates relative to row-inner so SVG and core positions share the same origin.
   function getRect(el) {
     if (!el) return null;
     const r = el.getBoundingClientRect();
@@ -435,10 +521,11 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   const svgNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS, 'svg');
   svg.classList.add('hw-conn-overlay');
-  const layoutW = Math.max(1, layout.offsetWidth || contRect.width);
-  const layoutH = Math.max(1, layout.offsetHeight || contRect.height);
+  const layoutW = Math.max(1, Math.round(contRect.width));
+  const layoutH = Math.max(1, Math.round(contRect.height));
   svg.setAttribute('width', layoutW);
   svg.setAttribute('height', layoutH);
+  svg.setAttribute('viewBox', `0 0 ${layoutW} ${layoutH}`);
   svg.innerHTML = '<defs></defs>';
 
   const selRect = coreRect(selCoreIdx);
@@ -689,7 +776,7 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
     }
   }
 
-  layout.appendChild(svg);
+  rowInner.appendChild(svg);
 
   // Span detail popover
   if (selSpanKey) {

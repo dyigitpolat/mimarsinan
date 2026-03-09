@@ -12,7 +12,9 @@ class ActivationQuantizationStep(PipelineStep):
         self.tuner = None
 
     def validate(self):
-        return self.tuner.validate()
+        if self.tuner is not None:
+            return self.tuner.validate()
+        return self.pipeline.get_target_metric()
 
     def process(self):
         self.tuner = ActivationQuantizationTuner(

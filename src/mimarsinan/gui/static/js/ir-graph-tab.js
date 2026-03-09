@@ -409,7 +409,7 @@ function buildTierDetail(tier, allGroups, groupEdges, nodeById, irGraph, g2t, ti
       <span>${esc(tierLabel)} — ${tier.groups.length} group${tier.groups.length !== 1 ? 's' : ''}, ${tier.totalCores} core${tier.totalCores !== 1 ? 's' : ''}</span>
       <button class="ir-detail-close" onclick="window._irTierClose()">✕</button>
     </div>
-    <div style="padding:12px 16px">`;
+    <div class="ir-node-detail-body" style="padding:12px 16px">`;
 
   // Connectivity summary
   if (incomingTiers.size > 0 || outgoingTiers.size > 0) {
@@ -478,8 +478,10 @@ function buildGroupDetail(g, nodeById, irGraph) {
     <div class="ir-node-detail-header">
       <span>${esc(g.key)} — ${cores.length} cores, ${ops.length} ops</span>
       <button class="ir-detail-close" onclick="window._irGroupClick('${safeKey}')">✕</button>
-    </div><div style="padding:12px 16px">`;
+    </div><div class="ir-node-detail-body" style="padding:12px 16px">`;
 
+  // Scrollable list of soft cores and ops (max ~10 rows visible) so heatmaps stay in view
+  html += '<div class="ir-detail-list-scroll">';
   if (inEdges.length > 0 || outEdges.length > 0) {
     html += '<div style="margin-bottom:12px">';
     if (inEdges.length > 0) {
@@ -503,7 +505,7 @@ function buildGroupDetail(g, nodeById, irGraph) {
   }
 
   if (cores.length > 0) {
-    html += '<table class="data-table compact"><thead><tr><th>ID</th><th>Name</th><th>Axons</th><th>Neurons</th><th>Norm</th><th>Activation</th><th>Threshold</th><th>Act Scale</th><th>Param Scale</th><th>InAct Scale</th><th>Latency</th><th>Sparsity</th></tr></thead><tbody>';
+    html += '<table class="data-table compact"><thead><tr><th>ID</th><th>Name</th><th>Dimensions (ax×n)</th><th>Norm</th><th>Activation</th><th>Threshold</th><th>Act Scale</th><th>Param Scale</th><th>InAct Scale</th><th>Latency</th><th>Sparsity</th></tr></thead><tbody>';
     for (const c of cores) {
       const sp = c.weight_stats ? (c.weight_stats.sparsity * 100).toFixed(1) + '%' : '-';
       const short = c.name.length > 30 ? c.name.substring(0, 28) + '..' : c.name;
@@ -511,8 +513,11 @@ function buildGroupDetail(g, nodeById, irGraph) {
       const act = c.activation_type || '-';
       const normShort = norm.length > 16 ? norm.substring(0, 14) + '..' : norm;
       const actShort = act.length > 22 ? act.substring(0, 20) + '..' : act;
+      const dimStr = c.pre_pruning_axons != null && c.pre_pruning_neurons != null
+        ? `${c.pre_pruning_axons}×${c.pre_pruning_neurons} → ${c.axons}×${c.neurons}`
+        : `${c.axons}×${c.neurons}`;
       html += `<tr><td>${c.id}</td><td title="${esc(c.name)}">${esc(short)}</td>
-        <td>${c.axons}</td><td>${c.neurons}</td><td title="${esc(norm)}">${esc(normShort)}</td><td title="${esc(act)}">${esc(actShort)}</td><td>${c.threshold.toFixed(2)}</td>
+        <td title="Pre- and post-pruning">${dimStr}</td><td title="${esc(norm)}">${esc(normShort)}</td><td title="${esc(act)}">${esc(actShort)}</td><td>${c.threshold.toFixed(2)}</td>
         <td>${c.activation_scale != null ? c.activation_scale.toFixed(3) : '-'}</td>
         <td>${c.parameter_scale != null ? c.parameter_scale.toFixed(3) : '-'}</td>
         <td>${c.input_activation_scale != null ? c.input_activation_scale.toFixed(3) : '-'}</td>
@@ -521,9 +526,21 @@ function buildGroupDetail(g, nodeById, irGraph) {
     html += '</tbody></table>';
   }
 
+  if (ops.length > 0) {
+    html += `<div style="margin-top:${cores.length > 0 ? '12px' : '0'}"><table class="data-table compact"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Input</th><th>Output</th><th>Params</th></tr></thead><tbody>`;
+    for (const o of ops) {
+      html += `<tr><td>${o.id}</td><td>${esc(o.name)}</td><td>${esc(o.op_type)}</td>
+        <td>${o.input_shape || '-'}</td><td>${o.output_shape || '-'}</td>
+        <td title="${esc(o.params || '')}">${esc((o.params || '-').substring(0, 35))}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+  html += '</div>'; // end ir-detail-list-scroll
+
   // Soft-core weight heatmaps (backend-rendered images only; one per weight bank or owned core)
+  // Dimensions: pre_pruning_axons/neurons when available; axons/neurons are post-pruning. Scale heatmaps for relative size consistency.
   const weightBanks = irGraph.weight_banks || {};
-  const heatmapGroups = new Map(); // key -> { title, coreIds, postImageUri, preImageUri? }
+  const heatmapGroups = new Map(); // key -> { title, coreIds, postImageUri, preImageUri?, postAxons, postNeurons, preAxons?, preNeurons? }
   for (const c of cores) {
     const bankId = c.weight_bank_id != null ? c.weight_bank_id : null;
     const key = bankId != null ? `bank-${bankId}` : `core-${c.id}`;
@@ -540,30 +557,71 @@ function buildGroupDetail(g, nodeById, irGraph) {
       coreNames: [c.name],
       postImageUri: postUri,
       preImageUri: c.pre_pruning_heatmap_image || null,
+      postAxons: c.axons ?? 0,
+      postNeurons: c.neurons ?? 0,
+      preAxons: c.pre_pruning_axons ?? null,
+      preNeurons: c.pre_pruning_neurons ?? null,
     };
     heatmapGroups.set(key, entry);
   }
+  const IR_HEATMAP_MAX_PX = 280;
+  const MIN_HEATMAP_VIEW_WIDTH = 80;
+  const MIN_HEATMAP_VIEW_HEIGHT = 80;
   for (const [, entry] of heatmapGroups) {
     if (entry.coreIds.length > 1) entry.title += ` (${entry.coreIds.length} cores)`;
+    const maxLong = Math.max(
+      entry.postAxons || 0,
+      entry.postNeurons || 0,
+      entry.preAxons || 0,
+      entry.preNeurons || 0,
+      1
+    );
+    function heatmapSizePre(axons, neurons) {
+      if (!axons || !neurons) return { w: IR_HEATMAP_MAX_PX, h: IR_HEATMAP_MAX_PX };
+      let w = Math.round((neurons / maxLong) * IR_HEATMAP_MAX_PX);
+      let h = Math.round((axons / maxLong) * IR_HEATMAP_MAX_PX);
+      if (w < MIN_HEATMAP_VIEW_WIDTH && w <= h) {
+        w = MIN_HEATMAP_VIEW_WIDTH;
+        h = Math.round((axons / neurons) * w);
+      } else if (h < MIN_HEATMAP_VIEW_HEIGHT && h <= w) {
+        h = MIN_HEATMAP_VIEW_HEIGHT;
+        w = Math.round((neurons / axons) * h);
+      }
+      w = Math.max(2, w);
+      h = Math.max(2, h);
+      return { w, h };
+    }
+    function heatmapSizePost(postAxons, postNeurons, preSize, preAxons, preNeurons) {
+      if (preSize && preAxons && preNeurons) {
+        const scaleW = preSize.w / preNeurons;
+        const scaleH = preSize.h / preAxons;
+        return {
+          w: Math.max(2, Math.round(postNeurons * scaleW)),
+          h: Math.max(2, Math.round(postAxons * scaleH)),
+        };
+      }
+      let w = Math.round((postNeurons / maxLong) * IR_HEATMAP_MAX_PX);
+      let h = Math.round((postAxons / maxLong) * IR_HEATMAP_MAX_PX);
+      w = Math.max(2, w);
+      h = Math.max(2, h);
+      return { w, h };
+    }
+    const preSize = entry.preAxons != null && entry.preNeurons != null ? heatmapSizePre(entry.preAxons, entry.preNeurons) : null;
+    const postSize = heatmapSizePost(entry.postAxons, entry.postNeurons, preSize, entry.preAxons || 0, entry.preNeurons || 0);
     html += '<div class="ir-softcore-heatmap-card" style="margin-top:16px">';
     html += `<div class="section-label" style="margin-bottom:8px">${esc(entry.title)} — soft-core weight heatmap</div>`;
+    html += '<div class="ir-softcore-heatmaps-scroll" style="max-height:320px;max-width:100%;overflow:auto">';
     html += '<div class="ir-softcore-heatmaps" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">';
     if (entry.preImageUri) {
-      html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Pre-pruning</div><img src="${entry.preImageUri}" alt="Pre-pruning" class="ir-softcore-heatmap-img" style="max-width:280px;height:auto;display:block;border:1px solid #2e3140;border-radius:4px"></div>`;
+      const dimLabel = entry.preAxons != null && entry.preNeurons != null ? ` (${entry.preAxons}×${entry.preNeurons})` : '';
+      const style = preSize ? `width:${preSize.w}px;height:${preSize.h}px;display:block;object-fit:fill;border:1px solid #2e3140;border-radius:4px` : 'max-width:280px;height:auto;display:block;border:1px solid #2e3140;border-radius:4px';
+      html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Pre-pruning${dimLabel}</div><img src="${entry.preImageUri}" alt="Pre-pruning" class="ir-softcore-heatmap-img" style="${style}"></div>`;
     }
-    html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Post-pruning</div><img src="${entry.postImageUri}" alt="Post-pruning" class="ir-softcore-heatmap-img" style="max-width:280px;height:auto;display:block;border:1px solid #2e3140;border-radius:4px"></div>`;
-    html += '</div></div>';
+    const postDimLabel = ` (${entry.postAxons}×${entry.postNeurons})`;
+    html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Post-pruning${postDimLabel}</div><img src="${entry.postImageUri}" alt="Post-pruning" class="ir-softcore-heatmap-img" style="width:${postSize.w}px;height:${postSize.h}px;display:block;object-fit:fill;border:1px solid #2e3140;border-radius:4px"></div>`;
+    html += '</div></div></div>';
   }
 
-  if (ops.length > 0) {
-    html += `<div style="margin-top:${cores.length > 0 ? '12px' : '0'}"><table class="data-table compact"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Input</th><th>Output</th><th>Params</th></tr></thead><tbody>`;
-    for (const o of ops) {
-      html += `<tr><td>${o.id}</td><td>${esc(o.name)}</td><td>${esc(o.op_type)}</td>
-        <td>${o.input_shape || '-'}</td><td>${o.output_shape || '-'}</td>
-        <td title="${esc(o.params || '')}">${esc((o.params || '-').substring(0, 35))}</td></tr>`;
-    }
-    html += '</tbody></table></div>';
-  }
   html += '</div></div>';
   return html;
 }
@@ -594,7 +652,7 @@ function buildEdgeDetail(edge, groups, nodeById, irGraph, tiers) {
       <span>Edge: ${fromDesc.label} → ${toDesc.label}</span>
       <button class="ir-detail-close" onclick="window._irEdgeClose && window._irEdgeClose()">✕</button>
     </div>
-    <div style="padding:12px 16px">
+    <div class="ir-node-detail-body" style="padding:12px 16px">
       <table class="data-table compact">
         <tr><td>Source</td><td><span class="conn-chip incoming">${fromDesc.label}</span></td></tr>
         <tr><td>Destination</td><td><span class="conn-chip outgoing">${toDesc.label}</span></td></tr>

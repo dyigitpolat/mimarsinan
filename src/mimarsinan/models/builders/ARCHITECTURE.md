@@ -17,6 +17,8 @@ systems.
 | `torch_vit_builder.py` | `TorchViTBuilder` | Builds native `torchvision.vit_b_16` model |
 | `torch_squeezenet11_builder.py` | `TorchSqueezeNet11Builder` | Builds native `torchvision.squeezenet1_1` model |
 | `torch_custom_builder.py` | `TorchCustomBuilder` | Builds a native model from a user-provided factory |
+| `torch_sequential_linear_builder.py` | `TorchSequentialLinearBuilder` | Builds native Sequential(Flatten, Linear, …) |
+| `torch_sequential_conv_builder.py` | `TorchSequentialConvBuilder` | Builds native Sequential(Conv2d, ReLU, MaxPool2d, Flatten, Linear, …); two IR segments |
 
 Each builder implements `build(configuration) -> nn.Module`.  Native builders
 produce plain `nn.Module` instances that are later converted to `Supermodel`
@@ -33,4 +35,4 @@ by `TorchMappingStep`.
 
 ## Exported API (\_\_init\_\_.py)
 
-`PerceptronMixerBuilder`, `SimpleMLPBuilder`, `SimpleConvBuilder`, `VGG16Builder`, `VitBuilder`, `TorchVGG16Builder`, `TorchViTBuilder`, `TorchSqueezeNet11Builder`, `TorchCustomBuilder`.
+`PerceptronMixerBuilder`, `SimpleMLPBuilder`, `SimpleConvBuilder`, `VGG16Builder`, `VitBuilder`, `TorchVGG16Builder`, `TorchViTBuilder`, `TorchSqueezeNet11Builder`, `TorchCustomBuilder`, `TorchSequentialLinearBuilder`, `TorchSequentialConvBuilder`.

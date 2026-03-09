@@ -15,6 +15,7 @@ from mimarsinan.models.builders import TorchViTBuilder
 from mimarsinan.models.builders import TorchSqueezeNet11Builder
 from mimarsinan.models.builders import TorchCustomBuilder
 from mimarsinan.models.builders import TorchSequentialLinearBuilder
+from mimarsinan.models.builders import TorchSequentialConvBuilder
 
 class ModelConfigurationStep(PipelineStep):
     """
@@ -70,6 +71,7 @@ class ModelConfigurationStep(PipelineStep):
                 model_factory=self.pipeline.config.get("model_factory"),
             ),
             "torch_sequential_linear": TorchSequentialLinearBuilder(*common_args),
+            "torch_sequential_conv": TorchSequentialConvBuilder(*common_args),
         }
         builder = builders[self.pipeline.config['model_type']]
         

@@ -38,8 +38,11 @@ def render_heatmap_png_data_uri(
         return _empty_image_data_uri()
 
     h, w = matrix.shape
-    out_h = min(h, max_size)
-    out_w = min(w, max_size)
+    # Preserve aspect ratio when capping: scale so the longer side is max_size
+    max_side = max(h, w, 1)
+    scale = max_size / max_side
+    out_w = max(1, round(w * scale))
+    out_h = max(1, round(h * scale))
     fig_w = out_w / dpi
     fig_h = out_h / dpi
 
@@ -66,24 +69,27 @@ def render_heatmap_png_data_uri(
     ax.set_ylim(h - 0.5, -0.5)
     ax.axis("off")
 
-    # Pruned row/col lines (red)
+    # Pruned row/col lines (red): thickness = one row height or one column width in the output image
+    # Row line thickness in points: (out_h / h) pixels -> 72 * (out_h / h) / dpi pt. Column likewise.
+    row_lw_pt = 72.0 * out_h / (h * dpi) if h else 1.0
+    col_lw_pt = 72.0 * out_w / (w * dpi) if w else 1.0
     if pruned_row_mask is not None:
         for i, masked in enumerate(pruned_row_mask):
             if masked:
-                ax.axhline(i, color="#e53935", linewidth=1.5, alpha=0.9)
+                ax.axhline(i, color="#e53935", linewidth=row_lw_pt, alpha=0.9)
     if pruned_col_mask is not None:
         for j, masked in enumerate(pruned_col_mask):
             if masked:
-                ax.axvline(j, color="#e53935", linewidth=1.5, alpha=0.9)
+                ax.axvline(j, color="#e53935", linewidth=col_lw_pt, alpha=0.9)
 
     plt.tight_layout(pad=0)
     buf = io.BytesIO()
+    # Do not use bbox_inches='tight' so output dimensions stay exactly (out_w, out_h)
+    # and match the frontend mini-view frame aspect (neurons/axons).
     plt.savefig(
         buf,
         format="png",
         dpi=dpi,
-        bbox_inches="tight",
-        pad_inches=0,
         facecolor=fig.get_facecolor(),
         edgecolor="none",
     )

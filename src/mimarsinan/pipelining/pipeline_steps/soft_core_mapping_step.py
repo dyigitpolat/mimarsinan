@@ -28,9 +28,11 @@ class SoftCoreMappingStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
-        return self.pipeline.get_target_metric()
+        m = getattr(self, "_last_metric", None)
+        return m if m is not None else self.pipeline.get_target_metric()
 
     def process(self):
+        self._last_metric = None
         model = self.get_entry("fused_model")
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
@@ -304,6 +306,7 @@ class SoftCoreMappingStep(PipelineStep):
                 DataLoaderFactory(self.pipeline.data_provider_factory),
                 None,
             ).test()
+            self._last_metric = float(acc)
             print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
         except Exception as e:
             print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")

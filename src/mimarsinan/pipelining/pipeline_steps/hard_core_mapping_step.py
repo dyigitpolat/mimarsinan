@@ -23,9 +23,11 @@ class HardCoreMappingStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
-        return self.pipeline.get_target_metric()
+        m = getattr(self, "_last_metric", None)
+        return m if m is not None else self.pipeline.get_target_metric()
 
     def process(self):
+        self._last_metric = None
         model = self.get_entry("model")
         ir_graph = self.get_entry('ir_graph')
         sim_len = int(self.get_entry("scaled_simulation_length"))
@@ -61,6 +63,7 @@ class HardCoreMappingStep(PipelineStep):
                 DataLoaderFactory(self.pipeline.data_provider_factory),
                 None,
             ).test()
+            self._last_metric = float(acc)
             print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
         except Exception as e:
             print(f"[HardCoreMappingStep] Hard-core simulation test failed (non-fatal): {e}")

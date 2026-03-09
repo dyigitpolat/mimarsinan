@@ -88,7 +88,7 @@ class WeightPreloadingStep(PipelineStep):
         if finetune_epochs > 0:
             lr = self.pipeline.config.get("finetune_lr", self.pipeline.config["lr"])
             print(f"[WeightPreloadingStep] Fine-tuning for {finetune_epochs} epochs (lr={lr})")
-            self.trainer.train_n_epochs(lr, finetune_epochs, warmup_epochs=1)
+            self.trainer.train_n_epochs(lr, finetune_epochs, warmup_epochs=5)
         else:
             print("[WeightPreloadingStep] No fine-tuning (finetune_epochs=0)")
 

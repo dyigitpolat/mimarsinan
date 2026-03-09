@@ -40,7 +40,9 @@ class ActivationAnalysisStep(PipelineStep):
         self.trainer = None
 
     def validate(self):
-        return self.trainer.validate()
+        if self.trainer is not None:
+            return self.trainer.validate()
+        return self.pipeline.get_target_metric()
 
     def process(self):
         model = self.get_entry("model")

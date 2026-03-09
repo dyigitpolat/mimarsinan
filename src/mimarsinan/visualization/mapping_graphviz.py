@@ -1153,11 +1153,22 @@ def write_hybrid_hardcore_mapping_combined_dot(
                 if k in stats:
                     rows.append((k, stats[k]))
 
-            # Build HTML label with an image row
+            # Build HTML label with an image row (preserve aspect for heatmap thumbnails)
             img_cells = []
             if graph_png is not None and os.path.exists(graph_png):
                 img_cells.append(_img(graph_png, w=260, h=160))
-            if heat is not None and os.path.exists(heat):
+            if heat is not None and os.path.exists(heat) and mapping is not None and mapping.cores:
+                max_ax = max(c.axons_per_core for c in mapping.cores)
+                max_nu = max(c.neurons_per_core for c in mapping.cores)
+                max_side = 260
+                if max_ax >= max_nu:
+                    thumb_w = max(1, round(max_side * max_nu / max_ax))
+                    thumb_h = max_side
+                else:
+                    thumb_w = max_side
+                    thumb_h = max(1, round(max_side * max_ax / max_nu))
+                img_cells.append(_img(heat, w=thumb_w, h=thumb_h))
+            elif heat is not None and os.path.exists(heat):
                 img_cells.append(_img(heat, w=260, h=160))
 
             img_row_html = "-"
