@@ -184,62 +184,94 @@ def compute_pruning_masks(perceptron, pruning_fraction):
     return row_mask, col_mask
 
 
+def compute_masks_from_importance(
+    perceptrons,
+    rate,
+    pruning_fraction,
+    base_row_imp,
+    base_col_imp,
+    exempt_input_layers=None,
+    exempt_output_layers=None,
+):
+    """Compute per-layer pruning masks from importance scores with cross-layer propagation.
+
+    Single implementation used by PruningTuner and compute_all_pruning_masks.
+    exempt_input_layers: layer indices whose columns are not pruned (e.g. input buffer).
+    exempt_output_layers: layer indices whose rows are not pruned (e.g. output buffer).
+
+    Returns:
+        (row_masks, col_masks): lists of boolean tensors, True = keep, False = prune.
+    """
+    import math as _math
+    exempt_input_layers = exempt_input_layers if exempt_input_layers is not None else set()
+    exempt_output_layers = exempt_output_layers if exempt_output_layers is not None else set()
+    n_layers = len(perceptrons)
+    row_masks = []
+    col_masks = []
+    device = perceptrons[0].layer.weight.device
+    for i, p in enumerate(perceptrons):
+        out_f, in_f = p.layer.weight.data.shape
+        k_r = int(_math.floor(rate * pruning_fraction * out_f))
+        if i in exempt_output_layers:
+            k_r = 0
+        rm = torch.ones(out_f, dtype=torch.bool, device=device)
+        if k_r > 0 and i < len(base_row_imp):
+            _, idx = base_row_imp[i].to(device).sort()
+            rm[idx[:k_r]] = False
+        row_masks.append(rm)
+
+        k_c = int(_math.floor(rate * pruning_fraction * in_f))
+        if i in exempt_input_layers:
+            k_c = 0
+        cm = torch.ones(in_f, dtype=torch.bool, device=device)
+        if k_c > 0 and i < len(base_col_imp):
+            _, idx = base_col_imp[i].to(device).sort()
+            cm[idx[:k_c]] = False
+        col_masks.append(cm)
+
+    for i in range(n_layers - 1):
+        if row_masks[i].shape[0] == col_masks[i + 1].shape[0]:
+            col_masks[i + 1] = col_masks[i + 1] & row_masks[i]
+    return row_masks, col_masks
+
+
 def compute_all_pruning_masks(perceptrons, pruning_fraction, activation_stats=None):
     """Compute pruning masks for all perceptrons with cross-layer propagation.
 
     When activation_stats is provided, uses activation-based significance.
-    Otherwise falls back to weight-L1 significance.
-
-    First computes independent masks per perceptron (guaranteeing at least
-    pruning_fraction of rows and columns are pruned). Then propagates:
-    if layer L prunes row i (output neuron i is dead), and layer L+1 has
-    in_features == out_features of L, then column i of L+1 is also pruned
-    (on top of L+1's own column-level pruning).
-
-    Args:
-        perceptrons: List of Perceptron modules in forward-topological order.
-        pruning_fraction: Float in [0, 1]. Minimum fraction to prune.
-        activation_stats: Optional list of dicts from _collect_activation_stats.
+    Otherwise falls back to weight-L1 significance. Uses shared
+    compute_masks_from_importance with first/last layer exemption.
 
     Returns:
         List of (row_mask, col_mask) tuples, one per perceptron.
     """
-    # Phase 1: compute independent masks
-    masks = []
-    for i, p in enumerate(perceptrons):
-        if activation_stats is not None and i < len(activation_stats):
-            row_mask, col_mask = compute_pruning_masks_from_activations(
-                activation_stats[i], p, pruning_fraction
-            )
-        else:
-            row_mask, col_mask = compute_pruning_masks(p, pruning_fraction)
-        masks.append((row_mask, col_mask))
-
-    # Exempt input-buffer (first layer columns) and output-buffer (last layer rows)
     n = len(perceptrons)
-    if n > 0:
-        first_row, first_col = masks[0]
-        masks[0] = (first_row, torch.ones_like(first_col, dtype=torch.bool, device=first_col.device))
-        last_row, last_col = masks[-1]
-        masks[-1] = (torch.ones_like(last_row, dtype=torch.bool, device=last_row.device), last_col)
-
-    # Phase 2: propagate row pruning as additional column pruning
-    for i in range(len(perceptrons) - 1):
-        prev_row_mask = masks[i][0]  # output neurons of layer i
-        next_col_mask = masks[i + 1][1]  # input features of layer i+1
-
-        prev_out = prev_row_mask.shape[0]
-        next_in = next_col_mask.shape[0]
-
-        # Only propagate when dimensions match (direct connection)
-        if prev_out == next_in:
-            # Where prev layer pruned a row, also prune the corresponding column
-            # in the next layer (union with existing column pruning)
-            propagated_prune = ~prev_row_mask  # True where prev row was pruned
-            combined_col_mask = next_col_mask & ~propagated_prune
-            masks[i + 1] = (masks[i + 1][0], combined_col_mask)
-
-    return masks
+    base_row_imp = []
+    base_col_imp = []
+    for i, p in enumerate(perceptrons):
+        w = p.layer.weight.data
+        if activation_stats is not None and i < len(activation_stats):
+            if activation_stats[i].get("output_importance") is not None:
+                base_row_imp.append(activation_stats[i]["output_importance"].clone())
+            else:
+                base_row_imp.append(w.abs().sum(dim=1))
+            if activation_stats[i].get("input_importance") is not None:
+                base_col_imp.append(activation_stats[i]["input_importance"].clone())
+            else:
+                base_col_imp.append(w.abs().sum(dim=0))
+        else:
+            base_row_imp.append(w.abs().sum(dim=1))
+            base_col_imp.append(w.abs().sum(dim=0))
+    row_masks, col_masks = compute_masks_from_importance(
+        perceptrons,
+        1.0,
+        pruning_fraction,
+        base_row_imp,
+        base_col_imp,
+        exempt_input_layers={0},
+        exempt_output_layers={n - 1} if n > 0 else set(),
+    )
+    return list(zip(row_masks, col_masks))
 
 
 def apply_pruning_masks(perceptron, row_mask, col_mask, rate, original_weight, original_bias):

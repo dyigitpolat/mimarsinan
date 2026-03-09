@@ -177,9 +177,9 @@ class TestPruneIRGraph:
 
     def test_propagative_pruning_expands_pruned_set(self):
         """A row that only feeds pruned columns is pruned by propagation.
-        Cols 2,3 are below threshold (tiny values from row 3); row 3 only feeds those cols -> pruned."""
+        Segment output columns are exempt, so only row 3 is pruned (rows 0,1,2 are segment input exempt)."""
         thresh = 1e-8
-        tiny = 1e-10  # below thresh so cols 2,3 count as zero
+        tiny = 1e-10  # below thresh
         w = np.array([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -193,8 +193,9 @@ class TestPruneIRGraph:
 
         pruned = prune_ir_graph(graph, zero_threshold=thresh)
         pruned_core = pruned.nodes[0]
-        # Rows 0,1,2 are segment input (-2); we exempt them. Only row 3 can be pruned. Cols 2,3 below threshold; cols 0,1 are output exempt.
-        assert pruned_core.core_matrix.shape == (3, 2), "Exemption keeps rows 0,1,2; propagation prunes row 3 and cols 2,3"
+        # Rows 0,1,2 are segment input (exempt); row 3 only feeds cols 2,3 -> pruned by propagation.
+        # All 4 cols are segment output (exempt), so no cols pruned. Shape (3, 4).
+        assert pruned_core.core_matrix.shape == (3, 4), "Exemption keeps rows 0,1,2 and all output cols; only row 3 pruned"
         assert pruned_core.core_matrix[0, 0] == 1.0 and pruned_core.core_matrix[1, 1] == 1.0
         assert len(pruned_core.input_sources.flatten()) == 3
 

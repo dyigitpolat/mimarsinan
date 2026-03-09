@@ -64,3 +64,39 @@ class TestComputePropagatedPrunedRowsCols:
         zero_rows, zero_cols = compute_propagated_pruned_rows_cols(w, zero_threshold=1e-8)
         assert len(zero_rows) == 0
         assert len(zero_cols) == 0
+
+    def test_exempt_indices_never_added(self):
+        """Exempt rows/cols are never added at init or by propagation."""
+        # Row 0 only feeds col 0; col 0 only receives from row 0. If we mark col 0 pruned,
+        # propagation would normally add row 0. Exempt row 0 -> row 0 must stay unpruned.
+        w = np.array([
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ], dtype=np.float64)
+        zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+            w,
+            initial_zero_rows=set(),
+            initial_zero_cols={0},
+            exempt_rows=frozenset({0}),
+            exempt_cols=frozenset(),
+        )
+        assert 0 not in zero_rows, "Exempt row 0 must not be pruned"
+        assert zero_cols == {0}
+
+    def test_exempt_at_value_based_init(self):
+        """Value-based init does not add exempt indices."""
+        w = np.array([
+            [0.0, 0.0],
+            [0.0, 1.0],
+        ], dtype=np.float64)
+        zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
+            w,
+            zero_threshold=1e-8,
+            exempt_rows=frozenset({0}),
+            exempt_cols=frozenset({0}),
+        )
+        assert 0 not in zero_rows
+        assert 0 not in zero_cols
+        assert zero_rows == set()
+        assert zero_cols == set()

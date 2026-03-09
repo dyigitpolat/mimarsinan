@@ -775,10 +775,10 @@ class TestMappingEquivalence:
             f"vs flow {pred_flow.tolist()}"
         )
 
-    def test_model_flow_equivalence_without_propagation(self, device):
+    def test_model_flow_equivalence_with_pruning(self, device):
         """
-        With propagate_when_using_model_masks=False, pruned IR matches model masks
-        exactly (no extra propagation). Model and flow must yield same argmax.
+        With model masks and exemption-aware propagation, pruned IR preserves
+        segment I/O and model/flow yield same argmax.
         """
         in_dim, d1, d2, d3, out_dim = 64, 32, 16, 10, 5
         batch_size = 10
@@ -798,7 +798,6 @@ class TestMappingEquivalence:
             ir_raw,
             initial_pruned_per_node=initial_node or None,
             initial_pruned_per_bank=initial_bank or None,
-            propagate_when_using_model_masks=False,
         )
 
         flow = SpikingUnifiedCoreFlow(
@@ -825,14 +824,14 @@ class TestMappingEquivalence:
         pred_flow = out_flow.argmax(dim=1)
         match = (pred_model == pred_flow).all().item()
         assert match, (
-            f"Without propagation: model vs flow argmax mismatch: model {pred_model.tolist()} "
+            f"Model vs flow argmax mismatch: model {pred_model.tolist()} "
             f"vs flow {pred_flow.tolist()}"
         )
 
-    def test_propagation_prunes_at_least_as_much(self, device):
+    def test_propagation_compacts_cores(self, device):
         """
-        With propagate_when_using_model_masks=True, the pruned IR has total core size
-        <= total core size when False (propagation only adds more pruned rows/cols).
+        With model masks, propagation always runs and can compact cores
+        (total core size <= unpruned size).
         """
         in_dim, d1, d2, d3, out_dim = 48, 24, 12, 8, 5
         model = _MinimalFourLayerFlow(device, in_dim, d1, d2, d3, out_dim)
@@ -843,26 +842,22 @@ class TestMappingEquivalence:
 
         ir_raw = _run_ir_mapping(model)
         initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_raw)
+        unpruned_total = sum(
+            n.core_matrix.shape[0] * n.core_matrix.shape[1]
+            for n in ir_raw.nodes
+            if getattr(n, "core_matrix", None) is not None
+        )
 
-        ir_no_prop = prune_ir_graph(
+        ir_pruned = prune_ir_graph(
             ir_raw,
             initial_pruned_per_node=initial_node or None,
             initial_pruned_per_bank=initial_bank or None,
-            propagate_when_using_model_masks=False,
-        )
-        ir_with_prop = prune_ir_graph(
-            copy.deepcopy(ir_raw),
-            initial_pruned_per_node=initial_node or None,
-            initial_pruned_per_bank=initial_bank or None,
-            propagate_when_using_model_masks=True,
         )
 
-        shapes_no = _get_ir_core_shapes(ir_no_prop)
-        shapes_prop = _get_ir_core_shapes(ir_with_prop)
-        total_no = sum(s[0] * s[1] for s in shapes_no)
-        total_prop = sum(s[0] * s[1] for s in shapes_prop)
-        assert total_prop <= total_no, (
-            f"With propagation total size ({total_prop}) should be <= without ({total_no})"
+        shapes = _get_ir_core_shapes(ir_pruned)
+        total = sum(s[0] * s[1] for s in shapes)
+        assert total <= unpruned_total, (
+            f"Pruned total size ({total}) should be <= unpruned ({unpruned_total})"
         )
 
 

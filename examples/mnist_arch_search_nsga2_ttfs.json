@@ -84,6 +84,6 @@
     "pruning_fraction": 0.3
   },
   "target_metric_override": 0.95,
-  "start_step": "Normalization Fusion",
+  "start_step": "Pruning Adaptation",
   "stop_step": null
 }
