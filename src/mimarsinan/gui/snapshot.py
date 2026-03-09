@@ -246,6 +246,8 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
                             pruned_row_mask=row_mask,
                             pruned_col_mask=col_mask,
                         )
+                        info["pre_pruning_axons"] = int(pre_arr.shape[0])
+                        info["pre_pruning_neurons"] = int(pre_arr.shape[1])
                 except Exception:
                     logger.debug("Failed to render pre-pruning heatmap for core %s", node.id, exc_info=True)
             neural_cores.append(info)

@@ -1,6 +1,6 @@
 {
     "pipeline_mode": "phased",
-    "experiment_name": "Z_AQ_cifar10_torch_squeezenet11_pretrained",
+    "experiment_name": "00Z_AQ_cifar10_torch_squeezenet11_pretrained",
     "generated_files_path": "./generated",
     "data_provider_name": "CIFAR10_DataProvider",
     "platform_constraints": {
@@ -18,8 +18,8 @@
         ],
         "max_axons": 2048,
         "max_neurons": 2048,
-        "target_tq": 64,
-        "simulation_steps": 64,
+        "target_tq": 32,
+        "simulation_steps": 32,
         "weight_bits": 8
     },
     "deployment_parameters": {
@@ -30,21 +30,23 @@
         "configuration_mode": "user",
         "model_type": "torch_squeezenet11",
         "weight_source": "torchvision",
-        "finetune_epochs": 20,
+        "finetune_epochs": 30,
         "finetune_lr": 0.0001,
         "model_config": {
             "base_activation": "ReLU"
         },
         "spiking_mode": "ttfs_quantized",
-        "weight_quantization": false,
+        "weight_quantization": true,
         "activation_quantization": true,
         "spike_generation_mode": "TTFS",
         "firing_mode": "TTFS",
         "thresholding_mode": "<=",
 
-        "max_simulation_samples": 10
+        "max_simulation_samples": 10,
+        "pruning": true,
+        "pruning_fraction": 0.2
     },
 
     "target_metric_override": null,
-    "start_step": "Soft Core Mapping"
+    "start_step": "Torch Mapping"
 }

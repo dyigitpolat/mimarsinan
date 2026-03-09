@@ -409,7 +409,8 @@ class ArchitectureSearchStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
-        return self.pipeline.get_target_metric()
+        m = getattr(self, "_last_metric", None)
+        return m if m is not None else self.pipeline.get_target_metric()
 
     def process(self):
         model_type = self.pipeline.config["model_type"]
@@ -558,6 +559,11 @@ class ArchitectureSearchStep(PipelineStep):
         _report_fn = getattr(_reporter, "report", None) if _reporter else None
         result = optimizer.optimize(problem, reporter=_report_fn)
         result_json = _search_result_to_jsonable(result)
+        acc = None
+        if result.best and result.best.objectives:
+            acc = result.best.objectives.get("accuracy")
+        if acc is not None:
+            self._last_metric = float(acc)
 
         try:
             out_dir = self.pipeline.working_directory

@@ -170,6 +170,12 @@ body {
   border: 1px solid var(--border); border-radius: var(--radius);
   margin: 0 0 20px; background: var(--bg-secondary); overflow: hidden;
 }
+.ir-node-detail-body {
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .ir-node-detail-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 10px 16px; background: var(--bg-hover); border-bottom: 1px solid var(--border);
@@ -179,6 +185,13 @@ body {
   background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 0 4px; line-height: 1;
 }
 .ir-detail-close:hover { color: var(--text-primary); }
+/* Scrollable soft-core/ops list in IR group detail: ~10 rows visible, rest scroll */
+.ir-detail-list-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
 /* ═══════════ Hardware — Stage Flow ═══════════ */
 .stage-flow { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 12px 0; width: 100%; }
 .stage-flow-row {
@@ -274,12 +287,15 @@ body {
   display: inline-block;
   box-sizing: border-box;
   transition: border-color 0.15s, box-shadow 0.15s;
+  /* Match heatmap background so no white padding shows if image aspect matches container */
+  background: #2b303c;
 }
 .hw-core-cell:hover .hw-core { border-color: var(--accent); }
 .hw-core-selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent-dim); z-index: 1; }
 .hw-core-canvas {
   display: block; vertical-align: top; pointer-events: none; border-radius: 2px;
-  image-rendering: auto; object-fit: contain;
+  image-rendering: auto; object-fit: contain; object-position: center;
+  min-width: 0; min-height: 0;
 }
 
 /* ── Empty core placeholder ── */
@@ -290,6 +306,19 @@ body {
 /* ── Soft-core (IR) heatmap images: preserve aspect, no stretching ── */
 .ir-softcore-heatmap-img {
   object-fit: contain; max-width: 280px; max-height: 280px; width: auto; height: auto; display: block;
+}
+/* When IR heatmaps use explicit width/height + object-fit:fill (like software core detail), don't cap size so they match hardware view */
+.ir-softcore-heatmap-img[style*="object-fit:fill"] {
+  max-width: none;
+  max-height: none;
+}
+/* Scrollable area for extreme-aspect heatmaps (IR graph and hardware softcore detail) */
+.ir-softcore-heatmaps-scroll,
+.hw-softcore-heatmaps-scroll {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 4px;
+  border: 1px solid var(--border);
 }
 
 /* ── Buffer lines (input/output) ── */
@@ -426,6 +455,9 @@ body {
 .hw-softcore-heatmap {
   display: block; max-width: 100%; max-height: 200px; width: auto; height: auto;
   object-fit: contain; border-radius: 4px; border: 1px solid var(--border);
+}
+.hw-softcore-heatmap[style*="object-fit:fill"] {
+  max-width: none; max-height: none;
 }
 .hw-core-detail-placeholder {
   color: var(--text-muted); font-size: 12px; text-align: center;

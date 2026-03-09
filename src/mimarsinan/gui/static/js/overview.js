@@ -44,7 +44,9 @@ function renderMetricProgression(steps) {
   }] : [];
   const anno = pts.length === 0 ? emptyAnnotation('No metrics yet') : [];
   safeReact('chart-metric-progression', traces, {
-    xaxis: { tickangle: -45 }, yaxis: { title: 'Target Metric' },
+    margin: { t: 40, r: 30, b: 100, l: 60 },
+    xaxis: { tickangle: -45, automargin: true, tickfont: { size: 10 } },
+    yaxis: { title: 'Target Metric', automargin: true },
     height: 260, annotations: anno,
   });
 }
@@ -62,10 +64,12 @@ function renderStepTiming(steps) {
     type: 'bar', orientation: 'h',
     marker: { color: timed.map(s => s.running ? '#ff9800' : '#5b8af5') },
     text: timed.map(s => fmtDuration(s.duration) + (s.running ? ' ●' : '')),
-    textposition: 'outside', textfont: { size: 10, color: '#9a9daa' },
+    textposition: 'inside', textfont: { size: 10, color: '#e8eaed' },
   }] : [];
   safeReact('chart-step-timing', traces, {
-    xaxis: { title: 'Duration (s)' }, yaxis: { autorange: 'reversed' },
+    margin: { t: 40, r: 30, b: 50, l: 180 },
+    xaxis: { title: 'Duration (s)', automargin: true },
+    yaxis: { autorange: 'reversed', automargin: true, tickfont: { size: 10 } },
     height: Math.max(200, timed.length * 32 + 60), annotations: anno,
   });
 }
