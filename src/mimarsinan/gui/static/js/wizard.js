@@ -245,13 +245,18 @@ function getDivisors(n) {
 function updateSearchVisibility() {
   const needsSearch = getSegVal('configMode') === 'nas' || getSegVal('hwMode') === 'auto';
   const sec = document.getElementById('searchSection');
+
   if (needsSearch) {
-    sec.classList.remove('section-hidden');
-    // Auto-open when first revealed
+    sec.classList.remove('section-hidden');   // display:none → visible
+    sec.classList.remove('search-entering');  // reset if already present
+    void sec.offsetHeight;                    // force reflow between display change and animation
+    sec.classList.add('search-entering');     // trigger entrance animation
+
     if (!sec.classList.contains('open')) sec.classList.add('open');
   } else {
     sec.classList.add('section-hidden');
     sec.classList.remove('open');
+    sec.classList.remove('search-entering');
   }
 }
 
@@ -286,13 +291,13 @@ function renderModelConfigFields() {
   container.innerHTML = schema.map(f => {
     if (f.type === 'select') {
       return `<div class="field"><label class="field-label">${f.label}</label>
-        <select id="mc_${f.key}" onchange="update()">${f.options.map(o => `<option value="${o}" ${o===f.default?'selected':''}>${o}</option>`).join('')}</select></div>`;
+        <select id="mc_${f.key}" onchange="update()">${f.options.map(o => `<option value="${o}" ${o === f.default ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`;
     } else if (f.type === 'toggle') {
-      return `<div class="field"><div class="toggle-row ${f.default?'on':''}" id="mc_${f.key}" onclick="toggleClick(this)">
+      return `<div class="field"><div class="toggle-row ${f.default ? 'on' : ''}" id="mc_${f.key}" onclick="toggleClick(this)">
         <span class="toggle-label">${f.label}</span><div class="toggle-switch"></div></div></div>`;
     } else {
       return `<div class="field"><label class="field-label">${f.label}</label>
-        <input type="${f.type}" id="mc_${f.key}" value="${f.default}" ${f.step?'step="'+f.step+'"':''} oninput="update()"></div>`;
+        <input type="${f.type}" id="mc_${f.key}" value="${f.default}" ${f.step ? 'step="' + f.step + '"' : ''} oninput="update()"></div>`;
     }
   }).join('');
 }
@@ -310,7 +315,7 @@ function renderCoreTypes() {
         <input type="number" value="${ct.max_neurons}" min="1" onchange="state.coreTypes[${i}].max_neurons=+this.value;update()">
       </div>
       <div class="field">
-        <label class="field-label">Count ${state.coreTypes.length > 1 ? '<span style="cursor:pointer;color:var(--accent-rose)" onclick="removeCoreType('+i+')">✕ remove</span>' : ''}</label>
+        <label class="field-label">Count ${state.coreTypes.length > 1 ? '<span style="cursor:pointer;color:var(--accent-rose)" onclick="removeCoreType(' + i + ')">✕ remove</span>' : ''}</label>
         <input type="number" value="${ct.count}" min="1" onchange="state.coreTypes[${i}].count=+this.value;update()">
       </div>
     </div>
