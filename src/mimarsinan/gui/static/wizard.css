@@ -354,8 +354,14 @@ body::before {
   display: none !important;
 }
 
+/* Fade-out before hiding (JS adds section-hiding, then section-hidden after transition) */
+.section-search-banner.section-hiding {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
 /* Visible state — violet accent border */
-.section-search-banner:not(.section-hidden) {
+.section-search-banner:not(.section-hidden):not(.section-hiding) {
   border-color: var(--accent-violet);
   box-shadow:
     0 0 0 1px rgba(139, 92, 246, 0.15),
@@ -365,11 +371,6 @@ body::before {
 /* Entrance animation — triggered by JS class */
 .section-search-banner.search-entering {
   animation: searchBannerIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-/* Snap section-body to full height during entrance so grid measures correctly */
-.section-search-banner.search-entering .section-body {
-  transition: none !important;
 }
 
 @keyframes searchBannerIn {

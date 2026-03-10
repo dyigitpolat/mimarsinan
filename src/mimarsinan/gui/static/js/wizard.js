@@ -248,15 +248,44 @@ function updateSearchVisibility() {
 
   if (needsSearch) {
     sec.classList.remove('section-hidden');   // display:none → visible
+    sec.classList.remove('section-hiding');   // in case we're mid-fade
     sec.classList.remove('search-entering');  // reset if already present
     void sec.offsetHeight;                    // force reflow between display change and animation
     sec.classList.add('search-entering');     // trigger entrance animation
 
+    // After entrance (0.5s), remove class so section-body expand/collapse uses normal transition
+    var entranceTimeout = setTimeout(function () {
+      sec.classList.remove('search-entering');
+    }, 500);
+    var onEntranceDone = function () {
+      sec.classList.remove('search-entering');
+      sec.removeEventListener('animationend', onEntranceDone);
+      clearTimeout(entranceTimeout);
+    };
+    sec.addEventListener('animationend', onEntranceDone);
+
     if (!sec.classList.contains('open')) sec.classList.add('open');
   } else {
-    sec.classList.add('section-hidden');
+    // Fade out, then remove from flow
+    if (sec.classList.contains('section-hiding')) return; // already hiding
+    sec.classList.add('section-hiding');
     sec.classList.remove('open');
     sec.classList.remove('search-entering');
+    var onFadeDone = function (e) {
+      if (e.propertyName !== 'opacity') return;
+      sec.classList.remove('section-hiding');
+      sec.classList.add('section-hidden');
+      sec.removeEventListener('transitionend', onFadeDone);
+    };
+    sec.addEventListener('transitionend', onFadeDone);
+    // Fallback if transitionend doesn't fire (e.g. opacity already 0)
+    setTimeout(function () {
+      if (sec.classList.contains('section-hiding')) {
+        sec.classList.remove('section-hiding');
+        sec.classList.add('section-hidden');
+        sec.removeEventListener('transitionend', onFadeDone);
+      }
+    }, 400);
   }
 }
 
