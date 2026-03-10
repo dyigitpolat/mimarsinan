@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mimarsinan — Deployment Configurator</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="/static/wizard.css" rel="stylesheet">
+</head>
+<body>
+
+<div class="app-shell" id="appShell">
+
+<!-- ═══ HEADER ═══ -->
+<header class="header">
+  <div class="logo-group">
+    <div class="logo-mark">M</div>
+    <div class="logo-text">Mimarsinan <span>Deployment Configurator</span></div>
+  </div>
+  <div class="header-actions">
+    <button class="btn-run" id="runBtn" onclick="runPipeline()">RUN</button>
+    <button class="btn-sm" onclick="resetAll()">Reset</button>
+    <div class="toggle-row" id="showJsonToggle" onclick="toggleShowJson(this)" style="padding:6px 12px">
+      <span class="toggle-label" style="font-size:0.78rem">Show generated JSON</span>
+      <div class="toggle-switch"></div>
+    </div>
+    <button class="btn-sm primary" id="copyJsonBtn" onclick="copyJson()" style="display:none">Copy JSON</button>
+  </div>
+</header>
+
+<!-- ═══ WIZARD ═══ -->
+<main class="wizard-panel" id="wizard">
+
+  <!-- ① Dataset ────────────────────────────────────── -->
+  <div class="section open" data-section="dataset">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-icon cyan">⬡</div>
+      <div class="section-title-group">
+        <div class="section-title">Dataset</div>
+        <div class="section-subtitle">Data source and experiment identity</div>
+      </div>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field-grid cols-1">
+        <div class="field">
+          <label class="field-label">Data Provider</label>
+          <select id="dataProvider" onchange="update()">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label class="field-label">Experiment Name</label>
+            <input type="text" id="experimentName" value="my_deployment" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Random Seed</label>
+            <input type="number" id="seed" value="0" min="0" oninput="update()">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② Model ──────────────────────────────────────── -->
+  <div class="section" data-section="model">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-icon blue">◈</div>
+      <div class="section-title-group">
+        <div class="section-title">Model Architecture</div>
+        <div class="section-subtitle">Network structure and configuration mode</div>
+      </div>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field" style="margin-bottom:14px">
+        <label class="field-label">Model Type</label>
+        <!-- TODO:BACKEND — Populate from /api/model_types -->
+        <div class="chip-grid" id="modelTypeChips"></div>
+      </div>
+
+      <div class="field" style="margin-bottom:14px">
+        <label class="field-label">Configuration Mode</label>
+        <div class="seg-control" id="configMode">
+          <div class="seg-btn active" data-val="user" onclick="setSegment(this)">User-defined</div>
+          <div class="seg-btn" data-val="nas" onclick="setSegment(this)">Search (NAS)</div>
+        </div>
+      </div>
+
+      <div id="userModelConfig" class="cond visible">
+        <div class="sub-section">
+          <div class="sub-section-title">Model Parameters</div>
+          <!-- TODO:BACKEND — Generate dynamically from /api/model_config_schema/{model_type} -->
+          <div class="field-grid" id="modelConfigFields"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ Hardware ─── (BEFORE training & deployment) ── -->
+  <div class="section" data-section="hardware">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-icon amber">⬢</div>
+      <div class="section-title-group">
+        <div class="section-title">Hardware Configuration</div>
+        <div class="section-subtitle">Core types, dimensions, and quantization precision</div>
+      </div>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field" style="margin-bottom:14px">
+        <label class="field-label">Hardware Config Mode</label>
+        <div class="seg-control" id="hwMode">
+          <div class="seg-btn active amber" data-val="user" onclick="setSegment(this)">Fixed (User)</div>
+          <div class="seg-btn" data-val="auto" onclick="setSegment(this)">Search (Auto)</div>
+        </div>
+      </div>
+
+      <!-- Shared HW parameters (both modes) -->
+      <div class="field-grid" style="margin-bottom:14px">
+        <div class="field">
+          <label class="field-label">Weight Bits <span class="hint">parameter precision</span></label>
+          <input type="number" id="weightBits" value="8" min="1" max="32" oninput="onWeightBitsChange(); update()">
+        </div>
+        <div class="field">
+          <label class="field-label">Allow Axon Tiling</label>
+          <div class="toggle-row" id="axonTilingToggle" onclick="toggleClick(this)">
+            <span class="toggle-label" style="font-size:0.78rem">Axon Tiling</span>
+            <div class="toggle-switch"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dep-bar" id="hwDeps"></div>
+
+      <!-- Fixed HW -->
+      <div id="hwFixed" class="cond visible">
+        <div class="sub-section">
+          <div class="sub-section-title" style="display:flex;align-items:center;justify-content:space-between">
+            Core Types
+            <button class="btn-sm" onclick="addCoreType()" style="font-size:0.65rem;padding:3px 10px">+ Add Core Type</button>
+          </div>
+          <div id="coreTypesList"></div>
+        </div>
+      </div>
+
+      <!-- Auto search HW -->
+      <div id="hwAuto" class="cond hidden">
+        <div class="sub-section">
+          <div class="sub-section-title">Search Space Bounds</div>
+          <div class="field-grid">
+            <div class="field">
+              <label class="field-label">Num Core Types</label>
+              <input type="number" id="numCoreTypes" value="2" min="1" max="8" oninput="update()">
+            </div>
+            <div class="field">
+              <label class="field-label">Core Counts <span class="hint">comma-sep</span></label>
+              <input type="text" id="coreTypeCounts" value="150, 150" oninput="update()">
+            </div>
+            <div class="field">
+              <label class="field-label">Axon Bounds <span class="hint">min, max</span></label>
+              <input type="text" id="coreAxonBounds" value="128, 2048" oninput="update()">
+            </div>
+            <div class="field">
+              <label class="field-label">Neuron Bounds <span class="hint">min, max</span></label>
+              <input type="text" id="coreNeuronBounds" value="128, 2048" oninput="update()">
+            </div>
+            <div class="field">
+              <label class="field-label">Max Threshold Groups</label>
+              <input type="number" id="maxThresholdGroups" value="4" min="1" max="8" oninput="update()">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ Training ───────────────────────────────────── -->
+  <div class="section" data-section="training">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-icon green">▶</div>
+      <div class="section-title-group">
+        <div class="section-title">Training</div>
+        <div class="section-subtitle">Pretraining, weight loading, and learning rates</div>
+      </div>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field" style="margin-bottom:14px">
+        <label class="field-label">Weight Source</label>
+        <div class="seg-control" id="weightSourceMode">
+          <div class="seg-btn active green" data-val="train" onclick="setSegment(this)">Train from scratch</div>
+          <div class="seg-btn" data-val="pretrained" onclick="setSegment(this)">Pretrained</div>
+        </div>
+      </div>
+
+      <div id="trainFromScratch" class="cond visible">
+        <div class="field-grid">
+          <div class="field">
+            <label class="field-label">Learning Rate</label>
+            <input type="number" id="lr" value="0.001" step="0.0001" min="0" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Training Epochs</label>
+            <input type="number" id="trainingEpochs" value="20" min="1" oninput="update()">
+          </div>
+        </div>
+      </div>
+
+      <div id="pretrainedConfig" class="cond hidden">
+        <div class="field-grid">
+          <div class="field">
+            <label class="field-label">Weight Source <span class="hint">torchvision / path / URL</span></label>
+            <input type="text" id="weightSource" value="torchvision" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Learning Rate</label>
+            <input type="number" id="lrPretrained" value="0.0001" step="0.0001" min="0" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Fine-tune Epochs</label>
+            <input type="number" id="finetuneEpochs" value="5" min="0" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Fine-tune LR <span class="hint">(blank=same)</span></label>
+            <input type="number" id="finetuneLr" value="" step="0.0001" min="0" oninput="update()" placeholder="auto">
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="field-grid">
+        <div class="field">
+          <label class="field-label">Tuner Epochs <span class="hint">per adaptation step</span></label>
+          <input type="number" id="tunerEpochs" value="3" min="1" oninput="update()">
+        </div>
+        <div class="field">
+          <label class="field-label">Degradation Tolerance</label>
+          <input type="number" id="degradationTolerance" value="0.1" step="0.01" min="0" max="1" oninput="update()">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑤ Deployment Mode ────────────────────────────── -->
+  <div class="section" data-section="spiking">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-icon rose">⚡</div>
+      <div class="section-title-group">
+        <div class="section-title">Deployment Mode</div>
+        <div class="section-subtitle">Spiking encoding, cycles, quantization, and pruning</div>
+      </div>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field" style="margin-bottom:14px">
+        <label class="field-label">Spiking Mode</label>
+        <div class="seg-control" id="spikingMode">
+          <div class="seg-btn active rose" data-val="rate" onclick="setSegment(this)">Rate-coded</div>
+          <div class="seg-btn" data-val="ttfs" onclick="setSegment(this)">TTFS</div>
+          <div class="seg-btn" data-val="ttfs_quantized" onclick="setSegment(this)">TTFS Quantized</div>
+        </div>
+      </div>
+
+      <div class="dep-bar" id="spikingDeps"></div>
+
+      <!-- Cycles & Tq -->
+      <div class="field-grid" style="margin-bottom:14px">
+        <div class="field">
+          <label class="field-label">Cycles <span class="hint">simulation time steps</span></label>
+          <input type="number" id="simCycles" value="32" min="1" oninput="onCyclesChange(); update()">
+        </div>
+        <div class="field">
+          <label class="field-label">Target Tq <span class="hint">activation quantization levels</span></label>
+          <input type="number" id="targetTq" value="32" min="1" oninput="onTqChange(); update()">
+        </div>
+      </div>
+      <div class="note warn hide" id="tqWarn"></div>
+
+      <!-- Quantization toggles -->
+      <div class="field-grid" style="margin-bottom:14px; margin-top:14px">
+        <div class="field">
+          <div class="toggle-row" id="actQuantToggle" onclick="toggleClick(this)">
+            <span class="toggle-label">Activation Quantization</span>
+            <div class="toggle-switch"></div>
+          </div>
+        </div>
+        <div class="field">
+          <div class="toggle-row" id="wtQuantToggle" onclick="toggleClick(this)">
+            <span class="toggle-label">Weight Quantization</span>
+            <div class="toggle-switch"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Pruning -->
+      <div class="field-grid" style="margin-bottom:14px">
+        <div class="field">
+          <div class="toggle-row" id="pruningToggle" onclick="toggleClick(this)">
+            <span class="toggle-label">Pruning</span>
+            <div class="toggle-switch"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">Pruning Fraction</label>
+          <input type="number" id="pruningFraction" value="0.5" step="0.05" min="0" max="1" oninput="update()" disabled>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Advanced SNN params -->
+      <div class="sub-section">
+        <div class="sub-section-title">Advanced SNN Parameters <span class="badge-locked section-badge" style="margin-left:6px">auto-derived</span></div>
+        <div class="field-grid cols-3">
+          <div class="field">
+            <label class="field-label">Firing Mode</label>
+            <select id="firingMode" onchange="update()">
+              <option value="Default">Default</option>
+              <option value="TTFS">TTFS</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Spike Gen Mode</label>
+            <select id="spikeGenMode" onchange="update()">
+              <option value="Uniform">Uniform</option>
+              <option value="Deterministic">Deterministic</option>
+              <option value="Stochastic">Stochastic</option>
+              <option value="TTFS">TTFS</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Threshold Mode</label>
+            <select id="thresholdMode" onchange="update()">
+              <option value="<=">&le; (inclusive)</option>
+              <option value="<">&lt; (strict)</option>
+            </select>
+          </div>
+        </div>
+        <div class="note">Auto-set by spiking mode. Override only for advanced experiments.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑥ Search Strategy ─── (hidden when inactive) ── -->
+  <div class="section section-hidden" data-section="search" id="searchSection">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-icon violet">◎</div>
+      <div class="section-title-group">
+        <div class="section-title">Search Strategy</div>
+        <div class="section-subtitle">Optimizer, population, and evaluation</div>
+      </div>
+      <span class="section-badge badge-auto">Active</span>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field" style="margin-bottom:14px">
+        <label class="field-label">Search Optimizer</label>
+        <div class="seg-control" id="optimizer">
+          <div class="seg-btn active violet" data-val="nsga2" onclick="setSegment(this)">NSGA-II</div>
+          <div class="seg-btn" data-val="kedi" onclick="setSegment(this)">Agentic (Kedi)</div>
+        </div>
+      </div>
+
+      <div class="field-grid cols-3" style="margin-bottom:14px">
+        <div class="field">
+          <label class="field-label">Population Size</label>
+          <input type="number" id="popSize" value="12" min="2" oninput="update()">
+        </div>
+        <div class="field">
+          <label class="field-label">Generations</label>
+          <input type="number" id="generations" value="5" min="1" oninput="update()">
+        </div>
+        <div class="field">
+          <label class="field-label">Search Seed</label>
+          <input type="number" id="searchSeed" value="42" min="0" oninput="update()">
+        </div>
+      </div>
+
+      <div class="sub-section">
+        <div class="sub-section-title">Accuracy Evaluation</div>
+        <div class="field-grid">
+          <div class="field">
+            <label class="field-label">Evaluator</label>
+            <select id="accuracyEvaluator" onchange="update()">
+              <option value="extrapolating" selected>Extrapolating</option>
+              <option value="fast">Fast</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Warmup Fraction</label>
+            <input type="number" id="warmupFraction" value="0.1" step="0.05" min="0" max="1" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Extrap. Train Epochs</label>
+            <input type="number" id="extrapTrainEpochs" value="1" min="1" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Extrap. Checkpoints</label>
+            <input type="number" id="extrapCheckpoints" value="5" min="1" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Extrap. Target Epochs</label>
+            <input type="number" id="extrapTargetEpochs" value="10" min="1" oninput="update()">
+          </div>
+          <div class="field">
+            <label class="field-label">Training Batch Size</label>
+            <input type="number" id="searchBatchSize" value="" placeholder="auto" oninput="update()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Kedi-specific -->
+      <div id="kediConfig" class="cond hidden">
+        <div class="sub-section" style="margin-top:14px">
+          <div class="sub-section-title">Kedi LLM Configuration</div>
+          <div class="field-grid">
+            <div class="field">
+              <label class="field-label">LLM Model</label>
+              <input type="text" id="kediModel" value="openai:gpt-4o" oninput="update()">
+            </div>
+            <div class="field">
+              <label class="field-label">Adapter</label>
+              <select id="kediAdapter" onchange="update()">
+                <option value="pydantic">Pydantic</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label">Candidates / Batch</label>
+              <input type="number" id="kediCandidates" value="5" min="1" oninput="update()">
+            </div>
+            <div class="field">
+              <label class="field-label">Max Regen Rounds</label>
+              <input type="number" id="kediRegenRounds" value="10" min="1" oninput="update()">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ═══ JSON OUTPUT ═══ -->
+<aside class="output-panel">
+  <div class="output-header">
+    <div class="output-title">Generated Configuration</div>
+    <div class="output-actions">
+      <button class="btn-sm" onclick="copyJson()">Copy</button>
+      <button class="btn-sm" onclick="downloadJson()">Download</button>
+    </div>
+  </div>
+  <div class="json-scroll"><div id="jsonOutput"></div></div>
+</aside>
+
+</div>
+
+<script src="/static/js/wizard.js"></script>
+</body>
+</html>

@@ -9,8 +9,10 @@ VisionTransformer PerceptronFlow.
 from mimarsinan.models.perceptron_mixer.vision_transformer import VisionTransformer
 from mimarsinan.models.supermodel import Supermodel
 from mimarsinan.models.preprocessing.input_cq import InputCQ
+from mimarsinan.pipelining.model_registry import ModelRegistry
 
 
+@ModelRegistry.register("vit", label="ViT", category="native")
 class VitBuilder:
     """
     Build a Supermodel containing a VisionTransformer.
@@ -74,4 +76,16 @@ class VitBuilder:
                 )
 
         return supermodel
+
+    @classmethod
+    def get_config_schema(cls):
+        return [
+            {"key": "base_activation", "type": "select", "label": "Activation", "options": ["ReLU", "LeakyReLU", "GELU"], "default": "ReLU"},
+            {"key": "patch_size", "type": "number", "label": "Patch Size", "default": 4},
+            {"key": "d_model", "type": "number", "label": "Embed Dim", "default": 128},
+            {"key": "num_heads", "type": "number", "label": "Num Heads", "default": 4},
+            {"key": "num_layers", "type": "number", "label": "Num Layers", "default": 4},
+            {"key": "mlp_ratio", "type": "number", "label": "MLP Ratio", "default": 4},
+            {"key": "dropout", "type": "number", "label": "Dropout", "default": 0.1, "step": 0.05},
+        ]
 

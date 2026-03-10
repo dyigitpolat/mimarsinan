@@ -44,3 +44,16 @@ class BasicDataProviderFactory(DataProviderFactory):
             self._cached_provider = provider
 
         return provider
+
+    @classmethod
+    def list_registered(cls) -> list[dict]:
+        """Return list of registered provider ids and display labels (for GUI)."""
+        import mimarsinan.data_handling.data_providers  # noqa: F401 - populate registry
+        result = []
+        for name in sorted(cls._provider_registry.keys()):
+            provider_cls = cls._provider_registry[name]
+            label = getattr(provider_cls, "DISPLAY_LABEL", None)
+            if label is None:
+                label = name.replace("_DataProvider", "").replace("_", " ")
+            result.append({"id": name, "label": label})
+        return result

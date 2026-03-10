@@ -3,12 +3,15 @@
 import torch
 import torch.nn as nn
 
+from mimarsinan.pipelining.model_registry import ModelRegistry
+
 
 def _conv_output_size(size: int, kernel_size: int, stride: int, padding: int) -> int:
     """Output size after Conv2d/MaxPool2d: (size + 2*padding - kernel_size) // stride + 1."""
     return (size + 2 * padding - kernel_size) // stride + 1
 
 
+@ModelRegistry.register("torch_sequential_conv", label="Torch Seq. Conv", category="torch")
 class TorchSequentialConvBuilder:
     """Builds a plain nn.Module: Sequential(Conv2d, ReLU, MaxPool2d, Flatten, Linear, ReLU, ..., Linear).
 
@@ -129,3 +132,12 @@ class TorchSequentialConvBuilder:
             if i < len(dims) - 2:
                 layers.append(nn.ReLU(inplace=True))
         return nn.Sequential(*layers)
+
+    @classmethod
+    def get_config_schema(cls):
+        return [
+            {"key": "conv_out_channels", "type": "number", "label": "Conv Channels", "default": 16},
+            {"key": "hidden_dims", "type": "text", "label": "FC Hidden Dims", "default": "128, 64"},
+            {"key": "conv_kernel_size", "type": "number", "label": "Kernel Size", "default": 3},
+            {"key": "pool_kernel_size", "type": "number", "label": "Pool Kernel", "default": 2},
+        ]

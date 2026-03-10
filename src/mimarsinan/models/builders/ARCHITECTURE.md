@@ -20,9 +20,7 @@ systems.
 | `torch_sequential_linear_builder.py` | `TorchSequentialLinearBuilder` | Builds native Sequential(Flatten, Linear, …) |
 | `torch_sequential_conv_builder.py` | `TorchSequentialConvBuilder` | Builds native Sequential(Conv2d, ReLU, MaxPool2d, Flatten, Linear, …); two IR segments |
 
-Each builder implements `build(configuration) -> nn.Module`.  Native builders
-produce plain `nn.Module` instances that are later converted to `Supermodel`
-by `TorchMappingStep`.
+Each builder implements `build(configuration) -> nn.Module`.  Builders that appear in the GUI wizard self-register via `@ModelRegistry.register(id, label=..., category=...)` (in `pipelining.model_registry`) and implement `get_config_schema() -> list[dict]` for dynamic form generation. Native builders produce plain `nn.Module` instances that are later converted to `Supermodel` by `TorchMappingStep`.
 
 ## Dependencies
 

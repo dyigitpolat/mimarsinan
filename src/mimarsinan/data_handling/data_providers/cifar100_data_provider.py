@@ -9,6 +9,8 @@ import os
 
 @BasicDataProviderFactory.register("CIFAR100_DataProvider")
 class CIFAR100_DataProvider(DataProvider):
+    DISPLAY_LABEL = "CIFAR-100 (32×32×3, 100 classes)"
+
     def __init__(self, datasets_path, *, seed: int | None = 0):
         super().__init__(datasets_path, seed=seed)
 

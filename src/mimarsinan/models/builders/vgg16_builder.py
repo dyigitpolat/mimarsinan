@@ -1,8 +1,10 @@
 from mimarsinan.models.supermodel import Supermodel
 from mimarsinan.models.preprocessing.input_cq import InputCQ
 from mimarsinan.models.vgg16 import VGG16Mapper
+from mimarsinan.pipelining.model_registry import ModelRegistry
 
 
+@ModelRegistry.register("vgg16", label="VGG-16", category="native")
 class VGG16Builder:
     def __init__(self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config):
         self.device = device
@@ -46,5 +48,11 @@ class VGG16Builder:
                     )
 
         return supermodel
+
+    @classmethod
+    def get_config_schema(cls):
+        return [
+            {"key": "base_activation", "type": "select", "label": "Activation", "options": ["ReLU", "LeakyReLU"], "default": "ReLU"},
+        ]
 
 

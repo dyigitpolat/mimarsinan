@@ -10,7 +10,7 @@ tuning, and evaluation subsystems.
 | `data_provider.py` | `DataProvider`, `ClassificationMode`, `RegressionMode` | Abstract base for dataset providers; prediction mode protocols |
 | `data_provider_factory.py` | `DataProviderFactory`, `BasicDataProviderFactory` | Factory with class-level registry (`@register` decorator) |
 | `data_loader_factory.py` | `DataLoaderFactory` | Creates PyTorch `DataLoader`s for train/val/test splits |
-| `data_providers/` | Concrete providers | MNIST, CIFAR-10, CIFAR-100, ECG implementations |
+| `data_providers/` | Concrete providers | MNIST, CIFAR-10, CIFAR-100, ECG; each may set `DISPLAY_LABEL` for GUI dropdowns |
 
 ## Dependencies
 

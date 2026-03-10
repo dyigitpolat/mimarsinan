@@ -3,8 +3,10 @@ from __future__ import annotations
 from mimarsinan.models.preprocessing.input_cq import InputCQ
 from mimarsinan.models.simple_conv import SimpleConvMapper
 from mimarsinan.models.supermodel import Supermodel
+from mimarsinan.pipelining.model_registry import ModelRegistry
 
 
+@ModelRegistry.register("simple_conv", label="Simple Conv", category="native")
 class SimpleConvBuilder:
     def __init__(self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config):
         self.device = device
@@ -87,5 +89,15 @@ class SimpleConvBuilder:
                     )
 
         return supermodel
+
+    @classmethod
+    def get_config_schema(cls):
+        return [
+            {"key": "conv_out_channels", "type": "number", "label": "Conv Channels", "default": 16},
+            {"key": "conv_kernel_size", "type": "number", "label": "Kernel Size", "default": 3},
+            {"key": "conv_stride", "type": "number", "label": "Stride", "default": 4},
+            {"key": "use_pool", "type": "toggle", "label": "Use Pooling", "default": False},
+            {"key": "fc_hidden_features", "type": "number", "label": "FC Hidden", "default": 64},
+        ]
 
 

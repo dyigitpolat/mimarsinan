@@ -2,7 +2,10 @@
 
 import torchvision.models as models
 
+from mimarsinan.pipelining.model_registry import ModelRegistry
 
+
+@ModelRegistry.register("torch_squeezenet11", label="Torch SqueezeNet", category="torch")
 class TorchSqueezeNet11Builder:
     def __init__(
         self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config
@@ -22,3 +25,9 @@ class TorchSqueezeNet11Builder:
                 weights=models.SqueezeNet1_1_Weights.IMAGENET1K_V1
             )
         return _factory
+
+    @classmethod
+    def get_config_schema(cls):
+        return [
+            {"key": "base_activation", "type": "select", "label": "Activation", "options": ["ReLU"], "default": "ReLU"},
+        ]

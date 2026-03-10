@@ -9,6 +9,8 @@ import torch
 
 @BasicDataProviderFactory.register("MNIST32_DataProvider")
 class MNIST32_DataProvider(DataProvider):
+    DISPLAY_LABEL = "MNIST-32 (32×32, 10 classes)"
+
     """
     MNIST resized to 32x32 (still 1 channel).
     This is required for VGG-style architectures with 5x (2x2,stride2) pooling:

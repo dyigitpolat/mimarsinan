@@ -97,8 +97,16 @@ class TestBasicDataProviderFactory:
 
         del BasicDataProviderFactory._provider_registry["_test_provider_unique_42"]
 
-
-class TestDataLoaderFactory:
+    def test_list_registered_returns_id_and_label(self):
+        import mimarsinan.data_handling.data_providers  # noqa: F401 — populate registry
+        result = BasicDataProviderFactory.list_registered()
+        assert isinstance(result, list)
+        assert len(result) >= 1
+        ids = [e["id"] for e in result]
+        assert "MNIST_DataProvider" in ids
+        for entry in result:
+            assert "id" in entry
+            assert "label" in entry
     def test_creates_loaders(self):
         dp_factory = MockDataProviderFactory()
         dlf = DataLoaderFactory(dp_factory, num_workers=0)

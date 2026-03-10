@@ -2,7 +2,10 @@
 
 import torchvision.models as models
 
+from mimarsinan.pipelining.model_registry import ModelRegistry
 
+
+@ModelRegistry.register("torch_vgg16", label="Torch VGG16", category="torch")
 class TorchVGG16Builder:
     def __init__(
         self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config
@@ -20,3 +23,9 @@ class TorchVGG16Builder:
         def _factory():
             return models.vgg16_bn(weights=models.VGG16_BN_Weights.IMAGENET1K_V1)
         return _factory
+
+    @classmethod
+    def get_config_schema(cls):
+        return [
+            {"key": "base_activation", "type": "select", "label": "Activation", "options": ["ReLU", "LeakyReLU"], "default": "ReLU"},
+        ]
