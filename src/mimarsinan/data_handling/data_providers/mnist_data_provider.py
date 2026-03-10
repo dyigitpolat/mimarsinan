@@ -7,6 +7,8 @@ import torch
 
 @BasicDataProviderFactory.register("MNIST_DataProvider")
 class MNIST_DataProvider(DataProvider):
+    DISPLAY_LABEL = "MNIST (28×28, 10 classes)"
+
     def __init__(self, datasets_path, *, seed: int | None = 0):
         super().__init__(datasets_path, seed=seed)
 

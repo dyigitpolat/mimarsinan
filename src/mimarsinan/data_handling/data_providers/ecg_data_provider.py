@@ -10,6 +10,8 @@ import os
     
 @BasicDataProviderFactory.register("ECG_DataProvider")
 class ECG_DataProvider(DataProvider):
+    DISPLAY_LABEL = "ECG (1D signal, multi-class)"
+
     def __init__(self, datasets_path, *, seed: int | None = 0):
         super().__init__(datasets_path, seed=seed)
         

@@ -10,31 +10,22 @@ import mimarsinan.data_handling.data_providers
 import sys
 import json
 import os
+import threading
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python main.py <deployment_config_json>")
-        exit(1)
-    
-    deployment_config_path = sys.argv[1]
-    with open(deployment_config_path, 'r') as f:
-        deployment_config = json.load(f)
-    
+
+def _parse_deployment_config(deployment_config):
+    """Parse deployment config dict into args for pipeline creation. Used by main() and run_pipeline_from_config."""
     data_provider_name = deployment_config['data_provider_name']
     seed = deployment_config.get("seed", 0)
     data_provider_factory = BasicDataProviderFactory(data_provider_name, "./datasets", seed=seed)
 
     deployment_name = deployment_config['experiment_name']
-    deployment_parameters = deployment_config['deployment_parameters']
+    deployment_parameters = dict(deployment_config['deployment_parameters'])
 
-    # Backward compatible platform constraints protocol:
-    # - Legacy: platform_constraints is the flat dict used by pipelines
-    # - New: {"mode": "user"|"auto", "user": {...}, "auto": {"fixed": {...}, "search_space": {...}}}
     platform_constraints_raw = deployment_config["platform_constraints"]
     if isinstance(platform_constraints_raw, dict) and "mode" in platform_constraints_raw:
         mode = platform_constraints_raw.get("mode", "user")
         if mode == "user":
-            # Prefer explicit user block; otherwise, treat remaining keys as the user dict.
             platform_constraints = platform_constraints_raw.get(
                 "user",
                 {k: v for k, v in platform_constraints_raw.items() if k != "mode"},
@@ -43,45 +34,115 @@ def main():
             auto = platform_constraints_raw.get("auto", {}) or {}
             fixed = auto.get("fixed", {}) or {}
             search_space = auto.get("search_space", {}) or {}
-
-            # Merge hardware search-space hints into deployment_parameters.arch_search (if not already provided).
             arch_cfg = deployment_parameters.setdefault("arch_search", {})
             for k, v in search_space.items():
                 arch_cfg.setdefault(k, v)
-
             platform_constraints = fixed
         else:
             raise ValueError(f"Invalid platform_constraints.mode: {mode}")
     else:
         platform_constraints = platform_constraints_raw
-    start_step = deployment_config['start_step']
-    stop_step = deployment_config.get("stop_step")
-    target_metric_override = deployment_config.get('target_metric_override')
 
-    if 'pipeline_mode' in deployment_config:
-        pipeline_mode = deployment_config['pipeline_mode']
-    else:
-        pipeline_mode = "phased"
-    
-    working_directory = \
-        deployment_config['generated_files_path'] + "/" + deployment_name + "_" + pipeline_mode + "_deployment_run"
-    
-    # save deployment config to working directory /_RUN_CONFIG/config.json
+    pipeline_mode = deployment_config.get("pipeline_mode", "phased")
+    working_directory = (
+        deployment_config['generated_files_path'] + "/"
+        + deployment_name + "_" + pipeline_mode + "_deployment_run"
+    )
     os.makedirs(working_directory + "/_RUN_CONFIG", exist_ok=True)
     with open(working_directory + "/_RUN_CONFIG/config.json", 'w') as f:
         json.dump(deployment_config, f, indent=4)
 
+    return {
+        "pipeline_mode": pipeline_mode,
+        "data_provider_factory": data_provider_factory,
+        "deployment_name": deployment_name,
+        "platform_constraints": platform_constraints,
+        "deployment_parameters": deployment_parameters,
+        "working_directory": working_directory,
+        "start_step": deployment_config.get("start_step"),
+        "stop_step": deployment_config.get("stop_step"),
+        "target_metric_override": deployment_config.get("target_metric_override"),
+    }
 
-    run_pipeline(
-        pipeline_mode=pipeline_mode,
-        data_provider_factory=data_provider_factory,
-        deployment_name=deployment_name,
-        platform_constraints=platform_constraints,
+
+def run_pipeline_from_config(deployment_config, collector, gui_port=8501):
+    """Create pipeline from config dict, attach collector and hooks, run pipeline in a background thread.
+
+    Used by the GUI when user clicks RUN in the wizard. Returns immediately; pipeline runs in thread.
+    """
+    parsed = _parse_deployment_config(deployment_config)
+    pipeline_mode = parsed["pipeline_mode"]
+    deployment_parameters = parsed["deployment_parameters"]
+    DeploymentPipeline.apply_preset(pipeline_mode, deployment_parameters)
+
+    reporter = WandB_Reporter(parsed["deployment_name"], "deployment")
+    pipeline = DeploymentPipeline(
+        data_provider_factory=parsed["data_provider_factory"],
         deployment_parameters=deployment_parameters,
-        working_directory=working_directory,
-        start_step=start_step,
-        stop_step=stop_step,
-        target_metric_override=target_metric_override)
+        platform_constraints=parsed["platform_constraints"],
+        reporter=reporter,
+        working_directory=parsed["working_directory"],
+    )
+
+    resolved_start_step = None
+    if parsed["start_step"] is not None:
+        try:
+            resolved_start_step = pipeline.get_resolved_start_step(parsed["start_step"])
+        except Exception:
+            resolved_start_step = parsed["start_step"]
+
+    from mimarsinan.gui import GUIHandle
+    from mimarsinan.gui import _make_json_safe
+    from mimarsinan.gui.composite_reporter import CompositeReporter
+
+    gui = GUIHandle(pipeline, collector)
+    pipeline.reporter = CompositeReporter([reporter, gui.reporter])
+    pipeline.register_pre_step_hook(gui.on_step_start)
+    pipeline.register_post_step_hook(gui.on_step_end)
+
+    safe_config = _make_json_safe(pipeline.config)
+    collector.set_pipeline_info([name for name, _ in pipeline.steps], safe_config)
+
+    if parsed["target_metric_override"] is not None:
+        pipeline.set_target_metric(parsed["target_metric_override"])
+
+    def _run():
+        try:
+            if resolved_start_step is None:
+                pipeline.run(stop_step=parsed["stop_step"])
+            else:
+                pipeline.run_from(step_name=resolved_start_step, stop_step=parsed["stop_step"])
+        finally:
+            try:
+                reporter.finish()
+            except Exception:
+                pass
+
+    thread = threading.Thread(target=_run, daemon=True, name="pipeline-run")
+    thread.start()
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python main.py <deployment_config_json>")
+        exit(1)
+
+    deployment_config_path = sys.argv[1]
+    with open(deployment_config_path, 'r') as f:
+        deployment_config = json.load(f)
+
+    parsed = _parse_deployment_config(deployment_config)
+    run_pipeline(
+        pipeline_mode=parsed["pipeline_mode"],
+        data_provider_factory=parsed["data_provider_factory"],
+        deployment_name=parsed["deployment_name"],
+        platform_constraints=parsed["platform_constraints"],
+        deployment_parameters=parsed["deployment_parameters"],
+        working_directory=parsed["working_directory"],
+        start_step=parsed["start_step"],
+        stop_step=parsed["stop_step"],
+        target_metric_override=parsed["target_metric_override"],
+    )
 
 def run_pipeline(
     pipeline_mode,

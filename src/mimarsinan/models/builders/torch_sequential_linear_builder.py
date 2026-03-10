@@ -3,7 +3,10 @@
 import torch
 import torch.nn as nn
 
+from mimarsinan.pipelining.model_registry import ModelRegistry
 
+
+@ModelRegistry.register("torch_sequential_linear", label="Torch Seq. Linear", category="torch")
 class TorchSequentialLinearBuilder:
     """Builds a plain nn.Module: Sequential(Flatten, Linear, ReLU, ..., Linear).
 
@@ -49,3 +52,9 @@ class TorchSequentialLinearBuilder:
             if i < len(dims) - 2:
                 layers.append(nn.ReLU(inplace=True))
         return nn.Sequential(*layers)
+
+    @classmethod
+    def get_config_schema(cls):
+        return [
+            {"key": "hidden_dims", "type": "text", "label": "Hidden Dims (comma-sep)", "default": "512, 256, 128"},
+        ]

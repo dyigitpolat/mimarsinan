@@ -12,7 +12,7 @@ import logging
 import math
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -59,7 +59,10 @@ class _SafeJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
-def create_app(collector: DataCollector) -> FastAPI:
+def create_app(
+    collector: "DataCollector",
+    run_config_fn: Callable[[dict, "DataCollector"], None] | None = None,
+) -> FastAPI:
     app = FastAPI(
         title="Mimarsinan Pipeline Monitor",
         docs_url=None,
@@ -99,6 +102,40 @@ def create_app(collector: DataCollector) -> FastAPI:
     def pipeline_config():
         return collector.pipeline_config or {}
 
+    # -- Wizard / config APIs (used when run_config_fn is set, e.g. --ui mode) ----
+
+    @app.get("/api/data_providers")
+    def api_data_providers():
+        from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
+        return BasicDataProviderFactory.list_registered()
+
+    @app.get("/api/model_types")
+    def api_model_types():
+        from mimarsinan.pipelining.model_registry import get_model_types
+        return get_model_types()
+
+    @app.get("/api/model_config_schema/{model_type}")
+    def api_model_config_schema(model_type: str):
+        from mimarsinan.pipelining.model_registry import get_model_config_schema
+        return get_model_config_schema(model_type)
+
+    @app.post("/api/run")
+    def api_run(body: dict):
+        if run_config_fn is None:
+            return JSONResponse(
+                status_code=501,
+                content={"error": "Run from config not available (start with --ui to enable)."},
+            )
+        try:
+            run_config_fn(body, collector)
+            return JSONResponse(status_code=202, content={"status": "accepted"})
+        except Exception as e:
+            logger.exception("Run from config failed")
+            return JSONResponse(
+                status_code=400,
+                content={"error": str(e)},
+            )
+
     # -- WebSocket -------------------------------------------------------------
 
     @app.websocket("/ws")
@@ -115,6 +152,13 @@ def create_app(collector: DataCollector) -> FastAPI:
             collector.remove_ws_listener(ws)
 
     # -- Static files ----------------------------------------------------------
+
+    @app.get("/wizard")
+    def wizard_page():
+        wizard_path = _STATIC_DIR / "wizard.html"
+        if wizard_path.exists():
+            return FileResponse(wizard_path, media_type="text/html")
+        return HTMLResponse("<h1>Wizard not found</h1>", status_code=404)
 
     @app.get("/")
     def index():
@@ -140,15 +184,19 @@ def _port_is_free(host: str, port: int) -> bool:
 
 
 def start_server(
-    collector: DataCollector,
+    collector: "DataCollector",
     host: str = "0.0.0.0",
     port: int = 8501,
     max_port_attempts: int = 20,
+    run_config_fn: Callable[[dict, "DataCollector"], None] | None = None,
 ) -> threading.Thread:
     """Start the FastAPI server in a background daemon thread.
 
     If *port* is already in use, tries successive ports up to
     *port + max_port_attempts - 1* before giving up.
+
+    If *run_config_fn* is provided (e.g. when started with --ui), POST /api/run
+    will run the pipeline from the request body and attach to this collector.
     """
     import uvicorn
 
@@ -165,7 +213,7 @@ def start_server(
         )
         chosen_port = port
 
-    app = create_app(collector)
+    app = create_app(collector, run_config_fn=run_config_fn)
 
     config = uvicorn.Config(
         app,
@@ -185,4 +233,6 @@ def start_server(
     thread.start()
     logger.info("GUI server started on http://%s:%d", host, chosen_port)
     print(f"\n  Pipeline Monitor GUI: http://localhost:{chosen_port}\n")
+    if run_config_fn is not None:
+        print(f"  Wizard: http://localhost:{chosen_port}/wizard\n")
     return thread
