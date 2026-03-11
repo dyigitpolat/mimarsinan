@@ -1,5 +1,5 @@
 /* Architecture search results tab. */
-import { esc, safeReact } from './util.js';
+import { esc, safeReact, cssId } from './util.js';
 
 export function renderSearchTab(search, container) {
   if (!search) { container.innerHTML = '<div class="empty-state">No search data</div>'; return; }
@@ -40,8 +40,13 @@ export function renderSearchTab(search, container) {
     html += '</div></div>';
   }
 
-  if (search.history?.length > 0)
-    html += '<div class="card"><div class="card-header">Search History</div><div class="card-body"><div id="s-hist" style="min-height:200px"></div></div></div>';
+  const histKeys = search.history?.length > 0 ? Object.keys(search.history[0] || {}).filter(k => typeof search.history[0][k] === 'number') : [];
+  if (histKeys.length > 0) {
+    for (const k of histKeys) {
+      const elId = 's-hist-' + cssId(k);
+      html += `<div class="card" style="margin-bottom:20px"><div class="card-header">${esc(k)}</div><div class="card-body"><div id="${elId}" style="min-height:200px"></div></div></div>`;
+    }
+  }
 
   container.innerHTML = html;
   renderParetoChart(search);
@@ -85,17 +90,22 @@ function renderParetoChart(search) {
     y: search.pareto_front.map(c => (c.objectives || {})[yKey]),
     text: search.pareto_front.map((_, i) => `Candidate ${i}`),
     mode: 'markers', type: 'scatter', marker: { size: 10, color: '#5b8af5' },
-  }], { height: 300, xaxis: { title: xKey }, yaxis: { title: yKey } });
+  }], { height: 300, margin: { r: 100 }, xaxis: { title: xKey }, yaxis: { title: yKey } });
 }
 
 function renderHistoryChart(search) {
   if (!search.history?.length) return;
   const histKeys = Object.keys(search.history[0] || {}).filter(k => typeof search.history[0][k] === 'number');
   if (histKeys.length === 0) return;
-  safeReact('s-hist', histKeys.map(k => ({
-    x: search.history.map((_, i) => i), y: search.history.map(h => h[k]),
-    name: k, type: 'scatter', mode: 'lines+markers', line: { width: 1.5 }, marker: { size: 4 },
-  })), { height: 260, xaxis: { title: 'Generation' }, showlegend: true, legend: { font: { size: 10 } } });
+  const layoutOpts = { height: 260, margin: { r: 100 }, xaxis: { title: 'Generation' }, showlegend: false };
+  for (const k of histKeys) {
+    const elId = 's-hist-' + cssId(k);
+    safeReact(elId, [{
+      x: search.history.map((_, i) => i),
+      y: search.history.map(h => h[k]),
+      name: k, type: 'scatter', mode: 'lines+markers', line: { width: 1.5 }, marker: { size: 4 },
+    }], layoutOpts);
+  }
 }
 
 function formatValue(v) {

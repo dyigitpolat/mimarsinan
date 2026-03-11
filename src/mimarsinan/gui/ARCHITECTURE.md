@@ -36,6 +36,12 @@ deployment configurator: it loads data providers and model types from the API,
 builds a config, and submits it via POST `/api/run`; RUN redirects to `/` (monitor).
 Rate-coded spiking mode forces activation quantization ON; the Cycles field is
 disabled for non-quantized TTFS (analytical TTFS does not use simulation steps).
+Non-quantized TTFS has activation quantization OFF by default (user can toggle);
+Target Tq is disabled when activation quantization is off. **Float weights** is a
+toggle in the **Hardware Configuration** panel (next to Weight Bits): when ON it
+disables the Weight Bits control and locks Weight Quantization to off in Deployment
+Mode; pipeline uses vanilla (float) deployment. **Pruning fraction** is a [0–1) range slider with value display; the 0.8–1.0 range
+is styled in red and a feasibility warning is shown in that range.
 
 **Pipeline steps bar**: A bar at the top of the wizard (below the header) shows the
 ordered list of pipeline steps for the current configuration. It calls POST
@@ -44,6 +50,12 @@ whenever the user changes options. Steps are rendered as horizontal chips; new s
 animate in (opacity + scale). On loading, the bar shows a subtle loading state; on
 API error, the last known step list is kept or a short "Could not load steps" message
 is shown.
+
+**Monitor plots** (step-detail metrics tab, scales-tab adaptation, search-tab): legends
+are placed outside the plot area to the right (`x: 1.02`, `margin.r: 100`). Accuracy
+and Adaptation curves use a fixed vertical axis [0, 1]. A single data point is drawn
+as a horizontal line from that point to the right edge. Search history is rendered as
+one card and plot per numeric metric (separate charts per objective).
 
 ## Dependencies
 
