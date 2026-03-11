@@ -248,6 +248,19 @@ class MapperGraphConverter:
 
     # ── Linear conversion ────────────────────────────────────────────────
 
+    @staticmethod
+    def _activation_to_name(act_mod) -> str | None:
+        """Map a PyTorch activation module to a Perceptron activation name string."""
+        if act_mod is None:
+            return None
+        if isinstance(act_mod, nn.ReLU):
+            return "ReLU"
+        if isinstance(act_mod, nn.LeakyReLU):
+            return "LeakyReLU"
+        if isinstance(act_mod, nn.GELU):
+            return "GELU"
+        return None
+
     def _convert_linear(
         self,
         node: fx.Node,
@@ -257,16 +270,18 @@ class MapperGraphConverter:
     ) -> None:
         bn_mod = self._find_absorbed_follower(node, (nn.BatchNorm1d,), report)
         act_mod = self._find_absorbed_follower(
-            node, (nn.ReLU, nn.LeakyReLU), report, skip_bn=True
+            node, (nn.ReLU, nn.LeakyReLU, nn.GELU), report, skip_bn=True
         )
 
         normalization = copy.deepcopy(bn_mod) if bn_mod is not None else nn.Identity()
+        act_name = self._activation_to_name(act_mod)
 
         perceptron = Perceptron(
             output_channels=mod.out_features,
             input_features=mod.in_features,
             bias=mod.bias is not None,
             normalization=normalization,
+            base_activation_name=act_name,
             name=node.name,
         )
 

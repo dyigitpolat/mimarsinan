@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "mnist_torch_sequential_conv",
+  "experiment_name": "00n_mnist_torch_sequential_conv",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
 
@@ -41,6 +41,6 @@
   },
 
   "target_metric_override": null,
-  "start_step": "Soft Core Mapping",
+  "start_step": null,
   "stop_step": null
 }

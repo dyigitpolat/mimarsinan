@@ -14,6 +14,7 @@ class SimpleMLP(PerceptronFlow):
         num_classes,
         mlp_width_1,
         mlp_width_2,
+        base_activation_name=None,
     ):
         super(SimpleMLP, self).__init__(device)
 
@@ -41,6 +42,7 @@ class SimpleMLP(PerceptronFlow):
                     output_channels=network_shape[i + 1],
                     input_features=network_shape[i],
                     normalization=norm,
+                    base_activation_name=base_activation_name,
                 )
             )
 

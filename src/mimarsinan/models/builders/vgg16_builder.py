@@ -15,9 +15,7 @@ class VGG16Builder:
         self.pipeline_config = pipeline_config
 
     def build(self, configuration):
-        # VGG16 has a fixed architecture; configuration is currently unused but kept
-        # for parity with other builders.
-        _ = configuration
+        base_activation = (configuration or {}).get("base_activation", "ReLU")
 
         preprocessor = InputCQ(self.pipeline_config["target_tq"])
         perceptron_flow = VGG16Mapper(
@@ -26,6 +24,7 @@ class VGG16Builder:
             self.num_classes,
             max_axons=self.max_axons,
             max_neurons=self.max_neurons,
+            base_activation_name=base_activation,
         )
         supermodel = Supermodel(
             self.device,

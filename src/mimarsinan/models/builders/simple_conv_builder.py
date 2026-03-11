@@ -43,6 +43,8 @@ class SimpleConvBuilder:
         # FC hidden layer size
         fc_hidden_features = cfg.get("fc_hidden_features", None)
 
+        base_activation = cfg.get("base_activation", "ReLU")
+
         preprocessor = InputCQ(self.pipeline_config["target_tq"])
         perceptron_flow = SimpleConvMapper(
             self.device,
@@ -68,6 +70,7 @@ class SimpleConvBuilder:
             max_axons=self.max_axons,
             max_neurons=self.max_neurons,
             name="simple_conv",
+            base_activation_name=base_activation,
         )
 
         supermodel = Supermodel(
@@ -93,11 +96,19 @@ class SimpleConvBuilder:
     @classmethod
     def get_config_schema(cls):
         return [
+            {"key": "base_activation", "type": "select", "label": "Activation", "options": ["ReLU", "LeakyReLU", "GELU"], "default": "ReLU"},
             {"key": "conv_out_channels", "type": "number", "label": "Conv Channels", "default": 16},
             {"key": "conv_kernel_size", "type": "number", "label": "Kernel Size", "default": 3},
             {"key": "conv_stride", "type": "number", "label": "Stride", "default": 4},
             {"key": "use_pool", "type": "toggle", "label": "Use Pooling", "default": False},
             {"key": "fc_hidden_features", "type": "number", "label": "FC Hidden", "default": 64},
         ]
+
+    @classmethod
+    def get_nas_search_options(cls, input_shape=None):
+        return {
+            "conv_out_channels": [8, 16, 32, 64],
+            "fc_hidden_features": [32, 64, 128, 256],
+        }
 
 

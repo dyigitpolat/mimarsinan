@@ -41,6 +41,7 @@ class VitBuilder:
         num_layers = int(configuration["num_layers"])
         mlp_ratio = int(configuration["mlp_ratio"])
         dropout = float(configuration.get("dropout", 0.1))
+        base_activation = configuration.get("base_activation", "ReLU")
 
         preprocessor = InputCQ(self.pipeline_config["target_tq"])
         perceptron_flow = VisionTransformer(
@@ -53,6 +54,7 @@ class VitBuilder:
             num_layers=num_layers,
             mlp_ratio=mlp_ratio,
             dropout=dropout,
+            base_activation_name=base_activation,
         )
 
         supermodel = Supermodel(
@@ -89,3 +91,26 @@ class VitBuilder:
             {"key": "dropout", "type": "number", "label": "Dropout", "default": 0.1, "step": 0.05},
         ]
 
+    @classmethod
+    def get_nas_search_options(cls, input_shape=None):
+        """Discrete search values for numeric config keys used by the NAS."""
+        return {
+            "patch_size": [2, 4, 8],
+            "d_model":    [64, 96, 128, 192, 256],
+            "num_heads":  [2, 4, 8],
+            "num_layers": [2, 4, 6],
+            "mlp_ratio":  [2, 4],
+        }
+
+    @classmethod
+    def validate_config(cls, config, platform_cfg, input_shape, allow_axon_tiling):
+        """patch_size must divide image dims; d_model must be divisible by num_heads."""
+        patch_size = int(config.get("patch_size", 4))
+        d_model = int(config.get("d_model", 128))
+        num_heads = int(config.get("num_heads", 4))
+        H, W = int(input_shape[-2]), int(input_shape[-1])
+        if H % patch_size != 0 or W % patch_size != 0:
+            return False
+        if d_model % num_heads != 0:
+            return False
+        return True

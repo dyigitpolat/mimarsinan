@@ -4,15 +4,35 @@ from mimarsinan.models.layers import MaxValueScaler, LeakyGradReLU
 import torch.nn as nn
 import torch
 
+
+# Canonical mapping from string names to activation constructors.
+# "ReLU" maps to LeakyGradReLU (ReLU forward, leaky gradient backward) —
+# the default pipeline activation for SNN training.
+ACTIVATION_REGISTRY = {
+    "ReLU": LeakyGradReLU,
+    "LeakyReLU": nn.LeakyReLU,
+    "GELU": nn.GELU,
+}
+
+
+def make_activation(name=None):
+    """Create an activation module from a string name. Default: LeakyGradReLU."""
+    if name is None or name not in ACTIVATION_REGISTRY:
+        return LeakyGradReLU()
+    return ACTIVATION_REGISTRY[name]()
+
+
 class Perceptron(nn.Module):
     def __init__(
-        self, 
+        self,
         output_channels, input_features, bias=True,
-        normalization = nn.Identity(), name="Perceptron"):
+        normalization=nn.Identity(),
+        base_activation_name=None,
+        name="Perceptron"):
 
         super(Perceptron, self).__init__()
         self.name = name
-        
+
         self.input_features = input_features
         self.output_channels = output_channels
 
@@ -26,19 +46,18 @@ class Perceptron(nn.Module):
         self.scale_factor = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
         self.input_activation = nn.Identity()
-        self.activation = LeakyGradReLU()
-        #self.activation = nn.LeakyReLU()
+
+        self.base_activation_name = base_activation_name or "ReLU"
+        self.base_activation = make_activation(self.base_activation_name)
+        self.activation = make_activation(self.base_activation_name)
 
         self.regularization = nn.Identity()
-        
+
         self.parameter_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
         self.input_activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
         self.activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
         self.per_input_scales = None
-
-        self.base_activation = LeakyGradReLU()
-        #self.base_activation = nn.LeakyReLU()
 
     def set_parameter_scale(self, new_scale):
         if isinstance(new_scale, float):

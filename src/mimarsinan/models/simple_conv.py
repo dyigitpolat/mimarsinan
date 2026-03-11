@@ -63,6 +63,7 @@ class SimpleConvMapper(PerceptronFlow):
         max_axons: int | None = None,
         max_neurons: int | None = None,
         name: str = "simple_conv",
+        base_activation_name=None,
     ):
         super().__init__(device)
 
@@ -152,6 +153,7 @@ class SimpleConvMapper(PerceptronFlow):
             max_axons=max_axons,
             use_batchnorm=bool(use_batchnorm),
             name=f"{self.name}_conv1",
+            base_activation_name=base_activation_name,
         )
         self.feature_mappers.append(conv1)
         out = conv1
@@ -170,6 +172,7 @@ class SimpleConvMapper(PerceptronFlow):
             max_axons=max_axons,
             use_batchnorm=bool(use_batchnorm),
             name=f"{self.name}_conv2",
+            base_activation_name=base_activation_name,
         )
         self.feature_mappers.append(conv2)
         out = conv2
@@ -193,12 +196,12 @@ class SimpleConvMapper(PerceptronFlow):
 
         # First FC layer (hidden)
         # Perceptron args: (output_channels, input_features, ...)
-        fc1 = Perceptron(fc_hidden, fc_in_features, normalization=nn.Identity(), name=f"{self.name}_fc1")
+        fc1 = Perceptron(fc_hidden, fc_in_features, normalization=nn.Identity(), base_activation_name=base_activation_name, name=f"{self.name}_fc1")
         self.classifier_perceptrons.append(fc1)
         out = PerceptronMapper(out, fc1)
 
         # Second FC layer (output)
-        fc2 = Perceptron(num_classes, fc_hidden, normalization=nn.Identity(), name=f"{self.name}_fc2")
+        fc2 = Perceptron(num_classes, fc_hidden, normalization=nn.Identity(), base_activation_name=base_activation_name, name=f"{self.name}_fc2")
         self.classifier_perceptrons.append(fc2)
         out = PerceptronMapper(out, fc2)
 

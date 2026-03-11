@@ -8,7 +8,7 @@ import einops
 
 class PerceptronMixer(PerceptronFlow):
     def __init__(
-        self, 
+        self,
         device,
         input_shape,
         num_classes,
@@ -17,11 +17,12 @@ class PerceptronMixer(PerceptronFlow):
         patch_c_1,
         fc_w_1,
         fc_w_2,
+        base_activation_name=None,
     ):
         super(PerceptronMixer, self).__init__(device)
 
         self.input_activation = nn.Identity()
-        
+
         self.input_shape = input_shape
         self.input_channels = input_shape[-3]
 
@@ -41,6 +42,7 @@ class PerceptronMixer(PerceptronFlow):
             self.patch_channels,
             self.patch_size,
             normalization=nn.LazyBatchNorm1d(),
+            base_activation_name=base_activation_name,
         )
         self.patch_layer_CONV = nn.Conv2d(
             self.input_channels,
@@ -64,23 +66,26 @@ class PerceptronMixer(PerceptronFlow):
                     XX,
                     self.patch_count,
                     normalization=nn.LazyBatchNorm1d(),
+                    base_activation_name=base_activation_name,
                     name=f"tok_mixer_{mixer_idx}",
                 )
             )
-            self.fc_layers_list.append(Perceptron(self.patch_count, XX))
+            self.fc_layers_list.append(Perceptron(self.patch_count, XX, base_activation_name=base_activation_name))
 
             self.patch_layers_list_2.append(
                 Perceptron(
                     YY,
                     self.patch_channels,
                     normalization=nn.LazyBatchNorm1d(),
+                    base_activation_name=base_activation_name,
                     name=f"ch_mixer_{mixer_idx}",
                 )
             )
-            self.fc_layers_list_2.append(Perceptron(self.patch_channels, YY))
-        
+            self.fc_layers_list_2.append(Perceptron(self.patch_channels, YY, base_activation_name=base_activation_name))
+
         self.output_layer = Perceptron(
-            num_classes, self.patch_count * self.patch_channels
+            num_classes, self.patch_count * self.patch_channels,
+            base_activation_name=base_activation_name,
         )
 
         self.out = None
