@@ -1,6 +1,6 @@
 from init import *
 
-from mimarsinan.common.wandb_utils import WandB_Reporter
+from mimarsinan.common.reporter import DefaultReporter
 from mimarsinan.pipelining.pipelines.deployment_pipeline import (
     DeploymentPipeline,
 )
@@ -75,7 +75,7 @@ def run_pipeline_from_config(deployment_config, collector, gui_port=8501):
     deployment_parameters = parsed["deployment_parameters"]
     DeploymentPipeline.apply_preset(pipeline_mode, deployment_parameters)
 
-    reporter = WandB_Reporter(parsed["deployment_name"], "deployment")
+    reporter = DefaultReporter()
     pipeline = DeploymentPipeline(
         data_provider_factory=parsed["data_provider_factory"],
         deployment_parameters=deployment_parameters,
@@ -161,7 +161,7 @@ def run_pipeline(
     merged_params = dict(deployment_parameters)
     DeploymentPipeline.apply_preset(pipeline_mode, merged_params)
 
-    reporter = WandB_Reporter(deployment_name, "deployment")
+    reporter = DefaultReporter()
 
     pipeline = DeploymentPipeline(
         data_provider_factory=data_provider_factory,
@@ -201,11 +201,11 @@ def run_pipeline(
     else:
         pipeline.run_from(step_name=start_step, stop_step=stop_step)
 
-    # Finish WandB reporting explicitly to avoid hanging
+    # Finish reporter (e.g. flush / no-op)
     try:
         reporter.finish()
     except Exception:
-        pass  # Non-fatal: WandB may not be running
+        pass  # Non-fatal
 
     # Keep the process (and GUI server) alive until user confirms exit
     if gui_started:

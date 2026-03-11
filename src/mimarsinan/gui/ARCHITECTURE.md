@@ -12,7 +12,7 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 | `__init__.py` | `GUIHandle`, `start_gui` | Facade: creates collector, reporter; optional `start_step` backfills skipped steps from cache for browsing |
 | `data_collector.py` | `DataCollector` | Thread-safe in-memory store; broadcasts updates via WebSocket |
 | `reporter.py` | `GUIReporter` | Implements `Reporter` protocol; forwards metrics to `DataCollector` |
-| `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (WandB + GUI) |
+| `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (e.g. default + GUI) |
 | `server.py` | `start_server`, `create_app` | FastAPI + Uvicorn server in a daemon thread; optional `run_config_fn` for POST `/api/run` |
 | `snapshot.py` | `build_step_snapshot` | Pure functions extracting JSON-safe snapshots; step-specific tabs and new/edited kinds |
 | `persistence.py` | `load_persisted_steps`, `save_step_to_persisted` | Load/save step state to `_GUI_STATE/steps.json` for backfill |
@@ -47,7 +47,7 @@ is shown.
 
 ## Dependencies
 
-- **Internal**: `common.wandb_utils` (`Reporter` protocol), `mapping.ir` (for snapshots), `mapping.spike_source_spans`, `gui.heatmap_renderer` (for snapshot heatmaps).
+- **Internal**: `common.reporter` (Reporter protocol), `mapping.ir` (for snapshots), `mapping.spike_source_spans`, `gui.heatmap_renderer` (for snapshot heatmaps).
 - **External**: `fastapi`, `uvicorn`, `websockets`, `matplotlib` (heatmap rendering).
 
 ## Dependents

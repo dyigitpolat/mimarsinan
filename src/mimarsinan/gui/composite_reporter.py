@@ -32,3 +32,8 @@ class CompositeReporter:
     def console_log(self, metric_name: str, metric_value: Any) -> None:
         for r in self._reporters:
             r.console_log(metric_name, metric_value)
+
+    def finish(self) -> None:
+        for r in self._reporters:
+            if hasattr(r, "finish"):
+                r.finish()

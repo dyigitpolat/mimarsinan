@@ -7,4 +7,4 @@ from mimarsinan.common.file_utils import (
     save_weights_and_chip_code,
 )
 from mimarsinan.common.build_utils import find_cpp20_compiler
-from mimarsinan.common.wandb_utils import Reporter, WandB_Reporter
+from mimarsinan.common.reporter import Reporter, DefaultReporter

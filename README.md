@@ -10,7 +10,6 @@ a pipeline for ***m***odeling ***i***n-***m***emory ***ar***chitectures for
     - torch
     - torchvision
     - einops
-    - wandb
     - matplotlib
 
 - CUDA

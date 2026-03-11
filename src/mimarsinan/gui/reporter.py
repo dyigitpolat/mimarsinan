@@ -1,4 +1,4 @@
-"""GUI Reporter — captures metrics for the browser dashboard."""
+"""GUI Reporter — implements Reporter protocol; forwards metrics to the browser dashboard."""
 
 from __future__ import annotations
 
@@ -9,11 +9,7 @@ if TYPE_CHECKING:
 
 
 class GUIReporter:
-    """Drop-in replacement/companion for WandB_Reporter.
-
-    Every ``report()`` call is forwarded to a :class:`DataCollector` which
-    stores the time-series for the web frontend.
-    """
+    """Implements Reporter protocol; forwards metrics to DataCollector for the web frontend."""
 
     def __init__(self, collector: DataCollector) -> None:
         self._collector = collector
@@ -23,4 +19,7 @@ class GUIReporter:
         self._collector.record_metric(metric_name, metric_value, step=step)
 
     def console_log(self, metric_name: str, metric_value: Any) -> None:
+        pass
+
+    def finish(self) -> None:
         pass

@@ -135,7 +135,7 @@ def main() -> None:
     from init import init
     init()
 
-    from mimarsinan.common.wandb_utils import WandB_Reporter
+    from mimarsinan.common.reporter import DefaultReporter
     from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
     from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
     import mimarsinan.data_handling.data_providers  # noqa: F401
@@ -166,7 +166,7 @@ def main() -> None:
     merged_params = dict(deployment_parameters)
     DeploymentPipeline.apply_preset(pipeline_mode, merged_params)
 
-    reporter = WandB_Reporter(deployment_name, "deployment")
+    reporter = DefaultReporter()
     pipeline = DeploymentPipeline(
         data_provider_factory=BasicDataProviderFactory(
             deployment_config["data_provider_name"],

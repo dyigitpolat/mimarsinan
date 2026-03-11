@@ -4,7 +4,6 @@ scipy
 torch
 torchvision
 einops
-wandb
 matplotlib
 pymoo
 plotly
