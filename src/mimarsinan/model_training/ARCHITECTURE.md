@@ -16,7 +16,7 @@ training, and shared training utilities.
 ## Dependencies
 
 - **Internal**: `transformations.perceptron_transformer` (`PerceptronTransformer`), `models.layers` (`SavedTensorDecorator`), `models.perceptron_mixer.perceptron` (`Perceptron`).
-- **External**: `torch`, `wandb` (via reporter callback).
+- **External**: `torch`, reporting via reporter callback.
 
 ## Dependents
 

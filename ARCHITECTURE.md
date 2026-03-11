@@ -183,7 +183,7 @@ mimarsinan/
 │       └── common/                 # Shared utilities
 │           ├── file_utils.py
 │           ├── build_utils.py
-│           └── wandb_utils.py      # Weights & Biases reporter + Reporter protocol
+│           └── reporter.py         # Reporter protocol + DefaultReporter (in-tree metrics)
 ```
 
 ---
@@ -228,9 +228,9 @@ Platform constraints support two modes:
 `run_pipeline()` automatically starts a browser-based monitoring GUI on port 8501 (configurable via `gui_port`). The integration follows a non-invasive design:
 
 1. A `GUIHandle` is created via `start_gui(pipeline)`, which spawns a FastAPI/Uvicorn server in a daemon thread
-2. The pipeline's `reporter` is wrapped in a `CompositeReporter` that dispatches metrics to both WandB and the GUI's `DataCollector`
+2. The pipeline's `reporter` is wrapped in a `CompositeReporter` that dispatches metrics to the default reporter and the GUI's `DataCollector`
 3. Pre/post-step hooks are registered on the pipeline to track step lifecycle and extract rich snapshots after each step
-4. When the pipeline completes, WandB is explicitly finished via `reporter.finish()` to avoid process hangs
+4. When the pipeline completes, the primary reporter's `finish()` is called (no-op for the default reporter)
 5. The process then waits for user input (Enter key) before exiting, keeping the GUI server alive for post-run inspection
 
 If the GUI fails to start (e.g., port conflict, missing dependencies), a warning is printed and the pipeline continues without monitoring.
@@ -1232,7 +1232,7 @@ A real-time browser-based dashboard that launches automatically with every pipel
 | `GUIHandle` | `__init__.py` | Facade: creates collector, reporter, and step hooks |
 | `DataCollector` | `data_collector.py` | Thread-safe in-memory store for metrics, step lifecycle, and snapshots. Broadcasts updates to WebSocket listeners |
 | `GUIReporter` | `reporter.py` | Implements the `Reporter` protocol; forwards `report()` calls to `DataCollector` |
-| `CompositeReporter` | `composite_reporter.py` | Dispatches `report()`/`console_log()` to multiple reporters (WandB + GUI) |
+| `CompositeReporter` | `composite_reporter.py` | Dispatches `report()`/`console_log()` to multiple reporters (e.g. default + GUI) |
 | `server.py` | `server.py` | FastAPI application with REST endpoints (`/api/pipeline`, `/api/steps/{name}`) and a WebSocket (`/ws`) for real-time push. Runs in a daemon thread via Uvicorn |
 | `snapshot.py` | `snapshot.py` | Pure functions that extract JSON-serializable snapshots from pipeline artifacts: model weights/stats, IR graph topology with latency-tier grouping, hardware mapping with per-core heatmaps and connectivity, search results, adaptation rates |
 
@@ -1486,5 +1486,5 @@ python src/main.py configs/your_config.json
 - Python 3.10+
 - CUDA-capable GPU (strongly recommended)
 - C++20 compiler: Clang ≥ 17 (preferred) or `g++-11` (fallback) — required for `std::ranges` support in nevresim
-- Dependencies: `torch`, `torchvision`, `einops`, `numpy`, `wandb`, `pymoo`, `matplotlib`, `plotly`, `fastapi`, `uvicorn`, `websockets`
+- Dependencies: `torch`, `torchvision`, `einops`, `numpy`, `pymoo`, `matplotlib`, `plotly`, `fastapi`, `uvicorn`, `websockets`
 
