@@ -1132,6 +1132,7 @@ class Conv2DPerceptronMapper(Mapper):
         max_axons: int | None = None,
         use_batchnorm: bool = True,
         name: str = "Conv2DPerceptron",
+        base_activation_name=None,
     ):
         super().__init__(source_mapper)
 
@@ -1176,6 +1177,7 @@ class Conv2DPerceptronMapper(Mapper):
             input_features=patch_size,
             normalization=(nn.LazyBatchNorm1d() if self.use_batchnorm else nn.Identity()),
             bias=self.bias,
+            base_activation_name=base_activation_name,
             name=f"{self.name}_full",
         )
 
@@ -1435,6 +1437,7 @@ class Conv1DPerceptronMapper(Mapper):
         max_axons: int | None = None,
         use_batchnorm: bool = True,
         name: str = "Conv1DPerceptron",
+        base_activation_name=None,
     ):
         super().__init__(source_mapper)
 
@@ -1456,6 +1459,7 @@ class Conv1DPerceptronMapper(Mapper):
             input_features=patch_size,
             normalization=(nn.LazyBatchNorm1d() if self.use_batchnorm else nn.Identity()),
             bias=self.bias,
+            base_activation_name=base_activation_name,
             name=f"{self.name}_full",
         )
 

@@ -17,9 +17,10 @@ class SimpleMLPBuilder:
         self.pipeline_config = pipeline_config
 
     def build(self, configuration):
+        base_activation = configuration.get("base_activation", "ReLU")
         preprocessor = InputCQ(self.pipeline_config["target_tq"])
 
-        perceptron_flow = SimpleMLP(self.device, self.input_shape, self.num_classes, configuration['mlp_width_1'], configuration['mlp_width_2'])
+        perceptron_flow = SimpleMLP(self.device, self.input_shape, self.num_classes, configuration['mlp_width_1'], configuration['mlp_width_2'], base_activation_name=base_activation)
         supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
         allow_axon_tiling = bool(self.pipeline_config.get("allow_axon_tiling", False))
         for perceptron in supermodel.get_perceptrons():
@@ -32,6 +33,14 @@ class SimpleMLPBuilder:
     @classmethod
     def get_config_schema(cls):
         return [
+            {"key": "base_activation", "type": "select", "label": "Activation", "options": ["ReLU", "LeakyReLU", "GELU"], "default": "ReLU"},
             {"key": "mlp_width_1", "type": "number", "label": "Hidden Width 1", "default": 256},
             {"key": "mlp_width_2", "type": "number", "label": "Hidden Width 2", "default": 128},
         ]
+
+    @classmethod
+    def get_nas_search_options(cls, input_shape=None):
+        return {
+            "mlp_width_1": [64, 128, 256, 512],
+            "mlp_width_2": [64, 128, 256, 512],
+        }

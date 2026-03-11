@@ -72,19 +72,21 @@ _COMPUTE_OP_MODULES: set[type] = {
     nn.AvgPool2d,
     nn.AdaptiveAvgPool2d,
     nn.LayerNorm,
-    nn.GELU,
     nn.Dropout,
     nn.Dropout2d,
     nn.Identity,
     nn.Flatten,
 }
 
-# Modules that get absorbed into the preceding Perceptron
+# Modules that get absorbed into the preceding Perceptron.
+# nn.GELU is included so that Linear → GELU sequences get absorbed into
+# a single Perceptron with GELU activation, matching native ViT / FFN behaviour.
 _ABSORBABLE_MODULES: set[type] = {
     nn.BatchNorm1d,
     nn.BatchNorm2d,
     nn.ReLU,
     nn.LeakyReLU,
+    nn.GELU,
 }
 
 # Modules explicitly unsupported with reasons

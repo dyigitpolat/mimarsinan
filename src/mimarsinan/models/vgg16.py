@@ -100,6 +100,7 @@ class VGG16Mapper(PerceptronFlow):
         *,
         max_axons: int | None = None,
         max_neurons: int | None = None,
+        base_activation_name=None,
     ):
         super().__init__(device)
 
@@ -141,6 +142,7 @@ class VGG16Mapper(PerceptronFlow):
                 max_axons=max_axons,
                 use_batchnorm=True,
                 name=f"vgg_conv_{conv_idx}",
+                base_activation_name=base_activation_name,
             )
             self.feature_mappers.append(conv)
             out = conv
@@ -154,11 +156,11 @@ class VGG16Mapper(PerceptronFlow):
         out = EinopsRearrangeMapper(out, "... c h w -> ... (c h w)")
         out = Ensure2DMapper(out)
 
-        fc1 = Perceptron(4096, 512 * 7 * 7, normalization=nn.LazyBatchNorm1d(), name="vgg_fc1")
+        fc1 = Perceptron(4096, 512 * 7 * 7, normalization=nn.LazyBatchNorm1d(), base_activation_name=base_activation_name, name="vgg_fc1")
         fc1.regularization = nn.Dropout()
-        fc2 = Perceptron(4096, 4096, normalization=nn.LazyBatchNorm1d(), name="vgg_fc2")
+        fc2 = Perceptron(4096, 4096, normalization=nn.LazyBatchNorm1d(), base_activation_name=base_activation_name, name="vgg_fc2")
         fc2.regularization = nn.Dropout()
-        fc3 = Perceptron(self.num_classes, 4096, normalization=nn.Identity(), name="vgg_fc3")
+        fc3 = Perceptron(self.num_classes, 4096, normalization=nn.Identity(), base_activation_name=base_activation_name, name="vgg_fc3")
 
         self.classifier_perceptrons.extend([fc1, fc2, fc3])
 

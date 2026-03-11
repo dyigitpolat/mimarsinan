@@ -5,16 +5,19 @@ Inserted after Pretraining and before the first adaptation / quantization
 step.  Traces the trained model, validates representability, constructs the
 Mapper DAG with Perceptron wrappers, transfers trained weights, and sets up
 the AdaptationManager.
+
+Per-layer activation types discovered during graph conversion are preserved:
+each Perceptron's base_activation_name is set from the absorbed activation
+module (ReLU → LeakyGradReLU, LeakyReLU → nn.LeakyReLU, GELU → nn.GELU).
+The AdaptationManager then wraps each base_activation in TransformedActivation.
 """
 
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
-from mimarsinan.models.layers import LeakyGradReLU
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
 import torch
-import torch.nn as nn
 
 
 class TorchMappingStep(PipelineStep):
@@ -23,7 +26,8 @@ class TorchMappingStep(PipelineStep):
     This step:
       1. Traces the model with ``torch.fx``.
       2. Validates that every operation is representable.
-      3. Converts the FX graph to a Mapper DAG, transferring trained weights.
+      3. Converts the FX graph to a Mapper DAG, transferring trained weights
+         and preserving per-layer activation types.
       4. Wraps the result in a ``Supermodel``.
       5. Sets up Perceptron activations via ``AdaptationManager``.
       6. Optionally verifies forward-pass equivalence with the original model.
@@ -57,9 +61,8 @@ class TorchMappingStep(PipelineStep):
         )
 
         adaptation_manager = AdaptationManager()
-        model_config = self.pipeline.config.get("model_config", {})
         for perceptron in supermodel.get_perceptrons():
-            self._set_activation(model_config, perceptron, adaptation_manager)
+            adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         self._verify_equivalence(native_model, supermodel)
 
@@ -77,23 +80,6 @@ class TorchMappingStep(PipelineStep):
         print(f"[TorchMappingStep] Converted native model to Supermodel")
         print(f"  Perceptrons: {len(supermodel.get_perceptrons())}")
         print(f"  Validation: {self.validate()}")
-
-    def _set_activation(self, model_config, perceptron, adaptation_manager):
-        base_act = model_config.get("base_activation", "ReLU")
-        if base_act == "ReLU":
-            perceptron.base_activation = LeakyGradReLU()
-            perceptron.activation = LeakyGradReLU()
-        elif base_act == "LeakyReLU":
-            perceptron.base_activation = nn.LeakyReLU()
-            perceptron.activation = nn.LeakyReLU()
-        elif base_act == "GELU":
-            perceptron.base_activation = nn.GELU()
-            perceptron.activation = nn.GELU()
-        else:
-            perceptron.base_activation = LeakyGradReLU()
-            perceptron.activation = LeakyGradReLU()
-
-        adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
     def _verify_equivalence(self, native_model, supermodel):
         """Best-effort check that the converted model matches the original."""

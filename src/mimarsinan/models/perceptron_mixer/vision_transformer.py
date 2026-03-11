@@ -72,6 +72,7 @@ class VisionTransformer(PerceptronFlow):
         num_layers: int = 4,
         mlp_ratio: int = 4,
         dropout: float = 0.1,
+        base_activation_name=None,
     ):
         super().__init__(device)
 
@@ -92,6 +93,7 @@ class VisionTransformer(PerceptronFlow):
         self.num_layers = num_layers
         self.mlp_ratio = mlp_ratio
         self.dropout_p = dropout
+        self.base_activation_name = base_activation_name
 
         num_patches = (H // patch_size) * (W // patch_size)
         self.num_patches = num_patches
@@ -111,35 +113,35 @@ class VisionTransformer(PerceptronFlow):
         self.norm2 = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(num_layers)])
 
         self.q_proj = nn.ModuleList([
-            Perceptron(d_model, d_model, normalization=nn.Identity(), name=f"q_{i}")
+            Perceptron(d_model, d_model, normalization=nn.Identity(), base_activation_name=base_activation_name, name=f"q_{i}")
             for i in range(num_layers)
         ])
         self.k_proj = nn.ModuleList([
-            Perceptron(d_model, d_model, normalization=nn.Identity(), name=f"k_{i}")
+            Perceptron(d_model, d_model, normalization=nn.Identity(), base_activation_name=base_activation_name, name=f"k_{i}")
             for i in range(num_layers)
         ])
         self.v_proj = nn.ModuleList([
-            Perceptron(d_model, d_model, normalization=nn.Identity(), name=f"v_{i}")
+            Perceptron(d_model, d_model, normalization=nn.Identity(), base_activation_name=base_activation_name, name=f"v_{i}")
             for i in range(num_layers)
         ])
         self.out_proj = nn.ModuleList([
-            Perceptron(d_model, d_model, normalization=nn.Identity(), name=f"out_{i}")
+            Perceptron(d_model, d_model, normalization=nn.Identity(), base_activation_name=base_activation_name, name=f"out_{i}")
             for i in range(num_layers)
         ])
 
         self.ffn1 = nn.ModuleList([
-            Perceptron(ffn_hidden, d_model, normalization=nn.Identity(), name=f"ffn1_{i}")
+            Perceptron(ffn_hidden, d_model, normalization=nn.Identity(), base_activation_name=base_activation_name, name=f"ffn1_{i}")
             for i in range(num_layers)
         ])
         self.ffn2 = nn.ModuleList([
-            Perceptron(d_model, ffn_hidden, normalization=nn.Identity(), name=f"ffn2_{i}")
+            Perceptron(d_model, ffn_hidden, normalization=nn.Identity(), base_activation_name=base_activation_name, name=f"ffn2_{i}")
             for i in range(num_layers)
         ])
 
         # ---- Final norm + classifier ----
         self.final_norm = nn.LayerNorm(d_model)
         self.classifier = Perceptron(
-            num_classes, d_model, normalization=nn.Identity(), name="classifier"
+            num_classes, d_model, normalization=nn.Identity(), base_activation_name=base_activation_name, name="classifier"
         )
 
         # ---- Build mapper graph (single source of truth) ----
@@ -167,6 +169,7 @@ class VisionTransformer(PerceptronFlow):
             padding=0,
             use_batchnorm=True,
             name="patch_embed",
+            base_activation_name=self.base_activation_name,
         )
         self.patch_embed_perceptron = out  # Expose for owned_perceptron_groups
 

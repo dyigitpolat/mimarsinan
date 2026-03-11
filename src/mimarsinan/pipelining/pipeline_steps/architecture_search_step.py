@@ -4,16 +4,9 @@ import os
 from typing import Any, Dict, List, Literal, Sequence, Tuple
 
 from mimarsinan.pipelining.pipeline_step import PipelineStep
+from mimarsinan.pipelining.model_registry import ModelRegistry
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
 from mimarsinan.search.problems.joint_arch_hw_problem import JointArchHwProblem
-
-from mimarsinan.models.builders import (
-    PerceptronMixerBuilder,
-    SimpleConvBuilder,
-    SimpleMLPBuilder,
-    VGG16Builder,
-    VitBuilder,
-)
 from mimarsinan.visualization.search_visualization import (
     create_interactive_search_report,
     write_final_population_json,
@@ -22,202 +15,27 @@ from mimarsinan.visualization.search_visualization import (
 
 OptimizerType = Literal["nsga2", "kedi"]
 
-_BUILDER_CLASSES: Dict[str, type] = {
-    "mlp_mixer": PerceptronMixerBuilder,
-    "simple_mlp": SimpleMLPBuilder,
-    "simple_conv": SimpleConvBuilder,
-    "vgg16": VGG16Builder,
-    "vit": VitBuilder,
-}
-
 
 # ====================================================================== #
-# Per-model-type: arch_options, model_config_assembler, validate_fn,
-# constraint_fn.  These are plain functions so they can be injected into
-# the generic JointArchHwProblem.
+# Generic Kedi optimizer helpers
 # ====================================================================== #
 
 
-# ---- PerceptronMixer ------------------------------------------------- #
-
-def _mixer_arch_options(arch_cfg: Dict[str, Any], h: int, w: int) -> List[Tuple[str, Sequence[Any]]]:
-    return [
-        ("patch_n_1", arch_cfg.get("patch_rows_options", _divisors(h))),
-        ("patch_m_1", arch_cfg.get("patch_cols_options", _divisors(w))),
-        ("patch_c_1", arch_cfg.get("patch_channels_options", [8, 16, 24, 32, 48, 64, 96, 128, 192, 256])),
-        ("fc_w_1", arch_cfg.get("fc_w1_options", [16, 32, 48, 64, 96, 128, 192, 256])),
-        ("fc_w_2", arch_cfg.get("fc_w2_options", [16, 32, 48, 64, 96, 128, 192, 256])),
-    ]
-
-
-def _mixer_assembler(raw: Dict[str, Any]) -> Dict[str, Any]:
-    return {"base_activation": "LeakyReLU", **{k: int(v) for k, v in raw.items()}}
-
-
-def _mixer_validate(
-    mc: Dict[str, Any],
-    pcfg: Dict[str, Any],
-    input_shape: Tuple[int, ...],
-    allow_axon_tiling: bool,
-) -> bool:
-    pr = int(mc["patch_n_1"])
-    pc = int(mc["patch_m_1"])
-    h, w = int(input_shape[-2]), int(input_shape[-1])
-    if h % pr != 0 or w % pc != 0:
-        return False
-
-    patch_h = h // pr
-    patch_w = w // pc
-    in_ch = int(input_shape[-3])
-    patch_size = patch_h * patch_w * in_ch
-    patch_count = pr * pc
-    patch_channels = int(mc["patch_c_1"])
-
-    max_in = max(
-        patch_size, patch_count, int(mc["fc_w_1"]),
-        patch_channels, int(mc["fc_w_2"]), patch_count * patch_channels,
-    )
-    max_axons = int(pcfg["max_axons"])
-    if not allow_axon_tiling and max_in > max_axons - 1:
-        return False
-    return True
-
-
-def _mixer_constraint(
-    mc: Dict[str, Any],
-    pcfg: Dict[str, Any],
-    input_shape: Tuple[int, ...],
-    allow_axon_tiling: bool,
-) -> float:
-    pr = int(mc["patch_n_1"])
-    pc = int(mc["patch_m_1"])
-    h, w = int(input_shape[-2]), int(input_shape[-1])
-    if h % pr != 0 or w % pc != 0:
-        return 1e6
-
-    patch_h = h // pr
-    patch_w = w // pc
-    in_ch = int(input_shape[-3])
-    patch_size = patch_h * patch_w * in_ch
-    patch_count = pr * pc
-    patch_channels = int(mc["patch_c_1"])
-
-    max_in = max(
-        patch_size, patch_count, int(mc["fc_w_1"]),
-        patch_channels, int(mc["fc_w_2"]), patch_count * patch_channels,
-    )
-    max_axons = int(pcfg["max_axons"])
-    return max(0.0, float(max_in - (max_axons - 1)))
-
-
-# ---- Vision Transformer ---------------------------------------------- #
-
-def _vit_arch_options(arch_cfg: Dict[str, Any]) -> List[Tuple[str, Sequence[Any]]]:
-    return [
-        ("patch_size", arch_cfg.get("patch_size_options", [2, 4, 8])),
-        ("d_model", arch_cfg.get("d_model_options", [64, 96, 128, 192, 256])),
-        ("num_heads", arch_cfg.get("num_heads_options", [2, 4, 8])),
-        ("num_layers", arch_cfg.get("num_layers_options", [2, 4, 6])),
-        ("mlp_ratio", arch_cfg.get("mlp_ratio_options", [2, 4])),
-    ]
-
-
-def _vit_assembler(raw: Dict[str, Any]) -> Dict[str, Any]:
-    d_model = int(raw["d_model"])
-    num_heads = int(raw["num_heads"])
-    while d_model % num_heads != 0 and num_heads > 1:
-        num_heads //= 2
-    return {
-        "base_activation": "ReLU",
-        "patch_size": int(raw["patch_size"]),
-        "d_model": d_model,
-        "num_heads": num_heads,
-        "num_layers": int(raw["num_layers"]),
-        "mlp_ratio": int(raw["mlp_ratio"]),
-        "dropout": 0.1,
-    }
-
-
-def _vit_validate(
-    mc: Dict[str, Any],
-    pcfg: Dict[str, Any],
-    input_shape: Tuple[int, ...],
-    allow_axon_tiling: bool,
-) -> bool:
-    patch_size = int(mc["patch_size"])
-    d_model = int(mc["d_model"])
-    num_heads = int(mc["num_heads"])
-    mlp_ratio = int(mc["mlp_ratio"])
-    C, H, W = int(input_shape[-3]), int(input_shape[-2]), int(input_shape[-1])
-
-    if H % patch_size != 0 or W % patch_size != 0:
-        return False
-    if d_model % num_heads != 0:
-        return False
-
-    ffn_hidden = d_model * mlp_ratio
-    patch_input = C * patch_size * patch_size
-    max_in = max(d_model, ffn_hidden, patch_input)
-
-    max_axons = int(pcfg["max_axons"])
-    if not allow_axon_tiling and max_in > max_axons - 1:
-        return False
-    return True
-
-
-def _vit_constraint(
-    mc: Dict[str, Any],
-    pcfg: Dict[str, Any],
-    input_shape: Tuple[int, ...],
-    allow_axon_tiling: bool,
-) -> float:
-    patch_size = int(mc["patch_size"])
-    d_model = int(mc["d_model"])
-    mlp_ratio = int(mc["mlp_ratio"])
-    num_heads = int(mc["num_heads"])
-    C, H, W = int(input_shape[-3]), int(input_shape[-2]), int(input_shape[-1])
-
-    if H % patch_size != 0 or W % patch_size != 0:
-        return 1e6
-    if d_model % num_heads != 0:
-        return 1e6
-
-    ffn_hidden = d_model * mlp_ratio
-    patch_input = C * patch_size * patch_size
-    max_in = max(d_model, ffn_hidden, patch_input)
-    max_axons = int(pcfg["max_axons"])
-    return max(0.0, float(max_in - (max_axons - 1)))
-
-
-# ====================================================================== #
-# Kedi optimizer helpers (PerceptronMixer-specific for now)
-# ====================================================================== #
-
-def _build_kedi_config_schema(
+def _build_kedi_config_schema_generic(
+    arch_options: List[Tuple[str, List[Any]]],
     arch_cfg: Dict[str, Any],
-    input_shape: tuple,
     target_tq: int,
 ) -> Dict[str, Any]:
-    patch_rows = arch_cfg.get("patch_rows_options", [1, 2, 4, 7, 14, 28])
-    patch_cols = arch_cfg.get("patch_cols_options", [1, 2, 4, 7, 14, 28])
-    patch_channels = arch_cfg.get("patch_channels_options", [16, 32, 48, 64, 96, 128])
-    fc_w1 = arch_cfg.get("fc_w1_options", [32, 64, 96, 128])
-    fc_w2 = arch_cfg.get("fc_w2_options", [32, 64, 96, 128])
     num_core_types = arch_cfg.get("num_core_types", 2)
     core_type_counts = arch_cfg.get("core_type_counts", [200, 200])
     core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
     core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
     max_threshold_groups = arch_cfg.get("max_threshold_groups", 3)
 
+    model_config_desc = {key: f"one of {values}" for key, values in arch_options}
+
     return {
-        "model_config": {
-            "base_activation": "LeakyReLU (fixed)",
-            "patch_n_1": f"integer from {patch_rows} (must divide input height {input_shape[-2]})",
-            "patch_m_1": f"integer from {patch_cols} (must divide input width {input_shape[-1]})",
-            "patch_c_1": f"integer from {patch_channels}",
-            "fc_w_1": f"integer from {fc_w1}",
-            "fc_w_2": f"integer from {fc_w2}",
-        },
+        "model_config": model_config_desc,
         "platform_constraints": {
             "cores": (
                 f"list of {num_core_types} objects, each with max_axons "
@@ -236,40 +54,30 @@ def _build_kedi_config_schema(
     }
 
 
-def _build_kedi_example_config(
+def _build_kedi_example_config_generic(
+    arch_options: List[Tuple[str, List[Any]]],
     arch_cfg: Dict[str, Any],
-    input_shape: tuple,
     target_tq: int,
 ) -> Dict[str, Any]:
     num_core_types = arch_cfg.get("num_core_types", 2)
     core_type_counts = arch_cfg.get("core_type_counts", [200, 200])
 
-    patch_n, patch_m, patch_c = 2, 2, 64
+    model_config = {key: values[len(values) // 2] for key, values in arch_options}
+
     small_axons, small_neurons = 512, 512
     large_axons, large_neurons = 1024, 1024
     core_dims = [(small_axons, small_neurons), (large_axons, large_neurons)]
-
     cores = []
     for i in range(num_core_types):
         ax, neu = core_dims[i % len(core_dims)]
         cores.append({"max_axons": ax, "max_neurons": neu, "count": core_type_counts[i]})
 
-    min_axons = min(c["max_axons"] for c in cores)
-    min_neurons = min(c["max_neurons"] for c in cores)
-
     return {
-        "model_config": {
-            "base_activation": "LeakyReLU",
-            "patch_n_1": patch_n,
-            "patch_m_1": patch_m,
-            "patch_c_1": patch_c,
-            "fc_w_1": 64,
-            "fc_w_2": 64,
-        },
+        "model_config": model_config,
         "platform_constraints": {
             "cores": cores,
-            "max_axons": min_axons,
-            "max_neurons": min_neurons,
+            "max_axons": min(c["max_axons"] for c in cores),
+            "max_neurons": min(c["max_neurons"] for c in cores),
             "target_tq": target_tq,
             "weight_bits": 8,
             "allow_axon_tiling": False,
@@ -278,13 +86,49 @@ def _build_kedi_example_config(
     }
 
 
+def _build_kedi_constraints_desc(
+    arch_options: List[Tuple[str, List[Any]]],
+    arch_cfg: Dict[str, Any],
+) -> str:
+    core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
+    core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
+    max_threshold_groups = arch_cfg.get("max_threshold_groups", 3)
+
+    option_lines = "\n".join(
+        f"   - {key}: must be one of {values}" for key, values in arch_options
+    )
+
+    return f"""
+CRITICAL CONSTRAINTS:
+
+1. MODEL CONFIGURATION OPTIONS:
+{option_lines}
+
+2. TILING CONSTRAINT (most important!):
+   Softcores are tiled to fit the SMALLEST core type. The tiling limit is
+   max_axons = min(cores[*].max_axons) and max_neurons = min(cores[*].max_neurons).
+   The largest layer input must fit in max_axons - 1.
+
+3. HETEROGENEOUS CORES:
+   Different core types may have different max_axons/max_neurons.
+   Softcores are sized for the smallest core, so they can pack into ANY core type.
+   The max_axons/max_neurons in platform_constraints must equal the MIN across all cores.
+
+4. Core dimensions: each core's max_axons and max_neurons must be multiples of 8,
+   between {core_axons_bounds[0]} and {core_axons_bounds[1]}.
+   Core neurons must be in range {core_neurons_bounds[0]}-{core_neurons_bounds[1]}.
+
+5. threshold_groups: integer from 1 to {max_threshold_groups}.
+"""
+
+
 def _create_optimizer(
     optimizer_type: OptimizerType,
     arch_cfg: Dict[str, Any],
+    arch_options: List[Tuple[str, List[Any]]],
     seed: int,
     pop_size: int,
     generations: int,
-    input_shape: tuple = None,
     target_tq: int = 16,
 ):
     if optimizer_type == "kedi":
@@ -298,40 +142,10 @@ def _create_optimizer(
             max_failed_examples = arch_cfg.get("max_failed_examples", 5)
             llm_retries = arch_cfg.get("llm_retries", 3)
 
-            config_schema = None
-            example_config = None
-            if input_shape is not None:
-                config_schema = _build_kedi_config_schema(arch_cfg, input_shape, target_tq)
-                example_config = _build_kedi_example_config(arch_cfg, input_shape, target_tq)
-
-            h = int(input_shape[-2]) if input_shape else 28
-            w = int(input_shape[-1]) if input_shape else 28
-            constraints_desc = arch_cfg.get("constraints_description") or f"""
-CRITICAL CONSTRAINTS:
-
-1. PATCH DIVISIBILITY: patch_n_1 must divide {h}, patch_m_1 must divide {w}
-   - Valid patch_n_1 options: {_divisors(h)}
-   - Valid patch_m_1 options: {_divisors(w)}
-
-2. TILING CONSTRAINT (most important!):
-   Softcores are tiled to fit the SMALLEST core type. The tiling limit is
-   max_axons = min(cores[*].max_axons) and max_neurons = min(cores[*].max_neurons).
-   The largest layer input must fit in max_axons - 1.
-
-   Calculate: patch_count = patch_n_1 * patch_m_1
-   The LARGEST input is: patch_count * patch_c_1
-
-   RULE: (patch_n_1 * patch_m_1 * patch_c_1) <= max_axons - 1
-
-3. HETEROGENEOUS CORES:
-   Different core types may have different max_axons/max_neurons.
-   Softcores are sized for the smallest core, so they can pack into ANY core type.
-   The max_axons/max_neurons in platform_constraints must equal the MIN across all cores.
-
-4. Core dimensions: each core's max_axons and max_neurons must be multiples of 8, between 64 and 1024.
-
-5. threshold_groups: integer from 1 to 3.
-"""
+            config_schema = _build_kedi_config_schema_generic(arch_options, arch_cfg, target_tq)
+            example_config = _build_kedi_example_config_generic(arch_options, arch_cfg, target_tq)
+            constraints_desc = arch_cfg.get("constraints_description") or \
+                _build_kedi_constraints_desc(arch_options, arch_cfg)
 
             return KediOptimizer(
                 pop_size=pop_size,
@@ -350,7 +164,6 @@ CRITICAL CONSTRAINTS:
         except ImportError as e:
             print(f"[ArchitectureSearchStep] Kedi optimizer not available: {e}")
             print("[ArchitectureSearchStep] Falling back to NSGA2")
-            optimizer_type = "nsga2"
 
     return NSGA2Optimizer(
         pop_size=pop_size,
@@ -359,11 +172,6 @@ CRITICAL CONSTRAINTS:
         eliminate_duplicates=True,
         verbose=True,
     )
-
-
-def _divisors(n: int) -> List[int]:
-    n = int(n)
-    return [d for d in range(1, n + 1) if n % d == 0]
 
 
 def _search_result_to_jsonable(result) -> Dict[str, Any]:
@@ -382,6 +190,75 @@ def _search_result_to_jsonable(result) -> Dict[str, Any]:
     }
 
 
+def _derive_arch_options(
+    builder_cls: type,
+    arch_cfg: Dict[str, Any],
+    input_shape: tuple,
+) -> Tuple[List[Tuple[str, List[Any]]], Dict[str, Any]]:
+    """
+    Derive (arch_options, schema_map) from a builder's schema and optional
+    get_nas_search_options() classmethod.
+
+    arch_options is a list of (key, values) pairs for all searchable config keys:
+    - "select" fields with multiple options
+    - numeric fields listed in get_nas_search_options()
+
+    schema_map maps key -> field descriptor for assembler type coercion.
+    """
+    schema = getattr(builder_cls, "get_config_schema", lambda: [])()
+    schema_map = {f["key"]: f for f in schema}
+
+    nas_opts_fn = getattr(builder_cls, "get_nas_search_options", None)
+    builder_options: Dict[str, List[Any]] = (
+        nas_opts_fn(input_shape=input_shape) if nas_opts_fn else {}
+    )
+
+    arch_options: List[Tuple[str, List[Any]]] = []
+    for field_desc in schema:
+        key = field_desc["key"]
+        field_type = field_desc.get("type")
+        if field_type == "select" and "options" in field_desc:
+            values = arch_cfg.get(f"{key}_options", field_desc["options"])
+            if len(values) > 1:
+                arch_options.append((key, list(values)))
+        elif key in builder_options:
+            values = arch_cfg.get(f"{key}_options", builder_options[key])
+            if len(values) > 1:
+                arch_options.append((key, list(values)))
+
+    # Also include builder_options keys not covered by schema
+    schema_keys = {f["key"] for f in schema}
+    for key, default_values in builder_options.items():
+        if key not in schema_keys:
+            values = arch_cfg.get(f"{key}_options", default_values)
+            if len(values) > 1:
+                arch_options.append((key, list(values)))
+
+    return arch_options, schema_map
+
+
+def _make_assembler(schema: List[Dict[str, Any]], schema_map: Dict[str, Any]):
+    """
+    Return a model_config assembler that:
+    - Fills in schema defaults for all fields
+    - Coerces searched values to their declared types
+    """
+    def assembler(raw: Dict[str, Any]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        for field_desc in schema:
+            if "default" in field_desc:
+                result[field_desc["key"]] = field_desc["default"]
+        for k, v in raw.items():
+            field_info = schema_map.get(k, {})
+            if field_info.get("type") == "number":
+                default = field_info.get("default", 0)
+                result[k] = float(v) if isinstance(default, float) else int(v)
+            else:
+                result[k] = v
+        return result
+    return assembler
+
+
 # ====================================================================== #
 # The pipeline step
 # ====================================================================== #
@@ -393,6 +270,10 @@ class ArchitectureSearchStep(PipelineStep):
     Modes:
     - user: passthrough (uses pipeline.config['model_config'] and existing platform constraints)
     - nas:  runs NSGA-II / Kedi joint search via the generic JointArchHwProblem
+
+    NAS search-space definitions are derived generically from each builder's
+    get_config_schema() and optional get_nas_search_options() classmethods.
+    No per-model NAS provider classes are needed.
     """
 
     def __init__(self, pipeline):
@@ -416,17 +297,17 @@ class ArchitectureSearchStep(PipelineStep):
         model_type = self.pipeline.config["model_type"]
         configuration_mode = self.pipeline.config.get("configuration_mode", "user")
 
-        def _make_builder():
-            cls = _BUILDER_CLASSES.get(model_type)
-            if cls is None:
-                raise ValueError(f"Unknown model_type: {model_type}")
-            return cls(
+        builder_cls = ModelRegistry.get_builder_cls(model_type)
+
+        def _make_builder(max_axons=None, max_neurons=None, extra_cfg=None):
+            cfg = self.pipeline.config if extra_cfg is None else extra_cfg
+            return builder_cls(
                 self.pipeline.config["device"],
                 self.pipeline.config["input_shape"],
                 self.pipeline.config["num_classes"],
-                self.pipeline.config["max_axons"],
-                self.pipeline.config["max_neurons"],
-                self.pipeline.config,
+                max_axons if max_axons is not None else self.pipeline.config["max_axons"],
+                max_neurons if max_neurons is not None else self.pipeline.config["max_neurons"],
+                cfg,
             )
 
         if configuration_mode == "user":
@@ -463,29 +344,41 @@ class ArchitectureSearchStep(PipelineStep):
         if configuration_mode != "nas":
             raise ValueError(f"Invalid configuration_mode: {configuration_mode}")
 
-        # ---- Resolve model-specific search space ---- #
+        # ---- Derive search space generically from builder schema ---- #
         arch_cfg = self.pipeline.config.get("arch_search", {})
-        h = int(self.pipeline.config["input_shape"][-2])
-        w = int(self.pipeline.config["input_shape"][-1])
+        input_shape = tuple(self.pipeline.config["input_shape"])
 
-        if model_type == "mlp_mixer":
-            arch_options = _mixer_arch_options(arch_cfg, h, w)
-            assembler = _mixer_assembler
-            v_fn = _mixer_validate
-            c_fn = _mixer_constraint
-        elif model_type == "vit":
-            arch_options = _vit_arch_options(arch_cfg)
-            assembler = _vit_assembler
-            v_fn = _vit_validate
-            c_fn = _vit_constraint
-        else:
+        arch_options, schema_map = _derive_arch_options(builder_cls, arch_cfg, input_shape)
+
+        if not arch_options:
+            schema = getattr(builder_cls, "get_config_schema", lambda: [])()
             raise NotImplementedError(
-                f"ArchitectureSearchStep NAS does not yet have search-space definitions for "
-                f"model_type='{model_type}'. Add arch_options / assembler / validate / "
-                f"constraint functions, then pass them to JointArchHwProblem."
+                f"No NAS search space defined for model_type='{model_type}'. "
+                f"Add get_nas_search_options() or 'select' fields with multiple options "
+                f"to {builder_cls.__name__}.get_config_schema(). "
+                f"Current schema keys: {[f['key'] for f in schema]}"
             )
 
-        builder_cls = _BUILDER_CLASSES[model_type]
+        schema = getattr(builder_cls, "get_config_schema", lambda: [])()
+        assembler = _make_assembler(schema, schema_map)
+
+        # Generic validate_fn and constraint_fn derived from builder.validate_config
+        validate_config_fn = getattr(builder_cls, "validate_config", None)
+
+        def validate_fn(model_config, platform_constraints, inp_shape, allow_axon_tiling):
+            if validate_config_fn is not None:
+                return bool(validate_config_fn(
+                    model_config, platform_constraints, inp_shape, allow_axon_tiling
+                ))
+            return True
+
+        def constraint_fn(model_config, platform_constraints, inp_shape, allow_axon_tiling):
+            if validate_config_fn is not None:
+                if not validate_config_fn(
+                    model_config, platform_constraints, inp_shape, allow_axon_tiling
+                ):
+                    return 1.0
+            return 0.0
 
         # ---- Common NAS parameters ---- #
         pop_size = int(arch_cfg.get("pop_size", 12))
@@ -518,15 +411,15 @@ class ArchitectureSearchStep(PipelineStep):
         problem = JointArchHwProblem(
             data_provider_factory=self.pipeline.data_provider_factory,
             device=self.pipeline.config["device"],
-            input_shape=tuple(self.pipeline.config["input_shape"]),
+            input_shape=input_shape,
             num_classes=int(self.pipeline.config["num_classes"]),
             target_tq=int(self.pipeline.config["target_tq"]),
             lr=float(self.pipeline.config["lr"]),
             builder_factory=builder_cls,
             arch_options=arch_options,
             model_config_assembler=assembler,
-            validate_fn=v_fn,
-            constraint_fn=c_fn,
+            validate_fn=validate_fn,
+            constraint_fn=constraint_fn,
             num_core_types=num_core_types,
             core_type_counts=core_type_counts,
             core_axons_bounds=(int(core_axons_bounds[0]), int(core_axons_bounds[1])),
@@ -546,14 +439,15 @@ class ArchitectureSearchStep(PipelineStep):
         optimizer = _create_optimizer(
             optimizer_type=optimizer_type,
             arch_cfg=arch_cfg,
+            arch_options=arch_options,
             seed=seed,
             pop_size=pop_size,
             generations=generations,
-            input_shape=tuple(self.pipeline.config["input_shape"]),
             target_tq=int(self.pipeline.config["target_tq"]),
         )
 
-        print(f"[ArchitectureSearchStep] Using {optimizer_type} optimizer")
+        print(f"[ArchitectureSearchStep] model_type='{model_type}' | optimizer={optimizer_type} "
+              f"| search space: {[(k, len(v)) for k, v in arch_options]}")
 
         _reporter = getattr(self.pipeline, "reporter", None)
         _report_fn = getattr(_reporter, "report", None) if _reporter else None
@@ -604,7 +498,7 @@ class ArchitectureSearchStep(PipelineStep):
         merged_config = {**self.pipeline.config, **platform_constraints}
         builder = builder_cls(
             self.pipeline.config["device"],
-            self.pipeline.config["input_shape"],
+            input_shape,
             self.pipeline.config["num_classes"],
             int(platform_constraints["max_axons"]),
             int(platform_constraints["max_neurons"]),

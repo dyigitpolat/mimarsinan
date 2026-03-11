@@ -1,21 +1,12 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
+from mimarsinan.pipelining.model_registry import ModelRegistry
 
 from mimarsinan.search.small_step_evaluator import SmallStepEvaluator
 from mimarsinan.search.mlp_mixer_configuration_sampler import MLP_Mixer_ConfigurationSampler
 from mimarsinan.search.optimizers.sampler_optimizer import SamplerOptimizer
 from mimarsinan.search.problems.evaluator_problem import EvaluatorProblem
 from mimarsinan.search.results import ObjectiveSpec
-from mimarsinan.models.builders import PerceptronMixerBuilder
-from mimarsinan.models.builders import SimpleMLPBuilder
-from mimarsinan.models.builders import SimpleConvBuilder
-from mimarsinan.models.builders import VGG16Builder
-from mimarsinan.models.builders import VitBuilder
-from mimarsinan.models.builders import TorchVGG16Builder
-from mimarsinan.models.builders import TorchViTBuilder
-from mimarsinan.models.builders import TorchSqueezeNet11Builder
-from mimarsinan.models.builders import TorchCustomBuilder
-from mimarsinan.models.builders import TorchSequentialLinearBuilder
-from mimarsinan.models.builders import TorchSequentialConvBuilder
+
 
 class ModelConfigurationStep(PipelineStep):
     """
@@ -57,24 +48,10 @@ class ModelConfigurationStep(PipelineStep):
             self.pipeline.config,
         )
 
-        builders = {
-            "mlp_mixer": PerceptronMixerBuilder(*common_args),
-            "simple_mlp": SimpleMLPBuilder(*common_args),
-            "simple_conv": SimpleConvBuilder(*common_args),
-            "vgg16": VGG16Builder(*common_args),
-            "vit": VitBuilder(*common_args),
-            "torch_vgg16": TorchVGG16Builder(*common_args),
-            "torch_vit": TorchViTBuilder(*common_args),
-            "torch_squeezenet11": TorchSqueezeNet11Builder(*common_args),
-            "torch_custom": TorchCustomBuilder(
-                *common_args,
-                model_factory=self.pipeline.config.get("model_factory"),
-            ),
-            "torch_sequential_linear": TorchSequentialLinearBuilder(*common_args),
-            "torch_sequential_conv": TorchSequentialConvBuilder(*common_args),
-        }
-        builder = builders[self.pipeline.config['model_type']]
-        
+        model_type = self.pipeline.config['model_type']
+        builder_cls = ModelRegistry.get_builder_cls(model_type)
+        builder = builder_cls(*common_args)
+
         configuration_mode = self.pipeline.config['configuration_mode']
 
         if configuration_mode == "nas":
@@ -90,7 +67,7 @@ class ModelConfigurationStep(PipelineStep):
                 self.pipeline.loss,
                 self.pipeline.config["lr"],
                 self.pipeline.config["device"],
-                builders["mlp_mixer"],
+                builder,
             )
 
             problem = EvaluatorProblem(
