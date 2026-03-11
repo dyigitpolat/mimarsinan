@@ -57,12 +57,24 @@ export function updateLiveCharts(stepName, state) {
   for (const [group, metricNames] of Object.entries(groups)) {
     const el = document.getElementById(`mc-${cssId(group)}`);
     if (!el || !el.data) return;
-    const traces = metricNames.map(name => {
+    const allTraces = metricNames.map(name => {
       const points = metrics[name] || [];
       const x = stepStartSec != null ? points.map(p => (p.timestamp - stepStartSec)) : points.map((_, i) => i);
-      return { x, y: points.map(p => p.value), name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
+      const y = points.map(p => p.value);
+      return { x, y, name };
     });
-    Plotly.react(el, traces, el.layout, { displayModeBar: false, responsive: true });
+    const xMax = computeGroupXMax(allTraces);
+    const traces = allTraces.map(({ x, y, name }) => {
+      let xOut = x, yOut = y;
+      if (x.length === 1 && xMax != null) {
+        xOut = [x[0], xMax];
+        yOut = [y[0], y[0]];
+      }
+      return { x: xOut, y: yOut, name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
+    });
+    const layout = { ...el.layout };
+    if (group === 'Accuracy' || group === 'Adaptation') layout.yaxis = { ...(layout.yaxis || {}), range: [0, 1] };
+    Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
   }
 }
 
@@ -159,11 +171,46 @@ function renderMetricsTab(metrics, container, stepStartTime) {
 function plotMetricGroup(group, metricNames, metrics, stepStartTime) {
   const el = document.getElementById(`mc-${cssId(group)}`);
   if (!el) return;
-  safeReact(el, metricNames.map(name => {
+  const allTraces = metricNames.map(name => {
     const points = metrics[name] || [];
     const x = stepStartTime != null ? points.map(p => (p.timestamp - stepStartTime)) : points.map((_, i) => i);
-    return { x, y: points.map(p => p.value), name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
-  }), { showlegend: metricNames.length > 1, legend: { font: { size: 10 }, x: 0, y: 1 }, height: 240, xaxis: { title: stepStartTime != null ? 'Elapsed (s)' : 'Index' } });
+    const y = points.map(p => p.value);
+    return { x, y, name };
+  });
+  const xMax = computeGroupXMax(allTraces);
+  const traces = allTraces.map(({ x, y, name }) => {
+    let xOut = x, yOut = y;
+    if (x.length === 1 && xMax != null) {
+      xOut = [x[0], xMax];
+      yOut = [y[0], y[0]];
+    }
+    return { x: xOut, y: yOut, name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
+  });
+  const layoutOpts = {
+    showlegend: metricNames.length > 1,
+    legend: { x: 1.02, y: 1, xanchor: 'left', orientation: 'v', font: { size: 10 } },
+    margin: { r: 100 },
+    height: 240,
+    xaxis: { title: stepStartTime != null ? 'Elapsed (s)' : 'Index' },
+  };
+  if (group === 'Accuracy' || group === 'Adaptation') {
+    layoutOpts.yaxis = { range: [0, 1] };
+  }
+  safeReact(el, traces, layoutOpts);
+}
+
+function computeGroupXMax(traces) {
+  let max = null;
+  for (const t of traces) {
+    if (t.x.length > 0) {
+      const m = Math.max(...t.x);
+      if (max == null || m > max) max = m;
+    }
+  }
+  if (max != null && typeof max === 'number') {
+    return max + (max === 0 ? 1 : Math.max(1, max * 0.1));
+  }
+  return null;
 }
 
 function groupMetricsByCategory(names) {

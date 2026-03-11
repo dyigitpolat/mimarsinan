@@ -67,6 +67,7 @@ function init() {
     renderCoreTypes();
     applySpikingDeps();
     applyHwDeps();
+    onPruningFractionChange();
     updateSearchVisibility();
     update();
     schedulePipelineStepsUpdate();
@@ -103,7 +104,11 @@ function toggleClick(el) {
 function isToggleOn(id) { return document.getElementById(id)?.classList.contains('on') || false; }
 function setToggle(id, val, forced = false) {
   const el = document.getElementById(id); if (!el) return;
-  el.classList.toggle('on', val);
+  if (val) {
+    el.classList.add('on');
+  } else {
+    el.classList.remove('on');
+  }
   el.classList.toggle('forced', forced);
 }
 
@@ -128,9 +133,35 @@ function handleSegmentChange(controlId, val) {
   }
 }
 
+function onPruningFractionChange() {
+  const el = document.getElementById('pruningFraction');
+  const valueEl = document.getElementById('pruningFractionValue');
+  const warnEl = document.getElementById('pruningWarn');
+  if (!el || !valueEl || !warnEl) return;
+  const val = parseFloat(el.value);
+  valueEl.textContent = val.toFixed(2);
+  if (val >= 0.8) {
+    warnEl.textContent = 'This much pruning may not be feasible.';
+    warnEl.classList.remove('hide');
+    el.classList.add('pruning-slider-warn');
+  } else {
+    warnEl.classList.add('hide');
+    el.classList.remove('pruning-slider-warn');
+  }
+}
+
 function handleToggleChange(id) {
   if (id === 'pruningToggle') {
-    document.getElementById('pruningFraction').disabled = !isToggleOn('pruningToggle');
+    const slider = document.getElementById('pruningFraction');
+    if (slider) slider.disabled = !isToggleOn('pruningToggle');
+    onPruningFractionChange();
+  }
+  if (id === 'actQuantToggle') {
+    const targetTqEl = document.getElementById('targetTq');
+    if (targetTqEl) targetTqEl.disabled = !isToggleOn('actQuantToggle');
+  }
+  if (id === 'floatWeightsToggle') {
+    applyHwDeps();
   }
 }
 
@@ -144,6 +175,12 @@ function applySpikingDeps() {
   const depsEl = document.getElementById('spikingDeps');
   let deps = [];
 
+  // Weight quantization is always forced from Float + Weight Bits (same pattern as actQuant below)
+  const floatWeights = isToggleOn('floatWeightsToggle');
+  const bits = parseInt(v('weightBits'));
+  const wtQuantOn = !floatWeights && bits > 0 && bits < 32;
+  function setWtQuantFromHw() { setToggle('wtQuantToggle', wtQuantOn, true); }
+
   if (mode === 'rate') {
     // Rate-coded defaults: Uniform / Default / <=
     document.getElementById('firingMode').value = 'Default';
@@ -151,7 +188,7 @@ function applySpikingDeps() {
     document.getElementById('thresholdMode').value = '<=';
     // Rate-coded deployment requires activation quantization
     setToggle('actQuantToggle', true, true);
-    // Weight quant: controlled by HW (applyHwDeps handles forcing)
+    setWtQuantFromHw();
     applyHwDeps();
     deps.push({ text: 'Firing: Default', active: true });
     deps.push({ text: 'Spike Gen: Uniform', active: true });
@@ -162,7 +199,8 @@ function applySpikingDeps() {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
     document.getElementById('thresholdMode').value = '<=';
-    setToggle('actQuantToggle', isToggleOn('actQuantToggle'), false);
+    setToggle('actQuantToggle', false, false);
+    setWtQuantFromHw();
     applyHwDeps();
     deps.push({ text: 'Firing: TTFS', forced: true });
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
@@ -175,7 +213,8 @@ function applySpikingDeps() {
     document.getElementById('thresholdMode').value = '<=';
     // TTFS Quantized forces ACTIVATION quant only (not weight quant)
     setToggle('actQuantToggle', true, true);
-    applyHwDeps(); // weight quant still driven by HW bits
+    setWtQuantFromHw();
+    applyHwDeps();
     deps.push({ text: 'Firing: TTFS', forced: true });
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
     deps.push({ text: 'Activation Quant: forced ON', forced: true });
@@ -193,22 +232,37 @@ function applySpikingDeps() {
 
   const simCyclesEl = document.getElementById('simCycles');
   if (simCyclesEl) simCyclesEl.disabled = (mode === 'ttfs');
+  const targetTqEl = document.getElementById('targetTq');
+  if (targetTqEl) targetTqEl.disabled = !isToggleOn('actQuantToggle');
   validateTq();
 }
 
 // ── Hardware weight_bits → force weight quantization ───────
 function applyHwDeps() {
-  const bits = parseInt(v('weightBits'));
+  const floatWeights = isToggleOn('floatWeightsToggle');
+  const weightBitsEl = document.getElementById('weightBits');
   const depsEl = document.getElementById('hwDeps');
-  // If weight_bits is specified (any positive integer), hardware requires quantized weights
-  // → force weight_quantization ON
-  if (bits > 0 && bits < 32) {
-    setToggle('wtQuantToggle', true, true);
-    depsEl.innerHTML = `<span class="dep-chip forced"><span class="dot"></span>Weight Quantization: forced ON (${bits}-bit hardware)</span>`;
+
+  if (floatWeights) {
+    if (weightBitsEl) weightBitsEl.disabled = true;
+    depsEl.innerHTML = '<span class="dep-chip forced"><span class="dot"></span>Float weights: weight quantization off</span>';
   } else {
-    setToggle('wtQuantToggle', false, false);
-    depsEl.innerHTML = '';
+    if (weightBitsEl) weightBitsEl.disabled = false;
+    const bits = parseInt(v('weightBits'));
+    if (bits > 0 && bits < 32) {
+      depsEl.innerHTML = `<span class="dep-chip forced"><span class="dot"></span>Weight Quantization: forced ON (${bits}-bit hardware)</span>`;
+    } else {
+      depsEl.innerHTML = bits >= 32 ? '<span class="dep-chip forced"><span class="dot"></span>Weight Quantization: off (32-bit)</span>' : '';
+    }
   }
+  syncWtQuantToggle();
+}
+
+function syncWtQuantToggle() {
+  const floatWeights = isToggleOn('floatWeightsToggle');
+  const bits = parseInt(v('weightBits'));
+  const wtQuantOn = !floatWeights && bits > 0 && bits < 32;
+  setToggle('wtQuantToggle', wtQuantOn, true);
 }
 
 function onWeightBitsChange() {
@@ -387,9 +441,21 @@ function buildConfig() {
   const optimizerType = getSegVal('optimizer');
 
   const actQuant = isToggleOn('actQuantToggle');
-  const wtQuant = isToggleOn('wtQuantToggle');
+  const floatWeights = isToggleOn('floatWeightsToggle');
+  const bits = parseInt(v('weightBits'));
+  let wtQuant;
+  if (floatWeights) {
+    wtQuant = false;
+  } else {
+    wtQuant = bits > 0 && bits < 32;
+  }
   const pruning = isToggleOn('pruningToggle');
-  const pipelineMode = (actQuant || wtQuant) ? "phased" : "vanilla";
+  let pipelineMode;
+  if (floatWeights) {
+    pipelineMode = "vanilla";
+  } else {
+    pipelineMode = (actQuant || wtQuant) ? "phased" : "vanilla";
+  }
 
   const lr = weightMode === 'train' ? parseFloat(v('lr')) : parseFloat(v('lrPretrained'));
   const targetTq = parseInt(v('targetTq'));
@@ -535,6 +601,7 @@ function renderJson(obj) {
 }
 
 function update() {
+  syncWtQuantToggle();
   document.getElementById('jsonOutput').innerHTML = renderJson(buildConfig());
   schedulePipelineStepsUpdate();
 }
