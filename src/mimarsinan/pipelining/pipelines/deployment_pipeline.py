@@ -63,6 +63,74 @@ PIPELINE_MODE_PRESETS: dict[str, dict] = {
 }
 
 
+def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
+    """Return ordered list of (step_name, step_class) for the given config.
+
+    Single source of truth for pipeline step order and presence. Uses only
+    config keys; no pipeline or data provider required. Used by
+    DeploymentPipeline._assemble_steps() and by the wizard API for preview.
+    """
+    config_mode = config.get("configuration_mode", "user")
+    spiking = config.get("spiking_mode", "rate")
+    act_q = config.get("activation_quantization", False)
+    wt_q = config.get("weight_quantization", False)
+    pruning = config.get("pruning", False)
+    pruning_fraction = float(config.get("pruning_fraction", 0.0))
+    weight_source = config.get("weight_source")
+    model_type = config.get("model_type", "")
+
+    specs: list[tuple[str, type]] = []
+
+    # ── Configuration ───────────────────────────────────────────────
+    if config_mode == "nas":
+        specs.append(("Architecture Search", ArchitectureSearchStep))
+    else:
+        specs.append(("Model Configuration", ModelConfigurationStep))
+
+    # ── Model Building ──────────────────────────────────────────────
+    specs.append(("Model Building", ModelBuildingStep))
+
+    # ── Pretraining / Weight Preloading ────────────────────────────
+    if weight_source:
+        specs.append(("Weight Preloading", WeightPreloadingStep))
+    else:
+        specs.append(("Pretraining", PretrainingStep))
+
+    # ── Torch Mapping (native PyTorch models only) ──────────────────
+    if model_type.startswith("torch_"):
+        specs.append(("Torch Mapping", TorchMappingStep))
+
+    # ── Pruning ─────────────────────────────────────────────────────
+    if pruning and pruning_fraction > 0:
+        specs.extend(_PRUNING_STEPS)
+
+    # ── Activation Quantization ─────────────────────────────────────
+    if act_q:
+        specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
+
+    # ── Weight Quantization ─────────────────────────────────────────
+    if wt_q:
+        specs.extend(_WEIGHT_QUANTIZATION_STEPS)
+
+    # ── Normalization Fusion & IR Mapping ───────────────────────────
+    specs.append(("Normalization Fusion", NormalizationFusionStep))
+    specs.append(("Soft Core Mapping", SoftCoreMappingStep))
+    if wt_q:
+        specs.append(
+            ("Core Quantization Verification", CoreQuantizationVerificationStep)
+        )
+
+    # ── CoreFlow Tuning (rate-coded only) ───────────────────────────
+    if spiking == "rate":
+        specs.append(("CoreFlow Tuning", CoreFlowTuningStep))
+
+    # ── Hardware Deployment ─────────────────────────────────────────
+    specs.append(("Hard Core Mapping", HardCoreMappingStep))
+    specs.append(("Simulation", SimulationStep))
+
+    return specs
+
+
 class DeploymentPipeline(Pipeline):
     """Unified deployment pipeline with configurable quantization."""
 
@@ -178,76 +246,15 @@ class DeploymentPipeline(Pipeline):
     # --------------------------------------------------- step assembly logic
 
     def _assemble_steps(self):
+        for name, cls in get_pipeline_step_specs(self.config):
+            self.add_pipeline_step(name, cls(self))
         config_mode = self.config.get("configuration_mode", "user")
-        spiking = self.config.get("spiking_mode", "rate")
-        act_q = self.config.get("activation_quantization", False)
-        wt_q = self.config.get("weight_quantization", False)
         pruning = self.config.get("pruning", False)
         pruning_fraction = float(self.config.get("pruning_fraction", 0.0))
-
-        # ── Configuration ───────────────────────────────────────────────
-        if config_mode == "nas":
-            self.add_pipeline_step(
-                "Architecture Search", ArchitectureSearchStep(self)
-            )
-        else:
-            self.add_pipeline_step(
-                "Model Configuration", ModelConfigurationStep(self)
-            )
-
-        # ── Model Building ──────────────────────────────────────────────
-        self.add_pipeline_step("Model Building", ModelBuildingStep(self))
-
-        # ── Pretraining / Weight Preloading ────────────────────────────
-        if self.config.get("weight_source"):
-            self.add_pipeline_step(
-                "Weight Preloading", WeightPreloadingStep(self)
-            )
-        else:
-            self.add_pipeline_step("Pretraining", PretrainingStep(self))
-
-        # ── Torch Mapping (native PyTorch models only) ──────────────────
-        if self.config.get("model_type", "").startswith("torch_"):
-            self.add_pipeline_step("Torch Mapping", TorchMappingStep(self))
-
-        # ── Pruning ─────────────────────────────────────────────────────
         if pruning and pruning_fraction > 0:
-            for name, cls in _PRUNING_STEPS:
-                self.add_pipeline_step(name, cls(self))
             print(f"[DeploymentPipeline] Pruning enabled: pruning={pruning}, pruning_fraction={pruning_fraction}; PruningAdaptationStep added.")
         else:
             print(f"[DeploymentPipeline] Pruning not in pipeline: pruning={pruning}, pruning_fraction={pruning_fraction}")
-
-        # ── Activation Quantization ─────────────────────────────────────
-        if act_q:
-            for name, cls in _ACTIVATION_QUANTIZATION_STEPS:
-                self.add_pipeline_step(name, cls(self))
-
-        # ── Weight Quantization ─────────────────────────────────────────
-        if wt_q:
-            for name, cls in _WEIGHT_QUANTIZATION_STEPS:
-                self.add_pipeline_step(name, cls(self))
-
-        # ── Normalization Fusion & IR Mapping ───────────────────────────
-        self.add_pipeline_step(
-            "Normalization Fusion", NormalizationFusionStep(self)
-        )
-        self.add_pipeline_step("Soft Core Mapping", SoftCoreMappingStep(self))
-        if wt_q:
-            self.add_pipeline_step(
-                "Core Quantization Verification",
-                CoreQuantizationVerificationStep(self),
-            )
-
-        # ── CoreFlow Tuning (rate-coded only) ───────────────────────────
-        if spiking == "rate":
-            self.add_pipeline_step(
-                "CoreFlow Tuning", CoreFlowTuningStep(self)
-            )
-
-        # ── Hardware Deployment ─────────────────────────────────────────
-        self.add_pipeline_step("Hard Core Mapping", HardCoreMappingStep(self))
-        self.add_pipeline_step("Simulation", SimulationStep(self))
 
     # -------------------------------------------------------- preset helper
 

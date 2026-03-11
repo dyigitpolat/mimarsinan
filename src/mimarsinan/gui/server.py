@@ -136,7 +136,31 @@ def create_app(
                 content={"error": str(e)},
             )
 
-    # -- WebSocket -------------------------------------------------------------
+    @app.post("/api/pipeline_steps")
+    def api_pipeline_steps(body: dict):
+        """Return ordered pipeline step names for the given deployment config (wizard preview)."""
+        from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+            DeploymentPipeline,
+            get_pipeline_step_specs,
+        )
+        try:
+            deployment_parameters = dict(body.get("deployment_parameters", {}))
+            pipeline_mode = body.get("pipeline_mode", "vanilla")
+            DeploymentPipeline.apply_preset(pipeline_mode, deployment_parameters)
+            config = dict(DeploymentPipeline.default_deployment_parameters)
+            config.update(deployment_parameters)
+            config.update(DeploymentPipeline.default_platform_constraints)
+            platform = body.get("platform_constraints") or {}
+            if isinstance(platform, dict):
+                config.update(platform)
+            specs = get_pipeline_step_specs(config)
+            return {"steps": [name for name, _ in specs]}
+        except Exception as e:
+            logger.debug("pipeline_steps failed: %s", e)
+            return JSONResponse(
+                status_code=400,
+                content={"error": str(e)},
+            )
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):

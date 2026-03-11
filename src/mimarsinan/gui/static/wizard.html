@@ -15,6 +15,8 @@
 
   <div class="app-shell" id="appShell">
 
+    <!-- Header + Pipeline steps (sticky at top together) -->
+    <div class="app-shell-top">
     <!-- ═══ HEADER ═══ -->
     <header class="header">
       <div class="logo-group">
@@ -31,6 +33,15 @@
         <button class="btn-sm primary" id="copyJsonBtn" onclick="copyJson()" style="display:none">Copy JSON</button>
       </div>
     </header>
+
+    <!-- Pipeline steps (same top band as header) -->
+    <div class="pipeline-steps-bar" id="pipelineStepsBar">
+      <span class="pipeline-steps-label">Pipeline</span>
+      <div class="pipeline-steps-scroll">
+        <div class="pipeline-steps-list" id="pipelineStepsList"></div>
+      </div>
+    </div>
+    </div><!-- /.app-shell-top -->
 
     <!-- ═══ WIZARD ═══ -->
     <main class="wizard-panel" id="wizard">
