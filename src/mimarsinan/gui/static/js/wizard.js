@@ -175,11 +175,12 @@ function applySpikingDeps() {
   const depsEl = document.getElementById('spikingDeps');
   let deps = [];
 
-  // Weight quantization is always forced from Float + Weight Bits (same pattern as actQuant below)
+  // Weight quantization: forced off only when Float is on; otherwise user choice
   const floatWeights = isToggleOn('floatWeightsToggle');
-  const bits = parseInt(v('weightBits'));
-  const wtQuantOn = !floatWeights && bits > 0 && bits < 32;
-  function setWtQuantFromHw() { setToggle('wtQuantToggle', wtQuantOn, true); }
+  function setWtQuantFromHw() {
+    if (floatWeights) setToggle('wtQuantToggle', false, true);
+    else setToggle('wtQuantToggle', isToggleOn('wtQuantToggle'), false);
+  }
 
   if (mode === 'rate') {
     // Rate-coded defaults: Uniform / Default / <=
@@ -248,21 +249,15 @@ function applyHwDeps() {
     depsEl.innerHTML = '<span class="dep-chip forced"><span class="dot"></span>Float weights: weight quantization off</span>';
   } else {
     if (weightBitsEl) weightBitsEl.disabled = false;
-    const bits = parseInt(v('weightBits'));
-    if (bits > 0 && bits < 32) {
-      depsEl.innerHTML = `<span class="dep-chip forced"><span class="dot"></span>Weight Quantization: forced ON (${bits}-bit hardware)</span>`;
-    } else {
-      depsEl.innerHTML = bits >= 32 ? '<span class="dep-chip forced"><span class="dot"></span>Weight Quantization: off (32-bit)</span>' : '';
-    }
+    depsEl.innerHTML = '';
   }
   syncWtQuantToggle();
 }
 
 function syncWtQuantToggle() {
   const floatWeights = isToggleOn('floatWeightsToggle');
-  const bits = parseInt(v('weightBits'));
-  const wtQuantOn = !floatWeights && bits > 0 && bits < 32;
-  setToggle('wtQuantToggle', wtQuantOn, true);
+  if (floatWeights) setToggle('wtQuantToggle', false, true);
+  else setToggle('wtQuantToggle', isToggleOn('wtQuantToggle'), false);
 }
 
 function onWeightBitsChange() {
@@ -442,13 +437,9 @@ function buildConfig() {
 
   const actQuant = isToggleOn('actQuantToggle');
   const floatWeights = isToggleOn('floatWeightsToggle');
-  const bits = parseInt(v('weightBits'));
   let wtQuant;
-  if (floatWeights) {
-    wtQuant = false;
-  } else {
-    wtQuant = bits > 0 && bits < 32;
-  }
+  if (floatWeights) wtQuant = false;
+  else wtQuant = isToggleOn('wtQuantToggle');
   const pruning = isToggleOn('pruningToggle');
   let pipelineMode;
   if (floatWeights) {
