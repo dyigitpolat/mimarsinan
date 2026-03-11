@@ -55,6 +55,10 @@ let state = {
   coreTypes: [{ max_axons: 1025, max_neurons: 257, count: 100 }],
 };
 
+let pipelineStepsDebounceTimer = null;
+let lastPipelineSteps = [];
+let pipelineStepsLoading = false;
+
 // ── Init ───────────────────────────────────────────────────
 function init() {
   loadFromAPI().then(function () {
@@ -65,6 +69,7 @@ function init() {
     applyHwDeps();
     updateSearchVisibility();
     update();
+    schedulePipelineStepsUpdate();
     var showJson = document.getElementById('showJsonToggle');
     var copyBtn = document.getElementById('copyJsonBtn');
     if (copyBtn && showJson) copyBtn.style.display = showJson.classList.contains('on') ? '' : 'none';
@@ -144,14 +149,15 @@ function applySpikingDeps() {
     document.getElementById('firingMode').value = 'Default';
     document.getElementById('spikeGenMode').value = 'Uniform';
     document.getElementById('thresholdMode').value = '<=';
-    // Quantization: NOT forced — user controls
-    setToggle('actQuantToggle', isToggleOn('actQuantToggle'), false);
+    // Rate-coded deployment requires activation quantization
+    setToggle('actQuantToggle', true, true);
     // Weight quant: controlled by HW (applyHwDeps handles forcing)
     applyHwDeps();
     deps.push({ text: 'Firing: Default', active: true });
     deps.push({ text: 'Spike Gen: Uniform', active: true });
     deps.push({ text: 'Threshold: ≤', active: true });
     deps.push({ text: 'CoreFlow Tuning: included', active: true });
+    deps.push({ text: 'Activation Quant: forced ON', forced: true });
   } else if (mode === 'ttfs') {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
@@ -162,6 +168,7 @@ function applySpikingDeps() {
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
     deps.push({ text: 'Threshold: ≤', forced: true });
     deps.push({ text: 'CoreFlow Tuning: skipped', active: true });
+    deps.push({ text: 'Cycles: not used (analytical TTFS)', forced: true });
   } else if (mode === 'ttfs_quantized') {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
@@ -183,6 +190,10 @@ function applySpikingDeps() {
   document.getElementById('firingMode').disabled = isTTFS;
   document.getElementById('spikeGenMode').disabled = isTTFS;
   document.getElementById('thresholdMode').disabled = isTTFS;
+
+  const simCyclesEl = document.getElementById('simCycles');
+  if (simCyclesEl) simCyclesEl.disabled = (mode === 'ttfs');
+  validateTq();
 }
 
 // ── Hardware weight_bits → force weight quantization ───────
@@ -220,6 +231,12 @@ function validateTq() {
   const cycles = parseInt(v('simCycles'));
   const tq = parseInt(v('targetTq'));
   const warnEl = document.getElementById('tqWarn');
+  const simCyclesEl = document.getElementById('simCycles');
+
+  if (simCyclesEl && simCyclesEl.disabled) {
+    warnEl.classList.add('hide');
+    return;
+  }
 
   if (isNaN(cycles) || isNaN(tq) || cycles <= 0 || tq <= 0) {
     warnEl.classList.add('hide');
@@ -519,6 +536,68 @@ function renderJson(obj) {
 
 function update() {
   document.getElementById('jsonOutput').innerHTML = renderJson(buildConfig());
+  schedulePipelineStepsUpdate();
+}
+
+// ── Pipeline steps preview ──────────────────────────────────
+function schedulePipelineStepsUpdate() {
+  if (pipelineStepsDebounceTimer) clearTimeout(pipelineStepsDebounceTimer);
+  pipelineStepsDebounceTimer = setTimeout(function () {
+    pipelineStepsDebounceTimer = null;
+    updatePipelineStepsBar();
+  }, 250);
+}
+
+function updatePipelineStepsBar() {
+  var listEl = document.getElementById('pipelineStepsList');
+  var barEl = document.getElementById('pipelineStepsBar');
+  if (!listEl || !barEl) return;
+  if (pipelineStepsLoading) return;
+  pipelineStepsLoading = true;
+  barEl.classList.add('pipeline-steps-loading');
+  fetch('/api/pipeline_steps', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildConfig()),
+  })
+    .then(function (res) {
+      if (!res.ok) return res.json().then(function (b) { throw new Error(b.error || 'Failed'); });
+      return res.json();
+    })
+    .then(function (data) {
+      var steps = data.steps || [];
+      lastPipelineSteps = steps;
+      barEl.classList.remove('pipeline-steps-loading', 'pipeline-steps-error');
+      listEl.classList.add('pipeline-steps-updating');
+      setTimeout(function () {
+        var arrow = '<span class="pipeline-step-arrow" aria-hidden="true">→</span>';
+        listEl.innerHTML = steps.map(function (name) {
+          return '<span class="pipeline-step-chip">' + escapeHtml(name) + '</span>';
+        }).join(arrow);
+        listEl.classList.remove('pipeline-steps-updating');
+      }, 150);
+    })
+    .catch(function (err) {
+      barEl.classList.remove('pipeline-steps-loading');
+      barEl.classList.add('pipeline-steps-error');
+      if (lastPipelineSteps.length) {
+        var arrow = '<span class="pipeline-step-arrow" aria-hidden="true">→</span>';
+        listEl.innerHTML = lastPipelineSteps.map(function (name) {
+          return '<span class="pipeline-step-chip">' + escapeHtml(name) + '</span>';
+        }).join(arrow);
+      } else {
+        listEl.innerHTML = '<span class="pipeline-steps-error-msg">Could not load steps</span>';
+      }
+    })
+    .finally(function () {
+      pipelineStepsLoading = false;
+    });
+}
+
+function escapeHtml(s) {
+  var div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
 }
 
 // ── Actions ────────────────────────────────────────────────

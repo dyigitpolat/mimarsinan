@@ -24,6 +24,7 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 - `GET /api/model_types` — list model types (id, label, category).
 - `GET /api/model_config_schema/{model_type}` — config fields for dynamic form generation.
 - `POST /api/run` — body = full deployment config JSON; creates pipeline, attaches collector, runs in background thread; returns 202.
+- `POST /api/pipeline_steps` — body = same deployment config shape as `/api/run`; returns `{"steps": ["Step Name", ...]}` for the pipeline that would be built. Used by the wizard to show a live pipeline preview without running the pipeline.
 - `GET /wizard` — serves the deployment configurator wizard (`static/wizard.html`).
 
 ### Frontend (`static/`)
@@ -33,6 +34,16 @@ modular visualization components (overview, model, IR graph, hardware, search,
 scales tabs). The **wizard** (`wizard.html`, `wizard.css`, `js/wizard.js`) is the
 deployment configurator: it loads data providers and model types from the API,
 builds a config, and submits it via POST `/api/run`; RUN redirects to `/` (monitor).
+Rate-coded spiking mode forces activation quantization ON; the Cycles field is
+disabled for non-quantized TTFS (analytical TTFS does not use simulation steps).
+
+**Pipeline steps bar**: A bar at the top of the wizard (below the header) shows the
+ordered list of pipeline steps for the current configuration. It calls POST
+`/api/pipeline_steps` with the current config (debounced, e.g. 250 ms) on load and
+whenever the user changes options. Steps are rendered as horizontal chips; new steps
+animate in (opacity + scale). On loading, the bar shows a subtle loading state; on
+API error, the last known step list is kept or a short "Could not load steps" message
+is shown.
 
 ## Dependencies
 
