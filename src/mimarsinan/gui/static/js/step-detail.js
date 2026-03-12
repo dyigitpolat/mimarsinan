@@ -222,7 +222,7 @@ function groupMetricsByCategory(names) {
     else if (l.includes('accuracy') || l.includes('acc')) add('Accuracy', name);
     else if (l === 'lr' || l.includes('learning rate')) add('Learning Rate', name);
     else if (l.includes('adaptation') || l.includes('tuning rate')) add('Adaptation', name);
-    else if (l.includes('search')) add('Search', name);
+    else if (l.includes('search')) add(`Search: ${name}`, name);  // one plot per search metric (different scales)
     else add('Other', name);
   }
   return groups;
@@ -234,7 +234,10 @@ function renderConstraintsTab(constraints, container) {
   let html = '<div class="card"><div class="card-header">Resolved Platform Constraints</div><div class="card-body"><table class="config-table">';
   for (const [k, v] of Object.entries(constraints)) {
     if (k === 'cores' && Array.isArray(v)) {
-      html += `<tr><td>cores</td><td>${v.map(c => `[${c.count || '?'}×] ${c.max_axons || '?'}a × ${c.max_neurons || '?'}n`).join(' &nbsp; ')}</td></tr>`;
+      html += `<tr><td>cores</td><td>${v.map(c => {
+        const base = `[${c.count || '?'}×] ${c.max_axons || '?'}a × ${c.max_neurons || '?'}n`;
+        return c.has_bias ? base + ' (bias)' : base;
+      }).join(' &nbsp; ')}</td></tr>`;
     } else html += `<tr><td>${esc(String(k))}</td><td>${esc(String(v))}</td></tr>`;
   }
   html += '</table></div></div>';
