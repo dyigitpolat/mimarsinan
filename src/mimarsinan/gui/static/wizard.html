@@ -306,7 +306,7 @@
               </div>
             </div>
 
-            <!-- Shared HW parameters (both modes): grid col1 = Weight Bits + Float (50/50), col2 = Axon Tiling -->
+            <!-- Shared HW parameters (both modes): grid col1 = Weight Bits + Float (50/50), col2 = Axon Tiling, col3 = Hardware bias -->
             <div class="field-grid field-grid-hw-row" style="margin-bottom:14px">
               <div class="field">
                 <label class="field-label">Weight Bits <span class="hint">parameter precision</span></label>
@@ -323,6 +323,13 @@
                 <label class="field-label">Allow Axon Tiling</label>
                 <div class="toggle-row" id="axonTilingToggle" onclick="toggleClick(this)">
                   <span class="toggle-label" style="font-size:0.78rem">Axon Tiling</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">Hardware bias</label>
+                <div class="toggle-row" id="hardwareBiasToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Bias in HW</span>
                   <div class="toggle-switch"></div>
                 </div>
               </div>

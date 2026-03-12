@@ -52,7 +52,7 @@ function ensureModelConfigSchema(modelTypeId) {
 // ── State ──────────────────────────────────────────────────
 let state = {
   modelType: "mlp_mixer",
-  coreTypes: [{ max_axons: 1025, max_neurons: 257, count: 100 }],
+  coreTypes: [{ max_axons: 1025, max_neurons: 257, count: 100, has_bias: true }],
 };
 
 let pipelineStepsDebounceTimer = null;
@@ -65,6 +65,7 @@ function init() {
     renderModelChips();
     renderModelConfigFields();
     renderCoreTypes();
+    setToggle('hardwareBiasToggle', true);
     applySpikingDeps();
     applyHwDeps();
     onPruningFractionChange();
@@ -528,18 +529,21 @@ function buildConfig() {
   const allowTiling = isToggleOn('axonTilingToggle');
 
   if (hwMode === 'user') {
+    const hardwareBias = isToggleOn('hardwareBiasToggle');
     platformConstraints = {
-      cores: state.coreTypes.map(ct => ({ ...ct })),
+      cores: state.coreTypes.map(ct => ({ ...ct, has_bias: hardwareBias })),
       max_axons: Math.max(...state.coreTypes.map(c => c.max_axons)),
       max_neurons: Math.max(...state.coreTypes.map(c => c.max_neurons)),
       target_tq: targetTq,
       simulation_steps: simCycles,
       weight_bits: weightBits,
+      has_bias: hardwareBias,
     };
     if (allowTiling) platformConstraints.allow_axon_tiling = true;
   } else {
     platformConstraints = {
       mode: "auto",
+      has_bias: isToggleOn('hardwareBiasToggle'),
       auto: {
         fixed: {
           target_tq: targetTq,

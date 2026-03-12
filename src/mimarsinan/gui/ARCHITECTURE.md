@@ -54,8 +54,10 @@ is shown.
 **Monitor plots** (step-detail metrics tab, scales-tab adaptation, search-tab): legends
 are placed outside the plot area to the right (`x: 1.02`, `margin.r: 100`). Accuracy
 and Adaptation curves use a fixed vertical axis [0, 1]. A single data point is drawn
-as a horizontal line from that point to the right edge. Search history is rendered as
-one card and plot per numeric metric (separate charts per objective).
+as a horizontal line from that point to the right edge. In the step-detail metrics tab,
+architecture search metrics (names containing "search") are shown in separate plots
+per metric so each keeps its own scale. Search history is rendered as one card and
+plot per numeric metric (separate charts per objective).
 
 ## Dependencies
 
