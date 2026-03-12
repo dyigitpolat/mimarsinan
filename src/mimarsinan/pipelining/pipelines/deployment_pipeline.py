@@ -149,7 +149,6 @@ class DeploymentPipeline(Pipeline):
         "target_tq": 32,
         "simulation_steps": 32,
         "weight_bits": 8,
-        "allow_axon_tiling": False,
     }
 
     # ------------------------------------------------------------------ init

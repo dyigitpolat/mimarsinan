@@ -110,6 +110,7 @@ class ModelConfigurationStep(PipelineStep):
             "cores": cores_config,
             "max_axons": int(effective_max_axons),
             "max_neurons": int(effective_max_neurons),
+            "allow_core_coalescing": bool(self.pipeline.config.get("allow_core_coalescing", False)),
         })
 
         # --- Emit default simulation length ---

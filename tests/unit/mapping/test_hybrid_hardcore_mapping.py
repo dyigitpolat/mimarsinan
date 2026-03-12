@@ -95,6 +95,28 @@ class TestBuildHybridHardCoreMapping:
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
         assert len(hm.get_neural_segments()) >= 1
 
+    def test_has_bias_produces_bias_capable_hard_cores(self):
+        """When cores_config has has_bias=true, allocated HardCores have has_bias_capability=True."""
+        ir = _make_two_core_ir()
+        cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 10, "has_bias": True}]
+        hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
+        neural_segs = hm.get_neural_segments()
+        assert len(neural_segs) >= 1
+        for seg in neural_segs:
+            for hc in seg.cores:
+                assert hc.has_bias_capability is True
+
+    def test_has_bias_omitted_defaults_true(self):
+        """When has_bias is omitted from cores_config, HardCores have has_bias_capability=True."""
+        ir = _make_two_core_ir()
+        cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 10}]
+        hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
+        neural_segs = hm.get_neural_segments()
+        assert len(neural_segs) >= 1
+        for seg in neural_segs:
+            for hc in seg.cores:
+                assert getattr(hc, "has_bias_capability", True) is True
+
 
 class TestCompactSoftCoreMapping:
     """Compaction uses pruning maps (pruned_row_mask, pruned_col_mask), not parameter values."""

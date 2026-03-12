@@ -94,6 +94,7 @@ def greedy_pack_softcores(
     is_mapping_possible: Callable[[SoftT, HardT], bool],
     place: Callable[[int, HardT, SoftT], None],
     pick_softcore: Callable[[List[SoftT]], SoftT] = pick_best_softcore,
+    fuse_hardcores: Callable[[List[HardT]], HardT] | None = None,
 ) -> None:
     """
     Greedy packing loop shared by:
@@ -157,15 +158,34 @@ def greedy_pack_softcores(
                 s_a = int(core.get_input_count())
                 s_n = int(core.get_output_count())
                 avail = {k: v for k, v in type_counts.items()}
-                raise RuntimeError(
-                    f"No more hard cores available: softcore ({s_a} axons, "
-                    f"{s_n} neurons) does not fit any unused type. "
-                    f"Remaining types: {avail}"
-                )
-
-            used_hardcores.append(chosen_unused)
-            unused_hardcores.remove(chosen_unused)
-            target_idx = len(used_hardcores) - 1
+                
+                fused_hc = None
+                if fuse_hardcores is not None:
+                    for hc_type, qty in type_counts.items():
+                        c_a, c_n = hc_type
+                        if c_n >= s_n and c_a * qty >= s_a:
+                            qty_needed = (s_a + c_a - 1) // c_a
+                            fusing_hcs = [hc for hc in unused_hardcores if _core_type_key(hc) == hc_type][:qty_needed]
+                            temp_fused = fuse_hardcores(fusing_hcs)
+                            if is_mapping_possible(core, temp_fused):
+                                fused_hc = temp_fused
+                                for hc in fusing_hcs:
+                                    unused_hardcores.remove(hc)
+                                break
+                            
+                if fused_hc is not None:
+                    used_hardcores.append(fused_hc)
+                    target_idx = len(used_hardcores) - 1
+                else:
+                    raise RuntimeError(
+                        f"No more hard cores available: softcore ({s_a} axons, "
+                        f"{s_n} neurons) does not fit any unused type "
+                        f"even with coalescing. Remaining types: {avail}"
+                    )
+            else:
+                used_hardcores.append(chosen_unused)
+                unused_hardcores.remove(chosen_unused)
+                target_idx = len(used_hardcores) - 1
 
         place(target_idx, used_hardcores[target_idx], core)
         softcores.remove(core)

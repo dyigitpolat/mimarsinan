@@ -243,6 +243,12 @@ class SpikingHybridCoreFlow(nn.Module):
             torch.tensor(float(core.threshold), dtype=torch.float32, device=device)
             for core in cores
         ]
+        # Hardware-bias tensors (dedicated bias register, not always-on axon row).
+        hw_biases = [
+            torch.tensor(core.hardware_bias, dtype=torch.float32, device=device)
+            if getattr(core, "hardware_bias", None) is not None else None
+            for core in cores
+        ]
 
         ops = {"<": torch.lt, "<=": torch.le}
 
@@ -276,6 +282,9 @@ class SpikingHybridCoreFlow(nn.Module):
 
                 memb_i = memb[core_idx]
                 memb_i += torch.matmul(core_params[core_idx], input_signals[core_idx].T).T
+                # Hardware-bias: add bias every cycle (matches always-on axon semantics).
+                if hw_biases[core_idx] is not None:
+                    memb_i += hw_biases[core_idx]
 
                 fired = ops[self.thresholding_mode](thresholds[core_idx], memb_i)
                 buffers[core_idx] = fired.float()
@@ -352,6 +361,12 @@ class SpikingHybridCoreFlow(nn.Module):
             torch.tensor(float(core.threshold), dtype=torch.float32, device=device)
             for core in cores
         ]
+        # Hardware-bias tensors (dedicated bias register, not always-on axon row).
+        hw_biases = [
+            torch.tensor(core.hardware_bias, dtype=torch.float32, device=device)
+            if getattr(core, "hardware_bias", None) is not None else None
+            for core in cores
+        ]
 
         buffers = [
             torch.zeros(batch_size, core.get_output_count(), device=device)
@@ -372,6 +387,9 @@ class SpikingHybridCoreFlow(nn.Module):
                 cycle=0,
             )
             V = torch.matmul(core_params[ci], input_signals[ci].T).T
+            # Hardware-bias: add dedicated bias register.
+            if hw_biases[ci] is not None:
+                V = V + hw_biases[ci]
 
             if quantized:
                 safe_thresh = thresholds[ci].clamp(min=1e-12)

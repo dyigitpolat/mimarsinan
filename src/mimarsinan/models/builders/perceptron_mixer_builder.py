@@ -38,12 +38,6 @@ class PerceptronMixerBuilder:
 
         supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
 
-        allow_axon_tiling = bool(self.pipeline_config.get("allow_axon_tiling", False))
-        for perceptron in supermodel.get_perceptrons():
-            if not allow_axon_tiling:
-                assert perceptron.layer.weight.shape[1] <= self.max_axons - 1, \
-                    f"not enough axons ({perceptron.layer.weight.shape[1]} > {self.max_axons - 1})"
-
         return supermodel
 
     @classmethod
@@ -71,7 +65,7 @@ class PerceptronMixerBuilder:
         }
 
     @classmethod
-    def validate_config(cls, config, platform_cfg, input_shape, allow_axon_tiling):
+    def validate_config(cls, config, platform_cfg, input_shape):
         """Patch dimensions must divide the spatial input dimensions."""
         pr = int(config.get("patch_n_1", 1))
         pc = int(config.get("patch_m_1", 1))

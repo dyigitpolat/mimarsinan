@@ -48,7 +48,7 @@ def _build_kedi_config_schema_generic(
             "max_neurons": "MIN of all cores' max_neurons (computed automatically).",
             "target_tq": f"{target_tq} (fixed)",
             "weight_bits": "8 (fixed)",
-            "allow_axon_tiling": "false (fixed)",
+            "allow_core_coalescing": "false (fixed)",
         },
         "threshold_groups": f"integer from 1 to {max_threshold_groups}",
     }
@@ -80,7 +80,7 @@ def _build_kedi_example_config_generic(
             "max_neurons": min(c["max_neurons"] for c in cores),
             "target_tq": target_tq,
             "weight_bits": 8,
-            "allow_axon_tiling": False,
+            "allow_core_coalescing": False,
         },
         "threshold_groups": 2,
     }
@@ -330,7 +330,7 @@ class ArchitectureSearchStep(PipelineStep):
                     "cores": cores,
                     "max_axons": effective_max_axons,
                     "max_neurons": effective_max_neurons,
-                    "allow_axon_tiling": self.pipeline.config.get("allow_axon_tiling", False),
+                    "allow_core_coalescing": self.pipeline.config.get("allow_core_coalescing", False),
                     "target_tq": self.pipeline.config.get("target_tq"),
                     "simulation_steps": self.pipeline.config.get("simulation_steps"),
                     "weight_bits": self.pipeline.config.get("weight_bits"),
@@ -365,17 +365,17 @@ class ArchitectureSearchStep(PipelineStep):
         # Generic validate_fn and constraint_fn derived from builder.validate_config
         validate_config_fn = getattr(builder_cls, "validate_config", None)
 
-        def validate_fn(model_config, platform_constraints, inp_shape, allow_axon_tiling):
+        def validate_fn(model_config, platform_constraints, inp_shape):
             if validate_config_fn is not None:
                 return bool(validate_config_fn(
-                    model_config, platform_constraints, inp_shape, allow_axon_tiling
+                    model_config, platform_constraints, inp_shape
                 ))
             return True
 
-        def constraint_fn(model_config, platform_constraints, inp_shape, allow_axon_tiling):
+        def constraint_fn(model_config, platform_constraints, inp_shape):
             if validate_config_fn is not None:
                 if not validate_config_fn(
-                    model_config, platform_constraints, inp_shape, allow_axon_tiling
+                    model_config, platform_constraints, inp_shape
                 ):
                     return 1.0
             return 0.0
@@ -425,7 +425,6 @@ class ArchitectureSearchStep(PipelineStep):
             core_axons_bounds=(int(core_axons_bounds[0]), int(core_axons_bounds[1])),
             core_neurons_bounds=(int(core_neurons_bounds[0]), int(core_neurons_bounds[1])),
             max_threshold_groups=max_threshold_groups,
-            allow_axon_tiling=bool(self.pipeline.config.get("allow_axon_tiling", False)),
             accuracy_seed=seed,
             warmup_fraction=warmup_fraction,
             training_batch_size=(int(training_batch_size) if training_batch_size is not None else None),
@@ -495,6 +494,11 @@ class ArchitectureSearchStep(PipelineStep):
         model_config = best_cfg["model_config"]
         platform_constraints = best_cfg["platform_constraints"]
 
+        # Apply global has_bias (not searchable) to every core from pipeline config
+        global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
+        for c in platform_constraints.get("cores", []):
+            c["has_bias"] = global_has_bias
+
         merged_config = {**self.pipeline.config, **platform_constraints}
         builder = builder_cls(
             self.pipeline.config["device"],
@@ -507,6 +511,7 @@ class ArchitectureSearchStep(PipelineStep):
 
         self.add_entry("model_builder", builder, "pickle")
         self.add_entry("model_config", model_config)
+        platform_constraints["allow_core_coalescing"] = bool(self.pipeline.config.get("allow_core_coalescing", False))
         self.add_entry("platform_constraints_resolved", platform_constraints)
         self.add_entry("architecture_search_result", result_json)
         sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))

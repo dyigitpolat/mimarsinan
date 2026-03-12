@@ -66,17 +66,6 @@ class VitBuilder:
             self.pipeline_config["target_tq"],
         )
 
-        # Validate axon constraints for Perceptrons
-        allow_axon_tiling = bool(self.pipeline_config.get("allow_axon_tiling", False))
-        if not allow_axon_tiling:
-            for perceptron in supermodel.get_perceptrons():
-                n_axons = perceptron.layer.weight.shape[1]
-                assert n_axons <= self.max_axons - 1, (
-                    f"ViT perceptron '{getattr(perceptron, 'name', '?')}' "
-                    f"needs {n_axons} axons but max_axons={self.max_axons} "
-                    f"(bias takes 1). Enable allow_axon_tiling or increase max_axons."
-                )
-
         return supermodel
 
     @classmethod
@@ -103,7 +92,7 @@ class VitBuilder:
         }
 
     @classmethod
-    def validate_config(cls, config, platform_cfg, input_shape, allow_axon_tiling):
+    def validate_config(cls, config, platform_cfg, input_shape):
         """patch_size must divide image dims; d_model must be divisible by num_heads."""
         patch_size = int(config.get("patch_size", 4))
         d_model = int(config.get("d_model", 128))

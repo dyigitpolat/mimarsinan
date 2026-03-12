@@ -13,8 +13,7 @@ NAS is driven generically from each builder's schema and two optional hooks:
       the schema options.  Override this to expose numeric hyperparameters
       (e.g. hidden widths, patch sizes) to the NAS optimizer.
 
-  validate_config(cls, config, platform_cfg, input_shape,
-                  allow_axon_tiling) -> bool
+  validate_config(cls, config, platform_cfg, input_shape) -> bool
       Model-specific structural feasibility check (e.g. patch must divide
       image dimensions).  Called by ArchitectureSearchStep before the generic
       hardware-constraint check.  Defaults to True if not implemented.

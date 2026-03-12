@@ -119,6 +119,17 @@ class SpikingUnifiedCoreFlow(nn.Module):
                     self._id_to_param_idx[node.id] = thresh_idx
                     self._id_to_bank[node.id] = None  # type: ignore[assignment]
 
+        # --- Hardware-bias parameters (dedicated bias register per core) ---
+        self._hw_bias_params: Dict[int, nn.Parameter] = {}
+        for node in self.nodes:
+            if isinstance(node, NeuralCore) and node.hardware_bias is not None:
+                bp = nn.Parameter(
+                    torch.tensor(node.hardware_bias, dtype=torch.float32),
+                    requires_grad=False,
+                )
+                self._hw_bias_params[node.id] = bp
+                self.register_parameter(f"_hw_bias_{node.id}", bp)
+
         # Build fast lookup: node_id -> (owned_param_index | None)
         self._id_to_owned_param: Dict[int, int] = {}
         owned_counter = 0
@@ -364,7 +375,11 @@ class SpikingUnifiedCoreFlow(nn.Module):
                         cycle=cycle,
                     )
 
-                    memb += torch.matmul(weight, inp.T).T
+                    contribution = torch.matmul(weight, inp.T).T
+                    # Hardware-bias: add bias every cycle (matches always-on axon semantics)
+                    if node.id in self._hw_bias_params:
+                        contribution = contribution + self._hw_bias_params[node.id]
+                    memb += contribution
                     fired = ops[self.thresholding_mode](threshold, memb)
                     out_train[cycle] = fired.float()
                     total_spikes += fired.float().sum().item()
@@ -493,7 +508,22 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 )
 
                 out = torch.matmul(weight, inp.T).T
-                out = F.relu(out)
+                # Hardware-bias: add dedicated bias register
+                if node.id in self._hw_bias_params:
+                    out = out + self._hw_bias_params[node.id]
+
+                # Apply activation: default to ReLU when activation_type is
+                # None or 'ReLU' (backward compat — the original TTFS flow
+                # always applied ReLU unconditionally).
+                if node.activation_type is None or node.activation_type == 'ReLU':
+                    out = F.relu(out)
+                else:
+                    try:
+                        act_fn = getattr(F, node.activation_type.lower())
+                        out = act_fn(out)
+                    except AttributeError:
+                        out = F.relu(out)
+                
                 out = out / threshold
 
                 activation_cache[node.id] = out
@@ -556,6 +586,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 )
 
                 V = torch.matmul(weight, inp.T).T
+                # Hardware-bias: add dedicated bias register
+                if node.id in self._hw_bias_params:
+                    V = V + self._hw_bias_params[node.id]
                 safe_thresh = threshold.clamp(min=1e-12)
                 k_fire_raw = torch.ceil(S * (1.0 - V / safe_thresh))
                 fires = k_fire_raw < S
@@ -782,7 +815,10 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
                         cycle=cycle,
                     )
 
-                    memb += torch.matmul(weight, inp.T).T
+                    contribution = torch.matmul(weight, inp.T).T
+                    if node.id in self._hw_bias_params:
+                        contribution = contribution + self._hw_bias_params[node.id]
+                    memb += contribution
                     fired = ops[self.thresholding_mode](threshold, memb)
                     out_train[cycle] = fired.float()
                     total_spikes += fired.float().sum().item()

@@ -67,27 +67,17 @@ class TestIRMappingMapFC:
         assert len(m.nodes) >= 3
         assert len(out.flatten()) == 10
 
-    def test_axon_tiling_disabled_raises(self):
-        """When axons > max and tiling is off, should raise or use psum."""
-        m = IRMapping(max_axons=4, max_neurons=64, allow_axon_tiling=False)
+    def test_wide_layer_single_core(self):
+        """Wide layers exceeding max_axons produce a single wide core (hardware packing handles fusion)."""
+        m = IRMapping(max_axons=6, max_neurons=64)
         sources = np.array([IRSource(-2, i) for i in range(10)])
         out_shape = np.array([4])
         w = torch.randn(4, 10)
         b = torch.randn(4)
-        with pytest.raises((AssertionError, RuntimeError, ValueError)):
-            m.map_fc(sources, out_shape, w, b, name="fc_too_wide")
-
-    def test_axon_tiling_enabled(self):
-        """With axon tiling, large axon counts should produce partial-sum cores."""
-        m = IRMapping(max_axons=6, max_neurons=64, allow_axon_tiling=True)
-        sources = np.array([IRSource(-2, i) for i in range(10)])
-        out_shape = np.array([4])
-        w = torch.randn(4, 10)
-        b = torch.randn(4)
-        out = m.map_fc(sources, out_shape, w, b, name="fc_tiled")
+        out = m.map_fc(sources, out_shape, w, b, name="fc_wide")
 
         assert len(out.flatten()) == 4
-        assert len(m.nodes) > 1
+        assert len(m.nodes) == 1  # single wide core, no psum decomposition
 
     def test_map_produces_valid_graph(self):
         m = IRMapping(max_axons=32, max_neurons=32)
