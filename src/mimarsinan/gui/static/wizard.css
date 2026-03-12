@@ -556,6 +556,10 @@ body::before {
   grid-template-columns: 1fr 1fr 1fr;
 }
 
+.field-grid.cols-4 {
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+}
+
 .field-grid.cols-1 {
   grid-template-columns: 1fr;
 }

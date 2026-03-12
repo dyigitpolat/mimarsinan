@@ -206,7 +206,12 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
 
         if isinstance(node, NeuralCore):
             mat = node.get_core_matrix(ir_graph)
-            group_key = _layer_key_from_node_name(node.name)
+            base_group = _layer_key_from_node_name(node.name)
+            if node.latency is not None:
+                group_key = f"{base_group} (L{node.latency})"
+            else:
+                group_key = base_group
+
             info["layer_group"] = group_key
             info["axons"] = int(mat.shape[0])
             info["neurons"] = int(mat.shape[1])
@@ -225,7 +230,10 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
                 "sparsity": float(np.mean(np.abs(mat) < 1e-8)),
                 "histogram": _histogram(mat),
             }
+            info["psum_group_id"] = node.psum_group_id
             info["psum_role"] = node.psum_role
+            info["coalescing_group_id"] = node.coalescing_group_id
+            info["coalescing_role"] = node.coalescing_role
             if node.weight_bank_id is not None:
                 info["weight_bank_id"] = int(node.weight_bank_id)
             # Emit per-core heatmap for every NeuralCore (owned and bank-backed)

@@ -293,7 +293,7 @@ body {
 .hw-core-cell:hover .hw-core { border-color: var(--accent); }
 .hw-core-selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent-dim); z-index: 1; }
 .hw-core-canvas {
-  display: block; vertical-align: top; pointer-events: none; border-radius: 2px;
+  display: block; pointer-events: none; border-radius: 2px;
   image-rendering: auto; object-fit: contain; object-position: center;
   min-width: 0; min-height: 0;
 }
@@ -301,6 +301,21 @@ body {
 /* ── Empty core placeholder ── */
 .hw-core-empty {
   background: var(--bg-primary); border-style: dashed !important; opacity: 0.45;
+}
+
+/* ── Trace & Coalesce indicators ── */
+.hw-core-traced {
+  border-color: #fff !important;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.4), inset 0 0 4px rgba(255, 255, 255, 0.2);
+  z-index: 5;
+}
+.hw-core-fused-badge {
+  position: absolute; top: 2px; right: 2px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 4px var(--accent-dim);
+  pointer-events: none;
+  z-index: 3;
 }
 
 /* ── Soft-core (IR) heatmap images: preserve aspect, no stretching ── */

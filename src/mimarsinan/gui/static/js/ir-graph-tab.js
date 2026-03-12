@@ -385,6 +385,14 @@ function renderTierDAG(irGraph) {
   window._irGroupClick = (key) => { st.detailGroup = (st.detailGroup === key) ? null : key; st.selectedEdge = null; render(); };
   window._irEdgeClose = () => { st.selectedEdge = null; render(); };
   window._irTierClose = () => { st.selectedTier = null; st.detailGroup = null; render(); };
+  window._irTraceHardCore = (id) => {
+    // We want to switch to the hardware tab and highlight soft-core id.
+    // We'll use a global event or property that hardware-tab.js can pick up.
+    window._hwTraceSoftId = id;
+    const hwTabBtn = document.querySelector('.tab-btn[data-tab="hardware"]');
+    if (hwTabBtn) hwTabBtn.click();
+  };
+
   render();
 }
 
@@ -505,23 +513,18 @@ function buildGroupDetail(g, nodeById, irGraph) {
   }
 
   if (cores.length > 0) {
-    html += '<table class="data-table compact"><thead><tr><th>ID</th><th>Name</th><th>Dimensions (ax×n)</th><th>Norm</th><th>Activation</th><th>Threshold</th><th>Act Scale</th><th>Param Scale</th><th>InAct Scale</th><th>Latency</th><th>Sparsity</th></tr></thead><tbody>';
+    html += '<table class="data-table compact"><thead><tr><th>ID</th><th>Name</th><th>Dim</th><th>PSum</th><th>Coalesce</th><th>Thresh</th><th>ActS</th><th>ParamS</th><th>Latency</th><th>Trace</th></tr></thead><tbody>';
     for (const c of cores) {
-      const sp = c.weight_stats ? (c.weight_stats.sparsity * 100).toFixed(1) + '%' : '-';
-      const short = c.name.length > 30 ? c.name.substring(0, 28) + '..' : c.name;
-      const norm = c.normalization_type || '-';
-      const act = c.activation_type || '-';
-      const normShort = norm.length > 16 ? norm.substring(0, 14) + '..' : norm;
-      const actShort = act.length > 22 ? act.substring(0, 20) + '..' : act;
-      const dimStr = c.pre_pruning_axons != null && c.pre_pruning_neurons != null
-        ? `${c.pre_pruning_axons}×${c.pre_pruning_neurons} → ${c.axons}×${c.neurons}`
-        : `${c.axons}×${c.neurons}`;
+      const psum = c.psum_role ? `${c.psum_role} (G${c.psum_group_id})` : '-';
+      const coalesce = c.coalescing_role ? `${c.coalescing_role} (G${c.coalescing_group_id})` : '-';
+      const short = c.name.length > 20 ? c.name.substring(0, 18) + '..' : c.name;
+      const dimStr = `${c.axons}×${c.neurons}`;
       html += `<tr><td>${c.id}</td><td title="${esc(c.name)}">${esc(short)}</td>
-        <td title="Pre- and post-pruning">${dimStr}</td><td title="${esc(norm)}">${esc(normShort)}</td><td title="${esc(act)}">${esc(actShort)}</td><td>${c.threshold.toFixed(2)}</td>
-        <td>${c.activation_scale != null ? c.activation_scale.toFixed(3) : '-'}</td>
-        <td>${c.parameter_scale != null ? c.parameter_scale.toFixed(3) : '-'}</td>
-        <td>${c.input_activation_scale != null ? c.input_activation_scale.toFixed(3) : '-'}</td>
-        <td>${c.latency ?? '-'}</td><td>${sp}</td></tr>`;
+        <td>${dimStr}</td><td>${esc(psum)}</td><td>${esc(coalesce)}</td><td>${c.threshold.toFixed(2)}</td>
+        <td>${c.activation_scale != null ? c.activation_scale.toFixed(2) : '-'}</td>
+        <td>${c.parameter_scale != null ? c.parameter_scale.toFixed(2) : '-'}</td>
+        <td>${c.latency ?? '-'}</td>
+        <td><button class="action-btn-tiny" onclick="window._irTraceHardCore(${c.id})">Trace</button></td></tr>`;
     }
     html += '</tbody></table>';
   }

@@ -131,6 +131,12 @@ function buildSoftCoreDetailPanelHtml(nodeId, irGraph) {
       html += `<tr><td>Neurons</td><td>${postNu}</td></tr>`;
     }
     html += `<tr><td>Threshold</td><td>${node.threshold != null ? Number(node.threshold).toFixed(4) : '—'}</td></tr>`;
+    if (node.psum_role) {
+      html += `<tr><td>PSum</td><td>${esc(node.psum_role)} (G${node.psum_group_id})</td></tr>`;
+    }
+    if (node.coalescing_role) {
+      html += `<tr><td>Coalesce</td><td>${esc(node.coalescing_role)} (G${node.coalescing_group_id})</td></tr>`;
+    }
     html += `<tr><td>Latency</td><td>${node.latency ?? '—'}</td></tr>`;
     html += `<tr><td>Activation scale</td><td>${node.activation_scale != null ? Number(node.activation_scale).toFixed(4) : '—'}</td></tr>`;
     html += `<tr><td>Parameter scale</td><td>${node.parameter_scale != null ? Number(node.parameter_scale).toFixed(4) : '—'}</td></tr>`;
@@ -217,6 +223,17 @@ function renderStageFlow(hw, irGraph) {
   const globalLayout = computeGlobalLayout(hw);
 
   function render() {
+    // If a soft-core trace is active, auto-expand segments that contain it.
+    if (window._hwTraceSoftId != null) {
+      const traceId = parseInt(window._hwTraceSoftId, 10);
+      for (const stage of hw.stages) {
+        if (stage.kind === 'neural' && stage.cores) {
+          const hasTrace = stage.cores.some(c => (c.mapped_placements || []).some(p => p.ir_node_id === traceId));
+          if (hasTrace) expanded.add(stage.segment_index ?? stage.index);
+        }
+      }
+    }
+
     let html = '<div class="stage-flow">';
     html += '<div class="stage-flow-row">';
     html += '<div class="stage-flow-column">';
@@ -401,13 +418,18 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
       </div>`;
     }
     const pct = (core.utilization * 100).toFixed(0);
-    const selCls = selCoreIdx === core.core_index ? ' hw-core-selected' : '';
+    const isTraced = window._hwTraceSoftId != null && (core.mapped_placements || []).some(p => p.ir_node_id === parseInt(window._hwTraceSoftId, 10));
+    const selCls = (selCoreIdx === core.core_index ? ' hw-core-selected' : '') + (isTraced ? ' hw-core-traced' : '');
     let cell = `<div class="hw-core-cell" style="${cellStyle}" onclick="window._hwCoreClick(${segIdx},${core.core_index})" title="Core ${core.core_index}: ${core.used_axons}/${core.axons_per_core}ax × ${core.used_neurons}/${core.neurons_per_core}n, util=${pct}%">`;
     cell += `<span class="hw-core-id">${core.core_index}</span>`;
     cell += '<div class="hw-core-cell-main">';
     cell += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}" style="${coreStyle}">`;
     if (core.heatmap_image) {
       cell += `<img class="hw-core-canvas" src="${core.heatmap_image}" style="width:100%;height:100%;display:block;object-fit:fill" draggable="false">`;
+    }
+    const isFused = (core.mapped_placements || []).some(p => p.coalescing_role === 'fused');
+    if (isFused) {
+      cell += '<div class="hw-core-fused-badge" title="Fused/Coalesced Core"></div>';
     }
     cell += '</div>';
     cell += `<span class="hw-core-util">${pct}%</span>`;
