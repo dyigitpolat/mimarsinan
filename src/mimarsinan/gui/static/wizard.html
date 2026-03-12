@@ -306,8 +306,8 @@
               </div>
             </div>
 
-            <!-- Shared HW parameters (both modes): grid col1 = Weight Bits + Float (50/50), col2 = Axon Tiling, col3 = Hardware bias -->
-            <div class="field-grid field-grid-hw-row" style="margin-bottom:14px">
+            <!-- Shared HW parameters (both modes): col1 = Weight Bits + Float, col2 = Core Coalescing, col3 = Hardware bias -->
+            <div class="field-grid cols-3 field-grid-hw-row" style="margin-bottom:14px">
               <div class="field">
                 <label class="field-label">Weight Bits <span class="hint">parameter precision</span></label>
                 <div class="weight-bits-float-row">
@@ -320,9 +320,9 @@
                 </div>
               </div>
               <div class="field">
-                <label class="field-label">Allow Axon Tiling</label>
-                <div class="toggle-row" id="axonTilingToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Axon Tiling</span>
+                <label class="field-label">Core Coalescing <span class="hint">wide layers</span></label>
+                <div class="toggle-row" id="coreCoalescingToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Coalescing</span>
                   <div class="toggle-switch"></div>
                 </div>
               </div>

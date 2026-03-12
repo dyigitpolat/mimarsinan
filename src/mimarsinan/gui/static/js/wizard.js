@@ -164,6 +164,9 @@ function handleToggleChange(id) {
   if (id === 'floatWeightsToggle') {
     applyHwDeps();
   }
+  if (id === 'coreCoalescingToggle') {
+    applyCoalescingDeps();
+  }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -253,6 +256,10 @@ function applyHwDeps() {
     depsEl.innerHTML = '';
   }
   syncWtQuantToggle();
+}
+
+function applyCoalescingDeps() {
+  applyHwDeps();
 }
 
 function syncWtQuantToggle() {
@@ -526,7 +533,7 @@ function buildConfig() {
 
   // platform_constraints
   let platformConstraints;
-  const allowTiling = isToggleOn('axonTilingToggle');
+  const allowCoalescing = isToggleOn('coreCoalescingToggle');
 
   if (hwMode === 'user') {
     const hardwareBias = isToggleOn('hardwareBiasToggle');
@@ -539,7 +546,7 @@ function buildConfig() {
       weight_bits: weightBits,
       has_bias: hardwareBias,
     };
-    if (allowTiling) platformConstraints.allow_axon_tiling = true;
+    if (allowCoalescing) platformConstraints.allow_core_coalescing = true;
   } else {
     platformConstraints = {
       mode: "auto",
@@ -549,7 +556,7 @@ function buildConfig() {
           target_tq: targetTq,
           simulation_steps: simCycles,
           weight_bits: weightBits,
-          allow_axon_tiling: allowTiling,
+          allow_core_coalescing: allowCoalescing,
         },
         search_space: {
           num_core_types: parseInt(v('numCoreTypes')),
