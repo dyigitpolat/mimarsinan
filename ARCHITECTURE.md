@@ -398,7 +398,7 @@ Operates in two modes based on `configuration_mode`:
 
 Objectives: `accuracy` (max), `wasted_area` (min), `total_params` (min).
 
-The step produces a `PerceptronMixerBuilder` and the resolved platform constraints (including `cores` — a list of core types with `{count, max_axons, max_neurons}`). The builder is created directly from the search-resolved constraints; **no side-effect writes** are made to `pipeline.config`. Downstream steps read hardware dimensions from the cached `platform_constraints_resolved` entry.
+The step produces a `PerceptronMixerBuilder` and the resolved platform constraints (including `cores` — a list of core types with `{count, max_axons, max_neurons}` and optional `has_bias`). When `has_bias` is true for a core type, that hardware core implements bias via a per-neuron bias register; the last-row always-on axon is not used for that core in nevresim. The builder is created directly from the search-resolved constraints; **no side-effect writes** are made to `pipeline.config`. Downstream steps read hardware dimensions from the cached `platform_constraints_resolved` entry.
 
 After the search completes, the step **validates the best candidate**: if the search failed to find any feasible configuration, a `RuntimeError` is raised with the constraint violation details, rather than silently passing an infeasible config to later steps.
 
@@ -515,7 +515,7 @@ Scaling factors (`activation_scale`, `parameter_scale`) are **not modified**, en
 This critical step converts the PyTorch model into an `IRGraph`:
 
 1. Extracts the `ModelRepresentation` (mapper graph) from the model
-2. Reads `max_axons`, `max_neurons`, and `allow_axon_tiling` from the `platform_constraints_resolved` cache entry (produced by Architecture Search). When heterogeneous `cores` are present, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types — this allows softcores as large as the biggest core type, relying on the greedy packer's scarcity-aware metric (§9.2) to place them correctly
+2. Reads `max_axons`, `max_neurons`, `allow_core_coalescing`, and `hardware_bias` from the `platform_constraints_resolved` cache entry (produced by Architecture Search). When heterogeneous `cores` are present, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types — this allows softcores as large as the biggest core type, relying on the greedy packer's scarcity-aware metric (§9.2) to place them correctly. `hardware_bias` is `True` only when all core types declare `has_bias: true`; it controls whether bias consumes an axon slot (legacy always-on row) or a dedicated hardware register
 3. Creates an `IRMapping` with these hardware constraints
 4. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
 5. Optionally quantizes weights (rounds `core_matrix *= parameter_scale` to integers) only when `weight_quantization` is enabled
@@ -807,7 +807,9 @@ Key fields:
 - `core_matrix: np.ndarray | None` — shape `(axons, neurons)`, the weight matrix.  `None` when using a shared weight bank.
 - `threshold: float` — Spiking threshold (tuned by CoreFlowTuner)
 - `activation_scale`, `parameter_scale`, `input_activation_scale` — Scaling factors
-- `psum_group_id`, `psum_role` — For partial-sum decomposition when a layer exceeds hardware limits
+- `psum_group_id`, `psum_role` — For partial-sum (psum) decomposition: `role` is `"partial_pos"`, `"partial_neg"`, or `"accum"`. Produced when a wide layer is split using the 2N+1-core psum strategy.
+- `coalescing_group_id`, `coalescing_role` — For core-coalescing decomposition: `role` is `"partial"` or `"accum"`. Produced when `allow_core_coalescing=True` is set on the `IRMapping`; uses N+1 cores instead of 2N+1.
+- `hardware_bias: np.ndarray | None` — When non-`None`, the bias vector is stored in a dedicated hardware register rather than an always-on axon row.
 - `weight_bank_id: int | None` — If set, this core references a `WeightBank` stored on the `IRGraph` instead of owning its `core_matrix`.
 - `weight_row_slice: tuple[int,int] | None` — Optional neuron-axis slice into the bank's matrix (for output-channel tiling).
 
@@ -849,8 +851,9 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
 - `add_compute_op(...)` — Creates a `ComputeOp`
 - `map_fc(...)` — Maps a fully-connected layer, handling:
   - **Output tiling**: Splits neurons across multiple cores when `neurons > max_neurons`
-  - **Axon tiling**: Splits axons across cores (partial sums) when `axons > max_axons` and `allow_axon_tiling` is enabled
-  - **Partial sum accumulation**: Creates `psum_role="partial_pos"/"partial_neg"` cores and an `"accum"` core
+  - **Axon tiling (psum)** — default when `in_features > max_axons`: splits weights into N positive-weight partial cores + N negative-weight partial cores + 1 accumulator (2N+1 cores total); `psum_role` is `"partial_pos"`, `"partial_neg"`, or `"accum"`
+  - **Axon tiling (coalescing)** — used when `allow_core_coalescing=True`: N full-weight partial cores + 1 trivial +1-weight accumulator (N+1 cores total); more hardware-efficient and requires signed-weight support; `coalescing_role` is `"partial"` or `"accum"`
+  - **Bias mode**: when `hardware_bias=True`, bias is stored in `NeuralCore.hardware_bias` (no axon slot consumed); otherwise an always-on axon row (`IRSource(-3, 0)`) occupies the last row of the weight matrix
 
 **Heterogeneous tiling**: When multiple core types exist, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types. This allows softcores as large as the biggest core type. The greedy packer's scarcity-aware placement metric (§9.2) then ensures flexible softcores (those that fit multiple core types) are directed toward more abundant types, preserving scarce large-capacity types for softcores that strictly require them.
 
@@ -929,7 +932,7 @@ SegmentIOSlice(node_id, seg_offset, seg_count)
 This allows skip connections: a residual `AddMapper`'s ComputeOp reads two state-buffer entries (the pre-block output and the block output) that may have been produced by non-adjacent stages.
 
 Built by `build_hybrid_hard_core_mapping(ir_graph, cores_config)`:
-1. Allocates a **single shared pool** of hardware cores from `cores_config` upfront; all segments draw from this same pool, ensuring the total core budget is respected across the entire hybrid program
+1. Allocates a **single shared pool** of hardware cores from `cores_config` upfront; each core type may specify optional `has_bias` (default false). When true, those cores use hardware per-neuron bias instead of the last-row always-on axon. All segments draw from this same pool, ensuring the total core budget is respected across the entire hybrid program
 2. Walks the IR graph in topological order, grouping consecutive `NeuralCore`s
 3. At each `ComputeOp`, flushes the current neural segment into a `HardCoreMapping` (packed from the shared pool)
 4. External source references (from earlier stages or the original input) are resolved via the state buffer

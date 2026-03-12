@@ -204,7 +204,6 @@ def _run_ir_mapping(model, max_axons=4096, max_neurons=4096):
         firing_mode="Default",
         max_axons=max_axons,
         max_neurons=max_neurons,
-        allow_axon_tiling=False,
     )
     return ir_mapping.map(repr_)
 

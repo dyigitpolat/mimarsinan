@@ -17,8 +17,20 @@ def get_all_model_type_schemas() -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for model_id, builder_cls in BUILDERS_REGISTRY.items():
         schema = getattr(builder_cls, "WIZARD_SCHEMA", None)
+        
         if schema is None:
-            continue
+            # Shim for newer builders that don't have WIZARD_SCHEMA attribute
+            label = getattr(builder_cls, "label", model_id)
+            config_schema = []
+            if hasattr(builder_cls, "get_config_schema"):
+                config_schema = builder_cls.get_config_schema()
+            
+            schema = {
+                "label": label,
+                "description": "",
+                "config_schema": config_schema
+            }
+            
         out.append({"id": model_id, **schema})
     return out
 

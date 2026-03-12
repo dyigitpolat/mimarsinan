@@ -175,8 +175,15 @@ class NeuralCore(IRNode):
     # Metadata for debugging/visualization
     psum_group_id: int | None = None
     psum_role: str | None = None  # "partial_pos", "partial_neg", "accum"
+    coalescing_group_id: int | None = None
+    coalescing_role: str | None = None  # "master", "slave"
     normalization_type: str | None = None
     activation_type: str | None = None
+
+    # Hardware-bias mode: bias stored in a dedicated register, not as an always-on axon row.
+    # When set, core_matrix has shape (in_features, out_features) — no extra bias row.
+    # When None, bias is encoded as the last axon row wired to IRSource(-3, 0) (legacy mode).
+    hardware_bias: np.ndarray | None = None
 
     # Pre-pruning snapshot for GUI (set by ir_pruning before compacting)
     pre_pruning_heatmap: list | None = None  # full matrix (axons, neurons) as list of lists for soft-core viz
@@ -258,6 +265,12 @@ class NeuralCore(IRNode):
             device=input_tensor.device,
         )
         out = torch.matmul(inputs, weight.T)
+
+        if self.hardware_bias is not None:
+            bias = torch.tensor(
+                self.hardware_bias, dtype=torch.float32, device=input_tensor.device
+            )
+            out = out + bias
 
         out = F.relu(out)
         out = torch.clamp(out, 0.0, self.activation_scale.item())
@@ -594,6 +607,8 @@ def soft_core_to_neural_core(soft_core, core_id_offset: int = 0) -> NeuralCore:
         latency=soft_core.latency,
         psum_group_id=soft_core.psum_group_id,
         psum_role=soft_core.psum_role,
+        coalescing_group_id=soft_core.coalescing_group_id,
+        coalescing_role=soft_core.coalescing_role,
     )
 
 
@@ -645,6 +660,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
     ]
 
     core_matrix = neural_core.get_core_matrix(graph)
+
     pruned_row_mask = getattr(neural_core, "pruned_row_mask", None)
     pruned_col_mask = getattr(neural_core, "pruned_col_mask", None)
     # Only attach masks when they match current matrix (full pre-compaction layout)
@@ -666,10 +682,15 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         name=neural_core.name,
         psum_group_id=neural_core.psum_group_id,
         psum_role=neural_core.psum_role,
+        coalescing_group_id=neural_core.coalescing_group_id,
+        coalescing_role=neural_core.coalescing_role,
     )
     if pruned_row_mask is not None and pruned_col_mask is not None:
         soft.pruned_row_mask = pruned_row_mask
         soft.pruned_col_mask = pruned_col_mask
+    # Pass hardware_bias through (no always-on row needed).
+    if neural_core.hardware_bias is not None:
+        soft.hardware_bias = neural_core.hardware_bias.copy()
     return soft
 
 

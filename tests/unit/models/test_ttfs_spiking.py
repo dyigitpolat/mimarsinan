@@ -282,6 +282,217 @@ class TestUnifiedVsHybridTTFS:
         assert agreement >= 0.75, f"Agreement {agreement*100:.0f}% < 75%"
 
 
+# ---------------------------------------------------------------------------
+# Hardware-bias mode tests
+# ---------------------------------------------------------------------------
+
+def _relu_model_to_ir_graph_hw_bias(model, in_dim, *, quantize=False, weight_bits=8):
+    """Like _relu_model_to_ir_graph but uses hardware_bias (no always-on row)."""
+    w1 = model[0].weight.data.numpy()
+    b1 = model[0].bias.data.numpy()
+    w2 = model[2].weight.data.numpy()
+    b2 = model[2].bias.data.numpy()
+
+    hidden_dim = w1.shape[0]
+    out_dim = w2.shape[0]
+    q_max = (2 ** (weight_bits - 1)) - 1
+
+    # No bias row in core_matrix — bias in hardware_bias field
+    core1_matrix = w1.T.copy()  # (in_dim, hidden_dim)
+    abs_max_1 = max(np.abs(np.concatenate([core1_matrix.flatten(), b1.flatten()])).max(), 1e-12)
+    ps1 = q_max / abs_max_1
+
+    input_sources_1 = np.array(
+        [IRSource(node_id=-2, index=i) for i in range(in_dim)],
+        dtype=object,
+    )
+
+    if quantize:
+        core1_matrix_q = np.round(core1_matrix * ps1)
+        hw_bias_1 = np.round(b1 * ps1)
+        threshold_1 = ps1
+    else:
+        core1_matrix_q = core1_matrix
+        hw_bias_1 = b1.copy()
+        threshold_1 = 1.0
+
+    core1 = NeuralCore(
+        id=0, name="hidden",
+        input_sources=input_sources_1,
+        core_matrix=core1_matrix_q,
+        hardware_bias=hw_bias_1,
+        threshold=threshold_1,
+        parameter_scale=torch.tensor(1.0) if quantize else torch.tensor(ps1),
+        latency=0,
+    )
+
+    core2_matrix = w2.T.copy()  # (hidden_dim, out_dim)
+    abs_max_2 = max(np.abs(np.concatenate([core2_matrix.flatten(), b2.flatten()])).max(), 1e-12)
+    ps2 = q_max / abs_max_2
+
+    input_sources_2 = np.array(
+        [IRSource(node_id=0, index=i) for i in range(hidden_dim)],
+        dtype=object,
+    )
+
+    if quantize:
+        core2_matrix_q = np.round(core2_matrix * ps2)
+        hw_bias_2 = np.round(b2 * ps2)
+        threshold_2 = ps2
+    else:
+        core2_matrix_q = core2_matrix
+        hw_bias_2 = b2.copy()
+        threshold_2 = 1.0
+
+    core2 = NeuralCore(
+        id=1, name="output",
+        input_sources=input_sources_2,
+        core_matrix=core2_matrix_q,
+        hardware_bias=hw_bias_2,
+        threshold=threshold_2,
+        parameter_scale=torch.tensor(1.0) if quantize else torch.tensor(ps2),
+        latency=1,
+    )
+
+    output_sources = np.array(
+        [IRSource(node_id=1, index=i) for i in range(out_dim)],
+        dtype=object,
+    )
+    return IRGraph(nodes=[core1, core2], output_sources=output_sources)
+
+
+class TestHardwareBiasUnifiedTTFS:
+    """SpikingUnifiedCoreFlow with hardware_bias produces same results as legacy always-on."""
+
+    def test_hw_bias_matches_legacy_ttfs(self):
+        torch.manual_seed(42)
+        np.random.seed(42)
+
+        in_dim, hidden_dim, out_dim = 8, 16, 4
+        T = 64
+        model = _make_simple_relu_model(in_dim, hidden_dim, out_dim)
+        x = torch.rand(8, in_dim)
+
+        # Legacy (always-on row)
+        ir_legacy = _relu_model_to_ir_graph(model, in_dim, quantize=False)
+        flow_legacy = SpikingUnifiedCoreFlow(
+            input_shape=(in_dim,), ir_graph=ir_legacy, simulation_length=T,
+            preprocessor=nn.Identity(), firing_mode="TTFS",
+            spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
+        )
+
+        # Hardware-bias (no always-on row)
+        ir_hw = _relu_model_to_ir_graph_hw_bias(model, in_dim, quantize=False)
+        flow_hw = SpikingUnifiedCoreFlow(
+            input_shape=(in_dim,), ir_graph=ir_hw, simulation_length=T,
+            preprocessor=nn.Identity(), firing_mode="TTFS",
+            spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
+        )
+
+        with torch.no_grad():
+            out_legacy = flow_legacy(x)
+            out_hw = flow_hw(x)
+
+        torch.testing.assert_close(out_legacy, out_hw, atol=1e-5, rtol=1e-5)
+
+    def test_hw_bias_argmax_matches_relu(self):
+        torch.manual_seed(42)
+        np.random.seed(42)
+
+        in_dim, hidden_dim, out_dim = 8, 16, 4
+        T = 64
+        model = _make_simple_relu_model(in_dim, hidden_dim, out_dim)
+        x = torch.rand(8, in_dim)
+
+        with torch.no_grad():
+            relu_preds = model(x).argmax(dim=1)
+
+        ir_hw = _relu_model_to_ir_graph_hw_bias(model, in_dim, quantize=False)
+        flow = SpikingUnifiedCoreFlow(
+            input_shape=(in_dim,), ir_graph=ir_hw, simulation_length=T,
+            preprocessor=nn.Identity(), firing_mode="TTFS",
+            spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
+        )
+
+        with torch.no_grad():
+            hw_preds = flow(x).argmax(dim=1)
+
+        assert (relu_preds == hw_preds).all()
+
+
+class TestHardwareBiasHybridTTFS:
+    """SpikingHybridCoreFlow with hardware_bias produces same results as legacy always-on."""
+
+    def test_hw_bias_matches_legacy_ttfs(self):
+        torch.manual_seed(42)
+        np.random.seed(42)
+
+        in_dim, hidden_dim, out_dim = 8, 16, 4
+        T = 64
+        model = _make_simple_relu_model(in_dim, hidden_dim, out_dim)
+        x = torch.rand(8, in_dim)
+        cores_config = [{"max_axons": 256, "max_neurons": 256, "count": 10}]
+
+        # Legacy
+        ir_legacy = _relu_model_to_ir_graph(model, in_dim, quantize=False)
+        hm_legacy = build_hybrid_hard_core_mapping(ir_graph=ir_legacy, cores_config=cores_config)
+        flow_legacy = SpikingHybridCoreFlow(
+            input_shape=(in_dim,), hybrid_mapping=hm_legacy,
+            simulation_length=T, preprocessor=nn.Identity(),
+            firing_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
+        )
+
+        # Hardware-bias
+        ir_hw = _relu_model_to_ir_graph_hw_bias(model, in_dim, quantize=False)
+        hm_hw = build_hybrid_hard_core_mapping(ir_graph=ir_hw, cores_config=cores_config)
+        flow_hw = SpikingHybridCoreFlow(
+            input_shape=(in_dim,), hybrid_mapping=hm_hw,
+            simulation_length=T, preprocessor=nn.Identity(),
+            firing_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
+        )
+
+        with torch.no_grad():
+            out_legacy = flow_legacy(x)
+            out_hw = flow_hw(x)
+
+        torch.testing.assert_close(out_legacy, out_hw, atol=1e-5, rtol=1e-5)
+
+    def test_unified_vs_hybrid_hw_bias(self):
+        """Unified and Hybrid flows agree when both use hardware_bias."""
+        torch.manual_seed(42)
+        np.random.seed(42)
+
+        in_dim, hidden_dim, out_dim = 8, 16, 4
+        T = 64
+        model = _make_simple_relu_model(in_dim, hidden_dim, out_dim)
+        x = torch.rand(4, in_dim)
+
+        ir_graph = _relu_model_to_ir_graph_hw_bias(model, in_dim, quantize=False)
+
+        unified = SpikingUnifiedCoreFlow(
+            input_shape=(in_dim,), ir_graph=ir_graph, simulation_length=T,
+            preprocessor=nn.Identity(), firing_mode="TTFS",
+            spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
+        )
+
+        cores_config = [{"max_axons": 256, "max_neurons": 256, "count": 10}]
+        hm = build_hybrid_hard_core_mapping(ir_graph=ir_graph, cores_config=cores_config)
+        hybrid = SpikingHybridCoreFlow(
+            input_shape=(in_dim,), hybrid_mapping=hm,
+            simulation_length=T, preprocessor=nn.Identity(),
+            firing_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
+        )
+
+        with torch.no_grad():
+            u_out = unified(x)
+            h_out = hybrid(x)
+
+        u_preds = u_out.argmax(dim=1)
+        h_preds = h_out.argmax(dim=1)
+        agreement = (u_preds == h_preds).float().mean().item()
+        assert agreement >= 0.75, f"Agreement {agreement*100:.0f}% < 75%"
+
+
 class TestTTFSRealisticMixedWeights:
     def test_mixed_weight_quantized_agreement(self):
         torch.manual_seed(123)

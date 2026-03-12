@@ -63,7 +63,6 @@ class SoftCoreMapping:
         firing_mode="Default",
         max_axons: int | None = None,
         max_neurons: int | None = None,
-        allow_axon_tiling: bool = False,
     ):
         self.cores = []
         self.output_sources = []
@@ -73,7 +72,6 @@ class SoftCoreMapping:
 
         self.max_axons = max_axons
         self.max_neurons = max_neurons
-        self.allow_axon_tiling = bool(allow_axon_tiling)
         
         assert firing_mode in ["Default", "Novena", "TTFS"]
         
@@ -190,11 +188,6 @@ class SoftCoreMapping:
         required_axons = x_rows + (1 if fc_biases is not None else 0)
         if required_axons <= max_axons and o_rows <= max_neurons:
             return _map_fc_block(input_tensor_sources, fc_weights, fc_biases)
-
-        if not self.allow_axon_tiling and required_axons > max_axons:
-            raise ValueError(
-                f"Axon tiling disabled: required axons={required_axons} exceeds max_axons={max_axons}."
-            )
 
         if o_rows > max_neurons:
             # Output-channel tiling for safety (already commonly handled at model level).
@@ -2130,31 +2123,86 @@ def hard_cores_to_chip(input_size, hardcore_mapping, axons_per_core, neurons_per
     matrix and axon-source list are padded with zeros / off-sources to the
     uniform ``axons_per_core`` x ``neurons_per_core`` dimensions required by
     the C++ template.
+
+    Bias handling modes (checked in priority order):
+
+    1. **hardware_bias field** — When a HardCore carries an explicit
+       ``hardware_bias`` array (set during packing from NeuralCores that
+       used IRMapping's hardware_bias mode), that array is emitted as
+       per-neuron bias directly.  No always-on axon row exists.
+
+    2. **Legacy always-on row** — When ``has_bias_capability=True`` and no
+       ``hardware_bias`` is present, the last row of core_matrix is assumed
+       to be the always-on bias row.  It is folded into per-neuron bias and
+       the always-on axon connection is converted to off.
+
+    3. **No bias** — When ``has_bias_capability=False`` and no
+       ``hardware_bias``, the core_matrix is used as-is.
     """
     output_sources = hardcore_mapping.output_sources
 
     hardcores = []
     for hardcore in hardcore_mapping.cores:
-        # ``outs`` = actual neuron count for this core (may be smaller
-        # than the uniform target when the pool is heterogeneous).
         outs = int(hardcore.neurons_per_core)
-        hardcores.append(
-            generate_core_weights(
-                neurons_per_core,
-                axons_per_core,
-                hardcore.core_matrix.transpose(),
-                outs,
-                hardcore.threshold,
-                hardcore.latency,
+        hw_bias = getattr(hardcore, "hardware_bias", None)
+        has_bias_cap = getattr(hardcore, "has_bias_capability", True)
+
+        if hw_bias is not None:
+            # Mode 1: dedicated hardware_bias — no always-on row in core_matrix.
+            weight_tensor = hardcore.core_matrix.transpose()  # (neurons, axons)
+            hardcores.append(
+                generate_core_weights(
+                    neurons_per_core,
+                    axons_per_core,
+                    weight_tensor,
+                    outs,
+                    hardcore.threshold,
+                    hardcore.latency,
+                    bias_tensor=hw_bias,
+                )
             )
-        )
+        elif has_bias_cap:
+            # Mode 2: legacy always-on row — peel last row as bias.
+            bias_tensor = hardcore.core_matrix[-1, :].copy()
+            weight_tensor = hardcore.core_matrix[:-1, :].transpose()  # (neurons, axons-1)
+            hardcores.append(
+                generate_core_weights(
+                    neurons_per_core,
+                    axons_per_core,
+                    weight_tensor,
+                    outs,
+                    hardcore.threshold,
+                    hardcore.latency,
+                    bias_tensor=bias_tensor,
+                )
+            )
+        else:
+            # Mode 3: no bias.
+            hardcores.append(
+                generate_core_weights(
+                    neurons_per_core,
+                    axons_per_core,
+                    hardcore.core_matrix.transpose(),
+                    outs,
+                    hardcore.threshold,
+                    hardcore.latency,
+                )
+            )
 
     hardcore_connections = []
     for hardcore in hardcore_mapping.cores:
-        # Pad axon_sources to the uniform target size.
         axon_sources = list(hardcore.axon_sources)
         while len(axon_sources) < axons_per_core:
             axon_sources.append(SpikeSource(-1, 0, is_input=False, is_off=True))
+        # For legacy always-on mode, convert the bias axon to off
+        # (bias is now in the neuron's register).
+        hw_bias = getattr(hardcore, "hardware_bias", None)
+        has_bias_cap = getattr(hardcore, "has_bias_capability", True)
+        if hw_bias is None and has_bias_cap:
+            for i in range(len(axon_sources) - 1, -1, -1):
+                if axon_sources[i].is_always_on_:
+                    axon_sources[i] = SpikeSource(-1, 0, is_input=False, is_off=True)
+                    break
         hardcore_connections.append(Connection(axon_sources))
 
     chip = ChipModel(

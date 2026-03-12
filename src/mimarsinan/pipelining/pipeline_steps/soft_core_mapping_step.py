@@ -43,7 +43,13 @@ class SoftCoreMappingStep(PipelineStep):
         else:
             resolved_max_axons = platform_constraints.get("max_axons")
             resolved_max_neurons = platform_constraints.get("max_neurons")
-        resolved_allow_axon_tiling = bool(platform_constraints.get("allow_axon_tiling", False))
+        resolved_allow_core_coalescing = bool(platform_constraints.get("allow_core_coalescing", False))
+        # hardware_bias=True only when ALL core types declare has_bias=True.
+        # If any core uses the legacy always-on axon row, conservative mode is required.
+        if cores:
+            resolved_hardware_bias = all(bool(ct.get("has_bias", True)) for ct in cores)
+        else:
+            resolved_hardware_bias = False
 
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):
@@ -66,7 +72,6 @@ class SoftCoreMappingStep(PipelineStep):
                   input_shape=tuple(self.pipeline.config["input_shape"]),
                   max_axons=int(resolved_max_axons),
                   max_neurons=int(resolved_max_neurons),
-                  allow_axon_tiling=resolved_allow_axon_tiling,
                   device=flowchart_device,
               )
               print(f"[SoftCoreMappingStep] Wrote flowchart DOT: {out_dot}")
@@ -79,8 +84,7 @@ class SoftCoreMappingStep(PipelineStep):
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
 
-        self._calculate_input_activation_scales(model, validator, 1.0)
-
+        
         from mimarsinan.mapping.per_source_scales import compute_per_source_scales
         compute_per_source_scales(model.get_mapper_repr())
 
@@ -126,7 +130,8 @@ class SoftCoreMappingStep(PipelineStep):
             firing_mode=self.pipeline.config["firing_mode"],
             max_axons=resolved_max_axons,
             max_neurons=resolved_max_neurons,
-            allow_axon_tiling=resolved_allow_axon_tiling,
+            allow_core_coalescing=resolved_allow_core_coalescing,
+            hardware_bias=resolved_hardware_bias,
         )
         
         mapper_repr = model.get_mapper_repr()

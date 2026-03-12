@@ -74,8 +74,11 @@ def _make_available_hardware_cores(cores_config: Sequence[dict]) -> list[HardCor
         count = int(core_type["count"])
         max_axons = int(core_type["max_axons"])
         max_neurons = int(core_type["max_neurons"])
+        has_bias = bool(core_type.get("has_bias", True))
         for _ in range(count):
-            available_hardware_cores.append(HardCore(max_axons, max_neurons))
+            available_hardware_cores.append(
+                HardCore(max_axons, max_neurons, has_bias_capability=has_bias)
+            )
     return available_hardware_cores
 
 
@@ -161,6 +164,35 @@ def _remap_external_sources_to_segment_inputs(
     return graph, input_map
 
 
+def _check_no_split_coalescing_groups(nodes: list) -> None:
+    """Assert that no coalescing group is split at a segment boundary.
+
+    Each coalescing group that has partial cores in this segment must also
+    have its accumulator core in this segment.  A missing accumulator means
+    a ComputeOp was inserted between a partial core and its accumulator,
+    which would break the coalescing semantics.
+    """
+    group_roles: dict[int, list[str]] = {}
+    for n in nodes:
+        if isinstance(n, NeuralCore):
+            gid = getattr(n, "coalescing_group_id", None)
+            role = getattr(n, "coalescing_role", None)
+            if gid is not None and role is not None:
+                group_roles.setdefault(gid, []).append(role)
+
+    for gid, roles in group_roles.items():
+        if "master" in roles:
+            continue # Unified wide core, no psums needed.
+
+        if "accum" not in roles:
+            raise ValueError(
+                f"Coalescing group {gid} has partial cores in this neural segment "
+                f"but its accumulator is missing (roles found: {roles}). "
+                f"A ComputeOp must not be inserted between coalescing partial cores "
+                f"and their accumulator."
+            )
+
+
 def _flush_neural_segment(
     *,
     current_neural: list[NeuralCore],
@@ -177,6 +209,8 @@ def _flush_neural_segment(
     (i.e. those consumed by any node *outside* this segment).
     """
     segment_node_ids = {n.id for n in current_neural}
+
+    _check_no_split_coalescing_groups(current_neural)
 
     output_nodes: list[NeuralCore] = []
     for n in current_neural:

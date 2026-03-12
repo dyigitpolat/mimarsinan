@@ -27,7 +27,6 @@ class LayoutIRMapping:
 
     max_axons: int
     max_neurons: int
-    allow_axon_tiling: bool = False
     threshold_groups: int = 1
     threshold_seed: int = 0
     pruning_fraction: float = 0.0
@@ -35,7 +34,6 @@ class LayoutIRMapping:
     def __post_init__(self):
         self.max_axons = int(self.max_axons)
         self.max_neurons = int(self.max_neurons)
-        self.allow_axon_tiling = bool(self.allow_axon_tiling)
         self.threshold_groups = max(1, int(self.threshold_groups))
         self.threshold_seed = int(self.threshold_seed)
 
@@ -257,13 +255,9 @@ class LayoutIRMapping:
 
         # Axon tiling check (bias uses 1 axon)
         if self.max_axons is not None and in_features > self.max_axons - 1:
-            if not self.allow_axon_tiling:
-                raise ValueError(
-                    f"FC requires {in_features} axons but max is {self.max_axons - 1} (enable allow_axon_tiling)"
-                )
-            # For MNIST PoC we keep this unimplemented to avoid producing invalid accumulator cores.
             raise NotImplementedError(
-                "allow_axon_tiling layout mapping not supported in LayoutIRMapping (yet)"
+                f"FC requires {in_features} axons but max is {self.max_axons - 1}; "
+                "axon tiling is not supported in LayoutIRMapping."
             )
 
         # Output tiling

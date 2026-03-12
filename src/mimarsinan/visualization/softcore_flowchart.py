@@ -38,11 +38,10 @@ def _estimate_map_fc(
     has_bias: bool,
     max_axons: int,
     max_neurons: int,
-    allow_axon_tiling: bool,
 ) -> HWEstimate:
     """
     Estimate the number of hardware cores produced by SoftCoreMapping.map_fc (without actually mapping),
-    including axon tiling (partial sums + accumulator) when enabled.
+    including axon tiling (partial sums + accumulator) when needed.
     """
 
     bias_ax = 1 if has_bias else 0
@@ -59,15 +58,6 @@ def _estimate_map_fc(
             f"core_matrix≈{required_axons}x<= {max_neurons} (axons x neurons), cores_per_group={instances}"
         )
         return HWEstimate(True, None, cores_total, details)
-
-    # Axon overflow
-    if not allow_axon_tiling:
-        return HWEstimate(
-            False,
-            f"requires axon tiling: required_axons={required_axons} > max_axons={max_axons}",
-            0,
-            f"UNMAPPABLE: required_axons={required_axons} > max_axons={max_axons} and allow_axon_tiling=False",
-        )
 
     # Replicate SoftCoreMapping.map_fc tiling logic
     tile_size = max_axons  # bias excluded from partials
@@ -129,7 +119,6 @@ def generate_softcore_flowchart_dot(
     input_shape: tuple[int, ...],
     max_axons: int,
     max_neurons: int,
-    allow_axon_tiling: bool = False,
     device: torch.device | None = None,
 ) -> str:
     """
@@ -194,7 +183,6 @@ def generate_softcore_flowchart_dot(
                 has_bias=(p.layer.bias is not None),
                 max_axons=int(max_axons),
                 max_neurons=int(max_neurons),
-                allow_axon_tiling=bool(allow_axon_tiling),
             )
         elif isinstance(node, Conv2DPerceptronMapper):
             k_h, k_w = node.kernel_size
@@ -213,7 +201,6 @@ def generate_softcore_flowchart_dot(
                 has_bias=bool(node.bias),
                 max_axons=int(max_axons),
                 max_neurons=int(max_neurons),
-                allow_axon_tiling=bool(allow_axon_tiling),
             )
         elif isinstance(node, Conv1DPerceptronMapper):
             in_f = int(node.in_channels * node.kernel_size)
@@ -231,7 +218,6 @@ def generate_softcore_flowchart_dot(
                 has_bias=bool(node.bias),
                 max_axons=int(max_axons),
                 max_neurons=int(max_neurons),
-                allow_axon_tiling=bool(allow_axon_tiling),
             )
         elif isinstance(node, AddMapper):
             # Add is mapped as a linear op (concat + identity weights). Estimate roughly.
@@ -303,7 +289,6 @@ def write_softcore_flowchart_dot(
     input_shape: tuple[int, ...],
     max_axons: int,
     max_neurons: int,
-    allow_axon_tiling: bool = False,
     device: torch.device | None = None,
 ) -> None:
     dot = generate_softcore_flowchart_dot(
@@ -311,7 +296,6 @@ def write_softcore_flowchart_dot(
         input_shape=input_shape,
         max_axons=max_axons,
         max_neurons=max_neurons,
-        allow_axon_tiling=allow_axon_tiling,
         device=device,
     )
     with open(out_path, "w", encoding="utf-8") as f:

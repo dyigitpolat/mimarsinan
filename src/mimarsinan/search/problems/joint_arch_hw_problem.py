@@ -58,11 +58,11 @@ BuilderFactory = Callable[..., Any]
 # model_config_assembler(decoded_arch_dict) -> model_config dict
 ModelConfigAssembler = Callable[[Dict[str, Any]], Dict[str, Any]]
 
-# validate_fn(model_config, platform_constraints, input_shape, allow_axon_tiling) -> bool
-ValidateFn = Callable[[Dict[str, Any], Dict[str, Any], Tuple[int, ...], bool], bool]
+# validate_fn(model_config, platform_constraints, input_shape) -> bool
+ValidateFn = Callable[[Dict[str, Any], Dict[str, Any], Tuple[int, ...]], bool]
 
-# constraint_fn(model_config, platform_constraints, input_shape, allow_axon_tiling) -> float
-ConstraintFn = Callable[[Dict[str, Any], Dict[str, Any], Tuple[int, ...], bool], float]
+# constraint_fn(model_config, platform_constraints, input_shape) -> float
+ConstraintFn = Callable[[Dict[str, Any], Dict[str, Any], Tuple[int, ...]], float]
 
 
 @dataclass
@@ -98,7 +98,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     core_axons_bounds: Tuple[int, int] = (64, 2048)
     core_neurons_bounds: Tuple[int, int] = (64, 2048)
     max_threshold_groups: int = 4
-    allow_axon_tiling: bool = False
 
     # --- Evaluation knobs ---
     accuracy_seed: int = 0
@@ -190,7 +189,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             "max_neurons": int(min_neurons),
             "target_tq": int(self.target_tq),
             "weight_bits": 8,
-            "allow_axon_tiling": bool(self.allow_axon_tiling),
         }
 
         return {
@@ -210,7 +208,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
                     configuration["model_config"],
                     configuration["platform_constraints"],
                     self.input_shape,
-                    self.allow_axon_tiling,
                 ))
             return True
         except Exception:
@@ -223,7 +220,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
                     configuration["model_config"],
                     configuration["platform_constraints"],
                     self.input_shape,
-                    self.allow_axon_tiling,
                 ))
             return 0.0 if self.validate(configuration) else 1.0
         except Exception:
@@ -293,7 +289,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             layout_mapper = LayoutIRMapping(
                 max_axons=int(pcfg["max_axons"]),
                 max_neurons=int(pcfg["max_neurons"]),
-                allow_axon_tiling=bool(pcfg.get("allow_axon_tiling", False)),
                 threshold_groups=threshold_groups,
                 threshold_seed=int(self.accuracy_seed),
                 pruning_fraction=float(self.pruning_fraction),

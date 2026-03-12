@@ -40,7 +40,8 @@ class IRMapping:
         firing_mode: str = "Default",
         max_axons: int | None = None,
         max_neurons: int | None = None,
-        allow_axon_tiling: bool = False,
+        allow_core_coalescing: bool = False,
+        hardware_bias: bool = False,
     ):
         self.nodes: List[IRNode] = []
         self.output_sources: np.ndarray = np.array([])
@@ -49,13 +50,14 @@ class IRMapping:
         self.firing_mode = firing_mode
         self.max_axons = max_axons
         self.max_neurons = max_neurons
-        self.allow_axon_tiling = bool(allow_axon_tiling)
+        self.allow_core_coalescing = bool(allow_core_coalescing)
+        self.hardware_bias = bool(hardware_bias)
 
         assert firing_mode in ("Default", "Novena", "TTFS"), \
             f"Invalid firing_mode: {firing_mode!r}"
 
         self._next_node_id = 0
-        self._psum_group_counter = 0
+        self._coalescing_group_counter = 0
         self._next_bank_id = 0
         self._weight_banks: Dict[int, WeightBank] = {}
 
@@ -195,6 +197,10 @@ class IRMapping:
         perceptron_index: int | None = None,
         perceptron_output_slice: tuple[int, int] | None = None,
         perceptron_input_slice: tuple[int, int] | None = None,
+        psum_group_id: int | None = None,
+        psum_role: str | None = None,
+        coalescing_group_id: int | None = None,
+        coalescing_role: str | None = None,
     ) -> np.ndarray:
         """
         Add a NeuralCore node to the graph.
@@ -223,13 +229,19 @@ class IRMapping:
         in_features = len(ir_input_list)
         out_features = weights.shape[0]
 
+        hardware_bias_arr = None
         if biases is not None:
-            # Add bias row
-            core_matrix = np.zeros((in_features + 1, out_features), dtype=float)
-            core_matrix[:in_features, :] = self._to_numpy(weights).T
-            core_matrix[-1, :] = self._to_numpy(biases).flatten()
-            # Add always-on source for bias
-            ir_input_list.append(IRSource(node_id=-3, index=0))
+            if self.hardware_bias:
+                # Hardware-bias mode: bias in dedicated register, no axon slot consumed
+                core_matrix = np.zeros((in_features, out_features), dtype=float)
+                core_matrix[:, :] = self._to_numpy(weights).T
+                hardware_bias_arr = self._to_numpy(biases).flatten()
+            else:
+                # Legacy always-on mode: bias occupies the last axon row
+                core_matrix = np.zeros((in_features + 1, out_features), dtype=float)
+                core_matrix[:in_features, :] = self._to_numpy(weights).T
+                core_matrix[-1, :] = self._to_numpy(biases).flatten()
+                ir_input_list.append(IRSource(node_id=-3, index=0))
         else:
             core_matrix = np.zeros((in_features, out_features), dtype=float)
             core_matrix[:, :] = self._to_numpy(weights).T
@@ -239,6 +251,7 @@ class IRMapping:
             name=name or f"neural_core_{node_id}",
             input_sources=np.array(ir_input_list),
             core_matrix=core_matrix,
+            hardware_bias=hardware_bias_arr,
             threshold=1.0,
             activation_scale=activation_scale,
             parameter_scale=parameter_scale,
@@ -248,6 +261,10 @@ class IRMapping:
             perceptron_index=perceptron_index,
             perceptron_output_slice=perceptron_output_slice,
             perceptron_input_slice=perceptron_input_slice,
+            psum_group_id=psum_group_id,
+            psum_role=psum_role,
+            coalescing_group_id=coalescing_group_id,
+            coalescing_role=coalescing_role,
         )
         self.nodes.append(neural_core)
 
@@ -268,6 +285,10 @@ class IRMapping:
         normalization_type: str | None = None,
         activation_type: str | None = None,
         perceptron_index: int | None = None,
+        psum_group_id: int | None = None,
+        psum_role: str | None = None,
+        coalescing_group_id: int | None = None,
+        coalescing_role: str | None = None,
     ) -> np.ndarray:
         """Add a NeuralCore that references a shared ``WeightBank``.
 
@@ -318,6 +339,10 @@ class IRMapping:
             normalization_type=normalization_type,
             activation_type=activation_type,
             perceptron_index=perceptron_index,
+            psum_group_id=psum_group_id,
+            psum_role=psum_role,
+            coalescing_group_id=coalescing_group_id,
+            coalescing_role=coalescing_role,
         )
         self.nodes.append(neural_core)
 
@@ -339,14 +364,21 @@ class IRMapping:
         normalization_type: str | None = None,
         activation_type: str | None = None,
         perceptron_index: int | None = None,
+        psum_group_id: int | None = None,
+        psum_role: str | None = None,
+        coalescing_group_id: int | None = None,
+        coalescing_role: str | None = None,
     ) -> np.ndarray:
         """
         Map a fully-connected layer to IR nodes.
 
-        This handles:
-        - Simple FC (single NeuralCore)
-        - Output-channel tiling (multiple NeuralCores)
-        - Axon tiling with partial sums (if allow_axon_tiling is True)
+        Creates one NeuralCore per FC layer (or per output tile when
+        out_features exceeds max_neurons).  Cores may be wider than
+        max_axons — hardware packing (HardCoreMapping) handles axon
+        constraints via core fusion.
+
+        ``allow_core_coalescing`` only controls whether coalescing
+        metadata (group_id / role) is attached to wide cores.
         """
         fc_weights = self._to_numpy(fc_weights)
         if fc_biases is not None:
@@ -386,35 +418,24 @@ class IRMapping:
                         normalization_type=normalization_type,
                         activation_type=activation_type,
                         perceptron_index=perceptron_index,
+                        psum_group_id=psum_group_id,
+                        psum_role=psum_role,
+                        coalescing_group_id=coalescing_group_id,
+                        coalescing_role=coalescing_role,
                     ).flatten()
                 )
 
             out = np.stack(outputs, axis=1)  # (out_features, core_count)
             return out.reshape(tuple(output_shape))
 
-        input_count = src_arr.flatten().shape[0]
+        # Tag wide cores with coalescing metadata when enabled.
+        is_wide = self.max_axons is not None and in_features > self.max_axons
+        if is_wide and self.allow_core_coalescing and coalescing_group_id is None:
+            coalescing_group_id = self._coalescing_group_counter
+            self._coalescing_group_counter += 1
+            coalescing_role = "master"
 
-        # Check axon limits
-        if self.max_axons is not None and in_features > self.max_axons - 1:
-            if not self.allow_axon_tiling:
-                raise ValueError(
-                    f"FC layer requires {in_features} axons but max is {self.max_axons - 1}. "
-                    f"Enable allow_axon_tiling for partial sum decomposition."
-                )
-            return self._map_fc_with_psum(
-                input_tensor_sources,
-                fc_weights,
-                fc_biases,
-                activation_scale,
-                parameter_scale,
-                input_activation_scale,
-                name,
-                normalization_type,
-                activation_type,
-                perceptron_index,
-            )
-
-        # Check neuron limits and tile output channels if needed
+        # Tile output channels if they exceed max_neurons.
         if self.max_neurons is not None and out_features > self.max_neurons:
             return self._map_fc_output_tiled(
                 input_tensor_sources,
@@ -427,9 +448,13 @@ class IRMapping:
                 normalization_type,
                 activation_type,
                 perceptron_index,
+                psum_group_id=psum_group_id,
+                psum_role=psum_role,
+                coalescing_group_id=coalescing_group_id,
+                coalescing_role=coalescing_role,
             )
 
-        # Simple case: single core
+        # Single core (may be wider than max_axons — handled by hardware packing).
         return self.add_neural_core(
             input_sources=input_tensor_sources.T if len(input_tensor_sources.shape) > 1 else input_tensor_sources,
             weights=fc_weights,
@@ -441,6 +466,10 @@ class IRMapping:
             normalization_type=normalization_type,
             activation_type=activation_type,
             perceptron_index=perceptron_index,
+            psum_group_id=psum_group_id,
+            psum_role=psum_role,
+            coalescing_group_id=coalescing_group_id,
+            coalescing_role=coalescing_role,
         )
 
     def _map_fc_output_tiled(
@@ -455,6 +484,10 @@ class IRMapping:
         normalization_type: str | None,
         activation_type: str | None,
         perceptron_index: int | None,
+        psum_group_id: int | None = None,
+        psum_role: str | None = None,
+        coalescing_group_id: int | None = None,
+        coalescing_role: str | None = None,
     ) -> np.ndarray:
         """Tile output channels across multiple cores."""
         out_features = weights.shape[0]
@@ -480,6 +513,10 @@ class IRMapping:
                 activation_type=activation_type,
                 perceptron_index=perceptron_index,
                 perceptron_output_slice=(start, end),
+                psum_group_id=psum_group_id,
+                psum_role=psum_role,
+                coalescing_group_id=coalescing_group_id,
+                coalescing_role=coalescing_role,
             )
             output_sources_list.append(tile_sources)
             start = end
@@ -498,6 +535,10 @@ class IRMapping:
         normalization_type: str | None,
         activation_type: str | None,
         perceptron_index: int | None,
+        psum_group_id: int | None = None,
+        psum_role: str | None = None,
+        coalescing_group_id: int | None = None,
+        coalescing_role: str | None = None,
     ) -> np.ndarray:
         """
         Map FC with axon tiling using partial sums.
@@ -507,115 +548,6 @@ class IRMapping:
         2. Create pos/neg partial sum cores for each tile
         3. Create accumulator cores that sum partials and add bias
         """
-        out_features = weights.shape[0]
-        in_features = weights.shape[1]
-
-        # Tile size for axons (leave room for bias in accumulator)
-        tile_size = self.max_axons - 1
-        tile_count = (in_features + tile_size - 1) // tile_size
-
-        psum_group_id = self._psum_group_counter
-        self._psum_group_counter += 1
-
-        # Also tile output features if needed
-        out_chunk = self.max_neurons if self.max_neurons else out_features
-        mapped = []
-
-        for out_start in range(0, out_features, out_chunk):
-            out_end = min(out_start + out_chunk, out_features)
-            out_block = out_end - out_start
-
-            partial_sources = []
-
-            # Create partial sum cores for each input tile
-            for tile_idx in range(tile_count):
-                in_start = tile_idx * tile_size
-                in_end = min(in_start + tile_size, in_features)
-
-                tile_inputs = input_sources.flatten()[in_start:in_end]
-                tile_weights = weights[out_start:out_end, in_start:in_end]
-
-                # Separate positive and negative weights
-                pos_weights = np.maximum(tile_weights, 0)
-                neg_weights = np.minimum(tile_weights, 0)
-
-                # Positive partial
-                pos_sources = self.add_neural_core(
-                    input_sources=tile_inputs,
-                    weights=pos_weights,
-                    biases=None,
-                    activation_scale=torch.tensor(float("inf")),  # No clamping
-                    parameter_scale=parameter_scale,
-                    input_activation_scale=input_activation_scale,
-                    name=f"{name}_psum_pos_t{tile_idx}_o{out_start}" if name else None,
-                    normalization_type=normalization_type,
-                    activation_type=activation_type,
-                    perceptron_index=perceptron_index,
-                    perceptron_output_slice=(out_start, out_end),
-                    perceptron_input_slice=(in_start, in_end),
-                )
-
-                # Negative partial (absolute values)
-                neg_sources = self.add_neural_core(
-                    input_sources=tile_inputs,
-                    weights=-neg_weights,  # Make positive
-                    biases=None,
-                    activation_scale=torch.tensor(float("inf")),
-                    parameter_scale=parameter_scale,
-                    input_activation_scale=input_activation_scale,
-                    name=f"{name}_psum_neg_t{tile_idx}_o{out_start}" if name else None,
-                    normalization_type=normalization_type,
-                    activation_type=activation_type,
-                    perceptron_index=perceptron_index,
-                    perceptron_output_slice=(out_start, out_end),
-                    perceptron_input_slice=(in_start, in_end),
-                )
-
-                partial_sources.append((pos_sources, neg_sources))
-
-            # Create accumulator core
-            # Accumulator inputs: all pos partials, then all neg partials
-            acc_inputs = []
-            for pos, neg in partial_sources:
-                acc_inputs.extend(pos.flatten().tolist())
-            for pos, neg in partial_sources:
-                acc_inputs.extend(neg.flatten().tolist())
-
-            # Accumulator weights: +1 for pos, -1 for neg
-            ps = float(parameter_scale.item() if hasattr(parameter_scale, "item") else parameter_scale)
-            unit = 1.0 / ps
-
-            acc_in_count = len(acc_inputs)
-            acc_weights = np.zeros((out_block, acc_in_count), dtype=float)
-
-            pos_offset = 0
-            neg_offset = tile_count * out_block
-
-            for t_idx in range(tile_count):
-                for n in range(out_block):
-                    acc_weights[n, pos_offset + t_idx * out_block + n] = unit
-                    acc_weights[n, neg_offset + t_idx * out_block + n] = -unit
-
-            tile_biases = biases[out_start:out_end] if biases is not None else None
-
-            acc_sources = self.add_neural_core(
-                input_sources=np.array(acc_inputs),
-                weights=acc_weights,
-                biases=tile_biases,
-                activation_scale=activation_scale,
-                parameter_scale=parameter_scale,
-                input_activation_scale=input_activation_scale,
-                name=f"{name}_psum_accum_o{out_start}" if name else None,
-                normalization_type=normalization_type,
-                activation_type=activation_type,
-                perceptron_index=perceptron_index,
-                perceptron_output_slice=(out_start, out_end),
-            )
-
-            mapped.append(acc_sources)
-
-        return np.concatenate(mapped)
-
     def _convert_sources(self, sources: np.ndarray) -> np.ndarray:
         """Convert SpikeSource or IRSource array to IRSource array."""
         flat = sources.flatten()
@@ -644,7 +576,8 @@ def map_model_to_ir(
     firing_mode: str = "Default",
     max_axons: int | None = None,
     max_neurons: int | None = None,
-    allow_axon_tiling: bool = False,
+    allow_core_coalescing: bool = False,
+    hardware_bias: bool = False,
 ) -> IRGraph:
     """
     Convenience function to map a model representation to an IRGraph.
@@ -655,7 +588,8 @@ def map_model_to_ir(
         firing_mode: Firing mode ("Default" or "Novena").
         max_axons: Maximum axons per core.
         max_neurons: Maximum neurons per core.
-        allow_axon_tiling: Whether to allow axon tiling with partial sums.
+        allow_core_coalescing: Whether to allow expanding core widths.
+        hardware_bias: Whether to use dedicated bias registers.
 
     Returns:
         IRGraph containing both NeuralCore and ComputeOp nodes.
@@ -665,7 +599,8 @@ def map_model_to_ir(
         firing_mode=firing_mode,
         max_axons=max_axons,
         max_neurons=max_neurons,
-        allow_axon_tiling=allow_axon_tiling,
+        allow_core_coalescing=allow_core_coalescing,
+        hardware_bias=hardware_bias,
     )
     return ir_mapping.map(model_representation)
 

@@ -36,6 +36,15 @@ def compact_soft_core_mapping(cores, output_sources):
         ):
             keep_rows = [r for r in range(n_axons) if not pruned_row_mask[r]]
             keep_cols = [c for c in range(n_neurons) if not pruned_col_mask[c]]
+            # Always preserve the always-on bias row (last axon, wired to is_always_on_ source).
+            # It must never be pruned even if its weight values happen to be zero.
+            if (
+                core.axon_sources
+                and getattr(core.axon_sources[-1], "is_always_on_", False)
+                and (n_axons - 1) not in keep_rows
+            ):
+                keep_rows.append(n_axons - 1)
+                keep_rows.sort()
         else:
             keep_rows = list(range(n_axons))
             keep_cols = list(range(n_neurons))
@@ -45,9 +54,14 @@ def compact_soft_core_mapping(cores, output_sources):
             if keep_rows and keep_cols:
                 core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
                 core.axon_sources = [core.axon_sources[r] for r in keep_rows]
+                # Compact hardware_bias alongside columns.
+                if getattr(core, "hardware_bias", None) is not None:
+                    core.hardware_bias = core.hardware_bias[keep_cols]
             else:
                 core.core_matrix = np.zeros((1, 1), dtype=np.float64)
                 core.axon_sources = [SpikeSource(-1, 0, False, True)]
+                if getattr(core, "hardware_bias", None) is not None:
+                    core.hardware_bias = np.zeros(1)
             remap = {old_idx: new_idx for new_idx, old_idx in enumerate(keep_cols)}
             reindex_maps[core.id] = remap
         else:
@@ -110,6 +124,8 @@ class SoftCore:
         name: str | None = None,
         psum_group_id: int | None = None,
         psum_role: str | None = None,
+        coalescing_group_id: int | None = None,
+        coalescing_role: str | None = None,
     ):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
@@ -124,6 +140,12 @@ class SoftCore:
         self.name = name
         self.psum_group_id = psum_group_id
         self.psum_role = psum_role
+        self.coalescing_group_id = coalescing_group_id
+        self.coalescing_role = coalescing_role
+
+        # Hardware-bias mode: when set, bias lives in a dedicated register
+        # (not as an always-on axon row).  Shape: (neurons,).
+        self.hardware_bias = None
 
         self.latency = None
         self._axon_source_spans = None
@@ -147,9 +169,10 @@ class SoftCore:
         return self._axon_source_spans
     
 class HardCore:
-    def __init__(self, axons_per_core, neurons_per_core):
+    def __init__(self, axons_per_core, neurons_per_core, has_bias_capability=True):
         self.axons_per_core = axons_per_core
         self.neurons_per_core = neurons_per_core
+        self.has_bias_capability = has_bias_capability
 
         self.core_matrix = np.zeros((axons_per_core, neurons_per_core))
         self.axon_sources = []
@@ -162,7 +185,11 @@ class HardCore:
         self.parameter_scale = None
         self.threshold = None
         self.latency = None
-    
+
+        # Hardware-bias: per-neuron bias stored in dedicated register.
+        # None means legacy (always-on axon row or no bias).
+        self.hardware_bias = None
+
         self.unusable_space = 0
         self._axon_source_spans = None
 
@@ -209,6 +236,12 @@ class HardCore:
         
         if self.latency is None:
             self.latency = softcore.latency
+
+        # Copy hardware_bias from SoftCore into the correct neuron slice.
+        if getattr(softcore, "hardware_bias", None) is not None:
+            if self.hardware_bias is None:
+                self.hardware_bias = np.zeros(self.neurons_per_core)
+            self.hardware_bias[neuron_offset:neuron_offset + softcore.get_output_count()] = softcore.hardware_bias
 
         self.unusable_space += \
             (neuron_offset * softcore.get_input_count()) + \
@@ -271,6 +304,8 @@ class HardCoreMapping:
             "neuron_offset": neuron_offset,
             "axons": axons,
             "neurons": neurons,
+            "coalescing_group_id": getattr(softcore, "coalescing_group_id", None),
+            "coalescing_role": getattr(softcore, "coalescing_role", None),
         })
 
         for soft_neuron_idx in range(softcore.get_output_count()):
@@ -307,12 +342,32 @@ class HardCoreMapping:
         def place(core_idx: int, hardcore, softcore):
             self.merge_softcore_into(core_idx, hardcore, softcore)
 
+        def fuse_hardcores(hcs):
+            if not hcs:
+                raise ValueError("Cannot fuse empty list of hardcores")
+            first = hcs[0]
+            fused = HardCore(
+                axons_per_core=sum(hc.axons_per_core for hc in hcs),
+                neurons_per_core=first.neurons_per_core,
+                has_bias_capability=first.has_bias_capability
+            )
+            fused.threshold = first.threshold
+            fused.input_activation_scale = first.input_activation_scale
+            fused.activation_scale = first.activation_scale
+            fused.parameter_scale = first.parameter_scale
+            fused.latency = first.latency
+            # All fused components share the same neuron layout; copy hardware_bias.
+            fused.hardware_bias = first.hardware_bias
+            return fused
+
+        from mimarsinan.mapping.core_packing import greedy_pack_softcores
         greedy_pack_softcores(
             softcores=unmapped_cores,
             used_hardcores=self.cores,
             unused_hardcores=self.unused_cores,
             is_mapping_possible=is_mapping_possible,
             place=place,
+            fuse_hardcores=fuse_hardcores,
         )
 
         def remap_sources(sources):

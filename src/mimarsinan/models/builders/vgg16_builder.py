@@ -35,17 +35,6 @@ class VGG16Builder:
             self.pipeline_config["target_tq"],
         )
 
-        # Enforce axon constraints only when axon-tiling is disabled.
-        # (Neuron tiling is handled at mapping time by splitting output rows.)
-        allow_axon_tiling = bool(self.pipeline_config.get("allow_axon_tiling", False))
-        if not allow_axon_tiling:
-            for perceptron in supermodel.get_perceptrons():
-                in_axons = perceptron.layer.weight.shape[1]
-                if in_axons > self.max_axons - 1:
-                    raise ValueError(
-                        f"not enough axons ({in_axons} > {self.max_axons - 1})"
-                    )
-
         return supermodel
 
     @classmethod

@@ -210,7 +210,6 @@ def default_config():
         "lr": 0.001,
         "weight_quantization": False,
         "activation_quantization": False,
-        "allow_axon_tiling": False,
         "spiking_mode": "rate",
         "firing_mode": "Default",
         "spike_generation_mode": "Deterministic",
@@ -351,7 +350,6 @@ def platform_constraints():
         "max_axons": 256,
         "max_neurons": 256,
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 20}],
-        "allow_axon_tiling": False,
         "weight_bits": 8,
         "target_tq": 4,
     }

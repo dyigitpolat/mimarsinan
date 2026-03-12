@@ -97,7 +97,6 @@ class TestTorchSequentialConvBuilder:
             firing_mode="Default",
             max_axons=1024,
             max_neurons=1024,
-            allow_axon_tiling=True,  # FC has 1568 inputs, exceeds single core; tiling required
         )
         ir_graph = ir_mapping.map(mapper_repr)
         segments = get_neural_segments(ir_graph)

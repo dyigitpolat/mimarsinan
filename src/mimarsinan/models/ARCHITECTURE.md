@@ -9,8 +9,8 @@ and architecture-specific implementations.
 |------|---------|---------|
 | `layers.py` | `LeakyGradReLU`, `TransformedActivation`, `ClampDecorator`, `QuantizeDecorator`, `SavedTensorDecorator`, `FrozenStatsNormalization`, `MaxValueScaler`, ... | Activation functions, composable decorators, normalization wrappers |
 | `supermodel.py` | `Supermodel` | Top-level model wrapper (preprocessor + input activation + perceptron flow) |
-| `unified_core_flow.py` | `SpikingUnifiedCoreFlow`, `StableSpikingUnifiedCoreFlow` | PyTorch-based spiking simulator for `IRGraph` |
-| `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | PyTorch-based spiking simulator for `HybridHardCoreMapping` |
+| `unified_core_flow.py` | `SpikingUnifiedCoreFlow`, `StableSpikingUnifiedCoreFlow` | PyTorch-based spiking simulator for `IRGraph`. Supports `NeuralCore.hardware_bias` (dedicated bias register): registered as `_hw_bias_params` and applied in all forward paths (rate-coded, TTFS continuous, TTFS quantized). |
+| `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | PyTorch-based spiking simulator for `HybridHardCoreMapping`. Supports `HardCore.hardware_bias` in both rate-coded (bias added every cycle) and TTFS (bias added before activation/threshold) paths. |
 | `simple_conv.py` | `SimpleConvMapper` | Simple convolutional model using mapper graph |
 | `vgg16.py` | `VGG16Mapper` | VGG-16 architecture using mapper graph |
 | `mlp_mixer_ref.py` | `MLPMixer` | Reference MLP-Mixer (not used in pipeline) |
