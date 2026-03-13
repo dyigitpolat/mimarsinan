@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from mimarsinan.models.builders.wizard_schema import get_all_model_type_schemas
+from mimarsinan.pipelining.model_registry import ModelRegistry
 
 
 def get_wizard_model_types() -> List[Dict[str, Any]]:
@@ -90,7 +91,7 @@ def get_pipeline_step_names_for_state(state: Dict[str, Any]) -> List[str]:
     else:
         steps.append("Pretraining")
 
-    if model_type.startswith("torch_"):
+    if ModelRegistry.get_category(model_type) == "torch":
         steps.append("Torch Mapping")
 
     if pruning and pruning_fraction > 0:

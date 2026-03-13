@@ -285,6 +285,18 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
             total_params = float(sum(int(p.numel()) for p in model.parameters()))
 
+            # If builder returned a plain nn.Module (torch category), convert to Supermodel for layout and eval.
+            if not hasattr(model, "get_mapper_repr"):
+                from mimarsinan.torch_mapping.converter import convert_torch_model
+
+                model = convert_torch_model(
+                    model,
+                    input_shape=tuple(self.input_shape),
+                    num_classes=self.num_classes,
+                    device=self.device,
+                    Tq=self.target_tq,
+                )
+
             # Layout-only mapping
             layout_mapper = LayoutIRMapping(
                 max_axons=int(pcfg["max_axons"]),

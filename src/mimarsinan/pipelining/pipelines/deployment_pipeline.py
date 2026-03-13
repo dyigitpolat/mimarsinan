@@ -27,6 +27,7 @@ These flags can be set explicitly in the JSON to override presets.
 from __future__ import annotations
 
 from mimarsinan.pipelining.pipeline import Pipeline
+from mimarsinan.pipelining.model_registry import ModelRegistry
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 from mimarsinan.pipelining.pipeline_steps import *
 
@@ -96,8 +97,8 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     else:
         specs.append(("Pretraining", PretrainingStep))
 
-    # ── Torch Mapping (native PyTorch models only) ──────────────────
-    if model_type.startswith("torch_"):
+    # ── Torch Mapping (category "torch" models) ─────────────────────
+    if ModelRegistry.get_category(model_type) == "torch":
         specs.append(("Torch Mapping", TorchMappingStep))
 
     # ── Pruning ─────────────────────────────────────────────────────

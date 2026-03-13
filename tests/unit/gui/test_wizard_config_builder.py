@@ -177,11 +177,11 @@ class TestWizardSchema:
         assert steps[0] == "Architecture Search"
         assert "Simulation" in steps
 
-    def test_get_wizard_model_types_has_mlp_mixer_and_vit(self):
+    def test_get_wizard_model_types_has_mlp_mixer_and_torch_vit(self):
         types = get_wizard_model_types()
         ids = [t["id"] for t in types]
         assert "mlp_mixer" in ids
-        assert "vit" in ids
+        assert "torch_vit" in ids
         assert "torch_sequential_linear" in ids
 
     def test_get_wizard_nas_schema_has_optimizers(self):

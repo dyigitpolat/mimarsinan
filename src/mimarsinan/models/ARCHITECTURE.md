@@ -13,15 +13,14 @@ and architecture-specific implementations.
 | `supermodel.py` | `Supermodel` | Top-level model wrapper (preprocessor + input activation + perceptron flow) |
 | `unified_core_flow.py` | `SpikingUnifiedCoreFlow`, `StableSpikingUnifiedCoreFlow` | PyTorch-based spiking simulator for `IRGraph`. Supports `NeuralCore.hardware_bias` (dedicated bias register): registered as `_hw_bias_params` and applied in all forward paths (rate-coded, TTFS continuous, TTFS quantized). |
 | `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | PyTorch-based spiking simulator for `HybridHardCoreMapping`. Supports `HardCore.hardware_bias` in both rate-coded (bias added every cycle) and TTFS (bias added before activation/threshold) paths. |
-| `simple_conv.py` | `SimpleConvMapper` | Simple convolutional model using mapper graph |
-| `vgg16.py` | `VGG16Mapper` | VGG-16 architecture using mapper graph |
+| `torch_mlp_mixer.py` | `TorchMLPMixer` | Native PyTorch MLP-Mixer (plain `nn.Module`) for torch_mapping conversion |
 | `mlp_mixer_ref.py` | `MLPMixer` | Reference MLP-Mixer (not used in pipeline) |
 
 ### Subdirectories
 
 | Directory | Purpose |
 |-----------|---------|
-| `perceptron_mixer/` | Core building blocks: `Perceptron`, `PerceptronFlow`, architecture implementations |
+| `perceptron_mixer/` | Core building blocks: `Perceptron`, `PerceptronFlow`, `SimpleMLP` (single mapper-repr example) |
 | `preprocessing/` | Input preprocessing modules (`InputCQ`) |
 | `builders/` | Model builder classes for pipeline/search integration |
 

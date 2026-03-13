@@ -27,7 +27,7 @@ class TestGetModelTypes:
         result = get_model_types()
         ids = [e["id"] for e in result]
         assert "mlp_mixer" in ids
-        assert "vit" in ids
+        assert "torch_vit" in ids
         assert "torch_sequential_linear" in ids
 
     def test_sorted_by_id(self):
@@ -58,9 +58,24 @@ class TestGetModelConfigSchema:
         result = get_model_config_schema("nonexistent_model_xyz")
         assert result == []
 
-    def test_vit_schema_from_builder(self):
-        result = get_model_config_schema("vit")
+    def test_torch_vit_schema_from_builder(self):
+        result = get_model_config_schema("torch_vit")
         assert len(result) > 0
         keys = [f["key"] for f in result]
-        assert "patch_size" in keys
-        assert "d_model" in keys
+        assert "base_activation" in keys
+
+
+class TestGetCategory:
+    """get_category drives TorchMappingStep; only simple_mlp is native."""
+
+    def test_simple_mlp_is_native(self):
+        assert ModelRegistry.get_category("simple_mlp") == "native"
+
+    def test_mlp_mixer_is_torch(self):
+        assert ModelRegistry.get_category("mlp_mixer") == "torch"
+
+    def test_torch_sequential_linear_is_torch(self):
+        assert ModelRegistry.get_category("torch_sequential_linear") == "torch"
+
+    def test_unknown_returns_none(self):
+        assert ModelRegistry.get_category("nonexistent_xyz") is None
