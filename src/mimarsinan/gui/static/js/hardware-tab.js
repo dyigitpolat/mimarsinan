@@ -76,21 +76,29 @@ function nodeTag(nodeId) {
 
 function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
   const pct = (core.utilization * 100).toFixed(1);
+  const placements = core.mapped_placements || [];
+  const aTotal = Math.max(1, core.axons_per_core);
+  const nTotal = Math.max(1, core.neurons_per_core);
+  const fusedBoundaries = core.fused_axon_boundaries;
   let html = '<div class="hw-core-detail-panel">';
   if (core.heatmap_image) {
     const ar = Math.max(1, core.neurons_per_core) / Math.max(1, core.axons_per_core);
-    html += `<div class="hw-core-detail-heatmap-wrap" style="aspect-ratio: ${ar}; max-height: 240px">`;
+    html += `<div class="hw-core-detail-heatmap-wrap" style="aspect-ratio: ${ar}; max-height: 240px; position:relative">`;
     html += `<img src="${core.heatmap_image.replace(/"/g, '&quot;')}" alt="Core ${core.core_index} heatmap" class="hw-core-detail-heatmap">`;
-    const placements = core.mapped_placements || [];
-    const aTotal = Math.max(1, core.axons_per_core);
-    const nTotal = Math.max(1, core.neurons_per_core);
-    for (const pl of placements) {
+    for (let pi = 0; pi < placements.length; pi++) {
+      const pl = placements[pi];
       const top = (pl.axon_offset / aTotal) * 100;
       const left = (pl.neuron_offset / nTotal) * 100;
       const height = (pl.axons / aTotal) * 100;
       const width = (pl.neurons / nTotal) * 100;
       const nodeId = pl.ir_node_id;
-      html += `<div class="hw-core-detail-heatmap-region" style="top:${top}%;left:${left}%;width:${width}%;height:${height}%" data-ir-node-id="${nodeId}" onclick="event.stopPropagation(); window._hwSoftCoreClick(${segIdx}, ${nodeId})" title="Software core n${nodeId}"> </div>`;
+      html += `<div class="hw-core-detail-heatmap-region" style="top:${top}%;left:${left}%;width:${width}%;height:${height}%" data-ir-node-id="${nodeId}" onclick="event.stopPropagation(); window._hwSoftCoreClick(${segIdx}, ${nodeId}, ${core.core_index}, ${pi})" title="Software core n${nodeId}"> </div>`;
+    }
+    if (fusedBoundaries && fusedBoundaries.length >= 2) {
+      for (let i = 1; i < fusedBoundaries.length - 1; i++) {
+        const topPct = (fusedBoundaries[i] / aTotal) * 100;
+        html += `<div class="hw-core-detail-fused-line" style="top:${topPct}%;left:0;right:0;height:2px"></div>`;
+      }
     }
     html += '</div>';
   }
@@ -101,11 +109,28 @@ function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
   html += `<tr><td>Dimensions</td><td>${core.axons_per_core} axons × ${core.neurons_per_core} neurons</td></tr>`;
   html += `<tr><td>Used</td><td>${core.used_axons ?? '—'} / ${core.used_neurons ?? '—'}</td></tr>`;
   html += `<tr><td>Threshold</td><td>${core.threshold != null ? core.threshold.toFixed(4) : '—'}</td></tr>`;
-  html += '</table></div>';
+  html += '</table>';
+  if (placements.length > 0) {
+    html += `<div class="hw-constituents-section"><div class="section-label">Constituents (${placements.length})</div>`;
+    html += '<table class="data-table compact hw-constituents-table"><thead><tr><th>ID</th><th>Dimensions</th><th>Util.</th><th>Coalesce</th></tr></thead><tbody>';
+    for (let pi = 0; pi < placements.length; pi++) {
+      const pl = placements[pi];
+      const utilPct = (pl.utilization_frac != null ? pl.utilization_frac * 100 : (pl.axons * pl.neurons) / (aTotal * nTotal) * 100).toFixed(1);
+      const coalesce = pl.coalescing_role ? `${esc(pl.coalescing_role)}${pl.coalescing_group_id != null ? ' G' + pl.coalescing_group_id : ''}` : '—';
+      html += `<tr class="hw-constituent-row" onclick="event.stopPropagation(); window._hwSoftCoreClick(${segIdx}, ${pl.ir_node_id}, ${core.core_index}, ${pi})" title="Click for soft-core detail">
+        <td><span class="hw-constituent-id">n${pl.ir_node_id}</span></td>
+        <td>${pl.axons}×${pl.neurons}</td>
+        <td>${utilPct}%</td>
+        <td>${coalesce}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+  html += '</div>';
   return html;
 }
 
-function buildSoftCoreDetailPanelHtml(nodeId, irGraph) {
+function buildSoftCoreDetailPanelHtml(nodeId, irGraph, origin) {
   if (!irGraph || !irGraph.nodes) return '';
   const node = irGraph.nodes.find(n => n.id === nodeId || n.id === parseInt(nodeId, 10));
   if (!node) return '<div class="hw-softcore-detail-panel"><div class="hw-softcore-detail-header">Unknown node</div></div>';
@@ -116,6 +141,12 @@ function buildSoftCoreDetailPanelHtml(nodeId, irGraph) {
   html += '<button class="ir-detail-close" onclick="window._hwSoftCoreClose()" title="Close">✕</button>';
   html += '</div><div class="hw-softcore-detail-body">';
   html += `<p class="hw-softcore-name" title="${esc(node.name)}">${esc(node.name || node.layer_group || `n${node.id}`)}</p>`;
+  if (origin && origin.placement) {
+    const p = origin.placement;
+    const aEnd = p.axon_offset + (p.axons ?? 0);
+    const nEnd = p.neuron_offset + (p.neurons ?? 0);
+    html += `<p class="hw-softcore-located-in">Located in: Segment ${origin.segIdx}, Hard core ${origin.coreIndex}, region axons ${p.axon_offset}..${aEnd}, neurons ${p.neuron_offset}..${nEnd}</p>`;
+  }
   if (isNeural) {
     html += '<table class="data-table compact">';
     html += `<tr><td>ID</td><td>${node.id}</td></tr>`;
@@ -220,6 +251,7 @@ function renderStageFlow(hw, irGraph) {
   const selectedCore = {};
   const selectedSpan = {};
   let selectedSoftCore = null;
+  let selectedSoftCoreOrigin = null; // { segIdx, coreIndex, placement } when soft core opened from HW tab
   const globalLayout = computeGlobalLayout(hw);
 
   function render() {
@@ -260,7 +292,7 @@ function renderStageFlow(hw, irGraph) {
           if (core) {
             let detailHtml = buildCoreDetailPanelHtml(segIdx, core, irGraph);
             if (selectedSoftCore != null) {
-              detailHtml += buildSoftCoreDetailPanelHtml(selectedSoftCore, irGraph);
+              detailHtml += buildSoftCoreDetailPanelHtml(selectedSoftCore, irGraph, selectedSoftCoreOrigin);
             }
             blockHtml = '<div class="stage-block-with-detail">' + blockHtml + detailHtml + '</div>';
           }
@@ -305,12 +337,13 @@ function renderStageFlow(hw, irGraph) {
     }
   }
 
-  window._hwToggle = (si) => { expanded.has(si) ? expanded.delete(si) : expanded.add(si); selectedCore[si] = null; selectedSpan[si] = null; selectedSoftCore = null; render(); };
+  window._hwToggle = (si) => { expanded.has(si) ? expanded.delete(si) : expanded.add(si); selectedCore[si] = null; selectedSpan[si] = null; selectedSoftCore = null; selectedSoftCoreOrigin = null; render(); };
   window._hwCoreClick = (segIdx, ci) => {
     if (selectedCore[segIdx] === ci) {
       selectedCore[segIdx] = null;
       selectedSpan[segIdx] = null;
       selectedSoftCore = null;
+      selectedSoftCoreOrigin = null;
     } else {
       // Only one segment has a selection at a time so the detail panel shows this segment's core
       for (const k of Object.keys(selectedCore)) selectedCore[k] = null;
@@ -318,15 +351,24 @@ function renderStageFlow(hw, irGraph) {
       selectedCore[segIdx] = ci;
       selectedSpan[segIdx] = null;
       selectedSoftCore = null;
+      selectedSoftCoreOrigin = null;
     }
     render();
   };
-  window._hwSoftCoreClick = (segIdx, nodeId) => {
+  window._hwSoftCoreClick = (segIdx, nodeId, coreIndex, placementIndex) => {
     selectedSoftCore = nodeId;
+    selectedSoftCoreOrigin = null;
+    if (coreIndex != null && placementIndex != null && hw && hw.stages) {
+      const stage = hw.stages.find(s => s.kind === 'neural' && (s.segment_index ?? s.index) === segIdx);
+      const core = stage?.cores?.find(c => c.core_index === coreIndex);
+      const pl = core?.mapped_placements?.[placementIndex];
+      if (pl) selectedSoftCoreOrigin = { segIdx, coreIndex, placement: pl };
+    }
     render();
   };
   window._hwSoftCoreClose = () => {
     selectedSoftCore = null;
+    selectedSoftCoreOrigin = null;
     render();
   };
   window._hwSpanClick = (segIdx, spanKey) => {
@@ -423,13 +465,39 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
     let cell = `<div class="hw-core-cell" style="${cellStyle}" onclick="window._hwCoreClick(${segIdx},${core.core_index})" title="Core ${core.core_index}: ${core.used_axons}/${core.axons_per_core}ax × ${core.used_neurons}/${core.neurons_per_core}n, util=${pct}%">`;
     cell += `<span class="hw-core-id">${core.core_index}</span>`;
     cell += '<div class="hw-core-cell-main">';
-    cell += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}" style="${coreStyle}">`;
+    cell += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}" style="${coreStyle};position:relative">`;
     if (core.heatmap_image) {
       cell += `<img class="hw-core-canvas" src="${core.heatmap_image}" style="width:100%;height:100%;display:block;object-fit:fill" draggable="false">`;
     }
-    const isFused = (core.mapped_placements || []).some(p => p.coalescing_role === 'fused');
-    if (isFused) {
-      cell += '<div class="hw-core-fused-badge" title="Fused/Coalesced Core"></div>';
+    const placements = core.mapped_placements || [];
+    const aTotal = Math.max(1, core.axons_per_core);
+    const nTotal = Math.max(1, core.neurons_per_core);
+    const fusedBoundaries = core.fused_axon_boundaries;
+    const fusedCount = core.fused_component_count != null ? core.fused_component_count : (fusedBoundaries && fusedBoundaries.length > 1 ? fusedBoundaries.length - 1 : 0);
+    if (placements.length > 1 || (fusedBoundaries && fusedBoundaries.length >= 2)) {
+      cell += '<div class="hw-core-constituent-overlay" style="position:absolute;inset:0;pointer-events:none">';
+      if (placements.length > 1) {
+        for (const pl of placements) {
+          const top = (pl.axon_offset / aTotal) * 100;
+          const left = (pl.neuron_offset / nTotal) * 100;
+          const width = (pl.neurons / nTotal) * 100;
+          const height = (pl.axons / aTotal) * 100;
+          cell += `<div class="hw-core-constituent-boundary" style="top:${top}%;left:${left}%;width:${width}%;height:${height}%"></div>`;
+        }
+      }
+      if (fusedBoundaries && fusedBoundaries.length >= 2) {
+        for (let i = 1; i < fusedBoundaries.length - 1; i++) {
+          const topPct = (fusedBoundaries[i] / aTotal) * 100;
+          cell += `<div class="hw-core-fused-boundary-line" style="top:${topPct}%;left:0;right:0;height:1px"></div>`;
+        }
+      }
+      cell += '</div>';
+    }
+    if (fusedCount > 1) {
+      cell += `<div class="hw-core-fused-badge" title="Fused: ${fusedCount} physical HW cores">${fusedCount} HW</div>`;
+    }
+    if (placements.length > 1) {
+      cell += `<div class="hw-core-soft-badge" title="${placements.length} soft cores">${placements.length} soft</div>`;
     }
     cell += '</div>';
     cell += `<span class="hw-core-util">${pct}%</span>`;

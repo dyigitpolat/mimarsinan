@@ -117,6 +117,23 @@ class TestBuildHybridHardCoreMapping:
             for hc in seg.cores:
                 assert getattr(hc, "has_bias_capability", True) is True
 
+    def test_fused_hard_core_has_fused_component_axons(self):
+        """When packer fuses multiple physical cores, the fused HardCore has fused_component_axons set."""
+        # One soft core with 100 axons (needs 2×64 physical cores fused)
+        w = np.ones((101, 32), dtype=np.float32) * 0.1  # 100 axons + bias, 32 neurons
+        s = np.array([IRSource(-2, i) for i in range(100)] + [IRSource(-3, 0)], dtype=object)
+        c = NeuralCore(id=0, name="large", input_sources=s, core_matrix=w, latency=0)
+        out = np.array([IRSource(0, i) for i in range(32)], dtype=object)
+        ir = IRGraph(nodes=[c], output_sources=out)
+        cores_config = [{"max_axons": 64, "max_neurons": 32, "count": 4}]
+        hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
+        neural_segs = hm.get_neural_segments()
+        assert len(neural_segs) == 1
+        assert len(neural_segs[0].cores) == 1
+        fused_hc = neural_segs[0].cores[0]
+        assert getattr(fused_hc, "fused_component_axons", None) is not None
+        assert fused_hc.fused_component_axons == [64, 64]
+
 
 class TestCompactSoftCoreMapping:
     """Compaction uses pruning maps (pruned_row_mask, pruned_col_mask), not parameter values."""

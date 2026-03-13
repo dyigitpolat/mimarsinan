@@ -358,6 +358,8 @@ class HardCoreMapping:
             fused.latency = first.latency
             # All fused components share the same neuron layout; copy hardware_bias.
             fused.hardware_bias = first.hardware_bias
+            # Record fusion structure for GUI (boundaries, fused badge).
+            fused.fused_component_axons = [hc.axons_per_core for hc in hcs]
             return fused
 
         from mimarsinan.mapping.core_packing import greedy_pack_softcores

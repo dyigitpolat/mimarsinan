@@ -14,7 +14,7 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 | `reporter.py` | `GUIReporter` | Implements `Reporter` protocol; forwards metrics to `DataCollector` |
 | `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (e.g. default + GUI) |
 | `server.py` | `start_server`, `create_app` | FastAPI + Uvicorn server in a daemon thread; optional `run_config_fn` for POST `/api/run` |
-| `snapshot.py` | `build_step_snapshot` | Pure functions extracting JSON-safe snapshots; step-specific tabs and new/edited kinds |
+| `snapshot.py` | `build_step_snapshot`, `snapshot_hard_core_mapping` | Pure functions extracting JSON-safe snapshots; step-specific tabs and new/edited kinds. Hardware snapshot: per-placement `utilization_frac`, `constituent_count` per core, and when a core is fused, `fused_axon_boundaries` and `fused_component_count` for GUI boundaries and badges. |
 | `persistence.py` | `load_persisted_steps`, `save_step_to_persisted` | Load/save step state to `_GUI_STATE/steps.json` for backfill |
 | `heatmap_renderer.py` | `render_heatmap_png_data_uri` | Renders weight matrices as PNG data URIs for GUI; no raw matrices sent to frontend |
 
@@ -31,7 +31,11 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 
 Single-page application using ES modules and Plotly.js. See `static/js/` for
 modular visualization components (overview, model, IR graph, hardware, search,
-scales tabs). The **wizard** (`wizard.html`, `wizard.css`, `js/wizard.js`) is the
+scales tabs). **Hardware tab**: shows soft-core and fused hardware-core boundaries
+on miniview and detail heatmaps; "Constituents (N)" table with ID, dimensions,
+utilization per constituent; clicking a constituent or heatmap region opens
+soft-core detail with "Located in" (segment, hard core, region) for two-way
+traceability. Snapshot provides per-placement utilization and fused boundaries. The **wizard** (`wizard.html`, `wizard.css`, `js/wizard.js`) is the
 deployment configurator: it loads data providers and model types from the API,
 builds a config, and submits it via POST `/api/run`; RUN redirects to `/` (monitor).
 Rate-coded spiking mode forces activation quantization ON; the Cycles field is

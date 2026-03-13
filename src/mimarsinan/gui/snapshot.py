@@ -547,7 +547,23 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
                         f"Hard core mapping traceability inconsistent: core index {ci} has no placement list "
                         "(soft_core_placements_per_hard_core). Re-run the Hard Core Mapping step."
                     )
-                core_d["mapped_placements"] = list(placements[ci])
+                pl_list = placements[ci]
+                total_area = core.axons_per_core * core.neurons_per_core
+                mapped_placements = []
+                for pl in pl_list:
+                    pl_copy = dict(pl)
+                    ax, nu = pl_copy.get("axons", 0), pl_copy.get("neurons", 0)
+                    pl_copy["utilization_frac"] = (ax * nu / total_area) if total_area > 0 else 0.0
+                    mapped_placements.append(pl_copy)
+                core_d["mapped_placements"] = mapped_placements
+                core_d["constituent_count"] = len(pl_list)
+                fused_axons = getattr(core, "fused_component_axons", None)
+                if fused_axons:
+                    boundaries = [0]
+                    for c in fused_axons:
+                        boundaries.append(boundaries[-1] + c)
+                    core_d["fused_axon_boundaries"] = boundaries
+                    core_d["fused_component_count"] = len(fused_axons)
                 cores_detail.append(core_d)
                 all_core_utils.append(core_d)
             stage_info["num_cores"] = len(hcm.cores)
