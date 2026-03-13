@@ -13,16 +13,10 @@ from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
 from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+from mimarsinan.common.layer_key import layer_key_from_node_name
+from mimarsinan.common.safe_numeric import safe_float
 
 import re
-
-
-def _as_float(x: Any) -> float | None:
-    try:
-        # torch scalar / numpy scalar / python numeric
-        return float(x)
-    except Exception:
-        return None
 
 
 def _percent(n: int, d: int) -> str:
@@ -109,26 +103,6 @@ def _dot_html_label_mixed(
     return "<\n<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n" + "\n".join(body) + "\n</TABLE>\n>"
 
 
-_RE_CONV_POS = re.compile(r"^(.*)_pos\d+_\d+_g\d+$")
-_RE_FC_TILE = re.compile(r"^(.*)_tile_\d+_\d+$")
-
-
-def _layer_key_from_node_name(name: str) -> str:
-    """
-    Best-effort grouping key that collapses per-position/per-tile neural cores into a "layer stack".
-    """
-    s = str(name)
-    m = _RE_CONV_POS.match(s)
-    if m:
-        return m.group(1)
-    m = _RE_FC_TILE.match(s)
-    if m:
-        return m.group(1)
-    if "_psum_" in s:
-        return s.split("_psum_", 1)[0]
-    return s
-
-
 def _stack_sample_lines(names: list[str], ids: list[int]) -> str:
     """
     Produce a vertical stack like:
@@ -188,7 +162,7 @@ def write_ir_graph_summary_dot(
 
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
-            gk = f"neural::{_layer_key_from_node_name(node.name)}"
+            gk = f"neural::{layer_key_from_node_name(node.name)}"
             kind = "neural"
         elif isinstance(node, ComputeOp):
             gk = f"compute::{node.id}::{node.name}"
@@ -260,7 +234,7 @@ def write_ir_graph_summary_dot(
                 shapes[(ax, neu)] = shapes.get((ax, neu), 0) + 1
                 if n.psum_role is not None:
                     roles[str(n.psum_role)] = roles.get(str(n.psum_role), 0) + 1
-                thr = _as_float(n.threshold)
+                thr = safe_float(n.threshold)
                 if thr is not None:
                     thresholds.append(thr)
                 if n.latency is not None:
@@ -530,7 +504,7 @@ def write_ir_graph_dot(
                 ("type", "NeuralCore"),
                 ("shape(axons×neurons)", f"{ax}×{neu}"),
                 ("weights nnz", f"{nnz}/{total} ({_percent(nnz, total)})"),
-                ("threshold", str(_as_float(node.threshold) if node.threshold is not None else "n/a")),
+                ("threshold", str(safe_float(node.threshold) if node.threshold is not None else "n/a")),
                 ("latency", str(node.latency if node.latency is not None else "n/a")),
             ]
             if node.psum_group_id is not None or node.psum_role is not None:
@@ -682,7 +656,7 @@ def write_softcore_mapping_dot(
             ("type", "SoftCore"),
             ("shape(axons×neurons)", f"{ax}×{neu}"),
             ("weights nnz", f"{nnz}/{total} ({_percent(nnz, total)})"),
-            ("threshold", str(_as_float(getattr(c, "threshold", None)) or "n/a")),
+            ("threshold", str(safe_float(getattr(c, "threshold", None)) or "n/a")),
             ("latency", str(getattr(c, "latency", None) if getattr(c, "latency", None) is not None else "n/a")),
         ]
         if psum:
@@ -846,7 +820,7 @@ def write_hardcore_mapping_dot(
             ("capacity(axons×neurons)", f"{ax}×{neu}"),
             ("used(axons×neurons)", f"{used_ax}×{used_neu}"),
             ("weights nnz", f"{nnz}/{total} ({_percent(nnz, total)})"),
-            ("threshold", str(_as_float(core.threshold) if core.threshold is not None else "n/a")),
+            ("threshold", str(safe_float(core.threshold) if core.threshold is not None else "n/a")),
             ("latency", str(core.latency if core.latency is not None else "n/a")),
             ("unusable_space", str(int(getattr(core, "unusable_space", 0)))),
         ]

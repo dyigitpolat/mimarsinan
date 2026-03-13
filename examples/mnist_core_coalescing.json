@@ -21,7 +21,9 @@
         "firing_mode": "TTFS",
         "thresholding_mode": "<=",
         "activation_quantization": true,
-        "weight_quantization": false
+        "weight_quantization": false,
+        "pruning": true,
+        "pruning_fraction": 0.5
     },
 
     "platform_constraints": {
@@ -42,6 +44,6 @@
     },
 
     "target_metric_override": null,
-    "start_step": "Soft Core Mapping",
+    "start_step": "Pruning Adaptation",
     "stop_step": "Simulation"
 }

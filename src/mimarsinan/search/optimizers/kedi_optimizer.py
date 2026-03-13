@@ -26,6 +26,18 @@ from mimarsinan.search.optimizers.kedi_optimizer_support import (
     sample_failed_for_constraint,
     select_best_candidate,
 )
+from mimarsinan.search.optimizers.kedi_prompts import (
+    build_constraint_instruction_prompt,
+    build_failure_insights_prompt,
+    build_initial_candidates_prompt,
+    build_offspring_prompt,
+    build_performance_insights_prompt,
+    build_regenerate_candidates_prompt,
+    build_regenerate_offspring_prompt,
+    build_update_constraint_prompt,
+    build_update_performance_insights_prompt,
+    parse_candidates,
+)
 from mimarsinan.search.problem import SearchProblem
 from mimarsinan.search.results import Candidate, ObjectiveSpec, SearchResult
 
@@ -547,30 +559,19 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
         search_space_desc: str,
     ) -> List[ConfigT]:
         """Generate initial candidate configurations using LLM."""
-        template = f"""You are an optimization expert generating candidates for a multi-objective optimization problem.
-
-{search_space_desc}
-
-Generate exactly {n_candidates} different configuration candidates that:
-1. Are diverse and explore different regions of the search space
-2. Are likely to be valid (satisfy any constraints)
-3. Trade off between different objectives
-
-Return the configurations as a list of dictionaries."""
-        
+        template = build_initial_candidates_prompt(n_candidates, search_space_desc)
         result = self._llm_call(
             template=template,
             output_schema={
                 "candidates": List[Dict[str, Any]],
             },
         )
-        
         candidates = getattr(result, "candidates", [])
         if self.verbose:
             self._log(f"  LLM generated {len(candidates)} candidates")
-            for i, c in enumerate(candidates[:2]):  # Show first 2
+            for i, c in enumerate(candidates[:2]):
                 self._log(f"    Sample {i+1}: {str(c)[:300]}...")
-        return self._parse_candidates(candidates, n_candidates)
+        return parse_candidates(candidates, n_candidates, self._log)
     
     def _regenerate_candidates(
         self,
@@ -583,36 +584,15 @@ Return the configurations as a list of dictionaries."""
     ) -> List[ConfigT]:
         """Regenerate candidates using failure insights."""
         failed_str = prettify_results(failed_results, objectives)
-        
-        template = f"""You are an optimization expert. Previous candidates failed validation. Learn from the failures and generate better candidates.
-
-{search_space_desc}
-
-FAILED CANDIDATES AND THEIR ISSUES:
-{failed_str}
-
-CONSTRAINT COMPLIANCE INSTRUCTIONS:
-{constraint_instruction if constraint_instruction else "No specific constraints learned yet."}
-
-PERFORMANCE INSIGHTS:
-{performance_insights if performance_insights else "No performance insights available yet."}
-
-Generate exactly {n_candidates} NEW configuration candidates that:
-1. Address the issues from the failed candidates
-2. Follow the constraint instructions
-3. Are likely to be valid
-
-Return the configurations as a list of dictionaries."""
-        
+        template = build_regenerate_candidates_prompt(
+            failed_str, search_space_desc, constraint_instruction, performance_insights, n_candidates
+        )
         result = self._llm_call(
             template=template,
-            output_schema={
-                "candidates": List[Dict[str, Any]],
-            },
+            output_schema={"candidates": List[Dict[str, Any]]},
         )
-        
         candidates = getattr(result, "candidates", [])
-        return self._parse_candidates(candidates, n_candidates)
+        return parse_candidates(candidates, n_candidates, self._log)
     
     def _generate_offspring(
         self,
@@ -624,38 +604,16 @@ Return the configurations as a list of dictionaries."""
         performance_insights: str,
     ) -> List[ConfigT]:
         """Generate offspring from Pareto front configurations."""
-        pareto_str = prettify_results(pareto_results[:5], objectives)  # Limit to top 5
-        
-        template = f"""You are an optimization expert. Generate offspring candidates based on high-quality Pareto-optimal configurations.
-
-{search_space_desc}
-
-PARETO-OPTIMAL CONFIGURATIONS (best performers so far):
-{pareto_str}
-
-CONSTRAINT COMPLIANCE INSTRUCTIONS:
-{constraint_instruction if constraint_instruction else "Follow standard constraints."}
-
-PERFORMANCE INSIGHTS:
-{performance_insights if performance_insights else "Analyze the Pareto configurations for patterns."}
-
-Generate exactly {n_candidates} NEW configuration candidates that:
-1. Build upon the patterns in the Pareto configurations
-2. Explore new trade-offs between objectives
-3. Follow the constraint instructions
-4. Try to improve on existing solutions
-
-Return the configurations as a list of dictionaries."""
-        
+        pareto_str = prettify_results(pareto_results[:5], objectives)
+        template = build_offspring_prompt(
+            pareto_str, search_space_desc, constraint_instruction, performance_insights, n_candidates
+        )
         result = self._llm_call(
             template=template,
-            output_schema={
-                "candidates": List[Dict[str, Any]],
-            },
+            output_schema={"candidates": List[Dict[str, Any]]},
         )
-        
         candidates = getattr(result, "candidates", [])
-        return self._parse_candidates(candidates, n_candidates)
+        return parse_candidates(candidates, n_candidates, self._log)
     
     def _regenerate_offspring(
         self,
@@ -669,41 +627,16 @@ Return the configurations as a list of dictionaries."""
     ) -> List[ConfigT]:
         """Regenerate offspring using both Pareto front and failure insights."""
         failed_str = prettify_results(failed_results, objectives)
-        pareto_str = prettify_results(pareto_results[:3], objectives)  # Top 3
-        
-        template = f"""You are an optimization expert. Some offspring candidates failed. Learn from the failures while using the Pareto front as guidance.
-
-{search_space_desc}
-
-PARETO-OPTIMAL CONFIGURATIONS (reference for valid, high-quality solutions):
-{pareto_str}
-
-FAILED OFFSPRING AND THEIR ISSUES:
-{failed_str}
-
-CONSTRAINT COMPLIANCE INSTRUCTIONS:
-{constraint_instruction if constraint_instruction else "Follow the patterns from Pareto configurations."}
-
-PERFORMANCE INSIGHTS:
-{performance_insights}
-
-Generate exactly {n_candidates} NEW configuration candidates that:
-1. Address the issues from the failed candidates
-2. Stay close to the Pareto configurations (which are known to be valid)
-3. Follow the constraint instructions
-4. Try to improve on existing solutions
-
-Return the configurations as a list of dictionaries."""
-        
+        pareto_str = prettify_results(pareto_results[:3], objectives)
+        template = build_regenerate_offspring_prompt(
+            failed_str, pareto_str, search_space_desc, constraint_instruction, performance_insights, n_candidates
+        )
         result = self._llm_call(
             template=template,
-            output_schema={
-                "candidates": List[Dict[str, Any]],
-            },
+            output_schema={"candidates": List[Dict[str, Any]]},
         )
-        
         candidates = getattr(result, "candidates", [])
-        return self._parse_candidates(candidates, n_candidates)
+        return parse_candidates(candidates, n_candidates, self._log)
     
     def _generate_failure_insights(
         self,
@@ -713,29 +646,12 @@ Return the configurations as a list of dictionaries."""
     ) -> List[str]:
         """Generate insights for why candidates failed."""
         failed_str = prettify_results(failed_results, objectives)
-        
-        template = f"""You are an optimization expert. Analyze why these candidates failed and provide specific insights.
-
-{search_space_desc}
-
-FAILED CANDIDATES:
-{failed_str}
-
-For each failed candidate, provide a specific insight about:
-1. What constraint or requirement it violated
-2. How to fix it in future candidates
-
-Return a list of exactly {len(failed_results)} insight strings, one for each failed candidate."""
-        
+        template = build_failure_insights_prompt(failed_str, search_space_desc, len(failed_results))
         result = self._llm_call(
             template=template,
-            output_schema={
-                "insights": List[str],
-            },
+            output_schema={"insights": List[str]},
         )
-        
         insights = getattr(result, "insights", [])
-        # Ensure we have the right number of insights
         while len(insights) < len(failed_results):
             insights.append("Unknown failure reason")
         return insights[:len(failed_results)]
@@ -748,23 +664,11 @@ Return a list of exactly {len(failed_results)} insight strings, one for each fai
     ) -> str:
         """Generate consolidated constraint instructions from failures."""
         failed_str = prettify_results(failed_results, objectives)
-        
-        template = f"""You are an optimization expert. Based on these failed candidates, create a consolidated set of constraint instructions.
-
-{search_space_desc}
-
-FAILED CANDIDATES AND INSIGHTS:
-{failed_str}
-
-Create a clear, actionable set of instructions that future candidates should follow to avoid these failures. Return a detailed paragraph describing how to satisfy constraints when proposing configurations."""
-        
+        template = build_constraint_instruction_prompt(failed_str, search_space_desc)
         result = self._llm_call(
             template=template,
-            output_schema={
-                "constraint_instruction": str,
-            },
+            output_schema={"constraint_instruction": str},
         )
-        
         return getattr(result, "constraint_instruction", "")
     
     def _update_constraint_instruction(
@@ -776,24 +680,11 @@ Create a clear, actionable set of instructions that future candidates should fol
     ) -> str:
         """Update constraint instructions with new failure insights."""
         failed_str = prettify_results(failed_results, objectives)
-        
-        template = f"""You are an optimization expert. Update the constraint instructions based on new failures.
-
-PREVIOUS CONSTRAINT INSTRUCTIONS:
-{previous_instruction}
-
-NEW FAILED CANDIDATES:
-{failed_str}
-
-Update the constraint instructions to incorporate insights from these new failures. Return an updated, comprehensive set of constraint instructions."""
-        
+        template = build_update_constraint_prompt(previous_instruction, failed_str, search_space_desc)
         result = self._llm_call(
             template=template,
-            output_schema={
-                "updated_instruction": str,
-            },
+            output_schema={"updated_instruction": str},
         )
-        
         return getattr(result, "updated_instruction", previous_instruction)
     
     def _generate_performance_insights(
@@ -806,8 +697,6 @@ Update the constraint instructions to incorporate insights from these new failur
         stats = compute_performance_stats(valid_results, objectives)
         if not stats:
             return ""
-        
-        # Format stats for the prompt
         stats_lines = []
         for spec in objectives:
             best = stats.get(f'best_{spec.name}')
@@ -817,35 +706,16 @@ Update the constraint instructions to incorporate insights from these new failur
                 stats_lines.append(f"  Config: {prettify_configuration(best.configuration)}")
             if worst:
                 stats_lines.append(f"Worst {spec.name}: {worst.objectives.get(spec.name, 'N/A')}")
-        
         top_pareto = stats.get('top_3_pareto', [])
         if top_pareto:
             stats_lines.append("\nTop Pareto configurations:")
             stats_lines.append(prettify_results(top_pareto, objectives))
-        
         stats_str = "\n".join(stats_lines)
-        
-        template = f"""You are an optimization expert. Analyze the performance patterns and provide insights for generating better candidates.
-
-{search_space_desc}
-
-PERFORMANCE STATISTICS:
-{stats_str}
-
-Analyze:
-1. What patterns make configurations perform well?
-2. What trade-offs exist between objectives?
-3. What configuration choices lead to good overall performance?
-
-Return a detailed analysis of what makes configurations perform well and how to generate better candidates."""
-        
+        template = build_performance_insights_prompt(stats_str, search_space_desc)
         result = self._llm_call(
             template=template,
-            output_schema={
-                "performance_insights": str,
-            },
+            output_schema={"performance_insights": str},
         )
-        
         return getattr(result, "performance_insights", "")
     
     def _update_performance_insights(
@@ -859,56 +729,18 @@ Return a detailed analysis of what makes configurations perform well and how to 
         stats = compute_performance_stats(valid_results, objectives)
         if not stats:
             return previous_insights
-        
         top_pareto = stats.get('top_3_pareto', [])
         pareto_str = prettify_results(top_pareto, objectives) if top_pareto else "None"
-        
-        template = f"""You are an optimization expert. Update the performance insights based on new results.
-
-PREVIOUS INSIGHTS:
-{previous_insights}
-
-CURRENT TOP PARETO CONFIGURATIONS:
-{pareto_str}
-
-TOTAL VALID CANDIDATES: {len(valid_results)}
-PARETO FRONT SIZE: {stats.get('pareto_size', 0)}
-
-Update the insights with any new patterns or observations. Return updated performance insights incorporating the new results."""
-        
+        template = build_update_performance_insights_prompt(
+            previous_insights,
+            pareto_str,
+            len(valid_results),
+            stats.get('pareto_size', 0),
+            search_space_desc,
+        )
         result = self._llm_call(
             template=template,
-            output_schema={
-                "updated_insights": str,
-            },
+            output_schema={"updated_insights": str},
         )
-        
         return getattr(result, "updated_insights", previous_insights)
-    
-    def _parse_candidates(
-        self,
-        candidates: Any,
-        expected_count: int,
-    ) -> List[ConfigT]:
-        """Parse and validate candidate configurations from LLM output."""
-        if not isinstance(candidates, list):
-            self._log(f"Warning: LLM returned non-list candidates: {type(candidates)}")
-            return []
-        
-        parsed: List[ConfigT] = []
-        for c in candidates:
-            if isinstance(c, dict):
-                parsed.append(c)
-            elif isinstance(c, str):
-                # Try to parse as JSON
-                try:
-                    import json
-                    parsed.append(json.loads(c))
-                except:
-                    self._log(f"Warning: Could not parse candidate string: {c[:100]}")
-        
-        if len(parsed) != expected_count:
-            self._log(f"Warning: Expected {expected_count} candidates, got {len(parsed)}")
-        
-        return parsed
 

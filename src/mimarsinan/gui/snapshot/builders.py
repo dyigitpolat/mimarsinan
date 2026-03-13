@@ -8,7 +8,6 @@ mutation.
 from __future__ import annotations
 
 import logging
-import re
 from collections import defaultdict
 from typing import Any
 
@@ -17,24 +16,8 @@ import numpy as np
 logger = logging.getLogger("mimarsinan.gui")
 
 
-def _t(val: Any) -> float:
-    """Convert tensor/ndarray/scalar to plain float."""
-    if hasattr(val, "item"):
-        return float(val.item())
-    return float(val)
-
-
-def _histogram(arr: np.ndarray, bins: int = 50) -> dict:
-    """Return a compact histogram dict (counts, bin_edges)."""
-    if arr.size == 0:
-        return {"counts": [], "bin_edges": []}
-    counts, edges = np.histogram(arr.flatten(), bins=bins)
-    return {"counts": counts.tolist(), "bin_edges": edges.tolist()}
-
-
-# ---------------------------------------------------------------------------
-# Model snapshot
-# ---------------------------------------------------------------------------
+from .helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
+from mimarsinan.common.layer_key import layer_key_from_node_name
 
 def snapshot_model(model: Any) -> dict:
     """Extract per-layer weight/bias statistics and architecture info."""
@@ -128,36 +111,10 @@ def _get_model_perceptrons(model: Any) -> list:
     return []
 
 
-def _safe_scalar(obj: Any, attr: str) -> float | None:
-    try:
-        val = getattr(obj, attr, None)
-        if val is None:
-            return None
-        return _t(val)
-    except Exception:
-        return None
-
 
 # ---------------------------------------------------------------------------
 # IR Graph snapshot
 # ---------------------------------------------------------------------------
-
-_RE_CONV_POS = re.compile(r"^(.*)_pos\d+_\d+_g\d+$")
-_RE_FC_TILE = re.compile(r"^(.*)_tile_\d+_\d+$")
-
-
-def _layer_key_from_node_name(name: str) -> str:
-    """Best-effort grouping key that collapses per-position/per-tile cores into a layer stack."""
-    s = str(name)
-    m = _RE_CONV_POS.match(s)
-    if m:
-        return m.group(1)
-    m = _RE_FC_TILE.match(s)
-    if m:
-        return m.group(1)
-    if "_psum_" in s:
-        return s.split("_psum_", 1)[0]
-    return s
 
 
 def snapshot_ir_graph(ir_graph: Any) -> dict:
@@ -206,7 +163,7 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
 
         if isinstance(node, NeuralCore):
             mat = node.get_core_matrix(ir_graph)
-            base_group = _layer_key_from_node_name(node.name)
+            base_group = layer_key_from_node_name(node.name)
             if node.latency is not None:
                 group_key = f"{base_group} (L{node.latency})"
             else:
@@ -788,18 +745,6 @@ def snapshot_adaptation_manager(manager: Any) -> dict:
 
 # Map cache virtual key (step contract) to snapshot key (GUI tab).
 # Multiple cache keys can map to the same snapshot key (e.g. fused_model -> model).
-_CACHE_KEY_TO_SNAPSHOT_KEY: dict[str, str] = {
-    "model": "model",
-    "fused_model": "model",
-    "ir_graph": "ir_graph",
-    "hard_core_mapping": "hard_core_mapping",
-    "architecture_search_result": "search_result",
-    "adaptation_manager": "adaptation_manager",
-    "activation_scales": "activation_scales",
-    "platform_constraints_resolved": "platform_constraints",
-}
-
-
 def build_step_snapshot(
     pipeline: Any,
     step_name: str,
@@ -922,18 +867,3 @@ def build_step_snapshot(
         }
 
     return snapshot, snapshot_key_kinds
-
-
-def _safe_dict(obj: Any) -> Any:
-    """Recursively convert an object to JSON-safe types."""
-    if isinstance(obj, dict):
-        return {str(k): _safe_dict(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_safe_dict(v) for v in obj]
-    if isinstance(obj, (int, float, str, bool, type(None))):
-        return obj
-    if hasattr(obj, "item"):
-        return obj.item()
-    if hasattr(obj, "tolist"):
-        return obj.tolist()
-    return str(obj)

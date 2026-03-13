@@ -8,8 +8,9 @@ Pluggable optimizer implementations for the search framework.
 |------|---------|---------|
 | `base.py` | `SearchOptimizer` | Abstract base class for all optimizers |
 | `nsga2_optimizer.py` | `NSGA2Optimizer` | Multi-objective genetic algorithm via pymoo's NSGA-II |
-| `kedi_optimizer.py` | `KediOptimizer` | LLM-based optimizer using agentic reasoning (optional, requires `kedi`) |
-| `kedi_optimizer_support.py` | (support utilities) | Prompt templates and analysis helpers for Kedi |
+| `kedi_optimizer.py` | `KediOptimizer` | LLM-based optimizer using agentic reasoning (optional, requires `kedi`); orchestration only, prompts in `kedi_prompts` |
+| `kedi_prompts.py` | `build_*_prompt`, `parse_candidates` | Prompt template builders and candidate parsing for Kedi LLM calls |
+| `kedi_optimizer_support.py` | `CandidateResult`, `compute_pareto_front`, `prettify_*`, etc. | Pareto/formatting and analysis helpers for Kedi |
 | `sampler_optimizer.py` | `SamplerOptimizer` | Simple sampler-based optimizer with feedback |
 | `test_kedi_optimizer.py` | (test) | Unit tests for KediOptimizer |
 
