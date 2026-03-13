@@ -10,12 +10,7 @@ import plotly.graph_objects as go
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from plotly.subplots import make_subplots
 
-
-def _safe_float(v, default=None):
-    try:
-        return float(v)
-    except Exception:
-        return default
+from mimarsinan.common.safe_numeric import safe_float
 
 
 def write_final_population_json(result_json: Dict[str, Any], out_path: str) -> None:
@@ -53,7 +48,7 @@ def plot_history_best_metrics(result_json: Dict[str, Any], out_path: str) -> Non
 
     plt.figure(figsize=(10, 6))
     for name, ys in series.items():
-        ys2 = [_safe_float(y) for y in ys]
+        ys2 = [safe_float(y) for y in ys]
         if all(y is None for y in ys2):
             continue
         plt.plot(gens, ys2, label=name)
@@ -88,7 +83,7 @@ def plot_history_metrics_separate(result_json: Dict[str, Any], out_dir: str) -> 
     os.makedirs(out_dir, exist_ok=True)
 
     for key, label in metrics:
-        ys = [_safe_float(b.get(key)) for b in bests]
+        ys = [safe_float(b.get(key)) for b in bests]
         if all(y is None for y in ys):
             continue
 
@@ -127,9 +122,9 @@ def plot_default_pareto_scatters(result_json: Dict[str, Any], out_dir: str) -> N
     if not pareto:
         return
 
-    wasted = [_safe_float(c.get("objectives", {}).get("wasted_area")) for c in pareto]
-    params = [_safe_float(c.get("objectives", {}).get("total_params")) for c in pareto]
-    acc = [_safe_float(c.get("objectives", {}).get("accuracy")) for c in pareto]
+    wasted = [safe_float(c.get("objectives", {}).get("wasted_area")) for c in pareto]
+    params = [safe_float(c.get("objectives", {}).get("total_params")) for c in pareto]
+    acc = [safe_float(c.get("objectives", {}).get("accuracy")) for c in pareto]
 
     # Filter out obvious penalty values so plots remain readable.
     PENALTY_CUTOFF = 1e17
@@ -202,7 +197,7 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
     bests = [h.get("best", {}) if isinstance(h, dict) else {} for h in hist]
 
     def _hist_series(name: str):
-        return [_safe_float(b.get(name)) for b in bests]
+        return [safe_float(b.get(name)) for b in bests]
 
     PENALTY_CUTOFF = 1e17
 
@@ -210,7 +205,7 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
         vals = []
         for c in pareto:
             obj = (c.get("objectives", {}) if isinstance(c, dict) else {}) or {}
-            v = _safe_float(obj.get(name))
+            v = safe_float(obj.get(name))
             if v is None or (v is not None and v >= PENALTY_CUTOFF):
                 vals.append(None)
             else:
@@ -379,7 +374,7 @@ def create_interactive_search_report(result_json: Dict[str, Any], out_path: str)
     PENALTY_CUTOFF = 1e17
 
     def _hist_series(name: str):
-        return [_safe_float(b.get(name)) for b in bests]
+        return [safe_float(b.get(name)) for b in bests]
 
     def _extract_candidate_data(candidates, check_pareto=False):
         """Extract objective data from candidates list."""
@@ -397,12 +392,12 @@ def create_interactive_search_report(result_json: Dict[str, Any], out_path: str)
             
             # Build hover info
             info_parts = [f"Gen: {gen}", f"Pareto: {'✓' if is_pareto else '✗'}"]
-            info_parts.extend([f"{k}: {_safe_float(v):.4f}" for k, v in obj.items()])
+            info_parts.extend([f"{k}: {safe_float(v):.4f}" for k, v in obj.items()])
             hover_info = "<br>".join(info_parts)
             
             valid = True
             for name in metric_names:
-                v = _safe_float(obj.get(name))
+                v = safe_float(obj.get(name))
                 if v is None or v >= PENALTY_CUTOFF:
                     valid = False
                     break
@@ -441,7 +436,7 @@ def create_interactive_search_report(result_json: Dict[str, Any], out_path: str)
         gen = meta.get("generation", -1)
         
         # Skip invalid candidates
-        has_penalty = any(_safe_float(v, 0) >= PENALTY_CUTOFF for v in objectives_data.values())
+        has_penalty = any(safe_float(v, 0) >= PENALTY_CUTOFF for v in objectives_data.values())
         if has_penalty:
             continue
         
@@ -461,7 +456,7 @@ def create_interactive_search_report(result_json: Dict[str, Any], out_path: str)
             row["hw_max_neurons"] = platform_cfg.get("max_neurons", "")
         # Add objectives
         for k, v in objectives_data.items():
-            val = _safe_float(v)
+            val = safe_float(v)
             if val is not None and val < PENALTY_CUTOFF:
                 row[f"obj_{k}"] = val
         

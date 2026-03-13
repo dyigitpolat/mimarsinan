@@ -1,4 +1,4 @@
-from mimarsinan.mapping.mapping_utils import *
+from mimarsinan.mapping.chip_export import hard_cores_to_chip
 from mimarsinan.common.file_utils import *
 from mimarsinan.code_generation.generate_main import *
 from mimarsinan.chip_simulation.compile_nevresim import *

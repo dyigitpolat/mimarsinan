@@ -705,7 +705,7 @@ def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):
     copied into each SoftCore) so downstream packing and codegen see one
     concrete matrix per core.
     """
-    from mimarsinan.mapping.mapping_utils import SoftCoreMapping
+    from mimarsinan.mapping.soft_core_mapper import SoftCoreMapping
     
     compute_ops = ir_graph.get_compute_ops()
     if compute_ops:

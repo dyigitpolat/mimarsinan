@@ -11,7 +11,8 @@ in Perceptrons when the adaptation/quantization stages need them.
 |------|---------|---------|
 | `torch_graph_tracer.py` | `trace_model` | FX-based graph extraction with shape propagation |
 | `representability_analyzer.py` | `RepresentabilityAnalyzer`, `RepresentabilityReport`, `OpInfo` | Validates whether an FX graph can be represented in mimarsinan IR |
-| `mapper_graph_converter.py` | `MapperGraphConverter` | Converts FX graph to Mapper DAG with Perceptron wrappers and weight transfer |
+| `mapper_graph_converter.py` | `MapperGraphConverter` | Converts FX graph to Mapper DAG; inherits mixins from `converter_handlers/` for linear, conv, pool, transformer, structural ops |
+| `converter_handlers/` | `LinearConvertMixin`, `ConvConvertMixin`, `PoolConvertMixin`, `TransformerConvertMixin`, `StructuralConvertMixin` | Per-category _convert_* methods; mixed into `MapperGraphConverter` |
 | `converted_model_flow.py` | `ConvertedModelFlow` | PerceptronFlow subclass wrapping the converted ModelRepresentation; overrides `_apply` so that `to(device)` / `to(dtype)` also propagates to every node in the mapper graph, keeping mapper submodules (e.g. LayerNorm, ModuleMapper.module) on the same device/dtype as the rest of the model |
 | `converter.py` | `convert_torch_model`, `check_representability` | Public API facade |
 

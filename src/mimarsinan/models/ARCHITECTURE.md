@@ -7,7 +7,9 @@ and architecture-specific implementations.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `layers.py` | `LeakyGradReLU`, `TransformedActivation`, `ClampDecorator`, `QuantizeDecorator`, `SavedTensorDecorator`, `FrozenStatsNormalization`, `MaxValueScaler`, ... | Activation functions, composable decorators, normalization wrappers |
+| `activations.py` | `LeakyGradReLUFunction`, `LeakyGradReLU`, `StaircaseFunction`, `DifferentiableClamp` | Custom autograd activations |
+| `decorators.py` | `NoisyDropout`, `NoiseDecorator`, `SavedTensorDecorator`, `StatsDecorator`, `ShiftDecorator`, `ScaleDecorator`, `ClampDecorator`, `QuantizeDecorator`, `RateAdjustedDecorator`, `NestedAdjustmentStrategy`, `MixAdjustmentStrategy`, `RandomMaskAdjustmentStrategy`, `NestedDecoration`, `DecoratedActivation`, `AnyDecorator` | Composable decorators and adjustment strategies |
+| `layers.py` | Re-exports from `activations` and `decorators`; `TransformedActivation`, `FrozenStatsNormalization`, `MaxValueScaler`, `FrozenStatsMaxValueScaler` | Thin re-exporter plus standalone layers |
 | `supermodel.py` | `Supermodel` | Top-level model wrapper (preprocessor + input activation + perceptron flow) |
 | `unified_core_flow.py` | `SpikingUnifiedCoreFlow`, `StableSpikingUnifiedCoreFlow` | PyTorch-based spiking simulator for `IRGraph`. Supports `NeuralCore.hardware_bias` (dedicated bias register): registered as `_hw_bias_params` and applied in all forward paths (rate-coded, TTFS continuous, TTFS quantized). |
 | `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | PyTorch-based spiking simulator for `HybridHardCoreMapping`. Supports `HardCore.hardware_bias` in both rate-coded (bias added every cycle) and TTFS (bias added before activation/threshold) paths. |

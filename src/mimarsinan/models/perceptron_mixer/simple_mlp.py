@@ -1,4 +1,11 @@
-from mimarsinan.mapping.mapping_utils import *
+from mimarsinan.mapping.mapping_utils import (
+    EinopsRearrangeMapper,
+    Ensure2DMapper,
+    InputMapper,
+    ModelRepresentation,
+    ModuleMapper,
+    PerceptronMapper,
+)
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
 
