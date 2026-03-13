@@ -44,6 +44,6 @@
     },
 
     "target_metric_override": null,
-    "start_step": "Pruning Adaptation",
+    "start_step": "Soft Core Mapping",
     "stop_step": "Simulation"
 }

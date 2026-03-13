@@ -381,9 +381,13 @@ def prune_ir_graph(
             keep_cols = [c for c in range(node.core_matrix.shape[1]) if c not in zero_cols]
             if keep_cols:
                 node.core_matrix = node.core_matrix[:, keep_cols]
+                if node.hardware_bias is not None:
+                    node.hardware_bias = node.hardware_bias[keep_cols]
             else:
                 # All columns pruned — keep a 1-column zero matrix to avoid empty
                 node.core_matrix = node.core_matrix[:, :1] * 0.0
+                if node.hardware_bias is not None:
+                    node.hardware_bias = node.hardware_bias[:1] * 0.0
 
     # Phase 4: remove zeroed rows from core matrices and their input sources
     for node in graph.nodes:
