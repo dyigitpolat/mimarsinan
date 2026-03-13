@@ -309,11 +309,35 @@ body {
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.4), inset 0 0 4px rgba(255, 255, 255, 0.2);
   z-index: 5;
 }
+.hw-core-constituent-overlay {
+  box-sizing: border-box;
+}
+.hw-core-constituent-boundary {
+  position: absolute; box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+}
+.hw-core-fused-boundary-line {
+  position: absolute; left: 0; right: 0;
+  background: rgba(255, 193, 7, 0.9);
+  pointer-events: none; z-index: 2;
+}
 .hw-core-fused-badge {
   position: absolute; top: 2px; right: 2px;
-  width: 6px; height: 6px; border-radius: 50%;
+  padding: 1px 4px; border-radius: 3px;
+  font-size: 7px; font-weight: 700; line-height: 1.2;
   background: var(--accent);
+  color: var(--bg-primary);
   box-shadow: 0 0 4px var(--accent-dim);
+  pointer-events: none;
+  z-index: 3;
+}
+.hw-core-soft-badge {
+  position: absolute; bottom: 2px; left: 2px;
+  padding: 1px 4px; border-radius: 3px;
+  font-size: 7px; font-weight: 700; line-height: 1.2;
+  background: rgba(76, 175, 80, 0.9);
+  color: var(--bg-primary);
   pointer-events: none;
   z-index: 3;
 }
@@ -446,7 +470,22 @@ body {
 .hw-core-detail-heatmap-region:hover {
   background: rgba(91, 138, 245, 0.2); border-color: var(--accent);
 }
+.hw-core-detail-fused-line {
+  position: absolute; left: 0; right: 0;
+  background: rgba(255, 193, 7, 0.9);
+  pointer-events: none; z-index: 1;
+}
 .hw-core-detail-panel .data-table { margin: 0; font-size: 11px; }
+.hw-constituents-section { margin-top: 8px; }
+.hw-constituents-section .section-label { font-size: 10px; margin-bottom: 4px; color: var(--text-muted); }
+.hw-constituents-table { margin: 0; font-size: 10px; }
+.hw-constituent-row { cursor: pointer; transition: background 0.15s; }
+.hw-constituent-row:hover { background: var(--bg-hover); }
+.hw-constituent-id { font-weight: 600; color: var(--accent); }
+.hw-softcore-located-in {
+  font-size: 10px; color: var(--text-muted); margin: 0 0 6px 0;
+  padding: 6px 8px; background: var(--bg-hover); border-radius: 4px;
+}
 
 /* Software core detail pane (to the right of hardware core detail) */
 .hw-softcore-detail-panel {
