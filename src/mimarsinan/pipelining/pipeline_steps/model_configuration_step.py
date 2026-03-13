@@ -55,12 +55,6 @@ class ModelConfigurationStep(PipelineStep):
         configuration_mode = self.pipeline.config['configuration_mode']
 
         if configuration_mode == "nas":
-            if self.pipeline.config["model_type"] != "mlp_mixer":
-                raise NotImplementedError(
-                    f"NAS configuration_mode only implemented for model_type='mlp_mixer' "
-                    f"(got {self.pipeline.config['model_type']})"
-                )
-
             sampler = MLP_Mixer_ConfigurationSampler()
             evaluator = SmallStepEvaluator(
                 self.pipeline.data_provider_factory,

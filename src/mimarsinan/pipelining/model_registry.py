@@ -54,6 +54,15 @@ class ModelRegistry:
         import mimarsinan.models.builders  # noqa: F401
 
     @classmethod
+    def get_category(cls, model_id: str) -> str | None:
+        """Return the category for the given model_id, or None if unknown."""
+        cls._ensure_builders_loaded()
+        entry = cls._registry.get(model_id)
+        if entry is None:
+            return None
+        return entry.get("category")
+
+    @classmethod
     def get_builder_cls(cls, model_id: str) -> type:
         """Return the builder class registered under model_id.
 

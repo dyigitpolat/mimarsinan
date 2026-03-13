@@ -398,7 +398,7 @@ Operates in two modes based on `configuration_mode`:
 
 Objectives: `accuracy` (max), `wasted_area` (min), `total_params` (min).
 
-The step produces a `PerceptronMixerBuilder` and the resolved platform constraints (including `cores` — a list of core types with `{count, max_axons, max_neurons}` and optional `has_bias`). When `has_bias` is true for a core type, that hardware core implements bias via a per-neuron bias register; the last-row always-on axon is not used for that core in nevresim. The builder is created directly from the search-resolved constraints; **no side-effect writes** are made to `pipeline.config`. Downstream steps read hardware dimensions from the cached `platform_constraints_resolved` entry.
+The step produces a model builder (e.g. `TorchMLPMixerBuilder`, `SimpleMLPBuilder`) and the resolved platform constraints (including `cores` — a list of core types with `{count, max_axons, max_neurons}` and optional `has_bias`). When `has_bias` is true for a core type, that hardware core implements bias via a per-neuron bias register; the last-row always-on axon is not used for that core in nevresim. The builder is created directly from the search-resolved constraints; **no side-effect writes** are made to `pipeline.config`. Downstream steps read hardware dimensions from the cached `platform_constraints_resolved` entry.
 
 After the search completes, the step **validates the best candidate**: if the search failed to find any feasible configuration, a `RuntimeError` is raised with the constraint violation details, rather than silently passing an infeasible config to later steps.
 
@@ -698,16 +698,12 @@ Key custom functions:
 
 **Directory**: `models/builders/`
 
-Builders are created during Architecture Search and cached for later use:
+Builders are created during Architecture Search (or Model Configuration) and cached for later use. **Category** (registered via `@ModelRegistry.register(..., category=...)`) controls whether `TorchMappingStep` runs: only `category == "torch"` gets the step; `"native"` is the single mapper-repr path.
 
-- `PerceptronMixerBuilder` — Builds `Supermodel(preprocessor=InputCQ, perceptron_flow=PerceptronMixer)`
-- `VitBuilder` — Builds `Supermodel(preprocessor=InputCQ, perceptron_flow=VisionTransformer)`
-- `SimpleMlpBuilder` — Simple multi-layer perceptron
-- `SimpleConvBuilder` — Convolutional model
-- `VGG16Builder` — VGG-16 architecture
-- `TorchSequentialLinearBuilder` — Sequential n-linear PyTorch MLP (torch 2 repr flow)
+- **Category "native"** (mapper-repr, no TorchMappingStep): `SimpleMLPBuilder` — Builds `Supermodel(preprocessor=InputCQ, perceptron_flow=SimpleMLP)` with a hand-built Mapper DAG.
+- **Category "torch"** (plain `nn.Module` → TorchMappingStep converts to Supermodel): `TorchMLPMixerBuilder` (mlp_mixer), `TorchVGG16Builder`, `TorchViTBuilder`, `TorchSequentialLinearBuilder`, `TorchSequentialConvBuilder`, `TorchSqueezeNet11Builder`, `TorchCustomBuilder` — each `build(configuration)` returns a plain `nn.Module`; the pipeline inserts `TorchMappingStep` after Pretraining to trace and convert to a Supermodel.
 
-Each builder's `build(configuration)` method takes a model config dict and returns a `Supermodel`.
+Each builder's `build(configuration)` method takes a model config dict and returns either a `Supermodel` (native) or a plain `nn.Module` (torch).
 
 ---
 
@@ -1391,7 +1387,7 @@ Module dependency rules:
 - **Pipeline steps**: `{Action}Step` (e.g., `PretrainingStep`, `WeightQuantizationStep`)
 - **Tuners**: `{Type}Tuner` (e.g., `ClampTuner`, `CoreFlowTuner`)
 - **Mappers**: `{Type}Mapper` (e.g., `PerceptronMapper`, `Conv2DPerceptronMapper`)
-- **Builders**: `{Model}Builder` (e.g., `PerceptronMixerBuilder`)
+- **Builders**: `{Model}Builder` (e.g., `TorchMLPMixerBuilder`, `SimpleMLPBuilder`)
 
 ### Design Patterns
 - **Pipeline + Step**: Command pattern for sequential execution with dependency injection via cache
@@ -1426,9 +1422,9 @@ Module dependency rules:
 5. Add it to the appropriate pipeline(s) in `pipelining/pipelines/`
 6. Ensure the data contracts are satisfied (promises/requires chain)
 
-### Adding a New Model Architecture
+### Adding a New Model Architecture (mapper-repr, category "native")
 
-1. Create a new `PerceptronFlow` subclass in `models/perceptron_mixer/` (see `VisionTransformer` as an example of a complex architecture with non-neural operations)
+1. Create a new `PerceptronFlow` subclass in `models/perceptron_mixer/` (see `SimpleMLP` as the single retained example)
 2. Build the computation using the `Mapper` graph (mappers from `mapping/mapping_utils.py`). For operations that cannot be mapped to crossbar cores (e.g., LayerNorm, attention, element-wise add), use the appropriate `ComputeOp`-emitting mappers (`LayerNormMapper`, `MultiHeadAttentionComputeMapper`, `AddMapper`, etc.)
 3. Implement `get_perceptrons()`, `get_perceptron_groups()`, `get_mapper_repr()`
 4. Create a builder in `models/builders/` with a `build(configuration)` method
@@ -1442,8 +1438,8 @@ PyTorch `nn.Module` and let the `torch_mapping` module convert it automatically:
 
 1. Create a builder in `models/builders/` whose `build()` returns a plain `nn.Module`
    (not a `Supermodel`).  See `TorchVGG16Builder` or `TorchCustomBuilder` as examples.
-2. Register the builder in `ModelConfigurationStep` with a `"torch_*"` model type name.
-3. The pipeline will automatically insert `TorchMappingStep` after Pretraining, which
+2. Register the builder with **category `"torch"`** (e.g. `@ModelRegistry.register("my_model", label="My Model", category="torch")`).
+3. The pipeline will automatically insert `TorchMappingStep` after Pretraining (when `ModelRegistry.get_category(model_type) == "torch"`), which
    traces the trained model with `torch.fx`, validates representability, converts to a
    Mapper DAG with Perceptron wrappers, and wraps everything in a `Supermodel`.
 4. The conversion transfers trained weights and absorbs BatchNorm / activation into

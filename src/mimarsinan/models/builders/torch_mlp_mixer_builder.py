@@ -1,18 +1,17 @@
-from mimarsinan.models.perceptron_mixer.perceptron_mixer import PerceptronMixer
-from mimarsinan.models.supermodel import Supermodel
-from mimarsinan.models.preprocessing.input_cq import InputCQ
+"""Builder for native PyTorch MLP-Mixer; registered as mlp_mixer with category torch."""
+
+from mimarsinan.models.torch_mlp_mixer import TorchMLPMixer
 from mimarsinan.pipelining.model_registry import ModelRegistry
 
-import torch.nn as nn
 
-
-def _divisors(n):
-    n = int(n)
+def _divisors(n: int) -> list[int]:
     return [d for d in range(1, n + 1) if n % d == 0]
 
 
-@ModelRegistry.register("mlp_mixer", label="MLP Mixer", category="native")
-class PerceptronMixerBuilder:
+@ModelRegistry.register("mlp_mixer", label="MLP Mixer", category="torch")
+class TorchMLPMixerBuilder:
+    """Builds native nn.Module MLP-Mixer; TorchMappingStep converts to Supermodel."""
+
     def __init__(self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config):
         self.device = device
         self.input_shape = input_shape
@@ -22,23 +21,16 @@ class PerceptronMixerBuilder:
         self.pipeline_config = pipeline_config
 
     def build(self, configuration):
-        patch_n_1 = configuration["patch_n_1"]
-        patch_m_1 = configuration["patch_m_1"]
-        patch_c_1 = configuration["patch_c_1"]
-        fc_w_1 = configuration["fc_w_1"]
-        fc_w_2 = configuration["fc_w_2"]
-        base_activation = configuration.get("base_activation", "ReLU")
-
-        preprocessor = InputCQ(self.pipeline_config["target_tq"])
-        perceptron_flow = PerceptronMixer(
-            self.device,
-            self.input_shape, self.num_classes,
-            patch_n_1, patch_m_1, patch_c_1, fc_w_1, fc_w_2,
-            base_activation_name=base_activation)
-
-        supermodel = Supermodel(self.device, self.input_shape, self.num_classes, preprocessor, perceptron_flow, self.pipeline_config["target_tq"])
-
-        return supermodel
+        return TorchMLPMixer(
+            input_shape=tuple(self.input_shape),
+            num_classes=self.num_classes,
+            patch_n_1=int(configuration["patch_n_1"]),
+            patch_m_1=int(configuration["patch_m_1"]),
+            patch_c_1=int(configuration["patch_c_1"]),
+            fc_w_1=int(configuration["fc_w_1"]),
+            fc_w_2=int(configuration["fc_w_2"]),
+            base_activation=configuration.get("base_activation", "ReLU"),
+        )
 
     @classmethod
     def get_config_schema(cls):
@@ -53,20 +45,18 @@ class PerceptronMixerBuilder:
 
     @classmethod
     def get_nas_search_options(cls, input_shape=None):
-        """Discrete search values for numeric config keys used by the NAS."""
         h = int(input_shape[-2]) if input_shape is not None else 28
         w = int(input_shape[-1]) if input_shape is not None else 28
         return {
             "patch_n_1": _divisors(h),
             "patch_m_1": _divisors(w),
             "patch_c_1": [8, 16, 24, 32, 48, 64, 96, 128, 192, 256],
-            "fc_w_1":    [16, 32, 48, 64, 96, 128, 192, 256],
-            "fc_w_2":    [16, 32, 48, 64, 96, 128, 192, 256],
+            "fc_w_1": [16, 32, 48, 64, 96, 128, 192, 256],
+            "fc_w_2": [16, 32, 48, 64, 96, 128, 192, 256],
         }
 
     @classmethod
     def validate_config(cls, config, platform_cfg, input_shape):
-        """Patch dimensions must divide the spatial input dimensions."""
         pr = int(config.get("patch_n_1", 1))
         pc = int(config.get("patch_m_1", 1))
         h, w = int(input_shape[-2]), int(input_shape[-1])

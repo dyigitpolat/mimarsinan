@@ -1,9 +1,8 @@
-"""Perceptron-based model architectures: Perceptron, MLP-Mixer, ViT.
+"""Perceptron-based model architectures: Perceptron, PerceptronFlow, SimpleMLP.
 
 Only ``Perceptron`` and ``PerceptronFlow`` are eagerly re-exported here.
-Architecture classes (``PerceptronMixer``, ``VisionTransformer``, ``SimpleMLP``)
-import from ``mapping.mapping_utils`` and must be imported directly from their
-own modules to avoid circular imports with the mapping subsystem.
+``SimpleMLP`` (mapper-repr example) is in ``simple_mlp``; other architectures
+use torch-based builders and torch_mapping.
 """
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
