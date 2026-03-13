@@ -470,7 +470,7 @@ Conditionally included when `pruning` is enabled and `pruning_fraction > 0`. Use
 3. Uses `SmartSmoothAdaptation` (with a per-cycle callback to refresh importance) to progressively scale candidate weights toward zero (at adaptation rate `r`, weights are multiplied by `1 − r`).
 4. When adaptation completes (`r = 1.0`), pruned rows/columns are fully zeroed.
 
-The zeroed structure is later physically removed from the IR graph by `ir_pruning.prune_ir_graph()` during Soft Core Mapping, which compacts `NeuralCore` weight matrices and rewires source references. Before compacting, each node receives `pre_pruning_heatmap`, `pruned_row_mask`, and `pruned_col_mask` for GUI soft-core pre/post pruning visualizations.
+The zeroed structure is later physically removed from the IR graph by `ir_pruning.prune_ir_graph()` during Soft Core Mapping, which compacts `NeuralCore` weight matrices and rewires source references. When columns are removed, `hardware_bias` (if present) is sliced with the same `keep_cols` indices so it stays in sync with `core_matrix.shape[1]`. Before compacting, each node receives `pre_pruning_heatmap`, `pruned_row_mask`, and `pruned_col_mask` for GUI soft-core pre/post pruning visualizations.
 
 ### 5.10 Weight Quantization
 
@@ -809,7 +809,7 @@ Key fields:
 - `activation_scale`, `parameter_scale`, `input_activation_scale` — Scaling factors
 - `psum_group_id`, `psum_role` — For partial-sum (psum) decomposition: `role` is `"partial_pos"`, `"partial_neg"`, or `"accum"`. Produced when a wide layer is split using the 2N+1-core psum strategy.
 - `coalescing_group_id`, `coalescing_role` — For core-coalescing decomposition: `role` is `"partial"` or `"accum"`. Produced when `allow_core_coalescing=True` is set on the `IRMapping`; uses N+1 cores instead of 2N+1.
-- `hardware_bias: np.ndarray | None` — When non-`None`, the bias vector is stored in a dedicated hardware register rather than an always-on axon row.
+- `hardware_bias: np.ndarray | None` — When non-`None`, the bias vector is stored in a dedicated hardware register rather than an always-on axon row. **Invariant**: `len(hardware_bias)` must equal `core_matrix.shape[1]` (neuron count); `ir_pruning.prune_ir_graph()` maintains this by slicing `hardware_bias` whenever columns are removed, and `neural_core_to_soft_core()` asserts it at conversion time.
 - `weight_bank_id: int | None` — If set, this core references a `WeightBank` stored on the `IRGraph` instead of owning its `core_matrix`.
 - `weight_row_slice: tuple[int,int] | None` — Optional neuron-axis slice into the bank's matrix (for output-channel tiling).
 

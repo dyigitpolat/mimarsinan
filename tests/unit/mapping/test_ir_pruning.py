@@ -611,6 +611,114 @@ class TestGetInitialPruningMasksFromModel:
             neural_core_to_soft_core(core, graph)
 
 
+class TestHardwareBiasPruning:
+    """hardware_bias must be pruned alongside core_matrix columns in Phase 3."""
+
+    def test_hardware_bias_pruned_with_columns(self):
+        """When zeroed columns are removed, hardware_bias is sliced to match."""
+        w = np.array([
+            [1.0, 0.0, 3.0],
+            [4.0, 0.0, 6.0],
+        ], dtype=np.float32)
+        bias = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        src = _make_source_array([(-2, 0), (-2, 1)])
+        core0 = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
+        core0.hardware_bias = bias
+
+        # Core 1 downstream so column 1 of core0 is NOT segment-output exempt
+        w1 = np.array([[1.0], [1.0], [1.0]], dtype=np.float32)
+        src1 = _make_source_array([(0, 0), (0, 1), (0, 2)])
+        core1 = NeuralCore(id=1, name="core1", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
+        out_src = _make_source_array([(1, 0)])
+        graph = IRGraph(nodes=[core0, core1], output_sources=out_src)
+
+        pruned = prune_ir_graph(graph)
+        pruned_core = pruned.nodes[0]
+        # Column 1 is all-zero and not segment-output → removed
+        assert pruned_core.core_matrix.shape[1] == 2
+        assert pruned_core.hardware_bias.shape[0] == 2
+        np.testing.assert_allclose(pruned_core.hardware_bias, [10.0, 30.0])
+
+    def test_hardware_bias_all_columns_pruned(self):
+        """When all columns are pruned, hardware_bias is truncated to 1 element (zeroed)."""
+        w = np.array([
+            [0.0, 0.0],
+            [0.0, 0.0],
+        ], dtype=np.float32)
+        bias = np.array([10.0, 20.0], dtype=np.float32)
+        src = _make_source_array([(-2, 0), (-2, 1)])
+        core0 = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
+        core0.hardware_bias = bias
+
+        # Downstream core so columns are not segment-output exempt
+        w1 = np.array([[1.0], [1.0]], dtype=np.float32)
+        src1 = _make_source_array([(0, 0), (0, 1)])
+        core1 = NeuralCore(id=1, name="core1", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
+        out_src = _make_source_array([(1, 0)])
+        graph = IRGraph(nodes=[core0, core1], output_sources=out_src)
+
+        pruned = prune_ir_graph(graph)
+        pruned_core = pruned.nodes[0]
+        assert pruned_core.core_matrix.shape[1] == 1
+        assert pruned_core.hardware_bias.shape[0] == 1
+        assert pruned_core.hardware_bias[0] == 0.0
+
+    def test_no_hardware_bias_unchanged(self):
+        """When hardware_bias is None, pruning columns does not crash."""
+        w = np.array([
+            [1.0, 0.0, 3.0],
+            [4.0, 0.0, 6.0],
+        ], dtype=np.float32)
+        src = _make_source_array([(-2, 0), (-2, 1)])
+        core0 = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
+        assert core0.hardware_bias is None
+
+        w1 = np.array([[1.0], [1.0], [1.0]], dtype=np.float32)
+        src1 = _make_source_array([(0, 0), (0, 1), (0, 2)])
+        core1 = NeuralCore(id=1, name="core1", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
+        out_src = _make_source_array([(1, 0)])
+        graph = IRGraph(nodes=[core0, core1], output_sources=out_src)
+
+        pruned = prune_ir_graph(graph)
+        pruned_core = pruned.nodes[0]
+        assert pruned_core.hardware_bias is None
+        assert pruned_core.core_matrix.shape[1] == 2
+
+    def test_hardware_bias_survives_to_soft_core(self):
+        """After pruning, hardware_bias length matches core_matrix columns through soft-core conversion."""
+        w = np.array([
+            [1.0, 0.0, 3.0],
+            [4.0, 0.0, 6.0],
+        ], dtype=np.float32)
+        bias = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        src = _make_source_array([(-2, 0), (-2, 1)])
+        core0 = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
+        core0.hardware_bias = bias
+
+        w1 = np.array([[1.0], [1.0], [1.0]], dtype=np.float32)
+        src1 = _make_source_array([(0, 0), (0, 1), (0, 2)])
+        core1 = NeuralCore(id=1, name="core1", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
+        out_src = _make_source_array([(1, 0)])
+        graph = IRGraph(nodes=[core0, core1], output_sources=out_src)
+
+        pruned = prune_ir_graph(graph)
+        pruned_core = pruned.nodes[0]
+        # Convert to soft core — should not raise
+        soft = neural_core_to_soft_core(pruned_core, pruned)
+        assert soft.hardware_bias is not None
+        assert len(soft.hardware_bias) == soft.core_matrix.shape[1]
+
+    def test_neural_core_to_soft_core_raises_on_bias_mismatch(self):
+        """neural_core_to_soft_core raises ValueError when hardware_bias length != neuron count."""
+        w = np.ones((3, 2), dtype=np.float64)
+        src = _make_source_array([(-2, 0), (-2, 1), (-2, 2)])
+        core = NeuralCore(id=0, name="c0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
+        core.hardware_bias = np.ones(5, dtype=np.float64)  # mismatched length
+        graph = IRGraph(nodes=[core], output_sources=_make_source_array([(0, 0), (0, 1)]))
+        with pytest.raises(ValueError, match="hardware_bias length.*5.*neuron count.*2"):
+            neural_core_to_soft_core(core, graph)
+
+
 class TestSegmentIOExemption:
     """Segment-aware input/output buffer exemption: segment input rows and output cols are never pruned."""
 

@@ -690,6 +690,13 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         soft.pruned_col_mask = pruned_col_mask
     # Pass hardware_bias through (no always-on row needed).
     if neural_core.hardware_bias is not None:
+        n_neurons = core_matrix.shape[1]
+        if len(neural_core.hardware_bias) != n_neurons:
+            raise ValueError(
+                f"neural_core_to_soft_core: hardware_bias length ({len(neural_core.hardware_bias)}) "
+                f"does not match core_matrix neuron count ({n_neurons}) for node_id={neural_core.id}. "
+                f"hardware_bias must be pruned alongside core_matrix columns in ir_pruning."
+            )
         soft.hardware_bias = neural_core.hardware_bias.copy()
     return soft
 
