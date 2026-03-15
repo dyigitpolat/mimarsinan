@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.base import Mapper
+from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_chip_supported_activation
 from mimarsinan.mapping.soft_core_mapper import map_mm
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
@@ -42,20 +42,46 @@ class PerceptronMapper(Mapper):
         layer_weights = PerceptronTransformer().get_effective_weight(self.perceptron)
         layer_biases = PerceptronTransformer().get_effective_bias(self.perceptron)
 
-        normalization = getattr(self.perceptron, "normalization", None)
-        normalization_type = type(normalization).__name__ if normalization is not None else None
-
-        activation = getattr(self.perceptron, "activation", None)
-        activation_type = type(activation).__name__ if activation is not None else None
-        if activation is not None and hasattr(activation, "base_activation") and hasattr(activation, "decorators"):
-            base = getattr(activation, "base_activation", None)
-            base_name = type(base).__name__ if base is not None else "Activation"
-            decorators = getattr(activation, "decorators", []) or []
-            decorator_names = [type(d).__name__ for d in decorators]
-            activation_type = f"{base_name} + {', '.join(decorator_names)}" if decorator_names else base_name
-
         layer_sources = self.source_mapper.map_to_ir(ir_mapping)
         layer_sources = layer_sources.transpose()
+
+        if not is_chip_supported_activation(self.perceptron):
+            # Activation not supported on crossbar (Identity, GELU, etc.)
+            # → host-side linear ComputeOp (preserves negatives, no ReLU).
+            w_np = layer_weights.detach().cpu().numpy()
+            b_np = layer_biases.detach().cpu().numpy() if layer_biases is not None else None
+            name = getattr(self.perceptron, "name", None)
+            out_features = w_np.shape[0]
+            in_features = w_np.shape[1]
+
+            src_arr = np.array(layer_sources, dtype=object)
+
+            # Mirror map_fc's 2D handling: one ComputeOp per column
+            # (e.g., one per token position in mixer architectures).
+            if src_arr.ndim == 2:
+                if src_arr.shape[0] != in_features and src_arr.shape[1] == in_features:
+                    src_arr = src_arr.T
+                core_count = int(src_arr.shape[1])
+                outputs = []
+                for i in range(core_count):
+                    col_sources = np.array(src_arr[:, i], dtype=object).flatten()
+                    col_out = ir_mapping.add_linear_compute_op(
+                        input_sources=col_sources,
+                        weights=w_np, biases=b_np,
+                        name=(f"{name}_col{i}" if name else None),
+                    )
+                    outputs.append(col_out.flatten())
+                result = np.stack(outputs, axis=1)  # (out_features, core_count)
+                return result.transpose()
+
+            output_sources = ir_mapping.add_linear_compute_op(
+                input_sources=src_arr, weights=w_np, biases=b_np, name=name,
+            )
+            return output_sources
+
+        normalization = getattr(self.perceptron, "normalization", None)
+        normalization_type = type(normalization).__name__ if normalization is not None else None
+        activation_type = resolve_activation_type(self.perceptron)
 
         output_shape = np.array([layer_weights.shape[0], layer_sources.shape[-1]])
         layer_sources = ir_mapping.map_fc(

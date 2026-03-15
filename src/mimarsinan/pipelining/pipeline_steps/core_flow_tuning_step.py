@@ -30,7 +30,7 @@ class CoreFlowTuningStep(PipelineStep):
         else:
             print("[CoreFlowTuningStep] Unified IR tuning (neural-only): CoreFlowTuner")
 
-        self.preprocessor = nn.Sequential(model.get_preprocessor(), model.in_act)
+        self.preprocessor = model.get_preprocessor()
 
         # Run threshold tuning using spike rate matching algorithm
         tuner = CoreFlowTuner(self.pipeline, ir_graph, self.preprocessor)

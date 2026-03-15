@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import IRSource
-from mimarsinan.mapping.mappers.base import Mapper
+from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_chip_supported_activation
 from mimarsinan.mapping.mappers.pooling import _chunk_sizes
 from mimarsinan.mapping.soft_core_mapper import map_mm
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
@@ -238,29 +238,34 @@ class Conv2DPerceptronMapper(Mapper):
         full_b = PerceptronTransformer().get_effective_bias(self.perceptron)
 
         has_bias = full_b is not None
+        chip_supported = is_chip_supported_activation(self.perceptron)
 
-        if self.max_neurons is None:
-            group_sizes = [self.out_channels]
-        else:
-            group_sizes = _chunk_sizes(self.out_channels, int(self.max_neurons))
+        # Resolve activation_type from the perceptron (shared with PerceptronMapper)
+        activation_type = resolve_activation_type(self.perceptron)
 
-        bank_ids: list[int] = []
-        start_idx = 0
-        for g in group_sizes:
-            end_idx = start_idx + g
-            w_slice = full_w[start_idx:end_idx, :]
-            b_slice = full_b[start_idx:end_idx] if has_bias else None
+        if chip_supported:
+            if self.max_neurons is None:
+                group_sizes = [self.out_channels]
+            else:
+                group_sizes = _chunk_sizes(self.out_channels, int(self.max_neurons))
 
-            bank_id = ir_mapping.register_weight_bank(
-                weights=w_slice,
-                biases=b_slice,
-                activation_scale=self.perceptron.activation_scale,
-                parameter_scale=self.perceptron.parameter_scale,
-                input_activation_scale=self.perceptron.input_activation_scale,
-                perceptron_index=getattr(self, "perceptron_index", None),
-            )
-            bank_ids.append(bank_id)
-            start_idx = end_idx
+            bank_ids: list[int] = []
+            start_idx = 0
+            for g in group_sizes:
+                end_idx = start_idx + g
+                w_slice = full_w[start_idx:end_idx, :]
+                b_slice = full_b[start_idx:end_idx] if has_bias else None
+
+                bank_id = ir_mapping.register_weight_bank(
+                    weights=w_slice,
+                    biases=b_slice,
+                    activation_scale=self.perceptron.activation_scale,
+                    parameter_scale=self.perceptron.parameter_scale,
+                    input_activation_scale=self.perceptron.input_activation_scale,
+                    perceptron_index=getattr(self, "perceptron_index", None),
+                )
+                bank_ids.append(bank_id)
+                start_idx = end_idx
 
         all_output_sources = []
 
@@ -279,18 +284,30 @@ class Conv2DPerceptronMapper(Mapper):
 
                 patch_sources = np.array(patch_sources)
 
-                position_outputs = []
-                for g_idx, bank_id in enumerate(bank_ids):
-                    core_outputs = ir_mapping.add_shared_neural_core(
+                if chip_supported:
+                    position_outputs = []
+                    for g_idx, bank_id in enumerate(bank_ids):
+                        core_outputs = ir_mapping.add_shared_neural_core(
+                            input_sources=patch_sources,
+                            weight_bank_id=bank_id,
+                            has_bias=has_bias,
+                            name=f"{self.name}_pos{oh}_{ow}_g{g_idx}",
+                            activation_type=activation_type,
+                            perceptron_index=getattr(self, "perceptron_index", None),
+                        )
+                        position_outputs.append(core_outputs)
+                    all_output_sources.append(np.concatenate(position_outputs))
+                else:
+                    # Activation not chip-supported → host-side linear ComputeOp
+                    w_np = full_w.detach().cpu().numpy()
+                    b_np = full_b.detach().cpu().numpy() if has_bias else None
+                    core_outputs = ir_mapping.add_linear_compute_op(
                         input_sources=patch_sources,
-                        weight_bank_id=bank_id,
-                        has_bias=has_bias,
-                        name=f"{self.name}_pos{oh}_{ow}_g{g_idx}",
-                        perceptron_index=getattr(self, "perceptron_index", None),
+                        weights=w_np,
+                        biases=b_np,
+                        name=f"{self.name}_pos{oh}_{ow}_linear",
                     )
-                    position_outputs.append(core_outputs)
-
-                all_output_sources.append(np.concatenate(position_outputs))
+                    all_output_sources.append(core_outputs)
 
         output_array = np.stack(all_output_sources, axis=0)
         output_array = output_array.T

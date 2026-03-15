@@ -215,3 +215,82 @@ class SubscriptMapper(Mapper):
 
     def _forward_impl(self, x):
         return x.select(1, self.index)
+
+
+class PermuteMapper(Mapper):
+    """Mapper for ``tensor.permute(*dims)`` or ``tensor.transpose(d0, d1)``.
+
+    * ``_forward_impl`` applies the true permutation — required for correct
+      software validation (ReshapeMapper.view would silently scramble values).
+    * ``_map`` / ``_map_to_ir`` use ``np.transpose`` with the batch-stripped
+      permutation so that SpikeSource / IRSource arrays are reordered correctly
+      for hardware layout.
+
+    ``dims`` is the full permutation tuple including the batch axis 0,
+    e.g. ``(0, 2, 1)`` for a 3-D batch-first tensor.
+    """
+
+    def __init__(self, source_mapper, dims):
+        super(PermuteMapper, self).__init__(source_mapper)
+        self.dims = tuple(dims)
+        # numpy permutation: drop batch dim 0, shift remaining axes by -1.
+        self._np_dims = tuple(d - 1 for d in self.dims if d != 0)
+
+    def _map(self, mapping):
+        arr = self.source_mapper.map(mapping)
+        return np.transpose(arr, self._np_dims)
+
+    def _map_to_ir(self, ir_mapping):
+        arr = self.source_mapper.map_to_ir(ir_mapping)
+        return np.transpose(arr, self._np_dims)
+
+    def _forward_impl(self, x):
+        return x.permute(*self.dims)
+
+
+class MeanMapper(Mapper):
+    """Mapper for ``tensor.mean(dim=dim)``.
+
+    * ``_forward_impl`` computes the true mean — used for software validation.
+    * ``_map`` uses subscript [0] for legacy shape-tracking (SoftCoreMapping).
+    * ``_map_to_ir`` creates a ComputeOp with op_type="mean" so the IR graph
+      (and spiking simulation) properly averages all groups, not just index 0.
+    """
+
+    def __init__(self, source_mapper, dim: int):
+        super(MeanMapper, self).__init__(source_mapper)
+        self.dim = dim
+
+    def _map(self, mapping):
+        # Legacy SoftCoreMapping: shape-tracking only; [0] gives correct output shape.
+        return self.source_mapper.map(mapping)[0]
+
+    def _map_to_ir(self, ir_mapping):
+        src = self.source_mapper.map_to_ir(ir_mapping)
+        # src shape is e.g. (num_patches, features) for mean(dim=1).
+        # dim is the batch-relative dim (1 in the original tensor), which maps
+        # to axis 0 in the batch-stripped source array.
+        reduce_axis = self.dim - 1 if self.dim > 0 else 0
+        num_groups = src.shape[reduce_axis]
+        # Output shape: remove the reduced axis.
+        out_shape = tuple(d for i, d in enumerate(src.shape) if i != reduce_axis)
+        group_size = int(np.prod(out_shape)) if out_shape else 1
+
+        # Flatten sources in the order expected by _exec_mean:
+        # group 0 features, group 1 features, ..., group N features.
+        # Transpose so the reduce axis comes first, then flatten.
+        if reduce_axis != 0:
+            src = np.moveaxis(src, reduce_axis, 0)
+        flat_sources = src.flatten()
+
+        return ir_mapping.add_compute_op(
+            input_sources=flat_sources,
+            op_type="mean",
+            params={"num_groups": num_groups, "group_size": group_size},
+            input_shape=(num_groups, group_size),
+            output_shape=out_shape if out_shape else (1,),
+            name="mean_reduce",
+        )
+
+    def _forward_impl(self, x):
+        return x.mean(dim=self.dim)

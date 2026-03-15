@@ -37,6 +37,8 @@ from mimarsinan.mapping.mappers.structural import (
     DelayMapper,
     EinopsRearrangeMapper,
     InputMapper,
+    MeanMapper,
+    PermuteMapper,
     ReshapeMapper,
     StackMapper,
     SubscriptMapper,

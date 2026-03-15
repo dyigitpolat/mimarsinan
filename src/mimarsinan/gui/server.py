@@ -59,6 +59,85 @@ class _SafeJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
+def _get_softcores_from_request(body: dict):
+    """Build a model repr and run layout mapping, returning LayoutSoftCoreSpec list.
+
+    Handles both native (simple_mlp) and torch (torch_sequential_linear, etc.) builders
+    by delegating to the appropriate builder class.
+    """
+    from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
+    from mimarsinan.models.builders import BUILDERS_REGISTRY
+    from mimarsinan.pipelining.model_registry import ModelRegistry
+    import torch
+
+    model_type = body.get("model_type", "simple_mlp")
+    input_shape = tuple(int(x) for x in body.get("input_shape", [1, 28, 28]))
+    num_classes = int(body.get("num_classes", 10))
+    model_config = body.get("model_config", {})
+    max_axons = int(body.get("max_axons", 1024))
+    max_neurons = int(body.get("max_neurons", 1024))
+    threshold_groups = int(body.get("threshold_groups", 1))
+    pruning_fraction = float(body.get("pruning_fraction", 0.0))
+    threshold_seed = int(body.get("threshold_seed", 0))
+
+    builder_cls = BUILDERS_REGISTRY.get(model_type)
+    if builder_cls is None:
+        raise ValueError(f"Unknown model_type: {model_type!r}")
+
+    pipeline_config = {
+        "target_tq": int(body.get("target_tq", 32)),
+        "device": "cpu",
+    }
+    builder = builder_cls(
+        device=torch.device("cpu"),
+        input_shape=input_shape,
+        num_classes=num_classes,
+        max_axons=max_axons,
+        max_neurons=max_neurons,
+        pipeline_config=pipeline_config,
+    )
+    raw_model = builder.build(model_config)
+
+    category = ModelRegistry.get_category(model_type)
+    if category == "torch":
+        from mimarsinan.torch_mapping.converter import convert_torch_model
+        # Initialize lazy modules (e.g. LazyBatchNorm1d) before conversion
+        raw_model.eval()
+        with torch.no_grad():
+            try:
+                raw_model(torch.randn(1, *input_shape))
+            except Exception:
+                pass
+        supermodel = convert_torch_model(
+            raw_model,
+            input_shape=input_shape,
+            num_classes=num_classes,
+            device="cpu",
+        )
+        model_repr = supermodel.get_mapper_repr()
+    else:
+        # Native model — also initialize lazy modules
+        raw_model.eval()
+        with torch.no_grad():
+            try:
+                raw_model(torch.randn(2, *input_shape))
+            except Exception:
+                pass
+        model_repr = raw_model.get_mapper_repr()
+
+    result = verify_soft_core_mapping(
+        model_repr,
+        max_axons=max_axons,
+        max_neurons=max_neurons,
+        threshold_groups=threshold_groups,
+        pruning_fraction=pruning_fraction,
+        threshold_seed=threshold_seed,
+    )
+    if not result.feasible:
+        raise ValueError(f"Soft-core mapping verification failed: {result.error}")
+    return result.softcores
+
+
 def create_app(
     collector: "DataCollector",
     run_config_fn: Callable[[dict, "DataCollector"], None] | None = None,
@@ -135,6 +214,97 @@ def create_app(
                 status_code=400,
                 content={"error": str(e)},
             )
+
+    @app.post("/api/hw_config_verify")
+    def api_hw_config_verify(body: dict):
+        """Verify that a hardware core config can fit the given model's softcores.
+
+        Request body:
+            model_repr_json: {
+                model_type: str,
+                input_shape: list[int],
+                num_classes: int,
+                model_config: dict,
+                max_axons: int,
+                max_neurons: int,
+                threshold_groups: int,
+                pruning_fraction: float,
+                threshold_seed: int,
+            }
+            core_types: [{max_axons, max_neurons, count}, ...]
+        """
+        try:
+            from mimarsinan.mapping.mapping_verifier import (
+                verify_soft_core_mapping,
+                verify_hardware_config,
+            )
+            mr = dict(body.get("model_repr_json", {}))
+            # Use large fixed bounds so softcores reflect true model dimensions,
+            # consistent with the auto-config pass.
+            mr["max_axons"] = max(int(mr.get("max_axons", 1024)), 4096)
+            mr["max_neurons"] = max(int(mr.get("max_neurons", 1024)), 4096)
+            softcores = _get_softcores_from_request(mr)
+            core_types = body.get("core_types", [])
+            result = verify_hardware_config(softcores, core_types)
+            return {
+                "feasible": result["feasible"],
+                "errors": result["errors"],
+                "field_errors": result["field_errors"],
+                "packing": {
+                    "cores_used": result["packing_result"].cores_used if result["packing_result"] else 0,
+                    "total_capacity": result["packing_result"].total_capacity if result["packing_result"] else 0,
+                    "used_area": result["packing_result"].used_area if result["packing_result"] else 0,
+                } if result["packing_result"] else None,
+            }
+        except Exception as e:
+            logger.exception("hw_config_verify failed")
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
+    @app.post("/api/hw_config_auto")
+    def api_hw_config_auto(body: dict):
+        """Auto-suggest a hardware configuration for the given model.
+
+        Request body keys (from wizard state):
+            model_type: str
+            input_shape: list[int]
+            num_classes: int
+            model_config: dict        (builder configuration)
+            max_axons: int            (upper bound for layout pass)
+            max_neurons: int          (upper bound for layout pass)
+            threshold_groups: int     (default 1)
+            pruning_fraction: float   (default 0.0)
+            threshold_seed: int       (default 0)
+            allow_coalescing: bool    (default false)
+            hardware_bias: bool       (default true)
+            axon_granularity: int     (default 1)
+            neuron_granularity: int   (default 1)
+        """
+        try:
+            from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config
+            # Use a large fixed bound for the layout pass so softcores reflect the true
+            # model dimensions (not the previously-suggested, potentially-smaller bounds).
+            # This breaks the circular dependency where verify re-runs layout with the
+            # newly-suggested smaller dimensions and gets different softcores.
+            layout_body = dict(body)
+            layout_body["max_axons"] = max(int(body.get("max_axons", 1024)), 4096)
+            layout_body["max_neurons"] = max(int(body.get("max_neurons", 1024)), 4096)
+            softcores = _get_softcores_from_request(layout_body)
+            suggestion = suggest_hardware_config(
+                softcores,
+                allow_coalescing=bool(body.get("allow_coalescing", False)),
+                hardware_bias=bool(body.get("hardware_bias", True)),
+                axon_granularity=int(body.get("axon_granularity", 1)),
+                neuron_granularity=int(body.get("neuron_granularity", 1)),
+                safety_margin=float(body.get("safety_margin", 0.15)),
+            )
+            return {
+                "core_types": suggestion.core_types,
+                "total_cores": suggestion.total_cores,
+                "rationale": suggestion.rationale,
+            }
+        except Exception as e:
+            logger.exception("hw_config_auto failed")
+            return JSONResponse(status_code=400, content={"error": str(e)})
 
     @app.post("/api/pipeline_steps")
     def api_pipeline_steps(body: dict):

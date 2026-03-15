@@ -18,9 +18,7 @@ class SimulationStep(PipelineStep):
         return self.accuracy
 
     def process(self):
-        preprocessor = nn.Sequential(
-            self.get_entry("model").get_preprocessor(),
-            self.get_entry("model").in_act)
+        preprocessor = self.get_entry("model").get_preprocessor()
 
         runner = SimulationRunner(
             self.pipeline,

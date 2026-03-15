@@ -183,6 +183,31 @@ class IRMapping:
 
         return output_sources
 
+    def add_linear_compute_op(
+        self,
+        input_sources: np.ndarray,
+        weights,
+        biases=None,
+        name: str | None = None,
+    ) -> np.ndarray:
+        """Add a host-side linear ComputeOp (matmul + bias, no activation).
+
+        Used for layers with Identity activation that cannot run on NeuralCore
+        crossbars. The matmul preserves negative values (no ReLU clipping).
+        """
+        w = np.asarray(weights, dtype=np.float64)
+        params: Dict[str, Any] = {"weight": w.tolist()}
+        if biases is not None:
+            params["bias"] = np.asarray(biases, dtype=np.float64).flatten().tolist()
+        out_features = w.shape[0]
+        return self.add_compute_op(
+            input_sources=input_sources.flatten(),
+            op_type="linear",
+            params=params,
+            output_shape=(out_features,),
+            name=name or "linear_compute",
+        )
+
     def add_neural_core(
         self,
         input_sources: np.ndarray,

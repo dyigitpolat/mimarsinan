@@ -38,6 +38,77 @@ class TestTorchMLPMixer:
         assert out.shape == (4, 10)
 
 
+class TestTorchMLPMixerConversion:
+    """Verify that convert_torch_model preserves forward-pass fidelity.
+
+    The Supermodel's forward pass (used by TorchMappingStep validation) must
+    agree with the original PyTorch model.  A failure here manifests as ~10%
+    (chance-level) accuracy right after the Torch Mapping step.
+    """
+
+    def test_supermodel_forward_matches_original(self):
+        """Supermodel output must numerically match the original model."""
+        from mimarsinan.torch_mapping.converter import convert_torch_model
+
+        model = TorchMLPMixer(
+            input_shape=(1, 28, 28),
+            num_classes=10,
+            patch_n_1=4,
+            patch_m_1=4,
+            patch_c_1=32,
+            fc_w_1=64,
+            fc_w_2=64,
+        )
+        model.eval()
+        supermodel = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
+        supermodel.eval()
+
+        x = torch.randn(4, 1, 28, 28)
+        with torch.no_grad():
+            orig_out = model(x)
+            # Compare perceptron_flow directly (bypasses InputCQ preprocessing)
+            # to isolate the mapper DAG fidelity from input quantization.
+            super_out = supermodel.perceptron_flow(x)
+
+        assert orig_out.shape == super_out.shape, (
+            f"Shape mismatch: {orig_out.shape} vs {super_out.shape}"
+        )
+        assert torch.allclose(orig_out, super_out, atol=1e-3), (
+            f"Output mismatch — max diff: {(orig_out - super_out).abs().max().item():.6f}. "
+            "The Supermodel forward pass does not faithfully reproduce the original model."
+        )
+
+    def test_supermodel_argmax_matches_original(self):
+        """Class predictions from the Supermodel must match the original model."""
+        from mimarsinan.torch_mapping.converter import convert_torch_model
+
+        torch.manual_seed(42)
+        model = TorchMLPMixer(
+            input_shape=(1, 28, 28),
+            num_classes=10,
+            patch_n_1=4,
+            patch_m_1=4,
+            patch_c_1=32,
+            fc_w_1=64,
+            fc_w_2=64,
+        )
+        model.eval()
+        supermodel = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
+        supermodel.eval()
+
+        x = torch.randn(16, 1, 28, 28)
+        with torch.no_grad():
+            orig_pred = model(x).argmax(dim=1)
+            # Compare perceptron_flow directly (bypasses InputCQ preprocessing)
+            super_pred = supermodel.perceptron_flow(x).argmax(dim=1)
+
+        agreement = (orig_pred == super_pred).float().mean().item()
+        assert agreement == 1.0, (
+            f"Class predictions disagree on {int((1 - agreement) * 16)}/16 samples. "
+            "TorchMappingStep validation will show chance-level accuracy."
+        )
+
+
 class TestTorchMLPMixerBuilder:
     def test_build_returns_module(self):
         builder = TorchMLPMixerBuilder(

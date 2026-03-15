@@ -12,10 +12,15 @@ Spiking mode  (``spiking_mode`` in ``deployment_parameters``)
   ``"rate"``     Rate-coded SNN.  CoreFlow tuning step is included.
   ``"ttfs"``     Time-to-first-spike SNN.  Analytical ReLU↔TTFS mapping.
 
+Activation adaptation
+  Activation Analysis + Clamp Adaptation always run because the chip
+  only supports ReLU.  These steps train the model to produce
+  ReLU-compatible (non-negative, clamped) activations.
+
 Quantization flags  (booleans in ``deployment_parameters``)
   ``activation_quantization``
-      Enables the activation quantization chain: Activation Analysis →
-      Clamp Adaptation → Activation Shifting → Activation Quantization.
+      Enables additional activation quantization: Activation Shifting →
+      Activation Quantization (discrete levels for chip deployment).
       Configured via ``target_tq``.
   ``weight_quantization``
       Enables weight quantization + verification.
@@ -37,9 +42,18 @@ import torch
 
 # ── Step groups ─────────────────────────────────────────────────────────────
 
-_ACTIVATION_QUANTIZATION_STEPS: list[tuple[str, type]] = [
+# Activation adaptation: Activation Analysis + Clamp Adaptation are ALWAYS
+# required because the chip only supports ReLU.  These steps convert any
+# base activation (LeakyReLU, GELU, Identity, etc.) to a ReLU-compatible
+# form by training the model with ClampDecorator.
+_ACTIVATION_ADAPTATION_STEPS: list[tuple[str, type]] = [
     ("Activation Analysis",       ActivationAnalysisStep),
     ("Clamp Adaptation",          ClampAdaptationStep),
+]
+
+# Full activation quantization: Shifting + Quantization are only needed
+# when discrete activation levels are required for chip deployment.
+_ACTIVATION_QUANTIZATION_STEPS: list[tuple[str, type]] = [
     ("Activation Shifting",       ActivationShiftStep),
     ("Activation Quantization",   ActivationQuantizationStep),
 ]
@@ -105,7 +119,19 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     if pruning and pruning_fraction > 0:
         specs.extend(_PRUNING_STEPS)
 
-    # ── Activation Quantization ─────────────────────────────────────
+    # ── Activation Adaptation + Quantization ──────────────────────
+    # Activation Analysis + Clamp Adaptation are required whenever the
+    # model may contain non-ReLU activations (Identity, GELU, etc.)
+    # because the chip only supports ReLU.  These steps convert all
+    # activations to ReLU-compatible form via gradual clamping.
+    #
+    # They always run: even if all layers were built with ReLU, torch
+    # mapping may introduce Identity layers (conv without activation,
+    # final classifier).  The steps are cheap no-ops for pure-ReLU models.
+    specs.extend(_ACTIVATION_ADAPTATION_STEPS)
+
+    # Full activation quantization (Shifting + Quantization) is only
+    # needed when discrete activation levels are required.
     if act_q:
         specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
 

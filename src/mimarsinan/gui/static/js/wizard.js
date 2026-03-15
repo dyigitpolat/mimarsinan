@@ -59,6 +59,11 @@ let pipelineStepsDebounceTimer = null;
 let lastPipelineSteps = [];
 let pipelineStepsLoading = false;
 
+// Hardware auto-fill state
+let _hwAutoMode = false;   // true after user clicks Auto; triggers re-fill on param changes
+let _hwRefilling = false;  // true while a fetch is in-flight (prevents re-entrant refills)
+let _hwAutoRefillTimer = null;
+
 // ── Init ───────────────────────────────────────────────────
 function init() {
   loadFromAPI().then(function () {
@@ -72,6 +77,7 @@ function init() {
     updateSearchVisibility();
     update();
     schedulePipelineStepsUpdate();
+    autoFillHardware();
     var showJson = document.getElementById('showJsonToggle');
     var copyBtn = document.getElementById('copyJsonBtn');
     if (copyBtn && showJson) copyBtn.style.display = showJson.classList.contains('on') ? '' : 'none';
@@ -411,15 +417,15 @@ function renderCoreTypes() {
     <div class="field-grid cols-3" style="margin-bottom:8px;align-items:end">
       <div class="field">
         <label class="field-label">Max Axons</label>
-        <input type="number" value="${ct.max_axons}" min="1" onchange="state.coreTypes[${i}].max_axons=+this.value;update()">
+        <input id="ct_${i}_max_axons" type="number" value="${ct.max_axons}" min="1" onchange="state.coreTypes[${i}].max_axons=+this.value;_hwAutoMode=false;update()">
       </div>
       <div class="field">
         <label class="field-label">Max Neurons</label>
-        <input type="number" value="${ct.max_neurons}" min="1" onchange="state.coreTypes[${i}].max_neurons=+this.value;update()">
+        <input id="ct_${i}_max_neurons" type="number" value="${ct.max_neurons}" min="1" onchange="state.coreTypes[${i}].max_neurons=+this.value;_hwAutoMode=false;update()">
       </div>
       <div class="field">
         <label class="field-label">Count ${state.coreTypes.length > 1 ? '<span style="cursor:pointer;color:var(--accent-rose)" onclick="removeCoreType(' + i + ')">✕ remove</span>' : ''}</label>
-        <input type="number" value="${ct.count}" min="1" onchange="state.coreTypes[${i}].count=+this.value;update()">
+        <input id="ct_${i}_count" type="number" value="${ct.count}" min="1" onchange="state.coreTypes[${i}].count=+this.value;_hwAutoMode=false;update()">
       </div>
     </div>
   `).join('');
@@ -606,6 +612,16 @@ function update() {
   syncWtQuantToggle();
   document.getElementById('jsonOutput').innerHTML = renderJson(buildConfig());
   schedulePipelineStepsUpdate();
+  if (getSegVal('hwMode') === 'user') {
+    if (_hwAutoMode) {
+      scheduleHwAutoRefill();
+    } else {
+      scheduleHwValidation();
+    }
+  } else {
+    const banner = document.getElementById('hwValidationBanner');
+    if (banner) banner.classList.add('hide');
+  }
 }
 
 // ── Pipeline steps preview ──────────────────────────────────
@@ -716,6 +732,210 @@ function runPipeline() {
     if (runBtn) runBtn.disabled = false;
   });
 }
+
+// ══════════════════════════════════════════════════════════
+// HARDWARE AUTO-FILL & VALIDATION
+// ══════════════════════════════════════════════════════════
+
+let _hwValidateTimer = null;
+let _hwValidating = false;
+
+// Build the request body for both auto and verify endpoints
+function _buildHwApiBody() {
+  const schema = MODEL_CONFIG_SCHEMAS[state.modelType] || [];
+  const modelConfig = {};
+  schema.forEach(f => {
+    const el = document.getElementById('mc_' + f.key);
+    if (!el) return;
+    if (f.type === 'number') modelConfig[f.key] = parseFloat(el.value);
+    else if (f.type === 'toggle') modelConfig[f.key] = el.classList.contains('on');
+    else if (f.type === 'text' && f.key === 'hidden_dims')
+      modelConfig[f.key] = el.value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    else modelConfig[f.key] = el.value;
+  });
+
+  const maxAx = state.coreTypes.length ? Math.max(...state.coreTypes.map(c => c.max_axons)) : 1024;
+  const maxNeu = state.coreTypes.length ? Math.max(...state.coreTypes.map(c => c.max_neurons)) : 1024;
+  const pruningOn = isToggleOn('pruningToggle');
+  const pruningFrac = pruningOn ? parseFloat(document.getElementById('pruningFraction')?.value || '0') : 0;
+  const thresholdGroups = parseInt(document.getElementById('maxThresholdGroups')?.value || '1') || 1;
+  const targetTq = parseInt(document.getElementById('targetTq')?.value || '32') || 32;
+
+  return {
+    model_type: state.modelType,
+    input_shape: (function () {
+      const dp = v('dataProvider') || '';
+      // Best-effort: derive from data provider name; fallback to 1,28,28
+      if (dp.includes('CIFAR')) return [3, 32, 32];
+      if (dp.includes('ECG')) return [1, 140];
+      return [1, 28, 28];
+    })(),
+    num_classes: 10,
+    model_config: modelConfig,
+    max_axons: maxAx,
+    max_neurons: maxNeu,
+    threshold_groups: thresholdGroups,
+    pruning_fraction: pruningFrac,
+    threshold_seed: 0,
+    allow_coalescing: isToggleOn('coreCoalescingToggle'),
+    hardware_bias: isToggleOn('hardwareBiasToggle'),
+    target_tq: targetTq,
+  };
+}
+
+// Auto-fill hardware configuration using the greedy algorithm
+function autoFillHardware() {
+  if (_hwRefilling) return;
+  _hwRefilling = true;
+
+  const btn = document.getElementById('hwAutoBtn');
+  if (btn) { btn.classList.add('loading'); btn.textContent = '...'; }
+
+  const body = _buildHwApiBody();
+
+  fetch('/api/hw_config_auto', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(r => r.json()).then(data => {
+    if (data.error) {
+      _hwAutoMode = false;
+      _showHwValidation(false, [data.error], {});
+      return;
+    }
+    if (data.core_types && data.core_types.length) {
+      _hwAutoMode = true;
+      state.coreTypes = data.core_types.map(ct => ({
+        max_axons: ct.max_axons,
+        max_neurons: ct.max_neurons,
+        count: ct.count,
+        has_bias: ct.has_bias !== undefined ? ct.has_bias : isToggleOn('hardwareBiasToggle'),
+      }));
+      renderCoreTypes();
+      // Flash the hardware config pane for 1 second
+      const pane = document.getElementById('hwSection');
+      if (pane) {
+        pane.classList.remove('hw-auto-flash');
+        void pane.offsetWidth; // reflow to restart animation
+        pane.classList.add('hw-auto-flash');
+        setTimeout(() => pane.classList.remove('hw-auto-flash'), 1000);
+      }
+      // Verify the auto-suggestion is actually feasible (catches under-estimated counts)
+      _doHwValidation('\u2713 Auto-configured: ' + (data.rationale || ''));
+    }
+  }).catch(err => {
+    _hwAutoMode = false;
+    _showHwValidation(false, ['Auto-config request failed: ' + err.message], {});
+  }).finally(() => {
+    _hwRefilling = false;
+    if (btn) { btn.classList.remove('loading'); btn.textContent = 'Auto'; }
+  });
+}
+
+// Schedule a re-fill when _hwAutoMode is active and params changed
+function scheduleHwAutoRefill() {
+  if (_hwRefilling) return;
+  if (_hwAutoRefillTimer) clearTimeout(_hwAutoRefillTimer);
+  // Show a brief "updating" hint in the banner
+  const banner = document.getElementById('hwValidationBanner');
+  if (banner && !banner.classList.contains('hide')) {
+    banner.textContent = 'Recalculating\u2026';
+    banner.className = 'hw-validation-banner hw-updating';
+  }
+  _hwAutoRefillTimer = setTimeout(() => {
+    _hwAutoRefillTimer = null;
+    if (_hwAutoMode && !_hwRefilling) autoFillHardware();
+  }, 1200);
+}
+
+// Debounced validation: called on every update() when hwMode=user
+function scheduleHwValidation() {
+  if (_hwValidateTimer) clearTimeout(_hwValidateTimer);
+  _hwValidateTimer = setTimeout(_runHwValidation, 800);
+}
+
+function _runHwValidation() {
+  if (getSegVal('hwMode') !== 'user') return;
+  _doHwValidation();
+}
+
+function _doHwValidation(successPrefix) {
+  if (!state.coreTypes || !state.coreTypes.length) return;
+
+  const body = _buildHwApiBody();
+  const coreTypes = state.coreTypes.map(ct => ({
+    max_axons: ct.max_axons,
+    max_neurons: ct.max_neurons,
+    count: ct.count,
+  }));
+
+  fetch('/api/hw_config_verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_repr_json: body, core_types: coreTypes }),
+  }).then(r => r.json()).then(data => {
+    if (data.error) return;  // server error, skip silently
+    if (data.feasible && successPrefix) {
+      _showHwValidation(true, [successPrefix], {});
+    } else {
+      _showHwValidation(data.feasible, data.errors || [], data.field_errors || {});
+    }
+  }).catch(() => {});  // network errors: skip silently
+}
+
+function _showHwValidation(feasible, errors, fieldErrors) {
+  const banner = document.getElementById('hwValidationBanner');
+  const section = document.getElementById('hwSection');
+  if (!banner) return;
+
+  // Clear previous per-field highlights
+  document.querySelectorAll('.hw-field-invalid').forEach(el => el.classList.remove('hw-field-invalid'));
+
+  if (feasible && (!errors || errors.length === 0 || (errors.length === 1 && errors[0].startsWith('\u2713')))) {
+    const msg = errors && errors.length ? errors[0] : '\u2713 Hardware configuration is sufficient.';
+    banner.textContent = msg;
+    banner.className = 'hw-validation-banner ok';
+    if (section) section.classList.remove('hw-invalid');
+    setTimeout(() => { if (banner.className.includes('ok')) banner.classList.add('hide'); }, 3000);
+    return;
+  }
+
+  // Show error banner and flash section header
+  if (section) {
+    section.classList.add('hw-invalid');
+    void section.offsetWidth;
+    section.classList.remove('hw-invalid');
+    section.classList.add('hw-invalid');
+  }
+
+  banner.className = 'hw-validation-banner';
+  banner.innerHTML = '<strong>Hardware configuration issues:</strong><ul style="margin:4px 0 0 16px">' +
+    (errors || []).map(e => '<li>' + _escHtml(e) + '</li>').join('') +
+    '</ul>';
+
+  // Highlight invalid inputs with a red border (no extra DOM elements that break grid layout)
+  Object.keys(fieldErrors || {}).forEach(key => {
+    const m = key.match(/^core_type_(\d+)_(max_axons|max_neurons)$/);
+    if (m) {
+      const inputEl = document.getElementById('ct_' + m[1] + '_' + m[2]);
+      if (inputEl) inputEl.classList.add('hw-field-invalid');
+    }
+    // Insufficient total core count: highlight all count inputs
+    if (key === 'total_count') {
+      state.coreTypes.forEach((_, i) => {
+        const inputEl = document.getElementById('ct_' + i + '_count');
+        if (inputEl) inputEl.classList.add('hw-field-invalid');
+      });
+    }
+  });
+}
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Hook into update() to trigger debounced validation
+const _originalUpdate = update;
 
 // ── Boot ───────────────────────────────────────────────────
 init();

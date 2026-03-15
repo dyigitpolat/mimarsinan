@@ -18,11 +18,14 @@ import torch.fx as fx
 
 from mimarsinan.mapping.mapping_utils import (
     InputMapper,
+    MeanMapper,
     ModelRepresentation,
     ModuleMapper,
     GELUMapper,
     DropoutMapper,
+    PermuteMapper,
     ReshapeMapper,
+    SubscriptMapper,
 )
 from mimarsinan.torch_mapping.representability_analyzer import (
     RepresentabilityAnalyzer,
@@ -212,23 +215,54 @@ class MapperGraphConverter(
 
         elif method == "flatten":
             start_dim = node.args[1] if len(node.args) > 1 else 1
-            if start_dim <= 1:
-                out_shape = self._get_output_shape(node)
-                if out_shape is not None:
-                    flat_shape = (out_shape[-1],) if len(out_shape) == 2 else out_shape[1:]
-                    mapper = ReshapeMapper(source, flat_shape)
-                    self._node_to_mapper[node] = mapper
-                    return
-            self._node_to_mapper[node] = source
+            out_shape = self._get_output_shape(node)
+            if out_shape is not None and len(out_shape) >= 2:
+                new_shape = out_shape[1:]
+                mapper = ReshapeMapper(source, new_shape)
+                self._node_to_mapper[node] = mapper
+            else:
+                self._node_to_mapper[node] = source
 
         elif method == "contiguous":
             self._node_to_mapper[node] = source
 
         elif method in ("permute", "transpose"):
-            self._node_to_mapper[node] = source
+            in_shape = self._get_input_shape(node)
+            if method == "permute":
+                # args: (self_node, d0, d1, ...) or single tuple arg
+                raw = node.args[1:]
+                if len(raw) == 1 and isinstance(raw[0], (tuple, list)):
+                    dims = tuple(int(d) for d in raw[0])
+                else:
+                    dims = tuple(int(d) for d in raw)
+            else:  # transpose(dim0, dim1)
+                d0 = int(node.args[1]) if len(node.args) > 1 else 0
+                d1 = int(node.args[2]) if len(node.args) > 2 else 1
+                ndim = len(in_shape) if in_shape else 3
+                dims = list(range(ndim))
+                dims[d0], dims[d1] = dims[d1], dims[d0]
+                dims = tuple(dims)
+            # PermuteMapper handles both _forward_impl (true permute) and
+            # _map/_map_to_ir (np.transpose for source-array reordering).
+            if dims and dims[0] == 0:
+                self._node_to_mapper[node] = PermuteMapper(source, dims)
+            else:
+                # Non-batch-preserving permutation: fall back to shape-only tracking.
+                out_shape = self._get_output_shape(node)
+                if out_shape is not None and len(out_shape) >= 2:
+                    self._node_to_mapper[node] = ReshapeMapper(source, out_shape[1:])
+                else:
+                    self._node_to_mapper[node] = source
 
         elif method in ("mean",):
-            self._node_to_mapper[node] = source
+            # Extract the dim argument from args or kwargs; default to 1.
+            if len(node.args) > 1:
+                dim = node.args[1]
+            else:
+                dim = node.kwargs.get("dim", 1)
+            if not isinstance(dim, int):
+                dim = 1
+            self._node_to_mapper[node] = MeanMapper(source, dim=dim)
 
         elif method in ("size", "dim"):
             self._node_to_mapper[node] = source

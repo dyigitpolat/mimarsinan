@@ -92,12 +92,19 @@ class StructuralConvertMixin:
         report: RepresentabilityReport,
         skip_bn: bool = False,
     ):
-        """Find the first absorbed follower of ``node`` matching ``target_types``."""
+        """Find the first absorbed follower of ``node`` matching ``target_types``.
+
+        Skips through absorbed Identity modules (always) and BatchNorm
+        modules (when ``skip_bn=True``) to reach the target.
+        """
         for user in node.users:
             if user.name in self._absorbed and user.op == "call_module":
                 mod = self._modules.get(user.target)
                 if mod is not None and isinstance(mod, target_types):
                     return mod
+                # Skip through Identity (always) and BN (when skip_bn)
+                if isinstance(mod, nn.Identity):
+                    return self._find_absorbed_follower(user, target_types, report, skip_bn)
                 if skip_bn and isinstance(mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                    return self._find_absorbed_follower(user, target_types, report)
+                    return self._find_absorbed_follower(user, target_types, report, skip_bn)
         return None

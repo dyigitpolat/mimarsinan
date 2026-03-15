@@ -74,19 +74,19 @@ _COMPUTE_OP_MODULES: set[type] = {
     nn.LayerNorm,
     nn.Dropout,
     nn.Dropout2d,
-    nn.Identity,
     nn.Flatten,
 }
 
 # Modules that get absorbed into the preceding Perceptron.
-# nn.GELU is included so that Linear → GELU sequences get absorbed into
-# a single Perceptron with GELU activation, matching native ViT / FFN behaviour.
+# nn.Identity is absorbable so that chains like mm → Identity → BN → act
+# can be normalized into a single Perceptron package.
 _ABSORBABLE_MODULES: set[type] = {
     nn.BatchNorm1d,
     nn.BatchNorm2d,
     nn.ReLU,
     nn.LeakyReLU,
     nn.GELU,
+    nn.Identity,
 }
 
 # Modules explicitly unsupported with reasons

@@ -338,8 +338,12 @@ class ComputeOp(IRNode):
             return self._exec_select(x)
         elif self.op_type == "add":
             return self._exec_add(x)
+        elif self.op_type == "mean":
+            return self._exec_mean(x)
         elif self.op_type == "dropout":
             return self._exec_dropout(x)
+        elif self.op_type == "linear":
+            return self._exec_linear(x)
         else:
             raise NotImplementedError(f"ComputeOp: unsupported op_type '{self.op_type}'")
 
@@ -472,9 +476,34 @@ class ComputeOp(IRNode):
         b = x[:, half:]
         return a + b
 
+    def _exec_mean(self, x: torch.Tensor) -> torch.Tensor:
+        """Mean-reduce along a dimension.
+
+        Input has shape (B, num_groups * group_size).  We reshape to
+        (B, num_groups, group_size) and take the mean along dim=1,
+        producing (B, group_size).
+        """
+        group_size = self.params["group_size"]
+        num_groups = self.params["num_groups"]
+        x = x[:, :num_groups * group_size].view(x.shape[0], num_groups, group_size)
+        return x.mean(dim=1)
+
     def _exec_dropout(self, x: torch.Tensor) -> torch.Tensor:
         """Identity at inference (dropout is training-only)."""
         return x.view(x.shape[0], -1)
+
+    def _exec_linear(self, x: torch.Tensor) -> torch.Tensor:
+        """Host-side linear (matmul + bias). No activation — preserves negatives.
+
+        Used for layers with Identity activation that cannot run on NeuralCore
+        crossbars (chip hardcodes ReLU).
+        """
+        weight = torch.tensor(self.params["weight"], dtype=x.dtype, device=x.device)
+        out = torch.matmul(x, weight.T)
+        if "bias" in self.params and self.params["bias"] is not None:
+            bias = torch.tensor(self.params["bias"], dtype=x.dtype, device=x.device)
+            out = out + bias
+        return out.view(out.shape[0], -1)
 
 
 # ---------------------------------------------------------------------------

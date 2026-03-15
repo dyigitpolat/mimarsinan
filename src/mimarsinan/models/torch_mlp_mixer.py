@@ -42,21 +42,19 @@ class TorchMLPMixer(nn.Module):
         num_patches = patch_n_1 * patch_m_1
         self.num_patches = num_patches
         self.patch_channels = patch_c_1
-        act = _get_activation(base_activation)
-
         # Patch embedding: Conv2d then flatten to (B, num_patches, patch_c_1)
         self.patch_embed = nn.Conv2d(
             c, patch_c_1, kernel_size=(patch_h, patch_w), stride=(patch_h, patch_w)
         )
         self.patch_bn = nn.BatchNorm2d(patch_c_1)
 
-        # Two mixer blocks (token mixer + channel mixer each)
-        self.token_mix_1 = _TokenMixer(num_patches, patch_c_1, fc_w_1, act)
-        self.channel_mix_1 = _ChannelMixer(patch_c_1, fc_w_2, act)
-        self.token_mix_2 = _TokenMixer(num_patches, patch_c_1, fc_w_1, act)
-        self.channel_mix_2 = _ChannelMixer(patch_c_1, fc_w_2, act)
+        # Two mixer blocks (token mixer + channel mixer each) — each gets its own activation
+        self.token_mix_1 = _TokenMixer(num_patches, patch_c_1, fc_w_1, _get_activation(base_activation))
+        self.channel_mix_1 = _ChannelMixer(patch_c_1, fc_w_2, _get_activation(base_activation))
+        self.token_mix_2 = _TokenMixer(num_patches, patch_c_1, fc_w_1, _get_activation(base_activation))
+        self.channel_mix_2 = _ChannelMixer(patch_c_1, fc_w_2, _get_activation(base_activation))
 
-        self.norm = nn.LazyBatchNorm1d()
+        self.norm = nn.Identity()
         self.classifier = nn.Linear(patch_c_1, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -79,7 +77,7 @@ class _TokenMixer(nn.Module):
 
     def __init__(self, num_patches: int, dim: int, hidden: int, act: nn.Module):
         super().__init__()
-        self.ln = nn.LazyBatchNorm1d()
+        self.ln = nn.Identity()
         self.fc1 = nn.Linear(num_patches, hidden)
         self.fc2 = nn.Linear(hidden, num_patches)
         self.act = act
@@ -99,7 +97,7 @@ class _ChannelMixer(nn.Module):
 
     def __init__(self, dim: int, hidden: int, act: nn.Module):
         super().__init__()
-        self.ln = nn.LazyBatchNorm1d()
+        self.ln = nn.Identity()
         self.fc1 = nn.Linear(dim, hidden)
         self.fc2 = nn.Linear(hidden, dim)
         self.act = act

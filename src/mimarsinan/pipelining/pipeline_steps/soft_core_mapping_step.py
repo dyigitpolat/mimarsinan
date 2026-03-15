@@ -91,10 +91,11 @@ class SoftCoreMappingStep(PipelineStep):
         act_q = bool(self.pipeline.config.get("activation_quantization", False))
 
         # ttfs_quantized is only relevant with activation quantization; without it, deployment may diverge from training.
+        # Plain ttfs uses continuous TTFS and does not require activation_quantization.
         spiking_mode = self.pipeline.config.get("spiking_mode", "rate")
-        if spiking_mode in ("ttfs", "ttfs_quantized") and not act_q:
+        if spiking_mode == "ttfs_quantized" and not act_q:
             print(
-                "[SoftCoreMappingStep] Warning: TTFS/ttfs_quantized is on but activation_quantization is off; "
+                "[SoftCoreMappingStep] Warning: ttfs_quantized is on but activation_quantization is off; "
                 "deployment accuracy may drop compared to training."
             )
 
@@ -293,7 +294,8 @@ class SoftCoreMappingStep(PipelineStep):
         # graphs and graphs containing ComputeOps (sync barriers handled in SpikingUnifiedCoreFlow).
         try:
             device = self.pipeline.config["device"]
-            preprocessor = nn.Sequential(model.get_preprocessor(), model.in_act)
+            # Single input activation: get_preprocessor() (e.g. InputCQ) already includes in_act
+            preprocessor = model.get_preprocessor()
             flow = SpikingUnifiedCoreFlow(
                 self.pipeline.config["input_shape"],
                 ir_graph,
