@@ -193,6 +193,43 @@ def _check_no_split_coalescing_groups(nodes: list) -> None:
             )
 
 
+def _reindex_nodes(
+    nodes: list[NeuralCore],
+    reindex_maps: dict[int, dict[int, int]],
+) -> list[NeuralCore]:
+    """Deep-copy nodes and apply compaction reindex to their input_sources."""
+    result = []
+    for n in nodes:
+        n2 = copy.deepcopy(n)
+        _apply_reindex_to_ir_sources(n2.input_sources, reindex_maps)
+        result.append(n2)
+    return result
+
+
+def _apply_reindex_to_ir_sources(
+    sources: np.ndarray,
+    reindex_maps: dict[int, dict[int, int]],
+) -> None:
+    """Apply compaction reindex maps to an array of IRSource objects in place.
+
+    For each IRSource referencing a compacted core, updates ``.index``
+    to the new (post-compaction) neuron index.  Sources referencing
+    pruned neurons are replaced with off-sources.
+    """
+    for i, src in enumerate(sources.flatten()):
+        if not isinstance(src, IRSource) or src.node_id < 0:
+            continue
+        remap = reindex_maps.get(src.node_id)
+        if remap is None:
+            continue  # core not in any compacted segment
+        new_idx = remap.get(src.index)
+        if new_idx is not None:
+            sources.flat[i] = IRSource(node_id=src.node_id, index=new_idx)
+        else:
+            # Neuron was pruned — replace with off-source
+            sources.flat[i] = IRSource(node_id=-1, index=0)
+
+
 def _flush_neural_segment(
     *,
     current_neural: list[NeuralCore],
@@ -200,13 +237,20 @@ def _flush_neural_segment(
     shared_pool: list[HardCore],
     weight_banks: dict,
     name: str,
-) -> HybridStage:
+) -> tuple[HybridStage, dict[int, dict[int, int]]]:
     """Pack a neural segment using cores drawn from *shared_pool*.
 
     ``consumed_by`` is the pre-scanned map of *node_id → set of consumer
     node_ids* over the full IR graph.  It is used to determine which
     segment-internal nodes need to appear in the segment's output buffer
     (i.e. those consumed by any node *outside* this segment).
+
+    Returns:
+        (stage, reindex_maps) where reindex_maps is
+        ``{core_id: {old_neuron_idx: new_neuron_idx}}`` from compaction.
+        Callers must apply these maps to any external references that
+        point into this segment's cores (e.g. final output_sources,
+        ComputeOp input_sources).
     """
     segment_node_ids = {n.id for n in current_neural}
 
@@ -240,7 +284,7 @@ def _flush_neural_segment(
 
     # Compact soft cores: remove all-zero rows/columns and reindex spans so
     # hardware mapping shows only utilized structure (pruning reflected).
-    compact_soft_core_mapping(soft.cores, soft.output_sources)
+    reindex_maps = compact_soft_core_mapping(soft.cores, soft.output_sources)
 
     # Rebuild output_map from compacted output sizes
     output_map = []
@@ -262,7 +306,7 @@ def _flush_neural_segment(
         hard_core_mapping=hard,
         input_map=input_map,
         output_map=output_map,
-    )
+    ), reindex_maps
 
 
 def build_hybrid_hard_core_mapping(
@@ -294,6 +338,10 @@ def build_hybrid_hard_core_mapping(
     stages: list[HybridStage] = []
     shared_pool: list[HardCore] = _make_available_hardware_cores(cores_config)
 
+    # Collect compaction reindex maps from all segments so we can fix up
+    # external references (final output_sources, ComputeOp input_sources).
+    all_reindex_maps: dict[int, dict[int, int]] = {}
+
     current_neural: list[NeuralCore] = []
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
@@ -302,7 +350,11 @@ def build_hybrid_hard_core_mapping(
 
         if isinstance(node, ComputeOp):
             if current_neural:
-                stage = _flush_neural_segment(
+                # Apply accumulated reindex maps to nodes' input_sources so
+                # references to previously-compacted cores use correct indices.
+                if all_reindex_maps:
+                    current_neural = _reindex_nodes(current_neural, all_reindex_maps)
+                stage, seg_reindex = _flush_neural_segment(
                     current_neural=current_neural,
                     consumed_by=consumed_by,
                     shared_pool=shared_pool,
@@ -310,15 +362,22 @@ def build_hybrid_hard_core_mapping(
                     name=f"neural_segment_until:{node.name}",
                 )
                 stages.append(stage)
+                all_reindex_maps.update(seg_reindex)
                 current_neural = []
 
-            stages.append(HybridStage(kind="compute", name=node.name, compute_op=copy.deepcopy(node)))
+            # Apply compaction reindex to ComputeOp input_sources so they
+            # reference the compacted neuron indices in the state buffer.
+            op_copy = copy.deepcopy(node)
+            _apply_reindex_to_ir_sources(op_copy.input_sources, all_reindex_maps)
+            stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
             continue
 
         raise TypeError(f"Unknown IR node type in hybrid compilation: {type(node)}")
 
     if current_neural:
-        stage = _flush_neural_segment(
+        if all_reindex_maps:
+            current_neural = _reindex_nodes(current_neural, all_reindex_maps)
+        stage, seg_reindex = _flush_neural_segment(
             current_neural=current_neural,
             consumed_by=consumed_by,
             shared_pool=shared_pool,
@@ -326,11 +385,16 @@ def build_hybrid_hard_core_mapping(
             name="neural_segment_final",
         )
         stages.append(stage)
+        all_reindex_maps.update(seg_reindex)
 
     if not stages:
         raise ValueError("Cannot build HybridHardCoreMapping: IRGraph has no stages.")
 
+    # Apply compaction reindex to final output_sources.
+    output_sources = ir_graph.output_sources.copy()
+    _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
+
     return HybridHardCoreMapping(
         stages=stages,
-        output_sources=ir_graph.output_sources.copy(),
+        output_sources=output_sources,
     )

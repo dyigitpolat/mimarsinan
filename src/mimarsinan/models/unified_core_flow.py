@@ -37,6 +37,33 @@ from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore, WeightBank
 from mimarsinan.mapping.ir_source_spans import IRSourceSpan, compress_ir_sources
 
 
+def _ttfs_activation_from_type(activation_type: str | None):
+    """Resolve activation function for TTFS from IR activation_type string.
+
+    activation_type may be a compound string from TransformedActivation, e.g.
+    "LeakyReLU + ClampDecorator, QuantizeDecorator". We use only the base name
+    (before " + ") and map to torch.nn.functional: LeakyReLU -> leaky_relu,
+    ReLU -> relu, GELU -> gelu. Falls back to relu if unknown or lookup fails.
+    """
+    if activation_type is None or (isinstance(activation_type, str) and activation_type.strip() in ("", "ReLU")):
+        return F.relu
+    base = activation_type.split(" + ")[0].strip()
+    name_map = {
+        "LeakyReLU": "leaky_relu",
+        "LeakyGradReLU": "relu",  # LeakyGradReLU.forward is pure ReLU; leaky only in backward
+        "ReLU": "relu",
+        "GELU": "gelu",
+        "Identity": "identity",
+    }
+    f_name = name_map.get(base, "relu")
+    if f_name == "identity":
+        return lambda x: x
+    try:
+        return getattr(F, f_name)
+    except AttributeError:
+        return F.relu
+
+
 class SpikingUnifiedCoreFlow(nn.Module):
     """
     Spiking version of UnifiedCoreFlow.
@@ -512,17 +539,10 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 if node.id in self._hw_bias_params:
                     out = out + self._hw_bias_params[node.id]
 
-                # Apply activation: default to ReLU when activation_type is
-                # None or 'ReLU' (backward compat — the original TTFS flow
-                # always applied ReLU unconditionally).
-                if node.activation_type is None or node.activation_type == 'ReLU':
-                    out = F.relu(out)
-                else:
-                    try:
-                        act_fn = getattr(F, node.activation_type.lower())
-                        out = act_fn(out)
-                    except AttributeError:
-                        out = F.relu(out)
+                # Apply activation: resolve from activation_type (may be compound
+                # string e.g. "LeakyReLU + ClampDecorator, QuantizeDecorator").
+                act_fn = _ttfs_activation_from_type(node.activation_type)
+                out = act_fn(out)
                 
                 out = out / threshold
 

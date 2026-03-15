@@ -40,6 +40,8 @@ def check_representability(
         A ``RepresentabilityReport`` describing what is and isn't supported.
     """
     gm = trace_model(model, input_shape, device=device)
+    from mimarsinan.torch_mapping.graph_normalization import normalize_fx_graph
+    gm = normalize_fx_graph(gm)
     analyzer = RepresentabilityAnalyzer(gm)
     return analyzer.analyze()
 
@@ -77,6 +79,9 @@ def convert_torch_model(
     device = torch.device(device)
 
     gm = trace_model(model, input_shape, device=device)
+
+    from mimarsinan.torch_mapping.graph_normalization import normalize_fx_graph
+    gm = normalize_fx_graph(gm)
 
     analyzer = RepresentabilityAnalyzer(gm)
     report = analyzer.analyze()

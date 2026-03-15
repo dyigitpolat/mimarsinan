@@ -46,7 +46,7 @@ class HardCoreMappingStep(PipelineStep):
         
         # Run a spiking simulation test to verify the hard-core mapping
         try:
-            preprocessor = nn.Sequential(model.get_preprocessor(), model.in_act)
+            preprocessor = model.get_preprocessor()
             flow = SpikingHybridCoreFlow(
                 self.pipeline.config["input_shape"],
                 hybrid_mapping,

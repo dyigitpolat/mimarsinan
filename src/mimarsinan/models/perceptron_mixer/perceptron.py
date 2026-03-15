@@ -12,6 +12,7 @@ ACTIVATION_REGISTRY = {
     "ReLU": LeakyGradReLU,
     "LeakyReLU": nn.LeakyReLU,
     "GELU": nn.GELU,
+    "Identity": nn.Identity,
 }
 
 

@@ -15,6 +15,19 @@ if TYPE_CHECKING:
 
 
 class ConvConvertMixin:
+    @staticmethod
+    def _conv_activation_to_name(act_mod) -> str | None:
+        """Map a PyTorch activation module to a Perceptron activation name string."""
+        if act_mod is None:
+            return None
+        if isinstance(act_mod, nn.ReLU):
+            return "ReLU"
+        if isinstance(act_mod, nn.LeakyReLU):
+            return "LeakyReLU"
+        if isinstance(act_mod, nn.GELU):
+            return "GELU"
+        return None
+
     def _convert_conv2d(
         self,
         node: fx.Node,
@@ -23,6 +36,10 @@ class ConvConvertMixin:
         report: RepresentabilityReport,
     ) -> None:
         bn_mod = self._find_absorbed_follower(node, (nn.BatchNorm2d,), report)
+        act_mod = self._find_absorbed_follower(
+            node, (nn.ReLU, nn.LeakyReLU, nn.GELU), report, skip_bn=True
+        )
+        act_name = self._conv_activation_to_name(act_mod) or "Identity"
 
         conv_mapper = Conv2DPerceptronMapper(
             source,
@@ -34,6 +51,7 @@ class ConvConvertMixin:
             dilation=mod.dilation,
             bias=mod.bias is not None,
             use_batchnorm=bn_mod is not None,
+            base_activation_name=act_name,
             name=node.name,
         )
 
@@ -60,6 +78,10 @@ class ConvConvertMixin:
         from mimarsinan.mapping.mapping_utils import Conv1DPerceptronMapper
 
         bn_mod = self._find_absorbed_follower(node, (nn.BatchNorm1d,), report)
+        act_mod = self._find_absorbed_follower(
+            node, (nn.ReLU, nn.LeakyReLU, nn.GELU), report, skip_bn=True
+        )
+        act_name = self._conv_activation_to_name(act_mod) or "Identity"
 
         conv_mapper = Conv1DPerceptronMapper(
             source,
@@ -71,6 +93,7 @@ class ConvConvertMixin:
             dilation=mod.dilation[0],
             bias=mod.bias is not None,
             use_batchnorm=bn_mod is not None,
+            base_activation_name=act_name,
             name=node.name,
         )
 

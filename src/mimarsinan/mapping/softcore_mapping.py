@@ -16,6 +16,9 @@ def compact_soft_core_mapping(cores, output_sources):
     does not use parameter values to detect zeros. Modifies each core's core_matrix
     and axon_sources in place, and replaces output_sources so neuron indices match
     the compacted layout.
+
+    Returns:
+        reindex_maps: dict[int, dict[int, int]] — core_id → {old_neuron_idx: new_neuron_idx}
     """
     import os
     reindex_maps = {}  # core_id -> {old_neuron_idx: new_neuron_idx}
@@ -109,6 +112,8 @@ def compact_soft_core_mapping(cores, output_sources):
         )
     output_sources.clear()
     output_sources.extend(new_out)
+
+    return reindex_maps
 
 
 class SoftCore:

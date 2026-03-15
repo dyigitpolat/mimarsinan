@@ -5,6 +5,42 @@ from __future__ import annotations
 import torch.nn as nn
 
 
+def resolve_activation_type(perceptron) -> str | None:
+    """Extract the activation_type string from a perceptron for IR metadata.
+
+    Handles both plain activations (nn.ReLU, nn.Identity, etc.) and
+    TransformedActivation wrappers (from AdaptationManager).  Returns a
+    string like ``"LeakyGradReLU"`` or ``"Identity + ClampDecorator"``.
+    """
+    activation = getattr(perceptron, "activation", None)
+    if activation is None:
+        return None
+    activation_type = type(activation).__name__
+    if hasattr(activation, "base_activation") and hasattr(activation, "decorators"):
+        base = getattr(activation, "base_activation", None)
+        base_name = type(base).__name__ if base is not None else "Activation"
+        decorators = getattr(activation, "decorators", []) or []
+        decorator_names = [type(d).__name__ for d in decorators]
+        activation_type = (
+            f"{base_name} + {', '.join(decorator_names)}" if decorator_names else base_name
+        )
+    return activation_type
+
+
+# Activations that the SNN chip's NeuralCore crossbar can implement.
+# Layers with other activations (Identity, GELU, etc.) become ComputeOps.
+CHIP_SUPPORTED_ACTIVATIONS = {"LeakyGradReLU", "ReLU", "LeakyReLU"}
+
+
+def is_chip_supported_activation(perceptron) -> bool:
+    """Check if a perceptron's base activation can run on a NeuralCore crossbar."""
+    act_type = resolve_activation_type(perceptron)
+    if act_type is None:
+        return True  # default (ReLU) is supported
+    base = act_type.split(" + ")[0].strip()
+    return base in CHIP_SUPPORTED_ACTIVATIONS
+
+
 class Mapper(nn.Module):
     def __init__(self, source_mapper=None):
         super(Mapper, self).__init__()

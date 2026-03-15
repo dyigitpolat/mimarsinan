@@ -43,7 +43,7 @@ class LinearConvertMixin:
         )
 
         normalization = copy.deepcopy(bn_mod) if bn_mod is not None else nn.Identity()
-        act_name = self._activation_to_name(act_mod)
+        act_name = self._activation_to_name(act_mod) or "Identity"
 
         perceptron = Perceptron(
             output_channels=mod.out_features,

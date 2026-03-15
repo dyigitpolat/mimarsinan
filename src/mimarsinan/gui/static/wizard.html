@@ -288,15 +288,18 @@
       <!-- Right column: hardware, deployment, search strategy -->
       <div class="wizard-column wizard-column-right">
         <!-- Hardware ──────────────────────────────────────── -->
-        <div class="section" data-section="hardware">
+        <div class="section" data-section="hardware" id="hwSection">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-icon amber">⬢</div>
             <div class="section-title-group">
               <div class="section-title">Hardware Configuration</div>
               <div class="section-subtitle">Core types, dimensions, and quantization precision</div>
             </div>
+            <button class="btn-sm btn-hw-auto" id="hwAutoBtn" onclick="event.stopPropagation();autoFillHardware()" title="Auto-suggest hardware based on model settings">Auto</button>
             <span class="section-chevron">▾</span>
           </div>
+          <!-- Validation banner: shown when HW config cannot satisfy model requirements -->
+          <div id="hwValidationBanner" class="hw-validation-banner hide"></div>
           <div class="section-body">
             <div class="field" style="margin-bottom:14px">
               <label class="field-label">Hardware Config Mode</label>

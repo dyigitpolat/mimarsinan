@@ -17,8 +17,9 @@ class Supermodel(nn.Module):
             ])
 
     def forward(self, x):
+        # Apply input activation only once: preprocessor (e.g. InputCQ) already
+        # includes clamp+quant; applying in_act again would double-quantize.
         out = self.preprocessor(x)
-        out = self.in_act(out)
         out = self.perceptron_flow(out)
         return out
     

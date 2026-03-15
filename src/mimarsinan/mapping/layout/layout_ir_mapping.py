@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 import zlib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
@@ -43,6 +43,11 @@ class LayoutIRMapping:
         # Dependency tracking for latency computation
         self._node_input_node_ids: Dict[int, Set[int]] = {}
         self._node_id_to_softcore_idx: Dict[int, int] = {}
+
+        # Weight bank registry for conv-style shared-weight cores
+        self._next_bank_id: int = 0
+        # bank_id -> (in_features_with_bias, out_features)
+        self._layout_weight_banks: Dict[int, Tuple[int, int]] = {}
 
     def _alloc_node_id(self) -> int:
         node_id = self._next_node_id
@@ -184,6 +189,23 @@ class LayoutIRMapping:
 
         return output_sources
 
+    def add_linear_compute_op(
+        self,
+        input_sources: np.ndarray,
+        weights,
+        biases=None,
+        name: str | None = None,
+    ) -> np.ndarray:
+        """Host-side linear ComputeOp — layout pass only needs output shape."""
+        w = np.asarray(weights)
+        out_features = w.shape[0]
+        return self.add_compute_op(
+            input_sources=np.array(input_sources, dtype=object).flatten(),
+            op_type="linear",
+            output_shape=(out_features,),
+            name=name or "linear_compute",
+        )
+
     def add_neural_core(
         self,
         *,
@@ -286,7 +308,63 @@ class LayoutIRMapping:
             output_count=out_features,
             name=name,
             input_sources=src_arr,
-        ).reshape(tuple(output_shape))
+        )
+
+    def register_weight_bank(
+        self,
+        weights: Any,
+        biases: Any = None,
+        **kwargs,
+    ) -> int:
+        """Register a shared weight bank (shape-only) and return its bank ID.
+
+        Used by Conv2DPerceptronMapper._map_to_ir so that layout estimation
+        works for convolutional models without requiring actual weight tensors.
+        """
+        bank_id = self._next_bank_id
+        self._next_bank_id += 1
+
+        w_shape = getattr(weights, "shape", None)
+        if w_shape is not None:
+            out_features = int(w_shape[0])
+            in_features = int(w_shape[1])
+        else:
+            out_features = 1
+            in_features = 1
+
+        has_bias = biases is not None
+        in_features_with_bias = in_features + (1 if has_bias else 0)
+
+        self._layout_weight_banks[bank_id] = (in_features_with_bias, out_features)
+        return bank_id
+
+    def add_shared_neural_core(
+        self,
+        *,
+        input_sources: Any,
+        weight_bank_id: int,
+        has_bias: bool = True,
+        name: Optional[str] = None,
+        **kwargs,
+    ) -> np.ndarray:
+        """Add a shared-weight neural core (shape-only) for conv positions.
+
+        Each call corresponds to one spatial position in a conv layer.
+        """
+        bank_shape = self._layout_weight_banks.get(weight_bank_id)
+        if bank_shape is None:
+            raise ValueError(f"Unknown weight_bank_id={weight_bank_id}")
+        in_features_with_bias, out_features = bank_shape
+
+        src_arr = np.array(input_sources, dtype=object).flatten()
+        in_count = int(src_arr.shape[0]) + (1 if has_bias else 0)
+
+        return self._emit_core(
+            input_count=in_count,
+            output_count=out_features,
+            name=name,
+            input_sources=src_arr,
+        )
 
     def collect_layout_softcores(self, model_representation) -> List[LayoutSoftCoreSpec]:
         """
