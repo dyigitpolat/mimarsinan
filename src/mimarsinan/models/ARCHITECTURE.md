@@ -14,6 +14,7 @@ and architecture-specific implementations.
 | `unified_core_flow.py` | `_ttfs_activation_from_type`, `SpikingUnifiedCoreFlow`, `StableSpikingUnifiedCoreFlow` | Helper `_ttfs_activation_from_type` resolves IR `activation_type` (including compound strings like "LeakyReLU + ClampDecorator, QuantizeDecorator") to `F.relu`/`F.leaky_relu`/`F.gelu`. Spiking simulator supports `NeuralCore.hardware_bias` in all forward paths (rate-coded, TTFS continuous, TTFS quantized). |
 | `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | PyTorch-based spiking simulator for `HybridHardCoreMapping`. Supports `HardCore.hardware_bias` in both rate-coded (bias added every cycle) and TTFS (bias added before activation/threshold) paths. |
 | `torch_mlp_mixer.py` | `TorchMLPMixer` | Native PyTorch MLP-Mixer (plain `nn.Module`) for torch_mapping conversion |
+| `torch_mlp_mixer_core.py` | `TorchMLPMixerCore`, `_TokenMixerCore`, `_ChannelMixerCore` | MLP-Mixer variant with activation after every FC so all mixer layers package as chip perceptrons |
 | `mlp_mixer_ref.py` | `MLPMixer` | Reference MLP-Mixer (not used in pipeline) |
 
 ### Subdirectories

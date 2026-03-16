@@ -1,5 +1,6 @@
 from .simple_mlp_builder import SimpleMLPBuilder
 from .torch_mlp_mixer_builder import TorchMLPMixerBuilder
+from .torch_mlp_mixer_core_builder import TorchMLPMixerCoreBuilder
 from .torch_vgg16_builder import TorchVGG16Builder
 from .torch_vit_builder import TorchViTBuilder
 from .torch_squeezenet11_builder import TorchSqueezeNet11Builder
@@ -10,6 +11,7 @@ from .torch_sequential_conv_builder import TorchSequentialConvBuilder
 # Canonical registry: model_type id -> builder class. Used by pipeline steps and wizard schema.
 BUILDERS_REGISTRY = {
     "mlp_mixer": TorchMLPMixerBuilder,
+    "mlp_mixer_core": TorchMLPMixerCoreBuilder,
     "simple_mlp": SimpleMLPBuilder,
     "torch_vgg16": TorchVGG16Builder,
     "torch_vit": TorchViTBuilder,
