@@ -6,6 +6,7 @@ import torch
 from types import SimpleNamespace
 
 from mimarsinan.mapping.ir import (
+    ComputeOp,
     IRGraph,
     IRSource,
     NeuralCore,
@@ -394,6 +395,20 @@ def _make_mock_perceptron(out_f: int, in_f: int, row_pruned_indices=None, col_pr
     return SimpleNamespace(layer=layer)
 
 
+def _make_mock_perceptron_1d(out_f: int, in_f: int, row_pruned=None, col_pruned=None):
+    """Build a mock perceptron with 1D prune_row_mask and prune_col_mask (True = pruned)."""
+    if row_pruned is None:
+        row_pruned = torch.zeros(out_f, dtype=torch.bool)
+    elif isinstance(row_pruned, (list, tuple)):
+        row_pruned = torch.tensor(row_pruned, dtype=torch.bool)
+    if col_pruned is None:
+        col_pruned = torch.zeros(in_f, dtype=torch.bool)
+    elif isinstance(col_pruned, (list, tuple)):
+        col_pruned = torch.tensor(col_pruned, dtype=torch.bool)
+    layer = SimpleNamespace(prune_row_mask=row_pruned, prune_col_mask=col_pruned)
+    return SimpleNamespace(layer=layer)
+
+
 class TestGetInitialPruningMasksFromModel:
     """Tests for order-based perceptron-to-node mapping when counts differ (tiled IR)."""
 
@@ -421,6 +436,55 @@ class TestGetInitialPruningMasksFromModel:
         r1, c1 = initial_node[1]
         assert len(r0) == 3 and len(c0) == 2
         assert len(r1) == 4 and len(c1) == 3
+
+    def test_provenance_path_with_perceptron_index_returns_masks(self):
+        """When perceptron_index is set on nodes, get_initial_pruning_masks_from_model uses provenance (H2/H4)."""
+        # Two cores with explicit perceptron_index (e.g. from assign_perceptron_indices)
+        src0 = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
+        core0 = NeuralCore(
+            id=0, name="c0", input_sources=src0, core_matrix=np.ones((3, 2)), threshold=1.0, latency=0,
+            perceptron_index=0,
+        )
+        src1 = _make_source_array([(-2, 0), (-2, 1), (-2, 2), (-3, 0)])
+        core1 = NeuralCore(
+            id=1, name="c1", input_sources=src1, core_matrix=np.ones((4, 3)), threshold=1.0, latency=0,
+            perceptron_index=1,
+        )
+        graph = IRGraph(nodes=[core0, core1], output_sources=_make_source_array([(1, 0), (1, 1), (1, 2)]))
+        # Perceptrons with 1D masks (preferred path)
+        p0 = _make_mock_perceptron_1d(2, 2)
+        p1 = _make_mock_perceptron_1d(3, 3)
+        model = SimpleNamespace(get_perceptrons=lambda: [p0, p1])
+
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(model, graph)
+        assert len(initial_node) == 2, "Provenance path should assign masks when perceptron_index is set"
+        assert 0 in initial_node and 1 in initial_node
+        r0, c0 = initial_node[0]
+        r1, c1 = initial_node[1]
+        assert len(r0) == 3 and len(c0) == 2
+        assert len(r1) == 4 and len(c1) == 3
+        assert len(initial_bank) == 0
+
+    def test_1to1_hardware_bias_fallback_returns_masks(self):
+        """1:1 fallback works when core matrix has no bias row (hardware_bias layout)."""
+        # Two cores with (in_f, out_f) — no bias row
+        src0 = _make_source_array([(-2, 0), (-2, 1)])
+        core0 = NeuralCore(id=0, name="c0", input_sources=src0, core_matrix=np.ones((2, 2)), threshold=1.0, latency=0)
+        src1 = _make_source_array([(-2, 0), (-2, 1), (-2, 2)])
+        core1 = NeuralCore(id=1, name="c1", input_sources=src1, core_matrix=np.ones((3, 3)), threshold=1.0, latency=0)
+        graph = IRGraph(nodes=[core0, core1], output_sources=_make_source_array([(1, 0), (1, 1), (1, 2)]))
+        p0 = _make_mock_perceptron_1d(2, 2)
+        p1 = _make_mock_perceptron_1d(3, 3)
+        model = SimpleNamespace(get_perceptrons=lambda: [p0, p1])
+
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(model, graph)
+        assert len(initial_node) == 2
+        assert 0 in initial_node and 1 in initial_node
+        r0, c0 = initial_node[0]
+        r1, c1 = initial_node[1]
+        assert len(r0) == 2 and len(c0) == 2
+        assert len(r1) == 3 and len(c1) == 3
+        assert len(initial_bank) == 0
 
     def test_tiled_one_perceptron_14_nodes(self):
         """Tiled IR (14 nodes, 1 perceptron): get_initial_pruning_masks returns empty so prune_ir_graph uses zero-threshold only."""
@@ -782,3 +846,76 @@ class TestSegmentIOExemption:
         # Node 0: input rows 0,1 exempt so 3 rows kept; output_buf empty so cols can be pruned -> (3, 1) or similar
         # Node 1 (output node): no init, so zero-threshold + exemption; output_buf {0,1} so both cols kept -> (3, 2)
         assert pruned.nodes[1].core_matrix.shape == (3, 2)
+
+    def test_segment_io_exemption_non_last_segment_output_cols_empty(self):
+        """NC -> ComputeOp -> NC: first core feeds next segment but is not in output_sources.
+        output_buffer_cols for the first core must be empty so compaction can prune columns."""
+        # Segment 1: core0 (id=0). Segment 2: core1 (id=2). ComputeOp (id=1) in between.
+        w0 = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float64)
+        src0 = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
+        core0 = NeuralCore(id=0, name="c0", input_sources=src0, core_matrix=w0.copy(), threshold=1.0, latency=0)
+        op_src = _make_source_array([(0, 0), (0, 1)])
+        compute_op = ComputeOp(
+            id=1,
+            name="op",
+            input_sources=op_src,
+            op_type="identity",
+        )
+        w1 = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
+        src1 = _make_source_array([(1, 0), (1, 1), (-3, 0)])  # from ComputeOp (node 1) and bias
+        core1 = NeuralCore(id=2, name="c1", input_sources=src1, core_matrix=w1.copy(), threshold=1.0, latency=1)
+        graph = IRGraph(
+            nodes=[core0, compute_op, core1],
+            output_sources=_make_source_array([(2, 0), (2, 1)]),  # only core1 is graph output
+        )
+        segments = get_neural_segments(graph)
+        assert len(segments) == 2, "ComputeOp splits into two segments"
+        assert len(segments[0]) == 1 and segments[0][0].id == 0
+        assert len(segments[1]) == 1 and segments[1][0].id == 2
+
+        in_buf, out_buf = compute_segment_io_exemption(graph)
+        assert out_buf[0] == set(), "Node 0 is not in output_sources; no last-segment output-buffer cols"
+        assert out_buf[2] == {0, 1}, "Node 2 feeds output_sources; both cols exempt"
+
+        # Prune column 1 of core0 via initial mask; exemption does not protect it -> compaction removes it
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={0: ([False, False, False], [False, True])},
+        )
+        pruned_core0 = pruned.nodes[0]
+        assert pruned_core0.core_matrix.shape[1] == 1, "Column 1 was pruned and not exempt; core0 compacted to 1 col"
+
+    def test_segment_io_exemption_non_graph_input_rows_can_compact(self):
+        """NC -> ComputeOp -> NC: second core's rows are from ComputeOp (not graph input).
+        input_buffer_rows for the second core must be empty so axon/row pruning compacts."""
+        # Segment 1: core0 (id=0). Segment 2: core1 (id=2). core1's rows from ComputeOp (1) and bias (-3).
+        w0 = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float64)
+        src0 = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
+        core0 = NeuralCore(id=0, name="c0", input_sources=src0, core_matrix=w0.copy(), threshold=1.0, latency=0)
+        op_src = _make_source_array([(0, 0), (0, 1)])
+        compute_op = ComputeOp(
+            id=1,
+            name="op",
+            input_sources=op_src,
+            op_type="identity",
+        )
+        w1 = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
+        src1 = _make_source_array([(1, 0), (1, 1), (-3, 0)])  # from ComputeOp and bias; no -2
+        core1 = NeuralCore(id=2, name="c1", input_sources=src1, core_matrix=w1.copy(), threshold=1.0, latency=1)
+        graph = IRGraph(
+            nodes=[core0, compute_op, core1],
+            output_sources=_make_source_array([(2, 0), (2, 1)]),
+        )
+        in_buf, out_buf = compute_segment_io_exemption(graph)
+        assert in_buf[0] == {0, 1}, "Node 0 has graph input rows (-2)"
+        assert in_buf[2] == set(), "Node 2 has no graph input rows; all rows from ComputeOp or bias"
+
+        # Prune row 0 of core1 via initial mask; exemption does not protect it -> row compaction
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={2: ([True, False, False], [False, False])},
+        )
+        pruned_core1 = pruned.nodes[2]
+        assert pruned_core1.core_matrix.shape[0] == 2, "Row 0 was pruned and not exempt; core1 compacted to 2 rows"
+        assert pruned_core1.core_matrix.shape[1] == 2
+        assert len(pruned_core1.input_sources.flatten()) == 2

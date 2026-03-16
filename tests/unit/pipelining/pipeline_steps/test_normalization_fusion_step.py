@@ -86,3 +86,37 @@ class TestNormalizationFusionStep:
         step.run()
         metric = step.validate()
         assert isinstance(metric, float)
+
+    def test_pruning_buffers_preserved_after_fusion(self, mock_pipeline):
+        """Fusion must preserve prune_row_mask and prune_col_mask so IR compaction can use model masks (H1)."""
+        model = make_tiny_supermodel()
+        # Find a perceptron with BatchNorm so fusion runs
+        perceptrons = model.get_perceptrons()
+        fused_idx = None
+        for i, p in enumerate(perceptrons):
+            if not isinstance(p.normalization, nn.Identity):
+                out_f = p.layer.weight.shape[0]
+                in_f = p.layer.weight.shape[1]
+                p.layer.register_buffer(
+                    "prune_row_mask",
+                    torch.zeros(out_f, dtype=torch.bool),
+                )
+                p.layer.register_buffer(
+                    "prune_col_mask",
+                    torch.zeros(in_f, dtype=torch.bool),
+                )
+                fused_idx = i
+                break
+        assert fused_idx is not None, "Fixture should have at least one BN layer"
+
+        step = self._make_step(mock_pipeline, model)
+        step.run()
+
+        fused_model = mock_pipeline.cache["NormFusion.model"]
+        p_fused = fused_model.get_perceptrons()[fused_idx]
+        assert hasattr(p_fused.layer, "prune_row_mask"), "prune_row_mask must be preserved"
+        assert hasattr(p_fused.layer, "prune_col_mask"), "prune_col_mask must be preserved"
+        assert p_fused.layer.prune_row_mask.dim() == 1
+        assert p_fused.layer.prune_col_mask.dim() == 1
+        assert p_fused.layer.prune_row_mask.shape[0] == p_fused.layer.weight.shape[0]
+        assert p_fused.layer.prune_col_mask.shape[0] == p_fused.layer.weight.shape[1]

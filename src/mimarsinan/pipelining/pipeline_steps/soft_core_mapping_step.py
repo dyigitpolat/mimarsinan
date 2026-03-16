@@ -219,6 +219,19 @@ class SoftCoreMappingStep(PipelineStep):
         # Use model pruning masks when available so compaction is driven by maps, not parameter values.
         if self.pipeline.config.get("pruning", False):
             from mimarsinan.mapping.ir_pruning import prune_ir_graph, get_initial_pruning_masks_from_model
+            # Diagnostic: confirm pruning buffers on model before mask extraction
+            try:
+                perceptrons_pre = model.get_perceptrons()
+                if perceptrons_pre:
+                    layer0 = getattr(perceptrons_pre[0], "layer", None)
+                    has_row = getattr(layer0, "prune_row_mask", None) is not None
+                    has_col = getattr(layer0, "prune_col_mask", None) is not None
+                    print(
+                        f"[SoftCoreMappingStep] Pruning: before mask extraction — first perceptron layer "
+                        f"prune_row_mask={has_row} prune_col_mask={has_col}"
+                    )
+            except Exception as e:
+                print(f"[SoftCoreMappingStep] Pruning: could not check first perceptron buffers: {e}")
             initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_graph)
             # Optional diagnostic: confirm pruning provenance when tiled
             try:
@@ -382,6 +395,14 @@ class SoftCoreMappingStep(PipelineStep):
         new_layer = nn.Linear(in_features, out_features)
         new_layer.weight.data = main_weights
         new_layer.bias.data = bias
+
+        # Preserve pruning buffers (e.g. prune_row_mask, prune_col_mask) so IR compaction can use model masks
+        for src in (fused_linear_layer, getattr(fused_linear_layer, "linear", None)):
+            if src is None:
+                continue
+            for buf_name, buf_val in src.named_buffers():
+                if not hasattr(new_layer, buf_name):
+                    new_layer.register_buffer(buf_name, buf_val.clone())
 
         return new_layer
 
