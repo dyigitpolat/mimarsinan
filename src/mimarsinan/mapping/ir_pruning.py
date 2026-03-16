@@ -111,7 +111,7 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             nr, nc = mat.shape
         except Exception:
             continue
-        # Bias row is last axon
+        # Bias row is last axon (when nr > in_f); when hardware_bias=True, nr == in_f
         ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)]
         if nr > in_f:
             ir_row_mask.append(False)  # bias
@@ -120,6 +120,13 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
         ir_col_mask = (ir_col_mask + [False] * nc)[:nc]
         if len(ir_row_mask) == nr and len(ir_col_mask) == nc:
             initial_pruned_per_node[node.id] = (ir_row_mask, ir_col_mask)
+        else:
+            import logging
+            logging.getLogger(__name__).debug(
+                "get_initial_pruning_masks_from_model: skip node_id=%s shape mismatch "
+                "nr=%s nc=%s len(ir_row_mask)=%s len(ir_col_mask)=%s",
+                node.id, nr, nc, len(ir_row_mask), len(ir_col_mask),
+            )
 
     # 2) Weight banks with perceptron_index
     for bank_id, bank in getattr(ir_graph, "weight_banks", {}).items():
@@ -143,7 +150,7 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
         if len(ir_row_mask) == n_axons and len(ir_col_mask) == n_neurons:
             initial_pruned_per_bank[bank_id] = (ir_row_mask, ir_col_mask)
 
-    # 3) Fallback: 1:1 order-based (no provenance)
+    # 3) Fallback: 1:1 order-based (no provenance). Support both legacy bias row (nr == in_f+1) and hardware_bias (nr == in_f).
     if len(initial_pruned_per_node) == 0 and len(initial_pruned_per_bank) == 0 and len(neural_cores) == len(perceptrons):
         for i, (node, p) in enumerate(zip(neural_cores, perceptrons)):
             row_pruned, col_pruned = _perceptron_masks(p)
@@ -153,13 +160,43 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             try:
                 mat = node.get_core_matrix(ir_graph)
                 nr, nc = mat.shape
-                if nr != in_f + 1 or nc != out_f:
-                    continue
             except Exception:
                 continue
-            ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)] + [False]
-            ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]
-            initial_pruned_per_node[node.id] = (ir_row_mask, ir_col_mask)
+            # Legacy: (axons, neurons) = (in_f+1, out_f); hardware_bias: (in_f, out_f)
+            if nr == in_f + 1 and nc == out_f:
+                ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)] + [False]
+                ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]
+            elif nr == in_f and nc == out_f:
+                ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)]
+                ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]
+            else:
+                continue
+            if len(ir_row_mask) == nr and len(ir_col_mask) == nc:
+                initial_pruned_per_node[node.id] = (ir_row_mask, ir_col_mask)
+
+    # Always-visible diagnostic when pruning is used (caller enables pruning)
+    n_node = len(initial_pruned_per_node)
+    n_bank = len(initial_pruned_per_bank)
+    n_cores = len(neural_cores)
+    n_perceptrons = len(perceptrons) if perceptrons else 0
+    n_with_provenance = sum(1 for n in neural_cores if getattr(n, "perceptron_index", None) is not None)
+    print(
+        f"[Pruning] get_initial_pruning_masks_from_model: neural_cores={n_cores} perceptrons={n_perceptrons} "
+        f"perceptron_index_set={n_with_provenance} -> initial_pruned_per_node={n_node} initial_pruned_per_bank={n_bank}"
+    )
+    if neural_cores and perceptrons and n_node == 0 and n_bank == 0:
+        p0 = perceptrons[0]
+        layer = getattr(p0, "layer", None)
+        has_1d = (
+            layer is not None
+            and getattr(layer, "prune_row_mask", None) is not None
+            and getattr(layer, "prune_col_mask", None) is not None
+        )
+        has_2d = layer is not None and getattr(layer, "prune_mask", None) is not None
+        print(
+            f"[Pruning] No model masks applied. First perceptron layer: prune_row_mask/prune_col_mask={has_1d} "
+            f"prune_mask={has_2d}. If both False, buffers were lost (H1/H5). If True, check provenance/shape (H2/H3/H4)."
+        )
 
     return initial_pruned_per_node, initial_pruned_per_bank
 
@@ -317,6 +354,16 @@ def prune_ir_graph(
                 remap[old_idx] = new_idx
                 new_idx += 1
         reindex_maps[node.id] = remap
+
+    # Diagnostic when no model masks were provided: report whether value-based pruning found anything
+    if not (initial_pruned_per_node or initial_pruned_per_bank):
+        total_r = sum(len(s) for s in pruned_rows.values())
+        total_c = sum(len(s) for s in pruned_neurons.values())
+        n_with_any = sum(1 for nid in pruned_rows if pruned_rows[nid] or pruned_neurons.get(nid, set()))
+        print(
+            f"[Pruning] prune_ir_graph: no model masks; value-based (zero_threshold): "
+            f"nodes_with_pruned_rc={n_with_any} total_pruned_rows={total_r} total_pruned_cols={total_c}"
+        )
 
     # Phase 2: rewire all sources
     def _rewire_sources(sources: np.ndarray) -> np.ndarray:
