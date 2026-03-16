@@ -24,9 +24,19 @@ class ConvertedModelFlow(PerceptronFlow):
         self.input_activation = nn.Identity()
         self._mapper_repr = mapper_repr
 
-        # Register all Perceptron modules so that .to(device), state_dict,
-        # parameters(), etc. work correctly.
-        self._perceptrons = nn.ModuleList(mapper_repr.get_perceptrons())
+        # Register ALL Perceptron modules (including non-chip-supported ones) so
+        # that .to(device), state_dict, parameters(), etc. work correctly.
+        # get_perceptrons() only returns chip-targeted perceptrons for pipeline
+        # steps, but ALL perceptrons need PyTorch module registration.
+        mapper_repr._ensure_exec_graph()
+        seen = set()
+        all_perceptrons = []
+        for node in mapper_repr._exec_order:
+            p = getattr(node, "perceptron", None)
+            if p is not None and id(p) not in seen:
+                seen.add(id(p))
+                all_perceptrons.append(p)
+        self._perceptrons = nn.ModuleList(all_perceptrons)
 
         # Also register any Conv/Pool mapper modules that own nn.Modules
         # (e.g. Conv2DPerceptronMapper owns a Perceptron registered above,

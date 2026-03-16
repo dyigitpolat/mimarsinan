@@ -143,7 +143,13 @@ class TestE2ENumericalAssurance:
         )
 
     def test_no_spurious_relu_on_final_layer(self, model_cls, input_shape, num_classes):
-        """Final perceptron must have Identity activation (not default ReLU)."""
+        """Final perceptron in the mapper graph must have Identity activation (not default ReLU).
+
+        get_perceptrons() only returns chip-targeted perceptrons, so we inspect
+        the mapper graph directly to verify the final layer has Identity activation.
+        """
+        from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+
         torch.manual_seed(42)
         model = model_cls()
         model.eval()
@@ -151,8 +157,14 @@ class TestE2ENumericalAssurance:
             model(torch.randn(2, *input_shape))
 
         supermodel = convert_torch_model(model, input_shape=input_shape, num_classes=num_classes)
-        perceptrons = supermodel.get_perceptrons()
-        last = perceptrons[-1]
+        mapper_repr = supermodel.perceptron_flow.get_mapper_repr()
+        mapper_repr._ensure_exec_graph()
+
+        perceptron_mappers = [
+            n for n in mapper_repr._exec_order if isinstance(n, PerceptronMapper)
+        ]
+        assert len(perceptron_mappers) >= 1, f"{model_cls.__name__}: no PerceptronMapper found"
+        last = perceptron_mappers[-1].perceptron
         assert last.base_activation_name == "Identity", (
             f"{model_cls.__name__}: final perceptron has activation "
             f"'{last.base_activation_name}' instead of 'Identity'. "

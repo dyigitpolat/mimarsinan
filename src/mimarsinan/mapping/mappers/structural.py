@@ -166,10 +166,17 @@ class AddMapper(Mapper):
         assert a_sources.shape == b_sources.shape
         n = a_sources.flatten().shape[0]
         all_sources = np.concatenate([a_sources.flatten(), b_sources.flatten()])
+        params = {"half_size": n}
+        scale_a = getattr(self, "_ir_add_scale_a", None)
+        scale_b = getattr(self, "_ir_add_scale_b", None)
+        if scale_a is not None:
+            params["scale_a"] = scale_a
+        if scale_b is not None:
+            params["scale_b"] = scale_b
         return ir_mapping.add_compute_op(
             input_sources=all_sources,
             op_type="add",
-            params={"half_size": n},
+            params=params,
             input_shape=(2, *a_sources.shape),
             output_shape=a_sources.shape,
             name="element_add",

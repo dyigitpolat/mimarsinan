@@ -14,7 +14,10 @@ TTFS mode implements the B1-model from:
 
 Two TTFS deployment modes (selected via ``spiking_mode``):
 
-  * **ttfs** (continuous) — exact analytical ``ReLU(W @ x + b) / θ``.
+  * **ttfs** (continuous) — analytical ``clamp(ReLU(W @ x + b) / θ, 0, 1)``
+    per NeuralCore; outputs clamped to ``[0, 1]`` to match hardware TTFS
+    (neurons fire at most once).  Inputs are not clamped because weight
+    matrices already incorporate ``per_input_scales`` normalization.
   * **ttfs_quantized** (analytical quantised) — closed-form computation
     that yields the exact same output as the cycle-based simulation
     but in O(N_cores) instead of O(max_latency * S * N_cores):
@@ -510,10 +513,19 @@ class SpikingUnifiedCoreFlow(nn.Module):
     # -----------------------------------------------------------------
     def _forward_ttfs_continuous(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Exact analytical TTFS: ``relu(W @ x + b) / θ`` per core.
+        Analytical TTFS continuous: ``clamp(relu(W @ x + b) / θ, 0, 1)`` per core.
+
+        Outputs are clamped to [0, 1] because TTFS neurons fire at most once —
+        V > θ fires immediately (rate 1), matching hardware behavior.
+
+        Inputs are NOT clamped: weight matrices already incorporate
+        ``per_input_scales`` (from ``compute_per_source_scales``) that normalize
+        ComputeOp outputs to the expected range.  Clamping inputs would corrupt
+        models with ComputeOp→NeuralCore paths (e.g. MLP-Mixer Identity layers).
 
         Single-pass over nodes in topological order.  ComputeOps are
-        applied directly on activations.
+        applied directly on activations (host-side ops preserve signed values;
+        final output is read unclamped for argmax).
         """
         batch_size = x.shape[0]
         device = x.device
@@ -543,8 +555,13 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 # string e.g. "LeakyReLU + ClampDecorator, QuantizeDecorator").
                 act_fn = _ttfs_activation_from_type(node.activation_type)
                 out = act_fn(out)
-                
+
                 out = out / threshold
+
+                # TTFS: a neuron fires at most once, so its output rate is in [0, 1].
+                # Hardware naturally clamps (V > θ fires immediately → rate 1).
+                # The analytical formula can exceed 1; clamp to match hardware.
+                out = out.clamp(0.0, 1.0)
 
                 activation_cache[node.id] = out
                 self._last_core_spike_counts[node.id] = 0.0

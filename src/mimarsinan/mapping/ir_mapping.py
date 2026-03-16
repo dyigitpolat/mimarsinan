@@ -78,10 +78,15 @@ class IRMapping:
     ) -> int:
         """Register a shared weight bank and return its ID.
 
-        The bank stores a ``core_matrix`` in the standard IR layout
-        ``(axons, neurons)``.  If ``biases`` is provided the matrix
-        includes an extra "always-on" axon row for the bias, matching
-        the convention of ``add_neural_core``.
+        When ``self.hardware_bias`` is True and biases are provided, the bias
+        is stored in ``WeightBank.hardware_bias`` (a plain vector) and the
+        core_matrix contains weights only — no extra always-on axon row.
+        Each NeuralCore that later references this bank via
+        ``add_shared_neural_core`` will receive a copy of that bias as its
+        own ``NeuralCore.hardware_bias``.
+
+        When ``self.hardware_bias`` is False (legacy), biases are appended as
+        the last row of core_matrix and an always-on source is wired in.
 
         perceptron_index: Optional index into model.get_perceptrons() for pruning provenance.
         """
@@ -92,14 +97,20 @@ class IRMapping:
         in_features = w.shape[1]
         out_features = w.shape[0]
 
+        core_matrix = np.zeros((in_features, out_features), dtype=float)
+        core_matrix[:, :] = w.T
+
+        bank_hw_bias = None
         if biases is not None:
             b = self._to_numpy(biases).flatten()
-            core_matrix = np.zeros((in_features + 1, out_features), dtype=float)
-            core_matrix[:in_features, :] = w.T
-            core_matrix[-1, :] = b
-        else:
-            core_matrix = np.zeros((in_features, out_features), dtype=float)
-            core_matrix[:, :] = w.T
+            if self.hardware_bias:
+                # Hardware-bias mode: keep core_matrix weights-only; store bias separately.
+                bank_hw_bias = b
+            else:
+                # Legacy always-on axon row mode.
+                core_matrix = np.zeros((in_features + 1, out_features), dtype=float)
+                core_matrix[:in_features, :] = w.T
+                core_matrix[-1, :] = b
 
         self._weight_banks[bank_id] = WeightBank(
             id=bank_id,
@@ -108,6 +119,7 @@ class IRMapping:
             parameter_scale=parameter_scale,
             input_activation_scale=input_activation_scale,
             perceptron_index=perceptron_index,
+            hardware_bias=bank_hw_bias,
         )
         return bank_id
 
@@ -341,20 +353,30 @@ class IRMapping:
         ir_input_sources = self._convert_sources(input_sources)
         ir_input_list = list(ir_input_sources.flatten())
 
-        if has_bias:
-            ir_input_list.append(IRSource(node_id=-3, index=0))
-
         out_features = bank.core_matrix.shape[1]
         if weight_row_slice is None:
             weight_row_slice = (0, out_features)
         else:
             out_features = weight_row_slice[1] - weight_row_slice[0]
 
+        # Determine bias mode.  When the bank carries a hardware_bias vector
+        # (set by register_weight_bank when hardware_bias=True) we copy (a
+        # slice of) it onto the NeuralCore and do NOT add an always-on axon.
+        # Otherwise fall back to the legacy always-on axon row.
+        node_hw_bias = None
+        if has_bias:
+            if bank.hardware_bias is not None:
+                start, end = weight_row_slice
+                node_hw_bias = bank.hardware_bias[start:end]
+            else:
+                ir_input_list.append(IRSource(node_id=-3, index=0))
+
         neural_core = NeuralCore(
             id=node_id,
             name=name or f"neural_core_{node_id}",
             input_sources=np.array(ir_input_list),
             core_matrix=None,
+            hardware_bias=node_hw_bias,
             threshold=1.0,
             activation_scale=bank.activation_scale,
             parameter_scale=bank.parameter_scale,

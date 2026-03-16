@@ -41,17 +41,22 @@ class WeightBank:
     the kernel ``h_out * w_out`` times in the IR and in simulation.
 
     The ``core_matrix`` stored here has the same layout as
-    ``NeuralCore.core_matrix``: shape ``(axons, neurons)`` — i.e. the
-    transposed weight matrix with an optional bias row appended as the
-    last axon.
+    ``NeuralCore.core_matrix``: shape ``(axons, neurons)`` — weights only,
+    no bias row.  When ``hardware_bias`` is set, each NeuralCore that
+    references this bank receives a copy (or slice) of that array as its
+    own ``hardware_bias`` at construction time.
     """
     id: int
-    core_matrix: np.ndarray  # (axons, neurons) — the shared weight block
+    core_matrix: np.ndarray  # (axons, neurons) — weights only, no bias row
     activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     # Pruning provenance: index into model.get_perceptrons() when this bank backs a single perceptron
     perceptron_index: int | None = None
+    # Hardware-bias mode: bias vector shared across all cores that reference this bank.
+    # When set, add_shared_neural_core copies (a slice of) this into NeuralCore.hardware_bias
+    # instead of appending an always-on axon row.
+    hardware_bias: np.ndarray | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -470,10 +475,19 @@ class ComputeOp(IRNode):
         Element-wise addition of two source tensors.
 
         Input is the concatenation of A and B, so x has shape (B, 2*N).
+        When scale_a / scale_b are present (set by compute_per_source_scales
+        when the two branches have different activation scales), the output is
+        scale_a * a + scale_b * b = (A_full + B_full) / s_combined.
         """
         half = self.params["half_size"]
         a = x[:, :half]
         b = x[:, half:]
+        scale_a = self.params.get("scale_a", None)
+        scale_b = self.params.get("scale_b", None)
+        if scale_a is not None and scale_b is not None:
+            sa = torch.tensor(scale_a, dtype=x.dtype, device=x.device).unsqueeze(0)
+            sb = torch.tensor(scale_b, dtype=x.dtype, device=x.device).unsqueeze(0)
+            return sa * a + sb * b
         return a + b
 
     def _exec_mean(self, x: torch.Tensor) -> torch.Tensor:

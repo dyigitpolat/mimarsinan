@@ -186,6 +186,8 @@ class SoftCoreMappingStep(PipelineStep):
                             scale_used = bank_scale_used[node.weight_bank_id]
                             node.threshold = scale_used
                             node.parameter_scale = torch.tensor(1.0)
+                            if node.hardware_bias is not None:
+                                node.hardware_bias = node.hardware_bias * scale_used
                     else:
                         ps = float(
                             node.parameter_scale.item()
@@ -203,6 +205,11 @@ class SoftCoreMappingStep(PipelineStep):
                         node.core_matrix = W_q
                         node.threshold = scale
                         node.parameter_scale = torch.tensor(1.0)
+                        # Scale hardware_bias by the same factor as the weights so that
+                        # act(W_q @ inp + b_hw) / threshold = act(W_eff @ inp + b_eff).
+                        # Without this, b_eff is effectively divided by `scale` (≈127 for 8-bit).
+                        if node.hardware_bias is not None:
+                            node.hardware_bias = node.hardware_bias * scale
 
         # Calculate latencies for all neural cores in the IR graph
         max_latency = IRLatency(ir_graph).calculate()

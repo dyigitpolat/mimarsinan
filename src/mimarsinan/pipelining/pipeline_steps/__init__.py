@@ -3,6 +3,7 @@ from .model_configuration_step import ModelConfigurationStep
 from .model_building_step import ModelBuildingStep
 from .pretraining_step import PretrainingStep
 from .activation_analysis_step import ActivationAnalysisStep
+from .activation_adaptation_step import ActivationAdaptationStep
 from .clamp_adaptation_step import ClampAdaptationStep
 from .activation_shift_step import ActivationShiftStep
 from .activation_quantization_step import ActivationQuantizationStep

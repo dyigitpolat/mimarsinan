@@ -1,40 +1,11 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
+from mimarsinan.pipelining.pipeline_steps.activation_utils import needs_clamp_adaptation
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 
 import torch.nn as nn
-
-
-# Base activation types that produce non-negative outputs and are
-# compatible with the chip's hardcoded ReLU.  Models using only these
-# activations do not need clamp adaptation.
-_RELU_COMPATIBLE_TYPES = (
-    "LeakyGradReLU",  # forward is pure ReLU; leaky only in backward
-    "ReLU",
-)
-
-
-# Activations that become host-side ComputeOps — no adaptation needed.
-_HOST_SIDE_TYPES = ("Identity",)
-
-
-def _needs_clamp_adaptation(model) -> bool:
-    """Check whether any chip-targeted perceptron needs clamp adaptation.
-
-    Identity/GELU perceptrons become ComputeOps (host-side) and need no
-    adaptation. Only chip-targeted perceptrons with non-ReLU activations
-    (unlikely after correct packaging) would need clamping.
-    """
-    for p in model.get_perceptrons():
-        base = p.base_activation
-        name = type(base).__name__
-        if name in _HOST_SIDE_TYPES:
-            continue  # runs on host, no clamping needed
-        if name not in _RELU_COMPATIBLE_TYPES:
-            return True  # chip-targeted but not ReLU-compatible
-    return False
 
 
 class ClampAdaptationStep(PipelineStep):
@@ -57,7 +28,7 @@ class ClampAdaptationStep(PipelineStep):
         model = self.get_entry('model')
         adaptation_manager = self.get_entry("adaptation_manager")
 
-        if not _needs_clamp_adaptation(model):
+        if not needs_clamp_adaptation(model):
             # All activations are already ReLU-compatible — just set
             # clamp_rate=1 and apply scales (no tuning needed).
             adaptation_manager.clamp_rate = 1.0

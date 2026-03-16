@@ -192,7 +192,10 @@ class TestConversion:
         )
         assert supermodel is not None
         perceptrons = supermodel.get_perceptrons()
-        assert len(perceptrons) >= 2
+        # get_perceptrons() returns only chip-targeted (non-Identity) perceptrons.
+        # SimpleMLP has one ReLU hidden layer and one Identity final layer;
+        # the Identity final layer is excluded from get_perceptrons().
+        assert len(perceptrons) >= 1
 
     def test_convert_mlp_with_bn(self):
         model = MLPWithBN(in_features=16, hidden=32, out_features=10)
@@ -205,7 +208,8 @@ class TestConversion:
             model, input_shape=(16,), num_classes=10
         )
         perceptrons = supermodel.get_perceptrons()
-        assert len(perceptrons) >= 2
+        # Only chip-targeted perceptrons; the Identity final layer is excluded.
+        assert len(perceptrons) >= 1
 
         has_bn = any(
             not isinstance(p.normalization, nn.Identity)
@@ -221,7 +225,8 @@ class TestConversion:
         )
         assert supermodel is not None
         perceptrons = supermodel.get_perceptrons()
-        assert len(perceptrons) == 2
+        # Only chip-targeted perceptrons; Identity final layer is excluded.
+        assert len(perceptrons) == 1
         x = torch.randn(2, 1, 28, 28)
         out = supermodel(x)
         assert out.shape == (2, 10)
@@ -237,7 +242,8 @@ class TestConversion:
         )
         assert supermodel is not None
         perceptrons = supermodel.get_perceptrons()
-        assert len(perceptrons) >= 2
+        # Only chip-targeted perceptrons; Identity final layer is excluded.
+        assert len(perceptrons) >= 1
 
     def test_convert_residual(self):
         model = ResidualBlock(features=16, num_classes=10)
@@ -294,7 +300,8 @@ class TestConvertedModelFlow:
         supermodel = convert_torch_model(model, input_shape=(16,), num_classes=10)
         flow = supermodel.perceptron_flow
         assert isinstance(flow, ConvertedModelFlow)
-        assert len(flow.get_perceptrons()) >= 2
+        # get_perceptrons() returns only chip-targeted (non-Identity) perceptrons.
+        assert len(flow.get_perceptrons()) >= 1
 
     def test_get_mapper_repr(self):
         model = SimpleMLP(in_features=16)

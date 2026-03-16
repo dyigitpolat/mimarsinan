@@ -27,9 +27,14 @@ def resolve_activation_type(perceptron) -> str | None:
     return activation_type
 
 
-# Activations that the SNN chip's NeuralCore crossbar can implement.
-# Layers with other activations (Identity, GELU, etc.) become ComputeOps.
+# Activations that the SNN chip's NeuralCore crossbar can implement natively.
 CHIP_SUPPORTED_ACTIVATIONS = {"LeakyGradReLU", "ReLU", "LeakyReLU"}
+
+# Activations that are host-side pass-throughs: the layer has no real nonlinearity
+# and cannot be packaged as a chip perceptron even after adaptation.
+# Non-Identity activations (including GELU) are chip-targeted and can be
+# adapted to a chip-supported form (e.g. GELU → ReLU) before IR mapping.
+HOST_SIDE_ACTIVATIONS = {"Identity"}
 
 
 def is_chip_supported_activation(perceptron) -> bool:
