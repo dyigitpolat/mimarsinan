@@ -8,9 +8,9 @@ weight matrices.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results |
+| `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results. `LayoutHardCoreInstance.softcore_count` tracks placements; `LayoutPackingResult.used_core_softcore_counts` exposes per-core occupancy. |
 | `layout_ir_mapping.py` | `LayoutIRMapping` | Collects `LayoutSoftCoreSpec`s from mapper graph traversal (shape only, no weights) |
-| `layout_packer.py` | `pack_layout` | Packs layout softcores into layout hardcores using `greedy_pack_softcores` |
+| `layout_packer.py` | `pack_layout` | Packs layout softcores into layout hardcores using `greedy_pack_softcores`; successful result includes `used_core_softcore_counts`. |
 
 ## Dependencies
 

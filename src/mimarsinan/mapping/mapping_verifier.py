@@ -168,24 +168,23 @@ def verify_hardware_config(
     max_req_axons = max(sc.input_count for sc in softcores)
     max_req_neurons = max(sc.output_count for sc in softcores)
 
-    # Build LayoutHardCoreType list and check per-type feasibility
+    # Build LayoutHardCoreType list and check feasibility of dimensions.
+    # With multiple core types, at least one type must fit the largest softcore.
     hw_types: List[LayoutHardCoreType] = []
+    at_least_one_covers_largest = False
     for i, ct in enumerate(core_types):
         ax = int(ct.get("max_axons", 0))
         neu = int(ct.get("max_neurons", 0))
         cnt = int(ct.get("count", 0))
         hw_types.append(LayoutHardCoreType(max_axons=ax, max_neurons=neu, count=cnt))
+        if ax >= max_req_axons and neu >= max_req_neurons:
+            at_least_one_covers_largest = True
 
-        if ax < max_req_axons:
-            field_errors[f"core_type_{i}_max_axons"] = (
-                f"Core type {i+1}: max_axons={ax} is too small. "
-                f"Need at least {max_req_axons} axons to accommodate the largest soft core."
-            )
-        if neu < max_req_neurons:
-            field_errors[f"core_type_{i}_max_neurons"] = (
-                f"Core type {i+1}: max_neurons={neu} is too small. "
-                f"Need at least {max_req_neurons} neurons to accommodate the largest soft core."
-            )
+    if not at_least_one_covers_largest:
+        field_errors["core_types"] = (
+            f"No core type fits the largest soft core ({max_req_axons} axons, {max_req_neurons} neurons). "
+            "At least one type must have max_axons and max_neurons >= these values."
+        )
 
     # Attempt greedy packing — this is the precise feasibility check.
     # (We do NOT pre-check total_count < len(softcores): multiple softcores can

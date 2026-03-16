@@ -53,7 +53,7 @@ class TestSuggestHardwareConfig:
     def test_non_empty_core_types(self):
         softcores = _make_uniform_softcores(5)
         result = suggest_hardware_config(softcores)
-        assert len(result.core_types) >= 1
+        assert len(result.core_types) == 2
         assert result.total_cores > 0
 
     def test_core_type_fields_present(self):
@@ -117,32 +117,40 @@ class TestSuggestHardwareConfig:
         for ct in r_no_bias.core_types:
             assert ct.get("has_bias") is False
 
-    def test_single_type_covers_all_sizes(self):
-        """Always produces a single core type whose dimensions cover every softcore."""
+    def test_two_types_cover_all_sizes(self):
+        """Always produces two core types; together they cover every softcore."""
         large_cores = [LayoutSoftCoreSpec(input_count=512, output_count=256, threshold_group_id=0)] * 3
         small_cores = [LayoutSoftCoreSpec(input_count=8, output_count=4, threshold_group_id=0)] * 10
         all_cores = large_cores + small_cores
         result = suggest_hardware_config(all_cores)
-        assert len(result.core_types) == 1
-        ct = result.core_types[0]
-        assert ct["max_axons"] >= 512
-        assert ct["max_neurons"] >= 256
+        assert len(result.core_types) == 2
+        # At least one type must fit the largest softcore (512, 256).
+        fits_large = any(
+            ct["max_axons"] >= 512 and ct["max_neurons"] >= 256
+            for ct in result.core_types
+        )
+        assert fits_large
 
-    def test_one_type_for_similar_sizes(self):
-        """When all softcores have similar sizes, a single type is optimal."""
+    def test_two_types_for_similar_sizes(self):
+        """When all softcores have similar sizes, still recommend two types (HxW and WxH)."""
         softcores = _make_softcores([(16, 8), (18, 10), (14, 9), (17, 8)])
         result = suggest_hardware_config(softcores)
-        assert len(result.core_types) == 1
+        assert len(result.core_types) == 2
 
     def test_granularity_rounding(self):
-        """Axon/neuron granularity should round dimensions up to nearest multiple."""
+        """Axon/neuron granularity: dimensions are multiples and at least one type covers the softcore."""
         softcores = [LayoutSoftCoreSpec(input_count=17, output_count=9, threshold_group_id=0)]
         result = suggest_hardware_config(softcores, axon_granularity=8, neuron_granularity=8)
+        assert len(result.core_types) == 2
         for ct in result.core_types:
             assert ct["max_axons"] % 8 == 0
             assert ct["max_neurons"] % 8 == 0
-            assert ct["max_axons"] >= 17
-            assert ct["max_neurons"] >= 9
+        # At least one type must fit (17, 9).
+        fits = any(
+            ct["max_axons"] >= 17 and ct["max_neurons"] >= 9
+            for ct in result.core_types
+        )
+        assert fits
 
     def test_rationale_non_empty(self):
         softcores = _make_uniform_softcores(5)
@@ -169,25 +177,25 @@ class TestSuggestHardwareConfig:
         )
 
     def test_suggested_count_passes_packing(self):
-        """Regression: suggested count must actually pass pack_layout at that exact count.
-        Old code used cores_used from a large pool which was optimistic; binary search fixes this."""
+        """Regression: suggested config must pass pack_layout at the suggested counts."""
         from mimarsinan.mapping.layout.layout_packer import pack_layout
         from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
 
         softcores = _make_uniform_softcores(50, axons=16, neurons=8)
         suggestion = suggest_hardware_config(softcores)
-        assert len(suggestion.core_types) == 1
-        ct = suggestion.core_types[0]
+        assert len(suggestion.core_types) == 2
 
-        hw_types = [LayoutHardCoreType(
-            max_axons=ct["max_axons"],
-            max_neurons=ct["max_neurons"],
-            count=ct["count"],
-        )]
+        hw_types = [
+            LayoutHardCoreType(
+                max_axons=ct["max_axons"],
+                max_neurons=ct["max_neurons"],
+                count=ct["count"],
+            )
+            for ct in suggestion.core_types
+        ]
         result = pack_layout(softcores=softcores, core_types=hw_types)
         assert result.feasible, (
-            f"Suggested count={ct['count']} failed packing for {len(softcores)} softcores: "
-            f"{result.error}"
+            f"Suggested config failed packing for {len(softcores)} softcores: {result.error}"
         )
 
     def test_suggested_count_consistent_with_verify(self):
@@ -210,28 +218,119 @@ class TestSuggestHardwareConfig:
         )
 
     def test_suggested_count_not_excessive(self):
-        """Suggested count should not be more than 3x the minimum feasible count."""
+        """Suggested total_cores should not be more than 3x the minimum feasible total."""
         from mimarsinan.mapping.layout.layout_packer import pack_layout
         from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
 
         softcores = _make_uniform_softcores(20, axons=8, neurons=4)
         suggestion = suggest_hardware_config(softcores, safety_margin=0.15)
-        ct = suggestion.core_types[0]
+        assert len(suggestion.core_types) == 2
 
-        # Find minimum feasible by binary search
+        def pack_feasible(total: int) -> bool:
+            c1, c2 = (total + 1) // 2, total // 2
+            hw = [
+                LayoutHardCoreType(
+                    max_axons=suggestion.core_types[0]["max_axons"],
+                    max_neurons=suggestion.core_types[0]["max_neurons"],
+                    count=max(1, c1),
+                ),
+                LayoutHardCoreType(
+                    max_axons=suggestion.core_types[1]["max_axons"],
+                    max_neurons=suggestion.core_types[1]["max_neurons"],
+                    count=max(1, c2),
+                ),
+            ]
+            return pack_layout(softcores=softcores, core_types=hw).feasible
+
         lo, hi = 1, len(softcores)
+        while not pack_feasible(hi):
+            hi *= 2
+            if hi > 10 * len(softcores):
+                break
         while lo < hi:
             mid = (lo + hi) // 2
-            hw = [LayoutHardCoreType(max_axons=ct["max_axons"], max_neurons=ct["max_neurons"], count=mid)]
-            if pack_layout(softcores=softcores, core_types=hw).feasible:
+            if pack_feasible(mid):
                 hi = mid
             else:
                 lo = mid + 1
         min_feasible = lo
 
-        assert ct["count"] <= min_feasible * 3, (
-            f"Suggested count {ct['count']} seems excessive for min_feasible={min_feasible}"
+        assert suggestion.total_cores <= min_feasible * 3, (
+            f"Suggested total_cores {suggestion.total_cores} excessive for min_feasible={min_feasible}"
         )
+
+    def test_occupancy_constraint(self):
+        """More than half of used hardware cores should house at least 4 software cores."""
+        from mimarsinan.mapping.layout.layout_packer import pack_layout
+        from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
+
+        softcores = _make_uniform_softcores(40, axons=16, neurons=8)
+        suggestion = suggest_hardware_config(softcores)
+        hw_types = [
+            LayoutHardCoreType(
+                max_axons=ct["max_axons"],
+                max_neurons=ct["max_neurons"],
+                count=ct["count"],
+            )
+            for ct in suggestion.core_types
+        ]
+        result = pack_layout(softcores=softcores, core_types=hw_types)
+        assert result.feasible
+        assert result.used_core_softcore_counts is not None
+        counts = result.used_core_softcore_counts
+        if len(counts) >= 2:
+            n_ok = sum(1 for c in counts if c >= 4)
+            assert n_ok > len(counts) / 2, (
+                f"Occupancy constraint failed: {n_ok}/{len(counts)} cores have >=4 softcores"
+            )
+
+    def test_coalescing_two_types_square_and_wide(self):
+        """With coalescing, recommend H×H (square) and W×H (wide) with W > H."""
+        softcores = _make_uniform_softcores(20, axons=32, neurons=24)
+        result = suggest_hardware_config(softcores, allow_coalescing=True)
+        assert len(result.core_types) == 2
+        a1, n1 = result.core_types[0]["max_axons"], result.core_types[0]["max_neurons"]
+        a2, n2 = result.core_types[1]["max_axons"], result.core_types[1]["max_neurons"]
+        # One type is square (axons == neurons), one is wide (axons > neurons).
+        square = (a1 == n1) or (a2 == n2)
+        wide = (a1 > n1) or (a2 > n2)
+        assert square and wide
+        verification = verify_hardware_config(softcores, result.core_types)
+        assert verification["feasible"]
+
+    def test_both_coalescing_and_no_coalescing_produce_valid_mappings(self):
+        """Both allow_coalescing=False (H×W, W×H) and True (H×H, W×H) must pack all softcores."""
+        from mimarsinan.mapping.layout.layout_packer import pack_layout
+        from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
+
+        # Mix of shapes including neuron-heavy (more neurons than axons)
+        softcores = _make_softcores([
+            (64, 32), (32, 64), (48, 48), (40, 60), (60, 40),
+            (32, 64), (64, 32), (24, 48), (48, 24),
+        ])
+        for allow_coalescing in (False, True):
+            suggestion = suggest_hardware_config(
+                softcores, allow_coalescing=allow_coalescing
+            )
+            assert len(suggestion.core_types) == 2, (
+                f"allow_coalescing={allow_coalescing}: expected 2 core types"
+            )
+            hw_types = [
+                LayoutHardCoreType(
+                    max_axons=ct["max_axons"],
+                    max_neurons=ct["max_neurons"],
+                    count=ct["count"],
+                )
+                for ct in suggestion.core_types
+            ]
+            result = pack_layout(softcores=softcores, core_types=hw_types)
+            assert result.feasible, (
+                f"allow_coalescing={allow_coalescing}: pack_layout failed: {result.error}"
+            )
+            v = verify_hardware_config(softcores, suggestion.core_types)
+            assert v["feasible"], (
+                f"allow_coalescing={allow_coalescing}: verify failed: {v['errors']}"
+            )
 
 
 # ── Tests: suggest_hardware_config_for_model ───────────────────────────────

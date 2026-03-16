@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,7 @@ class LayoutHardCoreInstance:
 
     unusable_space: int = 0
     used_area: int = 0
+    softcore_count: int = 0
 
     def __post_init__(self):
         self.available_axons = int(self.axons_per_core)
@@ -88,6 +89,7 @@ class LayoutHardCoreInstance:
         self.available_neurons -= out_c
 
         self.used_area += int(in_c) * int(out_c)
+        self.softcore_count += 1
 
         if self.threshold_group_id is None:
             self.threshold_group_id = int(softcore.threshold_group_id)
@@ -108,5 +110,6 @@ class LayoutPackingResult:
     avg_unused_area_per_core: float
 
     error: Optional[str] = None
+    used_core_softcore_counts: Optional[Tuple[int, ...]] = None
 
 
