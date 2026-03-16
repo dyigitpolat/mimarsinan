@@ -436,7 +436,16 @@ Decorates each perceptron's activation with a `SavedTensorDecorator`, runs valid
 - **Requires**: `model`, `adaptation_manager`, `activation_scales`
 - **Updates**: `model`, `adaptation_manager`
 
-Uses `ClampTuner` to gradually introduce clamping to each perceptron's activation, guided by the previously computed activation scales. The `SmartSmoothAdaptation` framework ensures the clamping is applied incrementally to minimize accuracy loss.
+**Runs only when `activation_quantization` is True.** Uses `ClampTuner` to gradually introduce clamping to each perceptron's activation, guided by the previously computed activation scales. The `SmartSmoothAdaptation` framework ensures the clamping is applied incrementally to minimize accuracy loss.
+
+### 5.5b Activation Adaptation (no-quant)
+
+**File**: `pipeline_steps/activation_adaptation_step.py`
+
+- **Requires**: `model`, `adaptation_manager`, `activation_scales`
+- **Updates**: `model`, `adaptation_manager`
+
+**Runs only when `activation_quantization` is False.** Replaces non-ReLU chip-targeted bases (GELU, LeakyReLU) with ReLU via a short adaptation phase and applies activation_scales. Does not set `clamp_rate`, so the clamp decorator remains a no-op and Normalization Fusion → Soft Core Mapping stays exact. Shared logic with Clamp Adaptation (e.g. “needs ReLU adaptation”) lives in `pipeline_steps/activation_utils.py`.
 
 ### 5.6 Activation Shifting
 
@@ -518,7 +527,7 @@ This critical step converts the PyTorch model into an `IRGraph`:
 2. Reads `max_axons`, `max_neurons`, `allow_core_coalescing`, and `hardware_bias` from the `platform_constraints_resolved` cache entry (produced by Architecture Search). When heterogeneous `cores` are present, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types — this allows softcores as large as the biggest core type, relying on the greedy packer's scarcity-aware metric (§9.2) to place them correctly. `hardware_bias` is `True` only when all core types declare `has_bias: true`; it controls whether bias consumes an axon slot (legacy always-on row) or a dedicated hardware register
 3. Creates an `IRMapping` with these hardware constraints
 4. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
-5. Optionally quantizes weights (rounds `core_matrix *= parameter_scale` to integers) only when `weight_quantization` is enabled
+5. Optionally quantizes weights and biases when `weight_quantization` is enabled: rounds `core_matrix` entries to integers by multiplying by `scale` and setting `threshold = scale`.  **Critically, `hardware_bias` is also multiplied by the same `scale`** so that the TTFS simulation formula `act(W_q @ x + b_hw) / threshold` correctly reconstructs `act(W_eff @ x + b_eff)`.  Without this, the bias contribution would be attenuated by ~`q_max / max_weight` (typically ~127× for 8-bit) relative to the weight contribution.  This applies to both owned-weight NeuralCores and bank-backed NeuralCores (Conv2D).
 6. Optionally generates Graphviz visualizations when `generate_visualizations` is enabled in the config (disabled by default)
 7. Runs a soft-core spiking simulation for early verification
 
@@ -819,8 +828,9 @@ A shared weight matrix stored once on the `IRGraph` and referenced by many `Neur
 
 Key fields:
 - `id: int`
-- `core_matrix: np.ndarray` — shape `(axons, neurons)`, same layout as NeuralCore
+- `core_matrix: np.ndarray` — shape `(in_features, out_features)` transposed — weights only, **no bias row** regardless of bias mode
 - `activation_scale`, `parameter_scale`, `input_activation_scale`
+- `hardware_bias: np.ndarray | None` — When non-`None`, the shared bias vector (length `out_features`) produced by `register_weight_bank` when `IRMapping.hardware_bias=True`.  `add_shared_neural_core` copies (a slice of) this into each referencing `NeuralCore.hardware_bias` at construction time and does **not** wire an always-on axon.  When `None`, each `NeuralCore` uses the legacy always-on axon row instead.
 
 ### 8.3 ComputeOp
 
@@ -841,15 +851,14 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
 
 `IRMapping` converts a `ModelRepresentation` to an `IRGraph`:
 
-- `add_neural_core(...)` — Creates a `NeuralCore` with source wiring (owned weights)
-- `add_shared_neural_core(...)` — Creates a bank-backed `NeuralCore` that references a `WeightBank` instead of storing its own `core_matrix`
-- `register_weight_bank(...)` — Stores a shared weight matrix and returns its `bank_id`
+- `add_neural_core(...)` — Creates a `NeuralCore` with source wiring (owned weights).  When `hardware_bias=True`, bias is stored in `NeuralCore.hardware_bias` (no axon slot consumed); otherwise an always-on axon row (`IRSource(-3, 0)`) occupies the last row of the weight matrix.
+- `register_weight_bank(...)` — Stores a shared weight matrix and returns its `bank_id`.  When `hardware_bias=True`, the bias vector is stored in `WeightBank.hardware_bias` and the `core_matrix` contains **weights only** (no extra row); otherwise the bias is appended as the last row of `core_matrix` (legacy always-on axon mode).
+- `add_shared_neural_core(...)` — Creates a bank-backed `NeuralCore`.  Automatically detects bias mode from the bank: if `bank.hardware_bias is not None`, it copies the appropriate slice into `NeuralCore.hardware_bias` and does **not** append an always-on axon source; otherwise it falls back to the legacy always-on axon row.  This ensures bank-backed cores (Conv2D) use exactly the same bias mechanism as owned-weight cores.
 - `add_compute_op(...)` — Creates a `ComputeOp`
 - `map_fc(...)` — Maps a fully-connected layer, handling:
   - **Output tiling**: Splits neurons across multiple cores when `neurons > max_neurons`
   - **Axon tiling (psum)** — default when `in_features > max_axons`: splits weights into N positive-weight partial cores + N negative-weight partial cores + 1 accumulator (2N+1 cores total); `psum_role` is `"partial_pos"`, `"partial_neg"`, or `"accum"`
   - **Axon tiling (coalescing)** — used when `allow_core_coalescing=True`: N full-weight partial cores + 1 trivial +1-weight accumulator (N+1 cores total); more hardware-efficient and requires signed-weight support; `coalescing_role` is `"partial"` or `"accum"`
-  - **Bias mode**: when `hardware_bias=True`, bias is stored in `NeuralCore.hardware_bias` (no axon slot consumed); otherwise an always-on axon row (`IRSource(-3, 0)`) occupies the last row of the weight matrix
 
 **Heterogeneous tiling**: When multiple core types exist, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types. This allows softcores as large as the biggest core type. The greedy packer's scarcity-aware placement metric (§9.2) then ensures flexible softcores (those that fit multiple core types) are directed toward more abundant types, preserving scarce large-capacity types for softcores that strictly require them.
 

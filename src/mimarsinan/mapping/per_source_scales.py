@@ -54,7 +54,15 @@ def compute_per_source_scales(model_repr):
         elif isinstance(node, AddMapper):
             parts = [out_scales[d] for d in deps if d in out_scales]
             if len(parts) >= 2:
-                out_scales[node] = (parts[0] + parts[1]) / 2.0
+                s_a, s_b = parts[0], parts[1]
+                s_combined = (s_a + s_b) / 2.0
+                out_scales[node] = s_combined
+                # Store per-element rescale factors so _exec_add can produce
+                # (A_full + B_full) / s_combined instead of A_full/s_A + B_full/s_B.
+                eps = 1e-12
+                safe = s_combined.clamp(min=eps)
+                node._ir_add_scale_a = (s_a / safe).tolist()
+                node._ir_add_scale_b = (s_b / safe).tolist()
             elif parts:
                 out_scales[node] = parts[0]
 

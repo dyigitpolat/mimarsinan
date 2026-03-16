@@ -20,7 +20,7 @@ class NormalizationFusionStep(PipelineStep):
 
     def validate(self):
         if self.trainer is not None:
-            return self.trainer.validate()
+            return self.trainer.test()
         return self.pipeline.get_target_metric()
 
     def process(self):

@@ -22,7 +22,9 @@ Each layer's neuron dynamics have two phases:
 Two deployment modes for TTFS (selected via ``spiking_mode``):
 
   * **ttfs** (continuous / event-based) — exact analytical computation,
-    no time-step discretisation.  Equivalent to ``ReLU(W @ x + b) / θ``.
+    no time-step discretisation.  Equivalent to ``clamp(ReLU(W @ x + b) / θ, 0, 1)``.
+    Outputs clamped to ``[0, 1]`` per core (hardware TTFS fires at most once).
+    Inputs are not clamped; weight matrices normalize ComputeOp sources.
   * **ttfs_quantized** (analytical quantised) — closed-form computation
     that matches the cycle-based simulation exactly but runs in O(N_cores)
     instead of O(max_latency * S * N_cores).
@@ -320,7 +322,9 @@ class SpikingHybridCoreFlow(nn.Module):
         TTFS neural segment execution.
 
         When ``quantized=False`` (default): continuous analytical
-        ``relu(W @ x + b) / θ`` per core.
+        ``clamp(relu(W @ x + b) / θ, 0, 1)`` per core.  Outputs clamped to
+        [0, 1] to match hardware TTFS.  Inputs are NOT clamped; weight matrices
+        incorporate ``per_input_scales`` normalization for ComputeOp sources.
 
         When ``quantized=True``: analytical closed-form computation that
         matches the cycle-based simulation exactly::
@@ -401,7 +405,9 @@ class SpikingHybridCoreFlow(nn.Module):
                 )
             else:
                 out = F.relu(V)
-                buffers[ci] = out / thresholds[ci]
+                # TTFS: a neuron fires at most once → output rate ∈ [0, 1].
+                # Hardware naturally clamps (V > θ fires immediately → rate 1).
+                buffers[ci] = (out / thresholds[ci]).clamp(0.0, 1.0)
 
         output = torch.zeros(batch_size, len(output_sources), device=device)
         for sp in output_spans:

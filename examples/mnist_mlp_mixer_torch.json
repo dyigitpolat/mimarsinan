@@ -1,7 +1,7 @@
 {
     "seed": 0,
     "pipeline_mode": "phased",
-    "experiment_name": "my_deployment",
+    "experiment_name": "08zzmy_deployment",
     "generated_files_path": "./generated",
     "data_provider_name": "MNIST_DataProvider",
     "platform_constraints": {
@@ -34,7 +34,7 @@
       "configuration_mode": "user",
       "model_type": "mlp_mixer",
       "model_config": {
-        "base_activation": "ReLU",
+        "base_activation": "LeakyReLU",
         "patch_n_1": 4,
         "patch_m_1": 4,
         "patch_c_1": 32,
@@ -47,9 +47,9 @@
       "thresholding_mode": "<=",
       "activation_quantization": false,
       "weight_quantization": true,
-      "max_simulation_samples": 50
+      "max_simulation_samples": 200
     },
     "target_metric_override": null,
-    "start_step": null,
+    "start_step": "Simulation",
     "stop_step": null
   }
