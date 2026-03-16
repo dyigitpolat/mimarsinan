@@ -822,6 +822,11 @@ function autoFillHardware() {
       }
       // Verify the auto-suggestion is actually feasible (catches under-estimated counts)
       _doHwValidation('\u2713 Auto-configured: ' + (data.rationale || ''));
+    } else {
+      // No core types returned (e.g. no softcores, or layout failed) — clear Recalculating state
+      _hwAutoMode = false;
+      const msg = data.rationale || 'Auto-config returned no core types.';
+      _showHwValidation(false, [msg], {});
     }
   }).catch(err => {
     _hwAutoMode = false;

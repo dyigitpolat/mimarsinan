@@ -87,6 +87,7 @@ def pack_layout(
         unused_area_total=unused_total,
         avg_unused_area_per_core=avg_unused,
         error=None,
+        used_core_softcore_counts=tuple(hc.softcore_count for hc in used_hardcores),
     )
 
 

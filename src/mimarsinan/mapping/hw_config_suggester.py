@@ -5,30 +5,31 @@ Given a list of LayoutSoftCoreSpec (already accounting for pruning and threshold
 groups via LayoutIRMapping), this module produces a reasonable hardware core
 configuration that:
   1. Can fit all softcores.
-  2. Minimises total core count and wasted axon/neuron buffer space.
-  3. Uses simple heuristics — no optimisation search.
+  2. Uses two core types (H×W and W×H, or H×H and W×H when coalescing).
+  3. Chooses the smallest H, W such that more than half of used hardware cores
+     each house at least 4 software cores.
 
 Algorithm
 ---------
-``suggest_hardware_config`` always produces a **single core type** whose
-``max_axons`` and ``max_neurons`` equal the maximum across all softcores
-(guaranteeing every softcore fits).  The count is found by:
+``suggest_hardware_config`` always produces **two core types** (unless there are
+no softcores):
 
-  1. Doubling the pool from ``len(softcores)`` until ``pack_layout`` succeeds.
-  2. Binary-searching downward to find the true minimum feasible pool.
-  3. Applying a safety margin (default 15 %) on top of that minimum.
+- **Without coalescing**: types are H×W and W×H (one long, one wide).
+- **With coalescing**: types are H×H (square) and W×H with W > H (square + wide).
 
-This two-phase approach is necessary because the greedy packing algorithm
-can produce better results when the available pool is large (more unused
-cores to choose from), making ``cores_used`` from a large pool an
-**optimistic underestimate** of the cores actually needed at that exact count.
+Dimensions are the **smallest** H and W that:
+  1. Cover all softcores (every softcore fits in at least one type).
+  2. After packing with a 50/50 pool split, more than half of used cores
+     have at least 4 softcores each (skipped when fewer than 2 cores are used).
+
+Search: start from minimal (H, W) for coverage; if the occupancy constraint
+fails, increase H and/or W and retry until it passes or an iteration limit
+is reached. Pool size per (H, W) is found by binary search plus safety margin.
 
 Important: both the auto-config pass (``api_hw_config_auto``) and the
 verification pass (``api_hw_config_verify``) run layout mapping with a
 large fixed bound (≥ 4096 axons/neurons) so that both see identical,
-naturally-sized softcores.  The suggested ``max_axons`` / ``max_neurons``
-are then the true maximum softcore dimensions, not an artificially
-tiled view.
+naturally-sized softcores.
 
 Typical usage:
     from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
@@ -44,7 +45,7 @@ Typical usage:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence
 
 from mimarsinan.mapping.layout.layout_packer import pack_layout
@@ -79,49 +80,113 @@ def _next_multiple(value: int, multiple: int) -> int:
     return int(math.ceil(value / multiple) * multiple)
 
 
-def _pack_feasible(
-    softcores: Sequence[LayoutSoftCoreSpec], max_axons: int, max_neurons: int, count: int
-) -> bool:
-    hw_types = [LayoutHardCoreType(max_axons=max_axons, max_neurons=max_neurons, count=count)]
-    return pack_layout(softcores=list(softcores), core_types=hw_types).feasible
-
-
-def _count_cores_needed(
-    softcores: Sequence[LayoutSoftCoreSpec],
-    max_axons: int,
-    max_neurons: int,
-    safety_margin: float = 0.15,
-) -> int:
-    """Find the minimum pool where greedy packing succeeds, then apply safety margin.
-
-    We binary-search for the true minimum rather than trusting ``cores_used``
-    from a large pool, because the greedy algorithm can pack fewer cores when
-    the pool is large (more unused cores to choose from), making the
-    ``cores_used`` count optimistic for smaller pools.
-    """
+def _dimension_bounds(softcores: Sequence[LayoutSoftCoreSpec]) -> tuple[int, int, int, int]:
+    """Return (max_ax, max_neu, min_dim, max_dim) for softcores."""
     if not softcores:
-        return 0
+        return 0, 0, 0, 0
+    max_ax = max(sc.input_count for sc in softcores)
+    max_neu = max(sc.output_count for sc in softcores)
+    min_dim = max(min(sc.input_count, sc.output_count) for sc in softcores)
+    max_dim = max(max(sc.input_count, sc.output_count) for sc in softcores)
+    return max_ax, max_neu, min_dim, max_dim
 
+
+def _make_two_core_types(
+    h: int,
+    w: int,
+    allow_coalescing: bool,
+    axon_granularity: int,
+    neuron_granularity: int,
+) -> list[tuple[int, int]]:
+    """Return list of (max_axons, max_neurons) for the two core types.
+
+    Without coalescing: (H, W) and (W, H). With coalescing: (H, H) and (W, H), W > H.
+    """
+    g_ax = max(axon_granularity, 1)
+    g_neu = max(neuron_granularity, 1)
+    if allow_coalescing:
+        if w <= h:
+            w = h + 1
+        return [(h, h), (w, h)]
+    return [(h, w), (w, h)]
+
+
+def _pack_with_two_types(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    type1: tuple[int, int],
+    type2: tuple[int, int],
+    total_count: int,
+) -> tuple[bool, int | None, tuple[int, ...] | None]:
+    """Pack with two core types (50/50 split). Return (feasible, cores_used, used_core_softcore_counts)."""
+    c1, c2 = (total_count + 1) // 2, total_count // 2
+    if c1 <= 0 and c2 <= 0:
+        return False, None, None
+    hw_types = [
+        LayoutHardCoreType(max_axons=type1[0], max_neurons=type1[1], count=max(1, c1)),
+        LayoutHardCoreType(max_axons=type2[0], max_neurons=type2[1], count=max(1, c2)),
+    ]
+    result = pack_layout(softcores=list(softcores), core_types=hw_types)
+    if not result.feasible:
+        return False, None, None
+    return True, result.cores_used, result.used_core_softcore_counts
+
+
+def _min_hw_coverage(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    allow_coalescing: bool,
+    axon_granularity: int,
+    neuron_granularity: int,
+) -> tuple[int, int]:
+    """Return smallest (H, W) that cover all softcores. W > H when coalescing."""
+    max_ax, max_neu, min_dim, max_dim = _dimension_bounds(softcores)
+    if not softcores:
+        return 1, 1
+    g = max(axon_granularity, neuron_granularity, 1)
+    if allow_coalescing:
+        # (H,H) fits (a,b) iff max(a,b) <= H. (W,H) fits (a,b) iff a <= W and b <= H.
+        # Ensure square covers all: H >= max_dim. Then W > H for the wide type.
+        h = _next_multiple(max_dim, g)
+        w = _next_multiple(h + 1, g)
+        return h, w
+    h = _next_multiple(max_dim, g)
+    w = _next_multiple(min_dim, g)
+    return h, w
+
+
+def _occupancy_ok(counts: tuple[int, ...] | None, min_frac: float = 0.5, min_per_core: int = 4) -> bool:
+    """True if more than min_frac of used cores have at least min_per_core softcores."""
+    if not counts or len(counts) < 2:
+        return True
+    n_ok = sum(1 for c in counts if c >= min_per_core)
+    return n_ok > len(counts) * min_frac
+
+
+def _count_cores_needed_two_types(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    type1: tuple[int, int],
+    type2: tuple[int, int],
+    safety_margin: float,
+) -> int:
+    """Minimum total pool size (with 50/50 split) for packing to succeed, plus safety margin."""
     n_sc = len(softcores)
-
-    # Find an upper bound where packing definitely succeeds (double from n_sc).
+    if not n_sc:
+        return 0
     upper = max(n_sc, 1)
     for _ in range(30):
-        if _pack_feasible(softcores, max_axons, max_neurons, upper):
+        feasible, _, _ = _pack_with_two_types(softcores, type1, type2, upper)
+        if feasible:
             break
         upper *= 2
     else:
-        return int(math.ceil(n_sc * (1.0 + safety_margin)))
-
-    # Binary-search for the true minimum feasible pool.
+        return max(1, int(math.ceil(n_sc * (1.0 + safety_margin))))
     lower = 1
     while lower < upper:
         mid = (lower + upper) // 2
-        if _pack_feasible(softcores, max_axons, max_neurons, mid):
+        feasible, _, _ = _pack_with_two_types(softcores, type1, type2, mid)
+        if feasible:
             upper = mid
         else:
             lower = mid + 1
-
     min_feasible = lower
     padded = int(math.ceil(min_feasible * (1.0 + safety_margin)))
     return max(padded, min_feasible + 1)
@@ -140,15 +205,11 @@ def suggest_hardware_config(
     neuron_granularity: int = 1,
     safety_margin: float = 0.15,
 ) -> HardwareSuggestion:
-    """Produce a simple, reasonable hardware configuration for the given softcores.
+    """Produce a two-type hardware configuration for the given softcores.
 
-    This is *not* an optimiser — it uses straightforward heuristics:
-
-    1. Attempt to detect two distinct size classes (large vs small cores).
-    2. For each class, the core dimensions are the *maximum* of that class
-       (optionally rounded up to *granularity* multiples for tidy hardware).
-    3. Simulate greedy packing to find how many cores are required.
-    4. Apply a ``safety_margin`` (default 15%) on top.
+    Returns two core types (H×W and W×H, or H×H and W×H when coalescing),
+    with the smallest H, W such that more than half of used cores host at least
+    4 softcores. Applies safety_margin on top of the minimum feasible pool size.
 
     Parameters
     ----------
@@ -156,15 +217,11 @@ def suggest_hardware_config(
         Pre-computed ``LayoutSoftCoreSpec`` list (already accounts for pruning
         and threshold groups via ``LayoutIRMapping.collect_layout_softcores``).
     allow_coalescing:
-        Passed through to the rationale string; coalescing itself is handled
-        upstream by ``IRMapping``.
+        If True, types are H×H (square) and W×H (wide, W > H); else H×W and W×H.
     hardware_bias:
-        Whether cores use a dedicated hardware bias register (vs an always-on
-        axon row).  Affects ``has_bias`` in the returned core type dicts.
-    axon_granularity:
-        Round max_axons up to a multiple of this value (default 1 = no rounding).
-    neuron_granularity:
-        Round max_neurons up to a multiple of this value (default 1 = no rounding).
+        Whether cores use a dedicated hardware bias register.
+    axon_granularity, neuron_granularity:
+        Round dimensions up to these multiples.
     safety_margin:
         Fraction of extra cores to add on top of the minimum pack count.
 
@@ -179,20 +236,72 @@ def suggest_hardware_config(
             rationale="No softcores — nothing to map.",
         )
 
-    # Single core type covering all softcores — guarantees every softcore fits.
-    max_ax = _next_multiple(max(sc.input_count for sc in softcores), axon_granularity)
-    max_neu = _next_multiple(max(sc.output_count for sc in softcores), neuron_granularity)
-    count = _count_cores_needed(list(softcores), max_ax, max_neu, safety_margin)
+    softcores_list = list(softcores)
+    h, w = _min_hw_coverage(
+        softcores_list, allow_coalescing, axon_granularity, neuron_granularity
+    )
+    g_ax = max(axon_granularity, 1)
+    g_neu = max(neuron_granularity, 1)
+    max_iter = 50
+    best_hw: tuple[int, int] | None = None
+    best_counts: tuple[int, int] | None = None
+    best_total: int | None = None
 
-    core_types: List[Dict[str, Any]] = [{
-        "max_axons": max_ax,
-        "max_neurons": max_neu,
-        "count": count,
-        "has_bias": hardware_bias,
-    }]
+    for _ in range(max_iter):
+        types_spec = _make_two_core_types(h, w, allow_coalescing, g_ax, g_neu)
+        type1, type2 = types_spec[0], types_spec[1]
+        total = _count_cores_needed_two_types(softcores_list, type1, type2, safety_margin)
+        feasible, cores_used, counts = _pack_with_two_types(
+            softcores_list, type1, type2, total
+        )
+        if not feasible or counts is None:
+            h = int(math.ceil(h * 1.25)) if h else 1
+            w = int(math.ceil(w * 1.25)) if w else 1
+            continue
+        if _occupancy_ok(counts):
+            c1, c2 = (total + 1) // 2, total // 2
+            best_hw = (h, w)
+            best_counts = (c1, c2)
+            best_total = total
+            break
+        h = int(math.ceil(h * 1.25)) if h else 1
+        w = int(math.ceil(w * 1.25)) if w else 1
+
+    if best_hw is None or best_counts is None or best_total is None:
+        h, w = _min_hw_coverage(
+            softcores_list, allow_coalescing, axon_granularity, neuron_granularity
+        )
+        types_spec = _make_two_core_types(h, w, allow_coalescing, g_ax, g_neu)
+        type1, type2 = types_spec[0], types_spec[1]
+        best_total = _count_cores_needed_two_types(
+            softcores_list, type1, type2, safety_margin
+        )
+        best_hw = (h, w)
+        best_counts = ((best_total + 1) // 2, best_total // 2)
+
+    h, w = best_hw
+    c1, c2 = best_counts
+    types_spec = _make_two_core_types(h, w, allow_coalescing, g_ax, g_neu)
+    type1, type2 = types_spec[0], types_spec[1]
+
+    core_types: List[Dict[str, Any]] = [
+        {
+            "max_axons": type1[0],
+            "max_neurons": type1[1],
+            "count": c1,
+            "has_bias": hardware_bias,
+        },
+        {
+            "max_axons": type2[0],
+            "max_neurons": type2[1],
+            "count": c2,
+            "has_bias": hardware_bias,
+        },
+    ]
 
     rationale_parts = [
-        f"{len(softcores)} softcores → {max_ax}×{max_neu} core type, {count} instances"
+        f"{len(softcores)} softcores → two types {type1[0]}×{type1[1]} and {type2[0]}×{type2[1]}, "
+        f"{best_total} total cores (>50% with ≥4 softcores)"
     ]
     if allow_coalescing:
         rationale_parts.append("coalescing enabled")
@@ -201,7 +310,7 @@ def suggest_hardware_config(
 
     return HardwareSuggestion(
         core_types=core_types,
-        total_cores=count,
+        total_cores=best_total,
         rationale=". ".join(rationale_parts) + ".",
     )
 

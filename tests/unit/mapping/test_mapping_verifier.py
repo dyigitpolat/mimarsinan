@@ -241,19 +241,21 @@ class TestVerifyHardwareConfig:
         assert result["errors"] == []
 
     def test_insufficient_axons_fails(self, simple_softcores):
-        # max_axons=8 < required 16
+        # max_axons=8 < required 16; no type fits the largest softcore
         core_types = [{"max_axons": 8, "max_neurons": 16, "count": 10}]
         result = verify_hardware_config(simple_softcores, core_types)
         assert not result["feasible"]
         assert any("axons" in e.lower() for e in result["errors"])
-        assert any("max_axons" in k for k in result["field_errors"])
+        # With multi-type check we use "core_types" when no type covers the largest
+        assert len(result["field_errors"]) > 0
 
     def test_insufficient_neurons_fails(self, simple_softcores):
-        # max_neurons=4 < required 8
+        # max_neurons=4 < required 8; no type fits the largest softcore
         core_types = [{"max_axons": 32, "max_neurons": 4, "count": 10}]
         result = verify_hardware_config(simple_softcores, core_types)
         assert not result["feasible"]
         assert any("neurons" in e.lower() for e in result["errors"])
+        assert len(result["field_errors"]) > 0
 
     def test_too_few_cores_fails(self):
         # 20 softcores, only 1 core available
@@ -337,3 +339,19 @@ class TestVerifyHardwareConfig:
         )
         assert result_pass["feasible"]
         assert "total_count" not in result_pass["field_errors"]
+
+    def test_two_type_config_at_least_one_covers_largest_passes(self):
+        """With two core types (e.g. H×W and W×H), only one type need fit the largest softcore."""
+        # Largest softcore is (20, 10). Type (10, 20) does not fit it; type (20, 10) does.
+        softcores = [
+            LayoutSoftCoreSpec(input_count=20, output_count=10, threshold_group_id=0),
+            LayoutSoftCoreSpec(input_count=8, output_count=8, threshold_group_id=0),
+        ]
+        core_types = [
+            {"max_axons": 10, "max_neurons": 20, "count": 2},
+            {"max_axons": 20, "max_neurons": 10, "count": 2},
+        ]
+        result = verify_hardware_config(softcores, core_types)
+        assert result["feasible"], (
+            f"Two-type config with one type covering (20,10) should pass: {result['errors']}"
+        )
