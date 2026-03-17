@@ -1,7 +1,9 @@
 from mimarsinan.model_training.training_utilities import AccuracyTracker
+from mimarsinan.data_handling.data_loader_factory import shutdown_data_loader
 
 import warmup_scheduler
 import torch
+
 
 class BasicTrainer:
     def __init__(
@@ -48,6 +50,17 @@ class BasicTrainer:
         self.test_batch_size = batch_size
         self.test_loader = self.data_loader_factory.create_test_loader(
             self.test_batch_size, self.data_provider)
+
+    def close(self):
+        """Shut down DataLoader workers. Call when done with training/testing."""
+        shutdown_data_loader(self.train_loader)
+        shutdown_data_loader(self.validation_loader)
+        shutdown_data_loader(self.test_loader)
+        self.train_loader = None
+        self.validation_loader = None
+        self.test_loader = None
+        self.train_iter = None
+        self.val_iter = None
 
     def _report(self, metric_name, metric_value):
         if self.report_function is not None:
@@ -121,7 +134,7 @@ class BasicTrainer:
                 _, predicted = self.model(x).max(1)
                 total += float(y.size(0))
                 correct += float(predicted.eq(y).sum().item())
-                
+
         acc = correct / total
         self._report("Test accuracy", acc)
         return acc
@@ -176,11 +189,11 @@ class BasicTrainer:
             self._report("Training accuracy", training_accuracy)
 
             validation_accuracy = self.validate()
-            if validation_accuracy >= target_accuracy: 
+            if validation_accuracy >= target_accuracy:
                 self._train_one_epoch(optimizer, scheduler, scaler)
                 self._train_one_epoch(optimizer, scheduler, scaler)
                 break
-        
+
         self.test()
         return validation_accuracy
     

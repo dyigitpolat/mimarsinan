@@ -47,6 +47,10 @@ class TorchMappingStep(PipelineStep):
             return self.trainer.validate()
         return self.pipeline.get_target_metric()
 
+    def cleanup(self):
+        if self.trainer is not None:
+            self.trainer.close()
+
     def process(self):
         from mimarsinan.torch_mapping.converter import convert_torch_model
 

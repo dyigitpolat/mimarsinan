@@ -42,6 +42,10 @@ class ActivationAdaptationStep(PipelineStep):
             return self.trainer.validate()
         return self.pipeline.get_target_metric()
 
+    def cleanup(self):
+        if self.trainer is not None:
+            self.trainer.close()
+
     def process(self):
         model = self.get_entry("model")
         adaptation_manager = self.get_entry("adaptation_manager")

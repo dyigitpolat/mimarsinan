@@ -8,7 +8,7 @@ management, data contract verification, and performance tolerance enforcement.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `pipeline.py` | `Pipeline` | Orchestration engine: step registration, verification, execution, hook management |
-| `pipeline_step.py` | `PipelineStep` | Abstract base class with data contracts (`requires`, `promises`, `updates`, `clears`) |
+| `pipeline_step.py` | `PipelineStep` | Abstract base class with data contracts (`requires`, `promises`, `updates`, `clears`); `process()`, `validate()`, and optional `cleanup()` for resource release |
 | `model_registry.py` | `ModelRegistry`, `get_model_types`, `get_model_config_schema` | Registry populated by builders via `@ModelRegistry.register`; builders expose `get_config_schema()` for GUI form generation |
 
 ### Subdirectories

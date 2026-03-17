@@ -117,8 +117,11 @@ def run_pipeline_from_config(deployment_config, collector, gui_port=8501):
                 reporter.finish()
             except Exception:
                 pass
+            finally:
+                collector.set_pipeline_thread(None)
 
-    thread = threading.Thread(target=_run, daemon=True, name="pipeline-run")
+    thread = threading.Thread(target=_run, daemon=False, name="pipeline-run")
+    collector.set_pipeline_thread(thread)
     thread.start()
 
 

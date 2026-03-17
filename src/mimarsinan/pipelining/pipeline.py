@@ -135,28 +135,31 @@ class Pipeline:
         assert all([self._translate_key(step.name, requirement) in self.cache for requirement in step.requires]), \
             f"Pipeline error: Some requirements are not found in the cache."
 
-        step.run()
-        self.set_target_metric(step.validate())
-        self.save_cache()
+        try:
+            step.run()
+            self.set_target_metric(step.validate())
+            self.save_cache()
 
-        for entry in step.clears:
-            self.cache.remove(self._create_real_key(step.name, entry))
+            for entry in step.clears:
+                self.cache.remove(self._create_real_key(step.name, entry))
 
-        assert all([self._create_real_key(step.name, promise) in self.cache for promise in step.promises]), \
-            f"Pipeline error: Some promised entries were not added."
-        assert all([self._create_real_key(step.name, entry) not in self.cache for entry in step.clears]), \
-            f"Pipeline error: Some cleared entries were not removed."
-        
-        assert all([self._translate_key(step.name, entry) not in self.cache for entry in step.updates]), \
-            f"Pipeline error: Old values of some updated entries are still in the cache."
-        assert all([self._create_real_key(step.name, entry) in self.cache for entry in step.updates]), \
-            f"Pipeline error: New values of some updated entries are not found in the cache."
-        
-        assert self.get_target_metric() >= previous_metric * self.tolerance, \
-            f"[{step.name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {self.tolerance}) = {previous_metric * self.tolerance}"
+            assert all([self._create_real_key(step.name, promise) in self.cache for promise in step.promises]), \
+                f"Pipeline error: Some promised entries were not added."
+            assert all([self._create_real_key(step.name, entry) not in self.cache for entry in step.clears]), \
+                f"Pipeline error: Some cleared entries were not removed."
 
-        for hook in self.post_step_hooks:
-            hook(name, step)
+            assert all([self._translate_key(step.name, entry) not in self.cache for entry in step.updates]), \
+                f"Pipeline error: Old values of some updated entries are still in the cache."
+            assert all([self._create_real_key(step.name, entry) in self.cache for entry in step.updates]), \
+                f"Pipeline error: New values of some updated entries are not found in the cache."
+
+            assert self.get_target_metric() >= previous_metric * self.tolerance, \
+                f"[{step.name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {self.tolerance}) = {previous_metric * self.tolerance}"
+
+            for hook in self.post_step_hooks:
+                hook(name, step)
+        finally:
+            step.cleanup()
 
     def _find_starting_step_idx(self, step_name):
         requirements = self._get_all_requirements(step_name)

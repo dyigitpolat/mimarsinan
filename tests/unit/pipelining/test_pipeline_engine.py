@@ -100,6 +100,25 @@ class PerformanceDropStep(PipelineStep):
         return self._metric
 
 
+class CleanupTrackingStep(PipelineStep):
+    """Tracks that cleanup() was called; used to test pipeline cleanup contract."""
+    def __init__(self, pipeline, *, promises_data=True, metric=1.0):
+        promises = ["data"] if promises_data else []
+        super().__init__(requires=[], promises=promises, updates=[], clears=[], pipeline=pipeline)
+        self.cleanup_called = []
+        self._metric = metric
+
+    def process(self):
+        if self.promises:
+            self.add_entry("data", 1)
+
+    def validate(self):
+        return self._metric
+
+    def cleanup(self):
+        self.cleanup_called.append(True)
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -214,6 +233,57 @@ class TestPipelineRun:
 
         assert pre_calls == ["produce"]
         assert post_calls == ["produce"]
+
+
+class TestStepCleanup:
+    """Tests that the pipeline calls step.cleanup() and that it runs in finally."""
+
+    def test_cleanup_called_after_successful_step(self, tmp_path):
+        p = Pipeline(str(tmp_path / "cache"))
+        step = CleanupTrackingStep(p, promises_data=True)
+        p.add_pipeline_step("tracked", step)
+        p.run()
+
+        assert step.cleanup_called == [True], "cleanup() should be called once after the step runs"
+
+    def test_cleanup_called_for_each_step(self, tmp_path):
+        p = Pipeline(str(tmp_path / "cache"))
+        s1 = CleanupTrackingStep(p, promises_data=True)
+        s2 = CleanupTrackingStep(p, promises_data=True)
+        p.add_pipeline_step("first", s1)
+        p.add_pipeline_step("second", s2)
+        p.run()
+
+        assert s1.cleanup_called == [True]
+        assert s2.cleanup_called == [True]
+
+    def test_cleanup_called_even_when_step_fails_after_validate(self, tmp_path):
+        p = Pipeline(str(tmp_path / "cache"))
+        p.tolerance = 0.95
+        p.add_pipeline_step("good", ProducerStep(p, value=1))
+        failing = CleanupTrackingStep(p, promises_data=False, metric=0.01)
+        p.add_pipeline_step("bad", failing)
+
+        with pytest.raises(AssertionError, match="performance"):
+            p.run()
+
+        assert failing.cleanup_called == [True], (
+            "cleanup() should be called in finally even when the step fails the tolerance check"
+        )
+
+    def test_cleanup_called_when_validate_raises(self, tmp_path):
+        class ValidateRaisingStep(CleanupTrackingStep):
+            def validate(self):
+                raise RuntimeError("validate failed")
+
+        p = Pipeline(str(tmp_path / "cache"))
+        step = ValidateRaisingStep(p, promises_data=True)
+        p.add_pipeline_step("raises", step)
+
+        with pytest.raises(RuntimeError, match="validate failed"):
+            p.run()
+
+        assert step.cleanup_called == [True], "cleanup() should be called in finally when validate() raises"
 
 
 class TestPipelineRunFrom:

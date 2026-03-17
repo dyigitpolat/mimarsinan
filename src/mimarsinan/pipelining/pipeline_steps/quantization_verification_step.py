@@ -23,10 +23,14 @@ class QuantizationVerificationStep(PipelineStep):
     def validate(self):
         return self.trainer.validate()
 
+    def cleanup(self):
+        if self.trainer is not None:
+            self.trainer.close()
+
     def process(self):
         self.trainer = BasicTrainer(
-            self.get_entry("model"), 
-            self.pipeline.config['device'], 
+            self.get_entry("model"),
+            self.pipeline.config['device'],
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report

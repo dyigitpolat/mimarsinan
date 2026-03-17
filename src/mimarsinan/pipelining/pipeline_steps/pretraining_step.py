@@ -15,19 +15,23 @@ class PretrainingStep(PipelineStep):
     def validate(self):
         return self.trainer.validate()
 
+    def cleanup(self):
+        if self.trainer is not None:
+            self.trainer.close()
+
     def process(self):
         model = self.get_entry("model")
 
         self.trainer = BasicTrainer(
-            model, 
-            self.pipeline.config['device'], 
+            model,
+            self.pipeline.config['device'],
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
 
         self.trainer.train_n_epochs(
-            self.pipeline.config['lr'], 
+            self.pipeline.config['lr'],
             self.pipeline.config['training_epochs'],
             warmup_epochs=5)
-        
+
         self.update_entry("model", model, 'torch_model')

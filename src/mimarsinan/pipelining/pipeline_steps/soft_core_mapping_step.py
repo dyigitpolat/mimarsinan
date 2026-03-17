@@ -78,13 +78,13 @@ class SoftCoreMappingStep(PipelineStep):
           except Exception as e:
               print(f"[SoftCoreMappingStep] Flowchart generation failed (non-fatal): {e}")
         
-        validator = BasicTrainer(
-            model, 
-            self.pipeline.config['device'], 
+        self._validator = BasicTrainer(
+            model,
+            self.pipeline.config['device'],
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
+        validator = self._validator
 
-        
         from mimarsinan.mapping.per_source_scales import compute_per_source_scales
         compute_per_source_scales(model.get_mapper_repr())
 
@@ -337,7 +337,11 @@ class SoftCoreMappingStep(PipelineStep):
             print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
         except Exception as e:
             print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
-    
+
+    def cleanup(self):
+        if getattr(self, "_validator", None) is not None:
+            self._validator.close()
+
     def _calculate_input_activation_scales(self, model, validator, rate):
         for perceptron in model.get_perceptrons():
             if not isinstance(perceptron.input_activation, TransformedActivation):

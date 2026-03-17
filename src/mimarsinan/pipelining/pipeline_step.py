@@ -20,10 +20,18 @@ class PipelineStep:
         
     def process(self):
         raise NotImplementedError
-    
+
     def validate(self):
         raise NotImplementedError
-    
+
+    def cleanup(self):
+        """Release resources acquired during process() (e.g. DataLoader workers).
+
+        Called by the pipeline after validate(), in a finally block so it runs
+        even if later pipeline logic fails. Override to close trainers, loaders, etc.
+        """
+        pass
+
     def get_entry(self, key):
         assert key in self.requires, f"A non-required entry ({key}) cannot be retrieved from the cache."
         self._accessed_entries.add(key)

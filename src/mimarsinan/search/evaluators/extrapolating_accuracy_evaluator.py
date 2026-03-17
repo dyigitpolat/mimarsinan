@@ -21,7 +21,7 @@ import numpy as np
 import torch
 from scipy.optimize import curve_fit
 
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 
@@ -198,78 +198,82 @@ class ExtrapolatingAccuracyEvaluator:
         train_loader = data_loader_factory.create_training_loader(train_bs, data_provider)
         val_loader = data_loader_factory.create_validation_loader(val_bs, data_provider)
 
-        model = model.to(self.device)
+        try:
+            model = model.to(self.device)
 
-        optimizer = torch.optim.Adam(
-            model.parameters(),
-            lr=float(self.lr),
-            betas=(0.9, 0.99),
-            weight_decay=5e-5,
-        )
+            optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=float(self.lr),
+                betas=(0.9, 0.99),
+                weight_decay=5e-5,
+            )
 
-        use_amp = self.device.type == "cuda"
-        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+            use_amp = self.device.type == "cuda"
+            scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
-        # ---- training with checkpoints ---------------------------------
-        steps_per_epoch = max(1, len(train_loader))
-        total_steps = steps_per_epoch * int(self.num_train_epochs)
-        warmup_steps = max(1, int(total_steps * float(self.warmup_fraction)))
+            # ---- training with checkpoints ---------------------------------
+            steps_per_epoch = max(1, len(train_loader))
+            total_steps = steps_per_epoch * int(self.num_train_epochs)
+            warmup_steps = max(1, int(total_steps * float(self.warmup_fraction)))
 
-        # Decide at which global steps to measure accuracy.
-        # We always include the final step; the rest are spaced evenly.
-        num_ckpt = max(1, int(self.num_checkpoints))
-        checkpoint_interval = max(1, total_steps // num_ckpt)
-        checkpoint_steps = set()
-        for i in range(1, num_ckpt + 1):
-            checkpoint_steps.add(min(i * checkpoint_interval, total_steps))
-        checkpoint_steps.add(total_steps)  # always measure at the end
+            # Decide at which global steps to measure accuracy.
+            # We always include the final step; the rest are spaced evenly.
+            num_ckpt = max(1, int(self.num_checkpoints))
+            checkpoint_interval = max(1, total_steps // num_ckpt)
+            checkpoint_steps = set()
+            for i in range(1, num_ckpt + 1):
+                checkpoint_steps.add(min(i * checkpoint_interval, total_steps))
+            checkpoint_steps.add(total_steps)  # always measure at the end
 
-        # (epoch_fraction, accuracy) pairs
-        curve_t: List[float] = []
-        curve_y: List[float] = []
+            # (epoch_fraction, accuracy) pairs
+            curve_t: List[float] = []
+            curve_y: List[float] = []
 
-        global_step = 0
-        for epoch in range(int(self.num_train_epochs)):
-            model.train()
-            for x, y in train_loader:
-                x = x.to(self.device)
-                y = y.to(self.device)
+            global_step = 0
+            for epoch in range(int(self.num_train_epochs)):
+                model.train()
+                for x, y in train_loader:
+                    x = x.to(self.device)
+                    y = y.to(self.device)
 
-                # LR warmup
-                if global_step < warmup_steps:
-                    lr_now = float(self.lr) * float(global_step + 1) / float(warmup_steps)
-                else:
-                    lr_now = float(self.lr)
-                for pg in optimizer.param_groups:
-                    pg["lr"] = lr_now
+                    # LR warmup
+                    if global_step < warmup_steps:
+                        lr_now = float(self.lr) * float(global_step + 1) / float(warmup_steps)
+                    else:
+                        lr_now = float(self.lr)
+                    for pg in optimizer.param_groups:
+                        pg["lr"] = lr_now
 
-                optimizer.zero_grad(set_to_none=True)
-                with torch.amp.autocast("cuda", enabled=use_amp):
-                    loss = loss_fn(model, x, y)
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
+                    with torch.amp.autocast("cuda", enabled=use_amp):
+                        loss = loss_fn(model, x, y)
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
 
-                global_step += 1
+                    global_step += 1
 
-                if global_step in checkpoint_steps:
-                    acc = self._validate(model, val_loader)
-                    t = float(global_step) / float(steps_per_epoch)  # in epochs
-                    curve_t.append(t)
-                    curve_y.append(acc)
+                    if global_step in checkpoint_steps:
+                        acc = self._validate(model, val_loader)
+                        t = float(global_step) / float(steps_per_epoch)  # in epochs
+                        curve_t.append(t)
+                        curve_y.append(acc)
 
-        # ---- curve fitting & extrapolation -----------------------------
-        t_obs = np.array(curve_t, dtype=np.float64)
-        y_obs = np.array(curve_y, dtype=np.float64)
-        t_target = float(self.target_epochs)
+            # ---- curve fitting & extrapolation -----------------------------
+            t_obs = np.array(curve_t, dtype=np.float64)
+            y_obs = np.array(curve_y, dtype=np.float64)
+            t_target = float(self.target_epochs)
 
-        if len(t_obs) < 2:
-            # Can't fit a curve with < 2 points; return raw accuracy.
-            return float(y_obs[-1]) if len(y_obs) > 0 else 0.0
+            if len(t_obs) < 2:
+                # Can't fit a curve with < 2 points; return raw accuracy.
+                return float(y_obs[-1]) if len(y_obs) > 0 else 0.0
 
-        extrapolated, model_name = _fit_and_extrapolate(t_obs, y_obs, t_target)
+            extrapolated, model_name = _fit_and_extrapolate(t_obs, y_obs, t_target)
 
-        return float(extrapolated)
+            return float(extrapolated)
+        finally:
+            shutdown_data_loader(train_loader)
+            shutdown_data_loader(val_loader)
 
     # ---- helpers -------------------------------------------------------
 

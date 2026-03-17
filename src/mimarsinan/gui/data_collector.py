@@ -12,7 +12,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger("mimarsinan.gui")
 
@@ -60,6 +60,26 @@ class DataCollector:
         self._pipeline_config: dict | None = None
 
         self._ws_listeners: list[Any] = []
+        self._pipeline_thread: Optional[threading.Thread] = None
+
+    # -- Pipeline thread (for graceful exit) -----------------------------------
+
+    def set_pipeline_thread(self, thread: Optional[threading.Thread]) -> None:
+        with self._lock:
+            self._pipeline_thread = thread
+
+    def get_pipeline_thread(self) -> Optional[threading.Thread]:
+        with self._lock:
+            return self._pipeline_thread
+
+    def join_pipeline_thread(self, timeout: float = 30.0) -> bool:
+        """Wait for the pipeline thread to finish. Returns True if joined, False if timeout."""
+        with self._lock:
+            t = self._pipeline_thread
+        if t is None:
+            return True
+        t.join(timeout=timeout)
+        return not t.is_alive()
 
     # -- Pipeline configuration ------------------------------------------------
 

@@ -50,6 +50,6 @@
       "max_simulation_samples": 200
     },
     "target_metric_override": null,
-    "start_step": "Simulation",
+    "start_step": "Weight Quantization",
     "stop_step": null
   }
