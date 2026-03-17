@@ -37,11 +37,18 @@ export function renderPruningTab(pruningData, container) {
           </ul>
         </div>
       </div>
-      <div class="pruning-detail card">
-        <div class="card-header">Weight matrix (pruning masks)</div>
-        <div class="card-body">
-          <div class="pruning-detail-meta" id="pruning-detail-meta"></div>
-          <div class="pruning-detail-heatmap-wrap" id="pruning-detail-heatmap"></div>
+      <div class="pruning-panels">
+        <div class="pruning-detail card">
+          <div class="card-header">Layer details</div>
+          <div class="card-body">
+            <div class="pruning-detail-meta" id="pruning-detail-meta"></div>
+          </div>
+        </div>
+        <div class="pruning-heatmap-panel card">
+          <div class="card-header">Weight matrix (pruning masks)</div>
+          <div class="card-body">
+            <div class="pruning-detail-heatmap-wrap" id="pruning-detail-heatmap"></div>
+          </div>
         </div>
       </div>
     </div>`;
@@ -64,7 +71,7 @@ export function renderPruningTab(pruningData, container) {
       </table>`;
     const uri = (layer.heatmap_image || '').replace(/"/g, '&quot;');
     heatmapEl.innerHTML = uri
-      ? `<img src="${uri}" alt="Weight heatmap with pruning masks" class="pruning-detail-heatmap" style="max-width:${MAX_HEATMAP_PX}px;max-height:${MAX_HEATMAP_PX}px;object-fit:contain;border:1px solid var(--border-color, #2e3140);border-radius:4px">`
+      ? `<img src="${uri}" alt="Weight heatmap with pruning masks" class="pruning-detail-heatmap" style="border:1px solid var(--border-color, #2e3140);border-radius:4px">`
       : '<div class="empty-state">No heatmap</div>';
   }
 
