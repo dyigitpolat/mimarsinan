@@ -28,22 +28,38 @@ def resolve_activation_type(perceptron) -> str | None:
 
 
 # Activations that the SNN chip's NeuralCore crossbar can implement natively.
+# At IR mapping time, only these produce NeuralCores; all others become
+# host-side ComputeOps.
 CHIP_SUPPORTED_ACTIVATIONS = {"LeakyGradReLU", "ReLU", "LeakyReLU"}
 
-# Activations that are host-side pass-throughs: the layer has no real nonlinearity
-# and cannot be packaged as a chip perceptron even after adaptation.
-# Non-Identity activations (including GELU) are chip-targeted and can be
-# adapted to a chip-supported form (e.g. GELU → ReLU) before IR mapping.
-HOST_SIDE_ACTIVATIONS = {"Identity"}
+
+def _resolve_base_activation_name(perceptron) -> str:
+    """Return the base activation name string for a perceptron."""
+    act_type = resolve_activation_type(perceptron)
+    if act_type is None:
+        return "ReLU"  # default
+    return act_type.split(" + ")[0].strip()
 
 
 def is_chip_supported_activation(perceptron) -> bool:
-    """Check if a perceptron's base activation can run on a NeuralCore crossbar."""
-    act_type = resolve_activation_type(perceptron)
-    if act_type is None:
-        return True  # default (ReLU) is supported
-    base = act_type.split(" + ")[0].strip()
-    return base in CHIP_SUPPORTED_ACTIVATIONS
+    """Check if a perceptron's base activation can run on a NeuralCore crossbar.
+
+    Used at IR mapping time to decide NeuralCore vs ComputeOp.
+    """
+    return _resolve_base_activation_name(perceptron) in CHIP_SUPPORTED_ACTIVATIONS
+
+
+def is_chip_targeted_activation(perceptron) -> bool:
+    """Check if a perceptron targets chip deployment (already supported or adaptable).
+
+    Returns True for chip-supported activations (ReLU-like) and adaptable
+    activations (GELU, LeakyReLU — adapted to ReLU before IR mapping).
+    Returns False only for Identity (host-side only, no real nonlinearity).
+
+    Used by ``owned_perceptron_groups()`` to decide which perceptrons
+    participate in pipeline processing (scale propagation, quantization, etc.).
+    """
+    return _resolve_base_activation_name(perceptron) != "Identity"
 
 
 class Mapper(nn.Module):
