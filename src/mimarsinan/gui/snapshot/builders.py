@@ -330,6 +330,57 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
     }
 
 
+def _merge_consecutive_compute_groups(groups: list[dict]) -> list[dict]:
+    """Merge runs of 2+ consecutive compute-only groups into ``compute_group`` entries.
+
+    A single compute group between neural/virtual groups is left as-is.
+    Runs of two or more are combined into one entry with ``type: "compute_group"``.
+    The merged group carries ``sub_keys`` so callers can remap node-to-group edges.
+    """
+    result: list[dict] = []
+    run: list[dict] = []
+
+    def flush_run() -> None:
+        if len(run) == 1:
+            result.append(run[0])
+        elif len(run) >= 2:
+            all_node_ids = []
+            all_op_types: list[str] = []
+            sub_keys: list[str] = []
+            for g in run:
+                all_node_ids.extend(g.get("node_ids", []))
+                all_op_types.extend(g.get("op_types", []))
+                sub_keys.append(g["key"])
+            merged_key = " + ".join(sub_keys)
+            result.append({
+                "key": merged_key,
+                "order": run[0]["order"],
+                "type": "compute_group",
+                "num_cores": 0,
+                "num_ops": sum(g.get("num_ops", 0) for g in run),
+                "node_ids": all_node_ids,
+                "threshold_range": None,
+                "latency_range": None,
+                "axon_range": None,
+                "neuron_range": None,
+                "op_types": list(dict.fromkeys(all_op_types)),
+                "sub_keys": sub_keys,
+            })
+        run.clear()
+
+    for g in groups:
+        if g["type"] == "compute":
+            run.append(g)
+        else:
+            flush_run()
+            result.append(g)
+    flush_run()
+
+    for idx, g in enumerate(result):
+        g["order"] = idx
+    return result
+
+
 def _build_layer_groups(
     nodes: list[dict], edges: list[dict], node_group_map: dict
 ) -> tuple[list[dict], list[dict]]:
@@ -410,9 +461,18 @@ def _build_layer_groups(
             "op_types": list({o.get("op_type", "?") for o in ops}) if ops else [],
         })
 
+    groups = _merge_consecutive_compute_groups(groups)
+
+    merged_key_map: dict[str, str] = {}
+    for g in groups:
+        if g["type"] == "compute_group":
+            for sub_key in g.get("sub_keys", []):
+                merged_key_map[sub_key] = g["key"]
+
     node_to_group_key = {}
     for n in nodes:
-        node_to_group_key[n["id"]] = node_group_map.get(n["id"], n["name"])
+        raw_key = node_group_map.get(n["id"], n["name"])
+        node_to_group_key[n["id"]] = merged_key_map.get(raw_key, raw_key)
     node_to_group_key["input"] = "input"
     node_to_group_key["const1"] = "const1"
     node_to_group_key["output"] = "output"
@@ -499,6 +559,50 @@ def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
         pass
 
     return spans_out
+
+
+def _group_consecutive_compute_stages(stages: list[dict]) -> list[dict]:
+    """Merge runs of 2+ consecutive compute stages into ``compute_group`` entries.
+
+    A lone compute stage between neural segments is left as-is (``kind: "compute"``).
+    Runs of two or more consecutive compute stages become a single entry with
+    ``kind: "compute_group"`` carrying an ``ops`` list of the individual op dicts.
+    """
+    result: list[dict] = []
+    run: list[dict] = []
+
+    def flush_run() -> None:
+        if len(run) == 1:
+            result.append(run[0])
+        elif len(run) >= 2:
+            op_types = [s.get("op_type", "?") for s in run]
+            result.append({
+                "index": run[0]["index"],
+                "kind": "compute_group",
+                "name": f"Compute Group ({len(run)} ops)",
+                "ops": [
+                    {
+                        "op_type": s.get("op_type", "?"),
+                        "op_name": s.get("op_name", s.get("name", "?")),
+                        "input_shape": s.get("input_shape"),
+                        "output_shape": s.get("output_shape"),
+                    }
+                    for s in run
+                ],
+                "num_ops": len(run),
+                "op_types": list(dict.fromkeys(op_types)),
+                "is_barrier": True,
+            })
+        run.clear()
+
+    for stage in stages:
+        if stage["kind"] == "compute":
+            run.append(stage)
+        else:
+            flush_run()
+            result.append(stage)
+    flush_run()
+    return result
 
 
 def snapshot_hard_core_mapping(mapping: Any) -> dict:
@@ -599,6 +703,8 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
             stage_info["is_barrier"] = True
 
         stages_info.append(stage_info)
+
+    stages_info = _group_consecutive_compute_stages(stages_info)
 
     core_reuse = _compute_core_reuse(stages_info)
     global_core_layout = _compute_global_core_layout(stages_info)
