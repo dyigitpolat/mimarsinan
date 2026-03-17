@@ -165,7 +165,7 @@ def create_app(
     @app.middleware("http")
     async def _no_cache_static(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith("/static/"):
+        if request.url.path.startswith("/static/") or request.url.path == "/wizard":
             response.headers["Cache-Control"] = "no-store"
         return response
 
