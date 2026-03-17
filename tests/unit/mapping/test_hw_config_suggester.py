@@ -303,6 +303,89 @@ class TestSuggestHardwareConfig:
         verification = verify_hardware_config(softcores, result.core_types, allow_axon_coalescing=True)
         assert verification["feasible"]
 
+    def test_combined_coalescing_and_splitting_128x256_on_16x16(self):
+        """128×256 softcore on 16×16 hw cores using both coalescing + splitting.
+
+        Coalescing splits 128 axons into 8 fragments of 16.
+        Splitting splits 256 neurons into 16 fragments of 16.
+        Total: 8 × 16 = 128 hardware cores.
+        """
+        from mimarsinan.mapping.layout.layout_packer import pack_layout
+        from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
+
+        softcores = [LayoutSoftCoreSpec(input_count=128, output_count=256)]
+        hw_types = [LayoutHardCoreType(max_axons=16, max_neurons=16, count=128)]
+        result = pack_layout(
+            softcores=softcores,
+            core_types=hw_types,
+            allow_neuron_splitting=True,
+            allow_axon_coalescing=True,
+        )
+        assert result.feasible, f"Combined coalescing+splitting failed: {result.error}"
+        assert result.cores_used == 128  # 8 coalescing × 16 splits
+
+    def test_combined_coalescing_and_splitting_suggest_and_verify(self):
+        """Auto-suggest with both features produces a feasible config."""
+        softcores = _make_softcores([
+            (128, 256), (64, 32), (32, 16),
+        ])
+        suggestion = suggest_hardware_config(
+            softcores,
+            allow_coalescing=True,
+            allow_neuron_splitting=True,
+        )
+        assert suggestion.total_cores > 0
+        verification = verify_hardware_config(
+            softcores, suggestion.core_types,
+            allow_neuron_splitting=True,
+            allow_axon_coalescing=True,
+        )
+        assert verification["feasible"], (
+            f"Combined suggest→verify failed: {verification['errors']}"
+        )
+
+    def test_splitting_only_suggest_and_verify(self):
+        """Auto-suggest with splitting-only produces a feasible config."""
+        softcores = _make_softcores([
+            (64, 256), (64, 128), (64, 32),
+        ])
+        suggestion = suggest_hardware_config(
+            softcores,
+            allow_neuron_splitting=True,
+        )
+        assert suggestion.total_cores > 0
+        # Both types should have max_axons >= 64 (the hard constraint)
+        for ct in suggestion.core_types:
+            assert ct["max_axons"] >= 64, f"Splitting-only type has insufficient axons: {ct}"
+        verification = verify_hardware_config(
+            softcores, suggestion.core_types,
+            allow_neuron_splitting=True,
+        )
+        assert verification["feasible"], (
+            f"Splitting-only suggest→verify failed: {verification['errors']}"
+        )
+
+    def test_coalescing_only_suggest_and_verify(self):
+        """Auto-suggest with coalescing-only produces a feasible config."""
+        softcores = _make_softcores([
+            (256, 64), (128, 64), (32, 64),
+        ])
+        suggestion = suggest_hardware_config(
+            softcores,
+            allow_coalescing=True,
+        )
+        assert suggestion.total_cores > 0
+        # Both types should have max_neurons >= 64 (the hard constraint)
+        for ct in suggestion.core_types:
+            assert ct["max_neurons"] >= 64, f"Coalescing-only type has insufficient neurons: {ct}"
+        verification = verify_hardware_config(
+            softcores, suggestion.core_types,
+            allow_axon_coalescing=True,
+        )
+        assert verification["feasible"], (
+            f"Coalescing-only suggest→verify failed: {verification['errors']}"
+        )
+
     def test_both_coalescing_and_no_coalescing_produce_valid_mappings(self):
         """Both allow_coalescing=False (H×W, W×H) and True (H×H, W×H) must pack all softcores."""
         from mimarsinan.mapping.layout.layout_packer import pack_layout

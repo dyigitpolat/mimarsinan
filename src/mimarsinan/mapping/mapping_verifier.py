@@ -234,9 +234,21 @@ def verify_hardware_config(
         err_msg = result.error or "Hardware configuration cannot fit all soft cores."
         errors.append(err_msg)
         total_core_count = sum(int(ct.get("count", 0)) for ct in core_types)
+
+        # Estimate the minimum number of cores needed so the user knows how far off they are.
+        import math
+        max_hw_ax = max(hw.max_axons for hw in hw_types) if hw_types else 1
+        max_hw_neu = max(hw.max_neurons for hw in hw_types) if hw_types else 1
+        est_min = 0
+        for sc in softcores:
+            ax_f = math.ceil(sc.input_count / max_hw_ax) if allow_axon_coalescing else 1
+            neu_f = math.ceil(sc.output_count / max_hw_neu) if allow_neuron_splitting else 1
+            est_min += ax_f * neu_f
+
+        hint = f"Increase core counts (estimated minimum ~{est_min}) or core dimensions."
         field_errors["total_count"] = (
             f"Packing failed ({total_core_count} cores for {len(softcores)} soft cores): "
-            f"{err_msg}. Increase core counts or core dimensions."
+            f"{hint}"
         )
 
     errors = list(field_errors.values()) if field_errors else errors

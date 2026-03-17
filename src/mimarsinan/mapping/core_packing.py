@@ -166,7 +166,9 @@ def _try_split_into_unused(
     """Try to split *core* into a fresh unused hardware core.
 
     Last resort when the core's neurons exceed every core type's total
-    neuron capacity but axons fit.
+    neuron capacity but axons fit.  No threshold is applied here — the
+    fragment size equals the hardware core's neuron capacity, which is
+    always a reasonable size (the hardware designer chose it).
     """
     best_hc = None
     best_total_n = -1
@@ -176,7 +178,7 @@ def _try_split_into_unused(
         if (
             core.get_input_count() <= total_a
             and core.get_output_count() > total_n
-            and total_n > split_threshold * core.get_output_count()
+            and total_n > 0
             and total_n > best_total_n
         ):
             best_hc = hc

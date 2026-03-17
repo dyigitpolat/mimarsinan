@@ -223,20 +223,25 @@ def _min_hw_coverage(
 ) -> tuple[int, int]:
     """Return (h, w) seed dimensions for ``_make_two_core_types``.
 
+    The user enables coalescing/splitting because they want smaller cores in
+    that dimension.  We honour this by halving the flexible dimension when the
+    corresponding feature is active (floor at 20 % of max prevents pathological
+    fragmentation).
+
     Neither:
         h = max_dim, w = min_dim — both dimensions must cover all softcores.
 
     Splitting only:
-        h = max_ax (hard axon constraint), w = median_neu ≥ 20% of max_neu.
-        Neuron excess is handled by splitting, so the typical output count suffices.
+        h = max_ax (hard axon constraint), w = median_neu / 2 ≥ 20% of max_neu.
+        Neurons are split, so half the typical output count suffices per core.
 
     Coalescing only:
-        h = max_neu (hard neuron constraint), w = median_ax ≥ 20% of max_ax.
-        Axon excess is handled by coalescing, so the typical input count suffices.
+        h = max_neu (hard neuron constraint), w = median_ax / 2 ≥ 20% of max_ax.
+        Axons are coalesced, so half the typical input count suffices per core.
 
     Both:
-        h = median_neu ≥ 20% of max_neu, w = median_ax ≥ 20% of max_ax.
-        Both dimensions are relaxed; splitting and coalescing handle the outliers.
+        h = median_neu / 2 ≥ 20% of max_neu, w = median_ax / 2 ≥ 20% of max_ax.
+        Both dimensions halved; splitting and coalescing handle the rest.
     """
     max_ax, max_neu, min_dim, max_dim = _dimension_bounds(softcores)
     if not softcores:
@@ -247,18 +252,18 @@ def _min_hw_coverage(
     sorted_neu = sorted(sc.output_count for sc in softcores)
 
     if allow_neuron_splitting and allow_coalescing:
-        h = _next_multiple(max(_median(sorted_neu), _floor20(max_neu)), g)
-        w = _next_multiple(max(_median(sorted_ax), _floor20(max_ax)), g)
+        h = _next_multiple(max(_median(sorted_neu) // 2, _floor20(max_neu)), g)
+        w = _next_multiple(max(_median(sorted_ax) // 2, _floor20(max_ax)), g)
         return max(h, 1), max(w, 1)
 
     if allow_neuron_splitting:
         h = _next_multiple(max_ax, g)
-        w = _next_multiple(max(_median(sorted_neu), _floor20(max_neu)), g)
+        w = _next_multiple(max(_median(sorted_neu) // 2, _floor20(max_neu)), g)
         return h, max(w, 1)
 
     if allow_coalescing:
         h = _next_multiple(max_neu, g)
-        w = _next_multiple(max(_median(sorted_ax), _floor20(max_ax)), g)
+        w = _next_multiple(max(_median(sorted_ax) // 2, _floor20(max_ax)), g)
         return max(h, 1), max(w, 1)
 
     h = _next_multiple(max_dim, g)
@@ -397,22 +402,36 @@ def suggest_hardware_config(
             allow_axon_coalescing=allow_coalescing,
         )
 
+    # Determine which dimensions are flexible (may grow during iteration).
+    # When splitting is on, h = max_ax is a hard constraint (axons must fit).
+    # When coalescing is on, h = max_neu is a hard constraint (neurons must fit).
+    # "Neither" and "both" cases can grow both dimensions.
+    grow_h = not (allow_neuron_splitting ^ allow_coalescing)  # grow when both or neither
+    grow_w = True  # w is always the flexible (median-based) dimension
+
+    # When splitting/coalescing is enabled the whole point is smaller cores —
+    # skip the occupancy check (which forces growth until many softcores share
+    # a core) and accept any feasible packing.
+    skip_occupancy = allow_neuron_splitting or allow_coalescing
+
     for _ in range(max_iter):
         types_spec = _make_types(h, w)
         type1, type2 = types_spec[0], types_spec[1]
         total = _count(type1, type2)
         feasible, cores_used, counts = _pack(type1, type2, total)
         if not feasible or counts is None:
-            h = int(math.ceil(h * 1.25)) if h else 1
+            if grow_h:
+                h = int(math.ceil(h * 1.25)) if h else 1
             w = int(math.ceil(w * 1.25)) if w else 1
             continue
-        if _occupancy_ok(counts):
+        if skip_occupancy or _occupancy_ok(counts):
             c1, c2 = (total + 1) // 2, total // 2
             best_hw = (h, w)
             best_counts = (c1, c2)
             best_total = total
             break
-        h = int(math.ceil(h * 1.25)) if h else 1
+        if grow_h:
+            h = int(math.ceil(h * 1.25)) if h else 1
         w = int(math.ceil(w * 1.25)) if w else 1
 
     if best_hw is None or best_counts is None or best_total is None:

@@ -883,7 +883,12 @@ function _doHwValidation(successPrefix) {
   fetch('/api/hw_config_verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_repr_json: body, core_types: coreTypes }),
+    body: JSON.stringify({
+      model_repr_json: body,
+      core_types: coreTypes,
+      allow_coalescing: body.allow_coalescing || false,
+      allow_neuron_splitting: body.allow_neuron_splitting || false,
+    }),
   }).then(r => r.json()).then(data => {
     if (data.error) return;  // server error, skip silently
     if (data.feasible && successPrefix) {
