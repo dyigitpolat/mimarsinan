@@ -24,7 +24,9 @@
         <div class="logo-text">Mimarsinan <span>Deployment Configurator</span></div>
       </div>
       <div class="header-actions">
+        <a href="/"><button type="button" class="btn-sm">Home</button></a>
         <button class="btn-run" id="runBtn" onclick="runPipeline()">RUN</button>
+        <button class="btn-sm" id="saveTemplateBtn" onclick="saveAsTemplate()">Save as template</button>
         <button class="btn-sm" onclick="resetAll()">Reset</button>
         <div class="toggle-row" id="showJsonToggle" onclick="toggleShowJson(this)" style="padding:6px 12px">
           <span class="toggle-label" style="font-size:0.78rem">Show generated JSON</span>
@@ -295,7 +297,10 @@
               <div class="section-title">Hardware Configuration</div>
               <div class="section-subtitle">Core types, dimensions, and quantization precision</div>
             </div>
-            <button class="btn-sm btn-hw-auto" id="hwAutoBtn" onclick="event.stopPropagation();autoFillHardware()" title="Auto-suggest hardware based on model settings">Auto</button>
+            <div class="hw-auto-toggle on" id="hwAutoSuggestToggle" onclick="event.stopPropagation();toggleHwAutoSuggest(this)" title="Auto-suggest hardware based on model settings">
+              <span class="hw-auto-toggle-label">Auto</span>
+              <div class="hw-auto-toggle-switch"></div>
+            </div>
             <span class="section-chevron">▾</span>
           </div>
           <!-- Validation banner: shown when HW config cannot satisfy model requirements -->
@@ -412,7 +417,7 @@
 
             <div class="dep-bar" id="spikingDeps"></div>
 
-            <!-- Cycles & Tq -->
+            <!-- Cycles, Tq, Max simulation samples -->
             <div class="field-grid" style="margin-bottom:14px">
               <div class="field">
                 <label class="field-label">Cycles <span class="hint">simulation time steps</span></label>
@@ -421,6 +426,10 @@
               <div class="field">
                 <label class="field-label">Target Tq <span class="hint">activation quantization levels</span></label>
                 <input type="number" id="targetTq" value="32" min="1" oninput="onTqChange(); update()">
+              </div>
+              <div class="field">
+                <label class="field-label">Max simulation samples <span class="hint">leave empty for full test set</span></label>
+                <input type="number" id="maxSimulationSamples" value="" min="0" placeholder="all" oninput="update()">
               </div>
             </div>
             <div class="note warn hide" id="tqWarn"></div>

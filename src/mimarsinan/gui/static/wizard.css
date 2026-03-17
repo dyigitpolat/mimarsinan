@@ -1093,26 +1093,91 @@ option {
 .section:nth-child(6):not(.section-hidden) {
   animation-delay: 0.2s;
 }
-/* ─── Hardware Auto & Validation ──────────────────────── */
+/* ─── Hardware Auto Toggle (header pill) ─────────────────── */
 
-.btn-hw-auto {
-  font-size: 0.65rem;
-  padding: 3px 10px;
-  margin-right: 8px;
-  background: var(--bg-card);
-  border-color: var(--accent-amber, #f59e0b);
-  color: var(--accent-amber, #f59e0b);
+.hw-auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   flex-shrink: 0;
+  padding: 5px 10px 5px 9px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition);
+  margin-right: 2px;
 }
 
-.btn-hw-auto:hover {
-  background: var(--accent-amber, #f59e0b);
-  color: #fff;
+.hw-auto-toggle:hover {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.05);
 }
 
-.btn-hw-auto.loading {
-  opacity: 0.6;
+.hw-auto-toggle.on {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.hw-auto-toggle-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  transition: color var(--transition);
+}
+
+.hw-auto-toggle.on .hw-auto-toggle-label {
+  color: var(--accent-amber);
+}
+
+.hw-auto-toggle-switch {
+  width: 26px;
+  height: 15px;
+  border-radius: 8px;
+  background: var(--border);
+  position: relative;
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+
+.hw-auto-toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2.5px;
+  left: 2.5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: left var(--transition), background var(--transition);
+}
+
+.hw-auto-toggle.on .hw-auto-toggle-switch {
+  background: var(--accent-amber);
+}
+
+.hw-auto-toggle.on .hw-auto-toggle-switch::after {
+  left: 13.5px;
+  background: #fff;
+}
+
+.hw-auto-toggle.loading {
+  opacity: 0.65;
+  pointer-events: none;
   cursor: wait;
+}
+
+/* subtle pulse on the switch while loading */
+.hw-auto-toggle.loading .hw-auto-toggle-switch {
+  animation: hw-toggle-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes hw-toggle-pulse {
+  from { opacity: 1; }
+  to   { opacity: 0.4; }
 }
 
 .hw-validation-banner {
