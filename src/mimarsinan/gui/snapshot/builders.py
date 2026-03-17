@@ -111,6 +111,54 @@ def _get_model_perceptrons(model: Any) -> list:
     return []
 
 
+def snapshot_pruning_layers(model: Any) -> dict:
+    """Extract per-layer weight heatmaps with pruning masks for the Pruning Adaptation step.
+
+    Only includes perceptrons that have both prune_row_mask and prune_col_mask buffers
+    with lengths matching layer.weight.shape. Returns image data URIs only (no raw matrices).
+    """
+    from mimarsinan.gui.heatmap_renderer import render_heatmap_png_data_uri
+
+    perceptrons = _get_model_perceptrons(model)
+    layers_out: list[dict] = []
+
+    for idx, p in enumerate(perceptrons):
+        layer = getattr(p, "layer", None)
+        if layer is None or not hasattr(layer, "weight"):
+            continue
+        weight = layer.weight.data.detach().cpu().numpy()
+        out_f, in_f = weight.shape
+        prune_row = getattr(layer, "prune_row_mask", None)
+        prune_col = getattr(layer, "prune_col_mask", None)
+        if prune_row is None or prune_col is None:
+            continue
+        row_list = prune_row.detach().cpu().tolist()
+        col_list = prune_col.detach().cpu().tolist()
+        if len(row_list) != out_f or len(col_list) != in_f:
+            continue
+        try:
+            heatmap_uri = render_heatmap_png_data_uri(
+                weight,
+                pruned_row_mask=row_list,
+                pruned_col_mask=col_list,
+            )
+        except Exception:
+            logger.debug("Failed to render pruning heatmap for layer %s", idx, exc_info=True)
+            continue
+        layer_name = getattr(p, "name", f"perceptron_{idx}")
+        pruned_rows = sum(1 for x in row_list if x)
+        pruned_cols = sum(1 for x in col_list if x)
+        layers_out.append({
+            "layer_index": idx,
+            "layer_name": str(layer_name),
+            "shape": [int(out_f), int(in_f)],
+            "pruned_rows": int(pruned_rows),
+            "pruned_cols": int(pruned_cols),
+            "heatmap_image": heatmap_uri,
+        })
+
+    return {"layers": layers_out}
+
 
 # ---------------------------------------------------------------------------
 # IR Graph snapshot
@@ -857,6 +905,20 @@ def build_step_snapshot(
                     break
                 except Exception:
                     logger.debug("Failed to snapshot ir_graph for hardware tab from key %r", key, exc_info=True)
+
+    # Pruning Adaptation step: per-layer weight heatmaps with pruning masks (red lines)
+    if step_name == "Pruning Adaptation" and "model" in snapshot:
+        for key in cache.keys():
+            short = key.split(".", 1)[-1] if "." in key else key
+            if short in ("model", "fused_model"):
+                try:
+                    model_obj = cache.get(key)
+                    snapshot["pruning_layers"] = snapshot_pruning_layers(model_obj)
+                    if step is not None:
+                        snapshot_key_kinds["pruning_layers"] = "new"
+                except Exception:
+                    logger.debug("Failed to snapshot pruning layers from key %r", key, exc_info=True)
+                break
 
     cache_keys = [k.split(".", 1)[-1] if "." in k else k for k in cache.keys() if not k.startswith("__")]
     has_rich_data = any(k in snapshot for k in ("model", "ir_graph", "hard_core_mapping", "search_result"))
