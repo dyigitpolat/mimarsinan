@@ -100,6 +100,25 @@ class TestBuildDeploymentConfigFromState:
         assert out["platform_constraints"]["auto"]["fixed"]["target_tq"] == 16
         assert out["platform_constraints"]["auto"]["search_space"]["num_core_types"] == 2
 
+    def test_max_simulation_samples_preserved_when_set(self):
+        state = {
+            "deployment_parameters": {
+                "configuration_mode": "user",
+                "model_type": "mlp_mixer",
+                "model_config": {},
+                "max_simulation_samples": 200,
+            },
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "x",
+            "generated_files_path": "./out",
+        }
+        out = build_deployment_config_from_state(state)
+        assert out["deployment_parameters"]["max_simulation_samples"] == 200
+
+    def test_max_simulation_samples_absent_by_default_full_set(self):
+        out = build_deployment_config_from_state({})
+        assert "max_simulation_samples" not in out["deployment_parameters"]
+
 
 class TestValidateWizardState:
     def test_valid_state_passes(self):

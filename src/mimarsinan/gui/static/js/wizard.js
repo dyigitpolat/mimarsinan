@@ -75,12 +75,31 @@ function init() {
     applyHwDeps();
     onPruningFractionChange();
     updateSearchVisibility();
-    update();
-    schedulePipelineStepsUpdate();
-    autoFillHardware();
-    var showJson = document.getElementById('showJsonToggle');
-    var copyBtn = document.getElementById('copyJsonBtn');
-    if (copyBtn && showJson) copyBtn.style.display = showJson.classList.contains('on') ? '' : 'none';
+
+    var params = new URLSearchParams(location.search);
+    var runId = params.get('run_id');
+    var templateId = params.get('template_id');
+
+    function done() {
+      update();
+      schedulePipelineStepsUpdate();
+      if (isHwAutoSuggestOn()) autoFillHardware(); else scheduleHwValidation();
+      var showJson = document.getElementById('showJsonToggle');
+      var copyBtn = document.getElementById('copyJsonBtn');
+      if (copyBtn && showJson) copyBtn.style.display = showJson.classList.contains('on') ? '' : 'none';
+    }
+
+    if (runId) {
+      fetch('/api/runs/' + encodeURIComponent(runId)).then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
+        if (c) loadStateFromConfig(c).then(done); else done();
+      }).catch(function () { done(); });
+    } else if (templateId) {
+      fetch('/api/templates/' + encodeURIComponent(templateId)).then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
+        if (c) loadStateFromConfig(c).then(done); else done();
+      }).catch(function () { done(); });
+    } else {
+      done();
+    }
   });
 }
 
@@ -538,6 +557,9 @@ function buildConfig() {
     }
   }
 
+  const maxSim = parseInt(v('maxSimulationSamples'), 10);
+  if (maxSim > 0) dp.max_simulation_samples = maxSim;
+
   // platform_constraints
   let platformConstraints;
   const allowCoalescing = isToggleOn('coreCoalescingToggle');
@@ -587,8 +609,8 @@ function buildConfig() {
     platform_constraints: platformConstraints,
     deployment_parameters: dp,
     target_metric_override: null,
-    start_step: null,
-    stop_step: null,
+    start_step: (typeof window.__wizardStartStep !== 'undefined' && window.__wizardStartStep != null) ? window.__wizardStartStep : null,
+    stop_step: (typeof window.__wizardStopStep !== 'undefined' && window.__wizardStopStep != null) ? window.__wizardStopStep : null,
   };
 
   // Clean undefined
@@ -597,6 +619,137 @@ function buildConfig() {
   });
 
   return config;
+}
+
+// ── Load config from run or template (inverse of buildConfig) ─────
+function loadStateFromConfig(config) {
+  if (!config || typeof config !== 'object') return Promise.resolve();
+  const dp = config.deployment_parameters || {};
+  const pc = config.platform_constraints || {};
+
+  function setVal(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') {
+      el.value = val != null ? String(val) : '';
+    } else if (el.getAttribute('type') === 'number') {
+      el.value = val != null ? Number(val) : '';
+    } else {
+      el.value = val != null ? String(val) : '';
+    }
+  }
+  function setToggleFromConfig(id, val) {
+    setToggle(id, !!val, true);
+  }
+
+  setVal('experimentName', config.experiment_name);
+  setVal('dataProvider', config.data_provider_name);
+  setVal('seed', config.seed);
+
+  const configMode = dp.configuration_mode || 'user';
+  setSegVal('configMode', configMode);
+  handleSegmentChange('configMode', configMode);
+
+  const modelType = dp.model_type || state.modelType;
+  var modelConfigPromise = Promise.resolve();
+  if (MODEL_TYPES.some(function (m) { return m.id === modelType; })) {
+    state.modelType = modelType;
+    renderModelChips();
+    modelConfigPromise = ensureModelConfigSchema(state.modelType).then(function () {
+      renderModelConfigFields();
+      const modelConfig = dp.model_config || {};
+      const schema = MODEL_CONFIG_SCHEMAS[state.modelType] || [];
+      schema.forEach(function (f) {
+        const v = modelConfig[f.key];
+        if (v === undefined) return;
+        const el = document.getElementById('mc_' + f.key);
+        if (!el) return;
+        if (f.type === 'toggle') setToggleFromConfig('mc_' + f.key, v);
+        else if (f.type === 'text' && f.key === 'hidden_dims') setVal('mc_' + f.key, Array.isArray(v) ? v.join(', ') : v);
+        else setVal('mc_' + f.key, v);
+      });
+    });
+  }
+
+  const weightSourceMode = dp.weight_source ? 'pretrained' : 'train';
+  setSegVal('weightSourceMode', weightSourceMode);
+  handleSegmentChange('weightSourceMode', weightSourceMode);
+  setVal('lr', dp.lr);
+  setVal('trainingEpochs', dp.training_epochs);
+  setVal('weightSource', dp.weight_source);
+  setVal('lrPretrained', dp.finetune_lr != null ? dp.finetune_lr : dp.lr);
+  setVal('finetuneEpochs', dp.finetune_epochs);
+  setVal('tunerEpochs', dp.tuner_epochs);
+  setVal('degradationTolerance', dp.degradation_tolerance);
+
+  const hwMode = (pc.mode === 'auto') ? 'auto' : 'user';
+  setSegVal('hwMode', hwMode);
+  handleSegmentChange('hwMode', hwMode);
+
+  if (hwMode === 'user') {
+    const cores = pc.cores || [{ max_axons: 256, max_neurons: 256, count: 100, has_bias: true }];
+    state.coreTypes = cores.map(function (c) {
+      return { max_axons: c.max_axons || 256, max_neurons: c.max_neurons || 256, count: c.count || 100, has_bias: c.has_bias !== false };
+    });
+    renderCoreTypes();
+    setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
+    setToggleFromConfig('coreCoalescingToggle', pc.allow_core_coalescing);
+    setToggleFromConfig('neuronSplittingToggle', pc.allow_neuron_splitting);
+    setVal('weightBits', pc.weight_bits != null ? pc.weight_bits : dp.weight_bits);
+    setVal('targetTq', pc.target_tq);
+    setVal('simCycles', pc.simulation_steps);
+  } else {
+    const auto = pc.auto || {};
+    const fixed = auto.fixed || {};
+    const ss = auto.search_space || {};
+    setVal('targetTq', fixed.target_tq);
+    setVal('simCycles', fixed.simulation_steps);
+    setVal('weightBits', fixed.weight_bits);
+    setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
+    setToggleFromConfig('coreCoalescingToggle', fixed.allow_core_coalescing);
+    setToggleFromConfig('neuronSplittingToggle', fixed.allow_neuron_splitting);
+    setVal('numCoreTypes', ss.num_core_types);
+    setVal('coreTypeCounts', Array.isArray(ss.core_type_counts) ? ss.core_type_counts.join(', ') : ss.core_type_counts);
+    setVal('coreAxonBounds', Array.isArray(ss.core_axons_bounds) ? ss.core_axons_bounds.join(', ') : ss.core_axons_bounds);
+    setVal('coreNeuronBounds', Array.isArray(ss.core_neurons_bounds) ? ss.core_neurons_bounds.join(', ') : ss.core_neurons_bounds);
+    setVal('maxThresholdGroups', ss.max_threshold_groups);
+  }
+
+  setToggleFromConfig('floatWeightsToggle', dp.weight_quantization === false);
+  setSegVal('spikingMode', dp.spiking_mode || 'rate');
+  setVal('firingMode', dp.firing_mode);
+  setVal('spikeGenMode', dp.spike_generation_mode);
+  setVal('thresholdMode', dp.thresholding_mode);
+  setToggleFromConfig('actQuantToggle', dp.activation_quantization);
+  setToggleFromConfig('wtQuantToggle', dp.weight_quantization);
+  setToggleFromConfig('pruningToggle', dp.pruning);
+  setVal('pruningFraction', dp.pruning_fraction != null ? dp.pruning_fraction : 0.5);
+  setVal('maxSimulationSamples', dp.max_simulation_samples != null ? dp.max_simulation_samples : '');
+  applySpikingDeps();
+  applyHwDeps();
+  onPruningFractionChange();
+
+  const arch = dp.arch_search || {};
+  if (arch.optimizer) setSegVal('optimizer', arch.optimizer);
+  setVal('popSize', arch.pop_size);
+  setVal('generations', arch.generations);
+  setVal('searchSeed', arch.seed);
+  setVal('warmupFraction', arch.warmup_fraction);
+  setVal('accuracyEvaluator', arch.accuracy_evaluator);
+  setVal('extrapTrainEpochs', arch.extrapolation_num_train_epochs);
+  setVal('extrapCheckpoints', arch.extrapolation_num_checkpoints);
+  setVal('extrapTargetEpochs', arch.extrapolation_target_epochs);
+  setVal('searchBatchSize', arch.training_batch_size != null ? arch.training_batch_size : '');
+  setVal('kediModel', arch.kedi_model);
+  setVal('kediAdapter', arch.kedi_adapter);
+  setVal('kediCandidates', arch.candidates_per_batch);
+  setVal('kediRegenRounds', arch.max_regen_rounds);
+
+  window.__wizardStartStep = config.start_step != null ? config.start_step : null;
+  window.__wizardStopStep = config.stop_step != null ? config.stop_step : null;
+
+  updateSearchVisibility();
+  return modelConfigPromise;
 }
 
 function v(id) { const el = document.getElementById(id); return el ? el.value : ''; }
@@ -616,7 +769,7 @@ function update() {
   document.getElementById('jsonOutput').innerHTML = renderJson(buildConfig());
   schedulePipelineStepsUpdate();
   if (getSegVal('hwMode') === 'user') {
-    if (_hwAutoMode) {
+    if (isHwAutoSuggestOn() && _hwAutoMode) {
       scheduleHwAutoRefill();
     } else {
       scheduleHwValidation();
@@ -704,6 +857,27 @@ function downloadJson() {
 }
 function resetAll() { if (confirm('Reset all configuration to defaults?')) location.reload(); }
 
+function saveAsTemplate() {
+  var name = window.prompt('Template name:', buildConfig().experiment_name || 'config');
+  if (name == null || !name.trim()) return;
+  var btn = document.getElementById('saveTemplateBtn');
+  if (btn) btn.disabled = true;
+  fetch('/api/templates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim(), config: buildConfig() }),
+  }).then(function (r) {
+    if (!r.ok) return r.json().then(function (b) { throw new Error(b.error || 'Save failed'); });
+    return r.json();
+  }).then(function () {
+    alert('Template saved.');
+  }).catch(function (err) {
+    alert(err.message || 'Failed to save template');
+  }).finally(function () {
+    if (btn) btn.disabled = false;
+  });
+}
+
 // ── Show JSON toggle & RUN ──────────────────────────────────
 function toggleShowJson(el) {
   el.classList.toggle('on');
@@ -723,7 +897,7 @@ function runPipeline() {
     body: JSON.stringify(config),
   }).then(function (res) {
     if (res.status === 202 || res.ok) {
-      window.location.href = '/';
+      window.location.href = '/monitor';
       return;
     }
     return res.json().then(function (body) {
@@ -739,6 +913,23 @@ function runPipeline() {
 // ══════════════════════════════════════════════════════════
 // HARDWARE AUTO-FILL & VALIDATION
 // ══════════════════════════════════════════════════════════
+
+function isHwAutoSuggestOn() {
+  const el = document.getElementById('hwAutoSuggestToggle');
+  return el ? el.classList.contains('on') : true;
+}
+
+function toggleHwAutoSuggest(el) {
+  if (!el || el.classList.contains('loading')) return;
+  el.classList.toggle('on');
+  if (isHwAutoSuggestOn()) {
+    autoFillHardware();
+  } else {
+    _hwAutoMode = false;
+    scheduleHwValidation();
+  }
+  update();
+}
 
 let _hwValidateTimer = null;
 let _hwValidating = false;
@@ -792,8 +983,8 @@ function autoFillHardware() {
   if (_hwRefilling) return;
   _hwRefilling = true;
 
-  const btn = document.getElementById('hwAutoBtn');
-  if (btn) { btn.classList.add('loading'); btn.textContent = '...'; }
+  const toggleEl = document.getElementById('hwAutoSuggestToggle');
+  if (toggleEl) toggleEl.classList.add('loading');
 
   const body = _buildHwApiBody();
 
@@ -837,7 +1028,8 @@ function autoFillHardware() {
     _showHwValidation(false, ['Auto-config request failed: ' + err.message], {});
   }).finally(() => {
     _hwRefilling = false;
-    if (btn) { btn.classList.remove('loading'); btn.textContent = 'Auto'; }
+    const toggleEl = document.getElementById('hwAutoSuggestToggle');
+    if (toggleEl) toggleEl.classList.remove('loading');
   });
 }
 
@@ -853,7 +1045,7 @@ function scheduleHwAutoRefill() {
   }
   _hwAutoRefillTimer = setTimeout(() => {
     _hwAutoRefillTimer = null;
-    if (_hwAutoMode && !_hwRefilling) autoFillHardware();
+    if (isHwAutoSuggestOn() && _hwAutoMode && !_hwRefilling) autoFillHardware();
   }, 1200);
 }
 
