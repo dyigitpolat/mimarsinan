@@ -38,13 +38,7 @@ soft-core detail with "Located in" (segment, hard core, region) for two-way
 traceability. Snapshot provides per-placement utilization and fused boundaries. The **wizard** (`wizard.html`, `wizard.css`, `js/wizard.js`) is the
 deployment configurator: it loads data providers and model types from the API,
 builds a config, and submits it via POST `/api/run`; RUN redirects to `/` (monitor).
-Rate-coded spiking mode forces activation quantization ON; the Cycles field is
-disabled for non-quantized TTFS (analytical TTFS does not use simulation steps).
-Non-quantized TTFS has activation quantization OFF by default (user can toggle);
-Target Tq is disabled when activation quantization is off. **Float weights** is a
-toggle in the **Hardware Configuration** panel (next to Weight Bits): when ON it
-disables the Weight Bits control and locks Weight Quantization to off in Deployment
-Mode; pipeline uses vanilla (float) deployment. **Pruning fraction** is a [0–1) range slider with value display; the 0.8–1.0 range
+**Weight Quantization** and **Activation Quantization** are locked (derived) from Float and Spiking Mode: no manual selection in regular deployment. Float ON locks Weight Quant to OFF; Float OFF locks it to ON. Rate-coded or TTFS Quantized locks Activation Quant to ON; plain TTFS locks it to OFF. Rate-coded spiking mode thus forces activation quantization ON; the Cycles field is disabled for non-quantized TTFS (analytical TTFS does not use simulation steps). Target Tq is disabled when activation quantization is off. **Float weights** is a toggle in the **Hardware Configuration** panel (next to Weight Bits): when ON it disables the Weight Bits control and locks Weight Quantization to off in Deployment Mode; pipeline uses vanilla (float) deployment. **Pruning fraction** is a [0–1) range slider with value display; the 0.8–1.0 range
 is styled in red and a feasibility warning is shown in that range.
 
 **Pipeline steps bar**: A bar at the top of the wizard (below the header) shows the
