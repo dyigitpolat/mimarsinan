@@ -284,18 +284,23 @@ class TestSuggestHardwareConfig:
                 f"Occupancy constraint failed: {n_ok}/{len(counts)} cores have >=4 softcores"
             )
 
-    def test_coalescing_two_types_square_and_wide(self):
-        """With coalescing, recommend H×H (square) and W×H (wide) with W > H."""
+    def test_coalescing_two_types_same_neuron_height(self):
+        """With coalescing, both types share full neuron coverage; axon widths differ."""
         softcores = _make_uniform_softcores(20, axons=32, neurons=24)
         result = suggest_hardware_config(softcores, allow_coalescing=True)
         assert len(result.core_types) == 2
         a1, n1 = result.core_types[0]["max_axons"], result.core_types[0]["max_neurons"]
         a2, n2 = result.core_types[1]["max_axons"], result.core_types[1]["max_neurons"]
-        # One type is square (axons == neurons), one is wide (axons > neurons).
-        square = (a1 == n1) or (a2 == n2)
-        wide = (a1 > n1) or (a2 > n2)
-        assert square and wide
-        verification = verify_hardware_config(softcores, result.core_types)
+        max_neu = max(sc.output_count for sc in softcores)
+        # Both types must cover the full neuron count (neuron is the hard constraint).
+        assert n1 >= max_neu and n2 >= max_neu, f"types ({a1}×{n1}) and ({a2}×{n2}) must both have neurons >= {max_neu}"
+        # The two types must have different axon widths (compact A + wide B).
+        assert a1 != a2, "coalescing should produce two different axon widths"
+        # The larger type must cover the full axon count without coalescing.
+        max_ax = max(sc.input_count for sc in softcores)
+        assert max(a1, a2) >= max_ax, "at least one type should cover max axon count"
+        # Feasibility check (with coalescing enabled for packing).
+        verification = verify_hardware_config(softcores, result.core_types, allow_axon_coalescing=True)
         assert verification["feasible"]
 
     def test_both_coalescing_and_no_coalescing_produce_valid_mappings(self):

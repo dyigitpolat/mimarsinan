@@ -275,10 +275,11 @@ class LayoutIRMapping:
             out = np.stack(outs, axis=1)
             return out.reshape(tuple(output_shape))
 
-        # Axon tiling check (bias uses 1 axon)
-        if self.max_axons is not None and in_features > self.max_axons - 1:
+        # Axon tiling check (bias occupies 1 axon slot when present)
+        _bias_slots = 1 if fc_biases is not None else 0
+        if self.max_axons is not None and in_features + _bias_slots > self.max_axons:
             raise NotImplementedError(
-                f"FC requires {in_features} axons but max is {self.max_axons - 1}; "
+                f"FC requires {in_features + _bias_slots} axons but max is {self.max_axons}; "
                 "axon tiling is not supported in LayoutIRMapping."
             )
 

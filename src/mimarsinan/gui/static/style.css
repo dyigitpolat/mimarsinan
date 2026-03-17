@@ -494,6 +494,15 @@ body {
 .hw-core-detail-heatmap-region:hover {
   background: rgba(91, 138, 245, 0.2); border-color: var(--accent);
 }
+.hw-core-detail-heatmap-region.hw-split-region {
+  border: 1.5px dashed rgba(255, 152, 0, 0.7); background: rgba(255, 152, 0, 0.08);
+}
+.hw-core-detail-heatmap-region.hw-split-region:hover {
+  background: rgba(255, 152, 0, 0.22); border-color: #ff9800;
+}
+.hw-softcore-split-info {
+  font-size: 10px; color: #ff9800; margin: 2px 0 4px 0; font-style: italic;
+}
 .hw-core-detail-fused-line {
   position: absolute; left: 0; right: 0;
   background: rgba(255, 193, 7, 0.9);

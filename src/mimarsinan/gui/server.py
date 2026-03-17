@@ -59,11 +59,22 @@ class _SafeJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
+# Large bound used for the layout estimation pass so we always capture natural
+# softcore sizes without hitting any tiling/splitting check inside LayoutIRMapping.
+# This is intentionally much larger than any realistic layer dimension.
+_LAYOUT_PASS_LIMIT = 1 << 20  # ~1M axons/neurons — effectively unconstrained
+
+
 def _get_softcores_from_request(body: dict):
     """Build a model repr and run layout mapping, returning LayoutSoftCoreSpec list.
 
     Handles both native (simple_mlp) and torch (torch_sequential_linear, etc.) builders
     by delegating to the appropriate builder class.
+
+    The builder receives the user-specified max_axons/max_neurons so that native
+    models are sized appropriately.  The layout pass itself uses _LAYOUT_PASS_LIMIT
+    so that no tiling or error triggers inside LayoutIRMapping — we want the natural
+    (unsplit) softcore shapes regardless of the user's hardware target.
     """
     from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
     from mimarsinan.models.builders import BUILDERS_REGISTRY
@@ -125,10 +136,12 @@ def _get_softcores_from_request(body: dict):
                 pass
         model_repr = raw_model.get_mapper_repr()
 
+    # Use the large layout-pass limit (not the user's max_axons/max_neurons) so
+    # that LayoutIRMapping never tiles or errors — we need the natural softcore sizes.
     result = verify_soft_core_mapping(
         model_repr,
-        max_axons=max_axons,
-        max_neurons=max_neurons,
+        max_axons=_LAYOUT_PASS_LIMIT,
+        max_neurons=_LAYOUT_PASS_LIMIT,
         threshold_groups=threshold_groups,
         pruning_fraction=pruning_fraction,
         threshold_seed=threshold_seed,
@@ -239,13 +252,19 @@ def create_app(
                 verify_hardware_config,
             )
             mr = dict(body.get("model_repr_json", {}))
-            # Use large fixed bounds so softcores reflect true model dimensions,
-            # consistent with the auto-config pass.
+            # Ensure native models are built with a reasonable minimum layer size.
+            # _get_softcores_from_request uses _LAYOUT_PASS_LIMIT for the layout pass itself.
             mr["max_axons"] = max(int(mr.get("max_axons", 1024)), 4096)
             mr["max_neurons"] = max(int(mr.get("max_neurons", 1024)), 4096)
             softcores = _get_softcores_from_request(mr)
             core_types = body.get("core_types", [])
-            result = verify_hardware_config(softcores, core_types)
+            allow_neuron_splitting = bool(body.get("allow_neuron_splitting", False))
+            allow_coalescing = bool(body.get("allow_coalescing", False))
+            result = verify_hardware_config(
+                softcores, core_types,
+                allow_neuron_splitting=allow_neuron_splitting,
+                allow_axon_coalescing=allow_coalescing,
+            )
             return {
                 "feasible": result["feasible"],
                 "errors": result["errors"],
@@ -281,10 +300,8 @@ def create_app(
         """
         try:
             from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config
-            # Use a large fixed bound for the layout pass so softcores reflect the true
-            # model dimensions (not the previously-suggested, potentially-smaller bounds).
-            # This breaks the circular dependency where verify re-runs layout with the
-            # newly-suggested smaller dimensions and gets different softcores.
+            # Ensure native models are built with a reasonable minimum layer size.
+            # _get_softcores_from_request uses _LAYOUT_PASS_LIMIT for the layout pass itself.
             layout_body = dict(body)
             layout_body["max_axons"] = max(int(body.get("max_axons", 1024)), 4096)
             layout_body["max_neurons"] = max(int(body.get("max_neurons", 1024)), 4096)
@@ -296,6 +313,7 @@ def create_app(
                 axon_granularity=int(body.get("axon_granularity", 1)),
                 neuron_granularity=int(body.get("neuron_granularity", 1)),
                 safety_margin=float(body.get("safety_margin", 0.15)),
+                allow_neuron_splitting=bool(body.get("allow_neuron_splitting", False)),
             )
             return {
                 "core_types": suggestion.core_types,
