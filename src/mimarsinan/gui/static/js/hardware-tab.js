@@ -314,6 +314,29 @@ function renderStageFlow(hw, irGraph) {
           }
         }
         html += blockHtml;
+      } else if (stage.kind === 'compute_group') {
+        const cgKey = `cg_${si}`;
+        const isExp = expanded.has(cgKey);
+        const ops = stage.ops || [];
+        const opSummary = (stage.op_types || ops.map(o => o.op_type)).slice(0, 3).join(', ');
+        html += `<div class="stage-block compute-group">
+          <div class="stage-block-header" onclick="window._hwToggle('${cgKey}')">
+            <span class="stage-expand">${isExp ? '&#9660;' : '&#9654;'}</span>
+            <span class="stage-block-title">Compute Group</span>
+            <span class="stage-block-info">${ops.length} ops</span>
+            <span class="stage-block-info">${esc(opSummary)}</span>
+          </div>`;
+        if (isExp) {
+          html += '<div class="compute-group-detail" onclick="event.stopPropagation()">';
+          html += '<table class="data-table compact"><thead><tr><th>Op Type</th><th>Name</th><th>Input Shape</th><th>Output Shape</th></tr></thead><tbody>';
+          for (const op of ops) {
+            const inS = op.input_shape ? `[${op.input_shape.join(', ')}]` : '-';
+            const outS = op.output_shape ? `[${op.output_shape.join(', ')}]` : '-';
+            html += `<tr><td>${esc(op.op_type || '?')}</td><td title="${esc(op.op_name || '')}">${esc((op.op_name || '-').substring(0, 30))}</td><td>${inS}</td><td>${outS}</td></tr>`;
+          }
+          html += '</tbody></table></div>';
+        }
+        html += '</div>';
       } else {
         const shapeStr = [];
         if (stage.input_shape) shapeStr.push(`In: [${stage.input_shape.join(', ')}]`);

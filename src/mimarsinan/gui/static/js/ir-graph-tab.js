@@ -92,12 +92,14 @@ function setupZoom() {
 
 // ── Tier computation ─────────────────────────────────────────────────────
 // Groups arrive sorted by topological order from the backend.
-// We merge consecutive groups that share the same latency into one tier,
-// while compute-only groups become their own tier entry.
+// We merge consecutive groups that share the same latency into one tier.
+// Consecutive compute / compute_group entries are also merged into one tier
+// so that runs of compute ops between neural segments appear as a single block.
 function buildTiers(groups) {
   const tiers = [];
   let currentTier = null;
-  // Do NOT split same-latency groups into multiple tiers; keep one tier per latency.
+
+  const isComputeType = (g) => g.type === 'compute' || g.type === 'compute_group';
 
   for (const g of groups) {
     let lat;
@@ -106,10 +108,14 @@ function buildTiers(groups) {
     } else if (g.type === 'neural' && g.latency_range) {
       lat = 'lat_' + g.latency_range[0];
     } else {
-      lat = '__op_' + g.order;
+      lat = '__compute_run_' + g.order;
     }
 
-    if (currentTier && currentTier._latKey === lat) {
+    const canMerge = currentTier
+      && currentTier._latKey === lat
+      || (currentTier && isComputeType(g) && currentTier.groups.every(isComputeType));
+
+    if (canMerge) {
       currentTier.groups.push(g);
     } else {
       currentTier = {
@@ -125,6 +131,7 @@ function buildTiers(groups) {
     t.totalOps = t.groups.reduce((s, g) => s + (g.num_ops || 0), 0);
     t.isVirtual = t.groups.every(g => g.type === 'virtual');
     t.isCompute = !t.isVirtual && t.totalCores === 0 && t.totalOps > 0;
+    t.isComputeGroup = t.isCompute && t.totalOps > 1;
     t.opTypes = [...new Set(t.groups.flatMap(g => g.op_types || []))];
   }
 
@@ -195,6 +202,7 @@ function renderTierDAG(irGraph) {
 
   function tierDims(tier) {
     const MIN_W = 44, MAX_W = 110, MIN_H = 36, MAX_H = 96;
+    if (tier.isComputeGroup) return { w: 48, h: 38 };
     if (tier.isCompute) return { w: 36, h: 28 };
     if (tier.isVirtual) return { w: 44, h: 36 };
     let w = MIN_W, h = MIN_H;
@@ -215,7 +223,7 @@ function renderTierDAG(irGraph) {
 
     for (const tier of tiers) {
       const { w, h } = tierDims(tier);
-      const sc = tier.isCompute || tier.isVirtual ? 1 : Math.min(tier.groups.length, 6);
+      const sc = tier.isComputeGroup ? Math.min(tier.totalOps, 4) : (tier.isCompute || tier.isVirtual ? 1 : Math.min(tier.groups.length, 6));
       const fullW = w + (sc - 1) * STACK_OFF + DX;
       const fullH = h + (sc - 1) * STACK_OFF + DY;
       tierCols.push({ tier, x: curX, w, h, sc, fullW, fullH, colW: fullW, colH: fullH + LABEL_H });
@@ -314,6 +322,10 @@ function renderTierDAG(irGraph) {
       if (tier.isVirtual) {
         const label = tier._latKey === '__input__' ? 'INPUT' : 'OUTPUT';
         svg += `<text x="${cx}" y="${fy + tc.h / 2 + 4}" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">${label}</text>`;
+      } else if (tier.isComputeGroup) {
+        svg += `<text x="${cx}" y="${fy + tc.h / 2 - 2}" text-anchor="middle" fill="#fff" font-size="9" font-weight="600">${tier.totalOps} ops</text>`;
+        const opLabel = tier.opTypes.slice(0, 2).join(', ') || 'compute';
+        svg += `<text x="${cx}" y="${fy + tc.h / 2 + 10}" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="7">${esc(opLabel.substring(0, 22))}</text>`;
       } else if (tier.isCompute) {
         const opLabel = tier.opTypes.slice(0, 2).join(', ') || 'op';
         svg += `<text x="${cx}" y="${fy + tc.h / 2 + 3}" text-anchor="middle" fill="#fff" font-size="9" font-weight="500">${esc(opLabel.substring(0, 20))}</text>`;
@@ -329,7 +341,10 @@ function renderTierDAG(irGraph) {
       // Column label
       const labelX = tc.x + tc.colW / 2;
       if (!tier.isVirtual) {
-        const labelText = tier.isCompute ? (tier.opTypes[0] || 'compute') : `Latency ${tier.latency ?? '?'}`;
+        let labelText;
+        if (tier.isComputeGroup) labelText = `${tier.totalOps} compute ops`;
+        else if (tier.isCompute) labelText = tier.opTypes[0] || 'compute';
+        else labelText = `Latency ${tier.latency ?? '?'}`;
         svg += `<text x="${labelX}" y="${tc.labelY}" text-anchor="middle" fill="${isSel ? '#5b8af5' : '#6b6e7a'}" font-size="9" font-weight="600">${esc(labelText)}</text>`;
       }
     }
@@ -408,13 +423,18 @@ function buildTierDetail(tier, allGroups, groupEdges, nodeById, irGraph, g2t, ti
     if (tt === tier.idx && ft !== tier.idx && ft != null) incomingTiers.add(ft);
   }
 
-  const tierLabel = tier.isCompute
-    ? `Compute: ${tier.opTypes.join(', ') || '?'}`
-    : `Latency ${tier.latency ?? '?'}`;
+  let tierLabel;
+  if (tier.isComputeGroup) tierLabel = `Compute Group: ${tier.opTypes.join(', ') || '?'} (${tier.totalOps} ops)`;
+  else if (tier.isCompute) tierLabel = `Compute: ${tier.opTypes.join(', ') || '?'}`;
+  else tierLabel = `Latency ${tier.latency ?? '?'}`;
+
+  const headerSuffix = tier.isCompute
+    ? `${tier.totalOps} op${tier.totalOps !== 1 ? 's' : ''}`
+    : `${tier.groups.length} group${tier.groups.length !== 1 ? 's' : ''}, ${tier.totalCores} core${tier.totalCores !== 1 ? 's' : ''}`;
 
   let html = `<div class="ir-node-detail ir-tier-detail" style="margin-top:0">
     <div class="ir-node-detail-header">
-      <span>${esc(tierLabel)} — ${tier.groups.length} group${tier.groups.length !== 1 ? 's' : ''}, ${tier.totalCores} core${tier.totalCores !== 1 ? 's' : ''}</span>
+      <span>${esc(tierLabel)} — ${headerSuffix}</span>
       <button class="ir-detail-close" onclick="window._irTierClose()">✕</button>
     </div>
     <div class="ir-node-detail-body" style="padding:12px 16px">`;
@@ -422,50 +442,66 @@ function buildTierDetail(tier, allGroups, groupEdges, nodeById, irGraph, g2t, ti
   // Connectivity summary
   if (incomingTiers.size > 0 || outgoingTiers.size > 0) {
     html += '<div style="margin-bottom:12px">';
+    const tierConnLabel = (ti) => {
+      const t = tiers[ti];
+      if (t.isComputeGroup) return `${t.totalOps} ops`;
+      if (t.isCompute) return t.opTypes[0] || 'compute';
+      if (t.isVirtual) return t._latKey === '__input__' ? 'INPUT' : 'OUTPUT';
+      return `Lat ${t.latency}`;
+    };
     if (incomingTiers.size > 0) {
-      const labels = [...incomingTiers].map(ti => {
-        const t = tiers[ti];
-        return t.isCompute ? (t.opTypes[0] || 'compute') : (t.isVirtual ? (t._latKey === '__input__' ? 'INPUT' : 'OUTPUT') : `Lat ${t.latency}`);
-      });
+      const labels = [...incomingTiers].map(tierConnLabel);
       html += `<div class="conn-row" style="margin-bottom:4px"><span class="conn-label">Inputs from:</span>${labels.map(s => `<span class="conn-chip incoming">${esc(s)}</span>`).join(' ')}</div>`;
     }
     if (outgoingTiers.size > 0) {
-      const labels = [...outgoingTiers].map(ti => {
-        const t = tiers[ti];
-        return t.isCompute ? (t.opTypes[0] || 'compute') : (t.isVirtual ? (t._latKey === '__input__' ? 'INPUT' : 'OUTPUT') : `Lat ${t.latency}`);
-      });
+      const labels = [...outgoingTiers].map(tierConnLabel);
       html += `<div class="conn-row"><span class="conn-label">Outputs to:</span>${labels.map(s => `<span class="conn-chip outgoing">${esc(s)}</span>`).join(' ')}</div>`;
     }
     html += '</div>';
   }
 
-  // Group cards — clickable to drill into
-  html += '<div class="section-label" style="margin-bottom:8px">Groups (click to expand)</div>';
-  html += '<div class="ir-tier-group-list">';
-  for (const g of tier.groups) {
-    const safeKey = g.key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const coreCount = g.num_cores || 0;
-    const opCount = g.num_ops || 0;
-    const dims = [];
-    if (g.axon_range) dims.push(`${g.axon_range[0]}ax`);
-    if (g.neuron_range) dims.push(`${g.neuron_range[0]}n`);
-    const opTypes = (g.op_types || []).join(', ');
+  if (tier.isComputeGroup) {
+    // For compute group tiers, show ops table directly instead of group cards
+    const allOps = tier.groups.flatMap(g => (g.node_ids || []).map(id => nodeById[id]).filter(Boolean).filter(n => n.type === 'compute_op'));
+    html += `<div class="section-label" style="margin-bottom:8px">Compute Operations (${allOps.length})</div>`;
+    if (allOps.length > 0) {
+      html += '<table class="data-table compact"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Input</th><th>Output</th><th>Params</th></tr></thead><tbody>';
+      for (const o of allOps) {
+        html += `<tr><td>${o.id}</td><td title="${esc(o.name)}">${esc((o.name || '').substring(0, 25))}</td><td>${esc(o.op_type || '?')}</td>
+          <td>${o.input_shape || '-'}</td><td>${o.output_shape || '-'}</td>
+          <td title="${esc(o.params || '')}">${esc((o.params || '-').substring(0, 35))}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+  } else {
+    // Group cards — clickable to drill into
+    html += '<div class="section-label" style="margin-bottom:8px">Groups (click to expand)</div>';
+    html += '<div class="ir-tier-group-list">';
+    for (const g of tier.groups) {
+      const safeKey = g.key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const coreCount = g.num_cores || 0;
+      const opCount = g.num_ops || 0;
+      const dims = [];
+      if (g.axon_range) dims.push(`${g.axon_range[0]}ax`);
+      if (g.neuron_range) dims.push(`${g.neuron_range[0]}n`);
+      const opTypes = (g.op_types || []).join(', ');
 
-    const isSel = window._irGraphState.detailGroup === g.key;
-    html += `<div class="ir-tier-group-card${isSel ? ' ir-tier-group-card-selected' : ''}" onclick="window._irGroupClick('${safeKey}')">`;
-    html += `<div class="ir-tier-group-card-title">${esc(g.key)}</div>`;
-    html += '<div class="ir-tier-group-card-meta">';
-    if (g.type === 'neural') {
-      html += `<span>${coreCount} core${coreCount !== 1 ? 's' : ''}</span>`;
-      if (dims.length > 0) html += `<span>${dims.join(' × ')}</span>`;
+      const isSel = window._irGraphState.detailGroup === g.key;
+      html += `<div class="ir-tier-group-card${isSel ? ' ir-tier-group-card-selected' : ''}" onclick="window._irGroupClick('${safeKey}')">`;
+      html += `<div class="ir-tier-group-card-title">${esc(g.key)}</div>`;
+      html += '<div class="ir-tier-group-card-meta">';
+      if (g.type === 'neural') {
+        html += `<span>${coreCount} core${coreCount !== 1 ? 's' : ''}</span>`;
+        if (dims.length > 0) html += `<span>${dims.join(' × ')}</span>`;
+      }
+      if (g.type === 'compute' || g.type === 'compute_group' || opCount > 0) {
+        html += `<span>${opCount} op${opCount !== 1 ? 's' : ''}</span>`;
+        if (opTypes) html += `<span>${esc(opTypes.substring(0, 30))}</span>`;
+      }
+      html += '</div></div>';
     }
-    if (g.type === 'compute' || opCount > 0) {
-      html += `<span>${opCount} op${opCount !== 1 ? 's' : ''}</span>`;
-      if (opTypes) html += `<span>${esc(opTypes.substring(0, 30))}</span>`;
-    }
-    html += '</div></div>';
+    html += '</div>';
   }
-  html += '</div>';
 
   html += '</div></div>';
   return html;
@@ -636,7 +672,11 @@ function buildEdgeDetail(edge, groups, nodeById, irGraph, tiers) {
       const ti = parseInt(m[1], 10);
       const t = tiers[ti];
       if (t) {
-        const label = t.isCompute ? (t.opTypes[0] || 'compute') : (t.isVirtual ? (t._latKey === '__input__' ? 'INPUT' : 'OUTPUT') : `Latency ${t.latency}`);
+        let label;
+        if (t.isComputeGroup) label = `${t.totalOps} compute ops`;
+        else if (t.isCompute) label = t.opTypes[0] || 'compute';
+        else if (t.isVirtual) label = t._latKey === '__input__' ? 'INPUT' : 'OUTPUT';
+        else label = `Latency ${t.latency}`;
         return { label, cores: t.totalCores, ops: t.totalOps, latRange: t.latency != null ? [t.latency, t.latency] : null };
       }
     }
