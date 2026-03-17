@@ -188,11 +188,11 @@ function applySpikingDeps() {
   const depsEl = document.getElementById('spikingDeps');
   let deps = [];
 
-  // Weight quantization: forced off only when Float is on; otherwise user choice
+  // Weight quantization: locked to OFF when Float is on, ON when Float is off
   const floatWeights = isToggleOn('floatWeightsToggle');
   function setWtQuantFromHw() {
     if (floatWeights) setToggle('wtQuantToggle', false, true);
-    else setToggle('wtQuantToggle', isToggleOn('wtQuantToggle'), false);
+    else setToggle('wtQuantToggle', true, true);
   }
 
   if (mode === 'rate') {
@@ -213,7 +213,7 @@ function applySpikingDeps() {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
     document.getElementById('thresholdMode').value = '<=';
-    setToggle('actQuantToggle', false, false);
+    setToggle('actQuantToggle', false, true);
     setWtQuantFromHw();
     applyHwDeps();
     deps.push({ text: 'Firing: TTFS', forced: true });
@@ -274,7 +274,7 @@ function applyCoalescingDeps() {
 function syncWtQuantToggle() {
   const floatWeights = isToggleOn('floatWeightsToggle');
   if (floatWeights) setToggle('wtQuantToggle', false, true);
-  else setToggle('wtQuantToggle', isToggleOn('wtQuantToggle'), false);
+  else setToggle('wtQuantToggle', true, true);
 }
 
 function onWeightBitsChange() {
@@ -452,11 +452,9 @@ function buildConfig() {
   const weightMode = getSegVal('weightSourceMode');
   const optimizerType = getSegVal('optimizer');
 
-  const actQuant = isToggleOn('actQuantToggle');
   const floatWeights = isToggleOn('floatWeightsToggle');
-  let wtQuant;
-  if (floatWeights) wtQuant = false;
-  else wtQuant = isToggleOn('wtQuantToggle');
+  const wtQuant = !floatWeights;
+  const actQuant = (spikingMode === 'rate' || spikingMode === 'ttfs_quantized');
   const pruning = isToggleOn('pruningToggle');
   let pipelineMode;
   if (floatWeights) {
