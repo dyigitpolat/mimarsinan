@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from typing import List, Sequence
 
 from mimarsinan.mapping.core_packing import greedy_pack_softcores
@@ -20,13 +21,85 @@ def _make_instances(core_types: Sequence[LayoutHardCoreType]) -> List[LayoutHard
     return out
 
 
+def _split_layout_softcore(
+    core: LayoutSoftCoreSpec,
+    available_neurons: int,
+) -> tuple[LayoutSoftCoreSpec, LayoutSoftCoreSpec]:
+    """Split a layout-only soft core spec at the given neuron boundary."""
+    frag1 = LayoutSoftCoreSpec(
+        input_count=core.input_count,
+        output_count=available_neurons,
+        threshold_group_id=core.threshold_group_id,
+        latency_tag=core.latency_tag,
+        name=f"{core.name}_split_0" if core.name else None,
+    )
+    frag2 = LayoutSoftCoreSpec(
+        input_count=core.input_count,
+        output_count=core.output_count - available_neurons,
+        threshold_group_id=core.threshold_group_id,
+        latency_tag=core.latency_tag,
+        name=f"{core.name}_split_1" if core.name else None,
+    )
+    return frag1, frag2
+
+
+def _expand_for_axon_coalescing(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    core_types: Sequence[LayoutHardCoreType],
+) -> List[LayoutSoftCoreSpec]:
+    """Expand softcores for axon coalescing.
+
+    A softcore whose input_count exceeds the largest hw core's max_axons is split
+    into K coalescing fragments, each covering a slice of the inputs but all of
+    the output neurons — exactly what IRMapping does at model-building time when
+    coalescing is enabled.  This lets the layout packer correctly verify and count
+    hardware cores for coalescing configurations.
+    """
+    if not core_types:
+        return list(softcores)
+    max_avail_axons = max(int(ct.max_axons) for ct in core_types)
+    if max_avail_axons <= 0:
+        return list(softcores)
+
+    result: List[LayoutSoftCoreSpec] = []
+    for sc in softcores:
+        if sc.input_count <= max_avail_axons:
+            result.append(sc)
+        else:
+            k = math.ceil(sc.input_count / max_avail_axons)
+            base = sc.input_count // k
+            rem = sc.input_count - base * k
+            for i in range(k):
+                frag_ax = base + (1 if i < rem else 0)
+                result.append(LayoutSoftCoreSpec(
+                    input_count=frag_ax,
+                    output_count=sc.output_count,
+                    threshold_group_id=sc.threshold_group_id,
+                    latency_tag=sc.latency_tag,
+                    name=f"{sc.name}_coal{i}" if sc.name else None,
+                ))
+    return result
+
+
 def pack_layout(
     *,
     softcores: Sequence[LayoutSoftCoreSpec],
     core_types: Sequence[LayoutHardCoreType],
+    allow_neuron_splitting: bool = False,
+    allow_axon_coalescing: bool = False,
 ) -> LayoutPackingResult:
     """
     Pack layout-only softcores into a limited pool of hardware cores.
+
+    ``allow_neuron_splitting``:
+        Softcores may be split along the neuron (output) dimension across
+        multiple hardware cores.
+
+    ``allow_axon_coalescing``:
+        Softcores whose input count exceeds a single hardware core's max_axons
+        are pre-expanded into axon-coalescing fragments before packing.  Each
+        fragment carries all output neurons of the original softcore, mirroring
+        IRMapping's coalescing behaviour.
     """
 
     used_hardcores: List[LayoutHardCoreInstance] = []
@@ -34,6 +107,11 @@ def pack_layout(
 
     # Work on a mutable copy; greedy_pack_softcores removes elements.
     unmapped = list(copy.deepcopy(list(softcores)))
+
+    # Pre-expand for axon coalescing so the greedy packer sees fragments that
+    # fit within individual hardware cores' axon capacities.
+    if allow_axon_coalescing:
+        unmapped = _expand_for_axon_coalescing(unmapped, core_types)
 
     def is_mapping_possible(core: LayoutSoftCoreSpec, hardcore: LayoutHardCoreInstance) -> bool:
         # Threshold-group constraint: an empty hardcore can accept any group; otherwise, must match.
@@ -60,6 +138,7 @@ def pack_layout(
             unused_hardcores=unused_hardcores,
             is_mapping_possible=is_mapping_possible,
             place=place,
+            split_softcore=_split_layout_softcore if allow_neuron_splitting else None,
         )
     except Exception as e:
         # Infeasible mapping: return a structured result; search backends can apply penalties.
@@ -89,5 +168,3 @@ def pack_layout(
         error=None,
         used_core_softcore_counts=tuple(hc.softcore_count for hc in used_hardcores),
     )
-
-

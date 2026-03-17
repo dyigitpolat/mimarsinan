@@ -155,6 +155,14 @@ class SoftCore:
         self.latency = None
         self._axon_source_spans = None
 
+        # Neuron-splitting metadata: when a soft core is split across multiple
+        # hardware cores, each fragment records its offset within the original
+        # neuron range so that neuron_mapping references the correct indices.
+        self.neuron_offset_in_original = 0
+        self.split_group_id = None          # unique id linking fragments
+        self.split_fragment_index = None    # 0, 1, 2, ... per fragment
+        self.split_original_neurons = None  # total neurons before splitting
+
     def get_input_count(self):
         return len(self.axon_sources)
     
@@ -303,7 +311,7 @@ class HardCoreMapping:
 
         while len(self.soft_core_placements_per_hard_core) <= target_core_idx:
             self.soft_core_placements_per_hard_core.append([])
-        self.soft_core_placements_per_hard_core[target_core_idx].append({
+        placement = {
             "ir_node_id": softcore.id,
             "axon_offset": axon_offset,
             "neuron_offset": neuron_offset,
@@ -311,14 +319,23 @@ class HardCoreMapping:
             "neurons": neurons,
             "coalescing_group_id": getattr(softcore, "coalescing_group_id", None),
             "coalescing_role": getattr(softcore, "coalescing_role", None),
-        })
+        }
+        if getattr(softcore, "split_group_id", None) is not None:
+            orig_offset = getattr(softcore, "neuron_offset_in_original", 0)
+            placement["split_group_id"] = softcore.split_group_id
+            placement["split_fragment_index"] = softcore.split_fragment_index
+            placement["split_original_neurons"] = softcore.split_original_neurons
+            placement["neuron_range_in_original"] = [orig_offset, orig_offset + neurons]
+        self.soft_core_placements_per_hard_core[target_core_idx].append(placement)
 
-        for soft_neuron_idx in range(softcore.get_output_count()):
-            target_neuron_idx = prev_output_count + soft_neuron_idx
-            self.neuron_mapping[(softcore.id, soft_neuron_idx)] = \
+        orig_neuron_offset = getattr(softcore, "neuron_offset_in_original", 0)
+        for local_idx in range(softcore.get_output_count()):
+            original_neuron_idx = local_idx + orig_neuron_offset
+            target_neuron_idx = prev_output_count + local_idx
+            self.neuron_mapping[(softcore.id, original_neuron_idx)] = \
                 (target_core_idx, target_neuron_idx)
                 
-    def map(self, softcore_mapping):
+    def map(self, softcore_mapping, *, allow_neuron_splitting: bool = False):
         def is_mapping_possible(core, hardcore):
             tolerance = 0.1
             if hardcore.threshold is not None:
@@ -367,6 +384,59 @@ class HardCoreMapping:
             fused.fused_component_axons = [hc.axons_per_core for hc in hcs]
             return fused
 
+        # --- Neuron splitting callback ---
+        _split_counter = [0]
+
+        def split_softcore_fn(core, available_neurons):
+            group_id = _split_counter[0]
+            _split_counter[0] += 1
+            original_neurons = core.get_output_count()
+            orig_offset = getattr(core, "neuron_offset_in_original", 0)
+
+            # Fragment 1: first `available_neurons` columns
+            frag1 = SoftCore(
+                core_matrix=core.core_matrix[:, :available_neurons].copy(),
+                axon_sources=list(core.axon_sources),
+                id=core.id,
+                activation_scale=core.activation_scale,
+                parameter_scale=core.parameter_scale,
+                input_activation_scale=core.input_activation_scale,
+                name=core.name,
+                psum_group_id=core.psum_group_id,
+                psum_role=core.psum_role,
+            )
+            frag1.threshold = core.threshold
+            frag1.latency = core.latency
+            frag1.neuron_offset_in_original = orig_offset
+            frag1.split_group_id = group_id
+            frag1.split_fragment_index = 0
+            frag1.split_original_neurons = original_neurons
+            if getattr(core, "hardware_bias", None) is not None:
+                frag1.hardware_bias = core.hardware_bias[:available_neurons].copy()
+
+            # Fragment 2: remaining columns
+            frag2 = SoftCore(
+                core_matrix=core.core_matrix[:, available_neurons:].copy(),
+                axon_sources=list(core.axon_sources),
+                id=core.id,
+                activation_scale=core.activation_scale,
+                parameter_scale=core.parameter_scale,
+                input_activation_scale=core.input_activation_scale,
+                name=core.name,
+                psum_group_id=core.psum_group_id,
+                psum_role=core.psum_role,
+            )
+            frag2.threshold = core.threshold
+            frag2.latency = core.latency
+            frag2.neuron_offset_in_original = orig_offset + available_neurons
+            frag2.split_group_id = group_id
+            frag2.split_fragment_index = 1
+            frag2.split_original_neurons = original_neurons
+            if getattr(core, "hardware_bias", None) is not None:
+                frag2.hardware_bias = core.hardware_bias[available_neurons:].copy()
+
+            return frag1, frag2
+
         from mimarsinan.mapping.core_packing import greedy_pack_softcores
         greedy_pack_softcores(
             softcores=unmapped_cores,
@@ -375,6 +445,7 @@ class HardCoreMapping:
             is_mapping_possible=is_mapping_possible,
             place=place,
             fuse_hardcores=fuse_hardcores,
+            split_softcore=split_softcore_fn if allow_neuron_splitting else None,
         )
 
         def remap_sources(sources):

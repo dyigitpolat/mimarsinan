@@ -31,6 +31,7 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "simulation_steps": 32,
     "weight_bits": 8,
     "allow_axon_tiling": False,
+    "allow_neuron_splitting": False,
 }
 
 PIPELINE_MODE_PRESETS: Dict[str, Dict[str, object]] = {
@@ -72,6 +73,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "arch_search",
     "target_tq",
     "allow_axon_tiling",
+    "allow_neuron_splitting",
     "weight_bits",
     "tuner_epochs",
     "finetune_epochs",

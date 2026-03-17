@@ -36,6 +36,7 @@ class HardCoreMappingStep(PipelineStep):
         hybrid_mapping = build_hybrid_hard_core_mapping(
             ir_graph=ir_graph,
             cores_config=platform_constraints["cores"],
+            allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
         )
         print(
             f"[HardCoreMappingStep] Hybrid program: {len(hybrid_mapping.get_neural_segments())} neural segments, "

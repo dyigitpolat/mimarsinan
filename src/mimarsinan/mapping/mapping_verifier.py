@@ -127,6 +127,9 @@ def verify_soft_core_mapping(
 def verify_hardware_config(
     softcores: List[LayoutSoftCoreSpec],
     core_types: List[Dict[str, Any]],
+    *,
+    allow_neuron_splitting: bool = False,
+    allow_axon_coalescing: bool = False,
 ) -> Dict[str, Any]:
     """Check whether a hardware core configuration is sufficient for the given softcores.
 
@@ -136,6 +139,13 @@ def verify_hardware_config(
         List of ``LayoutSoftCoreSpec`` from ``verify_soft_core_mapping``.
     core_types:
         List of dicts with keys ``max_axons``, ``max_neurons``, ``count``.
+    allow_neuron_splitting:
+        If True, soft cores may be split along the neuron dimension during
+        packing, so the dimension pre-check only requires axon coverage.
+    allow_axon_coalescing:
+        If True, soft cores whose input count exceeds a single core's max_axons
+        are coalesced across multiple hardware cores, so the pre-check only
+        requires neuron coverage.
 
     Returns
     -------
@@ -169,27 +179,56 @@ def verify_hardware_config(
     max_req_neurons = max(sc.output_count for sc in softcores)
 
     # Build LayoutHardCoreType list and check feasibility of dimensions.
-    # With multiple core types, at least one type must fit the largest softcore.
+    # With neuron splitting, at least one core type must cover the largest
+    # axon count (neurons will be split as needed).  Without splitting,
+    # at least one type must cover both dimensions.
     hw_types: List[LayoutHardCoreType] = []
-    at_least_one_covers_largest = False
-    for i, ct in enumerate(core_types):
-        ax = int(ct.get("max_axons", 0))
-        neu = int(ct.get("max_neurons", 0))
-        cnt = int(ct.get("count", 0))
-        hw_types.append(LayoutHardCoreType(max_axons=ax, max_neurons=neu, count=cnt))
-        if ax >= max_req_axons and neu >= max_req_neurons:
-            at_least_one_covers_largest = True
+    for ct in core_types:
+        hw_types.append(LayoutHardCoreType(
+            max_axons=int(ct.get("max_axons", 0)),
+            max_neurons=int(ct.get("max_neurons", 0)),
+            count=int(ct.get("count", 0)),
+        ))
 
-    if not at_least_one_covers_largest:
-        field_errors["core_types"] = (
-            f"No core type fits the largest soft core ({max_req_axons} axons, {max_req_neurons} neurons). "
-            "At least one type must have max_axons and max_neurons >= these values."
-        )
+    # Pre-check: confirm at least one core type can accept the largest softcore.
+    # When both features are active any softcore is mappable regardless of dimensions
+    # (splitting distributes outputs, coalescing distributes inputs), so no check needed.
+    # When only one feature is active, the non-split dimension is still a hard constraint.
+    if not (allow_axon_coalescing and allow_neuron_splitting):
+        at_least_one_covers_largest = False
+        for hw in hw_types:
+            axon_ok = allow_axon_coalescing or hw.max_axons >= max_req_axons
+            neuron_ok = allow_neuron_splitting or hw.max_neurons >= max_req_neurons
+            if axon_ok and neuron_ok:
+                at_least_one_covers_largest = True
+                break
+
+        if not at_least_one_covers_largest:
+            if allow_neuron_splitting:
+                field_errors["core_types"] = (
+                    f"No core type fits the largest soft core's axon count ({max_req_axons} axons). "
+                    "At least one type must have max_axons >= this value (neurons will be split)."
+                )
+            elif allow_axon_coalescing:
+                field_errors["core_types"] = (
+                    f"No core type fits the largest soft core's neuron count ({max_req_neurons} neurons). "
+                    "At least one type must have max_neurons >= this value (axons will be coalesced)."
+                )
+            else:
+                field_errors["core_types"] = (
+                    f"No core type fits the largest soft core ({max_req_axons} axons, {max_req_neurons} neurons). "
+                    "At least one type must have max_axons and max_neurons >= these values."
+                )
 
     # Attempt greedy packing — this is the precise feasibility check.
     # (We do NOT pre-check total_count < len(softcores): multiple softcores can
     # share a single hardware core, so far fewer than len(softcores) cores may suffice.)
-    result = pack_layout(softcores=softcores, core_types=hw_types)
+    result = pack_layout(
+        softcores=softcores,
+        core_types=hw_types,
+        allow_neuron_splitting=allow_neuron_splitting,
+        allow_axon_coalescing=allow_axon_coalescing,
+    )
 
     if not result.feasible:
         err_msg = result.error or "Hardware configuration cannot fit all soft cores."

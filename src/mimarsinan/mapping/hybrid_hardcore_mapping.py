@@ -237,6 +237,7 @@ def _flush_neural_segment(
     shared_pool: list[HardCore],
     weight_banks: dict,
     name: str,
+    allow_neuron_splitting: bool = False,
 ) -> tuple[HybridStage, dict[int, dict[int, int]]]:
     """Pack a neural segment using cores drawn from *shared_pool*.
 
@@ -298,7 +299,7 @@ def _flush_neural_segment(
         current_offset += size
 
     hard = HardCoreMapping(shared_pool)
-    hard.map(soft)
+    hard.map(soft, allow_neuron_splitting=allow_neuron_splitting)
 
     return HybridStage(
         kind="neural",
@@ -313,6 +314,7 @@ def build_hybrid_hard_core_mapping(
     *,
     ir_graph: IRGraph,
     cores_config: Sequence[dict],
+    allow_neuron_splitting: bool = False,
 ) -> HybridHardCoreMapping:
     """
     Compile a unified IRGraph into a HybridHardCoreMapping.
@@ -360,6 +362,7 @@ def build_hybrid_hard_core_mapping(
                     shared_pool=shared_pool,
                     weight_banks=ir_graph.weight_banks,
                     name=f"neural_segment_until:{node.name}",
+                    allow_neuron_splitting=allow_neuron_splitting,
                 )
                 stages.append(stage)
                 all_reindex_maps.update(seg_reindex)
@@ -383,6 +386,7 @@ def build_hybrid_hard_core_mapping(
             shared_pool=shared_pool,
             weight_banks=ir_graph.weight_banks,
             name="neural_segment_final",
+            allow_neuron_splitting=allow_neuron_splitting,
         )
         stages.append(stage)
         all_reindex_maps.update(seg_reindex)

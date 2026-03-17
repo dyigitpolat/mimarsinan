@@ -92,7 +92,13 @@ function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
       const height = (pl.axons / aTotal) * 100;
       const width = (pl.neurons / nTotal) * 100;
       const nodeId = pl.ir_node_id;
-      html += `<div class="hw-core-detail-heatmap-region" style="top:${top}%;left:${left}%;width:${width}%;height:${height}%" data-ir-node-id="${nodeId}" onclick="event.stopPropagation(); window._hwSoftCoreClick(${segIdx}, ${nodeId}, ${core.core_index}, ${pi})" title="Software core n${nodeId}"> </div>`;
+      const isSplit = pl.split_group_id != null;
+      const splitCls = isSplit ? ' hw-split-region' : '';
+      const splitRange = isSplit && pl.neuron_range_in_original ? pl.neuron_range_in_original : null;
+      const splitTitle = isSplit && splitRange
+        ? `n${nodeId} [${splitRange[0]}:${splitRange[1]}/${pl.split_original_neurons || '?'}]`
+        : `Software core n${nodeId}`;
+      html += `<div class="hw-core-detail-heatmap-region${splitCls}" style="top:${top}%;left:${left}%;width:${width}%;height:${height}%" data-ir-node-id="${nodeId}" onclick="event.stopPropagation(); window._hwSoftCoreClick(${segIdx}, ${nodeId}, ${core.core_index}, ${pi})" title="${splitTitle}"> </div>`;
     }
     if (fusedBoundaries && fusedBoundaries.length >= 2) {
       for (let i = 1; i < fusedBoundaries.length - 1; i++) {
@@ -112,15 +118,19 @@ function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
   html += '</table>';
   if (placements.length > 0) {
     html += `<div class="hw-constituents-section"><div class="section-label">Constituents (${placements.length})</div>`;
-    html += '<table class="data-table compact hw-constituents-table"><thead><tr><th>ID</th><th>Dimensions</th><th>Util.</th><th>Coalesce</th></tr></thead><tbody>';
+    html += '<table class="data-table compact hw-constituents-table"><thead><tr><th>ID</th><th>Dimensions</th><th>Util.</th><th>Split</th><th>Coalesce</th></tr></thead><tbody>';
     for (let pi = 0; pi < placements.length; pi++) {
       const pl = placements[pi];
       const utilPct = (pl.utilization_frac != null ? pl.utilization_frac * 100 : (pl.axons * pl.neurons) / (aTotal * nTotal) * 100).toFixed(1);
-      const coalesce = pl.coalescing_role ? `${esc(pl.coalescing_role)}${pl.coalescing_group_id != null ? ' G' + pl.coalescing_group_id : ''}` : '—';
+      const coalesce = pl.coalescing_role ? `${esc(pl.coalescing_role)}${pl.coalescing_group_id != null ? ' G' + pl.coalescing_group_id : ''}` : '\u2014';
+      const splitInfo = pl.split_group_id != null && pl.neuron_range_in_original
+        ? `[${pl.neuron_range_in_original[0]}:${pl.neuron_range_in_original[1]}/${pl.split_original_neurons || '?'}]`
+        : '\u2014';
       html += `<tr class="hw-constituent-row" onclick="event.stopPropagation(); window._hwSoftCoreClick(${segIdx}, ${pl.ir_node_id}, ${core.core_index}, ${pi})" title="Click for soft-core detail">
         <td><span class="hw-constituent-id">n${pl.ir_node_id}</span></td>
-        <td>${pl.axons}×${pl.neurons}</td>
+        <td>${pl.axons}\u00d7${pl.neurons}</td>
         <td>${utilPct}%</td>
+        <td>${splitInfo}</td>
         <td>${coalesce}</td>
       </tr>`;
     }
@@ -146,6 +156,12 @@ function buildSoftCoreDetailPanelHtml(nodeId, irGraph, origin) {
     const aEnd = p.axon_offset + (p.axons ?? 0);
     const nEnd = p.neuron_offset + (p.neurons ?? 0);
     html += `<p class="hw-softcore-located-in">Located in: Segment ${origin.segIdx}, Hard core ${origin.coreIndex}, region axons ${p.axon_offset}..${aEnd}, neurons ${p.neuron_offset}..${nEnd}</p>`;
+    if (p.split_group_id != null && p.neuron_range_in_original) {
+      const r = p.neuron_range_in_original;
+      const total = p.split_original_neurons || '?';
+      const fragIdx = p.split_fragment_index != null ? p.split_fragment_index : '?';
+      html += `<p class="hw-softcore-split-info">Split fragment ${fragIdx} \u2014 neurons ${r[0]}..${r[1]} of ${total}</p>`;
+    }
   }
   if (isNeural) {
     html += '<table class="data-table compact">';

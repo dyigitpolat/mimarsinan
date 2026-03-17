@@ -86,6 +86,115 @@ def pick_best_softcore(unmapped_cores: List[SoftT]) -> SoftT:
     return core_b
 
 
+def _is_splittable(core: SoftCoreLike) -> bool:
+    """Check whether a soft core is eligible for neuron splitting.
+
+    Cores that are part of a coalescing group (axon-split fragments) must
+    not be neuron-split — they are already partial results.
+    """
+    return getattr(core, "coalescing_group_id", None) is None
+
+
+def _try_split_into_used(
+    core: SoftT,
+    used_hardcores: List[HardT],
+    split_softcore: Callable[[SoftT, int], tuple[SoftT, SoftT]],
+    split_threshold: float,
+    place: Callable[[int, HardT, SoftT], None],
+    softcores: List[SoftT],
+) -> bool:
+    """Try to split *core* into a partially-filled used hardware core.
+
+    Picks the used core with the **most** remaining neurons (to maximise
+    the useful fragment size) among cores where:
+    - axons fit
+    - neurons do NOT fit (the whole core is too wide)
+    - remaining neurons > split_threshold × total neurons
+
+    Returns True if a split was performed, False otherwise.
+    """
+    best_idx = None
+    best_avail_n = -1
+    for idx, hc in enumerate(used_hardcores):
+        avail_a = getattr(hc, "available_axons", int(hc.get_input_count()))
+        avail_n = getattr(hc, "available_neurons", int(hc.get_output_count()))
+        total_n = int(hc.get_output_count())
+        if (
+            core.get_input_count() <= avail_a
+            and core.get_output_count() > avail_n
+            and avail_n > split_threshold * total_n
+            and avail_n > best_avail_n
+        ):
+            # Also verify threshold/latency compatibility by checking that a
+            # hypothetical full-fit would pass (except neuron count).  We rely
+            # on the caller's is_mapping_possible being captured in the closure
+            # that constructed split_softcore — for now we check the attributes
+            # directly (same logic as HardCoreMapping.map).
+            hc_threshold = getattr(hc, "threshold", None)
+            core_threshold = getattr(core, "threshold", None)
+            if hc_threshold is not None and core_threshold is not None:
+                diff_rate = abs(core_threshold - hc_threshold) / (hc_threshold + 1)
+                if diff_rate > 0.1:
+                    continue
+            hc_latency = getattr(hc, "latency", None)
+            core_latency = getattr(core, "latency", None)
+            if hc_latency is not None:
+                if core_latency is None or core_latency != hc_latency:
+                    continue
+            best_idx = idx
+            best_avail_n = avail_n
+
+    if best_idx is None:
+        return False
+
+    frag1, frag2 = split_softcore(core, best_avail_n)
+    place(best_idx, used_hardcores[best_idx], frag1)
+    softcores.remove(core)
+    softcores.append(frag2)
+    return True
+
+
+def _try_split_into_unused(
+    core: SoftT,
+    used_hardcores: List[HardT],
+    unused_hardcores: List[HardT],
+    split_softcore: Callable[[SoftT, int], tuple[SoftT, SoftT]],
+    split_threshold: float,
+    place: Callable[[int, HardT, SoftT], None],
+    softcores: List[SoftT],
+) -> bool:
+    """Try to split *core* into a fresh unused hardware core.
+
+    Last resort when the core's neurons exceed every core type's total
+    neuron capacity but axons fit.
+    """
+    best_hc = None
+    best_total_n = -1
+    for hc in unused_hardcores:
+        total_a = int(hc.get_input_count())
+        total_n = int(hc.get_output_count())
+        if (
+            core.get_input_count() <= total_a
+            and core.get_output_count() > total_n
+            and total_n > split_threshold * core.get_output_count()
+            and total_n > best_total_n
+        ):
+            best_hc = hc
+            best_total_n = total_n
+
+    if best_hc is None:
+        return False
+
+    frag1, frag2 = split_softcore(core, best_total_n)
+    used_hardcores.append(best_hc)
+    unused_hardcores.remove(best_hc)
+    new_idx = len(used_hardcores) - 1
+    place(new_idx, used_hardcores[new_idx], frag1)
+    softcores.remove(core)
+    softcores.append(frag2)
+    return True
+
+
 def greedy_pack_softcores(
     *,
     softcores: List[SoftT],
@@ -95,6 +204,8 @@ def greedy_pack_softcores(
     place: Callable[[int, HardT, SoftT], None],
     pick_softcore: Callable[[List[SoftT]], SoftT] = pick_best_softcore,
     fuse_hardcores: Callable[[List[HardT]], HardT] | None = None,
+    split_softcore: Callable[[SoftT, int], tuple[SoftT, SoftT]] | None = None,
+    split_threshold: float = 0.2,
 ) -> None:
     """
     Greedy packing loop shared by:
@@ -113,6 +224,22 @@ def greedy_pack_softcores(
     preserves scarce hardware types for softcores that have no
     alternative, while still preferring shape-matched types when
     abundance is equal.
+
+    **Neuron splitting** (optional) — when ``split_softcore`` is provided
+    and the current soft core's neurons exceed a hardware core's remaining
+    (or total) neuron width, the soft core is split column-wise.  Fragment 1
+    fills the available neurons; Fragment 2 goes back into the unmapped pool.
+    Splitting is only attempted when the available neuron width exceeds
+    ``split_threshold`` × the hardware core's total neuron width (default 20%).
+    This avoids excessive fragmentation and traffic duplication.
+
+    Priority order:
+    1. Exact fit in used core
+    2. Split into used core (remaining neurons > 20% threshold)
+    3. Exact fit in unused core
+    4. Fusion
+    5. Split into unused core (last resort)
+    6. RuntimeError
 
     This mutates:
     - used_hardcores (may append newly allocated hardcores)
@@ -136,6 +263,18 @@ def greedy_pack_softcores(
                     best_remaining = rem
                     target_idx = idx
 
+        # --- Try neuron splitting into a used core ---
+        if (
+            target_idx is None
+            and split_softcore is not None
+            and _is_splittable(core)
+        ):
+            if _try_split_into_used(
+                core, used_hardcores, split_softcore, split_threshold,
+                place, softcores,
+            ):
+                continue
+
         if target_idx is None:
             # --- No used core fits: allocate an unused core. ---
             if not unused_hardcores:
@@ -158,7 +297,7 @@ def greedy_pack_softcores(
                 s_a = int(core.get_input_count())
                 s_n = int(core.get_output_count())
                 avail = {k: v for k, v in type_counts.items()}
-                
+
                 fused_hc = None
                 if fuse_hardcores is not None:
                     for hc_type, qty in type_counts.items():
@@ -172,7 +311,19 @@ def greedy_pack_softcores(
                                 for hc in fusing_hcs:
                                     unused_hardcores.remove(hc)
                                 break
-                            
+
+                # --- Try neuron splitting into an unused core (last resort) ---
+                if (
+                    fused_hc is None
+                    and split_softcore is not None
+                    and _is_splittable(core)
+                ):
+                    if _try_split_into_unused(
+                        core, used_hardcores, unused_hardcores,
+                        split_softcore, split_threshold, place, softcores,
+                    ):
+                        continue
+
                 if fused_hc is not None:
                     used_hardcores.append(fused_hc)
                     target_idx = len(used_hardcores) - 1

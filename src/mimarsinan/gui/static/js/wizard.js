@@ -173,6 +173,9 @@ function handleToggleChange(id) {
   if (id === 'coreCoalescingToggle') {
     applyCoalescingDeps();
   }
+  if (id === 'neuronSplittingToggle') {
+    applyHwDeps();
+  }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -553,6 +556,7 @@ function buildConfig() {
       has_bias: hardwareBias,
     };
     if (allowCoalescing) platformConstraints.allow_core_coalescing = true;
+    if (isToggleOn('neuronSplittingToggle')) platformConstraints.allow_neuron_splitting = true;
   } else {
     platformConstraints = {
       mode: "auto",
@@ -563,6 +567,7 @@ function buildConfig() {
           simulation_steps: simCycles,
           weight_bits: weightBits,
           allow_core_coalescing: allowCoalescing,
+          allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
         },
         search_space: {
           num_core_types: parseInt(v('numCoreTypes')),
@@ -779,6 +784,7 @@ function _buildHwApiBody() {
     threshold_seed: 0,
     allow_coalescing: isToggleOn('coreCoalescingToggle'),
     hardware_bias: isToggleOn('hardwareBiasToggle'),
+    allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
     target_tq: targetTq,
   };
 }
