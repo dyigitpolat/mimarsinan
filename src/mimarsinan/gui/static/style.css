@@ -123,6 +123,23 @@ body {
 .scrollable { max-height: 400px; overflow-y: auto; }
 .empty-state { text-align: center; padding: 48px 24px; color: var(--text-muted); font-size: 14px; }
 
+/* Pruning tab: layer list + detail */
+.pruning-browse { display: grid; grid-template-columns: 220px 1fr; gap: 20px; }
+.pruning-layer-list { min-width: 0; }
+.pruning-layer-ul { list-style: none; margin: 0; padding: 0; }
+.pruning-layer-item {
+  padding: 8px 12px; margin-bottom: 4px; border-radius: 6px; cursor: pointer;
+  border: 1px solid transparent; transition: background 0.15s, border-color 0.15s;
+}
+.pruning-layer-item:hover { background: var(--bg-hover); }
+.pruning-layer-item.active { background: var(--accent-dim); border-color: var(--accent); }
+.pruning-layer-name { display: block; font-weight: 500; font-size: 13px; }
+.pruning-layer-meta { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.pruning-layer-pruned { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.pruning-detail-meta { margin-bottom: 12px; }
+.pruning-detail-heatmap-wrap { margin-top: 8px; }
+.pruning-detail-heatmap { display: block; }
+
 /* ═══════════ Follow / Elapsed ═══════════ */
 .follow-btn {
   background: var(--bg-hover); border: 1px solid var(--border);
@@ -141,6 +158,7 @@ body {
 @media (max-width: 1024px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .pipeline-bar .step-block { flex: 1 1 60px; min-width: 60px; }
+  .pruning-browse { grid-template-columns: 1fr; }
 }
 
 /* ═══════════ IR Graph — PlotNeuralNet / NN-SVG Style ═══════════ */

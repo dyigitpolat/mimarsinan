@@ -5,6 +5,7 @@ import { renderIRGraphTab } from './ir-graph-tab.js';
 import { renderHardwareTab } from './hardware-tab.js';
 import { renderSearchTab } from './search-tab.js';
 import { renderActivationsTab, renderAdaptationTab } from './scales-tab.js';
+import { renderPruningTab } from './pruning-tab.js';
 
 // ── Public API ───────────────────────────────────────────────────────────
 export async function refreshStepDetail(stepName, state, fetchJSON) {
@@ -105,6 +106,7 @@ function determineTabs(detail, metrics) {
   if (hasScaleData) tabs.push('activations');
   if (snap.adaptation_manager) tabs.push('adaptation');
   if (snap.platform_constraints) tabs.push('constraints');
+  if (snap.pruning_layers && Array.isArray(snap.pruning_layers.layers)) tabs.push('pruning');
   if (snap.step_summary) tabs.push('summary');
   if (tabs.length === 0) tabs.push('metrics');
   return tabs;
@@ -113,7 +115,7 @@ function determineTabs(detail, metrics) {
 const TAB_LABELS = {
   metrics: 'Metrics', model: 'Model', ir_graph: 'IR Graph', hardware: 'Hardware',
   search: 'Search', activations: 'Activations', adaptation: 'Adaptation',
-  constraints: 'Constraints', summary: 'Summary',
+  constraints: 'Constraints', pruning: 'Pruning', summary: 'Summary',
 };
 
 function renderTabs(tabs, detail, metrics, state) {
@@ -150,6 +152,7 @@ function renderTabContent(tab, detail, metrics, container) {
     case 'activations': renderActivationsTab(snap.activation_scales, snap.model, container); break;
     case 'adaptation': renderAdaptationTab(snap.adaptation_manager, snap.model, metrics, container); break;
     case 'constraints': renderConstraintsTab(snap.platform_constraints, container); break;
+    case 'pruning': renderPruningTab(snap.pruning_layers, container); break;
     case 'summary': renderSummaryTab(snap.step_summary, container); break;
     default: container.innerHTML = '<div class="empty-state">No data</div>';
   }
