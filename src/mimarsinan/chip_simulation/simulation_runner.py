@@ -21,7 +21,7 @@ from mimarsinan.chip_simulation.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.compile_nevresim import compile_simulator
 from mimarsinan.chip_simulation.execute_nevresim import execute_simulator
 from mimarsinan.common.file_utils import save_inputs_to_files
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 
 
 @dataclass
@@ -101,11 +101,14 @@ class SimulationRunner:
         test_loader = data_loader_factory.create_test_loader(
             data_provider.get_test_batch_size(), data_provider)
 
-        for xs, ys in test_loader:
-            self.test_input.extend(preprocessor(xs).detach())
-            self.test_targets.extend(ys)
+        try:
+            for xs, ys in test_loader:
+                self.test_input.extend(preprocessor(xs).detach())
+                self.test_targets.extend(ys)
 
-        self.test_data = [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
+            self.test_data = [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
+        finally:
+            shutdown_data_loader(test_loader)
 
         max_samples = pipeline.config.get("max_simulation_samples", 0)
         total_samples = len(self.test_data)

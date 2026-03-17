@@ -9,4 +9,7 @@ from mimarsinan.data_handling.data_provider_factory import (
     DataProviderFactory,
     BasicDataProviderFactory,
 )
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.data_handling.data_loader_factory import (
+    DataLoaderFactory,
+    shutdown_data_loader,
+)

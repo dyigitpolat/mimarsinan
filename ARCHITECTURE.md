@@ -232,6 +232,7 @@ Platform constraints support two modes:
 3. Pre/post-step hooks are registered on the pipeline to track step lifecycle and extract rich snapshots after each step
 4. When the pipeline completes, the primary reporter's `finish()` is called (no-op for the default reporter)
 5. The process then waits for user input (Enter key) before exiting, keeping the GUI server alive for post-run inspection
+6. When running with `--ui`, the pipeline is started in a **non-daemon** thread. On exit (Enter or Ctrl+C), the main process calls `collector.join_pipeline_thread(timeout=60)` so the pipeline can finish the current step and shut down DataLoader workers cleanly before the process exits, avoiding multiprocessing/queue teardown errors
 
 If the GUI fails to start (e.g., port conflict, missing dependencies), a warning is printed and the pipeline continues without monitoring.
 
@@ -264,7 +265,7 @@ The `Pipeline` class is the orchestration engine. It:
 - `run()` / `run_from(step_name)` — Executes the pipeline (optionally from a midpoint)
 - `set_up_requirements()` — Builds the key translation table mapping virtual keys to real cache keys
 - `verify()` — Checks that every `requires` has been `promises`d by a prior step
-- `_run_step()` — Executes one step: checks requirements, runs `step.run()`, calls `step.validate()`, saves cache, asserts contracts, checks performance tolerance
+- `_run_step()` — Executes one step: checks requirements, runs `step.run()`, calls `step.validate()`, saves cache, asserts contracts, checks performance tolerance; calls `step.cleanup()` in a `finally` block so resources (e.g. DataLoader workers) are always released
 - `register_pre_step_hook(fn)` / `register_post_step_hook(fn)` — Registers callbacks invoked before/after each step. Multiple hooks can be registered; they are called in order. Used by the GUI to track step lifecycle and extract snapshots
 
 **Key design: Namespaced cache keys.** Each cache entry is stored under `"{step_name}.{key}"`. When step B requires `"model"` which was promised by step A, the pipeline translates B's virtual key `"model"` to the real key `"A.model"`. When B *updates* `"model"`, the old entry `"A.model"` is removed and replaced with `"B.model"`.
@@ -292,7 +293,7 @@ Steps interact with the cache exclusively through:
 - `self.add_entry(key, obj, strategy)` — Write (must be in `promises`)
 - `self.update_entry(key, obj, strategy)` — Update (must be in `updates`)
 
-Every step must also implement `validate()` → returns a metric (typically accuracy) that becomes the pipeline's target metric for the next step.
+Every step must also implement `validate()` → returns a metric (typically accuracy) that becomes the pipeline's target metric for the next step. Steps that acquire resources (e.g. a `BasicTrainer` with multi-worker DataLoaders) should override `cleanup()` to release them; the pipeline calls `cleanup()` in a `finally` after `validate()` so it runs even if later logic fails.
 
 ### 4.3 Pipeline Cache
 
@@ -1426,7 +1427,7 @@ Module dependency rules:
 
 1. Create a new file in `pipelining/pipeline_steps/`
 2. Subclass `PipelineStep`, declaring `requires`, `promises`, `updates`, `clears`
-3. Implement `process()` (the computation) and `validate()` (returns a metric)
+3. Implement `process()` (the computation) and `validate()` (returns a metric); override `cleanup()` if the step acquires resources (e.g. DataLoaders) that must be released
 4. Register the step in `pipelining/pipeline_steps/__init__.py`
 5. Add it to the appropriate pipeline(s) in `pipelining/pipelines/`
 6. Ensure the data contracts are satisfied (promises/requires chain)

@@ -23,16 +23,20 @@ class NormalizationFusionStep(PipelineStep):
             return self.trainer.test()
         return self.pipeline.get_target_metric()
 
+    def cleanup(self):
+        if self.trainer is not None:
+            self.trainer.close()
+
     def process(self):
         model = self.get_entry("model")
 
         self.trainer = BasicTrainer(
-            model, 
-            self.pipeline.config['device'], 
+            model,
+            self.pipeline.config['device'],
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
-        
+
         pt = PerceptronTransformer()
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.normalization, nn.Identity):
@@ -54,9 +58,9 @@ class NormalizationFusionStep(PipelineStep):
                 saved_buffers[buf_name] = buf_val.clone()
 
             perceptron.layer = nn.Linear(
-                perceptron.input_features, 
+                perceptron.input_features,
                 perceptron.output_channels, bias=True)
-            
+
             perceptron.layer.weight.data = fused_W
             perceptron.layer.bias.data = fused_b
 

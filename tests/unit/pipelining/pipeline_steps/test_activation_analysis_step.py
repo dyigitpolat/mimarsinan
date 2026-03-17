@@ -54,6 +54,20 @@ class TestActivationAnalysisStep:
         metric = step.validate()
         assert isinstance(metric, float)
 
+    def test_cleanup_closes_trainer(self, mock_pipeline):
+        """cleanup() releases the step's trainer (DataLoader workers)."""
+        step = self._make_step(mock_pipeline)
+        step.run()
+        step.validate()
+        assert step.trainer is not None
+        assert step.trainer.train_loader is not None
+
+        step.cleanup()
+
+        assert step.trainer.train_loader is None
+        assert step.trainer.validation_loader is None
+        assert step.trainer.test_loader is None
+
     def test_single_perceptron_model(self, mock_pipeline):
         """Edge case: model with only one perceptron."""
         from mimarsinan.models.perceptron_mixer.perceptron import Perceptron

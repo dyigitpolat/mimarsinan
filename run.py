@@ -16,5 +16,8 @@ if __name__ == "__main__":
             input("Press Enter to exit...\n")
         except (KeyboardInterrupt, EOFError):
             pass
+        finally:
+            if not collector.join_pipeline_thread(timeout=60.0):
+                print("Pipeline still running; exiting after timeout.")
     else:
         main()

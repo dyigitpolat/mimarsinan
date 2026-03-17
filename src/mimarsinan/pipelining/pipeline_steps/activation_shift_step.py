@@ -23,16 +23,20 @@ class ActivationShiftStep(PipelineStep):
             return self.trainer.validate()
         return self.pipeline.get_target_metric()
 
+    def cleanup(self):
+        if self.trainer is not None:
+            self.trainer.close()
+
     def process(self):
         model = self.get_entry("model")
 
         self.trainer = BasicTrainer(
-            model, 
-            self.pipeline.config['device'], 
+            model,
+            self.pipeline.config['device'],
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
         self.trainer.report_function = self.pipeline.reporter.report
-        
+
         adaptation_manager = self.get_entry('adaptation_manager')
         config = self.pipeline.config
         use_ttfs = config.get("spiking_mode", "rate") in ("ttfs", "ttfs_quantized")
@@ -61,14 +65,14 @@ class ActivationShiftStep(PipelineStep):
                 # model with the shift active, SoftCoreMappingStep adds the
                 # shift to the effective bias right before IR mapping.
                 adaptation_manager.update_activation(config, perceptron)
-        
+
         self.trainer.train_until_target_accuracy(
-            self.pipeline.config['lr'] / 20, 
-            max_epochs=2, 
+            self.pipeline.config['lr'] / 20,
+            max_epochs=2,
             target_accuracy=self.pipeline.get_target_metric(),
             warmup_epochs=0)
-        
+
         print(self.validate())
-        
+
         self.update_entry("adaptation_manager", adaptation_manager, "pickle")
         self.update_entry("model", model, 'torch_model')
