@@ -13,12 +13,13 @@ Spiking mode  (``spiking_mode`` in ``deployment_parameters``)
   ``"ttfs"``     Time-to-first-spike SNN.  Analytical ReLU↔TTFS mapping.
 
 Activation adaptation
-  Activation Analysis always runs. When ``activation_quantization`` is True,
-  OR when ``spiking_mode`` is ``"ttfs"`` or ``"ttfs_quantized"``, Clamp
-  Adaptation runs: trains the model with a ClampDecorator so it can operate
-  within the TTFS saturation range (relu(V)/θ is clamped to 1.0 in hardware).
-  Otherwise (rate-coded, no activation quantization), Activation Adaptation
-  (no-quant) runs: ReLU replacement + scales, no clamp.
+  Activation Analysis always runs. Activation Adaptation always runs next:
+  it replaces non-ReLU chip-targeted perceptrons (e.g. GELU, LeakyReLU) with
+  ReLU when needed and applies activation_scales in all cases. When
+  ``activation_quantization`` is True OR ``spiking_mode`` is ``"ttfs"`` or
+  ``"ttfs_quantized"``, Clamp Adaptation then runs: trains with a
+  ClampDecorator so the model operates within the TTFS saturation range
+  (relu(V)/θ clamped to 1.0 in hardware).
 
 Quantization flags  (booleans in ``deployment_parameters``)
   ``activation_quantization``
@@ -46,9 +47,8 @@ import torch
 # ── Step groups ─────────────────────────────────────────────────────────────
 
 # Activation Analysis always runs (produces activation_scales for IR).
-# Clamp Adaptation runs only when activation_quantization is True (clamp
-# is required for quantization). When act_q is False, Activation Adaptation
-# (no-quant) runs instead: ReLU replacement + scales, no clamp.
+# Activation Adaptation always runs next (ReLU replacement when needed, scales always).
+# Clamp Adaptation runs only when act_q or TTFS, after Activation Adaptation.
 _ACTIVATION_ANALYSIS_STEP: tuple[str, type] = ("Activation Analysis", ActivationAnalysisStep)
 _CLAMP_ADAPTATION_STEP: tuple[str, type] = ("Clamp Adaptation", ClampAdaptationStep)
 _ACTIVATION_ADAPTATION_NO_QUANT_STEP: tuple[str, type] = (
@@ -126,22 +126,13 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
 
     # ── Activation Adaptation + Quantization ──────────────────────
     # Activation Analysis always runs (activation_scales for IR).
-    #
-    # When activation_quantization is True: Clamp Adaptation runs (clamp
-    # required for quantization).
-    #
-    # When activation_quantization is False and spiking is a TTFS mode:
-    # Clamp Adaptation still runs — TTFS saturates relu(V)/θ at 1.0, so
-    # the model must be trained to operate within the clamped range to
-    # avoid large information loss from saturation.
-    #
-    # Otherwise (rate mode, act_q off): Activation Adaptation (no-quant)
-    # runs — ReLU replacement + scales, no clamp.
+    # Activation Adaptation always runs next: ReLU replacement when any
+    # chip-targeted perceptron is non-ReLU, scales applied in all cases.
+    # When act_q or TTFS, Clamp Adaptation runs after (clamp for quant/TTFS).
     specs.append(_ACTIVATION_ANALYSIS_STEP)
+    specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
     if act_q or spiking in ("ttfs", "ttfs_quantized"):
         specs.append(_CLAMP_ADAPTATION_STEP)
-    else:
-        specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
 
     # Full activation quantization (Shifting + Quantization) is only
     # needed when discrete activation levels are required.

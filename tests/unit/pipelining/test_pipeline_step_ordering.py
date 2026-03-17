@@ -1,10 +1,8 @@
-"""Pipeline step ordering: Activation Analysis + adaptation step must always run.
+"""Pipeline step ordering: Activation Analysis + Activation Adaptation + optional Clamp.
 
-The chip only supports ReLU activation. Adaptation step selection:
-  - act_q=True (any spiking mode): Clamp Adaptation (ClampDecorator, required for quantization).
-  - act_q=False + ttfs/ttfs_quantized: Clamp Adaptation (TTFS saturates relu(V)/θ at 1.0;
-    model must be trained to operate within [0, 1] to avoid large information loss).
-  - act_q=False + rate: Activation Adaptation (no-quant) — ReLU replacement + scales, no clamp.
+Activation Adaptation always runs immediately after Activation Analysis (ReLU
+replacement when needed, scales always). When act_q is True or spiking is
+TTFS, Clamp Adaptation runs after Activation Adaptation.
 """
 
 import pytest
@@ -26,7 +24,7 @@ def _step_classes(config: dict) -> list[type]:
 
 
 class TestActivationAdaptationAlwaysPresent:
-    """Activation Analysis always runs; Clamp or Activation Adaptation by spiking mode + act_q."""
+    """Activation Adaptation always runs after Activation Analysis; Clamp when act_q or TTFS."""
 
     def test_activation_analysis_always_present(self):
         for act_q in (True, False):
@@ -42,7 +40,29 @@ class TestActivationAdaptationAlwaysPresent:
                 f"Activation Analysis missing when activation_quantization={act_q}."
             )
 
+    def test_activation_adaptation_follows_activation_analysis(self):
+        """Activation Adaptation immediately follows Activation Analysis in all configs."""
+        for spiking in ("rate", "ttfs"):
+            for act_q in (True, False):
+                config = {
+                    "configuration_mode": "user",
+                    "spiking_mode": spiking,
+                    "activation_quantization": act_q,
+                    "weight_quantization": False,
+                    "model_type": "mlp_mixer",
+                }
+                names = _step_names(config)
+                assert "Activation Analysis" in names
+                assert "Activation Adaptation" in names
+                idx_analysis = names.index("Activation Analysis")
+                idx_adapt = names.index("Activation Adaptation")
+                assert idx_adapt == idx_analysis + 1, (
+                    f"Activation Adaptation should immediately follow Activation Analysis "
+                    f"(spiking={spiking}, act_q={act_q})."
+                )
+
     def test_clamp_adaptation_when_act_q_true(self):
+        """act_q=True: both Activation Adaptation and Clamp Adaptation, in that order."""
         config = {
             "configuration_mode": "user",
             "spiking_mode": "ttfs",
@@ -51,11 +71,12 @@ class TestActivationAdaptationAlwaysPresent:
             "model_type": "mlp_mixer",
         }
         names = _step_names(config)
+        assert "Activation Adaptation" in names
         assert "Clamp Adaptation" in names
-        assert "Activation Adaptation" not in names
+        assert names.index("Activation Adaptation") < names.index("Clamp Adaptation")
 
     def test_clamp_adaptation_for_ttfs_even_when_act_q_false(self):
-        """TTFS saturates relu(V)/θ at 1.0 → Clamp Adaptation runs regardless of act_q."""
+        """TTFS + act_q=False: both Activation Adaptation and Clamp Adaptation, in that order."""
         config = {
             "configuration_mode": "user",
             "spiking_mode": "ttfs",
@@ -64,11 +85,12 @@ class TestActivationAdaptationAlwaysPresent:
             "model_type": "mlp_mixer",
         }
         names = _step_names(config)
+        assert "Activation Adaptation" in names
         assert "Clamp Adaptation" in names
-        assert "Activation Adaptation" not in names
+        assert names.index("Activation Adaptation") < names.index("Clamp Adaptation")
 
     def test_activation_adaptation_for_rate_when_act_q_false(self):
-        """Rate mode + act_q=False → Activation Adaptation (no clamp needed)."""
+        """Rate mode + act_q=False → Activation Adaptation only (no Clamp)."""
         config = {
             "configuration_mode": "user",
             "spiking_mode": "rate",
@@ -91,10 +113,10 @@ class TestActivationAdaptationAlwaysPresent:
         }
         names = _step_names(config)
         fusion_idx = names.index("Normalization Fusion")
-        # For ttfs, both act_q=True and act_q=False use Clamp Adaptation
+        assert "Activation Adaptation" in names
+        assert names.index("Activation Adaptation") < fusion_idx
         assert "Clamp Adaptation" in names
-        clamp_idx = names.index("Clamp Adaptation")
-        assert clamp_idx < fusion_idx
+        assert names.index("Clamp Adaptation") < fusion_idx
 
 
 class TestActivationQuantizationConditional:
@@ -130,7 +152,7 @@ class TestStepOrderingInvariants:
 
     @pytest.mark.parametrize("spiking_mode", ["ttfs", "ttfs_quantized"])
     def test_clamp_adaptation_for_ttfs_when_act_q_false(self, spiking_mode):
-        """TTFS saturates at 1.0 → Clamp Adaptation runs even when act_q=False."""
+        """TTFS saturates at 1.0 → both Activation Adaptation and Clamp Adaptation."""
         config = {
             "configuration_mode": "user",
             "spiking_mode": spiking_mode,
@@ -140,11 +162,12 @@ class TestStepOrderingInvariants:
         }
         names = _step_names(config)
         assert "Activation Analysis" in names
+        assert "Activation Adaptation" in names
         assert "Clamp Adaptation" in names
-        assert "Activation Adaptation" not in names
+        assert names.index("Activation Adaptation") < names.index("Clamp Adaptation")
 
     def test_activation_adaptation_for_rate_when_act_q_false(self):
-        """Rate mode + act_q=False → Activation Adaptation (no saturation)."""
+        """Rate mode + act_q=False → Activation Adaptation only (no saturation)."""
         config = {
             "configuration_mode": "user",
             "spiking_mode": "rate",
@@ -167,7 +190,7 @@ class TestStepOrderingInvariants:
         }
         names = _step_names(config)
         assert "Activation Analysis" in names
+        assert "Activation Adaptation" in names
         assert "Clamp Adaptation" in names
-        assert "Activation Adaptation" not in names
-        # Torch Mapping should come before adaptation
+        assert names.index("Activation Adaptation") < names.index("Clamp Adaptation")
         assert names.index("Torch Mapping") < names.index("Activation Analysis")
