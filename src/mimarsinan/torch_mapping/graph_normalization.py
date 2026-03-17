@@ -6,9 +6,11 @@ packaging.  Each pass operates on the GraphModule in-place.
 
 Passes:
   1. **Dead code elimination**: Remove unused nodes.
-  2. **Consecutive mm fusion**: Fuse `Linear → Linear` (with only Identity/BN
-     in between) into a single Linear so the combined op can absorb a
-     downstream activation and become one Perceptron.
+  2. **Consecutive MM fusion**: Fuse chains of matrix-multiplication-equivalent
+     ops (``Linear``, ``BatchNorm``, ``Identity``) into a single ``Linear``.
+     BatchNorm between two Linears is folded into the preceding Linear
+     before the pair is fused.  This implements the **MM+** part of the
+     ``MM+ → BN? → ACT`` perceptron packaging rule.
 """
 
 from __future__ import annotations
@@ -20,11 +22,13 @@ import torch.nn as nn
 import torch.fx as fx
 
 
-# Module types that represent matmul-capable ops.
 _MM_MODULES = (nn.Linear, nn.Conv1d, nn.Conv2d)
 
-# Module types that can be skipped through when looking for a consecutive mm.
-_PASSTHROUGH_MODULES = (nn.Identity,)
+# Modules that can appear between two Linears and be folded/skipped to
+# enable consecutive-MM fusion.
+#   Identity  — pure passthrough, no parameter change.
+#   BatchNorm — diagonal matrix multiplication; folded into preceding Linear.
+_FOLDABLE_MODULES = (nn.Identity, nn.BatchNorm1d, nn.BatchNorm2d)
 
 
 def _get_sole_user_module(
@@ -42,23 +46,73 @@ def _get_sole_user_module(
     return user, mod
 
 
-def _walk_through_passthrough(
+def _find_next_linear_through_foldables(
     node: fx.Node,
     modules: dict[str, nn.Module],
-) -> Optional[fx.Node]:
-    """Walk forward through passthrough modules (Identity) to find the next non-trivial node.
+) -> tuple[Optional[fx.Node], list[tuple[fx.Node, nn.Module]]]:
+    """Walk forward through foldable modules to find the next Linear.
 
-    Returns the first non-passthrough user node, or None if the chain ends.
-    Each node in the chain must have exactly one user (no branching).
+    Returns ``(next_linear_node, chain)`` where *chain* is the list of
+    intermediate ``(node, module)`` pairs that were walked through.
+    Each intermediate node must have exactly one user (no branching).
+    Returns ``(None, [])`` if no fusable Linear is reachable.
     """
+    chain: list[tuple[fx.Node, nn.Module]] = []
     current = node
     while True:
         user_node, user_mod = _get_sole_user_module(current, modules)
         if user_node is None or user_mod is None:
-            return None
-        if not isinstance(user_mod, _PASSTHROUGH_MODULES):
-            return user_node
-        current = user_node
+            return None, []
+        if isinstance(user_mod, nn.Linear):
+            return user_node, chain
+        if isinstance(user_mod, _FOLDABLE_MODULES):
+            chain.append((user_node, user_mod))
+            current = user_node
+        else:
+            return None, []
+
+
+def _fold_bn_into_linear(linear_mod: nn.Linear, bn_mod: nn.Module) -> None:
+    """Fold BatchNorm parameters into a preceding Linear (in-place).
+
+    Mathematically: ``BN(W @ x + b) = γ/σ * (W @ x + b − μ) + β``
+    which equals ``(diag(γ/σ) @ W) @ x + (γ/σ * (b − μ) + β)``.
+    """
+    if not isinstance(bn_mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
+        return
+    if bn_mod.running_mean is None or bn_mod.running_var is None:
+        return
+
+    with torch.no_grad():
+        W = linear_mod.weight.data
+        b = (
+            linear_mod.bias.data
+            if linear_mod.bias is not None
+            else torch.zeros(W.shape[0], device=W.device, dtype=W.dtype)
+        )
+
+        gamma = (
+            bn_mod.weight.data
+            if bn_mod.weight is not None
+            else torch.ones(W.shape[0], device=W.device, dtype=W.dtype)
+        )
+        beta = (
+            bn_mod.bias.data
+            if bn_mod.bias is not None
+            else torch.zeros(W.shape[0], device=W.device, dtype=W.dtype)
+        )
+        mean = bn_mod.running_mean
+        var = bn_mod.running_var
+        eps = bn_mod.eps
+
+        scale = gamma / torch.sqrt(var + eps)
+
+        linear_mod.weight.data = scale.unsqueeze(1) * W
+        new_bias = scale * (b - mean) + beta
+        if linear_mod.bias is not None:
+            linear_mod.bias.data = new_bias
+        else:
+            linear_mod.bias = nn.Parameter(new_bias)
 
 
 def _fuse_linear_pair(
@@ -83,32 +137,30 @@ def _fuse_linear_pair(
         fused.weight.copy_(W_fused)
         fused.bias.copy_(b_fused)
 
-    # Register fused module, replacing mod2's target
     fused_target = node2.target
     gm.add_submodule(fused_target, fused)
 
     # Rewire: node2 now takes node1's INPUT (skip node1 entirely)
     node2.args = node1.args
 
-    # Remove intermediate nodes (node1 and passthrough nodes between them)
-    # by making them unused — DCE will clean them up.
-
 
 def normalize_fx_graph(gm: fx.GraphModule) -> fx.GraphModule:
     """Run graph normalization passes on a traced GraphModule.
 
     Currently implements:
-    1. Consecutive Linear fusion (through Identity passthrough)
+    1. Consecutive Linear fusion (through Identity/BN passthrough/folding)
     2. Dead code elimination
     """
     modules = dict(gm.named_modules())
     graph = gm.graph
 
-    # Pass 1: Fuse consecutive Linear layers connected through passthrough ops.
+    # Pass 1: Fuse consecutive Linear layers connected through foldable ops.
     # Iterate until no more fusions are possible (fixpoint).
     fused = True
     while fused:
         fused = False
+        # Refresh modules dict after each mutation round
+        modules = dict(gm.named_modules())
         for node in list(graph.nodes):
             if node.op != "call_module":
                 continue
@@ -116,17 +168,20 @@ def normalize_fx_graph(gm: fx.GraphModule) -> fx.GraphModule:
             if not isinstance(mod, nn.Linear):
                 continue
 
-            # Walk forward through passthrough to find next mm
-            next_node = _walk_through_passthrough(node, modules)
+            next_node, chain = _find_next_linear_through_foldables(node, modules)
             if next_node is None:
                 continue
             next_mod = modules.get(next_node.target)
             if not isinstance(next_mod, nn.Linear):
                 continue
 
-            # Dimensions must be compatible
             if mod.out_features != next_mod.in_features:
                 continue
+
+            # Fold any BatchNorm in the chain into the first Linear
+            for _chain_node, chain_mod in chain:
+                if isinstance(chain_mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                    _fold_bn_into_linear(mod, chain_mod)
 
             _fuse_linear_pair(gm, node, mod, next_node, next_mod)
             fused = True
@@ -136,5 +191,4 @@ def normalize_fx_graph(gm: fx.GraphModule) -> fx.GraphModule:
     graph.eliminate_dead_code()
     gm.recompile()
 
-    # Refresh modules dict after mutations
     return gm

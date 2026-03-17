@@ -12,12 +12,18 @@ The unit we package is the [Perceptron](../src/mimarsinan/models/perceptron_mixe
 
 ## Chip vs host: what can be packaged
 
-Not every perceptron can be implemented as a chip crossbar. The mapping layer distinguishes:
+Not every perceptron can be implemented as a chip crossbar. A single rule determines chip packaging:
 
-- **Chip-supported activations** ([`CHIP_SUPPORTED_ACTIVATIONS`](../src/mimarsinan/mapping/mappers/base.py)): LeakyGradReLU, ReLU, LeakyReLU. These can be **packaged** as one or more **NeuralCores**.
-- **Host-side activations** ([`HOST_SIDE_ACTIVATIONS`](../src/mimarsinan/mapping/mappers/base.py)): Identity. These layers have no real nonlinearity and are not packaged as chip perceptrons; they are emitted as host-side **ComputeOp**s instead.
+**All patterns in the compute graph that match the flow `MM+ → BN? → ACT` can be packaged as a chip perceptron**, where:
 
-The check is done via [`is_chip_supported_activation()`](../src/mimarsinan/mapping/mappers/base.py). Other activations (e.g. GELU) can be **adapted** earlier in the pipeline (e.g. to ReLU) so that by the time we map to IR, they are chip-supported and can be packaged.
+- **MM+**: one or more ops representable as matrix multiplications, normalized into a single MM by [`graph_normalization`](../src/mimarsinan/torch_mapping/graph_normalization.py). Consecutive Linears connected through Identity and/or BatchNorm are fused: BN (a diagonal MM) is folded into the preceding Linear, then the pair is fused into a single Linear (e.g. `Linear → BN → Linear`, `Linear → Identity → Linear`).
+- **BN?**: optional batch normalization.
+- **ACT**: any activation in [`CHIP_SUPPORTED_ACTIVATIONS`](../src/mimarsinan/mapping/mappers/base.py) (currently LeakyGradReLU, ReLU, LeakyReLU). Identity and resolvable reshape/permute ops may appear in between.
+
+Two related checks in [`base.py`](../src/mimarsinan/mapping/mappers/base.py) derive from `CHIP_SUPPORTED_ACTIVATIONS`:
+
+- **[`is_chip_targeted_activation()`](../src/mimarsinan/mapping/mappers/base.py)** — Returns `True` for all activations except Identity. Used by `owned_perceptron_groups()` to decide which perceptrons participate in pipeline processing (scale propagation, adaptation, quantization). GELU and LeakyReLU are chip-targeted because they are adapted to ReLU before IR mapping. Identity perceptrons are host-side only.
+- **[`is_chip_supported_activation()`](../src/mimarsinan/mapping/mappers/base.py)** — Returns `True` only for activations in `CHIP_SUPPORTED_ACTIVATIONS` (ReLU-like). Used at IR mapping time to decide NeuralCore vs ComputeOp. Other activations (e.g. GELU) are **adapted** earlier in the pipeline (e.g. to ReLU) so that by the time we map to IR, they are chip-supported and can be packaged.
 
 ## Mapper DAG and perceptron ownership
 

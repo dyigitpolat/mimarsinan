@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_chip_supported_activation, HOST_SIDE_ACTIVATIONS
+from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_chip_supported_activation, is_chip_targeted_activation
 from mimarsinan.mapping.soft_core_mapper import map_mm
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
@@ -104,8 +104,7 @@ class PerceptronMapper(Mapper):
         return self.perceptron(x)
 
     def owned_perceptron_groups(self):
-        base_name = type(self.perceptron.base_activation).__name__
-        if base_name in HOST_SIDE_ACTIVATIONS:
+        if not is_chip_targeted_activation(self.perceptron):
             return []
         return [[self.perceptron]]
 

@@ -71,11 +71,12 @@ class TestTorchMLPMixerCoreConversion:
         )
 
     def test_all_mixer_fc_perceptrons_chip_supported(self):
-        """Every mixer FC (8 total) must have chip-supported activation so they can be packaged.
+        """Every mixer FC (8 total) plus the patch embed must have chip-supported activation.
 
-        get_perceptrons() includes: patch embed (Conv mapper always adds its perceptron, Identity),
+        get_perceptrons() includes: patch embed (Conv mapper absorbs BN+ReLU, chip-supported),
         then 8 mixer FCs (all chip-supported for Core). Classifier is Identity and excluded by
-        PerceptronMapper.owned_perceptron_groups. So we expect 9 total, 8 chip-supported.
+        PerceptronMapper.owned_perceptron_groups (not chip-supported). So we expect 9 total,
+        all 9 chip-supported.
         """
         from mimarsinan.torch_mapping.converter import convert_torch_model
 
@@ -93,16 +94,12 @@ class TestTorchMLPMixerCoreConversion:
         perceptrons = supermodel.get_perceptrons()
 
         chip_supported = [p for p in perceptrons if is_chip_supported_activation(p)]
-        identity_count = sum(1 for p in perceptrons if p.base_activation_name == "Identity")
 
         assert len(perceptrons) == 9, (
             f"Expected 9 perceptrons (1 patch + 8 mixer FCs). Got {len(perceptrons)}."
         )
-        assert len(chip_supported) == 8, (
-            f"Expected 8 chip-supported perceptrons (mixer FCs). Got {len(chip_supported)}."
-        )
-        assert identity_count == 1, (
-            f"Expected 1 Identity (patch embed). Classifier is Identity but excluded from get_perceptrons(). Got {identity_count} Identity."
+        assert len(chip_supported) == 9, (
+            f"Expected 9 chip-supported perceptrons (patch+mixer FCs). Got {len(chip_supported)}."
         )
 
 
