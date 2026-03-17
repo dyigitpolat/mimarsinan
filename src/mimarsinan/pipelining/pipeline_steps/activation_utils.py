@@ -11,23 +11,17 @@ RELU_COMPATIBLE_TYPES = (
     "ReLU",
 )
 
-# Activations that become host-side ComputeOps — no adaptation needed.
-HOST_SIDE_TYPES = ("Identity",)
-
 
 def needs_clamp_adaptation(model) -> bool:
-    """Check whether any chip-targeted perceptron needs clamp adaptation.
+    """True if any chip-targeted perceptron has a non-ReLU base (e.g. GELU, LeakyReLU).
 
-    Identity perceptrons are host-side pass-throughs and are excluded from
-    get_perceptrons(); they do not appear here. Non-ReLU chip-targeted
-    perceptrons (e.g. GELU, LeakyReLU) need clamp calibration before the
-    activation is replaced by a chip-supported form (e.g. ReLU).
+    Used by ActivationAdaptationStep (ReLU replacement when True) and by
+    ClampAdaptationStep (short-path when False). Non-chip-supported perceptrons
+    (e.g. Identity) are excluded from get_perceptrons().
     """
     for p in model.get_perceptrons():
         base = p.base_activation
         name = type(base).__name__
-        if name in HOST_SIDE_TYPES:
-            continue  # redundant guard; Identity is already excluded by get_perceptrons()
         if name not in RELU_COMPATIBLE_TYPES:
             return True  # chip-targeted but not directly ReLU-compatible → needs clamp
     return False

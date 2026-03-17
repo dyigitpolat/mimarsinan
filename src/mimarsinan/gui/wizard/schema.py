@@ -97,10 +97,13 @@ def get_pipeline_step_names_for_state(state: Dict[str, Any]) -> List[str]:
     if pruning and pruning_fraction > 0:
         steps.append("Pruning Adaptation")
 
+    # Activation Analysis and Activation Adaptation always run (in that order).
+    steps.append("Activation Analysis")
+    steps.append("Activation Adaptation")
+    if act_q or spiking in ("ttfs", "ttfs_quantized"):
+        steps.append("Clamp Adaptation")
     if act_q:
         steps.extend([
-            "Activation Analysis",
-            "Clamp Adaptation",
             "Activation Shifting",
             "Activation Quantization",
         ])
