@@ -171,6 +171,33 @@ class TestGreedyPackSoftcores:
         )
         assert len(softs) == 0
 
+    def test_neuron_split_into_unused_small_cores(self):
+        """Splitting works when hw cores are much smaller than softcore neurons.
+
+        A 16×256 softcore on 16×16 hw cores: the softcore's neurons (256) far
+        exceed the core's neurons (16), but splitting should still proceed
+        because each 16-neuron fragment fills a whole core.
+        """
+        softs = [FakeSoftCore(16, 256)]
+        unused = [FakeHardCore(16, 16) for _ in range(20)]
+        used = []
+
+        def split_fn(core, avail_n):
+            frag1 = FakeSoftCore(core.get_input_count(), avail_n)
+            frag2 = FakeSoftCore(core.get_input_count(), core.get_output_count() - avail_n)
+            return frag1, frag2
+
+        greedy_pack_softcores(
+            softcores=softs, used_hardcores=used,
+            unused_hardcores=unused,
+            is_mapping_possible=self._is_mapping_possible,
+            place=self._place,
+            split_softcore=split_fn,
+        )
+        assert len(softs) == 0
+        # 256 / 16 = 16 hardware cores needed
+        assert len(used) == 16
+
     def test_prefers_tight_used_cores(self):
         """When a used core has room, pack there instead of opening a new one."""
         s1 = FakeSoftCore(4, 4)
