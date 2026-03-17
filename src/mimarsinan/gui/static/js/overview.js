@@ -79,7 +79,7 @@ export function renderConfig(config) {
   if (!el || !config) return;
   const priority = ['spiking_mode', 'pipeline_mode', 'configuration_mode', 'activation_quantization',
     'weight_quantization', 'max_axons', 'max_neurons', 'weight_bits', 'target_tq',
-    'training_epochs', 'lr', 'simulation_steps', 'input_shape', 'num_classes', 'device'];
+    'training_epochs', 'lr', 'simulation_steps', 'max_simulation_samples', 'input_shape', 'num_classes', 'device'];
   const all = Object.keys(config);
   const sorted = [...priority.filter(k => k in config), ...all.filter(k => !priority.includes(k)).sort()];
   let html = '<table class="config-table">';
