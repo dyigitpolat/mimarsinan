@@ -66,6 +66,7 @@ let _hwAutoRefillTimer = null;
 
 // ── Init ───────────────────────────────────────────────────
 function init() {
+  _renderHwStats(null); // show placeholder immediately, before API loads
   loadFromAPI().then(function () {
     renderModelChips();
     renderModelConfigFields();
@@ -150,7 +151,7 @@ function handleSegmentChange(controlId, val) {
   }
   if (controlId === 'spikingMode') { applySpikingDeps(); }
   if (controlId === 'hwMode') {
-    document.getElementById('hwFixed').className = 'cond ' + (val === 'user' ? 'visible' : 'hidden');
+    // hwFixed is always visible (locked when Auto suggest is on)
     document.getElementById('hwAuto').className = 'cond ' + (val !== 'user' ? 'visible' : 'hidden');
     updateSearchVisibility();
   }
@@ -435,22 +436,31 @@ function renderModelConfigFields() {
 
 // ── Core types ─────────────────────────────────────────────
 function renderCoreTypes() {
+  const locked = isHwAutoSuggestOn();
   document.getElementById('coreTypesList').innerHTML = state.coreTypes.map((ct, i) => `
     <div class="field-grid cols-3" style="margin-bottom:8px;align-items:end">
       <div class="field">
         <label class="field-label">Max Axons</label>
-        <input id="ct_${i}_max_axons" type="number" value="${ct.max_axons}" min="1" onchange="state.coreTypes[${i}].max_axons=+this.value;_hwAutoMode=false;update()">
+        <input id="ct_${i}_max_axons" type="number" value="${ct.max_axons}" min="1"
+          ${locked ? 'disabled' : `onchange="state.coreTypes[${i}].max_axons=+this.value;_hwAutoMode=false;update()"`}>
       </div>
       <div class="field">
         <label class="field-label">Max Neurons</label>
-        <input id="ct_${i}_max_neurons" type="number" value="${ct.max_neurons}" min="1" onchange="state.coreTypes[${i}].max_neurons=+this.value;_hwAutoMode=false;update()">
+        <input id="ct_${i}_max_neurons" type="number" value="${ct.max_neurons}" min="1"
+          ${locked ? 'disabled' : `onchange="state.coreTypes[${i}].max_neurons=+this.value;_hwAutoMode=false;update()"`}>
       </div>
       <div class="field">
-        <label class="field-label">Count ${state.coreTypes.length > 1 ? '<span style="cursor:pointer;color:var(--accent-rose)" onclick="removeCoreType(' + i + ')">✕ remove</span>' : ''}</label>
-        <input id="ct_${i}_count" type="number" value="${ct.count}" min="1" onchange="state.coreTypes[${i}].count=+this.value;_hwAutoMode=false;update()">
+        <label class="field-label">Count ${!locked && state.coreTypes.length > 1 ? `<span style="cursor:pointer;color:var(--accent-rose)" onclick="removeCoreType(${i})">✕ remove</span>` : ''}</label>
+        <input id="ct_${i}_count" type="number" value="${ct.count}" min="1"
+          ${locked ? 'disabled' : `onchange="state.coreTypes[${i}].count=+this.value;_hwAutoMode=false;update()"`}>
       </div>
     </div>
   `).join('');
+
+  const addBtn = document.getElementById('addCoreTypeBtn');
+  const autoLabel = document.getElementById('coreTypesAutoLabel');
+  if (addBtn) addBtn.style.display = locked ? 'none' : '';
+  if (autoLabel) autoLabel.style.display = locked ? '' : 'none';
 }
 
 function addCoreType() {
@@ -777,6 +787,7 @@ function update() {
   } else {
     const banner = document.getElementById('hwValidationBanner');
     if (banner) banner.classList.add('hide');
+    _renderHwStats('search');
   }
 }
 
@@ -924,6 +935,7 @@ function isHwAutoSuggestOn() {
 function toggleHwAutoSuggest(el) {
   if (!el || el.classList.contains('loading')) return;
   el.classList.toggle('on');
+  renderCoreTypes(); // re-render to apply/remove locked state
   if (isHwAutoSuggestOn()) {
     autoFillHardware();
   } else {
@@ -1039,12 +1051,13 @@ function autoFillHardware() {
 function scheduleHwAutoRefill() {
   if (_hwRefilling) return;
   if (_hwAutoRefillTimer) clearTimeout(_hwAutoRefillTimer);
-  // Show a brief "updating" hint in the banner
+  // Show a brief "updating" hint in the banner and loading state in stats
   const banner = document.getElementById('hwValidationBanner');
   if (banner && !banner.classList.contains('hide')) {
     banner.textContent = 'Recalculating\u2026';
     banner.className = 'hw-validation-banner hw-updating';
   }
+  _renderHwStats('loading');
   _hwAutoRefillTimer = setTimeout(() => {
     _hwAutoRefillTimer = null;
     if (isHwAutoSuggestOn() && _hwAutoMode && !_hwRefilling) autoFillHardware();
@@ -1054,6 +1067,7 @@ function scheduleHwAutoRefill() {
 // Debounced validation: called on every update() when hwMode=user
 function scheduleHwValidation() {
   if (_hwValidateTimer) clearTimeout(_hwValidateTimer);
+  _renderHwStats('loading');
   _hwValidateTimer = setTimeout(_runHwValidation, 800);
 }
 
@@ -1088,6 +1102,7 @@ function _doHwValidation(successPrefix) {
     } else {
       _showHwValidation(data.feasible, data.errors || [], data.field_errors || {});
     }
+    _renderHwStats(data.feasible ? data.stats : null);
   }).catch(() => {});  // network errors: skip silently
 }
 
@@ -1136,6 +1151,161 @@ function _showHwValidation(feasible, errors, fieldErrors) {
       });
     }
   });
+}
+
+function _renderHwStats(statsOrState) {
+  var panel = document.getElementById('hwStatsPanel');
+  if (!panel) return;
+
+  // Special string states
+  if (statsOrState === 'loading') {
+    panel.className = 'hw-stats-panel hw-stats-state-loading';
+    panel.innerHTML =
+      '<div class="hw-stats-header">' +
+        '<span class="hw-stats-title">Mapping Performance</span>' +
+        '<span class="hw-stats-badge loading">Verifying\u2026</span>' +
+      '</div>' +
+      '<div class="hw-stats-empty-msg">Computing mapping statistics\u2026</div>';
+    return;
+  }
+
+  if (statsOrState === 'search') {
+    panel.className = 'hw-stats-panel hw-stats-state-empty';
+    panel.innerHTML =
+      '<div class="hw-stats-header">' +
+        '<span class="hw-stats-title">Mapping Performance</span>' +
+        '<span class="hw-stats-badge empty">Search Mode</span>' +
+      '</div>' +
+      '<div class="hw-stats-empty-msg">Hardware is being searched \u2014 run the pipeline to see mapping stats.</div>';
+    return;
+  }
+
+  if (!statsOrState) {
+    panel.className = 'hw-stats-panel hw-stats-state-empty';
+    panel.innerHTML =
+      '<div class="hw-stats-header">' +
+        '<span class="hw-stats-title">Mapping Performance</span>' +
+        '<span class="hw-stats-badge empty">Not Verified</span>' +
+      '</div>' +
+      '<div class="hw-stats-empty-msg">Verify the hardware configuration to see mapping performance statistics.</div>';
+    return;
+  }
+
+  var stats = statsOrState;
+
+  if (!stats.feasible) {
+    panel.className = 'hw-stats-panel hw-stats-state-error';
+    panel.innerHTML =
+      '<div class="hw-stats-header">' +
+        '<span class="hw-stats-title">Mapping Performance</span>' +
+        '<span class="hw-stats-badge error">Infeasible</span>' +
+      '</div>' +
+      '<div class="hw-stats-empty-msg">Hardware configuration cannot fit all soft cores \u2014 adjust core types.</div>';
+    return;
+  }
+
+  // ── Helpers ─────────────────────────────────────────────
+  function fmt(v) { return v != null ? v.toFixed(1) : '\u2014'; }
+  function fmtInt(v) { return v != null ? String(v) : '\u2014'; }
+
+  function barColor(pct) {
+    if (pct >= 70) return 'green';
+    if (pct >= 40) return 'amber';
+    return 'rose';
+  }
+
+  function wasteBarColor(pct) {
+    if (pct <= 30) return 'green';
+    if (pct <= 60) return 'amber';
+    return 'rose';
+  }
+
+  function healthBar(label, pct, colorFn) {
+    var p = Math.max(0, Math.min(100, pct != null ? pct : 0));
+    var cls = colorFn(p);
+    return '<div class="hw-health-bar">' +
+      '<span class="hw-health-bar-label">' + _escHtml(label) + '</span>' +
+      '<div class="hw-health-bar-track"><div class="hw-health-bar-fill ' + cls + '" style="width:' + p.toFixed(1) + '%"></div></div>' +
+      '<span class="hw-health-bar-value">' + fmt(pct) + '%</span>' +
+      '</div>';
+  }
+
+  function miniBar(pct, colorFn) {
+    var p = Math.max(0, Math.min(100, pct != null ? pct : 0));
+    var cls = colorFn(p);
+    return '<div class="hw-per-core-cell">' +
+      '<div class="hw-per-core-bar-row">' +
+        '<div class="hw-per-core-track"><div class="hw-per-core-fill ' + cls + '" style="width:' + p.toFixed(1) + '%"></div></div>' +
+        '<span class="hw-per-core-value">' + fmt(pct) + '%</span>' +
+      '</div></div>';
+  }
+
+  function perCoreRow(label, min, avg, max, colorFn) {
+    return '<div class="hw-per-core-label">' + _escHtml(label) + '</div>' +
+      miniBar(min, colorFn) + miniBar(avg, colorFn) + miniBar(max, colorFn);
+  }
+
+  // ── Build HTML ──────────────────────────────────────────
+  var html =
+    '<div class="hw-stats-header">' +
+      '<span class="hw-stats-title">Mapping Performance</span>' +
+      '<span class="hw-stats-badge ok">Verified</span>' +
+    '</div>';
+
+  // Count cards
+  html +=
+    '<div class="hw-stats-cards">' +
+      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_cores) + '</div><div class="hw-stat-card-label">Cores Used</div></div>' +
+      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_softcores) + '</div><div class="hw-stat-card-label">Softcores</div></div>' +
+      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.coalesced_cores) + '</div><div class="hw-stat-card-label">Coalesced</div></div>' +
+      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.split_cores) + '</div><div class="hw-stat-card-label">Split Frags</div></div>' +
+    '</div>';
+
+  // Two-column body: total (left) + per-core (right)
+  html += '<div class="hw-stats-body">';
+
+  // Left: total health bars
+  html +=
+    '<div>' +
+      '<div class="hw-stats-section-label">Total</div>' +
+      '<div class="hw-stats-bars">' +
+        healthBar('Param Utilization', stats.mapped_params_pct, barColor) +
+        healthBar('Wasted Axons', stats.total_wasted_axons_pct, wasteBarColor) +
+        healthBar('Wasted Neurons', stats.total_wasted_neurons_pct, wasteBarColor) +
+      '</div>' +
+    '</div>';
+
+  // Right: per-core min/avg/max health bars
+  html +=
+    '<div>' +
+      '<div class="hw-stats-section-label">Per-Core</div>' +
+      '<div class="hw-per-core-grid">' +
+        '<div></div>' +
+        '<div class="hw-per-core-header">Min</div>' +
+        '<div class="hw-per-core-header">Avg</div>' +
+        '<div class="hw-per-core-header">Max</div>' +
+        perCoreRow('Wasted Axons',
+          stats.per_core_wasted_axons_pct_min,
+          stats.per_core_wasted_axons_pct_avg,
+          stats.per_core_wasted_axons_pct_max,
+          wasteBarColor) +
+        perCoreRow('Wasted Neurons',
+          stats.per_core_wasted_neurons_pct_min,
+          stats.per_core_wasted_neurons_pct_avg,
+          stats.per_core_wasted_neurons_pct_max,
+          wasteBarColor) +
+        perCoreRow('Param Usage',
+          stats.per_core_mapped_params_pct_min,
+          stats.per_core_mapped_params_pct_avg,
+          stats.per_core_mapped_params_pct_max,
+          barColor) +
+      '</div>' +
+    '</div>';
+
+  html += '</div>'; // end hw-stats-body
+
+  panel.className = 'hw-stats-panel';
+  panel.innerHTML = html;
 }
 
 function _escHtml(s) {

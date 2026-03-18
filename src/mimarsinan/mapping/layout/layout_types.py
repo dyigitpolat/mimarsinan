@@ -99,6 +99,30 @@ class LayoutHardCoreInstance:
 
 
 @dataclass(frozen=True)
+class LayoutCoreSnapshot:
+    """Per-used-core summary captured after packing."""
+
+    axons_per_core: int
+    neurons_per_core: int
+    used_axons: int
+    used_neurons: int
+    used_area: int
+    softcore_count: int
+
+    @property
+    def capacity(self) -> int:
+        return self.axons_per_core * self.neurons_per_core
+
+    @property
+    def wasted_axons(self) -> int:
+        return self.axons_per_core - self.used_axons
+
+    @property
+    def wasted_neurons(self) -> int:
+        return self.neurons_per_core - self.used_neurons
+
+
+@dataclass(frozen=True)
 class LayoutPackingResult:
     feasible: bool
     cores_used: int
@@ -111,5 +135,9 @@ class LayoutPackingResult:
 
     error: Optional[str] = None
     used_core_softcore_counts: Optional[Tuple[int, ...]] = None
+    used_core_snapshots: Optional[Tuple[LayoutCoreSnapshot, ...]] = None
+
+    coalesced_fragment_count: int = 0
+    split_fragment_count: int = 0
 
 

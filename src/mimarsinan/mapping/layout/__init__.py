@@ -1,6 +1,7 @@
 """Shape-only layout estimation for architecture search."""
 
 from mimarsinan.mapping.layout.layout_types import (
+    LayoutCoreSnapshot,
     LayoutSoftCoreSpec,
     LayoutHardCoreType,
     LayoutHardCoreInstance,

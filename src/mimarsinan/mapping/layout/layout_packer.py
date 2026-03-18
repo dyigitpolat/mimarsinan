@@ -6,6 +6,7 @@ from typing import List, Sequence
 
 from mimarsinan.mapping.core_packing import greedy_pack_softcores
 from mimarsinan.mapping.layout.layout_types import (
+    LayoutCoreSnapshot,
     LayoutHardCoreInstance,
     LayoutHardCoreType,
     LayoutPackingResult,
@@ -107,11 +108,15 @@ def pack_layout(
 
     # Work on a mutable copy; greedy_pack_softcores removes elements.
     unmapped = list(copy.deepcopy(list(softcores)))
+    pre_coalesce_count = len(unmapped)
 
     # Pre-expand for axon coalescing so the greedy packer sees fragments that
     # fit within individual hardware cores' axon capacities.
     if allow_axon_coalescing:
         unmapped = _expand_for_axon_coalescing(unmapped, core_types)
+    coalesced_fragment_count = len(unmapped) - pre_coalesce_count
+
+    split_counter = [0]
 
     def is_mapping_possible(core: LayoutSoftCoreSpec, hardcore: LayoutHardCoreInstance) -> bool:
         # Threshold-group constraint: an empty hardcore can accept any group; otherwise, must match.
@@ -131,6 +136,10 @@ def pack_layout(
     def place(core_idx: int, hardcore: LayoutHardCoreInstance, core: LayoutSoftCoreSpec) -> None:
         hardcore.add_softcore(core)
 
+    def _counting_split(core: LayoutSoftCoreSpec, available_neurons: int):
+        split_counter[0] += 1
+        return _split_layout_softcore(core, available_neurons)
+
     try:
         greedy_pack_softcores(
             softcores=unmapped,
@@ -138,7 +147,7 @@ def pack_layout(
             unused_hardcores=unused_hardcores,
             is_mapping_possible=is_mapping_possible,
             place=place,
-            split_softcore=_split_layout_softcore if allow_neuron_splitting else None,
+            split_softcore=_counting_split if allow_neuron_splitting else None,
         )
     except Exception as e:
         # Infeasible mapping: return a structured result; search backends can apply penalties.
@@ -158,6 +167,18 @@ def pack_layout(
     unused_total = int(total_capacity - used_area)
     avg_unused = float(unused_total / cores_used) if cores_used > 0 else float("inf")
 
+    snapshots = tuple(
+        LayoutCoreSnapshot(
+            axons_per_core=h.axons_per_core,
+            neurons_per_core=h.neurons_per_core,
+            used_axons=h.axons_per_core - h.available_axons,
+            used_neurons=h.neurons_per_core - h.available_neurons,
+            used_area=h.used_area,
+            softcore_count=h.softcore_count,
+        )
+        for h in used_hardcores
+    )
+
     return LayoutPackingResult(
         feasible=True,
         cores_used=cores_used,
@@ -167,4 +188,7 @@ def pack_layout(
         avg_unused_area_per_core=avg_unused,
         error=None,
         used_core_softcore_counts=tuple(hc.softcore_count for hc in used_hardcores),
+        used_core_snapshots=snapshots,
+        coalesced_fragment_count=coalesced_fragment_count,
+        split_fragment_count=split_counter[0],
     )
