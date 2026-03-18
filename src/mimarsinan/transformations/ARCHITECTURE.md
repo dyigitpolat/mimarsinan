@@ -7,7 +7,7 @@ pipeline steps and hardware mapping.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `perceptron_transformer.py` | `PerceptronTransformer` | Computes effective weights/biases by fusing normalization; uses `per_input_scales` for per-channel input scaling |
+| `perceptron_transformer.py` | `PerceptronTransformer` | Computes effective weights/biases by fusing normalization; uses `per_input_scales` for per-channel input scaling. `apply_effective_bias_transform` and `apply_effective_bias_transform_to_norm` are no-ops when `layer.bias is None` (bias-less perceptrons). |
 | `weight_quantization.py` | `TensorQuantization` | Symmetric tensor quantization to N-bit integers |
 | `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization` | Weight quantization that accounts for normalization parameters |
 | `chip_quantization.py` | `ChipQuantization` | Chip-level quantization utilities |

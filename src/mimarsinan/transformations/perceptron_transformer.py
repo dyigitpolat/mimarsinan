@@ -52,6 +52,8 @@ class PerceptronTransformer:
             perceptron.layer.weight.data[:] = ((weight_transform(effective_weight) * perceptron.activation_scale) / scale) / u.unsqueeze(-1)
 
     def apply_effective_bias_transform(self, perceptron, bias_transform):
+        if perceptron.layer.bias is None:
+            return
         effective_bias = self.get_effective_bias(perceptron)
         
         if isinstance(perceptron.normalization, nn.Identity):
@@ -62,6 +64,8 @@ class PerceptronTransformer:
 
 
     def apply_effective_bias_transform_to_norm(self, perceptron, bias_transform):
+        if perceptron.layer.bias is None:
+            return
         effective_bias = self.get_effective_bias(perceptron)
         
         if isinstance(perceptron.normalization, nn.Identity):

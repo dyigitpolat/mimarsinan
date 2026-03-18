@@ -97,6 +97,12 @@ class ModelConfigurationStep(PipelineStep):
                 }
             ]
 
+        # Propagate has_bias to every core type so SoftCoreMappingStep can
+        # resolve hardware_bias mode correctly.
+        global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
+        for ct in cores_config:
+            ct.setdefault("has_bias", global_has_bias)
+
         effective_max_axons = max(ct["max_axons"] for ct in cores_config)
         effective_max_neurons = max(ct["max_neurons"] for ct in cores_config)
 
