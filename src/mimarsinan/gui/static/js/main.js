@@ -3,6 +3,7 @@
 import { esc, fmtDuration, elapsedFromStepStart } from './util.js';
 import { renderPipelineBar, renderOverviewCards, renderConfig } from './overview.js';
 import { refreshStepDetail, updateLiveCharts } from './step-detail.js';
+import { appendConsoleLogs, clearConsoleLogs } from './console-tab.js';
 
 // ── Historical run mode ──────────────────────────────────────────────────
 const _params = new URLSearchParams(window.location.search);
@@ -22,6 +23,7 @@ const state = {
   lastDetailJSON: null,
   historicalRunId: _historicalRunId,
   isActiveRun: false,
+  consoleOffset: 0,
 };
 
 let _isActiveRun = false;
@@ -41,6 +43,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPipelineBarClicks();
   setupMainTabs();
   document.getElementById('auto-follow-btn').addEventListener('click', toggleAutoFollow);
+  document.getElementById('console-clear-btn')?.addEventListener('click', () => {
+    clearConsoleLogs();
+    state.consoleOffset = 0;
+  });
 
   if (state.historicalRunId) {
     const activeCheck = await fetch('/api/active_runs/' + encodeURIComponent(state.historicalRunId) + '/pipeline').then(r => r.ok).catch(() => false);
@@ -56,8 +62,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!state.historicalRunId) {
     connectWebSocket();
     setInterval(refreshPipeline, 5000);
+    setInterval(() => { if (state.activeMainTab === 'console') refreshConsoleLogs(); }, 2000);
   } else if (_isActiveRun) {
     setInterval(refreshPipeline, 3000);
+    setInterval(() => { if (state.activeMainTab === 'console') refreshConsoleLogs(); }, 2000);
   }
   setInterval(updateElapsedTimer, 1000);
 });
@@ -111,6 +119,10 @@ function handleWSMessage(msg) {
     bufferMetric(msg.step, msg.name, msg.value, msg.seq, msg.timestamp);
     if (state.selectedStep === msg.step) scheduleLiveChartUpdate(msg.step);
   }
+  if (msg.type === 'console_log') {
+    state.consoleOffset++;
+    if (state.activeMainTab === 'console') appendConsoleLogs([msg]);
+  }
 }
 
 function bufferMetric(step, name, value, seq, timestamp) {
@@ -150,20 +162,36 @@ function setupMainTabs() {
   const tabBar = document.getElementById('main-tabs');
   const overviewPane = document.getElementById('main-tab-overview');
   const configPane = document.getElementById('main-tab-config');
+  const consolePane = document.getElementById('main-tab-console');
   if (!tabBar || !overviewPane || !configPane) return;
   tabBar.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn[data-main-tab]');
     if (!btn) return;
     const tab = btn.dataset.mainTab;
-    if (tab !== 'overview' && tab !== 'config') return;
+    if (tab !== 'overview' && tab !== 'config' && tab !== 'console') return;
     state.activeMainTab = tab;
     tabBar.querySelectorAll('.tab-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.mainTab === tab);
     });
     overviewPane.classList.toggle('active', tab === 'overview');
     configPane.classList.toggle('active', tab === 'config');
+    if (consolePane) consolePane.classList.toggle('active', tab === 'console');
     if (tab === 'config') renderConfig(state.pipeline?.config);
+    if (tab === 'console') refreshConsoleLogs();
   });
+}
+
+async function refreshConsoleLogs() {
+  try {
+    const url = apiUrl('/console') + '?offset=' + state.consoleOffset;
+    const entries = await fetchJSON(url);
+    if (entries && entries.length > 0) {
+      state.consoleOffset += entries.length;
+      appendConsoleLogs(entries);
+    }
+  } catch (e) {
+    // silent — console polling is best-effort
+  }
 }
 
 function setupPipelineBarClicks() {

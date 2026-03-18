@@ -9,15 +9,15 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `__init__.py` | `GUIHandle`, `start_gui` | Facade: creates collector, reporter; optional `start_step` backfills skipped steps from cache for browsing |
-| `data_collector.py` | `DataCollector` | Thread-safe in-memory store; broadcasts updates via WebSocket |
+| `__init__.py` | `GUIHandle`, `start_gui`, `_TeeStream` | Facade: creates collector, reporter; installs `_TeeStream` on `sys.stdout`/`sys.stderr` to capture console output into DataCollector; optional `start_step` backfills skipped steps from cache for browsing |
+| `data_collector.py` | `DataCollector`, `MetricEvent`, `ConsoleLogEntry`, `StepRecord` | Thread-safe in-memory store; broadcasts metric, step lifecycle, and console log events via WebSocket |
 | `reporter.py` | `GUIReporter` | Implements `Reporter` protocol; forwards metrics to `DataCollector` |
 | `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (e.g. default + GUI) |
 | `server.py` | `start_server`, `create_app` | FastAPI + Uvicorn server in a daemon thread; optional `run_config_fn` for POST `/api/run` |
 | `snapshot/` | `build_step_snapshot`, `snapshot_model`, `snapshot_pruning_layers`, `snapshot_ir_graph`, `snapshot_hard_core_mapping`, `snapshot_search_result`, `snapshot_adaptation_manager` | Package: `helpers.py` (numeric/dict helpers, cache key map), `builders.py` (all snapshot builders); pure functions extracting JSON-safe snapshots; step-specific tabs and new/edited kinds. **Pruning**: `snapshot_pruning_layers(model)` extracts per-layer weight heatmaps with pruning masks (red lines) for the Pruning Adaptation step; `build_step_snapshot` adds `pruning_layers` when step is Pruning Adaptation. Hardware snapshot: per-placement `utilization_frac`, `constituent_count` per core, and when a core is fused, `fused_axon_boundaries` and `fused_component_count` for GUI boundaries and badges. |
-| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted`, `save_run_info`, `update_run_status`, `load_run_info`, `append_live_metric`, `load_live_metrics` | Load/save step state to `_GUI_STATE/steps.json` for backfill; run lifecycle metadata in `_GUI_STATE/run_info.json`; streaming metrics in `_GUI_STATE/live_metrics.jsonl` |
-| `process_manager.py` | `ProcessManager`, `ManagedRun` | Spawns headless pipeline processes, tracks them via filesystem polling (run_info.json, steps.json, live_metrics.jsonl), provides status/metrics/step detail APIs, kill with SIGTERM→SIGKILL escalation |
-| `runs.py` | `list_runs`, `get_run_config`, `get_run_pipeline`, `get_run_step_detail` | Discover and load historical pipeline runs from the generated files directory |
+| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted`, `save_run_info`, `update_run_status`, `load_run_info`, `append_live_metric`, `load_live_metrics`, `append_console_log`, `load_console_logs` | Load/save step state to `_GUI_STATE/steps.json` for backfill; run lifecycle metadata in `_GUI_STATE/run_info.json`; streaming metrics in `_GUI_STATE/live_metrics.jsonl`; stdout/stderr log lines in `_GUI_STATE/console.jsonl` |
+| `process_manager.py` | `ProcessManager`, `ManagedRun`, `_start_console_reader` | Spawns headless pipeline processes with `stdout=PIPE, stderr=PIPE`; background reader threads drain both pipes and write tagged lines to `_GUI_STATE/console.jsonl`; tracks runs via filesystem polling, provides status/metrics/step detail APIs, kill with SIGTERM→SIGKILL escalation |
+| `runs.py` | `list_runs`, `get_run_config`, `get_run_pipeline`, `get_run_step_detail`, `get_run_console_logs` | Discover and load historical pipeline runs from the generated files directory; `get_run_console_logs` reads `console.jsonl` for the console tab |
 | `templates.py` | `list_templates`, `get_template`, `save_template`, `delete_template` | CRUD for deployment configuration templates saved as JSON files |
 | `wizard_config_builder.py` | `build_deployment_config_from_state` | Builds complete deployment config from wizard UI state, applying defaults and presets |
 | `heatmap_renderer.py` | `render_heatmap_png_data_uri` | Renders weight matrices as PNG data URIs for GUI; no raw matrices sent to frontend |
@@ -112,6 +112,7 @@ plot per numeric metric (separate charts per objective).
 - `GET /api/active_runs` — summary of all tracked runs (status, progress, steps, target metrics)
 - `GET /api/active_runs/{run_id}/pipeline` — detailed pipeline state for an active run
 - `GET /api/active_runs/{run_id}/steps/{step_name}` — step detail with live metrics
+- `GET /api/active_runs/{run_id}/console?offset=N` — console log entries from `console.jsonl` (stdout+stderr)
 - `DELETE /api/active_runs/{run_id}` — terminate a running process
 
 ## Historical Run API Endpoints
@@ -120,6 +121,11 @@ plot per numeric metric (separate charts per objective).
 - `GET /api/runs/{run_id}/config` — full deployment config of a past run
 - `GET /api/runs/{run_id}/pipeline` — pipeline overview of a past run
 - `GET /api/runs/{run_id}/steps/{step_name}` — step detail of a past run
+- `GET /api/runs/{run_id}/console?offset=N` — console log entries for a past run
+
+## In-Process API Endpoints
+
+- `GET /api/console_logs?offset=N` — console log entries from in-process DataCollector (WebSocket also pushes `console_log` events)
 
 ## Template API Endpoints
 

@@ -12,6 +12,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,11 +22,40 @@ from mimarsinan.gui.persistence import (
     load_run_info,
     load_persisted_steps,
     load_live_metrics,
+    append_console_log,
 )
 
 logger = logging.getLogger("mimarsinan.gui")
 
 _RUN_PY = str(Path(__file__).resolve().parents[3] / "run.py")
+
+
+def _start_console_reader(proc: subprocess.Popen, working_dir: str) -> None:
+    """Spawn daemon threads that drain stdout and stderr from *proc* into console.jsonl."""
+
+    def _drain(pipe, stream_name: str) -> None:
+        try:
+            for raw in pipe:
+                line = raw.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
+                append_console_log(working_dir, stream_name, line, time.time())
+        except Exception:
+            pass
+        finally:
+            try:
+                pipe.close()
+            except Exception:
+                pass
+
+    for pipe, name in ((proc.stdout, "stdout"), (proc.stderr, "stderr")):
+        if pipe is None:
+            continue
+        t = threading.Thread(
+            target=_drain,
+            args=(pipe, name),
+            daemon=True,
+            name=f"console-reader-{name}-{proc.pid}",
+        )
+        t.start()
 
 
 @dataclass
@@ -121,17 +151,17 @@ class ProcessManager:
         with open(config_path, "w") as f:
             json.dump(config_to_write, f, indent=2)
 
-        log_path = os.path.join(working_dir, "_GUI_STATE", "stderr.log")
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        stderr_file = open(log_path, "w")
+        os.makedirs(os.path.join(working_dir, "_GUI_STATE"), exist_ok=True)
 
         python = sys.executable
         proc = subprocess.Popen(
-            [python, _RUN_PY, "--headless", config_path],
-            stdout=subprocess.DEVNULL,
-            stderr=stderr_file,
+            [python, "-u", _RUN_PY, "--headless", config_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             start_new_session=True,
         )
+
+        _start_console_reader(proc, working_dir)
 
         managed = ManagedRun(
             run_id=run_id,

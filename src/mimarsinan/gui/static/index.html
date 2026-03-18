@@ -36,6 +36,7 @@
   <div class="tabs main-tabs" id="main-tabs">
     <button class="tab-btn active" data-main-tab="overview">Overview</button>
     <button class="tab-btn" data-main-tab="config">Configuration</button>
+    <button class="tab-btn" data-main-tab="console">Console</button>
   </div>
 
   <!-- Overview pane (default) -->
@@ -61,6 +62,19 @@
       <div class="card-header">Pipeline Configuration</div>
       <div class="card-body" id="config-body">
         <div class="empty-state">Loading config...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Console pane -->
+  <div id="main-tab-console" class="main-tab-content">
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Console Output</span>
+        <button id="console-clear-btn" style="background:var(--bg-hover);color:var(--text-secondary);border:1px solid var(--border);padding:3px 10px;border-radius:var(--radius-sm);font-size:11px;cursor:pointer">Clear</button>
+      </div>
+      <div class="card-body no-pad">
+        <div id="console-log-output" class="console-output"></div>
       </div>
     </div>
   </div>

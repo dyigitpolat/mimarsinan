@@ -35,6 +35,14 @@ class MetricEvent:
 
 
 @dataclass
+class ConsoleLogEntry:
+    seq: int
+    stream: str  # "stdout" or "stderr"
+    line: str
+    ts: float
+
+
+@dataclass
 class StepRecord:
     name: str
     status: StepStatus = StepStatus.PENDING
@@ -59,9 +67,13 @@ class DataCollector:
         self._current_step: str | None = None
         self._pipeline_config: dict | None = None
 
+        self._console_logs: list[ConsoleLogEntry] = []
+        self._console_seq: int = 0
+
         self._ws_listeners: list[Any] = []
         self._pipeline_thread: Optional[threading.Thread] = None
         self._metric_callback: Any = None
+        self._console_callback: Any = None
 
     # -- Pipeline thread (for graceful exit) -----------------------------------
 
@@ -220,6 +232,40 @@ class DataCollector:
                 cb(current, metric_name, evt.value, evt.seq, evt.timestamp)
             except Exception:
                 pass
+
+    # -- Console logs ----------------------------------------------------------
+
+    def record_console_log(self, line: str, stream: str) -> None:
+        """Record a console output line and broadcast it via WebSocket."""
+        with self._lock:
+            self._console_seq += 1
+            entry = ConsoleLogEntry(
+                seq=self._console_seq,
+                stream=stream,
+                line=line,
+                ts=time.time(),
+            )
+            self._console_logs.append(entry)
+            cb = self._console_callback
+        self._broadcast({
+            "type": "console_log",
+            "stream": stream,
+            "line": line,
+            "ts": entry.ts,
+            "seq": entry.seq,
+        })
+        if cb is not None:
+            try:
+                cb(stream, line, entry.ts)
+            except Exception:
+                pass
+
+    def get_console_logs(self, offset: int = 0) -> list[dict]:
+        with self._lock:
+            return [
+                {"seq": e.seq, "stream": e.stream, "line": e.line, "ts": e.ts}
+                for e in self._console_logs[offset:]
+            ]
 
     # -- Read API (called by the server) --------------------------------------
 

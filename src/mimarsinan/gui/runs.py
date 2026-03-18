@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from mimarsinan.gui.persistence import load_persisted_steps, load_live_metrics
+from mimarsinan.gui.persistence import load_persisted_steps, load_live_metrics, load_console_logs
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -101,6 +101,15 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
         "current_step": None,
         "config": config,
     }
+
+
+def get_run_console_logs(run_id: str, offset: int = 0) -> list[dict[str, Any]]:
+    """Load console log entries for a past run from console.jsonl."""
+    _validate_run_id(run_id)
+    run_dir = Path(get_runs_root()) / run_id
+    if not run_dir.is_dir():
+        return []
+    return load_console_logs(str(run_dir), offset=offset)
 
 
 def get_run_step_detail(run_id: str, step_name: str) -> dict[str, Any] | None:

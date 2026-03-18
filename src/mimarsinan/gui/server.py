@@ -157,8 +157,11 @@ def create_app(
     process_manager: "ProcessManager | None" = None,
 ) -> FastAPI:
     from mimarsinan.gui.runs import (
-        list_runs, get_run_config, get_run_pipeline, get_run_step_detail as hist_step_detail,
+        list_runs, get_run_config, get_run_pipeline,
+        get_run_step_detail as hist_step_detail,
+        get_run_console_logs,
     )
+    from mimarsinan.gui.persistence import load_console_logs
     from mimarsinan.gui.templates import list_templates, get_template, save_template, delete_template
     app = FastAPI(
         title="Mimarsinan Pipeline Monitor",
@@ -198,6 +201,10 @@ def create_app(
     @app.get("/api/config")
     def pipeline_config():
         return collector.pipeline_config or {}
+
+    @app.get("/api/console")
+    def api_console_logs(offset: int = 0):
+        return collector.get_console_logs(offset=offset)
 
     # -- Wizard / config APIs (used when run_config_fn is set, e.g. --ui mode) ----
 
@@ -267,6 +274,10 @@ def create_app(
             return {"error": "step not found"}
         return detail
 
+    @app.get("/api/runs/{run_id}/console")
+    def api_run_console(run_id: str, offset: int = 0):
+        return get_run_console_logs(run_id, offset=offset)
+
     # -- Templates --------------------------------------------------------------
 
     @app.get("/api/templates")
@@ -325,6 +336,15 @@ def create_app(
             return JSONResponse(status_code=404, content={"error": "not found"})
         ok = process_manager.kill_run(run_id)
         return {"killed": ok}
+
+    @app.get("/api/active_runs/{run_id}/console")
+    def api_active_console(run_id: str, offset: int = 0):
+        if process_manager is None:
+            return JSONResponse(status_code=404, content={"error": "not found"})
+        managed = process_manager._runs.get(run_id)
+        if managed is None:
+            return JSONResponse(status_code=404, content={"error": "run not found"})
+        return load_console_logs(managed.working_dir, offset=offset)
 
     @app.post("/api/hw_config_verify")
     def api_hw_config_verify(body: dict):
