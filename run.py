@@ -59,7 +59,7 @@ def _run_headless(config_path: str) -> None:
             resolved_start_step = parsed["start_step"]
 
     collector = DataCollector()
-    gui = GUIHandle(pipeline, collector, persist_metrics=True)
+    gui = GUIHandle(pipeline, collector, persist_metrics=True, capture_stdio=False)
     collector._metric_callback = gui.on_metric
     pipeline.reporter = CompositeReporter([reporter, gui.reporter])
     pipeline.register_pre_step_hook(gui.on_step_start)
@@ -93,6 +93,10 @@ def _run_headless(config_path: str) -> None:
     finally:
         try:
             reporter.finish()
+        except Exception:
+            pass
+        try:
+            gui.restore_streams()
         except Exception:
             pass
         os._exit(exit_code)

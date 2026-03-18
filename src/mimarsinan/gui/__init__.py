@@ -14,6 +14,10 @@ and exposes the underlying :class:`DataCollector` and :class:`GUIReporter`.
 
 from __future__ import annotations
 
+import io
+import sys
+import threading
+import time
 from typing import Any
 
 from mimarsinan.gui.data_collector import DataCollector
@@ -21,21 +25,112 @@ from mimarsinan.gui.persistence import (
     load_persisted_steps,
     save_step_to_persisted,
     append_live_metric,
+    append_console_log,
 )
 from mimarsinan.gui.reporter import GUIReporter
 from mimarsinan.gui.snapshot import build_step_snapshot
+
+
+class _TeeStream(io.RawIOBase):
+    """Wraps a writable stream and forwards each write to a callback.
+
+    Lines are buffered so the callback always receives complete newline-terminated
+    strings (without the trailing newline), matching what a terminal reader would see.
+    """
+
+    def __init__(self, original: Any, callback: Any) -> None:
+        self._original = original
+        self._callback = callback
+        self._buf = ""
+        self._lock = threading.Lock()
+
+    # io.RawIOBase interface
+    def writable(self) -> bool:
+        return True
+
+    def write(self, s: Any) -> int:  # type: ignore[override]
+        if isinstance(s, (bytes, bytearray)):
+            text = s.decode("utf-8", errors="replace")
+        else:
+            text = str(s)
+        try:
+            self._original.write(s)
+            self._original.flush()
+        except Exception:
+            pass
+        with self._lock:
+            self._buf += text
+            while "\n" in self._buf:
+                line, self._buf = self._buf.split("\n", 1)
+                try:
+                    self._callback(line)
+                except Exception:
+                    pass
+        return len(s)
+
+    def flush(self) -> None:
+        try:
+            self._original.flush()
+        except Exception:
+            pass
+
+    def flush_remaining(self) -> None:
+        """Flush any buffered content that has no trailing newline."""
+        with self._lock:
+            if self._buf:
+                try:
+                    self._callback(self._buf)
+                except Exception:
+                    pass
+                self._buf = ""
+
+    # Proxy attribute access so third-party code that checks .encoding, .name, etc. works.
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._original, name)
 
 
 class GUIHandle:
     """Facade returned by :func:`start_gui`."""
 
     def __init__(
-        self, pipeline: Any, collector: DataCollector, persist_metrics: bool = False,
+        self,
+        pipeline: Any,
+        collector: DataCollector,
+        persist_metrics: bool = False,
+        capture_stdio: bool = True,
     ) -> None:
         self.pipeline = pipeline
         self.collector = collector
         self.reporter = GUIReporter(collector)
         self._persist_metrics = persist_metrics
+        self._capture_stdio = capture_stdio
+
+        self._orig_stdout = sys.stdout
+        self._orig_stderr = sys.stderr
+        if capture_stdio:
+            self._tee_stdout = _TeeStream(sys.stdout, lambda line: self._on_console(line, "stdout"))
+            self._tee_stderr = _TeeStream(sys.stderr, lambda line: self._on_console(line, "stderr"))
+            sys.stdout = self._tee_stdout  # type: ignore[assignment]
+            sys.stderr = self._tee_stderr  # type: ignore[assignment]
+        else:
+            self._tee_stdout = None
+            self._tee_stderr = None
+
+    def _on_console(self, line: str, stream: str) -> None:
+        self.collector.record_console_log(line, stream)
+        if self._persist_metrics:
+            working_dir = getattr(self.pipeline, "working_directory", None)
+            if working_dir:
+                append_console_log(working_dir, stream, line, time.time())
+
+    def restore_streams(self) -> None:
+        """Restore original stdout/stderr and flush any remaining buffered lines."""
+        if self._tee_stdout is not None:
+            self._tee_stdout.flush_remaining()
+        if self._tee_stderr is not None:
+            self._tee_stderr.flush_remaining()
+        sys.stdout = self._orig_stdout
+        sys.stderr = self._orig_stderr
 
     def on_step_start(self, step_name: str, step: Any) -> None:
         self.reporter.prefix = step_name

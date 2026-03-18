@@ -5,6 +5,7 @@ Files written under ``<working_dir>/_GUI_STATE/``:
 - ``steps.json``          – per-step snapshot (metrics, snapshot, status)
 - ``run_info.json``       – run metadata (pid, step_names, status, config_summary)
 - ``live_metrics.jsonl``  – append-only stream of metric events for live monitoring
+- ``console.jsonl``       – append-only stream of stdout/stderr log lines
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ _GUI_STATE_DIR = "_GUI_STATE"
 _STEPS_FILENAME = "steps.json"
 _RUN_INFO_FILENAME = "run_info.json"
 _LIVE_METRICS_FILENAME = "live_metrics.jsonl"
+_CONSOLE_LOG_FILENAME = "console.jsonl"
 
 
 def _gui_state_dir(working_directory: str) -> Path:
@@ -38,6 +40,10 @@ def _run_info_path(working_directory: str) -> Path:
 
 def _live_metrics_path(working_directory: str) -> Path:
     return _gui_state_dir(working_directory) / _LIVE_METRICS_FILENAME
+
+
+def _console_log_path(working_directory: str) -> Path:
+    return _gui_state_dir(working_directory) / _CONSOLE_LOG_FILENAME
 
 
 def _atomic_write_json(path: Path, data: Any) -> None:
@@ -224,6 +230,59 @@ def load_live_metrics(
                 if step_name is not None and record.get("step") != step_name:
                     continue
                 results.append(record)
+    except OSError:
+        pass
+    return results
+
+
+# ── console.jsonl ──────────────────────────────────────────────────────────
+
+def append_console_log(
+    working_directory: str,
+    stream: str,
+    line: str,
+    ts: float,
+) -> None:
+    """Append a single console log line to console.jsonl.
+
+    ``stream`` is ``"stdout"`` or ``"stderr"``.
+    """
+    path = _console_log_path(working_directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {"stream": stream, "line": line, "ts": ts}
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError as e:
+        logger.debug("Failed to append console log to %s: %s", path, e)
+
+
+def load_console_logs(
+    working_directory: str,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Read console.jsonl, skipping the first ``offset`` entries."""
+    path = _console_log_path(working_directory)
+    if not path.exists():
+        return []
+    results: list[dict[str, Any]] = []
+    idx = 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                if idx < offset:
+                    idx += 1
+                    continue
+                try:
+                    record = json.loads(raw)
+                except json.JSONDecodeError:
+                    idx += 1
+                    continue
+                results.append(record)
+                idx += 1
     except OSError:
         pass
     return results
