@@ -1,5 +1,5 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.pipeline_steps.activation_utils import needs_clamp_adaptation
+from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
@@ -28,7 +28,7 @@ class ClampAdaptationStep(PipelineStep):
         model = self.get_entry('model')
         adaptation_manager = self.get_entry("adaptation_manager")
 
-        if not needs_clamp_adaptation(model):
+        if not has_non_relu_activations(model):
             # All activations are already ReLU-compatible — just set
             # clamp_rate=1 and apply scales (no tuning needed).
             adaptation_manager.clamp_rate = 1.0

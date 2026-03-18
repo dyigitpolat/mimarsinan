@@ -10,6 +10,7 @@ specific transformations while maintaining accuracy.
 | `basic_tuner.py` | `BasicTuner` | Base tuner using `WeightTransformTrainer` and `SmartSmoothAdaptation` |
 | `perceptron_tuner.py` | `PerceptronTuner` | Base for per-perceptron tuners using `BasicTrainer` |
 | `perceptron_transform_tuner.py` | `PerceptronTransformTuner` | Base for tuners using `PerceptronTransformTrainer` |
+| `activation_adaptation_tuner.py` | `ActivationAdaptationTuner` | Gradually blends non-ReLU activations toward ReLU via `ActivationReplacementDecorator` |
 | `clamp_tuner.py` | `ClampTuner` | Introduces activation clamping progressively |
 | `activation_quantization_tuner.py` | `ActivationQuantizationTuner` | Quantizes activations to Tq levels |
 | `normalization_aware_perceptron_quantization_tuner.py` | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights with normalization awareness |
@@ -22,6 +23,7 @@ specific transformations while maintaining accuracy.
 ```
 BasicTuner (WeightTransformTrainer)
 PerceptronTuner (BasicTrainer, per-perceptron)
+├── ActivationAdaptationTuner
 ├── ClampTuner
 ├── ActivationQuantizationTuner
 ├── NoiseTuner

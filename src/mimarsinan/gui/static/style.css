@@ -587,3 +587,12 @@ body {
 .ir-tier-group-card-meta span {
   background: var(--bg-card); padding: 1px 6px; border-radius: 3px;
 }
+
+/* Home link */
+.home-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text-dim); text-decoration: none; font-size: 0.82rem; font-weight: 500;
+  margin-left: 16px; padding: 4px 10px; border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.home-link:hover { background: var(--hover); color: var(--text-primary); }

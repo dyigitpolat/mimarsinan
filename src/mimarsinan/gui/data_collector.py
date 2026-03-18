@@ -61,6 +61,7 @@ class DataCollector:
 
         self._ws_listeners: list[Any] = []
         self._pipeline_thread: Optional[threading.Thread] = None
+        self._metric_callback: Any = None
 
     # -- Pipeline thread (for graceful exit) -----------------------------------
 
@@ -109,6 +110,11 @@ class DataCollector:
                     self._step_names.append(step_name)
             rec.status = StepStatus.RUNNING
             rec.start_time = time.time()
+            rec.end_time = None
+            rec.target_metric = None
+            rec.snapshot = None
+            rec.snapshot_key_kinds = None
+            self._metrics = [m for m in self._metrics if m.step_name != step_name]
         self._broadcast({"type": "step_started", "step": step_name})
 
     def step_completed(
@@ -200,6 +206,7 @@ class DataCollector:
                 global_step=step,
             )
             self._metrics.append(evt)
+            cb = self._metric_callback
         self._broadcast({
             "type": "metric",
             "step": current,
@@ -208,6 +215,11 @@ class DataCollector:
             "seq": evt.seq,
             "timestamp": evt.timestamp,
         })
+        if cb is not None:
+            try:
+                cb(current, metric_name, evt.value, evt.seq, evt.timestamp)
+            except Exception:
+                pass
 
     # -- Read API (called by the server) --------------------------------------
 

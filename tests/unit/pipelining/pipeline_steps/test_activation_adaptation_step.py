@@ -1,9 +1,12 @@
 """Tests for ActivationAdaptationStep and activation_utils.
 
-When activation_quantization is False, ActivationAdaptationStep runs instead of
-ClampAdaptationStep. It must apply activation_scales and (if needed) replace
-non-ReLU with ReLU without setting clamp_rate, so Normalization Fusion →
-Soft Core Mapping stays exact.
+ActivationAdaptationStep always runs after Activation Analysis. It uses
+ActivationAdaptationTuner (SmartSmoothAdaptation) to gradually blend non-ReLU
+chip-targeted activations toward ReLU. When all activations are already
+ReLU-compatible, it is a no-op.
+
+This step does NOT apply activation_scales -- that is the responsibility of
+downstream steps (Clamp Adaptation, etc.).
 """
 
 import pytest
@@ -15,9 +18,8 @@ from conftest import (
 )
 
 from mimarsinan.pipelining.pipeline_steps.activation_utils import (
-    HOST_SIDE_TYPES,
     RELU_COMPATIBLE_TYPES,
-    needs_clamp_adaptation,
+    has_non_relu_activations,
 )
 from mimarsinan.pipelining.pipeline_steps.activation_adaptation_step import (
     ActivationAdaptationStep,
@@ -39,22 +41,22 @@ def _model_with_gelu():
 
 
 class TestActivationUtils:
-    """needs_clamp_adaptation (used for ReLU adaptation decision)."""
+    """has_non_relu_activations — checks for non-ReLU chip-targeted perceptrons."""
 
-    def test_needs_clamp_adaptation_false_when_all_relu(self):
+    def test_false_when_all_relu(self):
         model = make_tiny_supermodel()
         for p in model.get_perceptrons():
             p.base_activation = make_activation("ReLU")
             p.base_activation_name = "ReLU"
-        assert needs_clamp_adaptation(model) is False
+        assert has_non_relu_activations(model) is False
 
-    def test_needs_clamp_adaptation_true_when_any_gelu(self):
+    def test_true_when_any_gelu(self):
         """GELU perceptrons are chip-targeted (adapted to ReLU in ActivationAdaptationStep).
-        They are included in get_perceptrons() and trigger clamp adaptation."""
+        They are included in get_perceptrons() and trigger activation adaptation."""
         model = _model_with_gelu()
-        assert needs_clamp_adaptation(model) is True
+        assert has_non_relu_activations(model) is True
 
-    def test_needs_clamp_adaptation_true_when_any_leaky_relu(self):
+    def test_true_when_any_leaky_relu(self):
         model = make_tiny_supermodel()
         perceptrons = model.get_perceptrons()
         perceptrons[0].base_activation = make_activation("LeakyReLU")
@@ -62,15 +64,14 @@ class TestActivationUtils:
         perceptrons[0].set_activation(
             TransformedActivation(perceptrons[0].base_activation, [])
         )
-        assert needs_clamp_adaptation(model) is True
+        assert has_non_relu_activations(model) is True
 
     def test_constants_defined(self):
         assert "ReLU" in RELU_COMPATIBLE_TYPES
         assert "LeakyGradReLU" in RELU_COMPATIBLE_TYPES
-        assert "Identity" in HOST_SIDE_TYPES
 
 
-class TestActivationAdaptationStepClampRateUnchanged:
+class TestActivationAdaptationStepRates:
     """ActivationAdaptationStep must not set clamp_rate (stays 0)."""
 
     def test_clamp_rate_unchanged_after_step(self, mock_pipeline):
@@ -79,17 +80,13 @@ class TestActivationAdaptationStepClampRateUnchanged:
         model = make_tiny_supermodel()
         am = AdaptationManager()
         assert am.clamp_rate == 0.0
+        assert am.activation_adaptation_rate == 0.0
 
         mock_pipeline.config.update(default_config())
         mock_pipeline.config["activation_quantization"] = False
         mock_pipeline.config["tuner_epochs"] = 1
         mock_pipeline.seed("model", model, step_name="Activation Analysis")
         mock_pipeline.seed("adaptation_manager", am, step_name="Activation Analysis")
-        mock_pipeline.seed(
-            "activation_scales",
-            [1.0] * len(model.get_perceptrons()),
-            step_name="Activation Analysis",
-        )
 
         step = ActivationAdaptationStep(mock_pipeline)
         step.name = "Activation Adaptation"
@@ -100,24 +97,32 @@ class TestActivationAdaptationStepClampRateUnchanged:
             "ActivationAdaptationStep must not set clamp_rate; "
             "when act_q is False clamp stays no-op."
         )
+        assert am.activation_adaptation_rate == 0.0, (
+            "activation_adaptation_rate should be reset to 0 after adaptation."
+        )
 
-    def test_activation_scales_applied(self, mock_pipeline):
+    def test_scales_not_applied(self, mock_pipeline):
+        """ActivationAdaptationStep must NOT apply activation_scales."""
+        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+
         model = make_tiny_supermodel()
-        am = type("AM", (), {"clamp_rate": 0.0})()
+        am = AdaptationManager()
         n = len(model.get_perceptrons())
-        scales = [2.0] * n if n >= 1 else [1.0]
+
+        original_scales = [p.activation_scale.item() for p in model.get_perceptrons()]
 
         mock_pipeline.config.update(default_config())
         mock_pipeline.config["activation_quantization"] = False
         mock_pipeline.config["tuner_epochs"] = 1
         mock_pipeline.seed("model", model, step_name="Activation Analysis")
         mock_pipeline.seed("adaptation_manager", am, step_name="Activation Analysis")
-        mock_pipeline.seed("activation_scales", scales, step_name="Activation Analysis")
 
         step = ActivationAdaptationStep(mock_pipeline)
         step.name = "Activation Adaptation"
         mock_pipeline.prepare_step(step)
         step.run()
 
-        for p, s in zip(model.get_perceptrons(), scales):
-            assert p.activation_scale.item() == s
+        for p, orig in zip(model.get_perceptrons(), original_scales):
+            assert p.activation_scale.item() == orig, (
+                "ActivationAdaptationStep should not modify activation_scale"
+            )

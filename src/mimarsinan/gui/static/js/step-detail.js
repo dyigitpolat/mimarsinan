@@ -13,11 +13,21 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   if (!panel) return;
 
   let detail;
-  try { detail = await fetchJSON(`/api/steps/${encodeURIComponent(stepName)}`); }
+  let stepsBase;
+  if (state.historicalRunId && state.isActiveRun) {
+    stepsBase = `/api/active_runs/${encodeURIComponent(state.historicalRunId)}/steps`;
+  } else if (state.historicalRunId) {
+    stepsBase = `/api/runs/${encodeURIComponent(state.historicalRunId)}/steps`;
+  } else {
+    stepsBase = '/api/steps';
+  }
+  try { detail = await fetchJSON(`${stepsBase}/${encodeURIComponent(stepName)}`); }
   catch (e) { panel.innerHTML = '<div class="empty-state">Failed to load step detail</div>'; return; }
   if (detail.error) { panel.innerHTML = `<div class="empty-state">${esc(detail.error)}</div>`; return; }
 
+  const prevCount = _totalMetricPoints(stepName, state);
   ingestServerMetrics(stepName, detail.metrics || [], state);
+  const newCount = _totalMetricPoints(stepName, state);
 
   // Only rebuild DOM when structure changes (NOT when duration updates)
   const sig = JSON.stringify({
@@ -28,7 +38,10 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
     metricNames: Object.keys(getStepMetrics(stepName, state)).sort(),
   });
 
-  if (state.lastDetailJSON === sig && panel.querySelector('.step-detail-header')) return;
+  if (state.lastDetailJSON === sig && panel.querySelector('.step-detail-header')) {
+    if (newCount > prevCount) updateLiveCharts(stepName, state);
+    return;
+  }
   state.lastDetailJSON = sig;
 
   panel.innerHTML = `
@@ -59,7 +72,10 @@ export function updateLiveCharts(stepName, state) {
     const el = document.getElementById(`mc-${cssId(group)}`);
     if (!el || !el.data) return;
     const allTraces = metricNames.map(name => {
-      const points = metrics[name] || [];
+      let points = metrics[name] || [];
+      if (stepStartSec != null) {
+        points = points.filter(p => p.timestamp >= stepStartSec);
+      }
       const x = stepStartSec != null ? points.map(p => (p.timestamp - stepStartSec)) : points.map((_, i) => i);
       const y = points.map(p => p.value);
       return { x, y, name };
@@ -80,6 +96,14 @@ export function updateLiveCharts(stepName, state) {
 }
 
 // ── Metrics ingestion ────────────────────────────────────────────────────
+function _totalMetricPoints(stepName, state) {
+  const buf = state.metricBuffers[stepName];
+  if (!buf) return 0;
+  let n = 0;
+  for (const arr of Object.values(buf)) n += arr.length;
+  return n;
+}
+
 function ingestServerMetrics(stepName, serverMetrics, state) {
   if (!state.metricBuffers[stepName]) state.metricBuffers[stepName] = {};
   if (!state.seenSeqs[stepName]) state.seenSeqs[stepName] = new Set();
@@ -175,7 +199,10 @@ function plotMetricGroup(group, metricNames, metrics, stepStartTime) {
   const el = document.getElementById(`mc-${cssId(group)}`);
   if (!el) return;
   const allTraces = metricNames.map(name => {
-    const points = metrics[name] || [];
+    let points = metrics[name] || [];
+    if (stepStartTime != null) {
+      points = points.filter(p => p.timestamp >= stepStartTime);
+    }
     const x = stepStartTime != null ? points.map(p => (p.timestamp - stepStartTime)) : points.map((_, i) => i);
     const y = points.map(p => p.value);
     return { x, y, name };

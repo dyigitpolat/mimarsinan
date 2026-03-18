@@ -12,6 +12,7 @@ from mimarsinan.models.activations import (
     StaircaseFunction,
 )
 from mimarsinan.models.decorators import (
+    ActivationReplacementDecorator,
     AnyDecorator,
     ClampDecorator,
     DecoratedActivation,

@@ -154,7 +154,12 @@ def _get_softcores_from_request(body: dict):
 def create_app(
     collector: "DataCollector",
     run_config_fn: Callable[[dict, "DataCollector"], None] | None = None,
+    process_manager: "ProcessManager | None" = None,
 ) -> FastAPI:
+    from mimarsinan.gui.runs import (
+        list_runs, get_run_config, get_run_pipeline, get_run_step_detail as hist_step_detail,
+    )
+    from mimarsinan.gui.templates import list_templates, get_template, save_template, delete_template
     app = FastAPI(
         title="Mimarsinan Pipeline Monitor",
         docs_url=None,
@@ -213,6 +218,13 @@ def create_app(
 
     @app.post("/api/run")
     def api_run(body: dict):
+        if process_manager is not None:
+            try:
+                run_id = process_manager.spawn_run(body)
+                return JSONResponse(status_code=202, content={"status": "accepted", "run_id": run_id})
+            except Exception as e:
+                logger.exception("Spawn run failed")
+                return JSONResponse(status_code=400, content={"error": str(e)})
         if run_config_fn is None:
             return JSONResponse(
                 status_code=501,
@@ -227,6 +239,92 @@ def create_app(
                 status_code=400,
                 content={"error": str(e)},
             )
+
+    # -- Runs (historical) -----------------------------------------------------
+
+    @app.get("/api/runs")
+    def api_list_runs(include_steps: bool = False):
+        return list_runs(include_steps=include_steps)
+
+    @app.get("/api/runs/{run_id}/config")
+    def api_run_config(run_id: str):
+        config = get_run_config(run_id)
+        if config is None:
+            return JSONResponse(status_code=404, content={"error": "run not found"})
+        return config
+
+    @app.get("/api/runs/{run_id}/pipeline")
+    def api_run_pipeline(run_id: str):
+        data = get_run_pipeline(run_id)
+        if data is None:
+            return JSONResponse(status_code=404, content={"error": "run not found"})
+        return data
+
+    @app.get("/api/runs/{run_id}/steps/{step_name}")
+    def api_run_step(run_id: str, step_name: str):
+        detail = hist_step_detail(run_id, step_name)
+        if detail is None:
+            return {"error": "step not found"}
+        return detail
+
+    # -- Templates --------------------------------------------------------------
+
+    @app.get("/api/templates")
+    def api_list_templates():
+        return list_templates()
+
+    @app.get("/api/templates/{template_id}")
+    def api_get_template(template_id: str):
+        t = get_template(template_id)
+        if t is None:
+            return JSONResponse(status_code=404, content={"error": "template not found"})
+        return t
+
+    @app.post("/api/templates")
+    def api_save_template(body: dict):
+        name = body.pop("_template_name", body.get("experiment_name", "template"))
+        tid = save_template(name, body)
+        return {"id": tid}
+
+    @app.delete("/api/templates/{template_id}")
+    def api_delete_template(template_id: str):
+        ok = delete_template(template_id)
+        if not ok:
+            return JSONResponse(status_code=404, content={"error": "template not found"})
+        return {"deleted": True}
+
+    # -- Active runs (process-based) -------------------------------------------
+
+    @app.get("/api/active_runs")
+    def api_active_runs():
+        if process_manager is None:
+            return []
+        return process_manager.list_active()
+
+    @app.get("/api/active_runs/{run_id}/pipeline")
+    def api_active_pipeline(run_id: str):
+        if process_manager is None:
+            return JSONResponse(status_code=404, content={"error": "not found"})
+        detail = process_manager.get_run_detail(run_id)
+        if detail is None:
+            return JSONResponse(status_code=404, content={"error": "run not found"})
+        return detail
+
+    @app.get("/api/active_runs/{run_id}/steps/{step_name}")
+    def api_active_step(run_id: str, step_name: str):
+        if process_manager is None:
+            return JSONResponse(status_code=404, content={"error": "not found"})
+        detail = process_manager.get_run_step_detail(run_id, step_name)
+        if detail is None:
+            return {"error": "step not found"}
+        return detail
+
+    @app.delete("/api/active_runs/{run_id}")
+    def api_kill_run(run_id: str):
+        if process_manager is None:
+            return JSONResponse(status_code=404, content={"error": "not found"})
+        ok = process_manager.kill_run(run_id)
+        return {"killed": ok}
 
     @app.post("/api/hw_config_verify")
     def api_hw_config_verify(body: dict):
@@ -372,8 +470,18 @@ def create_app(
             return FileResponse(wizard_path, media_type="text/html")
         return HTMLResponse("<h1>Wizard not found</h1>", status_code=404)
 
+    @app.get("/monitor")
+    def monitor_page():
+        index_path = _STATIC_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path, media_type="text/html")
+        return HTMLResponse("<h1>Mimarsinan Monitor</h1><p>Static files not found.</p>")
+
     @app.get("/")
     def index():
+        welcome_path = _STATIC_DIR / "welcome.html"
+        if welcome_path.exists():
+            return FileResponse(welcome_path, media_type="text/html")
         index_path = _STATIC_DIR / "index.html"
         if index_path.exists():
             return FileResponse(index_path, media_type="text/html")
@@ -425,7 +533,12 @@ def start_server(
         )
         chosen_port = port
 
-    app = create_app(collector, run_config_fn=run_config_fn)
+    pm = None
+    if run_config_fn is not None:
+        from mimarsinan.gui.process_manager import ProcessManager
+        pm = ProcessManager()
+
+    app = create_app(collector, run_config_fn=run_config_fn, process_manager=pm)
 
     config = uvicorn.Config(
         app,

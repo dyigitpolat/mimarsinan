@@ -17,7 +17,11 @@ from __future__ import annotations
 from typing import Any
 
 from mimarsinan.gui.data_collector import DataCollector
-from mimarsinan.gui.persistence import load_persisted_steps, save_step_to_persisted
+from mimarsinan.gui.persistence import (
+    load_persisted_steps,
+    save_step_to_persisted,
+    append_live_metric,
+)
 from mimarsinan.gui.reporter import GUIReporter
 from mimarsinan.gui.snapshot import build_step_snapshot
 
@@ -25,14 +29,35 @@ from mimarsinan.gui.snapshot import build_step_snapshot
 class GUIHandle:
     """Facade returned by :func:`start_gui`."""
 
-    def __init__(self, pipeline: Any, collector: DataCollector) -> None:
+    def __init__(
+        self, pipeline: Any, collector: DataCollector, persist_metrics: bool = False,
+    ) -> None:
         self.pipeline = pipeline
         self.collector = collector
         self.reporter = GUIReporter(collector)
+        self._persist_metrics = persist_metrics
 
     def on_step_start(self, step_name: str, step: Any) -> None:
         self.reporter.prefix = step_name
         self.collector.step_started(step_name)
+        working_dir = getattr(self.pipeline, "working_directory", None)
+        if working_dir:
+            import time
+            save_step_to_persisted(
+                working_dir, step_name,
+                start_time=time.time(), end_time=None,
+                target_metric=None, metrics=[], snapshot=None,
+                snapshot_key_kinds=None, status="running",
+            )
+
+    def on_metric(
+        self, step_name: str, metric_name: str, value: float, seq: int, timestamp: float,
+    ) -> None:
+        if not self._persist_metrics:
+            return
+        working_dir = getattr(self.pipeline, "working_directory", None)
+        if working_dir:
+            append_live_metric(working_dir, step_name, metric_name, value, seq, timestamp)
 
     def on_step_end(self, step_name: str, step: Any) -> None:
         try:

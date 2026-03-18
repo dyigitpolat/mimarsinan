@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mimarsinan — Welcome</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .w-container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+    .w-hero { text-align: center; margin-bottom: 32px; }
+    .w-hero h1 { font-size: 1.8rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; }
+    .w-hero p { color: var(--text-dim); font-size: 0.92rem; margin-top: 4px; }
+
+    .w-stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    .w-stat { flex: 1; min-width: 120px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; text-align: center; }
+    .w-stat-value { font-size: 1.6rem; font-weight: 700; color: var(--accent-blue); }
+    .w-stat-label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+
+    .w-tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+    .w-tab-btn { background: none; border: none; padding: 10px 22px; font-size: 0.88rem; font-weight: 600; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.2s, border-color 0.2s; }
+    .w-tab-btn:hover { color: var(--text-primary); }
+    .w-tab-btn.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+    .w-tab-panel { display: none; }
+    .w-tab-panel.active { display: block; }
+
+    .w-actions { display: flex; gap: 12px; margin-bottom: 20px; }
+    .w-btn { padding: 8px 20px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 0.85rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: background 0.15s, border-color 0.15s; }
+    .w-btn:hover { background: var(--hover); border-color: var(--accent-blue); }
+    .w-btn-primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+    .w-btn-primary:hover { opacity: 0.9; }
+
+    /* Active runs */
+    .w-active-list { display: flex; flex-direction: column; gap: 12px; }
+    .w-active-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+    .w-active-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .w-active-header h3 { font-size: 0.95rem; font-weight: 600; margin: 0; color: var(--text-primary); flex: 1; }
+    .w-active-status { font-size: 0.75rem; font-weight: 600; padding: 2px 10px; border-radius: 99px; }
+    .w-active-status.running { background: rgba(34,211,238,0.12); color: #22d3ee; }
+    .w-active-status.completed { background: rgba(52,211,153,0.12); color: #34d399; }
+    .w-active-status.failed { background: rgba(248,113,113,0.12); color: #f87171; }
+    .w-active-status.stopped { background: rgba(251,191,36,0.12); color: #fbbf24; }
+    .w-active-elapsed { font-size: 0.78rem; color: var(--text-dim); }
+    .w-progress-wrap { background: var(--border); border-radius: 4px; height: 6px; margin: 8px 0; overflow: hidden; }
+    .w-progress-fill { height: 100%; border-radius: 4px; background: var(--accent-blue); transition: width 0.4s; }
+    .w-active-bottom { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
+    .w-active-metrics { flex: 1; display: flex; gap: 16px; flex-wrap: wrap; }
+    .w-active-sparkline { width: 120px; height: 32px; }
+    .w-active-actions { display: flex; gap: 8px; }
+
+    /* Run / template cards */
+    .w-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+    .w-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; cursor: pointer; transition: border-color 0.15s; }
+    .w-card:hover { border-color: var(--accent-blue); }
+    .w-card h3 { font-size: 0.92rem; font-weight: 600; color: var(--text-primary); margin: 0 0 6px; }
+    .w-card-meta { font-size: 0.78rem; color: var(--text-dim); }
+    .w-card-meta span { margin-right: 12px; }
+    .w-card-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .w-card-btn { padding: 5px 14px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-primary); font-size: 0.78rem; cursor: pointer; text-decoration: none; }
+    .w-card-btn:hover { background: var(--hover); }
+    .w-card-btn.danger { color: #f87171; border-color: rgba(248,113,113,0.3); }
+    .w-card-btn.danger:hover { background: rgba(248,113,113,0.08); }
+
+    .w-empty { text-align: center; padding: 40px 0; color: var(--text-dim); font-size: 0.88rem; }
+  </style>
+</head>
+<body>
+  <div class="w-container">
+    <div class="w-hero">
+      <h1>Mimarsinan</h1>
+      <p>Deployment Pipeline Framework</p>
+    </div>
+
+    <div class="w-stats" id="w-stats"></div>
+
+    <div class="w-tab-bar" id="w-tab-bar">
+      <button class="w-tab-btn active" data-tab="active">Active</button>
+      <button class="w-tab-btn" data-tab="runs">Runs</button>
+      <button class="w-tab-btn" data-tab="templates">Templates</button>
+    </div>
+
+    <div class="w-tab-panel active" id="panel-active">
+      <div class="w-active-list" id="active-list">
+        <div class="w-empty">Loading active experiments...</div>
+      </div>
+    </div>
+
+    <div class="w-tab-panel" id="panel-runs">
+      <div class="w-actions">
+        <a href="/wizard" class="w-btn w-btn-primary">New Pipeline</a>
+      </div>
+      <div class="w-card-grid" id="runs-grid">
+        <div class="w-empty">Loading runs...</div>
+      </div>
+    </div>
+
+    <div class="w-tab-panel" id="panel-templates">
+      <div class="w-actions">
+        <a href="/wizard" class="w-btn w-btn-primary">New from Wizard</a>
+      </div>
+      <div class="w-card-grid" id="templates-grid">
+        <div class="w-empty">Loading templates...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/welcome.js"></script>
+</body>
+</html>

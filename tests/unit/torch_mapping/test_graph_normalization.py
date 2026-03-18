@@ -327,7 +327,7 @@ from mimarsinan.mapping.mappers.base import (
     is_chip_targeted_activation,
 )
 from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
-from mimarsinan.pipelining.pipeline_steps.activation_utils import needs_clamp_adaptation
+from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
 from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import scale_from_activations
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
@@ -448,7 +448,7 @@ class TestBNFoldFusionPerceptronProperties:
 
     def test_gelu_perceptron_properties(self):
         """Linear -> BN -> Linear -> GELU produces a chip-targeted but not
-        chip-supported perceptron. needs_clamp_adaptation() must return True.
+        chip-supported perceptron. has_non_relu_activations() must return True.
         """
         _, supermodel = _warmup_and_convert(LinearBNLinearGELUClassifier)
         perceptrons = supermodel.get_perceptrons()
@@ -468,18 +468,18 @@ class TestBNFoldFusionPerceptronProperties:
             "GELU is NOT chip-supported (needs adaptation to ReLU first)"
         )
 
-    def test_gelu_triggers_clamp_adaptation(self):
-        """needs_clamp_adaptation() must be True when a GELU perceptron exists."""
+    def test_gelu_has_non_relu_activations(self):
+        """has_non_relu_activations() must be True when a GELU perceptron exists."""
         _, supermodel = _warmup_and_convert(LinearBNLinearGELUClassifier)
-        assert needs_clamp_adaptation(supermodel), (
-            "GELU perceptron should trigger clamp adaptation"
+        assert has_non_relu_activations(supermodel), (
+            "GELU perceptron should be detected as non-ReLU"
         )
 
-    def test_relu_does_not_trigger_clamp_adaptation(self):
-        """needs_clamp_adaptation() must be False when all perceptrons are ReLU."""
+    def test_relu_has_no_non_relu_activations(self):
+        """has_non_relu_activations() must be False when all perceptrons are ReLU."""
         _, supermodel = _warmup_and_convert(LinearBNLinearReLUClassifier)
-        assert not needs_clamp_adaptation(supermodel), (
-            "All-ReLU model should NOT trigger clamp adaptation"
+        assert not has_non_relu_activations(supermodel), (
+            "All-ReLU model should not be detected as having non-ReLU activations"
         )
 
     def test_no_act_fusion_produces_single_fused_linear(self):

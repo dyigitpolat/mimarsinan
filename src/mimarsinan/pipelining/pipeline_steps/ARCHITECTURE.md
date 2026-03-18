@@ -7,13 +7,13 @@ in the deployment pipeline.
 
 | File | Step Class | Pipeline Phase |
 |------|-----------|----------------|
-| `activation_utils.py` | `needs_clamp_adaptation`, `RELU_COMPATIBLE_TYPES`, `HOST_SIDE_TYPES` | Shared helper for activation steps |
+| `activation_utils.py` | `has_non_relu_activations`, `RELU_COMPATIBLE_TYPES` | Shared helper for activation steps |
 | `architecture_search_step.py` | `ArchitectureSearchStep` | Configuration |
 | `model_configuration_step.py` | `ModelConfigurationStep` | Configuration |
 | `model_building_step.py` | `ModelBuildingStep` | Model construction |
 | `pretraining_step.py` | `PretrainingStep` | Training |
 | `activation_analysis_step.py` | `ActivationAnalysisStep` | Quantization prep |
-| `activation_adaptation_step.py` | `ActivationAdaptationStep` | Activation adaptation (no-quant path: ReLU replacement + scales, no clamp) |
+| `activation_adaptation_step.py` | `ActivationAdaptationStep` | Activation adaptation (always runs: gradual ReLU replacement via ActivationAdaptationTuner) |
 | `clamp_adaptation_step.py` | `ClampAdaptationStep` | Quantization (runs only when activation_quantization is True) |
 | `activation_shift_step.py` | `ActivationShiftStep` | Quantization (bakes shift into bias for rate-coded; TTFS shift compensation deferred to SoftCoreMappingStep) |
 | `activation_quantization_step.py` | `ActivationQuantizationStep` | Quantization |
@@ -56,14 +56,15 @@ source scales is used as a uniform fallback.
 
 ### Activation adaptation: Clamp vs Activation Adaptation
 
-When `activation_quantization` is True, **Clamp Adaptation** runs (trains with
-ClampDecorator for quantization). When `activation_quantization` is False,
-**Activation Adaptation** runs instead: it replaces non-ReLU chip-targeted
-bases (GELU, LeakyReLU) with ReLU via a short adaptation phase and applies
-activation_scales, without setting clamp_rate, so Normalization Fusion →
-Soft Core Mapping stays exact. Shared logic for “needs ReLU adaptation” lives
-in `activation_utils.py` (`needs_clamp_adaptation`, `RELU_COMPATIBLE_TYPES`,
-`HOST_SIDE_TYPES`).
+**Activation Adaptation** always runs immediately after Activation Analysis in
+all pipeline configurations: it replaces non-ReLU chip-targeted bases (GELU,
+LeakyReLU) with ReLU when any exist; it does not apply activation_scales or
+set clamp_rate. When `activation_quantization` is True or spiking is TTFS,
+**Clamp Adaptation** runs next (applies scales and trains with ClampDecorator
+for quantization / TTFS saturation). Shared logic for detecting non-ReLU
+activations lives in `activation_utils.py` (`has_non_relu_activations`,
+`RELU_COMPATIBLE_TYPES`). Non-chip-supported perceptrons (e.g. Identity) are
+already excluded from `get_perceptrons()` via `is_chip_supported_activation`.
 
 ### TTFS shift compensation
 

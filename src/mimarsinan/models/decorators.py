@@ -213,6 +213,28 @@ class MixAdjustmentStrategy:
         return rate * target + (1.0 - rate) * base
 
 
+class ActivationReplacementDecorator:
+    """Blends the base activation output with a target activation (e.g. ReLU).
+
+    At rate 0 the output is entirely from the base activation; at rate 1
+    it is entirely from the target activation.  Uses MixAdjustmentStrategy
+    for a smooth linear blend.
+    """
+
+    def __init__(self, target_activation):
+        self.target_activation = target_activation
+        self._saved_input = None
+
+    def input_transform(self, x):
+        self._saved_input = x
+        return x
+
+    def output_transform(self, x):
+        target_out = self.target_activation(self._saved_input)
+        self._saved_input = None
+        return target_out
+
+
 class AnyDecorator:
     def __init__(self, any_module):
         self.module = any_module
