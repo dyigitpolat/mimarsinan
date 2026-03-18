@@ -204,12 +204,48 @@ function setupHistoricalBanner() {
   const header = document.querySelector('.header');
   if (!header) return;
   const banner = document.createElement('div');
+  const rid = state.historicalRunId;
+  const eRid = esc(rid);
+  const navLinks = `<a href="/monitor" style="color:var(--accent);font-size:0.78rem;text-decoration:none">Live monitor</a>
+    <a href="/" style="color:var(--text-secondary);font-size:0.78rem;text-decoration:none">Home</a>`;
   if (_isActiveRun) {
-    banner.style.cssText = 'padding:8px 32px;background:rgba(34,211,238,0.08);border-bottom:1px solid rgba(34,211,238,0.25);font-size:0.82rem;color:#22d3ee;display:flex;align-items:center;gap:12px;';
-    banner.innerHTML = `<span style="font-weight:600">Active run:</span> ${esc(state.historicalRunId)} <span style="margin-left:auto;display:flex;gap:12px"><a href="/monitor" style="color:var(--accent-blue);font-size:0.78rem;text-decoration:none;">Default monitor</a> <a href="/" style="color:var(--text-dim);font-size:0.78rem;text-decoration:none;">Home</a></span>`;
+    banner.style.cssText = 'padding:8px 32px;background:rgba(34,211,238,0.06);border-bottom:1px solid rgba(34,211,238,0.2);font-size:0.82rem;color:var(--accent-cyan);display:flex;align-items:center;gap:12px;';
+    banner.innerHTML = `<span style="font-weight:600">Active run:</span> ${eRid}
+      <span style="margin-left:auto;display:flex;gap:12px;align-items:center">
+        <button id="banner-stop-btn" style="background:rgba(248,113,113,0.12);color:var(--error);border:1px solid rgba(248,113,113,0.3);padding:3px 12px;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer">Stop</button>
+        ${navLinks}
+      </span>`;
   } else {
-    banner.style.cssText = 'padding:8px 32px;background:rgba(139,92,246,0.1);border-bottom:1px solid rgba(139,92,246,0.3);font-size:0.82rem;color:#8b5cf6;display:flex;align-items:center;gap:12px;';
-    banner.innerHTML = `<span style="font-weight:600">Historical run:</span> ${esc(state.historicalRunId)} <span style="margin-left:auto;display:flex;gap:12px"><a href="/monitor" style="color:var(--accent-blue);font-size:0.78rem;text-decoration:none;">Live monitor</a> <a href="/" style="color:var(--text-dim);font-size:0.78rem;text-decoration:none;">Home</a></span>`;
+    banner.style.cssText = 'padding:8px 32px;background:rgba(139,92,246,0.06);border-bottom:1px solid rgba(139,92,246,0.2);font-size:0.82rem;color:var(--accent-purple);display:flex;align-items:center;gap:12px;';
+    banner.innerHTML = `<span style="font-weight:600">Historical run:</span> ${eRid}
+      <span style="margin-left:auto;display:flex;gap:12px;align-items:center">
+        <button id="banner-save-tpl-btn" style="background:var(--bg-hover);color:var(--text-primary);border:1px solid var(--border);padding:3px 12px;border-radius:6px;font-size:0.75rem;font-weight:500;cursor:pointer">Save as Template</button>
+        ${navLinks}
+      </span>`;
   }
   header.parentNode.insertBefore(banner, header.nextSibling);
+
+  const stopBtn = document.getElementById('banner-stop-btn');
+  if (stopBtn) stopBtn.addEventListener('click', async () => {
+    if (!confirm('Stop this run?')) return;
+    await fetch('/api/active_runs/' + encodeURIComponent(rid), { method: 'DELETE' });
+    stopBtn.textContent = 'Stopped';
+    stopBtn.disabled = true;
+  });
+
+  const saveTplBtn = document.getElementById('banner-save-tpl-btn');
+  if (saveTplBtn) saveTplBtn.addEventListener('click', async () => {
+    try {
+      const cfg = await fetchJSON('/api/runs/' + encodeURIComponent(rid) + '/config');
+      if (!cfg || cfg.error) { alert('Cannot load config'); return; }
+      const name = prompt('Template name:', cfg.experiment_name || rid);
+      if (!name) return;
+      await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, config: cfg }),
+      });
+      alert('Template saved!');
+    } catch (e) { alert('Failed: ' + e.message); }
+  });
 }

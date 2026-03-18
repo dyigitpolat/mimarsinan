@@ -92,6 +92,7 @@ class GUIHandle:
                     detail.get("metrics", []),
                     detail.get("snapshot"),
                     detail.get("snapshot_key_kinds"),
+                    status="completed",
                 )
 
 

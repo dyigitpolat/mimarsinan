@@ -44,15 +44,27 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   }
   state.lastDetailJSON = sig;
 
+  const stepIdx = state.pipeline && state.pipeline.steps
+    ? state.pipeline.steps.findIndex(s => s.name === stepName) : -1;
+  const stepCountLabel = stepIdx >= 0 && state.pipeline
+    ? `<span class="detail-meta" style="font-size:11px;color:var(--text-muted)">Step ${stepIdx + 1} of ${state.pipeline.steps.length}</span>` : '';
+
   panel.innerHTML = `
     <div class="step-detail-header">
       <h2>${esc(detail.name)}</h2>
+      <button class="step-copy-name" title="Copy step name" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer">Copy</button>
       <span class="badge ${detail.status}">${detail.status}</span>
+      ${stepCountLabel}
       ${detail.duration ? `<span class="detail-meta">${fmtDuration(detail.duration)}</span>` : ''}
       ${detail.target_metric != null ? `<span class="detail-metric">Metric: ${detail.target_metric.toFixed(4)}</span>` : ''}
     </div>
     <div class="tabs" id="step-tabs"></div>
     <div id="step-tab-content"></div>`;
+
+  const copyBtn = panel.querySelector('.step-copy-name');
+  if (copyBtn) copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(stepName).then(() => { copyBtn.textContent = 'Copied!'; setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1200); });
+  });
 
   const metrics = getStepMetrics(stepName, state);
   const tabs = determineTabs(detail, metrics);

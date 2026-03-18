@@ -5,62 +5,175 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mimarsinan — Welcome</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <style>
-    .w-container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
-    .w-hero { text-align: center; margin-bottom: 32px; }
-    .w-hero h1 { font-size: 1.8rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; }
-    .w-hero p { color: var(--text-dim); font-size: 0.92rem; margin-top: 4px; }
+    .w-container { max-width: 1140px; margin: 0 auto; padding: 36px 24px; }
 
-    .w-stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
-    .w-stat { flex: 1; min-width: 120px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; text-align: center; }
-    .w-stat-value { font-size: 1.6rem; font-weight: 700; color: var(--accent-blue); }
-    .w-stat-label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+    /* ── Hero ── */
+    .w-hero { text-align: center; margin-bottom: 36px; }
+    .w-hero h1 {
+      font-size: 2.4rem; font-weight: 800; letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #22d3ee 0%, #5b8af5 40%, #8b5cf6 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: heroShimmer 4s ease-in-out infinite alternate;
+    }
+    @keyframes heroShimmer {
+      0% { filter: brightness(1); }
+      100% { filter: brightness(1.15); }
+    }
+    .w-hero p { color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px; }
+    .w-hero-actions { display: flex; gap: 12px; justify-content: center; margin-top: 18px; }
+    .w-btn {
+      padding: 9px 22px; border-radius: var(--radius); border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-primary); font-size: 0.85rem;
+      font-weight: 600; cursor: pointer; text-decoration: none;
+      transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+    }
+    .w-btn:hover { border-color: var(--accent); box-shadow: 0 0 12px rgba(91,138,245,0.15); }
+    .w-btn-primary {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-purple) 100%);
+      color: #fff; border-color: transparent;
+    }
+    .w-btn-primary:hover { opacity: 0.92; box-shadow: 0 0 16px rgba(91,138,245,0.3); }
 
-    .w-tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
-    .w-tab-btn { background: none; border: none; padding: 10px 22px; font-size: 0.88rem; font-weight: 600; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.2s, border-color 0.2s; }
+    /* ── Stats ── */
+    .w-stats { display: flex; gap: 14px; margin-bottom: 28px; flex-wrap: wrap; }
+    .w-stat {
+      flex: 1; min-width: 120px;
+      background: rgba(33, 36, 47, 0.6); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 18px; text-align: center;
+      transition: border-color var(--transition-med);
+    }
+    .w-stat:hover { border-color: rgba(91,138,245,0.3); }
+    .w-stat-value { font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .w-stat-value.active-val { color: var(--accent-cyan); }
+    .w-stat-value.runs-val { color: var(--accent); }
+    .w-stat-value.tpl-val { color: var(--accent-purple); }
+    .w-stat-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
+
+    /* ── Tabs ── */
+    .w-tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 22px; }
+    .w-tab-btn {
+      background: none; border: none; padding: 10px 22px; font-size: 0.88rem;
+      font-weight: 600; color: var(--text-muted); cursor: pointer;
+      border-bottom: 2px solid transparent; margin-bottom: -2px;
+      transition: color var(--transition-fast), border-color var(--transition-fast);
+    }
     .w-tab-btn:hover { color: var(--text-primary); }
-    .w-tab-btn.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+    .w-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .w-tab-count {
+      font-size: 0.68rem; background: var(--bg-hover); color: var(--text-muted);
+      padding: 1px 7px; border-radius: 99px; margin-left: 6px; font-weight: 700;
+    }
     .w-tab-panel { display: none; }
     .w-tab-panel.active { display: block; }
 
-    .w-actions { display: flex; gap: 12px; margin-bottom: 20px; }
-    .w-btn { padding: 8px 20px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 0.85rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: background 0.15s, border-color 0.15s; }
-    .w-btn:hover { background: var(--hover); border-color: var(--accent-blue); }
-    .w-btn-primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
-    .w-btn-primary:hover { opacity: 0.9; }
+    /* ── Active run cards ── */
+    .w-active-list { display: flex; flex-direction: column; gap: 14px; }
+    .w-active-card {
+      background: rgba(33, 36, 47, 0.6); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: 18px 22px; transition: border-color var(--transition-med), box-shadow var(--transition-med);
+      animation: fadeUp 0.35s ease both;
+    }
+    .w-active-card:hover { border-color: rgba(91,138,245,0.3); box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+    .w-active-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .w-active-header h3 { font-size: 0.98rem; font-weight: 600; margin: 0; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .w-active-status { font-size: 0.72rem; font-weight: 700; padding: 2px 10px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .w-active-status.running { background: rgba(34,211,238,0.12); color: var(--accent-cyan); }
+    .w-active-status.completed { background: rgba(52,211,153,0.12); color: var(--success); }
+    .w-active-status.failed { background: rgba(248,113,113,0.12); color: var(--error); }
+    .w-active-status.stopped { background: rgba(251,191,36,0.12); color: var(--stopped); }
+    .w-active-elapsed { font-size: 0.78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-    /* Active runs */
-    .w-active-list { display: flex; flex-direction: column; gap: 12px; }
-    .w-active-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
-    .w-active-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .w-active-header h3 { font-size: 0.95rem; font-weight: 600; margin: 0; color: var(--text-primary); flex: 1; }
-    .w-active-status { font-size: 0.75rem; font-weight: 600; padding: 2px 10px; border-radius: 99px; }
-    .w-active-status.running { background: rgba(34,211,238,0.12); color: #22d3ee; }
-    .w-active-status.completed { background: rgba(52,211,153,0.12); color: #34d399; }
-    .w-active-status.failed { background: rgba(248,113,113,0.12); color: #f87171; }
-    .w-active-status.stopped { background: rgba(251,191,36,0.12); color: #fbbf24; }
-    .w-active-elapsed { font-size: 0.78rem; color: var(--text-dim); }
-    .w-progress-wrap { background: var(--border); border-radius: 4px; height: 6px; margin: 8px 0; overflow: hidden; }
-    .w-progress-fill { height: 100%; border-radius: 4px; background: var(--accent-blue); transition: width 0.4s; }
-    .w-active-bottom { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
-    .w-active-metrics { flex: 1; display: flex; gap: 16px; flex-wrap: wrap; }
-    .w-active-sparkline { width: 120px; height: 32px; }
-    .w-active-actions { display: flex; gap: 8px; }
+    /* Mini pipeline bar in active cards */
+    .w-mini-pipeline { display: flex; gap: 3px; margin: 8px 0; flex-wrap: wrap; }
+    .w-mini-step {
+      flex: 1 1 0; min-width: 28px; height: 20px; border-radius: 4px;
+      font-size: 8px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 3px;
+      transition: transform var(--transition-fast);
+    }
+    .w-mini-step:hover { transform: translateY(-1px); }
+    .w-mini-step.pending { background: var(--bg-hover); color: var(--text-muted); }
+    .w-mini-step.running { background: var(--running); color: #fff; animation: pulse-bg 1.5s infinite; }
+    .w-mini-step.completed { background: #0d2818; color: var(--success); }
+    .w-mini-step.failed { background: #3a1b1b; color: var(--error); }
+    .w-mini-step.stopped { background: #3a2e0e; color: var(--stopped); }
 
-    /* Run / template cards */
+    .w-active-body { display: flex; align-items: center; gap: 16px; margin-top: 10px; }
+    .w-active-info { flex: 1; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: var(--text-muted); }
+    .w-active-info .w-metric-big { font-size: 1.1rem; font-weight: 700; color: var(--accent-cyan); }
+    .w-active-sparkline-wrap { width: 160px; height: 40px; flex-shrink: 0; }
+    .w-active-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+    /* Progress bar */
+    .w-progress-wrap { background: var(--bg-hover); border-radius: 4px; height: 5px; overflow: hidden; }
+    .w-progress-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent) 0%, var(--accent-cyan) 100%); transition: width 0.5s ease; }
+
+    /* ── Run/template cards ── */
+    .w-search-bar {
+      display: flex; gap: 12px; margin-bottom: 18px; align-items: center;
+    }
+    .w-search-input {
+      flex: 1; padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--border);
+      background: var(--bg-secondary); color: var(--text-primary); font-size: 0.85rem;
+      outline: none; transition: border-color var(--transition-fast);
+    }
+    .w-search-input:focus { border-color: var(--accent); }
+    .w-search-input::placeholder { color: var(--text-muted); }
+
     .w-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
-    .w-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; cursor: pointer; transition: border-color 0.15s; }
-    .w-card:hover { border-color: var(--accent-blue); }
-    .w-card h3 { font-size: 0.92rem; font-weight: 600; color: var(--text-primary); margin: 0 0 6px; }
-    .w-card-meta { font-size: 0.78rem; color: var(--text-dim); }
-    .w-card-meta span { margin-right: 12px; }
-    .w-card-actions { display: flex; gap: 8px; margin-top: 10px; }
-    .w-card-btn { padding: 5px 14px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-primary); font-size: 0.78rem; cursor: pointer; text-decoration: none; }
-    .w-card-btn:hover { background: var(--hover); }
-    .w-card-btn.danger { color: #f87171; border-color: rgba(248,113,113,0.3); }
+    .w-card {
+      background: rgba(33, 36, 47, 0.6); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 20px; transition: border-color var(--transition-med), box-shadow var(--transition-med);
+      animation: fadeUp 0.35s ease both;
+    }
+    .w-card:hover { border-color: rgba(91,138,245,0.3); box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+    .w-card h3 { font-size: 0.92rem; font-weight: 600; color: var(--text-primary); margin: 0 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .w-card-meta { font-size: 0.78rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .w-mode-badge {
+      font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 99px;
+      background: rgba(91,138,245,0.12); color: var(--accent); text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .w-step-bar { display: flex; gap: 2px; height: 4px; margin: 8px 0; border-radius: 2px; overflow: hidden; }
+    .w-step-bar-seg { flex: 1; border-radius: 2px; }
+    .w-step-bar-seg.done { background: var(--success); }
+    .w-step-bar-seg.todo { background: var(--bg-hover); }
+    .w-card-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .w-card-btn {
+      padding: 5px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+      background: transparent; color: var(--text-primary); font-size: 0.78rem; font-weight: 500;
+      cursor: pointer; text-decoration: none; transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+    .w-card-btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+    .w-card-btn.danger { color: var(--error); border-color: rgba(248,113,113,0.3); }
     .w-card-btn.danger:hover { background: rgba(248,113,113,0.08); }
+    .w-card-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .w-card-btn.primary:hover { opacity: 0.9; }
 
-    .w-empty { text-align: center; padding: 40px 0; color: var(--text-dim); font-size: 0.88rem; }
+    /* Template inline rename */
+    .w-tpl-name {
+      background: none; border: 1px solid transparent; color: var(--text-primary);
+      font-size: 0.92rem; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+      width: 100%; outline: none; transition: border-color var(--transition-fast), background var(--transition-fast);
+    }
+    .w-tpl-name:hover { border-color: var(--border); background: var(--bg-hover); }
+    .w-tpl-name:focus { border-color: var(--accent); background: var(--bg-secondary); }
+
+    .w-empty { text-align: center; padding: 48px 0; color: var(--text-muted); font-size: 0.88rem; }
+    .w-empty a { color: var(--accent-cyan); text-decoration: none; }
+    .w-empty a:hover { text-decoration: underline; }
+
+    @media (max-width: 768px) {
+      .w-hero h1 { font-size: 1.8rem; }
+      .w-stats { gap: 10px; }
+      .w-active-body { flex-direction: column; align-items: stretch; }
+      .w-active-sparkline-wrap { width: 100%; height: 36px; }
+    }
   </style>
 </head>
 <body>
@@ -68,14 +181,18 @@
     <div class="w-hero">
       <h1>Mimarsinan</h1>
       <p>Deployment Pipeline Framework</p>
+      <div class="w-hero-actions">
+        <a href="/wizard" class="w-btn w-btn-primary">New Pipeline</a>
+        <a href="/monitor" class="w-btn">Open Monitor</a>
+      </div>
     </div>
 
     <div class="w-stats" id="w-stats"></div>
 
     <div class="w-tab-bar" id="w-tab-bar">
-      <button class="w-tab-btn active" data-tab="active">Active</button>
-      <button class="w-tab-btn" data-tab="runs">Runs</button>
-      <button class="w-tab-btn" data-tab="templates">Templates</button>
+      <button class="w-tab-btn active" data-tab="active">Active <span class="w-tab-count" id="tab-count-active">0</span></button>
+      <button class="w-tab-btn" data-tab="runs">Runs <span class="w-tab-count" id="tab-count-runs">0</span></button>
+      <button class="w-tab-btn" data-tab="templates">Templates <span class="w-tab-count" id="tab-count-tpl">0</span></button>
     </div>
 
     <div class="w-tab-panel active" id="panel-active">
@@ -85,8 +202,9 @@
     </div>
 
     <div class="w-tab-panel" id="panel-runs">
-      <div class="w-actions">
-        <a href="/wizard" class="w-btn w-btn-primary">New Pipeline</a>
+      <div class="w-search-bar">
+        <input type="text" class="w-search-input" id="runs-search" placeholder="Search runs...">
+        <a href="/wizard" class="w-btn w-btn-primary" style="white-space:nowrap">New Pipeline</a>
       </div>
       <div class="w-card-grid" id="runs-grid">
         <div class="w-empty">Loading runs...</div>
@@ -94,8 +212,9 @@
     </div>
 
     <div class="w-tab-panel" id="panel-templates">
-      <div class="w-actions">
-        <a href="/wizard" class="w-btn w-btn-primary">New from Wizard</a>
+      <div class="w-search-bar">
+        <input type="text" class="w-search-input" id="tpl-search" placeholder="Search templates...">
+        <a href="/wizard" class="w-btn w-btn-primary" style="white-space:nowrap">New from Wizard</a>
       </div>
       <div class="w-card-grid" id="templates-grid">
         <div class="w-empty">Loading templates...</div>

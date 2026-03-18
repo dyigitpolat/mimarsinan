@@ -1,6 +1,19 @@
 /* Hardware mapping tab — consistent layout, side-based connectivity, buffer lines. */
 import { esc, safeReact, plotHistogram } from './util.js';
 
+function _resolveLayerLabel(irNodeId, irGraph) {
+  if (!irGraph || !irGraph.nodes) return '\u2014';
+  const node = irGraph.nodes.find(n => n.id === irNodeId || n.id === parseInt(irNodeId, 10));
+  if (!node) return '\u2014';
+  if (node.weight_bank_id != null) return `WB${node.weight_bank_id}`;
+  if (node.layer_group) return node.layer_group;
+  if (node.name) {
+    const parts = node.name.split('.');
+    return parts.length > 1 ? parts[parts.length - 1] : node.name;
+  }
+  return '\u2014';
+}
+
 export function renderHardwareTab(hw, container, irGraph) {
   if (!hw) { container.innerHTML = '<div class="empty-state">No hardware mapping data</div>'; return; }
 
@@ -77,12 +90,14 @@ function nodeTag(nodeId) {
 function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
   const pct = (core.utilization * 100).toFixed(1);
   const placements = core.mapped_placements || [];
-  const aTotal = Math.max(1, core.axons_per_core);
-  const nTotal = Math.max(1, core.neurons_per_core);
+  const aTotal = Math.max(1, core.heatmap_axons || core.axons_per_core);
+  const nTotal = Math.max(1, core.heatmap_neurons || core.neurons_per_core);
   const fusedBoundaries = core.fused_axon_boundaries;
   let html = '<div class="hw-core-detail-panel">';
   if (core.heatmap_image) {
-    const ar = Math.max(1, core.neurons_per_core) / Math.max(1, core.axons_per_core);
+    const hmA = core.heatmap_axons || core.axons_per_core;
+    const hmN = core.heatmap_neurons || core.neurons_per_core;
+    const ar = Math.max(1, hmN) / Math.max(1, hmA);
     html += `<div class="hw-core-detail-heatmap-wrap" style="aspect-ratio: ${ar}; max-height: 240px; position:relative">`;
     html += `<img src="${core.heatmap_image.replace(/"/g, '&quot;')}" alt="Core ${core.core_index} heatmap" class="hw-core-detail-heatmap">`;
     for (let pi = 0; pi < placements.length; pi++) {
@@ -118,7 +133,7 @@ function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
   html += '</table>';
   if (placements.length > 0) {
     html += `<div class="hw-constituents-section"><div class="section-label">Constituents (${placements.length})</div>`;
-    html += '<table class="data-table compact hw-constituents-table"><thead><tr><th>ID</th><th>Dimensions</th><th>Util.</th><th>Split</th><th>Coalesce</th></tr></thead><tbody>';
+    html += '<table class="data-table compact hw-constituents-table"><thead><tr><th>ID</th><th>Layer</th><th>Dims</th><th>Util.</th><th>Split</th><th>Coalesce</th></tr></thead><tbody>';
     for (let pi = 0; pi < placements.length; pi++) {
       const pl = placements[pi];
       const utilPct = (pl.utilization_frac != null ? pl.utilization_frac * 100 : (pl.axons * pl.neurons) / (aTotal * nTotal) * 100).toFixed(1);
@@ -126,8 +141,10 @@ function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
       const splitInfo = pl.split_group_id != null && pl.neuron_range_in_original
         ? `[${pl.neuron_range_in_original[0]}:${pl.neuron_range_in_original[1]}/${pl.split_original_neurons || '?'}]`
         : '\u2014';
+      const layerLabel = _resolveLayerLabel(pl.ir_node_id, irGraph);
       html += `<tr class="hw-constituent-row" onclick="event.stopPropagation(); window._hwSoftCoreClick(${segIdx}, ${pl.ir_node_id}, ${core.core_index}, ${pi})" title="Click for soft-core detail">
         <td><span class="hw-constituent-id">n${pl.ir_node_id}</span></td>
+        <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(layerLabel)}">${esc(layerLabel)}</td>
         <td>${pl.axons}\u00d7${pl.neurons}</td>
         <td>${utilPct}%</td>
         <td>${splitInfo}</td>
@@ -509,8 +526,8 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
       cell += `<img class="hw-core-canvas" src="${core.heatmap_image}" style="width:100%;height:100%;display:block;object-fit:fill" draggable="false">`;
     }
     const placements = core.mapped_placements || [];
-    const aTotal = Math.max(1, core.axons_per_core);
-    const nTotal = Math.max(1, core.neurons_per_core);
+    const aTotal = Math.max(1, core.heatmap_axons || core.axons_per_core);
+    const nTotal = Math.max(1, core.heatmap_neurons || core.neurons_per_core);
     const fusedBoundaries = core.fused_axon_boundaries;
     const fusedCount = core.fused_component_count != null ? core.fused_component_count : (fusedBoundaries && fusedBoundaries.length > 1 ? fusedBoundaries.length - 1 : 0);
     if (placements.length > 1 || (fusedBoundaries && fusedBoundaries.length >= 2)) {

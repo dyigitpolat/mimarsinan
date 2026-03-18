@@ -5,12 +5,17 @@ import { esc, fmtDuration, elapsedFromStepStart, safeReact, emptyAnnotation } fr
 export function renderPipelineBar(pipeline, selectedStep) {
   const bar = document.getElementById('pipeline-bar');
   if (!bar || !pipeline) return;
-  bar.innerHTML = (pipeline.steps || []).map(s => {
+  const steps = pipeline.steps || [];
+  bar.innerHTML = steps.map((s, i) => {
     const cls = s.status + (selectedStep === s.name ? ' selected' : '');
     const dur = s.duration ? ` (${fmtDuration(s.duration)})` : '';
-    return `<div class="step-block ${cls}" data-step="${esc(s.name)}" title="${esc(s.name)}${dur}">
+    const tooltip = `${s.name}${dur} [${i + 1}/${steps.length}]`;
+    const metricBadge = s.status === 'running' && s.target_metric != null
+      ? `<span style="font-size:8px;color:var(--accent-cyan);font-weight:700;display:block;margin-top:1px">${s.target_metric.toFixed(3)}</span>` : '';
+    return `<div class="step-block ${cls}" data-step="${esc(s.name)}" title="${esc(tooltip)}">
       <span class="step-name">${esc(abbreviate(s.name))}</span>
       ${s.status === 'running' ? '<span class="step-running-dot"></span>' : ''}
+      ${metricBadge}
     </div>`;
   }).join('');
 }
@@ -37,17 +42,32 @@ export function renderOverviewCards(pipeline) {
 }
 
 function renderMetricProgression(steps) {
-  const pts = steps.filter(s => s.status === 'completed' && s.target_metric != null);
+  const pts = steps.filter(s =>
+    s.target_metric != null && (s.status === 'completed' || s.end_time != null)
+  );
+  const lastPt = pts.length > 0 ? pts[pts.length - 1] : null;
+  const annotations = pts.length === 0 ? emptyAnnotation('No metrics yet') : [];
+  if (lastPt) {
+    annotations.push({
+      x: lastPt.name, y: lastPt.target_metric,
+      text: lastPt.target_metric.toFixed(4),
+      showarrow: true, arrowhead: 2, ax: 30, ay: -25,
+      font: { size: 11, color: '#22d3ee' },
+      bgcolor: 'rgba(15,17,23,0.85)', bordercolor: '#22d3ee', borderwidth: 1,
+    });
+  }
   const traces = pts.length > 0 ? [{
     x: pts.map(s => s.name), y: pts.map(s => s.target_metric),
-    type: 'scatter', mode: 'lines+markers', marker: { size: 8 }, line: { width: 2 },
+    type: 'scatter', mode: 'lines+markers',
+    marker: { size: 8, color: '#22d3ee' }, line: { width: 2, color: '#5b8af5' },
   }] : [];
-  const anno = pts.length === 0 ? emptyAnnotation('No metrics yet') : [];
+  const allMetrics = pts.map(s => s.target_metric);
+  const maxY = allMetrics.length > 0 ? Math.max(1, ...allMetrics) * 1.05 : 1;
   safeReact('chart-metric-progression', traces, {
     margin: { t: 40, r: 30, b: 100, l: 60 },
     xaxis: { tickangle: -45, automargin: true, tickfont: { size: 10 } },
-    yaxis: { title: 'Target Metric', automargin: true },
-    height: 260, annotations: anno,
+    yaxis: { title: 'Target Metric', automargin: true, range: [0, maxY] },
+    height: 260, annotations,
   });
 }
 

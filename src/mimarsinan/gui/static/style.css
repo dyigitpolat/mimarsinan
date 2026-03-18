@@ -11,13 +11,27 @@
   --text-muted: #6b6e7a;
   --accent: #5b8af5;
   --accent-dim: #3a5fba;
-  --success: #4caf50;
-  --warning: #ff9800;
-  --error: #f44336;
+  --accent-cyan: #22d3ee;
+  --accent-purple: #8b5cf6;
+  --success: #34d399;
+  --success-dim: #065f46;
+  --warning: #fbbf24;
+  --error: #f87171;
   --running: #5b8af5;
   --pending: #6b6e7a;
-  --radius: 8px;
+  --stopped: #fbbf24;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
   --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
+  --transition-fast: 0.15s ease;
+  --transition-med: 0.25s ease;
+  /* Aliases for welcome page & banner compatibility */
+  --surface: var(--bg-card);
+  --hover: var(--bg-hover);
+  --text-dim: var(--text-secondary);
+  --accent-blue: var(--accent);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -32,7 +46,8 @@ body {
 /* ═══════════ Layout ═══════════ */
 .header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--bg-secondary);
+  padding: 16px 24px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, #1e2235 100%);
 }
 .header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 8px; }
@@ -57,8 +72,9 @@ body {
 .step-block:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .step-block.pending   { background: var(--bg-card); color: var(--text-muted); border-color: var(--border); }
 .step-block.running   { background: var(--running); color: #fff; animation: pulse-bg 1.5s infinite; }
-.step-block.completed { background: #1b3a1e; color: var(--success); border-color: #2d5a32; }
+.step-block.completed { background: #0d2818; color: var(--success); border-color: #1a4a2e; }
 .step-block.failed    { background: #3a1b1b; color: var(--error); border-color: #5a2d2d; }
+.step-block.stopped   { background: #3a2e0e; color: var(--stopped); border-color: #5a4a1d; }
 .step-block.selected  { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
 
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -98,10 +114,11 @@ body {
 .step-detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .step-detail-header h2 { font-size: 20px; font-weight: 600; }
 .badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: 500; }
-.badge.completed { background: #1b3a1e; color: var(--success); }
+.badge.completed { background: #0d2818; color: var(--success); }
 .badge.running   { background: #1b2a4e; color: var(--running); }
 .badge.pending   { background: var(--bg-hover); color: var(--text-muted); }
 .badge.failed    { background: #3a1b1b; color: var(--error); }
+.badge.stopped   { background: #3a2e0e; color: var(--stopped); }
 .detail-meta { color: var(--text-muted); font-size: 12px; }
 .detail-metric { color: var(--accent); font-size: 14px; font-weight: 600; }
 
@@ -588,11 +605,29 @@ body {
   background: var(--bg-card); padding: 1px 6px; border-radius: 3px;
 }
 
+/* ═══════════ Glassy card variant ═══════════ */
+.card-glass {
+  background: rgba(33, 36, 47, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(46, 49, 64, 0.7);
+  border-radius: var(--radius);
+  transition: border-color var(--transition-med), box-shadow var(--transition-med);
+}
+.card-glass:hover { border-color: rgba(91, 138, 245, 0.3); box-shadow: 0 4px 20px rgba(0,0,0,0.25); }
+
+/* ═══════════ Entry animation ═══════════ */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in { animation: fadeUp 0.35s ease both; }
+
 /* Home link */
 .home-link {
   display: inline-flex; align-items: center; gap: 6px;
-  color: var(--text-dim); text-decoration: none; font-size: 0.82rem; font-weight: 500;
-  margin-left: 16px; padding: 4px 10px; border-radius: 6px;
-  transition: background 0.15s, color 0.15s;
+  color: var(--text-secondary); text-decoration: none; font-size: 0.82rem; font-weight: 500;
+  margin-left: 16px; padding: 4px 10px; border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
-.home-link:hover { background: var(--hover); color: var(--text-primary); }
+.home-link:hover { background: var(--bg-hover); color: var(--text-primary); }
