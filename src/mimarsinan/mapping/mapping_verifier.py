@@ -27,6 +27,7 @@ import numpy as np
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec, LayoutHardCoreType
 from mimarsinan.mapping.layout.layout_packer import pack_layout
+from mimarsinan.mapping.layout_verification_stats import build_stats_from_packing_result
 
 
 @dataclass
@@ -253,9 +254,12 @@ def verify_hardware_config(
 
     errors = list(field_errors.values()) if field_errors else errors
 
+    stats = build_stats_from_packing_result(result, num_original_softcores=len(softcores))
+
     return {
         "feasible": result.feasible,
         "errors": errors,
         "field_errors": field_errors,
         "packing_result": result,
+        "stats": stats.to_dict(),
     }

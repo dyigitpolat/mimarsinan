@@ -145,6 +145,9 @@
         </div>
       </div>
 
+      <!-- Mapping Performance Stats — always visible, full-width -->
+      <div id="hwStatsPanel" class="hw-stats-panel"></div>
+
       <!-- Two-column grid: software left, hardware/deployment right -->
       <div class="wizard-columns">
       <!-- Left column: software (dataset, model, training) -->
@@ -352,13 +355,13 @@
 
             <div class="dep-bar" id="hwDeps"></div>
 
-            <!-- Fixed HW -->
-            <div id="hwFixed" class="cond visible">
+            <!-- Core Types — always visible; locked when Auto is on -->
+            <div id="hwFixed">
               <div class="sub-section">
                 <div class="sub-section-title" style="display:flex;align-items:center;justify-content:space-between">
                   Core Types
-                  <button class="btn-sm" onclick="addCoreType()" style="font-size:0.65rem;padding:3px 10px">+ Add Core
-                    Type</button>
+                  <span id="coreTypesAutoLabel" class="hw-auto-badge" style="display:none">Auto-managed</span>
+                  <button id="addCoreTypeBtn" class="btn-sm" onclick="addCoreType()" style="font-size:0.65rem;padding:3px 10px">+ Add Core Type</button>
                 </div>
                 <div id="coreTypesList"></div>
               </div>

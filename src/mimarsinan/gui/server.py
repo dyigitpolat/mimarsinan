@@ -372,6 +372,7 @@ def create_app(
                     "total_capacity": result["packing_result"].total_capacity if result["packing_result"] else 0,
                     "used_area": result["packing_result"].used_area if result["packing_result"] else 0,
                 } if result["packing_result"] else None,
+                "stats": result.get("stats"),
             }
         except Exception as e:
             logger.exception("hw_config_verify failed")
