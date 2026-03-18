@@ -64,6 +64,10 @@ let _hwAutoMode = false;   // true after user clicks Auto; triggers re-fill on p
 let _hwRefilling = false;  // true while a fetch is in-flight (prevents re-entrant refills)
 let _hwAutoRefillTimer = null;
 
+// Stats panel state — true once full verified stats have been rendered at least once.
+// Enables the overlay-on-reload approach instead of full content replacement.
+let _hwStatsHasContent = false;
+
 // ── Init ───────────────────────────────────────────────────
 function init() {
   _renderHwStats(null); // show placeholder immediately, before API loads
@@ -778,6 +782,15 @@ function update() {
   syncWtQuantToggle();
   document.getElementById('jsonOutput').innerHTML = renderJson(buildConfig());
   schedulePipelineStepsUpdate();
+
+  // NAS architecture search: mapping stats are meaningless until the search settles.
+  if (getSegVal('configMode') === 'nas') {
+    const banner = document.getElementById('hwValidationBanner');
+    if (banner) banner.classList.add('hide');
+    _renderHwStats('nas');
+    return;
+  }
+
   if (getSegVal('hwMode') === 'user') {
     if (isHwAutoSuggestOn() && _hwAutoMode) {
       scheduleHwAutoRefill();
@@ -992,10 +1005,28 @@ function _buildHwApiBody() {
   };
 }
 
+// Show/hide a translucent loading overlay on the hw-config fixed panel.
+function _setHwConfigLoading(isLoading) {
+  var el = document.getElementById('hwFixed');
+  if (!el) return;
+  if (isLoading) {
+    if (!el.querySelector('.hw-auto-loading-overlay')) {
+      var overlay = document.createElement('div');
+      overlay.className = 'hw-auto-loading-overlay';
+      overlay.innerHTML = '<div class="hw-spinner"></div>';
+      el.appendChild(overlay);
+    }
+  } else {
+    var existing = el.querySelector('.hw-auto-loading-overlay');
+    if (existing) existing.remove();
+  }
+}
+
 // Auto-fill hardware configuration using the greedy algorithm
 function autoFillHardware() {
   if (_hwRefilling) return;
   _hwRefilling = true;
+  _setHwConfigLoading(true);
 
   const toggleEl = document.getElementById('hwAutoSuggestToggle');
   if (toggleEl) toggleEl.classList.add('loading');
@@ -1042,6 +1073,7 @@ function autoFillHardware() {
     _showHwValidation(false, ['Auto-config request failed: ' + err.message], {});
   }).finally(() => {
     _hwRefilling = false;
+    _setHwConfigLoading(false);
     const toggleEl = document.getElementById('hwAutoSuggestToggle');
     if (toggleEl) toggleEl.classList.remove('loading');
   });
@@ -1157,8 +1189,21 @@ function _renderHwStats(statsOrState) {
   var panel = document.getElementById('hwStatsPanel');
   if (!panel) return;
 
-  // Special string states
+  // ── Loading: overlay on existing content to avoid janky blank-then-repopulate ──
   if (statsOrState === 'loading') {
+    if (_hwStatsHasContent) {
+      if (!panel.querySelector('.hw-stats-overlay')) {
+        var overlay = document.createElement('div');
+        overlay.className = 'hw-stats-overlay';
+        overlay.innerHTML = '<div class="hw-spinner"></div>';
+        panel.appendChild(overlay);
+      }
+      var badge = panel.querySelector('.hw-stats-badge');
+      if (badge) { badge.className = 'hw-stats-badge loading'; badge.textContent = 'Verifying\u2026'; }
+      return;  // keep existing content intact underneath the overlay
+    }
+    // First load — no data yet, show a placeholder
+    _hwStatsHasContent = false;
     panel.className = 'hw-stats-panel hw-stats-state-loading';
     panel.innerHTML =
       '<div class="hw-stats-header">' +
@@ -1169,12 +1214,28 @@ function _renderHwStats(statsOrState) {
     return;
   }
 
+  // For all non-loading transitions: remove any existing overlay and reset flag.
+  var existingOverlay = panel.querySelector('.hw-stats-overlay');
+  if (existingOverlay) existingOverlay.remove();
+  _hwStatsHasContent = false;
+
+  if (statsOrState === 'nas') {
+    panel.className = 'hw-stats-panel hw-stats-state-empty';
+    panel.innerHTML =
+      '<div class="hw-stats-header">' +
+        '<span class="hw-stats-title">Mapping Performance</span>' +
+        '<span class="hw-stats-badge empty">NAS Search</span>' +
+      '</div>' +
+      '<div class="hw-stats-empty-msg">Architecture is being searched \u2014 mapping stats depend on the final architecture.</div>';
+    return;
+  }
+
   if (statsOrState === 'search') {
     panel.className = 'hw-stats-panel hw-stats-state-empty';
     panel.innerHTML =
       '<div class="hw-stats-header">' +
         '<span class="hw-stats-title">Mapping Performance</span>' +
-        '<span class="hw-stats-badge empty">Search Mode</span>' +
+        '<span class="hw-stats-badge empty">HW Search</span>' +
       '</div>' +
       '<div class="hw-stats-empty-msg">Hardware is being searched \u2014 run the pipeline to see mapping stats.</div>';
     return;
@@ -1207,6 +1268,11 @@ function _renderHwStats(statsOrState) {
   // ── Helpers ─────────────────────────────────────────────
   function fmt(v) { return v != null ? v.toFixed(1) : '\u2014'; }
   function fmtInt(v) { return v != null ? String(v) : '\u2014'; }
+  function fmtNum(v) {
+    if (v == null) return '\u2014';
+    var n = Number(v);
+    return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  }
 
   function barColor(pct) {
     if (pct >= 70) return 'green';
@@ -1245,6 +1311,11 @@ function _renderHwStats(statsOrState) {
       miniBar(min, colorFn) + miniBar(avg, colorFn) + miniBar(max, colorFn);
   }
 
+  function detailChip(lbl, val) {
+    return '<span class="hw-detail-chip"><span class="hw-detail-chip-lbl">' +
+      _escHtml(lbl) + '</span>' + _escHtml(fmtNum(val)) + '</span>';
+  }
+
   // ── Build HTML ──────────────────────────────────────────
   var html =
     '<div class="hw-stats-header">' +
@@ -1252,13 +1323,19 @@ function _renderHwStats(statsOrState) {
       '<span class="hw-stats-badge ok">Verified</span>' +
     '</div>';
 
-  // Count cards
+  // Count cards — always-present topology overview
+  var latencyCard = (stats.latency_group_count > 0)
+    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.latency_group_count) + '</div><div class="hw-stat-card-label">Latency Groups</div></div>'
+    : '';
+  var thresholdCard = (stats.threshold_group_count > 0)
+    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.threshold_group_count) + '</div><div class="hw-stat-card-label">Sync Barriers</div></div>'
+    : '';
+
   html +=
     '<div class="hw-stats-cards">' +
       '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_cores) + '</div><div class="hw-stat-card-label">Cores Used</div></div>' +
       '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_softcores) + '</div><div class="hw-stat-card-label">Softcores</div></div>' +
-      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.coalesced_cores) + '</div><div class="hw-stat-card-label">Coalesced</div></div>' +
-      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.split_cores) + '</div><div class="hw-stat-card-label">Split Frags</div></div>' +
+      latencyCard + thresholdCard +
     '</div>';
 
   // Two-column body: total (left) + per-core (right)
@@ -1304,8 +1381,54 @@ function _renderHwStats(statsOrState) {
 
   html += '</div>'; // end hw-stats-body
 
+  // ── Coalescing detail ──────────────────────────────────
+  if (stats.coalescing_group_count > 0) {
+    html +=
+      '<div class="hw-detail-row">' +
+        '<span class="hw-detail-title">Coalescing</span>' +
+        '<span class="hw-detail-count">' + fmtInt(stats.coalescing_group_count) + ' groups</span>' +
+        '<span class="hw-detail-stat-label">Frags/group:</span>' +
+        detailChip('Min', stats.coalescing_frags_per_group_min) +
+        detailChip('Mdn', stats.coalescing_frags_per_group_median) +
+        detailChip('Max', stats.coalescing_frags_per_group_max) +
+      '</div>';
+  }
+
+  // ── Splitting detail ───────────────────────────────────
+  if (stats.split_softcore_count > 0) {
+    html +=
+      '<div class="hw-detail-row">' +
+        '<span class="hw-detail-title">Splitting</span>' +
+        '<span class="hw-detail-count">' + fmtInt(stats.split_softcore_count) + ' softcores split</span>' +
+        '<span class="hw-detail-stat-label">Splits/SC:</span>' +
+        detailChip('Min', stats.splits_per_softcore_min) +
+        detailChip('Mdn', stats.splits_per_softcore_median) +
+        detailChip('Max', stats.splits_per_softcore_max) +
+      '</div>';
+  }
+
   panel.className = 'hw-stats-panel';
   panel.innerHTML = html;
+  _hwStatsHasContent = true;
+
+  // Always mask the content swap to prevent the "bars growing from 0%" flash.
+  // We write the final-state HTML, then immediately place an opaque overlay on
+  // top (suppressing its own fade-in animation so it appears at full opacity
+  // instantly), then fade it out — revealing content that is already at its
+  // final state.  This applies on first load AND on every subsequent update.
+  (function () {
+    var m = document.createElement('div');
+    m.className = 'hw-stats-overlay';
+    // Override the class animation/transition so the overlay appears solid
+    // immediately (no fade-in).  We will trigger our own fade-out below.
+    m.style.cssText = 'animation:none;opacity:1;transition:none;';
+    m.innerHTML = '<div class="hw-spinner"></div>';
+    panel.appendChild(m);
+    m.offsetHeight;  // force reflow — browser commits opacity:1 before our next change
+    m.style.transition = 'opacity 0.22s ease';
+    m.style.opacity = '0';
+    setTimeout(function () { if (m.parentNode) m.parentNode.removeChild(m); }, 280);
+  }());
 }
 
 function _escHtml(s) {
