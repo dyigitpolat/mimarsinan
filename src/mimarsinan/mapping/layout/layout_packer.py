@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import copy
 import math
-from typing import List, Sequence
+import re
+from typing import Dict, List, Sequence, Tuple
 
 from mimarsinan.mapping.core_packing import greedy_pack_softcores
 from mimarsinan.mapping.layout.layout_types import (
@@ -47,7 +48,7 @@ def _split_layout_softcore(
 def _expand_for_axon_coalescing(
     softcores: Sequence[LayoutSoftCoreSpec],
     core_types: Sequence[LayoutHardCoreType],
-) -> List[LayoutSoftCoreSpec]:
+) -> Tuple[List[LayoutSoftCoreSpec], Tuple[int, ...]]:
     """Expand softcores for axon coalescing.
 
     A softcore whose input_count exceeds the largest hw core's max_axons is split
@@ -55,14 +56,18 @@ def _expand_for_axon_coalescing(
     the output neurons — exactly what IRMapping does at model-building time when
     coalescing is enabled.  This lets the layout packer correctly verify and count
     hardware cores for coalescing configurations.
+
+    Returns (expanded_softcores, coalescing_group_sizes) where coalescing_group_sizes
+    contains one entry per softcore that produced more than one coalescing fragment.
     """
     if not core_types:
-        return list(softcores)
+        return list(softcores), ()
     max_avail_axons = max(int(ct.max_axons) for ct in core_types)
     if max_avail_axons <= 0:
-        return list(softcores)
+        return list(softcores), ()
 
     result: List[LayoutSoftCoreSpec] = []
+    group_sizes: List[int] = []
     for sc in softcores:
         if sc.input_count <= max_avail_axons:
             result.append(sc)
@@ -79,7 +84,8 @@ def _expand_for_axon_coalescing(
                     latency_tag=sc.latency_tag,
                     name=f"{sc.name}_coal{i}" if sc.name else None,
                 ))
-    return result
+            group_sizes.append(k)
+    return result, tuple(group_sizes)
 
 
 def pack_layout(
@@ -112,11 +118,36 @@ def pack_layout(
 
     # Pre-expand for axon coalescing so the greedy packer sees fragments that
     # fit within individual hardware cores' axon capacities.
+    coalescing_group_sizes: Tuple[int, ...] = ()
     if allow_axon_coalescing:
-        unmapped = _expand_for_axon_coalescing(unmapped, core_types)
+        unmapped, coalescing_group_sizes = _expand_for_axon_coalescing(unmapped, core_types)
     coalesced_fragment_count = len(unmapped) - pre_coalesce_count
 
+    # Pre-assign temp names to anonymous softcores so split lineage can be tracked
+    # across multiple split calls via the _split_N suffix naming convention.
+    for i, sc in enumerate(unmapped):
+        if sc.name is None:
+            unmapped[i] = LayoutSoftCoreSpec(
+                input_count=sc.input_count,
+                output_count=sc.output_count,
+                threshold_group_id=sc.threshold_group_id,
+                latency_tag=sc.latency_tag,
+                name=f"__sc_{i}",
+            )
+
+    _SPLIT_SUFFIX_RE = re.compile(r"(_split_\d+)+$")
+
     split_counter = [0]
+    split_lineage: Dict[str, int] = {}  # root_name -> number of times any fragment was split
+
+    def _split_root(name: str) -> str:
+        return _SPLIT_SUFFIX_RE.sub("", name) or name
+
+    def _counting_split(core: LayoutSoftCoreSpec, available_neurons: int):
+        split_counter[0] += 1
+        root = _split_root(core.name or f"__noname_{id(core)}")
+        split_lineage[root] = split_lineage.get(root, 0) + 1
+        return _split_layout_softcore(core, available_neurons)
 
     def is_mapping_possible(core: LayoutSoftCoreSpec, hardcore: LayoutHardCoreInstance) -> bool:
         # Threshold-group constraint: an empty hardcore can accept any group; otherwise, must match.
@@ -135,10 +166,6 @@ def pack_layout(
 
     def place(core_idx: int, hardcore: LayoutHardCoreInstance, core: LayoutSoftCoreSpec) -> None:
         hardcore.add_softcore(core)
-
-    def _counting_split(core: LayoutSoftCoreSpec, available_neurons: int):
-        split_counter[0] += 1
-        return _split_layout_softcore(core, available_neurons)
 
     try:
         greedy_pack_softcores(
@@ -191,4 +218,6 @@ def pack_layout(
         used_core_snapshots=snapshots,
         coalesced_fragment_count=coalesced_fragment_count,
         split_fragment_count=split_counter[0],
+        coalescing_group_sizes=coalescing_group_sizes if coalescing_group_sizes else None,
+        split_counts_per_sc=tuple(split_lineage.values()) if split_lineage else None,
     )

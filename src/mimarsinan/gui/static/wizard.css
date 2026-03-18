@@ -1238,6 +1238,11 @@ input.hw-field-invalid {
   border-radius: 10px;
   border: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.18);
+  position: relative;
+  /* overflow:hidden is intentionally omitted — it would set min-height:0 on a
+     flex item (wizard-panel is a flex column with max-height), causing the
+     panel to collapse to zero height and clip all content.
+     The overlay uses border-radius:inherit to round its own corners. */
 }
 
 /* State variants */
@@ -1332,10 +1337,10 @@ input.hw-field-invalid {
   margin-bottom: 8px;
 }
 
-/* Overview count cards */
+/* Overview count cards — auto-fit so card count can vary */
 .hw-stats-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
   gap: 6px;
   margin-bottom: 12px;
 }
@@ -1399,7 +1404,7 @@ input.hw-field-invalid {
 .hw-health-bar-fill {
   height: 100%;
   border-radius: 5px;
-  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s;
+  transition: background 0.3s;
   min-width: 2px;
 }
 
@@ -1479,7 +1484,6 @@ input.hw-field-invalid {
 .hw-per-core-fill {
   height: 100%;
   border-radius: 4px;
-  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   min-width: 2px;
 }
 
@@ -1516,4 +1520,108 @@ input.hw-field-invalid {
   background: rgba(245, 158, 11, 0.10);
   color: var(--accent-amber);
   border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* ── Loading overlays (stats panel + hw-config pane) ────────────
+   Positioned over the nearest positioned ancestor (.hw-stats-panel
+   and #hwFixed both get position:relative).
+   pointer-events:none keeps the underlying controls accessible while
+   the overlay is visible (user can read but not interact). */
+
+.hw-stats-overlay,
+.hw-auto-loading-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(8, 10, 14, 0.62);
+  backdrop-filter: blur(1.5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  animation: hw-overlay-fadein 0.18s ease;
+  transition: opacity 0.22s ease;
+  pointer-events: none;
+}
+
+@keyframes hw-overlay-fadein {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Shared spinner used by both overlays */
+.hw-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  border-top-color: var(--accent-amber);
+  border-radius: 50%;
+  animation: hw-spin 0.75s linear infinite;
+}
+
+@keyframes hw-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── hwFixed needs position:relative for the overlay ──────── */
+#hwFixed {
+  position: relative;
+}
+
+/* ── Coalescing / splitting detail rows ─────────────────────
+   Full-width rows that appear below the two-column body when
+   coalescing or splitting events occurred during packing.     */
+
+.hw-detail-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.hw-detail-title {
+  font-size: 0.63rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  min-width: 68px;
+}
+
+.hw-detail-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.80rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 96px;
+}
+
+.hw-detail-stat-label {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  margin-right: 2px;
+}
+
+.hw-detail-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+}
+
+.hw-detail-chip-lbl {
+  font-size: 0.58rem;
+  font-family: 'Outfit', sans-serif;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }

@@ -140,4 +140,10 @@ class LayoutPackingResult:
     coalesced_fragment_count: int = 0
     split_fragment_count: int = 0
 
+    # Per-coalescing-group fragment counts (one entry per group that had > 1 fragment).
+    coalescing_group_sizes: Optional[Tuple[int, ...]] = None
+
+    # Per-split-softcore split counts (one entry per softcore that was split ≥ once).
+    split_counts_per_sc: Optional[Tuple[int, ...]] = None
+
 

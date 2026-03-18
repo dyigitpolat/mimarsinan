@@ -254,7 +254,7 @@ def verify_hardware_config(
 
     errors = list(field_errors.values()) if field_errors else errors
 
-    stats = build_stats_from_packing_result(result, num_original_softcores=len(softcores))
+    stats = build_stats_from_packing_result(result, num_original_softcores=len(softcores), softcores=softcores)
 
     return {
         "feasible": result.feasible,

@@ -5,6 +5,9 @@ Defines the expected output shape and numeric correctness of
   - total and per-core wasted-axon/neuron percentages
   - mapped-parameter utilization percentages
   - coalesced-core and neuron-splitting statistics
+  - coalescing group distribution (count, min/median/max fragments per group)
+  - split distribution (count, min/median/max splits per softcore)
+  - latency group and threshold group counts
   - edge cases (single softcore, perfect-fit, infeasible)
 """
 
@@ -81,6 +84,14 @@ class TestStatsShape:
         assert isinstance(stats.coalesced_cores, int)
         assert isinstance(stats.split_cores, int)
 
+        # New extended fields
+        assert isinstance(stats.latency_group_count, int)
+        assert isinstance(stats.threshold_group_count, int)
+        assert isinstance(stats.coalescing_group_count, int)
+        assert isinstance(stats.split_softcore_count, int)
+        assert stats.coalescing_frags_per_group_min <= stats.coalescing_frags_per_group_max
+        assert stats.splits_per_softcore_min <= stats.splits_per_softcore_max
+
     def test_to_dict_roundtrip(self):
         scs = _make_softcores([(8, 4)])
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=16, count=2)]
@@ -90,6 +101,10 @@ class TestStatsShape:
         assert d["feasible"] is True
         assert "total_cores" in d
         assert "mapped_params_pct" in d
+        assert "latency_group_count" in d
+        assert "threshold_group_count" in d
+        assert "coalescing_group_count" in d
+        assert "split_softcore_count" in d
 
 
 # ── Numeric correctness ─────────────────────────────────────────────────────
@@ -282,3 +297,120 @@ class TestVerifyHardwareConfigStats:
 
         assert "stats" in result
         assert result["stats"]["feasible"] is False
+
+
+# ── Coalescing group distribution ────────────────────────────────────────────
+
+class TestCoalescingGroupDistribution:
+    """Coalescing group count and per-group fragment distribution."""
+
+    def test_single_coalesced_softcore_reports_one_group(self):
+        """One 32-axon softcore on 16-axon hw → one coalescing group of size 2."""
+        scs = _make_softcores([(32, 8)])
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=4)]
+        stats = _pack_and_stats(scs, hw, allow_axon_coalescing=True)
+
+        assert stats.coalescing_group_count == 1
+        assert stats.coalescing_frags_per_group_min == pytest.approx(2.0)
+        assert stats.coalescing_frags_per_group_median == pytest.approx(2.0)
+        assert stats.coalescing_frags_per_group_max == pytest.approx(2.0)
+
+    def test_two_different_coalescing_groups(self):
+        """32-axon and 48-axon softcores on 16-axon hw → two groups of sizes 2 and 3."""
+        scs = _make_softcores([(32, 4), (48, 4)])
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=4, count=8)]
+        stats = _pack_and_stats(scs, hw, allow_axon_coalescing=True)
+
+        assert stats.coalescing_group_count == 2
+        assert stats.coalescing_frags_per_group_min == pytest.approx(2.0)
+        assert stats.coalescing_frags_per_group_max == pytest.approx(3.0)
+        # Median of [2, 3] = 2.5
+        assert stats.coalescing_frags_per_group_median == pytest.approx(2.5)
+
+    def test_no_coalescing_group_when_fits(self):
+        """Softcore fits in one core — no coalescing groups."""
+        scs = _make_softcores([(8, 4)])
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=1)]
+        stats = _pack_and_stats(scs, hw, allow_axon_coalescing=True)
+
+        assert stats.coalescing_group_count == 0
+        assert stats.coalescing_frags_per_group_min == pytest.approx(0.0)
+        assert stats.coalescing_frags_per_group_max == pytest.approx(0.0)
+
+
+# ── Split distribution ───────────────────────────────────────────────────────
+
+class TestSplitDistribution:
+    """Split softcore count and per-softcore split count distribution."""
+
+    def test_single_split_softcore_reports_one_entry(self):
+        """One 32-neuron softcore on 16-neuron hw → one softcore split once."""
+        scs = _make_softcores([(8, 32)])
+        hw = [LayoutHardCoreType(max_axons=8, max_neurons=16, count=4)]
+        stats = _pack_and_stats(scs, hw, allow_neuron_splitting=True)
+
+        assert stats.split_softcore_count == 1
+        assert stats.splits_per_softcore_min == pytest.approx(1.0)
+        assert stats.splits_per_softcore_median == pytest.approx(1.0)
+        assert stats.splits_per_softcore_max == pytest.approx(1.0)
+
+    def test_two_softcores_split_different_amounts(self):
+        """32-neuron and 48-neuron softcores on 16-neuron hw → 1 and 2 splits each."""
+        scs = _make_softcores([(4, 32), (4, 48)])
+        hw = [LayoutHardCoreType(max_axons=4, max_neurons=16, count=8)]
+        stats = _pack_and_stats(scs, hw, allow_neuron_splitting=True)
+
+        assert stats.split_softcore_count == 2
+        assert stats.splits_per_softcore_min == pytest.approx(1.0)
+        assert stats.splits_per_softcore_max == pytest.approx(2.0)
+
+    def test_no_splits_when_all_fit(self):
+        """All softcores fit; no splits."""
+        scs = _make_softcores([(4, 4), (4, 4)])
+        hw = [LayoutHardCoreType(max_axons=8, max_neurons=8, count=2)]
+        stats = _pack_and_stats(scs, hw, allow_neuron_splitting=True)
+
+        assert stats.split_softcore_count == 0
+        assert stats.splits_per_softcore_min == pytest.approx(0.0)
+        assert stats.splits_per_softcore_max == pytest.approx(0.0)
+
+
+# ── Latency / threshold group counts ────────────────────────────────────────
+
+class TestLatencyStats:
+    """Latency group and threshold group counts are derived from softcores."""
+
+    def test_no_latency_tags_reports_zero(self):
+        scs = [LayoutSoftCoreSpec(input_count=8, output_count=4)]  # latency_tag=None by default
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=1)]
+        stats = _pack_and_stats(scs, hw)
+
+        assert stats.latency_group_count == 0
+
+    def test_two_distinct_latency_tags(self):
+        scs = [
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=0),
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=1),
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=0),
+        ]
+        hw = [LayoutHardCoreType(max_axons=4, max_neurons=4, count=3)]
+        stats = _pack_and_stats(scs, hw)
+
+        assert stats.latency_group_count == 2
+
+    def test_threshold_groups_counted(self):
+        scs = [
+            LayoutSoftCoreSpec(input_count=4, output_count=4, threshold_group_id=0),
+            LayoutSoftCoreSpec(input_count=4, output_count=4, threshold_group_id=1),
+        ]
+        hw = [LayoutHardCoreType(max_axons=4, max_neurons=4, count=2)]
+        stats = _pack_and_stats(scs, hw)
+
+        assert stats.threshold_group_count == 2
+
+    def test_single_threshold_group_default(self):
+        scs = _make_softcores([(4, 4), (4, 4)])
+        hw = [LayoutHardCoreType(max_axons=8, max_neurons=8, count=1)]
+        stats = _pack_and_stats(scs, hw)
+
+        assert stats.threshold_group_count == 1  # default group_id=0 for all
