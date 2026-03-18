@@ -897,8 +897,10 @@ function runPipeline() {
     body: JSON.stringify(config),
   }).then(function (res) {
     if (res.status === 202 || res.ok) {
-      window.location.href = '/monitor';
-      return;
+      return res.json().then(function (body) {
+        var rid = body && body.run_id;
+        window.location.href = rid ? '/monitor?run_id=' + encodeURIComponent(rid) : '/monitor';
+      });
     }
     return res.json().then(function (body) {
       alert(body.error || 'Run failed');

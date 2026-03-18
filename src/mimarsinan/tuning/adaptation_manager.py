@@ -7,6 +7,7 @@ class AdaptationManager(nn.Module):
     def __init__(self):
         super(AdaptationManager, self).__init__()
         
+        self.activation_adaptation_rate = 0.0
         self.clamp_rate = 0.0
         self.shift_rate = 0.0
         self.quantization_rate = 0.0
@@ -25,10 +26,13 @@ class AdaptationManager(nn.Module):
             return
 
         use_ttfs = pipeline_config.get("spiking_mode", "rate") in ("ttfs", "ttfs_quantized")
-        decorators = [
-            self.get_rate_adjusted_clamp_decorator(perceptron),
-            self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron),
-        ]
+        decorators = []
+        if self.activation_adaptation_rate > 0:
+            decorators.append(
+                self.get_rate_adjusted_activation_replacement_decorator(perceptron))
+        decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
+        decorators.append(
+            self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
         if not use_ttfs:
             decorators.append(self.get_shift_decorator(pipeline_config, perceptron))
 
@@ -50,6 +54,14 @@ class AdaptationManager(nn.Module):
         #     )
         # )
         
+    def get_rate_adjusted_activation_replacement_decorator(self, perceptron):
+        """Gradually blend the base activation toward LeakyGradReLU (chip ReLU)."""
+        from mimarsinan.models.activations import LeakyGradReLU
+        return RateAdjustedDecorator(
+            self.activation_adaptation_rate,
+            ActivationReplacementDecorator(LeakyGradReLU()),
+            MixAdjustmentStrategy())
+
     def get_rate_adjusted_clamp_decorator(self, perceptron):
         return RateAdjustedDecorator(
             self.clamp_rate, 

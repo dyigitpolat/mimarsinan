@@ -14,6 +14,7 @@ in Perceptrons when the adaptation/quantization stages need them.
 | `mapper_graph_converter.py` | `MapperGraphConverter` | Converts FX graph to Mapper DAG; inherits mixins from `converter_handlers/` for linear, conv, pool, transformer, structural ops |
 | `converter_handlers/` | `LinearConvertMixin`, `ConvConvertMixin`, `PoolConvertMixin`, `TransformerConvertMixin`, `StructuralConvertMixin` | Per-category _convert_* methods; mixed into `MapperGraphConverter` |
 | `converted_model_flow.py` | `ConvertedModelFlow` | PerceptronFlow subclass wrapping the converted ModelRepresentation; overrides `_apply` so that `to(device)` / `to(dtype)` also propagates to every node in the mapper graph, keeping mapper submodules (e.g. LayerNorm, ModuleMapper.module) on the same device/dtype as the rest of the model |
+| `graph_normalization.py` | `normalize_fx_graph` | MM+ fusion: folds BN into preceding Linear, fuses consecutive Linears (through Identity/BN), dead code elimination |
 | `converter.py` | `convert_torch_model`, `check_representability` | Public API facade |
 
 ## Dependencies
@@ -30,6 +31,28 @@ in Perceptrons when the adaptation/quantization stages need them.
 
 - `pipelining.pipeline_steps.torch_mapping_step` uses `convert_torch_model`.
 - `models.builders` (torch_* builders) produce native models consumed by this module.
+
+## Perceptron packaging rule
+
+Conversion produces one `Perceptron` (wrapped by a `PerceptronMapper`) for each
+segment of the FX graph matching the pattern **MM+ → BN? → ACT**:
+
+- **MM+**: one or more matrix-multiplication-equivalent ops (`nn.Linear`,
+  `BatchNorm` — a diagonal MM) fused into a single `nn.Linear` by
+  `graph_normalization`.  Identity and BN between consecutive Linears are
+  walked through; BN is folded into the preceding Linear before the pair
+  is fused.
+- **BN?**: optional `BatchNorm1d`/`BatchNorm2d` (absorbed into the preceding
+  Linear).
+- **ACT**: optional activation (`ReLU`, `LeakyReLU`, `GELU`, `Identity`),
+  absorbed into the same Perceptron.
+
+Whether the resulting Perceptron participates in pipeline processing is
+determined by [`is_chip_targeted_activation()`](../mapping/mappers/base.py)
+(True for all except Identity). At IR mapping time,
+[`is_chip_supported_activation()`](../mapping/mappers/base.py) decides
+NeuralCore vs host-side ComputeOp. Both derive from
+`CHIP_SUPPORTED_ACTIVATIONS` — no separate host-side activation list.
 
 ## Exported API (\_\_init\_\_.py)
 

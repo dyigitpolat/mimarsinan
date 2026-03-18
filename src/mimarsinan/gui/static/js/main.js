@@ -4,19 +4,35 @@ import { esc, fmtDuration, elapsedFromStepStart } from './util.js';
 import { renderPipelineBar, renderOverviewCards, renderConfig } from './overview.js';
 import { refreshStepDetail, updateLiveCharts } from './step-detail.js';
 
+// ── Historical run mode ──────────────────────────────────────────────────
+const _params = new URLSearchParams(window.location.search);
+const _historicalRunId = _params.get('run_id') || null;
+
 // ── Global state ─────────────────────────────────────────────────────────
 const state = {
   pipeline: null,
   selectedStep: null,
   activeTab: null,
   activeMainTab: 'overview',
-  autoFollow: true,
+  autoFollow: !_historicalRunId,
   ws: null,
   metricBuffers: {},
   seenSeqs: {},
   connected: false,
   lastDetailJSON: null,
+  historicalRunId: _historicalRunId,
+  isActiveRun: false,
 };
+
+let _isActiveRun = false;
+
+function apiUrl(path) {
+  if (state.historicalRunId) {
+    if (_isActiveRun) return '/api/active_runs/' + encodeURIComponent(state.historicalRunId) + path;
+    return '/api/runs/' + encodeURIComponent(state.historicalRunId) + path;
+  }
+  return '/api' + path;
+}
 
 async function fetchJSON(url) { return (await fetch(url)).json(); }
 
@@ -25,9 +41,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPipelineBarClicks();
   setupMainTabs();
   document.getElementById('auto-follow-btn').addEventListener('click', toggleAutoFollow);
+
+  if (state.historicalRunId) {
+    const activeCheck = await fetch('/api/active_runs/' + encodeURIComponent(state.historicalRunId) + '/pipeline').then(r => r.ok).catch(() => false);
+    if (activeCheck) {
+      _isActiveRun = true;
+      state.isActiveRun = true;
+      state.autoFollow = true;
+    }
+    setupHistoricalBanner();
+  }
+
   await refreshPipeline();
-  connectWebSocket();
-  setInterval(refreshPipeline, 5000);
+  if (!state.historicalRunId) {
+    connectWebSocket();
+    setInterval(refreshPipeline, 5000);
+  } else if (_isActiveRun) {
+    setInterval(refreshPipeline, 3000);
+  }
   setInterval(updateElapsedTimer, 1000);
 });
 
@@ -40,7 +71,7 @@ function scheduleRefresh() {
 
 async function refreshPipeline() {
   try {
-    state.pipeline = await fetchJSON('/api/pipeline');
+    state.pipeline = await fetchJSON(apiUrl('/pipeline'));
     renderPipelineBar(state.pipeline, state.selectedStep);
     renderOverviewCards(state.pipeline);
     if (state.activeMainTab === 'config') renderConfig(state.pipeline?.config);
@@ -70,6 +101,8 @@ function connectWebSocket() {
 
 function handleWSMessage(msg) {
   if (msg.type === 'step_started') {
+    delete state.metricBuffers[msg.step];
+    delete state.seenSeqs[msg.step];
     if (state.autoFollow) { state.selectedStep = msg.step; state.activeTab = null; state.lastDetailJSON = null; }
     scheduleRefresh();
   }
@@ -165,4 +198,18 @@ function toggleAutoFollow() {
 function updateAutoFollowBtn() {
   const btn = document.getElementById('auto-follow-btn');
   if (btn) { btn.classList.toggle('active', state.autoFollow); btn.textContent = state.autoFollow ? 'Following' : 'Follow'; }
+}
+
+function setupHistoricalBanner() {
+  const header = document.querySelector('.header');
+  if (!header) return;
+  const banner = document.createElement('div');
+  if (_isActiveRun) {
+    banner.style.cssText = 'padding:8px 32px;background:rgba(34,211,238,0.08);border-bottom:1px solid rgba(34,211,238,0.25);font-size:0.82rem;color:#22d3ee;display:flex;align-items:center;gap:12px;';
+    banner.innerHTML = `<span style="font-weight:600">Active run:</span> ${esc(state.historicalRunId)} <span style="margin-left:auto;display:flex;gap:12px"><a href="/monitor" style="color:var(--accent-blue);font-size:0.78rem;text-decoration:none;">Default monitor</a> <a href="/" style="color:var(--text-dim);font-size:0.78rem;text-decoration:none;">Home</a></span>`;
+  } else {
+    banner.style.cssText = 'padding:8px 32px;background:rgba(139,92,246,0.1);border-bottom:1px solid rgba(139,92,246,0.3);font-size:0.82rem;color:#8b5cf6;display:flex;align-items:center;gap:12px;';
+    banner.innerHTML = `<span style="font-weight:600">Historical run:</span> ${esc(state.historicalRunId)} <span style="margin-left:auto;display:flex;gap:12px"><a href="/monitor" style="color:var(--accent-blue);font-size:0.78rem;text-decoration:none;">Live monitor</a> <a href="/" style="color:var(--text-dim);font-size:0.78rem;text-decoration:none;">Home</a></span>`;
+  }
+  header.parentNode.insertBefore(banner, header.nextSibling);
 }

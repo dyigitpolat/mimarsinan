@@ -27,6 +27,19 @@ the IR into physical hardware cores.
 | `mapping_verifier.py` | `verify_soft_core_mapping`, `verify_hardware_config`, `MappingVerificationResult` | Layout mapping verification; hardware config check. With multiple core types, at least one type must fit the largest softcore. |
 | `hw_config_suggester.py` | `suggest_hardware_config`, `suggest_hardware_config_for_model`, `HardwareSuggestion` | Two-type hardware suggester: H×W and W×H (or H×H and W×H when coalescing); smallest H,W such that >50% of used cores host ≥4 softcores. |
 
+### Perceptron packaging rule
+
+Perceptron packaging follows the pattern **MM+ → BN? → ACT**. Two predicates in
+`mappers/base.py` derive from `CHIP_SUPPORTED_ACTIVATIONS`:
+
+- `is_chip_targeted_activation` — True for all except Identity; controls
+  `owned_perceptron_groups()` (pipeline processing, scale propagation).
+- `is_chip_supported_activation` — True only for ReLU-like; controls IR mapping
+  (NeuralCore vs host-side ComputeOp).
+
+There is no separate host-side activation list; host-side is derived as
+"not chip-targeted" (Identity only).
+
 ### Subdirectory
 
 | Directory | Purpose |

@@ -1,6 +1,6 @@
-"""Shared helpers for activation adaptation steps (clamp vs ReLU-only).
+"""Shared helpers for activation adaptation steps.
 
-Used by ClampAdaptationStep and ActivationAdaptationStep to decide whether
+Used by ActivationAdaptationStep and ClampAdaptationStep to check whether
 any chip-targeted perceptron has a non-ReLU base (GELU, LeakyReLU, etc.).
 """
 
@@ -12,16 +12,15 @@ RELU_COMPATIBLE_TYPES = (
 )
 
 
-def needs_clamp_adaptation(model) -> bool:
+def has_non_relu_activations(model) -> bool:
     """True if any chip-targeted perceptron has a non-ReLU base (e.g. GELU, LeakyReLU).
 
-    Used by ActivationAdaptationStep (ReLU replacement when True) and by
-    ClampAdaptationStep (short-path when False). Non-chip-supported perceptrons
-    (e.g. Identity) are excluded from get_perceptrons().
+    Non-chip-supported perceptrons (e.g. Identity) are excluded from
+    get_perceptrons().
     """
     for p in model.get_perceptrons():
         base = p.base_activation
         name = type(base).__name__
         if name not in RELU_COMPATIBLE_TYPES:
-            return True  # chip-targeted but not directly ReLU-compatible → needs clamp
+            return True
     return False

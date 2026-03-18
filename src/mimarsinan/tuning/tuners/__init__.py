@@ -2,6 +2,9 @@
 
 from mimarsinan.tuning.tuners.basic_tuner import BasicTuner
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
+from mimarsinan.tuning.tuners.activation_adaptation_tuner import (
+    ActivationAdaptationTuner,
+)
 from mimarsinan.tuning.tuners.activation_quantization_tuner import (
     ActivationQuantizationTuner,
 )

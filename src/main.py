@@ -44,13 +44,19 @@ def _parse_deployment_config(deployment_config):
         platform_constraints = platform_constraints_raw
 
     pipeline_mode = deployment_config.get("pipeline_mode", "phased")
-    working_directory = (
-        deployment_config['generated_files_path'] + "/"
-        + deployment_name + "_" + pipeline_mode + "_deployment_run"
-    )
+
+    if "_working_directory" in deployment_config:
+        working_directory = deployment_config["_working_directory"]
+    else:
+        working_directory = (
+            deployment_config['generated_files_path'] + "/"
+            + deployment_name + "_" + pipeline_mode + "_deployment_run"
+        )
+
     os.makedirs(working_directory + "/_RUN_CONFIG", exist_ok=True)
+    saveable_config = {k: v for k, v in deployment_config.items() if not k.startswith("_")}
     with open(working_directory + "/_RUN_CONFIG/config.json", 'w') as f:
-        json.dump(deployment_config, f, indent=4)
+        json.dump(saveable_config, f, indent=4)
 
     return {
         "pipeline_mode": pipeline_mode,

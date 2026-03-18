@@ -335,7 +335,7 @@ Two quantization flags (booleans in `deployment_parameters`) provide fine-graine
 
 | Flag | What it enables |
 |------|-----------------|
-| `activation_quantization` | Activation Analysis → Clamp Adaptation → Input Activation Analysis → Activation Shifting → Activation Quantization.  Configured via `target_tq`. |
+| `activation_quantization` | Activation Analysis → Activation Adaptation → Clamp Adaptation → Input Activation Analysis → Activation Shifting → Activation Quantization.  Configured via `target_tq`. |
 | `weight_quantization` | Weight Quantization → Quantization Verification.  Configured via `weight_bits`. |
 
 An additional pruning flag controls dimension reduction:
@@ -359,7 +359,7 @@ Model Configuration → Model Building → Pretraining
 
 ```
 Model Configuration → Model Building → Pretraining
-→ Activation Analysis → Clamp Adaptation → Input Activation Analysis
+→ Activation Analysis → Activation Adaptation → Clamp Adaptation → Input Activation Analysis
 → Activation Shifting → Activation Quantization
 → Weight Quantization → Quantization Verification
 → Normalization Fusion → Soft Core Mapping
@@ -371,7 +371,7 @@ Model Configuration → Model Building → Pretraining
 
 ```
 Model Configuration → Model Building → Pretraining
-→ Activation Analysis → Clamp Adaptation → Input Activation Analysis
+→ Activation Analysis → Activation Adaptation → Clamp Adaptation → Input Activation Analysis
 → Activation Shifting → Activation Quantization
 → Pruning Adaptation
 → Weight Quantization → Quantization Verification
@@ -430,23 +430,23 @@ Trains the model from scratch using `BasicTrainer` for `training_epochs` with a 
 
 Decorates each perceptron's activation with a `SavedTensorDecorator`, runs validation, and computes activation scales based on the 99th percentile of the cumulative sum of sorted activations. Only non-pruned activations (above a small threshold) are included so that post-pruning statistics are not skewed and clamping does not over-degrade accuracy. These scales determine the clamping range for each perceptron.
 
-### 5.5 Clamp Adaptation
-
-**File**: `pipeline_steps/clamp_adaptation_step.py`
-
-- **Requires**: `model`, `adaptation_manager`, `activation_scales`
-- **Updates**: `model`, `adaptation_manager`
-
-**Runs only when `activation_quantization` is True.** Uses `ClampTuner` to gradually introduce clamping to each perceptron's activation, guided by the previously computed activation scales. The `SmartSmoothAdaptation` framework ensures the clamping is applied incrementally to minimize accuracy loss.
-
-### 5.5b Activation Adaptation (no-quant)
+### 5.5 Activation Adaptation
 
 **File**: `pipeline_steps/activation_adaptation_step.py`
 
 - **Requires**: `model`, `adaptation_manager`, `activation_scales`
 - **Updates**: `model`, `adaptation_manager`
 
-**Runs only when `activation_quantization` is False.** Replaces non-ReLU chip-targeted bases (GELU, LeakyReLU) with ReLU via a short adaptation phase and applies activation_scales. Does not set `clamp_rate`, so the clamp decorator remains a no-op and Normalization Fusion → Soft Core Mapping stays exact. Shared logic with Clamp Adaptation (e.g. “needs ReLU adaptation”) lives in `pipeline_steps/activation_utils.py`.
+**Always runs immediately after Activation Analysis.** When any chip-targeted perceptron has a non-ReLU base (GELU, LeakyReLU), uses `ActivationAdaptationTuner` to gradually blend activations toward ReLU via `SmartSmoothAdaptation`. The tuner sets `activation_adaptation_rate` on the `AdaptationManager`, which inserts an `ActivationReplacementDecorator` that linearly interpolates between the original activation output and ReLU output. When all activations are already ReLU-compatible, only applies activation_scales. After full adaptation (rate=1), the base activation is committed to ReLU and the rate is reset. Does not set `clamp_rate`, so the clamp decorator remains a no-op and Normalization Fusion → Soft Core Mapping stays exact. Shared logic (e.g. "needs ReLU adaptation") lives in `pipeline_steps/activation_utils.py`.
+
+### 5.5b Clamp Adaptation
+
+**File**: `pipeline_steps/clamp_adaptation_step.py`
+
+- **Requires**: `model`, `adaptation_manager`, `activation_scales`
+- **Updates**: `model`, `adaptation_manager`
+
+**Runs only when `activation_quantization` is True or spiking is TTFS**, and always after Activation Adaptation. Uses `ClampTuner` to gradually introduce clamping to each perceptron's activation, guided by the previously computed activation scales. The `SmartSmoothAdaptation` framework ensures the clamping is applied incrementally to minimize accuracy loss.
 
 ### 5.6 Activation Shifting
 
@@ -1002,6 +1002,7 @@ All tuners extend `BasicTuner`, which uses `SmartSmoothAdaptation`:
 
 | Tuner | Purpose |
 |-------|---------|
+| `ActivationAdaptationTuner` | Gradually blends non-ReLU activations toward ReLU |
 | `ClampTuner` | Introduces activation clamping |
 | `ActivationQuantizationTuner` | Quantizes activations to Tq levels |
 | `PruningTuner` | Gradually zeros least-significant weight rows/columns |
