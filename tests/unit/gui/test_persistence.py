@@ -159,6 +159,39 @@ class TestSaveLoadPersistedSteps:
         assert steps["Step1"]["start_time"] == 1.0
         assert steps["Step2"]["start_time"] == 3.0
 
+    def test_save_step_running_then_completed(self, tmp_path):
+        """Simulate on_step_start writing status='running', then on_step_end writing status='completed'."""
+        working_dir = str(tmp_path)
+        save_step_to_persisted(
+            working_dir,
+            step_name="Train",
+            start_time=10.0,
+            end_time=None,
+            target_metric=None,
+            metrics=[],
+            snapshot=None,
+            snapshot_key_kinds=None,
+            status="running",
+        )
+        steps = load_persisted_steps(working_dir)
+        assert steps["Train"]["status"] == "running"
+
+        save_step_to_persisted(
+            working_dir,
+            step_name="Train",
+            start_time=10.0,
+            end_time=20.0,
+            target_metric=0.95,
+            metrics=[{"name": "acc", "value": 0.95}],
+            snapshot={"layers": 4},
+            snapshot_key_kinds={"layers": "int"},
+            status="completed",
+        )
+        steps = load_persisted_steps(working_dir)
+        assert steps["Train"]["status"] == "completed"
+        assert steps["Train"]["end_time"] == 20.0
+        assert steps["Train"]["target_metric"] == 0.95
+
     def test_load_persisted_steps_missing_returns_empty(self, tmp_path):
         working_dir = str(tmp_path)
         steps = load_persisted_steps(working_dir)

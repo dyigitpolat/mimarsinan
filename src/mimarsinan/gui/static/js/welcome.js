@@ -1,15 +1,12 @@
-/* Mimarsinan Welcome Page */
+/* Mimarsinan Welcome Page — modern active-run monitoring, searchable runs, templates. */
 
-const _esc = (s) => {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-};
+const _esc = (s) => { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; };
 
 let allRuns = [];
 let allTemplates = [];
 let allActiveRuns = [];
 let _activeTimer = null;
+let _pollMs = 4000;
 
 // ── Tab switching ────────────────────────────────────────────────────────
 document.getElementById('w-tab-bar').addEventListener('click', (e) => {
@@ -20,6 +17,10 @@ document.getElementById('w-tab-bar').addEventListener('click', (e) => {
   document.querySelectorAll('.w-tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
 });
 
+// ── Search ───────────────────────────────────────────────────────────────
+document.getElementById('runs-search').addEventListener('input', () => renderRuns());
+document.getElementById('tpl-search').addEventListener('input', () => renderTemplates());
+
 // ── Init ─────────────────────────────────────────────────────────────────
 (async function init() {
   await Promise.all([loadRuns(), loadTemplates(), loadActiveRuns()]);
@@ -29,32 +30,33 @@ document.getElementById('w-tab-bar').addEventListener('click', (e) => {
 
 // ── Data loading ─────────────────────────────────────────────────────────
 async function loadRuns() {
-  try {
-    allRuns = await (await fetch('/api/runs?include_steps=true')).json();
-  } catch { allRuns = []; }
+  try { allRuns = await (await fetch('/api/runs?include_steps=true')).json(); } catch { allRuns = []; }
   renderRuns();
 }
 
 async function loadTemplates() {
-  try {
-    allTemplates = await (await fetch('/api/templates')).json();
-  } catch { allTemplates = []; }
+  try { allTemplates = await (await fetch('/api/templates')).json(); } catch { allTemplates = []; }
   renderTemplates();
 }
 
 async function loadActiveRuns() {
-  try {
-    allActiveRuns = await (await fetch('/api/active_runs')).json();
-  } catch { allActiveRuns = []; }
+  try { allActiveRuns = await (await fetch('/api/active_runs')).json(); } catch { allActiveRuns = []; }
   renderActiveRuns();
 }
 
 function startActivePolling() {
   if (_activeTimer) clearInterval(_activeTimer);
+  const hasActive = allActiveRuns.some(r => r.is_alive);
+  _pollMs = hasActive ? 2000 : 5000;
   _activeTimer = setInterval(async () => {
     await loadActiveRuns();
     updateStats();
-  }, 4000);
+    const nowActive = allActiveRuns.some(r => r.is_alive);
+    if (nowActive !== hasActive) {
+      clearInterval(_activeTimer);
+      startActivePolling();
+    }
+  }, _pollMs);
 }
 
 // ── Stats ────────────────────────────────────────────────────────────────
@@ -62,55 +64,102 @@ function updateStats() {
   const el = document.getElementById('w-stats');
   const active = allActiveRuns.filter(r => r.is_alive).length;
   el.innerHTML = `
-    <div class="w-stat"><div class="w-stat-value">${active}</div><div class="w-stat-label">Active</div></div>
-    <div class="w-stat"><div class="w-stat-value">${allRuns.length}</div><div class="w-stat-label">Past Runs</div></div>
-    <div class="w-stat"><div class="w-stat-value">${allTemplates.length}</div><div class="w-stat-label">Templates</div></div>
+    <div class="w-stat"><div class="w-stat-value active-val">${active}</div><div class="w-stat-label">Active</div></div>
+    <div class="w-stat"><div class="w-stat-value runs-val">${allRuns.length}</div><div class="w-stat-label">Past Runs</div></div>
+    <div class="w-stat"><div class="w-stat-value tpl-val">${allTemplates.length}</div><div class="w-stat-label">Templates</div></div>
   `;
+  document.getElementById('tab-count-active').textContent = active;
+  document.getElementById('tab-count-runs').textContent = allRuns.length;
+  document.getElementById('tab-count-tpl').textContent = allTemplates.length;
 }
 
 // ── Active runs ──────────────────────────────────────────────────────────
 function renderActiveRuns() {
   const container = document.getElementById('active-list');
   if (allActiveRuns.length === 0) {
-    container.innerHTML = '<div class="w-empty">No active experiments. <a href="/wizard" style="color:var(--accent-blue)">Start one</a>.</div>';
+    container.innerHTML = '<div class="w-empty">No active experiments. <a href="/wizard">Start one &rarr;</a></div>';
     return;
   }
-  container.innerHTML = allActiveRuns.map(renderActiveCard).join('');
-  drawSparklines();
+  container.innerHTML = allActiveRuns.map((r, i) => renderActiveCard(r, i)).join('');
+  requestAnimationFrame(() => drawSparklines());
 }
 
-function renderActiveCard(run) {
+function renderActiveCard(run, idx) {
   const status = run.is_alive ? 'running' : (run.status || 'unknown');
   const pct = Math.round((run.progress || 0) * 100);
   const elapsed = run.started_at ? formatElapsed(Date.now() / 1000 - run.started_at) : '';
-  const stepInfo = run.current_step ? `<span>Step: ${_esc(run.current_step)}</span>` : '';
-  const progressInfo = `${run.completed_steps || 0}/${run.total_steps || '?'}`;
+  const stepNames = run.step_names || [];
+  const stepsInfo = run.steps || {};
+  const completedCount = run.completed_steps || 0;
+  const totalCount = run.total_steps || stepNames.length || 0;
+
+  const lastMetric = _lastTargetMetric(run);
+  const metricHtml = lastMetric != null
+    ? `<span class="w-metric-big">${lastMetric.toFixed(4)}</span><span>target</span>`
+    : '';
+
+  const eta = _estimateRemaining(run);
+  const etaHtml = eta != null ? `<span>~${formatElapsed(eta)} remaining</span>` : '';
+
+  let miniBar = '';
+  if (stepNames.length > 0) {
+    miniBar = '<div class="w-mini-pipeline">';
+    for (const sn of stepNames) {
+      const sd = stepsInfo[sn] || {};
+      let st = sd.status || 'pending';
+      if (st === 'pending' && sd.end_time != null) st = 'completed';
+      if (st === 'running' && !run.is_alive) st = 'failed';
+      const shortName = sn.length > 10 ? sn.substring(0, 9) + '\u2026' : sn;
+      miniBar += `<div class="w-mini-step ${st}" title="${_esc(sn)}">${_esc(shortName)}</div>`;
+    }
+    miniBar += '</div>';
+  }
+
   return `
-    <div class="w-active-card">
+    <div class="w-active-card" style="animation-delay:${idx * 60}ms">
       <div class="w-active-header">
-        <h3>${_esc(run.experiment_name || run.run_id)}</h3>
+        <h3 title="${_esc(run.run_id)}">${_esc(run.experiment_name || run.run_id)}</h3>
         <span class="w-active-status ${status}">${status}</span>
         <span class="w-active-elapsed">${elapsed}</span>
       </div>
+      ${miniBar}
       <div class="w-progress-wrap">
         <div class="w-progress-fill" style="width:${pct}%"></div>
       </div>
-      <div class="w-active-bottom">
-        <div class="w-active-metrics">
-          ${stepInfo}
-          <span>${progressInfo} steps</span>
+      <div class="w-active-body">
+        <div class="w-active-info">
+          ${metricHtml}
+          <span>${completedCount}/${totalCount} steps</span>
+          ${run.current_step ? `<span>Step: ${_esc(run.current_step)}</span>` : ''}
+          ${etaHtml}
         </div>
-        <canvas class="w-active-sparkline" data-run-id="${_esc(run.run_id)}"></canvas>
+        <div class="w-active-sparkline-wrap" id="spark-${CSS.escape(run.run_id)}"></div>
         <div class="w-active-actions">
-          <a href="/monitor?run_id=${encodeURIComponent(run.run_id)}" class="w-card-btn">View</a>
+          <a href="/monitor?run_id=${encodeURIComponent(run.run_id)}" class="w-card-btn primary">View</a>
           ${run.is_alive ? `<button class="w-card-btn danger" onclick="stopRun('${_esc(run.run_id)}')">Stop</button>` : ''}
         </div>
       </div>
     </div>`;
 }
 
+function _lastTargetMetric(run) {
+  const tms = run.target_metrics;
+  if (tms && tms.length > 0) return tms[tms.length - 1].value;
+  return null;
+}
+
+function _estimateRemaining(run) {
+  if (!run.is_alive || !run.started_at) return null;
+  const completed = run.completed_steps || 0;
+  const total = run.total_steps || 0;
+  if (completed < 1 || total < 2) return null;
+  const elapsedSec = Date.now() / 1000 - run.started_at;
+  const avgPerStep = elapsedSec / completed;
+  return avgPerStep * (total - completed);
+}
+
 function formatElapsed(secs) {
-  if (secs < 0) secs = 0;
+  if (!secs || secs < 0) secs = 0;
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = Math.floor(secs % 60);
@@ -121,24 +170,34 @@ function formatElapsed(secs) {
 
 function drawSparklines() {
   for (const run of allActiveRuns) {
-    const canvas = document.querySelector(`.w-active-sparkline[data-run-id="${CSS.escape(run.run_id)}"]`);
-    if (!canvas) continue;
-    const ctx = canvas.getContext('2d');
+    const wrap = document.getElementById('spark-' + CSS.escape(run.run_id));
+    if (!wrap) continue;
     const values = (run.target_metrics || []).map(m => m.value);
-    if (values.length < 2) { ctx.clearRect(0, 0, canvas.width, canvas.height); continue; }
-    const w = canvas.width, h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-    const min = Math.min(...values), max = Math.max(...values);
-    const range = max - min || 1;
-    ctx.beginPath();
-    ctx.strokeStyle = '#22d3ee';
-    ctx.lineWidth = 1.5;
-    values.forEach((v, i) => {
-      const x = (i / (values.length - 1)) * w;
-      const y = h - ((v - min) / range) * (h - 4) - 2;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+    if (values.length < 2) {
+      wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">No metrics yet</span>';
+      continue;
+    }
+    const divId = 'sparkdiv-' + run.run_id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    if (!wrap.querySelector('#' + CSS.escape(divId))) {
+      wrap.innerHTML = `<div id="${divId}" style="width:100%;height:100%"></div>`;
+    }
+    const el = document.getElementById(divId);
+    if (!el) continue;
+    try {
+      Plotly.react(el, [{
+        y: values,
+        type: 'scatter', mode: 'lines',
+        line: { color: '#22d3ee', width: 2 },
+        fill: 'tozeroy', fillcolor: 'rgba(34,211,238,0.08)',
+      }], {
+        margin: { t: 0, r: 0, b: 0, l: 0 },
+        xaxis: { visible: false },
+        yaxis: { visible: false, range: [0, Math.max(1, ...values) * 1.05] },
+        paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        height: 40,
+        showlegend: false,
+      }, { displayModeBar: false, staticPlot: true });
+    } catch { /* Plotly not loaded yet */ }
   }
 }
 
@@ -152,52 +211,113 @@ window.stopRun = async function(runId) {
 // ── Past runs ────────────────────────────────────────────────────────────
 function renderRuns() {
   const grid = document.getElementById('runs-grid');
-  if (allRuns.length === 0) {
-    grid.innerHTML = '<div class="w-empty">No past runs found.</div>';
+  const q = (document.getElementById('runs-search').value || '').toLowerCase().trim();
+  const filtered = q ? allRuns.filter(r =>
+    (r.experiment_name || r.run_id).toLowerCase().includes(q) ||
+    (r.pipeline_mode || '').toLowerCase().includes(q)
+  ) : allRuns;
+  if (filtered.length === 0) {
+    grid.innerHTML = q
+      ? '<div class="w-empty">No runs match your search.</div>'
+      : '<div class="w-empty">No past runs found. <a href="/wizard">Create one &rarr;</a></div>';
     return;
   }
-  grid.innerHTML = allRuns.map(run => {
+  grid.innerHTML = filtered.map((run, i) => {
     const date = new Date(run.created_at * 1000).toLocaleString();
-    const steps = run.total_steps ? `${run.completed_steps}/${run.total_steps} steps` : '';
+    const total = run.total_steps || 0;
+    const done = run.completed_steps || 0;
+    let stepBar = '';
+    if (total > 0) {
+      stepBar = '<div class="w-step-bar">';
+      for (let s = 0; s < total; s++) {
+        stepBar += `<div class="w-step-bar-seg ${s < done ? 'done' : 'todo'}"></div>`;
+      }
+      stepBar += '</div>';
+    }
     return `
-      <div class="w-card">
-        <h3>${_esc(run.experiment_name || run.run_id)}</h3>
+      <div class="w-card" style="animation-delay:${i * 40}ms">
+        <h3 title="${_esc(run.run_id)}">${_esc(run.experiment_name || run.run_id)}</h3>
         <div class="w-card-meta">
-          <span>${_esc(run.pipeline_mode)}</span>
+          <span class="w-mode-badge">${_esc(run.pipeline_mode)}</span>
           <span>${date}</span>
-          <span>${steps}</span>
+          <span>${done}/${total} steps</span>
         </div>
+        ${stepBar}
         <div class="w-card-actions">
           <a href="/monitor?run_id=${encodeURIComponent(run.run_id)}" class="w-card-btn">View</a>
-          <a href="/wizard?run_id=${encodeURIComponent(run.run_id)}" class="w-card-btn">Edit & Continue</a>
+          <a href="/wizard?run_id=${encodeURIComponent(run.run_id)}" class="w-card-btn">Edit &amp; Continue</a>
+          <button class="w-card-btn" onclick="saveRunAsTemplate('${_esc(run.run_id)}')">Save as Template</button>
         </div>
       </div>`;
   }).join('');
 }
 
+window.saveRunAsTemplate = async function(runId) {
+  try {
+    const config = await (await fetch('/api/runs/' + encodeURIComponent(runId) + '/config')).json();
+    if (!config || config.error) { alert('Could not load run config.'); return; }
+    const name = prompt('Template name:', config.experiment_name || runId);
+    if (!name) return;
+    await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, config }),
+    });
+    await loadTemplates();
+    updateStats();
+  } catch (err) { alert('Failed to save template: ' + err.message); }
+};
+
 // ── Templates ────────────────────────────────────────────────────────────
 function renderTemplates() {
   const grid = document.getElementById('templates-grid');
-  if (allTemplates.length === 0) {
-    grid.innerHTML = '<div class="w-empty">No templates saved yet.</div>';
+  const q = (document.getElementById('tpl-search').value || '').toLowerCase().trim();
+  const filtered = q ? allTemplates.filter(t =>
+    (t.name || t.id).toLowerCase().includes(q) ||
+    (t.pipeline_mode || '').toLowerCase().includes(q)
+  ) : allTemplates;
+  if (filtered.length === 0) {
+    grid.innerHTML = q
+      ? '<div class="w-empty">No templates match your search.</div>'
+      : '<div class="w-empty">No templates saved yet. <a href="/wizard">Create one &rarr;</a></div>';
     return;
   }
-  grid.innerHTML = allTemplates.map(t => {
+  grid.innerHTML = filtered.map((t, i) => {
     const date = new Date(t.created_at * 1000).toLocaleString();
     return `
-      <div class="w-card">
-        <h3>${_esc(t.name || t.id)}</h3>
+      <div class="w-card" style="animation-delay:${i * 40}ms">
+        <input class="w-tpl-name" value="${_esc(t.name || t.id)}" data-tpl-id="${_esc(t.id)}" data-orig="${_esc(t.name || t.id)}"
+               onblur="renameTemplate(this)" onkeydown="if(event.key==='Enter')this.blur()">
         <div class="w-card-meta">
-          <span>${_esc(t.pipeline_mode)}</span>
+          <span class="w-mode-badge">${_esc(t.pipeline_mode || 'unknown')}</span>
           <span>${date}</span>
         </div>
         <div class="w-card-actions">
-          <a href="/wizard?template_id=${encodeURIComponent(t.id)}" class="w-card-btn">Use Template</a>
+          <a href="/wizard?template_id=${encodeURIComponent(t.id)}" class="w-card-btn primary">Use Template</a>
           <button class="w-card-btn danger" onclick="deleteTemplate('${_esc(t.id)}')">Delete</button>
         </div>
       </div>`;
   }).join('');
 }
+
+window.renameTemplate = async function(input) {
+  const newName = input.value.trim();
+  const origName = input.dataset.orig;
+  const tplId = input.dataset.tplId;
+  if (!newName || newName === origName) { input.value = origName; return; }
+  try {
+    const config = await (await fetch('/api/templates/' + encodeURIComponent(tplId))).json();
+    if (!config || config.error) { input.value = origName; return; }
+    await fetch('/api/templates/' + encodeURIComponent(tplId), { method: 'DELETE' });
+    await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName, config }),
+    });
+    await loadTemplates();
+    updateStats();
+  } catch { input.value = origName; }
+};
 
 window.deleteTemplate = async function(id) {
   if (!confirm('Delete this template?')) return;

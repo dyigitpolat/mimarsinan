@@ -15,8 +15,35 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 | `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (e.g. default + GUI) |
 | `server.py` | `start_server`, `create_app` | FastAPI + Uvicorn server in a daemon thread; optional `run_config_fn` for POST `/api/run` |
 | `snapshot/` | `build_step_snapshot`, `snapshot_model`, `snapshot_pruning_layers`, `snapshot_ir_graph`, `snapshot_hard_core_mapping`, `snapshot_search_result`, `snapshot_adaptation_manager` | Package: `helpers.py` (numeric/dict helpers, cache key map), `builders.py` (all snapshot builders); pure functions extracting JSON-safe snapshots; step-specific tabs and new/edited kinds. **Pruning**: `snapshot_pruning_layers(model)` extracts per-layer weight heatmaps with pruning masks (red lines) for the Pruning Adaptation step; `build_step_snapshot` adds `pruning_layers` when step is Pruning Adaptation. Hardware snapshot: per-placement `utilization_frac`, `constituent_count` per core, and when a core is fused, `fused_axon_boundaries` and `fused_component_count` for GUI boundaries and badges. |
-| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted` | Load/save step state to `_GUI_STATE/steps.json` for backfill |
+| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted`, `save_run_info`, `update_run_status`, `load_run_info`, `append_live_metric`, `load_live_metrics` | Load/save step state to `_GUI_STATE/steps.json` for backfill; run lifecycle metadata in `_GUI_STATE/run_info.json`; streaming metrics in `_GUI_STATE/live_metrics.jsonl` |
+| `process_manager.py` | `ProcessManager`, `ManagedRun` | Spawns headless pipeline processes, tracks them via filesystem polling (run_info.json, steps.json, live_metrics.jsonl), provides status/metrics/step detail APIs, kill with SIGTERM→SIGKILL escalation |
+| `runs.py` | `list_runs`, `get_run_config`, `get_run_pipeline`, `get_run_step_detail` | Discover and load historical pipeline runs from the generated files directory |
+| `templates.py` | `list_templates`, `get_template`, `save_template`, `delete_template` | CRUD for deployment configuration templates saved as JSON files |
+| `wizard_config_builder.py` | `build_deployment_config_from_state` | Builds complete deployment config from wizard UI state, applying defaults and presets |
 | `heatmap_renderer.py` | `render_heatmap_png_data_uri` | Renders weight matrices as PNG data URIs for GUI; no raw matrices sent to frontend |
+
+### Step Status Persistence Contract
+
+Steps in `_GUI_STATE/steps.json` follow a strict status lifecycle:
+
+1. **`on_step_start`** → writes `status: "running"`, `start_time`, `end_time: null`
+2. **`on_step_end`** → writes `status: "completed"`, `end_time`, `target_metric`, full snapshot
+3. **Failure** → writes `status: "failed"` (or inferred: `running` + dead process → `failed`)
+4. **Fallback rule**: if `status` key is missing but `end_time` is present, status is inferred as `"completed"` (backwards compatibility with older persisted data)
+
+This contract is enforced in `__init__.py` (`GUIHandle.on_step_end`) and consumed by `process_manager.py` (`get_run_detail`, `get_run_step_detail`, `list_active`) and `runs.py` (`get_run_pipeline`, `get_run_step_detail`).
+
+### Process-Based Concurrent Runs
+
+Pipeline runs are executed as **isolated OS processes** via `ProcessManager`:
+- `spawn_run()` creates a unique timestamped working directory and launches `run.py --headless`
+- IPC is file-based: `run_info.json` (lifecycle), `steps.json` (step state), `live_metrics.jsonl` (streaming metrics)
+- On server restart, `_recover_orphaned_runs()` scans for existing run directories with active PIDs
+- `kill_run()` sends SIGTERM → waits 3s → escalates to SIGKILL
+
+### Welcome Page (`static/welcome.html`, `static/js/welcome.js`)
+
+Landing page with active runs monitoring (mini pipeline bars, Plotly sparklines, estimated completion), searchable past runs grid, and template management with inline rename.
 
 ### Wizard and config APIs (when started with `--ui`)
 
@@ -65,8 +92,30 @@ plot per numeric metric (separate charts per objective).
 ## Dependents
 
 - Entry point (`main.py`) calls `start_gui()` and wraps the pipeline reporter.
-- `run.py --ui` starts the GUI server with an empty collector and wizard at `/wizard`; POST `/api/run` runs the pipeline in a background thread.
+- `run.py --ui` starts the GUI server with `ProcessManager` and wizard at `/wizard`; POST `/api/run` spawns headless pipeline processes.
+- `run.py --headless <config>` runs a pipeline with file-based monitoring (no GUI server); writes to `_GUI_STATE/`.
 
 ## Exported API (\_\_init\_\_.py)
 
 `GUIHandle`, `start_gui`.
+
+## Active Run API Endpoints (when `ProcessManager` available)
+
+- `GET /api/active_runs` — summary of all tracked runs (status, progress, steps, target metrics)
+- `GET /api/active_runs/{run_id}/pipeline` — detailed pipeline state for an active run
+- `GET /api/active_runs/{run_id}/steps/{step_name}` — step detail with live metrics
+- `DELETE /api/active_runs/{run_id}` — terminate a running process
+
+## Historical Run API Endpoints
+
+- `GET /api/runs` — list past runs (optionally with `?include_steps=true`)
+- `GET /api/runs/{run_id}/config` — full deployment config of a past run
+- `GET /api/runs/{run_id}/pipeline` — pipeline overview of a past run
+- `GET /api/runs/{run_id}/steps/{step_name}` — step detail of a past run
+
+## Template API Endpoints
+
+- `GET /api/templates` — list saved templates
+- `GET /api/templates/{id}` — get a template's config
+- `POST /api/templates` — save a new template (body: `{name, config}`)
+- `DELETE /api/templates/{id}` — delete a template

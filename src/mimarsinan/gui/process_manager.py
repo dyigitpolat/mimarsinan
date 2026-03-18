@@ -179,6 +179,19 @@ class ProcessManager:
 
             progress = (completed / total) if total > 0 else 0.0
 
+            steps_summary = {}
+            for sn in step_names:
+                sd = steps.get(sn, {})
+                st = sd.get("status", "pending")
+                if st == "pending" and sd.get("end_time") is not None:
+                    st = "completed"
+                if st == "running" and not alive:
+                    st = "failed"
+                steps_summary[sn] = {
+                    "status": st,
+                    "end_time": sd.get("end_time"),
+                }
+
             results.append({
                 "run_id": run_id,
                 "experiment_name": managed.experiment_name,
@@ -192,6 +205,8 @@ class ProcessManager:
                 "progress": progress,
                 "target_metrics": target_metrics,
                 "pid": managed.pid,
+                "step_names": step_names,
+                "steps": steps_summary,
             })
         return results
 
@@ -211,6 +226,8 @@ class ProcessManager:
         for sn in step_names:
             sd = steps_data.get(sn, {})
             status = sd.get("status", "pending")
+            if status == "pending" and sd.get("end_time") is not None:
+                status = "completed"
             if status == "running" and not alive:
                 status = "failed"
             if status == "running":
@@ -267,9 +284,13 @@ class ProcessManager:
                         "global_step": lm.get("global_step"),
                     })
 
+        step_status = sd.get("status", "pending")
+        if step_status == "pending" and sd.get("end_time") is not None:
+            step_status = "completed"
+
         return {
             "name": step_name,
-            "status": sd.get("status", "pending"),
+            "status": step_status,
             "start_time": sd.get("start_time"),
             "end_time": sd.get("end_time"),
             "duration": (sd.get("end_time", 0) - sd.get("start_time", 0))

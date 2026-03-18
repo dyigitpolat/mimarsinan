@@ -23,6 +23,62 @@ class TestGetRunDetail:
         manager = ProcessManager(generated_files_root=str(tmp_path))
         assert manager.get_run_detail("nonexistent_run_id") is None
 
+    def test_get_run_detail_end_time_fallback_for_status(self, tmp_path):
+        """Steps with end_time but no explicit status should be inferred as 'completed'."""
+        from mimarsinan.gui.persistence import (
+            save_run_info, save_step_to_persisted,
+        )
+        run_id = "test_exp_phased_deployment_run_20240101_120000"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        working_dir = str(run_dir)
+
+        save_run_info(working_dir, pid=999999999, step_names=["StepA", "StepB"])
+
+        save_step_to_persisted(
+            working_dir, "StepA",
+            start_time=10.0, end_time=20.0,
+            target_metric=0.9, metrics=[], snapshot=None, snapshot_key_kinds=None,
+        )
+        save_step_to_persisted(
+            working_dir, "StepB",
+            start_time=20.0, end_time=None,
+            target_metric=None, metrics=[], snapshot=None, snapshot_key_kinds=None,
+            status="running",
+        )
+
+        manager = ProcessManager(generated_files_root=str(tmp_path))
+        detail = manager.get_run_detail(run_id)
+        assert detail is not None
+        step_a = next(s for s in detail["steps"] if s["name"] == "StepA")
+        step_b = next(s for s in detail["steps"] if s["name"] == "StepB")
+        assert step_a["status"] == "completed"
+        assert step_a["target_metric"] == 0.9
+        assert step_b["status"] == "failed"
+
+    def test_get_run_step_detail_end_time_fallback(self, tmp_path):
+        """get_run_step_detail uses end_time fallback when status key is missing."""
+        from mimarsinan.gui.persistence import (
+            save_run_info, save_step_to_persisted,
+        )
+        run_id = "test2_exp_phased_deployment_run_20240101_130000"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        working_dir = str(run_dir)
+
+        save_run_info(working_dir, pid=999999999, step_names=["StepX"])
+        save_step_to_persisted(
+            working_dir, "StepX",
+            start_time=10.0, end_time=15.0,
+            target_metric=0.88, metrics=[], snapshot=None, snapshot_key_kinds=None,
+        )
+
+        manager = ProcessManager(generated_files_root=str(tmp_path))
+        sd = manager.get_run_step_detail(run_id, "StepX")
+        assert sd is not None
+        assert sd["status"] == "completed"
+        assert sd["target_metric"] == 0.88
+
 
 class TestKillRun:
     def test_kill_run_unknown_run_id_returns_false(self, tmp_path):

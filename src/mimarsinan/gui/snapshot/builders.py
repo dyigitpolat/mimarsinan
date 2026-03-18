@@ -641,8 +641,9 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
                 }
                 try:
                     from mimarsinan.gui.heatmap_renderer import render_heatmap_png_data_uri as _render_heatmap
-                    # Use full core matrix so heatmap aspect matches the hardware core cell (no stretching).
                     core_d["heatmap_image"] = _render_heatmap(core.core_matrix)
+                    core_d["heatmap_axons"] = core.core_matrix.shape[0]
+                    core_d["heatmap_neurons"] = core.core_matrix.shape[1]
                 except Exception:
                     logger.debug("Failed to render heatmap for core %d", ci, exc_info=True)
                 placements = getattr(hcm, "soft_core_placements_per_hard_core", None)
