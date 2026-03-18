@@ -8,8 +8,8 @@ in the deployment pipeline.
 | File | Step Class | Pipeline Phase |
 |------|-----------|----------------|
 | `activation_utils.py` | `has_non_relu_activations`, `RELU_COMPATIBLE_TYPES` | Shared helper for activation steps |
-| `architecture_search_step.py` | `ArchitectureSearchStep` | Configuration |
-| `model_configuration_step.py` | `ModelConfigurationStep` | Configuration |
+| `architecture_search_step.py` | `ArchitectureSearchStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`) |
+| `model_configuration_step.py` | `ModelConfigurationStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`) |
 | `model_building_step.py` | `ModelBuildingStep` | Model construction |
 | `pretraining_step.py` | `PretrainingStep` | Training |
 | `activation_analysis_step.py` | `ActivationAnalysisStep` | Quantization prep |
@@ -20,7 +20,7 @@ in the deployment pipeline.
 | `weight_quantization_step.py` | `WeightQuantizationStep` | Quantization |
 | `quantization_verification_step.py` | `QuantizationVerificationStep` | Verification |
 | `normalization_fusion_step.py` | `NormalizationFusionStep` | Optimization |
-| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (computes per-source input scales via `compute_per_source_scales`; adds TTFS shift compensation; scales `hardware_bias` by the quantization factor during weight quantization) |
+| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (computes per-source input scales via `compute_per_source_scales`; adds TTFS shift compensation; scales and rounds `hardware_bias` by the quantization factor during weight quantization; reduces effective `max_axons` by 1 when `hardware_bias=False` to account for the always-on bias axon) |
 | `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification |
 | `core_flow_tuning_step.py` | `CoreFlowTuningStep` | Tuning |
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping |
@@ -85,14 +85,25 @@ act(W_q @ x + b_hw) / threshold
 ```
 
 For this to equal the intended `act(W_eff @ x + b_eff)`, the `hardware_bias`
-must also be multiplied by `s` — otherwise the bias contribution is attenuated
-by a factor of `1/s` (typically ~1/127 for 8-bit).  `SoftCoreMappingStep`
-applies this scaling to `node.hardware_bias` for every NeuralCore that has one,
-covering both owned-weight FC layers and bank-backed Conv2D layers.
+must also be multiplied by `s` and rounded to the nearest integer —
+otherwise the bias contribution is attenuated by a factor of `1/s`
+(typically ~1/127 for 8-bit).  `SoftCoreMappingStep` applies
+`np.round(hardware_bias * s)` to `node.hardware_bias` for every NeuralCore
+that has one, covering both owned-weight FC layers and bank-backed Conv2D layers.
 
 Note: the legacy always-on axon row (used when `hardware_bias=False`) is immune
 to this issue because the bias row lives inside `core_matrix` and is scaled
 automatically together with the weights.
+
+### Effective axon capacity with legacy bias mode
+
+When `hardware_bias=False`, every biased core allocates an extra always-on axon
+row for bias.  `SoftCoreMappingStep` reduces the effective `max_axons` by 1
+(i.e. passes `max_axons - 1` to `IRMapping`) so that wide-core detection and
+layout estimation correctly account for this reserved slot.
+`ModelConfigurationStep` and `ArchitectureSearchStep` propagate the `has_bias`
+flag from the pipeline config to `platform_constraints_resolved` cores so that
+`SoftCoreMappingStep` can resolve the hardware-bias mode correctly.
 
 ## Exported API (\_\_init\_\_.py)
 

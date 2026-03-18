@@ -51,6 +51,13 @@ class SoftCoreMappingStep(PipelineStep):
         else:
             resolved_hardware_bias = False
 
+        # When hardware_bias=False, every biased core consumes an extra always-on
+        # axon slot.  Reduce effective max_axons by 1 so that IRMapping correctly
+        # detects wide cores that would overflow after the bias row is appended.
+        effective_max_axons = resolved_max_axons
+        if not resolved_hardware_bias:
+            effective_max_axons = resolved_max_axons - 1
+
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):
                 perceptron.layer = self.bring_back_bias(perceptron.layer)
@@ -70,7 +77,7 @@ class SoftCoreMappingStep(PipelineStep):
                   model.get_mapper_repr(),
                   out_dot,
                   input_shape=tuple(self.pipeline.config["input_shape"]),
-                  max_axons=int(resolved_max_axons),
+                  max_axons=int(effective_max_axons),
                   max_neurons=int(resolved_max_neurons),
                   device=flowchart_device,
               )
@@ -129,7 +136,7 @@ class SoftCoreMappingStep(PipelineStep):
         ir_mapping = IRMapping(
             q_max=q_max,
             firing_mode=self.pipeline.config["firing_mode"],
-            max_axons=resolved_max_axons,
+            max_axons=effective_max_axons,
             max_neurons=resolved_max_neurons,
             allow_core_coalescing=resolved_allow_core_coalescing,
             hardware_bias=resolved_hardware_bias,
@@ -187,7 +194,7 @@ class SoftCoreMappingStep(PipelineStep):
                             node.threshold = scale_used
                             node.parameter_scale = torch.tensor(1.0)
                             if node.hardware_bias is not None:
-                                node.hardware_bias = node.hardware_bias * scale_used
+                                node.hardware_bias = np.round(node.hardware_bias * scale_used)
                     else:
                         ps = float(
                             node.parameter_scale.item()
@@ -209,7 +216,7 @@ class SoftCoreMappingStep(PipelineStep):
                         # act(W_q @ inp + b_hw) / threshold = act(W_eff @ inp + b_eff).
                         # Without this, b_eff is effectively divided by `scale` (≈127 for 8-bit).
                         if node.hardware_bias is not None:
-                            node.hardware_bias = node.hardware_bias * scale
+                            node.hardware_bias = np.round(node.hardware_bias * scale)
 
         # Calculate latencies for all neural cores in the IR graph
         max_latency = IRLatency(ir_graph).calculate()

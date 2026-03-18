@@ -317,6 +317,13 @@ class ArchitectureSearchStep(PipelineStep):
             self.add_entry("model_config", model_config)
 
             cores = self.pipeline.config.get("cores", [])
+
+            # Propagate has_bias to every core type so SoftCoreMappingStep can
+            # resolve hardware_bias mode correctly.
+            global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
+            for c in cores:
+                c.setdefault("has_bias", global_has_bias)
+
             if cores:
                 effective_max_axons = max(ct["max_axons"] for ct in cores)
                 effective_max_neurons = max(ct["max_neurons"] for ct in cores)
