@@ -6,7 +6,7 @@ import torch
 from mimarsinan.models.torch_mlp_mixer_core import TorchMLPMixerCore
 from mimarsinan.models.builders.torch_mlp_mixer_core_builder import TorchMLPMixerCoreBuilder
 from mimarsinan.pipelining.model_registry import ModelRegistry
-from mimarsinan.mapping.mappers.base import is_chip_supported_activation
+from mimarsinan.mapping.mappers.base import is_perceptron_activation
 
 
 class TestTorchMLPMixerCore:
@@ -93,13 +93,13 @@ class TestTorchMLPMixerCoreConversion:
         supermodel = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
         perceptrons = supermodel.get_perceptrons()
 
-        chip_supported = [p for p in perceptrons if is_chip_supported_activation(p)]
+        all_perceptron_act = [p for p in perceptrons if is_perceptron_activation(p)]
 
         assert len(perceptrons) == 9, (
             f"Expected 9 perceptrons (1 patch + 8 mixer FCs). Got {len(perceptrons)}."
         )
-        assert len(chip_supported) == 9, (
-            f"Expected 9 chip-supported perceptrons (patch+mixer FCs). Got {len(chip_supported)}."
+        assert len(all_perceptron_act) == 9, (
+            f"Expected 9 perceptron activations (patch+mixer FCs). Got {len(all_perceptron_act)}."
         )
 
 

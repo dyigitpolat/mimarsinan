@@ -14,11 +14,6 @@ from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 
 @dataclass
 class LayoutIRMapping:
-    # Signals to mappers that this is a layout-estimation pass.  Chip-targeted
-    # perceptrons (GELU, LeakyReLU, …) are estimated as future NeuralCores even
-    # though their activation is not yet chip-supported — they will be adapted to
-    # ReLU before the real IR mapping step.
-    _is_layout_pass: ClassVar[bool] = True
     """
     Mapping backend that collects *shape-only* neural cores (LayoutSoftCoreSpec) while
     running the model's Mapper graph via map_to_ir().

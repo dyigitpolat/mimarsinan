@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_chip_supported_activation, is_chip_targeted_activation
+from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_perceptron_activation
 from mimarsinan.mapping.soft_core_mapper import map_mm
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
@@ -45,25 +45,16 @@ class PerceptronMapper(Mapper):
         layer_sources = self.source_mapper.map_to_ir(ir_mapping)
         layer_sources = layer_sources.transpose()
 
-        # Route to ComputeOp for actual IR when activation is not chip-supported.
-        # Exception: during the layout-estimation pass, chip-targeted perceptrons
-        # (e.g. GELU) are mapped as future NeuralCores — they will be adapted to
-        # ReLU before the real IR mapping step.
-        _layout_pass = getattr(ir_mapping, '_is_layout_pass', False)
-        if not is_chip_supported_activation(self.perceptron) and (
-            not _layout_pass or not is_chip_targeted_activation(self.perceptron)
-        ):
-            # Activation not supported on crossbar (Identity, GELU, etc.)
-            # → host-side linear ComputeOp (preserves negatives, no ReLU).
+        if not is_perceptron_activation(self.perceptron):
+            # No nonlinearity (Identity) → host-side linear ComputeOp.
             w_np = layer_weights.detach().cpu().numpy()
             b_np = layer_biases.detach().cpu().numpy() if layer_biases is not None else None
             name = getattr(self.perceptron, "name", None)
-            out_features = w_np.shape[0]
             in_features = w_np.shape[1]
 
             src_arr = np.array(layer_sources, dtype=object)
 
-            # Mirror map_fc's 2D handling: one ComputeOp per column
+            # Handle 2D batch inputs: one ComputeOp per column
             # (e.g., one per token position in mixer architectures).
             if src_arr.ndim == 2:
                 if src_arr.shape[0] != in_features and src_arr.shape[1] == in_features:
@@ -86,6 +77,7 @@ class PerceptronMapper(Mapper):
             )
             return output_sources
 
+        # Has a real activation → NeuralCore.
         normalization = getattr(self.perceptron, "normalization", None)
         normalization_type = type(normalization).__name__ if normalization is not None else None
         activation_type = resolve_activation_type(self.perceptron)
@@ -111,7 +103,7 @@ class PerceptronMapper(Mapper):
         return self.perceptron(x)
 
     def owned_perceptron_groups(self):
-        if not is_chip_targeted_activation(self.perceptron):
+        if not is_perceptron_activation(self.perceptron):
             return []
         return [[self.perceptron]]
 

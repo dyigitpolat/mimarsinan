@@ -1,19 +1,16 @@
-"""Perceptron packaging: Identity layers → ComputeOps, ReLU layers → NeuralCores.
+"""Perceptron packaging: activation detection determines NeuralCore vs ComputeOp.
 
-The chip only supports ReLU activation. Layers packaged as Perceptrons
-(matmul + bn + chip_activation) map to NeuralCores. Layers with Identity
-activation cannot run on the crossbar and become host-side ComputeOps.
+The perceptron packaging rule: MM+ + BN? + ACT → perceptron → NeuralCore.
+When no activation is detected (Identity), the layer is a linear compute op.
+Any detected nonlinearity (ReLU, GELU, LeakyReLU, etc.) qualifies as a
+perceptron — the adaptation pipeline converts all of them to LeakyGradReLU.
 
 Mapper eligibility contract
 -----------------------------
 All mapper types (PerceptronMapper, Conv2DPerceptronMapper, Conv1DPerceptronMapper)
-must expose the same chip-targeted-only semantics through
-``owned_perceptron_groups()``:
+must expose the same semantics through ``owned_perceptron_groups()``:
   - Identity activation → returns [] (excluded from pipeline processing)
-  - Any chip-supported activation (ReLU, LeakyReLU, GELU, …) → returns the perceptron
-
-This is the single source of truth consumed by ``ModelRepresentation.get_perceptrons()``
-and downstream pipeline steps such as ActivationAdaptationStep.
+  - Any nonlinear activation (ReLU, LeakyReLU, GELU, …) → returns the perceptron
 """
 
 import pytest
@@ -79,6 +76,25 @@ class TestReLUFCStaysNeuralCore:
 
         assert len(neural_cores) >= 1, "ReLU FC should create NeuralCores"
         assert len(linear_ops) == 0, "ReLU FC should NOT create linear ComputeOps"
+
+
+class TestGELUFCBecomesNeuralCore:
+    """FC layer with GELU activation → NeuralCore (any nonlinearity is a perceptron)."""
+
+    def test_gelu_fc_creates_neural_core(self):
+        inp = InputMapper((1, 4, 4))
+        flat = EinopsRearrangeMapper(inp, "... c h w -> ... (c h w)")
+        p = Perceptron(4, 16, normalization=nn.Identity(),
+                       base_activation_name="GELU")
+        fc = PerceptronMapper(flat, p)
+        repr_ = ModelRepresentation(fc)
+
+        ir_graph = _map_to_ir(repr_, (1, 4, 4))
+        neural_cores = [n for n in ir_graph.nodes if isinstance(n, NeuralCore)]
+        linear_ops = [n for n in ir_graph.nodes if isinstance(n, ComputeOp) and n.op_type == "linear"]
+
+        assert len(neural_cores) >= 1, "GELU FC should create NeuralCores"
+        assert len(linear_ops) == 0, "GELU FC should NOT create linear ComputeOps"
 
 
 class TestLinearComputeOpPreservesNegatives:
@@ -193,10 +209,10 @@ class TestMixedModelForwardEquivalence:
 # ---------------------------------------------------------------------------
 
 class TestPerceptronMapperEligibilityContract:
-    """PerceptronMapper.owned_perceptron_groups() must apply is_chip_targeted_activation.
+    """PerceptronMapper.owned_perceptron_groups() must apply is_perceptron_activation.
 
-    Identity perceptrons are host-side and must be excluded from the
-    pipeline-visible perceptron list.  All other activations are chip-targeted.
+    Identity perceptrons are linear compute ops and must be excluded from the
+    pipeline-visible perceptron list. All nonlinear activations are perceptrons.
     """
 
     def test_identity_fc_excluded_from_owned_groups(self):
@@ -211,7 +227,7 @@ class TestPerceptronMapperEligibilityContract:
         )
 
     @pytest.mark.parametrize("act_name", ["ReLU", "LeakyReLU", "GELU"])
-    def test_chip_targeted_fc_included_in_owned_groups(self, act_name):
+    def test_nonlinear_fc_included_in_owned_groups(self, act_name):
         inp = InputMapper((1, 4, 4))
         flat = EinopsRearrangeMapper(inp, "... c h w -> ... (c h w)")
         p = Perceptron(4, 16, normalization=nn.Identity(),
@@ -224,10 +240,7 @@ class TestPerceptronMapperEligibilityContract:
 
 
 class TestConv2DMapperEligibilityContract:
-    """Conv2DPerceptronMapper.owned_perceptron_groups() must mirror PerceptronMapper.
-
-    This is the contract that was previously broken (returned unconditionally).
-    """
+    """Conv2DPerceptronMapper.owned_perceptron_groups() must mirror PerceptronMapper."""
 
     def test_identity_conv2d_excluded_from_owned_groups(self):
         inp = InputMapper((1, 4, 4))
@@ -242,8 +255,8 @@ class TestConv2DMapperEligibilityContract:
             "from owned_perceptron_groups()."
         )
 
-    @pytest.mark.parametrize("act_name", ["ReLU", "LeakyReLU"])
-    def test_chip_targeted_conv2d_included_in_owned_groups(self, act_name):
+    @pytest.mark.parametrize("act_name", ["ReLU", "LeakyReLU", "GELU"])
+    def test_nonlinear_conv2d_included_in_owned_groups(self, act_name):
         inp = InputMapper((1, 4, 4))
         conv = Conv2DPerceptronMapper(
             inp, in_channels=1, out_channels=2,
@@ -273,8 +286,8 @@ class TestConv1DMapperEligibilityContract:
             "from owned_perceptron_groups()."
         )
 
-    @pytest.mark.parametrize("act_name", ["ReLU", "LeakyReLU"])
-    def test_chip_targeted_conv1d_included_in_owned_groups(self, act_name):
+    @pytest.mark.parametrize("act_name", ["ReLU", "LeakyReLU", "GELU"])
+    def test_nonlinear_conv1d_included_in_owned_groups(self, act_name):
         inp = InputMapper((1, 8))
         conv = Conv1DPerceptronMapper(
             inp, in_channels=1, out_channels=2,
@@ -289,10 +302,8 @@ class TestConv1DMapperEligibilityContract:
 
 
 class TestGetPerceptronsExcludesIdentity:
-    """ModelRepresentation.get_perceptrons() must return only chip-targeted perceptrons.
-
-    This is the final contract consumed by pipeline steps: Identity perceptrons
-    are invisible to ActivationAdaptationStep and all other tuners.
+    """ModelRepresentation.get_perceptrons() must return only perceptrons with
+    nonlinear activations. Identity perceptrons are invisible to the pipeline.
     """
 
     def test_identity_fc_not_in_get_perceptrons(self):
@@ -372,4 +383,4 @@ class TestGetPerceptronsExcludesIdentity:
             f"Found activations: {act_names}"
         )
         # The FC with LeakyReLU must be included
-        assert len(perceptrons) >= 1, "At least one chip-targeted perceptron expected"
+        assert len(perceptrons) >= 1, "At least one perceptron expected"

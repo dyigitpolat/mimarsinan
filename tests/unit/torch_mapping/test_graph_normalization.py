@@ -322,10 +322,7 @@ class TestNoFusionCases:
 # ===========================================================================
 
 from mimarsinan.torch_mapping.converter import convert_torch_model
-from mimarsinan.mapping.mappers.base import (
-    is_chip_supported_activation,
-    is_chip_targeted_activation,
-)
+from mimarsinan.mapping.mappers.base import is_perceptron_activation
 from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
 from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
 from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import scale_from_activations
@@ -439,11 +436,8 @@ class TestBNFoldFusionPerceptronProperties:
             f"Fused perceptron should have Identity normalization (BN was folded), "
             f"got {type(fused_p.normalization).__name__}"
         )
-        assert is_chip_targeted_activation(fused_p), (
-            "ReLU perceptron must be chip-targeted"
-        )
-        assert is_chip_supported_activation(fused_p), (
-            "ReLU perceptron must be chip-supported"
+        assert is_perceptron_activation(fused_p), (
+            "ReLU perceptron must be a perceptron activation"
         )
 
     def test_gelu_perceptron_properties(self):
@@ -463,9 +457,8 @@ class TestBNFoldFusionPerceptronProperties:
 
         fused_p = gelu_perceptrons[0]
         assert isinstance(fused_p.normalization, nn.Identity)
-        assert is_chip_targeted_activation(fused_p)
-        assert not is_chip_supported_activation(fused_p), (
-            "GELU is NOT chip-supported (needs adaptation to ReLU first)"
+        assert is_perceptron_activation(fused_p), (
+            "GELU perceptron must be a perceptron activation"
         )
 
     def test_gelu_has_non_relu_activations(self):

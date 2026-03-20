@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import IRSource
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_chip_supported_activation, is_chip_targeted_activation
+from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_perceptron_activation
 from mimarsinan.mapping.mappers.pooling import _chunk_sizes
 from mimarsinan.mapping.soft_core_mapper import map_mm
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
@@ -87,7 +87,7 @@ class Conv2DPerceptronMapper(Mapper):
         )
 
     def owned_perceptron_groups(self):
-        if not is_chip_targeted_activation(self.perceptron):
+        if not is_perceptron_activation(self.perceptron):
             return []
         return [[self.perceptron]]
 
@@ -241,18 +241,12 @@ class Conv2DPerceptronMapper(Mapper):
         full_b = PerceptronTransformer().get_effective_bias(self.perceptron)
 
         has_bias = full_b is not None
-        # During the layout-estimation pass, chip-targeted activations (GELU, etc.)
-        # are treated as future NeuralCores — they will be adapted to ReLU before
-        # the real IR mapping step.
-        _layout_pass = getattr(ir_mapping, '_is_layout_pass', False)
-        chip_supported = is_chip_supported_activation(self.perceptron) or (
-            _layout_pass and is_chip_targeted_activation(self.perceptron)
-        )
+        chip_perceptron = is_perceptron_activation(self.perceptron)
 
         # Resolve activation_type from the perceptron (shared with PerceptronMapper)
         activation_type = resolve_activation_type(self.perceptron)
 
-        if chip_supported:
+        if chip_perceptron:
             if self.max_neurons is None:
                 group_sizes = [self.out_channels]
             else:
@@ -293,7 +287,7 @@ class Conv2DPerceptronMapper(Mapper):
 
                 patch_sources = np.array(patch_sources)
 
-                if chip_supported:
+                if chip_perceptron:
                     position_outputs = []
                     for g_idx, bank_id in enumerate(bank_ids):
                         core_outputs = ir_mapping.add_shared_neural_core(
@@ -307,7 +301,7 @@ class Conv2DPerceptronMapper(Mapper):
                         position_outputs.append(core_outputs)
                     all_output_sources.append(np.concatenate(position_outputs))
                 else:
-                    # Activation not chip-supported → host-side linear ComputeOp
+                    # No nonlinearity (Identity) → host-side linear ComputeOp
                     w_np = full_w.detach().cpu().numpy()
                     b_np = full_b.detach().cpu().numpy() if has_bias else None
                     core_outputs = ir_mapping.add_linear_compute_op(
@@ -371,7 +365,7 @@ class Conv1DPerceptronMapper(Mapper):
         )
 
     def owned_perceptron_groups(self):
-        if not is_chip_targeted_activation(self.perceptron):
+        if not is_perceptron_activation(self.perceptron):
             return []
         return [[self.perceptron]]
 

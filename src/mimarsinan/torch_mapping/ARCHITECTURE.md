@@ -48,18 +48,17 @@ segment of the FX graph matching the pattern **MM+ → BN? → ACT**:
   absorbed into the same Perceptron.
 
 Whether the resulting Perceptron participates in pipeline processing is
-determined by [`is_chip_targeted_activation()`](../mapping/mappers/base.py)
-(True for all except Identity). At IR mapping time,
-[`is_chip_supported_activation()`](../mapping/mappers/base.py) decides
-NeuralCore vs host-side ComputeOp. Both derive from
-`CHIP_SUPPORTED_ACTIVATIONS` — no separate host-side activation list.
+determined by [`is_perceptron_activation()`](../mapping/mappers/base.py)
+(True for any non-Identity activation). Any detected nonlinearity (ReLU, GELU,
+LeakyReLU, etc.) maps to a NeuralCore. Identity (no activation) produces a
+host-side linear ComputeOp.
 
 The mapper boundary is the **single source of truth** for activation eligibility:
 `owned_perceptron_groups()` on every mapper type (FC, Conv2D, Conv1D) returns `[]`
 for Identity perceptrons and the perceptron list otherwise.  Downstream pipeline
 steps such as `ActivationAdaptationStep` consume `model.get_perceptrons()` and
-are therefore guaranteed to see only chip-targeted perceptrons — no special-casing
-of `Identity` is needed outside the mapper layer.
+are therefore guaranteed to see only perceptrons with nonlinear activations — no
+special-casing of `Identity` is needed outside the mapper layer.
 
 ## Exported API (\_\_init\_\_.py)
 

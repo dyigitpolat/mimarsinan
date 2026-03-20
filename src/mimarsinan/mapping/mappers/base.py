@@ -27,39 +27,19 @@ def resolve_activation_type(perceptron) -> str | None:
     return activation_type
 
 
-# Activations that the SNN chip's NeuralCore crossbar can implement natively.
-# At IR mapping time, only these produce NeuralCores; all others become
-# host-side ComputeOps.
-CHIP_SUPPORTED_ACTIVATIONS = {"LeakyGradReLU", "ReLU", "LeakyReLU"}
+def is_perceptron_activation(perceptron) -> bool:
+    """True if the perceptron has a real (non-identity) activation.
 
+    The perceptron packaging rule: ``MM+ + BN? + ACT → perceptron``.
+    When ACT is Identity (no nonlinearity detected during torch mapping),
+    the layer is a linear compute op, not a perceptron.
 
-def _resolve_base_activation_name(perceptron) -> str:
-    """Return the base activation name string for a perceptron."""
-    act_type = resolve_activation_type(perceptron)
-    if act_type is None:
-        return "ReLU"  # default
-    return act_type.split(" + ")[0].strip()
-
-
-def is_chip_supported_activation(perceptron) -> bool:
-    """Check if a perceptron's base activation can run on a NeuralCore crossbar.
-
-    Used at IR mapping time to decide NeuralCore vs ComputeOp.
+    Any detected nonlinearity (ReLU, GELU, LeakyReLU, etc.) qualifies —
+    the adaptation pipeline converts all of them to LeakyGradReLU before
+    deployment.
     """
-    return _resolve_base_activation_name(perceptron) in CHIP_SUPPORTED_ACTIVATIONS
-
-
-def is_chip_targeted_activation(perceptron) -> bool:
-    """Check if a perceptron targets chip deployment (already supported or adaptable).
-
-    Returns True for chip-supported activations (ReLU-like) and adaptable
-    activations (GELU, LeakyReLU — adapted to ReLU before IR mapping).
-    Returns False only for Identity (host-side only, no real nonlinearity).
-
-    Used by ``owned_perceptron_groups()`` to decide which perceptrons
-    participate in pipeline processing (scale propagation, quantization, etc.).
-    """
-    return _resolve_base_activation_name(perceptron) != "Identity"
+    base_act = getattr(perceptron, "base_activation", None)
+    return base_act is not None and not isinstance(base_act, nn.Identity)
 
 
 class Mapper(nn.Module):
