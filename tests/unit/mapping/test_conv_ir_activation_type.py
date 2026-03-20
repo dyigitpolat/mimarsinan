@@ -38,24 +38,38 @@ class TestConvIRActivationType:
         for core in neural_cores:
             assert core.activation_type == "LeakyGradReLU"
 
-    @pytest.mark.parametrize("act_name", ["Identity", "GELU"])
-    def test_unsupported_activation_creates_compute_ops(self, act_name):
-        """Conv with non-chip activation (Identity, GELU) creates ComputeOps."""
+    def test_identity_activation_creates_compute_ops(self):
+        """Conv with Identity (no activation) creates ComputeOps."""
         from mimarsinan.mapping.ir import ComputeOp
         inp = InputMapper((1, 4, 4))
         conv = Conv2DPerceptronMapper(
             inp, in_channels=1, out_channels=2,
             kernel_size=2, stride=2, padding=0,
             bias=True, use_batchnorm=False,
-            base_activation_name=act_name,
+            base_activation_name="Identity",
         )
         ir_mapping = IRMapping(q_max=1, firing_mode="TTFS", max_axons=256, max_neurons=256)
         conv.map_to_ir(ir_mapping)
 
         neural_cores = [n for n in ir_mapping.nodes if isinstance(n, NeuralCore)]
         linear_ops = [n for n in ir_mapping.nodes if isinstance(n, ComputeOp) and n.op_type == "linear"]
-        assert len(neural_cores) == 0, f"{act_name} Conv should NOT create NeuralCores"
-        assert len(linear_ops) > 0, f"{act_name} Conv should create linear ComputeOps"
+        assert len(neural_cores) == 0, "Identity Conv should NOT create NeuralCores"
+        assert len(linear_ops) > 0, "Identity Conv should create linear ComputeOps"
+
+    def test_gelu_activation_creates_neural_cores(self):
+        """Conv with GELU (nonlinear activation) creates NeuralCores."""
+        inp = InputMapper((1, 4, 4))
+        conv = Conv2DPerceptronMapper(
+            inp, in_channels=1, out_channels=2,
+            kernel_size=2, stride=2, padding=0,
+            bias=True, use_batchnorm=False,
+            base_activation_name="GELU",
+        )
+        ir_mapping = IRMapping(q_max=1, firing_mode="TTFS", max_axons=256, max_neurons=256)
+        conv.map_to_ir(ir_mapping)
+
+        neural_cores = [n for n in ir_mapping.nodes if isinstance(n, NeuralCore)]
+        assert len(neural_cores) > 0, "GELU Conv should create NeuralCores"
 
     @pytest.mark.parametrize("act_type,expected_fn", [
         ("LeakyGradReLU", "relu"),

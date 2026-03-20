@@ -18,16 +18,15 @@ Not every perceptron can be implemented as a chip crossbar. A single rule determ
 
 - **MM+**: one or more ops representable as matrix multiplications, normalized into a single MM by [`graph_normalization`](../src/mimarsinan/torch_mapping/graph_normalization.py). Consecutive Linears connected through Identity and/or BatchNorm are fused: BN (a diagonal MM) is folded into the preceding Linear, then the pair is fused into a single Linear (e.g. `Linear → BN → Linear`, `Linear → Identity → Linear`).
 - **BN?**: optional batch normalization.
-- **ACT**: any activation in [`CHIP_SUPPORTED_ACTIVATIONS`](../src/mimarsinan/mapping/mappers/base.py) (currently LeakyGradReLU, ReLU, LeakyReLU). Identity and resolvable reshape/permute ops may appear in between.
+- **ACT**: any detected nonlinear activation (ReLU, GELU, LeakyReLU, etc.). The adaptation pipeline converts all of them to LeakyGradReLU before deployment. When no activation is detected, the layer gets `Identity` and becomes a host-side linear ComputeOp.
 
-Two related checks in [`base.py`](../src/mimarsinan/mapping/mappers/base.py) derive from `CHIP_SUPPORTED_ACTIVATIONS`:
+A single predicate in [`base.py`](../src/mimarsinan/mapping/mappers/base.py) controls the packaging decision:
 
-- **[`is_chip_targeted_activation()`](../src/mimarsinan/mapping/mappers/base.py)** — Returns `True` for all activations except Identity. Used by `owned_perceptron_groups()` to decide which perceptrons participate in pipeline processing (scale propagation, adaptation, quantization). GELU and LeakyReLU are chip-targeted because they are adapted to ReLU before IR mapping. Identity perceptrons are host-side only.
-- **[`is_chip_supported_activation()`](../src/mimarsinan/mapping/mappers/base.py)** — Returns `True` only for activations in `CHIP_SUPPORTED_ACTIVATIONS` (ReLU-like). Used at IR mapping time to decide NeuralCore vs ComputeOp. Other activations (e.g. GELU) are **adapted** earlier in the pipeline (e.g. to ReLU) so that by the time we map to IR, they are chip-supported and can be packaged.
+- **[`is_perceptron_activation()`](../src/mimarsinan/mapping/mappers/base.py)** — Returns `True` if the perceptron has a real (non-Identity) activation. Uses `isinstance` check, not a hardcoded activation set. Any nonlinearity maps to a NeuralCore; Identity maps to a host-side ComputeOp.
 
 ## Mapper DAG and perceptron ownership
 
-The model is represented as a DAG of **mappers**. Each [PerceptronMapper](../src/mimarsinan/mapping/mappers/perceptron.py) wraps a single Perceptron and implements both forward execution and IR mapping. The method [`owned_perceptron_groups()`](../src/mimarsinan/mapping/mappers/perceptron.py) returns either a single group containing that perceptron (for chip-supported activations) or an empty list (for host-side activations).
+The model is represented as a DAG of **mappers**. Each [PerceptronMapper](../src/mimarsinan/mapping/mappers/perceptron.py) wraps a single Perceptron and implements both forward execution and IR mapping. The method [`owned_perceptron_groups()`](../src/mimarsinan/mapping/mappers/perceptron.py) returns either a single group containing that perceptron (for nonlinear activations) or an empty list (for Identity/host-side activations).
 
 The [ModelRepresentation](../src/mimarsinan/mapping/model_representation.py) builds the mapper graph and provides:
 

@@ -1,10 +1,10 @@
 """Shared helpers for activation adaptation steps.
 
 Used by ActivationAdaptationStep and ClampAdaptationStep to check whether
-any chip-targeted perceptron has a non-ReLU base (GELU, LeakyReLU, etc.).
+any perceptron has a non-ReLU base (GELU, LeakyReLU, etc.).
 
 Contract: callers pass only perceptrons returned by ``model.get_perceptrons()``,
-which already excludes host-side Identity perceptrons via
+which already excludes Identity perceptrons (linear compute ops) via
 ``owned_perceptron_groups()`` in every mapper.  No Identity special-casing is
 needed here.
 """
@@ -18,10 +18,10 @@ RELU_COMPATIBLE_TYPES = (
 
 
 def needs_relu_adaptation(perceptron) -> bool:
-    """True when a chip-targeted perceptron still needs ReLU adaptation.
+    """True when a perceptron still needs ReLU adaptation.
 
-    All perceptrons passed here are guaranteed chip-targeted by the mapper
-    contract (``owned_perceptron_groups()`` never returns Identity perceptrons).
+    All perceptrons passed here have nonlinear activations (the mapper contract
+    ensures ``owned_perceptron_groups()`` never returns Identity perceptrons).
     This function only checks whether the activation is already ReLU-compatible.
     """
     base_name = type(perceptron.base_activation).__name__

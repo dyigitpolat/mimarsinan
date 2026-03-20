@@ -82,12 +82,12 @@ Shared logic for detecting non-ReLU activations lives in `activation_utils.py`
 
 **Mapper eligibility contract**: All mapper types (`PerceptronMapper`,
 `Conv2DPerceptronMapper`, `Conv1DPerceptronMapper`) implement
-`owned_perceptron_groups()` using `is_chip_targeted_activation()` from
+`owned_perceptron_groups()` using `is_perceptron_activation()` from
 `mapping.mappers.base`.  This means `model.get_perceptrons()` always returns
-only chip-targeted perceptrons — Identity (host-side ComputeOp) perceptrons
-are never visible to any pipeline step.  `activation_utils.py` therefore needs
-no special-casing for `Identity`; `needs_relu_adaptation` only checks whether
-the activation is already ReLU-compatible.
+only perceptrons with nonlinear activations — Identity (host-side ComputeOp)
+perceptrons are never visible to any pipeline step.  `activation_utils.py`
+therefore needs no special-casing for `Identity`; `needs_relu_adaptation` only
+checks whether the activation is already ReLU-compatible.
 
 ### TTFS shift compensation
 

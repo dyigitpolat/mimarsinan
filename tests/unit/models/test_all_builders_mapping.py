@@ -407,10 +407,11 @@ class TestTorchViTBuilderMapping:
 # PARAMETRIC: Lightweight builders sanity check
 # ══════════════════════════════════════════════════════════
 
-class TestGELUActivationLayoutPass:
-    """GELU is chip-targeted (will be adapted to ReLU by the pipeline) but not yet
-    chip-supported at build time.  The layout pass must estimate GELU perceptrons as
-    future NeuralCores; the actual IR pass must still route them to ComputeOps."""
+class TestGELUActivationIRMapping:
+    """GELU is a nonlinear activation → perceptron → NeuralCore in both layout and IR.
+
+    Any detected nonlinearity produces a NeuralCore. The adaptation pipeline
+    converts GELU to LeakyGradReLU before deployment."""
 
     def test_simple_mlp_gelu_layout_produces_neural_cores(self):
         """verify_soft_core_mapping on a GELU simple_mlp must yield >0 neural cores."""
@@ -421,8 +422,7 @@ class TestGELUActivationLayoutPass:
             model_config={"mlp_width_1": 16, "mlp_width_2": 8, "base_activation": "GELU"},
         )
         assert result.num_neural_cores > 0, (
-            "GELU simple_mlp layout pass produced no neural cores; "
-            "layout should estimate GELU as a future NeuralCore."
+            "GELU simple_mlp layout pass produced no neural cores."
         )
 
     def test_mlp_mixer_gelu_layout_produces_neural_cores(self):
@@ -441,8 +441,8 @@ class TestGELUActivationLayoutPass:
             "GELU mlp_mixer layout pass produced no neural cores."
         )
 
-    def test_gelu_actual_ir_still_uses_compute_op(self):
-        """GELU perceptrons must still map to ComputeOps in the real IR (not layout)."""
+    def test_gelu_actual_ir_creates_neural_cores(self):
+        """GELU perceptrons must map to NeuralCores (any nonlinearity is a perceptron)."""
         from mimarsinan.models.builders import BUILDERS_REGISTRY
         from mimarsinan.mapping.ir_mapping import IRMapping
 
@@ -465,11 +465,10 @@ class TestGELUActivationLayoutPass:
         model_repr = raw.get_mapper_repr()
         ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=512, max_neurons=512)
         ir_graph = ir.map(model_repr)
-        # GELU is not chip-supported so all layers become ComputeOps in actual IR
-        assert len(ir_graph.get_neural_cores()) == 0, (
-            "GELU perceptrons should remain ComputeOps in the real IR mapping pass."
+        # GELU is a nonlinear activation → all GELU layers become NeuralCores
+        assert len(ir_graph.get_neural_cores()) > 0, (
+            "GELU perceptrons should create NeuralCores in the IR."
         )
-        assert len(ir_graph.get_compute_ops()) > 0
 
 
 @pytest.mark.parametrize("model_type,input_shape,num_classes,config,max_ax,max_neu", [
