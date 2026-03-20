@@ -86,10 +86,6 @@ class Conv2DPerceptronMapper(Mapper):
             name=f"{self.name}_full",
         )
 
-    def owned_perceptron_groups(self):
-        if not is_chip_targeted_activation(self.perceptron):
-            return []
-        return [[self.perceptron]]
 
     def _forward_impl(self, x):
         if x.dim() != 4:

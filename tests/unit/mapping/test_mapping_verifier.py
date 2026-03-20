@@ -78,6 +78,36 @@ def _make_torch_conv_repr():
     return supermodel.get_mapper_repr()
 
 
+def _make_torch_mlp_mixer_repr():
+    """Build an MLP-Mixer and return its mapper repr after conversion."""
+    from mimarsinan.models.builders import BUILDERS_REGISTRY
+    from mimarsinan.torch_mapping.converter import convert_torch_model
+
+    builder = BUILDERS_REGISTRY["mlp_mixer"](
+        device=torch.device("cpu"),
+        input_shape=(1, 28, 28),
+        num_classes=10,
+        max_axons=2048,
+        max_neurons=2048,
+        pipeline_config={"target_tq": 32, "device": "cpu"},
+    )
+    model = builder.build({
+        "patch_n_1": 4,
+        "patch_m_1": 4,
+        "patch_c_1": 32,
+        "fc_w_1": 64,
+        "fc_w_2": 64,
+        "base_activation": "LeakyReLU",
+    })
+    model.eval()
+    with torch.no_grad():
+        _ = model(torch.randn(1, 1, 28, 28))
+    supermodel = convert_torch_model(
+        model, input_shape=(1, 28, 28), num_classes=10, device="cpu", Tq=32
+    )
+    return supermodel.get_mapper_repr()
+
+
 # ── Tests: verify_soft_core_mapping ────────────────────────────────────────
 
 class TestVerifySoftCoreMapping:
@@ -159,6 +189,42 @@ class TestVerifySoftCoreMapping:
         # With 4 groups and multiple cores, seeds should produce different assignments
         # (not guaranteed, but very likely)
         assert len(r1.softcores) == len(r2.softcores)
+
+    def test_mlp_mixer_layout_preserves_multiple_neural_segments(self):
+        """Layout pass should preserve neural depth across intervening ComputeOps."""
+        repr_ = _make_torch_mlp_mixer_repr()
+        result = verify_soft_core_mapping(repr_, max_axons=4096, max_neurons=4096)
+        assert result.feasible
+        latency_tags = {sc.latency_tag for sc in result.softcores if sc.latency_tag is not None}
+        assert len(latency_tags) >= 4, (
+            "MLP-Mixer should expose multiple sequential neural segments in layout "
+            "verification; compute-op boundaries must not collapse all softcores "
+            "to one latency tag."
+        )
+
+    def test_mlp_mixer_reports_host_side_segments(self):
+        """MLP-Mixer layout should report compute-only segments separately."""
+        repr_ = _make_torch_mlp_mixer_repr()
+        result = verify_soft_core_mapping(repr_, max_axons=4096, max_neurons=4096)
+        assert result.feasible
+        assert result.host_side_segment_count == 5
+
+    def test_mlp_mixer_exposes_layout_preview_flow(self):
+        """Layout preview should alternate host runs and latency groups."""
+        repr_ = _make_torch_mlp_mixer_repr()
+        result = verify_soft_core_mapping(repr_, max_axons=4096, max_neurons=4096)
+        assert result.feasible
+        preview = result.layout_preview
+        assert preview is not None
+        flow = preview["flow"]
+        assert flow[0]["kind"] == "input"
+        assert flow[-1]["kind"] == "output"
+        host_counts = [item["compute_op_count"] for item in flow if item["kind"] == "host"]
+        neural_counts = [item["softcore_count"] for item in flow if item["kind"] == "neural"]
+        latency_group_indices = [item["latency_group_index"] for item in flow if item["kind"] == "neural"]
+        assert host_counts == [16, 32, 16, 32, 18]
+        assert neural_counts == [32, 16, 32, 16]
+        assert latency_group_indices == [0, 1, 2, 3]
 
 
 # ── Tests: Layout ↔ IR 1-1 Correspondence ──────────────────────────────────

@@ -43,6 +43,13 @@ class MappingVerificationResult:
     max_output_size: int
     total_area: int
 
+    # Layout-derived count of host-side compute segments between / around
+    # neural segments. Used by the wizard as the "Sync Barriers" metric.
+    host_side_segment_count: int = 0
+
+    # Compact layout-only flow summary for the wizard miniview.
+    layout_preview: Optional[Dict[str, Any]] = None
+
     # Optional error message when feasible=False
     error: Optional[str] = None
 
@@ -97,6 +104,8 @@ def verify_soft_core_mapping(
             max_input_size=0,
             max_output_size=0,
             total_area=0,
+            host_side_segment_count=0,
+            layout_preview=None,
             error=str(exc),
         )
 
@@ -108,6 +117,8 @@ def verify_soft_core_mapping(
             max_input_size=0,
             max_output_size=0,
             total_area=0,
+            host_side_segment_count=getattr(layout, "host_side_segment_count", 0),
+            layout_preview=getattr(layout, "layout_preview", None),
             error="No neural cores produced by mapping — model may have no perceptron layers.",
         )
 
@@ -122,6 +133,8 @@ def verify_soft_core_mapping(
         max_input_size=max_in,
         max_output_size=max_out,
         total_area=total_area,
+        host_side_segment_count=getattr(layout, "host_side_segment_count", 0),
+        layout_preview=getattr(layout, "layout_preview", None),
     )
 
 

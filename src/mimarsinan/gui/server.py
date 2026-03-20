@@ -65,8 +65,8 @@ class _SafeJSONResponse(JSONResponse):
 _LAYOUT_PASS_LIMIT = 1 << 20  # ~1M axons/neurons — effectively unconstrained
 
 
-def _get_softcores_from_request(body: dict):
-    """Build a model repr and run layout mapping, returning LayoutSoftCoreSpec list.
+def _get_layout_result_from_request(body: dict):
+    """Build a model repr and run layout mapping, returning the verification result.
 
     Handles both native (simple_mlp) and torch (torch_sequential_linear, etc.) builders
     by delegating to the appropriate builder class.
@@ -148,7 +148,12 @@ def _get_softcores_from_request(body: dict):
     )
     if not result.feasible:
         raise ValueError(f"Soft-core mapping verification failed: {result.error}")
-    return result.softcores
+    return result
+
+
+def _get_softcores_from_request(body: dict):
+    """Build a model repr and run layout mapping, returning LayoutSoftCoreSpec list."""
+    return _get_layout_result_from_request(body).softcores
 
 
 def create_app(
@@ -374,7 +379,8 @@ def create_app(
             # _get_softcores_from_request uses _LAYOUT_PASS_LIMIT for the layout pass itself.
             mr["max_axons"] = max(int(mr.get("max_axons", 1024)), 4096)
             mr["max_neurons"] = max(int(mr.get("max_neurons", 1024)), 4096)
-            softcores = _get_softcores_from_request(mr)
+            layout_result = _get_layout_result_from_request(mr)
+            softcores = layout_result.softcores
             core_types = body.get("core_types", [])
             allow_neuron_splitting = bool(body.get("allow_neuron_splitting", False))
             allow_coalescing = bool(body.get("allow_coalescing", False))
@@ -392,7 +398,11 @@ def create_app(
                     "total_capacity": result["packing_result"].total_capacity if result["packing_result"] else 0,
                     "used_area": result["packing_result"].used_area if result["packing_result"] else 0,
                 } if result["packing_result"] else None,
-                "stats": result.get("stats"),
+                "stats": {
+                    **(result.get("stats") or {}),
+                    "host_side_segment_count": layout_result.host_side_segment_count,
+                    "layout_preview": layout_result.layout_preview,
+                },
             }
         except Exception as e:
             logger.exception("hw_config_verify failed")
