@@ -282,11 +282,15 @@ class ProcessManager:
             except (OSError, json.JSONDecodeError):
                 pass
 
+        # config.json stores the full outer config; pipeline specs expect the
+        # flat deployment_parameters dict (same structure as pipeline.config).
+        outer_config = config or {}
+        flat_config = outer_config.get("deployment_parameters", outer_config)
         try:
             from mimarsinan.pipelining.pipelines.deployment_pipeline import (
                 get_pipeline_semantic_group_by_step_name,
             )
-            groups = get_pipeline_semantic_group_by_step_name(config or {})
+            groups = get_pipeline_semantic_group_by_step_name(flat_config)
         except Exception:
             groups = {}
         for s in steps:
