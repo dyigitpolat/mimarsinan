@@ -17,14 +17,6 @@ class AdaptationManager(nn.Module):
         self.noise_rate = 0.0
 
     def update_activation(self, pipeline_config, perceptron):
-        # Identity-activated perceptrons run on host as ComputeOps — they
-        # must not get clamped to [0, scale] because that would clip the
-        # negative values that the host-side linear op is supposed to preserve.
-        if isinstance(perceptron.base_activation, nn.Identity):
-            perceptron.set_activation(
-                TransformedActivation(perceptron.base_activation, []))
-            return
-
         use_ttfs = pipeline_config.get("spiking_mode", "rate") in ("ttfs", "ttfs_quantized")
         decorators = []
         if self.activation_adaptation_rate > 0:

@@ -349,6 +349,8 @@ class ComputeOp(IRNode):
             return self._exec_dropout(x)
         elif self.op_type == "linear":
             return self._exec_linear(x)
+        elif self.op_type == "module":
+            return self._exec_module(x)
         else:
             raise NotImplementedError(f"ComputeOp: unsupported op_type '{self.op_type}'")
 
@@ -507,16 +509,26 @@ class ComputeOp(IRNode):
         return x.view(x.shape[0], -1)
 
     def _exec_linear(self, x: torch.Tensor) -> torch.Tensor:
-        """Host-side linear (matmul + bias). No activation — preserves negatives.
-
-        Used for layers with Identity activation that cannot run on NeuralCore
-        crossbars (chip hardcodes ReLU).
-        """
+        """Host-side linear (matmul + bias). No activation — preserves negatives."""
         weight = torch.tensor(self.params["weight"], dtype=x.dtype, device=x.device)
         out = torch.matmul(x, weight.T)
         if "bias" in self.params and self.params["bias"] is not None:
             bias = torch.tensor(self.params["bias"], dtype=x.dtype, device=x.device)
             out = out + bias
+        return out.view(out.shape[0], -1)
+
+    def _exec_module(self, x: torch.Tensor) -> torch.Tensor:
+        """Execute a generic PyTorch module stored in params.
+
+        Reshapes flat (B, N) input to the module's expected shape,
+        runs the module, and flattens the output back.
+        """
+        module = self.params["module"]
+        input_shape = self.params.get("input_shape")
+        if input_shape is not None:
+            x = x.view(x.shape[0], *input_shape)
+        with torch.no_grad():
+            out = module(x)
         return out.view(out.shape[0], -1)
 
 

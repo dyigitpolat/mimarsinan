@@ -143,13 +143,13 @@ class TestE2ENumericalAssurance:
             f"{model_cls.__name__}: {int((1 - agreement) * 16)}/16 predictions disagree."
         )
 
-    def test_no_spurious_relu_on_final_layer(self, model_cls, input_shape, num_classes):
-        """Final perceptron in the mapper graph must have Identity activation (not default ReLU).
+    def test_every_perceptron_has_real_activation(self, model_cls, input_shape, num_classes):
+        """Every PerceptronMapper must have a non-Identity activation.
 
-        get_perceptrons() only returns chip-targeted perceptrons, so we inspect
-        the mapper graph directly to verify the final layer has Identity activation.
+        Activation-less layers (e.g. final classifier) should be
+        ModuleComputeMapper, not PerceptronMapper with a fake Identity.
         """
-        from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+        from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ModuleComputeMapper
 
         torch.manual_seed(42)
         model = model_cls()
@@ -164,13 +164,11 @@ class TestE2ENumericalAssurance:
         perceptron_mappers = [
             n for n in mapper_repr._exec_order if isinstance(n, PerceptronMapper)
         ]
-        assert len(perceptron_mappers) >= 1, f"{model_cls.__name__}: no PerceptronMapper found"
-        last = perceptron_mappers[-1].perceptron
-        assert last.base_activation_name == "Identity", (
-            f"{model_cls.__name__}: final perceptron has activation "
-            f"'{last.base_activation_name}' instead of 'Identity'. "
-            "This would clip negative logits."
-        )
+        for pm in perceptron_mappers:
+            assert pm.perceptron.base_activation_name != "Identity", (
+                f"{model_cls.__name__}: PerceptronMapper '{pm.perceptron.name}' has "
+                f"Identity activation — it should be a ModuleComputeMapper instead."
+            )
 
 
 # ── TorchMLPMixer specific test ────────────────────────────────────────
@@ -201,12 +199,9 @@ class TestTorchMLPMixerE2E:
         diff = (orig - converted).abs().max().item()
         assert diff < 1e-3, f"TorchMLPMixer max diff {diff:.6f}"
 
-    def test_conv_perceptron_has_correct_activation(self):
-        """Conv2d patch embedding should NOT have spurious ReLU.
-
-        Identity conv perceptrons are host-side and excluded from
-        get_perceptrons(); access the Conv2DPerceptronMapper directly.
-        """
+    def test_conv_patch_embedding_is_compute_op(self):
+        """Conv2d patch embedding (no activation) should be ModuleComputeMapper, not a perceptron."""
+        from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper
         from mimarsinan.models.torch_mlp_mixer import TorchMLPMixer
 
         model = TorchMLPMixer(
@@ -219,12 +214,14 @@ class TestTorchMLPMixerE2E:
         supermodel = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
         repr_ = supermodel.get_mapper_repr()
         repr_._ensure_exec_graph()
-        conv_mappers = [n for n in repr_._exec_order if isinstance(n, Conv2DPerceptronMapper)]
-        assert conv_mappers, "No Conv2DPerceptronMapper found in converted TorchMLPMixer"
 
-        # Patch embedding Conv2d has no activation in the original model
-        act_name = conv_mappers[0].perceptron.base_activation_name
-        assert act_name == "Identity", (
-            f"Patch embedding has activation '{act_name}', "
-            "expected 'Identity' (no activation after Conv2d+BN in TorchMLPMixer)."
+        # Conv2d with no activation → ModuleComputeMapper, not Conv2DPerceptronMapper
+        conv_mappers = [n for n in repr_._exec_order if isinstance(n, Conv2DPerceptronMapper)]
+        assert not conv_mappers, (
+            "Patch embedding Conv2d should be ModuleComputeMapper, "
+            f"but found {len(conv_mappers)} Conv2DPerceptronMapper(s)"
         )
+
+        # Should exist as a ModuleComputeMapper instead
+        compute_mappers = [n for n in repr_._exec_order if isinstance(n, ModuleComputeMapper)]
+        assert compute_mappers, "No ModuleComputeMapper found for patch embedding"

@@ -148,11 +148,11 @@ class TestRepresentability:
         assert report.is_representable
         assert len(report.absorption_plan) > 0, "BatchNorm should be in absorption plan"
 
-    def test_unsupported_detected(self):
+    def test_lstm_representable_as_compute_op(self):
+        """LSTM is representable: it runs host-side as a generic ComputeOp."""
         model = UnsupportedModel()
         report = check_representability(model, input_shape=(16,))
-        assert not report.is_representable
-        assert len(report.unsupported_ops) > 0
+        assert report.is_representable
 
     def test_report_summary(self):
         model = SimpleMLP(in_features=16)
@@ -224,10 +224,11 @@ class TestConversion:
             out = supermodel(dummy)
         assert out.shape == (4, 10)
 
-    def test_convert_unsupported_raises(self):
+    def test_convert_lstm_as_compute_op(self):
+        """LSTM model converts successfully — LSTM runs host-side as ComputeOp."""
         model = UnsupportedModel()
-        with pytest.raises(RepresentabilityError):
-            convert_torch_model(model, input_shape=(16,), num_classes=10)
+        supermodel = convert_torch_model(model, input_shape=(16,), num_classes=10)
+        assert supermodel is not None
 
     def test_mapper_repr_exists(self):
         model = SimpleMLP(in_features=16, hidden=32, out_features=10)

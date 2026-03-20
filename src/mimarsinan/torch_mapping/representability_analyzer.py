@@ -7,11 +7,9 @@ unsupported, and produces a ``RepresentabilityReport``.
 
 from __future__ import annotations
 
-import operator
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
-import torch
 import torch.nn as nn
 import torch.fx as fx
 
@@ -66,17 +64,6 @@ _NEURAL_CORE_MODULES: set[type] = {
     nn.Conv1d,
 }
 
-# Modules representable as ComputeOp (via existing Mapper subclasses)
-_COMPUTE_OP_MODULES: set[type] = {
-    nn.MaxPool2d,
-    nn.AvgPool2d,
-    nn.AdaptiveAvgPool2d,
-    nn.LayerNorm,
-    nn.Dropout,
-    nn.Dropout2d,
-    nn.Flatten,
-}
-
 # Modules that get absorbed into the preceding Perceptron.
 # nn.Identity is absorbable so that chains like mm → Identity → BN → act
 # can be normalized into a single Perceptron package.
@@ -87,47 +74,6 @@ _ABSORBABLE_MODULES: set[type] = {
     nn.LeakyReLU,
     nn.GELU,
     nn.Identity,
-}
-
-# Modules explicitly unsupported with reasons
-_UNSUPPORTED_MODULES: Dict[type, str] = {
-    nn.ConvTranspose1d: "Transposed convolutions are not representable as crossbar cores",
-    nn.ConvTranspose2d: "Transposed convolutions are not representable as crossbar cores",
-    nn.LSTM: "Recurrent layers are not supported",
-    nn.GRU: "Recurrent layers are not supported",
-    nn.RNN: "Recurrent layers are not supported",
-    nn.Embedding: "Embedding layers are not supported (no crossbar equivalent)",
-}
-
-# Function calls that map to ComputeOps or are passthrough
-_SUPPORTED_FUNCTIONS: set = {
-    torch.flatten,
-    torch.relu,
-    torch.nn.functional.relu,
-    torch.nn.functional.gelu,
-    torch.nn.functional.dropout,
-    torch.nn.functional.adaptive_avg_pool2d,
-    torch.nn.functional.max_pool2d,
-    torch.nn.functional.avg_pool2d,
-    torch.add,
-    operator.add,
-    torch.nn.functional.layer_norm,
-}
-
-# Methods on tensors that are safe shape manipulations
-_SUPPORTED_METHODS: set[str] = {
-    "view",
-    "reshape",
-    "flatten",
-    "contiguous",
-    "permute",
-    "transpose",
-    "unsqueeze",
-    "squeeze",
-    "expand",
-    "size",
-    "dim",
-    "mean",
 }
 
 
@@ -189,69 +135,33 @@ class RepresentabilityAnalyzer:
                     )
                     return
 
-            report.supported_ops.append(
-                OpInfo(node.name, "call_module", mod_type.__name__)
-            )
-        elif mod_type in _COMPUTE_OP_MODULES:
-            report.supported_ops.append(
-                OpInfo(node.name, "call_module", mod_type.__name__)
-            )
-        elif mod_type in _ABSORBABLE_MODULES:
-            report.supported_ops.append(
-                OpInfo(node.name, "call_module", mod_type.__name__)
-            )
-        elif mod_type in _UNSUPPORTED_MODULES:
-            report.unsupported_ops.append(
-                OpInfo(node.name, "call_module", mod_type.__name__,
-                       reason=_UNSUPPORTED_MODULES[mod_type])
-            )
-        else:
-            report.unsupported_ops.append(
-                OpInfo(node.name, "call_module", mod_type.__name__,
-                       reason=f"Unknown module type '{mod_type.__name__}' has no mimarsinan mapping")
-            )
+        # Everything is supported: neural-core candidates become Perceptrons,
+        # absorbable modules get folded into preceding Perceptrons,
+        # and everything else becomes a generic ComputeOp or passthrough.
+        report.supported_ops.append(
+            OpInfo(node.name, "call_module", mod_type.__name__)
+        )
 
     def _classify_function_node(
         self, node: fx.Node, report: RepresentabilityReport
     ) -> None:
         fn = node.target
-
-        if fn in _SUPPORTED_FUNCTIONS:
-            report.supported_ops.append(
-                OpInfo(node.name, "call_function", getattr(fn, "__name__", str(fn)))
-            )
-        elif fn is operator.getitem:
-            report.supported_ops.append(
-                OpInfo(node.name, "call_function", "getitem")
-            )
-        elif fn is torch.cat:
-            report.supported_ops.append(
-                OpInfo(node.name, "call_function", "cat")
-            )
-        else:
-            fn_name = getattr(fn, "__name__", str(fn))
-            report.unsupported_ops.append(
-                OpInfo(node.name, "call_function", fn_name,
-                       reason=f"Function '{fn_name}' has no mimarsinan mapping")
-            )
+        fn_name = getattr(fn, "__name__", str(fn))
+        # All functions are supported: the converter handles them generically
+        # (structural ops, passthrough, or ModuleComputeMapper).
+        report.supported_ops.append(
+            OpInfo(node.name, "call_function", fn_name)
+        )
 
     def _classify_method_node(
         self, node: fx.Node, report: RepresentabilityReport
     ) -> None:
         method_name = node.target
-        if method_name in _SUPPORTED_METHODS:
-            report.supported_ops.append(
-                OpInfo(node.name, "call_method", method_name)
-            )
-        elif method_name == "add" or method_name == "__add__":
-            report.supported_ops.append(
-                OpInfo(node.name, "call_method", method_name)
-            )
-        else:
-            report.unsupported_ops.append(
-                OpInfo(node.name, "call_method", method_name,
-                       reason=f"Tensor method '{method_name}' has no mimarsinan mapping")
-            )
+        # All tensor methods are supported: the converter handles them
+        # (view, reshape, permute, mean, etc. or passthrough for unknown).
+        report.supported_ops.append(
+            OpInfo(node.name, "call_method", method_name)
+        )
 
     def _build_absorption_plan(self, report: RepresentabilityReport) -> None:
         """Determine which BN / activation nodes should be absorbed into a preceding Perceptron."""

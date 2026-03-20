@@ -109,10 +109,8 @@ def _convert(model_cls):
 def _get_conv_perceptron_activation_name(model_cls):
     """Convert model, return the conv perceptron's base_activation_name.
 
-    Accesses the perceptron directly from its Conv2DPerceptronMapper node in
-    the mapper graph rather than through ``get_perceptrons()``.  Identity conv
-    perceptrons are host-side and intentionally excluded from the pipeline-
-    visible perceptron list, so direct traversal is required to test absorption.
+    Only works for models where the conv layer has an activation (produces
+    Conv2DPerceptronMapper). For no-activation conv, use _has_conv_compute_mapper.
     """
     supermodel = _convert(model_cls)
     repr_ = supermodel.get_mapper_repr()
@@ -122,16 +120,26 @@ def _get_conv_perceptron_activation_name(model_cls):
     return conv_mappers[0].perceptron.base_activation_name
 
 
+def _has_conv_compute_mapper(model_cls):
+    """Check that a no-activation conv produces a ModuleComputeMapper (not PerceptronMapper)."""
+    from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper
+    supermodel = _convert(model_cls)
+    repr_ = supermodel.get_mapper_repr()
+    repr_._ensure_exec_graph()
+    compute_mappers = [n for n in repr_._exec_order if isinstance(n, ModuleComputeMapper)]
+    conv_perceptron_mappers = [n for n in repr_._exec_order if isinstance(n, Conv2DPerceptronMapper)]
+    return len(compute_mappers) >= 1 and len(conv_perceptron_mappers) == 0
+
+
 # ── Tests ───────────────────────────────────────────────────────────────
 
 
 class TestConv2dActivationAbsorption:
-    def test_no_activation_gives_identity(self):
-        """Conv2d -> BN (no activation) must produce Identity, not ReLU."""
-        name = _get_conv_perceptron_activation_name(ConvBNOnly)
-        assert name == "Identity", (
-            f"Conv perceptron got activation '{name}' instead of 'Identity'. "
-            "Spurious ReLU would zero ~50% of BN outputs."
+    def test_no_activation_gives_compute_mapper(self):
+        """Conv2d -> BN (no activation) must produce ModuleComputeMapper, not PerceptronMapper."""
+        assert _has_conv_compute_mapper(ConvBNOnly), (
+            "Conv without activation should produce a ModuleComputeMapper, "
+            "not a Conv2DPerceptronMapper."
         )
 
     def test_relu_absorbed(self):

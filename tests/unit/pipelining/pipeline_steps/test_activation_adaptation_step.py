@@ -322,48 +322,6 @@ class TestActivationAdaptationCommit:
             "(single minibatch) rather than the full test set."
         )
 
-    def test_run_does_not_commit_identity_perceptrons(self, mock_pipeline):
-        """ActivationAdaptationTuner.run() must commit only chip-targeted
-        non-ReLU perceptrons.
-
-        Identity perceptrons are host-side ComputeOps in the mapped model and
-        must remain Identity. Rewriting them to ReLU causes large behavioural
-        changes in torch-mapped models (observed 0.95 -> 0.61 test-accuracy
-        drop on the MLP-Mixer deployment regression).
-        """
-        from unittest.mock import patch
-
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
-        from mimarsinan.tuning.tuners.activation_adaptation_tuner import (
-            ActivationAdaptationTuner,
-        )
-        from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
-
-        model, identity_perceptron, leaky_perceptron = _model_with_identity_and_leaky_relu()
-        am = AdaptationManager()
-
-        mock_pipeline.config.update(default_config())
-        mock_pipeline.config["activation_quantization"] = False
-        mock_pipeline.config["tuner_epochs"] = 1
-
-        assert has_non_relu_activations(model) is True
-
-        with patch.object(PerceptronTuner, "run", autospec=True, return_value=None):
-            tuner = ActivationAdaptationTuner(
-                mock_pipeline,
-                model=model,
-                target_accuracy=0.0,
-                lr=mock_pipeline.config["lr"] * 1e-3,
-                adaptation_manager=am,
-            )
-            tuner.run()
-
-        assert type(identity_perceptron.base_activation).__name__ == "Identity", (
-            "Identity perceptron must remain Identity after the adaptation "
-            "commit. Only chip-targeted non-ReLU perceptrons should be "
-            "rewritten to LeakyGradReLU."
-        )
-        assert type(leaky_perceptron.base_activation).__name__ == "LeakyGradReLU", (
-            "LeakyReLU perceptron must be committed to LeakyGradReLU."
-        )
-        tuner.trainer.close()
+    # test_run_does_not_commit_identity_perceptrons removed:
+    # Identity perceptrons no longer exist — layers without activation go through
+    # ModuleComputeMapper and never enter the adaptation pipeline.
