@@ -6,23 +6,19 @@ export function renderPipelineBar(pipeline, selectedStep) {
   const bar = document.getElementById('pipeline-bar');
   if (!bar || !pipeline) return;
   const steps = pipeline.steps || [];
-  bar.innerHTML = steps.map((s, i) => {
-    const cls = s.status + (selectedStep === s.name ? ' selected' : '');
+  const cols = steps.map((s, i) => {
     const dur = s.duration ? ` (${fmtDuration(s.duration)})` : '';
     const tooltip = `${s.name}${dur} [${i + 1}/${steps.length}]`;
-    const metricBadge = s.status === 'running' && s.target_metric != null
-      ? `<span style="font-size:8px;color:var(--accent-cyan);font-weight:700;display:block;margin-top:1px">${s.target_metric.toFixed(3)}</span>` : '';
-    return `<div class="step-block ${cls}" data-step="${esc(s.name)}" title="${esc(tooltip)}">
-      <span class="step-name">${esc(abbreviate(s.name))}</span>
-      ${s.status === 'running' ? '<span class="step-running-dot"></span>' : ''}
-      ${metricBadge}
+    const selected = selectedStep === s.name ? ' selected' : '';
+    const group = s.semantic_group || 'other';
+    const metric = s.status === 'running' && s.target_metric != null
+      ? `<span class="psb-metric">${s.target_metric.toFixed(3)}</span>` : '';
+    return `<div class="psb-col${selected}" data-status="${esc(s.status)}" data-group="${esc(group)}" data-step="${esc(s.name)}" title="${esc(tooltip)}">
+      <div class="psb-bar">${metric}</div>
+      <span class="psb-label">${esc(s.name)}</span>
     </div>`;
-  }).join('');
-}
-
-function abbreviate(name) {
-  if (name.length <= 18) return name;
-  return name.split(' ').map(w => w.length > 4 ? w.substring(0, 4) + '.' : w).join(' ');
+  });
+  bar.innerHTML = `<div class="psb-list">${cols.join('')}</div>`;
 }
 
 // ── Overview cards ───────────────────────────────────────────────────────

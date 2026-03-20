@@ -57,6 +57,7 @@ let state = {
 
 let pipelineStepsDebounceTimer = null;
 let lastPipelineSteps = [];
+let lastPipelineGroups = [];
 let pipelineStepsLoading = false;
 
 // Hardware auto-fill state
@@ -84,6 +85,8 @@ function init() {
     var params = new URLSearchParams(location.search);
     var runId = params.get('run_id');
     var templateId = params.get('template_id');
+
+    window.__isEditContinueMode = !!runId;
 
     function done() {
       update();
@@ -653,7 +656,7 @@ function loadStateFromConfig(config) {
     }
   }
   function setToggleFromConfig(id, val) {
-    setToggle(id, !!val, true);
+    setToggle(id, !!val, false);
   }
 
   setVal('experimentName', config.experiment_name);
@@ -705,6 +708,10 @@ function loadStateFromConfig(config) {
     state.coreTypes = cores.map(function (c) {
       return { max_axons: c.max_axons || 256, max_neurons: c.max_neurons || 256, count: c.count || 100, has_bias: c.has_bias !== false };
     });
+    // Preserve loaded core types — disable auto-suggest so init()'s done() won't overwrite them
+    const autoToggleEl = document.getElementById('hwAutoSuggestToggle');
+    if (autoToggleEl) autoToggleEl.classList.remove('on');
+    _hwAutoMode = false;
     renderCoreTypes();
     setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
     setToggleFromConfig('coreCoalescingToggle', pc.allow_core_coalescing);
@@ -813,6 +820,25 @@ function schedulePipelineStepsUpdate() {
   }, 250);
 }
 
+function _renderWizardPipelineSteps(steps, groups) {
+  var selectable = !!window.__isEditContinueMode;
+  var cols = steps.map(function (name, i) {
+    var group = (groups && groups[i]) || 'other';
+    var isStart = selectable && window.__wizardStartStep === name;
+    var isPast = selectable && window.__wizardStartStep &&
+      steps.indexOf(window.__wizardStartStep) > i;
+    var dataStatus = isStart ? 'running' : (isPast ? 'completed' : 'pending');
+    var selectedCls = isStart ? ' selected' : '';
+    var onclick = selectable ? ' onclick="selectStartStep(' + JSON.stringify(name) + ')"' : '';
+    return '<div class="psb-col' + selectedCls + '" data-status="' + dataStatus +
+      '" data-group="' + escapeHtml(group) + '"' + onclick + '>' +
+      '<div class="psb-bar"></div>' +
+      '<span class="psb-label">' + escapeHtml(name) + '</span>' +
+      '</div>';
+  });
+  return '<div class="psb-list psb-list--preview">' + cols.join('') + '</div>';
+}
+
 function updatePipelineStepsBar() {
   var listEl = document.getElementById('pipelineStepsList');
   var barEl = document.getElementById('pipelineStepsBar');
@@ -831,14 +857,13 @@ function updatePipelineStepsBar() {
     })
     .then(function (data) {
       var steps = data.steps || [];
+      var semanticGroups = data.semantic_groups || [];
       lastPipelineSteps = steps;
+      lastPipelineGroups = semanticGroups;
       barEl.classList.remove('pipeline-steps-loading', 'pipeline-steps-error');
       listEl.classList.add('pipeline-steps-updating');
       setTimeout(function () {
-        var arrow = '<span class="pipeline-step-arrow" aria-hidden="true">→</span>';
-        listEl.innerHTML = steps.map(function (name) {
-          return '<span class="pipeline-step-chip">' + escapeHtml(name) + '</span>';
-        }).join(arrow);
+        listEl.innerHTML = _renderWizardPipelineSteps(steps, semanticGroups);
         listEl.classList.remove('pipeline-steps-updating');
       }, 150);
     })
@@ -846,10 +871,7 @@ function updatePipelineStepsBar() {
       barEl.classList.remove('pipeline-steps-loading');
       barEl.classList.add('pipeline-steps-error');
       if (lastPipelineSteps.length) {
-        var arrow = '<span class="pipeline-step-arrow" aria-hidden="true">→</span>';
-        listEl.innerHTML = lastPipelineSteps.map(function (name) {
-          return '<span class="pipeline-step-chip">' + escapeHtml(name) + '</span>';
-        }).join(arrow);
+        listEl.innerHTML = _renderWizardPipelineSteps(lastPipelineSteps, lastPipelineGroups);
       } else {
         listEl.innerHTML = '<span class="pipeline-steps-error-msg">Could not load steps</span>';
       }
@@ -857,6 +879,15 @@ function updatePipelineStepsBar() {
     .finally(function () {
       pipelineStepsLoading = false;
     });
+}
+
+function selectStartStep(name) {
+  window.__wizardStartStep = (window.__wizardStartStep === name) ? null : name;
+  var listEl = document.getElementById('pipelineStepsList');
+  if (listEl && lastPipelineSteps.length) {
+    listEl.innerHTML = _renderWizardPipelineSteps(lastPipelineSteps, lastPipelineGroups);
+  }
+  update();
 }
 
 function escapeHtml(s) {

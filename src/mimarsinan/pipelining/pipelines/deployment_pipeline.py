@@ -72,6 +72,44 @@ _WEIGHT_QUANTIZATION_STEPS: list[tuple[str, type]] = [
     ("Quantization Verification", QuantizationVerificationStep),
 ]
 
+# ── Semantic groups (step class → UI group id) ──────────────────────────────
+# Stable lowercase ids used by the GUI to color-code pipeline bars.
+_SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
+    ArchitectureSearchStep:             "configuration",
+    ModelConfigurationStep:             "configuration",
+    ModelBuildingStep:                  "model_building",
+    PretrainingStep:                    "pretraining",
+    WeightPreloadingStep:               "pretraining",
+    TorchMappingStep:                   "torch_mapping",
+    PruningAdaptationStep:              "pruning",
+    ActivationAnalysisStep:             "activation",
+    ActivationAdaptationStep:           "activation",
+    ClampAdaptationStep:                "activation",
+    ActivationShiftStep:                "activation_quantization",
+    ActivationQuantizationStep:         "activation_quantization",
+    WeightQuantizationStep:             "weight_quantization",
+    QuantizationVerificationStep:       "weight_quantization",
+    NormalizationFusionStep:            "normalization",
+    SoftCoreMappingStep:                "soft_mapping",
+    CoreQuantizationVerificationStep:   "core_verification",
+    CoreFlowTuningStep:                 "coreflow_tuning",
+    HardCoreMappingStep:                "hardware",
+    SimulationStep:                     "simulation",
+}
+
+
+def get_pipeline_semantic_group_by_step_name(config: dict) -> dict[str, str]:
+    """Return {step_name: semantic_group_id} for every step in the given config.
+
+    Derived from ``get_pipeline_step_specs``, so the mapping is always
+    consistent with actual pipeline composition.
+    """
+    return {
+        name: _SEMANTIC_GROUP_BY_STEP_CLASS.get(cls, "other")
+        for name, cls in get_pipeline_step_specs(config)
+    }
+
+
 # ── Pipeline-mode presets ───────────────────────────────────────────────────
 
 PIPELINE_MODE_PRESETS: dict[str, dict] = {
