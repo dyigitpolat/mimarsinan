@@ -56,17 +56,21 @@ class TestCoreCoalescing:
         # Core has 40 inputs, exceeding max_axons=20
         assert cores[0].get_input_count() == 40
 
-    def test_wide_core_without_coalescing_metadata(self):
-        """When coalescing is disabled, a single wide core is still produced (no metadata)."""
+    def test_wide_core_without_coalescing_psum_decomposition(self):
+        """When coalescing is disabled, wide layers use psum decomposition."""
         m = _make_mapping(max_axons=20, max_neurons=64, allow_core_coalescing=False)
         m.map_fc(_make_sources(40), np.array([2]), torch.randn(2, 40))
         cores = _neural_cores(m)
-        assert len(cores) == 1, f"Expected 1 wide core, got {len(cores)}"
-        # Wide core has all 40 inputs (hardware packing handles fusion)
-        assert cores[0].get_input_count() == 40
-        # No coalescing metadata when coalescing is disabled
-        assert cores[0].coalescing_group_id is None
-        assert cores[0].coalescing_role is None
+        # Psum produces: pos/neg partial cores per tile + accumulator cores
+        assert len(cores) > 1, f"Expected psum decomposition, got {len(cores)} cores"
+        roles = {getattr(c, 'psum_role', None) for c in cores}
+        assert 'partial_pos' in roles
+        assert 'partial_neg' in roles
+        assert 'accum' in roles
+        # No coalescing metadata on psum cores
+        for c in cores:
+            assert c.coalescing_group_id is None
+            assert c.coalescing_role is None
 
     def test_coalescing_tiles_outputs_when_necessary(self):
         """Even with wide cores allowed, it must tile if neurons exceed max_neurons."""

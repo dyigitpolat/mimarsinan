@@ -330,23 +330,6 @@ class LayoutIRMapping:
 
         return output_sources
 
-    def add_linear_compute_op(
-        self,
-        input_sources: np.ndarray,
-        weights,
-        biases=None,
-        name: str | None = None,
-    ) -> np.ndarray:
-        """Host-side linear ComputeOp — layout pass only needs output shape."""
-        w = np.asarray(weights)
-        out_features = w.shape[0]
-        return self.add_compute_op(
-            input_sources=np.array(input_sources, dtype=object).flatten(),
-            op_type="linear",
-            output_shape=(out_features,),
-            name=name or "linear_compute",
-        )
-
     def add_neural_core(
         self,
         *,
