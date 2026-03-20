@@ -20,9 +20,7 @@ from mimarsinan.mapping.mapping_utils import (
     InputMapper,
     MeanMapper,
     ModelRepresentation,
-    ModuleMapper,
-    GELUMapper,
-    DropoutMapper,
+    ModuleComputeMapper,
     PermuteMapper,
     ReshapeMapper,
     SubscriptMapper,
@@ -35,17 +33,40 @@ from mimarsinan.torch_mapping.representability_analyzer import (
 from mimarsinan.torch_mapping.converter_handlers import (
     LinearConvertMixin,
     ConvConvertMixin,
-    PoolConvertMixin,
-    TransformerConvertMixin,
     StructuralConvertMixin,
 )
+
+
+class _FunctionWrapper(nn.Module):
+    """Wrap an ``F.*`` function call as an ``nn.Module`` for ModuleComputeMapper.
+
+    Captures the function and its non-tensor arguments (kwargs and positional
+    args beyond the first tensor) from an FX node so the wrapped function can
+    be called as ``module(x)`` during forward and spiking simulation.
+    """
+
+    def __init__(self, fn, extra_args=(), kwargs=None):
+        super().__init__()
+        self.fn = fn
+        self.extra_args = extra_args
+        self.kwargs = kwargs or {}
+
+    def forward(self, x):
+        return self.fn(x, *self.extra_args, **self.kwargs)
+
+    @classmethod
+    def from_fx_node(cls, node: fx.Node, fn) -> "_FunctionWrapper":
+        # args[0] is the input tensor (handled by the mapper source);
+        # remaining args are parameters (kernel_size, stride, etc.)
+        extra_args = tuple(a for a in node.args[1:] if not isinstance(a, fx.Node))
+        # Filter out training= for dropout etc. — keep all kwargs
+        kwargs = {k: v for k, v in node.kwargs.items() if not isinstance(v, fx.Node)}
+        return cls(fn, extra_args, kwargs)
 
 
 class MapperGraphConverter(
     LinearConvertMixin,
     ConvConvertMixin,
-    PoolConvertMixin,
-    TransformerConvertMixin,
     StructuralConvertMixin,
 ):
     """Convert a traced ``GraphModule`` into a mimarsinan ``ModelRepresentation``.
@@ -115,6 +136,13 @@ class MapperGraphConverter(
             return self._get_mapper(args[0])
         return None
 
+    # Modules that are passthrough (no IR node) when not absorbed:
+    # - Identity: no-op
+    # - Dropout: identity at inference / spiking simulation
+    # - BatchNorm: standalone BN (rare; if not absorbed, pass through)
+    _PASSTHROUGH_MODULES = (nn.Identity, nn.Dropout, nn.Dropout2d,
+                            nn.BatchNorm1d, nn.BatchNorm2d)
+
     def _handle_call_module(
         self, node: fx.Node, report: RepresentabilityReport
     ) -> None:
@@ -128,71 +156,56 @@ class MapperGraphConverter(
 
         source = self._get_source_mapper(node)
 
+        # Perceptron candidates: Linear/Conv + absorbed BN/activation → Perceptron
         if isinstance(mod, nn.Linear):
             self._convert_linear(node, mod, source, report)
         elif isinstance(mod, nn.Conv2d):
             self._convert_conv2d(node, mod, source, report)
         elif isinstance(mod, nn.Conv1d):
             self._convert_conv1d(node, mod, source, report)
-        elif isinstance(mod, nn.MaxPool2d):
-            self._convert_maxpool2d(node, mod, source)
-        elif isinstance(mod, nn.AvgPool2d):
-            self._convert_avgpool2d(node, mod, source)
-        elif isinstance(mod, nn.AdaptiveAvgPool2d):
-            self._convert_adaptive_avgpool2d(node, mod, source)
-        elif isinstance(mod, nn.LayerNorm):
-            self._convert_layer_norm(node, mod, source)
-        elif isinstance(mod, nn.GELU):
-            self._convert_gelu(node, source)
-        elif isinstance(mod, (nn.Dropout, nn.Dropout2d)):
-            self._convert_dropout(node, mod, source)
-        elif isinstance(mod, nn.Identity):
+        # Passthrough: no IR node needed
+        elif isinstance(mod, self._PASSTHROUGH_MODULES):
             self._node_to_mapper[node] = source
+        # Flatten: shape-only (ReshapeMapper, no ComputeOp)
         elif isinstance(mod, nn.Flatten):
             self._convert_flatten_module(node, source)
-        elif isinstance(mod, (nn.ReLU, nn.LeakyReLU)):
-            mapper = ModuleMapper(source, mod)
-            self._node_to_mapper[node] = mapper
-        elif isinstance(mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
-            self._node_to_mapper[node] = source
         else:
-            mapper = ModuleMapper(source, mod)
+            # Generic: any other module → host-side ComputeOp
+            in_shape = self._get_input_shape(node)
+            input_shape = tuple(in_shape[1:]) if in_shape and len(in_shape) >= 2 else None
+            out_shape = self._get_output_shape(node)
+            output_shape = tuple(out_shape[1:]) if out_shape and len(out_shape) >= 2 else None
+            mapper = ModuleComputeMapper(
+                source, mod, input_shape=input_shape,
+                output_shape=output_shape, name=node.name,
+            )
             self._node_to_mapper[node] = mapper
 
     def _handle_call_function(self, node: fx.Node) -> None:
         fn = node.target
 
+        # Structural ops: multi-input or shape-only — need dedicated handling
         if fn is operator.add or fn is torch.add:
             self._convert_add(node)
         elif fn is torch.flatten:
             self._convert_flatten_func(node)
-        elif fn is torch.relu or fn is F.relu:
-            source = self._get_source_mapper(node)
-            mapper = ModuleMapper(source, nn.ReLU())
-            self._node_to_mapper[node] = mapper
-        elif fn is F.gelu:
-            source = self._get_source_mapper(node)
-            mapper = GELUMapper(source, name=node.name)
-            self._node_to_mapper[node] = mapper
-        elif fn is F.dropout:
-            source = self._get_source_mapper(node)
-            mapper = DropoutMapper(source, name=node.name)
-            self._node_to_mapper[node] = mapper
-        elif fn is F.adaptive_avg_pool2d:
-            self._convert_adaptive_avgpool2d_func(node)
-        elif fn is F.max_pool2d:
-            self._convert_maxpool2d_func(node)
-        elif fn is F.avg_pool2d:
-            self._convert_avgpool2d_func(node)
-        elif fn is F.layer_norm:
-            self._convert_layer_norm_func(node)
         elif fn is operator.getitem:
             self._convert_getitem(node)
         elif fn is torch.cat:
             self._convert_cat(node)
         else:
+            # Generic: wrap function call as ModuleComputeMapper
             source = self._get_source_mapper(node)
-            self._node_to_mapper[node] = source
+            wrapper = _FunctionWrapper.from_fx_node(node, fn)
+            in_shape = self._get_input_shape(node)
+            input_shape = tuple(in_shape[1:]) if in_shape and len(in_shape) >= 2 else None
+            out_shape = self._get_output_shape(node)
+            output_shape = tuple(out_shape[1:]) if out_shape and len(out_shape) >= 2 else None
+            mapper = ModuleComputeMapper(
+                source, wrapper, input_shape=input_shape,
+                output_shape=output_shape, name=node.name,
+            )
+            self._node_to_mapper[node] = mapper
 
     def _handle_call_method(self, node: fx.Node) -> None:
         method = node.target
@@ -295,13 +308,13 @@ class MapperGraphConverter(
         if len(node.args) >= 1 and isinstance(node.args[0], fx.Node):
             input_node = node.args[0]
             meta = input_node.meta.get("tensor_meta")
-            if meta is not None:
+            if meta is not None and hasattr(meta, "shape"):
                 return tuple(meta.shape)
         return None
 
     def _get_output_shape(self, node: fx.Node) -> Optional[Tuple[int, ...]]:
         """Get the output tensor shape (with batch) from ShapeProp metadata."""
         meta = node.meta.get("tensor_meta")
-        if meta is not None:
+        if meta is not None and hasattr(meta, "shape"):
             return tuple(meta.shape)
         return None

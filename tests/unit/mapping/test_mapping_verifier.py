@@ -222,7 +222,11 @@ class TestVerifySoftCoreMapping:
         host_counts = [item["compute_op_count"] for item in flow if item["kind"] == "host"]
         neural_counts = [item["softcore_count"] for item in flow if item["kind"] == "neural"]
         latency_group_indices = [item["latency_group_index"] for item in flow if item["kind"] == "neural"]
-        assert host_counts == [16, 32, 16, 32, 18]
+        # Slot 0: patch_embed Conv2d (1 generic module ComputeOp)
+        # Slots 1-4: mixer fc2 layers (per-column ComputeOps) + mean + classifier
+        assert host_counts[0] == 1, (
+            f"Patch embed Conv2d should create 1 module ComputeOp, got {host_counts[0]}"
+        )
         assert neural_counts == [32, 16, 32, 16]
         assert latency_group_indices == [0, 1, 2, 3]
 

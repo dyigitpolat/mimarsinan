@@ -43,7 +43,7 @@ from mimarsinan.mapping.mappers.structural import (
     StackMapper,
     SubscriptMapper,
 )
-from mimarsinan.mapping.mappers.perceptron import ModuleMapper, PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper, ModuleMapper, PerceptronMapper
 from mimarsinan.mapping.mappers.leading_dim import (
     Ensure2DMapper,
     MergeLeadingDimsMapper,

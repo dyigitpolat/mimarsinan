@@ -322,7 +322,6 @@ class TestNoFusionCases:
 # ===========================================================================
 
 from mimarsinan.torch_mapping.converter import convert_torch_model
-from mimarsinan.mapping.mappers.base import is_perceptron_activation
 from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
 from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
 from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import scale_from_activations
@@ -436,7 +435,7 @@ class TestBNFoldFusionPerceptronProperties:
             f"Fused perceptron should have Identity normalization (BN was folded), "
             f"got {type(fused_p.normalization).__name__}"
         )
-        assert is_perceptron_activation(fused_p), (
+        assert not isinstance(fused_p.base_activation, nn.Identity), (
             "ReLU perceptron must be a perceptron activation"
         )
 
@@ -457,7 +456,7 @@ class TestBNFoldFusionPerceptronProperties:
 
         fused_p = gelu_perceptrons[0]
         assert isinstance(fused_p.normalization, nn.Identity)
-        assert is_perceptron_activation(fused_p), (
+        assert not isinstance(fused_p.base_activation, nn.Identity), (
             "GELU perceptron must be a perceptron activation"
         )
 
@@ -475,11 +474,11 @@ class TestBNFoldFusionPerceptronProperties:
             "All-ReLU model should not be detected as having non-ReLU activations"
         )
 
-    def test_no_act_fusion_produces_single_fused_linear(self):
+    def test_no_act_fusion_produces_no_perceptron_mappers(self):
         """Linear -> BN -> Linear -> Linear: all three fuse into one.
-        Output gets Identity activation. The fused chain has no separate
-        perceptron — everything collapses into the single output linear.
+        No activation detected → no PerceptronMappers, only ModuleComputeMappers.
         """
+        from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper
         _, supermodel = _warmup_and_convert(LinearBNLinearNoActClassifier)
         mapper_repr = supermodel.perceptron_flow.get_mapper_repr()
         mapper_repr._ensure_exec_graph()
@@ -487,9 +486,15 @@ class TestBNFoldFusionPerceptronProperties:
         perceptron_mappers = [
             n for n in mapper_repr._exec_order if isinstance(n, PerceptronMapper)
         ]
-        assert len(perceptron_mappers) == 1, (
-            f"Expected 1 PerceptronMapper (fully fused chain), "
+        compute_mappers = [
+            n for n in mapper_repr._exec_order if isinstance(n, ModuleComputeMapper)
+        ]
+        assert len(perceptron_mappers) == 0, (
+            f"Expected 0 PerceptronMappers (no activation in chain), "
             f"got {len(perceptron_mappers)}"
+        )
+        assert len(compute_mappers) >= 1, (
+            f"Expected at least 1 ModuleComputeMapper, got {len(compute_mappers)}"
         )
 
     def test_normalization_fusion_step_skips_fused_perceptrons(self):

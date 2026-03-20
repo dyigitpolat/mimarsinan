@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
-from mimarsinan.mapping.mapping_utils import Ensure2DMapper, PerceptronMapper
+from mimarsinan.mapping.mapping_utils import Ensure2DMapper, PerceptronMapper, ModuleComputeMapper
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 
 if TYPE_CHECKING:
@@ -41,27 +41,41 @@ class LinearConvertMixin:
         act_mod = self._find_absorbed_follower(
             node, (nn.ReLU, nn.LeakyReLU, nn.GELU), report, skip_bn=True
         )
-
-        normalization = copy.deepcopy(bn_mod) if bn_mod is not None else nn.Identity()
-        act_name = self._activation_to_name(act_mod) or "Identity"
-
-        perceptron = Perceptron(
-            output_channels=mod.out_features,
-            input_features=mod.in_features,
-            bias=mod.bias is not None,
-            normalization=normalization,
-            base_activation_name=act_name,
-            name=node.name,
-        )
-
-        with torch.no_grad():
-            perceptron.layer.weight.copy_(mod.weight.data)
-            if mod.bias is not None:
-                perceptron.layer.bias.copy_(mod.bias.data)
-
-            if bn_mod is not None and not isinstance(normalization, nn.Identity):
-                self._copy_bn_params(normalization, bn_mod)
+        act_name = self._activation_to_name(act_mod)
 
         source = Ensure2DMapper(source)
-        mapper = PerceptronMapper(source, perceptron)
+
+        if act_name is None:
+            # No activation detected → generic compute op (not a perceptron).
+            # Build a sequential module wrapping Linear + optional BN.
+            linear = copy.deepcopy(mod)
+            if bn_mod is not None:
+                bn_copy = copy.deepcopy(bn_mod)
+                module = nn.Sequential(linear, bn_copy)
+            else:
+                module = linear
+            mapper = ModuleComputeMapper(
+                source, module,
+                output_shape=(mod.out_features,),
+                name=node.name,
+            )
+        else:
+            # Activation detected → perceptron (will be deployed on chip)
+            normalization = copy.deepcopy(bn_mod) if bn_mod is not None else nn.Identity()
+            perceptron = Perceptron(
+                output_channels=mod.out_features,
+                input_features=mod.in_features,
+                bias=mod.bias is not None,
+                normalization=normalization,
+                base_activation_name=act_name,
+                name=node.name,
+            )
+            with torch.no_grad():
+                perceptron.layer.weight.copy_(mod.weight.data)
+                if mod.bias is not None:
+                    perceptron.layer.bias.copy_(mod.bias.data)
+                if bn_mod is not None and not isinstance(normalization, nn.Identity):
+                    self._copy_bn_params(normalization, bn_mod)
+            mapper = PerceptronMapper(source, perceptron)
+
         self._node_to_mapper[node] = mapper

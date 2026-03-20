@@ -1,4 +1,4 @@
-"""PerceptronMapper and ModuleMapper: FC/module application mappers."""
+"""PerceptronMapper, ModuleComputeMapper, and ModuleMapper."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_perceptron_activation
+from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
 from mimarsinan.mapping.soft_core_mapper import map_mm
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
@@ -45,39 +45,6 @@ class PerceptronMapper(Mapper):
         layer_sources = self.source_mapper.map_to_ir(ir_mapping)
         layer_sources = layer_sources.transpose()
 
-        if not is_perceptron_activation(self.perceptron):
-            # No nonlinearity (Identity) → host-side linear ComputeOp.
-            w_np = layer_weights.detach().cpu().numpy()
-            b_np = layer_biases.detach().cpu().numpy() if layer_biases is not None else None
-            name = getattr(self.perceptron, "name", None)
-            in_features = w_np.shape[1]
-
-            src_arr = np.array(layer_sources, dtype=object)
-
-            # Handle 2D batch inputs: one ComputeOp per column
-            # (e.g., one per token position in mixer architectures).
-            if src_arr.ndim == 2:
-                if src_arr.shape[0] != in_features and src_arr.shape[1] == in_features:
-                    src_arr = src_arr.T
-                core_count = int(src_arr.shape[1])
-                outputs = []
-                for i in range(core_count):
-                    col_sources = np.array(src_arr[:, i], dtype=object).flatten()
-                    col_out = ir_mapping.add_linear_compute_op(
-                        input_sources=col_sources,
-                        weights=w_np, biases=b_np,
-                        name=(f"{name}_col{i}" if name else None),
-                    )
-                    outputs.append(col_out.flatten())
-                result = np.stack(outputs, axis=1)  # (out_features, core_count)
-                return result.transpose()
-
-            output_sources = ir_mapping.add_linear_compute_op(
-                input_sources=src_arr, weights=w_np, biases=b_np, name=name,
-            )
-            return output_sources
-
-        # Has a real activation → NeuralCore.
         normalization = getattr(self.perceptron, "normalization", None)
         normalization_type = type(normalization).__name__ if normalization is not None else None
         activation_type = resolve_activation_type(self.perceptron)
@@ -103,9 +70,82 @@ class PerceptronMapper(Mapper):
         return self.perceptron(x)
 
     def owned_perceptron_groups(self):
-        if not is_perceptron_activation(self.perceptron):
-            return []
         return [[self.perceptron]]
+
+
+class ModuleComputeMapper(Mapper):
+    """Generic host-side ComputeOp for any nn.Module that isn't a perceptron.
+
+    Wraps the original PyTorch module. Forward calls the module directly.
+    IR mapping creates a ComputeOp with op_type="module" that stores the
+    module for host-side execution during spiking simulation.
+
+    Used for bare Linear (no activation), Conv2d (no activation), MaxPool2d,
+    LayerNorm, Dropout, or any other module that isn't packed as a perceptron.
+    """
+
+    def __init__(self, source_mapper, module: nn.Module,
+                 input_shape=None, output_shape=None, name=None):
+        super().__init__(source_mapper)
+        self.module = module
+        self.input_shape = input_shape
+        self.output_shape = output_shape
+        self.name = name
+
+    def _forward_impl(self, x):
+        return self.module(x)
+
+    def _map_to_ir(self, ir_mapping):
+        input_sources = self.source_mapper.map_to_ir(ir_mapping)
+        src_arr = np.array(input_sources, dtype=object)
+
+        # Handle 2D source arrays: each column is an independent instance
+        # (e.g., token positions in mixer architectures). Create one
+        # ComputeOp per column so the module runs independently per instance.
+        # Transpose to (features, instances) convention used by map_fc.
+        if src_arr.ndim == 2:
+            src_arr = src_arr.transpose()
+            # Determine input feature count from the module
+            in_features = getattr(self.module, 'in_features', None)
+            if in_features is None and hasattr(self.module, '0'):
+                # nn.Sequential: check first sub-module
+                in_features = getattr(self.module[0], 'in_features', None)
+            # Align first dim with module input features
+            if in_features is not None:
+                if src_arr.shape[0] != in_features and src_arr.shape[1] == in_features:
+                    src_arr = src_arr.T
+            col_count = int(src_arr.shape[1])
+            outputs = []
+            for i in range(col_count):
+                col_sources = np.array(src_arr[:, i], dtype=object).flatten()
+                col_out = ir_mapping.add_compute_op(
+                    input_sources=col_sources,
+                    op_type="module",
+                    params={"module": self.module, "input_shape": self.input_shape},
+                    input_shape=self.input_shape,
+                    output_shape=self.output_shape,
+                    name=(f"{self.name}_col{i}" if self.name else None),
+                )
+                outputs.append(np.array(col_out, dtype=object).flatten())
+            result = np.stack(outputs, axis=1)
+            return result.transpose()
+
+        return ir_mapping.add_compute_op(
+            input_sources=input_sources,
+            op_type="module",
+            params={"module": self.module, "input_shape": self.input_shape},
+            input_shape=self.input_shape,
+            output_shape=self.output_shape,
+            name=self.name,
+        )
+
+    def _map(self, mapping):
+        raise NotImplementedError(
+            f"{self.name}: ModuleComputeMapper does not support legacy SoftCoreMapping. "
+            "Use IRMapping."
+        )
+
+    # owned_perceptron_groups() → inherited [] from Mapper base
 
 
 class ModuleMapper(Mapper):

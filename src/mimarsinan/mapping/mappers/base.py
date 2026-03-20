@@ -27,21 +27,6 @@ def resolve_activation_type(perceptron) -> str | None:
     return activation_type
 
 
-def is_perceptron_activation(perceptron) -> bool:
-    """True if the perceptron has a real (non-identity) activation.
-
-    The perceptron packaging rule: ``MM+ + BN? + ACT → perceptron``.
-    When ACT is Identity (no nonlinearity detected during torch mapping),
-    the layer is a linear compute op, not a perceptron.
-
-    Any detected nonlinearity (ReLU, GELU, LeakyReLU, etc.) qualifies —
-    the adaptation pipeline converts all of them to LeakyGradReLU before
-    deployment.
-    """
-    base_act = getattr(perceptron, "base_activation", None)
-    return base_act is not None and not isinstance(base_act, nn.Identity)
-
-
 class Mapper(nn.Module):
     def __init__(self, source_mapper=None):
         super(Mapper, self).__init__()
