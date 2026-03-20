@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import IRSource
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_chip_supported_activation
+from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type, is_chip_supported_activation, is_chip_targeted_activation
 from mimarsinan.mapping.mappers.pooling import _chunk_sizes
 from mimarsinan.mapping.soft_core_mapper import map_mm
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
@@ -21,6 +21,7 @@ class Conv2DPerceptronMapper(Mapper):
     Convolution implemented as:
     - Forward: efficient nn.Conv2d
     - Mapping: shared-weight Perceptron (im2col + matmul), tiled as needed.
+    - owned_perceptron_groups(): only chip-targeted perceptrons (not Identity).
     """
 
     def __init__(
@@ -86,6 +87,8 @@ class Conv2DPerceptronMapper(Mapper):
         )
 
     def owned_perceptron_groups(self):
+        if not is_chip_targeted_activation(self.perceptron):
+            return []
         return [[self.perceptron]]
 
     def _forward_impl(self, x):
@@ -238,7 +241,13 @@ class Conv2DPerceptronMapper(Mapper):
         full_b = PerceptronTransformer().get_effective_bias(self.perceptron)
 
         has_bias = full_b is not None
-        chip_supported = is_chip_supported_activation(self.perceptron)
+        # During the layout-estimation pass, chip-targeted activations (GELU, etc.)
+        # are treated as future NeuralCores — they will be adapted to ReLU before
+        # the real IR mapping step.
+        _layout_pass = getattr(ir_mapping, '_is_layout_pass', False)
+        chip_supported = is_chip_supported_activation(self.perceptron) or (
+            _layout_pass and is_chip_targeted_activation(self.perceptron)
+        )
 
         # Resolve activation_type from the perceptron (shared with PerceptronMapper)
         activation_type = resolve_activation_type(self.perceptron)
@@ -362,6 +371,8 @@ class Conv1DPerceptronMapper(Mapper):
         )
 
     def owned_perceptron_groups(self):
+        if not is_chip_targeted_activation(self.perceptron):
+            return []
         return [[self.perceptron]]
 
     def _forward_impl(self, x):

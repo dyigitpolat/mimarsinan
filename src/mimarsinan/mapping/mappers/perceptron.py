@@ -45,7 +45,14 @@ class PerceptronMapper(Mapper):
         layer_sources = self.source_mapper.map_to_ir(ir_mapping)
         layer_sources = layer_sources.transpose()
 
-        if not is_chip_supported_activation(self.perceptron):
+        # Route to ComputeOp for actual IR when activation is not chip-supported.
+        # Exception: during the layout-estimation pass, chip-targeted perceptrons
+        # (e.g. GELU) are mapped as future NeuralCores — they will be adapted to
+        # ReLU before the real IR mapping step.
+        _layout_pass = getattr(ir_mapping, '_is_layout_pass', False)
+        if not is_chip_supported_activation(self.perceptron) and (
+            not _layout_pass or not is_chip_targeted_activation(self.perceptron)
+        ):
             # Activation not supported on crossbar (Identity, GELU, etc.)
             # → host-side linear ComputeOp (preserves negatives, no ReLU).
             w_np = layer_weights.detach().cpu().numpy()

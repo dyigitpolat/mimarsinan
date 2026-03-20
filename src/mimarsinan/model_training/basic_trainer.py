@@ -183,7 +183,7 @@ class BasicTrainer:
         if warmup_epochs > 0:
             scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=warmup_epochs, after_scheduler=scheduler)
 
-        validation_accuracy = 0
+        validation_accuracy = 0.0
         for _ in range(max_epochs + warmup_epochs):
             training_accuracy = self._train_one_epoch(optimizer, scheduler, scaler)
             self._report("Training accuracy", training_accuracy)
@@ -192,6 +192,10 @@ class BasicTrainer:
             if validation_accuracy >= target_accuracy:
                 self._train_one_epoch(optimizer, scheduler, scaler)
                 self._train_one_epoch(optimizer, scheduler, scaler)
+                # Re-measure after the extra epochs so the returned metric
+                # reflects the actual final model weights, not the pre-extra-epoch
+                # snapshot that triggered early stopping.
+                validation_accuracy = self.validate()
                 break
 
         self.test()

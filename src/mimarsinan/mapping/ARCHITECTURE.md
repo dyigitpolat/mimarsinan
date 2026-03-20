@@ -35,11 +35,26 @@ Perceptron packaging follows the pattern **MM+ → BN? → ACT**. Two predicates
 
 - `is_chip_targeted_activation` — True for all except Identity; controls
   `owned_perceptron_groups()` (pipeline processing, scale propagation).
-- `is_chip_supported_activation` — True only for ReLU-like; controls IR mapping
-  (NeuralCore vs host-side ComputeOp).
+- `is_chip_supported_activation` — True only for ReLU-like; controls actual IR
+  mapping (NeuralCore vs host-side ComputeOp).
 
 There is no separate host-side activation list; host-side is derived as
 "not chip-targeted" (Identity only).
+
+**Mapper eligibility contract**: Every concrete mapper type
+(`PerceptronMapper`, `Conv2DPerceptronMapper`, `Conv1DPerceptronMapper`) implements
+`owned_perceptron_groups()` using `is_chip_targeted_activation()`. This means
+`ModelRepresentation.get_perceptrons()` always returns only chip-targeted
+perceptrons. Downstream pipeline steps and tuners can rely on this contract and
+do not need to special-case `Identity` activation.
+
+**Layout-pass contract**: `LayoutIRMapping` sets `_is_layout_pass = True`.
+Mappers check this flag in `_map_to_ir` to route chip-targeted perceptrons
+(e.g. GELU) to `map_fc` (NeuralCore estimate) rather than `add_linear_compute_op`.
+This gives correct hardware sizing because adaptable activations (GELU → ReLU)
+will be chip-supported by the time the actual IR mapping runs. The actual
+`IRMapping` does not set `_is_layout_pass`, so GELU still becomes a ComputeOp
+there.
 
 ### Subdirectory
 

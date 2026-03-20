@@ -1,0 +1,170 @@
+"""Unit tests for ClampAdaptationStep.
+
+ClampAdaptationStep always uses ClampTuner — the old "fast path" (no-training
+when all activations were already ReLU-compatible) has been removed because it
+caused a ~28% accuracy drop in TTFS mode: applying hard clamping without
+recovery training degrades a model that was never trained with clamped
+activations.
+
+Key contracts verified here:
+  - ClampTuner is always created (not None after process()).
+  - validate() returns a fresh metric measured after clamping (not the old
+    pipeline target).
+  - clamp_rate is set to 1.0 after tuning completes.
+  - cleanup() does not raise even when called multiple times.
+"""
+
+import pytest
+import torch
+import torch.nn as nn
+
+from conftest import (
+    MockPipeline,
+    make_tiny_supermodel,
+    default_config,
+)
+
+from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.pipelining.pipeline_steps.clamp_adaptation_step import ClampAdaptationStep
+from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _seed_clamp_step(mock_pipeline, *, target_metric=0.5):
+    """Seed a MockPipeline so ClampAdaptationStep can run.  Returns (model, am)."""
+    model = make_tiny_supermodel()
+    am = AdaptationManager()
+    scales = [1.0] * len(model.get_perceptrons())
+
+    mock_pipeline.config["activation_quantization"] = True
+    mock_pipeline.config["tuner_epochs"] = 1
+    mock_pipeline._target_metric = target_metric
+
+    mock_pipeline.seed("model", model, step_name="Activation Adaptation")
+    mock_pipeline.seed("adaptation_manager", am, step_name="Activation Adaptation")
+    mock_pipeline.seed("activation_scales", scales, step_name="Activation Analysis")
+
+    return model, am
+
+
+def _run_clamp_step(mock_pipeline):
+    step = ClampAdaptationStep(mock_pipeline)
+    step.name = "Clamp Adaptation"
+    mock_pipeline.prepare_step(step)
+    step.run()
+    return step
+
+
+# ---------------------------------------------------------------------------
+# ClampTuner is always created
+# ---------------------------------------------------------------------------
+
+class TestClampAdaptationAlwaysUsesTuner:
+    """ClampAdaptationStep must always create a ClampTuner regardless of the
+    current activation types on the model."""
+
+    def test_tuner_created_for_relu_compatible_model(self, mock_pipeline):
+        """Even when all activations are ReLU-compatible (common after
+        ActivationAdaptationStep), ClampTuner must be created."""
+        _seed_clamp_step(mock_pipeline)
+        step = _run_clamp_step(mock_pipeline)
+
+        assert step.tuner is not None, (
+            "ClampAdaptationStep must always create a ClampTuner. "
+            "The no-training fast-path has been removed."
+        )
+        assert isinstance(step.tuner, ClampTuner)
+
+    def test_tuner_created_for_non_relu_model(self, mock_pipeline):
+        """When the model has non-ReLU activations, ClampTuner must also be used."""
+        from mimarsinan.models.perceptron_mixer.perceptron import make_activation
+        from mimarsinan.models.layers import TransformedActivation
+
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+        scales = [1.0] * len(model.get_perceptrons())
+
+        p = model.get_perceptrons()[0]
+        p.base_activation = make_activation("LeakyReLU")
+        p.base_activation_name = "LeakyReLU"
+        p.set_activation(TransformedActivation(p.base_activation, []))
+
+        mock_pipeline.config["activation_quantization"] = True
+        mock_pipeline.config["tuner_epochs"] = 1
+        mock_pipeline.seed("model", model, step_name="Activation Adaptation")
+        mock_pipeline.seed("adaptation_manager", am, step_name="Activation Adaptation")
+        mock_pipeline.seed("activation_scales", scales, step_name="Activation Analysis")
+
+        step = _run_clamp_step(mock_pipeline)
+
+        assert step.tuner is not None
+        assert isinstance(step.tuner, ClampTuner)
+
+
+# ---------------------------------------------------------------------------
+# validate() contract
+# ---------------------------------------------------------------------------
+
+class TestClampAdaptationValidate:
+    """validate() must return a fresh metric, not the old pipeline target."""
+
+    def test_validate_returns_fresh_metric_not_old_target(self, mock_pipeline):
+        """validate() must NOT return the pre-clamp pipeline target.
+
+        Set an impossibly high target (0.99) and verify the step reports
+        something honest for a random untrained model (~0.25 for 4 classes).
+        """
+        _seed_clamp_step(mock_pipeline, target_metric=0.99)
+        step = _run_clamp_step(mock_pipeline)
+
+        result = step.validate()
+        assert result != pytest.approx(0.99), (
+            "validate() returned the stale pipeline target (0.99) without "
+            "measuring the clamped model."
+        )
+        assert isinstance(result, float)
+        assert 0.0 <= result <= 1.0
+
+    def test_validate_returns_float_in_range(self, mock_pipeline):
+        _seed_clamp_step(mock_pipeline)
+        step = _run_clamp_step(mock_pipeline)
+
+        result = step.validate()
+        assert isinstance(result, float)
+        assert 0.0 <= result <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Clamp rate and scale contract
+# ---------------------------------------------------------------------------
+
+class TestClampAdaptationClampRate:
+    """After tuning completes, clamp_rate must be 1.0."""
+
+    def test_clamp_rate_is_one_after_tuning(self, mock_pipeline):
+        model, am = _seed_clamp_step(mock_pipeline)
+        _run_clamp_step(mock_pipeline)
+        assert am.clamp_rate == pytest.approx(1.0), (
+            "ClampAdaptationStep must set clamp_rate=1.0 after tuning."
+        )
+
+
+# ---------------------------------------------------------------------------
+# cleanup() safety
+# ---------------------------------------------------------------------------
+
+class TestClampAdaptationCleanup:
+    def test_cleanup_does_not_raise(self, mock_pipeline):
+        _seed_clamp_step(mock_pipeline)
+        step = _run_clamp_step(mock_pipeline)
+        step.cleanup()  # must not raise
+
+    def test_cleanup_before_run_does_not_raise(self, mock_pipeline):
+        _seed_clamp_step(mock_pipeline)
+        step = ClampAdaptationStep(mock_pipeline)
+        step.name = "Clamp Adaptation"
+        mock_pipeline.prepare_step(step)
+        step.cleanup()  # must not raise even if process() never ran
