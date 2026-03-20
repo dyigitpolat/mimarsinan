@@ -3,6 +3,17 @@
 The chip only supports ReLU activation. Layers packaged as Perceptrons
 (matmul + bn + chip_activation) map to NeuralCores. Layers with Identity
 activation cannot run on the crossbar and become host-side ComputeOps.
+
+Mapper eligibility contract
+-----------------------------
+All mapper types (PerceptronMapper, Conv2DPerceptronMapper, Conv1DPerceptronMapper)
+must expose the same chip-targeted-only semantics through
+``owned_perceptron_groups()``:
+  - Identity activation → returns [] (excluded from pipeline processing)
+  - Any chip-supported activation (ReLU, LeakyReLU, GELU, …) → returns the perceptron
+
+This is the single source of truth consumed by ``ModelRepresentation.get_perceptrons()``
+and downstream pipeline steps such as ActivationAdaptationStep.
 """
 
 import pytest
@@ -14,7 +25,7 @@ from mimarsinan.mapping.mappers.structural import (
     InputMapper, EinopsRearrangeMapper,
 )
 from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
-from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
+from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper, Conv1DPerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp
@@ -175,3 +186,190 @@ class TestMixedModelForwardEquivalence:
         assert max_diff < 1e-4, (
             f"IR forward should match model forward, max diff: {max_diff:.6f}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Mapper eligibility contract tests
+# ---------------------------------------------------------------------------
+
+class TestPerceptronMapperEligibilityContract:
+    """PerceptronMapper.owned_perceptron_groups() must apply is_chip_targeted_activation.
+
+    Identity perceptrons are host-side and must be excluded from the
+    pipeline-visible perceptron list.  All other activations are chip-targeted.
+    """
+
+    def test_identity_fc_excluded_from_owned_groups(self):
+        inp = InputMapper((1, 4, 4))
+        flat = EinopsRearrangeMapper(inp, "... c h w -> ... (c h w)")
+        p = Perceptron(4, 16, normalization=nn.Identity(),
+                       base_activation_name="Identity")
+        mapper = PerceptronMapper(flat, p)
+        assert mapper.owned_perceptron_groups() == [], (
+            "PerceptronMapper with Identity activation must return [] "
+            "from owned_perceptron_groups()."
+        )
+
+    @pytest.mark.parametrize("act_name", ["ReLU", "LeakyReLU", "GELU"])
+    def test_chip_targeted_fc_included_in_owned_groups(self, act_name):
+        inp = InputMapper((1, 4, 4))
+        flat = EinopsRearrangeMapper(inp, "... c h w -> ... (c h w)")
+        p = Perceptron(4, 16, normalization=nn.Identity(),
+                       base_activation_name=act_name)
+        mapper = PerceptronMapper(flat, p)
+        groups = mapper.owned_perceptron_groups()
+        assert len(groups) == 1 and p in groups[0], (
+            f"PerceptronMapper with {act_name} activation must expose the perceptron."
+        )
+
+
+class TestConv2DMapperEligibilityContract:
+    """Conv2DPerceptronMapper.owned_perceptron_groups() must mirror PerceptronMapper.
+
+    This is the contract that was previously broken (returned unconditionally).
+    """
+
+    def test_identity_conv2d_excluded_from_owned_groups(self):
+        inp = InputMapper((1, 4, 4))
+        conv = Conv2DPerceptronMapper(
+            inp, in_channels=1, out_channels=2,
+            kernel_size=2, stride=2, padding=0,
+            bias=False, use_batchnorm=False,
+            base_activation_name="Identity",
+        )
+        assert conv.owned_perceptron_groups() == [], (
+            "Conv2DPerceptronMapper with Identity activation must return [] "
+            "from owned_perceptron_groups()."
+        )
+
+    @pytest.mark.parametrize("act_name", ["ReLU", "LeakyReLU"])
+    def test_chip_targeted_conv2d_included_in_owned_groups(self, act_name):
+        inp = InputMapper((1, 4, 4))
+        conv = Conv2DPerceptronMapper(
+            inp, in_channels=1, out_channels=2,
+            kernel_size=2, stride=2, padding=0,
+            bias=False, use_batchnorm=False,
+            base_activation_name=act_name,
+        )
+        groups = conv.owned_perceptron_groups()
+        assert len(groups) == 1 and conv.perceptron in groups[0], (
+            f"Conv2DPerceptronMapper with {act_name} activation must expose the perceptron."
+        )
+
+
+class TestConv1DMapperEligibilityContract:
+    """Conv1DPerceptronMapper.owned_perceptron_groups() must mirror PerceptronMapper."""
+
+    def test_identity_conv1d_excluded_from_owned_groups(self):
+        inp = InputMapper((1, 8))
+        conv = Conv1DPerceptronMapper(
+            inp, in_channels=1, out_channels=2,
+            kernel_size=2, stride=2, padding=0,
+            bias=False, use_batchnorm=False,
+            base_activation_name="Identity",
+        )
+        assert conv.owned_perceptron_groups() == [], (
+            "Conv1DPerceptronMapper with Identity activation must return [] "
+            "from owned_perceptron_groups()."
+        )
+
+    @pytest.mark.parametrize("act_name", ["ReLU", "LeakyReLU"])
+    def test_chip_targeted_conv1d_included_in_owned_groups(self, act_name):
+        inp = InputMapper((1, 8))
+        conv = Conv1DPerceptronMapper(
+            inp, in_channels=1, out_channels=2,
+            kernel_size=2, stride=2, padding=0,
+            bias=False, use_batchnorm=False,
+            base_activation_name=act_name,
+        )
+        groups = conv.owned_perceptron_groups()
+        assert len(groups) == 1 and conv.perceptron in groups[0], (
+            f"Conv1DPerceptronMapper with {act_name} activation must expose the perceptron."
+        )
+
+
+class TestGetPerceptronsExcludesIdentity:
+    """ModelRepresentation.get_perceptrons() must return only chip-targeted perceptrons.
+
+    This is the final contract consumed by pipeline steps: Identity perceptrons
+    are invisible to ActivationAdaptationStep and all other tuners.
+    """
+
+    def test_identity_fc_not_in_get_perceptrons(self):
+        """FC Identity perceptron must not appear in get_perceptrons()."""
+        inp = InputMapper((1, 4, 4))
+        flat = EinopsRearrangeMapper(inp, "... c h w -> ... (c h w)")
+        p_id = Perceptron(8, 16, normalization=nn.Identity(),
+                          base_activation_name="Identity")
+        p_relu = Perceptron(4, 8, normalization=nn.Identity(),
+                            base_activation_name="ReLU")
+        m1 = PerceptronMapper(flat, p_id)
+        m2 = PerceptronMapper(m1, p_relu)
+        repr_ = ModelRepresentation(m2)
+
+        perceptrons = repr_.get_perceptrons()
+        assert p_id not in perceptrons, "Identity FC must be excluded from get_perceptrons()"
+        assert p_relu in perceptrons, "ReLU FC must be included in get_perceptrons()"
+
+    def test_identity_conv2d_not_in_get_perceptrons(self):
+        """Conv2D Identity perceptron must not appear in get_perceptrons()."""
+        inp = InputMapper((1, 4, 4))
+        conv_id = Conv2DPerceptronMapper(
+            inp, in_channels=1, out_channels=2,
+            kernel_size=2, stride=2, padding=0,
+            bias=False, use_batchnorm=False,
+            base_activation_name="Identity",
+        )
+        flat = EinopsRearrangeMapper(conv_id, "... c h w -> ... (c h w)")
+        p_relu = Perceptron(4, 8, normalization=nn.Identity(),
+                            base_activation_name="ReLU")
+        fc = PerceptronMapper(flat, p_relu)
+        repr_ = ModelRepresentation(fc)
+
+        perceptrons = repr_.get_perceptrons()
+        assert conv_id.perceptron not in perceptrons, (
+            "Identity Conv2D perceptron must be excluded from get_perceptrons()"
+        )
+        assert p_relu in perceptrons, "ReLU FC must still be in get_perceptrons()"
+
+    def test_torch_mapped_mixed_model_excludes_identity_conv(self):
+        """Torch-mapped model with Conv(Identity)+FC(LeakyReLU): only FC is in get_perceptrons().
+
+        This mirrors the MLP-Mixer deployment scenario where the patch-embedding
+        Conv2d has no activation (→ Identity) but the FC mixing layers do.
+        """
+        import torch.nn as nn
+        from mimarsinan.torch_mapping.converter import convert_torch_model
+
+        class ConvIdentityFCLeakyReLU(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = nn.Conv2d(1, 4, kernel_size=2, stride=2, padding=0)
+                self.bn = nn.BatchNorm2d(4)
+                self.fc = nn.Linear(4 * 4 * 4, 8)
+                self.act = nn.LeakyReLU()
+
+            def forward(self, x):
+                x = self.conv(x)
+                x = self.bn(x)
+                x = x.flatten(1)
+                x = self.act(self.fc(x))
+                return x
+
+        torch.manual_seed(0)
+        model = ConvIdentityFCLeakyReLU()
+        model.eval()
+        with torch.no_grad():
+            model(torch.randn(2, 1, 8, 8))
+
+        supermodel = convert_torch_model(model, input_shape=(1, 8, 8), num_classes=8)
+        perceptrons = supermodel.get_perceptrons()
+
+        # The Conv2d has no activation → Identity → must NOT be in get_perceptrons()
+        act_names = [type(p.base_activation).__name__ for p in perceptrons]
+        assert "Identity" not in act_names, (
+            f"Identity conv perceptron must not be in get_perceptrons(). "
+            f"Found activations: {act_names}"
+        )
+        # The FC with LeakyReLU must be included
+        assert len(perceptrons) >= 1, "At least one chip-targeted perceptron expected"

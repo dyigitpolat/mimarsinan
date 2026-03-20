@@ -37,20 +37,16 @@ class TestTrainerZeroEpochs:
         trainer = _make_trainer()
         trainer.train_n_epochs(lr=0.01, epochs=0, warmup_epochs=0)
 
-    @pytest.mark.xfail(
-        reason="BUG: BasicTrainer.train_until_target_accuracy returns int 0 "
-               "instead of float 0.0 when max_epochs=0. The variable "
-               "validation_accuracy is initialized to int literal 0, and the "
-               "loop body never executes to replace it with a float.",
-        strict=True,
-    )
     def test_train_until_target_zero_epochs(self):
-        """max_epochs=0 with target_accuracy=0.0."""
+        """max_epochs=0 must return a float (was incorrectly returning int 0)."""
         trainer = _make_trainer()
         acc = trainer.train_until_target_accuracy(
             lr=0.01, max_epochs=0, target_accuracy=0.0, warmup_epochs=0
         )
-        assert isinstance(acc, float)
+        assert isinstance(acc, float), (
+            f"Expected float, got {type(acc).__name__}({acc!r}). "
+            "validation_accuracy must be initialised to 0.0, not int 0."
+        )
 
 
 class TestTrainerUnreachableTarget:
@@ -99,6 +95,46 @@ class TestTrainerSerialization:
         acc = restored.validate()
         assert isinstance(acc, float)
         assert 0.0 <= acc <= 1.0
+
+
+class TestTrainUntilTargetAccuracyReturn:
+    """train_until_target_accuracy return-value contract.
+
+    When early stopping triggers the method runs 2 extra training epochs before
+    breaking.  The returned metric must reflect the model weights *after* those
+    extra epochs, not the metric sampled before them.
+    """
+
+    def test_return_type_is_float(self):
+        """Return value must always be a float, including edge cases."""
+        trainer = _make_trainer()
+        acc = trainer.train_until_target_accuracy(
+            lr=0.01, max_epochs=2, target_accuracy=0.0, warmup_epochs=0
+        )
+        assert isinstance(acc, float)
+
+    def test_return_reflects_final_weights(self):
+        """The value returned by train_until_target_accuracy must agree with a
+        fresh validate() call on the same model immediately afterward.
+
+        Before the fix, the method returned the validation metric measured
+        *before* 2 extra training epochs.  After those epochs the weights had
+        changed, so the returned metric was stale.
+        """
+        trainer = _make_trainer()
+        returned_acc = trainer.train_until_target_accuracy(
+            lr=0.01, max_epochs=4, target_accuracy=0.0, warmup_epochs=0
+        )
+        # Validate immediately — same data (TinyDataProvider: full dataset in
+        # one batch), so the call is deterministic.
+        fresh_acc = trainer.validate()
+
+        assert abs(returned_acc - fresh_acc) < 1e-6, (
+            f"Returned accuracy ({returned_acc:.6f}) must equal the accuracy of "
+            f"the actual final weights ({fresh_acc:.6f}).  A difference indicates "
+            "the method returned a stale metric captured before the extra training "
+            "epochs that ran after early-stop was triggered."
+        )
 
 
 class TestTrainerBatchSizes:

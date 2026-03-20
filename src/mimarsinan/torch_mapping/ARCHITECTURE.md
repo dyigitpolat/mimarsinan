@@ -54,6 +54,13 @@ determined by [`is_chip_targeted_activation()`](../mapping/mappers/base.py)
 NeuralCore vs host-side ComputeOp. Both derive from
 `CHIP_SUPPORTED_ACTIVATIONS` — no separate host-side activation list.
 
+The mapper boundary is the **single source of truth** for activation eligibility:
+`owned_perceptron_groups()` on every mapper type (FC, Conv2D, Conv1D) returns `[]`
+for Identity perceptrons and the perceptron list otherwise.  Downstream pipeline
+steps such as `ActivationAdaptationStep` consume `model.get_perceptrons()` and
+are therefore guaranteed to see only chip-targeted perceptrons — no special-casing
+of `Identity` is needed outside the mapper layer.
+
 ## Exported API (\_\_init\_\_.py)
 
 `convert_torch_model`, `check_representability`, `RepresentabilityReport`.

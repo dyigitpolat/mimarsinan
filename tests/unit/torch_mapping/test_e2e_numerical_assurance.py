@@ -13,6 +13,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
 
@@ -201,7 +202,11 @@ class TestTorchMLPMixerE2E:
         assert diff < 1e-3, f"TorchMLPMixer max diff {diff:.6f}"
 
     def test_conv_perceptron_has_correct_activation(self):
-        """Conv2d patch embedding should NOT have spurious ReLU."""
+        """Conv2d patch embedding should NOT have spurious ReLU.
+
+        Identity conv perceptrons are host-side and excluded from
+        get_perceptrons(); access the Conv2DPerceptronMapper directly.
+        """
         from mimarsinan.models.torch_mlp_mixer import TorchMLPMixer
 
         model = TorchMLPMixer(
@@ -212,10 +217,14 @@ class TestTorchMLPMixerE2E:
         model.eval()
 
         supermodel = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
-        perceptrons = supermodel.get_perceptrons()
+        repr_ = supermodel.get_mapper_repr()
+        repr_._ensure_exec_graph()
+        conv_mappers = [n for n in repr_._exec_order if isinstance(n, Conv2DPerceptronMapper)]
+        assert conv_mappers, "No Conv2DPerceptronMapper found in converted TorchMLPMixer"
 
-        # First perceptron is Conv2d patch embedding — no activation in original model
-        assert perceptrons[0].base_activation_name == "Identity", (
-            f"Patch embedding has activation '{perceptrons[0].base_activation_name}', "
+        # Patch embedding Conv2d has no activation in the original model
+        act_name = conv_mappers[0].perceptron.base_activation_name
+        assert act_name == "Identity", (
+            f"Patch embedding has activation '{act_name}', "
             "expected 'Identity' (no activation after Conv2d+BN in TorchMLPMixer)."
         )

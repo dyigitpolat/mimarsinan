@@ -7,7 +7,7 @@ training, and shared training utilities.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `basic_trainer.py` | `BasicTrainer` | Standard PyTorch training loop with cosine annealing, mixed precision, early stopping |
+| `basic_trainer.py` | `BasicTrainer` | Standard PyTorch training loop with cosine annealing, mixed precision, early stopping. `train_until_target_accuracy` returns a metric measured on the **final** model weights (after any extra epochs triggered by early stopping). `validate()` evaluates one minibatch (fast probe); `test()` evaluates the full test split. |
 | `training_utilities.py` | `AccuracyTracker`, `BasicClassificationLoss`, `CustomClassificationLoss` | Loss functions and accuracy tracking |
 | `weight_transform_trainer.py` | `WeightTransformTrainer` | Trainer that applies weight transforms each epoch (for quantization-aware training) |
 | `perceptron_transform_trainer.py` | `PerceptronTransformTrainer` | Trainer that applies per-perceptron transforms each epoch |

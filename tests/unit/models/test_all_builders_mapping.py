@@ -407,6 +407,71 @@ class TestTorchViTBuilderMapping:
 # PARAMETRIC: Lightweight builders sanity check
 # ══════════════════════════════════════════════════════════
 
+class TestGELUActivationLayoutPass:
+    """GELU is chip-targeted (will be adapted to ReLU by the pipeline) but not yet
+    chip-supported at build time.  The layout pass must estimate GELU perceptrons as
+    future NeuralCores; the actual IR pass must still route them to ComputeOps."""
+
+    def test_simple_mlp_gelu_layout_produces_neural_cores(self):
+        """verify_soft_core_mapping on a GELU simple_mlp must yield >0 neural cores."""
+        result, _ = _check_builder(
+            "simple_mlp",
+            input_shape=(1, 8, 8),
+            num_classes=4,
+            model_config={"mlp_width_1": 16, "mlp_width_2": 8, "base_activation": "GELU"},
+        )
+        assert result.num_neural_cores > 0, (
+            "GELU simple_mlp layout pass produced no neural cores; "
+            "layout should estimate GELU as a future NeuralCore."
+        )
+
+    def test_mlp_mixer_gelu_layout_produces_neural_cores(self):
+        result, _ = _check_builder(
+            "mlp_mixer",
+            input_shape=(1, 8, 8),
+            num_classes=4,
+            model_config={
+                "patch_n_1": 2, "patch_m_1": 2, "patch_c_1": 8,
+                "fc_w_1": 16, "fc_w_2": 16, "base_activation": "GELU",
+            },
+            max_axons=2048,
+            max_neurons=2048,
+        )
+        assert result.num_neural_cores > 0, (
+            "GELU mlp_mixer layout pass produced no neural cores."
+        )
+
+    def test_gelu_actual_ir_still_uses_compute_op(self):
+        """GELU perceptrons must still map to ComputeOps in the real IR (not layout)."""
+        from mimarsinan.models.builders import BUILDERS_REGISTRY
+        from mimarsinan.mapping.ir_mapping import IRMapping
+
+        builder = BUILDERS_REGISTRY["simple_mlp"](
+            device=DEVICE,
+            input_shape=(1, 8, 8),
+            num_classes=4,
+            max_axons=512,
+            max_neurons=512,
+            pipeline_config=PIPELINE_CONFIG,
+        )
+        raw = builder.build({"mlp_width_1": 16, "mlp_width_2": 8, "base_activation": "GELU"})
+        raw.eval()
+        with torch.no_grad():
+            try:
+                raw(torch.randn(2, 1, 8, 8))
+            except Exception:
+                pass
+
+        model_repr = raw.get_mapper_repr()
+        ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=512, max_neurons=512)
+        ir_graph = ir.map(model_repr)
+        # GELU is not chip-supported so all layers become ComputeOps in actual IR
+        assert len(ir_graph.get_neural_cores()) == 0, (
+            "GELU perceptrons should remain ComputeOps in the real IR mapping pass."
+        )
+        assert len(ir_graph.get_compute_ops()) > 0
+
+
 @pytest.mark.parametrize("model_type,input_shape,num_classes,config,max_ax,max_neu", [
     (
         "simple_mlp", (1, 8, 8), 4,

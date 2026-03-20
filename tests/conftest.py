@@ -36,6 +36,7 @@ from mimarsinan.mapping.mapping_utils import (
 )
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
+from mimarsinan.model_training.training_utilities import BasicClassificationLoss
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +72,7 @@ class MockPipeline:
         self.config = config or default_config()
         self.working_directory = working_directory or tempfile.mkdtemp()
         self.data_provider_factory = MockDataProviderFactory()
-        self.loss = nn.CrossEntropyLoss()
+        self.loss = BasicClassificationLoss()
         self.reporter = _NoopReporter()
         self._target_metric = 0.0
 
