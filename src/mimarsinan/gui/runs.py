@@ -84,11 +84,14 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     if not steps_data:
         return None
     config = get_run_config(run_id) or {}
+    # config.json stores the full outer config; pipeline specs expect the flat
+    # deployment_parameters dict (same structure as pipeline.config).
+    flat_config = config.get("deployment_parameters", config)
     try:
         from mimarsinan.pipelining.pipelines.deployment_pipeline import (
             get_pipeline_semantic_group_by_step_name,
         )
-        groups = get_pipeline_semantic_group_by_step_name(config)
+        groups = get_pipeline_semantic_group_by_step_name(flat_config)
     except Exception:
         groups = {}
     steps = []
