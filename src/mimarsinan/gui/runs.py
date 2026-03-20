@@ -84,6 +84,13 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     if not steps_data:
         return None
     config = get_run_config(run_id) or {}
+    try:
+        from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+            get_pipeline_semantic_group_by_step_name,
+        )
+        groups = get_pipeline_semantic_group_by_step_name(config)
+    except Exception:
+        groups = {}
     steps = []
     for name, sd in steps_data.items():
         start_t = sd.get("start_time")
@@ -95,6 +102,7 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
             "end_time": end_t,
             "duration": (end_t - start_t) if start_t and end_t else None,
             "target_metric": sd.get("target_metric"),
+            "semantic_group": groups.get(name),
         })
     return {
         "steps": steps,

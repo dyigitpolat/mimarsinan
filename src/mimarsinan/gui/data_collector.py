@@ -271,6 +271,15 @@ class DataCollector:
 
     def get_pipeline_overview(self) -> dict:
         with self._lock:
+            config = self._pipeline_config or {}
+        try:
+            from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+                get_pipeline_semantic_group_by_step_name,
+            )
+            groups = get_pipeline_semantic_group_by_step_name(config)
+        except Exception:
+            groups = {}
+        with self._lock:
             steps = []
             for name in self._step_names:
                 rec = self._steps.get(name, StepRecord(name=name))
@@ -281,6 +290,7 @@ class DataCollector:
                     "end_time": rec.end_time,
                     "duration": (rec.end_time - rec.start_time) if rec.start_time and rec.end_time else None,
                     "target_metric": rec.target_metric,
+                    "semantic_group": groups.get(rec.name),
                 })
             return {
                 "steps": steps,

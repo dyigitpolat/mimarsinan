@@ -198,11 +198,13 @@ body::before {
 /* ─── Pipeline steps bar (sticky at top like header) ───────── */
 .pipeline-steps-bar {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 12px 32px 14px;
+  flex-direction: column;
+  /* top/bottom trimmed: the psb-list's own padding-bottom carries the
+     space needed for diagonal labels */
+  padding: 6px 24px 0;
   border-bottom: 1px solid var(--border);
   transition: var(--transition);
+  overflow: visible;   /* let diagonal labels bleed below the border */
 }
 
 .pipeline-steps-bar.pipeline-steps-loading {
@@ -220,39 +222,19 @@ body::before {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-secondary);
-  flex-shrink: 0;
-  padding-top: 6px;
+  padding-bottom: 4px;
 }
 
 .pipeline-steps-scroll {
-  flex: 1;
-  min-width: 0;
-  max-height: 140px;
-  overflow-x: auto;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
+  width: 100%;
+  /* overflow: visible so diagonal labels can extend below without clipping.
+     Bars use flex: 1 1 0 and always fill the width — no horizontal scroll needed. */
+  overflow: visible;
 }
 
-.pipeline-steps-scroll::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.pipeline-steps-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.pipeline-steps-scroll::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
 
 .pipeline-steps-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 2px 0;
+  /* .psb-list inside handles flex layout; this element is the fade wrapper */
   transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -280,6 +262,37 @@ body::before {
   max-width: 180px;
   min-height: 40px;
   animation: pipelineStepIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.pipeline-step-chip--selectable {
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.pipeline-step-chip--selectable:hover {
+  background: rgba(16, 185, 129, 0.38);
+  border-color: rgba(16, 185, 129, 0.85);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+}
+
+.pipeline-step-chip--selected {
+  background: rgba(16, 185, 129, 0.55);
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+  color: #fff;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pipeline-step-chip--selected::before {
+  content: '▶ start';
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1;
 }
 
 .pipeline-step-arrow {

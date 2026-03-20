@@ -282,6 +282,16 @@ class ProcessManager:
             except (OSError, json.JSONDecodeError):
                 pass
 
+        try:
+            from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+                get_pipeline_semantic_group_by_step_name,
+            )
+            groups = get_pipeline_semantic_group_by_step_name(config or {})
+        except Exception:
+            groups = {}
+        for s in steps:
+            s["semantic_group"] = groups.get(s["name"])
+
         return {
             "steps": steps,
             "current_step": current_step,

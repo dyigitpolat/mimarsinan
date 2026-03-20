@@ -1,0 +1,363 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Pipeline Step Bar — cyberpunk neon-on-dark style.
+
+   Bars are thin horizontal LED strips spanning the full section width.
+   Each bar has a dark translucent fill tinted by its semantic group
+   colour plus a bright 2 px top edge — like an illuminated panel line.
+
+   Structure:
+     .psb-list[.psb-list--preview]
+       .psb-col[data-status="pending|running|completed|failed|stopped"]
+                [data-group="…"]
+                [.selected]
+         .psb-bar
+           (.psb-metric   live running metric)
+         .psb-label       diagonal, reads SW→NE
+   =================================================================== */
+
+/* ── Group glow token — bare R,G,B for rgba() ────────────────────
+   Palette deliberately drawn from the app's existing accent colours
+   so the bars feel native, not bolted-on.
+   ----------------------------------------------------------------- */
+.psb-col { --g: 107,114,128; }          /* fallback slate */
+
+/* ── violet family — configuration phase */
+[data-group="configuration"]           { --g: 168, 85,247; }   /* violet */
+[data-group="model_building"]          { --g: 139, 92,246; }   /* purple */
+
+/* ── sky family — learning/pretraining */
+[data-group="pretraining"]             { --g:  56,189,248; }   /* sky-400 */
+[data-group="torch_mapping"]           { --g:  14,165,233; }   /* sky-500 */
+
+/* ── rose — pruning (destructive/cutting) */
+[data-group="pruning"]                 { --g: 244, 63, 94; }   /* rose-500 */
+
+/* ── green family — activation/adaptation */
+[data-group="activation"]              { --g:  74,222,128; }   /* green-400 */
+[data-group="activation_quantization"] { --g:  52,211,153; }   /* emerald (= --success) */
+
+/* ── amber — quantization precision */
+[data-group="weight_quantization"]     { --g: 251,191, 36; }   /* amber (= --warning) */
+
+/* ── cyan family — normalization / IR mapping */
+[data-group="normalization"]           { --g:  34,211,238; }   /* cyan (= --accent-cyan) */
+[data-group="soft_mapping"]            { --g:  96,165,250; }   /* blue-400 */
+
+/* ── indigo family — hardware/verification */
+[data-group="core_verification"]       { --g: 129,140,248; }   /* indigo-400 */
+[data-group="coreflow_tuning"]         { --g:  99,102,241; }   /* indigo-500 */
+
+/* ── orange — physical hardware (hot silicon) */
+[data-group="hardware"]                { --g: 249,115, 22; }   /* orange-500 */
+
+/* ── bright cyan — simulation output */
+[data-group="simulation"]              { --g: 103,232,249; }   /* cyan-300 */
+
+
+/* ── Container ─────────────────────────────────────────────────────── */
+.psb-list {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  /* left: room for first bar's label sweeping left (~65 px);
+     bottom: vertical projection of longest label at -38°
+             ≈ 165 px × sin(38°) ≈ 102 px, plus a bit of breathing room */
+  padding: 5px 12px 108px 65px;
+  overflow: visible;        /* labels must never be clipped */
+  position: relative;
+}
+
+/* ── Column ─────────────────────────────────────────────────────────── */
+.psb-col {
+  flex: 1 1 0;              /* all bars share width equally */
+  min-width: 14px;
+  position: relative;
+  cursor: pointer;
+  z-index: 0;
+  transition: z-index 0s;
+}
+
+.psb-col:hover { z-index: 10; }
+
+/* ── Bar ── thin horizontal LED strip ────────────────────────────── */
+.psb-bar {
+  width: 100%;
+  height: 18px;
+  border-radius: 3px;
+  position: relative;
+
+  /* Neon glass: coloured tint on near-black, bright top rim */
+  background:
+    linear-gradient(to bottom,
+      rgba(255,255,255,0.11) 0%,
+      rgba(255,255,255,0.02) 45%,
+      transparent           100%),
+    linear-gradient(to bottom,
+      rgba(var(--g), 0.26)  0%,
+      rgba(var(--g), 0.08)  100%);
+
+  /* Subtle side borders + bright top edge */
+  border: 1px solid rgba(var(--g), 0.28);
+  border-top: 2px solid rgba(var(--g), 0.75);
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.07),
+    0 2px 5px rgba(0,0,0,0.40);
+
+  transition: border-top-color 0.2s ease, box-shadow 0.25s ease, filter 0.25s ease;
+}
+
+/* ── Label — diagonal, SW→NE ─────────────────────────────────────── */
+/* Anchor: label's right edge at bar's horizontal centre.
+   rotate(-38°) around that anchor: body sweeps down-left.
+   Reading direction: first char SW, last char NE (at bar).           */
+.psb-label {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 50%;
+  transform-origin: right top;
+  transform: rotate(-38deg);
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: #6b6e7a;
+  letter-spacing: 0.025em;
+  pointer-events: none;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+/* ── Metric overlay (live value inside a running bar) ──────────── */
+.psb-metric {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.92);
+  text-shadow: 0 0 5px rgba(0,0,0,0.9);
+  pointer-events: none;
+  z-index: 2;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   STATUS STATES
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── PENDING: almost off ─────────────────────────────────────────── */
+.psb-col[data-status="pending"] .psb-bar {
+  background:
+    linear-gradient(to bottom,
+      rgba(var(--g), 0.06) 0%,
+      transparent           100%);
+  border-color:     rgba(var(--g), 0.10);
+  border-top-color: rgba(var(--g), 0.16);
+  box-shadow: none;
+}
+
+/* ── RUNNING: neon-lit, pulsing glow ─────────────────────────────── */
+.psb-col[data-status="running"] .psb-bar {
+  background:
+    linear-gradient(to bottom,
+      rgba(255,255,255,0.17) 0%,
+      rgba(255,255,255,0.04) 50%,
+      transparent            100%),
+    linear-gradient(to bottom,
+      rgba(var(--g), 0.56)   0%,
+      rgba(var(--g), 0.22)  100%);
+  border-color:     rgba(var(--g), 0.88);
+  border-top-color: rgba(var(--g), 1.00);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.18),
+    /* tight edge */ 0 0 4px 1px rgba(var(--g), 0.80),
+    /* close bloom*/ 0 0 11px 3px rgba(var(--g), 0.55),
+    /* mid halo   */ 0 0 26px 7px rgba(var(--g), 0.28),
+    /* wide corona */ 0 0 52px 14px rgba(var(--g), 0.12);
+  animation: psb-pulse 2.2s ease-in-out infinite;
+}
+
+.psb-col[data-status="running"] .psb-label {
+  color: #e4e6eb;
+  font-weight: 600;
+  text-shadow: 0 0 7px rgba(var(--g), 0.65);
+}
+
+/* ── COMPLETED: still shining — full colour, moderate halo, no pulse ── */
+.psb-col[data-status="completed"] .psb-bar {
+  background:
+    linear-gradient(to bottom,
+      rgba(255,255,255,0.13) 0%,
+      rgba(255,255,255,0.03) 45%,
+      transparent           100%),
+    linear-gradient(to bottom,
+      rgba(var(--g), 0.38)  0%,
+      rgba(var(--g), 0.12)  100%);
+  border-color:     rgba(var(--g), 0.50);
+  border-top-color: rgba(var(--g), 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    0 0 5px 1px  rgba(var(--g), 0.32),
+    0 0 14px 3px rgba(var(--g), 0.14),
+    0 2px 5px rgba(0,0,0,0.38);
+}
+
+.psb-col[data-status="completed"] .psb-label {
+  color: #9ea1ac;
+}
+
+/* ── FAILED ─────────────────────────────────────────────────────── */
+.psb-col[data-status="failed"] .psb-bar {
+  background:
+    linear-gradient(to bottom, rgba(248,113,113,0.22) 0%, rgba(248,113,113,0.07) 100%);
+  border-color:     rgba(248,113,113,0.32);
+  border-top-color: rgba(248,113,113,0.80);
+  box-shadow: 0 0 6px 1px rgba(248,113,113,0.18);
+}
+
+/* ── STOPPED ─────────────────────────────────────────────────────── */
+.psb-col[data-status="stopped"] .psb-bar {
+  background:
+    linear-gradient(to bottom, rgba(251,191,36,0.20) 0%, rgba(251,191,36,0.06) 100%);
+  border-color:     rgba(251,191,36,0.30);
+  border-top-color: rgba(251,191,36,0.78);
+  box-shadow: 0 0 5px 1px rgba(251,191,36,0.16);
+}
+
+/* ── SELECTED (monitor: user clicked step) ───────────────────────── */
+.psb-col.selected .psb-bar {
+  outline: 2px solid rgba(var(--g), 0.85);
+  outline-offset: 2px;
+  filter: none !important;
+}
+
+.psb-col.selected .psb-label {
+  color: rgba(var(--g), 0.95);
+  font-weight: 600;
+}
+
+/* ── Hover ───────────────────────────────────────────────────────── */
+.psb-col:hover .psb-bar {
+  border-top-color: rgba(var(--g), 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    0 0 8px 2px  rgba(var(--g), 0.28),
+    0 0 18px 5px rgba(var(--g), 0.14),
+    0 2px 6px rgba(0,0,0,0.36);
+}
+
+/* Keep running glow dominant on hover */
+.psb-col[data-status="running"]:hover .psb-bar {
+  animation: psb-pulse 2.2s ease-in-out infinite;
+}
+
+/* ── Pulse animation ─────────────────────────────────────────────── */
+@keyframes psb-pulse {
+  0%,100% { filter: brightness(1.00) saturate(1.00); }
+  50%      { filter: brightness(1.22) saturate(1.16); }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   WIZARD PREVIEW MODE  (.psb-list--preview)
+
+   All bars are "ON" — full colour, no dimming. They show the pipeline
+   at a glance without implying any execution state.
+   The selected "start step" is highlighted with a stronger glow.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.psb-list--preview .psb-col { cursor: default; }
+.psb-list--preview .psb-col[onclick] { cursor: pointer; }
+
+/* Override pending → fully ON (same as the base bar style) */
+.psb-list--preview .psb-col[data-status="pending"] .psb-bar {
+  background:
+    linear-gradient(to bottom,
+      rgba(255,255,255,0.11) 0%,
+      rgba(255,255,255,0.02) 45%,
+      transparent           100%),
+    linear-gradient(to bottom,
+      rgba(var(--g), 0.26)  0%,
+      rgba(var(--g), 0.08)  100%);
+  border: 1px solid rgba(var(--g), 0.28);
+  border-top: 2px solid rgba(var(--g), 0.75);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.07),
+    0 2px 5px rgba(0,0,0,0.40);
+}
+
+/* Override completed → same ON state */
+.psb-list--preview .psb-col[data-status="completed"] .psb-bar {
+  filter: none;
+  background:
+    linear-gradient(to bottom,
+      rgba(255,255,255,0.11) 0%,
+      rgba(255,255,255,0.02) 45%,
+      transparent           100%),
+    linear-gradient(to bottom,
+      rgba(var(--g), 0.26)  0%,
+      rgba(var(--g), 0.08)  100%);
+  border: 1px solid rgba(var(--g), 0.28);
+  border-top: 2px solid rgba(var(--g), 0.75);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.07),
+    0 2px 5px rgba(0,0,0,0.40);
+}
+
+/* Selected "start step" — highlighted, no pulse */
+.psb-list--preview .psb-col[data-status="running"] .psb-bar {
+  background:
+    linear-gradient(to bottom,
+      rgba(255,255,255,0.16) 0%,
+      rgba(255,255,255,0.04) 50%,
+      transparent            100%),
+    linear-gradient(to bottom,
+      rgba(var(--g), 0.46)   0%,
+      rgba(var(--g), 0.18)  100%);
+  border-color:     rgba(var(--g), 0.75);
+  border-top-color: rgba(var(--g), 1.00);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.15),
+    0 0 8px 2px  rgba(var(--g), 0.48),
+    0 0 20px 5px rgba(var(--g), 0.22);
+  animation: none;
+}
+
+.psb-list--preview .psb-col[data-status="running"] .psb-label {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+/* All wizard labels slightly brighter than monitor muted */
+.psb-list--preview .psb-col .psb-label {
+  color: #9a9daa;
+}
+
+/* Hover in preview: brief brighten */
+.psb-list--preview .psb-col:hover .psb-bar {
+  border-top-color: rgba(var(--g), 1.00);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    0 0 10px 3px rgba(var(--g), 0.35),
+    0 0 22px 6px rgba(var(--g), 0.18),
+    0 2px 6px rgba(0,0,0,0.38);
+}
+
+/* "▶ start" badge */
+.psb-list--preview .psb-col.selected::before {
+  content: '▶ start';
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #34d399;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 0 6px rgba(52,211,153,0.65);
+}

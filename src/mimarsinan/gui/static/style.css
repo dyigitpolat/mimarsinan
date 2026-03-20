@@ -57,7 +57,12 @@ body {
 .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
 
 /* ═══════════ Pipeline bar ═══════════ */
-.pipeline-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 24px; }
+/* .pipeline-bar-host wraps the psb-list; must allow overflow for diagonal labels */
+.pipeline-bar-host {
+  margin-bottom: 8px;
+  overflow: visible;
+  position: relative;
+}
 .step-block {
   flex: 1 1 80px; min-width: 70px; max-width: 160px;
   padding: 8px 6px; border-radius: var(--radius); cursor: pointer; text-align: center;
@@ -179,7 +184,6 @@ body {
 
 @media (max-width: 1024px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
-  .pipeline-bar .step-block { flex: 1 1 60px; min-width: 60px; }
   .pruning-browse { grid-template-columns: 1fr; }
   .pruning-panels { flex-direction: column; }
 }

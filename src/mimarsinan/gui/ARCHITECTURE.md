@@ -52,7 +52,7 @@ Landing page with active runs monitoring (mini pipeline bars, Plotly sparklines,
 - `GET /api/model_config_schema/{model_type}` — config fields for dynamic form generation.
 - `POST /api/run` — body = full deployment config JSON; creates pipeline, attaches collector, runs in background thread; returns 202.
 - `POST /api/hw_config_verify` — verifies hardware core config; returns `{feasible, errors, field_errors, packing, stats}`. `stats` is a `LayoutVerificationStats.to_dict()` augmented with `host_side_segment_count` and `layout_preview`; together they provide per-core waste/utilization metrics, layout-derived neural-segment summary (`neural_segment_count`, `segment_latency_min/median/max` where latency means latency groups per segment), host-side segment count (shown as sync barriers), a compact latency-group miniview, and coalescing/splitting counts.
-- `POST /api/pipeline_steps` — body = same deployment config shape as `/api/run`; returns `{"steps": ["Step Name", ...]}` for the pipeline that would be built. Used by the wizard to show a live pipeline preview without running the pipeline.
+- `POST /api/pipeline_steps` — body = same deployment config shape as `/api/run`; returns `{"steps": ["Step Name", ...], "semantic_groups": ["group_id", ...]}` for the pipeline that would be built. Used by the wizard to show a live pipeline preview without running the pipeline; `semantic_groups` (same length as `steps`) drives per-step colour coding.
 - `GET /wizard` — serves the deployment configurator wizard (`static/wizard.html`).
 
 ### Frontend (`static/`)
@@ -78,13 +78,17 @@ the panel is hidden so stale numbers are never shown.
 **Weight Quantization** and **Activation Quantization** are locked (derived) from Float and Spiking Mode: no manual selection in regular deployment. Float ON locks Weight Quant to OFF; Float OFF locks it to ON. Rate-coded or TTFS Quantized locks Activation Quant to ON; plain TTFS locks it to OFF. Rate-coded spiking mode thus forces activation quantization ON; the Cycles field is disabled for non-quantized TTFS (analytical TTFS does not use simulation steps). Target Tq is disabled when activation quantization is off. **Float weights** is a toggle in the **Hardware Configuration** panel (next to Weight Bits): when ON it disables the Weight Bits control and locks Weight Quantization to off in Deployment Mode; pipeline uses vanilla (float) deployment. **Pruning fraction** is a [0–1) range slider with value display; the 0.8–1.0 range
 is styled in red and a feasibility warning is shown in that range.
 
-**Pipeline steps bar**: A bar at the top of the wizard (below the header) shows the
-ordered list of pipeline steps for the current configuration. It calls POST
-`/api/pipeline_steps` with the current config (debounced, e.g. 250 ms) on load and
-whenever the user changes options. Steps are rendered as horizontal chips; new steps
-animate in (opacity + scale). On loading, the bar shows a subtle loading state; on
-API error, the last known step list is kept or a short "Could not load steps" message
-is shown.
+**Pipeline steps bar**: Both the wizard header and the monitor's top section render
+pipeline steps as a column-bar layout (`static/pipeline-step-bar.css`). Each step is a
+vertical column with a tall shiny bar (coloured by semantic group) and the step name as
+a diagonal label beneath it (`transform: rotate(45deg)`), mirroring the diagonal tick
+labels in the Plotly target-metric chart. Monitor states: `running` → glowing bar +
+bold white label; `completed` → dim group colour + grey label; `pending` → near-off +
+grey label. Wizard preview uses `psb-list--preview` modifier: all bars shown at
+uniform preview intensity, no glow. Semantic groups flow from
+`get_pipeline_semantic_group_by_step_name` (backend) → API → `data-group` attribute →
+CSS. The wizard bar calls POST `/api/pipeline_steps` (debounced, 250 ms) on load and
+on config change; on error the last known list is kept.
 
 **Monitor plots** (step-detail metrics tab, scales-tab adaptation, search-tab): legends
 are placed outside the plot area to the right (`x: 1.02`, `margin.r: 100`). Accuracy

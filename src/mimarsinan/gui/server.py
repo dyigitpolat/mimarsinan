@@ -455,10 +455,11 @@ def create_app(
 
     @app.post("/api/pipeline_steps")
     def api_pipeline_steps(body: dict):
-        """Return ordered pipeline step names for the given deployment config (wizard preview)."""
+        """Return ordered pipeline step names and semantic groups for the given deployment config (wizard preview)."""
         from mimarsinan.pipelining.pipelines.deployment_pipeline import (
             DeploymentPipeline,
             get_pipeline_step_specs,
+            get_pipeline_semantic_group_by_step_name,
         )
         try:
             deployment_parameters = dict(body.get("deployment_parameters", {}))
@@ -471,7 +472,11 @@ def create_app(
             if isinstance(platform, dict):
                 config.update(platform)
             specs = get_pipeline_step_specs(config)
-            return {"steps": [name for name, _ in specs]}
+            groups = get_pipeline_semantic_group_by_step_name(config)
+            return {
+                "steps": [name for name, _ in specs],
+                "semantic_groups": [groups.get(name, "other") for name, _ in specs],
+            }
         except Exception as e:
             logger.debug("pipeline_steps failed: %s", e)
             return JSONResponse(

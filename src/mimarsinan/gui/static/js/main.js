@@ -196,7 +196,7 @@ async function refreshConsoleLogs() {
 
 function setupPipelineBarClicks() {
   document.getElementById('pipeline-bar').addEventListener('click', (e) => {
-    const block = e.target.closest('.step-block');
+    const block = e.target.closest('.psb-col');
     if (!block) return;
     const stepName = block.dataset.step;
     if (!stepName) return;
