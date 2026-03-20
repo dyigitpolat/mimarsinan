@@ -1316,6 +1316,43 @@ function _renderHwStats(statsOrState) {
       _escHtml(lbl) + '</span>' + _escHtml(fmtNum(val)) + '</span>';
   }
 
+  function renderLayoutPreview(preview) {
+    if (!preview || !Array.isArray(preview.flow) || preview.flow.length === 0) return '';
+
+    var items = preview.flow.map(function (item) {
+      if (item.kind === 'input' || item.kind === 'output') {
+        return '<div class="hw-layout-mini-endcap ' + item.kind + '">' +
+          '<span>' + item.kind.toUpperCase() + '</span>' +
+          '</div>';
+      }
+      if (item.kind === 'host') {
+        return '<div class="hw-layout-mini-host">' +
+          '<div class="hw-layout-mini-host-box">' +
+          '<div class="hw-layout-mini-host-label">' + fmtInt(item.compute_op_count) + ' ops</div>' +
+          '<div class="hw-layout-mini-host-sub">host</div>' +
+          '</div>' +
+          '</div>';
+      }
+      if (item.kind === 'neural') {
+        return '<div class="hw-layout-mini-lat-group">' +
+          '<div class="hw-layout-mini-lat-label">' + fmtInt(item.latency_group_index) + '</div>' +
+          '<div class="hw-layout-mini-lat-bar">' + fmtInt(item.softcore_count) + '</div>' +
+          '</div>';
+      }
+      return '';
+    }).filter(Boolean);
+
+    var flowHtml = items.map(function (itemHtml, idx) {
+      if (idx === items.length - 1) return itemHtml;
+      return itemHtml + '<div class="hw-layout-mini-arrow">→</div>';
+    }).join('');
+
+    return '<div class="hw-layout-mini-wrap">' +
+      '<div class="hw-stats-section-label">Mapping Miniview</div>' +
+      '<div class="hw-layout-mini-flow">' + flowHtml + '</div>' +
+      '</div>';
+  }
+
   // ── Build HTML ──────────────────────────────────────────
   var html =
     '<div class="hw-stats-header">' +
@@ -1324,18 +1361,18 @@ function _renderHwStats(statsOrState) {
     '</div>';
 
   // Count cards — always-present topology overview
-  var latencyCard = (stats.latency_group_count > 0)
-    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.latency_group_count) + '</div><div class="hw-stat-card-label">Latency Groups</div></div>'
+  var segmentCard = (stats.neural_segment_count > 0)
+    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.neural_segment_count) + '</div><div class="hw-stat-card-label">Neural Segments</div></div>'
     : '';
-  var thresholdCard = (stats.threshold_group_count > 0)
-    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.threshold_group_count) + '</div><div class="hw-stat-card-label">Sync Barriers</div></div>'
+  var syncBarrierCard = (stats.host_side_segment_count > 0)
+    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.host_side_segment_count) + '</div><div class="hw-stat-card-label">Sync Barriers</div></div>'
     : '';
 
   html +=
     '<div class="hw-stats-cards">' +
       '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_cores) + '</div><div class="hw-stat-card-label">Cores Used</div></div>' +
       '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_softcores) + '</div><div class="hw-stat-card-label">Softcores</div></div>' +
-      latencyCard + thresholdCard +
+      segmentCard + syncBarrierCard +
     '</div>';
 
   // Two-column body: total (left) + per-core (right)
@@ -1381,9 +1418,11 @@ function _renderHwStats(statsOrState) {
 
   html += '</div>'; // end hw-stats-body
 
+  var detailRowsHtml = '';
+
   // ── Coalescing detail ──────────────────────────────────
   if (stats.coalescing_group_count > 0) {
-    html +=
+    detailRowsHtml +=
       '<div class="hw-detail-row">' +
         '<span class="hw-detail-title">Coalescing</span>' +
         '<span class="hw-detail-count">' + fmtInt(stats.coalescing_group_count) + ' groups</span>' +
@@ -1394,9 +1433,22 @@ function _renderHwStats(statsOrState) {
       '</div>';
   }
 
+  // ── Segment latency detail ───────────────────────────────
+  if (stats.neural_segment_count > 0) {
+    detailRowsHtml +=
+      '<div class="hw-detail-row">' +
+        '<span class="hw-detail-title">Segment Latency</span>' +
+        '<span class="hw-detail-count">' + fmtInt(stats.neural_segment_count) + ' segments</span>' +
+        '<span class="hw-detail-stat-label">Latency groups/segment:</span>' +
+        detailChip('Min', stats.segment_latency_min) +
+        detailChip('Mdn', stats.segment_latency_median) +
+        detailChip('Max', stats.segment_latency_max) +
+      '</div>';
+  }
+
   // ── Splitting detail ───────────────────────────────────
   if (stats.split_softcore_count > 0) {
-    html +=
+    detailRowsHtml +=
       '<div class="hw-detail-row">' +
         '<span class="hw-detail-title">Splitting</span>' +
         '<span class="hw-detail-count">' + fmtInt(stats.split_softcore_count) + ' softcores split</span>' +
@@ -1405,6 +1457,16 @@ function _renderHwStats(statsOrState) {
         detailChip('Mdn', stats.splits_per_softcore_median) +
         detailChip('Max', stats.splits_per_softcore_max) +
       '</div>';
+  }
+
+  var layoutPreviewHtml = renderLayoutPreview(stats.layout_preview);
+  if (detailRowsHtml || layoutPreviewHtml) {
+    html += '<div class="hw-stats-bottom">';
+    html += '<div class="hw-stats-bottom-left">' + detailRowsHtml + '</div>';
+    if (layoutPreviewHtml) {
+      html += '<div class="hw-stats-bottom-right">' + layoutPreviewHtml + '</div>';
+    }
+    html += '</div>';
   }
 
   panel.className = 'hw-stats-panel';

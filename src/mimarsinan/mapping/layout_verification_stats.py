@@ -54,8 +54,13 @@ class LayoutVerificationStats:
     coalesced_cores: int
     split_cores: int
 
-    # Latency architecture metrics (derived from the original softcores list).
-    latency_group_count: int = 0
+    # Neural segment / latency summary metrics (derived from the original
+    # softcores list). ``segment_latency_*`` summarizes the number of distinct
+    # latency tiers inside each neural segment, not the global latency-tag values.
+    neural_segment_count: int = 0
+    segment_latency_min: float = 0.0
+    segment_latency_median: float = 0.0
+    segment_latency_max: float = 0.0
     threshold_group_count: int = 0
 
     # Coalescing group distribution (one entry per group that produced > 1 fragment).
@@ -86,13 +91,40 @@ def _safe_median(values: List[float]) -> float:
     return float(s[n // 2]) if n % 2 == 1 else (s[n // 2 - 1] + s[n // 2]) / 2.0
 
 
-def _latency_stats(softcores: Optional[Sequence[LayoutSoftCoreSpec]]) -> tuple[int, int]:
-    """Return (latency_group_count, threshold_group_count)."""
+def _latency_stats(
+    softcores: Optional[Sequence[LayoutSoftCoreSpec]],
+) -> tuple[int, float, float, float, int]:
+    """Return segment count, latency tiers/segment min-median-max, threshold count."""
     if not softcores:
-        return 0, 0
-    latency_groups = len({sc.latency_tag for sc in softcores if sc.latency_tag is not None})
+        return 0, 0.0, 0.0, 0.0, 0
+
+    tagged_softcores = [sc for sc in softcores if sc.latency_tag is not None]
     threshold_groups = len({sc.threshold_group_id for sc in softcores})
-    return latency_groups, threshold_groups
+    if not tagged_softcores:
+        return 0, 0.0, 0.0, 0.0, threshold_groups
+
+    segments_to_latencies: Dict[int, set[int]] = {}
+    fallback_by_latency_tag = {int(sc.latency_tag) for sc in tagged_softcores}
+    has_segment_ids = any(sc.segment_id is not None for sc in tagged_softcores)
+
+    if has_segment_ids:
+        for sc in tagged_softcores:
+            seg_id = int(sc.segment_id) if sc.segment_id is not None else int(sc.latency_tag)
+            segments_to_latencies.setdefault(seg_id, set()).add(int(sc.latency_tag))
+    else:
+        # Backward-compatible fallback for handcrafted tests / old softcore data:
+        # each distinct latency tag is treated as its own single-tier segment.
+        for lat in fallback_by_latency_tag:
+            segments_to_latencies[lat] = {lat}
+
+    per_segment_latencies = sorted(float(len(latencies)) for latencies in segments_to_latencies.values())
+    return (
+        len(per_segment_latencies),
+        float(min(per_segment_latencies)),
+        _safe_median(per_segment_latencies),
+        float(max(per_segment_latencies)),
+        threshold_groups,
+    )
 
 
 def _stats_from_packing(
@@ -115,8 +147,15 @@ def _stats_from_packing(
     per_core_neu_pct = [_pct(s.wasted_neurons, s.neurons_per_core) for s in snaps]
     per_core_param_pct = [_pct(s.used_area, s.capacity) for s in snaps]
 
-    # Latency / threshold groups from the original softcores list.
-    latency_group_count, threshold_group_count = _latency_stats(softcores)
+    # Neural segment / latency summary and threshold groups from the original
+    # softcores list.
+    (
+        neural_segment_count,
+        segment_latency_min,
+        segment_latency_median,
+        segment_latency_max,
+        threshold_group_count,
+    ) = _latency_stats(softcores)
 
     # Coalescing group distribution.
     coal_sizes = list(packing.coalescing_group_sizes or ())
@@ -152,7 +191,10 @@ def _stats_from_packing(
         per_core_mapped_params_pct_max=max(per_core_param_pct),
         coalesced_cores=packing.coalesced_fragment_count,
         split_cores=packing.split_fragment_count,
-        latency_group_count=latency_group_count,
+        neural_segment_count=neural_segment_count,
+        segment_latency_min=segment_latency_min,
+        segment_latency_median=segment_latency_median,
+        segment_latency_max=segment_latency_max,
         threshold_group_count=threshold_group_count,
         coalescing_group_count=coalescing_group_count,
         coalescing_frags_per_group_min=coalescing_frags_per_group_min,
@@ -184,7 +226,10 @@ def _empty_stats(*, feasible: bool, num_softcores: int = 0) -> LayoutVerificatio
         per_core_mapped_params_pct_max=0.0,
         coalesced_cores=0,
         split_cores=0,
-        latency_group_count=0,
+        neural_segment_count=0,
+        segment_latency_min=0.0,
+        segment_latency_median=0.0,
+        segment_latency_max=0.0,
         threshold_group_count=0,
         coalescing_group_count=0,
         coalescing_frags_per_group_min=0.0,

@@ -44,10 +44,13 @@ class LayoutIRMapping:
 
         self._next_node_id = 0
         self.layout_softcores: List[LayoutSoftCoreSpec] = []
+        self.host_side_segment_count: int = 0
+        self.layout_preview: Dict[str, Any] | None = None
 
         # Dependency tracking for latency computation
         self._node_input_node_ids: Dict[int, Set[int]] = {}
         self._node_id_to_softcore_idx: Dict[int, int] = {}
+        self._node_is_neural: Dict[int, bool] = {}
 
         # Weight bank registry for conv-style shared-weight cores
         self._next_bank_id: int = 0
@@ -80,6 +83,7 @@ class LayoutIRMapping:
 
         # Track dependencies for latency computation
         self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
+        self._node_is_neural[node_id] = True
 
         sc_idx = len(self.layout_softcores)
         self._node_id_to_softcore_idx[node_id] = sc_idx
@@ -106,11 +110,12 @@ class LayoutIRMapping:
 
     def _compute_latencies(self) -> Dict[int, int]:
         """
-        Compute latency (depth in hops through neural cores) for each node.
+        Compute latency (depth in hops through neural segments) for each node.
 
         Similar to IRLatency but operates on the layout dependency graph.
-        A node's latency is ``max(latency of each dependency) + 1``, or 0 if it
-        has no upstream core dependencies.
+        Neural nodes increase latency by 1 over the deepest dependency.
+        ComputeOp nodes preserve the upstream latency, so host-side barriers
+        do not collapse distinct neural segments into one depth.
         """
         memo: Dict[int, int] = {}
 
@@ -121,7 +126,8 @@ class LayoutIRMapping:
             if not deps:
                 memo[node_id] = 0
                 return 0
-            result = max(_get(d) for d in deps) + 1
+            max_upstream = max(_get(d) for d in deps)
+            result = max_upstream + (1 if self._node_is_neural.get(node_id, False) else 0)
             memo[node_id] = result
             return result
 
@@ -130,10 +136,139 @@ class LayoutIRMapping:
 
         return memo
 
+    def _compute_segment_ids(self) -> Dict[int, int]:
+        """
+        Compute neural-segment IDs for each node.
+
+        A neural segment is a maximal run of neural nodes connected without an
+        intervening ComputeOp. ComputeOps carry forward the latest neural
+        segment index, and the next downstream neural node starts a new segment.
+        """
+        memo: Dict[int, int] = {}
+
+        def _get(node_id: int) -> int:
+            if node_id in memo:
+                return memo[node_id]
+
+            deps = self._node_input_node_ids.get(node_id)
+            is_neural = self._node_is_neural.get(node_id, False)
+            if not deps:
+                memo[node_id] = 0 if is_neural else -1
+                return memo[node_id]
+
+            upstream_segments = [_get(d) for d in deps]
+            if is_neural:
+                has_compute_dep = any(not self._node_is_neural.get(d, False) for d in deps)
+                memo[node_id] = max(upstream_segments) + 1 if has_compute_dep else max(upstream_segments)
+            else:
+                memo[node_id] = max(upstream_segments)
+            return memo[node_id]
+
+        for node_id in self._node_input_node_ids:
+            _get(node_id)
+
+        return memo
+
+    def _compute_host_side_segment_count(self, segment_ids: Dict[int, int]) -> int:
+        """Count maximal host-side (compute-only) segments in the layout graph."""
+        host_segments = {
+            int(segment_ids[node_id] + 1)
+            for node_id, is_neural in self._node_is_neural.items()
+            if not is_neural and node_id in segment_ids
+        }
+        return len(host_segments)
+
+    def _build_layout_preview(
+        self,
+        segment_ids: Dict[int, int],
+        latencies: Dict[int, int],
+    ) -> Dict[str, Any]:
+        """Build a compact layout-only flow summary for the wizard miniview."""
+        neural_latency_tags = sorted({
+            int(sc.latency_tag) for sc in self.layout_softcores if sc.latency_tag is not None
+        })
+        latency_to_index = {lat: idx for idx, lat in enumerate(neural_latency_tags)}
+        min_neural_latency = neural_latency_tags[0] if neural_latency_tags else 0
+
+        host_counts: Dict[int, int] = {}
+        for node_id, is_neural in self._node_is_neural.items():
+            if is_neural or node_id not in latencies:
+                continue
+            slot = max(0, int(latencies[node_id] - min_neural_latency + 1))
+            host_counts[slot] = host_counts.get(slot, 0) + 1
+
+        neural_summary: Dict[int, Dict[str, Any]] = {}
+        for sc in self.layout_softcores:
+            if sc.latency_tag is None:
+                continue
+            lat_tag = int(sc.latency_tag)
+            info = neural_summary.setdefault(lat_tag, {
+                "latency_tag": lat_tag,
+                "latency_group_index": latency_to_index.get(lat_tag, 0),
+                "softcore_count": 0,
+                "segment_ids": set(),
+            })
+            info["softcore_count"] += 1
+            if sc.segment_id is not None:
+                info["segment_ids"].add(int(sc.segment_id))
+
+        for info in neural_summary.values():
+            seg_ids = sorted(info.pop("segment_ids"))
+            info["segment_count"] = len(seg_ids)
+            info["segment_ids"] = seg_ids
+
+        neural_groups = [neural_summary[k] for k in sorted(neural_summary)]
+        host_segments = [
+            {"slot": slot, "compute_op_count": host_counts[slot]}
+            for slot in sorted(host_counts)
+        ]
+
+        flow: List[Dict[str, Any]] = [{"kind": "input"}]
+        max_slot = max(
+            [len(neural_groups)] + list(host_counts.keys())
+        ) if (neural_groups or host_counts) else 0
+        for slot in range(max_slot + 1):
+            if slot in host_counts:
+                flow.append({
+                    "kind": "host",
+                    "slot": slot,
+                    "compute_op_count": host_counts[slot],
+                })
+            if slot < len(neural_groups):
+                group = next((g for g in neural_groups if g["latency_group_index"] == slot), None)
+                if group is not None:
+                    flow.append({
+                        "kind": "neural",
+                        "latency_group_index": group["latency_group_index"],
+                        "latency_tag": group["latency_tag"],
+                        "softcore_count": group["softcore_count"],
+                        "segment_count": group["segment_count"],
+                    })
+        flow.append({"kind": "output"})
+
+        return {
+            "neural_segments": [
+                {
+                    "segment_id": int(seg_id),
+                    "softcore_count": sum(1 for sc in self.layout_softcores if sc.segment_id == seg_id),
+                    "latency_group_count": len({
+                        int(sc.latency_tag) for sc in self.layout_softcores
+                        if sc.segment_id == seg_id and sc.latency_tag is not None
+                    }),
+                }
+                for seg_id in sorted({
+                    int(sc.segment_id) for sc in self.layout_softcores if sc.segment_id is not None
+                })
+            ],
+            "latency_groups": neural_groups,
+            "host_segments": host_segments,
+            "flow": flow,
+        }
+
     def _finalize_softcores(self) -> None:
         """
-        Compute latencies and assign threshold groups, then rebuild each
-        LayoutSoftCoreSpec with the correct ``latency_tag`` and
+        Compute latencies / segment IDs and assign threshold groups, then rebuild
+        each LayoutSoftCoreSpec with the correct ``latency_tag``, ``segment_id``, and
         ``threshold_group_id``.
 
         Threshold groups are assigned via latency-stratified random
@@ -141,10 +276,13 @@ class LayoutIRMapping:
         deterministically) placed into one of N groups.
         """
         latencies = self._compute_latencies()
+        segment_ids = self._compute_segment_ids()
+        self.host_side_segment_count = self._compute_host_side_segment_count(segment_ids)
         rng = random.Random(self.threshold_seed)
 
         for node_id, sc_idx in self._node_id_to_softcore_idx.items():
             latency = latencies.get(node_id, 0)
+            segment_id = segment_ids.get(node_id, 0)
             tg = rng.randint(0, max(self.threshold_groups - 1, 0))
 
             old = self.layout_softcores[sc_idx]
@@ -153,8 +291,11 @@ class LayoutIRMapping:
                 output_count=old.output_count,
                 threshold_group_id=int(tg),
                 latency_tag=int(latency),
+                segment_id=int(segment_id),
                 name=old.name,
             )
+
+        self.layout_preview = self._build_layout_preview(segment_ids, latencies)
 
     # ------------------------------------------------------------------
     # Public mapping interface (called by Mapper.map_to_ir)
@@ -171,8 +312,9 @@ class LayoutIRMapping:
     ) -> np.ndarray:
         """
         ComputeOps don't produce layout softcores (they execute on the host).
-        We still need to return correctly-shaped placeholder sources so that
-        downstream NeuralCore mappers can be layout-estimated.
+        We still need to return correctly-shaped placeholder sources and preserve
+        dependency metadata so downstream NeuralCore mappers can be
+        layout-estimated with the correct segment structure.
         """
         if output_shape is not None:
             output_size = 1
@@ -181,12 +323,11 @@ class LayoutIRMapping:
         else:
             output_size = int(np.array(input_sources, dtype=object).flatten().shape[0])
 
-        # Use a sentinel node_id (-100) to tag ComputeOp-originated sources.
-        # These placeholders carry no layout information, but they allow the
-        # mapper graph traversal to continue and reach downstream NeuralCores.
-        from mimarsinan.mapping.ir import IRSource
+        node_id = self._alloc_node_id()
+        self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
+        self._node_is_neural[node_id] = False
         output_sources = np.array([
-            IRSource(node_id=-100, index=i) for i in range(output_size)
+            IRSource(node_id=node_id, index=i) for i in range(output_size)
         ])
 
         if output_shape is not None:

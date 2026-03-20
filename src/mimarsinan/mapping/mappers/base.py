@@ -67,11 +67,11 @@ class Mapper(nn.Module):
         super(Mapper, self).__init__()
         self._source_mapper_container = [source_mapper]
         self.sources = None
-        self._cached_mapping_id = None
+        self._cached_mapping = None
         self._cached_output = None
         self._cached_input_id = None
         self._ir_sources = None
-        self._cached_ir_mapping_id = None
+        self._cached_ir_mapping = None
 
     def get_source_mappers(self):
         """Return the list of source mappers this node depends on."""
@@ -88,26 +88,28 @@ class Mapper(nn.Module):
         return self._source_mapper_container[0]
 
     def clear_cache(self):
+        self.sources = None
+        self._cached_mapping = None
         self._cached_output = None
         self._cached_input_id = None
         self._ir_sources = None
-        self._cached_ir_mapping_id = None
+        self._cached_ir_mapping = None
 
     def map(self, mapping):
-        if self.sources is not None and self._cached_mapping_id == id(mapping):
+        if self.sources is not None and self._cached_mapping is mapping:
             return self.sources
         self.sources = self._map(mapping)
-        self._cached_mapping_id = id(mapping)
+        self._cached_mapping = mapping
         return self.sources
 
     def _map(self, mapping):
         raise NotImplementedError
 
     def map_to_ir(self, ir_mapping):
-        if self._ir_sources is not None and self._cached_ir_mapping_id == id(ir_mapping):
+        if self._ir_sources is not None and self._cached_ir_mapping is ir_mapping:
             return self._ir_sources
         self._ir_sources = self._map_to_ir(ir_mapping)
-        self._cached_ir_mapping_id = id(ir_mapping)
+        self._cached_ir_mapping = ir_mapping
         return self._ir_sources
 
     def _map_to_ir(self, ir_mapping):

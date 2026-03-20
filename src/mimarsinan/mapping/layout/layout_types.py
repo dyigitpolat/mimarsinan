@@ -19,6 +19,11 @@ class LayoutSoftCoreSpec:
     # Optional latency tag (kept for parity with real mapping constraints).
     latency_tag: Optional[int] = None
 
+    # Optional neural-segment tag. Consecutive neural cores separated by
+    # host-side ComputeOps belong to different segments even if their global
+    # latency tags are consecutive.
+    segment_id: Optional[int] = None
+
     name: Optional[str] = None
 
     def get_input_count(self) -> int:

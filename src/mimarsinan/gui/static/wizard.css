@@ -182,10 +182,6 @@ body::before {
   min-width: 0;
 }
 
-.wizard-column-left {}
-
-.wizard-column-right {}
-
 .wizard-panel::-webkit-scrollbar {
   width: 6px;
 }
@@ -1436,7 +1432,7 @@ input.hw-field-invalid {
 /* ── Per-core min/avg/max health bar grid ─────────────────── */
 .hw-per-core-grid {
   display: grid;
-  grid-template-columns: 100px 1fr 1fr 1fr;
+  grid-template-columns: 100px repeat(3, minmax(0, 1fr));
   gap: 5px 8px;
   align-items: center;
 }
@@ -1572,11 +1568,18 @@ input.hw-field-invalid {
    Full-width rows that appear below the two-column body when
    coalescing or splitting events occurred during packing.     */
 
+/* Detail rows: one grid per row; last three columns must be equal width so Min/Mdn/Max
+   line up across Coalescing / Segment Latency / Splitting (max-content per row breaks this). */
 .hw-detail-row {
-  display: flex;
+  display: grid;
+  grid-template-columns:
+    92px
+    minmax(0, 1fr)
+    minmax(0, 1fr)
+    repeat(3, minmax(72px, 1fr));
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  column-gap: 6px;
+  row-gap: 6px;
   padding-top: 10px;
   margin-top: 10px;
   border-top: 1px solid var(--border);
@@ -1602,14 +1605,18 @@ input.hw-field-invalid {
 .hw-detail-stat-label {
   font-size: 0.62rem;
   color: var(--text-secondary);
-  margin-right: 2px;
+  margin-right: 0;
 }
 
 .hw-detail-chip {
   display: inline-flex;
   align-items: baseline;
+  justify-content: center;
   gap: 4px;
-  padding: 2px 9px;
+  padding: 2px 6px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   border-radius: 6px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1624,4 +1631,194 @@ input.hw-field-invalid {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* ── Layout miniview ─────────────────────────────────────── */
+.hw-layout-mini-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.hw-layout-mini-wrap > .hw-stats-section-label {
+  width: 100%;
+  text-align: center;
+}
+
+.hw-layout-mini-flow {
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  width: 100%;
+}
+
+.hw-layout-mini-endcap {
+  flex: 0 0 auto;
+  width: 28px;
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 3px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  text-align: center;
+}
+
+.hw-layout-mini-endcap span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.hw-layout-mini-endcap.input {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.28);
+  color: var(--accent-green);
+}
+
+.hw-layout-mini-endcap.output {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.28);
+  color: var(--accent-blue);
+}
+
+.hw-layout-mini-host {
+  flex: 0 0 auto;
+  min-width: 44px;
+}
+
+.hw-layout-mini-host-box {
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  background: rgba(139, 92, 246, 0.14);
+  box-sizing: border-box;
+}
+
+.hw-layout-mini-host-label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.hw-layout-mini-host-sub {
+  font-size: 0.52rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hw-layout-mini-lat-group {
+  flex: 0 0 auto;
+  min-width: 28px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+  margin-top: 14px;
+}
+
+.hw-layout-mini-lat-label {
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  transform: translateX(-50%);
+  font-size: 0.56rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.hw-layout-mini-lat-bar {
+  width: 28px;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.hw-stats-bottom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  align-items: stretch;
+}
+
+.hw-stats-bottom-left {
+  min-width: 0;
+  width: 100%;
+}
+
+.hw-stats-bottom-right {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.hw-layout-mini-arrow {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  line-height: 1;
+  margin: 0 1px;
+}
+
+@media (max-width: 1180px) {
+  .hw-stats-bottom {
+    grid-template-columns: 1fr;
+  }
+  .hw-detail-row {
+    grid-template-columns:
+      88px
+      minmax(0, 1fr)
+      minmax(0, 1fr)
+      repeat(3, minmax(68px, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .hw-stats-bottom-left {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .hw-detail-row {
+    grid-template-columns:
+      84px
+      minmax(112px, 1fr)
+      minmax(128px, 1fr)
+      repeat(3, 64px);
+    min-width: max-content;
+  }
 }

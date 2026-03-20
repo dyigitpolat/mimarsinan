@@ -7,7 +7,7 @@ Defines the expected output shape and numeric correctness of
   - coalesced-core and neuron-splitting statistics
   - coalescing group distribution (count, min/median/max fragments per group)
   - split distribution (count, min/median/max splits per softcore)
-  - latency group and threshold group counts
+  - neural segment count, per-segment latency min/median/max, and threshold group counts
   - edge cases (single softcore, perfect-fit, infeasible)
 """
 
@@ -85,10 +85,15 @@ class TestStatsShape:
         assert isinstance(stats.split_cores, int)
 
         # New extended fields
-        assert isinstance(stats.latency_group_count, int)
+        assert isinstance(stats.neural_segment_count, int)
+        assert isinstance(stats.segment_latency_min, float)
+        assert isinstance(stats.segment_latency_median, float)
+        assert isinstance(stats.segment_latency_max, float)
         assert isinstance(stats.threshold_group_count, int)
         assert isinstance(stats.coalescing_group_count, int)
         assert isinstance(stats.split_softcore_count, int)
+        assert stats.segment_latency_min <= stats.segment_latency_median
+        assert stats.segment_latency_median <= stats.segment_latency_max
         assert stats.coalescing_frags_per_group_min <= stats.coalescing_frags_per_group_max
         assert stats.splits_per_softcore_min <= stats.splits_per_softcore_max
 
@@ -101,7 +106,10 @@ class TestStatsShape:
         assert d["feasible"] is True
         assert "total_cores" in d
         assert "mapped_params_pct" in d
-        assert "latency_group_count" in d
+        assert "neural_segment_count" in d
+        assert "segment_latency_min" in d
+        assert "segment_latency_median" in d
+        assert "segment_latency_max" in d
         assert "threshold_group_count" in d
         assert "coalescing_group_count" in d
         assert "split_softcore_count" in d
@@ -375,19 +383,22 @@ class TestSplitDistribution:
         assert stats.splits_per_softcore_max == pytest.approx(0.0)
 
 
-# ── Latency / threshold group counts ────────────────────────────────────────
+# ── Segment latency / threshold counts ──────────────────────────────────────
 
 class TestLatencyStats:
-    """Latency group and threshold group counts are derived from softcores."""
+    """Segment latency summaries and threshold counts are derived from softcores."""
 
     def test_no_latency_tags_reports_zero(self):
         scs = [LayoutSoftCoreSpec(input_count=8, output_count=4)]  # latency_tag=None by default
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=1)]
         stats = _pack_and_stats(scs, hw)
 
-        assert stats.latency_group_count == 0
+        assert stats.neural_segment_count == 0
+        assert stats.segment_latency_min == pytest.approx(0.0)
+        assert stats.segment_latency_median == pytest.approx(0.0)
+        assert stats.segment_latency_max == pytest.approx(0.0)
 
-    def test_two_distinct_latency_tags(self):
+    def test_segment_count_tracks_distinct_latency_tags(self):
         scs = [
             LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=0),
             LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=1),
@@ -396,7 +407,27 @@ class TestLatencyStats:
         hw = [LayoutHardCoreType(max_axons=4, max_neurons=4, count=3)]
         stats = _pack_and_stats(scs, hw)
 
-        assert stats.latency_group_count == 2
+        assert stats.neural_segment_count == 2
+        assert stats.segment_latency_min == pytest.approx(1.0)
+        assert stats.segment_latency_median == pytest.approx(1.0)
+        assert stats.segment_latency_max == pytest.approx(1.0)
+
+    def test_segment_latency_summary_uses_tiers_per_segment(self):
+        scs = [
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=0, segment_id=0),
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=1, segment_id=0),
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=2, segment_id=1),
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=3, segment_id=2),
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=4, segment_id=2),
+            LayoutSoftCoreSpec(input_count=4, output_count=4, latency_tag=5, segment_id=2),
+        ]
+        hw = [LayoutHardCoreType(max_axons=4, max_neurons=4, count=6)]
+        stats = _pack_and_stats(scs, hw)
+
+        assert stats.neural_segment_count == 3
+        assert stats.segment_latency_min == pytest.approx(1.0)
+        assert stats.segment_latency_median == pytest.approx(2.0)
+        assert stats.segment_latency_max == pytest.approx(3.0)
 
     def test_threshold_groups_counted(self):
         scs = [
