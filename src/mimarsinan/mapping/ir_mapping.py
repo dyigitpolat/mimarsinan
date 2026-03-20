@@ -58,6 +58,7 @@ class IRMapping:
 
         self._next_node_id = 0
         self._coalescing_group_counter = 0
+        self._psum_group_counter = 0
         self._next_bank_id = 0
         self._weight_banks: Dict[int, WeightBank] = {}
 
@@ -194,31 +195,6 @@ class IRMapping:
             output_sources = output_sources.reshape(output_shape)
 
         return output_sources
-
-    def add_linear_compute_op(
-        self,
-        input_sources: np.ndarray,
-        weights,
-        biases=None,
-        name: str | None = None,
-    ) -> np.ndarray:
-        """Add a host-side linear ComputeOp (matmul + bias, no activation).
-
-        Used for layers with Identity activation that cannot run on NeuralCore
-        crossbars. The matmul preserves negative values (no ReLU clipping).
-        """
-        w = np.asarray(weights, dtype=np.float64)
-        params: Dict[str, Any] = {"weight": w.tolist()}
-        if biases is not None:
-            params["bias"] = np.asarray(biases, dtype=np.float64).flatten().tolist()
-        out_features = w.shape[0]
-        return self.add_compute_op(
-            input_sources=input_sources.flatten(),
-            op_type="linear",
-            params=params,
-            output_shape=(out_features,),
-            name=name or "linear_compute",
-        )
 
     def add_neural_core(
         self,
@@ -475,12 +451,29 @@ class IRMapping:
             out = np.stack(outputs, axis=1)  # (out_features, core_count)
             return out.reshape(tuple(output_shape))
 
-        # Tag wide cores with coalescing metadata when enabled.
+        # Wide core handling: in_features > max_axons.
         is_wide = self.max_axons is not None and in_features > self.max_axons
-        if is_wide and self.allow_core_coalescing and coalescing_group_id is None:
-            coalescing_group_id = self._coalescing_group_counter
-            self._coalescing_group_counter += 1
-            coalescing_role = "master"
+        if is_wide:
+            if self.allow_core_coalescing:
+                # Coalescing mode: keep as one wide core, hardware fuses physical cores.
+                if coalescing_group_id is None:
+                    coalescing_group_id = self._coalescing_group_counter
+                    self._coalescing_group_counter += 1
+                    coalescing_role = "master"
+            else:
+                # Psum decomposition: split into pos/neg partial cores + accumulator.
+                return self._map_fc_with_psum(
+                    input_sources=input_tensor_sources.flatten(),
+                    weights=fc_weights,
+                    biases=fc_biases,
+                    activation_scale=activation_scale,
+                    parameter_scale=parameter_scale,
+                    input_activation_scale=input_activation_scale,
+                    name=name,
+                    normalization_type=normalization_type,
+                    activation_type=activation_type,
+                    perceptron_index=perceptron_index,
+                )
 
         # Tile output channels if they exceed max_neurons.
         if self.max_neurons is not None and out_features > self.max_neurons:
@@ -501,7 +494,7 @@ class IRMapping:
                 coalescing_role=coalescing_role,
             )
 
-        # Single core (may be wider than max_axons — handled by hardware packing).
+        # Single core (fits max_axons, or coalescing enabled for wide core).
         return self.add_neural_core(
             input_sources=input_tensor_sources.T if len(input_tensor_sources.shape) > 1 else input_tensor_sources,
             weights=fc_weights,
@@ -587,14 +580,149 @@ class IRMapping:
         coalescing_group_id: int | None = None,
         coalescing_role: str | None = None,
     ) -> np.ndarray:
-        """
-        Map FC with axon tiling using partial sums.
+        """Map FC with axon tiling using partial sums.
 
-        Strategy:
-        1. Split inputs into tiles that fit max_axons
-        2. Create pos/neg partial sum cores for each tile
-        3. Create accumulator cores that sum partials and add bias
+        Mirrors the psum strategy in ``SoftCoreMapping.map_fc`` (soft_core_mapper.py
+        lines 179-275):
+
+        1. Split input axons into tiles that fit ``max_axons``.
+        2. For each tile × output block: create pos and neg partial-sum NeuralCores
+           (``w_pos = clamp(w, min=0)``, ``w_neg = clamp(-w, min=0)``).
+        3. Create accumulator NeuralCores that gather pos/neg partials, subtract,
+           and add bias.
+
+        The accumulator weight matrix is a sparse identity-like matrix with
+        ``+1/parameter_scale`` for pos partials and ``-1/parameter_scale`` for neg.
         """
+        max_axons = int(self.max_axons)
+        max_neurons = int(self.max_neurons) if self.max_neurons is not None else weights.shape[0]
+        in_features = weights.shape[1]
+        out_features = weights.shape[0]
+
+        src_arr = input_sources.flatten()
+
+        # 1. Tile input axons.
+        tile_slices: list[tuple[int, int]] = []
+        in_start = 0
+        while in_start < in_features:
+            in_end = min(in_features, in_start + max_axons)
+            tile_slices.append((in_start, in_end))
+            in_start = in_end
+
+        tile_count = len(tile_slices)
+        group_id = self._psum_group_counter
+        self._psum_group_counter += 1
+
+        # 2. Compute output block size: accumulator needs 2*tile_count*block_size
+        #    axons (pos + neg partials) + optional bias axon.
+        bias_axons = 1 if (biases is not None and not self.hardware_bias) else 0
+        max_out_by_accum = (max_axons - bias_axons) // (2 * tile_count)
+        if max_out_by_accum <= 0:
+            raise ValueError(
+                f"Cannot build psum accumulator: tile_count={tile_count} "
+                f"requires at least {2 * tile_count + bias_axons} axons, "
+                f"but max_axons={max_axons}."
+            )
+        out_block_size = min(max_neurons, max_out_by_accum)
+
+        # 3. Build partial + accumulator cores per output block.
+        all_output_sources: list[np.ndarray] = []
+        a = 0
+        while a < out_features:
+            b = min(out_features, a + out_block_size)
+            block = b - a
+
+            w_block = weights[a:b, :]  # (block, in_features)
+            b_block = biases[a:b] if biases is not None else None
+
+            # -- partial cores --
+            partial_pos_sources: list[np.ndarray] = []
+            partial_neg_sources: list[np.ndarray] = []
+            for t_idx, (ta, tb) in enumerate(tile_slices):
+                w_tile = w_block[:, ta:tb]
+                if not torch.is_tensor(w_tile):
+                    w_tile = torch.as_tensor(w_tile, dtype=torch.float32)
+                w_pos = torch.clamp(w_tile, min=0).numpy()
+                w_neg = torch.clamp(-w_tile, min=0).numpy()
+
+                tile_src = src_arr[ta:tb]
+
+                pos_out = self.add_neural_core(
+                    input_sources=tile_src,
+                    weights=w_pos,
+                    biases=None,
+                    activation_scale=activation_scale,
+                    parameter_scale=parameter_scale,
+                    input_activation_scale=input_activation_scale,
+                    name=f"{name}_psum_pos_g{group_id}_t{t_idx}_o{a}_{b}" if name else None,
+                    normalization_type=normalization_type,
+                    activation_type=activation_type,
+                    perceptron_index=perceptron_index,
+                    perceptron_input_slice=(ta, tb),
+                    perceptron_output_slice=(a, b),
+                    psum_group_id=group_id,
+                    psum_role="partial_pos",
+                )
+                neg_out = self.add_neural_core(
+                    input_sources=tile_src,
+                    weights=w_neg,
+                    biases=None,
+                    activation_scale=activation_scale,
+                    parameter_scale=parameter_scale,
+                    input_activation_scale=input_activation_scale,
+                    name=f"{name}_psum_neg_g{group_id}_t{t_idx}_o{a}_{b}" if name else None,
+                    normalization_type=normalization_type,
+                    activation_type=activation_type,
+                    perceptron_index=perceptron_index,
+                    perceptron_input_slice=(ta, tb),
+                    perceptron_output_slice=(a, b),
+                    psum_group_id=group_id,
+                    psum_role="partial_neg",
+                )
+                partial_pos_sources.append(pos_out)  # each (block,)
+                partial_neg_sources.append(neg_out)
+
+            # -- accumulator core --
+            # Gather partial outputs: [pos_t0_n0..nB, pos_t1_n0..nB, ..., neg_t0_n0..nB, ...]
+            acc_input_list: list[IRSource] = []
+            for t_idx in range(tile_count):
+                for n in range(block):
+                    acc_input_list.append(partial_pos_sources[t_idx][n])
+            for t_idx in range(tile_count):
+                for n in range(block):
+                    acc_input_list.append(partial_neg_sources[t_idx][n])
+
+            ps = parameter_scale.item() if hasattr(parameter_scale, "item") else float(parameter_scale)
+            unit = 1.0 / float(ps)
+            acc_axons = 2 * tile_count * block
+            acc_w = np.zeros((block, acc_axons), dtype=float)
+            pos_off = 0
+            neg_off = tile_count * block
+            for t_idx in range(tile_count):
+                for n in range(block):
+                    acc_w[n, pos_off + t_idx * block + n] = unit
+                    acc_w[n, neg_off + t_idx * block + n] = -unit
+
+            acc_out = self.add_neural_core(
+                input_sources=np.array(acc_input_list),
+                weights=acc_w,
+                biases=b_block,
+                activation_scale=activation_scale,
+                parameter_scale=parameter_scale,
+                input_activation_scale=input_activation_scale,
+                name=f"{name}_psum_accum_g{group_id}_o{a}_{b}" if name else None,
+                normalization_type=normalization_type,
+                activation_type=activation_type,
+                perceptron_index=perceptron_index,
+                perceptron_output_slice=(a, b),
+                psum_group_id=group_id,
+                psum_role="accum",
+            )
+            all_output_sources.append(acc_out)
+            a = b
+
+        return np.concatenate(all_output_sources)
+
     def _convert_sources(self, sources: np.ndarray) -> np.ndarray:
         """Convert SpikeSource or IRSource array to IRSource array."""
         flat = sources.flatten()
