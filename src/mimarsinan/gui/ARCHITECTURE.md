@@ -47,6 +47,8 @@ Pipeline runs are executed as **isolated OS processes** via `ProcessManager`:
 
 Landing page with active runs monitoring (mini pipeline bars, Plotly sparklines, estimated completion), searchable past runs grid, and template management with inline rename.
 
+Active-run cards use **incremental DOM updates**: on each poll only changed fields (status, elapsed, progress, mini-step classes, metrics, ETA) are patched in place. New cards get `w-active-card--enter` (which triggers the `fadeUp` entrance animation); the class is removed on `animationend` so polls never retrigger it. Sparklines are redrawn only when the metric series changes (length + last value fingerprint).
+
 ### Wizard and config APIs (when started with `--ui`)
 
 - `GET /api/data_providers` — list registered data providers (id, label).
@@ -67,7 +69,7 @@ utilization per constituent; clicking a constituent or heatmap region opens
 soft-core detail with "Located in" (segment, hard core, region) for two-way
 traceability. Snapshot provides per-placement utilization and fused boundaries. The **wizard** (`wizard.html`, `wizard.css`, `js/wizard.js`) is the
 deployment configurator: it loads data providers and model types from the API,
-builds a config, and submits it via POST `/api/run`; RUN redirects to `/` (monitor).
+builds a config, and submits it via POST `/api/run`; RUN redirects to `/monitor?run_id=...` when a run id is returned, or `/` otherwise.
 **Mapping stats panel**: after a successful hardware verification, the wizard
 renders a compact stats panel (`#hwStatsPanel`) below the validation banner
 showing overview cards (cores used, softcores, neural segments, sync barriers),
@@ -129,6 +131,8 @@ and sets `_hwAutoMode = false` when `__isEditContinueMode` is true (for both
 and `done()` never triggers an unwanted `autoFillHardware`. Toggles restored from
 JSON use `forced=false` so they remain editable; spiking/hardware dependency
 rules still apply via `applySpikingDeps` / `applyHwDeps` after load.
+
+**Monitor connection dot** (`#conn-dot`, `static/js/main.js`): the status dot reflects WebSocket connectivity for in-process runs (no `run_id` param) and HTTP polling health (`pollOk`) for run-id-scoped active and historical runs where WebSocket is not used.
 
 **Monitor plots** (step-detail metrics tab, scales-tab adaptation, search-tab): legends
 are placed outside the plot area to the right (`x: 1.02`, `margin.r: 100`). Accuracy

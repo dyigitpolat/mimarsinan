@@ -20,6 +20,7 @@ const state = {
   metricBuffers: {},
   seenSeqs: {},
   connected: false,
+  pollOk: false,
   lastDetailJSON: null,
   historicalRunId: _historicalRunId,
   isActiveRun: false,
@@ -93,8 +94,11 @@ async function refreshPipeline() {
       }
     }
     if (state.selectedStep) await refreshStepDetail(state.selectedStep, state, fetchJSON);
+
+    if (!state.pollOk) { state.pollOk = true; updateConnectionDot(); }
   } catch (e) {
     console.error('Refresh failed:', e);
+    if (state.pollOk) { state.pollOk = false; updateConnectionDot(); }
   }
 }
 
@@ -143,7 +147,10 @@ function scheduleLiveChartUpdate(stepName) {
 // ── UI helpers ───────────────────────────────────────────────────────────
 function updateConnectionDot() {
   const dot = document.getElementById('conn-dot');
-  if (dot) dot.className = 'status-dot ' + (state.connected ? 'connected' : 'disconnected');
+  if (!dot) return;
+  const healthy = state.historicalRunId ? state.pollOk : state.connected;
+  dot.className = 'status-dot ' + (healthy ? 'connected' : 'disconnected');
+  dot.title = state.historicalRunId ? 'HTTP polling' : 'WebSocket';
 }
 
 function updateElapsedTimer() {
@@ -234,8 +241,7 @@ function setupHistoricalBanner() {
   const banner = document.createElement('div');
   const rid = state.historicalRunId;
   const eRid = esc(rid);
-  const navLinks = `<a href="/monitor" style="color:var(--accent);font-size:0.78rem;text-decoration:none">Live monitor</a>
-    <a href="/" style="color:var(--text-secondary);font-size:0.78rem;text-decoration:none">Home</a>`;
+  const navLinks = `<a href="/" style="color:var(--text-secondary);font-size:0.78rem;text-decoration:none">Home</a>`;
   if (_isActiveRun) {
     banner.style.cssText = 'padding:8px 32px;background:rgba(34,211,238,0.06);border-bottom:1px solid rgba(34,211,238,0.2);font-size:0.82rem;color:var(--accent-cyan);display:flex;align-items:center;gap:12px;';
     banner.innerHTML = `<span style="font-weight:600">Active run:</span> ${eRid}

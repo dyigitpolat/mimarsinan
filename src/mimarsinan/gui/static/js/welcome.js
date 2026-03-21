@@ -76,15 +76,120 @@ function updateStats() {
 // ── Active runs ──────────────────────────────────────────────────────────
 function renderActiveRuns() {
   const container = document.getElementById('active-list');
+
   if (allActiveRuns.length === 0) {
     container.innerHTML = '<div class="w-empty">No active experiments. <a href="/wizard">Start one &rarr;</a></div>';
     return;
   }
-  container.innerHTML = allActiveRuns.map((r, i) => renderActiveCard(r, i)).join('');
+
+  // If there's an empty-state placeholder, clear it before first insert.
+  if (container.querySelector('.w-empty')) container.innerHTML = '';
+
+  const currentIds = new Set(allActiveRuns.map(r => r.run_id));
+
+  // Remove stale cards.
+  for (const el of [...container.querySelectorAll('.w-active-card[data-run-id]')]) {
+    if (!currentIds.has(el.dataset.runId)) el.remove();
+  }
+
+  // Insert new or update existing, maintaining API order.
+  allActiveRuns.forEach((run, idx) => {
+    let el = container.querySelector(`.w-active-card[data-run-id="${CSS.escape(run.run_id)}"]`);
+    if (!el) {
+      el = _buildActiveCard(run, idx);
+      container.appendChild(el);
+    } else {
+      _patchActiveCard(el, run);
+    }
+  });
+
+  // Reorder nodes to match API order without re-inserting.
+  allActiveRuns.forEach((run, idx) => {
+    const el = container.querySelector(`.w-active-card[data-run-id="${CSS.escape(run.run_id)}"]`);
+    if (el && container.children[idx] !== el) container.insertBefore(el, container.children[idx] || null);
+  });
+
   requestAnimationFrame(() => drawSparklines());
 }
 
-function renderActiveCard(run, idx) {
+function _buildActiveCard(run, idx) {
+  const el = document.createElement('div');
+  el.className = 'w-active-card w-active-card--enter';
+  el.dataset.runId = run.run_id;
+  el.style.animationDelay = (idx * 60) + 'ms';
+  el.addEventListener('animationend', () => {
+    el.classList.remove('w-active-card--enter');
+    el.style.animationDelay = '';
+  }, { once: true });
+  el.innerHTML = _activeCardInnerHTML(run);
+  return el;
+}
+
+function _patchActiveCard(el, run) {
+  const status = run.is_alive ? 'running' : (run.status || 'unknown');
+  const pct = Math.round((run.progress || 0) * 100);
+  const elapsed = run.started_at ? formatElapsed(Date.now() / 1000 - run.started_at) : '';
+  const completedCount = run.completed_steps || 0;
+  const totalCount = run.total_steps || (run.step_names || []).length || 0;
+
+  const statusEl = el.querySelector('.w-active-status');
+  if (statusEl && (statusEl.textContent !== status || !statusEl.classList.contains(status))) {
+    statusEl.className = `w-active-status ${status}`;
+    statusEl.textContent = status;
+  }
+
+  const elapsedEl = el.querySelector('.w-active-elapsed');
+  if (elapsedEl && elapsedEl.textContent !== elapsed) elapsedEl.textContent = elapsed;
+
+  const fill = el.querySelector('.w-progress-fill');
+  if (fill) fill.style.width = pct + '%';
+
+  // Mini pipeline: update step status classes.
+  const miniSteps = el.querySelectorAll('.w-mini-step');
+  const stepsInfo = run.steps || {};
+  const stepNames = run.step_names || [];
+  miniSteps.forEach((stepEl, i) => {
+    const sn = stepNames[i];
+    if (!sn) return;
+    const sd = stepsInfo[sn] || {};
+    let st = sd.status || 'pending';
+    if (st === 'pending' && sd.end_time != null) st = 'completed';
+    if (st === 'running' && !run.is_alive) st = 'failed';
+    stepEl.className = `w-mini-step ${st}`;
+  });
+
+  // Info section: metric, steps count, current step, ETA.
+  const info = el.querySelector('.w-active-info');
+  if (info) {
+    const lastMetric = _lastTargetMetric(run);
+    const metricHtml = lastMetric != null
+      ? `<span class="w-metric-big">${lastMetric.toFixed(4)}</span><span>target</span>`
+      : '';
+    const eta = _estimateRemaining(run);
+    const etaHtml = eta != null ? `<span>~${formatElapsed(eta)} remaining</span>` : '';
+    info.innerHTML = `${metricHtml}
+      <span>${completedCount}/${totalCount} steps</span>
+      ${run.current_step ? `<span>Step: ${_esc(run.current_step)}</span>` : ''}
+      ${etaHtml}`;
+  }
+
+  // Stop button: add if now alive and missing, remove if no longer alive.
+  const actions = el.querySelector('.w-active-actions');
+  if (actions) {
+    const stopBtn = actions.querySelector('.w-card-btn.danger');
+    if (run.is_alive && !stopBtn) {
+      const btn = document.createElement('button');
+      btn.className = 'w-card-btn danger';
+      btn.onclick = () => window.stopRun(run.run_id);
+      btn.textContent = 'Stop';
+      actions.appendChild(btn);
+    } else if (!run.is_alive && stopBtn) {
+      stopBtn.remove();
+    }
+  }
+}
+
+function _activeCardInnerHTML(run) {
   const status = run.is_alive ? 'running' : (run.status || 'unknown');
   const pct = Math.round((run.progress || 0) * 100);
   const elapsed = run.started_at ? formatElapsed(Date.now() / 1000 - run.started_at) : '';
@@ -116,28 +221,26 @@ function renderActiveCard(run, idx) {
   }
 
   return `
-    <div class="w-active-card" style="animation-delay:${idx * 60}ms">
-      <div class="w-active-header">
-        <h3 title="${_esc(run.run_id)}">${_esc(run.experiment_name || run.run_id)}</h3>
-        <span class="w-active-status ${status}">${status}</span>
-        <span class="w-active-elapsed">${elapsed}</span>
+    <div class="w-active-header">
+      <h3 title="${_esc(run.run_id)}">${_esc(run.experiment_name || run.run_id)}</h3>
+      <span class="w-active-status ${status}">${status}</span>
+      <span class="w-active-elapsed">${elapsed}</span>
+    </div>
+    ${miniBar}
+    <div class="w-progress-wrap">
+      <div class="w-progress-fill" style="width:${pct}%"></div>
+    </div>
+    <div class="w-active-body">
+      <div class="w-active-info">
+        ${metricHtml}
+        <span>${completedCount}/${totalCount} steps</span>
+        ${run.current_step ? `<span>Step: ${_esc(run.current_step)}</span>` : ''}
+        ${etaHtml}
       </div>
-      ${miniBar}
-      <div class="w-progress-wrap">
-        <div class="w-progress-fill" style="width:${pct}%"></div>
-      </div>
-      <div class="w-active-body">
-        <div class="w-active-info">
-          ${metricHtml}
-          <span>${completedCount}/${totalCount} steps</span>
-          ${run.current_step ? `<span>Step: ${_esc(run.current_step)}</span>` : ''}
-          ${etaHtml}
-        </div>
-        <div class="w-active-sparkline-wrap" id="spark-${CSS.escape(run.run_id)}"></div>
-        <div class="w-active-actions">
-          <a href="/monitor?run_id=${encodeURIComponent(run.run_id)}" class="w-card-btn primary">View</a>
-          ${run.is_alive ? `<button class="w-card-btn danger" onclick="stopRun('${_esc(run.run_id)}')">Stop</button>` : ''}
-        </div>
+      <div class="w-active-sparkline-wrap" id="spark-${CSS.escape(run.run_id)}"></div>
+      <div class="w-active-actions">
+        <a href="/monitor?run_id=${encodeURIComponent(run.run_id)}" class="w-card-btn primary">View</a>
+        ${run.is_alive ? `<button class="w-card-btn danger" onclick="stopRun('${_esc(run.run_id)}')">Stop</button>` : ''}
       </div>
     </div>`;
 }
@@ -168,15 +271,25 @@ function formatElapsed(secs) {
   return `${s}s`;
 }
 
+// Track sparkline data fingerprints to skip unchanged series.
+const _sparkFingerprints = {};
+
 function drawSparklines() {
   for (const run of allActiveRuns) {
     const wrap = document.getElementById('spark-' + CSS.escape(run.run_id));
     if (!wrap) continue;
     const values = (run.target_metrics || []).map(m => m.value);
     if (values.length < 2) {
-      wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">No metrics yet</span>';
+      if (!wrap.querySelector('span')) {
+        wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">No metrics yet</span>';
+      }
       continue;
     }
+    // Only redraw when series actually changes (length + last value).
+    const fingerprint = values.length + ':' + values[values.length - 1];
+    if (_sparkFingerprints[run.run_id] === fingerprint) continue;
+    _sparkFingerprints[run.run_id] = fingerprint;
+
     const divId = 'sparkdiv-' + run.run_id.replace(/[^a-zA-Z0-9_-]/g, '_');
     if (!wrap.querySelector('#' + CSS.escape(divId))) {
       wrap.innerHTML = `<div id="${divId}" style="width:100%;height:100%"></div>`;
