@@ -1086,7 +1086,7 @@ function runPipeline() {
     if (res.status === 202 || res.ok) {
       return res.json().then(function (body) {
         var rid = body && body.run_id;
-        window.location.href = rid ? '/monitor?run_id=' + encodeURIComponent(rid) : '/monitor';
+        window.location.href = rid ? '/monitor?run_id=' + encodeURIComponent(rid) : '/';
       });
     }
     return res.json().then(function (body) {

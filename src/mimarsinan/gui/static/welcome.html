@@ -76,8 +76,8 @@
       background: rgba(33, 36, 47, 0.6); backdrop-filter: blur(12px);
       border: 1px solid var(--border); border-radius: var(--radius-lg);
       padding: 18px 22px; transition: border-color var(--transition-med), box-shadow var(--transition-med);
-      animation: fadeUp 0.35s ease both;
     }
+    .w-active-card--enter { animation: fadeUp 0.35s ease both; }
     .w-active-card:hover { border-color: rgba(91,138,245,0.3); box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
     .w-active-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
     .w-active-header h3 { font-size: 0.98rem; font-weight: 600; margin: 0; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -183,7 +183,6 @@
       <p>Deployment Pipeline Framework</p>
       <div class="w-hero-actions">
         <a href="/wizard" class="w-btn w-btn-primary">New Pipeline</a>
-        <a href="/monitor" class="w-btn">Open Monitor</a>
       </div>
     </div>
 
