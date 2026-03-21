@@ -5,11 +5,11 @@ import json
 import pytest
 
 from mimarsinan.gui.templates import (
+    delete_template,
+    get_template,
     get_templates_dir,
     list_templates,
     save_template,
-    get_template,
-    delete_template,
 )
 
 

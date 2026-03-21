@@ -169,7 +169,13 @@ def create_app(
         get_run_console_logs,
     )
     from mimarsinan.gui.persistence import load_console_logs
-    from mimarsinan.gui.templates import list_templates, get_template, save_template, delete_template
+    from mimarsinan.gui.templates import (
+        delete_template,
+        get_template,
+        list_templates,
+        name_and_deployment_from_post_body,
+        save_template,
+    )
     app = FastAPI(
         title="Mimarsinan Pipeline Monitor",
         docs_url=None,
@@ -300,8 +306,8 @@ def create_app(
 
     @app.post("/api/templates")
     def api_save_template(body: dict):
-        name = body.pop("_template_name", body.get("experiment_name", "template"))
-        tid = save_template(name, body)
+        name, config = name_and_deployment_from_post_body(body)
+        tid = save_template(name, config)
         return {"id": tid}
 
     @app.delete("/api/templates/{template_id}")

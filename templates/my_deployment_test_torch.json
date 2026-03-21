@@ -1,0 +1,57 @@
+{
+  "seed": 0,
+  "pipeline_mode": "vanilla",
+  "experiment_name": "my_deployment_test_torch",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 628,
+        "max_neurons": 26,
+        "count": 204,
+        "has_bias": false
+      },
+      {
+        "max_axons": 1256,
+        "max_neurons": 52,
+        "count": 204,
+        "has_bias": false
+      }
+    ],
+    "max_axons": 1256,
+    "max_neurons": 52,
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8,
+    "has_bias": false,
+    "allow_core_coalescing": true,
+    "allow_neuron_splitting": true
+  },
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 10,
+    "tuner_epochs": 1,
+    "degradation_tolerance": 0.1,
+    "configuration_mode": "user",
+    "model_type": "torch_sequential_conv",
+    "model_config": {
+      "conv_out_channels": 16,
+      "hidden_dims": [
+        128,
+        64
+      ],
+      "conv_kernel_size": 3,
+      "pool_kernel_size": 2
+    },
+    "spiking_mode": "ttfs",
+    "firing_mode": "TTFS",
+    "spike_generation_mode": "TTFS",
+    "thresholding_mode": "<=",
+    "activation_quantization": false,
+    "weight_quantization": false
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}

@@ -11,6 +11,22 @@ from typing import Any
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
+def name_and_deployment_from_post_body(body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Split POST ``/api/templates`` JSON into filename stem and deployment config to store.
+
+    Clients send ``{\"name\": str, \"config\": <deployment>}`` (wizard, welcome,
+    monitor banner), or a flat deployment object (same keys as run config).
+    """
+    if not isinstance(body, dict):
+        return "template", {}
+    inner = body.get("config")
+    if isinstance(inner, dict):
+        name = (str(body.get("name") or "").strip() or str(inner.get("experiment_name") or "template"))
+        return name, inner
+    name = str(body.get("experiment_name") or "template")
+    return name, body
+
+
 def get_templates_dir() -> str:
     return os.environ.get("MIMARSINAN_TEMPLATES_DIR", "./templates")
 
@@ -34,6 +50,8 @@ def list_templates() -> list[dict[str, Any]]:
             with open(child, encoding="utf-8") as f:
                 config = json.load(f)
         except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(config, dict):
             continue
         results.append({
             "id": child.stem,
