@@ -1,7 +1,8 @@
-"""Unit tests for wizard config builder and validation."""
+"""Unit tests for wizard config builder, validation, and run utilities."""
 
 import pytest
 
+from mimarsinan.gui.runs import suggest_resume_step
 from mimarsinan.gui.wizard import build_deployment_config_from_state, validate_wizard_state
 from mimarsinan.gui.wizard.flow import (
     WIZARD_STEP_IDS,
@@ -208,3 +209,31 @@ class TestWizardSchema:
         assert "optimizer_options" in nas
         assert any(o["id"] == "nsga2" for o in nas["optimizer_options"])
         assert "common_fields" in nas
+
+
+class TestSuggestResumeStep:
+    def test_returns_first_incomplete_step(self):
+        steps = ["Training", "Quantization", "Simulation"]
+        completed = {"Training"}
+        assert suggest_resume_step(steps, completed) == "Quantization"
+
+    def test_returns_first_step_when_none_completed(self):
+        steps = ["Training", "Quantization"]
+        assert suggest_resume_step(steps, set()) == "Training"
+
+    def test_returns_none_when_all_completed(self):
+        steps = ["Training", "Quantization"]
+        assert suggest_resume_step(steps, {"Training", "Quantization"}) is None
+
+    def test_returns_none_for_empty_steps(self):
+        assert suggest_resume_step([], {"Training"}) is None
+
+    def test_preserves_canonical_order(self):
+        steps = ["A", "B", "C", "D"]
+        completed = {"A", "C"}
+        assert suggest_resume_step(steps, completed) == "B"
+
+    def test_step_not_in_completed_set_is_suggested(self):
+        steps = ["Training", "Quantization", "Simulation"]
+        completed = {"Training", "Quantization"}
+        assert suggest_resume_step(steps, completed) == "Simulation"

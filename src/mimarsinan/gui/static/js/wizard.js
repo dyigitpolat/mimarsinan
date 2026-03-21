@@ -69,9 +69,34 @@ let _hwAutoRefillTimer = null;
 // Enables the overlay-on-reload approach instead of full content replacement.
 let _hwStatsHasContent = false;
 
+// Edit & continue: names of steps completed in the previous run.
+// Persists for the session so _renderWizardPipelineSteps can colour steps.
+let _ecPrevCompleted = null;   // Set<string> | null
+// True after the one-shot auto-suggestion has fired (prevents re-suggesting on re-renders).
+let _ecSuggestionDone = false;
+let _pipelineStepsEcBound = false;
+
+// ── Pipeline step bar (edit & continue): delegated click — inline onclick with
+// JSON.stringify(stepName) breaks HTML attributes (inner quotes close the attribute).
+function onPipelineStepsListClick(ev) {
+  if (!window.__isEditContinueMode) return;
+  var col = ev.target.closest('.psb-col[data-ec-start-step]');
+  if (!col) return;
+  var enc = col.getAttribute('data-ec-start-step');
+  if (enc == null || enc === '') return;
+  try {
+    selectStartStep(decodeURIComponent(enc));
+  } catch (e) { /* ignore malformed */ }
+}
+
 // ── Init ───────────────────────────────────────────────────
 function init() {
   _renderHwStats(null); // show placeholder immediately, before API loads
+  var _psList = document.getElementById('pipelineStepsList');
+  if (_psList && !_pipelineStepsEcBound) {
+    _pipelineStepsEcBound = true;
+    _psList.addEventListener('click', onPipelineStepsListClick);
+  }
   loadFromAPI().then(function () {
     renderModelChips();
     renderModelConfigFields();
@@ -87,6 +112,8 @@ function init() {
     var templateId = params.get('template_id');
 
     window.__isEditContinueMode = !!runId;
+    window.__editContinueSourceRunId = runId || null;
+    if (window.__isEditContinueMode) document.body.classList.add('edit-continue-mode');
 
     function done() {
       update();
@@ -98,9 +125,27 @@ function init() {
     }
 
     if (runId) {
-      fetch('/api/runs/' + encodeURIComponent(runId)).then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
-        if (c) loadStateFromConfig(c).then(done); else done();
-      }).catch(function () { done(); });
+      // Fetch config and pipeline state concurrently; pipeline state is used to
+      // suggest the first incomplete step as the default restart point.
+      var _pipelineStateFetch = fetch('/api/runs/' + encodeURIComponent(runId) + '/pipeline')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+      fetch('/api/runs/' + encodeURIComponent(runId) + '/config')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (c) {
+          return (c ? loadStateFromConfig(c) : Promise.resolve()).then(function () { return _pipelineStateFetch; });
+        })
+        .then(function (pipelineState) {
+          if (pipelineState && pipelineState.steps) {
+            _ecPrevCompleted = new Set(
+              pipelineState.steps
+                .filter(function (s) { return s.status === 'completed'; })
+                .map(function (s) { return s.name; })
+            );
+          }
+          done();
+        })
+        .catch(function () { done(); });
     } else if (templateId) {
       fetch('/api/templates/' + encodeURIComponent(templateId)).then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
         if (c) loadStateFromConfig(c).then(done); else done();
@@ -630,6 +675,10 @@ function buildConfig() {
     stop_step: (typeof window.__wizardStopStep !== 'undefined' && window.__wizardStopStep != null) ? window.__wizardStopStep : null,
   };
 
+  if (window.__isEditContinueMode && window.__editContinueSourceRunId) {
+    config._continue_from_run_id = window.__editContinueSourceRunId;
+  }
+
   // Clean undefined
   Object.keys(config.deployment_parameters).forEach(k => {
     if (config.deployment_parameters[k] === undefined) delete config.deployment_parameters[k];
@@ -769,6 +818,15 @@ function loadStateFromConfig(config) {
   window.__wizardStartStep = config.start_step != null ? config.start_step : null;
   window.__wizardStopStep = config.stop_step != null ? config.stop_step : null;
 
+  // In edit & continue mode, always turn off Auto-suggest so loaded hw settings
+  // are editable immediately and done() does not trigger an unexpected auto-fill.
+  if (window.__isEditContinueMode) {
+    const autoToggleEl = document.getElementById('hwAutoSuggestToggle');
+    if (autoToggleEl) autoToggleEl.classList.remove('on');
+    _hwAutoMode = false;
+    renderCoreTypes();
+  }
+
   updateSearchVisibility();
   return modelConfigPromise;
 }
@@ -822,16 +880,60 @@ function schedulePipelineStepsUpdate() {
 
 function _renderWizardPipelineSteps(steps, groups) {
   var selectable = !!window.__isEditContinueMode;
+
+  // Find the suggested step index (first step not completed in the previous run).
+  var ecSuggestedIdx = -1;
+  if (selectable && _ecPrevCompleted) {
+    for (var j = 0; j < steps.length; j++) {
+      if (!_ecPrevCompleted.has(steps[j])) { ecSuggestedIdx = j; break; }
+    }
+  }
+
   var cols = steps.map(function (name, i) {
     var group = (groups && groups[i]) || 'other';
     var isStart = selectable && window.__wizardStartStep === name;
-    var isPast = selectable && window.__wizardStartStep &&
-      steps.indexOf(window.__wizardStartStep) > i;
-    var dataStatus = isStart ? 'running' : (isPast ? 'completed' : 'pending');
+    var dataStatus, ecStatus, isClickable;
+
+    if (selectable && _ecPrevCompleted) {
+      // EC mode with previous-run data: assign meaningful states.
+      if (isStart) {
+        dataStatus = 'running';
+        ecStatus = _ecPrevCompleted.has(name) ? 'cache' : 'suggested';
+        isClickable = true;
+      } else if (_ecPrevCompleted.has(name)) {
+        dataStatus = 'completed';
+        ecStatus = 'cache';
+        isClickable = true;
+      } else if (i === ecSuggestedIdx) {
+        dataStatus = 'pending';
+        ecStatus = 'suggested';
+        isClickable = true;
+      } else {
+        dataStatus = 'pending';
+        ecStatus = 'future';
+        isClickable = false;
+      }
+    } else if (selectable) {
+      // EC mode but no previous-run data (API failed or run has no steps yet): fall back
+      // to position-based colouring so the bar is at least somewhat informative.
+      var isPast = window.__wizardStartStep && steps.indexOf(window.__wizardStartStep) > i;
+      dataStatus = isStart ? 'running' : (isPast ? 'completed' : 'pending');
+      ecStatus = null;
+      isClickable = true;
+    } else {
+      // Plain preview (not EC): all bars uniform, none clickable.
+      dataStatus = 'pending';
+      ecStatus = null;
+      isClickable = false;
+    }
+
     var selectedCls = isStart ? ' selected' : '';
-    var onclick = selectable ? ' onclick="selectStartStep(' + JSON.stringify(name) + ')"' : '';
-    return '<div class="psb-col' + selectedCls + '" data-status="' + dataStatus +
-      '" data-group="' + escapeHtml(group) + '"' + onclick + '>' +
+    var ecAttr = ecStatus ? ' data-ec-status="' + ecStatus + '"' : '';
+    var selCls = isClickable ? ' psb-col--ec-selectable' : '';
+    var dataStart = isClickable ? ' data-ec-start-step="' + encodeURIComponent(name) + '"' : '';
+    var title = (!isClickable && selectable) ? ' title="Cannot restart from this step — earlier steps must run first"' : '';
+    return '<div class="psb-col' + selectedCls + selCls + '" data-status="' + dataStatus +
+      '" data-group="' + escapeHtml(group) + '"' + ecAttr + dataStart + title + '>' +
       '<div class="psb-bar"></div>' +
       '<span class="psb-label">' + escapeHtml(name) + '</span>' +
       '</div>';
@@ -858,6 +960,25 @@ function updatePipelineStepsBar() {
     .then(function (data) {
       var steps = data.steps || [];
       var semanticGroups = data.semantic_groups || [];
+
+      var stepChanged = false;
+      // Stale selection guard: clear if the selected step no longer exists in the new pipeline.
+      if (window.__wizardStartStep && steps.indexOf(window.__wizardStartStep) < 0) {
+        window.__wizardStartStep = null;
+        stepChanged = true;
+      }
+      // Edit & continue: on first pipeline load, suggest the first incomplete step.
+      if (window.__isEditContinueMode && window.__wizardStartStep == null && _ecPrevCompleted && !_ecSuggestionDone) {
+        for (var i = 0; i < steps.length; i++) {
+          if (!_ecPrevCompleted.has(steps[i])) {
+            window.__wizardStartStep = steps[i];
+            stepChanged = true;
+            break;
+          }
+        }
+        _ecSuggestionDone = true;
+      }
+
       lastPipelineSteps = steps;
       lastPipelineGroups = semanticGroups;
       barEl.classList.remove('pipeline-steps-loading', 'pipeline-steps-error');
@@ -865,6 +986,7 @@ function updatePipelineStepsBar() {
       setTimeout(function () {
         listEl.innerHTML = _renderWizardPipelineSteps(steps, semanticGroups);
         listEl.classList.remove('pipeline-steps-updating');
+        if (stepChanged) update(); // refresh JSON preview to reflect new start_step
       }, 150);
     })
     .catch(function (err) {
@@ -882,6 +1004,16 @@ function updatePipelineStepsBar() {
 }
 
 function selectStartStep(name) {
+  // Guard: in EC mode with previous-run data, only completed (cache) and the
+  // suggested step are valid restart points; future steps are not selectable.
+  if (window.__isEditContinueMode && _ecPrevCompleted) {
+    var suggestedIdx = -1;
+    for (var j = 0; j < lastPipelineSteps.length; j++) {
+      if (!_ecPrevCompleted.has(lastPipelineSteps[j])) { suggestedIdx = j; break; }
+    }
+    var nameIdx = lastPipelineSteps.indexOf(name);
+    if (suggestedIdx >= 0 && nameIdx > suggestedIdx) return;
+  }
   window.__wizardStartStep = (window.__wizardStartStep === name) ? null : name;
   var listEl = document.getElementById('pipelineStepsList');
   if (listEl && lastPipelineSteps.length) {

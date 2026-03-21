@@ -85,6 +85,16 @@ def load_persisted_steps(working_directory: str) -> dict[str, Any]:
         return {}
 
 
+def write_persisted_steps_replace(working_directory: str, steps: dict[str, Any]) -> None:
+    """Replace ``steps.json`` with exactly the given ``steps`` mapping (atomic write).
+
+    Used after backfilling skipped steps so the monitor and REST APIs see completed
+    step snapshots on disk, not only in-memory state.
+    """
+    path = _state_path(working_directory)
+    _atomic_write_json(path, {"steps": steps})
+
+
 def save_step_to_persisted(
     working_directory: str,
     step_name: str,

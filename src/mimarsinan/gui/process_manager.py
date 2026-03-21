@@ -24,6 +24,10 @@ from mimarsinan.gui.persistence import (
     load_live_metrics,
     append_console_log,
 )
+from mimarsinan.gui.run_cache_seed import (
+    copy_pipeline_cache_from_previous_run,
+    copy_steps_json_from_previous_run,
+)
 
 logger = logging.getLogger("mimarsinan.gui")
 
@@ -147,11 +151,27 @@ class ProcessManager:
         config_to_write = dict(deployment_config)
         config_to_write["generated_files_path"] = gen_root
         config_to_write["_working_directory"] = working_dir
+        continue_from = config_to_write.pop("_continue_from_run_id", None)
+
         config_path = os.path.join(config_dir, "config.json")
         with open(config_path, "w") as f:
             json.dump(config_to_write, f, indent=2)
 
         os.makedirs(os.path.join(working_dir, "_GUI_STATE"), exist_ok=True)
+
+        # Edit & continue: copy pipeline cache from the run we edited so
+        # run_from(start_step=...) finds requirements in self.cache.
+        if continue_from:
+            copy_pipeline_cache_from_previous_run(
+                os.path.abspath(gen_root),
+                str(continue_from),
+                working_dir,
+            )
+            copy_steps_json_from_previous_run(
+                os.path.abspath(gen_root),
+                str(continue_from),
+                working_dir,
+            )
 
         python = sys.executable
         proc = subprocess.Popen(

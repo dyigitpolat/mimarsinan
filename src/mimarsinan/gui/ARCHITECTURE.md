@@ -15,8 +15,9 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 | `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (e.g. default + GUI) |
 | `server.py` | `start_server`, `create_app` | FastAPI + Uvicorn server in a daemon thread; optional `run_config_fn` for POST `/api/run` |
 | `snapshot/` | `build_step_snapshot`, `snapshot_model`, `snapshot_pruning_layers`, `snapshot_ir_graph`, `snapshot_hard_core_mapping`, `snapshot_search_result`, `snapshot_adaptation_manager` | Package: `helpers.py` (numeric/dict helpers, cache key map), `builders.py` (all snapshot builders); pure functions extracting JSON-safe snapshots; step-specific tabs and new/edited kinds. **Pruning**: `snapshot_pruning_layers(model)` extracts per-layer weight heatmaps with pruning masks (red lines) for the Pruning Adaptation step; `build_step_snapshot` adds `pruning_layers` when step is Pruning Adaptation. Hardware snapshot: per-placement `utilization_frac`, `constituent_count` per core, and when a core is fused, `fused_axon_boundaries` and `fused_component_count` for GUI boundaries and badges. |
-| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted`, `save_run_info`, `update_run_status`, `load_run_info`, `append_live_metric`, `load_live_metrics`, `append_console_log`, `load_console_logs` | Load/save step state to `_GUI_STATE/steps.json` for backfill; run lifecycle metadata in `_GUI_STATE/run_info.json`; streaming metrics in `_GUI_STATE/live_metrics.jsonl`; stdout/stderr log lines in `_GUI_STATE/console.jsonl` |
+| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted`, `write_persisted_steps_replace`, `save_run_info`, `update_run_status`, `load_run_info`, `append_live_metric`, `load_live_metrics`, `append_console_log`, `load_console_logs` | Load/save step state to `_GUI_STATE/steps.json` for backfill; `write_persisted_steps_replace` atomically replaces the whole steps map (used after backfilling skipped steps so the monitor sees completed steps on disk); run lifecycle metadata in `_GUI_STATE/run_info.json`; streaming metrics in `_GUI_STATE/live_metrics.jsonl`; stdout/stderr log lines in `_GUI_STATE/console.jsonl` |
 | `process_manager.py` | `ProcessManager`, `ManagedRun`, `_start_console_reader` | Spawns headless pipeline processes with `stdout=PIPE, stderr=PIPE`; background reader threads drain both pipes and write tagged lines to `_GUI_STATE/console.jsonl`; tracks runs via filesystem polling, provides status/metrics/step detail APIs, kill with SIGTERM→SIGKILL escalation |
+| `run_cache_seed.py` | `copy_pipeline_cache_from_previous_run`, `copy_steps_json_from_previous_run` | Edit & continue: copies pipeline cache files and optionally `_GUI_STATE/steps.json` from the prior run so `run_from` has cache entries and backfill can restore full step snapshots for the monitor |
 | `runs.py` | `list_runs`, `get_run_config`, `get_run_pipeline`, `get_run_step_detail`, `get_run_console_logs` | Discover and load historical pipeline runs from the generated files directory; `get_run_console_logs` reads `console.jsonl` for the console tab |
 | `templates.py` | `list_templates`, `get_template`, `save_template`, `delete_template` | CRUD for deployment configuration templates saved as JSON files |
 | `wizard_config_builder.py` | `build_deployment_config_from_state` | Builds complete deployment config from wizard UI state, applying defaults and presets |
@@ -37,6 +38,7 @@ This contract is enforced in `__init__.py` (`GUIHandle.on_step_end`) and consume
 
 Pipeline runs are executed as **isolated OS processes** via `ProcessManager`:
 - `spawn_run()` creates a unique timestamped working directory and launches `run.py --headless`
+- If the deployment dict includes `_continue_from_run_id` (wizard edit & continue), that key is **not** written to `_RUN_CONFIG/config.json`; `copy_pipeline_cache_from_previous_run` runs first so the new process loads the previous run’s pipeline cache from disk
 - IPC is file-based: `run_info.json` (lifecycle), `steps.json` (step state), `live_metrics.jsonl` (streaming metrics)
 - On server restart, `_recover_orphaned_runs()` scans for existing run directories with active PIDs
 - `kill_run()` sends SIGTERM → waits 3s → escalates to SIGKILL
@@ -90,6 +92,44 @@ uniform preview intensity, no glow. Semantic groups flow from
 CSS. The wizard bar calls POST `/api/pipeline_steps` (debounced, 250 ms) on load and
 on config change; on error the last known list is kept.
 
+**Edit & continue** (`/wizard?run_id=...` from Welcome): `window.__isEditContinueMode`
+is set and `document.body` gets class `edit-continue-mode` so the preview bar is
+interactive and the hint label is shown. Click handling is delegated on
+`#pipelineStepsList` via `data-ec-start-step` (URL-encoded step name); inline
+`onclick` with quoted names is not used because it breaks HTML attributes for
+names containing spaces. Clicking a step sets `window.__wizardStartStep` (toggle
+off by clicking again); the chosen step is passed in the deployment config as
+`start_step` for `Pipeline.run_from`.
+
+*New run cache seeding*: `buildConfig()` sets `_continue_from_run_id` to the
+Welcome run id (`window.__editContinueSourceRunId`). `ProcessManager.spawn_run`
+strips it from the saved `_RUN_CONFIG/config.json` and calls
+`copy_pipeline_cache_from_previous_run` and `copy_steps_json_from_previous_run`
+so the new working directory has the prior run’s pipeline cache **and** a seed
+`steps.json` before `run.py --headless` starts. After `_backfill_skipped_steps`
+runs, `_persist_skipped_steps_to_steps_json` replaces `steps.json` with only
+the skipped (completed-from-cache) steps so the monitor/APIs match execution —
+`on_step_end` only persists steps that actually run in-process, so this extra
+write is required for skipped steps.
+
+*Restart-step default*: `init()` concurrently fetches `GET /api/runs/{run_id}/config`
+(the deployment JSON) and `GET /api/runs/{run_id}/pipeline`; after
+`loadStateFromConfig` the completed step names are stored in `_ecPrevCompleted`
+(a persistent `Set`, not cleared). On the first successful `POST /api/pipeline_steps`
+response, `updatePipelineStepsBar` picks the first canonical step not in that
+completed set as the default `__wizardStartStep` (one-shot via `_ecSuggestionDone`).
+If the currently selected step is
+absent from the new step list (e.g. after changing config), it is silently
+cleared. `update()` is called after any automatic step change to keep the JSON
+preview in sync.
+
+*Hardware Auto-suggest*: `loadStateFromConfig` always turns off `#hwAutoSuggestToggle`
+and sets `_hwAutoMode = false` when `__isEditContinueMode` is true (for both
+`user` and `auto` hardware modes), so core-type inputs are editable immediately
+and `done()` never triggers an unwanted `autoFillHardware`. Toggles restored from
+JSON use `forced=false` so they remain editable; spiking/hardware dependency
+rules still apply via `applySpikingDeps` / `applyHwDeps` after load.
+
 **Monitor plots** (step-detail metrics tab, scales-tab adaptation, search-tab): legends
 are placed outside the plot area to the right (`x: 1.02`, `margin.r: 100`). Accuracy
 and Adaptation curves use a fixed vertical axis [0, 1]. A single data point is drawn
@@ -139,3 +179,5 @@ plot per numeric metric (separate charts per objective).
 - `GET /api/templates/{id}` — get a template's config
 - `POST /api/templates` — save a new template (body: `{name, config}`)
 - `DELETE /api/templates/{id}` — delete a template
+e
+mplate
