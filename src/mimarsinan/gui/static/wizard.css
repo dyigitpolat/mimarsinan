@@ -216,13 +216,31 @@ body::before {
   background: rgba(244, 63, 94, 0.06);
 }
 
+.pipeline-steps-top-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
 .pipeline-steps-label {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-secondary);
-  padding-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.pipeline-steps-hint {
+  display: none;
+  font-size: 0.68rem;
+  color: var(--accent-amber);
+  opacity: 0.85;
+}
+
+.edit-continue-mode .pipeline-steps-hint {
+  display: inline;
 }
 
 .pipeline-steps-scroll {

@@ -24,6 +24,7 @@ from mimarsinan.gui.data_collector import DataCollector
 from mimarsinan.gui.persistence import (
     load_persisted_steps,
     save_step_to_persisted,
+    write_persisted_steps_replace,
     append_live_metric,
     append_console_log,
 )
@@ -264,6 +265,36 @@ def _backfill_skipped_steps(
                 snapshot=snapshot,
                 snapshot_key_kinds=snapshot_key_kinds,
             )
+
+    # Persist skipped steps to disk so the monitor / active-run APIs can browse them.
+    # (In-memory backfill alone does not write steps.json; on_step_end only runs for executed steps.)
+    if working_dir:
+        _persist_skipped_steps_to_steps_json(working_dir, collector, step_names, start_idx)
+
+
+def _persist_skipped_steps_to_steps_json(
+    working_dir: str,
+    collector: DataCollector,
+    step_names: list[str],
+    start_idx: int,
+) -> None:
+    """Write steps.json containing only steps before start_idx, from collector state."""
+    merged: dict[str, Any] = {}
+    for i in range(start_idx):
+        name = step_names[i]
+        detail = collector.get_step_detail(name)
+        if not detail:
+            continue
+        merged[name] = {
+            "start_time": detail.get("start_time"),
+            "end_time": detail.get("end_time"),
+            "target_metric": detail.get("target_metric"),
+            "metrics": detail.get("metrics", []),
+            "snapshot": detail.get("snapshot"),
+            "snapshot_key_kinds": detail.get("snapshot_key_kinds") or {},
+            "status": "completed",
+        }
+    write_persisted_steps_replace(working_dir, merged)
 
 
 def _make_json_safe(obj: Any) -> Any:

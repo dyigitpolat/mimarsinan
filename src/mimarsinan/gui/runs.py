@@ -13,6 +13,18 @@ from mimarsinan.gui.persistence import load_persisted_steps, load_live_metrics, 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
+def suggest_resume_step(ordered_steps: list[str], completed_steps: set[str]) -> str | None:
+    """Return the first step in canonical order that has not been completed, or None if all are complete.
+
+    This is the server-side equivalent of the edit-continue resume hint logic
+    that the wizard frontend uses to pre-select a restart point.
+    """
+    for step in ordered_steps:
+        if step not in completed_steps:
+            return step
+    return None
+
+
 def get_runs_root() -> str:
     return os.environ.get("MIMARSINAN_RUNS_ROOT", "./generated")
 

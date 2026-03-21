@@ -10,6 +10,7 @@ from mimarsinan.gui.persistence import (
     load_live_metrics,
     save_step_to_persisted,
     load_persisted_steps,
+    write_persisted_steps_replace,
 )
 
 
@@ -196,3 +197,25 @@ class TestSaveLoadPersistedSteps:
         working_dir = str(tmp_path)
         steps = load_persisted_steps(working_dir)
         assert steps == {}
+
+
+class TestWritePersistedStepsReplace:
+    def test_replace_overwrites_entire_steps_dict(self, tmp_path):
+        working_dir = str(tmp_path)
+        save_step_to_persisted(
+            working_dir,
+            step_name="OldStep",
+            start_time=1.0,
+            end_time=2.0,
+            target_metric=None,
+            metrics=[],
+            snapshot=None,
+            snapshot_key_kinds=None,
+        )
+        write_persisted_steps_replace(
+            working_dir,
+            {"OnlyStep": {"start_time": 3.0, "end_time": 4.0, "target_metric": 0.9, "metrics": [], "snapshot": {}, "snapshot_key_kinds": {}, "status": "completed"}},
+        )
+        steps = load_persisted_steps(working_dir)
+        assert list(steps.keys()) == ["OnlyStep"]
+        assert "OldStep" not in steps
