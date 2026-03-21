@@ -10,7 +10,9 @@ import asyncio
 import json
 import logging
 import math
+import os
 import threading
+import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -529,6 +531,29 @@ def create_app(
     return app
 
 
+def _gui_entry_url(port: int) -> str:
+    """HTTP URL for the welcome page (``/``) shown and opened after the GUI server starts."""
+    return f"http://127.0.0.1:{port}/"
+
+
+def _schedule_open_browser(url: str) -> None:
+    """Open *url* in the default browser after a short delay so the server is accepting.
+
+    Uses :func:`webbrowser.open` (``xdg-open`` on Linux, ``open`` on macOS, etc.).
+    Set ``MIMARSINAN_GUI_NO_BROWSER=1`` to skip (e.g. CI or headless environments).
+    """
+    if os.environ.get("MIMARSINAN_GUI_NO_BROWSER", "").strip().lower() in ("1", "true", "yes"):
+        return
+
+    def _open() -> None:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            logger.debug("Could not open browser for %s", url, exc_info=True)
+
+    threading.Timer(0.6, _open).start()
+
+
 def _port_is_free(host: str, port: int) -> bool:
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -592,8 +617,8 @@ def start_server(
 
     thread = threading.Thread(target=_run, daemon=True, name="gui-server")
     thread.start()
-    logger.info("GUI server started on http://%s:%d", host, chosen_port)
-    print(f"\n  Pipeline Monitor GUI: http://localhost:{chosen_port}\n")
-    if run_config_fn is not None:
-        print(f"  Wizard: http://localhost:{chosen_port}/wizard\n")
+    logger.info("GUI server started (bind %s:%d)", host, chosen_port)
+    entry_url = _gui_entry_url(chosen_port)
+    print(f"\n  Mimarsinan is running at: {entry_url}\n")
+    _schedule_open_browser(entry_url)
     return thread
