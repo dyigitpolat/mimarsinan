@@ -89,6 +89,18 @@ function onPipelineStepsListClick(ev) {
   } catch (e) { /* ignore malformed */ }
 }
 
+// ── Wizard URL params: deployment config (same shape as edit & continue) ──
+/** Load deployment JSON for ``?run_id=`` or ``?template_id=`` (flat config like GET /api/runs/.../config). */
+function fetchDeploymentConfigForWizardUrlParams(runId, templateId) {
+  if (runId) {
+    return fetch('/api/runs/' + encodeURIComponent(runId) + '/config').then(function (r) { return r.ok ? r.json() : null; });
+  }
+  if (templateId) {
+    return fetch('/api/templates/' + encodeURIComponent(templateId)).then(function (r) { return r.ok ? r.json() : null; });
+  }
+  return Promise.resolve(null);
+}
+
 // ── Init ───────────────────────────────────────────────────
 function init() {
   _renderHwStats(null); // show placeholder immediately, before API loads
@@ -124,35 +136,29 @@ function init() {
       if (copyBtn && showJson) copyBtn.style.display = showJson.classList.contains('on') ? '' : 'none';
     }
 
-    if (runId) {
-      // Fetch config and pipeline state concurrently; pipeline state is used to
-      // suggest the first incomplete step as the default restart point.
-      var _pipelineStateFetch = fetch('/api/runs/' + encodeURIComponent(runId) + '/pipeline')
+    // Same load path for run config and template: flat deployment dict → loadStateFromConfig.
+    // For edit & continue only, also fetch pipeline to suggest the restart step.
+    var pipelinePrefetch = runId
+      ? fetch('/api/runs/' + encodeURIComponent(runId) + '/pipeline')
         .then(function (r) { return r.ok ? r.json() : null; })
-        .catch(function () { return null; });
-      fetch('/api/runs/' + encodeURIComponent(runId) + '/config')
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (c) {
-          return (c ? loadStateFromConfig(c) : Promise.resolve()).then(function () { return _pipelineStateFetch; });
-        })
-        .then(function (pipelineState) {
-          if (pipelineState && pipelineState.steps) {
-            _ecPrevCompleted = new Set(
-              pipelineState.steps
-                .filter(function (s) { return s.status === 'completed'; })
-                .map(function (s) { return s.name; })
-            );
-          }
-          done();
-        })
-        .catch(function () { done(); });
-    } else if (templateId) {
-      fetch('/api/templates/' + encodeURIComponent(templateId)).then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
-        if (c) loadStateFromConfig(c).then(done); else done();
-      }).catch(function () { done(); });
-    } else {
-      done();
-    }
+        .catch(function () { return null; })
+      : Promise.resolve(null);
+
+    fetchDeploymentConfigForWizardUrlParams(runId, templateId)
+      .then(function (c) {
+        return (c ? loadStateFromConfig(c) : Promise.resolve()).then(function () { return pipelinePrefetch; });
+      })
+      .then(function (pipelineState) {
+        if (runId && pipelineState && pipelineState.steps) {
+          _ecPrevCompleted = new Set(
+            pipelineState.steps
+              .filter(function (s) { return s.status === 'completed'; })
+              .map(function (s) { return s.name; })
+          );
+        }
+        done();
+      })
+      .catch(function () { done(); });
   });
 }
 

@@ -1,37 +1,29 @@
 {
   "seed": 0,
-  "pipeline_mode": "phased",
-  "experiment_name": "mnist_easy_default_mixer",
+  "pipeline_mode": "vanilla",
+  "experiment_name": "mnist_eas",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
     "cores": [
       {
-        "max_axons": 256,
-        "max_neurons": 128,
-        "count": 40,
-        "has_bias": true
-      },
-      {
-        "max_axons": 128,
-        "max_neurons": 256,
-        "count": 40,
+        "max_axons": 1025,
+        "max_neurons": 257,
+        "count": 100,
         "has_bias": true
       }
     ],
-    "max_axons": 256,
-    "max_neurons": 256,
+    "max_axons": 1025,
+    "max_neurons": 257,
     "target_tq": 32,
     "simulation_steps": 32,
     "weight_bits": 8,
-    "has_bias": true,
-    "allow_core_coalescing": true,
-    "allow_neuron_splitting": true
+    "has_bias": true
   },
   "deployment_parameters": {
     "lr": 0.001,
-    "training_epochs": 20,
-    "tuner_epochs": 3,
+    "training_epochs": 10,
+    "tuner_epochs": 1,
     "degradation_tolerance": 0.1,
     "configuration_mode": "user",
     "model_type": "mlp_mixer",
@@ -43,16 +35,15 @@
       "fc_w_1": 64,
       "fc_w_2": 64
     },
-    "spiking_mode": "ttfs_quantized",
+    "spiking_mode": "ttfs",
     "firing_mode": "TTFS",
     "spike_generation_mode": "TTFS",
     "thresholding_mode": "<=",
-    "activation_quantization": true,
-    "weight_quantization": true,
-    "pruning": true,
-    "pruning_fraction": 0.2
+    "activation_quantization": false,
+    "weight_quantization": false
   },
   "target_metric_override": null,
-  "start_step": null,
-  "stop_step": null
+  "start_step": "Soft Core Mapping",
+  "stop_step": null,
+  "_continue_from_run_id": "my_deployment_vanilla_deployment_run_20260321_201438"
 }
