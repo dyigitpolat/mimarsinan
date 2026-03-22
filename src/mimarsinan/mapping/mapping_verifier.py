@@ -144,6 +144,7 @@ def verify_hardware_config(
     *,
     allow_neuron_splitting: bool = False,
     allow_axon_coalescing: bool = False,
+    allow_scheduling: bool = False,
 ) -> Dict[str, Any]:
     """Check whether a hardware core configuration is sufficient for the given softcores.
 
@@ -207,8 +208,10 @@ def verify_hardware_config(
     # Pre-check: confirm at least one core type can accept the largest softcore.
     # When both features are active any softcore is mappable regardless of dimensions
     # (splitting distributes outputs, coalescing distributes inputs), so no check needed.
-    # When only one feature is active, the non-split dimension is still a hard constraint.
-    if not (allow_axon_coalescing and allow_neuron_splitting):
+    # When scheduling is enabled, coalescing/splitting fragments can be distributed
+    # across passes, so dimension constraints are always satisfiable.
+    # When only one feature is active (no scheduling), the non-split dimension is still a hard constraint.
+    if not (allow_axon_coalescing and allow_neuron_splitting) and not allow_scheduling:
         at_least_one_covers_largest = False
         for hw in hw_types:
             axon_ok = allow_axon_coalescing or hw.max_axons >= max_req_axons
@@ -237,6 +240,8 @@ def verify_hardware_config(
     # Attempt greedy packing — this is the precise feasibility check.
     # (We do NOT pre-check total_count < len(softcores): multiple softcores can
     # share a single hardware core, so far fewer than len(softcores) cores may suffice.)
+    all_softcores = list(softcores)  # preserve full list for stats
+
     result = pack_layout(
         softcores=softcores,
         core_types=hw_types,
@@ -244,12 +249,89 @@ def verify_hardware_config(
         allow_axon_coalescing=allow_axon_coalescing,
     )
 
-    if not result.feasible:
+    # When scheduling is enabled and single-pass packing fails, check if
+    # scheduled mapping can handle the workload.  With scheduling, the only
+    # hard constraint is that each individual softcore's dimensions are
+    # feasible for the hardware core types (with coalescing/splitting).
+    # If that's satisfied, scheduling can always succeed — it just uses
+    # more passes.
+    schedule_info: Dict[str, Any] = {}
+    if not result.feasible and allow_scheduling:
+        # With scheduling, the workload is always mappable — each pass gets a
+        # fresh core pool.  Partition softcores into per-segment passes and
+        # pack the busiest pass to produce meaningful utilization stats.
+        from mimarsinan.mapping.schedule_partitioner import estimate_passes_for_layout
+        total_core_count = sum(int(ct.get("count", 0)) for ct in core_types)
+        max_hw_ax = max(hw.max_axons for hw in hw_types) if hw_types else 1
+        max_hw_neu = max(hw.max_neurons for hw in hw_types) if hw_types else 1
+
+        common_est_kwargs = dict(
+            max_hw_axons=max_hw_ax,
+            max_hw_neurons=max_hw_neu,
+            allow_coalescing=allow_axon_coalescing,
+            allow_splitting=allow_neuron_splitting,
+        )
+
+        # Compute per-segment pass counts.
+        from collections import defaultdict as _defaultdict
+        seg_softcores: Dict[int, List[LayoutSoftCoreSpec]] = {}
+        for sc in all_softcores:
+            sid = sc.segment_id if sc.segment_id is not None else 0
+            seg_softcores.setdefault(sid, []).append(sc)
+
+        per_segment_passes: Dict[int, int] = {}
+        total_pass_count = 0
+        all_pass_lists: list = []
+        for sid in sorted(seg_softcores.keys()):
+            seg_scs = seg_softcores[sid]
+            if total_core_count > 0:
+                n_passes, seg_pass_lists = estimate_passes_for_layout(
+                    seg_scs, total_core_count, **common_est_kwargs,
+                )
+            else:
+                n_passes, seg_pass_lists = 1, [seg_scs]
+            per_segment_passes[sid] = max(n_passes, 1)
+            total_pass_count += max(n_passes, 1)
+            all_pass_lists.extend(seg_pass_lists)
+
+        # Pack the busiest pass for representative utilization stats.
+        best_pass_result = None
+        best_pass_softcores = all_softcores
+        for pass_scs in sorted(all_pass_lists, key=len, reverse=True):
+            try:
+                pr = pack_layout(
+                    softcores=pass_scs,
+                    core_types=hw_types,
+                    allow_neuron_splitting=allow_neuron_splitting,
+                    allow_axon_coalescing=allow_axon_coalescing,
+                )
+                if pr.feasible:
+                    best_pass_result = pr
+                    best_pass_softcores = pass_scs
+                    break
+            except Exception:
+                continue
+
+        schedule_info = {
+            "scheduled_feasible": True,
+            "total_passes": total_pass_count,
+            "per_segment_passes": per_segment_passes,
+            "max_cores_per_pass": total_core_count,
+            "message": (
+                f"Scheduled mapping: {total_pass_count} total passes across "
+                f"{len(per_segment_passes)} segment(s) (cores reused between passes)."
+            ),
+        }
+        if best_pass_result is not None and best_pass_result.feasible:
+            result = best_pass_result
+            softcores = best_pass_softcores
+        field_errors.clear()
+
+    if not result.feasible and not schedule_info.get("scheduled_feasible"):
         err_msg = result.error or "Hardware configuration cannot fit all soft cores."
         errors.append(err_msg)
         total_core_count = sum(int(ct.get("count", 0)) for ct in core_types)
 
-        # Estimate the minimum number of cores needed so the user knows how far off they are.
         import math
         max_hw_ax = max(hw.max_axons for hw in hw_types) if hw_types else 1
         max_hw_neu = max(hw.max_neurons for hw in hw_types) if hw_types else 1
@@ -267,12 +349,22 @@ def verify_hardware_config(
 
     errors = list(field_errors.values()) if field_errors else errors
 
-    stats = build_stats_from_packing_result(result, num_original_softcores=len(softcores), softcores=softcores)
+    stats = build_stats_from_packing_result(result, num_original_softcores=len(all_softcores), softcores=all_softcores)
+    stats_dict = stats.to_dict()
 
-    return {
-        "feasible": result.feasible,
+    if schedule_info.get("scheduled_feasible"):
+        stats_dict["feasible"] = True
+        stats_dict["schedule_pass_count"] = schedule_info.get("total_passes", 0)
+        stats_dict["max_cores_per_pass"] = schedule_info.get("max_cores_per_pass", 0)
+        stats_dict["per_segment_passes"] = schedule_info.get("per_segment_passes", {})
+
+    out: Dict[str, Any] = {
+        "feasible": result.feasible or schedule_info.get("scheduled_feasible", False),
         "errors": errors,
         "field_errors": field_errors,
         "packing_result": result,
-        "stats": stats.to_dict(),
+        "stats": stats_dict,
     }
+    if schedule_info:
+        out["schedule_info"] = schedule_info
+    return out

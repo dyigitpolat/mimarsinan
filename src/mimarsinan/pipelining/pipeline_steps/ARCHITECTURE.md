@@ -23,7 +23,7 @@ in the deployment pipeline.
 | `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (computes per-source input scales via `compute_per_source_scales`; adds TTFS shift compensation; scales and rounds `hardware_bias` by the quantization factor during weight quantization; reduces effective `max_axons` by 1 when `hardware_bias=False` to account for the always-on bias axon) |
 | `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification |
 | `core_flow_tuning_step.py` | `CoreFlowTuningStep` | Tuning |
-| `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping |
+| `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping (passes `allow_scheduling` from `platform_constraints_resolved` to `build_hybrid_hard_core_mapping`; reports per-segment pass counts when scheduled) |
 | `simulation_step.py` | `SimulationStep` | Verification |
 | `torch_mapping_step.py` | `TorchMappingStep` | Model conversion (torch_* types) |
 | `weight_preloading_step.py` | `WeightPreloadingStep` | Load pretrained weights (replaces Pretraining) |
