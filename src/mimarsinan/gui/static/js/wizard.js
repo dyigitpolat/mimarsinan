@@ -254,6 +254,9 @@ function handleToggleChange(id) {
   if (id === 'neuronSplittingToggle') {
     applyHwDeps();
   }
+  if (id === 'scheduledMappingToggle') {
+    applyHwDeps();
+  }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -645,6 +648,7 @@ function buildConfig() {
     };
     if (allowCoalescing) platformConstraints.allow_core_coalescing = true;
     if (isToggleOn('neuronSplittingToggle')) platformConstraints.allow_neuron_splitting = true;
+    if (isToggleOn('scheduledMappingToggle')) platformConstraints.allow_scheduling = true;
   } else {
     platformConstraints = {
       mode: "auto",
@@ -656,6 +660,7 @@ function buildConfig() {
           weight_bits: weightBits,
           allow_core_coalescing: allowCoalescing,
           allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
+          allow_scheduling: isToggleOn('scheduledMappingToggle'),
         },
         search_space: {
           num_core_types: parseInt(v('numCoreTypes')),
@@ -771,6 +776,7 @@ function loadStateFromConfig(config) {
     setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
     setToggleFromConfig('coreCoalescingToggle', pc.allow_core_coalescing);
     setToggleFromConfig('neuronSplittingToggle', pc.allow_neuron_splitting);
+    setToggleFromConfig('scheduledMappingToggle', pc.allow_scheduling);
     setVal('weightBits', pc.weight_bits != null ? pc.weight_bits : dp.weight_bits);
     setVal('targetTq', pc.target_tq);
     setVal('simCycles', pc.simulation_steps);
@@ -784,6 +790,7 @@ function loadStateFromConfig(config) {
     setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
     setToggleFromConfig('coreCoalescingToggle', fixed.allow_core_coalescing);
     setToggleFromConfig('neuronSplittingToggle', fixed.allow_neuron_splitting);
+    setToggleFromConfig('scheduledMappingToggle', fixed.allow_scheduling);
     setVal('numCoreTypes', ss.num_core_types);
     setVal('coreTypeCounts', Array.isArray(ss.core_type_counts) ? ss.core_type_counts.join(', ') : ss.core_type_counts);
     setVal('coreAxonBounds', Array.isArray(ss.core_axons_bounds) ? ss.core_axons_bounds.join(', ') : ss.core_axons_bounds);
@@ -1170,6 +1177,7 @@ function _buildHwApiBody() {
     allow_coalescing: isToggleOn('coreCoalescingToggle'),
     hardware_bias: isToggleOn('hardwareBiasToggle'),
     allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
+    allow_scheduling: isToggleOn('scheduledMappingToggle'),
     target_tq: targetTq,
   };
 }
@@ -1230,7 +1238,11 @@ function autoFillHardware() {
         setTimeout(() => pane.classList.remove('hw-auto-flash'), 1000);
       }
       // Verify the auto-suggestion is actually feasible (catches under-estimated counts)
-      _doHwValidation('\u2713 Auto-configured: ' + (data.rationale || ''));
+      let rationaleMsg = '\u2713 Auto-configured: ' + (data.rationale || '');
+      if (data.num_passes && data.num_passes > 1) {
+        rationaleMsg += ' (' + data.num_passes + ' schedule passes)';
+      }
+      _doHwValidation(rationaleMsg);
     } else {
       // No core types returned (e.g. no softcores, or layout failed) — clear Recalculating state
       _hwAutoMode = false;
@@ -1295,11 +1307,18 @@ function _doHwValidation(successPrefix) {
       core_types: coreTypes,
       allow_coalescing: body.allow_coalescing || false,
       allow_neuron_splitting: body.allow_neuron_splitting || false,
+      allow_scheduling: body.allow_scheduling || false,
     }),
   }).then(r => r.json()).then(data => {
     if (data.error) return;  // server error, skip silently
     if (data.feasible && successPrefix) {
-      _showHwValidation(true, [successPrefix], {});
+      let msg = successPrefix;
+      if (data.schedule_info && data.schedule_info.scheduled_feasible) {
+        msg += ' (scheduled: ' + data.schedule_info.num_passes + ' passes)';
+      }
+      _showHwValidation(true, [msg], {});
+    } else if (data.schedule_info && data.schedule_info.scheduled_feasible) {
+      _showHwValidation(true, [data.schedule_info.message], {});
     } else {
       _showHwValidation(data.feasible, data.errors || [], data.field_errors || {});
     }
@@ -1315,12 +1334,16 @@ function _showHwValidation(feasible, errors, fieldErrors) {
   // Clear previous per-field highlights
   document.querySelectorAll('.hw-field-invalid').forEach(el => el.classList.remove('hw-field-invalid'));
 
-  if (feasible && (!errors || errors.length === 0 || (errors.length === 1 && errors[0].startsWith('\u2713')))) {
+  if (feasible) {
     const msg = errors && errors.length ? errors[0] : '\u2713 Hardware configuration is sufficient.';
     banner.textContent = msg;
     banner.className = 'hw-validation-banner ok';
     if (section) section.classList.remove('hw-invalid');
-    setTimeout(() => { if (banner.className.includes('ok')) banner.classList.add('hide'); }, 3000);
+    // Auto-hide after 3s for simple success; keep visible for scheduling info
+    const isScheduleInfo = msg.toLowerCase().includes('scheduled') || msg.toLowerCase().includes('passes');
+    if (!isScheduleInfo) {
+      setTimeout(() => { if (banner.className.includes('ok')) banner.classList.add('hide'); }, 3000);
+    }
     return;
   }
 
@@ -1434,6 +1457,12 @@ function _renderHwStats(statsOrState) {
     return;
   }
 
+  // Scheduled mapping: show pass count in the stats header badge
+  var scheduleBadge = '';
+  if (stats.schedule_pass_count && stats.schedule_pass_count > 1) {
+    scheduleBadge = ' \u2022 Scheduled';
+  }
+
   // ── Helpers ─────────────────────────────────────────────
   function fmt(v) { return v != null ? v.toFixed(1) : '\u2014'; }
   function fmtInt(v) { return v != null ? String(v) : '\u2014'; }
@@ -1488,6 +1517,8 @@ function _renderHwStats(statsOrState) {
   function renderLayoutPreview(preview) {
     if (!preview || !Array.isArray(preview.flow) || preview.flow.length === 0) return '';
 
+    var hasScheduling = preview.schedule_sync_count > 0;
+
     var items = preview.flow.map(function (item) {
       if (item.kind === 'input' || item.kind === 'output') {
         return '<div class="hw-layout-mini-endcap ' + item.kind + '">' +
@@ -1495,6 +1526,13 @@ function _renderHwStats(statsOrState) {
           '</div>';
       }
       if (item.kind === 'host') {
+        if (item.schedule_sync) {
+          // Schedule sync barrier — thin red vertical line with glowing effect
+          return '<div class="hw-layout-mini-sync-divider">' +
+            '<div class="hw-layout-mini-sync-cap">\u21bb</div>' +
+            '<div class="hw-layout-mini-sync-bar"></div>' +
+            '</div>';
+        }
         return '<div class="hw-layout-mini-host">' +
           '<div class="hw-layout-mini-host-box">' +
           '<div class="hw-layout-mini-host-label">' + fmtInt(item.compute_op_count) + ' ops</div>' +
@@ -1513,11 +1551,12 @@ function _renderHwStats(statsOrState) {
 
     var flowHtml = items.map(function (itemHtml, idx) {
       if (idx === items.length - 1) return itemHtml;
-      return itemHtml + '<div class="hw-layout-mini-arrow">→</div>';
+      return itemHtml + '<div class="hw-layout-mini-arrow">\u2192</div>';
     }).join('');
 
+    var title = hasScheduling ? 'Mapping Miniview (Scheduled)' : 'Mapping Miniview';
     return '<div class="hw-layout-mini-wrap">' +
-      '<div class="hw-stats-section-label">Mapping Miniview</div>' +
+      '<div class="hw-stats-section-label">' + title + '</div>' +
       '<div class="hw-layout-mini-flow">' + flowHtml + '</div>' +
       '</div>';
   }
@@ -1526,20 +1565,23 @@ function _renderHwStats(statsOrState) {
   var html =
     '<div class="hw-stats-header">' +
       '<span class="hw-stats-title">Mapping Performance</span>' +
-      '<span class="hw-stats-badge ok">Verified</span>' +
+      '<span class="hw-stats-badge ok">Verified' + scheduleBadge + '</span>' +
     '</div>';
 
   // Count cards — always-present topology overview
   var segmentCard = (stats.neural_segment_count > 0)
     ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.neural_segment_count) + '</div><div class="hw-stat-card-label">Neural Segments</div></div>'
     : '';
-  var syncBarrierCard = (stats.host_side_segment_count > 0)
-    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.host_side_segment_count) + '</div><div class="hw-stat-card-label">Sync Barriers</div></div>'
+  var scheduleSyncs = (stats.layout_preview && stats.layout_preview.schedule_sync_count) || 0;
+  var totalBarriers = (stats.host_side_segment_count || 0) + scheduleSyncs;
+  var syncBarrierCard = (totalBarriers > 0)
+    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(totalBarriers) + '</div><div class="hw-stat-card-label">Sync Barriers</div></div>'
     : '';
+  var coresLabel = (stats.schedule_pass_count > 1) ? 'Cores / Pass' : 'Cores Used';
 
   html +=
     '<div class="hw-stats-cards">' +
-      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_cores) + '</div><div class="hw-stat-card-label">Cores Used</div></div>' +
+      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_cores) + '</div><div class="hw-stat-card-label">' + coresLabel + '</div></div>' +
       '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_softcores) + '</div><div class="hw-stat-card-label">Softcores</div></div>' +
       segmentCard + syncBarrierCard +
     '</div>';
@@ -1612,6 +1654,23 @@ function _renderHwStats(statsOrState) {
         detailChip('Min', stats.segment_latency_min) +
         detailChip('Mdn', stats.segment_latency_median) +
         detailChip('Max', stats.segment_latency_max) +
+      '</div>';
+  }
+
+  // ── Scheduling detail ──────────────────────────────────
+  if (stats.schedule_pass_count > 1) {
+    var perSegDetail = '';
+    if (stats.per_segment_passes) {
+      var segEntries = Object.keys(stats.per_segment_passes).sort(function(a, b) { return a - b; });
+      perSegDetail = segEntries.map(function(sid) {
+        return 'seg ' + sid + ': ' + stats.per_segment_passes[sid] + 'p';
+      }).join(', ');
+    }
+    detailRowsHtml +=
+      '<div class="hw-detail-row">' +
+        '<span class="hw-detail-title">Scheduling</span>' +
+        '<span class="hw-detail-count">' + fmtInt(stats.schedule_pass_count) + ' total passes</span>' +
+        '<span class="hw-detail-stat-label">' + (perSegDetail || 'Cores reused between passes.') + '</span>' +
       '</div>';
   }
 

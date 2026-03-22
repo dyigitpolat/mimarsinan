@@ -81,6 +81,8 @@ class HardwareSuggestion:
     core_types: List[Dict[str, Any]]
     total_cores: int
     rationale: str
+    num_passes: int = 1
+    estimated_latency_multiplier: float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +483,123 @@ def suggest_hardware_config(
         total_cores=best_total,
         rationale=". ".join(rationale_parts) + ".",
     )
+
+
+def suggest_hardware_config_scheduled(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    *,
+    max_passes: int = 8,
+    latency_weight: float = 1.0,
+    allow_coalescing: bool = False,
+    hardware_bias: bool = True,
+    axon_granularity: int = 1,
+    neuron_granularity: int = 1,
+    safety_margin: float = 0.15,
+    allow_neuron_splitting: bool = False,
+) -> HardwareSuggestion:
+    """Suggest hardware config with scheduled mapping (core reuse across passes).
+
+    Explores the tradeoff between core count and number of schedule passes.
+    For each candidate pass count, suggests hardware for the largest pass
+    and evaluates::
+
+        cost = total_core_area × num_passes ^ latency_weight
+
+    ``latency_weight`` controls the balance:
+      - 1.0: area × latency product (balanced)
+      - < 1.0: favours fewer cores (area-conscious)
+      - > 1.0: favours fewer passes (latency-conscious)
+
+    Returns the configuration with the lowest cost.
+    """
+    from mimarsinan.mapping.schedule_partitioner import estimate_passes_for_layout
+
+    if not softcores:
+        return HardwareSuggestion(
+            core_types=[], total_cores=0,
+            rationale="No softcores — nothing to map.",
+        )
+
+    max_passes = max(1, int(max_passes))
+    softcores_list = list(softcores)
+
+    common_kwargs = dict(
+        allow_coalescing=allow_coalescing,
+        hardware_bias=hardware_bias,
+        axon_granularity=axon_granularity,
+        neuron_granularity=neuron_granularity,
+        safety_margin=safety_margin,
+        allow_neuron_splitting=allow_neuron_splitting,
+    )
+
+    # Try the non-scheduled path first (1 pass = all softcores).
+    single = suggest_hardware_config(softcores_list, **common_kwargs)
+
+    def _core_area(suggestion: HardwareSuggestion) -> float:
+        return sum(
+            ct["max_axons"] * ct["max_neurons"] * ct["count"]
+            for ct in suggestion.core_types
+        )
+
+    best = single
+    best_cost = _core_area(single) * (1.0 ** latency_weight)
+    best_passes = 1
+
+    # For multi-pass search, we need hw dimensions from the single-pass
+    # suggestion to estimate hardware core cost per softcore.
+    if single.core_types:
+        ref_ax = max(ct["max_axons"] for ct in single.core_types)
+        ref_neu = max(ct["max_neurons"] for ct in single.core_types)
+    else:
+        max_ax, max_neu, _, _ = _dimension_bounds(softcores_list)
+        ref_ax, ref_neu = max_ax or 256, max_neu or 256
+
+    # Search: progressively reduce the per-pass core budget.
+    # For each budget, estimate how many passes result, then suggest hw
+    # for the largest pass.
+    seen_pass_counts: set[int] = {1}
+    budgets_to_try = set()
+    # Try halving the single-pass core count, and fractions down to 1/max_passes.
+    for divisor in range(2, max_passes + 1):
+        budgets_to_try.add(max(1, single.total_cores // divisor))
+    # Also try absolute small budgets for extreme scheduling.
+    for b in [1, 2, 4, 8, 16, 32]:
+        if b < single.total_cores:
+            budgets_to_try.add(b)
+
+    for budget in sorted(budgets_to_try, reverse=True):
+        est_passes, pass_lists = estimate_passes_for_layout(
+            softcores_list, budget,
+            max_hw_axons=ref_ax, max_hw_neurons=ref_neu,
+            allow_coalescing=allow_coalescing, allow_splitting=allow_neuron_splitting,
+        )
+        if est_passes <= 1 or est_passes in seen_pass_counts or est_passes > max_passes:
+            continue
+        seen_pass_counts.add(est_passes)
+
+        largest_pass = max(pass_lists, key=len)
+        try:
+            suggestion = suggest_hardware_config(largest_pass, **common_kwargs)
+        except Exception:
+            continue
+        if not suggestion.core_types:
+            continue
+
+        cost = _core_area(suggestion) * (est_passes ** latency_weight)
+        if cost < best_cost:
+            best = suggestion
+            best_cost = cost
+            best_passes = est_passes
+
+    # Annotate the winner with scheduling info.
+    rationale_parts = [best.rationale.rstrip(".")]
+    if best_passes > 1:
+        rationale_parts.append(f"{best_passes} schedule passes (cores reused)")
+        rationale_parts.append(f"latency ~{best_passes}x single-pass")
+    best.rationale = ". ".join(rationale_parts) + "."
+    best.num_passes = best_passes
+    best.estimated_latency_multiplier = float(best_passes)
+    return best
 
 
 def suggest_hardware_config_for_model(

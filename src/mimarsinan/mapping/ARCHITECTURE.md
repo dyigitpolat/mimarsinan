@@ -15,7 +15,8 @@ the IR into physical hardware cores.
 | `chip_export.py` | `hard_cores_to_chip`, `generate_core_weights`, `generate_core_connection_info`, `to_numpy` | Converts `HardCoreMapping` → `ChipModel` for nevresim. Single consumer: `chip_simulation.nevresim_driver`. |
 | `softcore_mapping.py` | `SoftCore`, `HardCore`, `HardCoreMapping`, `compact_soft_core_mapping` | Logical-to-physical core representations and packing. **Bias chain**: `SoftCore.hardware_bias` and `HardCore.hardware_bias` carry dedicated per-neuron bias arrays through the packing pipeline; `HardCore.add_softcore()` copies bias into the correct neuron slice; `compact_soft_core_mapping` compacts `hardware_bias` alongside pruned columns. When `hardware_bias` is set, no always-on axon row exists. Legacy mode: `HardCore.has_bias_capability` (from `cores_config["has_bias"]`); codegen folds the last matrix row into per-neuron bias. Two-way traceability: `neuron_mapping` (soft→hard); `soft_core_placements_per_hard_core` (hard→soft) for overlay/UI. **Fused cores**: when the packer fuses multiple physical HardCores via `fuse_hardcores`, the returned fused HardCore has optional `fused_component_axons` (list of axon counts per component) set in `HardCoreMapping.map()` for GUI boundary and badge display. |
 | `core_packing.py` | `greedy_pack_softcores`, `pre_allocate_coalescing_groups` | Generic best-fit greedy bin-packing algorithm; `pre_allocate_coalescing_groups` reserves dedicated `HardCore`s for coalescing partial softcores (which occupy the full axon width and cannot share a core via diagonal packing) before the main greedy pass |
-| `hybrid_hardcore_mapping.py` | `HybridHardCoreMapping`, `HybridStage`, `SegmentIOSlice`, `build_hybrid_hard_core_mapping` | Multi-segment deployable program with state-buffer I/O |
+| `hybrid_hardcore_mapping.py` | `HybridHardCoreMapping`, `HybridStage`, `SegmentIOSlice`, `build_hybrid_hard_core_mapping` | Multi-segment deployable program with state-buffer I/O. `HybridStage` carries optional `schedule_segment_index` / `schedule_pass_index` metadata for scheduled mapping. When `allow_scheduling=True`, `build_hybrid_hard_core_mapping` allocates a **fresh** hardware core pool per pass (same physical cores reprogrammed) instead of a single shared pool, enabling models that need more cores than available. |
+| `schedule_partitioner.py` | `partition_segment_into_passes`, `estimate_passes_for_layout` | Partitions a neural segment's cores into sequential schedule passes. Respects latency ordering (cores at latency L+1 depend only on latency ≤ L) and coalescing group integrity (never split). `estimate_passes_for_layout` is a lightweight layout-level variant for the HW config suggester. |
 | `chip_latency.py` | `ChipLatency` | Calculates chip simulation latency from core graph; raises if mapping has no output_sources. |
 | `ir_latency.py` | `IRLatency` | Computes per-node latency tiers in the IR graph |
 | `ir_pruning_analysis.py` | `get_neural_segments`, `compute_segment_io_exemption` | Pure graph queries: neural segments and per-node I/O exemption. Used by `ir_pruning`. |
@@ -26,7 +27,7 @@ the IR into physical hardware cores.
 | `spike_source_spans.py` | `SpikeSourceSpan`, `compress_spike_sources` | Range-compressed spike source representations |
 | `mapping_verifier.py` | `verify_soft_core_mapping`, `verify_hardware_config`, `MappingVerificationResult` | Layout mapping verification; hardware config check. With multiple core types, at least one type must fit the largest softcore. `MappingVerificationResult` also carries `host_side_segment_count` (compute-only runs between / around neural segments) and `layout_preview` (compact input/host/latency-group/output flow summary for the wizard). `verify_hardware_config` returns a `"stats"` dict (from `LayoutVerificationStats.to_dict()`) alongside feasibility. |
 | `layout_verification_stats.py` | `LayoutVerificationStats`, `build_layout_verification_stats`, `build_stats_from_packing_result` | Pure stats module: computes total and per-core wasted-axon/neuron percentages, mapped-parameter utilization, coalescing/splitting counts, and layout-derived neural-segment summaries from a `LayoutPackingResult`. Segment latency summary reports latency groups per neural segment, not absolute global depth indices. UI-agnostic; reusable by wizard, monitor, search, or reports. |
-| `hw_config_suggester.py` | `suggest_hardware_config`, `suggest_hardware_config_for_model`, `HardwareSuggestion` | Two-type hardware suggester: H×W and W×H (or H×H and W×H when coalescing); smallest H,W such that >50% of used cores host ≥4 softcores. |
+| `hw_config_suggester.py` | `suggest_hardware_config`, `suggest_hardware_config_scheduled`, `suggest_hardware_config_for_model`, `HardwareSuggestion` | Two-type hardware suggester: H×W and W×H (or H×H and W×H when coalescing); smallest H,W such that >50% of used cores host ≥4 softcores. `suggest_hardware_config_scheduled` explores the core-count ↔ pass-count tradeoff when scheduling is enabled, using cost model `area × passes^latency_weight`. `HardwareSuggestion` includes `num_passes` and `estimated_latency_multiplier`. |
 
 ### Perceptron packaging rule
 
@@ -47,6 +48,26 @@ host-side linear ComputeOp.
 `ModelRepresentation.get_perceptrons()` always returns only perceptrons with
 nonlinear activations. Downstream pipeline steps and tuners can rely on this
 contract and do not need to special-case `Identity` activation.
+
+### Scheduled mapping
+
+When `allow_scheduling=True` in `platform_constraints`, `build_hybrid_hard_core_mapping`
+splits neural segments into multiple **schedule passes** that execute sequentially,
+reusing the same physical hardware cores.  This trades latency for chip area.
+
+**Key design**: schedule passes are additional `HybridStage` entries — the existing
+state-buffer execution model in `SpikingHybridCoreFlow` handles inter-pass data
+handoff identically to inter-segment handoff, requiring zero changes to the simulator.
+
+**Partitioning algorithm** (`schedule_partitioner.py`):
+1. Compute latency per core within the segment.
+2. Group by latency; greedily assign groups to passes (increasing latency order).
+3. If a single latency group exceeds available cores, bin-pack its atomic units
+   (coalescing groups are never split).
+
+**HW config suggester**: `suggest_hardware_config_scheduled` searches pass counts
+1..`max_schedule_passes`, finds minimum cores per pass count, and picks the
+configuration minimizing `core_area × passes^latency_weight`.
 
 ### Subdirectory
 

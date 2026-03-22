@@ -75,6 +75,10 @@ class LayoutVerificationStats:
     splits_per_softcore_median: float = 0.0
     splits_per_softcore_max: float = 0.0
 
+    # Scheduled mapping metrics.
+    schedule_pass_count: int = 0
+    max_cores_per_pass: int = 0
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 

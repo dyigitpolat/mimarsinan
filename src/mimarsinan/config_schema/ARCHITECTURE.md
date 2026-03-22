@@ -8,7 +8,7 @@ merged flat config for pipeline runtime).
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Default values and preset merge logic |
+| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Default values and preset merge logic. Platform constraints include `allow_scheduling` (default False), `max_schedule_passes` (default 8), `scheduling_latency_weight` (default 1.0) for scheduled mapping. |
 | `validation.py` | `validate_deployment_config`, `validate_merged_config` | Validate JSON shape and merged flat config |
 | `__init__.py` | Re-exports above | Public API |
 

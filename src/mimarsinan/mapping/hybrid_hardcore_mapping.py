@@ -42,6 +42,9 @@ class HybridStage:
     compute_op: ComputeOp | None = None
     input_map: list[SegmentIOSlice] = field(default_factory=list)
     output_map: list[SegmentIOSlice] = field(default_factory=list)
+    # Scheduling metadata (None when scheduling is off / single-pass segments)
+    schedule_segment_index: int | None = None
+    schedule_pass_index: int | None = None
 
 
 @dataclass
@@ -238,6 +241,7 @@ def _flush_neural_segment(
     weight_banks: dict,
     name: str,
     allow_neuron_splitting: bool = False,
+    skip_coalescing_check: bool = False,
 ) -> tuple[HybridStage, dict[int, dict[int, int]]]:
     """Pack a neural segment using cores drawn from *shared_pool*.
 
@@ -245,6 +249,11 @@ def _flush_neural_segment(
     node_ids* over the full IR graph.  It is used to determine which
     segment-internal nodes need to appear in the segment's output buffer
     (i.e. those consumed by any node *outside* this segment).
+
+    When ``skip_coalescing_check`` is True, the coalescing group integrity
+    check is skipped.  This is used by scheduled passes where coalescing
+    fragments may be distributed across passes with the state buffer
+    handling inter-pass data flow.
 
     Returns:
         (stage, reindex_maps) where reindex_maps is
@@ -255,7 +264,8 @@ def _flush_neural_segment(
     """
     segment_node_ids = {n.id for n in current_neural}
 
-    _check_no_split_coalescing_groups(current_neural)
+    if not skip_coalescing_check:
+        _check_no_split_coalescing_groups(current_neural)
 
     output_nodes: list[NeuralCore] = []
     for n in current_neural:
@@ -310,11 +320,91 @@ def _flush_neural_segment(
     ), reindex_maps
 
 
+def _flush_scheduled_segment(
+    *,
+    current_neural: list[NeuralCore],
+    consumed_by: dict[int, set[int]],
+    cores_config: Sequence[dict],
+    weight_banks: dict,
+    segment_index: int,
+    segment_label: str,
+    allow_neuron_splitting: bool = False,
+    all_reindex_maps: dict[int, dict[int, int]],
+) -> tuple[list[HybridStage], dict[int, dict[int, int]]]:
+    """Flush a neural segment as one or more scheduled passes.
+
+    Each pass gets a **fresh** hardware core pool (same physical cores
+    reprogrammed).  Returns all stages and the accumulated reindex maps.
+
+    If the initial partition produces a pass that fails to pack, the pass
+    is automatically halved and retried until each sub-pass packs or
+    contains only a single core.
+    """
+    from mimarsinan.mapping.schedule_partitioner import partition_segment_into_passes
+
+    total_hw_cores = sum(int(ct["count"]) for ct in cores_config)
+    max_hw_axons = max(int(ct["max_axons"]) for ct in cores_config) if cores_config else 0
+    max_hw_neurons = max(int(ct["max_neurons"]) for ct in cores_config) if cores_config else 0
+
+    passes = partition_segment_into_passes(
+        current_neural, total_hw_cores,
+        max_hw_axons=max_hw_axons,
+        max_hw_neurons=max_hw_neurons,
+        allow_coalescing=any(
+            getattr(c, "coalescing_group_id", None) is not None for c in current_neural
+        ),
+        allow_splitting=allow_neuron_splitting,
+    )
+
+    stages: list[HybridStage] = []
+    seg_reindex_all: dict[int, dict[int, int]] = {}
+
+    def _flush_pass(pass_cores, pass_idx):
+        """Try to flush a single pass; on failure, split and retry."""
+        merged_reindex = {**all_reindex_maps, **seg_reindex_all}
+        if merged_reindex:
+            pass_cores = _reindex_nodes(pass_cores, merged_reindex)
+
+        fresh_pool = _make_available_hardware_cores(cores_config)
+        try:
+            stage, pass_reindex = _flush_neural_segment(
+                current_neural=pass_cores,
+                consumed_by=consumed_by,
+                shared_pool=fresh_pool,
+                weight_banks=weight_banks,
+                name=f"{segment_label}_pass{pass_idx}",
+                allow_neuron_splitting=allow_neuron_splitting,
+                skip_coalescing_check=True,
+            )
+            stage.schedule_segment_index = segment_index
+            stage.schedule_pass_index = pass_idx
+            stages.append(stage)
+            seg_reindex_all.update(pass_reindex)
+        except RuntimeError:
+            # Packing failed — split this pass in half and retry.
+            if len(pass_cores) <= 1:
+                raise  # Single core can't pack — truly infeasible
+            mid = len(pass_cores) // 2
+            _flush_pass(pass_cores[:mid], pass_idx)
+            _flush_pass(pass_cores[mid:], pass_idx + 1000)  # offset to avoid name collisions
+
+    for pass_idx, pass_cores in enumerate(passes):
+        _flush_pass(pass_cores, pass_idx)
+
+    # Renumber pass indices sequentially after potential splits.
+    for i, stage in enumerate(stages):
+        if stage.schedule_segment_index == segment_index:
+            stage.schedule_pass_index = i
+
+    return stages, seg_reindex_all
+
+
 def build_hybrid_hard_core_mapping(
     *,
     ir_graph: IRGraph,
     cores_config: Sequence[dict],
     allow_neuron_splitting: bool = False,
+    allow_scheduling: bool = False,
 ) -> HybridHardCoreMapping:
     """
     Compile a unified IRGraph into a HybridHardCoreMapping.
@@ -324,8 +414,14 @@ def build_hybrid_hard_core_mapping(
     metadata so the runtime can maintain a ``Dict[int, Tensor]`` state
     buffer keyed by original IR node_id.
 
-    A **single** pool of hardware cores is allocated upfront and shared
-    across all neural segments so the total core budget is respected.
+    When ``allow_scheduling`` is False (default), a **single** pool of
+    hardware cores is allocated upfront and shared across all neural
+    segments so the total core budget is respected.
+
+    When ``allow_scheduling`` is True, each neural segment (or pass within
+    a segment) gets a **fresh** hardware core pool — the same physical
+    cores are reprogrammed between passes.  This allows mapping models
+    that need more cores than available, trading latency for chip area.
     """
 
     consumed_by: dict[int, set[int]] = defaultdict(set)
@@ -338,11 +434,54 @@ def build_hybrid_hard_core_mapping(
             consumed_by[src.node_id].add(_FINAL_OUTPUT_SENTINEL)
 
     stages: list[HybridStage] = []
-    shared_pool: list[HardCore] = _make_available_hardware_cores(cores_config)
 
     # Collect compaction reindex maps from all segments so we can fix up
     # external references (final output_sources, ComputeOp input_sources).
     all_reindex_maps: dict[int, dict[int, int]] = {}
+
+    if allow_scheduling:
+        _build_scheduled(
+            ir_graph=ir_graph,
+            cores_config=cores_config,
+            consumed_by=consumed_by,
+            stages=stages,
+            all_reindex_maps=all_reindex_maps,
+            allow_neuron_splitting=allow_neuron_splitting,
+        )
+    else:
+        _build_single_pool(
+            ir_graph=ir_graph,
+            cores_config=cores_config,
+            consumed_by=consumed_by,
+            stages=stages,
+            all_reindex_maps=all_reindex_maps,
+            allow_neuron_splitting=allow_neuron_splitting,
+        )
+
+    if not stages:
+        raise ValueError("Cannot build HybridHardCoreMapping: IRGraph has no stages.")
+
+    # Apply compaction reindex to final output_sources.
+    output_sources = ir_graph.output_sources.copy()
+    _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
+
+    return HybridHardCoreMapping(
+        stages=stages,
+        output_sources=output_sources,
+    )
+
+
+def _build_single_pool(
+    *,
+    ir_graph: IRGraph,
+    cores_config: Sequence[dict],
+    consumed_by: dict[int, set[int]],
+    stages: list[HybridStage],
+    all_reindex_maps: dict[int, dict[int, int]],
+    allow_neuron_splitting: bool,
+) -> None:
+    """Original single-shared-pool compilation path."""
+    shared_pool: list[HardCore] = _make_available_hardware_cores(cores_config)
 
     current_neural: list[NeuralCore] = []
     for node in ir_graph.nodes:
@@ -391,14 +530,63 @@ def build_hybrid_hard_core_mapping(
         stages.append(stage)
         all_reindex_maps.update(seg_reindex)
 
-    if not stages:
-        raise ValueError("Cannot build HybridHardCoreMapping: IRGraph has no stages.")
 
-    # Apply compaction reindex to final output_sources.
-    output_sources = ir_graph.output_sources.copy()
-    _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
+def _build_scheduled(
+    *,
+    ir_graph: IRGraph,
+    cores_config: Sequence[dict],
+    consumed_by: dict[int, set[int]],
+    stages: list[HybridStage],
+    all_reindex_maps: dict[int, dict[int, int]],
+    allow_neuron_splitting: bool,
+) -> None:
+    """Scheduled compilation: fresh core pool per pass, segments may be split."""
+    segment_index = 0
 
-    return HybridHardCoreMapping(
-        stages=stages,
-        output_sources=output_sources,
-    )
+    current_neural: list[NeuralCore] = []
+    for node in ir_graph.nodes:
+        if isinstance(node, NeuralCore):
+            current_neural.append(node)
+            continue
+
+        if isinstance(node, ComputeOp):
+            if current_neural:
+                if all_reindex_maps:
+                    current_neural = _reindex_nodes(current_neural, all_reindex_maps)
+                seg_stages, seg_reindex = _flush_scheduled_segment(
+                    current_neural=current_neural,
+                    consumed_by=consumed_by,
+                    cores_config=cores_config,
+                    weight_banks=ir_graph.weight_banks,
+                    segment_index=segment_index,
+                    segment_label=f"neural_segment_until:{node.name}",
+                    allow_neuron_splitting=allow_neuron_splitting,
+                    all_reindex_maps=all_reindex_maps,
+                )
+                stages.extend(seg_stages)
+                all_reindex_maps.update(seg_reindex)
+                current_neural = []
+                segment_index += 1
+
+            op_copy = copy.deepcopy(node)
+            _apply_reindex_to_ir_sources(op_copy.input_sources, all_reindex_maps)
+            stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
+            continue
+
+        raise TypeError(f"Unknown IR node type in hybrid compilation: {type(node)}")
+
+    if current_neural:
+        if all_reindex_maps:
+            current_neural = _reindex_nodes(current_neural, all_reindex_maps)
+        seg_stages, seg_reindex = _flush_scheduled_segment(
+            current_neural=current_neural,
+            consumed_by=consumed_by,
+            cores_config=cores_config,
+            weight_banks=ir_graph.weight_banks,
+            segment_index=segment_index,
+            segment_label="neural_segment_final",
+            allow_neuron_splitting=allow_neuron_splitting,
+            all_reindex_maps=all_reindex_maps,
+        )
+        stages.extend(seg_stages)
+        all_reindex_maps.update(seg_reindex)

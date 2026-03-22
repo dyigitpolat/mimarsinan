@@ -32,6 +32,9 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "weight_bits": 8,
     "allow_axon_tiling": False,
     "allow_neuron_splitting": False,
+    "allow_scheduling": False,
+    "max_schedule_passes": 8,
+    "scheduling_latency_weight": 1.0,
 }
 
 PIPELINE_MODE_PRESETS: Dict[str, Dict[str, object]] = {
@@ -74,6 +77,9 @@ CONFIG_KEYS_SET: Set[str] = {
     "target_tq",
     "allow_axon_tiling",
     "allow_neuron_splitting",
+    "allow_scheduling",
+    "max_schedule_passes",
+    "scheduling_latency_weight",
     "weight_bits",
     "tuner_epochs",
     "finetune_epochs",

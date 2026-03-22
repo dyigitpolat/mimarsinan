@@ -37,11 +37,31 @@ class HardCoreMappingStep(PipelineStep):
             ir_graph=ir_graph,
             cores_config=platform_constraints["cores"],
             allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
+            allow_scheduling=bool(platform_constraints.get("allow_scheduling", False)),
         )
-        print(
-            f"[HardCoreMappingStep] Hybrid program: {len(hybrid_mapping.get_neural_segments())} neural segments, "
-            f"{len(hybrid_mapping.get_compute_ops())} compute ops"
-        )
+
+        # Report structure — distinguish scheduled passes from segments.
+        neural_segs = hybrid_mapping.get_neural_segments()
+        compute_ops = hybrid_mapping.get_compute_ops()
+        scheduled_stages = [s for s in hybrid_mapping.stages if s.schedule_pass_index is not None]
+        if scheduled_stages:
+            seg_pass_counts: dict[int, int] = {}
+            for s in scheduled_stages:
+                si = s.schedule_segment_index or 0
+                seg_pass_counts[si] = max(seg_pass_counts.get(si, 0), (s.schedule_pass_index or 0) + 1)
+            detail = ", ".join(
+                f"seg {si}: {pc} pass{'es' if pc > 1 else ''}"
+                for si, pc in sorted(seg_pass_counts.items())
+            )
+            print(
+                f"[HardCoreMappingStep] Hybrid program (scheduled): {len(seg_pass_counts)} neural segment(s) "
+                f"({detail}), {len(compute_ops)} compute op(s)"
+            )
+        else:
+            print(
+                f"[HardCoreMappingStep] Hybrid program: {len(neural_segs)} neural segments, "
+                f"{len(compute_ops)} compute ops"
+            )
 
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")
         

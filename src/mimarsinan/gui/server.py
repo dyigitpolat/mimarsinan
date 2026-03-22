@@ -359,6 +359,108 @@ def create_app(
             return JSONResponse(status_code=404, content={"error": "run not found"})
         return load_console_logs(managed.working_dir, offset=offset)
 
+    def _expand_preview_for_scheduling(preview, per_segment_passes, max_cores_per_pass):
+        """Expand layout_preview flow to show schedule pass boundaries.
+
+        Each neural segment that requires >1 pass gets its latency groups
+        distributed across passes, with sync barriers inserted between
+        consecutive passes.
+        """
+        if not preview or not preview.get("flow"):
+            return preview
+
+        old_flow = preview["flow"]
+        # Identify which segment each neural group belongs to by tracking
+        # segment transitions (host items separate segments).
+        # The layout_preview groups neural items by latency_group_index
+        # and host items act as segment delimiters.
+
+        # Collect neural groups per segment.
+        segments = []  # list of lists of neural flow items
+        current_seg_neural = []
+        current_seg_id = 0
+
+        for item in old_flow:
+            if item.get("kind") == "neural":
+                current_seg_neural.append(item)
+            elif item.get("kind") == "host":
+                if current_seg_neural:
+                    segments.append((current_seg_id, current_seg_neural))
+                    current_seg_neural = []
+                    current_seg_id += 1
+            # input/output are not segments
+
+        if current_seg_neural:
+            segments.append((current_seg_id, current_seg_neural))
+
+        # Build pass assignments per segment.
+        seg_pass_assignments = {}  # seg_id -> list of (pass_idx, [neural_items])
+        for seg_id, neural_items in segments:
+            n_passes = per_segment_passes.get(seg_id, per_segment_passes.get(str(seg_id), 1))
+            if n_passes <= 1:
+                seg_pass_assignments[seg_id] = [(0, neural_items)]
+                continue
+
+            # Distribute latency groups evenly across n_passes passes using
+            # ceiling-chunked distribution (not hw-budget-based — we already
+            # know exactly how many passes are needed from per_segment_passes).
+            n = len(neural_items)
+            chunk = max(1, (n + n_passes - 1) // n_passes)
+            passes = []
+            for pass_idx in range(n_passes):
+                start = pass_idx * chunk
+                if start >= n:
+                    break
+                end = min(start + chunk, n)
+                passes.append((pass_idx, neural_items[start:end]))
+
+            seg_pass_assignments[seg_id] = passes
+
+        # Rebuild the flow with sync barriers between passes.
+        new_flow = [{"kind": "input"}]
+        seg_idx = 0
+        emitted_segments = set()
+        for item in old_flow:
+            if item.get("kind") == "input" or item.get("kind") == "output":
+                continue
+            if item.get("kind") == "host":
+                new_flow.append(item)
+                seg_idx += 1
+                continue
+            if item.get("kind") == "neural":
+                passes_for_seg = seg_pass_assignments.get(seg_idx)
+                if passes_for_seg is None:
+                    new_flow.append(item)
+                    continue
+
+                # Emit the full segment (with pass barriers) on first neural item.
+                if seg_idx not in emitted_segments:
+                    emitted_segments.add(seg_idx)
+                    for pi, (pass_id, pass_items) in enumerate(passes_for_seg):
+                        if pi > 0:
+                            new_flow.append({
+                                "kind": "host",
+                                "slot": -1,
+                                "compute_op_count": 0,
+                                "schedule_sync": True,
+                            })
+                        for neural_item in pass_items:
+                            new_flow.append(neural_item)
+                continue
+
+        new_flow.append({"kind": "output"})
+
+        # Update host_side_segment_count with schedule sync barriers.
+        schedule_syncs = sum(
+            1 for item in new_flow
+            if item.get("kind") == "host" and item.get("schedule_sync")
+        )
+
+        result = dict(preview)
+        result["flow"] = new_flow
+        result["schedule_sync_count"] = schedule_syncs
+        return result
+
     @app.post("/api/hw_config_verify")
     def api_hw_config_verify(body: dict):
         """Verify that a hardware core config can fit the given model's softcores.
@@ -392,12 +494,30 @@ def create_app(
             core_types = body.get("core_types", [])
             allow_neuron_splitting = bool(body.get("allow_neuron_splitting", False))
             allow_coalescing = bool(body.get("allow_coalescing", False))
+            allow_scheduling = bool(body.get("allow_scheduling", False))
             result = verify_hardware_config(
                 softcores, core_types,
                 allow_neuron_splitting=allow_neuron_splitting,
                 allow_axon_coalescing=allow_coalescing,
+                allow_scheduling=allow_scheduling,
             )
-            return {
+            stats_out = {
+                **(result.get("stats") or {}),
+                "host_side_segment_count": layout_result.host_side_segment_count,
+                "layout_preview": layout_result.layout_preview,
+            }
+
+            # When scheduling is active, expand the miniview flow to show
+            # per-segment pass boundaries as sync barriers.
+            si = result.get("schedule_info")
+            if si and si.get("per_segment_passes"):
+                stats_out["layout_preview"] = _expand_preview_for_scheduling(
+                    layout_result.layout_preview,
+                    si["per_segment_passes"],
+                    si.get("max_cores_per_pass", 0),
+                )
+
+            resp = {
                 "feasible": result["feasible"],
                 "errors": result["errors"],
                 "field_errors": result["field_errors"],
@@ -406,12 +526,11 @@ def create_app(
                     "total_capacity": result["packing_result"].total_capacity if result["packing_result"] else 0,
                     "used_area": result["packing_result"].used_area if result["packing_result"] else 0,
                 } if result["packing_result"] else None,
-                "stats": {
-                    **(result.get("stats") or {}),
-                    "host_side_segment_count": layout_result.host_side_segment_count,
-                    "layout_preview": layout_result.layout_preview,
-                },
+                "stats": stats_out,
             }
+            if "schedule_info" in result:
+                resp["schedule_info"] = result["schedule_info"]
+            return resp
         except Exception as e:
             logger.exception("hw_config_verify failed")
             return JSONResponse(status_code=400, content={"error": str(e)})
@@ -436,15 +555,15 @@ def create_app(
             neuron_granularity: int   (default 1)
         """
         try:
-            from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config
+            from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config, suggest_hardware_config_scheduled
             # Ensure native models are built with a reasonable minimum layer size.
             # _get_softcores_from_request uses _LAYOUT_PASS_LIMIT for the layout pass itself.
             layout_body = dict(body)
             layout_body["max_axons"] = max(int(body.get("max_axons", 1024)), 4096)
             layout_body["max_neurons"] = max(int(body.get("max_neurons", 1024)), 4096)
             softcores = _get_softcores_from_request(layout_body)
-            suggestion = suggest_hardware_config(
-                softcores,
+
+            common_kwargs = dict(
                 allow_coalescing=bool(body.get("allow_coalescing", False)),
                 hardware_bias=bool(body.get("hardware_bias", True)),
                 axon_granularity=int(body.get("axon_granularity", 1)),
@@ -452,10 +571,23 @@ def create_app(
                 safety_margin=float(body.get("safety_margin", 0.15)),
                 allow_neuron_splitting=bool(body.get("allow_neuron_splitting", False)),
             )
+
+            if bool(body.get("allow_scheduling", False)):
+                suggestion = suggest_hardware_config_scheduled(
+                    softcores,
+                    max_passes=int(body.get("max_schedule_passes", 8)),
+                    latency_weight=float(body.get("scheduling_latency_weight", 1.0)),
+                    **common_kwargs,
+                )
+            else:
+                suggestion = suggest_hardware_config(softcores, **common_kwargs)
+
             return {
                 "core_types": suggestion.core_types,
                 "total_cores": suggestion.total_cores,
                 "rationale": suggestion.rationale,
+                "num_passes": suggestion.num_passes,
+                "estimated_latency_multiplier": suggestion.estimated_latency_multiplier,
             }
         except Exception as e:
             logger.exception("hw_config_auto failed")
