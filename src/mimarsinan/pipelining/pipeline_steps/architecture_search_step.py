@@ -338,6 +338,7 @@ class ArchitectureSearchStep(PipelineStep):
                     "max_axons": effective_max_axons,
                     "max_neurons": effective_max_neurons,
                     "allow_core_coalescing": self.pipeline.config.get("allow_core_coalescing", False),
+                    "allow_scheduling": bool(self.pipeline.config.get("allow_scheduling", False)),
                     "target_tq": self.pipeline.config.get("target_tq"),
                     "simulation_steps": self.pipeline.config.get("simulation_steps"),
                     "weight_bits": self.pipeline.config.get("weight_bits"),
@@ -519,6 +520,7 @@ class ArchitectureSearchStep(PipelineStep):
         self.add_entry("model_builder", builder, "pickle")
         self.add_entry("model_config", model_config)
         platform_constraints["allow_core_coalescing"] = bool(self.pipeline.config.get("allow_core_coalescing", False))
+        platform_constraints["allow_scheduling"] = bool(self.pipeline.config.get("allow_scheduling", False))
         self.add_entry("platform_constraints_resolved", platform_constraints)
         self.add_entry("architecture_search_result", result_json)
         sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))

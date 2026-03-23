@@ -1,0 +1,57 @@
+{
+  "seed": 0,
+  "pipeline_mode": "vanilla",
+  "experiment_name": "my_deployment",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 8,
+        "max_neurons": 32,
+        "count": 20,
+        "has_bias": true
+      },
+      {
+        "max_axons": 16,
+        "max_neurons": 64,
+        "count": 20,
+        "has_bias": true
+      }
+    ],
+    "max_axons": 16,
+    "max_neurons": 64,
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8,
+    "has_bias": true,
+    "allow_core_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": true
+  },
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 10,
+    "tuner_epochs": 1,
+    "degradation_tolerance": 0.1,
+    "configuration_mode": "user",
+    "model_type": "mlp_mixer",
+    "model_config": {
+      "base_activation": "LeakyReLU",
+      "patch_n_1": 4,
+      "patch_m_1": 4,
+      "patch_c_1": 32,
+      "fc_w_1": 64,
+      "fc_w_2": 64
+    },
+    "spiking_mode": "ttfs",
+    "firing_mode": "TTFS",
+    "spike_generation_mode": "TTFS",
+    "thresholding_mode": "<=",
+    "activation_quantization": false,
+    "weight_quantization": false
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}

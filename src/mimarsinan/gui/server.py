@@ -401,33 +401,67 @@ def create_app(
                 seg_pass_assignments[seg_id] = [(0, neural_items)]
                 continue
 
-            # Distribute latency groups evenly across n_passes passes using
-            # ceiling-chunked distribution (not hw-budget-based — we already
-            # know exactly how many passes are needed from per_segment_passes).
             n = len(neural_items)
-            chunk = max(1, (n + n_passes - 1) // n_passes)
-            passes = []
-            for pass_idx in range(n_passes):
-                start = pass_idx * chunk
-                if start >= n:
-                    break
-                end = min(start + chunk, n)
-                passes.append((pass_idx, neural_items[start:end]))
+            if n >= n_passes:
+                # More items than passes: chunk items across passes.
+                chunk = max(1, (n + n_passes - 1) // n_passes)
+                passes = []
+                for pass_idx in range(n_passes):
+                    start = pass_idx * chunk
+                    if start >= n:
+                        break
+                    end = min(start + chunk, n)
+                    passes.append((pass_idx, neural_items[start:end]))
+            else:
+                # Fewer items than passes (e.g. 1 latency group, 2 passes):
+                # split neural items by dividing softcore_count across passes.
+                expanded = []
+                for item in neural_items:
+                    sc = item.get("softcore_count", 1)
+                    per_pass = max(1, (sc + n_passes - 1) // n_passes)
+                    remaining = sc
+                    for pi in range(n_passes):
+                        take = min(per_pass, remaining)
+                        if take <= 0:
+                            break
+                        sub = dict(item)
+                        sub["softcore_count"] = take
+                        expanded.append((pi, sub))
+                        remaining -= take
+                    # If softcore_count < n_passes, pad remaining passes
+                    for pi in range(len([e for e in expanded if True]), n_passes):
+                        if not any(p == pi for p, _ in expanded):
+                            sub = dict(item)
+                            sub["softcore_count"] = 0
+                            expanded.append((pi, sub))
+                # Group by pass_idx
+                from collections import defaultdict as _ddict
+                by_pass = _ddict(list)
+                for pi, sub_item in expanded:
+                    by_pass[pi].append(sub_item)
+                passes = [(pi, by_pass[pi]) for pi in sorted(by_pass.keys())]
 
             seg_pass_assignments[seg_id] = passes
 
         # Rebuild the flow with sync barriers between passes.
+        # IMPORTANT: seg_idx must track the same logic as phase 1's
+        # current_seg_id — only increment when a host item follows
+        # neural items (not on every host item).
         new_flow = [{"kind": "input"}]
         seg_idx = 0
+        saw_neural_in_segment = False
         emitted_segments = set()
         for item in old_flow:
             if item.get("kind") == "input" or item.get("kind") == "output":
                 continue
             if item.get("kind") == "host":
                 new_flow.append(item)
-                seg_idx += 1
+                if saw_neural_in_segment:
+                    seg_idx += 1
+                    saw_neural_in_segment = False
                 continue
             if item.get("kind") == "neural":
+                saw_neural_in_segment = True
                 passes_for_seg = seg_pass_assignments.get(seg_idx)
                 if passes_for_seg is None:
                     new_flow.append(item)
