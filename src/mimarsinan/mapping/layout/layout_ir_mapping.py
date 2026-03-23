@@ -30,6 +30,8 @@ class LayoutIRMapping:
     threshold_groups: int = 1
     threshold_seed: int = 0
     pruning_fraction: float = 0.0
+    allow_core_coalescing: bool = False
+    hardware_bias: bool = False
 
     def __post_init__(self):
         self.max_axons = int(self.max_axons)
@@ -399,13 +401,19 @@ class LayoutIRMapping:
             out = np.stack(outs, axis=1)
             return out.reshape(tuple(output_shape))
 
-        # Axon tiling check (bias occupies 1 axon slot when present)
+        # Axon tiling: mirror IRMapping.map_fc behaviour for wide layers.
         _bias_slots = 1 if fc_biases is not None else 0
         if self.max_axons is not None and in_features + _bias_slots > self.max_axons:
-            raise NotImplementedError(
-                f"FC requires {in_features + _bias_slots} axons but max is {self.max_axons}; "
-                "axon tiling is not supported in LayoutIRMapping."
-            )
+            if self.allow_core_coalescing:
+                return self._map_fc_coalescing_layout(
+                    src_arr, output_shape, in_features, out_features,
+                    _bias_slots, name,
+                )
+            else:
+                return self._map_fc_psum_layout(
+                    src_arr, output_shape, in_features, out_features,
+                    _bias_slots, name,
+                )
 
         # Output tiling
         if self.max_neurons is not None and out_features > self.max_neurons:
@@ -434,6 +442,107 @@ class LayoutIRMapping:
             name=name,
             input_sources=src_arr,
         )
+
+    def _map_fc_coalescing_layout(
+        self,
+        src_arr: np.ndarray,
+        output_shape: np.ndarray,
+        in_features: int,
+        out_features: int,
+        bias_slots: int,
+        name: Optional[str],
+    ) -> np.ndarray:
+        """Layout-level coalescing for wide FC: one wide softcore per output tile.
+
+        Mirrors IRMapping.map_fc coalescing path — the core keeps its full
+        input width and hardware packing fuses physical cores as needed.
+        """
+        in_count = in_features + bias_slots
+        if self.max_neurons is not None and out_features > self.max_neurons:
+            chunks = []
+            start = 0
+            while start < out_features:
+                end = min(start + self.max_neurons, out_features)
+                chunks.append(self._emit_core(
+                    input_count=in_count,
+                    output_count=end - start,
+                    name=name,
+                    input_sources=src_arr,
+                ))
+                start = end
+            return np.concatenate(chunks).reshape(tuple(output_shape))
+        return self._emit_core(
+            input_count=in_count,
+            output_count=out_features,
+            name=name,
+            input_sources=src_arr,
+        )
+
+    def _map_fc_psum_layout(
+        self,
+        src_arr: np.ndarray,
+        output_shape: np.ndarray,
+        in_features: int,
+        out_features: int,
+        bias_slots: int,
+        name: Optional[str],
+    ) -> np.ndarray:
+        """Layout-level psum decomposition for wide FC.
+
+        Emits the same number and shape of softcores as IRMapping._map_fc_with_psum
+        (2 * tile_count partials + 1 accumulator per output block).
+        """
+        max_axons = int(self.max_axons)
+        max_neurons = int(self.max_neurons) if self.max_neurons is not None else out_features
+
+        tile_count = math.ceil(in_features / max_axons)
+        accum_bias_axons = bias_slots if not self.hardware_bias else 0
+        max_out_by_accum = (max_axons - accum_bias_axons) // (2 * tile_count)
+        if max_out_by_accum <= 0:
+            raise ValueError(
+                f"Cannot build psum accumulator: tile_count={tile_count} "
+                f"requires at least {2 * tile_count + accum_bias_axons} axons, "
+                f"but max_axons={max_axons}."
+            )
+        out_block_size = min(max_neurons, max_out_by_accum)
+
+        all_output_sources: list[np.ndarray] = []
+        a = 0
+        while a < out_features:
+            b = min(out_features, a + out_block_size)
+            block = b - a
+
+            for t_idx in range(tile_count):
+                t_start = t_idx * max_axons
+                t_end = min(in_features, t_start + max_axons)
+                tile_width = t_end - t_start
+                tile_src = src_arr.flatten()[t_start:t_end] if src_arr.size > t_start else src_arr.flatten()
+                # pos partial
+                self._emit_core(
+                    input_count=tile_width,
+                    output_count=block,
+                    name=f"{name}_psum_pos_t{t_idx}_o{a}" if name else None,
+                    input_sources=tile_src,
+                )
+                # neg partial
+                self._emit_core(
+                    input_count=tile_width,
+                    output_count=block,
+                    name=f"{name}_psum_neg_t{t_idx}_o{a}" if name else None,
+                    input_sources=tile_src,
+                )
+
+            accum_axons = 2 * tile_count * block + accum_bias_axons
+            accum_out = self._emit_core(
+                input_count=accum_axons,
+                output_count=block,
+                name=f"{name}_psum_accum_o{a}" if name else None,
+                input_sources=src_arr,
+            )
+            all_output_sources.append(accum_out)
+            a = b
+
+        return np.concatenate(all_output_sources).reshape(tuple(output_shape))
 
     def register_weight_bank(
         self,

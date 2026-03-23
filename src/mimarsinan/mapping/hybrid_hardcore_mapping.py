@@ -59,10 +59,15 @@ class HybridHardCoreMapping:
 
     ``output_sources`` mirrors the original IRGraph output_sources so the
     runtime can assemble the final network output from the state buffer.
+
+    ``node_activation_scales`` maps original IR ``node_id`` to the
+    ``activation_scale`` float.  Used by ``SpikingHybridCoreFlow`` in TTFS
+    mode to rescale ComputeOp inputs/outputs so bias terms remain correct.
     """
 
     stages: List[HybridStage]
     output_sources: np.ndarray = field(default_factory=lambda: np.array([], dtype=object))
+    node_activation_scales: dict[int, float] = field(default_factory=dict)
 
     def get_compute_ops(self) -> List[ComputeOp]:
         return [s.compute_op for s in self.stages if s.kind == "compute" and s.compute_op is not None]
@@ -350,8 +355,14 @@ def _flush_scheduled_segment(
     max_hw_axons = max(int(ct["max_axons"]) for ct in cores_config) if cores_config else 0
     max_hw_neurons = max(int(ct["max_neurons"]) for ct in cores_config) if cores_config else 0
 
+    # Reduce budget when heterogeneous core types exist to account for
+    # per-type scarcity (a core needing e.g. 64 neurons can only use types
+    # that offer >= 64 neurons, even if smaller types have spare capacity).
+    n_types = len(cores_config)
+    effective_budget = int(total_hw_cores * 0.8) if n_types > 1 else total_hw_cores
+
     passes = partition_segment_into_passes(
-        current_neural, total_hw_cores,
+        current_neural, effective_budget,
         max_hw_axons=max_hw_axons,
         max_hw_neurons=max_hw_neurons,
         allow_coalescing=any(
@@ -409,6 +420,30 @@ def _flush_scheduled_segment(
             stage.schedule_pass_index = i
 
     return stages, seg_reindex_all
+
+
+def _compute_node_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
+    """Extract per-node activation scales from an IRGraph.
+
+    For NeuralCores the scale is ``activation_scale``.  For ComputeOps the
+    scale is the average of the scales of the nodes feeding into it (a
+    pass-through heuristic that works for scale-equivariant ops like pooling
+    and for bias-carrying ops like nn.Linear).
+    """
+    scales: dict[int, float] = {}
+    for node in ir_graph.nodes:
+        if isinstance(node, NeuralCore):
+            s = node.activation_scale
+            scales[node.id] = float(s.item() if hasattr(s, "item") else s)
+        elif isinstance(node, ComputeOp):
+            src_scales: list[float] = []
+            for src in node.input_sources.flatten():
+                if isinstance(src, IRSource) and src.node_id >= 0:
+                    src_scales.append(scales.get(src.node_id, 1.0))
+            scales[node.id] = (
+                sum(src_scales) / len(src_scales) if src_scales else 1.0
+            )
+    return scales
 
 
 def build_hybrid_hard_core_mapping(
@@ -477,9 +512,13 @@ def build_hybrid_hard_core_mapping(
     output_sources = ir_graph.output_sources.copy()
     _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
 
+    # Build node_activation_scales for TTFS ComputeOp bias rescaling.
+    node_activation_scales = _compute_node_activation_scales(ir_graph)
+
     return HybridHardCoreMapping(
         stages=stages,
         output_sources=output_sources,
+        node_activation_scales=node_activation_scales,
     )
 
 

@@ -441,13 +441,20 @@ class SpikingHybridCoreFlow(nn.Module):
     # TTFS forward (state-buffer driven)
     # ---------------------------------------------------------------------
     def _forward_ttfs(self, x: torch.Tensor) -> torch.Tensor:
-        """TTFS forward pass using the global state buffer."""
+        """TTFS forward pass using the global state buffer.
+
+        ComputeOps receive TTFS-normalised inputs ([0, 1]) from the state
+        buffer but wrap modules whose bias was never divided by
+        activation_scale.  We rescale around execution using
+        ``node_activation_scales`` — same fix as SpikingUnifiedCoreFlow.
+        """
         T = self.simulation_length
         batch_size = x.shape[0]
         device = x.device
         quantized = self.spiking_mode == "ttfs_quantized"
 
         state_buffer: Dict[int, torch.Tensor] = {-2: x}
+        scales = getattr(self.hybrid_mapping, "node_activation_scales", {})
 
         for stage in self.hybrid_mapping.stages:
             if stage.kind == "neural":
@@ -462,7 +469,13 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
-                result = op.execute(x, state_buffer)
+                scale = scales.get(op.id, 1.0)
+                gathered = op.gather_inputs(x, state_buffer)
+                if abs(scale - 1.0) > 1e-9:
+                    gathered = gathered * scale
+                result = op.execute_on_gathered(gathered)
+                if abs(scale - 1.0) > 1e-9:
+                    result = result / scale
                 state_buffer[op.id] = result
 
             else:

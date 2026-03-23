@@ -6,18 +6,18 @@ partitions the segment's NeuralCores into ordered passes that can each fit on
 the available hardware.  Passes execute sequentially, reusing the same physical
 cores (reprogrammed between passes).
 
-The partitioning respects two invariants:
+The partitioning respects one hard invariant:
 
 1. **Latency ordering** — cores in pass *k* depend only on cores in passes
    < *k* (or external inputs).  This is guaranteed by assigning latency groups
    in increasing order.
 
-2. **Coalescing group integrity** — all partial-sum cores belonging to the same
-   coalescing group are placed in the same pass.
-
 Within a single latency group, cores are independent (by definition of "same
-depth in the dependency DAG"), so any partition of the group is valid as long as
-coalescing groups stay together.
+depth in the dependency DAG"), so any partition of the group is valid.
+
+Note: coalescing groups do NOT need to stay together — the state buffer in
+``SpikingHybridCoreFlow`` handles inter-pass data flow for partial-sum
+fragments.  Each core is an individual scheduling unit.
 
 Hardware core cost estimation
 -----------------------------
@@ -257,8 +257,12 @@ def estimate_passes_for_layout(
 # ---------------------------------------------------------------------------
 
 def _compute_core_latencies(cores: list[NeuralCore]) -> dict[int, int]:
-    """Compute per-core latency using IRLatency on a minimal sub-graph."""
+    """Compute per-core latency using IRLatency on a minimal sub-graph.
+
+    Uses save/restore to avoid mutating the original cores' latency attributes.
+    """
     import numpy as np
+    saved = {c.id: c.latency for c in cores}
     graph = IRGraph(
         nodes=list(cores),
         output_sources=np.array([], dtype=object),
@@ -266,7 +270,10 @@ def _compute_core_latencies(cores: list[NeuralCore]) -> dict[int, int]:
     )
     ir_lat = IRLatency(graph)
     ir_lat.calculate()
-    return {c.id: (c.latency if c.latency is not None else 0) for c in cores}
+    result = {c.id: (c.latency if c.latency is not None else 0) for c in cores}
+    for c in cores:
+        c.latency = saved[c.id]
+    return result
 
 
 def _build_atomic_units(cores: list[NeuralCore]) -> list[list[NeuralCore]]:

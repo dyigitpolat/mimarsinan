@@ -304,6 +304,8 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
                 threshold_groups=threshold_groups,
                 threshold_seed=int(self.accuracy_seed),
                 pruning_fraction=float(self.pruning_fraction),
+                allow_core_coalescing=bool(pcfg.get("allow_core_coalescing", False)),
+                hardware_bias=bool(pcfg.get("has_bias", False)),
             )
             softcores = layout_mapper.collect_layout_softcores(model.get_mapper_repr())
 
