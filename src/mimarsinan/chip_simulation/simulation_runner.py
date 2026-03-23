@@ -333,6 +333,8 @@ class SimulationRunner:
         """Execute a multi-stage hybrid mapping using the state buffer."""
         stages = hybrid.stages
         num_samples = len(self.test_data)
+        is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
+        scales = getattr(hybrid, "node_activation_scales", {})
 
         original_input = np.stack([d[0] for d in self.test_data])
         original_input = original_input.reshape(original_input.shape[0], -1)
@@ -374,7 +376,8 @@ class SimulationRunner:
                 print(f"  Executing compute op '{stage.name}' on host")
 
                 result = self._execute_compute_op_np(
-                    stage.compute_op, original_input, state_buffer
+                    stage.compute_op, original_input, state_buffer,
+                    ttfs_scale=scales.get(stage.compute_op.id, 1.0) if is_ttfs else 1.0,
                 )
                 state_buffer[stage.compute_op.id] = result
 
@@ -420,13 +423,25 @@ class SimulationRunner:
         op: ComputeOp,
         original_input: np.ndarray,
         state_buffer: Dict[int, np.ndarray],
+        ttfs_scale: float = 1.0,
     ) -> np.ndarray:
-        """Execute a ComputeOp on host using the state buffer."""
+        """Execute a ComputeOp on host using the state buffer.
+
+        When ``ttfs_scale != 1.0`` (TTFS mode with activation_scale > 1),
+        the gathered input is rescaled from [0, 1] back to training range
+        before execution, and the output is normalised back, matching the
+        fix in ``SpikingHybridCoreFlow._forward_ttfs``.
+        """
         x_torch = torch.tensor(original_input, dtype=torch.float32)
         buffers_torch = {
             k: torch.tensor(v, dtype=torch.float32) for k, v in state_buffer.items()
         }
-        result = op.execute(x_torch, buffers_torch)
+        gathered = op.gather_inputs(x_torch, buffers_torch)
+        if abs(ttfs_scale - 1.0) > 1e-9:
+            gathered = gathered * ttfs_scale
+        result = op.execute_on_gathered(gathered)
+        if abs(ttfs_scale - 1.0) > 1e-9:
+            result = result / ttfs_scale
         return result.detach().numpy()
 
     @staticmethod
