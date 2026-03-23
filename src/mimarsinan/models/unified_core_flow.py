@@ -198,6 +198,30 @@ class SpikingUnifiedCoreFlow(nn.Module):
         # Mapping contracts: after pruning, each core must satisfy axons/neurons vs sources.
         self._assert_mapping_contracts(ir_graph)
 
+        # TTFS activation-scale bookkeeping: each node's output in TTFS mode is
+        # normalised to [0, 1] by division with activation_scale inside the
+        # effective-weight formula.  ComputeOps, however, wrap the *original*
+        # PyTorch module (un-scaled weights + bias).  To keep the bias term
+        # correct we must re-scale their input back to training range before
+        # execution and normalise the output back afterwards.
+        self._ttfs_node_output_scale: Dict[int, float] = {}
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                self._ttfs_node_output_scale[node.id] = float(
+                    node.activation_scale.item()
+                    if hasattr(node.activation_scale, "item")
+                    else node.activation_scale
+                )
+            elif isinstance(node, ComputeOp):
+                src_scales: list[float] = []
+                for src in node.input_sources.flatten():
+                    src_id = int(src.node_id) if hasattr(src, "node_id") else int(src)
+                    if src_id >= 0:
+                        src_scales.append(self._ttfs_node_output_scale.get(src_id, 1.0))
+                self._ttfs_node_output_scale[node.id] = (
+                    sum(src_scales) / len(src_scales) if src_scales else 1.0
+                )
+
     # ---------------------------------------------------------------------
     # Spike generation (must match SpikingCoreFlow semantics)
     # ---------------------------------------------------------------------
@@ -722,14 +746,38 @@ class SpikingUnifiedCoreFlow(nn.Module):
         device: torch.device,
         activation_cache: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """Execute a ComputeOp in activation space (TTFS modes)."""
+        """Execute a ComputeOp in activation space (TTFS modes).
+
+        NeuralCore outputs are normalised to [0, 1] via the effective-weight
+        formula (``W_eff = per_input_scales * W / activation_scale``).
+        ComputeOps wrap the *original* module whose bias was never divided by
+        ``activation_scale``.  To keep the bias correct we must:
+
+        1. Rescale the gathered input from [0, 1] back to training range.
+        2. Execute the module.
+        3. Normalise the output back to TTFS range.
+
+        For scale-equivariant ops (pooling, reshape, mean) the rescale is a
+        no-op.  For ``nn.Linear`` (with bias) the rescale fixes a systematic
+        offset of ``b * (1 - 1/s)`` per output element.
+        """
         spans = self._input_spans[int(node.id)]
         in_dim = int(len(node.input_sources.flatten()))
         inp = torch.zeros(batch_size, in_dim, device=device)
         self._fill_activation_from_ir_spans(
             inp, x=x, activation_cache=activation_cache, spans=spans
         )
-        return node.execute_on_gathered(inp)
+
+        scale = self._ttfs_node_output_scale.get(node.id, 1.0)
+        if abs(scale - 1.0) > 1e-9:
+            inp = inp * scale
+
+        out = node.execute_on_gathered(inp)
+
+        if abs(scale - 1.0) > 1e-9:
+            out = out / scale
+
+        return out
 
     def get_core_spike_rates(self) -> list[float]:
         """

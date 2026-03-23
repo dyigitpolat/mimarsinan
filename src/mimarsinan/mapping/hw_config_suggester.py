@@ -631,6 +631,8 @@ def suggest_hardware_config_for_model(
         threshold_groups=threshold_groups,
         pruning_fraction=pruning_fraction,
         threshold_seed=threshold_seed,
+        allow_core_coalescing=allow_coalescing,
+        hardware_bias=hardware_bias,
     )
 
     if not result.feasible:

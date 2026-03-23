@@ -521,9 +521,13 @@ class ComputeOp(IRNode):
         """Execute a generic PyTorch module stored in params.
 
         Reshapes flat (B, N) input to the module's expected shape,
-        runs the module, and flattens the output back.
+        runs the module, and flattens the output back.  Ensures the
+        module lives on the same device as the input (handles
+        deserialized-from-pickle modules that land on CPU).
         """
         module = self.params["module"]
+        if hasattr(module, "to"):
+            module.to(x.device)
         input_shape = self.params.get("input_shape")
         if input_shape is not None:
             x = x.view(x.shape[0], *input_shape)

@@ -62,6 +62,8 @@ def verify_soft_core_mapping(
     threshold_groups: int = 1,
     pruning_fraction: float = 0.0,
     threshold_seed: int = 0,
+    allow_core_coalescing: bool = False,
+    hardware_bias: bool = False,
 ) -> MappingVerificationResult:
     """Verify that a mapper-graph model representation can be laid out as soft cores.
 
@@ -82,6 +84,11 @@ def verify_soft_core_mapping(
         as a random row/column reduction on each softcore.
     threshold_seed:
         RNG seed for deterministic threshold-group assignment.
+    allow_core_coalescing:
+        If True, enable layout-level axon tiling via coalescing (wide FC
+        layers keep their full width and hardware fuses physical cores).
+    hardware_bias:
+        If True, bias is in a dedicated register, not an always-on axon row.
 
     Returns
     -------
@@ -94,6 +101,8 @@ def verify_soft_core_mapping(
             threshold_groups=threshold_groups,
             threshold_seed=threshold_seed,
             pruning_fraction=pruning_fraction,
+            allow_core_coalescing=allow_core_coalescing,
+            hardware_bias=hardware_bias,
         )
         softcores = layout.collect_layout_softcores(model_repr)
     except Exception as exc:

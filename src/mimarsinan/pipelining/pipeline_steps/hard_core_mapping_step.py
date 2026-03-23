@@ -9,6 +9,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
 
 import torch.nn as nn
+import traceback
 import os
 
 class HardCoreMappingStep(PipelineStep):
@@ -67,6 +68,7 @@ class HardCoreMappingStep(PipelineStep):
         
         # Run a spiking simulation test to verify the hard-core mapping
         try:
+            device = self.pipeline.config["device"]
             preprocessor = model.get_preprocessor()
             flow = SpikingHybridCoreFlow(
                 self.pipeline.config["input_shape"],
@@ -78,9 +80,10 @@ class HardCoreMappingStep(PipelineStep):
                 self.pipeline.config["thresholding_mode"],
                 spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
             )
+            flow = flow.to(device)
             acc = BasicTrainer(
                 flow,
-                self.pipeline.config["device"],
+                device,
                 DataLoaderFactory(self.pipeline.data_provider_factory),
                 None,
             ).test()
@@ -88,6 +91,7 @@ class HardCoreMappingStep(PipelineStep):
             print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
         except Exception as e:
             print(f"[HardCoreMappingStep] Hard-core simulation test failed (non-fatal): {e}")
+            traceback.print_exc()
 
         # Visualize the hybrid program (stage-level) + each neural segment's HardCoreMapping.
         if self.pipeline.config.get("generate_visualizations", False):

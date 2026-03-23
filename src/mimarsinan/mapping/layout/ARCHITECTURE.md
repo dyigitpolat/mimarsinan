@@ -9,7 +9,7 @@ weight matrices.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutCoreSnapshot`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results. `LayoutHardCoreInstance.softcore_count` tracks placements; `LayoutPackingResult.used_core_softcore_counts` exposes per-core occupancy; `LayoutCoreSnapshot` captures per-used-core axon/neuron usage for stats; `LayoutPackingResult.used_core_snapshots` holds one snapshot per used core; `coalesced_fragment_count` and `split_fragment_count` count packing feature usage. |
-| `layout_ir_mapping.py` | `LayoutIRMapping` | Collects `LayoutSoftCoreSpec`s from mapper graph traversal (shape only, no weights) |
+| `layout_ir_mapping.py` | `LayoutIRMapping` | Collects `LayoutSoftCoreSpec`s from mapper graph traversal (shape only, no weights). Supports `allow_core_coalescing` and `hardware_bias` flags for axon tiling: wide FC layers emit psum-decomposed or coalescing-tiled softcores matching `IRMapping` core counts. |
 | `layout_packer.py` | `pack_layout` | Packs layout softcores into layout hardcores using `greedy_pack_softcores`; successful result includes `used_core_softcore_counts` and `used_core_snapshots`. |
 
 ## Dependencies
