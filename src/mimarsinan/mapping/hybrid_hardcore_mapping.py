@@ -329,12 +329,16 @@ def _flush_scheduled_segment(
     segment_index: int,
     segment_label: str,
     allow_neuron_splitting: bool = False,
-    all_reindex_maps: dict[int, dict[int, int]],
 ) -> tuple[list[HybridStage], dict[int, dict[int, int]]]:
     """Flush a neural segment as one or more scheduled passes.
 
     Each pass gets a **fresh** hardware core pool (same physical cores
     reprogrammed).  Returns all stages and the accumulated reindex maps.
+
+    Cores passed in must already be reindexed with any cross-segment
+    compaction maps (the caller handles this).  This function only applies
+    intra-segment inter-pass reindex (``seg_reindex_all``) to subsequent
+    passes.
 
     If the initial partition produces a pass that fails to pack, the pass
     is automatically halved and retried until each sub-pass packs or
@@ -359,12 +363,12 @@ def _flush_scheduled_segment(
     stages: list[HybridStage] = []
     seg_reindex_all: dict[int, dict[int, int]] = {}
 
-    def _flush_pass(pass_cores, pass_idx):
-        """Try to flush a single pass; on failure, split and retry."""
-        merged_reindex = {**all_reindex_maps, **seg_reindex_all}
-        if merged_reindex:
-            pass_cores = _reindex_nodes(pass_cores, merged_reindex)
+    def _flush_or_split(pass_cores, pass_idx):
+        """Flush a pre-reindexed pass. On failure, split and retry.
 
+        Cores must already be reindexed by the caller — this function
+        does NOT apply any reindex maps itself.
+        """
         fresh_pool = _make_available_hardware_cores(cores_config)
         try:
             stage, pass_reindex = _flush_neural_segment(
@@ -385,11 +389,19 @@ def _flush_scheduled_segment(
             if len(pass_cores) <= 1:
                 raise  # Single core can't pack — truly infeasible
             mid = len(pass_cores) // 2
-            _flush_pass(pass_cores[:mid], pass_idx)
-            _flush_pass(pass_cores[mid:], pass_idx + 1000)  # offset to avoid name collisions
+            snapshot = dict(seg_reindex_all)
+            _flush_or_split(pass_cores[:mid], pass_idx)
+            # Apply only the delta (first half's compaction) to second half
+            delta = {k: v for k, v in seg_reindex_all.items() if k not in snapshot}
+            second = _reindex_nodes(pass_cores[mid:], delta) if delta else pass_cores[mid:]
+            _flush_or_split(second, pass_idx + 1000)
 
     for pass_idx, pass_cores in enumerate(passes):
-        _flush_pass(pass_cores, pass_idx)
+        # Apply accumulated inter-pass reindex from previous passes in this
+        # segment.  Cross-segment reindex was already applied by the caller.
+        if seg_reindex_all:
+            pass_cores = _reindex_nodes(pass_cores, seg_reindex_all)
+        _flush_or_split(pass_cores, pass_idx)
 
     # Renumber pass indices sequentially after potential splits.
     for i, stage in enumerate(stages):
@@ -561,7 +573,6 @@ def _build_scheduled(
                     segment_index=segment_index,
                     segment_label=f"neural_segment_until:{node.name}",
                     allow_neuron_splitting=allow_neuron_splitting,
-                    all_reindex_maps=all_reindex_maps,
                 )
                 stages.extend(seg_stages)
                 all_reindex_maps.update(seg_reindex)
@@ -586,7 +597,6 @@ def _build_scheduled(
             segment_index=segment_index,
             segment_label="neural_segment_final",
             allow_neuron_splitting=allow_neuron_splitting,
-            all_reindex_maps=all_reindex_maps,
         )
         stages.extend(seg_stages)
         all_reindex_maps.update(seg_reindex)

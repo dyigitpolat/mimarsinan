@@ -1527,10 +1527,12 @@ function _renderHwStats(statsOrState) {
       }
       if (item.kind === 'host') {
         if (item.schedule_sync) {
-          // Schedule sync barrier — thin red vertical line with glowing effect
-          return '<div class="hw-layout-mini-sync-divider">' +
-            '<div class="hw-layout-mini-sync-cap">\u21bb</div>' +
-            '<div class="hw-layout-mini-sync-bar"></div>' +
+          // Schedule sync barrier — same visual weight as host-ops, red accent
+          return '<div class="hw-layout-mini-host hw-layout-mini-schedule-sync">' +
+            '<div class="hw-layout-mini-host-box">' +
+            '<div class="hw-layout-mini-host-label">\u21bb sync</div>' +
+            '<div class="hw-layout-mini-host-sub">pass</div>' +
+            '</div>' +
             '</div>';
         }
         return '<div class="hw-layout-mini-host">' +

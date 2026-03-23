@@ -112,6 +112,7 @@ class ModelConfigurationStep(PipelineStep):
             "max_neurons": int(effective_max_neurons),
             "allow_core_coalescing": bool(self.pipeline.config.get("allow_core_coalescing", False)),
             "allow_neuron_splitting": bool(self.pipeline.config.get("allow_neuron_splitting", False)),
+            "allow_scheduling": bool(self.pipeline.config.get("allow_scheduling", False)),
         })
 
         # --- Emit default simulation length ---
