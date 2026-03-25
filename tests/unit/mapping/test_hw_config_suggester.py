@@ -456,6 +456,7 @@ class TestSuggestHardwareConfigForModel:
             max_neurons=256,
             threshold_groups=2,
             pruning_fraction=0.3,
+            hardware_bias=False,
         )
         # Also get the actual softcores and verify the suggestion against them
         layout_result = verify_soft_core_mapping(
@@ -464,6 +465,7 @@ class TestSuggestHardwareConfigForModel:
             max_neurons=256,
             threshold_groups=2,
             pruning_fraction=0.3,
+            hardware_bias=False,
         )
         assert layout_result.feasible
         verification = verify_hardware_config(layout_result.softcores, suggestion.core_types)

@@ -2,7 +2,7 @@
 Schedule partitioner for splitting neural segments into multiple passes.
 
 When the hardware has fewer cores than a neural segment requires, this module
-partitions the segment's NeuralCores into ordered passes that can each fit on
+partitions the segment's cores into ordered passes that can each fit on
 the available hardware.  Passes execute sequentially, reusing the same physical
 cores (reprogrammed between passes).
 
@@ -22,39 +22,68 @@ fragments.  Each core is an individual scheduling unit.
 Hardware core cost estimation
 -----------------------------
 A single softcore may require multiple hardware cores after coalescing expansion
-(wide axons) or neuron splitting (many neurons).  Both the build-time partitioner
-and the layout-level estimator account for this by computing:
+(wide axons) or neuron splitting (many neurons).  The unified partitioner
+accounts for this by computing:
 
     hw_cost(sc) = ceil(axons / max_hw_axons) * ceil(neurons / max_hw_neurons)
 
 where the ceil factors are 1 when the corresponding feature is disabled.
+
+Budget helpers
+--------------
+``effective_core_budget`` applies a 20% scarcity discount when heterogeneous
+core types are present.  Both the wizard verifier and the hybrid mapping builder
+call this to ensure identical budgets.
 """
 
 from __future__ import annotations
 
 import math
 from collections import defaultdict
-from typing import List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple, TypeVar
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.ir_latency import IRLatency
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+
+T = TypeVar("T")
+
+
+# ---------------------------------------------------------------------------
+# Budget helper — single source of truth for both wizard and runtime
+# ---------------------------------------------------------------------------
+
+def effective_core_budget(cores_config: Sequence[dict]) -> int:
+    """Compute the effective hardware-core budget for schedule partitioning.
+
+    When multiple core types exist, the budget is reduced by 20% to account
+    for per-type scarcity (a core needing e.g. 64 neurons can only use types
+    that offer >= 64 neurons, even if smaller types have spare capacity).
+    """
+    total = sum(int(ct["count"]) for ct in cores_config)
+    n_types = len(cores_config)
+    return int(total * 0.8) if n_types > 1 else total
 
 
 # ---------------------------------------------------------------------------
 # Hardware core cost helpers
 # ---------------------------------------------------------------------------
 
-def _hw_cost_neural(
-    core: NeuralCore,
+def _hw_cost(
+    item: T,
     max_hw_axons: int,
     max_hw_neurons: int,
     allow_coalescing: bool,
     allow_splitting: bool,
 ) -> int:
-    """Estimate how many hardware cores a NeuralCore will consume."""
-    ax = core.get_input_count()
-    neu = core.get_output_count()
+    """Estimate how many hardware cores an item will consume.
+
+    Works with any object that has ``get_input_count()`` and
+    ``get_output_count()`` — both ``NeuralCore`` and ``LayoutSoftCoreSpec``
+    implement this interface.
+    """
+    ax = item.get_input_count()
+    neu = item.get_output_count()
     ax_f = math.ceil(ax / max_hw_axons) if allow_coalescing and max_hw_axons > 0 else 1
     neu_f = math.ceil(neu / max_hw_neurons) if allow_splitting and max_hw_neurons > 0 else 1
     return max(ax_f * neu_f, 1)
@@ -67,14 +96,75 @@ def _hw_cost_layout(
     allow_coalescing: bool,
     allow_splitting: bool,
 ) -> int:
-    """Estimate how many hardware cores a LayoutSoftCoreSpec will consume."""
-    ax_f = math.ceil(sc.input_count / max_hw_axons) if allow_coalescing and max_hw_axons > 0 else 1
-    neu_f = math.ceil(sc.output_count / max_hw_neurons) if allow_splitting and max_hw_neurons > 0 else 1
-    return max(ax_f * neu_f, 1)
+    """Estimate how many hardware cores a LayoutSoftCoreSpec will consume.
+
+    Thin wrapper kept for backward-compatible test imports.
+    """
+    return _hw_cost(sc, max_hw_axons, max_hw_neurons, allow_coalescing, allow_splitting)
 
 
 # ---------------------------------------------------------------------------
-# Core partitioner (operates on actual NeuralCore objects)
+# Unified generic partitioner
+# ---------------------------------------------------------------------------
+
+def _partition_with_latencies(
+    items: Sequence[T],
+    latency_getter: Callable[[T], int],
+    max_cores_per_pass: int,
+    cost_fn: Callable[[T], int],
+) -> list[list[T]]:
+    """Core partitioning algorithm shared by NeuralCore and LayoutSoftCoreSpec paths.
+
+    Groups *items* by latency (via *latency_getter*), then greedily assigns
+    latency groups to passes in increasing order.  When a single latency group
+    exceeds *max_cores_per_pass*, it is split using first-fit-decreasing
+    bin-packing (``_bin_pack_items_costed``).
+
+    Returns a list of passes, each a list of items.
+    """
+    if not items:
+        return []
+
+    if max_cores_per_pass <= 0:
+        raise ValueError("max_cores_per_pass must be positive")
+
+    lat_groups: dict[int, list[T]] = defaultdict(list)
+    for item in items:
+        lat_groups[latency_getter(item)].append(item)
+
+    passes: list[list[T]] = []
+    current_pass: list[T] = []
+    current_cost = 0
+
+    for lat in sorted(lat_groups.keys()):
+        group = lat_groups[lat]
+        units = [[g] for g in group]
+        group_cost = sum(cost_fn(g) for g in group)
+
+        if group_cost > max_cores_per_pass:
+            if current_pass:
+                passes.append(current_pass)
+                current_pass = []
+                current_cost = 0
+            sub_passes = _bin_pack_items_costed(units, max_cores_per_pass, cost_fn)
+            passes.extend(sub_passes)
+        elif current_cost + group_cost > max_cores_per_pass:
+            if current_pass:
+                passes.append(current_pass)
+            current_pass = list(group)
+            current_cost = group_cost
+        else:
+            current_pass.extend(group)
+            current_cost += group_cost
+
+    if current_pass:
+        passes.append(current_pass)
+
+    return passes
+
+
+# ---------------------------------------------------------------------------
+# NeuralCore partitioner (used at hard-core mapping build time)
 # ---------------------------------------------------------------------------
 
 def partition_segment_into_passes(
@@ -106,58 +196,19 @@ def partition_segment_into_passes(
     if not cores:
         return []
 
-    if max_cores_per_pass <= 0:
-        raise ValueError("max_cores_per_pass must be positive")
-
     def _cost(c: NeuralCore) -> int:
         if max_hw_axons > 0 and max_hw_neurons > 0:
-            return _hw_cost_neural(c, max_hw_axons, max_hw_neurons, allow_coalescing, allow_splitting)
+            return _hw_cost(c, max_hw_axons, max_hw_neurons, allow_coalescing, allow_splitting)
         return 1
 
-    # --- Step 1: compute latency per core via IRLatency on a sub-graph ---
     latency_map = _compute_core_latencies(cores)
 
-    # --- Step 2: group by latency ---
-    lat_groups: dict[int, list[NeuralCore]] = defaultdict(list)
-    for c in cores:
-        lat_groups[latency_map[c.id]].append(c)
-
-    # --- Step 3: greedily assign cores to passes by hw cost ---
-    # With scheduling, coalescing groups do NOT need to stay together — the
-    # state buffer handles inter-pass data flow for partial-sum fragments.
-    # Each core is an individual scheduling unit.
-    passes: list[list[NeuralCore]] = []
-    current_pass: list[NeuralCore] = []
-    current_cost = 0
-
-    for lat in sorted(lat_groups.keys()):
-        group_cores = lat_groups[lat]
-        # Treat each core individually (no coalescing atomicity constraint).
-        units = [[c] for c in group_cores]
-        group_cost = sum(_cost(c) for c in group_cores)
-
-        if group_cost > max_cores_per_pass:
-            # Oversized latency group — must split within the group.
-            if current_pass:
-                passes.append(current_pass)
-                current_pass = []
-                current_cost = 0
-            sub_passes = _bin_pack_units_costed(units, max_cores_per_pass, _cost)
-            passes.extend(sub_passes)
-        elif current_cost + group_cost > max_cores_per_pass:
-            # Adding this group would overflow — start a new pass.
-            if current_pass:
-                passes.append(current_pass)
-            current_pass = list(group_cores)
-            current_cost = group_cost
-        else:
-            current_pass.extend(group_cores)
-            current_cost += group_cost
-
-    if current_pass:
-        passes.append(current_pass)
-
-    return passes
+    return _partition_with_latencies(
+        items=cores,
+        latency_getter=lambda c: latency_map[c.id],
+        max_cores_per_pass=max_cores_per_pass,
+        cost_fn=_cost,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -175,12 +226,9 @@ def estimate_passes_for_layout(
 ) -> Tuple[int, List[List[LayoutSoftCoreSpec]]]:
     """Estimate the number of schedule passes from layout soft-core specs.
 
-    Groups by ``segment_id`` then ``latency_tag`` and applies the same
-    greedy assignment as :func:`partition_segment_into_passes`.
-
-    When ``max_hw_axons`` and ``max_hw_neurons`` are provided, each softcore's
-    hardware cost is estimated as ``ceil(axons/max_hw_axons) * ceil(neurons/max_hw_neurons)``
-    (accounting for coalescing/splitting expansion).
+    Groups by ``segment_id`` then delegates to the **same** partitioning
+    algorithm used by :func:`partition_segment_into_passes`, ensuring
+    identical pass counts for identical shapes.
 
     Returns ``(num_passes, pass_lists)`` where *pass_lists* is flattened
     across all segments (segment 0 passes first, then segment 1, etc.).
@@ -190,10 +238,9 @@ def estimate_passes_for_layout(
 
     def _cost(sc: LayoutSoftCoreSpec) -> int:
         if max_hw_axons > 0 and max_hw_neurons > 0:
-            return _hw_cost_layout(sc, max_hw_axons, max_hw_neurons, allow_coalescing, allow_splitting)
+            return _hw_cost(sc, max_hw_axons, max_hw_neurons, allow_coalescing, allow_splitting)
         return 1
 
-    # Group by segment_id
     by_segment: dict[int, list[LayoutSoftCoreSpec]] = defaultdict(list)
     for sc in softcores:
         seg = sc.segment_id if sc.segment_id is not None else 0
@@ -203,50 +250,13 @@ def estimate_passes_for_layout(
 
     for seg_id in sorted(by_segment.keys()):
         seg_cores = by_segment[seg_id]
-
-        # Group by latency_tag within segment
-        by_lat: dict[int, list[LayoutSoftCoreSpec]] = defaultdict(list)
-        for sc in seg_cores:
-            lat = sc.latency_tag if sc.latency_tag is not None else 0
-            by_lat[lat].append(sc)
-
-        current_pass: list[LayoutSoftCoreSpec] = []
-        current_cost = 0
-
-        for lat in sorted(by_lat.keys()):
-            group = by_lat[lat]
-            group_cost = sum(_cost(sc) for sc in group)
-
-            if group_cost > max_cores_per_pass:
-                # Oversized — split within group
-                if current_pass:
-                    all_passes.append(current_pass)
-                    current_pass = []
-                    current_cost = 0
-                # Greedy split: add softcores one by one until pass is full
-                sub_pass: list[LayoutSoftCoreSpec] = []
-                sub_cost = 0
-                for sc in group:
-                    c = _cost(sc)
-                    if sub_cost + c > max_cores_per_pass and sub_pass:
-                        all_passes.append(sub_pass)
-                        sub_pass = []
-                        sub_cost = 0
-                    sub_pass.append(sc)
-                    sub_cost += c
-                if sub_pass:
-                    all_passes.append(sub_pass)
-            elif current_cost + group_cost > max_cores_per_pass:
-                if current_pass:
-                    all_passes.append(current_pass)
-                current_pass = list(group)
-                current_cost = group_cost
-            else:
-                current_pass.extend(group)
-                current_cost += group_cost
-
-        if current_pass:
-            all_passes.append(current_pass)
+        seg_passes = _partition_with_latencies(
+            items=seg_cores,
+            latency_getter=lambda sc: int(sc.latency_tag) if sc.latency_tag is not None else 0,
+            max_cores_per_pass=max_cores_per_pass,
+            cost_fn=_cost,
+        )
+        all_passes.extend(seg_passes)
 
     num_passes = len(all_passes)
     return num_passes, all_passes
@@ -299,20 +309,18 @@ def _build_atomic_units(cores: list[NeuralCore]) -> list[list[NeuralCore]]:
     return units
 
 
-def _bin_pack_units_costed(
-    units: list[list[NeuralCore]],
+def _bin_pack_items_costed(
+    units: list[list[T]],
     max_per_pass: int,
-    cost_fn,
-) -> list[list[NeuralCore]]:
+    cost_fn: Callable[[T], int],
+) -> list[list[T]]:
     """First-fit-decreasing bin-pack of atomic units into passes using cost function."""
-    passes: list[list[NeuralCore]] = []
+    passes: list[list[T]] = []
     pass_costs: list[int] = []
 
     for unit in units:
         size = sum(cost_fn(c) for c in unit)
         if size > max_per_pass:
-            # Single unit exceeds budget — give it its own pass.
-            # The actual packing may still succeed via diagonal packing.
             passes.append(list(unit))
             pass_costs.append(size)
             continue
@@ -330,3 +338,7 @@ def _bin_pack_units_costed(
             pass_costs.append(size)
 
     return passes
+
+
+# Backward-compatible alias
+_bin_pack_units_costed = _bin_pack_items_costed

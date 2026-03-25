@@ -620,6 +620,11 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
             stage_info["segment_index"] = seg_idx
             neural_segment_idx += 1
 
+            if stage.schedule_pass_index is not None:
+                stage_info["schedule_pass_index"] = stage.schedule_pass_index
+            if stage.schedule_segment_index is not None:
+                stage_info["schedule_segment_index"] = stage.schedule_segment_index
+
             cores_detail: list[dict] = []
             for ci, core in enumerate(hcm.cores):
                 used_axons = core.axons_per_core - core.available_axons

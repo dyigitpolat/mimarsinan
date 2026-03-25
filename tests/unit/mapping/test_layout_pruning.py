@@ -73,7 +73,12 @@ class TestLayoutPruning:
             assert sc.output_count >= 1, f"output_count should be >= 1, got {sc.output_count}"
 
     def test_effective_fraction_is_80_percent(self):
-        """The applied reduction should be 80% of the user-provided fraction."""
+        """The applied reduction should be 80% of the user-provided fraction.
+
+        Output-layer softcores have their ``output_count`` protected from
+        pruning (graph-boundary columns cannot be pruned), so only hidden
+        layers are checked for exact output reduction.
+        """
         model = make_tiny_supermodel()
 
         baseline_mapper = LayoutIRMapping(max_axons=256, max_neurons=256)
@@ -83,11 +88,18 @@ class TestLayoutPruning:
         pruning_mapper = LayoutIRMapping(max_axons=256, max_neurons=256, pruning_fraction=1.0, threshold_seed=0)
         pruning_scs = pruning_mapper.collect_layout_softcores(model.get_mapper_repr())
 
-        for b, p in zip(baseline_scs, pruning_scs):
-            # Expected: input_count - floor(input_count * 0.8), but at least 1
+        n = len(baseline_scs)
+        for idx, (b, p) in enumerate(zip(baseline_scs, pruning_scs)):
             expected_in = max(1, b.input_count - int(b.input_count * 0.8))
-            expected_out = max(1, b.output_count - int(b.output_count * 0.8))
             assert p.input_count == expected_in, \
                 f"Expected input_count={expected_in}, got {p.input_count} (baseline={b.input_count})"
-            assert p.output_count == expected_out, \
-                f"Expected output_count={expected_out}, got {p.output_count} (baseline={b.output_count})"
+
+            is_output_layer = (idx == n - 1)
+            if is_output_layer:
+                # Output layer columns are protected
+                assert p.output_count == b.output_count, \
+                    f"Output layer output_count should be preserved: got {p.output_count}, expected {b.output_count}"
+            else:
+                expected_out = max(1, b.output_count - int(b.output_count * 0.8))
+                assert p.output_count == expected_out, \
+                    f"Expected output_count={expected_out}, got {p.output_count} (baseline={b.output_count})"

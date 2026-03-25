@@ -92,6 +92,8 @@ def _get_layout_result_from_request(body: dict):
     threshold_groups = int(body.get("threshold_groups", 1))
     pruning_fraction = float(body.get("pruning_fraction", 0.0))
     threshold_seed = int(body.get("threshold_seed", 0))
+    allow_core_coalescing = bool(body.get("allow_coalescing", False))
+    hardware_bias = bool(body.get("hardware_bias", False))
 
     builder_cls = BUILDERS_REGISTRY.get(model_type)
     if builder_cls is None:
@@ -147,6 +149,8 @@ def _get_layout_result_from_request(body: dict):
         threshold_groups=threshold_groups,
         pruning_fraction=pruning_fraction,
         threshold_seed=threshold_seed,
+        allow_core_coalescing=allow_core_coalescing,
+        hardware_bias=hardware_bias,
     )
     if not result.feasible:
         raise ValueError(f"Soft-core mapping verification failed: {result.error}")
@@ -359,24 +363,23 @@ def create_app(
             return JSONResponse(status_code=404, content={"error": "run not found"})
         return load_console_logs(managed.working_dir, offset=offset)
 
-    def _expand_preview_for_scheduling(preview, per_segment_passes, max_cores_per_pass):
+    def _expand_preview_for_scheduling(preview, per_segment_passes, per_segment_pass_lists):
         """Expand layout_preview flow to show schedule pass boundaries.
 
-        Each neural segment that requires >1 pass gets its latency groups
-        distributed across passes, with sync barriers inserted between
-        consecutive passes.
+        Uses the **actual pass lists** from the unified partitioner so the
+        miniview shows the same partition that hard-core mapping will apply.
+
+        Each neural segment that requires >1 pass gets its softcores
+        distributed across passes according to the partitioner output,
+        with sync barriers inserted between consecutive passes.
         """
         if not preview or not preview.get("flow"):
             return preview
 
         old_flow = preview["flow"]
-        # Identify which segment each neural group belongs to by tracking
-        # segment transitions (host items separate segments).
-        # The layout_preview groups neural items by latency_group_index
-        # and host items act as segment delimiters.
 
-        # Collect neural groups per segment.
-        segments = []  # list of lists of neural flow items
+        # --- Phase 1: identify neural segments in the flow ---
+        segments = []
         current_seg_neural = []
         current_seg_id = 0
 
@@ -388,65 +391,35 @@ def create_app(
                     segments.append((current_seg_id, current_seg_neural))
                     current_seg_neural = []
                     current_seg_id += 1
-            # input/output are not segments
 
         if current_seg_neural:
             segments.append((current_seg_id, current_seg_neural))
 
-        # Build pass assignments per segment.
-        seg_pass_assignments = {}  # seg_id -> list of (pass_idx, [neural_items])
+        # --- Phase 2: build per-segment pass assignments from partitioner ---
+        seg_pass_assignments = {}
         for seg_id, neural_items in segments:
             n_passes = per_segment_passes.get(seg_id, per_segment_passes.get(str(seg_id), 1))
-            if n_passes <= 1:
+            pass_lists = per_segment_pass_lists.get(seg_id, per_segment_pass_lists.get(str(seg_id)))
+
+            if n_passes <= 1 or not pass_lists or len(pass_lists) <= 1:
                 seg_pass_assignments[seg_id] = [(0, neural_items)]
                 continue
 
-            n = len(neural_items)
-            if n >= n_passes:
-                # More items than passes: chunk items across passes.
-                chunk = max(1, (n + n_passes - 1) // n_passes)
-                passes = []
-                for pass_idx in range(n_passes):
-                    start = pass_idx * chunk
-                    if start >= n:
-                        break
-                    end = min(start + chunk, n)
-                    passes.append((pass_idx, neural_items[start:end]))
-            else:
-                # Fewer items than passes (e.g. 1 latency group, 2 passes):
-                # split neural items by dividing softcore_count across passes.
-                expanded = []
-                for item in neural_items:
-                    sc = item.get("softcore_count", 1)
-                    per_pass = max(1, (sc + n_passes - 1) // n_passes)
-                    remaining = sc
-                    for pi in range(n_passes):
-                        take = min(per_pass, remaining)
-                        if take <= 0:
-                            break
-                        sub = dict(item)
-                        sub["softcore_count"] = take
-                        expanded.append((pi, sub))
-                        remaining -= take
-                    # If softcore_count < n_passes, pad remaining passes
-                    for pi in range(len([e for e in expanded if True]), n_passes):
-                        if not any(p == pi for p, _ in expanded):
-                            sub = dict(item)
-                            sub["softcore_count"] = 0
-                            expanded.append((pi, sub))
-                # Group by pass_idx
-                from collections import defaultdict as _ddict
-                by_pass = _ddict(list)
-                for pi, sub_item in expanded:
-                    by_pass[pi].append(sub_item)
-                passes = [(pi, by_pass[pi]) for pi in sorted(by_pass.keys())]
+            # Use the partitioner's authoritative pass lists directly.
+            # Each pass_list entry is a list of LayoutSoftCoreSpec objects;
+            # len(pl) is the exact softcore count for that pass.
+            passes = []
+            for pi, pass_list in enumerate(pass_lists):
+                if neural_items:
+                    template = dict(neural_items[0])
+                else:
+                    template = {"kind": "neural", "latency_group_index": 0, "latency_tag": 0, "softcore_count": 0, "segment_count": 1}
+                template["softcore_count"] = len(pass_list)
+                passes.append((pi, [template]))
 
             seg_pass_assignments[seg_id] = passes
 
-        # Rebuild the flow with sync barriers between passes.
-        # IMPORTANT: seg_idx must track the same logic as phase 1's
-        # current_seg_id — only increment when a host item follows
-        # neural items (not on every host item).
+        # --- Phase 3: rebuild flow with sync barriers ---
         new_flow = [{"kind": "input"}]
         seg_idx = 0
         saw_neural_in_segment = False
@@ -467,7 +440,6 @@ def create_app(
                     new_flow.append(item)
                     continue
 
-                # Emit the full segment (with pass barriers) on first neural item.
                 if seg_idx not in emitted_segments:
                     emitted_segments.add(seg_idx)
                     for pi, (pass_id, pass_items) in enumerate(passes_for_seg):
@@ -484,7 +456,6 @@ def create_app(
 
         new_flow.append({"kind": "output"})
 
-        # Update host_side_segment_count with schedule sync barriers.
         schedule_syncs = sum(
             1 for item in new_flow
             if item.get("kind") == "host" and item.get("schedule_sync")
@@ -548,7 +519,7 @@ def create_app(
                 stats_out["layout_preview"] = _expand_preview_for_scheduling(
                     layout_result.layout_preview,
                     si["per_segment_passes"],
-                    si.get("max_cores_per_pass", 0),
+                    si.get("per_segment_pass_lists", {}),
                 )
 
             resp = {
@@ -563,7 +534,11 @@ def create_app(
                 "stats": stats_out,
             }
             if "schedule_info" in result:
-                resp["schedule_info"] = result["schedule_info"]
+                si_clean = {
+                    k: v for k, v in result["schedule_info"].items()
+                    if k != "per_segment_pass_lists"
+                }
+                resp["schedule_info"] = si_clean
             return resp
         except Exception as e:
             logger.exception("hw_config_verify failed")

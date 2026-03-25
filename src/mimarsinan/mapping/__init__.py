@@ -9,6 +9,11 @@ from mimarsinan.mapping.ir import (
     WeightBank,
 )
 from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.mapping_structure import (
+    compute_core_input_count,
+    compute_fc_tiling_mode,
+    compute_psum_params,
+)
 from mimarsinan.mapping.softcore_mapping import SoftCore, HardCore, HardCoreMapping
 from mimarsinan.mapping.core_packing import greedy_pack_softcores
 from mimarsinan.mapping.hybrid_hardcore_mapping import (
