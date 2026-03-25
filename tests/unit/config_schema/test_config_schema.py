@@ -24,6 +24,8 @@ class TestDefaults:
         assert "degradation_tolerance" in d
         assert "configuration_mode" in d
         assert "spiking_mode" in d
+        assert "allow_scheduling" in d
+        assert d["allow_scheduling"] is False
 
     def test_default_platform_constraints_has_required_keys(self):
         d = get_default_platform_constraints()

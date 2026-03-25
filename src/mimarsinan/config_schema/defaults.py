@@ -22,6 +22,7 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "degradation_tolerance": 0.95,
     "configuration_mode": "user",
     "spiking_mode": "rate",
+    "allow_scheduling": False,
 }
 
 DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
@@ -32,7 +33,6 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "weight_bits": 8,
     "allow_axon_tiling": False,
     "allow_neuron_splitting": False,
-    "allow_scheduling": False,
     "max_schedule_passes": 8,
     "scheduling_latency_weight": 1.0,
 }

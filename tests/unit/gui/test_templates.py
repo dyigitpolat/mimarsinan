@@ -63,7 +63,18 @@ class TestSaveGetTemplateRoundTrip:
         template_id = save_template("My Config v2!", config)
         assert template_id == "My_Config_v2_"
         loaded = get_template(template_id)
-        assert loaded == config
+        assert loaded["experiment_name"] == "My Config v2!"
+        assert config["experiment_name"] == "Test"
+
+    def test_save_template_overwrites_experiment_name_with_template_name(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
+        config = {"experiment_name": "old_run_name", "pipeline_mode": "phased", "seed": 1}
+        save_template("Display Name", config)
+        loaded = get_template("Display_Name")
+        assert loaded["experiment_name"] == "Display Name"
+        assert loaded["pipeline_mode"] == "phased"
+        assert loaded["seed"] == 1
+        assert config["experiment_name"] == "old_run_name"
 
 
 class TestDeleteTemplate:

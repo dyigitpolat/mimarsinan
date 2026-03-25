@@ -1,26 +1,20 @@
 {
   "seed": 0,
-  "pipeline_mode": "vanilla",
-  "experiment_name": "my_deployment",
+  "pipeline_mode": "phased",
+  "experiment_name": "mnist_full_feature_set",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
     "cores": [
       {
-        "max_axons": 8,
+        "max_axons": 32,
         "max_neurons": 32,
-        "count": 20,
-        "has_bias": true
-      },
-      {
-        "max_axons": 16,
-        "max_neurons": 64,
-        "count": 20,
+        "count": 100,
         "has_bias": true
       }
     ],
-    "max_axons": 16,
-    "max_neurons": 64,
+    "max_axons": 32,
+    "max_neurons": 32,
     "target_tq": 32,
     "simulation_steps": 32,
     "weight_bits": 8,
@@ -29,7 +23,6 @@
     "allow_neuron_splitting": true
   },
   "deployment_parameters": {
-    "allow_scheduling": true,
     "lr": 0.001,
     "training_epochs": 10,
     "tuner_epochs": 1,
@@ -44,12 +37,16 @@
       "fc_w_1": 64,
       "fc_w_2": 64
     },
-    "spiking_mode": "ttfs",
+    "spiking_mode": "ttfs_quantized",
     "firing_mode": "TTFS",
     "spike_generation_mode": "TTFS",
     "thresholding_mode": "<=",
-    "activation_quantization": false,
-    "weight_quantization": false
+    "activation_quantization": true,
+    "weight_quantization": true,
+    "pruning": true,
+    "pruning_fraction": 0.05,
+    "max_simulation_samples": 200,
+    "allow_scheduling": true
   },
   "target_metric_override": null,
   "start_step": null,
