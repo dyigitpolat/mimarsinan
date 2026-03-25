@@ -10,6 +10,11 @@ import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+from mimarsinan.mapping.mapping_structure import (
+    compute_core_input_count,
+    compute_fc_tiling_mode,
+    compute_psum_params,
+)
 
 
 @dataclass
@@ -53,6 +58,8 @@ class LayoutIRMapping:
         self._next_bank_id: int = 0
         # bank_id -> (in_features_with_bias, out_features)
         self._layout_weight_banks: Dict[int, Tuple[int, int]] = {}
+        # softcore_idx -> bank_id (for uniform per-bank pruning)
+        self._sc_idx_to_bank_id: Dict[int, int] = {}
 
     def _alloc_node_id(self) -> int:
         node_id = self._next_node_id
@@ -268,19 +275,32 @@ class LayoutIRMapping:
         each LayoutSoftCoreSpec with the correct ``latency_tag``, ``segment_id``, and
         ``threshold_group_id``.
 
-        Threshold groups are assigned via latency-stratified random
-        assignment: softcores sharing the same latency are randomly (but
-        deterministically) placed into one of N groups.
+        Threshold group policy (pessimistic):
+        - Non-bank cores: random assignment from ``[0, threshold_groups - 1]``.
+        - Bank-backed cores: all positions sharing the same weight bank receive
+          the **same** threshold group.  This is pessimistic because in real
+          deployment each bank typically maps to a single threshold group,
+          creating large groups that are harder to pack.
         """
         latencies = self._compute_latencies()
         segment_ids = self._compute_segment_ids()
         self.host_side_segment_count = self._compute_host_side_segment_count(segment_ids)
         rng = random.Random(self.threshold_seed)
 
+        # Pre-assign one threshold group per weight bank (pessimistic).
+        bank_tg: Dict[int, int] = {}
+        for bank_id in self._layout_weight_banks:
+            bank_tg[bank_id] = rng.randint(0, max(self.threshold_groups - 1, 0))
+
         for node_id, sc_idx in self._node_id_to_softcore_idx.items():
             latency = latencies.get(node_id, 0)
             segment_id = segment_ids.get(node_id, 0)
-            tg = rng.randint(0, max(self.threshold_groups - 1, 0))
+
+            bid = self._sc_idx_to_bank_id.get(sc_idx)
+            if bid is not None and bid in bank_tg:
+                tg = bank_tg[bid]
+            else:
+                tg = rng.randint(0, max(self.threshold_groups - 1, 0))
 
             old = self.layout_softcores[sc_idx]
             self.layout_softcores[sc_idx] = LayoutSoftCoreSpec(
@@ -342,9 +362,8 @@ class LayoutIRMapping:
         **kwargs,
     ) -> np.ndarray:
         out_features = int(getattr(weights, "shape", [0])[0])
-        in_count = int(np.array(input_sources, dtype=object).flatten().shape[0])
-        if biases is not None:
-            in_count += 1  # bias axon (always-on)
+        n_sources = int(np.array(input_sources, dtype=object).flatten().shape[0])
+        in_count = compute_core_input_count(n_sources, biases is not None, self.hardware_bias)
         return self._emit_core(
             input_count=in_count,
             output_count=out_features,
@@ -401,32 +420,33 @@ class LayoutIRMapping:
             out = np.stack(outs, axis=1)
             return out.reshape(tuple(output_shape))
 
-        # Axon tiling: mirror IRMapping.map_fc behaviour for wide layers.
-        _bias_slots = 1 if fc_biases is not None else 0
-        if self.max_axons is not None and in_features + _bias_slots > self.max_axons:
-            if self.allow_core_coalescing:
-                return self._map_fc_coalescing_layout(
-                    src_arr, output_shape, in_features, out_features,
-                    _bias_slots, name,
-                )
-            else:
-                return self._map_fc_psum_layout(
-                    src_arr, output_shape, in_features, out_features,
-                    _bias_slots, name,
-                )
+        has_bias = fc_biases is not None
+        mode = compute_fc_tiling_mode(
+            in_features, out_features,
+            self.max_axons, self.max_neurons,
+            has_bias, self.hardware_bias, self.allow_core_coalescing,
+        )
 
-        # Output tiling
-        if self.max_neurons is not None and out_features > self.max_neurons:
+        if mode == "coalescing":
+            return self._map_fc_coalescing_layout(
+                src_arr, output_shape, in_features, out_features, has_bias, name,
+            )
+        if mode == "psum":
+            return self._map_fc_psum_layout(
+                src_arr, output_shape, in_features, out_features, has_bias, name,
+            )
+        if mode == "output_tiled":
             chunks = []
             start = 0
             while start < out_features:
                 end = min(start + self.max_neurons, out_features)
-                out_block = end - start
-                in_count = int(src_arr.flatten().shape[0]) + (1 if fc_biases is not None else 0)
+                in_count = compute_core_input_count(
+                    int(src_arr.flatten().shape[0]), has_bias, self.hardware_bias,
+                )
                 chunks.append(
                     self._emit_core(
                         input_count=in_count,
-                        output_count=out_block,
+                        output_count=end - start,
                         name=name,
                         input_sources=src_arr,
                     )
@@ -434,8 +454,10 @@ class LayoutIRMapping:
                 start = end
             return np.concatenate(chunks).reshape(tuple(output_shape))
 
-        # Simple single core
-        in_count = int(src_arr.flatten().shape[0]) + (1 if fc_biases is not None else 0)
+        # mode == "single"
+        in_count = compute_core_input_count(
+            int(src_arr.flatten().shape[0]), has_bias, self.hardware_bias,
+        )
         return self._emit_core(
             input_count=in_count,
             output_count=out_features,
@@ -449,7 +471,7 @@ class LayoutIRMapping:
         output_shape: np.ndarray,
         in_features: int,
         out_features: int,
-        bias_slots: int,
+        has_bias: bool,
         name: Optional[str],
     ) -> np.ndarray:
         """Layout-level coalescing for wide FC: one wide softcore per output tile.
@@ -457,7 +479,7 @@ class LayoutIRMapping:
         Mirrors IRMapping.map_fc coalescing path — the core keeps its full
         input width and hardware packing fuses physical cores as needed.
         """
-        in_count = in_features + bias_slots
+        in_count = compute_core_input_count(in_features, has_bias, self.hardware_bias)
         if self.max_neurons is not None and out_features > self.max_neurons:
             chunks = []
             start = 0
@@ -484,7 +506,7 @@ class LayoutIRMapping:
         output_shape: np.ndarray,
         in_features: int,
         out_features: int,
-        bias_slots: int,
+        has_bias: bool,
         name: Optional[str],
     ) -> np.ndarray:
         """Layout-level psum decomposition for wide FC.
@@ -492,39 +514,27 @@ class LayoutIRMapping:
         Emits the same number and shape of softcores as IRMapping._map_fc_with_psum
         (2 * tile_count partials + 1 accumulator per output block).
         """
-        max_axons = int(self.max_axons)
-        max_neurons = int(self.max_neurons) if self.max_neurons is not None else out_features
-
-        tile_count = math.ceil(in_features / max_axons)
-        accum_bias_axons = bias_slots if not self.hardware_bias else 0
-        max_out_by_accum = (max_axons - accum_bias_axons) // (2 * tile_count)
-        if max_out_by_accum <= 0:
-            raise ValueError(
-                f"Cannot build psum accumulator: tile_count={tile_count} "
-                f"requires at least {2 * tile_count + accum_bias_axons} axons, "
-                f"but max_axons={max_axons}."
-            )
-        out_block_size = min(max_neurons, max_out_by_accum)
+        pp = compute_psum_params(
+            in_features, out_features,
+            int(self.max_axons), self.max_neurons,
+            has_bias, self.hardware_bias,
+        )
 
         all_output_sources: list[np.ndarray] = []
         a = 0
         while a < out_features:
-            b = min(out_features, a + out_block_size)
+            b = min(out_features, a + pp.out_block_size)
             block = b - a
 
-            for t_idx in range(tile_count):
-                t_start = t_idx * max_axons
-                t_end = min(in_features, t_start + max_axons)
+            for t_idx, (t_start, t_end) in enumerate(pp.tile_slices):
                 tile_width = t_end - t_start
                 tile_src = src_arr.flatten()[t_start:t_end] if src_arr.size > t_start else src_arr.flatten()
-                # pos partial
                 self._emit_core(
                     input_count=tile_width,
                     output_count=block,
                     name=f"{name}_psum_pos_t{t_idx}_o{a}" if name else None,
                     input_sources=tile_src,
                 )
-                # neg partial
                 self._emit_core(
                     input_count=tile_width,
                     output_count=block,
@@ -532,7 +542,7 @@ class LayoutIRMapping:
                     input_sources=tile_src,
                 )
 
-            accum_axons = 2 * tile_count * block + accum_bias_axons
+            accum_axons = 2 * pp.tile_count * block + pp.accum_bias_axons
             accum_out = self._emit_core(
                 input_count=accum_axons,
                 output_count=block,
@@ -567,7 +577,7 @@ class LayoutIRMapping:
             in_features = 1
 
         has_bias = biases is not None
-        in_features_with_bias = in_features + (1 if has_bias else 0)
+        in_features_with_bias = compute_core_input_count(in_features, has_bias, self.hardware_bias)
 
         self._layout_weight_banks[bank_id] = (in_features_with_bias, out_features)
         return bank_id
@@ -591,14 +601,17 @@ class LayoutIRMapping:
         in_features_with_bias, out_features = bank_shape
 
         src_arr = np.array(input_sources, dtype=object).flatten()
-        in_count = int(src_arr.shape[0]) + (1 if has_bias else 0)
+        in_count = compute_core_input_count(int(src_arr.shape[0]), has_bias, self.hardware_bias)
 
-        return self._emit_core(
+        sc_idx = len(self.layout_softcores)  # index of the about-to-be-added softcore
+        result = self._emit_core(
             input_count=in_count,
             output_count=out_features,
             name=name,
             input_sources=src_arr,
         )
+        self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
+        return result
 
     def collect_layout_softcores(self, model_representation) -> List[LayoutSoftCoreSpec]:
         """
@@ -610,27 +623,63 @@ class LayoutIRMapping:
         If ``pruning_fraction > 0``, applies 80% of the user-provided fraction
         as a random dimension reduction to each softcore to estimate post-pruning
         core sizes (overestimating actual sizes for safety).
+
+        Output-layer protection: softcores whose neurons feed the graph's final
+        outputs have their ``output_count`` preserved (columns cannot be pruned
+        at the graph boundary).
+
+        Weight-bank uniformity: all softcores sharing a weight bank receive the
+        same pruning reduction (the bank is pruned once, not per position).
         """
-        _ = model_representation.map_to_ir(self)
+        output_sources = model_representation.map_to_ir(self)
         self._finalize_softcores()
+
+        # Identify softcores feeding the graph's final output so their
+        # output_count is protected from pruning reduction.
+        output_node_ids: Set[int] = set()
+        if output_sources is not None:
+            for src in np.array(output_sources, dtype=object).flatten():
+                if isinstance(src, IRSource) and src.node_id >= 0:
+                    output_node_ids.add(src.node_id)
+        output_sc_indices: Set[int] = set()
+        for node_id in output_node_ids:
+            sc_idx = self._node_id_to_softcore_idx.get(node_id)
+            if sc_idx is not None:
+                output_sc_indices.add(sc_idx)
 
         softcores = list(self.layout_softcores)
 
-        # Apply pruning estimation
         if self.pruning_fraction > 0:
             effective = self.pruning_fraction * 0.8
-            rng = random.Random(self.threshold_seed + 7919)  # distinct from threshold RNG
+            rng = random.Random(self.threshold_seed + 7919)
+
+            # Pre-compute per-bank reduction so all positions sharing a bank
+            # get identical pruning (see H3).
+            bank_reductions: Dict[int, Tuple[int, int]] = {}
+            for bank_id, (bank_in, bank_out) in self._layout_weight_banks.items():
+                in_red = int(math.floor(bank_in * effective))
+                out_red = int(math.floor(bank_out * effective))
+                bank_reductions[bank_id] = (in_red, out_red)
+
             pruned = []
-            for sc in softcores:
-                in_reduce = int(math.floor(sc.input_count * effective))
-                out_reduce = int(math.floor(sc.output_count * effective))
+            for idx, sc in enumerate(softcores):
+                is_output = idx in output_sc_indices
+                bank_id = self._sc_idx_to_bank_id.get(idx)
+
+                if bank_id is not None and bank_id in bank_reductions:
+                    in_reduce, out_reduce = bank_reductions[bank_id]
+                else:
+                    in_reduce = int(math.floor(sc.input_count * effective))
+                    out_reduce = int(math.floor(sc.output_count * effective))
+
                 new_in = max(1, sc.input_count - in_reduce)
-                new_out = max(1, sc.output_count - out_reduce)
+                new_out = sc.output_count if is_output else max(1, sc.output_count - out_reduce)
                 pruned.append(LayoutSoftCoreSpec(
                     input_count=new_in,
                     output_count=new_out,
                     threshold_group_id=sc.threshold_group_id,
                     latency_tag=sc.latency_tag,
+                    segment_id=sc.segment_id,
                     name=sc.name,
                 ))
             softcores = pruned

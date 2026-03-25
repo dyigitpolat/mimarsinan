@@ -39,6 +39,7 @@ class HardCoreMappingStep(PipelineStep):
             cores_config=platform_constraints["cores"],
             allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
             allow_scheduling=bool(platform_constraints.get("allow_scheduling", False)),
+            allow_coalescing=bool(platform_constraints.get("allow_core_coalescing", False)),
         )
 
         # Report structure — distinguish scheduled passes from segments.

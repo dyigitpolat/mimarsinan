@@ -264,13 +264,17 @@ def verify_hardware_config(
     # feasible for the hardware core types (with coalescing/splitting).
     # If that's satisfied, scheduling can always succeed — it just uses
     # more passes.
+    #
+    # Budget uses ``effective_core_budget`` (same 0.8x heterogeneous
+    # discount used by ``_flush_scheduled_segment`` at build time) so the
+    # wizard preview matches the actual mapping pass count.
     schedule_info: Dict[str, Any] = {}
     if not result.feasible and allow_scheduling:
-        # With scheduling, the workload is always mappable — each pass gets a
-        # fresh core pool.  Partition softcores into per-segment passes and
-        # pack the busiest pass to produce meaningful utilization stats.
-        from mimarsinan.mapping.schedule_partitioner import estimate_passes_for_layout
-        total_core_count = sum(int(ct.get("count", 0)) for ct in core_types)
+        from mimarsinan.mapping.schedule_partitioner import (
+            effective_core_budget,
+            estimate_passes_for_layout,
+        )
+        budget = effective_core_budget(core_types)
         max_hw_ax = max(hw.max_axons for hw in hw_types) if hw_types else 1
         max_hw_neu = max(hw.max_neurons for hw in hw_types) if hw_types else 1
 
@@ -281,25 +285,26 @@ def verify_hardware_config(
             allow_splitting=allow_neuron_splitting,
         )
 
-        # Compute per-segment pass counts.
-        from collections import defaultdict as _defaultdict
+        # Compute per-segment pass counts and actual pass lists.
         seg_softcores: Dict[int, List[LayoutSoftCoreSpec]] = {}
         for sc in all_softcores:
             sid = sc.segment_id if sc.segment_id is not None else 0
             seg_softcores.setdefault(sid, []).append(sc)
 
         per_segment_passes: Dict[int, int] = {}
+        per_segment_pass_lists: Dict[int, List[List[LayoutSoftCoreSpec]]] = {}
         total_pass_count = 0
         all_pass_lists: list = []
         for sid in sorted(seg_softcores.keys()):
             seg_scs = seg_softcores[sid]
-            if total_core_count > 0:
+            if budget > 0:
                 n_passes, seg_pass_lists = estimate_passes_for_layout(
-                    seg_scs, total_core_count, **common_est_kwargs,
+                    seg_scs, budget, **common_est_kwargs,
                 )
             else:
                 n_passes, seg_pass_lists = 1, [seg_scs]
             per_segment_passes[sid] = max(n_passes, 1)
+            per_segment_pass_lists[sid] = seg_pass_lists
             total_pass_count += max(n_passes, 1)
             all_pass_lists.extend(seg_pass_lists)
 
@@ -325,7 +330,8 @@ def verify_hardware_config(
             "scheduled_feasible": True,
             "total_passes": total_pass_count,
             "per_segment_passes": per_segment_passes,
-            "max_cores_per_pass": total_core_count,
+            "per_segment_pass_lists": per_segment_pass_lists,
+            "max_cores_per_pass": budget,
             "message": (
                 f"Scheduled mapping: {total_pass_count} total passes across "
                 f"{len(per_segment_passes)} segment(s) (cores reused between passes)."

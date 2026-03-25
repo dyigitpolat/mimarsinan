@@ -22,6 +22,11 @@ from mimarsinan.mapping.ir import (
     WeightBank,
     spike_source_to_ir_source,
 )
+from mimarsinan.mapping.mapping_structure import (
+    compute_core_input_count,
+    compute_fc_tiling_mode,
+    compute_psum_params,
+)
 
 
 class IRMapping:
@@ -451,32 +456,34 @@ class IRMapping:
             out = np.stack(outputs, axis=1)  # (out_features, core_count)
             return out.reshape(tuple(output_shape))
 
-        # Wide core handling: in_features > max_axons.
-        is_wide = self.max_axons is not None and in_features > self.max_axons
-        if is_wide:
-            if self.allow_core_coalescing:
-                # Coalescing mode: keep as one wide core, hardware fuses physical cores.
-                if coalescing_group_id is None:
-                    coalescing_group_id = self._coalescing_group_counter
-                    self._coalescing_group_counter += 1
-                    coalescing_role = "master"
-            else:
-                # Psum decomposition: split into pos/neg partial cores + accumulator.
-                return self._map_fc_with_psum(
-                    input_sources=input_tensor_sources.flatten(),
-                    weights=fc_weights,
-                    biases=fc_biases,
-                    activation_scale=activation_scale,
-                    parameter_scale=parameter_scale,
-                    input_activation_scale=input_activation_scale,
-                    name=name,
-                    normalization_type=normalization_type,
-                    activation_type=activation_type,
-                    perceptron_index=perceptron_index,
-                )
+        has_bias = fc_biases is not None
+        mode = compute_fc_tiling_mode(
+            in_features, out_features,
+            self.max_axons, self.max_neurons,
+            has_bias, self.hardware_bias, self.allow_core_coalescing,
+        )
 
-        # Tile output channels if they exceed max_neurons.
-        if self.max_neurons is not None and out_features > self.max_neurons:
+        if mode == "coalescing":
+            if coalescing_group_id is None:
+                coalescing_group_id = self._coalescing_group_counter
+                self._coalescing_group_counter += 1
+                coalescing_role = "master"
+            # Coalescing is just metadata; still need output tiling if neurons exceed limit.
+        elif mode == "psum":
+            return self._map_fc_with_psum(
+                input_sources=input_tensor_sources.flatten(),
+                weights=fc_weights,
+                biases=fc_biases,
+                activation_scale=activation_scale,
+                parameter_scale=parameter_scale,
+                input_activation_scale=input_activation_scale,
+                name=name,
+                normalization_type=normalization_type,
+                activation_type=activation_type,
+                perceptron_index=perceptron_index,
+            )
+
+        if mode == "output_tiled" or (mode == "coalescing" and self.max_neurons is not None and out_features > self.max_neurons):
             return self._map_fc_output_tiled(
                 input_tensor_sources,
                 fc_weights,
@@ -594,42 +601,23 @@ class IRMapping:
         The accumulator weight matrix is a sparse identity-like matrix with
         ``+1/parameter_scale`` for pos partials and ``-1/parameter_scale`` for neg.
         """
-        max_axons = int(self.max_axons)
-        max_neurons = int(self.max_neurons) if self.max_neurons is not None else weights.shape[0]
         in_features = weights.shape[1]
         out_features = weights.shape[0]
 
+        pp = compute_psum_params(
+            in_features, out_features,
+            int(self.max_axons), self.max_neurons,
+            biases is not None, self.hardware_bias,
+        )
+
         src_arr = input_sources.flatten()
-
-        # 1. Tile input axons.
-        tile_slices: list[tuple[int, int]] = []
-        in_start = 0
-        while in_start < in_features:
-            in_end = min(in_features, in_start + max_axons)
-            tile_slices.append((in_start, in_end))
-            in_start = in_end
-
-        tile_count = len(tile_slices)
         group_id = self._psum_group_counter
         self._psum_group_counter += 1
 
-        # 2. Compute output block size: accumulator needs 2*tile_count*block_size
-        #    axons (pos + neg partials) + optional bias axon.
-        bias_axons = 1 if (biases is not None and not self.hardware_bias) else 0
-        max_out_by_accum = (max_axons - bias_axons) // (2 * tile_count)
-        if max_out_by_accum <= 0:
-            raise ValueError(
-                f"Cannot build psum accumulator: tile_count={tile_count} "
-                f"requires at least {2 * tile_count + bias_axons} axons, "
-                f"but max_axons={max_axons}."
-            )
-        out_block_size = min(max_neurons, max_out_by_accum)
-
-        # 3. Build partial + accumulator cores per output block.
         all_output_sources: list[np.ndarray] = []
         a = 0
         while a < out_features:
-            b = min(out_features, a + out_block_size)
+            b = min(out_features, a + pp.out_block_size)
             block = b - a
 
             w_block = weights[a:b, :]  # (block, in_features)
@@ -638,7 +626,7 @@ class IRMapping:
             # -- partial cores --
             partial_pos_sources: list[np.ndarray] = []
             partial_neg_sources: list[np.ndarray] = []
-            for t_idx, (ta, tb) in enumerate(tile_slices):
+            for t_idx, (ta, tb) in enumerate(pp.tile_slices):
                 w_tile = w_block[:, ta:tb]
                 if not torch.is_tensor(w_tile):
                     w_tile = torch.as_tensor(w_tile, dtype=torch.float32)
@@ -685,20 +673,20 @@ class IRMapping:
             # -- accumulator core --
             # Gather partial outputs: [pos_t0_n0..nB, pos_t1_n0..nB, ..., neg_t0_n0..nB, ...]
             acc_input_list: list[IRSource] = []
-            for t_idx in range(tile_count):
+            for t_idx in range(pp.tile_count):
                 for n in range(block):
                     acc_input_list.append(partial_pos_sources[t_idx][n])
-            for t_idx in range(tile_count):
+            for t_idx in range(pp.tile_count):
                 for n in range(block):
                     acc_input_list.append(partial_neg_sources[t_idx][n])
 
             ps = parameter_scale.item() if hasattr(parameter_scale, "item") else float(parameter_scale)
             unit = 1.0 / float(ps)
-            acc_axons = 2 * tile_count * block
+            acc_axons = 2 * pp.tile_count * block
             acc_w = np.zeros((block, acc_axons), dtype=float)
             pos_off = 0
-            neg_off = tile_count * block
-            for t_idx in range(tile_count):
+            neg_off = pp.tile_count * block
+            for t_idx in range(pp.tile_count):
                 for n in range(block):
                     acc_w[n, pos_off + t_idx * block + n] = unit
                     acc_w[n, neg_off + t_idx * block + n] = -unit

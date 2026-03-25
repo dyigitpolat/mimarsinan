@@ -334,6 +334,7 @@ def _flush_scheduled_segment(
     segment_index: int,
     segment_label: str,
     allow_neuron_splitting: bool = False,
+    allow_coalescing: bool = False,
 ) -> tuple[list[HybridStage], dict[int, dict[int, int]]]:
     """Flush a neural segment as one or more scheduled passes.
 
@@ -349,25 +350,20 @@ def _flush_scheduled_segment(
     is automatically halved and retried until each sub-pass packs or
     contains only a single core.
     """
-    from mimarsinan.mapping.schedule_partitioner import partition_segment_into_passes
+    from mimarsinan.mapping.schedule_partitioner import (
+        effective_core_budget,
+        partition_segment_into_passes,
+    )
 
-    total_hw_cores = sum(int(ct["count"]) for ct in cores_config)
+    budget = effective_core_budget(cores_config)
     max_hw_axons = max(int(ct["max_axons"]) for ct in cores_config) if cores_config else 0
     max_hw_neurons = max(int(ct["max_neurons"]) for ct in cores_config) if cores_config else 0
 
-    # Reduce budget when heterogeneous core types exist to account for
-    # per-type scarcity (a core needing e.g. 64 neurons can only use types
-    # that offer >= 64 neurons, even if smaller types have spare capacity).
-    n_types = len(cores_config)
-    effective_budget = int(total_hw_cores * 0.8) if n_types > 1 else total_hw_cores
-
     passes = partition_segment_into_passes(
-        current_neural, effective_budget,
+        current_neural, budget,
         max_hw_axons=max_hw_axons,
         max_hw_neurons=max_hw_neurons,
-        allow_coalescing=any(
-            getattr(c, "coalescing_group_id", None) is not None for c in current_neural
-        ),
+        allow_coalescing=allow_coalescing,
         allow_splitting=allow_neuron_splitting,
     )
 
@@ -452,6 +448,7 @@ def build_hybrid_hard_core_mapping(
     cores_config: Sequence[dict],
     allow_neuron_splitting: bool = False,
     allow_scheduling: bool = False,
+    allow_coalescing: bool = False,
 ) -> HybridHardCoreMapping:
     """
     Compile a unified IRGraph into a HybridHardCoreMapping.
@@ -469,6 +466,9 @@ def build_hybrid_hard_core_mapping(
     a segment) gets a **fresh** hardware core pool — the same physical
     cores are reprogrammed between passes.  This allows mapping models
     that need more cores than available, trading latency for chip area.
+
+    ``allow_coalescing`` is threaded to the schedule partitioner so the
+    hardware cost model matches the wizard verifier.
     """
 
     consumed_by: dict[int, set[int]] = defaultdict(set)
@@ -494,6 +494,7 @@ def build_hybrid_hard_core_mapping(
             stages=stages,
             all_reindex_maps=all_reindex_maps,
             allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
         )
     else:
         _build_single_pool(
@@ -590,6 +591,7 @@ def _build_scheduled(
     stages: list[HybridStage],
     all_reindex_maps: dict[int, dict[int, int]],
     allow_neuron_splitting: bool,
+    allow_coalescing: bool = False,
 ) -> None:
     """Scheduled compilation: fresh core pool per pass, segments may be split."""
     segment_index = 0
@@ -612,6 +614,7 @@ def _build_scheduled(
                     segment_index=segment_index,
                     segment_label=f"neural_segment_until:{node.name}",
                     allow_neuron_splitting=allow_neuron_splitting,
+                    allow_coalescing=allow_coalescing,
                 )
                 stages.extend(seg_stages)
                 all_reindex_maps.update(seg_reindex)
@@ -636,6 +639,7 @@ def _build_scheduled(
             segment_index=segment_index,
             segment_label="neural_segment_final",
             allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
         )
         stages.extend(seg_stages)
         all_reindex_maps.update(seg_reindex)
