@@ -631,6 +631,8 @@ function buildConfig() {
   const maxSim = parseInt(v('maxSimulationSamples'), 10);
   if (maxSim > 0) dp.max_simulation_samples = maxSim;
 
+  dp.allow_scheduling = isToggleOn('scheduledMappingToggle');
+
   // platform_constraints
   let platformConstraints;
   const allowCoalescing = isToggleOn('coreCoalescingToggle');
@@ -648,7 +650,6 @@ function buildConfig() {
     };
     if (allowCoalescing) platformConstraints.allow_core_coalescing = true;
     if (isToggleOn('neuronSplittingToggle')) platformConstraints.allow_neuron_splitting = true;
-    if (isToggleOn('scheduledMappingToggle')) platformConstraints.allow_scheduling = true;
   } else {
     platformConstraints = {
       mode: "auto",
@@ -660,7 +661,6 @@ function buildConfig() {
           weight_bits: weightBits,
           allow_core_coalescing: allowCoalescing,
           allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
-          allow_scheduling: isToggleOn('scheduledMappingToggle'),
         },
         search_space: {
           num_core_types: parseInt(v('numCoreTypes')),
@@ -776,7 +776,6 @@ function loadStateFromConfig(config) {
     setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
     setToggleFromConfig('coreCoalescingToggle', pc.allow_core_coalescing);
     setToggleFromConfig('neuronSplittingToggle', pc.allow_neuron_splitting);
-    setToggleFromConfig('scheduledMappingToggle', pc.allow_scheduling);
     setVal('weightBits', pc.weight_bits != null ? pc.weight_bits : dp.weight_bits);
     setVal('targetTq', pc.target_tq);
     setVal('simCycles', pc.simulation_steps);
@@ -790,7 +789,6 @@ function loadStateFromConfig(config) {
     setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
     setToggleFromConfig('coreCoalescingToggle', fixed.allow_core_coalescing);
     setToggleFromConfig('neuronSplittingToggle', fixed.allow_neuron_splitting);
-    setToggleFromConfig('scheduledMappingToggle', fixed.allow_scheduling);
     setVal('numCoreTypes', ss.num_core_types);
     setVal('coreTypeCounts', Array.isArray(ss.core_type_counts) ? ss.core_type_counts.join(', ') : ss.core_type_counts);
     setVal('coreAxonBounds', Array.isArray(ss.core_axons_bounds) ? ss.core_axons_bounds.join(', ') : ss.core_axons_bounds);
@@ -808,6 +806,18 @@ function loadStateFromConfig(config) {
   setToggleFromConfig('pruningToggle', dp.pruning);
   setVal('pruningFraction', dp.pruning_fraction != null ? dp.pruning_fraction : 0.5);
   setVal('maxSimulationSamples', dp.max_simulation_samples != null ? dp.max_simulation_samples : '');
+  (function setScheduledMappingFromConfig() {
+    let allowSched;
+    if (dp.allow_scheduling !== undefined && dp.allow_scheduling !== null) {
+      allowSched = !!dp.allow_scheduling;
+    } else if (hwMode === 'user') {
+      allowSched = !!pc.allow_scheduling;
+    } else {
+      const fixedLegacy = (pc.auto || {}).fixed || {};
+      allowSched = !!fixedLegacy.allow_scheduling;
+    }
+    setToggleFromConfig('scheduledMappingToggle', allowSched);
+  })();
   applySpikingDeps();
   applyHwDeps();
   onPruningFractionChange();

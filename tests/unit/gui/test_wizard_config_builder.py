@@ -28,6 +28,7 @@ class TestBuildDeploymentConfigFromState:
         assert "platform_constraints" in out
         assert out["deployment_parameters"]["configuration_mode"] == "user"
         assert out["deployment_parameters"]["spiking_mode"] == "rate"
+        assert out["deployment_parameters"].get("allow_scheduling") is False
 
     def test_phased_preset_applied(self):
         out = build_deployment_config_from_state({"pipeline_mode": "phased"})

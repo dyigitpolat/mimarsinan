@@ -51,7 +51,7 @@ contract and do not need to special-case `Identity` activation.
 
 ### Scheduled mapping
 
-When `allow_scheduling=True` in `platform_constraints`, `build_hybrid_hard_core_mapping`
+When `allow_scheduling=True` in the merged pipeline config (typically from `deployment_parameters`), `build_hybrid_hard_core_mapping`
 splits neural segments into multiple **schedule passes** that execute sequentially,
 reusing the same physical hardware cores.  This trades latency for chip area.
 

@@ -77,14 +77,17 @@ def get_template(template_id: str) -> dict[str, Any] | None:
 
 def save_template(name: str, config: dict[str, Any]) -> str:
     """Save a config as a named template. Returns the template ID."""
-    safe_name = re.sub(r"[^A-Za-z0-9_\-]", "_", name.strip())
+    display_name = name.strip()
+    safe_name = re.sub(r"[^A-Za-z0-9_\-]", "_", display_name)
     if not safe_name:
         safe_name = "template"
+    out = dict(config)
+    out["experiment_name"] = display_name or "template"
     tdir = Path(get_templates_dir())
     tdir.mkdir(parents=True, exist_ok=True)
     path = tdir / f"{safe_name}.json"
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
+        json.dump(out, f, indent=2)
     return safe_name
 
 

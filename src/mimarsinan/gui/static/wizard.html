@@ -355,13 +355,6 @@
                   <div class="toggle-switch"></div>
                 </div>
               </div>
-              <div class="field">
-                <label class="field-label">Scheduled Mapping <span class="hint">reuse cores over time</span></label>
-                <div class="toggle-row" id="scheduledMappingToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Scheduling</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
             </div>
 
             <div class="dep-bar" id="hwDeps"></div>
@@ -431,8 +424,8 @@
 
             <div class="dep-bar" id="spikingDeps"></div>
 
-            <!-- Cycles, Tq, Max simulation samples -->
-            <div class="field-grid" style="margin-bottom:14px">
+            <!-- Row 1: Cycles, Target Tq — Row 2: Max simulation samples, Scheduled mapping -->
+            <div class="field-grid" style="margin-bottom:10px">
               <div class="field">
                 <label class="field-label">Cycles <span class="hint">simulation time steps</span></label>
                 <input type="number" id="simCycles" value="32" min="1" oninput="onCyclesChange(); update()">
@@ -441,9 +434,18 @@
                 <label class="field-label">Target Tq <span class="hint">activation quantization levels</span></label>
                 <input type="number" id="targetTq" value="32" min="1" oninput="onTqChange(); update()">
               </div>
+            </div>
+            <div class="field-grid" style="margin-bottom:14px">
               <div class="field">
                 <label class="field-label">Max simulation samples <span class="hint">leave empty for full test set</span></label>
                 <input type="number" id="maxSimulationSamples" value="" min="0" placeholder="all" oninput="update()">
+              </div>
+              <div class="field">
+                <label class="field-label">Scheduled Mapping <span class="hint">reuse cores over time</span></label>
+                <div class="toggle-row" id="scheduledMappingToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Scheduling</span>
+                  <div class="toggle-switch"></div>
+                </div>
               </div>
             </div>
             <div class="note warn hide" id="tqWarn"></div>

@@ -210,6 +210,7 @@ class DeploymentPipeline(Pipeline):
         "degradation_tolerance": 0.95,
         "configuration_mode": "user",
         "spiking_mode": "rate",
+        "allow_scheduling": False,
     }
 
     default_platform_constraints: dict = {

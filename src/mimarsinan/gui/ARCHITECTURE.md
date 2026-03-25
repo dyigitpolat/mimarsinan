@@ -19,7 +19,7 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 | `process_manager.py` | `ProcessManager`, `ManagedRun`, `_start_console_reader` | Spawns headless pipeline processes with `stdout=PIPE, stderr=PIPE`; background reader threads drain both pipes and write tagged lines to `_GUI_STATE/console.jsonl`; tracks runs via filesystem polling, provides status/metrics/step detail APIs, kill with SIGTERM→SIGKILL escalation |
 | `run_cache_seed.py` | `copy_pipeline_cache_from_previous_run`, `copy_steps_json_from_previous_run` | Edit & continue: copies pipeline cache files and optionally `_GUI_STATE/steps.json` from the prior run so `run_from` has cache entries and backfill can restore full step snapshots for the monitor |
 | `runs.py` | `list_runs`, `get_run_config`, `get_run_pipeline`, `get_run_step_detail`, `get_run_console_logs` | Discover and load historical pipeline runs from the generated files directory; `get_run_console_logs` reads `console.jsonl` for the console tab |
-| `templates.py` | `list_templates`, `get_template`, `save_template`, `delete_template`, `name_and_deployment_from_post_body` | CRUD for deployment configuration templates saved as JSON files. Files are a **flat deployment dict** (same shape as `get_run_config`). POST `/api/templates` accepts `{name, config}` or a flat deployment body. |
+| `templates.py` | `list_templates`, `get_template`, `save_template`, `delete_template`, `name_and_deployment_from_post_body` | CRUD for deployment configuration templates saved as JSON files. Files are a **flat deployment dict** (same shape as `get_run_config`). `save_template` sets `experiment_name` on the stored copy to the given template display name (so lists and wizard load show the template label, not the originating run name). POST `/api/templates` accepts `{name, config}` or a flat deployment body. |
 | `wizard_config_builder.py` | `build_deployment_config_from_state` | Builds complete deployment config from wizard UI state, applying defaults and presets |
 | `heatmap_renderer.py` | `render_heatmap_png_data_uri` | Renders weight matrices as PNG data URIs for GUI; no raw matrices sent to frontend |
 
@@ -79,8 +79,8 @@ per-core min/avg/max breakdowns, and detail rows for latency-groups-per-segment 
 coalescing/splitting summaries. The data comes from the
 `"stats"` key returned by `/api/hw_config_verify`. On failure or re-validation,
 the panel is hidden so stale numbers are never shown.
-**Scheduled Mapping** toggle (`#scheduledMappingToggle`) enables hardware core reuse across
-sequential passes. When ON, `allow_scheduling` is set in `platform_constraints` and the
+**Scheduled Mapping** toggle (`#scheduledMappingToggle`, in **Deployment Mode**) enables hardware core reuse across
+sequential passes. When ON, `allow_scheduling` is set in `deployment_parameters` and the
 auto-suggest endpoint uses `suggest_hardware_config_scheduled` (exploring the core-count ↔
 pass-count tradeoff). The verify endpoint reports `schedule_info` with estimated pass count.
 
@@ -188,5 +188,3 @@ plot per numeric metric (separate charts per objective).
 - `GET /api/templates/{id}` — get a template's config
 - `POST /api/templates` — save a new template (body: `{name, config}`)
 - `DELETE /api/templates/{id}` — delete a template
-e
-mplate
