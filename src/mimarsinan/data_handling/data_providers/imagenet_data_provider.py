@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+import torch
 import torchvision
 import torchvision.transforms as transforms
 
@@ -61,14 +62,22 @@ _IMAGENET_STD = (0.229, 0.224, 0.225)
 
 @BasicDataProviderFactory.register("ImageNet_DataProvider")
 class ImageNet_DataProvider(DataProvider):
-    """ILSVRC 2012 classification: train split, val split, 1000 classes.
+    """ILSVRC 2012 classification: 1000 classes.
 
     With ``IMAGENET_ROOT`` in ``.env``, creates ``<datasets_path>/imagenet`` as a symlink
     to that directory and uses it as the torchvision ``ImageNet`` root. Otherwise
     ``datasets_path`` is the root. See `torchvision.datasets.ImageNet`.
+
+    **Validation** is a small tail of the **training** split (same convention as
+    MNIST/CIFAR-10): ``training_validation_split`` (default 0.99) for training, remainder
+    for validation, with eval-style preprocessing on the validation subset only.
+
+    **Test** uses the official ``split="val"`` set (held-out; no public test labels in ILSVRC).
     """
 
     DISPLAY_LABEL = "ImageNet (224×224×3, 1000 classes)"
+
+    training_validation_split = 0.99
 
     def __init__(self, datasets_path, *, seed: int | None = 0):
         super().__init__(datasets_path, seed=seed)
@@ -103,14 +112,25 @@ class ImageNet_DataProvider(DataProvider):
             ]
         )
 
-        self.training_dataset = torchvision.datasets.ImageNet(
+        training_full = torchvision.datasets.ImageNet(
             root=root, split="train", transform=train_transform
         )
-        self.validation_dataset = torchvision.datasets.ImageNet(
+        training_full_eval = torchvision.datasets.ImageNet(
+            root=root, split="train", transform=eval_transform
+        )
+        n_train = len(training_full)
+        training_length = int(n_train * self.training_validation_split)
+
+        self.training_dataset = torch.utils.data.Subset(
+            training_full, range(0, training_length)
+        )
+        self.validation_dataset = torch.utils.data.Subset(
+            training_full_eval, range(training_length, n_train)
+        )
+
+        self.test_dataset = torchvision.datasets.ImageNet(
             root=root, split="val", transform=eval_transform
         )
-        # No public test labels for ILSVRC2012; reuse validation for test metrics.
-        self.test_dataset = self.validation_dataset
 
     def _get_training_dataset(self):
         return self.training_dataset
@@ -122,13 +142,13 @@ class ImageNet_DataProvider(DataProvider):
         return self.test_dataset
 
     def get_training_batch_size(self):
-        return 256
+        return 16
 
     def get_validation_batch_size(self):
-        return 256
+        return 16
 
     def get_test_batch_size(self):
-        return 256
+        return 16
 
     def get_prediction_mode(self):
         return ClassificationMode(1000)
