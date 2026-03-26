@@ -112,6 +112,25 @@ class TestRecoverOrphanedRuns:
         managed = manager._runs[run_id]
         assert managed.is_alive() is False
 
+    def test_list_active_handles_missing_finished_at_for_dead_run(self, tmp_path):
+        """Recovered dead runs with ``finished_at: null`` must not crash cleanup."""
+        from mimarsinan.gui.persistence import save_run_info
+
+        run_id = "null_finished_at_phased_deployment_run_20240101_120000"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        working_dir = str(run_dir)
+
+        # ``save_run_info`` writes ``finished_at=None`` for newly started runs.
+        save_run_info(working_dir, pid=999999999, step_names=["StepA"])
+
+        manager = ProcessManager(generated_files_root=str(tmp_path))
+
+        active = manager.list_active()
+        assert len(active) == 1
+        assert active[0]["run_id"] == run_id
+        assert active[0]["is_alive"] is False
+
     def test_recover_orphaned_runs_skips_finished_over_one_hour_ago(self, tmp_path):
         """Create run_info with finished_at over 1 hour ago; verify it is NOT recovered."""
         run_id = "old_exp_phased_deployment_run_20240101_120000"

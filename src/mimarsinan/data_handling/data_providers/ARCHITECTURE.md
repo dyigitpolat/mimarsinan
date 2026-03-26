@@ -12,10 +12,12 @@ Contains concrete `DataProvider` implementations that self-register with
 | `cifar10_data_provider.py` | `"cifar10"` | CIFAR-10 |
 | `cifar100_data_provider.py` | `"cifar100"` | CIFAR-100 |
 | `ecg_data_provider.py` | `"ecg"` | ECG time-series classification |
+| `imagenet_data_provider.py` | `"ImageNet_DataProvider"` | ImageNet ILSVRC2012: symlinks `<datasets_path>/imagenet` → `IMAGENET_ROOT` from `.env` when set |
 
 ## Dependencies
 
 - **Internal**: `data_handling.data_provider.DataProvider`, `data_handling.data_provider_factory.BasicDataProviderFactory`.
+- **Internal**: inline ``dotenv`` load of repo ``.env`` (read ``IMAGENET_ROOT``, create symlink under ``datasets_path``).
 - **External**: `torchvision`, `torch`.
 
 ## Dependents

@@ -414,7 +414,9 @@ class ProcessManager:
         for run_id, managed in self._runs.items():
             if not managed.is_alive():
                 info = load_run_info(managed.working_dir)
-                finished_at = (info or {}).get("finished_at", managed.started_at)
+                finished_at = (info or {}).get("finished_at")
+                if not isinstance(finished_at, (int, float)):
+                    finished_at = managed.started_at
                 if finished_at < cutoff:
                     to_remove.append(run_id)
         for rid in to_remove:

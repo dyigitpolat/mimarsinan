@@ -99,6 +99,27 @@ class SequentialWithFlatten(nn.Module):
         return self.net(x)
 
 
+class DynamicPatchTokenizer(nn.Module):
+    """Conv -> dynamic reshape -> permute -> mean -> Linear.
+
+    Mirrors the ViT patch-tokenization pattern where FX emits symbolic reshape
+    sizes derived from the runtime batch / spatial dimensions.
+    """
+
+    def __init__(self, in_channels=1, hidden_dim=8, num_classes=5):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, hidden_dim, kernel_size=14, stride=14)
+        self.head = nn.Linear(hidden_dim, num_classes)
+
+    def forward(self, x):
+        n = x.shape[0]
+        x = self.conv(x)
+        x = x.reshape(n, x.shape[1], x.shape[2] * x.shape[3])
+        x = x.permute(0, 2, 1)
+        x = x.mean(dim=1)
+        return self.head(x)
+
+
 class UnsupportedModel(nn.Module):
     """Contains an LSTM which is unsupported."""
     def __init__(self):
@@ -244,6 +265,21 @@ class TestConversion:
         perceptrons = supermodel.get_perceptrons()
         # Only chip-targeted perceptrons; Identity final layer is excluded.
         assert len(perceptrons) >= 1
+
+    def test_convert_dynamic_reshape_then_permute(self):
+        """ShapeProp metadata should preserve symbolic reshape before permute."""
+        model = DynamicPatchTokenizer(in_channels=1, hidden_dim=8, num_classes=5)
+        model.eval()
+
+        supermodel = convert_torch_model(
+            model, input_shape=(1, 28, 28), num_classes=5
+        )
+        assert supermodel is not None
+
+        x = torch.randn(2, 1, 28, 28)
+        with torch.no_grad():
+            out = supermodel(x)
+        assert out.shape == (2, 5)
 
     def test_convert_residual(self):
         model = ResidualBlock(features=16, num_classes=10)

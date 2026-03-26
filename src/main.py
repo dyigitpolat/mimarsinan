@@ -17,7 +17,8 @@ def _parse_deployment_config(deployment_config):
     """Parse deployment config dict into args for pipeline creation. Used by main() and run_pipeline_from_config."""
     data_provider_name = deployment_config['data_provider_name']
     seed = deployment_config.get("seed", 0)
-    data_provider_factory = BasicDataProviderFactory(data_provider_name, "./datasets", seed=seed)
+    datasets_path = deployment_config.get("datasets_path", "./datasets")
+    data_provider_factory = BasicDataProviderFactory(data_provider_name, datasets_path, seed=seed)
 
     deployment_name = deployment_config['experiment_name']
     deployment_parameters = dict(deployment_config['deployment_parameters'])

@@ -287,6 +287,28 @@ class TestTorchVGG16BuilderMapping:
         model = builder.build({})
         assert isinstance(model, nn.Module)
 
+    def test_build_adapts_grayscale_small_inputs(self):
+        """VGG16 should adapt its stem/pooling for MNIST-style 1x28x28 inputs."""
+        from mimarsinan.models.builders import BUILDERS_REGISTRY
+        builder = BUILDERS_REGISTRY["torch_vgg16"](
+            device=DEVICE,
+            input_shape=(1, 28, 28),
+            num_classes=10,
+            max_axons=4096,
+            max_neurons=4096,
+            pipeline_config=PIPELINE_CONFIG,
+        )
+        model = builder.build({})
+        assert model.features[0].in_channels == 1
+        assert sum(isinstance(mod, nn.MaxPool2d) for mod in model.features) == 4
+        with torch.no_grad():
+            assert model.eval()(torch.randn(1, 1, 28, 28)).shape == (1, 10)
+
+    def test_validate_config_accepts_generic_shapes(self):
+        from mimarsinan.models.builders.torch_vgg16_builder import TorchVGG16Builder
+        assert TorchVGG16Builder.validate_config({}, None, (1, 28, 28))
+        assert TorchVGG16Builder.validate_config({}, None, (3, 32, 32))
+
     def test_representability(self):
         """VGG16 should be representable (Conv2d + BatchNorm + ReLU + MaxPool + Linear)."""
         from mimarsinan.models.builders import BUILDERS_REGISTRY
@@ -330,6 +352,28 @@ class TestTorchSqueezeNet11BuilderMapping:
         model = builder.build({})
         assert isinstance(model, nn.Module)
 
+    def test_build_adapts_grayscale_inputs(self):
+        from mimarsinan.models.builders import BUILDERS_REGISTRY
+        builder = BUILDERS_REGISTRY["torch_squeezenet11"](
+            device=DEVICE,
+            input_shape=(1, 28, 28),
+            num_classes=10,
+            max_axons=4096,
+            max_neurons=4096,
+            pipeline_config=PIPELINE_CONFIG,
+        )
+        model = builder.build({})
+        assert model.features[0].in_channels == 1
+        with torch.no_grad():
+            assert model.eval()(torch.randn(1, 1, 28, 28)).shape == (1, 10)
+
+    def test_validate_config_accepts_generic_shapes(self):
+        from mimarsinan.models.builders.torch_squeezenet11_builder import (
+            TorchSqueezeNet11Builder,
+        )
+        assert TorchSqueezeNet11Builder.validate_config({}, None, (1, 28, 28))
+        assert TorchSqueezeNet11Builder.validate_config({}, None, (3, 32, 32))
+
     def test_representability(self):
         from mimarsinan.models.builders import BUILDERS_REGISTRY
         from mimarsinan.torch_mapping.converter import check_representability
@@ -371,9 +415,38 @@ class TestTorchViTBuilderMapping:
         model = builder.build({})
         assert isinstance(model, nn.Module)
 
-    @pytest.mark.xfail(
-        reason="torchvision ViT uses MultiheadAttention which has no mimarsinan mapping"
-    )
+    def test_build_adapts_square_size_and_channels(self):
+        from mimarsinan.models.builders import BUILDERS_REGISTRY
+        builder = BUILDERS_REGISTRY["torch_vit"](
+            device=DEVICE,
+            input_shape=(1, 28, 28),
+            num_classes=10,
+            max_axons=8192,
+            max_neurons=8192,
+            pipeline_config=PIPELINE_CONFIG,
+        )
+        model = builder.build({})
+        assert model.conv_proj.in_channels == 1
+        assert model.conv_proj.kernel_size == (14, 14)
+        with torch.no_grad():
+            assert model.eval()(torch.randn(1, 1, 28, 28)).shape == (1, 10)
+
+    def test_validate_config_accepts_square_sizes(self):
+        from mimarsinan.models.builders.torch_vit_builder import TorchViTBuilder
+        assert TorchViTBuilder.validate_config({}, None, (1, 28, 28))
+        assert TorchViTBuilder.validate_config({}, None, (3, 224, 224))
+        assert not TorchViTBuilder.validate_config({}, None, (1, 28, 30))
+
+    def test_small_input_build_and_map(self):
+        _check_builder(
+            "torch_vit",
+            input_shape=(1, 28, 28),
+            num_classes=10,
+            model_config={},
+            max_axons=8192,
+            max_neurons=8192,
+        )
+
     def test_representability(self):
         from mimarsinan.models.builders import BUILDERS_REGISTRY
         from mimarsinan.torch_mapping.converter import check_representability
@@ -389,9 +462,6 @@ class TestTorchViTBuilderMapping:
         report = check_representability(model, input_shape=(3, 32, 32))
         assert report.is_representable, f"ViT not representable: {report.summary()}"
 
-    @pytest.mark.xfail(
-        reason="torchvision ViT uses MultiheadAttention which has no mimarsinan mapping"
-    )
     def test_build_and_map(self):
         _check_builder(
             "torch_vit",
