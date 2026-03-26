@@ -104,6 +104,133 @@ def _hw_cost_layout(
 
 
 # ---------------------------------------------------------------------------
+# Validate-and-split refinement (mirrors build-time _flush_or_split)
+# ---------------------------------------------------------------------------
+
+def _validate_and_split_passes(
+    passes: list[list[T]],
+    pack_validator: Callable[[list[T]], bool],
+    fragment_expander: Optional[Callable[[T], Optional[list[T]]]] = None,
+    max_per_pass: int = 0,
+) -> tuple[list[list[T]], bool]:
+    """Validate each pass with real packing; split or fragment on failure.
+
+    Mirrors the build-time ``_flush_or_split`` pattern: if a pass fails
+    typed packing, split it in half and retry recursively.
+
+    When a **single-item** pass fails and *fragment_expander* is provided,
+    the item is expanded into fragment-sized sub-items (e.g. coalescing /
+    splitting fragments).  Fragments are distributed into sub-passes of at
+    most *max_per_pass* items and each sub-pass is validated recursively.
+    This handles the case where a softcore's fragments exceed the available
+    core count — the fragments are simply scheduled across multiple passes.
+
+    If fragment expansion is not possible (expander returns ``None``) or a
+    fragment itself cannot pack, the configuration is truly infeasible.
+
+    Returns ``(validated_passes, all_feasible)``.
+    """
+    validated: list[list[T]] = []
+    all_ok = True
+
+    def _process(items: list[T]) -> None:
+        nonlocal all_ok
+        if not items:
+            return
+        if pack_validator(items):
+            validated.append(items)
+            return
+        if len(items) > 1:
+            mid = len(items) // 2
+            _process(items[:mid])
+            _process(items[mid:])
+            return
+        # Single item failed — try fragment expansion.
+        if fragment_expander is not None:
+            frags = fragment_expander(items[0])
+            if frags is not None:
+                k = max_per_pass if max_per_pass > 0 else len(frags)
+                sub_passes = [frags[i:i + k] for i in range(0, len(frags), k)]
+                for sp in sub_passes:
+                    _process(sp)
+                return
+        all_ok = False
+        validated.append(items)
+
+    for p in passes:
+        _process(p)
+
+    return validated, all_ok
+
+
+def _make_softcore_fragment_expander(
+    hw_types: Sequence,
+    allow_coalescing: bool,
+    allow_splitting: bool,
+) -> Callable[[LayoutSoftCoreSpec], Optional[list[LayoutSoftCoreSpec]]]:
+    """Create a fragment expander for layout softcores.
+
+    When a softcore is too large for a single-pass packing (its
+    coalescing/splitting fragments exceed the available core count), the
+    expander produces individual fragment-sized sub-softcores.  Each
+    fragment is sized to fit on **one** core of the best-fitting type,
+    so packing always uses the real hardware — no synthetic configs.
+
+    Returns ``None`` if the softcore cannot be fragmented (dimensions
+    don't fit any core type even with coalescing/splitting, or the
+    softcore already fits a single core).
+    """
+    if not hw_types:
+        return lambda _sc: None
+
+    def _expander(sc: LayoutSoftCoreSpec) -> Optional[list[LayoutSoftCoreSpec]]:
+        best_hw = None
+        best_count = 0
+
+        for hw in hw_types:
+            if not allow_coalescing and sc.input_count > hw.max_axons:
+                continue
+            if not allow_splitting and sc.output_count > hw.max_neurons:
+                continue
+
+            ax_f = (
+                math.ceil(sc.input_count / hw.max_axons)
+                if allow_coalescing and hw.max_axons > 0
+                else 1
+            )
+            neu_f = (
+                math.ceil(sc.output_count / hw.max_neurons)
+                if allow_splitting and hw.max_neurons > 0
+                else 1
+            )
+            total = ax_f * neu_f
+
+            if total > 1 and (best_hw is None or total < best_count):
+                best_count = total
+                best_hw = hw
+
+        if best_hw is None:
+            return None
+
+        frag_ax = min(sc.input_count, best_hw.max_axons)
+        frag_neu = min(sc.output_count, best_hw.max_neurons)
+
+        return [
+            LayoutSoftCoreSpec(
+                input_count=frag_ax,
+                output_count=frag_neu,
+                segment_id=sc.segment_id,
+                latency_tag=sc.latency_tag,
+                threshold_group_id=sc.threshold_group_id,
+                name=f"{sc.name}_frag{i}" if sc.name else None,
+            )
+            for i in range(best_count)
+        ]
+
+    return _expander
+
+
+# ---------------------------------------------------------------------------
 # Unified generic partitioner
 # ---------------------------------------------------------------------------
 
@@ -223,6 +350,7 @@ def estimate_passes_for_layout(
     max_hw_neurons: int = 0,
     allow_coalescing: bool = False,
     allow_splitting: bool = False,
+    core_types: Optional[Sequence] = None,
 ) -> Tuple[int, List[List[LayoutSoftCoreSpec]]]:
     """Estimate the number of schedule passes from layout soft-core specs.
 
@@ -230,8 +358,17 @@ def estimate_passes_for_layout(
     algorithm used by :func:`partition_segment_into_passes`, ensuring
     identical pass counts for identical shapes.
 
+    When *core_types* (a sequence of ``LayoutHardCoreType``) is provided,
+    each proposed pass is validated with ``pack_layout`` against the real
+    typed hardware.  Passes that fail are split in half and retried,
+    mirroring the build-time ``_flush_or_split`` pattern.  If a single
+    softcore cannot pack, the overall result is marked infeasible.
+
     Returns ``(num_passes, pass_lists)`` where *pass_lists* is flattened
     across all segments (segment 0 passes first, then segment 1, etc.).
+    When *core_types* is given and any single-item pass fails, the third
+    element of the returned tuple indicates infeasibility — callers should
+    use :func:`estimate_passes_for_layout_validated` for this.
     """
     if not softcores or max_cores_per_pass <= 0:
         return (0, []) if not softcores else (1, [list(softcores)])
@@ -258,8 +395,99 @@ def estimate_passes_for_layout(
         )
         all_passes.extend(seg_passes)
 
+    # Validate each pass with real typed packing when core_types is given.
+    if core_types is not None:
+        from mimarsinan.mapping.layout.layout_packer import pack_layout as _pack_layout
+
+        def _validator(pass_scs: list[LayoutSoftCoreSpec]) -> bool:
+            try:
+                pr = _pack_layout(
+                    softcores=pass_scs,
+                    core_types=list(core_types),
+                    allow_neuron_splitting=allow_splitting,
+                    allow_axon_coalescing=allow_coalescing,
+                )
+                return pr.feasible
+            except Exception:
+                return False
+
+        _expander = _make_softcore_fragment_expander(
+            list(core_types), allow_coalescing, allow_splitting,
+        )
+        all_passes, _all_ok = _validate_and_split_passes(
+            all_passes, _validator,
+            fragment_expander=_expander,
+            max_per_pass=max_cores_per_pass,
+        )
+
     num_passes = len(all_passes)
     return num_passes, all_passes
+
+
+def estimate_passes_for_layout_validated(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    max_cores_per_pass: int,
+    *,
+    max_hw_axons: int = 0,
+    max_hw_neurons: int = 0,
+    allow_coalescing: bool = False,
+    allow_splitting: bool = False,
+    core_types: Sequence,
+) -> Tuple[int, List[List[LayoutSoftCoreSpec]], bool]:
+    """Like :func:`estimate_passes_for_layout` but returns feasibility.
+
+    Returns ``(num_passes, pass_lists, all_feasible)`` where
+    *all_feasible* is ``False`` when at least one single-softcore pass
+    could not pack on the given *core_types*.
+    """
+    if not softcores or max_cores_per_pass <= 0:
+        ok = not softcores
+        return (0, [], ok) if not softcores else (1, [list(softcores)], ok)
+
+    def _cost(sc: LayoutSoftCoreSpec) -> int:
+        if max_hw_axons > 0 and max_hw_neurons > 0:
+            return _hw_cost(sc, max_hw_axons, max_hw_neurons, allow_coalescing, allow_splitting)
+        return 1
+
+    by_segment: dict[int, list[LayoutSoftCoreSpec]] = defaultdict(list)
+    for sc in softcores:
+        seg = sc.segment_id if sc.segment_id is not None else 0
+        by_segment[seg].append(sc)
+
+    all_passes: list[list[LayoutSoftCoreSpec]] = []
+    for seg_id in sorted(by_segment.keys()):
+        seg_cores = by_segment[seg_id]
+        seg_passes = _partition_with_latencies(
+            items=seg_cores,
+            latency_getter=lambda sc: int(sc.latency_tag) if sc.latency_tag is not None else 0,
+            max_cores_per_pass=max_cores_per_pass,
+            cost_fn=_cost,
+        )
+        all_passes.extend(seg_passes)
+
+    from mimarsinan.mapping.layout.layout_packer import pack_layout as _pack_layout
+
+    def _validator(pass_scs: list[LayoutSoftCoreSpec]) -> bool:
+        try:
+            pr = _pack_layout(
+                softcores=pass_scs,
+                core_types=list(core_types),
+                allow_neuron_splitting=allow_splitting,
+                allow_axon_coalescing=allow_coalescing,
+            )
+            return pr.feasible
+        except Exception:
+            return False
+
+    _expander = _make_softcore_fragment_expander(
+        list(core_types), allow_coalescing, allow_splitting,
+    )
+    all_passes, all_ok = _validate_and_split_passes(
+        all_passes, _validator,
+        fragment_expander=_expander,
+        max_per_pass=max_cores_per_pass,
+    )
+    return len(all_passes), all_passes, all_ok
 
 
 # ---------------------------------------------------------------------------

@@ -316,11 +316,18 @@ class ProcessManager:
         for s in steps:
             s["semantic_group"] = groups.get(s["name"])
 
+        run_status = (info or {}).get("status", "running" if alive else "unknown")
+        run_error = (info or {}).get("error")
+        if not alive and run_status == "running":
+            run_status = "failed"
+
         return {
             "steps": steps,
             "current_step": current_step,
             "config": config,
             "is_alive": alive,
+            "status": run_status,
+            "error": run_error,
         }
 
     def get_run_step_detail(self, run_id: str, step_name: str) -> dict | None:
