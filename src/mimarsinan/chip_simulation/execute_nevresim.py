@@ -3,9 +3,16 @@ import subprocess
 import time
 
 
-def execute_simulator(simulator_filename, input_count, num_proc=4):
-    """Run the nevresim binary. Supports both absolute and relative paths."""
-    print("Executing simulator...")
+def execute_simulator(simulator_filename, input_count, num_proc=0):
+    """Run the nevresim binary. Supports both absolute and relative paths.
+
+    When *num_proc* is 0 (default), uses ``os.cpu_count() // 2`` workers
+    (at least 1).
+    """
+    if num_proc <= 0:
+        num_proc = max(1, (os.cpu_count() or 2) // 2)
+    num_proc = min(num_proc, input_count) if input_count > 0 else 1
+    print(f"Executing simulator ({num_proc} processes)...")
 
     start_time = time.time()
 

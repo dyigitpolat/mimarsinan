@@ -75,7 +75,7 @@ class NevresimDriver:
         return simulator_filename
 
     def _run_simulator(
-        self, input_loader, simulation_length, latency, max_input_count=None, num_proc=50,
+        self, input_loader, simulation_length, latency, max_input_count=None, num_proc=0,
         simulator_filename=None,
     ):
         """Save inputs, optionally compile, run, return raw float list."""
@@ -93,12 +93,12 @@ class NevresimDriver:
         simulator_output = execute_simulator(simulator_filename, max_input_count, num_proc)
         return simulator_output, max_input_count
 
-    def predict_spiking(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=50):
+    def predict_spiking(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=0):
         simulator_output, _ = self._run_simulator(
             input_loader, simulation_length, latency, max_input_count, num_proc)
         return self._simulator_output_to_predictions(simulator_output, self.chip.output_size)
 
-    def predict_spiking_raw(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=50):
+    def predict_spiking_raw(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=0):
         """Run simulation and return raw spike counts as (num_samples, num_outputs)."""
         simulator_output, max_input_count = self._run_simulator(
             input_loader, simulation_length, latency, max_input_count, num_proc)
@@ -113,7 +113,7 @@ class NevresimDriver:
         simulation_length,
         latency,
         max_input_count=None,
-        num_proc=50,
+        num_proc=0,
     ) -> np.ndarray:
         """Run simulation using a pre-compiled binary. Does not compile."""
         simulator_output, max_input_count = self._run_simulator(

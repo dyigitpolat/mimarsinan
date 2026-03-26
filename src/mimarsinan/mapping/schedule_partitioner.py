@@ -6,18 +6,20 @@ partitions the segment's cores into ordered passes that can each fit on
 the available hardware.  Passes execute sequentially, reusing the same physical
 cores (reprogrammed between passes).
 
-The partitioning respects one hard invariant:
+The partitioning respects two hard invariants:
 
 1. **Latency ordering** — cores in pass *k* depend only on cores in passes
    < *k* (or external inputs).  This is guaranteed by assigning latency groups
    in increasing order.
+2. **Coalescing integrity** — all hardware cores belonging to a single
+   coalescing group (wide axon tiling) must reside in the **same** pass.
+   The hardware lacks membrane-potential initialization across passes, so
+   partial sums cannot be accumulated temporally.  If no core type has a
+   sufficient ``count`` for the widest coalescing group, the configuration
+   is infeasible.
 
 Within a single latency group, cores are independent (by definition of "same
 depth in the dependency DAG"), so any partition of the group is valid.
-
-Note: coalescing groups do NOT need to stay together — the state buffer in
-``SpikingHybridCoreFlow`` handles inter-pass data flow for partial-sum
-fragments.  Each core is an individual scheduling unit.
 
 Hardware core cost estimation
 -----------------------------
@@ -168,63 +170,63 @@ def _make_softcore_fragment_expander(
     allow_coalescing: bool,
     allow_splitting: bool,
 ) -> Callable[[LayoutSoftCoreSpec], Optional[list[LayoutSoftCoreSpec]]]:
-    """Create a fragment expander for layout softcores.
+    """Create a splitting-only fragment expander for layout softcores.
 
-    When a softcore is too large for a single-pass packing (its
-    coalescing/splitting fragments exceed the available core count), the
-    expander produces individual fragment-sized sub-softcores.  Each
-    fragment is sized to fit on **one** core of the best-fitting type,
-    so packing always uses the real hardware — no synthetic configs.
+    When a softcore is too large for a single-pass packing, the expander
+    produces sub-softcores split along the **neuron** dimension only.
+    Each fragment retains the full input (axon) width so that coalescing
+    groups remain intact within a single pass.
 
-    Returns ``None`` if the softcore cannot be fragmented (dimensions
-    don't fit any core type even with coalescing/splitting, or the
-    softcore already fits a single core).
+    Returns ``None`` when:
+    - No core type can satisfy the coalescing requirement (insufficient
+      ``count``).  This marks the configuration as truly infeasible.
+    - The softcore already fits in a single pass (no expansion needed).
     """
     if not hw_types:
         return lambda _sc: None
 
     def _expander(sc: LayoutSoftCoreSpec) -> Optional[list[LayoutSoftCoreSpec]]:
         best_hw = None
-        best_count = 0
+        best_n_split = 0
 
         for hw in hw_types:
-            if not allow_coalescing and sc.input_count > hw.max_axons:
-                continue
             if not allow_splitting and sc.output_count > hw.max_neurons:
                 continue
 
-            ax_f = (
+            n_coalesce = (
                 math.ceil(sc.input_count / hw.max_axons)
                 if allow_coalescing and hw.max_axons > 0
                 else 1
             )
-            neu_f = (
+
+            if n_coalesce > hw.count:
+                continue
+
+            n_split = (
                 math.ceil(sc.output_count / hw.max_neurons)
                 if allow_splitting and hw.max_neurons > 0
                 else 1
             )
-            total = ax_f * neu_f
 
-            if total > 1 and (best_hw is None or total < best_count):
-                best_count = total
+            if n_split > 1 and (best_hw is None or n_split < best_n_split):
+                best_n_split = n_split
                 best_hw = hw
 
         if best_hw is None:
             return None
 
-        frag_ax = min(sc.input_count, best_hw.max_axons)
         frag_neu = min(sc.output_count, best_hw.max_neurons)
 
         return [
             LayoutSoftCoreSpec(
-                input_count=frag_ax,
+                input_count=sc.input_count,
                 output_count=frag_neu,
                 segment_id=sc.segment_id,
                 latency_tag=sc.latency_tag,
                 threshold_group_id=sc.threshold_group_id,
-                name=f"{sc.name}_frag{i}" if sc.name else None,
+                name=f"{sc.name}_split_frag{i}" if sc.name else None,
             )
-            for i in range(best_count)
+            for i in range(best_n_split)
         ]
 
     return _expander

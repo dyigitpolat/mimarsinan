@@ -135,12 +135,12 @@ class TestBuildHybridHardCoreMapping:
         assert fused_hc.fused_component_axons == [64, 64]
 
 
-class TestCrossPassCoalescing:
-    """Coalescing fragments distributed across schedule passes via psum decomposition."""
+class TestCoalescingBudgetValidation:
+    """Coalescing groups must fit within a single core type's count."""
 
-    def test_wide_core_decomposes_across_passes(self):
-        """A single NeuralCore with 31 axons on a 16x16 core (1 core budget)
-        is decomposed into pos/neg partial cores + accumulators + concat."""
+    def test_wide_core_insufficient_cores_raises(self):
+        """A NeuralCore with 31 axons on a 16x16 core type (count=1) needs
+        2 coalescing cores but only 1 is available — must fail."""
         w = np.random.default_rng(42).uniform(-0.5, 0.5, (31, 15)).astype(np.float32)
         sources = np.array([IRSource(-2, i) for i in range(31)], dtype=object)
         c = NeuralCore(id=0, name="wide", input_sources=sources, core_matrix=w, latency=0)
@@ -148,70 +148,29 @@ class TestCrossPassCoalescing:
         ir = IRGraph(nodes=[c], output_sources=out)
 
         cores_config = [{"max_axons": 16, "max_neurons": 16, "count": 1, "has_bias": False}]
+        with pytest.raises(RuntimeError, match="coalescing cores"):
+            build_hybrid_hard_core_mapping(
+                ir_graph=ir, cores_config=cores_config,
+                allow_scheduling=True, allow_coalescing=True,
+            )
+
+    def test_wide_core_sufficient_cores_succeeds(self):
+        """Same wide core with count=2 should succeed (2 coalescing cores available)."""
+        w = np.random.default_rng(42).uniform(-0.5, 0.5, (31, 15)).astype(np.float32)
+        sources = np.array([IRSource(-2, i) for i in range(31)], dtype=object)
+        c = NeuralCore(id=0, name="wide", input_sources=sources, core_matrix=w, latency=0)
+        out = np.array([IRSource(0, i) for i in range(15)], dtype=object)
+        ir = IRGraph(nodes=[c], output_sources=out)
+
+        cores_config = [{"max_axons": 16, "max_neurons": 16, "count": 2, "has_bias": False}]
         hm = build_hybrid_hard_core_mapping(
             ir_graph=ir, cores_config=cores_config,
             allow_scheduling=True, allow_coalescing=True,
         )
-        neural_segs = hm.get_neural_segments()
-        compute_ops = hm.get_compute_ops()
-        # 2 tiles * 2 (pos/neg) = 4 partials + ceil(15/4) = 4 accumulators = 8 neural
-        assert len(neural_segs) >= 4
-        # concat stage reassembles outputs under original node_id
-        assert any(op.op_type == "identity" for op in compute_ops)
+        assert len(hm.get_neural_segments()) >= 1
 
-    def test_psum_decomposition_numerical_correctness(self):
-        """Verify the psum decomposition produces numerically correct TTFS output.
-
-        Manually runs the TTFS analytical computation through both a
-        reference (large hardware) and decomposed (small hardware) mapping,
-        comparing the final outputs.
-        """
-        from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
-
-        rng = np.random.default_rng(123)
-        n_axons, n_neurons = 31, 15
-        w = rng.uniform(-0.3, 0.3, (n_axons, n_neurons)).astype(np.float32)
-        hw_bias = rng.uniform(-0.1, 0.1, n_neurons).astype(np.float32)
-        sources = np.array([IRSource(-2, i) for i in range(n_axons)], dtype=object)
-        c = NeuralCore(
-            id=0, name="wide", input_sources=sources, core_matrix=w,
-            hardware_bias=hw_bias, latency=0, threshold=1.0,
-        )
-        out = np.array([IRSource(0, i) for i in range(n_neurons)], dtype=object)
-        ir = IRGraph(nodes=[c], output_sources=out)
-
-        preprocessor = torch.nn.Identity()
-        x = torch.tensor(rng.uniform(0, 1, (4, n_axons)).astype(np.float32))
-
-        # Reference: large hardware (no decomposition needed)
-        cfg_big = [{"max_axons": 64, "max_neurons": 64, "count": 4}]
-        hm_ref = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cfg_big)
-        flow_ref = SpikingHybridCoreFlow(
-            (n_axons,), hm_ref, simulation_length=16,
-            preprocessor=preprocessor, spiking_mode="ttfs",
-        )
-        ref_out = flow_ref(x)
-
-        # Psum-decomposed: small hardware with scheduling + coalescing
-        cfg_small = [{"max_axons": 16, "max_neurons": 16, "count": 1, "has_bias": False}]
-        hm_dec = build_hybrid_hard_core_mapping(
-            ir_graph=ir, cores_config=cfg_small,
-            allow_scheduling=True, allow_coalescing=True,
-        )
-        flow_dec = SpikingHybridCoreFlow(
-            (n_axons,), hm_dec, simulation_length=16,
-            preprocessor=preprocessor, spiking_mode="ttfs",
-        )
-        dec_out = flow_dec(x)
-
-        np.testing.assert_allclose(
-            dec_out.detach().numpy(), ref_out.detach().numpy(),
-            atol=1e-4, rtol=1e-4,
-            err_msg="Psum decomposition must produce numerically correct output",
-        )
-
-    def test_exact_fit_no_decomposition(self):
-        """A core that fits exactly should not be decomposed."""
+    def test_exact_fit_no_coalescing_needed(self):
+        """A core that fits exactly needs no coalescing — should always succeed."""
         w = np.ones((16, 16), dtype=np.float32) * 0.1
         sources = np.array([IRSource(-2, i) for i in range(16)], dtype=object)
         c = NeuralCore(id=0, name="exact", input_sources=sources, core_matrix=w, latency=0)
@@ -226,49 +185,47 @@ class TestCrossPassCoalescing:
         neural_segs = hm.get_neural_segments()
         assert len(neural_segs) == 1
 
-    def test_legacy_bias_mode_decomposition(self):
-        """Psum decomposition handles legacy bias-as-axon mode correctly."""
-        n_axons, n_neurons = 31, 8
-        w = np.random.default_rng(77).uniform(-0.3, 0.3, (n_axons + 1, n_neurons)).astype(np.float32)
-        w[-1, :] = np.random.default_rng(77).uniform(-0.1, 0.1, n_neurons)  # bias row
-        sources = np.array(
-            [IRSource(-2, i) for i in range(n_axons)] + [IRSource(-3, 0)],
-            dtype=object,
-        )
-        c = NeuralCore(id=0, name="wide_bias", input_sources=sources, core_matrix=w, latency=0)
-        out = np.array([IRSource(0, i) for i in range(n_neurons)], dtype=object)
+    def test_heterogeneous_types_wider_type_fits(self):
+        """A wide core should succeed if a wider core type has enough count,
+        even if narrower types don't."""
+        w = np.random.default_rng(42).uniform(-0.5, 0.5, (31, 8)).astype(np.float32)
+        sources = np.array([IRSource(-2, i) for i in range(31)], dtype=object)
+        c = NeuralCore(id=0, name="wide", input_sources=sources, core_matrix=w, latency=0)
+        out = np.array([IRSource(0, i) for i in range(8)], dtype=object)
         ir = IRGraph(nodes=[c], output_sources=out)
 
-        cfg = [{"max_axons": 16, "max_neurons": 16, "count": 1, "has_bias": False}]
+        cores_config = [
+            {"max_axons": 16, "max_neurons": 16, "count": 1},
+            {"max_axons": 32, "max_neurons": 16, "count": 2},
+        ]
         hm = build_hybrid_hard_core_mapping(
-            ir_graph=ir, cores_config=cfg,
+            ir_graph=ir, cores_config=cores_config,
             allow_scheduling=True, allow_coalescing=True,
         )
-        assert len(hm.get_neural_segments()) >= 4
+        assert len(hm.get_neural_segments()) >= 1
 
-    def test_two_core_chain_wide_first(self):
-        """Two-core chain where the first core is wide: downstream references
-        must be correctly remapped through the concat ComputeOp."""
-        rng = np.random.default_rng(42)
-        w1 = rng.uniform(-0.3, 0.3, (31, 8)).astype(np.float32)
-        s1 = np.array([IRSource(-2, i) for i in range(31)], dtype=object)
-        c1 = NeuralCore(id=0, name="wide", input_sources=s1, core_matrix=w1,
-                        hardware_bias=np.zeros(8, dtype=np.float32), latency=0)
+    def test_legacy_bias_not_counted_as_weight_axon(self):
+        """The always-on bias axon should not be counted toward coalescing requirement.
 
-        w2 = rng.uniform(-0.3, 0.3, (8, 4)).astype(np.float32)
-        s2 = np.array([IRSource(0, i) for i in range(8)], dtype=object)
-        c2 = NeuralCore(id=1, name="out", input_sources=s2, core_matrix=w2,
-                        hardware_bias=np.zeros(4, dtype=np.float32), latency=1)
+        15 weight axons + 1 legacy bias = 16 total axons.  Only 15 weight
+        axons matter for coalescing (fits in 1 core of max_axons=16), and
+        the total 16 axons (including bias) fits physically.
+        """
+        w = np.ones((16, 4), dtype=np.float32) * 0.1
+        sources = np.array(
+            [IRSource(-2, i) for i in range(15)] + [IRSource(-3, 0)],
+            dtype=object,
+        )
+        c = NeuralCore(id=0, name="bias_core", input_sources=sources, core_matrix=w, latency=0)
+        out = np.array([IRSource(0, i) for i in range(4)], dtype=object)
+        ir = IRGraph(nodes=[c], output_sources=out)
 
-        out = np.array([IRSource(1, i) for i in range(4)], dtype=object)
-        ir = IRGraph(nodes=[c1, c2], output_sources=out)
-
-        cfg = [{"max_axons": 16, "max_neurons": 16, "count": 1, "has_bias": False}]
+        cores_config = [{"max_axons": 16, "max_neurons": 16, "count": 1}]
         hm = build_hybrid_hard_core_mapping(
-            ir_graph=ir, cores_config=cfg,
+            ir_graph=ir, cores_config=cores_config,
             allow_scheduling=True, allow_coalescing=True,
         )
-        assert len(hm.stages) >= 2
+        assert len(hm.get_neural_segments()) >= 1
 
 
 class TestCompactSoftCoreMapping:
