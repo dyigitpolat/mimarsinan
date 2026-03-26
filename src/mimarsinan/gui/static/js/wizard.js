@@ -202,6 +202,7 @@ function handleSegmentChange(controlId, val) {
   if (controlId === 'configMode') {
     document.getElementById('userModelConfig').className = 'cond ' + (val === 'user' ? 'visible' : 'hidden');
     updateSearchVisibility();
+    updateObjectiveCheckboxes();
   }
   if (controlId === 'weightSourceMode') {
     document.getElementById('trainFromScratch').className = 'cond ' + (val === 'train' ? 'visible' : 'hidden');
@@ -209,9 +210,9 @@ function handleSegmentChange(controlId, val) {
   }
   if (controlId === 'spikingMode') { applySpikingDeps(); }
   if (controlId === 'hwMode') {
-    // hwFixed is always visible (locked when Auto suggest is on)
-    document.getElementById('hwAuto').className = 'cond ' + (val !== 'user' ? 'visible' : 'hidden');
+    document.getElementById('hwAuto').className = 'cond ' + (val === 'search' ? 'visible' : 'hidden');
     updateSearchVisibility();
+    updateObjectiveCheckboxes();
   }
   if (controlId === 'optimizer') {
     document.getElementById('kediConfig').className = 'cond ' + (val === 'kedi' ? 'visible' : 'hidden');
@@ -407,7 +408,7 @@ function getDivisors(n) {
 
 // ── Search section visibility ──────────────────────────────
 function updateSearchVisibility() {
-  const needsSearch = getSegVal('configMode') === 'nas' || getSegVal('hwMode') === 'auto';
+  const needsSearch = getSegVal('configMode') === 'search' || getSegVal('hwMode') === 'search';
   const sec = document.getElementById('searchSection');
 
   if (needsSearch) {
@@ -576,7 +577,8 @@ function buildConfig() {
     training_epochs: weightMode === 'train' ? parseInt(v('trainingEpochs')) : undefined,
     tuner_epochs: parseInt(v('tunerEpochs')),
     degradation_tolerance: parseFloat(v('degradationTolerance')),
-    configuration_mode: configMode,
+    model_config_mode: configMode,
+    hw_config_mode: hwMode,
     model_type: state.modelType,
     model_config: modelConfig,
     spiking_mode: spikingMode,
@@ -605,7 +607,7 @@ function buildConfig() {
   }
 
   // NAS / search config
-  const needsSearch = configMode === 'nas' || hwMode === 'auto';
+  const needsSearch = configMode === 'search' || hwMode === 'search';
   if (needsSearch) {
     dp.arch_search = {
       optimizer: optimizerType,
@@ -618,6 +620,9 @@ function buildConfig() {
       extrapolation_num_checkpoints: parseInt(v('extrapCheckpoints')),
       extrapolation_target_epochs: parseInt(v('extrapTargetEpochs')),
     };
+    // Collect selected objectives
+    var selectedObjectives = getSelectedObjectives();
+    if (selectedObjectives.length > 0) dp.arch_search.objectives = selectedObjectives;
     const sbs = v('searchBatchSize');
     if (sbs) dp.arch_search.training_batch_size = parseInt(sbs);
     if (optimizerType === 'kedi') {
@@ -637,7 +642,7 @@ function buildConfig() {
   let platformConstraints;
   const allowCoalescing = isToggleOn('coreCoalescingToggle');
 
-  if (hwMode === 'user') {
+  if (hwMode === 'fixed') {
     const hardwareBias = isToggleOn('hardwareBiasToggle');
     platformConstraints = {
       cores: state.coreTypes.map(ct => ({ ...ct, has_bias: hardwareBias })),
@@ -651,24 +656,20 @@ function buildConfig() {
     if (allowCoalescing) platformConstraints.allow_core_coalescing = true;
     if (isToggleOn('neuronSplittingToggle')) platformConstraints.allow_neuron_splitting = true;
   } else {
+    // HW search mode: fixed values + search_space for architecture search
     platformConstraints = {
-      mode: "auto",
+      target_tq: targetTq,
+      simulation_steps: simCycles,
+      weight_bits: weightBits,
       has_bias: isToggleOn('hardwareBiasToggle'),
-      auto: {
-        fixed: {
-          target_tq: targetTq,
-          simulation_steps: simCycles,
-          weight_bits: weightBits,
-          allow_core_coalescing: allowCoalescing,
-          allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
-        },
-        search_space: {
-          num_core_types: parseInt(v('numCoreTypes')),
-          core_type_counts: v('coreTypeCounts').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
-          core_axons_bounds: v('coreAxonBounds').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
-          core_neurons_bounds: v('coreNeuronBounds').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
-          max_threshold_groups: parseInt(v('maxThresholdGroups')),
-        },
+      allow_core_coalescing: allowCoalescing,
+      allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
+      search_space: {
+        num_core_types: parseInt(v('numCoreTypes')),
+        core_type_counts: v('coreTypeCounts').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
+        core_axons_bounds: v('coreAxonBounds').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
+        core_neurons_bounds: v('coreNeuronBounds').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
+        max_threshold_groups: parseInt(v('maxThresholdGroups')),
       },
     };
   }
@@ -723,7 +724,7 @@ function loadStateFromConfig(config) {
   setVal('dataProvider', config.data_provider_name);
   setVal('seed', config.seed);
 
-  const configMode = dp.configuration_mode || 'user';
+  const configMode = dp.model_config_mode || 'user';
   setSegVal('configMode', configMode);
   handleSegmentChange('configMode', configMode);
 
@@ -759,11 +760,11 @@ function loadStateFromConfig(config) {
   setVal('tunerEpochs', dp.tuner_epochs);
   setVal('degradationTolerance', dp.degradation_tolerance);
 
-  const hwMode = (pc.mode === 'auto') ? 'auto' : 'user';
+  const hwMode = dp.hw_config_mode || 'fixed';
   setSegVal('hwMode', hwMode);
   handleSegmentChange('hwMode', hwMode);
 
-  if (hwMode === 'user') {
+  if (hwMode === 'fixed') {
     const cores = pc.cores || [{ max_axons: 256, max_neurons: 256, count: 100, has_bias: true }];
     state.coreTypes = cores.map(function (c) {
       return { max_axons: c.max_axons || 256, max_neurons: c.max_neurons || 256, count: c.count || 100, has_bias: c.has_bias !== false };
@@ -780,15 +781,14 @@ function loadStateFromConfig(config) {
     setVal('targetTq', pc.target_tq);
     setVal('simCycles', pc.simulation_steps);
   } else {
-    const auto = pc.auto || {};
-    const fixed = auto.fixed || {};
-    const ss = auto.search_space || {};
-    setVal('targetTq', fixed.target_tq);
-    setVal('simCycles', fixed.simulation_steps);
-    setVal('weightBits', fixed.weight_bits);
+    // HW search mode: fixed values + search_space in flat structure
+    setVal('targetTq', pc.target_tq);
+    setVal('simCycles', pc.simulation_steps);
+    setVal('weightBits', pc.weight_bits);
     setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
-    setToggleFromConfig('coreCoalescingToggle', fixed.allow_core_coalescing);
-    setToggleFromConfig('neuronSplittingToggle', fixed.allow_neuron_splitting);
+    setToggleFromConfig('coreCoalescingToggle', pc.allow_core_coalescing);
+    setToggleFromConfig('neuronSplittingToggle', pc.allow_neuron_splitting);
+    const ss = pc.search_space || {};
     setVal('numCoreTypes', ss.num_core_types);
     setVal('coreTypeCounts', Array.isArray(ss.core_type_counts) ? ss.core_type_counts.join(', ') : ss.core_type_counts);
     setVal('coreAxonBounds', Array.isArray(ss.core_axons_bounds) ? ss.core_axons_bounds.join(', ') : ss.core_axons_bounds);
@@ -872,14 +872,14 @@ function update() {
   schedulePipelineStepsUpdate();
 
   // NAS architecture search: mapping stats are meaningless until the search settles.
-  if (getSegVal('configMode') === 'nas') {
+  if (getSegVal('configMode') === 'search') {
     const banner = document.getElementById('hwValidationBanner');
     if (banner) banner.classList.add('hide');
-    _renderHwStats('nas');
+    _renderHwStats('search');
     return;
   }
 
-  if (getSegVal('hwMode') === 'user') {
+  if (getSegVal('hwMode') === 'fixed') {
     if (isHwAutoSuggestOn() && _hwAutoMode) {
       scheduleHwAutoRefill();
     } else {
@@ -1737,8 +1737,52 @@ function _escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// ── Objective checkboxes ────────────────────────────────────
+var _objectiveOptions = [];
+
+function loadObjectiveOptions() {
+  fetch('/api/wizard/schema').then(function(r) { return r.json(); }).then(function(data) {
+    var nas = data.nas || {};
+    _objectiveOptions = nas.objective_options || [];
+    updateObjectiveCheckboxes();
+  }).catch(function() {});
+}
+
+function updateObjectiveCheckboxes() {
+  var container = document.getElementById('objectiveCheckboxes');
+  if (!container) return;
+  var modelSearch = getSegVal('configMode') === 'search';
+  var hwSearch = getSegVal('hwMode') === 'search';
+  container.innerHTML = '';
+  _objectiveOptions.forEach(function(opt) {
+    // Hide accuracy objective when only HW is searched (no training)
+    if (opt.requires_training && !modelSearch && hwSearch) return;
+    var label = document.createElement('label');
+    label.className = 'objective-checkbox-label';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = opt.id;
+    cb.className = 'objective-checkbox';
+    cb.checked = true; // default all on
+    cb.onchange = function() { update(); };
+    var span = document.createElement('span');
+    span.textContent = opt.label + ' (' + opt.goal + ')';
+    label.appendChild(cb);
+    label.appendChild(span);
+    container.appendChild(label);
+  });
+}
+
+function getSelectedObjectives() {
+  var container = document.getElementById('objectiveCheckboxes');
+  if (!container) return [];
+  var cbs = container.querySelectorAll('input.objective-checkbox:checked');
+  return Array.from(cbs).map(function(cb) { return cb.value; });
+}
+
 // Hook into update() to trigger debounced validation
 const _originalUpdate = update;
 
 // ── Boot ───────────────────────────────────────────────────
 init();
+loadObjectiveOptions();

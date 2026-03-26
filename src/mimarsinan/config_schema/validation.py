@@ -3,9 +3,9 @@ Validation for deployment config JSON (main.py input) and merged flat config.
 
 Validates:
 - Top-level keys and nested deployment_parameters / platform_constraints.
-- User mode: model_type and model_config required.
+- User mode: model_type and model_config required when model_config_mode is "user".
 - TTFS: firing_mode and spike_generation_mode must be "TTFS" when spiking_mode is ttfs/ttfs_quantized.
-- NAS: arch_search required when configuration_mode is "nas".
+- Search: arch_search required when any search is active.
 """
 
 from __future__ import annotations
@@ -35,17 +35,21 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
         if "deployment_parameters" in config:
             errors.append("deployment_parameters must be a dict")
     else:
-        config_mode = dp.get("configuration_mode", "user")
-        if config_mode == "user":
-            if "model_type" not in dp:
-                errors.append("configuration_mode is 'user' but model_type is missing")
-            if "model_config" not in dp:
-                errors.append("configuration_mode is 'user' but model_config is missing")
-        elif config_mode == "nas":
-            if "arch_search" not in dp or not isinstance(dp.get("arch_search"), dict):
-                errors.append("configuration_mode is 'nas' but arch_search is missing or not a dict")
+        model_mode = dp.get("model_config_mode", "user")
+        hw_mode = dp.get("hw_config_mode", "fixed")
+        any_search = model_mode == "search" or hw_mode == "search"
 
-        # TTFS consistency: if spiking_mode is ttfs or ttfs_quantized, firing_mode and spike_generation_mode must be TTFS
+        if model_mode == "user":
+            if "model_type" not in dp:
+                errors.append("model_config_mode is 'user' but model_type is missing")
+            if "model_config" not in dp:
+                errors.append("model_config_mode is 'user' but model_config is missing")
+
+        if any_search:
+            if "arch_search" not in dp or not isinstance(dp.get("arch_search"), dict):
+                errors.append("Search is active but arch_search is missing or not a dict")
+
+        # TTFS consistency
         spiking = dp.get("spiking_mode", "rate")
         if spiking in ("ttfs", "ttfs_quantized"):
             if dp.get("firing_mode") != "TTFS":
@@ -56,15 +60,6 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
                 errors.append(
                     f"spiking_mode is '{spiking}' but spike_generation_mode must be 'TTFS', got {dp.get('spike_generation_mode')!r}"
                 )
-
-    pc = config.get("platform_constraints")
-    if isinstance(pc, dict) and "mode" in pc:
-        if pc.get("mode") == "user" and "user" not in pc and not any(k != "mode" for k in pc):
-            errors.append("platform_constraints.mode is 'user' but no user constraints provided")
-        if pc.get("mode") == "auto":
-            auto = pc.get("auto") or {}
-            if not isinstance(auto.get("fixed"), dict):
-                errors.append("platform_constraints.mode is 'auto' but auto.fixed must be a dict")
 
     return errors
 

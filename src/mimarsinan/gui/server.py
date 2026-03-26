@@ -225,6 +225,11 @@ def create_app(
 
     # -- Wizard / config APIs (used when run_config_fn is set, e.g. --ui mode) ----
 
+    @app.get("/api/wizard/schema")
+    def api_wizard_schema():
+        from mimarsinan.gui.wizard.schema import get_wizard_nas_schema
+        return {"nas": get_wizard_nas_schema()}
+
     @app.get("/api/data_providers")
     def api_data_providers():
         from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
@@ -294,6 +299,36 @@ def create_app(
     @app.get("/api/runs/{run_id}/console")
     def api_run_console(run_id: str, offset: int = 0):
         return get_run_console_logs(run_id, offset=offset)
+
+    @app.get("/api/runs/{run_id}/discovered")
+    def api_run_discovered(run_id: str):
+        """Return discovered architectural parameters from a previous search run.
+
+        Used by edit-and-continue to pre-populate the wizard with values
+        found by architecture search.
+        """
+        from mimarsinan.gui.runs import get_runs_root, _validate_run_id
+        _validate_run_id(run_id)
+        run_dir = os.path.join(get_runs_root(), run_id)
+        pop_path = os.path.join(run_dir, "final_population.json")
+        if not os.path.isfile(pop_path):
+            return _SafeJSONResponse(content={"discovered": False})
+        try:
+            import json as _json
+            with open(pop_path, encoding="utf-8") as f:
+                data = _json.load(f)
+            best = data.get("best", {})
+            cfg = best.get("configuration", {})
+            return _SafeJSONResponse(content={
+                "discovered": True,
+                "search_mode_used": data.get("search_mode_used"),
+                "discovered_model_config": data.get("discovered_model_config") or cfg.get("model_config"),
+                "discovered_platform_constraints": data.get("discovered_platform_constraints") or cfg.get("platform_constraints"),
+                "active_objectives": data.get("active_objectives", []),
+                "best_objectives": best.get("objectives", {}),
+            })
+        except Exception:
+            return _SafeJSONResponse(content={"discovered": False})
 
     # -- Templates --------------------------------------------------------------
 

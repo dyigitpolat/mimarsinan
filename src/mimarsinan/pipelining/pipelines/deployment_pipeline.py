@@ -44,6 +44,8 @@ import numpy as np
 import torch
 
 
+from mimarsinan.pipelining.search_mode import derive_search_mode  # noqa: F401 — re-export
+
 # ── Step groups ─────────────────────────────────────────────────────────────
 
 # Activation Analysis always runs (produces activation_scales for IR).
@@ -128,7 +130,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     config keys; no pipeline or data provider required. Used by
     DeploymentPipeline._assemble_steps() and by the wizard API for preview.
     """
-    config_mode = config.get("configuration_mode", "user")
+    search_mode = derive_search_mode(config)
     spiking = config.get("spiking_mode", "rate")
     act_q = config.get("activation_quantization", False)
     wt_q = config.get("weight_quantization", False)
@@ -140,7 +142,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     specs: list[tuple[str, type]] = []
 
     # ── Configuration ───────────────────────────────────────────────
-    if config_mode == "nas":
+    if search_mode != "fixed":
         specs.append(("Architecture Search", ArchitectureSearchStep))
     else:
         specs.append(("Model Configuration", ModelConfigurationStep))
@@ -208,7 +210,8 @@ class DeploymentPipeline(Pipeline):
         "training_epochs": 10,
         "tuner_epochs": 3,
         "degradation_tolerance": 0.95,
-        "configuration_mode": "user",
+        "model_config_mode": "user",
+        "hw_config_mode": "fixed",
         "spiking_mode": "rate",
         "allow_scheduling": False,
     }
@@ -301,12 +304,12 @@ class DeploymentPipeline(Pipeline):
 
     def _display_config(self):
         spiking = self.config.get("spiking_mode", "rate")
-        config_mode = self.config.get("configuration_mode", "user")
+        search_mode = derive_search_mode(self.config)
         act_q = self.config.get("activation_quantization", False)
         wt_q = self.config.get("weight_quantization", False)
         print(
             f"Deployment pipeline  "
-            f"[config={config_mode}, spiking={spiking}, "
+            f"[search_mode={search_mode}, spiking={spiking}, "
             f"act_quant={act_q}, wt_quant={wt_q}]"
         )
         for key, value in self.config.items():
@@ -317,7 +320,6 @@ class DeploymentPipeline(Pipeline):
     def _assemble_steps(self):
         for name, cls in get_pipeline_step_specs(self.config):
             self.add_pipeline_step(name, cls(self))
-        config_mode = self.config.get("configuration_mode", "user")
         pruning = self.config.get("pruning", False)
         pruning_fraction = float(self.config.get("pruning_fraction", 0.0))
         if pruning and pruning_fraction > 0:

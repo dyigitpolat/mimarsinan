@@ -13,6 +13,7 @@ performance after minimal training.
 
 from __future__ import annotations
 
+import math
 import warnings
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -44,6 +45,31 @@ def _pow3(t: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
 def _log2(t: np.ndarray, a: float, b: float) -> np.ndarray:
     """2-parameter log model: y = a * log(1 + b * t)."""
     return a * np.log1p(b * t)
+
+
+def soft_clip_accuracy(raw: float, observed_max: float) -> float:
+    """Soft-clip an extrapolated accuracy value.
+
+    Allows modest improvement over the best observed value but applies
+    diminishing returns via an exponential saturation curve, preventing
+    unrealistic extrapolation overshoot.
+
+    The ceiling is capped at ``min(1.0, observed_max + 0.15)`` (at most
+    15 percentage-points above the best observation).
+    """
+    if raw <= 0.0:
+        return 0.0
+    ceiling = min(1.0, observed_max + 0.15)
+    if raw <= observed_max:
+        return raw
+    if raw >= ceiling:
+        return ceiling
+    margin = ceiling - observed_max
+    if margin <= 0:
+        return observed_max
+    excess = (raw - observed_max) / margin
+    compressed = 1.0 - math.exp(-2.0 * excess)
+    return observed_max + margin * compressed
 
 
 # Registry: (name, function, number_of_params, bounds_lo, bounds_hi)
@@ -86,6 +112,7 @@ def _fit_and_extrapolate(
     best_residual = float("inf")
     best_pred = float(y_obs[-1])   # fallback
     best_name = "fallback"
+    observed_max = float(max(y_obs))
 
     for name, func, n_params, lb, ub in _CURVE_MODELS:
         if len(t_obs) < n_params + 1:
@@ -108,8 +135,7 @@ def _fit_and_extrapolate(
             if residual < best_residual:
                 best_residual = residual
                 pred = float(func(np.array([t_target]), *popt)[0])
-                # Clamp to [0, 1] and ensure it's at least as good as last observation
-                pred = max(0.0, min(1.0, pred))
+                pred = soft_clip_accuracy(pred, observed_max)
                 best_pred = pred
                 best_name = name
         except (RuntimeError, ValueError, TypeError):

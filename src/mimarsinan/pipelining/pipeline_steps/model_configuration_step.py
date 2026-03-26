@@ -1,26 +1,17 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.model_registry import ModelRegistry
 
-from mimarsinan.search.small_step_evaluator import SmallStepEvaluator
-from mimarsinan.search.mlp_mixer_configuration_sampler import MLP_Mixer_ConfigurationSampler
-from mimarsinan.search.optimizers.sampler_optimizer import SamplerOptimizer
-from mimarsinan.search.problems.evaluator_problem import EvaluatorProblem
-from mimarsinan.search.results import ObjectiveSpec
-
 
 class ModelConfigurationStep(PipelineStep):
     """
     Resolve model configuration and platform constraints from pipeline config.
 
-    In ``"user"`` configuration_mode the model config is taken directly from
-    ``pipeline.config['model_config']``.  In ``"nas"`` mode a lightweight
-    sampler-based search is performed (for the full NSGA-II / Kedi joint
-    search, use ``ArchitectureSearchStep`` instead).
+    Used when ``search_mode == "fixed"`` (no architecture search).
+    Takes model_config directly from ``pipeline.config['model_config']``.
 
-    This step also emits ``platform_constraints_resolved`` and a default
+    Emits ``platform_constraints_resolved`` and a default
     ``scaled_simulation_length`` so that downstream mapping / simulation
-    steps always have them, regardless of which training or spiking-mode
-    steps are included in the pipeline.
+    steps always have them.
     """
 
     def __init__(self, pipeline):
@@ -39,7 +30,9 @@ class ModelConfigurationStep(PipelineStep):
         return self.pipeline.get_target_metric()
 
     def process(self):
-        common_args = (
+        model_type = self.pipeline.config['model_type']
+        builder_cls = ModelRegistry.get_builder_cls(model_type)
+        builder = builder_cls(
             self.pipeline.config['device'],
             self.pipeline.config['input_shape'],
             self.pipeline.config['num_classes'],
@@ -48,40 +41,7 @@ class ModelConfigurationStep(PipelineStep):
             self.pipeline.config,
         )
 
-        model_type = self.pipeline.config['model_type']
-        builder_cls = ModelRegistry.get_builder_cls(model_type)
-        builder = builder_cls(*common_args)
-
-        configuration_mode = self.pipeline.config['configuration_mode']
-
-        if configuration_mode == "nas":
-            sampler = MLP_Mixer_ConfigurationSampler()
-            evaluator = SmallStepEvaluator(
-                self.pipeline.data_provider_factory,
-                self.pipeline.loss,
-                self.pipeline.config["lr"],
-                self.pipeline.config["device"],
-                builder,
-            )
-
-            problem = EvaluatorProblem(
-                evaluator=evaluator,
-                objective=ObjectiveSpec(name="accuracy", goal="max"),
-            )
-
-            optimizer = SamplerOptimizer(
-                sampler=sampler,
-                cycles=int(self.pipeline.config["nas_cycles"]),
-                batch_size=int(self.pipeline.config["nas_batch_size"]),
-                workers=int(self.pipeline.config["nas_workers"]),
-            )
-
-            result = optimizer.optimize(problem)
-            model_config = result.best.configuration
-        elif configuration_mode == "user":
-            model_config = self.pipeline.config['model_config']
-        else:
-            raise ValueError("Invalid configuration mode: " + configuration_mode)
+        model_config = self.pipeline.config['model_config']
 
         self.add_entry("model_builder", builder, 'pickle')
         self.add_entry("model_config", model_config)
@@ -97,8 +57,7 @@ class ModelConfigurationStep(PipelineStep):
                 }
             ]
 
-        # Propagate has_bias to every core type so SoftCoreMappingStep can
-        # resolve hardware_bias mode correctly.
+        # Propagate has_bias to every core type
         global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
         for ct in cores_config:
             ct.setdefault("has_bias", global_has_bias)
@@ -116,7 +75,5 @@ class ModelConfigurationStep(PipelineStep):
         })
 
         # --- Emit default simulation length ---
-        # CoreFlowTuningStep will override this if present in the pipeline;
-        # otherwise the raw config value is used (e.g. for TTFS pipelines).
         sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
         self.add_entry("scaled_simulation_length", sim_steps)

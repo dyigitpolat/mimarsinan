@@ -5,8 +5,15 @@ from typing import Any, Dict, List, Literal, Sequence, Tuple
 
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.search_mode import derive_search_mode
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
 from mimarsinan.search.problems.joint_arch_hw_problem import JointArchHwProblem
+from mimarsinan.search.results import (
+    ALL_OBJECTIVES,
+    ACCURACY_OBJECTIVE_NAME,
+    default_objectives_for_mode,
+    resolve_active_objectives,
+)
 from mimarsinan.visualization.search_visualization import (
     create_interactive_search_report,
     write_final_population_json,
@@ -17,26 +24,33 @@ OptimizerType = Literal["nsga2", "kedi"]
 
 
 # ====================================================================== #
-# Generic Kedi optimizer helpers
+# Kedi config schema builders — mode-aware
 # ====================================================================== #
 
 
-def _build_kedi_config_schema_generic(
+def _build_kedi_config_schema(
+    search_mode: str,
     arch_options: List[Tuple[str, List[Any]]],
     arch_cfg: Dict[str, Any],
     target_tq: int,
 ) -> Dict[str, Any]:
-    num_core_types = arch_cfg.get("num_core_types", 2)
-    core_type_counts = arch_cfg.get("core_type_counts", [200, 200])
-    core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
-    core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
-    max_threshold_groups = arch_cfg.get("max_threshold_groups", 3)
+    """Build the configuration schema description for Kedi LLM prompts.
 
-    model_config_desc = {key: f"one of {values}" for key, values in arch_options}
+    Only describes the dimensions being searched.
+    """
+    schema: Dict[str, Any] = {}
 
-    return {
-        "model_config": model_config_desc,
-        "platform_constraints": {
+    if search_mode in ("model", "joint"):
+        schema["model_config"] = {key: f"one of {values}" for key, values in arch_options}
+
+    if search_mode in ("hardware", "joint"):
+        num_core_types = arch_cfg.get("num_core_types", 2)
+        core_type_counts = arch_cfg.get("core_type_counts", [200, 200])
+        core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
+        core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
+        max_threshold_groups = arch_cfg.get("max_threshold_groups", 3)
+
+        schema["platform_constraints"] = {
             "cores": (
                 f"list of {num_core_types} objects, each with max_axons "
                 f"(int {core_axons_bounds[0]}-{core_axons_bounds[1]}, multiple of 8), "
@@ -48,83 +62,95 @@ def _build_kedi_config_schema_generic(
             "max_neurons": "MIN of all cores' max_neurons (computed automatically).",
             "target_tq": f"{target_tq} (fixed)",
             "weight_bits": "8 (fixed)",
-            "allow_core_coalescing": "false (fixed)",
-        },
-        "threshold_groups": f"integer from 1 to {max_threshold_groups}",
-    }
+        }
+        schema["threshold_groups"] = f"integer from 1 to {max_threshold_groups}"
+
+    return schema
 
 
-def _build_kedi_example_config_generic(
+def _build_kedi_example_config(
+    search_mode: str,
     arch_options: List[Tuple[str, List[Any]]],
     arch_cfg: Dict[str, Any],
     target_tq: int,
 ) -> Dict[str, Any]:
-    num_core_types = arch_cfg.get("num_core_types", 2)
-    core_type_counts = arch_cfg.get("core_type_counts", [200, 200])
+    """Build an example configuration for Kedi LLM prompts."""
+    example: Dict[str, Any] = {}
 
-    model_config = {key: values[len(values) // 2] for key, values in arch_options}
+    if search_mode in ("model", "joint"):
+        example["model_config"] = {key: values[len(values) // 2] for key, values in arch_options}
 
-    small_axons, small_neurons = 512, 512
-    large_axons, large_neurons = 1024, 1024
-    core_dims = [(small_axons, small_neurons), (large_axons, large_neurons)]
-    cores = []
-    for i in range(num_core_types):
-        ax, neu = core_dims[i % len(core_dims)]
-        cores.append({"max_axons": ax, "max_neurons": neu, "count": core_type_counts[i]})
+    if search_mode in ("hardware", "joint"):
+        num_core_types = arch_cfg.get("num_core_types", 2)
+        core_type_counts = arch_cfg.get("core_type_counts", [200, 200])
+        small_axons, small_neurons = 512, 512
+        large_axons, large_neurons = 1024, 1024
+        core_dims = [(small_axons, small_neurons), (large_axons, large_neurons)]
+        cores = []
+        for i in range(num_core_types):
+            ax, neu = core_dims[i % len(core_dims)]
+            cores.append({"max_axons": ax, "max_neurons": neu, "count": core_type_counts[i]})
 
-    return {
-        "model_config": model_config,
-        "platform_constraints": {
+        example["platform_constraints"] = {
             "cores": cores,
             "max_axons": min(c["max_axons"] for c in cores),
             "max_neurons": min(c["max_neurons"] for c in cores),
             "target_tq": target_tq,
             "weight_bits": 8,
-            "allow_core_coalescing": False,
-        },
-        "threshold_groups": 2,
-    }
+        }
+        example["threshold_groups"] = 2
+
+    return example
 
 
 def _build_kedi_constraints_desc(
+    search_mode: str,
     arch_options: List[Tuple[str, List[Any]]],
     arch_cfg: Dict[str, Any],
 ) -> str:
-    core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
-    core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
-    max_threshold_groups = arch_cfg.get("max_threshold_groups", 3)
+    """Build constraint description for Kedi LLM prompts."""
+    parts: List[str] = ["\nCRITICAL CONSTRAINTS:\n"]
 
-    option_lines = "\n".join(
-        f"   - {key}: must be one of {values}" for key, values in arch_options
-    )
+    if search_mode in ("model", "joint") and arch_options:
+        option_lines = "\n".join(f"   - {key}: must be one of {values}" for key, values in arch_options)
+        parts.append(f"1. MODEL CONFIGURATION OPTIONS:\n{option_lines}\n")
 
-    return f"""
-CRITICAL CONSTRAINTS:
+    if search_mode in ("hardware", "joint"):
+        core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
+        core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
+        max_threshold_groups = arch_cfg.get("max_threshold_groups", 3)
 
-1. MODEL CONFIGURATION OPTIONS:
-{option_lines}
+        parts.append(
+            f"2. TILING CONSTRAINT (most important!):\n"
+            f"   Softcores are tiled to fit the SMALLEST core type. The tiling limit is\n"
+            f"   max_axons = min(cores[*].max_axons) and max_neurons = min(cores[*].max_neurons).\n"
+            f"   The largest layer input must fit in max_axons - 1.\n"
+        )
+        parts.append(
+            f"3. HETEROGENEOUS CORES:\n"
+            f"   Different core types may have different max_axons/max_neurons.\n"
+            f"   Softcores are sized for the smallest core, so they can pack into ANY core type.\n"
+            f"   The max_axons/max_neurons in platform_constraints must equal the MIN across all cores.\n"
+        )
+        parts.append(
+            f"4. Core dimensions: each core's max_axons and max_neurons must be multiples of 8,\n"
+            f"   between {core_axons_bounds[0]} and {core_axons_bounds[1]}.\n"
+            f"   Core neurons must be in range {core_neurons_bounds[0]}-{core_neurons_bounds[1]}.\n"
+        )
+        parts.append(f"5. threshold_groups: integer from 1 to {max_threshold_groups}.\n")
 
-2. TILING CONSTRAINT (most important!):
-   Softcores are tiled to fit the SMALLEST core type. The tiling limit is
-   max_axons = min(cores[*].max_axons) and max_neurons = min(cores[*].max_neurons).
-   The largest layer input must fit in max_axons - 1.
+    return "\n".join(parts)
 
-3. HETEROGENEOUS CORES:
-   Different core types may have different max_axons/max_neurons.
-   Softcores are sized for the smallest core, so they can pack into ANY core type.
-   The max_axons/max_neurons in platform_constraints must equal the MIN across all cores.
 
-4. Core dimensions: each core's max_axons and max_neurons must be multiples of 8,
-   between {core_axons_bounds[0]} and {core_axons_bounds[1]}.
-   Core neurons must be in range {core_neurons_bounds[0]}-{core_neurons_bounds[1]}.
-
-5. threshold_groups: integer from 1 to {max_threshold_groups}.
-"""
+# ====================================================================== #
+# Optimizer factory
+# ====================================================================== #
 
 
 def _create_optimizer(
     optimizer_type: OptimizerType,
     arch_cfg: Dict[str, Any],
+    search_mode: str,
     arch_options: List[Tuple[str, List[Any]]],
     seed: int,
     pop_size: int,
@@ -142,10 +168,10 @@ def _create_optimizer(
             max_failed_examples = arch_cfg.get("max_failed_examples", 5)
             llm_retries = arch_cfg.get("llm_retries", 3)
 
-            config_schema = _build_kedi_config_schema_generic(arch_options, arch_cfg, target_tq)
-            example_config = _build_kedi_example_config_generic(arch_options, arch_cfg, target_tq)
+            config_schema = _build_kedi_config_schema(search_mode, arch_options, arch_cfg, target_tq)
+            example_config = _build_kedi_example_config(search_mode, arch_options, arch_cfg, target_tq)
             constraints_desc = arch_cfg.get("constraints_description") or \
-                _build_kedi_constraints_desc(arch_options, arch_cfg)
+                _build_kedi_constraints_desc(search_mode, arch_options, arch_cfg)
 
             return KediOptimizer(
                 pop_size=pop_size,
@@ -172,6 +198,11 @@ def _create_optimizer(
         eliminate_duplicates=True,
         verbose=True,
     )
+
+
+# ====================================================================== #
+# Helpers
+# ====================================================================== #
 
 
 def _search_result_to_jsonable(result) -> Dict[str, Any]:
@@ -259,6 +290,28 @@ def _make_assembler(schema: List[Dict[str, Any]], schema_map: Dict[str, Any]):
     return assembler
 
 
+def _build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
+    """Build a platform_constraints dict from the user-provided pipeline config."""
+    cores = list(pipeline_config.get("cores", []))
+    if cores:
+        effective_max_axons = max(ct["max_axons"] for ct in cores)
+        effective_max_neurons = max(ct["max_neurons"] for ct in cores)
+    else:
+        effective_max_axons = pipeline_config.get("max_axons", 256)
+        effective_max_neurons = pipeline_config.get("max_neurons", 256)
+
+    return {
+        "cores": cores,
+        "max_axons": effective_max_axons,
+        "max_neurons": effective_max_neurons,
+        "target_tq": pipeline_config.get("target_tq", 32),
+        "weight_bits": pipeline_config.get("weight_bits", 8),
+        "allow_core_coalescing": bool(pipeline_config.get("allow_core_coalescing", False)),
+        "allow_scheduling": bool(pipeline_config.get("allow_scheduling", False)),
+        "threshold_groups": int(pipeline_config.get("threshold_groups", 1)),
+    }
+
+
 # ====================================================================== #
 # The pipeline step
 # ====================================================================== #
@@ -267,13 +320,14 @@ class ArchitectureSearchStep(PipelineStep):
     """
     Produces model configuration + resolved platform constraints.
 
-    Modes:
-    - user: passthrough (uses pipeline.config['model_config'] and existing platform constraints)
-    - nas:  runs NSGA-II / Kedi joint search via the generic JointArchHwProblem
+    Modes (derived from ``search_mode``):
+    - fixed:    passthrough (uses pipeline config directly)
+    - model:    searches NN architecture, HW config fixed from user
+    - hardware: searches HW config, NN architecture fixed from user
+    - joint:    searches both NN architecture and HW config
 
-    NAS search-space definitions are derived generically from each builder's
+    Search-space definitions are derived generically from each builder's
     get_config_schema() and optional get_nas_search_options() classmethods.
-    No per-model NAS provider classes are needed.
     """
 
     def __init__(self, pipeline):
@@ -294,101 +348,103 @@ class ArchitectureSearchStep(PipelineStep):
         return m if m is not None else self.pipeline.get_target_metric()
 
     def process(self):
-        model_type = self.pipeline.config["model_type"]
-        configuration_mode = self.pipeline.config.get("configuration_mode", "user")
+        search_mode = derive_search_mode(self.pipeline.config)
 
+        if search_mode == "fixed":
+            self._process_fixed()
+        else:
+            self._process_search(search_mode)
+
+    # ------------------------------------------------------------------ #
+    # Fixed mode — passthrough
+    # ------------------------------------------------------------------ #
+
+    def _process_fixed(self):
+        model_type = self.pipeline.config["model_type"]
         builder_cls = ModelRegistry.get_builder_cls(model_type)
 
-        def _make_builder(max_axons=None, max_neurons=None, extra_cfg=None):
-            cfg = self.pipeline.config if extra_cfg is None else extra_cfg
-            return builder_cls(
-                self.pipeline.config["device"],
-                self.pipeline.config["input_shape"],
-                self.pipeline.config["num_classes"],
-                max_axons if max_axons is not None else self.pipeline.config["max_axons"],
-                max_neurons if max_neurons is not None else self.pipeline.config["max_neurons"],
-                cfg,
-            )
+        model_config = self.pipeline.config["model_config"]
+        builder = builder_cls(
+            self.pipeline.config["device"],
+            self.pipeline.config["input_shape"],
+            self.pipeline.config["num_classes"],
+            self.pipeline.config["max_axons"],
+            self.pipeline.config["max_neurons"],
+            self.pipeline.config,
+        )
 
-        if configuration_mode == "user":
-            model_config = self.pipeline.config["model_config"]
-            builder = _make_builder()
-            self.add_entry("model_builder", builder, "pickle")
-            self.add_entry("model_config", model_config)
+        self.add_entry("model_builder", builder, "pickle")
+        self.add_entry("model_config", model_config)
 
-            cores = self.pipeline.config.get("cores", [])
+        pcfg = _build_fixed_platform_constraints(self.pipeline.config)
 
-            # Propagate has_bias to every core type so SoftCoreMappingStep can
-            # resolve hardware_bias mode correctly.
-            global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
-            for c in cores:
-                c.setdefault("has_bias", global_has_bias)
+        # Propagate has_bias to every core type
+        global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
+        for c in pcfg.get("cores", []):
+            c.setdefault("has_bias", global_has_bias)
 
-            if cores:
-                effective_max_axons = max(ct["max_axons"] for ct in cores)
-                effective_max_neurons = max(ct["max_neurons"] for ct in cores)
-            else:
-                effective_max_axons = self.pipeline.config.get("max_axons")
-                effective_max_neurons = self.pipeline.config.get("max_neurons")
+        self.add_entry("platform_constraints_resolved", pcfg)
+        self.add_entry("architecture_search_result", {"search_mode": "fixed"})
+        sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
+        self.add_entry("scaled_simulation_length", sim_steps)
 
-            self.add_entry(
-                "platform_constraints_resolved",
-                {
-                    "cores": cores,
-                    "max_axons": effective_max_axons,
-                    "max_neurons": effective_max_neurons,
-                    "allow_core_coalescing": self.pipeline.config.get("allow_core_coalescing", False),
-                    "allow_scheduling": bool(self.pipeline.config.get("allow_scheduling", False)),
-                    "target_tq": self.pipeline.config.get("target_tq"),
-                    "simulation_steps": self.pipeline.config.get("simulation_steps"),
-                    "weight_bits": self.pipeline.config.get("weight_bits"),
-                },
-            )
-            self.add_entry("architecture_search_result", {"mode": "user"})
-            sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
-            self.add_entry("scaled_simulation_length", sim_steps)
-            return
+    # ------------------------------------------------------------------ #
+    # Search mode — run optimisation
+    # ------------------------------------------------------------------ #
 
-        if configuration_mode != "nas":
-            raise ValueError(f"Invalid configuration_mode: {configuration_mode}")
-
-        # ---- Derive search space generically from builder schema ---- #
+    def _process_search(self, search_mode: str):
+        model_type = self.pipeline.config["model_type"]
+        builder_cls = ModelRegistry.get_builder_cls(model_type)
         arch_cfg = self.pipeline.config.get("arch_search", {})
         input_shape = tuple(self.pipeline.config["input_shape"])
 
-        arch_options, schema_map = _derive_arch_options(builder_cls, arch_cfg, input_shape)
+        # ---- Derive architecture search space (if searching model) ----
+        arch_options: List[Tuple[str, List[Any]]] = []
+        schema_map: Dict[str, Any] = {}
+        assembler = None
 
-        if not arch_options:
+        if search_mode in ("model", "joint"):
+            arch_options, schema_map = _derive_arch_options(builder_cls, arch_cfg, input_shape)
+            if not arch_options:
+                schema = getattr(builder_cls, "get_config_schema", lambda: [])()
+                raise NotImplementedError(
+                    f"No NAS search space defined for model_type='{model_type}'. "
+                    f"Add get_nas_search_options() or 'select' fields with multiple options "
+                    f"to {builder_cls.__name__}.get_config_schema(). "
+                    f"Current schema keys: {[f['key'] for f in schema]}"
+                )
             schema = getattr(builder_cls, "get_config_schema", lambda: [])()
-            raise NotImplementedError(
-                f"No NAS search space defined for model_type='{model_type}'. "
-                f"Add get_nas_search_options() or 'select' fields with multiple options "
-                f"to {builder_cls.__name__}.get_config_schema(). "
-                f"Current schema keys: {[f['key'] for f in schema]}"
-            )
+            assembler = _make_assembler(schema, schema_map)
 
-        schema = getattr(builder_cls, "get_config_schema", lambda: [])()
-        assembler = _make_assembler(schema, schema_map)
+        # Identity assembler when model is not searched
+        if assembler is None:
+            assembler = lambda raw: dict(raw)
 
-        # Generic validate_fn and constraint_fn derived from builder.validate_config
+        # ---- Fixed values for non-searched dimensions ----
+        fixed_model_config = None
+        fixed_platform_constraints = None
+
+        if search_mode in ("hardware",):
+            fixed_model_config = dict(self.pipeline.config.get("model_config", {}))
+
+        if search_mode in ("model",):
+            fixed_platform_constraints = _build_fixed_platform_constraints(self.pipeline.config)
+
+        # ---- Validate and constraint functions ----
         validate_config_fn = getattr(builder_cls, "validate_config", None)
 
         def validate_fn(model_config, platform_constraints, inp_shape):
             if validate_config_fn is not None:
-                return bool(validate_config_fn(
-                    model_config, platform_constraints, inp_shape
-                ))
+                return bool(validate_config_fn(model_config, platform_constraints, inp_shape))
             return True
 
         def constraint_fn(model_config, platform_constraints, inp_shape):
             if validate_config_fn is not None:
-                if not validate_config_fn(
-                    model_config, platform_constraints, inp_shape
-                ):
+                if not validate_config_fn(model_config, platform_constraints, inp_shape):
                     return 1.0
             return 0.0
 
-        # ---- Common NAS parameters ---- #
+        # ---- Common NAS parameters ----
         pop_size = int(arch_cfg.get("pop_size", 12))
         generations = int(arch_cfg.get("generations", 5))
         seed = int(arch_cfg.get("seed", 0))
@@ -415,7 +471,12 @@ class ArchitectureSearchStep(PipelineStep):
 
         optimizer_type: OptimizerType = arch_cfg.get("optimizer", "nsga2")
 
-        # ---- Build the single generic problem ---- #
+        # ---- Resolve active objectives ----
+        user_objectives = arch_cfg.get("objectives")
+        active_objectives = resolve_active_objectives(search_mode, user_objectives)
+        active_objective_names = [o.name for o in active_objectives]
+
+        # ---- Build the problem ----
         problem = JointArchHwProblem(
             data_provider_factory=self.pipeline.data_provider_factory,
             device=self.pipeline.config["device"],
@@ -423,11 +484,15 @@ class ArchitectureSearchStep(PipelineStep):
             num_classes=int(self.pipeline.config["num_classes"]),
             target_tq=int(self.pipeline.config["target_tq"]),
             lr=float(self.pipeline.config["lr"]),
+            search_mode=search_mode,
             builder_factory=builder_cls,
             arch_options=arch_options,
             model_config_assembler=assembler,
             validate_fn=validate_fn,
             constraint_fn=constraint_fn,
+            fixed_model_config=fixed_model_config,
+            fixed_platform_constraints=fixed_platform_constraints,
+            active_objective_names=active_objective_names,
             num_core_types=num_core_types,
             core_type_counts=core_type_counts,
             core_axons_bounds=(int(core_axons_bounds[0]), int(core_axons_bounds[1])),
@@ -446,6 +511,7 @@ class ArchitectureSearchStep(PipelineStep):
         optimizer = _create_optimizer(
             optimizer_type=optimizer_type,
             arch_cfg=arch_cfg,
+            search_mode=search_mode,
             arch_options=arch_options,
             seed=seed,
             pop_size=pop_size,
@@ -453,19 +519,23 @@ class ArchitectureSearchStep(PipelineStep):
             target_tq=int(self.pipeline.config["target_tq"]),
         )
 
-        print(f"[ArchitectureSearchStep] model_type='{model_type}' | optimizer={optimizer_type} "
-              f"| search space: {[(k, len(v)) for k, v in arch_options]}")
+        print(f"[ArchitectureSearchStep] model_type='{model_type}' | search_mode={search_mode} "
+              f"| optimizer={optimizer_type} | objectives={active_objective_names}"
+              f"| arch vars: {[(k, len(v)) for k, v in arch_options]}")
 
         _reporter = getattr(self.pipeline, "reporter", None)
         _report_fn = getattr(_reporter, "report", None) if _reporter else None
         result = optimizer.optimize(problem, reporter=_report_fn)
         result_json = _search_result_to_jsonable(result)
+
+        # Track accuracy metric if available
         acc = None
         if result.best and result.best.objectives:
-            acc = result.best.objectives.get("accuracy")
+            acc = result.best.objectives.get(ACCURACY_OBJECTIVE_NAME)
         if acc is not None:
             self._last_metric = float(acc)
 
+        # ---- Write visualisation outputs ----
         try:
             out_dir = self.pipeline.working_directory
             write_final_population_json(result_json, os.path.join(out_dir, "final_population.json"))
@@ -482,6 +552,7 @@ class ArchitectureSearchStep(PipelineStep):
         except Exception as e:
             print(f"[ArchitectureSearchStep] Visualization failed (non-fatal): {e}")
 
+        # ---- Extract best configuration ----
         best_cfg = result.best.configuration
         if not best_cfg:
             raise RuntimeError(
@@ -502,11 +573,16 @@ class ArchitectureSearchStep(PipelineStep):
         model_config = best_cfg["model_config"]
         platform_constraints = best_cfg["platform_constraints"]
 
-        # Apply global has_bias (not searchable) to every core from pipeline config
+        # Apply global has_bias (not searchable)
         global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
         for c in platform_constraints.get("cores", []):
             c["has_bias"] = global_has_bias
 
+        # For model-only search, merge fixed platform constraints
+        if search_mode == "model" and fixed_platform_constraints:
+            platform_constraints = {**fixed_platform_constraints, **platform_constraints}
+
+        # Build the builder with resolved constraints
         merged_config = {**self.pipeline.config, **platform_constraints}
         builder = builder_cls(
             self.pipeline.config["device"],
@@ -517,11 +593,20 @@ class ArchitectureSearchStep(PipelineStep):
             merged_config,
         )
 
+        # ---- Write discovered parameters ----
+        discovered = {
+            "search_mode_used": search_mode,
+            "discovered_model_config": model_config if search_mode in ("model", "joint") else None,
+            "discovered_platform_constraints": platform_constraints if search_mode in ("hardware", "joint") else None,
+            "active_objectives": active_objective_names,
+            "best_objectives": result.best.objectives,
+        }
+
         self.add_entry("model_builder", builder, "pickle")
         self.add_entry("model_config", model_config)
         platform_constraints["allow_core_coalescing"] = bool(self.pipeline.config.get("allow_core_coalescing", False))
         platform_constraints["allow_scheduling"] = bool(self.pipeline.config.get("allow_scheduling", False))
         self.add_entry("platform_constraints_resolved", platform_constraints)
-        self.add_entry("architecture_search_result", result_json)
+        self.add_entry("architecture_search_result", {**result_json, **discovered})
         sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
         self.add_entry("scaled_simulation_length", sim_steps)

@@ -12,6 +12,8 @@ from typing import Any, Dict, List
 
 from mimarsinan.models.builders.wizard_schema import get_all_model_type_schemas
 from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.pipelines.deployment_pipeline import get_pipeline_step_specs
+from mimarsinan.search.results import ALL_OBJECTIVES, ACCURACY_OBJECTIVE_NAME
 
 
 def get_wizard_model_types() -> List[Dict[str, Any]]:
@@ -45,96 +47,42 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
             "max_failed_examples": {"type": "int", "default": 5, "min": 0, "max": 20, "doc": "Max failed examples"},
             "constraints_description": {"type": "textarea", "default": "", "doc": "Constraints for LLM"},
         },
-        "search_space_mlp_mixer": {
-            "patch_rows_options": {"type": "array_int", "default": [1, 2, 4, 7, 14, 28], "doc": "Patch row options (e.g. divisors of 28)"},
-            "patch_cols_options": {"type": "array_int", "default": [1, 2, 4, 7, 14, 28], "doc": "Patch col options"},
-            "patch_channels_options": {"type": "array_int", "default": [16, 32, 48, 64, 96, 128], "doc": "Patch channel options"},
-            "fc_w1_options": {"type": "array_int", "default": [32, 64, 96, 128], "doc": "FC w1 options"},
-            "fc_w2_options": {"type": "array_int", "default": [32, 64, 96, 128], "doc": "FC w2 options"},
-        },
-        "deployment_nas_fields": {
-            "nas_cycles": {"type": "int", "default": 5, "min": 1, "max": 50, "doc": "NAS cycles"},
-            "nas_batch_size": {"type": "int", "default": 5, "min": 1, "max": 32, "doc": "NAS batch size"},
-            "nas_workers": {"type": "int", "default": 1, "min": 0, "max": 16, "doc": "NAS workers"},
-        },
+        "objective_options": [
+            {"id": o.name, "label": _objective_label(o.name), "goal": o.goal,
+             "requires_training": o.name == ACCURACY_OBJECTIVE_NAME}
+            for o in ALL_OBJECTIVES
+        ],
     }
 
 
-def get_pipeline_step_names_for_state(state: Dict[str, Any]) -> List[str]:
+def _objective_label(name: str) -> str:
+    labels = {
+        "estimated_accuracy": "Estimated Accuracy",
+        "total_params": "Total Parameters",
+        "total_param_capacity": "Chip Capacity",
+        "total_sync_barriers": "Sync Barriers",
+        "param_utilization_pct": "Param Utilization %",
+        "neuron_wastage_pct": "Neuron Wastage %",
+        "axon_wastage_pct": "Axon Wastage %",
+    }
+    return labels.get(name, name)
+
+
+def get_pipeline_step_names_for_config(config: dict) -> List[str]:
+    """Return ordered pipeline step names for the given config.
+
+    Delegates to the single source of truth in ``deployment_pipeline``.
     """
-    Return the ordered list of pipeline step names for the given wizard state.
-
-    Mirrors DeploymentPipeline._assemble_steps() without instantiating the pipeline.
-    Used for start_step / stop_step dropdowns.
-    """
-    dp = state.get("deployment_parameters") or {}
-    config_mode = dp.get("configuration_mode", "user")
-    model_type = dp.get("model_type", "")
-    weight_source = dp.get("weight_source") or ""
-    pruning = bool(dp.get("pruning", False))
-    pruning_fraction = float(dp.get("pruning_fraction", 0) or 0)
-    act_q = bool(dp.get("activation_quantization", False))
-    wt_q = bool(dp.get("weight_quantization", False))
-    spiking = dp.get("spiking_mode", "rate")
-
-    steps: List[str] = []
-
-    if config_mode == "nas":
-        steps.append("Architecture Search")
-    else:
-        steps.append("Model Configuration")
-
-    steps.append("Model Building")
-
-    if weight_source:
-        steps.append("Weight Preloading")
-    else:
-        steps.append("Pretraining")
-
-    if ModelRegistry.get_category(model_type) == "torch":
-        steps.append("Torch Mapping")
-
-    if pruning and pruning_fraction > 0:
-        steps.append("Pruning Adaptation")
-
-    # Activation Analysis and Activation Adaptation always run (in that order).
-    steps.append("Activation Analysis")
-    steps.append("Activation Adaptation")
-    if act_q or spiking in ("ttfs", "ttfs_quantized"):
-        steps.append("Clamp Adaptation")
-    if act_q:
-        steps.extend([
-            "Activation Shifting",
-            "Activation Quantization",
-        ])
-
-    if wt_q:
-        steps.extend([
-            "Weight Quantization",
-            "Quantization Verification",
-        ])
-
-    steps.append("Normalization Fusion")
-    steps.append("Soft Core Mapping")
-    if wt_q:
-        steps.append("Core Quantization Verification")
-
-    if spiking == "rate":
-        steps.append("CoreFlow Tuning")
-
-    steps.append("Hard Core Mapping")
-    steps.append("Simulation")
-
-    return steps
+    return [name for name, _ in get_pipeline_step_specs(config)]
 
 
 def get_data_provider_descriptions() -> Dict[str, str]:
     """Short description per data provider for the wizard."""
     return {
-        "MNIST_DataProvider": "MNIST 28×28 grayscale, 10 classes",
-        "CIFAR10_DataProvider": "CIFAR-10 32×32 RGB, 10 classes",
-        "CIFAR100_DataProvider": "CIFAR-100 32×32 RGB, 100 classes",
+        "MNIST_DataProvider": "MNIST 28x28 grayscale, 10 classes",
+        "CIFAR10_DataProvider": "CIFAR-10 32x32 RGB, 10 classes",
+        "CIFAR100_DataProvider": "CIFAR-100 32x32 RGB, 100 classes",
         "ECG_DataProvider": "ECG dataset",
-        "MNIST32_DataProvider": "MNIST resized to 32×32",
-        "ImageNet_DataProvider": "ImageNet ILSVRC2012 224×224 RGB, 1000 classes",
+        "MNIST32_DataProvider": "MNIST resized to 32x32",
+        "ImageNet_DataProvider": "ImageNet ILSVRC2012 224x224 RGB, 1000 classes",
     }

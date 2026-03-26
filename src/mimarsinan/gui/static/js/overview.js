@@ -93,7 +93,7 @@ function renderStepTiming(steps) {
 export function renderConfig(config) {
   const el = document.getElementById('config-body');
   if (!el || !config) return;
-  const priority = ['spiking_mode', 'pipeline_mode', 'configuration_mode', 'activation_quantization',
+  const priority = ['spiking_mode', 'pipeline_mode', 'model_config_mode', 'hw_config_mode', 'activation_quantization',
     'weight_quantization', 'max_axons', 'max_neurons', 'weight_bits', 'target_tq',
     'training_epochs', 'lr', 'simulation_steps', 'max_simulation_samples', 'input_shape', 'num_classes', 'device'];
   const all = Object.keys(config);

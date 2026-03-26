@@ -18,7 +18,8 @@ from mimarsinan.pipelining.pipelines.deployment_pipeline import (
 
 def _base_config(**overrides) -> dict:
     return {
-        "configuration_mode": "user",
+        "model_config_mode": "user",
+        "hw_config_mode": "fixed",
         "spiking_mode": "rate",
         "activation_quantization": False,
         "weight_quantization": False,
@@ -143,7 +144,7 @@ class TestKnownStepGroupMappings:
         assert groups["Simulation"] == "simulation"
 
     def test_architecture_search_is_configuration_group(self):
-        groups = get_pipeline_semantic_group_by_step_name(_base_config(configuration_mode="nas"))
+        groups = get_pipeline_semantic_group_by_step_name(_base_config(model_config_mode="search"))
         assert groups["Architecture Search"] == "configuration"
 
     def test_torch_mapping_group(self):
