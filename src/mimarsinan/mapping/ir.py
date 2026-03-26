@@ -528,11 +528,29 @@ class ComputeOp(IRNode):
         module = self.params["module"]
         if hasattr(module, "to"):
             module.to(x.device)
-        input_shape = self.params.get("input_shape")
-        if input_shape is not None:
-            x = x.view(x.shape[0], *input_shape)
+        input_shapes = self.params.get("input_shapes")
+        module_kwargs = self.params.get("module_kwargs", {}) or {}
+        output_index = self.params.get("output_index")
+        if input_shapes is not None:
+            inputs = []
+            offset = 0
+            for shape in input_shapes:
+                size = 1
+                for dim in shape:
+                    size *= dim
+                next_offset = offset + size
+                inputs.append(x[:, offset:next_offset].view(x.shape[0], *shape))
+                offset = next_offset
+            call_args = tuple(inputs)
+        else:
+            input_shape = self.params.get("input_shape")
+            if input_shape is not None:
+                x = x.view(x.shape[0], *input_shape)
+            call_args = (x,)
         with torch.no_grad():
-            out = module(x)
+            out = module(*call_args, **module_kwargs)
+        if output_index is not None:
+            out = out[output_index]
         return out.view(out.shape[0], -1)
 
 

@@ -8,23 +8,30 @@ and transfers trained weights.
 
 from __future__ import annotations
 
+import copy
 import operator
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.fx as fx
 
 from mimarsinan.mapping.mapping_utils import (
+    ConstantAddMapper,
+    ConstantPrependMapper,
     InputMapper,
+    LayerNormMapper,
     MeanMapper,
     ModelRepresentation,
     ModuleComputeMapper,
     PermuteMapper,
     ReshapeMapper,
+    SelectMapper,
     SubscriptMapper,
 )
+from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.torch_mapping.representability_analyzer import (
     RepresentabilityAnalyzer,
     RepresentabilityReport,
@@ -64,6 +71,67 @@ class _FunctionWrapper(nn.Module):
         return cls(fn, extra_args, kwargs)
 
 
+class _MultiInputModuleComputeMapper(Mapper):
+    """Host-side ComputeOp for modules that consume multiple tensor inputs."""
+
+    def __init__(
+        self,
+        source_mappers,
+        module: nn.Module,
+        *,
+        input_shapes=None,
+        output_shape=None,
+        name=None,
+        module_kwargs=None,
+        output_index=None,
+    ):
+        super().__init__()
+        self._source_mappers_list = list(source_mappers)
+        self.module = module
+        self.input_shapes = input_shapes
+        self.output_shape = output_shape
+        self.name = name
+        self.module_kwargs = module_kwargs or {}
+        self.output_index = output_index
+
+    def get_source_mappers(self):
+        return [m for m in self._source_mappers_list if m is not None]
+
+    def _forward_impl(self, x):
+        inputs = tuple(x) if isinstance(x, tuple) else (x,)
+        out = self.module(*inputs, **self.module_kwargs)
+        if self.output_index is not None:
+            out = out[self.output_index]
+        return out
+
+    def _map_to_ir(self, ir_mapping):
+        source_arrays = [
+            np.array(mapper.map_to_ir(ir_mapping), dtype=object)
+            for mapper in self.get_source_mappers()
+        ]
+        flat_sources = np.concatenate([arr.flatten() for arr in source_arrays])
+        input_shapes = self.input_shapes or [tuple(arr.shape) for arr in source_arrays]
+        return ir_mapping.add_compute_op(
+            input_sources=flat_sources,
+            op_type="module",
+            params={
+                "module": self.module,
+                "input_shapes": [tuple(shape) for shape in input_shapes],
+                "module_kwargs": self.module_kwargs,
+                "output_index": self.output_index,
+            },
+            input_shape=None,
+            output_shape=self.output_shape,
+            name=self.name,
+        )
+
+    def _map(self, mapping):
+        raise NotImplementedError(
+            f"{self.name}: multi-input ModuleComputeMapper does not support legacy SoftCoreMapping. "
+            "Use IRMapping."
+        )
+
+
 class MapperGraphConverter(
     LinearConvertMixin,
     ConvConvertMixin,
@@ -82,6 +150,7 @@ class MapperGraphConverter(
         self.input_shape = input_shape
         self._modules: Dict[str, nn.Module] = dict(graph_module.named_modules())
         self._node_to_mapper: Dict[fx.Node, Any] = {}
+        self._node_to_attr: Dict[fx.Node, Any] = {}
         self._absorbed: Set[str] = set()
 
     def convert(self, report: RepresentabilityReport) -> ModelRepresentation:
@@ -126,7 +195,10 @@ class MapperGraphConverter(
         self._node_to_mapper[node] = mapper
 
     def _handle_get_attr(self, node: fx.Node) -> None:
-        pass
+        obj = self.gm
+        for part in str(node.target).split("."):
+            obj = getattr(obj, part)
+        self._node_to_attr[node] = obj
 
     def _handle_output(self, node: fx.Node):
         args = node.args[0]
@@ -163,6 +235,12 @@ class MapperGraphConverter(
             self._convert_conv2d(node, mod, source, report)
         elif isinstance(mod, nn.Conv1d):
             self._convert_conv1d(node, mod, source, report)
+        elif isinstance(mod, nn.LayerNorm):
+            self._node_to_mapper[node] = LayerNormMapper(
+                source, copy.deepcopy(mod), name=node.name
+            )
+        elif isinstance(mod, nn.MultiheadAttention):
+            self._convert_multihead_attention(node, mod)
         # Passthrough: no IR node needed
         elif isinstance(mod, self._PASSTHROUGH_MODULES):
             self._node_to_mapper[node] = source
@@ -220,7 +298,13 @@ class MapperGraphConverter(
                     a if isinstance(a, int) else -1 for a in shape_args
                 )
             target_shape_no_batch = target_shape[1:] if len(target_shape) > 1 else target_shape
-            if all(d > 0 for d in target_shape_no_batch):
+            out_shape = self._get_output_shape(node)
+            resolved_shape_no_batch = (
+                tuple(out_shape[1:]) if out_shape is not None and len(out_shape) >= 2 else None
+            )
+            if resolved_shape_no_batch is not None and all(d > 0 for d in resolved_shape_no_batch):
+                mapper = ReshapeMapper(source, resolved_shape_no_batch)
+            elif all(d > 0 for d in target_shape_no_batch):
                 mapper = ReshapeMapper(source, target_shape_no_batch)
             else:
                 mapper = source
@@ -296,6 +380,53 @@ class MapperGraphConverter(
         if len(node.args) >= 1 and isinstance(node.args[0], fx.Node):
             return self._get_mapper(node.args[0])
         return None
+
+    def _get_attr_value(self, node: fx.Node):
+        return self._node_to_attr.get(node)
+
+    def _get_constant_tensor(self, node: fx.Node):
+        if isinstance(node, fx.Node) and node.op == "get_attr":
+            value = self._get_attr_value(node)
+            if isinstance(value, (nn.Parameter, torch.Tensor)):
+                return value
+        return None
+
+    def _get_expanded_constant_tensor(self, node: fx.Node):
+        if (
+            isinstance(node, fx.Node)
+            and node.op == "call_method"
+            and node.target == "expand"
+            and len(node.args) >= 1
+            and isinstance(node.args[0], fx.Node)
+        ):
+            return self._get_constant_tensor(node.args[0])
+        return None
+
+    def _convert_multihead_attention(self, node: fx.Node, mod: nn.MultiheadAttention) -> None:
+        source_nodes = [
+            arg for arg in node.args[:3] if isinstance(arg, fx.Node)
+        ]
+        source_mappers = [self._get_mapper(arg) for arg in source_nodes]
+        if not source_mappers:
+            self._node_to_mapper[node] = None
+            return
+        input_shapes = []
+        for arg in source_nodes:
+            shape = self._get_output_shape(arg)
+            input_shapes.append(tuple(shape[1:]) if shape is not None and len(shape) >= 2 else None)
+        query_shape = self._get_output_shape(source_nodes[0])
+        output_shape = (
+            tuple(query_shape[1:]) if query_shape is not None and len(query_shape) >= 2 else None
+        )
+        self._node_to_mapper[node] = _MultiInputModuleComputeMapper(
+            source_mappers,
+            copy.deepcopy(mod),
+            input_shapes=input_shapes,
+            output_shape=output_shape,
+            name=node.name,
+            module_kwargs={"need_weights": False},
+            output_index=0,
+        )
 
     def _get_source_mapper(self, node: fx.Node):
         """Get the mapper for the first argument of a node."""

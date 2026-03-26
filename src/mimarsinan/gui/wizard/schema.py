@@ -136,4 +136,5 @@ def get_data_provider_descriptions() -> Dict[str, str]:
         "CIFAR100_DataProvider": "CIFAR-100 32×32 RGB, 100 classes",
         "ECG_DataProvider": "ECG dataset",
         "MNIST32_DataProvider": "MNIST resized to 32×32",
+        "ImageNet_DataProvider": "ImageNet ILSVRC2012 224×224 RGB, 1000 classes",
     }

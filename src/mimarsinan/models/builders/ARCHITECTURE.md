@@ -9,9 +9,10 @@ Factory classes that construct `Supermodel` instances (category "native") or nat
 | `simple_mlp_builder.py` | `SimpleMLPBuilder` | Builds `Supermodel` with `SimpleMLP` flow (category "native", only mapper-repr example) |
 | `torch_mlp_mixer_builder.py` | `TorchMLPMixerBuilder` | Builds native `TorchMLPMixer` (registered as `mlp_mixer`, category "torch") |
 | `torch_mlp_mixer_core_builder.py` | `TorchMLPMixerCoreBuilder` | Builds native `TorchMLPMixerCore` (registered as `mlp_mixer_core`, category "torch") |
-| `torch_vgg16_builder.py` | `TorchVGG16Builder` | Builds native `torchvision.vgg16_bn` model |
-| `torch_vit_builder.py` | `TorchViTBuilder` | Builds native `torchvision.vit_b_16` model |
-| `torch_squeezenet11_builder.py` | `TorchSqueezeNet11Builder` | Builds native `torchvision.squeezenet1_1` model |
+| `torchvision_builder_utils.py` | `parse_image_input_shape`, `resize_conv_input_weights`, `adapt_conv_in_channels` | Shared helpers for adapting torchvision image-model stems to arbitrary input shapes |
+| `torch_vgg16_builder.py` | `TorchVGG16Builder` | Builds `torchvision.vgg16_bn`, adapting input channels and trimming trailing pools for small inputs while preserving the stock ImageNet layout at `3x224x224` |
+| `torch_vit_builder.py` | `TorchViTBuilder` | Builds a ViT-B-style `VisionTransformer`, choosing a square patch size near `16` for the current input while preserving `vit_b_16` behavior at `3x224x224` |
+| `torch_squeezenet11_builder.py` | `TorchSqueezeNet11Builder` | Builds `torchvision.squeezenet1_1`, adapting input channels while preserving the stock ImageNet stem at `3x224x224` |
 | `torch_custom_builder.py` | `TorchCustomBuilder` | Builds a native model from a user-provided factory |
 | `torch_sequential_linear_builder.py` | `TorchSequentialLinearBuilder` | Builds native Sequential(Flatten, Linear, …) |
 | `torch_sequential_conv_builder.py` | `TorchSequentialConvBuilder` | Builds native Sequential(Conv2d, ReLU, MaxPool2d, Flatten, Linear, …); two IR segments |
