@@ -88,6 +88,9 @@ def _run_headless(config_path: str) -> None:
             pipeline.run_from(step_name=resolved_start_step, stop_step=parsed["stop_step"])
         update_run_status(working_dir, "completed")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        sys.stderr.flush()
         update_run_status(working_dir, "failed", error=str(e))
         exit_code = 1
     finally:

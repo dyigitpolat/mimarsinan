@@ -78,6 +78,8 @@ function scheduleRefresh() {
   _refreshTimer = setTimeout(() => { _refreshTimer = null; refreshPipeline(); }, 200);
 }
 
+let _prevAlive = true;
+
 async function refreshPipeline() {
   try {
     state.pipeline = await fetchJSON(apiUrl('/pipeline'));
@@ -95,11 +97,35 @@ async function refreshPipeline() {
     }
     if (state.selectedStep) await refreshStepDetail(state.selectedStep, state, fetchJSON);
 
+    updateErrorBanner(state.pipeline);
+
+    if (_prevAlive && state.pipeline.is_alive === false) {
+      await refreshConsoleLogs();
+    }
+    _prevAlive = !!state.pipeline.is_alive;
+
     if (!state.pollOk) { state.pollOk = true; updateConnectionDot(); }
   } catch (e) {
     console.error('Refresh failed:', e);
     if (state.pollOk) { state.pollOk = false; updateConnectionDot(); }
   }
+}
+
+function updateErrorBanner(pipeline) {
+  let banner = document.getElementById('pipeline-error-banner');
+  if (!pipeline || pipeline.is_alive || !pipeline.error) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'pipeline-error-banner';
+    banner.style.cssText = 'padding:10px 32px;background:rgba(248,113,113,0.10);border-bottom:2px solid rgba(248,113,113,0.4);color:var(--error);font-size:0.85rem;font-weight:600;';
+    const header = document.querySelector('.header');
+    if (header) header.parentNode.insertBefore(banner, header.nextSibling);
+    else document.body.prepend(banner);
+  }
+  banner.textContent = 'Pipeline failed: ' + pipeline.error;
 }
 
 // ── WebSocket ────────────────────────────────────────────────────────────
