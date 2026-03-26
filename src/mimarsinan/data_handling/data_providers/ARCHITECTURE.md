@@ -12,7 +12,7 @@ Contains concrete `DataProvider` implementations that self-register with
 | `cifar10_data_provider.py` | `"cifar10"` | CIFAR-10 |
 | `cifar100_data_provider.py` | `"cifar100"` | CIFAR-100 |
 | `ecg_data_provider.py` | `"ecg"` | ECG time-series classification |
-| `imagenet_data_provider.py` | `"ImageNet_DataProvider"` | ImageNet ILSVRC2012: symlinks `<datasets_path>/imagenet` → `IMAGENET_ROOT` from `.env` when set |
+| `imagenet_data_provider.py` | `"ImageNet_DataProvider"` | ImageNet ILSVRC2012: symlinks `<datasets_path>/imagenet` → `IMAGENET_ROOT` from `.env` when set; validation = tail of `split="train"` (default 99/1 like CIFAR-10); test = official `split="val"` |
 
 ## Dependencies
 

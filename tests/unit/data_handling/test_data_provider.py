@@ -182,7 +182,7 @@ class TestImageNetDataProvider:
         monkeypatch.setenv("IMAGENET_ROOT", str(target))
 
         mock_ds = MagicMock()
-        mock_ds.__len__ = lambda: 10
+        mock_ds.__len__ = lambda self: 10
 
         def _getitem(_self, _idx):
             return torch.zeros(3, 224, 224), 0
@@ -200,7 +200,7 @@ class TestImageNetDataProvider:
         assert link.resolve() == target.resolve()
 
         assert dp.get_prediction_mode().num_classes == 1000
-        assert dp.get_training_batch_size() == 256
-        assert dp.get_validation_batch_size() == 256
-        assert dp.get_test_batch_size() == 256
+        assert dp.get_training_batch_size() == 16
+        assert dp.get_validation_batch_size() == 16
+        assert dp.get_test_batch_size() == 16
         assert dp.get_input_shape() == (3, 224, 224)
