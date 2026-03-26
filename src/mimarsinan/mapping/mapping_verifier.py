@@ -354,11 +354,16 @@ def verify_hardware_config(
         import math
         max_hw_ax = max(hw.max_axons for hw in hw_types) if hw_types else 1
         max_hw_neu = max(hw.max_neurons for hw in hw_types) if hw_types else 1
-        est_min = 0
+        per_sc_costs = []
         for sc in softcores:
             ax_f = math.ceil(sc.input_count / max_hw_ax) if allow_axon_coalescing else 1
             neu_f = math.ceil(sc.output_count / max_hw_neu) if allow_neuron_splitting else 1
-            est_min += ax_f * neu_f
+            per_sc_costs.append(ax_f * neu_f)
+
+        if allow_scheduling:
+            est_min = max(per_sc_costs) if per_sc_costs else 1
+        else:
+            est_min = sum(per_sc_costs)
 
         hint = f"Increase core counts (estimated minimum ~{est_min}) or core dimensions."
         field_errors["total_count"] = (
