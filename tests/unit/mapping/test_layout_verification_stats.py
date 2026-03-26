@@ -765,7 +765,11 @@ class TestEstimatePassesWithCoreTypes:
 
 
 class TestSoftcoreFragmentExpander:
-    """Tests for _make_softcore_fragment_expander in schedule_partitioner."""
+    """Tests for _make_softcore_fragment_expander in schedule_partitioner.
+
+    The expander only produces splitting fragments (neuron dimension).
+    Coalescing groups must fit within a single core type's count.
+    """
 
     def test_no_fragmentation_when_fits(self):
         from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
@@ -774,17 +778,23 @@ class TestSoftcoreFragmentExpander:
         sc = LayoutSoftCoreSpec(input_count=16, output_count=8, segment_id=0, latency_tag=0)
         assert expander(sc) is None
 
-    def test_coalescing_fragments(self):
+    def test_coalescing_only_infeasible_when_count_insufficient(self):
+        """A wide softcore needing 4 coalescing cores on a type with count=1
+        is infeasible (no splitting enabled to help)."""
         from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=1)]
         expander = _make_softcore_fragment_expander(hw, allow_coalescing=True, allow_splitting=False)
         sc = LayoutSoftCoreSpec(input_count=64, output_count=8, segment_id=0, latency_tag=0)
-        frags = expander(sc)
-        assert frags is not None
-        assert len(frags) == 4  # ceil(64/16)
-        for f in frags:
-            assert f.input_count == 16
-            assert f.output_count == 8
+        assert expander(sc) is None
+
+    def test_coalescing_only_feasible_when_count_sufficient(self):
+        """Same wide softcore but type has count=4 — no splitting needed,
+        so no expansion (it fits in one pass as coalesced)."""
+        from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=4)]
+        expander = _make_softcore_fragment_expander(hw, allow_coalescing=True, allow_splitting=False)
+        sc = LayoutSoftCoreSpec(input_count=64, output_count=8, segment_id=0, latency_tag=0)
+        assert expander(sc) is None
 
     def test_splitting_fragments(self):
         from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
@@ -798,14 +808,28 @@ class TestSoftcoreFragmentExpander:
             assert f.input_count == 16
             assert f.output_count == 8
 
-    def test_combined_coalescing_splitting(self):
+    def test_combined_coalescing_splitting_expands_only_splitting(self):
+        """With coalescing + splitting, only the neuron dimension is expanded.
+        Fragments keep the full axon width.  Coalescing count must be sufficient."""
         from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
-        hw = [LayoutHardCoreType(max_axons=16, max_neurons=16, count=1)]
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=16, count=4)]
         expander = _make_softcore_fragment_expander(hw, allow_coalescing=True, allow_splitting=True)
         sc = LayoutSoftCoreSpec(input_count=64, output_count=64, segment_id=0, latency_tag=0)
         frags = expander(sc)
         assert frags is not None
-        assert len(frags) == 16  # ceil(64/16) * ceil(64/16) = 4*4
+        assert len(frags) == 4  # ceil(64/16) splitting fragments
+        for f in frags:
+            assert f.input_count == 64  # full width preserved for coalescing
+            assert f.output_count == 16
+
+    def test_combined_infeasible_when_coalescing_count_insufficient(self):
+        """If no type has enough count for coalescing, returns None even
+        with splitting enabled."""
+        from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=16, count=1)]
+        expander = _make_softcore_fragment_expander(hw, allow_coalescing=True, allow_splitting=True)
+        sc = LayoutSoftCoreSpec(input_count=64, output_count=64, segment_id=0, latency_tag=0)
+        assert expander(sc) is None
 
     def test_infeasible_without_coalescing(self):
         from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
@@ -814,28 +838,31 @@ class TestSoftcoreFragmentExpander:
         sc = LayoutSoftCoreSpec(input_count=64, output_count=64, segment_id=0, latency_tag=0)
         assert expander(sc) is None
 
-    def test_picks_best_core_type(self):
-        """With heterogeneous types, the expander picks the type minimizing fragments."""
+    def test_picks_best_core_type_for_splitting(self):
+        """With heterogeneous types, the expander picks the type that has
+        sufficient coalescing count and minimizes splitting fragments."""
         from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
         hw = [
-            LayoutHardCoreType(max_axons=16, max_neurons=16, count=2),
-            LayoutHardCoreType(max_axons=8, max_neurons=8, count=3),
+            LayoutHardCoreType(max_axons=16, max_neurons=16, count=4),
+            LayoutHardCoreType(max_axons=32, max_neurons=8, count=2),
         ]
         expander = _make_softcore_fragment_expander(hw, allow_coalescing=True, allow_splitting=True)
         sc = LayoutSoftCoreSpec(input_count=64, output_count=64, segment_id=0, latency_tag=0)
         frags = expander(sc)
         assert frags is not None
-        # Type A: ceil(64/16)*ceil(64/16) = 16; Type B: ceil(64/8)*ceil(64/8) = 64
-        assert len(frags) == 16
+        # Type A: coalesce=4 (<=count=4), split=4 → 4 fragments
+        # Type B: coalesce=2 (<=count=2), split=8 → 8 fragments
+        # Picks type A (fewer split fragments)
+        assert len(frags) == 4
         for f in frags:
-            assert f.input_count == 16
+            assert f.input_count == 64  # full width
             assert f.output_count == 16
 
     def test_preserves_segment_and_latency(self):
         from mimarsinan.mapping.schedule_partitioner import _make_softcore_fragment_expander
-        hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=1)]
-        expander = _make_softcore_fragment_expander(hw, allow_coalescing=True, allow_splitting=False)
-        sc = LayoutSoftCoreSpec(input_count=32, output_count=8, segment_id=5, latency_tag=3)
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=2)]
+        expander = _make_softcore_fragment_expander(hw, allow_coalescing=True, allow_splitting=True)
+        sc = LayoutSoftCoreSpec(input_count=32, output_count=32, segment_id=5, latency_tag=3)
         frags = expander(sc)
         assert frags is not None
         for f in frags:
@@ -937,17 +964,32 @@ class TestUnifiedSchedulingVerifier:
         # Each pass can only fit 1 softcore (type A has count=1), so need >= 2 passes
         assert stats.get("schedule_pass_count", 0) >= 2
 
-    def test_fragments_exceed_cores_uses_real_hardware(self):
-        """With 1 small core, coalescing+splitting ON, and scheduling ON,
-        a large softcore's fragments exceed available cores.  The partitioner
-        expands fragments into sub-passes on real hardware.  Scheduling is
-        feasible, total_cores reflects real hardware, and metrics are sane."""
+    def test_coalescing_infeasible_when_count_insufficient(self):
+        """With 1 core of 16x16, a 64x64 softcore needs 4 coalescing cores
+        but only 1 is available — infeasible even with scheduling."""
         from mimarsinan.mapping.mapping_verifier import verify_hardware_config
         scs = [
             LayoutSoftCoreSpec(input_count=64, output_count=64,
                                segment_id=0, latency_tag=0),
         ]
         core_types = [{"max_axons": 16, "max_neurons": 16, "count": 1}]
+        result = verify_hardware_config(
+            scs, core_types,
+            allow_scheduling=True,
+            allow_axon_coalescing=True,
+            allow_neuron_splitting=True,
+        )
+        assert result["feasible"] is False
+
+    def test_coalescing_feasible_when_count_sufficient(self):
+        """With 4 cores of 16x16, a 64x64 softcore coalesces (4 cores) and
+        splits neurons across passes.  Scheduling distributes splitting only."""
+        from mimarsinan.mapping.mapping_verifier import verify_hardware_config
+        scs = [
+            LayoutSoftCoreSpec(input_count=64, output_count=64,
+                               segment_id=0, latency_tag=0),
+        ]
+        core_types = [{"max_axons": 16, "max_neurons": 16, "count": 4}]
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
@@ -956,28 +998,20 @@ class TestUnifiedSchedulingVerifier:
         )
         assert result["feasible"] is True
         stats = result["stats"]
-        # total_cores (Cores / Pass) must not exceed the real hardware count
-        assert stats["total_cores"] <= 1
-        # total_hw_cores must equal the real chip count, not synthetic
-        assert stats["total_hw_cores"] == 1
+        assert stats["total_hw_cores"] == 4
         assert stats["mapped_params_pct"] >= 0.0
         assert stats["mapped_params_pct"] <= 100.0
-        assert stats["total_wasted_axons_pct"] >= 0.0
-        assert stats["total_wasted_axons_pct"] <= 100.0
-        assert stats["total_wasted_neurons_pct"] >= 0.0
-        assert stats["total_wasted_neurons_pct"] <= 100.0
 
-    def test_many_softcores_on_single_small_core(self):
-        """96 softcores on 1 core of 16x16 with coalescing+splitting+scheduling.
-        This is the exact scenario from the user's MNIST config.
-        total_hw_cores must equal 1 (the real chip)."""
+    def test_many_softcores_with_coalescing(self):
+        """96 softcores (32x16) on 2 cores of 16x16 with coalescing+splitting+scheduling.
+        Each softcore needs 2 coalescing cores (ceil(32/16)=2), count=2 suffices."""
         from mimarsinan.mapping.mapping_verifier import verify_hardware_config
         scs = [
             LayoutSoftCoreSpec(input_count=32, output_count=16,
                                segment_id=i % 4, latency_tag=i)
             for i in range(96)
         ]
-        core_types = [{"max_axons": 16, "max_neurons": 16, "count": 1}]
+        core_types = [{"max_axons": 16, "max_neurons": 16, "count": 2}]
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
@@ -985,25 +1019,24 @@ class TestUnifiedSchedulingVerifier:
             allow_neuron_splitting=True,
         )
         assert result["feasible"] is True
-        assert result["stats"]["total_hw_cores"] == 1
+        assert result["stats"]["total_hw_cores"] == 2
 
-    def test_fragment_expansion_heterogeneous_total_hw_cores(self):
-        """Fragment expansion with heterogeneous core types: total_hw_cores must
-        equal sum(ct.count) from the real chip.  Fragments are packed on real
-        hardware — no synthetic configs."""
+    def test_splitting_only_heterogeneous_total_hw_cores(self):
+        """Splitting with heterogeneous core types: total_hw_cores must
+        equal sum(ct.count) from the real chip."""
         from mimarsinan.mapping.mapping_verifier import verify_hardware_config
         scs = [
-            LayoutSoftCoreSpec(input_count=64, output_count=64,
+            LayoutSoftCoreSpec(input_count=16, output_count=64,
                                segment_id=0, latency_tag=0),
         ]
         core_types = [
             {"max_axons": 16, "max_neurons": 16, "count": 2},
-            {"max_axons": 8, "max_neurons": 8, "count": 3},
+            {"max_axons": 16, "max_neurons": 8, "count": 3},
         ]
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
-            allow_axon_coalescing=True,
+            allow_axon_coalescing=False,
             allow_neuron_splitting=True,
         )
         assert result["feasible"] is True

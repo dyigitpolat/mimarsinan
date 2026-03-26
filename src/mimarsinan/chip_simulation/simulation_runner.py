@@ -255,8 +255,9 @@ class SimulationRunner:
         assert nevresim_path is not None
         sim_length = int(self.simulation_length)
 
+        max_workers = min(num_segs, max(1, (os.cpu_count() or 2) // 2))
         prepared: Dict[int, _PreparedSegment] = {}
-        with ProcessPoolExecutor(max_workers=num_segs) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(
                     _emit_and_compile_segment,
@@ -282,7 +283,7 @@ class SimulationRunner:
         self,
         prepared: _PreparedSegment,
         input_data: list,
-        num_proc: int = 50,
+        num_proc: int = 0,
     ) -> np.ndarray:
         """Run a neural segment using its pre-compiled binary.
 

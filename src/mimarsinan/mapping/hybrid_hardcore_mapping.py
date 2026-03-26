@@ -325,175 +325,59 @@ def _flush_neural_segment(
     ), reindex_maps
 
 
-def _psum_decompose_neural_core(
-    core: NeuralCore,
-    max_axons: int,
-    max_neurons: int,
-    id_base: int,
-) -> tuple[list[NeuralCore], dict[tuple[int, int], tuple[int, int]]]:
-    """Decompose a wide NeuralCore into a pos/neg psum chain for cross-pass coalescing.
+def _validate_coalescing_budget(
+    cores: list[NeuralCore],
+    cores_config: Sequence[dict],
+    allow_neuron_splitting: bool,
+) -> None:
+    """Verify every wide NeuralCore's coalescing group fits in one core type's count.
 
-    When a NeuralCore requires more coalescing cores than available per pass,
-    this function splits it into smaller cores that each fit on one hardware
-    core without coalescing.  The decomposition is numerically exact for TTFS:
+    Coalescing cores for a single NeuralCore cannot be distributed across
+    schedule passes because the hardware lacks membrane potential
+    initialization — partial sums from different passes would need to be
+    accumulated before activation, which is not yet supported.
 
-    1. **Partial cores** (pos/neg per axon tile, full output width): use a
-       high threshold so their outputs are scaled-down partial sums in [0, 1]
-       without clamping.
-    2. **Accumulator cores** (per output-neuron block): use ±THRESHOLD weights
-       to undo the scaling, reconstruct the full matmul, add bias, and apply
-       the original threshold/activation.
-
-    Returns ``(cores, output_remap)`` where *output_remap* maps
-    ``(original_id, neuron_idx)`` to ``(accum_id, local_idx)``.
+    Raises ``RuntimeError`` with a descriptive message when no core type
+    has a sufficient count.
     """
     import math
 
-    matrix = core.get_core_matrix(graph=None)  # (n_axons, n_neurons)
-    sources = core.input_sources.flatten()
-    n_axons, n_neurons = matrix.shape
+    for core in cores:
+        if core.core_matrix is None:
+            continue
+        n_weight_axons = core.get_input_count()
+        if core.hardware_bias is None:
+            src_flat = core.input_sources.flatten()
+            if (len(src_flat) > 0
+                    and isinstance(src_flat[-1], IRSource)
+                    and src_flat[-1].is_always_on()):
+                n_weight_axons -= 1
+        n_neurons = core.get_output_count()
 
-    # -- Separate bias axon (legacy mode) from pure weight rows -------------
-    has_legacy_bias = False
-    bias_row = None
-    bias_source = None
-    weight_matrix = matrix
-    weight_sources = sources
-    if (len(sources) > 0
-        and isinstance(sources[-1], IRSource)
-        and sources[-1].is_always_on()
-        and core.hardware_bias is None):
-        has_legacy_bias = True
-        bias_row = matrix[-1, :].copy()
-        bias_source = sources[-1]
-        weight_matrix = matrix[:-1, :]
-        weight_sources = sources[:-1]
+        fits_any = False
+        best_needed = 0
+        for ct in cores_config:
+            ct_axons = int(ct["max_axons"])
+            ct_neurons = int(ct["max_neurons"])
+            ct_count = int(ct["count"])
+            neuron_ok = allow_neuron_splitting or ct_neurons >= n_neurons
+            if not neuron_ok:
+                continue
+            n_coalesce = math.ceil(n_weight_axons / ct_axons)
+            if ct_count >= n_coalesce:
+                fits_any = True
+                break
+            best_needed = max(best_needed, n_coalesce)
 
-    n_weight_axons = weight_matrix.shape[0]
-
-    # -- Tile slices along axon dimension -----------------------------------
-    tile_slices: list[tuple[int, int]] = []
-    start = 0
-    while start < n_weight_axons:
-        end = min(n_weight_axons, start + max_axons)
-        tile_slices.append((start, end))
-        start = end
-    tile_count = len(tile_slices)
-
-    # -- Accumulator block size (must fit 2 * tile_count * block ≤ max_axons)
-    accum_bias_axons = 1 if has_legacy_bias else 0
-    block_size = (max_axons - accum_bias_axons) // (2 * tile_count)
-    if block_size <= 0:
-        raise ValueError(
-            f"Cannot psum-decompose core {core.name}: tile_count={tile_count} "
-            f"requires at least {2 * tile_count + accum_bias_axons} axons, "
-            f"but max_axons={max_axons}."
-        )
-    block_size = min(block_size, max_neurons)
-
-    # -- Partial-core threshold: high enough to prevent output clamping -----
-    max_l1 = max(
-        np.abs(weight_matrix[ta:tb, :]).sum(axis=0).max()
-        for ta, tb in tile_slices
-    )
-    THRESHOLD = max(float(max_l1) + 1e-6, 1.0)
-
-    next_id = id_base
-    partial_pos_cores: list[NeuralCore] = []
-    partial_neg_cores: list[NeuralCore] = []
-
-    for t_idx, (ta, tb) in enumerate(tile_slices):
-        w_tile = weight_matrix[ta:tb, :]
-        w_pos = np.maximum(w_tile, 0.0)
-        w_neg = np.maximum(-w_tile, 0.0)
-        tile_src = np.array(list(weight_sources[ta:tb]), dtype=object)
-
-        pos = NeuralCore(
-            id=next_id,
-            name=f"{core.name}_psum_pos_t{t_idx}",
-            input_sources=tile_src,
-            core_matrix=w_pos.copy(),
-            threshold=THRESHOLD,
-            activation_scale=core.activation_scale,
-            parameter_scale=core.parameter_scale,
-            input_activation_scale=core.input_activation_scale,
-            latency=core.latency,
-            psum_group_id=core.id,
-            psum_role="partial_pos",
-        )
-        next_id += 1
-        neg = NeuralCore(
-            id=next_id,
-            name=f"{core.name}_psum_neg_t{t_idx}",
-            input_sources=tile_src.copy(),
-            core_matrix=w_neg.copy(),
-            threshold=THRESHOLD,
-            activation_scale=core.activation_scale,
-            parameter_scale=core.parameter_scale,
-            input_activation_scale=core.input_activation_scale,
-            latency=core.latency,
-            psum_group_id=core.id,
-            psum_role="partial_neg",
-        )
-        next_id += 1
-        partial_pos_cores.append(pos)
-        partial_neg_cores.append(neg)
-
-    # -- Accumulator cores (one per output block) ---------------------------
-    accum_cores: list[NeuralCore] = []
-    output_remap: dict[tuple[int, int], tuple[int, int]] = {}
-
-    a = 0
-    while a < n_neurons:
-        b = min(n_neurons, a + block_size)
-        block = b - a
-
-        acc_axons = 2 * tile_count * block + accum_bias_axons
-        acc_matrix = np.zeros((acc_axons, block), dtype=float)
-
-        acc_input_list: list[IRSource] = []
-        idx = 0
-        for t_idx in range(tile_count):
-            for n in range(block):
-                acc_input_list.append(IRSource(partial_pos_cores[t_idx].id, a + n))
-                acc_matrix[idx, n] = THRESHOLD
-                idx += 1
-        for t_idx in range(tile_count):
-            for n in range(block):
-                acc_input_list.append(IRSource(partial_neg_cores[t_idx].id, a + n))
-                acc_matrix[idx, n] = -THRESHOLD
-                idx += 1
-
-        hw_bias = None
-        if core.hardware_bias is not None:
-            hw_bias = core.hardware_bias[a:b].copy()
-
-        if has_legacy_bias:
-            acc_input_list.append(bias_source)
-            acc_matrix[idx, :] = bias_row[a:b]
-
-        accum = NeuralCore(
-            id=next_id,
-            name=f"{core.name}_psum_accum_o{a}_{b}",
-            input_sources=np.array(acc_input_list, dtype=object),
-            core_matrix=acc_matrix,
-            hardware_bias=hw_bias,
-            threshold=core.threshold,
-            activation_scale=core.activation_scale,
-            parameter_scale=core.parameter_scale,
-            input_activation_scale=core.input_activation_scale,
-            latency=(core.latency or 0) + 1,
-            psum_group_id=core.id,
-            psum_role="accum",
-        )
-        next_id += 1
-        accum_cores.append(accum)
-        for n in range(block):
-            output_remap[(core.id, a + n)] = (accum.id, n)
-        a = b
-
-    all_cores = partial_pos_cores + partial_neg_cores + accum_cores
-    return all_cores, output_remap
+        if not fits_any and best_needed > 0:
+            raise RuntimeError(
+                f"Core '{core.name}' has {n_weight_axons} weight axons and "
+                f"{n_neurons} neurons, requiring at least {best_needed} "
+                f"coalescing cores in a single pass. No hardware core type "
+                f"has sufficient count. Increase the count of a suitable "
+                f"core type to at least {best_needed}, or use a core type "
+                f"with wider axons."
+            )
 
 
 def _flush_scheduled_segment(
@@ -530,6 +414,12 @@ def _flush_scheduled_segment(
     max_hw_axons = max(int(ct["max_axons"]) for ct in cores_config) if cores_config else 0
     max_hw_neurons = max(int(ct["max_neurons"]) for ct in cores_config) if cores_config else 0
 
+    # Validate that every wide core's coalescing group fits in a single pass.
+    if allow_coalescing:
+        _validate_coalescing_budget(
+            current_neural, cores_config, allow_neuron_splitting,
+        )
+
     passes = partition_segment_into_passes(
         current_neural, budget,
         max_hw_axons=max_hw_axons,
@@ -537,85 +427,6 @@ def _flush_scheduled_segment(
         allow_coalescing=allow_coalescing,
         allow_splitting=allow_neuron_splitting,
     )
-
-    # -- Pre-decompose wide cores that can't coalesce within one pass ------
-    import math
-
-    decomposed_replacements: dict[int, tuple[list[NeuralCore], dict[tuple[int, int], tuple[int, int]]]] = {}
-    if allow_coalescing and max_hw_axons > 0:
-        id_base = max((c.id for c in current_neural), default=0) + 100_000
-        for core in current_neural:
-            if core.core_matrix is None:
-                continue
-            n_weight_axons = core.get_input_count()
-            if core.hardware_bias is None:
-                src_flat = core.input_sources.flatten()
-                if (len(src_flat) > 0
-                    and isinstance(src_flat[-1], IRSource)
-                    and src_flat[-1].is_always_on()):
-                    n_weight_axons -= 1
-            if n_weight_axons <= max_hw_axons:
-                continue
-            n_coalesce = math.ceil(n_weight_axons / max_hw_axons)
-            if n_coalesce <= budget:
-                continue
-            decomposed, remap = _psum_decompose_neural_core(
-                core, max_hw_axons, max_hw_neurons, id_base,
-            )
-            decomposed_replacements[core.id] = (decomposed, remap)
-            id_base += len(decomposed) + 1
-
-    concat_stages: list[HybridStage] = []
-    if decomposed_replacements:
-        new_neural: list[NeuralCore] = []
-        for c in current_neural:
-            if c.id in decomposed_replacements:
-                decomposed, _ = decomposed_replacements[c.id]
-                new_neural.extend(decomposed)
-            else:
-                new_neural.append(c)
-
-        for c in new_neural:
-            for idx_s, src in enumerate(c.input_sources.flatten()):
-                if isinstance(src, IRSource) and (src.node_id, src.index) in _all_remaps(decomposed_replacements):
-                    new_nid, new_idx = _all_remaps(decomposed_replacements)[(src.node_id, src.index)]
-                    c.input_sources.flat[idx_s] = IRSource(new_nid, new_idx)
-
-        for orig_id, (decomposed, remap) in decomposed_replacements.items():
-            accum_ids = {nid for (_, _), (nid, _) in remap.items()}
-            partial_ids = {c.id for c in decomposed if c.id not in accum_ids}
-            for pid in partial_ids:
-                consumed_by[pid] = accum_ids
-            for aid in accum_ids:
-                consumed_by[aid] = consumed_by.get(orig_id, set()).copy()
-
-            concat_sources = np.array([
-                IRSource(remap[(orig_id, n)][0], remap[(orig_id, n)][1])
-                for n in range(max(k[1] for k in remap if k[0] == orig_id) + 1)
-            ], dtype=object)
-            concat_op = ComputeOp(
-                id=orig_id,
-                name=f"psum_concat_{orig_id}",
-                input_sources=concat_sources,
-                op_type="identity",
-            )
-            concat_stage = HybridStage(
-                kind="compute", name=concat_op.name, compute_op=concat_op,
-            )
-            concat_stage.schedule_segment_index = segment_index
-            concat_stages.append(concat_stage)
-
-            consumed_by[orig_id] = consumed_by.get(orig_id, set())
-
-        current_neural = new_neural
-
-        passes = partition_segment_into_passes(
-            current_neural, budget,
-            max_hw_axons=max_hw_axons,
-            max_hw_neurons=max_hw_neurons,
-            allow_coalescing=allow_coalescing,
-            allow_splitting=allow_neuron_splitting,
-        )
 
     stages: list[HybridStage] = []
     seg_reindex_all: dict[int, dict[int, int]] = {}
@@ -653,23 +464,11 @@ def _flush_scheduled_segment(
             pass_cores = _reindex_nodes(pass_cores, seg_reindex_all)
         _flush_or_split(pass_cores, pass_idx)
 
-    stages.extend(concat_stages)
-
     for i, stage in enumerate(stages):
         if stage.schedule_segment_index == segment_index:
             stage.schedule_pass_index = i
 
     return stages, seg_reindex_all
-
-
-def _all_remaps(
-    decomposed_replacements: dict[int, tuple[list, dict[tuple[int, int], tuple[int, int]]]],
-) -> dict[tuple[int, int], tuple[int, int]]:
-    """Merge all output remaps from decomposed cores into a single dict."""
-    merged: dict[tuple[int, int], tuple[int, int]] = {}
-    for _, (_, remap) in decomposed_replacements.items():
-        merged.update(remap)
-    return merged
 
 
 def _compute_node_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
