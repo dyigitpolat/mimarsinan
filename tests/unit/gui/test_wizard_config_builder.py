@@ -11,7 +11,7 @@ from mimarsinan.gui.wizard.flow import (
     get_previous_step_id,
 )
 from mimarsinan.gui.wizard.schema import (
-    get_pipeline_step_names_for_state,
+    get_pipeline_step_names_for_config,
     get_wizard_model_types,
     get_wizard_nas_schema,
 )
@@ -26,7 +26,8 @@ class TestBuildDeploymentConfigFromState:
         assert out["pipeline_mode"] == "phased"
         assert "deployment_parameters" in out
         assert "platform_constraints" in out
-        assert out["deployment_parameters"]["configuration_mode"] == "user"
+        assert out["deployment_parameters"]["model_config_mode"] == "user"
+        assert out["deployment_parameters"]["hw_config_mode"] == "fixed"
         assert out["deployment_parameters"]["spiking_mode"] == "rate"
         assert out["deployment_parameters"].get("allow_scheduling") is False
 
@@ -37,7 +38,6 @@ class TestBuildDeploymentConfigFromState:
 
     def test_vanilla_preset_no_quantization_flags(self):
         out = build_deployment_config_from_state({"pipeline_mode": "vanilla"})
-        # setdefault only adds if missing; defaults don't have act/wt quant
         assert "activation_quantization" not in out["deployment_parameters"] or out["deployment_parameters"]["activation_quantization"] is not True
 
     def test_state_not_mutated(self):
@@ -59,7 +59,7 @@ class TestBuildDeploymentConfigFromState:
             "stop_step": None,
             "target_metric_override": None,
             "deployment_parameters": {
-                "configuration_mode": "user",
+                "model_config_mode": "user",
                 "model_type": "mlp_mixer",
                 "model_config": {"patch_n_1": 4, "patch_m_1": 4, "patch_c_1": 16, "fc_w_1": 32, "fc_w_2": 32},
             },
@@ -71,41 +71,10 @@ class TestBuildDeploymentConfigFromState:
         assert out["deployment_parameters"]["model_type"] == "mlp_mixer"
         assert out["platform_constraints"]["max_axons"] == 512
 
-    def test_platform_constraints_mode_user_gets_user_key(self):
-        state = {
-            "platform_constraints": {"mode": "user", "max_axons": 128, "max_neurons": 128},
-            "deployment_parameters": {},
-            "data_provider_name": "MNIST_DataProvider",
-            "experiment_name": "x",
-            "generated_files_path": "./out",
-            "start_step": None,
-        }
-        out = build_deployment_config_from_state(state)
-        assert out["platform_constraints"]["mode"] == "user"
-        assert "user" in out["platform_constraints"]
-        assert out["platform_constraints"]["user"]["max_axons"] == 128
-
-    def test_platform_constraints_mode_auto_preserves_auto(self):
-        state = {
-            "platform_constraints": {
-                "mode": "auto",
-                "auto": {"fixed": {"target_tq": 16}, "search_space": {"num_core_types": 2}},
-            },
-            "deployment_parameters": {},
-            "data_provider_name": "MNIST_DataProvider",
-            "experiment_name": "x",
-            "generated_files_path": "./out",
-            "start_step": None,
-        }
-        out = build_deployment_config_from_state(state)
-        assert out["platform_constraints"]["mode"] == "auto"
-        assert out["platform_constraints"]["auto"]["fixed"]["target_tq"] == 16
-        assert out["platform_constraints"]["auto"]["search_space"]["num_core_types"] == 2
-
     def test_max_simulation_samples_preserved_when_set(self):
         state = {
             "deployment_parameters": {
-                "configuration_mode": "user",
+                "model_config_mode": "user",
                 "model_type": "mlp_mixer",
                 "model_config": {},
                 "max_simulation_samples": 200,
@@ -129,7 +98,7 @@ class TestValidateWizardState:
             "experiment_name": "t",
             "generated_files_path": "./out",
             "platform_constraints": {},
-            "deployment_parameters": {"configuration_mode": "user", "model_type": "mlp_mixer", "model_config": {}},
+            "deployment_parameters": {"model_config_mode": "user", "model_type": "mlp_mixer", "model_config": {}},
             "start_step": None,
         }
         assert validate_wizard_state(state) == []
@@ -155,36 +124,47 @@ class TestWizardFlow:
         assert get_step_index("review") == len(WIZARD_STEP_IDS) - 1
         assert get_step_index("nonexistent") == -1
 
-    def test_next_after_configuration_mode_user(self):
-        state = {"deployment_parameters": {"configuration_mode": "user"}}
-        assert get_next_step_id(state, "configuration_mode") == "user_model"
+    def test_next_after_search_toggles_goes_to_user_model(self):
+        state = {"deployment_parameters": {"model_config_mode": "user"}}
+        assert get_next_step_id(state, "search_toggles") == "user_model"
 
-    def test_next_after_configuration_mode_nas(self):
-        state = {"deployment_parameters": {"configuration_mode": "nas"}}
-        assert get_next_step_id(state, "configuration_mode") == "nas_options"
+    def test_next_after_user_model_no_search(self):
+        state = {"deployment_parameters": {"model_config_mode": "user", "hw_config_mode": "fixed"}}
+        assert get_next_step_id(state, "user_model") == "platform_constraints"
 
-    def test_previous_from_user_model_goes_to_configuration_mode(self):
-        state = {"deployment_parameters": {"configuration_mode": "user"}}
-        assert get_previous_step_id(state, "user_model") == "configuration_mode"
+    def test_next_after_user_model_with_model_search(self):
+        state = {"deployment_parameters": {"model_config_mode": "search", "hw_config_mode": "fixed"}}
+        assert get_next_step_id(state, "user_model") == "nas_options"
 
-    def test_previous_from_nas_options_goes_to_configuration_mode(self):
-        state = {"deployment_parameters": {"configuration_mode": "nas"}}
-        assert get_previous_step_id(state, "nas_options") == "configuration_mode"
+    def test_next_after_nas_options_hw_search_skips_platform(self):
+        state = {"deployment_parameters": {"model_config_mode": "search", "hw_config_mode": "search"}}
+        assert get_next_step_id(state, "nas_options") == "spiking_quantization"
+
+    def test_next_after_nas_options_model_only_goes_to_platform(self):
+        state = {"deployment_parameters": {"model_config_mode": "search", "hw_config_mode": "fixed"}}
+        assert get_next_step_id(state, "nas_options") == "platform_constraints"
+
+    def test_previous_from_user_model_goes_to_search_toggles(self):
+        state = {"deployment_parameters": {"model_config_mode": "user"}}
+        assert get_previous_step_id(state, "user_model") == "search_toggles"
+
+    def test_previous_from_nas_options_goes_to_user_model(self):
+        state = {"deployment_parameters": {"model_config_mode": "search"}}
+        assert get_previous_step_id(state, "nas_options") == "user_model"
 
 
 class TestWizardSchema:
     def test_get_pipeline_step_names_user_phased(self):
-        state = {
-            "deployment_parameters": {
-                "configuration_mode": "user",
-                "model_type": "mlp_mixer",
-                "activation_quantization": True,
-                "weight_quantization": True,
-                "pruning": False,
-                "spiking_mode": "rate",
-            },
+        config = {
+            "model_config_mode": "user",
+            "hw_config_mode": "fixed",
+            "model_type": "mlp_mixer",
+            "activation_quantization": True,
+            "weight_quantization": True,
+            "pruning": False,
+            "spiking_mode": "rate",
         }
-        steps = get_pipeline_step_names_for_state(state)
+        steps = get_pipeline_step_names_for_config(config)
         assert "Model Configuration" in steps
         assert "Model Building" in steps
         assert "Pretraining" in steps
@@ -192,11 +172,21 @@ class TestWizardSchema:
         assert "Weight Quantization" in steps
         assert "Simulation" in steps
 
-    def test_get_pipeline_step_names_nas(self):
-        state = {"deployment_parameters": {"configuration_mode": "nas"}}
-        steps = get_pipeline_step_names_for_state(state)
+    def test_get_pipeline_step_names_model_search(self):
+        config = {"model_config_mode": "search", "hw_config_mode": "fixed"}
+        steps = get_pipeline_step_names_for_config(config)
         assert steps[0] == "Architecture Search"
         assert "Simulation" in steps
+
+    def test_get_pipeline_step_names_hw_search(self):
+        config = {"model_config_mode": "user", "hw_config_mode": "search"}
+        steps = get_pipeline_step_names_for_config(config)
+        assert steps[0] == "Architecture Search"
+
+    def test_get_pipeline_step_names_joint_search(self):
+        config = {"model_config_mode": "search", "hw_config_mode": "search"}
+        steps = get_pipeline_step_names_for_config(config)
+        assert steps[0] == "Architecture Search"
 
     def test_get_wizard_model_types_has_mlp_mixer_and_torch_vit(self):
         types = get_wizard_model_types()
@@ -210,6 +200,15 @@ class TestWizardSchema:
         assert "optimizer_options" in nas
         assert any(o["id"] == "nsga2" for o in nas["optimizer_options"])
         assert "common_fields" in nas
+
+    def test_get_wizard_nas_schema_has_objective_options(self):
+        nas = get_wizard_nas_schema()
+        assert "objective_options" in nas
+        assert len(nas["objective_options"]) == 7
+        ids = [o["id"] for o in nas["objective_options"]]
+        assert "estimated_accuracy" in ids
+        assert "total_params" in ids
+        assert "param_utilization_pct" in ids
 
 
 class TestSuggestResumeStep:

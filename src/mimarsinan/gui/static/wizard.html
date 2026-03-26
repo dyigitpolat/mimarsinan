@@ -120,6 +120,14 @@
             </div>
           </div>
 
+          <!-- Optimization Objectives -->
+          <div class="sub-section" style="margin-top:14px">
+            <div class="sub-section-title">Optimization Objectives</div>
+            <div class="objective-checkboxes" id="objectiveCheckboxes">
+              <!-- Populated dynamically by JS from /api/wizard/schema objective_options -->
+            </div>
+          </div>
+
           <!-- Kedi-specific -->
           <div id="kediConfig" class="cond hidden">
             <div class="sub-section" style="margin-top:14px">
@@ -206,10 +214,10 @@
             </div>
 
             <div class="field" style="margin-bottom:14px">
-              <label class="field-label">Configuration Mode</label>
+              <label class="field-label">Model Configuration</label>
               <div class="seg-control" id="configMode">
                 <div class="seg-btn active" data-val="user" onclick="setSegment(this)">User-defined</div>
-                <div class="seg-btn" data-val="nas" onclick="setSegment(this)">Search (NAS)</div>
+                <div class="seg-btn" data-val="search" onclick="setSegment(this)">Search</div>
               </div>
             </div>
 
@@ -316,8 +324,8 @@
             <div class="field" style="margin-bottom:14px">
               <label class="field-label">Hardware Config Mode</label>
               <div class="seg-control" id="hwMode">
-                <div class="seg-btn active amber" data-val="user" onclick="setSegment(this)">Fixed (User)</div>
-                <div class="seg-btn" data-val="auto" onclick="setSegment(this)">Search (Auto)</div>
+                <div class="seg-btn active amber" data-val="fixed" onclick="setSegment(this)">Fixed</div>
+                <div class="seg-btn" data-val="search" onclick="setSegment(this)">Search</div>
               </div>
             </div>
 

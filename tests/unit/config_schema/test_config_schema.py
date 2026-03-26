@@ -22,7 +22,8 @@ class TestDefaults:
         assert "training_epochs" in d
         assert "tuner_epochs" in d
         assert "degradation_tolerance" in d
-        assert "configuration_mode" in d
+        assert "model_config_mode" in d
+        assert "hw_config_mode" in d
         assert "spiking_mode" in d
         assert "allow_scheduling" in d
         assert d["allow_scheduling"] is False
@@ -74,7 +75,7 @@ class TestValidateDeploymentConfig:
             "experiment_name": "test",
             "generated_files_path": "./out",
             "platform_constraints": {"max_axons": 256, "max_neurons": 256},
-            "deployment_parameters": {"configuration_mode": "user", "model_type": "mlp_mixer", "model_config": {}},
+            "deployment_parameters": {"model_config_mode": "user", "model_type": "mlp_mixer", "model_config": {}},
             "start_step": None,
         }
         errors = validate_deployment_config(cfg)
@@ -108,11 +109,23 @@ class TestValidateDeploymentConfig:
             "experiment_name": "test",
             "generated_files_path": "./out",
             "platform_constraints": {},
-            "deployment_parameters": {"configuration_mode": "user"},
+            "deployment_parameters": {"model_config_mode": "user"},
             "start_step": None,
         }
         errors = validate_deployment_config(cfg)
         assert any("model_type" in str(e).lower() or "model_config" in str(e).lower() for e in errors)
+
+    def test_search_mode_requires_arch_search(self):
+        cfg = {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "test",
+            "generated_files_path": "./out",
+            "platform_constraints": {},
+            "deployment_parameters": {"model_config_mode": "search"},
+            "start_step": None,
+        }
+        errors = validate_deployment_config(cfg)
+        assert any("arch_search" in str(e).lower() for e in errors)
 
     def test_ttfs_requires_ttfs_firing_and_spike_gen(self):
         cfg = {
@@ -121,7 +134,7 @@ class TestValidateDeploymentConfig:
             "generated_files_path": "./out",
             "platform_constraints": {},
             "deployment_parameters": {
-                "configuration_mode": "user",
+                "model_config_mode": "user",
                 "model_type": "mlp_mixer",
                 "model_config": {"patch_n_1": 4, "patch_m_1": 4, "patch_c_1": 16, "fc_w_1": 32, "fc_w_2": 32},
                 "spiking_mode": "ttfs",
@@ -147,7 +160,7 @@ class TestValidateMergedConfig:
             "spiking_mode": "rate",
             "firing_mode": "Default",
             "spike_generation_mode": "Deterministic",
-            "configuration_mode": "user",
+            "model_config_mode": "user",
             "model_type": "mlp_mixer",
             "model_config": {"patch_n_1": 4, "patch_m_1": 4, "patch_c_1": 16, "fc_w_1": 32, "fc_w_2": 32},
         }

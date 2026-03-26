@@ -23,24 +23,18 @@ def _parse_deployment_config(deployment_config):
     deployment_name = deployment_config['experiment_name']
     deployment_parameters = dict(deployment_config['deployment_parameters'])
 
-    platform_constraints_raw = deployment_config["platform_constraints"]
-    if isinstance(platform_constraints_raw, dict) and "mode" in platform_constraints_raw:
-        mode = platform_constraints_raw.get("mode", "user")
-        if mode == "user":
-            platform_constraints = platform_constraints_raw.get(
-                "user",
-                {k: v for k, v in platform_constraints_raw.items() if k != "mode"},
-            )
-        elif mode == "auto":
-            auto = platform_constraints_raw.get("auto", {}) or {}
-            fixed = auto.get("fixed", {}) or {}
-            search_space = auto.get("search_space", {}) or {}
-            arch_cfg = deployment_parameters.setdefault("arch_search", {})
-            for k, v in search_space.items():
-                arch_cfg.setdefault(k, v)
-            platform_constraints = fixed
-        else:
-            raise ValueError(f"Invalid platform_constraints.mode: {mode}")
+    platform_constraints_raw = deployment_config.get("platform_constraints", {})
+
+    # When hw_config_mode is "search", the platform_constraints dict contains
+    # both fixed values and a search_space sub-dict.  Merge search_space keys
+    # into arch_search so the architecture search step can find them.
+    hw_mode = deployment_parameters.get("hw_config_mode", "fixed")
+    if hw_mode == "search" and isinstance(platform_constraints_raw, dict):
+        search_space = platform_constraints_raw.pop("search_space", {}) or {}
+        arch_cfg = deployment_parameters.setdefault("arch_search", {})
+        for k, v in search_space.items():
+            arch_cfg.setdefault(k, v)
+        platform_constraints = platform_constraints_raw
     else:
         platform_constraints = platform_constraints_raw
 

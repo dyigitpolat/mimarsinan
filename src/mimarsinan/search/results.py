@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generic, List, Literal, Optional, Sequence, TypeVar
+from typing import Any, Dict, Generic, List, Literal, Optional, Sequence, Tuple, TypeVar
 
 
 Goal = Literal["min", "max"]
@@ -11,6 +11,63 @@ Goal = Literal["min", "max"]
 class ObjectiveSpec:
     name: str
     goal: Goal
+
+
+# ---------------------------------------------------------------------------
+# Canonical objective catalogue
+# ---------------------------------------------------------------------------
+
+ALL_OBJECTIVES: Tuple[ObjectiveSpec, ...] = (
+    ObjectiveSpec("estimated_accuracy", "max"),
+    ObjectiveSpec("total_params", "min"),
+    ObjectiveSpec("total_param_capacity", "min"),
+    ObjectiveSpec("total_sync_barriers", "min"),
+    ObjectiveSpec("param_utilization_pct", "max"),
+    ObjectiveSpec("neuron_wastage_pct", "min"),
+    ObjectiveSpec("axon_wastage_pct", "min"),
+)
+
+ACCURACY_OBJECTIVE_NAME = "estimated_accuracy"
+
+_OBJECTIVES_BY_NAME: Dict[str, ObjectiveSpec] = {o.name: o for o in ALL_OBJECTIVES}
+
+
+def objectives_for_mode(search_mode: str) -> Tuple[ObjectiveSpec, ...]:
+    """All objectives *available* for a given search mode.
+
+    Accuracy is excluded for hardware-only search (no training is performed).
+    """
+    if search_mode == "hardware":
+        return tuple(o for o in ALL_OBJECTIVES if o.name != ACCURACY_OBJECTIVE_NAME)
+    return ALL_OBJECTIVES
+
+
+def default_objectives_for_mode(search_mode: str) -> Tuple[str, ...]:
+    """Default active objective *names* when the user does not specify."""
+    if search_mode == "hardware":
+        return ("total_param_capacity", "param_utilization_pct", "neuron_wastage_pct", "axon_wastage_pct")
+    if search_mode == "model":
+        return ("estimated_accuracy", "total_params")
+    # joint
+    return ("estimated_accuracy", "total_params", "param_utilization_pct", "neuron_wastage_pct")
+
+
+def resolve_active_objectives(
+    search_mode: str,
+    user_selection: Optional[Sequence[str]] = None,
+) -> Tuple[ObjectiveSpec, ...]:
+    """Resolve user selection (or defaults) into validated ObjectiveSpec tuple."""
+    available = {o.name for o in objectives_for_mode(search_mode)}
+    names = tuple(user_selection) if user_selection else default_objectives_for_mode(search_mode)
+    resolved = []
+    for n in names:
+        if n in available and n in _OBJECTIVES_BY_NAME:
+            resolved.append(_OBJECTIVES_BY_NAME[n])
+    if not resolved:
+        # Fallback: use all defaults for the mode
+        for n in default_objectives_for_mode(search_mode):
+            resolved.append(_OBJECTIVES_BY_NAME[n])
+    return tuple(resolved)
 
 
 ConfigT = TypeVar("ConfigT")

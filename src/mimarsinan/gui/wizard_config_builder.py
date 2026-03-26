@@ -1,9 +1,12 @@
 """
 Build deployment config JSON from wizard state.
 
-Wizard state has the same shape as the deployment config (main.py input).
-The builder applies defaults and pipeline_mode preset so the output is valid
-and can be saved to a file and passed to main.py.
+Wizard state uses two independent search toggles:
+- ``deployment_parameters.model_config_mode``: ``"user"`` | ``"search"``
+- ``deployment_parameters.hw_config_mode``:    ``"fixed"`` | ``"search"``
+
+When hw_config_mode is ``"search"``, the platform_constraints dict may contain
+a ``search_space`` sub-dict with HW search bounds.
 """
 
 from __future__ import annotations
@@ -44,6 +47,11 @@ def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     for k, v in dp_defaults.items():
         dp.setdefault(k, v)
     apply_preset(out["pipeline_mode"], dp)
+
+    # Ensure the two search toggles have defaults
+    dp.setdefault("model_config_mode", "user")
+    dp.setdefault("hw_config_mode", "fixed")
+
     out["deployment_parameters"] = dp
 
     pc = state.get("platform_constraints")
@@ -51,22 +59,8 @@ def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
         pc = dict(get_default_platform_constraints())
     elif isinstance(pc, dict):
         pc = dict(pc)
-        if "mode" not in pc:
-            for k, v in get_default_platform_constraints().items():
-                pc.setdefault(k, v)
-        elif pc.get("mode") == "user":
-            if "user" not in pc or not isinstance(pc.get("user"), dict):
-                user = {k: v for k, v in pc.items() if k != "mode"}
-                for k, v in get_default_platform_constraints().items():
-                    user.setdefault(k, v)
-                pc["user"] = user
-        elif pc.get("mode") == "auto":
-            auto = pc.get("auto")
-            if isinstance(auto, dict):
-                if "fixed" not in auto or not isinstance(auto.get("fixed"), dict):
-                    auto["fixed"] = dict(get_default_platform_constraints())
-            else:
-                pc["auto"] = {"fixed": dict(get_default_platform_constraints()), "search_space": {}}
+        for k, v in get_default_platform_constraints().items():
+            pc.setdefault(k, v)
     else:
         pc = dict(pc)
     out["platform_constraints"] = pc
