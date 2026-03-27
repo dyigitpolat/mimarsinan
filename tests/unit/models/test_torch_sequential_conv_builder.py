@@ -18,8 +18,6 @@ class TestTorchSequentialConvBuilder:
             device=torch.device("cpu"),
             input_shape=(1, 28, 28),
             num_classes=10,
-            max_axons=1024,
-            max_neurons=1024,
             pipeline_config={"target_tq": 32},
         )
 

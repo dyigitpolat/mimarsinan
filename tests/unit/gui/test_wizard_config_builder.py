@@ -63,13 +63,15 @@ class TestBuildDeploymentConfigFromState:
                 "model_type": "mlp_mixer",
                 "model_config": {"patch_n_1": 4, "patch_m_1": 4, "patch_c_1": 16, "fc_w_1": 32, "fc_w_2": 32},
             },
-            "platform_constraints": {"max_axons": 512, "max_neurons": 512},
+            "platform_constraints": {
+                "cores": [{"max_axons": 512, "max_neurons": 512, "count": 200}],
+            },
         }
         out = build_deployment_config_from_state(state)
         assert out["data_provider_name"] == "CIFAR10_DataProvider"
         assert out["experiment_name"] == "cifar_run"
         assert out["deployment_parameters"]["model_type"] == "mlp_mixer"
-        assert out["platform_constraints"]["max_axons"] == 512
+        assert out["platform_constraints"]["cores"][0]["max_axons"] == 512
 
     def test_max_simulation_samples_preserved_when_set(self):
         state = {

@@ -115,8 +115,6 @@ class TestTorchMLPMixerBuilder:
             device=torch.device("cpu"),
             input_shape=(3, 32, 32),
             num_classes=10,
-            max_axons=256,
-            max_neurons=256,
             pipeline_config={"target_tq": 32},
         )
         config = {
@@ -135,8 +133,6 @@ class TestTorchMLPMixerBuilder:
             device=torch.device("cpu"),
             input_shape=(3, 32, 32),
             num_classes=10,
-            max_axons=256,
-            max_neurons=256,
             pipeline_config={"target_tq": 32},
         )
         config = {

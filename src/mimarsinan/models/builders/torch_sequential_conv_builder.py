@@ -31,8 +31,6 @@ class TorchSequentialConvBuilder:
         device,
         input_shape,
         num_classes,
-        max_axons,
-        max_neurons,
         pipeline_config,
     ):
         self.device = device

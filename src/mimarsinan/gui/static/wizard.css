@@ -1207,6 +1207,40 @@ option {
   to   { opacity: 0.4; }
 }
 
+/* ─── Objective Chips ──────────────────────────────────────── */
+
+.objective-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.objective-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 0.72rem;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: var(--transition);
+  color: var(--text-secondary);
+  user-select: none;
+}
+.objective-chip:hover {
+  border-color: var(--text-secondary);
+}
+.objective-chip.active {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.08);
+}
+.objective-chip .goal-badge {
+  font-size: 0.6rem;
+  opacity: 0.6;
+  text-transform: uppercase;
+}
+
 .hw-validation-banner {
   margin: 0 0 10px 0;
   padding: 10px 14px;

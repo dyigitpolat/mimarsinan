@@ -86,7 +86,7 @@ def _load_compatible_state_dict(model: nn.Module, state_dict) -> None:
 @ModelRegistry.register("torch_vit", label="Torch ViT", category="torch")
 class TorchViTBuilder:
     def __init__(
-        self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config
+        self, device, input_shape, num_classes, pipeline_config
     ):
         self.device = device
         self.input_shape = input_shape

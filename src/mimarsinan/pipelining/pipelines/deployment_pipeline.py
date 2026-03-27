@@ -217,8 +217,7 @@ class DeploymentPipeline(Pipeline):
     }
 
     default_platform_constraints: dict = {
-        "max_axons": 256,
-        "max_neurons": 256,
+        "cores": [{"max_axons": 256, "max_neurons": 256, "count": 1000}],
         "target_tq": 32,
         "simulation_steps": 32,
         "weight_bits": 8,

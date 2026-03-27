@@ -30,8 +30,11 @@ class TestDefaults:
 
     def test_default_platform_constraints_has_required_keys(self):
         d = get_default_platform_constraints()
-        assert "max_axons" in d
-        assert "max_neurons" in d
+        assert "cores" in d
+        assert isinstance(d["cores"], list)
+        assert len(d["cores"]) > 0
+        assert "max_axons" in d["cores"][0]
+        assert "max_neurons" in d["cores"][0]
         assert "target_tq" in d
         assert "simulation_steps" in d
         assert "weight_bits" in d
@@ -183,7 +186,7 @@ class TestConfigKeysSet:
     def test_has_deployment_and_platform_keys(self):
         keys = get_config_keys_set()
         assert "lr" in keys
-        assert "max_axons" in keys
+        assert "cores" in keys
         assert "target_tq" in keys
         assert "spiking_mode" in keys
         assert "model_type" in keys

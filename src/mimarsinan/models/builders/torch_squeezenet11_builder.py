@@ -17,7 +17,7 @@ def _adapt_squeezenet_for_input(model, input_shape):
 @ModelRegistry.register("torch_squeezenet11", label="Torch SqueezeNet", category="torch")
 class TorchSqueezeNet11Builder:
     def __init__(
-        self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config
+        self, device, input_shape, num_classes, pipeline_config
     ):
         self.device = device
         self.input_shape = input_shape

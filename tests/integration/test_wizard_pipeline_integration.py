@@ -46,7 +46,7 @@ def test_wizard_built_config_validates_and_pipeline_accepts(tmp_path):
                 "fc_w_2": 32,
             },
         },
-        "platform_constraints": {"max_axons": 256, "max_neurons": 256, "target_tq": 16, "simulation_steps": 16, "weight_bits": 8},
+        "platform_constraints": {"cores": [{"max_axons": 256, "max_neurons": 256, "count": 1000}], "target_tq": 16, "simulation_steps": 16, "weight_bits": 8},
     }
     cfg = build_deployment_config_from_state(state)
     assert validate_deployment_config(cfg) == []

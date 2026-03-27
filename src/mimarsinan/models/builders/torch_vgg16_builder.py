@@ -38,7 +38,7 @@ def _adapt_vgg_for_input(model: nn.Module, input_shape) -> nn.Module:
 @ModelRegistry.register("torch_vgg16", label="Torch VGG16", category="torch")
 class TorchVGG16Builder:
     def __init__(
-        self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config
+        self, device, input_shape, num_classes, pipeline_config
     ):
         self.device = device
         self.input_shape = input_shape
