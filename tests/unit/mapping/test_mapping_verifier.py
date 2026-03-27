@@ -87,8 +87,6 @@ def _make_torch_mlp_mixer_repr():
         device=torch.device("cpu"),
         input_shape=(1, 28, 28),
         num_classes=10,
-        max_axons=2048,
-        max_neurons=2048,
         pipeline_config={"target_tq": 32, "device": "cpu"},
     )
     model = builder.build({

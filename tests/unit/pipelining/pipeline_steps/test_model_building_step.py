@@ -14,12 +14,9 @@ class TestModelBuildingStep:
         cfg = mock_pipeline.config
         cfg.setdefault("input_shape", (1, 8, 8))
         cfg.setdefault("num_classes", 4)
-        cfg.setdefault("max_axons", 256)
-        cfg.setdefault("max_neurons", 256)
 
         builder = SimpleMLPBuilder(
-            cfg["device"], cfg["input_shape"], cfg["num_classes"],
-            cfg["max_axons"], cfg["max_neurons"], cfg,
+            cfg["device"], cfg["input_shape"], cfg["num_classes"], cfg,
         )
         model_config = {
             "mlp_width_1": 16,

@@ -2,26 +2,17 @@
 Generic joint architecture + hardware search problem.
 
 Works with *any* model that can be expressed through the mimarsinan IR.
-Model-specific behaviour is injected via constructor parameters:
-
-- ``arch_options``           – list of (key, values) pairs defining the
-                               architecture search space.
-- ``model_config_assembler`` – callable that post-processes the decoded
-                               architecture dict into a final model_config.
-- ``validate_fn``            – optional callable for fast feasibility checks.
-- ``constraint_fn``          – optional callable returning a continuous
-                               constraint-violation score.
-- ``builder_factory``        – callable that creates a model builder given
-                               resolved platform constraints.
+Model-specific behaviour is injected via constructor parameters.
 
 Search mode controls which dimensions are optimised:
 
     "model"    – architecture indices only; hardware is fixed.
-    "hardware" – core dimensions / threshold groups only; model is fixed.
+    "hardware" – core dimensions and counts only; model is fixed.
                  Model is built *once* and softcores are cached; subsequent
                  evaluations only run bin-packing (very fast).
     "joint"    – both architecture and hardware are searched.
 
+Hardware search space per core type: (max_axons, max_neurons, count).
 Objectives are selected from the canonical catalogue in ``search.results``.
 """
 
@@ -56,6 +47,14 @@ def _clip_int(v: float, lo: int, hi: int) -> int:
     return int(max(lo, min(hi, int(round(float(v))))))
 
 
+def effective_max_dims(cores: Sequence[Dict[str, Any]]) -> Tuple[int, int]:
+    """Return (max_axons, max_neurons) as MAX across core types for IR tiling."""
+    return (
+        max(int(ct["max_axons"]) for ct in cores),
+        max(int(ct["max_neurons"]) for ct in cores),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Type aliases for the injected callables
 # ---------------------------------------------------------------------------
@@ -85,8 +84,8 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
     The decision vector contains only variables for the searched dimensions:
     - ``"model"``:    architecture indices
-    - ``"hardware"``: threshold_groups + core dims per type
-    - ``"joint"``:    architecture indices + threshold_groups + core dims
+    - ``"hardware"``: (max_axons, max_neurons, count) per core type
+    - ``"joint"``:    architecture indices + hw vars
     """
 
     data_provider_factory: Any
@@ -115,10 +114,9 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
     # --- Hardware search space ---
     num_core_types: int = 1
-    core_type_counts: Sequence[int] = (100,)
     core_axons_bounds: Tuple[int, int] = (64, 2048)
     core_neurons_bounds: Tuple[int, int] = (64, 2048)
-    max_threshold_groups: int = 4
+    core_count_bounds: Tuple[int, int] = (50, 500)
 
     # --- Evaluation knobs ---
     accuracy_seed: int = 0
@@ -152,7 +150,8 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
     @property
     def _n_hw_vars(self) -> int:
-        return (1 + 2 * int(self.num_core_types)) if self._searches_hw else 0
+        # 3 variables per core type: (max_axons, max_neurons, count)
+        return (3 * int(self.num_core_types)) if self._searches_hw else 0
 
     # ------------------------------------------------------------------ #
     # EncodedProblem interface
@@ -174,9 +173,12 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         if self._searches_model:
             xl.extend([0.0] * len(self.arch_options))
         if self._searches_hw:
-            xl.append(1.0)  # threshold_groups lower bound
             for _ in range(int(self.num_core_types)):
-                xl.extend([float(self.core_axons_bounds[0]), float(self.core_neurons_bounds[0])])
+                xl.extend([
+                    float(self.core_axons_bounds[0]),
+                    float(self.core_neurons_bounds[0]),
+                    float(self.core_count_bounds[0]),
+                ])
         return np.array(xl, dtype=float)
 
     @property
@@ -185,9 +187,12 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         if self._searches_model:
             xu.extend([float(len(opts) - 1) for _, opts in self.arch_options])
         if self._searches_hw:
-            xu.append(float(self.max_threshold_groups))
             for _ in range(int(self.num_core_types)):
-                xu.extend([float(self.core_axons_bounds[1]), float(self.core_neurons_bounds[1])])
+                xu.extend([
+                    float(self.core_axons_bounds[1]),
+                    float(self.core_neurons_bounds[1]),
+                    float(self.core_count_bounds[1]),
+                ])
         return np.array(xu, dtype=float)
 
     # ------------------------------------------------------------------ #
@@ -202,38 +207,32 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             raw_arch[key] = options[idx]
         return self.model_config_assembler(raw_arch)
 
-    def _decode_hw(self, x: np.ndarray, offset: int) -> Tuple[Dict[str, Any], int]:
+    def _decode_hw(self, x: np.ndarray, offset: int) -> Dict[str, Any]:
         """Decode hardware variables from x starting at *offset*.
 
-        Returns (platform_constraints_dict, threshold_groups).
+        Returns platform_constraints dict with ``cores`` list only (no global
+        max_axons/max_neurons — those are derived at point-of-use).
         """
-        threshold_groups = _clip_int(x[offset], 1, int(self.max_threshold_groups))
-
         core_types: List[Dict[str, int]] = []
-        idx = offset + 1
-        for t in range(int(self.num_core_types)):
+        idx = offset
+        for _ in range(int(self.num_core_types)):
             ax = _clip_int(x[idx], int(self.core_axons_bounds[0]), int(self.core_axons_bounds[1]))
             neu = _clip_int(x[idx + 1], int(self.core_neurons_bounds[0]), int(self.core_neurons_bounds[1]))
-            idx += 2
+            count = _clip_int(x[idx + 2], int(self.core_count_bounds[0]), int(self.core_count_bounds[1]))
+            idx += 3
             ax = max(8, int(round(ax / 8)) * 8)
             neu = max(8, int(round(neu / 8)) * 8)
             core_types.append({
                 "max_axons": ax,
                 "max_neurons": neu,
-                "count": int(self.core_type_counts[t]),
+                "count": count,
             })
 
-        min_axons = min(int(ct["max_axons"]) for ct in core_types)
-        min_neurons = min(int(ct["max_neurons"]) for ct in core_types)
-
-        platform_constraints = {
+        return {
             "cores": core_types,
-            "max_axons": int(min_axons),
-            "max_neurons": int(min_neurons),
             "target_tq": int(self.target_tq),
             "weight_bits": 8,
         }
-        return platform_constraints, int(threshold_groups)
 
     def decode(self, x: np.ndarray) -> Dict[str, Any]:
         x = np.array(x, dtype=float).flatten()
@@ -251,15 +250,13 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
         # Hardware
         if self._searches_hw:
-            platform_constraints, threshold_groups = self._decode_hw(x, offset)
+            platform_constraints = self._decode_hw(x, offset)
         else:
             platform_constraints = dict(self.fixed_platform_constraints or {})
-            threshold_groups = int(platform_constraints.get("threshold_groups", 1))
 
         return {
             "model_config": model_config,
             "platform_constraints": platform_constraints,
-            "threshold_groups": threshold_groups,
         }
 
     # ------------------------------------------------------------------ #
@@ -300,8 +297,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             self.device,
             self.input_shape,
             self.num_classes,
-            int(pcfg["max_axons"]),
-            int(pcfg["max_neurons"]),
             {**pcfg, "target_tq": int(self.target_tq)},
         )
         model = builder.build(model_config).to(self.device)
@@ -338,13 +333,13 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         self,
         model,
         pcfg: Dict,
-        threshold_groups: int,
     ) -> Tuple[List[LayoutSoftCoreSpec], int]:
         """Collect layout softcores and host-side segment count from model."""
+        max_ax, max_neu = effective_max_dims(pcfg["cores"])
         layout_mapper = LayoutIRMapping(
-            max_axons=int(pcfg["max_axons"]),
-            max_neurons=int(pcfg["max_neurons"]),
-            threshold_groups=threshold_groups,
+            max_axons=max_ax,
+            max_neurons=max_neu,
+            threshold_groups=1,
             threshold_seed=int(self.accuracy_seed),
             pruning_fraction=float(self.pruning_fraction),
             allow_core_coalescing=bool(pcfg.get("allow_core_coalescing", False)),
@@ -366,9 +361,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         np.random.seed(int(self.accuracy_seed))
 
         model, total_params = self._build_model(mc, pcfg)
-        softcores, host_segments = self._collect_softcores(
-            model, pcfg, int(pcfg.get("threshold_groups", 1)),
-        )
+        softcores, host_segments = self._collect_softcores(model, pcfg)
 
         self._hw_only_cache = _HwOnlyCache(
             softcores=softcores,
@@ -459,13 +452,12 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
         mc = configuration["model_config"]
         pcfg = configuration["platform_constraints"]
-        threshold_groups = int(configuration["threshold_groups"])
 
         torch.manual_seed(int(self.accuracy_seed))
         np.random.seed(int(self.accuracy_seed))
 
         try:
-            obj = self._evaluate_inner(mc, pcfg, threshold_groups)
+            obj = self._evaluate_inner(mc, pcfg)
         except Exception:
             obj = self._penalty_objectives()
 
@@ -476,7 +468,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         self,
         mc: Dict[str, Any],
         pcfg: Dict[str, Any],
-        threshold_groups: int,
     ) -> Dict[str, float]:
         active_names = {spec.name for spec in self.objectives}
         needs_accuracy = ACCURACY_OBJECTIVE_NAME in active_names
@@ -493,7 +484,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
 
         # --- Model or joint search: build model fresh ---
         model, total_params = self._build_model(mc, pcfg)
-        softcores, host_segments = self._collect_softcores(model, pcfg, threshold_groups)
+        softcores, host_segments = self._collect_softcores(model, pcfg)
 
         hw_obj = self._compute_hw_objectives(softcores, pcfg, total_params, host_segments)
         if hw_obj is None:

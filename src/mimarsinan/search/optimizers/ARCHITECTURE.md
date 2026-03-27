@@ -11,7 +11,6 @@ Pluggable optimizer implementations for the search framework.
 | `kedi_optimizer.py` | `KediOptimizer` | LLM-based optimizer using agentic reasoning (optional, requires `kedi`); orchestration only, prompts in `kedi_prompts` |
 | `kedi_prompts.py` | `build_*_prompt`, `parse_candidates` | Prompt template builders and candidate parsing for Kedi LLM calls |
 | `kedi_optimizer_support.py` | `CandidateResult`, `compute_pareto_front`, `prettify_*`, etc. | Pareto/formatting and analysis helpers for Kedi |
-| `sampler_optimizer.py` | `SamplerOptimizer` | Simple sampler-based optimizer with feedback |
 | `test_kedi_optimizer.py` | (test) | Unit tests for KediOptimizer |
 
 ## Dependencies
@@ -22,8 +21,7 @@ Pluggable optimizer implementations for the search framework.
 ## Dependents
 
 - `pipelining.pipeline_steps.architecture_search_step` selects and uses optimizers.
-- `search.mlp_mixer_searcher` uses `SamplerOptimizer`.
 
 ## Exported API (\_\_init\_\_.py)
 
-`SearchOptimizer`, `NSGA2Optimizer`, `SamplerOptimizer`, and optionally `KediOptimizer`.
+`SearchOptimizer`, `NSGA2Optimizer`, and optionally `KediOptimizer`.

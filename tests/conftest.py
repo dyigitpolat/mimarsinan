@@ -348,8 +348,6 @@ def tiny_data_provider():
 @pytest.fixture
 def platform_constraints():
     return {
-        "max_axons": 256,
-        "max_neurons": 256,
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 20}],
         "weight_bits": 8,
         "target_tq": 4,

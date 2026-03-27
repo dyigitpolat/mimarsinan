@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from itertools import combinations
 from typing import Any, Dict, List, Sequence
 
 import matplotlib.pyplot as plt
@@ -22,7 +23,6 @@ def write_final_population_json(result_json: Dict[str, Any], out_path: str) -> N
         row = {}
         row.update(c.get("configuration", {}).get("model_config", {}))
         row.update(c.get("configuration", {}).get("platform_constraints", {}))
-        row["threshold_groups"] = c.get("configuration", {}).get("threshold_groups")
         row.update(c.get("objectives", {}))
         pop.append(row)
 
@@ -36,22 +36,20 @@ def plot_history_best_metrics(result_json: Dict[str, Any], out_path: str) -> Non
     if not hist:
         return
 
+    objectives = result_json.get("objectives", []) or []
+    metric_names = [o.get("name") for o in objectives if isinstance(o, dict) and o.get("name")]
+    if not metric_names:
+        return
+
     gens = [h.get("gen") for h in hist if "gen" in h]
     bests = [h.get("best", {}) for h in hist]
 
-    # Pull series if present
-    series = {
-        "accuracy": [b.get("accuracy") for b in bests],
-        "wasted_area": [b.get("wasted_area") for b in bests],
-        "total_params": [b.get("total_params") for b in bests],
-    }
-
     plt.figure(figsize=(10, 6))
-    for name, ys in series.items():
-        ys2 = [safe_float(y) for y in ys]
-        if all(y is None for y in ys2):
+    for name in metric_names:
+        ys = [safe_float(b.get(name)) for b in bests]
+        if all(y is None for y in ys):
             continue
-        plt.plot(gens, ys2, label=name)
+        plt.plot(gens, ys, label=name)
 
     plt.xlabel("generation")
     plt.ylabel("best metric value")
@@ -71,18 +69,18 @@ def plot_history_metrics_separate(result_json: Dict[str, Any], out_dir: str) -> 
     if not hist:
         return
 
+    objectives = result_json.get("objectives", []) or []
+    goal_by_name = {o.get("name"): o.get("goal") for o in objectives if isinstance(o, dict)}
+    if not goal_by_name:
+        return
+
     gens = [h.get("gen") for h in hist if "gen" in h]
     bests = [h.get("best", {}) for h in hist]
 
-    metrics = [
-        ("accuracy", "accuracy (max)"),
-        ("wasted_area", "wasted_area (min)"),
-        ("total_params", "total_params (min)"),
-    ]
-
     os.makedirs(out_dir, exist_ok=True)
 
-    for key, label in metrics:
+    for key, goal in goal_by_name.items():
+        label = f"{key} ({goal})"
         ys = [safe_float(b.get(key)) for b in bests]
         if all(y is None for y in ys):
             continue
@@ -122,19 +120,24 @@ def plot_default_pareto_scatters(result_json: Dict[str, Any], out_dir: str) -> N
     if not pareto:
         return
 
-    wasted = [safe_float(c.get("objectives", {}).get("wasted_area")) for c in pareto]
-    params = [safe_float(c.get("objectives", {}).get("total_params")) for c in pareto]
-    acc = [safe_float(c.get("objectives", {}).get("accuracy")) for c in pareto]
+    objectives = result_json.get("objectives", []) or []
+    goal_by_name = {o.get("name"): o.get("goal") for o in objectives if isinstance(o, dict)}
+    metric_names = list(goal_by_name.keys())
+    if len(metric_names) < 2:
+        return
 
-    # Filter out obvious penalty values so plots remain readable.
     PENALTY_CUTOFF = 1e17
-    for i in range(len(pareto)):
-        if wasted[i] is not None and wasted[i] >= PENALTY_CUTOFF:
-            wasted[i] = None
-        if params[i] is not None and params[i] >= PENALTY_CUTOFF:
-            params[i] = None
 
-    # filter None pairs
+    series: Dict[str, List] = {}
+    for name in metric_names:
+        vals = []
+        for c in pareto:
+            v = safe_float(c.get("objectives", {}).get(name))
+            if v is not None and v >= PENALTY_CUTOFF:
+                v = None
+            vals.append(v)
+        series[name] = vals
+
     def _pairs(a, b):
         xs, ys = [], []
         for x, y in zip(a, b):
@@ -144,37 +147,20 @@ def plot_default_pareto_scatters(result_json: Dict[str, Any], out_dir: str) -> N
             ys.append(float(y))
         return xs, ys
 
-    xs, ys = _pairs(wasted, acc)
-    if xs:
+    os.makedirs(out_dir, exist_ok=True)
+    for name_a, name_b in combinations(metric_names, 2):
+        goal_a = goal_by_name.get(name_a, "")
+        goal_b = goal_by_name.get(name_b, "")
+        xs, ys = _pairs(series[name_a], series[name_b])
+        if not xs:
+            continue
         plot_scatter(
             xs=xs,
             ys=ys,
-            xlabel="wasted_area (min)",
-            ylabel="accuracy (max)",
-            title="Pareto: wasted area vs accuracy",
-            out_path=os.path.join(out_dir, "scatter_wasted_vs_acc.png"),
-        )
-
-    xs, ys = _pairs(params, acc)
-    if xs:
-        plot_scatter(
-            xs=xs,
-            ys=ys,
-            xlabel="total_params (min)",
-            ylabel="accuracy (max)",
-            title="Pareto: params vs accuracy",
-            out_path=os.path.join(out_dir, "scatter_params_vs_acc.png"),
-        )
-
-    xs, ys = _pairs(wasted, params)
-    if xs:
-        plot_scatter(
-            xs=xs,
-            ys=ys,
-            xlabel="wasted_area (min)",
-            ylabel="total_params (min)",
-            title="Pareto: wasted area vs params",
-            out_path=os.path.join(out_dir, "scatter_wasted_vs_params.png"),
+            xlabel=f"{name_a} ({goal_a})",
+            ylabel=f"{name_b} ({goal_b})",
+            title=f"Pareto: {name_a} vs {name_b}",
+            out_path=os.path.join(out_dir, f"scatter_{name_a}_vs_{name_b}.png"),
         )
 
 
@@ -236,69 +222,87 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
             norm = [(1.0 - v) if v is not None else None for v in norm]
         return norm
 
-    wasted = _pareto_series("wasted_area")
-    params = _pareto_series("total_params")
-    acc = _pareto_series("accuracy")
+    metric_names = list(goal_by_name.keys())
+    if not metric_names:
+        plt.close("all")
+        return
 
-    n_wasted = _normalize(wasted, goal=goal_by_name.get("wasted_area"))
-    n_params = _normalize(params, goal=goal_by_name.get("total_params"))
-    n_acc = _normalize(acc, goal=goal_by_name.get("accuracy"))
+    pareto_series = {name: _pareto_series(name) for name in metric_names}
+    norm_series = {
+        name: _normalize(pareto_series[name], goal=goal_by_name.get(name))
+        for name in metric_names
+    }
 
-    triplets = [
-        ("wasted_area", n_wasted, "params", n_params, "accuracy", n_acc, "accuracy", n_acc),
-        ("params", n_params, "accuracy", n_acc, "wasted_area", n_wasted, "wasted_area", n_wasted),
-        ("wasted_area", n_wasted, "accuracy", n_acc, "params", n_params, "params", n_params),
-    ]
+    scatter_pairs = list(combinations(metric_names, 2))
+
+    # Build 3D triplets from the first 3 objectives (if available), rotating axes
+    triplets = []
+    if len(metric_names) >= 3:
+        first3 = metric_names[:3]
+        for i in range(3):
+            rotated = first3[i:] + first3[:i]
+            xn, yn, zn = rotated
+            triplets.append((xn, norm_series[xn], yn, norm_series[yn],
+                             zn, norm_series[zn], zn, norm_series[zn]))
 
     views = [(22, 45), (22, 135), (22, 225), (22, 315)]
 
-    # Layout: 5 rows x 4 cols
-    # - row 0: history 1x3
-    # - row 1: 2D pareto 1x3
-    # - rows 2-4: 3D triplets, one row per triplet, 4 views per row
-    fig = plt.figure(figsize=(20, 22))
+    n_hist = min(len(metric_names), 4)
+    n_scatter = min(len(scatter_pairs), 4)
+    n_3d_rows = len(triplets)
+    nrows = (1 if n_hist else 0) + (1 if n_scatter else 0) + n_3d_rows
+    if nrows == 0:
+        return
+
+    height_ratios = []
+    if n_hist:
+        height_ratios.append(1.2)
+    if n_scatter:
+        height_ratios.append(1.2)
+    height_ratios.extend([1.6] * n_3d_rows)
+
+    fig = plt.figure(figsize=(20, 4.5 * nrows))
     gs = fig.add_gridspec(
-        nrows=5,
+        nrows=nrows,
         ncols=4,
-        height_ratios=[1.2, 1.2, 1.6, 1.6, 1.6],
+        height_ratios=height_ratios,
         hspace=0.45,
         wspace=0.25,
     )
 
     fig.suptitle("NSGA-II Search Report (single file)", fontsize=14, y=0.995)
 
+    current_row = 0
+
     # History block
-    hist_gs = gs[0, 0:4].subgridspec(1, 3, wspace=0.25)
-    hist_metrics = [
-        ("accuracy", "accuracy (max)"),
-        ("wasted_area", "wasted_area (min)"),
-        ("total_params", "total_params (min)"),
-    ]
-    for i, (k, label) in enumerate(hist_metrics):
-        ax = fig.add_subplot(hist_gs[0, i])
-        ys = _hist_series(k)
-        ax.set_title(f"History: {k}", fontsize=11)
-        if gens and not all(y is None for y in ys):
-            ax.plot(gens, ys, marker="o", linewidth=1.2, markersize=3.0)
-        ax.set_xlabel("generation")
-        ax.set_ylabel(label)
-        ax.grid(True, alpha=0.25)
+    if n_hist:
+        hist_gs = gs[current_row, 0:4].subgridspec(1, n_hist, wspace=0.25)
+        for i, name in enumerate(metric_names[:n_hist]):
+            goal = goal_by_name.get(name, "")
+            ax = fig.add_subplot(hist_gs[0, i])
+            ys = _hist_series(name)
+            ax.set_title(f"History: {name}", fontsize=11)
+            if gens and not all(y is None for y in ys):
+                ax.plot(gens, ys, marker="o", linewidth=1.2, markersize=3.0)
+            ax.set_xlabel("generation")
+            ax.set_ylabel(f"{name} ({goal})")
+            ax.grid(True, alpha=0.25)
+        current_row += 1
 
     # 2D Pareto block
-    p2_gs = gs[1, 0:4].subgridspec(1, 3, wspace=0.25)
-    p2 = [
-        ("wasted_area (min)", wasted, "accuracy (max)", acc, "Pareto: wasted area vs accuracy"),
-        ("total_params (min)", params, "accuracy (max)", acc, "Pareto: params vs accuracy"),
-        ("wasted_area (min)", wasted, "total_params (min)", params, "Pareto: wasted area vs params"),
-    ]
-    for i, (xl, xv, yl, yv, title) in enumerate(p2):
-        ax = fig.add_subplot(p2_gs[0, i])
-        xs, ys = _pairs(xv, yv)
-        ax.scatter(xs, ys, s=14, alpha=0.8)
-        ax.set_title(title, fontsize=11)
-        ax.set_xlabel(xl)
-        ax.set_ylabel(yl)
-        ax.grid(True, alpha=0.25)
+    if n_scatter:
+        p2_gs = gs[current_row, 0:4].subgridspec(1, n_scatter, wspace=0.25)
+        for i, (na, nb) in enumerate(scatter_pairs[:n_scatter]):
+            ga = goal_by_name.get(na, "")
+            gb = goal_by_name.get(nb, "")
+            ax = fig.add_subplot(p2_gs[0, i])
+            xs, ys = _pairs(pareto_series[na], pareto_series[nb])
+            ax.scatter(xs, ys, s=14, alpha=0.8)
+            ax.set_title(f"Pareto: {na} vs {nb}", fontsize=11)
+            ax.set_xlabel(f"{na} ({ga})")
+            ax.set_ylabel(f"{nb} ({gb})")
+            ax.grid(True, alpha=0.25)
+        current_row += 1
 
     # 3D block: normalized (higher=better)
     def _collect_xyz(xv, yv, zv, cv):
@@ -317,14 +321,12 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
         if X.size == 0:
             continue
 
-        # create 4 views in this row
         last_sc = None
         for col_idx, (elev, azim) in enumerate(views):
-            ax = fig.add_subplot(gs[2 + row_idx, col_idx], projection="3d")
+            ax = fig.add_subplot(gs[current_row + row_idx, col_idx], projection="3d")
             sc = ax.scatter(X, Y, Z, c=C, s=14, alpha=0.9, cmap="viridis")
             last_sc = sc
 
-            # light surface on first view only (if possible)
             if col_idx == 0 and X.size >= 3:
                 try:
                     ax.plot_trisurf(X, Y, Z, color="lightgray", alpha=0.12, linewidth=0.2)
@@ -337,7 +339,6 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
             ax.set_title(f"{xname}-{yname}-{zname} | elev={elev}, azim={azim}", fontsize=9, pad=8)
             ax.view_init(elev=elev, azim=azim)
 
-        # One compact colorbar for the row, inset into the last axis
         if last_sc is not None:
             ax_last = fig.axes[-1]
             cax = inset_axes(ax_last, width="3%", height="60%", loc="center right", borderpad=2.0)
@@ -345,7 +346,6 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
             cb.set_label(f"{cname} (norm)", fontsize=8)
             cb.ax.tick_params(labelsize=8)
 
-    # Avoid tight_layout (3D axes don't play nice); manual spacing already applied.
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -452,8 +452,8 @@ def create_interactive_search_report(result_json: Dict[str, Any], out_path: str)
         cores = platform_cfg.get("cores", [])
         if cores:
             row["hw_core_types"] = len(cores)
-            row["hw_max_axons"] = platform_cfg.get("max_axons", "")
-            row["hw_max_neurons"] = platform_cfg.get("max_neurons", "")
+            row["hw_max_axons"] = max((int(ct.get("max_axons", 0)) for ct in cores), default="")
+            row["hw_max_neurons"] = max((int(ct.get("max_neurons", 0)) for ct in cores), default="")
         # Add objectives
         for k, v in objectives_data.items():
             val = safe_float(v)

@@ -37,12 +37,10 @@ class SoftCoreMappingStep(PipelineStep):
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
         cores = platform_constraints.get("cores", [])
-        if cores:
-            resolved_max_axons = max(ct["max_axons"] for ct in cores)
-            resolved_max_neurons = max(ct["max_neurons"] for ct in cores)
-        else:
-            resolved_max_axons = platform_constraints.get("max_axons")
-            resolved_max_neurons = platform_constraints.get("max_neurons")
+        if not cores:
+            raise ValueError("platform_constraints_resolved must contain a non-empty 'cores' list")
+        resolved_max_axons = max(ct["max_axons"] for ct in cores)
+        resolved_max_neurons = max(ct["max_neurons"] for ct in cores)
         resolved_allow_core_coalescing = bool(platform_constraints.get("allow_core_coalescing", False))
         # hardware_bias=True only when ALL core types declare has_bias=True.
         # If any core uses the legacy always-on axon row, conservative mode is required.

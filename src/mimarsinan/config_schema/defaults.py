@@ -27,8 +27,7 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
 }
 
 DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
-    "max_axons": 256,
-    "max_neurons": 256,
+    "cores": [{"max_axons": 256, "max_neurons": 256, "count": 1000}],
     "target_tq": 32,
     "simulation_steps": 32,
     "weight_bits": 8,
@@ -65,14 +64,9 @@ CONFIG_KEYS_SET: Set[str] = {
     "input_shape",
     "input_size",
     "num_classes",
-    "max_axons",
-    "max_neurons",
     "model_config",
     "model_factory",
     "lr",
-    "nas_cycles",
-    "nas_batch_size",
-    "nas_workers",
     "cores",
     "simulation_steps",
     "arch_search",

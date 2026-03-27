@@ -210,7 +210,10 @@ function handleSegmentChange(controlId, val) {
   }
   if (controlId === 'spikingMode') { applySpikingDeps(); }
   if (controlId === 'hwMode') {
+    document.getElementById('hwFixed').className = 'cond ' + (val === 'fixed' ? 'visible' : 'hidden');
     document.getElementById('hwAuto').className = 'cond ' + (val === 'search' ? 'visible' : 'hidden');
+    var ast = document.getElementById('hwAutoSuggestToggle');
+    if (ast) ast.style.display = (val === 'search' ? 'none' : '');
     updateSearchVisibility();
     updateObjectiveCheckboxes();
   }
@@ -1755,29 +1758,30 @@ function updateObjectiveCheckboxes() {
   var hwSearch = getSegVal('hwMode') === 'search';
   container.innerHTML = '';
   _objectiveOptions.forEach(function(opt) {
-    // Hide accuracy objective when only HW is searched (no training)
     if (opt.requires_training && !modelSearch && hwSearch) return;
-    var label = document.createElement('label');
-    label.className = 'objective-checkbox-label';
-    var cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = opt.id;
-    cb.className = 'objective-checkbox';
-    cb.checked = true; // default all on
-    cb.onchange = function() { update(); };
-    var span = document.createElement('span');
-    span.textContent = opt.label + ' (' + opt.goal + ')';
-    label.appendChild(cb);
-    label.appendChild(span);
-    container.appendChild(label);
+    var chip = document.createElement('div');
+    chip.className = 'objective-chip active';
+    chip.setAttribute('data-objective', opt.id);
+    var nameSpan = document.createElement('span');
+    nameSpan.textContent = opt.label;
+    var badge = document.createElement('span');
+    badge.className = 'goal-badge';
+    badge.textContent = opt.goal;
+    chip.appendChild(nameSpan);
+    chip.appendChild(badge);
+    chip.onclick = function() {
+      chip.classList.toggle('active');
+      update();
+    };
+    container.appendChild(chip);
   });
 }
 
 function getSelectedObjectives() {
   var container = document.getElementById('objectiveCheckboxes');
   if (!container) return [];
-  var cbs = container.querySelectorAll('input.objective-checkbox:checked');
-  return Array.from(cbs).map(function(cb) { return cb.value; });
+  var chips = container.querySelectorAll('.objective-chip.active');
+  return Array.from(chips).map(function(c) { return c.getAttribute('data-objective'); });
 }
 
 // Hook into update() to trigger debounced validation

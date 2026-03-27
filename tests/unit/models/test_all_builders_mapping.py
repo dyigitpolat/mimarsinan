@@ -27,8 +27,7 @@ DEVICE = torch.device("cpu")
 PIPELINE_CONFIG = {"target_tq": 32, "device": "cpu"}
 
 
-def _build_and_get_mapper_repr(model_type, input_shape, num_classes, model_config,
-                                max_axons=1024, max_neurons=1024):
+def _build_and_get_mapper_repr(model_type, input_shape, num_classes, model_config):
     """Build model using the registry builder and return its mapper repr."""
     from mimarsinan.models.builders import BUILDERS_REGISTRY
     from mimarsinan.torch_mapping.converter import convert_torch_model
@@ -38,8 +37,6 @@ def _build_and_get_mapper_repr(model_type, input_shape, num_classes, model_confi
         device=DEVICE,
         input_shape=input_shape,
         num_classes=num_classes,
-        max_axons=max_axons,
-        max_neurons=max_neurons,
         pipeline_config=PIPELINE_CONFIG,
     )
     raw_model = builder.build(model_config)
@@ -76,7 +73,7 @@ def _check_builder(model_type, input_shape, num_classes, model_config,
                    max_axons=1024, max_neurons=1024):
     """Full pipeline: build → get mapper repr → verify → suggest."""
     model_repr = _build_and_get_mapper_repr(
-        model_type, input_shape, num_classes, model_config, max_axons, max_neurons
+        model_type, input_shape, num_classes, model_config
     )
 
     # Step 1: verify soft-core mapping
@@ -194,8 +191,6 @@ class TestTorchSequentialConvBuilderMapping:
             device=DEVICE,
             input_shape=(1, 28, 28),
             num_classes=10,
-            max_axons=1024,
-            max_neurons=1024,
             pipeline_config=PIPELINE_CONFIG,
         )
         raw = builder.build({"conv_out_channels": 4, "hidden_dims": [32]})
@@ -280,8 +275,6 @@ class TestTorchVGG16BuilderMapping:
             device=DEVICE,
             input_shape=(3, 32, 32),
             num_classes=10,
-            max_axons=4096,
-            max_neurons=4096,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -294,8 +287,6 @@ class TestTorchVGG16BuilderMapping:
             device=DEVICE,
             input_shape=(1, 28, 28),
             num_classes=10,
-            max_axons=4096,
-            max_neurons=4096,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -317,8 +308,6 @@ class TestTorchVGG16BuilderMapping:
             device=DEVICE,
             input_shape=(3, 32, 32),
             num_classes=10,
-            max_axons=4096,
-            max_neurons=4096,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -345,8 +334,6 @@ class TestTorchSqueezeNet11BuilderMapping:
             device=DEVICE,
             input_shape=(3, 32, 32),
             num_classes=10,
-            max_axons=4096,
-            max_neurons=4096,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -358,8 +345,6 @@ class TestTorchSqueezeNet11BuilderMapping:
             device=DEVICE,
             input_shape=(1, 28, 28),
             num_classes=10,
-            max_axons=4096,
-            max_neurons=4096,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -381,8 +366,6 @@ class TestTorchSqueezeNet11BuilderMapping:
             device=DEVICE,
             input_shape=(3, 32, 32),
             num_classes=10,
-            max_axons=4096,
-            max_neurons=4096,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -408,8 +391,6 @@ class TestTorchViTBuilderMapping:
             device=DEVICE,
             input_shape=(3, 32, 32),
             num_classes=10,
-            max_axons=8192,
-            max_neurons=8192,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -421,8 +402,6 @@ class TestTorchViTBuilderMapping:
             device=DEVICE,
             input_shape=(1, 28, 28),
             num_classes=10,
-            max_axons=8192,
-            max_neurons=8192,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -454,8 +433,6 @@ class TestTorchViTBuilderMapping:
             device=DEVICE,
             input_shape=(3, 32, 32),
             num_classes=10,
-            max_axons=8192,
-            max_neurons=8192,
             pipeline_config=PIPELINE_CONFIG,
         )
         model = builder.build({})
@@ -520,8 +497,6 @@ class TestGELUActivationIRMapping:
             device=DEVICE,
             input_shape=(1, 8, 8),
             num_classes=4,
-            max_axons=512,
-            max_neurons=512,
             pipeline_config=PIPELINE_CONFIG,
         )
         raw = builder.build({"mlp_width_1": 16, "mlp_width_2": 8, "base_activation": "GELU"})

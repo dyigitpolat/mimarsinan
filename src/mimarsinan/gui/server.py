@@ -73,10 +73,9 @@ def _get_layout_result_from_request(body: dict):
     Handles both native (simple_mlp) and torch (torch_sequential_linear, etc.) builders
     by delegating to the appropriate builder class.
 
-    The builder receives the user-specified max_axons/max_neurons so that native
-    models are sized appropriately.  The layout pass itself uses _LAYOUT_PASS_LIMIT
-    so that no tiling or error triggers inside LayoutIRMapping — we want the natural
-    (unsplit) softcore shapes regardless of the user's hardware target.
+    The layout pass itself uses _LAYOUT_PASS_LIMIT so that no tiling or error
+    triggers inside LayoutIRMapping — we want the natural (unsplit) softcore
+    shapes regardless of the user's hardware target.
     """
     from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
     from mimarsinan.models.builders import BUILDERS_REGISTRY
@@ -87,8 +86,6 @@ def _get_layout_result_from_request(body: dict):
     input_shape = tuple(int(x) for x in body.get("input_shape", [1, 28, 28]))
     num_classes = int(body.get("num_classes", 10))
     model_config = body.get("model_config", {})
-    max_axons = int(body.get("max_axons", 1024))
-    max_neurons = int(body.get("max_neurons", 1024))
     threshold_groups = int(body.get("threshold_groups", 1))
     pruning_fraction = float(body.get("pruning_fraction", 0.0))
     threshold_seed = int(body.get("threshold_seed", 0))
@@ -107,8 +104,6 @@ def _get_layout_result_from_request(body: dict):
         device=torch.device("cpu"),
         input_shape=input_shape,
         num_classes=num_classes,
-        max_axons=max_axons,
-        max_neurons=max_neurons,
         pipeline_config=pipeline_config,
     )
     raw_model = builder.build(model_config)
@@ -511,8 +506,6 @@ def create_app(
                 input_shape: list[int],
                 num_classes: int,
                 model_config: dict,
-                max_axons: int,
-                max_neurons: int,
                 threshold_groups: int,
                 pruning_fraction: float,
                 threshold_seed: int,
@@ -588,8 +581,6 @@ def create_app(
             input_shape: list[int]
             num_classes: int
             model_config: dict        (builder configuration)
-            max_axons: int            (upper bound for layout pass)
-            max_neurons: int          (upper bound for layout pass)
             threshold_groups: int     (default 1)
             pruning_fraction: float   (default 0.0)
             threshold_seed: int       (default 0)

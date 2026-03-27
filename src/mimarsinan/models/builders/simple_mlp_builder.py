@@ -8,12 +8,10 @@ import torch.nn as nn
 
 @ModelRegistry.register("simple_mlp", label="Simple MLP", category="native")
 class SimpleMLPBuilder:
-    def __init__(self, device, input_shape, num_classes, max_axons, max_neurons, pipeline_config):
+    def __init__(self, device, input_shape, num_classes, pipeline_config):
         self.device = device
         self.input_shape = input_shape
         self.num_classes = num_classes
-        self.max_axons = max_axons
-        self.max_neurons = max_neurons
         self.pipeline_config = pipeline_config
 
     def build(self, configuration):
