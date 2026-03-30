@@ -10,3 +10,5 @@ plotly
 fastapi
 uvicorn[standard]
 websockets
+pydantic-ai
+python-dotenv

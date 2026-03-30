@@ -1,5 +1,21 @@
 from init import *
 
+import os
+from pathlib import Path
+
+
+def _load_project_dotenv() -> None:
+    """Populate ``os.environ`` from the repo ``.env`` (not loaded by Python by default)."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    repo_root = Path(__file__).resolve().parent.parent
+    load_dotenv(repo_root / ".env")
+
+
+_load_project_dotenv()
+
 from mimarsinan.common.reporter import DefaultReporter
 from mimarsinan.pipelining.pipelines.deployment_pipeline import (
     DeploymentPipeline,
@@ -7,9 +23,9 @@ from mimarsinan.pipelining.pipelines.deployment_pipeline import (
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 import mimarsinan.data_handling.data_providers
 
+import copy
 import sys
 import json
-import os
 import threading
 
 
@@ -26,15 +42,18 @@ def _parse_deployment_config(deployment_config):
     platform_constraints_raw = deployment_config.get("platform_constraints", {})
 
     # When hw_config_mode is "search", the platform_constraints dict contains
-    # both fixed values and a search_space sub-dict.  Merge search_space keys
+    # both fixed values and a search_space sub-dict. Merge search_space keys
     # into arch_search so the architecture search step can find them.
+    # Deep-copy before pop so we do not mutate deployment_config["platform_constraints"]:
+    # the same dict is written to _RUN_CONFIG/config.json and must keep search_space
+    # for Edit & Continue / wizard reload.
     hw_mode = deployment_parameters.get("hw_config_mode", "fixed")
     if hw_mode == "search" and isinstance(platform_constraints_raw, dict):
-        search_space = platform_constraints_raw.pop("search_space", {}) or {}
+        platform_constraints = copy.deepcopy(platform_constraints_raw)
+        search_space = platform_constraints.pop("search_space", {}) or {}
         arch_cfg = deployment_parameters.setdefault("arch_search", {})
         for k, v in search_space.items():
             arch_cfg.setdefault(k, v)
-        platform_constraints = platform_constraints_raw
     else:
         platform_constraints = platform_constraints_raw
 

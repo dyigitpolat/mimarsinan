@@ -3,6 +3,7 @@
 import { esc, fmtDuration, elapsedFromStepStart } from './util.js';
 import { renderPipelineBar, renderOverviewCards, renderConfig } from './overview.js';
 import { refreshStepDetail, updateLiveCharts } from './step-detail.js';
+import { handleSearchEvent } from './search-live.js';
 import { appendConsoleLogs, clearConsoleLogs } from './console-tab.js';
 
 // ── Historical run mode ──────────────────────────────────────────────────
@@ -141,6 +142,7 @@ function handleWSMessage(msg) {
   if (msg.type === 'step_started') {
     delete state.metricBuffers[msg.step];
     delete state.seenSeqs[msg.step];
+    if (state.searchEvents) delete state.searchEvents[msg.step];
     if (state.autoFollow) { state.selectedStep = msg.step; state.activeTab = null; state.lastDetailJSON = null; }
     scheduleRefresh();
   }
@@ -158,9 +160,23 @@ function handleWSMessage(msg) {
 function bufferMetric(step, name, value, seq, timestamp) {
   if (!state.metricBuffers[step]) state.metricBuffers[step] = {};
   if (!state.seenSeqs[step]) state.seenSeqs[step] = new Set();
-  if (!state.metricBuffers[step][name]) state.metricBuffers[step][name] = [];
+  if (!state.searchEvents) state.searchEvents = {};
   if (seq != null && state.seenSeqs[step].has(seq)) return;
   if (seq != null) state.seenSeqs[step].add(seq);
+
+  if (name === 'search_event') {
+    if (!state.searchEvents[step]) state.searchEvents[step] = [];
+    try {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      state.searchEvents[step].push(parsed);
+      if (state.selectedStep === step) handleSearchEvent(parsed);
+    } catch (_) { /* skip malformed */ }
+    if (!state.metricBuffers[step][name]) state.metricBuffers[step][name] = [];
+    state.metricBuffers[step][name].push({ seq, timestamp: timestamp || Date.now() / 1000, value });
+    return;
+  }
+
+  if (!state.metricBuffers[step][name]) state.metricBuffers[step][name] = [];
   state.metricBuffers[step][name].push({ seq, timestamp: timestamp || Date.now() / 1000, value: parseFloat(value) });
 }
 

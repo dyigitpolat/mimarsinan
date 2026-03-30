@@ -1,4 +1,4 @@
-"""Prompt templates and candidate parsing for KediOptimizer LLM calls."""
+"""Prompt templates and candidate parsing for AgentEvolveOptimizer LLM calls."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ Generate exactly {n_candidates} different configuration candidates that:
 2. Are likely to be valid (satisfy any constraints)
 3. Trade off between different objectives
 
-Return the configurations as a list of dictionaries."""
+First, explain your reasoning: what regions of the search space you are targeting, what trade-offs you are exploring, and why these specific configurations should perform well. Then provide the candidates."""
 
 
 def build_regenerate_candidates_prompt(
@@ -45,7 +45,7 @@ Generate exactly {n_candidates} NEW configuration candidates that:
 2. Follow the constraint instructions
 3. Are likely to be valid
 
-Return the configurations as a list of dictionaries."""
+First, explain your reasoning: what you learned from the failures, how you are adjusting the configurations, and why the new candidates should pass validation. Then provide the candidates."""
 
 
 def build_offspring_prompt(
@@ -74,7 +74,7 @@ Generate exactly {n_candidates} NEW configuration candidates that:
 3. Follow the constraint instructions
 4. Try to improve on existing solutions
 
-Return the configurations as a list of dictionaries."""
+First, explain your reasoning: what patterns you identified in the Pareto front, what trade-offs you are targeting, and how your offspring improve upon existing solutions. Then provide the candidates."""
 
 
 def build_regenerate_offspring_prompt(
@@ -107,7 +107,7 @@ Generate exactly {n_candidates} NEW configuration candidates that:
 3. Follow the constraint instructions
 4. Try to improve on existing solutions
 
-Return the configurations as a list of dictionaries."""
+First, explain your reasoning: what caused the offspring to fail, how you are correcting while staying close to Pareto solutions, and why the new candidates should succeed. Then provide the candidates."""
 
 
 def build_failure_insights_prompt(

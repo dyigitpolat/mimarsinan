@@ -110,6 +110,10 @@ function init() {
     _psList.addEventListener('click', onPipelineStepsListClick);
   }
   loadFromAPI().then(function () {
+    var params = new URLSearchParams(location.search);
+    var runId = params.get('run_id');
+    var templateId = params.get('template_id');
+
     renderModelChips();
     renderModelConfigFields();
     renderCoreTypes();
@@ -117,11 +121,9 @@ function init() {
     applySpikingDeps();
     applyHwDeps();
     onPruningFractionChange();
-    updateSearchVisibility();
-
-    var params = new URLSearchParams(location.search);
-    var runId = params.get('run_id');
-    var templateId = params.get('template_id');
+    // Avoid running hide animation on #searchSection before hydrate — it can race with
+    // transitionend and leave the panel hidden when loading ?template_id= / ?run_id=.
+    if (!runId && !templateId) updateSearchVisibility();
 
     window.__isEditContinueMode = !!runId;
     window.__editContinueSourceRunId = runId || null;
@@ -130,7 +132,13 @@ function init() {
     function done() {
       update();
       schedulePipelineStepsUpdate();
-      if (isHwAutoSuggestOn()) autoFillHardware(); else scheduleHwValidation();
+      // Same condition as updateSearchVisibility: do not run fixed-HW verify/auto-fill
+      // during architecture search — update() already shows search placeholders; these
+      // paths would overwrite loaded config and show "Auto-configured" / mapping stats.
+      var needsSearch = getSegVal('configMode') === 'search' || getSegVal('hwMode') === 'search';
+      if (!needsSearch) {
+        if (isHwAutoSuggestOn()) autoFillHardware(); else scheduleHwValidation();
+      }
       var showJson = document.getElementById('showJsonToggle');
       var copyBtn = document.getElementById('copyJsonBtn');
       if (copyBtn && showJson) copyBtn.style.display = showJson.classList.contains('on') ? '' : 'none';
@@ -144,21 +152,25 @@ function init() {
         .catch(function () { return null; })
       : Promise.resolve(null);
 
-    fetchDeploymentConfigForWizardUrlParams(runId, templateId)
-      .then(function (c) {
-        return (c ? loadStateFromConfig(c) : Promise.resolve()).then(function () { return pipelinePrefetch; });
-      })
-      .then(function (pipelineState) {
-        if (runId && pipelineState && pipelineState.steps) {
-          _ecPrevCompleted = new Set(
-            pipelineState.steps
-              .filter(function (s) { return s.status === 'completed'; })
-              .map(function (s) { return s.name; })
-          );
-        }
-        done();
-      })
-      .catch(function () { done(); });
+    // Load NAS objective schema before hydrating so loadStateFromConfig can restore chips
+    // and a late fetch cannot rebuild chips with reset selection.
+    return loadObjectiveOptions().then(function () {
+      return fetchDeploymentConfigForWizardUrlParams(runId, templateId)
+        .then(function (c) {
+          return (c ? loadStateFromConfig(c) : Promise.resolve()).then(function () { return pipelinePrefetch; });
+        })
+        .then(function (pipelineState) {
+          if (runId && pipelineState && pipelineState.steps) {
+            _ecPrevCompleted = new Set(
+              pipelineState.steps
+                .filter(function (s) { return s.status === 'completed'; })
+                .map(function (s) { return s.name; })
+            );
+          }
+          done();
+        })
+        .catch(function () { done(); });
+    });
   });
 }
 
@@ -218,7 +230,7 @@ function handleSegmentChange(controlId, val) {
     updateObjectiveCheckboxes();
   }
   if (controlId === 'optimizer') {
-    document.getElementById('kediConfig').className = 'cond ' + (val === 'kedi' ? 'visible' : 'hidden');
+    document.getElementById('agentEvolveConfig').className = 'cond ' + (val === 'agent_evolve' ? 'visible' : 'hidden');
   }
 }
 
@@ -627,12 +639,12 @@ function buildConfig() {
     var selectedObjectives = getSelectedObjectives();
     if (selectedObjectives.length > 0) dp.arch_search.objectives = selectedObjectives;
     const sbs = v('searchBatchSize');
-    if (sbs) dp.arch_search.training_batch_size = parseInt(sbs);
-    if (optimizerType === 'kedi') {
-      dp.arch_search.kedi_model = v('kediModel');
-      dp.arch_search.kedi_adapter = v('kediAdapter');
-      dp.arch_search.candidates_per_batch = parseInt(v('kediCandidates'));
-      dp.arch_search.max_regen_rounds = parseInt(v('kediRegenRounds'));
+    const sbsNum = sbs !== '' ? parseInt(sbs) : null;
+    dp.arch_search.training_batch_size = (sbsNum !== null && sbsNum > 0) ? sbsNum : null;
+    if (optimizerType === 'agent_evolve') {
+      dp.arch_search.agent_model = v('agentModel');
+      dp.arch_search.candidates_per_batch = parseInt(v('agentCandidates'));
+      dp.arch_search.max_regen_rounds = parseInt(v('agentRegenRounds'));
     }
   }
 
@@ -813,7 +825,7 @@ function loadStateFromConfig(config) {
     let allowSched;
     if (dp.allow_scheduling !== undefined && dp.allow_scheduling !== null) {
       allowSched = !!dp.allow_scheduling;
-    } else if (hwMode === 'user') {
+    } else if (hwMode === 'fixed') {
       allowSched = !!pc.allow_scheduling;
     } else {
       const fixedLegacy = (pc.auto || {}).fixed || {};
@@ -826,20 +838,25 @@ function loadStateFromConfig(config) {
   onPruningFractionChange();
 
   const arch = dp.arch_search || {};
-  if (arch.optimizer) setSegVal('optimizer', arch.optimizer);
+  var optimizerVal = arch.optimizer || 'nsga2';
+  setSegVal('optimizer', optimizerVal);
+  handleSegmentChange('optimizer', optimizerVal);
   setVal('popSize', arch.pop_size);
   setVal('generations', arch.generations);
   setVal('searchSeed', arch.seed);
   setVal('warmupFraction', arch.warmup_fraction);
-  setVal('accuracyEvaluator', arch.accuracy_evaluator);
+  (function setAccuracyEvaluatorFromArch() {
+    var raw = arch.accuracy_evaluator;
+    if (raw != null && String(raw) === 'direct') raw = 'fast';
+    setVal('accuracyEvaluator', raw);
+  })();
   setVal('extrapTrainEpochs', arch.extrapolation_num_train_epochs);
   setVal('extrapCheckpoints', arch.extrapolation_num_checkpoints);
   setVal('extrapTargetEpochs', arch.extrapolation_target_epochs);
   setVal('searchBatchSize', arch.training_batch_size != null ? arch.training_batch_size : '');
-  setVal('kediModel', arch.kedi_model);
-  setVal('kediAdapter', arch.kedi_adapter);
-  setVal('kediCandidates', arch.candidates_per_batch);
-  setVal('kediRegenRounds', arch.max_regen_rounds);
+  setVal('agentModel', arch.agent_model);
+  setVal('agentCandidates', arch.candidates_per_batch);
+  setVal('agentRegenRounds', arch.max_regen_rounds);
 
   window.__wizardStartStep = config.start_step != null ? config.start_step : null;
   window.__wizardStopStep = config.stop_step != null ? config.stop_step : null;
@@ -854,6 +871,7 @@ function loadStateFromConfig(config) {
   }
 
   updateSearchVisibility();
+  updateObjectiveCheckboxes(arch.objectives);
   return modelConfigPromise;
 }
 
@@ -1298,7 +1316,7 @@ function scheduleHwValidation() {
 }
 
 function _runHwValidation() {
-  if (getSegVal('hwMode') !== 'user') return;
+  if (getSegVal('hwMode') !== 'fixed') return;
   _doHwValidation();
 }
 
@@ -1744,23 +1762,28 @@ function _escHtml(s) {
 var _objectiveOptions = [];
 
 function loadObjectiveOptions() {
-  fetch('/api/wizard/schema').then(function(r) { return r.json(); }).then(function(data) {
+  return fetch('/api/wizard/schema').then(function(r) { return r.json(); }).then(function(data) {
     var nas = data.nas || {};
     _objectiveOptions = nas.objective_options || [];
     updateObjectiveCheckboxes();
-  }).catch(function() {});
+  }).catch(function() {
+    _objectiveOptions = [];
+  });
 }
 
-function updateObjectiveCheckboxes() {
+/** @param {string[]|null|undefined} selectedObjectiveIds When undefined/null, all objectives are active (new session). When an array, only those ids are active. */
+function updateObjectiveCheckboxes(selectedObjectiveIds) {
   var container = document.getElementById('objectiveCheckboxes');
   if (!container) return;
   var modelSearch = getSegVal('configMode') === 'search';
   var hwSearch = getSegVal('hwMode') === 'search';
+  var selectionSet = selectedObjectiveIds == null ? null : new Set(selectedObjectiveIds);
   container.innerHTML = '';
   _objectiveOptions.forEach(function(opt) {
     if (opt.requires_training && !modelSearch && hwSearch) return;
     var chip = document.createElement('div');
-    chip.className = 'objective-chip active';
+    var active = selectionSet === null ? true : selectionSet.has(opt.id);
+    chip.className = 'objective-chip' + (active ? ' active' : '');
     chip.setAttribute('data-objective', opt.id);
     var nameSpan = document.createElement('span');
     nameSpan.textContent = opt.label;
@@ -1789,4 +1812,3 @@ const _originalUpdate = update;
 
 // ── Boot ───────────────────────────────────────────────────
 init();
-loadObjectiveOptions();

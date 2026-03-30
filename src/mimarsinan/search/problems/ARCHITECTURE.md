@@ -8,7 +8,7 @@ scenarios.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `encoded_problem.py` | `EncodedProblem` | Protocol extending `SearchProblem` with continuous variable encoding for evolutionary optimizers |
-| `joint_arch_hw_problem.py` | `JointArchHwProblem` | Joint architecture + hardware co-search problem (model-agnostic) |
+| `joint_arch_hw_problem.py` | `JointArchHwProblem`, `effective_max_dims` | Joint architecture + hardware co-search problem (model-agnostic). Full feasibility (model build + HW packing) is checked in `validate_detailed()`; the built model and HW objectives are cached so `evaluate()` only runs accuracy training on already-validated candidates. |
 
 ## Dependencies
 

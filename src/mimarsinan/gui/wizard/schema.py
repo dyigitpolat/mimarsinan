@@ -26,7 +26,7 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
     return {
         "optimizer_options": [
             {"id": "nsga2", "label": "NSGA-II"},
-            {"id": "kedi", "label": "Kedi (LLM-based)"},
+            {"id": "agent_evolve", "label": "Agentic Evolution (LLM-based)"},
         ],
         "common_fields": {
             "pop_size": {"type": "int", "default": 8, "min": 2, "max": 64, "doc": "Population size"},
@@ -34,14 +34,13 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
             "seed": {"type": "int", "default": 42, "min": 0, "max": 999999, "doc": "Random seed"},
             "warmup_fraction": {"type": "float", "default": 0.1, "min": 0, "max": 1, "doc": "Warmup fraction"},
             "training_batch_size": {"type": "int", "default": 1024, "min": 1, "max": 8192, "doc": "Batch size"},
-            "accuracy_evaluator": {"type": "str", "default": "extrapolating", "options": ["extrapolating", "direct"], "doc": "Evaluator"},
+            "accuracy_evaluator": {"type": "str", "default": "extrapolating", "options": ["extrapolating", "fast"], "doc": "Evaluator"},
             "extrapolation_num_train_epochs": {"type": "int", "default": 1, "min": 1, "max": 10, "doc": "Extrapolation train epochs"},
             "extrapolation_num_checkpoints": {"type": "int", "default": 5, "min": 1, "max": 20, "doc": "Extrapolation checkpoints"},
             "extrapolation_target_epochs": {"type": "int", "default": 10, "min": 1, "max": 100, "doc": "Extrapolation target epochs"},
         },
-        "kedi_fields": {
-            "kedi_model": {"type": "str", "default": "deepseek:deepseek-chat", "doc": "Kedi model"},
-            "kedi_adapter": {"type": "str", "default": "pydantic", "doc": "Adapter"},
+        "agent_evolve_fields": {
+            "agent_model": {"type": "str", "default": "deepseek:deepseek-chat", "doc": "LLM model (pydantic-ai format)"},
             "candidates_per_batch": {"type": "int", "default": 5, "min": 1, "max": 20, "doc": "Candidates per batch"},
             "max_regen_rounds": {"type": "int", "default": 10, "min": 1, "max": 50, "doc": "Max regen rounds"},
             "max_failed_examples": {"type": "int", "default": 5, "min": 0, "max": 20, "doc": "Max failed examples"},

@@ -63,7 +63,7 @@ Active-run cards use **incremental DOM updates**: on each poll only changed fiel
 
 Single-page application using ES modules and Plotly.js. See `static/js/` for
 modular visualization components (overview, model, IR graph, hardware, search,
-scales, pruning tabs). **Pruning tab**: shown for the Pruning Adaptation step; lists layers with per-layer weight heatmaps (red lines for pruned rows/columns, same convention as IR Graph and Hardware) and a layer browser (list + detail panel). **Hardware tab**: shows soft-core and fused hardware-core boundaries
+scales, pruning, live-search tabs). **Pruning tab**: shown for the Pruning Adaptation step; lists layers with per-layer weight heatmaps (red lines for pruned rows/columns, same convention as IR Graph and Hardware) and a layer browser (list + detail panel). **Hardware tab**: shows soft-core and fused hardware-core boundaries
 on miniview and detail heatmaps; "Constituents (N)" table with ID, dimensions,
 utilization per constituent; clicking a constituent or heatmap region opens
 soft-core detail with "Located in" (segment, hard core, region) for two-way
@@ -119,9 +119,7 @@ the skipped (completed-from-cache) steps so the monitor/APIs match execution —
 `on_step_end` only persists steps that actually run in-process, so this extra
 write is required for skipped steps.
 
-*Restart-step default*: `init()` concurrently fetches `GET /api/runs/{run_id}/config`
-(the deployment JSON) and `GET /api/runs/{run_id}/pipeline`; after
-`loadStateFromConfig` the completed step names are stored in `_ecPrevCompleted`
+*Restart-step default*: `init()` loads `GET /api/wizard/schema` (NAS objective list) **before** fetching run/template config so `loadStateFromConfig` can restore optimization objective chips without a race. It then fetches `GET /api/runs/{run_id}/config` (or template) and `GET /api/runs/{run_id}/pipeline`; after `loadStateFromConfig` the completed step names are stored in `_ecPrevCompleted`
 (a persistent `Set`, not cleared). On the first successful `POST /api/pipeline_steps`
 response, `updatePipelineStepsBar` picks the first canonical step not in that
 completed set as the default `__wizardStartStep` (one-shot via `_ecSuggestionDone`).
@@ -129,6 +127,12 @@ If the currently selected step is
 absent from the new step list (e.g. after changing config), it is silently
 cleared. `update()` is called after any automatic step change to keep the JSON
 preview in sync.
+
+*Config hydrate*: `loadStateFromConfig` applies segment values with both `setSegVal` and `handleSegmentChange` where side effects matter (e.g. optimizer toggles Agentic Evolution-specific fields visibility). Saved `arch_search.objectives` is applied via `updateObjectiveCheckboxes(objectives)`. Legacy `accuracy_evaluator` value `direct` is normalized to `fast` for the wizard select.
+
+*Persisted HW search bounds*: `main._parse_deployment_config` merges `platform_constraints.search_space` into `deployment_parameters.arch_search` for the pipeline but uses a **deep copy** of `platform_constraints` for that merge, so the dict serialized to `_RUN_CONFIG/config.json` still contains `search_space`. Edit & Continue (`GET /api/runs/{id}/config`) therefore reloads num core types, core counts, axon/neuron bounds, and max threshold groups for Hardware Search mode.
+
+When `?template_id=` or `?run_id=` is present, `init()` skips the initial `updateSearchVisibility()` so the search banner does not run a hide transition before hydrate (which could leave `#searchSection` stuck hidden). After `loadStateFromConfig`, `done()` does **not** call `autoFillHardware` / `scheduleHwValidation` if either search toggle is active — otherwise fixed-HW auto/verify would overwrite the loaded config and show mapping stats / “Auto-configured” while the Search Strategy panel should stay authoritative.
 
 *Hardware Auto-suggest*: `loadStateFromConfig` always turns off `#hwAutoSuggestToggle`
 and sets `_hwAutoMode = false` when `__isEditContinueMode` is true (for both
@@ -146,6 +150,18 @@ as a horizontal line from that point to the right edge. In the step-detail metri
 architecture search metrics (names containing "search") are shown in separate plots
 per metric so each keeps its own scale. Search history is rendered as one card and
 plot per numeric metric (separate charts per objective).
+
+**Live Search tab** (`static/js/search-live.js`, `static/search-live.css`): a cyberpunk-
+themed real-time tracker for `AgentEvolveOptimizer` architecture search. The optimizer
+emits structured `search_event` JSON via `reporter("search_event", json.dumps(event))`.
+These events flow through `DataCollector` → WebSocket → `main.js` → `search-live.js`.
+`main.js` buffers parsed events in `state.searchEvents[stepName]`; `step-detail.js`
+adds a "Live Search" tab when search events are present; `renderLiveSearchTab` calls
+`initSearchLive` and `replaySearchEvents` to rebuild state from buffered history. The
+tracker shows generation cards (newest on top) with collapsible reasoning, candidate
+tiles with neon health bars per objective, failure phase tags, Pareto front summaries,
+and constraint/performance insight panels. Header stats show gen counter, valid/failed
+counts, Pareto size, and elapsed time.
 
 ## Dependencies
 

@@ -3,16 +3,16 @@ Search optimizers for multi-objective optimization.
 
 Available optimizers:
 - NSGA2Optimizer: Genetic algorithm-based optimizer using pymoo's NSGA-II
-- KediOptimizer: LLM-based optimizer using Kedi DSL for agentic search
+- AgentEvolveOptimizer: LLM-based optimizer using pydantic-ai for agentic evolution
 """
 
 from mimarsinan.search.optimizers.base import SearchOptimizer
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
 
-# KediOptimizer is optional (requires kedi package)
+# AgentEvolveOptimizer is optional (requires pydantic-ai)
 try:
-    from mimarsinan.search.optimizers.kedi_optimizer import KediOptimizer
-    __all__ = ["SearchOptimizer", "NSGA2Optimizer", "KediOptimizer"]
+    from mimarsinan.search.optimizers.agent_evolve_optimizer import AgentEvolveOptimizer
+    __all__ = ["SearchOptimizer", "NSGA2Optimizer", "AgentEvolveOptimizer"]
 except ImportError:
     __all__ = ["SearchOptimizer", "NSGA2Optimizer"]
 

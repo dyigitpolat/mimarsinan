@@ -7,7 +7,7 @@ with pluggable optimizers and problem definitions.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `problem.py` | `SearchProblem` | Protocol defining the search problem interface |
+| `problem.py` | `SearchProblem`, `ValidationResult` | Protocol defining the search problem interface; `ValidationResult` carries rich error info from `validate_detailed()` |
 | `results.py` | `ObjectiveSpec`, `Candidate`, `SearchResult` | Result types and Pareto front utilities |
 | `te_nas_evaluator.py` | `TE_NAS_Evaluator` | Training-free NAS evaluator using NTK |
 | `patch_borders.py` | `get_region_borders` | Patch border computation utility |
@@ -16,7 +16,7 @@ with pluggable optimizers and problem definitions.
 
 | Directory | Purpose |
 |-----------|---------|
-| `optimizers/` | Optimizer implementations (NSGA-II, Kedi LLM) |
+| `optimizers/` | Optimizer implementations (NSGA-II, Agentic Evolution LLM) |
 | `evaluators/` | Accuracy evaluators for search candidates |
 | `problems/` | Concrete search problem implementations |
 | `multi_metric/` | Multi-metric search utilities |
@@ -32,5 +32,5 @@ with pluggable optimizers and problem definitions.
 
 ## Exported API (\_\_init\_\_.py)
 
-`SearchProblem`, `ObjectiveSpec`, `Candidate`, `SearchResult`.
+`SearchProblem`, `ValidationResult`, `ObjectiveSpec`, `Candidate`, `SearchResult`.
 Optimizers are accessed via `search.optimizers` subpackage.

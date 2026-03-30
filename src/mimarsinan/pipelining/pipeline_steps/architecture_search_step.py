@@ -18,21 +18,21 @@ from mimarsinan.visualization.search_visualization import (
 )
 
 
-OptimizerType = Literal["nsga2", "kedi"]
+OptimizerType = Literal["nsga2", "agent_evolve"]
 
 
 # ====================================================================== #
-# Kedi config schema builders — mode-aware
+# Agentic Evolution config schema builders — mode-aware
 # ====================================================================== #
 
 
-def _build_kedi_config_schema(
+def _build_agent_evolve_config_schema(
     search_mode: str,
     arch_options: List[Tuple[str, List[Any]]],
     arch_cfg: Dict[str, Any],
     target_tq: int,
 ) -> Dict[str, Any]:
-    """Build the configuration schema description for Kedi LLM prompts."""
+    """Build the configuration schema description for Agentic Evolution LLM prompts."""
     schema: Dict[str, Any] = {}
 
     if search_mode in ("model", "joint"):
@@ -59,13 +59,13 @@ def _build_kedi_config_schema(
     return schema
 
 
-def _build_kedi_example_config(
+def _build_agent_evolve_example_config(
     search_mode: str,
     arch_options: List[Tuple[str, List[Any]]],
     arch_cfg: Dict[str, Any],
     target_tq: int,
 ) -> Dict[str, Any]:
-    """Build an example configuration for Kedi LLM prompts."""
+    """Build an example configuration for Agentic Evolution LLM prompts."""
     example: Dict[str, Any] = {}
 
     if search_mode in ("model", "joint"):
@@ -88,12 +88,12 @@ def _build_kedi_example_config(
     return example
 
 
-def _build_kedi_constraints_desc(
+def _build_agent_evolve_constraints_desc(
     search_mode: str,
     arch_options: List[Tuple[str, List[Any]]],
     arch_cfg: Dict[str, Any],
 ) -> str:
-    """Build constraint description for Kedi LLM prompts."""
+    """Build constraint description for Agentic Evolution LLM prompts."""
     parts: List[str] = ["\nCRITICAL CONSTRAINTS:\n"]
 
     if search_mode in ("model", "joint") and arch_options:
@@ -135,30 +135,28 @@ def _create_optimizer(
     generations: int,
     target_tq: int = 16,
 ):
-    if optimizer_type == "kedi":
+    if optimizer_type == "agent_evolve":
         try:
-            from mimarsinan.search.optimizers.kedi_optimizer import KediOptimizer
+            from mimarsinan.search.optimizers.agent_evolve_optimizer import AgentEvolveOptimizer
 
-            kedi_model = arch_cfg.get("kedi_model", "openai:gpt-4o")
-            kedi_adapter = arch_cfg.get("kedi_adapter", "pydantic")
+            agent_model = arch_cfg.get("agent_model", "openai:gpt-4o")
             candidates_per_batch = arch_cfg.get("candidates_per_batch", 5)
             max_regen_rounds = arch_cfg.get("max_regen_rounds", 10)
             max_failed_examples = arch_cfg.get("max_failed_examples", 5)
             llm_retries = arch_cfg.get("llm_retries", 3)
 
-            config_schema = _build_kedi_config_schema(search_mode, arch_options, arch_cfg, target_tq)
-            example_config = _build_kedi_example_config(search_mode, arch_options, arch_cfg, target_tq)
+            config_schema = _build_agent_evolve_config_schema(search_mode, arch_options, arch_cfg, target_tq)
+            example_config = _build_agent_evolve_example_config(search_mode, arch_options, arch_cfg, target_tq)
             constraints_desc = arch_cfg.get("constraints_description") or \
-                _build_kedi_constraints_desc(search_mode, arch_options, arch_cfg)
+                _build_agent_evolve_constraints_desc(search_mode, arch_options, arch_cfg)
 
-            return KediOptimizer(
+            return AgentEvolveOptimizer(
                 pop_size=pop_size,
                 generations=generations,
                 candidates_per_batch=candidates_per_batch,
                 max_regen_rounds=max_regen_rounds,
                 max_failed_examples=max_failed_examples,
-                model=kedi_model,
-                adapter_type=kedi_adapter,
+                model=agent_model,
                 llm_retries=llm_retries,
                 config_schema=config_schema,
                 example_config=example_config,
@@ -166,7 +164,7 @@ def _create_optimizer(
                 verbose=True,
             )
         except ImportError as e:
-            print(f"[ArchitectureSearchStep] Kedi optimizer not available: {e}")
+            print(f"[ArchitectureSearchStep] Agentic Evolution optimizer not available: {e}")
             print("[ArchitectureSearchStep] Falling back to NSGA2")
 
     return NSGA2Optimizer(
@@ -411,7 +409,7 @@ class ArchitectureSearchStep(PipelineStep):
         core_count_bounds = tuple(arch_cfg.get("core_count_bounds", [50, 500]))
 
         warmup_fraction = float(arch_cfg.get("warmup_fraction", 0.10))
-        training_batch_size = arch_cfg.get("training_batch_size")
+        training_batch_size = arch_cfg.get("training_batch_size") or None
 
         accuracy_evaluator = str(arch_cfg.get("accuracy_evaluator", "extrapolating"))
         extrapolation_num_train_epochs = int(arch_cfg.get("extrapolation_num_train_epochs", 1))

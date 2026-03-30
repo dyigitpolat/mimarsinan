@@ -1,11 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Generic, Protocol, Sequence, TypeVar
+from dataclasses import dataclass
+from typing import Any, Dict, Generic, Optional, Protocol, Sequence, TypeVar
 
 from mimarsinan.search.results import ObjectiveSpec
 
 
 ConfigT = TypeVar("ConfigT")
+
+
+@dataclass
+class ValidationResult:
+    """Result of a full feasibility check.
+
+    Returned by :meth:`SearchProblem.validate_detailed` to communicate
+    both the yes/no feasibility decision and, on failure, a human-readable
+    explanation that can feed into the agentic constraint-learning loop.
+    """
+
+    is_valid: bool
+    error_message: Optional[str] = None
+    failure_phase: Optional[str] = None  # "structural", "model_build", "hw_conversion", "hw_packing"
 
 
 class SearchProblem(Protocol, Generic[ConfigT]):
@@ -24,6 +39,15 @@ class SearchProblem(Protocol, Generic[ConfigT]):
 
     def validate(self, configuration: ConfigT) -> bool:
         ...
+
+    def validate_detailed(self, configuration: ConfigT) -> ValidationResult:
+        """Full feasibility check with rich error information.
+
+        The default implementation delegates to :meth:`validate`.
+        Subclasses may override to perform heavier checks (model building,
+        hardware packing) and return structured failure diagnostics.
+        """
+        return ValidationResult(is_valid=self.validate(configuration))
 
     def evaluate(self, configuration: ConfigT) -> Dict[str, float]:
         ...

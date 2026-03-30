@@ -19,6 +19,7 @@ Objectives are selected from the canonical catalogue in ``search.results``.
 from __future__ import annotations
 
 import json
+import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -31,6 +32,7 @@ from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSof
 from mimarsinan.mapping.layout_verification_stats import build_stats_from_packing_result
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
+from mimarsinan.search.problem import ValidationResult
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
@@ -72,6 +74,18 @@ class _HwOnlyCache:
     softcores: List[LayoutSoftCoreSpec]
     total_params: float
     host_side_segment_count: int
+
+
+# ---------------------------------------------------------------------------
+# Validation cache entry (model + HW metrics from a successful validate)
+# ---------------------------------------------------------------------------
+@dataclass
+class _ValidationEntry:
+    model: Any  # raw PyTorch model (for accuracy evaluation)
+    total_params: float
+    hw_objectives: Dict[str, float]  # pre-computed HW metrics from packing
+
+_VALIDATION_CACHE_MAX_SIZE = 16
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +145,8 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     # --- Internal ---
     _cache: Dict[str, Dict[str, float]] = field(default_factory=dict, init=False)
     _hw_only_cache: Optional[_HwOnlyCache] = field(default=None, init=False)
+    _validation_cache: Dict[str, _ValidationEntry] = field(default_factory=dict, init=False)
+    _validation_errors: Dict[str, ValidationResult] = field(default_factory=dict, init=False)
 
     # ------------------------------------------------------------------ #
     # Helpers
@@ -264,26 +280,172 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     # ------------------------------------------------------------------ #
 
     def validate(self, configuration: Dict[str, Any]) -> bool:
+        return self.validate_detailed(configuration).is_valid
+
+    def validate_detailed(self, configuration: Dict[str, Any]) -> ValidationResult:
+        """Full feasibility check: structural → model build → HW packing.
+
+        On success the built model and HW objectives are cached so that
+        a subsequent :meth:`evaluate` call does not rebuild them.
+        """
+        key = _json_key(configuration)
+
+        # Already validated successfully (cached entry exists)
+        if key in self._validation_cache:
+            return ValidationResult(is_valid=True)
+
+        # Already validated and failed (cached error exists)
+        if key in self._validation_errors:
+            return self._validation_errors[key]
+
+        # Already fully evaluated → must have been valid
+        if key in self._cache:
+            return ValidationResult(is_valid=True)
+
+        mc = configuration.get("model_config", {})
+        pcfg = configuration.get("platform_constraints", {})
+
+        # Phase 0: structural pre-check (fast, no model build)
         try:
             if self.validate_fn is not None:
-                return bool(self.validate_fn(
-                    configuration["model_config"],
-                    configuration["platform_constraints"],
-                    self.input_shape,
-                ))
-            return True
-        except Exception:
-            return False
+                if not self.validate_fn(mc, pcfg, self.input_shape):
+                    vr = ValidationResult(
+                        is_valid=False,
+                        error_message="Structural validation failed (validate_fn returned False)",
+                        failure_phase="structural",
+                    )
+                    self._validation_errors[key] = vr
+                    return vr
+        except Exception as exc:
+            vr = ValidationResult(
+                is_valid=False,
+                error_message=f"Structural validation error: {type(exc).__name__}: {exc}",
+                failure_phase="structural",
+            )
+            self._validation_errors[key] = vr
+            return vr
+
+        torch.manual_seed(int(self.accuracy_seed))
+        np.random.seed(int(self.accuracy_seed))
+
+        if self.search_mode == "hardware":
+            return self._validate_hw_only(key, pcfg)
+        return self._validate_model_or_joint(key, mc, pcfg)
+
+    def _validate_hw_only(self, key: str, pcfg: Dict) -> ValidationResult:
+        """Validate for HW-only search: build model once, then pack."""
+        try:
+            cache = self._ensure_hw_only_cache()
+        except Exception as exc:
+            vr = ValidationResult(
+                is_valid=False,
+                error_message=f"HW-only model build failed: {type(exc).__name__}: {exc}",
+                failure_phase="model_build",
+            )
+            self._validation_errors[key] = vr
+            return vr
+
+        hw_obj, error = self._compute_hw_objectives(
+            cache.softcores, pcfg, cache.total_params, cache.host_side_segment_count,
+        )
+        if hw_obj is None:
+            vr = ValidationResult(
+                is_valid=False, error_message=error, failure_phase="hw_packing",
+            )
+            self._validation_errors[key] = vr
+            return vr
+
+        self._validation_cache[key] = _ValidationEntry(
+            model=None, total_params=cache.total_params, hw_objectives=hw_obj,
+        )
+        self._evict_validation_cache()
+        return ValidationResult(is_valid=True)
+
+    def _validate_model_or_joint(
+        self, key: str, mc: Dict, pcfg: Dict,
+    ) -> ValidationResult:
+        """Validate for model/joint search: build → convert → pack."""
+        active_names = {spec.name for spec in self.objectives}
+        hw_names = active_names - {ACCURACY_OBJECTIVE_NAME}
+
+        # Phase 1: build raw model
+        try:
+            raw_model, total_params = self._build_raw_model(mc, pcfg)
+        except Exception as exc:
+            vr = ValidationResult(
+                is_valid=False,
+                error_message=f"Model build failed: {type(exc).__name__}: {exc}",
+                failure_phase="model_build",
+            )
+            self._validation_errors[key] = vr
+            return vr
+
+        # If no HW objectives, skip conversion/packing
+        if not hw_names:
+            self._validation_cache[key] = _ValidationEntry(
+                model=raw_model, total_params=total_params, hw_objectives={},
+            )
+            self._evict_validation_cache()
+            return ValidationResult(is_valid=True)
+
+        # Phase 2: convert to mapper representation
+        try:
+            mapped_model = self._ensure_mapper_repr(raw_model)
+        except Exception as exc:
+            vr = ValidationResult(
+                is_valid=False,
+                error_message=f"HW conversion failed: {type(exc).__name__}: {exc}",
+                failure_phase="hw_conversion",
+            )
+            self._validation_errors[key] = vr
+            return vr
+
+        # Phase 3: collect softcores
+        try:
+            softcores, host_segments = self._collect_softcores(mapped_model, pcfg)
+        except Exception as exc:
+            vr = ValidationResult(
+                is_valid=False,
+                error_message=f"Softcore collection failed: {type(exc).__name__}: {exc}",
+                failure_phase="hw_conversion",
+            )
+            self._validation_errors[key] = vr
+            return vr
+
+        # Phase 4: HW bin-packing
+        hw_obj, error = self._compute_hw_objectives(
+            softcores, pcfg, total_params, host_segments,
+        )
+        if hw_obj is None:
+            vr = ValidationResult(
+                is_valid=False, error_message=error, failure_phase="hw_packing",
+            )
+            self._validation_errors[key] = vr
+            return vr
+
+        self._validation_cache[key] = _ValidationEntry(
+            model=raw_model, total_params=total_params, hw_objectives=hw_obj,
+        )
+        self._evict_validation_cache()
+        return ValidationResult(is_valid=True)
+
+    def _evict_validation_cache(self) -> None:
+        """FIFO eviction to bound memory usage."""
+        while len(self._validation_cache) > _VALIDATION_CACHE_MAX_SIZE:
+            oldest_key = next(iter(self._validation_cache))
+            del self._validation_cache[oldest_key]
 
     def constraint_violation(self, configuration: Dict[str, Any]) -> float:
         try:
             if self.constraint_fn is not None:
-                return float(self.constraint_fn(
+                cv = float(self.constraint_fn(
                     configuration["model_config"],
                     configuration["platform_constraints"],
                     self.input_shape,
                 ))
-            return 0.0 if self.validate(configuration) else 1.0
+                if cv > 0:
+                    return cv
+            return 0.0 if self.validate_detailed(configuration).is_valid else 1.0
         except Exception:
             return 1e6
 
@@ -291,8 +453,8 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     # Model building & layout helpers
     # ------------------------------------------------------------------ #
 
-    def _build_model(self, model_config: Dict, pcfg: Dict):
-        """Build a model and initialise lazy modules. Returns (model, total_params) or raises."""
+    def _build_raw_model(self, model_config: Dict, pcfg: Dict):
+        """Build and warm up a raw model. Returns (model, total_params) or raises."""
         builder = self.builder_factory(
             self.device,
             self.input_shape,
@@ -316,17 +478,25 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             raise RuntimeError("Model has uninitialised parameters after forward pass")
 
         total_params = float(sum(int(p.numel()) for p in model.parameters()))
+        return model, total_params
 
-        if not hasattr(model, "get_mapper_repr"):
-            from mimarsinan.torch_mapping.converter import convert_torch_model
-            model = convert_torch_model(
-                model,
-                input_shape=tuple(self.input_shape),
-                num_classes=self.num_classes,
-                device=self.device,
-                Tq=self.target_tq,
-            )
+    def _ensure_mapper_repr(self, model):
+        """Convert to Supermodel if the model lacks ``get_mapper_repr``."""
+        if hasattr(model, "get_mapper_repr"):
+            return model
+        from mimarsinan.torch_mapping.converter import convert_torch_model
+        return convert_torch_model(
+            model,
+            input_shape=tuple(self.input_shape),
+            num_classes=self.num_classes,
+            device=self.device,
+            Tq=self.target_tq,
+        )
 
+    def _build_model(self, model_config: Dict, pcfg: Dict):
+        """Build, warm up, and convert a model. Returns (model, total_params)."""
+        model, total_params = self._build_raw_model(model_config, pcfg)
+        model = self._ensure_mapper_repr(model)
         return model, total_params
 
     def _collect_softcores(
@@ -406,16 +576,26 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         pcfg: Dict,
         total_params: float,
         host_side_segment_count: int,
-    ) -> Optional[Dict[str, float]]:
+    ) -> Tuple[Optional[Dict[str, float]], Optional[str]]:
         """Run bin-packing and compute all non-accuracy objectives.
 
-        Returns None if packing is infeasible.
+        Returns:
+            (hw_objectives, None) on success.
+            (None, error_message) if packing is infeasible.
         """
         core_types = self._make_core_types(pcfg)
         pack = pack_layout(softcores=softcores, core_types=core_types)
 
         if not pack.feasible:
-            return None
+            error = pack.error or "HW bin-packing infeasible"
+            total_hw_capacity = sum(
+                ct.max_axons * ct.max_neurons * ct.count for ct in core_types
+            )
+            error += (
+                f" | softcores={len(softcores)}"
+                f", total_hw_capacity={total_hw_capacity}"
+            )
+            return None, error
 
         stats = build_stats_from_packing_result(
             pack,
@@ -434,7 +614,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             "param_utilization_pct": stats.mapped_params_pct,
             "neuron_wastage_pct": stats.total_wasted_neurons_pct,
             "axon_wastage_pct": stats.total_wasted_axons_pct,
-        }
+        }, None
 
     # ------------------------------------------------------------------ #
     # Evaluation
@@ -445,23 +625,87 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         if key in self._cache:
             return self._cache[key]
 
-        if not self.validate(configuration):
+        vr = self.validate_detailed(configuration)
+        if not vr.is_valid:
             obj = self._penalty_objectives()
             self._cache[key] = obj
             return obj
 
-        mc = configuration["model_config"]
-        pcfg = configuration["platform_constraints"]
-
-        torch.manual_seed(int(self.accuracy_seed))
-        np.random.seed(int(self.accuracy_seed))
-
-        try:
-            obj = self._evaluate_inner(mc, pcfg)
-        except Exception:
-            obj = self._penalty_objectives()
+        vc = self._validation_cache.get(key)
+        if vc is not None:
+            try:
+                obj = self._evaluate_from_cache(vc, configuration)
+            except Exception as exc:
+                print(
+                    f"[JointArchHwProblem] _evaluate_from_cache failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                traceback.print_exc()
+                obj = self._penalty_objectives()
+        else:
+            mc = configuration["model_config"]
+            pcfg = configuration["platform_constraints"]
+            torch.manual_seed(int(self.accuracy_seed))
+            np.random.seed(int(self.accuracy_seed))
+            try:
+                obj = self._evaluate_inner(mc, pcfg)
+            except Exception as exc:
+                print(
+                    f"[JointArchHwProblem] _evaluate_inner failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                traceback.print_exc()
+                obj = self._penalty_objectives()
 
         self._cache[key] = obj
+        return obj
+
+    def _evaluate_from_cache(
+        self,
+        vc: _ValidationEntry,
+        configuration: Dict[str, Any],
+    ) -> Dict[str, float]:
+        """Build objectives from a cached validation entry.
+
+        HW objectives come from the cache; accuracy is evaluated on the
+        cached model (if needed).  The model reference is released after use.
+        """
+        active_names = {spec.name for spec in self.objectives}
+        needs_accuracy = ACCURACY_OBJECTIVE_NAME in active_names
+
+        obj: Dict[str, float] = {
+            k: v for k, v in vc.hw_objectives.items() if k in active_names
+        }
+
+        if needs_accuracy:
+            if vc.model is not None:
+                try:
+                    obj[ACCURACY_OBJECTIVE_NAME] = self._evaluate_accuracy(vc.model)
+                except Exception as exc:
+                    print(
+                        f"[JointArchHwProblem] Accuracy evaluation failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    traceback.print_exc()
+                    obj[ACCURACY_OBJECTIVE_NAME] = 0.0
+                finally:
+                    vc.model = None
+            else:
+                mc = configuration["model_config"]
+                pcfg = configuration["platform_constraints"]
+                torch.manual_seed(int(self.accuracy_seed))
+                np.random.seed(int(self.accuracy_seed))
+                try:
+                    raw_model, _ = self._build_raw_model(mc, pcfg)
+                    obj[ACCURACY_OBJECTIVE_NAME] = self._evaluate_accuracy(raw_model)
+                except Exception as exc:
+                    print(
+                        f"[JointArchHwProblem] Accuracy evaluation failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    traceback.print_exc()
+                    obj[ACCURACY_OBJECTIVE_NAME] = 0.0
+
         return obj
 
     def _evaluate_inner(
@@ -471,11 +715,12 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     ) -> Dict[str, float]:
         active_names = {spec.name for spec in self.objectives}
         needs_accuracy = ACCURACY_OBJECTIVE_NAME in active_names
+        hw_names = active_names - {ACCURACY_OBJECTIVE_NAME}
 
         # --- HW-only search: use cached softcores ---
         if self.search_mode == "hardware":
             cache = self._ensure_hw_only_cache()
-            hw_obj = self._compute_hw_objectives(
+            hw_obj, _err = self._compute_hw_objectives(
                 cache.softcores, pcfg, cache.total_params, cache.host_side_segment_count,
             )
             if hw_obj is None:
@@ -483,19 +728,45 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             return {k: v for k, v in hw_obj.items() if k in active_names}
 
         # --- Model or joint search: build model fresh ---
-        model, total_params = self._build_model(mc, pcfg)
-        softcores, host_segments = self._collect_softcores(model, pcfg)
+        raw_model, total_params = self._build_raw_model(mc, pcfg)
 
-        hw_obj = self._compute_hw_objectives(softcores, pcfg, total_params, host_segments)
-        if hw_obj is None:
-            return self._penalty_objectives()
+        obj: Dict[str, float] = {}
 
-        obj = {k: v for k, v in hw_obj.items() if k in active_names}
+        # Phase 1: HW objectives (convert → softcores → pack)
+        if hw_names:
+            try:
+                mapped_model = self._ensure_mapper_repr(raw_model)
+                softcores, host_segments = self._collect_softcores(mapped_model, pcfg)
+                hw_obj, _err = self._compute_hw_objectives(
+                    softcores, pcfg, total_params, host_segments,
+                )
+                if hw_obj is None:
+                    print("[JointArchHwProblem] Packing infeasible – returning full penalty")
+                    return self._penalty_objectives()
+                else:
+                    for k, v in hw_obj.items():
+                        if k in active_names:
+                            obj[k] = v
+            except Exception as exc:
+                print(
+                    f"[JointArchHwProblem] HW objective computation failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                traceback.print_exc()
+                return self._penalty_objectives()
 
-        # Accuracy evaluation (expensive)
+        # Phase 2: Accuracy on the raw (unconverted) model
         if needs_accuracy:
-            accuracy = self._evaluate_accuracy(model)
-            obj[ACCURACY_OBJECTIVE_NAME] = accuracy
+            try:
+                accuracy = self._evaluate_accuracy(raw_model)
+                obj[ACCURACY_OBJECTIVE_NAME] = accuracy
+            except Exception as exc:
+                print(
+                    f"[JointArchHwProblem] Accuracy evaluation failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                traceback.print_exc()
+                obj[ACCURACY_OBJECTIVE_NAME] = 0.0
 
         return obj
 

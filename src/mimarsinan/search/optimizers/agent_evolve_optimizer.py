@@ -1,5 +1,5 @@
 """
-Kedi-based multi-objective optimizer using LLM for candidate generation.
+Agentic Evolution: LLM-based multi-objective optimizer using pydantic-ai.
 
 This optimizer uses agentic reasoning to explore the search space,
 learning from failures and performance patterns to guide the search.
@@ -7,13 +7,15 @@ learning from failures and performance patterns to guide the search.
 
 from __future__ import annotations
 
-import os
+import asyncio
+import json
+import re
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Sequence, Tuple, get_args, get_origin
 
 from mimarsinan.search.optimizers.base import SearchOptimizer
-from mimarsinan.search.optimizers.kedi_optimizer_support import (
+from mimarsinan.search.optimizers.agent_evolve_support import (
     CandidateResult,
     compute_pareto_front,
     compute_performance_stats,
@@ -26,7 +28,7 @@ from mimarsinan.search.optimizers.kedi_optimizer_support import (
     sample_failed_for_constraint,
     select_best_candidate,
 )
-from mimarsinan.search.optimizers.kedi_prompts import (
+from mimarsinan.search.optimizers.agent_evolve_prompts import (
     build_constraint_instruction_prompt,
     build_failure_insights_prompt,
     build_initial_candidates_prompt,
@@ -47,10 +49,10 @@ ConfigT = Dict[str, Any]
 
 
 @dataclass
-class KediOptimizer(SearchOptimizer[ConfigT]):
+class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
     """
-    LLM-based multi-objective optimizer using Kedi DSL.
-    
+    LLM-based multi-objective optimizer using pydantic-ai for agentic evolution.
+
     This optimizer uses an agentic approach where the LLM:
     1. Generates initial candidate configurations
     2. Learns from validation/evaluation failures via insights
@@ -58,62 +60,57 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
     4. Uses performance analysis to guide search direction
     5. Generates offspring from Pareto front patterns
     """
-    
+
     # Search hyperparameters
     pop_size: int = 8
     generations: int = 5
     candidates_per_batch: int = 5
     max_regen_rounds: int = 10
     max_failed_examples: int = 5
-    
+
     # LLM configuration
     model: str = "openai:gpt-4o"
-    adapter_type: str = "pydantic"  # "pydantic" or "dspy"
-    llm_retries: int = 3  # Retries for LLM output validation
-    
+    llm_retries: int = 3
+
     # Problem description (optional, for better LLM context)
     config_schema: Optional[Dict[str, Any]] = None
     example_config: Optional[ConfigT] = None
     constraints_description: Optional[str] = None
-    
+
     # Verbosity
     verbose: bool = True
-    
+
     # Penalty for invalid candidates
     invalid_penalty: float = 1e18
-    
+
     # Internal state (not part of dataclass init)
-    _adapter: Any = field(default=None, init=False, repr=False)
-    _runtime: Any = field(default=None, init=False, repr=False)
-    _adapter_initialized: bool = field(default=False, init=False, repr=False)
-    
-    def _setup_adapter(self) -> None:
-        """Setup the Kedi adapter for LLM interactions (lazy initialization)."""
-        if self._adapter_initialized:
-            return
-        
-        try:
-            if self.adapter_type == "dspy":
-                from kedi.agent_adapter.adapters import DSPyAdapter
-                self._adapter = DSPyAdapter(model=self.model)
-            else:
-                from kedi.agent_adapter.adapters import PydanticAdapter
-                self._adapter = PydanticAdapter(
-                    model=self.model,
-                    retries=self.llm_retries,
-                )
-            self._adapter_initialized = True
-        except ImportError as e:
-            raise ImportError(
-                f"Kedi package is required for KediOptimizer. "
-                f"Install it from the kedi directory. Error: {e}"
-            )
-    
+    _agent: Any = field(default=None, init=False, repr=False)
+
+    def _get_agent(self) -> Any:
+        """Lazily initialize the pydantic-ai Agent."""
+        if self._agent is None:
+            from pydantic_ai import Agent
+            self._agent = Agent(model=self.model, retries=self.llm_retries)
+        return self._agent
+
     def _log(self, message: str) -> None:
         """Print a message if verbose mode is enabled."""
         if self.verbose:
             print(message, flush=True)
-    
+
+    @staticmethod
+    def _schema_has_dict_type(output_schema: Dict[str, type]) -> bool:
+        """Return True if any field type contains an open dict (additionalProperties issue)."""
+        for field_type in output_schema.values():
+            origin = get_origin(field_type)
+            if origin is dict:
+                return True
+            if origin is list:
+                args = get_args(field_type)
+                if args and get_origin(args[0]) is dict:
+                    return True
+        return False
+
     def _llm_call(
         self,
         template: str,
@@ -121,37 +118,78 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
     ) -> Any:
         """
         Make an LLM call with the given template and output schema.
-        
-        Args:
-            template: The prompt template
-            output_schema: Dictionary mapping output names to their types
-            
-        Returns:
-            The LLM response with filled outputs
+
+        When the schema contains Dict-valued fields (e.g. List[Dict[str, Any]]),
+        some providers (Gemini) strip `additionalProperties` from the JSON schema
+        and return empty objects. In that case we fall back to plain-text output
+        and parse the JSON ourselves, which works universally.
+
+        For simple field types (str, List[str], etc.) we use pydantic-ai structured
+        output as normal.
         """
-        # Lazy initialization of adapter
-        self._setup_adapter()
-        
-        return self._adapter.produce_sync(
-            template=template,
-            output_schema=output_schema,
-        )
-    
+        agent = self._get_agent()
+
+        if self._schema_has_dict_type(output_schema):
+            # Plain-text mode: ask the LLM to return a JSON object, parse manually.
+            keys = list(output_schema.keys())
+            augmented = (
+                template
+                + f"\n\nRespond with a single valid JSON object containing exactly "
+                f"these keys: {keys}. Output only the JSON — no markdown, no explanation."
+            )
+            result = asyncio.run(agent.run(augmented, output_type=str))
+            raw = getattr(result, "output", "") or ""
+
+            # Extract JSON from the raw text response
+            data: Dict[str, Any] = {}
+            try:
+                data = json.loads(raw.strip())
+            except json.JSONDecodeError:
+                m = re.search(r"\{.*\}", raw, re.DOTALL)
+                if m:
+                    try:
+                        data = json.loads(m.group())
+                    except Exception:
+                        data = {}
+
+            # Build a namespace with proper defaults for missing keys
+            ns: Dict[str, Any] = {}
+            for k, v in output_schema.items():
+                val = data.get(k)
+                if val is None:
+                    origin = get_origin(v)
+                    ns[k] = [] if (origin is list or origin is dict) else ""
+                else:
+                    ns[k] = val
+            return SimpleNamespace(**ns)
+
+        else:
+            # Structured pydantic-ai output for simple field types
+            from pydantic import BaseModel, create_model
+
+            output_model = create_model(
+                "_OutputModel",
+                __base__=BaseModel,
+                **{k: (v, ...) for k, v in output_schema.items()},
+            )
+            result = asyncio.run(agent.run(template, output_type=output_model))
+            return getattr(result, "output", result)
+
     def optimize(self, problem: SearchProblem[ConfigT], reporter=None) -> SearchResult[ConfigT]:
         """
         Run the LLM-based multi-objective optimization.
-        
+
         Args:
             problem: The search problem to optimize
             reporter: Optional callable(name, value) for per-generation reporting
-            
+
         Returns:
             SearchResult containing Pareto front and all evaluated candidates
         """
         objectives = list(problem.objectives)
         if not objectives:
             raise ValueError("SearchProblem.objectives must not be empty")
-        
+
         # Build search space description for LLM
         search_space_desc = format_search_space_description(
             objectives=objectives,
@@ -159,20 +197,25 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             example_config=self.example_config,
             constraints=self.constraints_description,
         )
-        
+
         # Track all results
         all_valid_results: List[CandidateResult] = []
         all_failed_results: List[CandidateResult] = []
         all_candidates: List[Candidate[ConfigT]] = []
         history: List[Dict[str, Any]] = []
-        
+
         # Accumulated instructions from learning
         constraint_instruction = ""
         performance_insights = ""
-        
+
         # ===== Generation 1: Initial Sampling =====
         self._log(f"=== Generation 1 / {self.generations} (initial sampling) ===")
-        
+
+        self._report_search_event(reporter, {
+            "type": "generation_start",
+            "gen": 1, "total_gens": self.generations, "phase": "initial",
+        })
+
         gen1_valid, gen1_failed, constraint_instruction = self._run_initial_generation(
             problem=problem,
             objectives=objectives,
@@ -180,21 +223,21 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             all_failed_results=all_failed_results,
             constraint_instruction=constraint_instruction,
             performance_insights=performance_insights,
+            reporter=reporter,
         )
-        
+
         all_valid_results.extend(gen1_valid)
         all_failed_results.extend(gen1_failed)
-        
-        # Convert to Candidate objects
+
         for r in gen1_valid:
             all_candidates.append(result_to_candidate(r, {"generation": 1, "is_pareto": False}))
         for r in gen1_failed:
             all_candidates.append(result_to_candidate(r, {"generation": 1, "is_pareto": False, "valid": False}))
-        
+
         # Compute initial Pareto front
         pareto = compute_pareto_front(all_valid_results, objectives)
         self._log(f"Generation 1: {len(gen1_valid)} valid, Pareto size={len(pareto)}")
-        
+
         # Generate initial performance insights
         if all_valid_results:
             performance_insights = self._generate_performance_insights(
@@ -202,7 +245,11 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                 objectives=objectives,
                 search_space_desc=search_space_desc,
             )
-        
+
+        pareto_front_summary = [
+            r.objectives for r in pareto[:5]
+        ]
+
         history.append({
             "gen": 1,
             "valid_count": len(gen1_valid),
@@ -216,13 +263,29 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                 reporter("Search Pareto size", len(pareto))
             except Exception:
                 pass
-        
+
+        self._report_search_event(reporter, {
+            "type": "generation_complete",
+            "gen": 1,
+            "valid_count": len(gen1_valid),
+            "failed_count": len(gen1_failed),
+            "pareto_size": len(pareto),
+            "pareto_front": pareto_front_summary,
+            "constraint_instruction": constraint_instruction[:500] if constraint_instruction else "",
+            "performance_insights": performance_insights[:500] if performance_insights else "",
+        })
+
         prev_pareto = pareto
-        
+
         # ===== Generations 2..N: Evolution =====
         for gen in range(2, self.generations + 1):
             self._log(f"\n=== Generation {gen} / {self.generations} ===")
-            
+
+            self._report_search_event(reporter, {
+                "type": "generation_start",
+                "gen": gen, "total_gens": self.generations, "phase": "evolution",
+            })
+
             gen_valid, gen_failed, constraint_instruction = self._run_evolution_generation(
                 problem=problem,
                 objectives=objectives,
@@ -231,20 +294,21 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                 all_failed_results=all_failed_results,
                 constraint_instruction=constraint_instruction,
                 performance_insights=performance_insights,
+                gen=gen,
+                reporter=reporter,
             )
-            
+
             all_valid_results.extend(gen_valid)
             all_failed_results.extend(gen_failed)
-            
-            # Convert to Candidate objects
+
             for r in gen_valid:
                 all_candidates.append(result_to_candidate(r, {"generation": gen, "is_pareto": False}))
             for r in gen_failed:
                 all_candidates.append(result_to_candidate(r, {"generation": gen, "is_pareto": False, "valid": False}))
-            
+
             # Update Pareto front
             pareto = compute_pareto_front(all_valid_results, objectives)
-            
+
             # Update performance insights
             if all_valid_results:
                 performance_insights = self._update_performance_insights(
@@ -253,9 +317,13 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                     objectives=objectives,
                     search_space_desc=search_space_desc,
                 )
-            
+
             self._log(f"Generation {gen}: {len(gen_valid)} valid, Pareto size={len(pareto)}")
-            
+
+            pareto_front_summary = [
+                r.objectives for r in pareto[:5]
+            ]
+
             history.append({
                 "gen": gen,
                 "valid_count": len(gen_valid),
@@ -269,37 +337,51 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                     reporter("Search Pareto size", len(pareto))
                 except Exception:
                     pass
-            
+
+            self._report_search_event(reporter, {
+                "type": "generation_complete",
+                "gen": gen,
+                "valid_count": len(gen_valid),
+                "failed_count": len(gen_failed),
+                "pareto_size": len(pareto),
+                "pareto_front": pareto_front_summary,
+                "constraint_instruction": constraint_instruction[:500] if constraint_instruction else "",
+                "performance_insights": performance_insights[:500] if performance_insights else "",
+            })
+
             prev_pareto = pareto
-        
+
         # ===== Build Final Results =====
         final_pareto = compute_pareto_front(all_valid_results, objectives)
-        
-        # Mark Pareto candidates
+
         pareto_configs = {prettify_configuration(r.configuration) for r in final_pareto}
         pareto_candidates: List[Candidate[ConfigT]] = []
         for r in final_pareto:
             pareto_candidates.append(result_to_candidate(r, {"is_pareto": True}))
-        
-        # Update all_candidates with Pareto status
+
         for c in all_candidates:
             c_key = prettify_configuration(c.configuration)
             if c_key in pareto_configs:
                 c.metadata["is_pareto"] = True
-        
-        # Select best candidate
+
         best_result = select_best_candidate(final_pareto, objectives)
         if best_result:
             best = result_to_candidate(best_result, {"is_pareto": True})
         else:
-            # Fallback to empty candidate if no valid results
             best = Candidate(configuration={}, objectives={}, metadata={})
-        
+
         self._log(f"\n=== Final Results ===")
         self._log(f"Total valid: {len(all_valid_results)}, Pareto size: {len(final_pareto)}")
         if best_result:
             self._log(f"Best: {best_result.objectives}")
-        
+
+        self._report_search_event(reporter, {
+            "type": "search_complete",
+            "total_valid": len(all_valid_results),
+            "total_failed": len(all_failed_results),
+            "final_pareto_size": len(final_pareto),
+        })
+
         return SearchResult(
             objectives=objectives,
             best=best,
@@ -307,7 +389,7 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             all_candidates=all_candidates,
             history=history,
         )
-    
+
     def _run_initial_generation(
         self,
         problem: SearchProblem[ConfigT],
@@ -316,29 +398,28 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
         all_failed_results: List[CandidateResult],
         constraint_instruction: str,
         performance_insights: str,
+        reporter=None,
     ) -> Tuple[List[CandidateResult], List[CandidateResult], str]:
         """
         Run the initial generation with regeneration loops.
-        
+
         Returns:
             (valid_results, failed_results, updated_constraint_instruction)
         """
         population_valid: List[CandidateResult] = []
         gen_failed: List[CandidateResult] = []
         last_round_failed: List[CandidateResult] = []
-        
+
         regen_round = 0
         while len(population_valid) < self.pop_size and regen_round < self.max_regen_rounds:
             if regen_round == 0:
-                # Generate initial candidates
-                candidates = self._generate_initial_candidates(
+                candidates, reasoning = self._generate_initial_candidates(
                     n_candidates=self.candidates_per_batch,
                     objectives=objectives,
                     search_space_desc=search_space_desc,
                 )
             else:
-                # Regenerate using failure insights
-                candidates = self._regenerate_candidates(
+                candidates, reasoning = self._regenerate_candidates(
                     failed_results=last_round_failed,
                     n_candidates=self.candidates_per_batch,
                     objectives=objectives,
@@ -346,13 +427,19 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                     constraint_instruction=constraint_instruction,
                     performance_insights=performance_insights,
                 )
-            
-            # Evaluate batch
-            valid_batch, failed_batch = self._evaluate_batch(problem, candidates, objectives)
-            
+
+            self._report_search_event(reporter, {
+                "type": "candidates_generated",
+                "gen": 1, "count": len(candidates), "reasoning": reasoning,
+            })
+
+            valid_batch, failed_batch = self._evaluate_batch(
+                problem, candidates, objectives,
+                gen=1, batch_idx=regen_round, reporter=reporter,
+            )
+
             self._log(f"  Batch {regen_round + 1}: {len(valid_batch)} valid, {len(failed_batch)} failed")
-            
-            # Generate failure insights
+
             if failed_batch:
                 insights = self._generate_failure_insights(
                     failed_results=failed_batch,
@@ -362,32 +449,41 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                 for r, insight in zip(failed_batch, insights):
                     r.insight = insight
                 gen_failed.extend(failed_batch)
-            
+
             population_valid.extend(valid_batch)
             last_round_failed = failed_batch
-            
-            # Update constraint instruction if we have failures
-            if gen_failed and (not constraint_instruction or len(valid_batch) > 0):
+
+            # Always update constraint instruction when there are failures so the
+            # LLM can learn from each round — especially critical when all candidates
+            # fail, which is exactly when the instruction needs to improve most.
+            if gen_failed:
                 sampled_failures = sample_failed_for_constraint(
                     last_round_failed, gen_failed, self.max_failed_examples
                 )
-                constraint_instruction = self._generate_constraint_instruction(
-                    failed_results=sampled_failures,
-                    objectives=objectives,
-                    search_space_desc=search_space_desc,
-                )
-            
+                if constraint_instruction:
+                    constraint_instruction = self._update_constraint_instruction(
+                        previous_instruction=constraint_instruction,
+                        failed_results=sampled_failures,
+                        objectives=objectives,
+                        search_space_desc=search_space_desc,
+                    )
+                else:
+                    constraint_instruction = self._generate_constraint_instruction(
+                        failed_results=sampled_failures,
+                        objectives=objectives,
+                        search_space_desc=search_space_desc,
+                    )
+
             regen_round += 1
             self._log(f"  Collected {len(population_valid)}/{self.pop_size} valid")
-            
+
             if len(population_valid) >= self.pop_size:
                 break
-        
-        # Trim to population size
+
         population_valid = population_valid[:self.pop_size]
-        
+
         return population_valid, gen_failed, constraint_instruction
-    
+
     def _run_evolution_generation(
         self,
         problem: SearchProblem[ConfigT],
@@ -397,26 +493,27 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
         all_failed_results: List[CandidateResult],
         constraint_instruction: str,
         performance_insights: str,
+        gen: int = 0,
+        reporter=None,
     ) -> Tuple[List[CandidateResult], List[CandidateResult], str]:
         """
         Run an evolution generation using Pareto front.
-        
+
         Returns:
             (valid_results, failed_results, updated_constraint_instruction)
         """
         population_valid: List[CandidateResult] = []
         gen_failed: List[CandidateResult] = []
         last_round_failed: List[CandidateResult] = []
-        
+
         if not prev_pareto:
-            # No Pareto front to evolve from, fall back to initial generation
             return self._run_initial_generation(
                 problem, objectives, search_space_desc,
                 all_failed_results, constraint_instruction, performance_insights,
+                reporter=reporter,
             )
-        
-        # Generate offspring from Pareto front
-        candidates = self._generate_offspring(
+
+        candidates, reasoning = self._generate_offspring(
             pareto_results=prev_pareto,
             n_candidates=self.pop_size,
             objectives=objectives,
@@ -424,13 +521,19 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             constraint_instruction=constraint_instruction,
             performance_insights=performance_insights,
         )
-        
-        # Evaluate batch
-        valid_batch, failed_batch = self._evaluate_batch(problem, candidates, objectives)
-        
+
+        self._report_search_event(reporter, {
+            "type": "candidates_generated",
+            "gen": gen, "count": len(candidates), "reasoning": reasoning,
+        })
+
+        valid_batch, failed_batch = self._evaluate_batch(
+            problem, candidates, objectives,
+            gen=gen, batch_idx=0, reporter=reporter,
+        )
+
         self._log(f"  Offspring: {len(valid_batch)} valid, {len(failed_batch)} failed")
-        
-        # Generate failure insights
+
         if failed_batch:
             insights = self._generate_failure_insights(
                 failed_results=failed_batch,
@@ -440,18 +543,16 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             for r, insight in zip(failed_batch, insights):
                 r.insight = insight
             gen_failed.extend(failed_batch)
-        
+
         population_valid.extend(valid_batch)
         last_round_failed = failed_batch
-        
-        # Regeneration loop if needed
+
         regen_round = 0
         while len(population_valid) < self.pop_size and regen_round < self.max_regen_rounds:
             if not last_round_failed:
                 break
-            
-            # Regenerate using failure insights
-            candidates = self._regenerate_offspring(
+
+            candidates, reasoning = self._regenerate_offspring(
                 failed_results=last_round_failed,
                 pareto_results=prev_pareto,
                 n_candidates=self.candidates_per_batch,
@@ -460,11 +561,19 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                 constraint_instruction=constraint_instruction,
                 performance_insights=performance_insights,
             )
-            
-            valid_batch, failed_batch = self._evaluate_batch(problem, candidates, objectives)
-            
+
+            self._report_search_event(reporter, {
+                "type": "candidates_generated",
+                "gen": gen, "count": len(candidates), "reasoning": reasoning,
+            })
+
+            valid_batch, failed_batch = self._evaluate_batch(
+                problem, candidates, objectives,
+                gen=gen, batch_idx=regen_round + 1, reporter=reporter,
+            )
+
             self._log(f"  Regen {regen_round + 1}: {len(valid_batch)} valid, {len(failed_batch)} failed")
-            
+
             if failed_batch:
                 insights = self._generate_failure_insights(
                     failed_results=failed_batch,
@@ -474,8 +583,7 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                 for r, insight in zip(failed_batch, insights):
                     r.insight = insight
                 gen_failed.extend(failed_batch)
-                
-                # Update constraint instruction
+
                 sampled_failures = sample_failed_for_constraint(
                     failed_batch, gen_failed, self.max_failed_examples
                 )
@@ -485,51 +593,93 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                     objectives=objectives,
                     search_space_desc=search_space_desc,
                 )
-            
+
             population_valid.extend(valid_batch)
             last_round_failed = failed_batch
             regen_round += 1
-            
+
             self._log(f"  Collected {len(population_valid)}/{self.pop_size} valid")
-        
+
         population_valid = population_valid[:self.pop_size]
-        
+
         return population_valid, gen_failed, constraint_instruction
-    
+
+    @staticmethod
+    def _report_search_event(reporter, event: Dict[str, Any]) -> None:
+        """Emit a structured search event via the reporter."""
+        if reporter is None:
+            return
+        try:
+            reporter("search_event", json.dumps(event, default=str))
+        except Exception:
+            pass
+
     def _evaluate_batch(
         self,
         problem: SearchProblem[ConfigT],
         candidates: List[ConfigT],
         objectives: Sequence[ObjectiveSpec],
+        gen: int = 0,
+        batch_idx: int = 0,
+        reporter=None,
     ) -> Tuple[List[CandidateResult], List[CandidateResult]]:
         """
         Evaluate a batch of candidates.
-        
+
+        Uses ``validate_detailed()`` when available to get rich error
+        information (failure phase + message) for the constraint-learning loop.
+
         Returns:
             (valid_results, failed_results)
         """
         valid_results: List[CandidateResult] = []
         failed_results: List[CandidateResult] = []
-        
+        has_detailed = hasattr(problem, "validate_detailed")
+        penalty_obj = {s.name: (0.0 if s.goal == "max" else self.invalid_penalty) for s in objectives}
+
         for idx, config in enumerate(candidates):
             try:
-                # Debug: log the candidate being evaluated
                 if self.verbose:
                     self._log(f"    Candidate {idx+1}: {prettify_configuration(config)[:200]}...")
-                
-                if not problem.validate(config):
-                    error_msg = "Validation failed"
+
+                if has_detailed:
+                    vr = problem.validate_detailed(config)
+                    is_valid = vr.is_valid
+                    error_msg = vr.error_message
+                    failure_phase = vr.failure_phase
+                else:
+                    is_valid = problem.validate(config)
+                    error_msg = None
+                    failure_phase = None
+
+                if not is_valid:
+                    if error_msg is None:
+                        if not config:
+                            error_msg = "Empty configuration — no keys provided"
+                        else:
+                            error_msg = f"Validation failed; provided keys: {list(config.keys())}"
                     if self.verbose:
-                        # Try to get more details about why validation failed
-                        self._log(f"    -> FAILED: {error_msg}")
-                    failed_results.append(CandidateResult(
+                        phase_str = f" [{failure_phase}]" if failure_phase else ""
+                        self._log(f"    -> FAILED{phase_str}: {error_msg}")
+                    cr = CandidateResult(
                         configuration=config,
-                        objectives={s.name: (0.0 if s.goal == "max" else self.invalid_penalty) for s in objectives},
+                        objectives=dict(penalty_obj),
                         is_valid=False,
                         error_message=error_msg,
-                    ))
+                        failure_phase=failure_phase,
+                    )
+                    failed_results.append(cr)
+                    self._report_search_event(reporter, {
+                        "type": "candidate_result",
+                        "gen": gen, "idx": idx,
+                        "config_summary": str(config)[:200],
+                        "is_valid": False,
+                        "objectives": dict(penalty_obj),
+                        "error_message": error_msg,
+                        "failure_phase": failure_phase,
+                    })
                     continue
-                
+
                 obj = problem.evaluate(config)
                 if self.verbose:
                     self._log(f"    -> VALID: {obj}")
@@ -538,41 +688,68 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
                     objectives=obj,
                     is_valid=True,
                 ))
+                self._report_search_event(reporter, {
+                    "type": "candidate_result",
+                    "gen": gen, "idx": idx,
+                    "config_summary": str(config)[:200],
+                    "is_valid": True,
+                    "objectives": obj,
+                    "error_message": None,
+                    "failure_phase": None,
+                })
             except Exception as e:
                 if self.verbose:
                     self._log(f"    -> EXCEPTION: {e}")
                 failed_results.append(CandidateResult(
                     configuration=config,
-                    objectives={s.name: (0.0 if s.goal == "max" else self.invalid_penalty) for s in objectives},
+                    objectives=dict(penalty_obj),
                     is_valid=False,
                     error_message=str(e),
                 ))
-        
+                self._report_search_event(reporter, {
+                    "type": "candidate_result",
+                    "gen": gen, "idx": idx,
+                    "config_summary": str(config)[:200],
+                    "is_valid": False,
+                    "objectives": dict(penalty_obj),
+                    "error_message": str(e),
+                    "failure_phase": "exception",
+                })
+
+        self._report_search_event(reporter, {
+            "type": "batch_summary",
+            "gen": gen, "batch_idx": batch_idx,
+            "valid_count": len(valid_results),
+            "failed_count": len(failed_results),
+        })
+
         return valid_results, failed_results
-    
+
     # ===== LLM Interaction Methods =====
-    
+
     def _generate_initial_candidates(
         self,
         n_candidates: int,
         objectives: Sequence[ObjectiveSpec],
         search_space_desc: str,
-    ) -> List[ConfigT]:
-        """Generate initial candidate configurations using LLM."""
+    ) -> Tuple[List[ConfigT], str]:
+        """Generate initial candidate configurations using LLM.
+
+        Returns (candidates, reasoning).
+        """
         template = build_initial_candidates_prompt(n_candidates, search_space_desc)
         result = self._llm_call(
             template=template,
-            output_schema={
-                "candidates": List[Dict[str, Any]],
-            },
+            output_schema={"reasoning": str, "candidates": List[Dict[str, Any]]},
         )
         candidates = getattr(result, "candidates", [])
+        reasoning = getattr(result, "reasoning", "")
         if self.verbose:
             self._log(f"  LLM generated {len(candidates)} candidates")
-            for i, c in enumerate(candidates[:2]):
-                self._log(f"    Sample {i+1}: {str(c)[:300]}...")
-        return parse_candidates(candidates, n_candidates, self._log)
-    
+            if reasoning:
+                self._log(f"  Reasoning: {reasoning[:300]}...")
+        return parse_candidates(candidates, n_candidates, self._log), reasoning
+
     def _regenerate_candidates(
         self,
         failed_results: List[CandidateResult],
@@ -581,19 +758,23 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
         search_space_desc: str,
         constraint_instruction: str,
         performance_insights: str,
-    ) -> List[ConfigT]:
-        """Regenerate candidates using failure insights."""
+    ) -> Tuple[List[ConfigT], str]:
+        """Regenerate candidates using failure insights.
+
+        Returns (candidates, reasoning).
+        """
         failed_str = prettify_results(failed_results, objectives)
         template = build_regenerate_candidates_prompt(
             failed_str, search_space_desc, constraint_instruction, performance_insights, n_candidates
         )
         result = self._llm_call(
             template=template,
-            output_schema={"candidates": List[Dict[str, Any]]},
+            output_schema={"reasoning": str, "candidates": List[Dict[str, Any]]},
         )
         candidates = getattr(result, "candidates", [])
-        return parse_candidates(candidates, n_candidates, self._log)
-    
+        reasoning = getattr(result, "reasoning", "")
+        return parse_candidates(candidates, n_candidates, self._log), reasoning
+
     def _generate_offspring(
         self,
         pareto_results: List[CandidateResult],
@@ -602,19 +783,23 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
         search_space_desc: str,
         constraint_instruction: str,
         performance_insights: str,
-    ) -> List[ConfigT]:
-        """Generate offspring from Pareto front configurations."""
+    ) -> Tuple[List[ConfigT], str]:
+        """Generate offspring from Pareto front configurations.
+
+        Returns (candidates, reasoning).
+        """
         pareto_str = prettify_results(pareto_results[:5], objectives)
         template = build_offspring_prompt(
             pareto_str, search_space_desc, constraint_instruction, performance_insights, n_candidates
         )
         result = self._llm_call(
             template=template,
-            output_schema={"candidates": List[Dict[str, Any]]},
+            output_schema={"reasoning": str, "candidates": List[Dict[str, Any]]},
         )
         candidates = getattr(result, "candidates", [])
-        return parse_candidates(candidates, n_candidates, self._log)
-    
+        reasoning = getattr(result, "reasoning", "")
+        return parse_candidates(candidates, n_candidates, self._log), reasoning
+
     def _regenerate_offspring(
         self,
         failed_results: List[CandidateResult],
@@ -624,8 +809,11 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
         search_space_desc: str,
         constraint_instruction: str,
         performance_insights: str,
-    ) -> List[ConfigT]:
-        """Regenerate offspring using both Pareto front and failure insights."""
+    ) -> Tuple[List[ConfigT], str]:
+        """Regenerate offspring using both Pareto front and failure insights.
+
+        Returns (candidates, reasoning).
+        """
         failed_str = prettify_results(failed_results, objectives)
         pareto_str = prettify_results(pareto_results[:3], objectives)
         template = build_regenerate_offspring_prompt(
@@ -633,11 +821,12 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
         )
         result = self._llm_call(
             template=template,
-            output_schema={"candidates": List[Dict[str, Any]]},
+            output_schema={"reasoning": str, "candidates": List[Dict[str, Any]]},
         )
         candidates = getattr(result, "candidates", [])
-        return parse_candidates(candidates, n_candidates, self._log)
-    
+        reasoning = getattr(result, "reasoning", "")
+        return parse_candidates(candidates, n_candidates, self._log), reasoning
+
     def _generate_failure_insights(
         self,
         failed_results: List[CandidateResult],
@@ -655,7 +844,7 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
         while len(insights) < len(failed_results):
             insights.append("Unknown failure reason")
         return insights[:len(failed_results)]
-    
+
     def _generate_constraint_instruction(
         self,
         failed_results: List[CandidateResult],
@@ -670,7 +859,7 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             output_schema={"constraint_instruction": str},
         )
         return getattr(result, "constraint_instruction", "")
-    
+
     def _update_constraint_instruction(
         self,
         previous_instruction: str,
@@ -686,7 +875,7 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             output_schema={"updated_instruction": str},
         )
         return getattr(result, "updated_instruction", previous_instruction)
-    
+
     def _generate_performance_insights(
         self,
         valid_results: List[CandidateResult],
@@ -717,7 +906,7 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             output_schema={"performance_insights": str},
         )
         return getattr(result, "performance_insights", "")
-    
+
     def _update_performance_insights(
         self,
         previous_insights: str,
@@ -743,4 +932,3 @@ class KediOptimizer(SearchOptimizer[ConfigT]):
             output_schema={"updated_insights": str},
         )
         return getattr(result, "updated_insights", previous_insights)
-

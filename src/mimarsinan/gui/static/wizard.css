@@ -1253,6 +1253,11 @@ option {
   animation: hw-flash 0.3s ease;
 }
 
+/* Only `.note.hide` existed elsewhere; this banner also used `hide` with no rule. */
+.hw-validation-banner.hide {
+  display: none;
+}
+
 .hw-validation-banner.ok {
   border-left-color: var(--accent-green, #22c55e);
   background: rgba(34, 197, 94, 0.08);
