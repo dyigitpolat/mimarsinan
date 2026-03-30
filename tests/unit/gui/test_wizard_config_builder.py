@@ -203,6 +203,11 @@ class TestWizardSchema:
         assert any(o["id"] == "nsga2" for o in nas["optimizer_options"])
         assert "common_fields" in nas
 
+    def test_get_wizard_nas_schema_accuracy_evaluator_matches_wizard_ui(self):
+        nas = get_wizard_nas_schema()
+        opts = nas["common_fields"]["accuracy_evaluator"]["options"]
+        assert opts == ["extrapolating", "fast"]
+
     def test_get_wizard_nas_schema_has_objective_options(self):
         nas = get_wizard_nas_schema()
         assert "objective_options" in nas

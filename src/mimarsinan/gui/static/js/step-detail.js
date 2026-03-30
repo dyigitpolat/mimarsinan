@@ -6,6 +6,7 @@ import { renderHardwareTab } from './hardware-tab.js';
 import { renderSearchTab } from './search-tab.js';
 import { renderActivationsTab, renderAdaptationTab } from './scales-tab.js';
 import { renderPruningTab } from './pruning-tab.js';
+import { initSearchLive, handleSearchEvent, replaySearchEvents } from './search-live.js';
 
 // ── Public API ───────────────────────────────────────────────────────────
 export async function refreshStepDetail(stepName, state, fetchJSON) {
@@ -67,6 +68,9 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   });
 
   const metrics = getStepMetrics(stepName, state);
+  const searchEvts = (state.searchEvents && state.searchEvents[stepName]) || [];
+  if (searchEvts.length > 0) detail._hasSearchEvents = true;
+  detail._searchEvents = searchEvts;
   const tabs = determineTabs(detail, metrics);
   if (!state.activeTab || !tabs.includes(state.activeTab)) state.activeTab = tabs[0];
   renderTabs(tabs, detail, metrics, state);
@@ -119,9 +123,20 @@ function _totalMetricPoints(stepName, state) {
 function ingestServerMetrics(stepName, serverMetrics, state) {
   if (!state.metricBuffers[stepName]) state.metricBuffers[stepName] = {};
   if (!state.seenSeqs[stepName]) state.seenSeqs[stepName] = new Set();
+  if (!state.searchEvents) state.searchEvents = {};
+  if (!state.searchEvents[stepName]) state.searchEvents[stepName] = [];
   for (const m of serverMetrics) {
     if (m.seq != null && state.seenSeqs[stepName].has(m.seq)) continue;
     if (m.seq != null) state.seenSeqs[stepName].add(m.seq);
+    if (m.name === 'search_event') {
+      try {
+        const parsed = typeof m.value === 'string' ? JSON.parse(m.value) : m.value;
+        state.searchEvents[stepName].push(parsed);
+      } catch (_) { /* skip malformed */ }
+      if (!state.metricBuffers[stepName][m.name]) state.metricBuffers[stepName][m.name] = [];
+      state.metricBuffers[stepName][m.name].push({ seq: m.seq, timestamp: m.timestamp, value: m.value });
+      continue;
+    }
     if (!state.metricBuffers[stepName][m.name]) state.metricBuffers[stepName][m.name] = [];
     state.metricBuffers[stepName][m.name].push({ seq: m.seq, timestamp: m.timestamp, value: parseFloat(m.value) });
   }
@@ -133,6 +148,7 @@ function getStepMetrics(stepName, state) { return state.metricBuffers[stepName] 
 function determineTabs(detail, metrics) {
   const tabs = [];
   if (Object.keys(metrics).length > 0) tabs.push('metrics');
+  if (metrics['search_event'] || detail._hasSearchEvents) tabs.push('live_search');
   const snap = detail.snapshot || {};
   if (snap.model) tabs.push('model');
   if (snap.ir_graph) tabs.push('ir_graph');
@@ -149,8 +165,8 @@ function determineTabs(detail, metrics) {
 }
 
 const TAB_LABELS = {
-  metrics: 'Metrics', model: 'Model', ir_graph: 'IR Graph', hardware: 'Hardware',
-  search: 'Search', activations: 'Activations', adaptation: 'Adaptation',
+  metrics: 'Metrics', live_search: 'Live Search', model: 'Model', ir_graph: 'IR Graph',
+  hardware: 'Hardware', search: 'Search', activations: 'Activations', adaptation: 'Adaptation',
   constraints: 'Constraints', pruning: 'Pruning', summary: 'Summary',
 };
 
@@ -181,6 +197,7 @@ function renderTabContent(tab, detail, metrics, container) {
   const stepStartTime = detail.start_time != null ? (detail.start_time > 1e12 ? detail.start_time / 1000 : detail.start_time) : null;
   switch (tab) {
     case 'metrics': renderMetricsTab(metrics, container, stepStartTime); break;
+    case 'live_search': renderLiveSearchTab(detail, container); break;
     case 'model': renderModelTab(snap.model, container); break;
     case 'ir_graph': renderIRGraphTab(snap.ir_graph, container); break;
     case 'hardware': renderHardwareTab(snap.hard_core_mapping, container, snap.ir_graph); break;
@@ -194,9 +211,16 @@ function renderTabContent(tab, detail, metrics, container) {
   }
 }
 
+// ── Live search tab ──────────────────────────────────────────────────────
+function renderLiveSearchTab(detail, container) {
+  initSearchLive(container);
+  const events = detail._searchEvents || [];
+  if (events.length > 0) replaySearchEvents(events);
+}
+
 // ── Metrics tab ──────────────────────────────────────────────────────────
 function renderMetricsTab(metrics, container, stepStartTime) {
-  const names = Object.keys(metrics);
+  const names = Object.keys(metrics).filter(n => n !== 'search_event');
   if (names.length === 0) { container.innerHTML = '<div class="empty-state">No metrics recorded</div>'; return; }
   const groups = groupMetricsByCategory(names);
   let html = '<div class="grid-2">';

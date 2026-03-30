@@ -1,0 +1,82 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "agent_evolve_search_all",
+  "generated_files_path": "./generated",
+  "data_provider_name": "CIFAR100_DataProvider",
+  "platform_constraints": {
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8,
+    "has_bias": true,
+    "allow_core_coalescing": true,
+    "allow_neuron_splitting": true,
+    "search_space": {
+      "num_core_types": 3,
+      "core_type_counts": [
+        50,
+        50
+      ],
+      "core_axons_bounds": [
+        16,
+        512
+      ],
+      "core_neurons_bounds": [
+        16,
+        512
+      ],
+      "max_threshold_groups": 1
+    }
+  },
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 10,
+    "tuner_epochs": 3,
+    "degradation_tolerance": 0.1,
+    "model_config_mode": "search",
+    "hw_config_mode": "search",
+    "model_type": "mlp_mixer",
+    "model_config": {
+      "base_activation": "LeakyReLU",
+      "patch_n_1": 4,
+      "patch_m_1": 4,
+      "patch_c_1": 32,
+      "fc_w_1": 64,
+      "fc_w_2": 64
+    },
+    "spiking_mode": "ttfs_quantized",
+    "firing_mode": "TTFS",
+    "spike_generation_mode": "TTFS",
+    "thresholding_mode": "<=",
+    "activation_quantization": true,
+    "weight_quantization": true,
+    "arch_search": {
+      "optimizer": "agent_evolve",
+      "pop_size": 5,
+      "generations": 3,
+      "seed": 42,
+      "warmup_fraction": 0.1,
+      "accuracy_evaluator": "extrapolating",
+      "extrapolation_num_train_epochs": 1,
+      "extrapolation_num_checkpoints": 5,
+      "extrapolation_target_epochs": 10,
+      "objectives": [
+        "estimated_accuracy",
+        "total_params",
+        "total_param_capacity",
+        "total_sync_barriers",
+        "param_utilization_pct",
+        "neuron_wastage_pct",
+        "axon_wastage_pct"
+      ],
+      "training_batch_size": null,
+      "agent_model": "openai:gpt-4o",
+      "candidates_per_batch": 3,
+      "max_regen_rounds": 3
+    },
+    "allow_scheduling": true
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}

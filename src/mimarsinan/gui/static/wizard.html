@@ -68,7 +68,7 @@
             <label class="field-label">Search Optimizer</label>
             <div class="seg-control" id="optimizer">
               <div class="seg-btn active violet" data-val="nsga2" onclick="setSegment(this)">NSGA-II</div>
-              <div class="seg-btn" data-val="kedi" onclick="setSegment(this)">Agentic (Kedi)</div>
+              <div class="seg-btn" data-val="agent_evolve" onclick="setSegment(this)">Agentic Evolution</div>
             </div>
           </div>
 
@@ -115,7 +115,7 @@
               </div>
               <div class="field">
                 <label class="field-label">Training Batch Size</label>
-                <input type="number" id="searchBatchSize" value="" placeholder="auto" oninput="update()">
+                <input type="number" id="searchBatchSize" value="" placeholder="auto" min="1" oninput="update()">
               </div>
             </div>
           </div>
@@ -128,28 +128,22 @@
             </div>
           </div>
 
-          <!-- Kedi-specific -->
-          <div id="kediConfig" class="cond hidden">
+          <!-- Agentic Evolution-specific -->
+          <div id="agentEvolveConfig" class="cond hidden">
             <div class="sub-section" style="margin-top:14px">
-              <div class="sub-section-title">Kedi LLM Configuration</div>
+              <div class="sub-section-title">Agentic Evolution LLM Configuration</div>
               <div class="field-grid">
                 <div class="field">
                   <label class="field-label">LLM Model</label>
-                  <input type="text" id="kediModel" value="openai:gpt-4o" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Adapter</label>
-                  <select id="kediAdapter" onchange="update()">
-                    <option value="pydantic">Pydantic</option>
-                  </select>
+                  <input type="text" id="agentModel" value="openai:gpt-4o" oninput="update()">
                 </div>
                 <div class="field">
                   <label class="field-label">Candidates / Batch</label>
-                  <input type="number" id="kediCandidates" value="5" min="1" oninput="update()">
+                  <input type="number" id="agentCandidates" value="5" min="1" oninput="update()">
                 </div>
                 <div class="field">
                   <label class="field-label">Max Regen Rounds</label>
-                  <input type="number" id="kediRegenRounds" value="10" min="1" oninput="update()">
+                  <input type="number" id="agentRegenRounds" value="10" min="1" oninput="update()">
                 </div>
               </div>
             </div>
