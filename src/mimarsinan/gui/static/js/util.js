@@ -1,8 +1,8 @@
 /* Shared utilities and Plotly safe-wrapper for Mimarsinan GUI.
- * Markdown: marked@14 + DOMPurify@3 (import map in index.html). */
+ * Markdown: pinned ESM from jsDelivr (no import map — works in any document). */
 
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import { marked } from 'https://cdn.jsdelivr.net/npm/marked@14.1.4/lib/marked.esm.js';
+import DOMPurify from 'https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.es.mjs';
 
 // ── HTML helpers ─────────────────────────────────────────────────────────
 const _escDiv = document.createElement('div');

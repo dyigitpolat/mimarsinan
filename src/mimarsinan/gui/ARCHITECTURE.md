@@ -167,7 +167,7 @@ card uses a two-column layout (`sl-gen-layout`): **main** (~2fr) holds subpanels
 reasoning (collapsible), candidates (grid with health bars), and **Constraints &
 insights** with two collapsible sections; when a generation completes, those sections
 receive content and **`sl-collapse-open`** so text is visible. Constraint and
-performance text is rendered via **`renderMarkdown`** (`util.js`) into `.sl-md` using **marked** (CommonMark + GFM) and **DOMPurify** sanitization; bare module specifiers resolve via **`importmap`** in `static/index.html` (pinned jsDelivr ESM: `marked@14.1.4`, `dompurify@3.1.7`).
+performance text is rendered via **`renderMarkdown`** (`util.js`) into `.sl-md` using **marked** (CommonMark + GFM) and **DOMPurify** sanitization; both load as **pinned jsDelivr ESM URLs** from `util.js` (no import map required).
 **Diagnostics** (~1fr, `sl-gen-diagnostics`) lists `llm_trace` events in call order;
 clicking a row shows structured request sections and response fields (no JSON string
 dumps); long text previews show a truncation hint when applicable. Header stats show
