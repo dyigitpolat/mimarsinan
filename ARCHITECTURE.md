@@ -1251,7 +1251,7 @@ A real-time browser-based dashboard that launches automatically with every pipel
 | Module | Responsibility |
 |--------|---------------|
 | `js/main.js` | State management, WebSocket, refresh loop |
-| `js/util.js` | HTML helpers, Plotly safe-wrapper with `uirevision` for zoom/pan persistence; **`renderMarkdown`** uses **marked** + **DOMPurify** (see `index.html` import map) |
+| `js/util.js` | HTML helpers, Plotly safe-wrapper with `uirevision` for zoom/pan persistence; **`renderMarkdown`** uses **marked** + **DOMPurify** (pinned jsDelivr ESM imports) |
 | `js/overview.js` | Pipeline bar, target metric progression, step timing charts |
 | `js/step-detail.js` | Step detail panel, tab routing, metrics tab |
 | `js/model-tab.js` | Model layer stats, weight distributions |
