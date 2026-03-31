@@ -157,11 +157,21 @@ emits structured `search_event` JSON via `reporter("search_event", json.dumps(ev
 These events flow through `DataCollector` → WebSocket → `main.js` → `search-live.js`.
 `main.js` buffers parsed events in `state.searchEvents[stepName]`; `step-detail.js`
 adds a "Live Search" tab when search events are present; `renderLiveSearchTab` calls
-`initSearchLive` and `replaySearchEvents` to rebuild state from buffered history. The
-tracker shows generation cards (newest on top) with collapsible reasoning, candidate
-tiles with neon health bars per objective, failure phase tags, Pareto front summaries,
-and constraint/performance insight panels. Header stats show gen counter, valid/failed
-counts, Pareto size, and elapsed time.
+`initSearchLive` and `replaySearchEvents` using **`state.searchEvents[stepName]`** as
+the source of truth (falls back to `detail._searchEvents`). **`detachSearchLive`** runs
+when switching to any other tab so `handleSearchEvent` does not update a detached DOM;
+reopening Live Search replays from `state.searchEvents`. A **global Pareto strip**
+(`#sl-pareto-strip`) below the header updates on each `generation_complete` with the
+latest `pareto_front` (per-generation Pareto subpanels were removed). Each generation
+card uses a two-column layout (`sl-gen-layout`): **main** (~2fr) holds subpanels for
+reasoning (collapsible), candidates (grid with health bars), and **Constraints &
+insights** with two collapsible sections; when a generation completes, those sections
+receive content and **`sl-collapse-open`** so text is visible. Constraint and
+performance text is rendered via **`renderMarkdown`** (`util.js`) into `.sl-md` using **marked** (CommonMark + GFM) and **DOMPurify** sanitization; bare module specifiers resolve via **`importmap`** in `static/index.html` (pinned jsDelivr ESM: `marked@14.1.4`, `dompurify@3.1.7`).
+**Diagnostics** (~1fr, `sl-gen-diagnostics`) lists `llm_trace` events in call order;
+clicking a row shows structured request sections and response fields (no JSON string
+dumps); long text previews show a truncation hint when applicable. Header stats show
+gen counter, valid/failed counts, Pareto size, and elapsed time.
 
 ## Dependencies
 
