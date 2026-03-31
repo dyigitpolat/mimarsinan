@@ -44,9 +44,9 @@
       "fc_w_1": 64,
       "fc_w_2": 64
     },
-    "spiking_mode": "rate",
-    "firing_mode": "Default",
-    "spike_generation_mode": "Uniform",
+    "spiking_mode": "ttfs_quantized",
+    "firing_mode": "TTFS",
+    "spike_generation_mode": "TTFS",
     "thresholding_mode": "<=",
     "activation_quantization": true,
     "weight_quantization": true,
@@ -70,10 +70,11 @@
         "axon_wastage_pct"
       ],
       "training_batch_size": null,
-      "agent_model": "openrouter:google/gemini-3-flash-preview",
+      "agent_model": "mistral:mistral-large-latest",
       "candidates_per_batch": 5,
       "max_regen_rounds": 10
     },
+    "max_simulation_samples": 100,
     "allow_scheduling": true
   },
   "target_metric_override": null,

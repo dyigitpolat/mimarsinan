@@ -3,7 +3,7 @@
 import { esc, fmtDuration, elapsedFromStepStart } from './util.js';
 import { renderPipelineBar, renderOverviewCards, renderConfig } from './overview.js';
 import { refreshStepDetail, updateLiveCharts } from './step-detail.js';
-import { handleSearchEvent } from './search-live.js';
+import { syncSearchEventsFromState } from './search-live.js';
 import { appendConsoleLogs, clearConsoleLogs } from './console-tab.js';
 
 // ── Historical run mode ──────────────────────────────────────────────────
@@ -169,7 +169,7 @@ function bufferMetric(step, name, value, seq, timestamp) {
     try {
       const parsed = typeof value === 'string' ? JSON.parse(value) : value;
       state.searchEvents[step].push(parsed);
-      if (state.selectedStep === step) handleSearchEvent(parsed);
+      if (state.selectedStep === step) syncSearchEventsFromState(step, state);
     } catch (_) { /* skip malformed */ }
     if (!state.metricBuffers[step][name]) state.metricBuffers[step][name] = [];
     state.metricBuffers[step][name].push({ seq, timestamp: timestamp || Date.now() / 1000, value });

@@ -8,16 +8,19 @@ with the full JointArchHwProblem.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import os
 import sys
 from dataclasses import dataclass
 from typing import Any, Dict, Sequence
+from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from mimarsinan.search.problem import SearchProblem
-from mimarsinan.search.results import ObjectiveSpec
+from mimarsinan.search.results import Candidate, ObjectiveSpec, SearchResult
 
 
 @dataclass
@@ -121,6 +124,71 @@ def test_agent_evolve_optimizer_with_mock():
     return result
 
 
+def test_optimize_uses_single_asyncio_run():
+    """Full search runs under one event loop (avoid httpx teardown on closed loop)."""
+    from mimarsinan.search.optimizers.agent_evolve_optimizer import AgentEvolveOptimizer
+
+    objectives = [ObjectiveSpec("distance_from_center", "min"), ObjectiveSpec("sum_of_coords", "max")]
+    dummy = SearchResult(
+        objectives=objectives,
+        best=Candidate(configuration={}, objectives={}, metadata={}),
+        pareto_front=[],
+        all_candidates=[],
+        history=[],
+    )
+
+    async def mock_inner(self, problem, objectives_):
+        return dummy
+
+    runs: list[int] = []
+    orig_run = asyncio.run
+
+    def counting_run(coro):
+        runs.append(1)
+        return orig_run(coro)
+
+    problem = MockMultiObjectiveProblem()
+    opt = AgentEvolveOptimizer(
+        pop_size=4,
+        generations=1,
+        candidates_per_batch=2,
+        model="openai:gpt-4o-mini",
+        config_schema={"x": "float", "y": "float"},
+        example_config={"x": 5.0, "y": 5.0},
+        constraints_description="x,y in [0,10]",
+        verbose=False,
+    )
+
+    with patch.object(AgentEvolveOptimizer, "_optimize_inner", mock_inner):
+        with patch(
+            "mimarsinan.search.optimizers.agent_evolve_optimizer.asyncio.run",
+            side_effect=counting_run,
+        ):
+            out = opt.optimize(problem)
+    assert len(runs) == 1
+    assert out is dummy
+
+
+def test_agent_evolve_async_api_structure():
+    """LLM path is async; one asyncio.run in optimize()."""
+    from mimarsinan.search.optimizers.agent_evolve_optimizer import AgentEvolveOptimizer
+
+    assert inspect.iscoroutinefunction(AgentEvolveOptimizer._optimize_inner)
+    assert inspect.iscoroutinefunction(AgentEvolveOptimizer._llm_call)
+
+
+def test_coerce_llm_text():
+    """LLM fields may be dict/list; slicing must not raise (unhashable slice on dict)."""
+    from mimarsinan.search.optimizers.agent_evolve_optimizer import AgentEvolveOptimizer
+
+    assert AgentEvolveOptimizer._coerce_llm_text(None) == ""
+    assert AgentEvolveOptimizer._coerce_llm_text("hello") == "hello"
+    assert '"a"' in AgentEvolveOptimizer._coerce_llm_text({"a": 1})
+    assert AgentEvolveOptimizer._coerce_llm_text([1, 2]).startswith("[")
+    # Slicing coerced output must not raise (unlike raw dict[:n])
+    _ = AgentEvolveOptimizer._coerce_llm_text({"k": "v"})[:300]
+
+
 def test_support_functions():
     """Test the support functions independently."""
     from mimarsinan.search.optimizers.agent_evolve_support import (
@@ -189,6 +257,36 @@ def test_support_functions():
     print(f"✓ select_best_candidate() works correctly (best={best.configuration})")
 
     print("\n✓ All support function tests passed!")
+
+
+def test_select_best_candidate_minimax_matches_results():
+    """AgentEvolve best must match select_minimax_rank on Candidate views."""
+    from mimarsinan.search.optimizers.agent_evolve_support import (
+        CandidateResult,
+        result_to_candidate,
+        select_best_candidate_minimax,
+        sort_pareto_results_minimax_first,
+    )
+    from mimarsinan.search.results import select_minimax_rank
+
+    objectives = (
+        ObjectiveSpec("estimated_accuracy", "max"),
+        ObjectiveSpec("total_params", "min"),
+    )
+    pareto = [
+        CandidateResult({"a": 1}, {"estimated_accuracy": 0.9, "total_params": 100}, True),
+        CandidateResult({"a": 2}, {"estimated_accuracy": 0.85, "total_params": 50}, True),
+        CandidateResult({"a": 3}, {"estimated_accuracy": 0.88, "total_params": 80}, True),
+    ]
+    cands = [result_to_candidate(r) for r in pareto]
+    expected = select_minimax_rank(cands, objectives)
+    assert expected is not None
+    got = select_best_candidate_minimax(pareto, objectives)
+    assert got is not None
+    assert got.configuration == expected.configuration
+
+    ordered = sort_pareto_results_minimax_first(pareto, objectives)
+    assert ordered[0].configuration == expected.configuration
 
 
 if __name__ == "__main__":

@@ -26,7 +26,8 @@ from mimarsinan.search.optimizers.agent_evolve_support import (
     prettify_results,
     result_to_candidate,
     sample_failed_for_constraint,
-    select_best_candidate,
+    select_best_candidate_minimax,
+    sort_pareto_results_minimax_first,
 )
 from mimarsinan.search.optimizers.agent_evolve_prompts import (
     build_constraint_instruction_prompt,
@@ -84,19 +85,40 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
     invalid_penalty: float = 1e18
 
     # Internal state (not part of dataclass init)
-    _agent: Any = field(default=None, init=False, repr=False)
+    _trace_reporter: Any = field(default=None, init=False, repr=False)
+    _trace_gen: int = field(default=0, init=False, repr=False)
+    _trace_seq: int = field(default=0, init=False, repr=False)
 
-    def _get_agent(self) -> Any:
-        """Lazily initialize the pydantic-ai Agent."""
-        if self._agent is None:
-            from pydantic_ai import Agent
-            self._agent = Agent(model=self.model, retries=self.llm_retries)
-        return self._agent
+    def _make_agent(self) -> Any:
+        """Create a new pydantic-ai Agent for this LLM call.
+
+        Do **not** cache the Agent across calls: the underlying async HTTP client
+        is tied to the running event loop. A cached Agent was a common source of
+        ``RuntimeError: Event loop is closed`` when combined with multiple
+        ``asyncio.run`` invocations or teardown races; even with one
+        ``asyncio.run`` per ``optimize()``, a fresh Agent per call avoids stale
+        transport state from provider SDKs.
+        """
+        from pydantic_ai import Agent
+
+        return Agent(model=self.model, retries=self.llm_retries)
 
     def _log(self, message: str) -> None:
         """Print a message if verbose mode is enabled."""
         if self.verbose:
             print(message, flush=True)
+
+    @staticmethod
+    def _coerce_llm_text(val: Any) -> str:
+        """Normalize LLM fields expected to be str; models sometimes return dict/list."""
+        if val is None:
+            return ""
+        if isinstance(val, str):
+            return val
+        try:
+            return json.dumps(val, ensure_ascii=False)
+        except TypeError:
+            return str(val)
 
     @staticmethod
     def _schema_has_dict_type(output_schema: Dict[str, type]) -> bool:
@@ -111,10 +133,144 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
                     return True
         return False
 
-    def _llm_call(
+    _TRACE_MAX_SECTION_CHARS = 4000
+    _TRACE_MAX_SECTIONS = 12
+    _TRACE_MAX_RESPONSE_STR = 2500
+    #: Longer previews for constraint / performance text in ``llm_trace`` (WebSocket-safe cap).
+    _TRACE_MAX_TEXT_PREVIEW = 12000
+    #: Per-field cap on ``generation_complete`` JSON for live GUI (constraint + insights).
+    _TRACE_MAX_GEN_COMPLETE_STR = 10000
+
+    def _split_prompt_for_trace(self, prompt_text: str) -> Tuple[List[Dict[str, str]], bool, int]:
+        """Split prompt into labeled sections for GUI; return (sections, truncated, total_chars)."""
+        total_chars = len(prompt_text)
+        parts = re.split(r"\n\s*\n+", prompt_text.strip())
+        parts = [p.strip() for p in parts if p.strip()]
+        truncated = len(parts) > self._TRACE_MAX_SECTIONS
+        sections: List[Dict[str, str]] = []
+        for i, p in enumerate(parts[: self._TRACE_MAX_SECTIONS]):
+            if len(p) > self._TRACE_MAX_SECTION_CHARS:
+                p = p[: self._TRACE_MAX_SECTION_CHARS] + "\n…"
+                truncated = True
+            first_line = p.split("\n", 1)[0].strip()
+            label = first_line[:72] + ("…" if len(first_line) > 72 else "")
+            if len(label) < 8:
+                label = f"Section {i + 1}"
+            sections.append({"label": label, "text": p})
+        return sections, truncated, total_chars
+
+    def _trace_response_summary(self, call_kind: str, result: Any) -> Dict[str, Any]:
+        """Structured response summary for live GUI (not raw JSON dumps)."""
+        if hasattr(result, "model_dump"):
+            result = SimpleNamespace(**result.model_dump())
+        out: Dict[str, Any] = {"call_kind": call_kind}
+
+        def _preview_cfg(d: Dict[str, Any]) -> str:
+            s = prettify_configuration(d) if isinstance(d, dict) else str(d)
+            return s[:280] + ("…" if len(s) > 280 else "")
+
+        if call_kind in (
+            "initial_candidates",
+            "regenerate_candidates",
+            "offspring",
+            "regenerate_offspring",
+        ):
+            reasoning = self._coerce_llm_text(getattr(result, "reasoning", "") or "")
+            cands = getattr(result, "candidates", []) or []
+            out["reasoning_preview"] = reasoning[: self._TRACE_MAX_RESPONSE_STR] + (
+                "…" if len(reasoning) > self._TRACE_MAX_RESPONSE_STR else ""
+            )
+            out["candidate_count"] = len(cands)
+            previews = []
+            for i, c in enumerate(cands[:2]):
+                if isinstance(c, dict):
+                    previews.append({"index": i, "summary": _preview_cfg(c)})
+                elif isinstance(c, str):
+                    previews.append({"index": i, "summary": c[:280]})
+            out["candidate_previews"] = previews
+            return out
+
+        if call_kind == "failure_insights":
+            insights = getattr(result, "insights", []) or []
+            items = []
+            for i, s in enumerate(insights[:20]):
+                t = str(s)
+                items.append({"index": i, "text": t[:400] + ("…" if len(t) > 400 else "")})
+            out["insight_count"] = len(insights)
+            out["insights"] = items
+            return out
+
+        if call_kind == "constraint_instruction":
+            text = self._coerce_llm_text(getattr(result, "constraint_instruction", "") or "")
+            cap = self._TRACE_MAX_TEXT_PREVIEW
+            out["text_preview"] = text[:cap] + ("…" if len(text) > cap else "")
+            out["text_preview_truncated"] = len(text) > cap
+            out["text_preview_full_len"] = len(text)
+            return out
+
+        if call_kind == "update_constraint":
+            text = self._coerce_llm_text(getattr(result, "updated_instruction", "") or "")
+            cap = self._TRACE_MAX_TEXT_PREVIEW
+            out["text_preview"] = text[:cap] + ("…" if len(text) > cap else "")
+            out["text_preview_truncated"] = len(text) > cap
+            out["text_preview_full_len"] = len(text)
+            return out
+
+        if call_kind == "performance_insights":
+            text = self._coerce_llm_text(getattr(result, "performance_insights", "") or "")
+            cap = self._TRACE_MAX_TEXT_PREVIEW
+            out["text_preview"] = text[:cap] + ("…" if len(text) > cap else "")
+            out["text_preview_truncated"] = len(text) > cap
+            out["text_preview_full_len"] = len(text)
+            return out
+
+        if call_kind == "update_performance_insights":
+            text = self._coerce_llm_text(getattr(result, "updated_insights", "") or "")
+            cap = self._TRACE_MAX_TEXT_PREVIEW
+            out["text_preview"] = text[:cap] + ("…" if len(text) > cap else "")
+            out["text_preview_truncated"] = len(text) > cap
+            out["text_preview_full_len"] = len(text)
+            return out
+
+        out["note"] = "unrecognized call_kind for trace"
+        return out
+
+    def _emit_llm_trace(
+        self,
+        call_kind: str,
+        prompt_sent: str,
+        output_schema: Dict[str, type],
+        result: Any,
+    ) -> None:
+        """Emit one llm_trace search_event for the live monitor."""
+        rep = getattr(self, "_trace_reporter", None)
+        if rep is None:
+            return
+        self._trace_seq += 1
+        sections, truncated, total_chars = self._split_prompt_for_trace(prompt_sent)
+        schema_keys = list(output_schema.keys())
+        try:
+            self._report_search_event(rep, {
+                "type": "llm_trace",
+                "gen": self._trace_gen,
+                "ordinal": self._trace_seq,
+                "call_kind": call_kind,
+                "output_schema_keys": schema_keys,
+                "request": {
+                    "sections": sections,
+                    "truncated": truncated,
+                    "total_chars": total_chars,
+                },
+                "response": self._trace_response_summary(call_kind, result),
+            })
+        except Exception:
+            pass
+
+    async def _llm_call(
         self,
         template: str,
         output_schema: Dict[str, type],
+        call_kind: str = "unknown",
     ) -> Any:
         """
         Make an LLM call with the given template and output schema.
@@ -126,54 +282,73 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
 
         For simple field types (str, List[str], etc.) we use pydantic-ai structured
         output as normal.
+
+        Must be awaited from a single asyncio loop (see ``optimize()`` / one
+        ``asyncio.run`` for the full search) so HTTP clients are not torn down
+        across closed loops.
         """
-        agent = self._get_agent()
+        agent = self._make_agent()
 
-        if self._schema_has_dict_type(output_schema):
-            # Plain-text mode: ask the LLM to return a JSON object, parse manually.
-            keys = list(output_schema.keys())
-            augmented = (
-                template
-                + f"\n\nRespond with a single valid JSON object containing exactly "
-                f"these keys: {keys}. Output only the JSON — no markdown, no explanation."
-            )
-            result = asyncio.run(agent.run(augmented, output_type=str))
-            raw = getattr(result, "output", "") or ""
+        try:
+            if self._schema_has_dict_type(output_schema):
+                # Plain-text mode: ask the LLM to return a JSON object, parse manually.
+                keys = list(output_schema.keys())
+                augmented = (
+                    template
+                    + f"\n\nRespond with a single valid JSON object containing exactly "
+                    f"these keys: {keys}. Output only the JSON — no markdown, no explanation."
+                )
+                result = await agent.run(augmented, output_type=str)
+                raw = getattr(result, "output", "") or ""
 
-            # Extract JSON from the raw text response
-            data: Dict[str, Any] = {}
-            try:
-                data = json.loads(raw.strip())
-            except json.JSONDecodeError:
-                m = re.search(r"\{.*\}", raw, re.DOTALL)
-                if m:
-                    try:
-                        data = json.loads(m.group())
-                    except Exception:
-                        data = {}
+                # Extract JSON from the raw text response
+                data: Dict[str, Any] = {}
+                try:
+                    data = json.loads(raw.strip())
+                except json.JSONDecodeError:
+                    m = re.search(r"\{.*\}", raw, re.DOTALL)
+                    if m:
+                        try:
+                            data = json.loads(m.group())
+                        except Exception:
+                            data = {}
 
-            # Build a namespace with proper defaults for missing keys
-            ns: Dict[str, Any] = {}
-            for k, v in output_schema.items():
-                val = data.get(k)
-                if val is None:
-                    origin = get_origin(v)
-                    ns[k] = [] if (origin is list or origin is dict) else ""
-                else:
-                    ns[k] = val
-            return SimpleNamespace(**ns)
+                # Build a namespace with proper defaults for missing keys
+                ns: Dict[str, Any] = {}
+                for k, v in output_schema.items():
+                    val = data.get(k)
+                    if val is None:
+                        origin = get_origin(v)
+                        ns[k] = [] if (origin is list or origin is dict) else ""
+                    else:
+                        ns[k] = val
+                out = SimpleNamespace(**ns)
+                self._emit_llm_trace(call_kind, augmented, output_schema, out)
+                return out
 
-        else:
-            # Structured pydantic-ai output for simple field types
-            from pydantic import BaseModel, create_model
+            else:
+                # Structured pydantic-ai output for simple field types
+                from pydantic import BaseModel, create_model
 
-            output_model = create_model(
-                "_OutputModel",
-                __base__=BaseModel,
-                **{k: (v, ...) for k, v in output_schema.items()},
-            )
-            result = asyncio.run(agent.run(template, output_type=output_model))
-            return getattr(result, "output", result)
+                output_model = create_model(
+                    "_OutputModel",
+                    __base__=BaseModel,
+                    **{k: (v, ...) for k, v in output_schema.items()},
+                )
+                result = await agent.run(template, output_type=output_model)
+                out = getattr(result, "output", result)
+                self._emit_llm_trace(call_kind, template, output_schema, out)
+                return out
+        except Exception as e:
+            if self.verbose:
+                self._log(f"  LLM error ({call_kind}): {e}")
+                chain = e
+                depth = 0
+                while chain.__cause__ is not None and depth < 20:
+                    chain = chain.__cause__
+                    depth += 1
+                    self._log(f"    cause: {chain}")
+            raise
 
     def optimize(self, problem: SearchProblem[ConfigT], reporter=None) -> SearchResult[ConfigT]:
         """
@@ -189,6 +364,19 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         objectives = list(problem.objectives)
         if not objectives:
             raise ValueError("SearchProblem.objectives must not be empty")
+
+        self._trace_reporter = reporter
+        try:
+            return asyncio.run(self._optimize_inner(problem, objectives))
+        finally:
+            self._trace_reporter = None
+
+    async def _optimize_inner(
+        self,
+        problem: SearchProblem[ConfigT],
+        objectives: List[ObjectiveSpec],
+    ) -> SearchResult[ConfigT]:
+        reporter = self._trace_reporter
 
         # Build search space description for LLM
         search_space_desc = format_search_space_description(
@@ -208,15 +396,19 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         constraint_instruction = ""
         performance_insights = ""
 
+        self._trace_gen = 1
+        self._trace_seq = 0
+
         # ===== Generation 1: Initial Sampling =====
         self._log(f"=== Generation 1 / {self.generations} (initial sampling) ===")
 
         self._report_search_event(reporter, {
             "type": "generation_start",
             "gen": 1, "total_gens": self.generations, "phase": "initial",
+            "objectives": [{"name": s.name, "goal": s.goal} for s in objectives],
         })
 
-        gen1_valid, gen1_failed, constraint_instruction = self._run_initial_generation(
+        gen1_valid, gen1_failed, constraint_instruction = await self._run_initial_generation(
             problem=problem,
             objectives=objectives,
             search_space_desc=search_space_desc,
@@ -240,15 +432,14 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
 
         # Generate initial performance insights
         if all_valid_results:
-            performance_insights = self._generate_performance_insights(
+            performance_insights = await self._generate_performance_insights(
                 valid_results=all_valid_results,
                 objectives=objectives,
                 search_space_desc=search_space_desc,
             )
 
-        pareto_front_summary = [
-            r.objectives for r in pareto[:5]
-        ]
+        pareto_sorted = sort_pareto_results_minimax_first(pareto, objectives)
+        pareto_front_summary = [r.objectives for r in pareto_sorted[:5]]
 
         history.append({
             "gen": 1,
@@ -271,8 +462,16 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
             "failed_count": len(gen1_failed),
             "pareto_size": len(pareto),
             "pareto_front": pareto_front_summary,
-            "constraint_instruction": constraint_instruction[:500] if constraint_instruction else "",
-            "performance_insights": performance_insights[:500] if performance_insights else "",
+            "constraint_instruction": (
+                constraint_instruction[: self._TRACE_MAX_GEN_COMPLETE_STR]
+                if constraint_instruction
+                else ""
+            ),
+            "performance_insights": (
+                performance_insights[: self._TRACE_MAX_GEN_COMPLETE_STR]
+                if performance_insights
+                else ""
+            ),
         })
 
         prev_pareto = pareto
@@ -281,12 +480,15 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         for gen in range(2, self.generations + 1):
             self._log(f"\n=== Generation {gen} / {self.generations} ===")
 
+            self._trace_gen = gen
+            self._trace_seq = 0
             self._report_search_event(reporter, {
                 "type": "generation_start",
                 "gen": gen, "total_gens": self.generations, "phase": "evolution",
+                "objectives": [{"name": s.name, "goal": s.goal} for s in objectives],
             })
 
-            gen_valid, gen_failed, constraint_instruction = self._run_evolution_generation(
+            gen_valid, gen_failed, constraint_instruction = await self._run_evolution_generation(
                 problem=problem,
                 objectives=objectives,
                 search_space_desc=search_space_desc,
@@ -311,7 +513,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
 
             # Update performance insights
             if all_valid_results:
-                performance_insights = self._update_performance_insights(
+                performance_insights = await self._update_performance_insights(
                     previous_insights=performance_insights,
                     valid_results=all_valid_results,
                     objectives=objectives,
@@ -320,9 +522,8 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
 
             self._log(f"Generation {gen}: {len(gen_valid)} valid, Pareto size={len(pareto)}")
 
-            pareto_front_summary = [
-                r.objectives for r in pareto[:5]
-            ]
+            pareto_sorted = sort_pareto_results_minimax_first(pareto, objectives)
+            pareto_front_summary = [r.objectives for r in pareto_sorted[:5]]
 
             history.append({
                 "gen": gen,
@@ -345,8 +546,16 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
                 "failed_count": len(gen_failed),
                 "pareto_size": len(pareto),
                 "pareto_front": pareto_front_summary,
-                "constraint_instruction": constraint_instruction[:500] if constraint_instruction else "",
-                "performance_insights": performance_insights[:500] if performance_insights else "",
+                "constraint_instruction": (
+                    constraint_instruction[: self._TRACE_MAX_GEN_COMPLETE_STR]
+                    if constraint_instruction
+                    else ""
+                ),
+                "performance_insights": (
+                    performance_insights[: self._TRACE_MAX_GEN_COMPLETE_STR]
+                    if performance_insights
+                    else ""
+                ),
             })
 
             prev_pareto = pareto
@@ -364,7 +573,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
             if c_key in pareto_configs:
                 c.metadata["is_pareto"] = True
 
-        best_result = select_best_candidate(final_pareto, objectives)
+        best_result = select_best_candidate_minimax(final_pareto, objectives)
         if best_result:
             best = result_to_candidate(best_result, {"is_pareto": True})
         else:
@@ -390,7 +599,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
             history=history,
         )
 
-    def _run_initial_generation(
+    async def _run_initial_generation(
         self,
         problem: SearchProblem[ConfigT],
         objectives: Sequence[ObjectiveSpec],
@@ -413,13 +622,13 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         regen_round = 0
         while len(population_valid) < self.pop_size and regen_round < self.max_regen_rounds:
             if regen_round == 0:
-                candidates, reasoning = self._generate_initial_candidates(
+                candidates, reasoning = await self._generate_initial_candidates(
                     n_candidates=self.candidates_per_batch,
                     objectives=objectives,
                     search_space_desc=search_space_desc,
                 )
             else:
-                candidates, reasoning = self._regenerate_candidates(
+                candidates, reasoning = await self._regenerate_candidates(
                     failed_results=last_round_failed,
                     n_candidates=self.candidates_per_batch,
                     objectives=objectives,
@@ -441,7 +650,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
             self._log(f"  Batch {regen_round + 1}: {len(valid_batch)} valid, {len(failed_batch)} failed")
 
             if failed_batch:
-                insights = self._generate_failure_insights(
+                insights = await self._generate_failure_insights(
                     failed_results=failed_batch,
                     objectives=objectives,
                     search_space_desc=search_space_desc,
@@ -461,14 +670,14 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
                     last_round_failed, gen_failed, self.max_failed_examples
                 )
                 if constraint_instruction:
-                    constraint_instruction = self._update_constraint_instruction(
+                    constraint_instruction = await self._update_constraint_instruction(
                         previous_instruction=constraint_instruction,
                         failed_results=sampled_failures,
                         objectives=objectives,
                         search_space_desc=search_space_desc,
                     )
                 else:
-                    constraint_instruction = self._generate_constraint_instruction(
+                    constraint_instruction = await self._generate_constraint_instruction(
                         failed_results=sampled_failures,
                         objectives=objectives,
                         search_space_desc=search_space_desc,
@@ -484,7 +693,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
 
         return population_valid, gen_failed, constraint_instruction
 
-    def _run_evolution_generation(
+    async def _run_evolution_generation(
         self,
         problem: SearchProblem[ConfigT],
         objectives: Sequence[ObjectiveSpec],
@@ -507,13 +716,13 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         last_round_failed: List[CandidateResult] = []
 
         if not prev_pareto:
-            return self._run_initial_generation(
+            return await self._run_initial_generation(
                 problem, objectives, search_space_desc,
                 all_failed_results, constraint_instruction, performance_insights,
                 reporter=reporter,
             )
 
-        candidates, reasoning = self._generate_offspring(
+        candidates, reasoning = await self._generate_offspring(
             pareto_results=prev_pareto,
             n_candidates=self.pop_size,
             objectives=objectives,
@@ -535,7 +744,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         self._log(f"  Offspring: {len(valid_batch)} valid, {len(failed_batch)} failed")
 
         if failed_batch:
-            insights = self._generate_failure_insights(
+            insights = await self._generate_failure_insights(
                 failed_results=failed_batch,
                 objectives=objectives,
                 search_space_desc=search_space_desc,
@@ -552,7 +761,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
             if not last_round_failed:
                 break
 
-            candidates, reasoning = self._regenerate_offspring(
+            candidates, reasoning = await self._regenerate_offspring(
                 failed_results=last_round_failed,
                 pareto_results=prev_pareto,
                 n_candidates=self.candidates_per_batch,
@@ -575,7 +784,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
             self._log(f"  Regen {regen_round + 1}: {len(valid_batch)} valid, {len(failed_batch)} failed")
 
             if failed_batch:
-                insights = self._generate_failure_insights(
+                insights = await self._generate_failure_insights(
                     failed_results=failed_batch,
                     objectives=objectives,
                     search_space_desc=search_space_desc,
@@ -587,7 +796,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
                 sampled_failures = sample_failed_for_constraint(
                     failed_batch, gen_failed, self.max_failed_examples
                 )
-                constraint_instruction = self._update_constraint_instruction(
+                constraint_instruction = await self._update_constraint_instruction(
                     previous_instruction=constraint_instruction,
                     failed_results=sampled_failures,
                     objectives=objectives,
@@ -727,7 +936,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
 
     # ===== LLM Interaction Methods =====
 
-    def _generate_initial_candidates(
+    async def _generate_initial_candidates(
         self,
         n_candidates: int,
         objectives: Sequence[ObjectiveSpec],
@@ -738,19 +947,20 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         Returns (candidates, reasoning).
         """
         template = build_initial_candidates_prompt(n_candidates, search_space_desc)
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"reasoning": str, "candidates": List[Dict[str, Any]]},
+            call_kind="initial_candidates",
         )
         candidates = getattr(result, "candidates", [])
-        reasoning = getattr(result, "reasoning", "")
+        reasoning = self._coerce_llm_text(getattr(result, "reasoning", ""))
         if self.verbose:
             self._log(f"  LLM generated {len(candidates)} candidates")
             if reasoning:
                 self._log(f"  Reasoning: {reasoning[:300]}...")
         return parse_candidates(candidates, n_candidates, self._log), reasoning
 
-    def _regenerate_candidates(
+    async def _regenerate_candidates(
         self,
         failed_results: List[CandidateResult],
         n_candidates: int,
@@ -767,15 +977,16 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         template = build_regenerate_candidates_prompt(
             failed_str, search_space_desc, constraint_instruction, performance_insights, n_candidates
         )
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"reasoning": str, "candidates": List[Dict[str, Any]]},
+            call_kind="regenerate_candidates",
         )
         candidates = getattr(result, "candidates", [])
-        reasoning = getattr(result, "reasoning", "")
+        reasoning = self._coerce_llm_text(getattr(result, "reasoning", ""))
         return parse_candidates(candidates, n_candidates, self._log), reasoning
 
-    def _generate_offspring(
+    async def _generate_offspring(
         self,
         pareto_results: List[CandidateResult],
         n_candidates: int,
@@ -792,15 +1003,16 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         template = build_offspring_prompt(
             pareto_str, search_space_desc, constraint_instruction, performance_insights, n_candidates
         )
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"reasoning": str, "candidates": List[Dict[str, Any]]},
+            call_kind="offspring",
         )
         candidates = getattr(result, "candidates", [])
-        reasoning = getattr(result, "reasoning", "")
+        reasoning = self._coerce_llm_text(getattr(result, "reasoning", ""))
         return parse_candidates(candidates, n_candidates, self._log), reasoning
 
-    def _regenerate_offspring(
+    async def _regenerate_offspring(
         self,
         failed_results: List[CandidateResult],
         pareto_results: List[CandidateResult],
@@ -819,15 +1031,16 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         template = build_regenerate_offspring_prompt(
             failed_str, pareto_str, search_space_desc, constraint_instruction, performance_insights, n_candidates
         )
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"reasoning": str, "candidates": List[Dict[str, Any]]},
+            call_kind="regenerate_offspring",
         )
         candidates = getattr(result, "candidates", [])
-        reasoning = getattr(result, "reasoning", "")
+        reasoning = self._coerce_llm_text(getattr(result, "reasoning", ""))
         return parse_candidates(candidates, n_candidates, self._log), reasoning
 
-    def _generate_failure_insights(
+    async def _generate_failure_insights(
         self,
         failed_results: List[CandidateResult],
         objectives: Sequence[ObjectiveSpec],
@@ -836,16 +1049,17 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         """Generate insights for why candidates failed."""
         failed_str = prettify_results(failed_results, objectives)
         template = build_failure_insights_prompt(failed_str, search_space_desc, len(failed_results))
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"insights": List[str]},
+            call_kind="failure_insights",
         )
         insights = getattr(result, "insights", [])
         while len(insights) < len(failed_results):
             insights.append("Unknown failure reason")
         return insights[:len(failed_results)]
 
-    def _generate_constraint_instruction(
+    async def _generate_constraint_instruction(
         self,
         failed_results: List[CandidateResult],
         objectives: Sequence[ObjectiveSpec],
@@ -854,13 +1068,14 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         """Generate consolidated constraint instructions from failures."""
         failed_str = prettify_results(failed_results, objectives)
         template = build_constraint_instruction_prompt(failed_str, search_space_desc)
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"constraint_instruction": str},
+            call_kind="constraint_instruction",
         )
         return getattr(result, "constraint_instruction", "")
 
-    def _update_constraint_instruction(
+    async def _update_constraint_instruction(
         self,
         previous_instruction: str,
         failed_results: List[CandidateResult],
@@ -870,13 +1085,14 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         """Update constraint instructions with new failure insights."""
         failed_str = prettify_results(failed_results, objectives)
         template = build_update_constraint_prompt(previous_instruction, failed_str, search_space_desc)
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"updated_instruction": str},
+            call_kind="update_constraint",
         )
         return getattr(result, "updated_instruction", previous_instruction)
 
-    def _generate_performance_insights(
+    async def _generate_performance_insights(
         self,
         valid_results: List[CandidateResult],
         objectives: Sequence[ObjectiveSpec],
@@ -901,13 +1117,14 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
             stats_lines.append(prettify_results(top_pareto, objectives))
         stats_str = "\n".join(stats_lines)
         template = build_performance_insights_prompt(stats_str, search_space_desc)
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"performance_insights": str},
+            call_kind="performance_insights",
         )
         return getattr(result, "performance_insights", "")
 
-    def _update_performance_insights(
+    async def _update_performance_insights(
         self,
         previous_insights: str,
         valid_results: List[CandidateResult],
@@ -927,8 +1144,9 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
             stats.get('pareto_size', 0),
             search_space_desc,
         )
-        result = self._llm_call(
+        result = await self._llm_call(
             template=template,
             output_schema={"updated_insights": str},
+            call_kind="update_performance_insights",
         )
         return getattr(result, "updated_insights", previous_insights)

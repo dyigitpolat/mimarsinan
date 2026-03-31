@@ -10,7 +10,12 @@ import random
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from mimarsinan.search.results import Candidate, ObjectiveSpec
+from mimarsinan.search.results import (
+    Candidate,
+    ObjectiveSpec,
+    _rank_candidates,
+    select_minimax_rank,
+)
 
 
 @dataclass
@@ -298,6 +303,46 @@ def result_to_candidate(result: CandidateResult, metadata: Optional[Dict[str, An
         objectives=result.objectives,
         metadata=metadata or {"is_pareto": False}
     )
+
+
+def sort_pareto_results_minimax_first(
+    pareto: List[CandidateResult],
+    objectives: Sequence[ObjectiveSpec],
+) -> List[CandidateResult]:
+    """
+    Order Pareto members by minimax rank (best-balanced first), matching the GUI and NSGA2.
+
+    Tie-break: ascending sum of per-objective ranks (same as ``select_minimax_rank``).
+    """
+    if len(pareto) <= 1:
+        return list(pareto)
+    cands = [result_to_candidate(r) for r in pareto]
+    ranks = _rank_candidates(cands, objectives)
+    worst = [max(row) for row in ranks]
+    rank_sums = [sum(row) for row in ranks]
+    order = sorted(range(len(pareto)), key=lambda i: (worst[i], rank_sums[i]))
+    return [pareto[i] for i in order]
+
+
+def select_best_candidate_minimax(
+    pareto: List[CandidateResult],
+    objectives: Sequence[ObjectiveSpec],
+) -> Optional[CandidateResult]:
+    """
+    Pick the reported ``best`` from the Pareto front using minimax-rank selection
+    (``select_minimax_rank`` on ``Candidate`` views), aligned with the live GUI and NSGA2.
+    """
+    if not pareto:
+        return None
+    cands = [result_to_candidate(r) for r in pareto]
+    best_cand = select_minimax_rank(cands, objectives)
+    if best_cand is None:
+        return None
+    key = prettify_configuration(best_cand.configuration)
+    for r in pareto:
+        if prettify_configuration(r.configuration) == key:
+            return r
+    return pareto[0]
 
 
 def select_best_candidate(

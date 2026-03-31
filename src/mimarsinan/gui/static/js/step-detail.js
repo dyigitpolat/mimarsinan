@@ -6,7 +6,7 @@ import { renderHardwareTab } from './hardware-tab.js';
 import { renderSearchTab } from './search-tab.js';
 import { renderActivationsTab, renderAdaptationTab } from './scales-tab.js';
 import { renderPruningTab } from './pruning-tab.js';
-import { initSearchLive, handleSearchEvent, replaySearchEvents } from './search-live.js';
+import { initSearchLive, detachSearchLive, replaySearchEvents, syncSearchEventsFromState } from './search-live.js';
 
 // ── Public API ───────────────────────────────────────────────────────────
 export async function refreshStepDetail(stepName, state, fetchJSON) {
@@ -27,8 +27,12 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   if (detail.error) { panel.innerHTML = `<div class="empty-state">${esc(detail.error)}</div>`; return; }
 
   const prevCount = _totalMetricPoints(stepName, state);
+  const prevSearchLen = (state.searchEvents && state.searchEvents[stepName])
+    ? state.searchEvents[stepName].length : 0;
   ingestServerMetrics(stepName, detail.metrics || [], state);
   const newCount = _totalMetricPoints(stepName, state);
+  const newSearchLen = (state.searchEvents && state.searchEvents[stepName])
+    ? state.searchEvents[stepName].length : 0;
 
   // Only rebuild DOM when structure changes (NOT when duration updates)
   const sig = JSON.stringify({
@@ -41,6 +45,9 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
 
   if (state.lastDetailJSON === sig && panel.querySelector('.step-detail-header')) {
     if (newCount > prevCount) updateLiveCharts(stepName, state);
+    if (newSearchLen > prevSearchLen && state.activeTab === 'live_search' && state.selectedStep === stepName) {
+      syncSearchEventsFromState(stepName, state);
+    }
     return;
   }
   state.lastDetailJSON = sig;
@@ -73,7 +80,7 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   detail._searchEvents = searchEvts;
   const tabs = determineTabs(detail, metrics);
   if (!state.activeTab || !tabs.includes(state.activeTab)) state.activeTab = tabs[0];
-  renderTabs(tabs, detail, metrics, state);
+  renderTabs(stepName, tabs, detail, metrics, state);
 }
 
 export function updateLiveCharts(stepName, state) {
@@ -170,7 +177,7 @@ const TAB_LABELS = {
   constraints: 'Constraints', pruning: 'Pruning', summary: 'Summary',
 };
 
-function renderTabs(tabs, detail, metrics, state) {
+function renderTabs(stepName, tabs, detail, metrics, state) {
   const tabBar = document.getElementById('step-tabs');
   const content = document.getElementById('step-tab-content');
   if (!tabBar || !content) return;
@@ -186,18 +193,19 @@ function renderTabs(tabs, detail, metrics, state) {
     if (!btn) return;
     state.activeTab = btn.dataset.tab;
     tabBar.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === state.activeTab));
-    renderTabContent(state.activeTab, detail, metrics, content);
+    renderTabContent(stepName, state.activeTab, detail, metrics, content, state);
   };
 
-  renderTabContent(state.activeTab, detail, metrics, content);
+  renderTabContent(stepName, state.activeTab, detail, metrics, content, state);
 }
 
-function renderTabContent(tab, detail, metrics, container) {
+function renderTabContent(stepName, tab, detail, metrics, container, state) {
+  if (tab !== 'live_search') detachSearchLive();
   const snap = detail.snapshot || {};
   const stepStartTime = detail.start_time != null ? (detail.start_time > 1e12 ? detail.start_time / 1000 : detail.start_time) : null;
   switch (tab) {
     case 'metrics': renderMetricsTab(metrics, container, stepStartTime); break;
-    case 'live_search': renderLiveSearchTab(detail, container); break;
+    case 'live_search': renderLiveSearchTab(stepName, detail, container, state); break;
     case 'model': renderModelTab(snap.model, container); break;
     case 'ir_graph': renderIRGraphTab(snap.ir_graph, container); break;
     case 'hardware': renderHardwareTab(snap.hard_core_mapping, container, snap.ir_graph); break;
@@ -212,9 +220,10 @@ function renderTabContent(tab, detail, metrics, container) {
 }
 
 // ── Live search tab ──────────────────────────────────────────────────────
-function renderLiveSearchTab(detail, container) {
+function renderLiveSearchTab(stepName, detail, container, state) {
   initSearchLive(container);
-  const events = detail._searchEvents || [];
+  const fromState = (state.searchEvents && state.searchEvents[stepName]) || [];
+  const events = fromState.length > 0 ? fromState : (detail._searchEvents || []);
   if (events.length > 0) replaySearchEvents(events);
 }
 

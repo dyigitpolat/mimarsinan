@@ -1,10 +1,43 @@
-/* Shared utilities and Plotly safe-wrapper for Mimarsinan GUI. */
+/* Shared utilities and Plotly safe-wrapper for Mimarsinan GUI.
+ * Markdown: marked@14 + DOMPurify@3 (import map in index.html). */
+
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 // ── HTML helpers ─────────────────────────────────────────────────────────
 const _escDiv = document.createElement('div');
 export function esc(s) {
   _escDiv.textContent = String(s ?? '');
   return _escDiv.innerHTML;
+}
+
+marked.setOptions({ gfm: true, breaks: false });
+
+let _linkHookInstalled = false;
+function _ensureExternalLinkHook() {
+  if (_linkHookInstalled) return;
+  _linkHookInstalled = true;
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName !== 'A' || !node.hasAttribute('href')) return;
+    const href = node.getAttribute('href') || '';
+    if (/^https?:\/\//i.test(href)) {
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+}
+
+/**
+ * Render Markdown to safe HTML for agentic evolution prose (constraints, insights, trace).
+ * Uses CommonMark + GFM via marked; output is sanitized with DOMPurify before innerHTML.
+ */
+export function renderMarkdown(s) {
+  if (s == null || s === '') return '';
+  const raw = String(s).trim();
+  if (!raw) return '';
+  _ensureExternalLinkHook();
+  const html = marked.parse(raw);
+  return DOMPurify.sanitize(html);
 }
 
 export function cssId(s) { return s.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); }
