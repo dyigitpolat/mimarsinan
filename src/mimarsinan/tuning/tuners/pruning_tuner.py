@@ -15,6 +15,9 @@ from mimarsinan.transformations.pruning import (
     compute_masks_from_importance,
 )
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
+from mimarsinan.tuning.tolerance_calibration import (
+    initial_tolerance_fn_for_pipeline_if_enabled,
+)
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 
 class PruningTuner(PerceptronTuner):
@@ -157,6 +160,18 @@ class PruningTuner(PerceptronTuner):
             self.target_adjuster.update_target(acc)
 
         before_cycle = lambda: self._refresh_pruning_importance()
+        initial_tol_fn = initial_tolerance_fn_for_pipeline_if_enabled(
+            self.pipeline.config,
+            clone_state=lambda: copy.deepcopy(self.model.state_dict()),
+            restore_state=lambda state: self.model.load_state_dict(state),
+            evaluate_at_rate=_update_and_eval,
+            validate_fn=self.trainer.validate,
+            train_validation_epochs=lambda lr, n, w: self.trainer.train_validation_epochs(
+                lr, n, w
+            ),
+            lr_probe=self.lr,
+            before_cycle=before_cycle,
+        )
         adapter = SmartSmoothAdaptation(
             _adaptation,
             lambda: copy.deepcopy(self.model.state_dict()),
@@ -165,8 +180,10 @@ class PruningTuner(PerceptronTuner):
             [BasicInterpolation(0.0, 1.0)],
             self.target_adjuster.get_target(),
             before_cycle=before_cycle,
+            initial_tolerance_fn=initial_tol_fn,
         )
-        adapter.tolerance = 0.05
+        if initial_tol_fn is None:
+            adapter.tolerance = 0.05
 
         print(f"[PruningTuner] Starting fractional discrete adaptation...")
         adapter.adapt_smoothly(max_cycles=max_cycles)

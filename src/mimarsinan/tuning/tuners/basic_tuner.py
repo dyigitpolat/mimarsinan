@@ -3,6 +3,9 @@ from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
+from mimarsinan.tuning.tolerance_calibration import (
+    initial_tolerance_fn_for_pipeline_if_enabled,
+)
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
@@ -107,13 +110,26 @@ class BasicTuner:
         def restore_state(state):
             self._get_model().load_state_dict(state)
 
+        initial_tol_fn = initial_tolerance_fn_for_pipeline_if_enabled(
+            self.pipeline.config,
+            clone_state=clone_state,
+            restore_state=restore_state,
+            evaluate_at_rate=evaluate_model,
+            validate_fn=self.validate,
+            train_validation_epochs=lambda lr, n, w: self._get_trainer().train_validation_epochs(
+                lr, n, w
+            ),
+            lr_probe=self._find_lr,
+        )
+
         adapter = SmartSmoothAdaptation (
             self._adaptation,
             clone_state,
             restore_state,
             evaluate_model,
             interpolators=[BasicInterpolation(0.0, 1.0),],
-            target_metric=self._get_target()
+            target_metric=self._get_target(),
+            initial_tolerance_fn=initial_tol_fn,
         )
         adapter.adapt_smoothly()
         

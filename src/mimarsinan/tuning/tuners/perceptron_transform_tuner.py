@@ -1,6 +1,9 @@
 from mimarsinan.tuning.learning_rate_explorer import LearningRateExplorer
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
+from mimarsinan.tuning.tolerance_calibration import (
+    initial_tolerance_fn_for_pipeline_if_enabled,
+)
 from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
 from mimarsinan.model_training.perceptron_transform_trainer import PerceptronTransformTrainer
 
@@ -71,13 +74,26 @@ class PerceptronTransformTuner:
             self._get_trainer().aux_model.load_state_dict(state[0])
             self._get_trainer().model.load_state_dict(state[1])
 
+        initial_tol_fn = initial_tolerance_fn_for_pipeline_if_enabled(
+            self.pipeline.config,
+            clone_state=clone_state,
+            restore_state=restore_state,
+            evaluate_at_rate=evaluate_model,
+            validate_fn=self.validate,
+            train_validation_epochs=lambda lr, n, w: self._get_trainer().train_validation_epochs(
+                lr, n, w
+            ),
+            lr_probe=self.pipeline_lr,
+        )
+
         adapter = SmartSmoothAdaptation (
             self._adaptation,
             clone_state,
             restore_state,
             evaluate_model,
             interpolators=[BasicInterpolation(0.0, 1.0),],
-            target_metric=self._get_target()
+            target_metric=self._get_target(),
+            initial_tolerance_fn=initial_tol_fn,
         )
         adapter.adapt_smoothly()
         

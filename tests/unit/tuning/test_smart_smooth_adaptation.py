@@ -97,3 +97,44 @@ class TestSmartSmoothAdaptation:
         )
         ssa.adapt_smoothly(max_cycles=3)
         assert len(before_cycle_calls) == 3, "before_cycle should be called once per cycle"
+
+    def test_initial_tolerance_fn_sets_tolerance_before_cycles(self):
+        """Optional calibration hook runs once and sets self.tolerance."""
+        tol_calls = []
+
+        def initial_tolerance_fn():
+            tol_calls.append(1)
+            return 0.07
+
+        def adapt_fn(rate):
+            pass
+
+        def evaluate(rate):
+            return 1.0
+
+        ssa = SmartSmoothAdaptation(
+            adapt_fn,
+            lambda: None,
+            lambda s: None,
+            evaluate,
+            [lambda t: t],
+            0.9,
+            initial_tolerance_fn=initial_tolerance_fn,
+        )
+        ssa.adapt_smoothly(max_cycles=1)
+
+        assert tol_calls == [1]
+        assert ssa.tolerance == pytest.approx(0.07)
+
+    def test_initial_tolerance_fn_none_unchanged_default(self):
+        ssa = SmartSmoothAdaptation(
+            lambda r: None,
+            lambda: None,
+            lambda s: None,
+            lambda rate: 1.0,
+            [lambda t: t],
+            0.9,
+            initial_tolerance_fn=None,
+        )
+        ssa.adapt_smoothly(max_cycles=1)
+        assert ssa.tolerance == 0.01

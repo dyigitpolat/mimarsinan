@@ -44,6 +44,28 @@ class TestBasicTrainer:
         trainer = _make_trainer()
         trainer.train_n_epochs(lr=0.01, epochs=1, warmup_epochs=0)
 
+    def test_train_validation_epochs_does_not_call_test(self):
+        trainer = _make_trainer()
+
+        def boom():
+            raise AssertionError("test() must not be called")
+
+        trainer.test = boom
+        trainer.train_validation_epochs(0.01, 2, 0)
+
+    def test_train_validation_epochs_runs_requested_epochs(self):
+        trainer = _make_trainer()
+        epoch_count = [0]
+        original = trainer._train_one_epoch
+
+        def wrapped(opt, sched, scaler):
+            epoch_count[0] += 1
+            return original(opt, sched, scaler)
+
+        trainer._train_one_epoch = wrapped  # type: ignore[method-assign]
+        trainer.train_validation_epochs(0.01, 3, 0)
+        assert epoch_count[0] == 3
+
     def test_train_until_target(self):
         trainer = _make_trainer()
         trainer.train_until_target_accuracy(
