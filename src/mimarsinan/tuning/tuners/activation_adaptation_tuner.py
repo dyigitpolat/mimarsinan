@@ -15,7 +15,6 @@ already-ReLU-compatible check.
 """
 
 from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
-from mimarsinan.pipelining.pipeline_steps.activation_utils import needs_relu_adaptation
 
 
 class ActivationAdaptationTuner(PerceptronTuner):
@@ -50,6 +49,9 @@ class ActivationAdaptationTuner(PerceptronTuner):
         super().run()
 
         from mimarsinan.models.perceptron_mixer.perceptron import make_activation
+        from mimarsinan.pipelining.pipeline_steps.activation_utils import (
+            needs_relu_adaptation,
+        )
 
         for p in self.model.get_perceptrons():
             if needs_relu_adaptation(p):

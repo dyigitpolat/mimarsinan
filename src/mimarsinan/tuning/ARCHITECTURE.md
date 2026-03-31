@@ -9,6 +9,7 @@ while maintaining model accuracy through smooth adaptation.
 |------|---------|---------|
 | `adaptation_manager.py` | `AdaptationManager` | Manages decorator rates (activation_adaptation, clamp, shift, quantization); for TTFS omits standalone shift decorator but nests shift inside QuantizeDecorator |
 | `smart_smooth_adaptation.py` | `SmartSmoothAdaptation` | Framework for gradually applying transformations with accuracy recovery |
+| `tolerance_calibration.py` | `ToleranceCalibrationConfig`, `estimate_tolerable_instant_drop`, `effective_probe_lr`, `LrProbeSpec`, `initial_tolerance_fn_for_pipeline_if_enabled` | Optional probe ladder (relative `delta_t` steps) plus one training epoch per probe to set initial instant-drop tolerance for step search. Probe LR: optional override `tuner_smooth_tolerance_lr`, else `lr_probe` (float or callable evaluated once when calibration runs), times `tuner_smooth_tolerance_lr_scale` (default 1.0). `BasicTuner` passes `self._find_lr` so LR matches post-baseline timing |
 | `basic_smooth_adaptation.py` | `BasicSmoothAdaptation` | Basic step-based adaptation (base for SmartSmoothAdaptation) |
 | `basic_interpolation.py` | `BasicInterpolation` | Linear interpolation utilities for adaptation schedules |
 | `adaptation_target_adjuster.py` | `AdaptationTargetAdjuster` | Dynamically adjusts accuracy targets during adaptation |

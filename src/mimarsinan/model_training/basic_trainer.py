@@ -177,6 +177,30 @@ class BasicTrainer:
     def train_n_epochs(self, lr, epochs, warmup_epochs = 0):
         return self.train_until_target_accuracy(lr, epochs, 1.0, warmup_epochs)
 
+    def train_validation_epochs(self, lr, n, warmup_epochs=0):
+        """
+        Run exactly ``n`` training epochs (plus optional LR warmup), validating
+        after each epoch. Does **not** run :meth:`test` — for calibration and
+        other paths that must avoid a full test-set pass.
+        """
+        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler(lr, n)
+
+        if warmup_epochs > 0:
+            scheduler = warmup_scheduler.GradualWarmupScheduler(
+                optimizer,
+                multiplier=1.0,
+                total_epoch=warmup_epochs,
+                after_scheduler=scheduler,
+            )
+
+        validation_accuracy = 0.0
+        for _ in range(int(n) + int(warmup_epochs)):
+            training_accuracy = self._train_one_epoch(optimizer, scheduler, scaler)
+            self._report("Training accuracy", training_accuracy)
+            validation_accuracy = self.validate()
+
+        return validation_accuracy
+
     def train_until_target_accuracy(self, lr, max_epochs, target_accuracy, warmup_epochs):
         optimizer, scheduler, scaler = self._get_optimizer_and_scheduler(lr, max_epochs)
 
