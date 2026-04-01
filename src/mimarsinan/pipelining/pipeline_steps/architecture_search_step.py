@@ -7,6 +7,7 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.model_registry import ModelRegistry
 from mimarsinan.pipelining.search_mode import derive_search_mode
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
+from mimarsinan.mapping.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.search.problems.joint_arch_hw_problem import JointArchHwProblem
 from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
@@ -261,13 +262,18 @@ def _build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
     if not cores:
         cores = [{"max_axons": 256, "max_neurons": 256, "count": 1000}]
 
-    return {
+    out: Dict[str, Any] = {
         "cores": cores,
         "target_tq": pipeline_config.get("target_tq", 32),
         "weight_bits": pipeline_config.get("weight_bits", 8),
-        "allow_core_coalescing": bool(pipeline_config.get("allow_core_coalescing", False)),
         "allow_scheduling": bool(pipeline_config.get("allow_scheduling", False)),
     }
+    if CANONICAL_KEY in pipeline_config:
+        out[CANONICAL_KEY] = bool(pipeline_config[CANONICAL_KEY])
+    else:
+        out[CANONICAL_KEY] = False
+    normalize_coalescing_config(out)
+    return out
 
 
 # ====================================================================== #
@@ -544,8 +550,12 @@ class ArchitectureSearchStep(PipelineStep):
 
         self.add_entry("model_builder", builder, "pickle")
         self.add_entry("model_config", model_config)
-        platform_constraints["allow_core_coalescing"] = bool(self.pipeline.config.get("allow_core_coalescing", False))
         platform_constraints["allow_scheduling"] = bool(self.pipeline.config.get("allow_scheduling", False))
+        if CANONICAL_KEY in self.pipeline.config:
+            platform_constraints[CANONICAL_KEY] = bool(self.pipeline.config[CANONICAL_KEY])
+        else:
+            platform_constraints.setdefault(CANONICAL_KEY, False)
+        normalize_coalescing_config(platform_constraints)
         self.add_entry("platform_constraints_resolved", platform_constraints)
         self.add_entry("architecture_search_result", {**result_json, **discovered})
         sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))

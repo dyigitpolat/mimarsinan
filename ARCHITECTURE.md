@@ -397,7 +397,7 @@ Operates in two modes based on `configuration_mode`:
 - **`"user"`**: Uses the model config and core topology from `deployment_parameters` directly.
 - **`"nas"`**: Runs multi-objective optimization (NSGA-II or Kedi) via a `JointArchHwProblem` that jointly optimizes architecture parameters and hardware core-type dimensions. The problem is model-agnostic; model-specific search spaces, config assemblers, and validation functions are injected as parameters.
 
-Objectives: `accuracy` (max), `wasted_area` (min), `total_params` (min).
+Objectives are chosen from `search.results.ALL_OBJECTIVES` (defaults via `default_objectives_for_mode`); they include `estimated_accuracy`, `total_params`, hardware utilization/wastage metrics, and `fragmentation_pct` (packing dead-zone signal).
 
 The step produces a model builder (e.g. `TorchMLPMixerBuilder`, `SimpleMLPBuilder`) and the resolved platform constraints (including `cores` — a list of core types with `{count, max_axons, max_neurons}` and optional `has_bias`). When `has_bias` is true for a core type, that hardware core implements bias via a per-neuron bias register; the last-row always-on axon is not used for that core in nevresim. The builder is created directly from the search-resolved constraints; **no side-effect writes** are made to `pipeline.config`. Downstream steps read hardware dimensions from the cached `platform_constraints_resolved` entry.
 
@@ -525,7 +525,7 @@ Scaling factors (`activation_scale`, `parameter_scale`) are **not modified**, en
 This critical step converts the PyTorch model into an `IRGraph`:
 
 1. Extracts the `ModelRepresentation` (mapper graph) from the model
-2. Reads `max_axons`, `max_neurons`, `allow_core_coalescing`, and `hardware_bias` from the `platform_constraints_resolved` cache entry (produced by Architecture Search). When heterogeneous `cores` are present, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types — this allows softcores as large as the biggest core type, relying on the greedy packer's scarcity-aware metric (§9.2) to place them correctly. `hardware_bias` is `True` only when all core types declare `has_bias: true`; it controls whether bias consumes an axon slot (legacy always-on row) or a dedicated hardware register
+2. Reads `max_axons`, `max_neurons`, `allow_coalescing`, and `hardware_bias` from the `platform_constraints_resolved` cache entry (produced by Architecture Search). When heterogeneous `cores` are present, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types — this allows softcores as large as the biggest core type, relying on the greedy packer's scarcity-aware metric (§9.2) to place them correctly. `hardware_bias` is `True` only when all core types declare `has_bias: true`; it controls whether bias consumes an axon slot (legacy always-on row) or a dedicated hardware register
 3. Creates an `IRMapping` with these hardware constraints
 4. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
 5. Optionally quantizes weights and biases when `weight_quantization` is enabled: rounds `core_matrix` entries to integers by multiplying by `scale` and setting `threshold = scale`.  **Critically, `hardware_bias` is also multiplied by the same `scale`** so that the TTFS simulation formula `act(W_q @ x + b_hw) / threshold` correctly reconstructs `act(W_eff @ x + b_eff)`.  Without this, the bias contribution would be attenuated by ~`q_max / max_weight` (typically ~127× for 8-bit) relative to the weight contribution.  This applies to both owned-weight NeuralCores and bank-backed NeuralCores (Conv2D).
@@ -814,7 +814,7 @@ Key fields:
 - `threshold: float` — Spiking threshold (tuned by CoreFlowTuner)
 - `activation_scale`, `parameter_scale`, `input_activation_scale` — Scaling factors
 - `psum_group_id`, `psum_role` — For partial-sum (psum) decomposition: `role` is `"partial_pos"`, `"partial_neg"`, or `"accum"`. Produced when a wide layer is split using the 2N+1-core psum strategy.
-- `coalescing_group_id`, `coalescing_role` — For core-coalescing decomposition: `role` is `"partial"` or `"accum"`. Produced when `allow_core_coalescing=True` is set on the `IRMapping`; uses N+1 cores instead of 2N+1.
+- `coalescing_group_id`, `coalescing_role` — For core-coalescing decomposition: `role` is `"partial"` or `"accum"`. Produced when `allow_coalescing=True` is set on the `IRMapping`; uses N+1 cores instead of 2N+1.
 - `hardware_bias: np.ndarray | None` — When non-`None`, the bias vector is stored in a dedicated hardware register rather than an always-on axon row. **Invariant**: `len(hardware_bias)` must equal `core_matrix.shape[1]` (neuron count); `ir_pruning.prune_ir_graph()` maintains this by slicing `hardware_bias` whenever columns are removed, and `neural_core_to_soft_core()` asserts it at conversion time.
 - `weight_bank_id: int | None` — If set, this core references a `WeightBank` stored on the `IRGraph` instead of owning its `core_matrix`.
 - `weight_row_slice: tuple[int,int] | None` — Optional neuron-axis slice into the bank's matrix (for output-channel tiling).
@@ -859,7 +859,7 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
 - `map_fc(...)` — Maps a fully-connected layer, handling:
   - **Output tiling**: Splits neurons across multiple cores when `neurons > max_neurons`
   - **Axon tiling (psum)** — default when `in_features > max_axons`: splits weights into N positive-weight partial cores + N negative-weight partial cores + 1 accumulator (2N+1 cores total); `psum_role` is `"partial_pos"`, `"partial_neg"`, or `"accum"`
-  - **Axon tiling (coalescing)** — used when `allow_core_coalescing=True`: N full-weight partial cores + 1 trivial +1-weight accumulator (N+1 cores total); more hardware-efficient and requires signed-weight support; `coalescing_role` is `"partial"` or `"accum"`
+  - **Axon tiling (coalescing)** — used when `allow_coalescing=True`: N full-weight partial cores + 1 trivial +1-weight accumulator (N+1 cores total); more hardware-efficient and requires signed-weight support; `coalescing_role` is `"partial"` or `"accum"`
 
 **Heterogeneous tiling**: When multiple core types exist, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types. This allows softcores as large as the biggest core type. The greedy packer's scarcity-aware placement metric (§9.2) then ensures flexible softcores (those that fit multiple core types) are directed toward more abundant types, preserving scarce large-capacity types for softcores that strictly require them.
 
@@ -1167,10 +1167,11 @@ Jointly optimizes:
 - **Architecture parameters**: Model-specific (e.g., `patch_rows/cols/channels`, `fc_w1/w2` for MLP-Mixer; `embed_dim`, `num_heads`, `depth`, `mlp_ratio`, `patch_size` for ViT)
 - **Hardware core-type dimensions**: Number of core types (heterogeneous), axon/neuron counts per type, threshold grouping
 
-Objectives: `accuracy` (max), `wasted_area` (min), `total_params` (min).
+Objectives are selected from `search.results.ALL_OBJECTIVES` (defaults via `default_objectives_for_mode`), including `fragmentation_pct` (min) derived from layout packing `unusable_space` totals.
 
 Key design decisions:
 
+- **Coalescing**: `platform_constraints` use only `allow_coalescing`. Deprecated names are rejected at validation and normalization. Pipeline steps set `allow_coalescing` in `platform_constraints_resolved`.
 - **Tiling to maximum core type**: `decode()` computes `max_axons = max(cores[*].max_axons)` and `max_neurons = max(cores[*].max_neurons)`. Softcores can be as large as the biggest core type; the scarcity-aware packer (§9.2) handles heterogeneous placement.
 - **Continuous constraint violation**: `constraint_violation()` returns `max(0, max_in_features - (max_axons - 1))`, giving NSGA-II a smooth gradient toward feasibility (see §12.2).
 - **Layout-only hardware estimation**: Each candidate is evaluated by collecting shape-only `LayoutSoftCoreSpec`s via `LayoutIRMapping` (which computes inter-core latencies and assigns latency-stratified random threshold groups using a deterministic `threshold_seed`) and then packing them via `pack_layout` using the same best-fit algorithm as real mapping.

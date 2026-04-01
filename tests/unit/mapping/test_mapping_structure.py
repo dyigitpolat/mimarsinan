@@ -123,7 +123,7 @@ class TestLayoutIRConsistency:
 
         mapping = LayoutIRMapping(
             max_axons=max_ax, max_neurons=max_ne,
-            allow_core_coalescing=coalesce, hardware_bias=hw_bias,
+            allow_coalescing=coalesce, hardware_bias=hw_bias,
         )
         src = np.array([IRSource(node_id=-2, index=i) for i in range(in_f)])
         w = np.zeros((out_f, in_f))
@@ -139,7 +139,7 @@ class TestLayoutIRConsistency:
 
         mapping = IRMapping(
             max_axons=max_ax, max_neurons=max_ne,
-            allow_core_coalescing=coalesce, hardware_bias=hw_bias,
+            allow_coalescing=coalesce, hardware_bias=hw_bias,
         )
         src = np.array([IRSource(node_id=-2, index=i) for i in range(in_f)])
         w = np.zeros((out_f, in_f))

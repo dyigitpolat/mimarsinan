@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from mimarsinan.mapping.coalescing import coalescing_config_errors
+
 
 def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
     """
@@ -24,6 +26,10 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
     if not isinstance(config, dict):
         errors.append("Config must be a dict")
         return errors
+
+    pc = config.get("platform_constraints")
+    if isinstance(pc, dict):
+        errors.extend(coalescing_config_errors(pc))
 
     # Top-level required
     for key in ("data_provider_name", "experiment_name", "generated_files_path", "platform_constraints", "deployment_parameters", "start_step"):

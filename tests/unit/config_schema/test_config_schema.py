@@ -12,7 +12,6 @@ from mimarsinan.config_schema import (
     get_config_keys_set,
 )
 
-
 class TestDefaults:
     """Default dicts match pipeline expectations and are complete."""
 
@@ -41,7 +40,7 @@ class TestDefaults:
         assert "target_tq" in d
         assert "simulation_steps" in d
         assert "weight_bits" in d
-        assert "allow_axon_tiling" in d
+        assert "allow_coalescing" in d
 
     def test_pipeline_mode_presets_has_vanilla_and_phased(self):
         presets = get_pipeline_mode_presets()
@@ -132,6 +131,25 @@ class TestValidateDeploymentConfig:
         }
         errors = validate_deployment_config(cfg)
         assert any("arch_search" in str(e).lower() for e in errors)
+
+    def test_deprecated_coalescing_key_in_platform_constraints_fails(self):
+        cfg = {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "test",
+            "generated_files_path": "./out",
+            "platform_constraints": {
+                "allow_core_coalescing": True,
+                "cores": [{"max_axons": 8, "max_neurons": 8, "count": 1}],
+            },
+            "deployment_parameters": {
+                "model_config_mode": "user",
+                "model_type": "mlp_mixer",
+                "model_config": {},
+            },
+            "start_step": None,
+        }
+        errors = validate_deployment_config(cfg)
+        assert any("not supported" in e and "allow_coalescing" in e for e in errors)
 
     def test_ttfs_requires_ttfs_firing_and_spike_gen(self):
         cfg = {

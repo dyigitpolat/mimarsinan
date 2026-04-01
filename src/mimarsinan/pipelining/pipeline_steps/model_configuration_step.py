@@ -1,3 +1,4 @@
+from mimarsinan.mapping.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.model_registry import ModelRegistry
 
@@ -54,12 +55,17 @@ class ModelConfigurationStep(PipelineStep):
         for ct in cores_config:
             ct.setdefault("has_bias", global_has_bias)
 
-        self.add_entry("platform_constraints_resolved", {
+        pcfg = {
             "cores": cores_config,
-            "allow_core_coalescing": bool(self.pipeline.config.get("allow_core_coalescing", False)),
             "allow_neuron_splitting": bool(self.pipeline.config.get("allow_neuron_splitting", False)),
             "allow_scheduling": bool(self.pipeline.config.get("allow_scheduling", False)),
-        })
+        }
+        if CANONICAL_KEY in self.pipeline.config:
+            pcfg[CANONICAL_KEY] = bool(self.pipeline.config[CANONICAL_KEY])
+        else:
+            pcfg[CANONICAL_KEY] = False
+        normalize_coalescing_config(pcfg)
+        self.add_entry("platform_constraints_resolved", pcfg)
 
         # --- Emit default simulation length ---
         sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))

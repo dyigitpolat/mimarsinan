@@ -8,13 +8,13 @@ merged flat config for pipeline runtime).
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Default values and preset merge logic. `allow_scheduling` (default False) lives in deployment parameters. Platform constraints include `max_schedule_passes` (default 8), `scheduling_latency_weight` (default 1.0) for scheduled mapping. |
-| `validation.py` | `validate_deployment_config`, `validate_merged_config` | Validate JSON shape and merged flat config |
+| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Default values and preset merge logic. `allow_scheduling` (default False) lives in deployment parameters. Platform defaults include `allow_coalescing`. Platform constraints include `max_schedule_passes` (default 8), `scheduling_latency_weight` (default 1.0) for scheduled mapping. |
+| `validation.py` | `validate_deployment_config`, `validate_merged_config` | Validate JSON shape and merged flat config; `validate_deployment_config` rejects deprecated coalescing keys in `platform_constraints` via `mapping.coalescing.coalescing_config_errors`. |
 | `__init__.py` | Re-exports above | Public API |
 
 ## Dependencies
 
-- **Internal**: None (no mimarsinan submodules).
+- **Internal**: `mapping.coalescing` (coalescing flag validation only).
 - **External**: `typing`.
 
 ## Dependents

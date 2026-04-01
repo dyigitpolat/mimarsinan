@@ -26,6 +26,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
+from mimarsinan.mapping.coalescing import (
+    CANONICAL_KEY,
+    CoalescingConfigError,
+    normalize_coalescing_config,
+)
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.layout_verification_stats import compute_mapping_stats
@@ -250,11 +255,15 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         }
         # Carry over non-searched flags from fixed_platform_constraints.
         if self.fixed_platform_constraints:
-            for key in ("allow_scheduling", "allow_core_coalescing",
-                        "allow_neuron_splitting", "allow_axon_coalescing",
-                        "has_bias"):
+            for key in ("allow_scheduling", "allow_neuron_splitting", "has_bias"):
                 if key in self.fixed_platform_constraints:
                     pcfg.setdefault(key, self.fixed_platform_constraints[key])
+            if CANONICAL_KEY in self.fixed_platform_constraints:
+                pcfg.setdefault(
+                    CANONICAL_KEY,
+                    bool(self.fixed_platform_constraints[CANONICAL_KEY]),
+                )
+        normalize_coalescing_config(pcfg)
         return pcfg
 
     def decode(self, x: np.ndarray) -> Dict[str, Any]:
@@ -276,6 +285,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             platform_constraints = self._decode_hw(x, offset)
         else:
             platform_constraints = dict(self.fixed_platform_constraints or {})
+            normalize_coalescing_config(platform_constraints)
 
         return {
             "model_config": model_config,
@@ -310,7 +320,17 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             return ValidationResult(is_valid=True)
 
         mc = configuration.get("model_config", {})
-        pcfg = configuration.get("platform_constraints", {})
+        pcfg = dict(configuration.get("platform_constraints", {}))
+        try:
+            normalize_coalescing_config(pcfg)
+        except CoalescingConfigError as exc:
+            vr = ValidationResult(
+                is_valid=False,
+                error_message=str(exc),
+                failure_phase="structural",
+            )
+            self._validation_errors[key] = vr
+            return vr
 
         # Phase 0: structural pre-check (fast, no model build)
         try:
@@ -519,7 +539,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             threshold_groups=1,
             threshold_seed=int(self.accuracy_seed),
             pruning_fraction=float(self.pruning_fraction),
-            allow_core_coalescing=bool(pcfg.get("allow_core_coalescing", False)),
+            allow_coalescing=bool(pcfg.get("allow_coalescing", False)),
             hardware_bias=bool(pcfg.get("has_bias", False)),
         )
         softcores = layout_mapper.collect_layout_softcores(model.get_mapper_repr())
@@ -532,7 +552,8 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             return self._hw_only_cache
 
         mc = self.fixed_model_config or {}
-        pcfg = self.fixed_platform_constraints or {}
+        pcfg = dict(self.fixed_platform_constraints or {})
+        normalize_coalescing_config(pcfg)
 
         torch.manual_seed(int(self.accuracy_seed))
         np.random.seed(int(self.accuracy_seed))
@@ -596,7 +617,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             core_types=core_types,
             allow_scheduling=bool(pcfg.get("allow_scheduling", False)),
             allow_neuron_splitting=bool(pcfg.get("allow_neuron_splitting", False)),
-            allow_axon_coalescing=bool(pcfg.get("allow_axon_coalescing", False)),
+            allow_coalescing=bool(pcfg.get("allow_coalescing", False)),
         )
 
         if not stats.feasible:
@@ -621,6 +642,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             "param_utilization_pct": stats.mapped_params_pct,
             "neuron_wastage_pct": stats.total_wasted_neurons_pct,
             "axon_wastage_pct": stats.total_wasted_axons_pct,
+            "fragmentation_pct": stats.fragmentation_pct,
         }, None
 
     # ------------------------------------------------------------------ #
@@ -720,6 +742,8 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         mc: Dict[str, Any],
         pcfg: Dict[str, Any],
     ) -> Dict[str, float]:
+        pcfg = dict(pcfg)
+        normalize_coalescing_config(pcfg)
         active_names = {spec.name for spec in self.objectives}
         needs_accuracy = ACCURACY_OBJECTIVE_NAME in active_names
         hw_names = active_names - {ACCURACY_OBJECTIVE_NAME}

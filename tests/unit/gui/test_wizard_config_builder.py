@@ -211,11 +211,12 @@ class TestWizardSchema:
     def test_get_wizard_nas_schema_has_objective_options(self):
         nas = get_wizard_nas_schema()
         assert "objective_options" in nas
-        assert len(nas["objective_options"]) == 7
+        assert len(nas["objective_options"]) == 8
         ids = [o["id"] for o in nas["objective_options"]]
         assert "estimated_accuracy" in ids
         assert "total_params" in ids
         assert "param_utilization_pct" in ids
+        assert "fragmentation_pct" in ids
 
 
 class TestSuggestResumeStep:

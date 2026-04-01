@@ -232,7 +232,6 @@ def generate_softcore_flowchart_dot(
                     has_bias=False,
                     max_axons=int(max_axons),
                     max_neurons=int(max_neurons),
-                    allow_axon_tiling=bool(allow_axon_tiling),
                 )
 
         if hw is not None:

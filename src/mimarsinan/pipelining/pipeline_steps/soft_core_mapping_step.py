@@ -41,7 +41,7 @@ class SoftCoreMappingStep(PipelineStep):
             raise ValueError("platform_constraints_resolved must contain a non-empty 'cores' list")
         resolved_max_axons = max(ct["max_axons"] for ct in cores)
         resolved_max_neurons = max(ct["max_neurons"] for ct in cores)
-        resolved_allow_core_coalescing = bool(platform_constraints.get("allow_core_coalescing", False))
+        resolved_allow_coalescing = bool(platform_constraints.get("allow_coalescing", False))
         # hardware_bias=True only when ALL core types declare has_bias=True.
         # If any core uses the legacy always-on axon row, conservative mode is required.
         if cores:
@@ -136,7 +136,7 @@ class SoftCoreMappingStep(PipelineStep):
             firing_mode=self.pipeline.config["firing_mode"],
             max_axons=effective_max_axons,
             max_neurons=resolved_max_neurons,
-            allow_core_coalescing=resolved_allow_core_coalescing,
+            allow_coalescing=resolved_allow_coalescing,
             hardware_bias=resolved_hardware_bias,
         )
         
