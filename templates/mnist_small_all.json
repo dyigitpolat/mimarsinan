@@ -51,7 +51,7 @@
     "activation_quantization": true,
     "weight_quantization": true,
     "pruning": true,
-    "pruning_fraction": 0.5,
+    "pruning_fraction": 0.3,
     "allow_scheduling": true
   },
   "target_metric_override": null,
