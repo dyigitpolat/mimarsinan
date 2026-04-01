@@ -27,7 +27,10 @@ import numpy as np
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec, LayoutHardCoreType
 from mimarsinan.mapping.layout.layout_packer import pack_layout
-from mimarsinan.mapping.layout_verification_stats import build_stats_from_packing_result
+from mimarsinan.mapping.layout_verification_stats import (
+    build_stats_from_packing_result,
+    compute_schedule_sync_count,
+)
 
 
 @dataclass
@@ -382,10 +385,12 @@ def verify_hardware_config(
     stats_dict = stats.to_dict()
 
     if schedule_info.get("scheduled_feasible"):
+        per_seg_passes = schedule_info.get("per_segment_passes", {})
         stats_dict["feasible"] = True
         stats_dict["schedule_pass_count"] = schedule_info.get("total_passes", 0)
+        stats_dict["schedule_sync_count"] = compute_schedule_sync_count(per_seg_passes)
         stats_dict["max_cores_per_pass"] = schedule_info.get("max_cores_per_pass", 0)
-        stats_dict["per_segment_passes"] = schedule_info.get("per_segment_passes", {})
+        stats_dict["per_segment_passes"] = per_seg_passes
 
     out: Dict[str, Any] = {
         "feasible": result.feasible or schedule_info.get("scheduled_feasible", False),
