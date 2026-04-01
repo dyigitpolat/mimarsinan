@@ -27,9 +27,8 @@ import numpy as np
 import torch
 
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
-from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.layout_verification_stats import build_stats_from_packing_result
+from mimarsinan.mapping.layout_verification_stats import compute_mapping_stats
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
 from mimarsinan.search.problem import ValidationResult
@@ -244,11 +243,19 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
                 "count": count,
             })
 
-        return {
+        pcfg: Dict[str, Any] = {
             "cores": core_types,
             "target_tq": int(self.target_tq),
             "weight_bits": 8,
         }
+        # Carry over non-searched flags from fixed_platform_constraints.
+        if self.fixed_platform_constraints:
+            for key in ("allow_scheduling", "allow_core_coalescing",
+                        "allow_neuron_splitting", "allow_axon_coalescing",
+                        "has_bias"):
+                if key in self.fixed_platform_constraints:
+                    pcfg.setdefault(key, self.fixed_platform_constraints[key])
+        return pcfg
 
     def decode(self, x: np.ndarray) -> Dict[str, Any]:
         x = np.array(x, dtype=float).flatten()
@@ -584,33 +591,33 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             (None, error_message) if packing is infeasible.
         """
         core_types = self._make_core_types(pcfg)
-        pack = pack_layout(softcores=softcores, core_types=core_types)
+        stats, error = compute_mapping_stats(
+            softcores=softcores,
+            core_types=core_types,
+            allow_scheduling=bool(pcfg.get("allow_scheduling", False)),
+            allow_neuron_splitting=bool(pcfg.get("allow_neuron_splitting", False)),
+            allow_axon_coalescing=bool(pcfg.get("allow_axon_coalescing", False)),
+        )
 
-        if not pack.feasible:
-            error = pack.error or "HW bin-packing infeasible"
+        if not stats.feasible:
             total_hw_capacity = sum(
                 ct.max_axons * ct.max_neurons * ct.count for ct in core_types
             )
-            error += (
+            full_error = error or "HW bin-packing infeasible"
+            full_error += (
                 f" | softcores={len(softcores)}"
                 f", total_hw_capacity={total_hw_capacity}"
             )
-            return None, error
-
-        stats = build_stats_from_packing_result(
-            pack,
-            num_original_softcores=len(softcores),
-            softcores=softcores,
-            core_types=core_types,
-        )
+            return None, full_error
 
         chip_capacity = self._compute_chip_capacity(pcfg)
-        schedule_passes = stats.schedule_pass_count
 
         return {
             "total_params": total_params,
             "total_param_capacity": chip_capacity,
-            "total_sync_barriers": float(host_side_segment_count + schedule_passes),
+            "total_sync_barriers": float(
+                host_side_segment_count + stats.schedule_sync_count
+            ),
             "param_utilization_pct": stats.mapped_params_pct,
             "neuron_wastage_pct": stats.total_wasted_neurons_pct,
             "axon_wastage_pct": stats.total_wasted_axons_pct,

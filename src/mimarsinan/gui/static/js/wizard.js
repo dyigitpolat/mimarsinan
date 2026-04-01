@@ -1605,7 +1605,9 @@ function _renderHwStats(statsOrState) {
   var segmentCard = (stats.neural_segment_count > 0)
     ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.neural_segment_count) + '</div><div class="hw-stat-card-label">Neural Segments</div></div>'
     : '';
-  var scheduleSyncs = (stats.layout_preview && stats.layout_preview.schedule_sync_count) || 0;
+  var scheduleSyncs = stats.schedule_sync_count
+    || (stats.layout_preview && stats.layout_preview.schedule_sync_count)
+    || 0;
   var totalBarriers = (stats.host_side_segment_count || 0) + scheduleSyncs;
   var syncBarrierCard = (totalBarriers > 0)
     ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(totalBarriers) + '</div><div class="hw-stat-card-label">Sync Barriers</div></div>'
