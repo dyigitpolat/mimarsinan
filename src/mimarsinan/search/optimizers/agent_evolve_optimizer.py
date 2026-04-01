@@ -20,6 +20,7 @@ from mimarsinan.search.optimizers.agent_evolve_support import (
     compute_pareto_front,
     compute_performance_stats,
     dominates,
+    format_performance_stats,
     format_search_space_description,
     prettify_configuration,
     prettify_objectives,
@@ -1102,20 +1103,7 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         stats = compute_performance_stats(valid_results, objectives)
         if not stats:
             return ""
-        stats_lines = []
-        for spec in objectives:
-            best = stats.get(f'best_{spec.name}')
-            worst = stats.get(f'worst_{spec.name}')
-            if best:
-                stats_lines.append(f"Best {spec.name}: {best.objectives.get(spec.name, 'N/A')}")
-                stats_lines.append(f"  Config: {prettify_configuration(best.configuration)}")
-            if worst:
-                stats_lines.append(f"Worst {spec.name}: {worst.objectives.get(spec.name, 'N/A')}")
-        top_pareto = stats.get('top_3_pareto', [])
-        if top_pareto:
-            stats_lines.append("\nTop Pareto configurations:")
-            stats_lines.append(prettify_results(top_pareto, objectives))
-        stats_str = "\n".join(stats_lines)
+        stats_str = format_performance_stats(stats, objectives, len(valid_results))
         template = build_performance_insights_prompt(stats_str, search_space_desc)
         result = await self._llm_call(
             template=template,
@@ -1135,13 +1123,10 @@ class AgentEvolveOptimizer(SearchOptimizer[ConfigT]):
         stats = compute_performance_stats(valid_results, objectives)
         if not stats:
             return previous_insights
-        top_pareto = stats.get('top_3_pareto', [])
-        pareto_str = prettify_results(top_pareto, objectives) if top_pareto else "None"
+        stats_str = format_performance_stats(stats, objectives, len(valid_results))
         template = build_update_performance_insights_prompt(
             previous_insights,
-            pareto_str,
-            len(valid_results),
-            stats.get('pareto_size', 0),
+            stats_str,
             search_space_desc,
         )
         result = await self._llm_call(
