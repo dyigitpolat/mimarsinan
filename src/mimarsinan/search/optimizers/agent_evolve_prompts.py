@@ -174,21 +174,24 @@ Return a detailed analysis of what makes configurations perform well and how to 
 
 def build_update_performance_insights_prompt(
     previous_insights: str,
-    pareto_str: str,
-    n_valid: int,
-    pareto_size: int,
+    stats_str: str,
     search_space_desc: str,
 ) -> str:
     return f"""You are an optimization expert. Update the performance insights based on new results.
 
+{search_space_desc}
+
 PREVIOUS INSIGHTS:
 {previous_insights}
 
-CURRENT TOP PARETO CONFIGURATIONS:
-{pareto_str}
+CURRENT PERFORMANCE STATISTICS:
+{stats_str}
 
-TOTAL VALID CANDIDATES: {n_valid}
-PARETO FRONT SIZE: {pareto_size}
+Analyze:
+1. What patterns make configurations perform well?
+2. What trade-offs exist between objectives?
+3. What configuration choices lead to good overall performance?
+4. What has changed compared to the previous insights?
 
 Update the insights with any new patterns or observations. Return updated performance insights incorporating the new results."""
 

@@ -149,20 +149,8 @@ def compute_performance_stats(
         )
         dominated_candidates.append((candidate, domination_count))
 
-    # Sort Pareto by ranking-based metric (best overall balance)
-    def compute_ranking_score(candidate: CandidateResult) -> float:
-        total_rank = 0
-        for spec in objectives:
-            key = spec.name
-            val = candidate.objectives.get(key, 0.0)
-            if spec.goal == "max":
-                rank = sum(1 for other in pareto_front if other.objectives.get(key, 0.0) > val) + 1
-            else:
-                rank = sum(1 for other in pareto_front if other.objectives.get(key, float('inf')) < val) + 1
-            total_rank += rank
-        return 1.0 / total_rank if total_rank > 0 else 0.0
-
-    pareto_sorted = sorted(pareto_front, key=compute_ranking_score, reverse=True)
+    # Sort Pareto by minimax rank (matching best candidate selection order)
+    pareto_sorted = sort_pareto_results_minimax_first(pareto_front, objectives)
     stats['top_3_pareto'] = pareto_sorted[:3]
 
     # Sort dominated by domination count (most dominated = worst)
@@ -242,6 +230,53 @@ def prettify_results(
         if result.insight:
             lines.append(f"Insight: {result.insight}")
         lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_performance_stats(
+    stats: Dict[str, Any],
+    objectives: Sequence[ObjectiveSpec],
+    n_valid: int,
+) -> str:
+    """Format compute_performance_stats output into a comprehensive string for LLM prompts.
+
+    Includes: best/worst per objective (with configs), top Pareto candidates,
+    bottom dominated candidates, and summary counts.
+    """
+    lines = []
+
+    pareto_size = stats.get('pareto_size', 0)
+    lines.append(f"TOTAL VALID CANDIDATES: {n_valid}")
+    lines.append(f"PARETO FRONT SIZE: {pareto_size}")
+    lines.append("")
+
+    lines.append("BEST AND WORST PER OBJECTIVE:")
+    for spec in objectives:
+        best = stats.get(f'best_{spec.name}')
+        worst = stats.get(f'worst_{spec.name}')
+        if best:
+            lines.append(f"  Best {spec.name}: {best.objectives.get(spec.name, 'N/A')}")
+            lines.append(f"    Config: {prettify_configuration(best.configuration)}")
+        if worst:
+            lines.append(f"  Worst {spec.name}: {worst.objectives.get(spec.name, 'N/A')}")
+            lines.append(f"    Config: {prettify_configuration(worst.configuration)}")
+    lines.append("")
+
+    top_pareto = stats.get('top_3_pareto', [])
+    if top_pareto:
+        lines.append("TOP PARETO CONFIGURATIONS (ranked by minimax-rank, best-balanced first):")
+        lines.append(prettify_results(top_pareto, objectives))
+    else:
+        lines.append("TOP PARETO CONFIGURATIONS: None")
+    lines.append("")
+
+    bottom = stats.get('bottom_3_dominated', [])
+    if bottom:
+        lines.append("WORST NON-PARETO CONFIGURATIONS (most dominated):")
+        lines.append(prettify_results(bottom, objectives))
+    else:
+        lines.append("WORST NON-PARETO CONFIGURATIONS: None")
 
     return "\n".join(lines)
 
