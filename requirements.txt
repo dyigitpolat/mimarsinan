@@ -1,5 +1,6 @@
 nni
 numpy
+git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git
 scipy
 torch
 torchvision
@@ -12,3 +13,4 @@ uvicorn[standard]
 websockets
 pydantic-ai
 python-dotenv
+pytest>=8.0
