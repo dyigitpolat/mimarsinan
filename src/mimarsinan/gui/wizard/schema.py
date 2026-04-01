@@ -63,6 +63,7 @@ def _objective_label(name: str) -> str:
         "param_utilization_pct": "Param Utilization %",
         "neuron_wastage_pct": "Neuron Wastage %",
         "axon_wastage_pct": "Axon Wastage %",
+        "fragmentation_pct": "Fragmentation %",
     }
     return labels.get(name, name)
 

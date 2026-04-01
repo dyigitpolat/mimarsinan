@@ -92,7 +92,7 @@ def test_ir_forward_matches_raw_model():
         firing_mode="TTFS",
         max_axons=1024,
         max_neurons=1024,
-        allow_core_coalescing=False,
+        allow_coalescing=False,
     )
     ir_graph = ir_mapping.map(repr)
 

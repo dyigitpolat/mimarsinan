@@ -25,6 +25,7 @@ ALL_OBJECTIVES: Tuple[ObjectiveSpec, ...] = (
     ObjectiveSpec("param_utilization_pct", "max"),
     ObjectiveSpec("neuron_wastage_pct", "min"),
     ObjectiveSpec("axon_wastage_pct", "min"),
+    ObjectiveSpec("fragmentation_pct", "min"),
 )
 
 ACCURACY_OBJECTIVE_NAME = "estimated_accuracy"
@@ -45,11 +46,23 @@ def objectives_for_mode(search_mode: str) -> Tuple[ObjectiveSpec, ...]:
 def default_objectives_for_mode(search_mode: str) -> Tuple[str, ...]:
     """Default active objective *names* when the user does not specify."""
     if search_mode == "hardware":
-        return ("total_param_capacity", "param_utilization_pct", "neuron_wastage_pct", "axon_wastage_pct")
+        return (
+            "total_param_capacity",
+            "param_utilization_pct",
+            "neuron_wastage_pct",
+            "axon_wastage_pct",
+            "fragmentation_pct",
+        )
     if search_mode == "model":
         return ("estimated_accuracy", "total_params")
     # joint
-    return ("estimated_accuracy", "total_params", "param_utilization_pct", "neuron_wastage_pct")
+    return (
+        "estimated_accuracy",
+        "total_params",
+        "param_utilization_pct",
+        "neuron_wastage_pct",
+        "fragmentation_pct",
+    )
 
 
 def resolve_active_objectives(

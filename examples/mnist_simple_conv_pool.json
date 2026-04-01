@@ -21,7 +21,7 @@
         "simulation_steps": 16,
         "weight_bits": 8,
 
-        "allow_axon_tiling": false
+        "allow_coalescing": false
     },
 
     "deployment_parameters": {

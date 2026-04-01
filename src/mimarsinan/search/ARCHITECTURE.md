@@ -8,7 +8,7 @@ with pluggable optimizers and problem definitions.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `problem.py` | `SearchProblem`, `ValidationResult` | Protocol defining the search problem interface; `ValidationResult` carries rich error info from `validate_detailed()` |
-| `results.py` | `ObjectiveSpec`, `Candidate`, `SearchResult` | Result types and Pareto front utilities |
+| `results.py` | `ObjectiveSpec`, `ALL_OBJECTIVES`, `default_objectives_for_mode`, `Candidate`, `SearchResult` | Canonical multi-objective catalogue (includes `fragmentation_pct` for packing dead zones), defaults per search mode, and Pareto utilities |
 | `te_nas_evaluator.py` | `TE_NAS_Evaluator` | Training-free NAS evaluator using NTK |
 | `patch_borders.py` | `get_region_borders` | Patch border computation utility |
 

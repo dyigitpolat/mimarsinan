@@ -326,14 +326,14 @@ class TestLayoutVsIRMapping:
 
         layout = LayoutIRMapping(
             max_axons=max_axons, max_neurons=max_neurons,
-            allow_core_coalescing=False,
+            allow_coalescing=False,
         )
         layout_out = layout.map_fc(input_sources, np.array([out_features]), weights, biases)
         layout_count = len(layout.layout_softcores)
 
         ir_mapping = IRMapping(
             max_axons=max_axons, max_neurons=max_neurons,
-            allow_core_coalescing=False,
+            allow_coalescing=False,
         )
         ir_out = ir_mapping.map_fc(
             input_sources, np.array([out_features]), weights, biases,
@@ -363,14 +363,14 @@ class TestLayoutVsIRMapping:
 
         layout = LayoutIRMapping(
             max_axons=max_axons, max_neurons=max_neurons,
-            allow_core_coalescing=True,
+            allow_coalescing=True,
         )
         layout_out = layout.map_fc(input_sources, np.array([out_features]), weights, biases)
         layout_count = len(layout.layout_softcores)
 
         ir_mapping = IRMapping(
             max_axons=max_axons, max_neurons=max_neurons,
-            allow_core_coalescing=True,
+            allow_coalescing=True,
         )
         ir_out = ir_mapping.map_fc(
             input_sources, np.array([out_features]), weights, biases,

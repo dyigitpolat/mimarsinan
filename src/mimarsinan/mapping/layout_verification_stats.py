@@ -85,6 +85,12 @@ class LayoutVerificationStats:
     schedule_sync_count: int = 0
     max_cores_per_pass: int = 0
 
+    # Rectangular leftover on used cores (from packing); strip-shaped internal
+    # fragmentation (unusable_space) vs ``unused_area_total`` (orthogonal signals).
+    unused_area_total: int = 0
+    unusable_space_total: int = 0
+    fragmentation_pct: float = 0.0
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -224,6 +230,9 @@ def _stats_from_packing(
     splits_per_softcore_median = _safe_median(split_counts_f)
     splits_per_softcore_max = float(max(split_counts_f)) if split_counts_f else 0.0
 
+    frag_cap = int(packing.total_capacity)
+    fragmentation_pct = _pct(float(packing.unusable_space_total), float(frag_cap))
+
     return LayoutVerificationStats(
         feasible=packing.feasible,
         total_cores=packing.cores_used,
@@ -256,6 +265,9 @@ def _stats_from_packing(
         splits_per_softcore_min=splits_per_softcore_min,
         splits_per_softcore_median=splits_per_softcore_median,
         splits_per_softcore_max=splits_per_softcore_max,
+        unused_area_total=int(packing.unused_area_total),
+        unusable_space_total=int(packing.unusable_space_total),
+        fragmentation_pct=fragmentation_pct,
     )
 
 
@@ -292,6 +304,9 @@ def _empty_stats(*, feasible: bool, num_softcores: int = 0, total_hw_cores: int 
         splits_per_softcore_min=0.0,
         splits_per_softcore_median=0.0,
         splits_per_softcore_max=0.0,
+        unused_area_total=0,
+        unusable_space_total=0,
+        fragmentation_pct=0.0,
     )
 
 
@@ -300,7 +315,7 @@ def build_layout_verification_stats(
     softcores: Sequence[LayoutSoftCoreSpec],
     core_types: Sequence[LayoutHardCoreType],
     allow_neuron_splitting: bool = False,
-    allow_axon_coalescing: bool = False,
+    allow_coalescing: bool = False,
 ) -> LayoutVerificationStats:
     """Pack softcores and compute verification statistics.
 
@@ -314,7 +329,7 @@ def build_layout_verification_stats(
         softcores=softcores,
         core_types=core_types,
         allow_neuron_splitting=allow_neuron_splitting,
-        allow_axon_coalescing=allow_axon_coalescing,
+        allow_coalescing=allow_coalescing,
     )
 
     if not packing.feasible:
@@ -367,7 +382,7 @@ def compute_mapping_stats(
     *,
     allow_scheduling: bool = False,
     allow_neuron_splitting: bool = False,
-    allow_axon_coalescing: bool = False,
+    allow_coalescing: bool = False,
 ) -> Tuple[LayoutVerificationStats, Optional[str]]:
     """Pack softcores and compute verification statistics with scheduling support.
 
@@ -386,7 +401,7 @@ def compute_mapping_stats(
         softcores=softcores,
         core_types=core_types,
         allow_neuron_splitting=allow_neuron_splitting,
-        allow_axon_coalescing=allow_axon_coalescing,
+        allow_coalescing=allow_coalescing,
     )
 
     if pack.feasible:
@@ -428,7 +443,7 @@ def compute_mapping_stats(
     common_kwargs = dict(
         max_hw_axons=max_hw_ax,
         max_hw_neurons=max_hw_neu,
-        allow_coalescing=allow_axon_coalescing,
+        allow_coalescing=allow_coalescing,
         allow_splitting=allow_neuron_splitting,
         core_types=core_dicts,
     )
@@ -461,7 +476,7 @@ def compute_mapping_stats(
                 softcores=pass_scs,
                 core_types=core_types,
                 allow_neuron_splitting=allow_neuron_splitting,
-                allow_axon_coalescing=allow_axon_coalescing,
+                allow_coalescing=allow_coalescing,
             )
             if pr.feasible:
                 best_stats = _stats_from_packing(

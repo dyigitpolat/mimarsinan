@@ -25,7 +25,7 @@
     "simulation_steps": 32,
     "weight_bits": 8,
     "has_bias": true,
-    "allow_core_coalescing": true,
+    "allow_coalescing": true,
     "allow_neuron_splitting": true
   },
   "deployment_parameters": {

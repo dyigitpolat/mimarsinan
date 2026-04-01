@@ -74,7 +74,7 @@ builds a config, and submits it via POST `/api/run`; RUN redirects to `/monitor?
 renders a compact stats panel (`#hwStatsPanel`) below the validation banner
 showing overview cards (cores used, softcores, neural segments, sync barriers),
 a compact layout-only miniview (`layout_preview.flow`) with input/host/latency-group/output
-stages, health-bar style percentage bars (wasted axons/neurons, param utilization),
+stages, health-bar style percentage bars (wasted axons/neurons, param utilization, fragmentation when present in stats),
 per-core min/avg/max breakdowns, and detail rows for latency-groups-per-segment plus
 coalescing/splitting summaries. The data comes from the
 `"stats"` key returned by `/api/hw_config_verify`. On failure or re-validation,

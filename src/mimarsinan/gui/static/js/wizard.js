@@ -668,7 +668,7 @@ function buildConfig() {
       weight_bits: weightBits,
       has_bias: hardwareBias,
     };
-    if (allowCoalescing) platformConstraints.allow_core_coalescing = true;
+    platformConstraints.allow_coalescing = allowCoalescing;
     if (isToggleOn('neuronSplittingToggle')) platformConstraints.allow_neuron_splitting = true;
   } else {
     // HW search mode: fixed values + search_space for architecture search
@@ -677,7 +677,7 @@ function buildConfig() {
       simulation_steps: simCycles,
       weight_bits: weightBits,
       has_bias: isToggleOn('hardwareBiasToggle'),
-      allow_core_coalescing: allowCoalescing,
+      allow_coalescing: allowCoalescing,
       allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
       search_space: {
         num_core_types: parseInt(v('numCoreTypes')),
@@ -790,7 +790,7 @@ function loadStateFromConfig(config) {
     _hwAutoMode = false;
     renderCoreTypes();
     setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
-    setToggleFromConfig('coreCoalescingToggle', pc.allow_core_coalescing);
+    setToggleFromConfig('coreCoalescingToggle', !!pc.allow_coalescing);
     setToggleFromConfig('neuronSplittingToggle', pc.allow_neuron_splitting);
     setVal('weightBits', pc.weight_bits != null ? pc.weight_bits : dp.weight_bits);
     setVal('targetTq', pc.target_tq);
@@ -801,7 +801,7 @@ function loadStateFromConfig(config) {
     setVal('simCycles', pc.simulation_steps);
     setVal('weightBits', pc.weight_bits);
     setToggleFromConfig('hardwareBiasToggle', pc.has_bias !== false);
-    setToggleFromConfig('coreCoalescingToggle', pc.allow_core_coalescing);
+    setToggleFromConfig('coreCoalescingToggle', !!pc.allow_coalescing);
     setToggleFromConfig('neuronSplittingToggle', pc.allow_neuron_splitting);
     const ss = pc.search_space || {};
     setVal('numCoreTypes', ss.num_core_types);

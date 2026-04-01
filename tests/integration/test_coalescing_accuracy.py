@@ -124,7 +124,7 @@ def test_coalescing_accuracy_with_rearrange():
             firing_mode="TTFS",
             max_axons=128, # Trigger decomposition
             max_neurons=1024,
-            allow_core_coalescing=allow_coalescing,
+            allow_coalescing=allow_coalescing,
         )
         
         repr = model.get_mapper_repr()

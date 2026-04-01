@@ -55,6 +55,7 @@ def _make_problem(
             "param_utilization_pct",
             "neuron_wastage_pct",
             "axon_wastage_pct",
+            "fragmentation_pct",
         ]
 
     input_shape = (1, 28, 28)
@@ -158,6 +159,42 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         obj = problem._evaluate_inner(mc, pcfg)
         assert obj["total_params"] < 1e17
         assert "estimated_accuracy" not in obj
+
+
+class TestCoalescingFlagAlignment:
+    """Canonical ``allow_coalescing`` controls layout width vs packing feasibility."""
+
+    _WIDE_BASE = {
+        # Enough cores for coalescing-expanded fragments (layout can be wide).
+        "cores": [{"max_axons": 16, "max_neurons": 64, "count": 2000}],
+        "target_tq": 32,
+        "weight_bits": 8,
+    }
+
+    def test_allow_coalescing_false_blocks_wide_packing(self):
+        """With coalescing off, the wide layout scenario should fail HW packing."""
+        from mimarsinan.mapping.coalescing import normalize_coalescing_config
+
+        problem = _make_problem(
+            objective_names=[
+                "total_params",
+                "param_utilization_pct",
+                "neuron_wastage_pct",
+                "axon_wastage_pct",
+                "fragmentation_pct",
+            ],
+        )
+        mc = _make_model_config()
+        pcfg = {**self._WIDE_BASE, "allow_coalescing": False}
+        normalize_coalescing_config(pcfg)
+
+        model, total_params = problem._build_model(mc, pcfg)
+        softcores, host_segments = problem._collect_softcores(model, pcfg)
+        hw_obj, error = problem._compute_hw_objectives(
+            softcores, pcfg, total_params, host_segments,
+        )
+        assert hw_obj is None
+        assert error is not None
 
 
 class TestAgentEvolveLikeConfigs:

@@ -11,7 +11,7 @@
         "target_tq": 32,
         "simulation_steps": 32,
         "weight_bits": 8,
-        "allow_axon_tiling": false
+        "allow_coalescing": false
       },
       "search_space": {
         "num_core_types": 2,

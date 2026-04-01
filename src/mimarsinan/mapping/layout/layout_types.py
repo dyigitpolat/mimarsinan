@@ -138,6 +138,10 @@ class LayoutPackingResult:
     unused_area_total: int
     avg_unused_area_per_core: float
 
+    # Sum of per-core strip-shaped packing dead zones (mirrors HardCore.unusable_space).
+    unusable_space_total: int = 0
+    avg_unusable_space_per_core: float = 0.0
+
     error: Optional[str] = None
     used_core_softcore_counts: Optional[Tuple[int, ...]] = None
     used_core_snapshots: Optional[Tuple[LayoutCoreSnapshot, ...]] = None

@@ -93,7 +93,7 @@ def pack_layout(
     softcores: Sequence[LayoutSoftCoreSpec],
     core_types: Sequence[LayoutHardCoreType],
     allow_neuron_splitting: bool = False,
-    allow_axon_coalescing: bool = False,
+    allow_coalescing: bool = False,
 ) -> LayoutPackingResult:
     """
     Pack layout-only softcores into a limited pool of hardware cores.
@@ -102,7 +102,7 @@ def pack_layout(
         Softcores may be split along the neuron (output) dimension across
         multiple hardware cores.
 
-    ``allow_axon_coalescing``:
+    ``allow_coalescing``:
         Softcores whose input count exceeds a single hardware core's max_axons
         are pre-expanded into axon-coalescing fragments before packing.  Each
         fragment carries all output neurons of the original softcore, mirroring
@@ -119,7 +119,7 @@ def pack_layout(
     # Pre-expand for axon coalescing so the greedy packer sees fragments that
     # fit within individual hardware cores' axon capacities.
     coalescing_group_sizes: Tuple[int, ...] = ()
-    if allow_axon_coalescing:
+    if allow_coalescing:
         unmapped, coalescing_group_sizes = _expand_for_axon_coalescing(unmapped, core_types)
     coalesced_fragment_count = len(unmapped) - pre_coalesce_count
 
@@ -185,6 +185,8 @@ def pack_layout(
             used_area=0,
             unused_area_total=0,
             avg_unused_area_per_core=float("inf"),
+            unusable_space_total=0,
+            avg_unusable_space_per_core=0.0,
             error=str(e),
         )
 
@@ -193,6 +195,11 @@ def pack_layout(
     used_area = sum(int(h.used_area) for h in used_hardcores)
     unused_total = int(total_capacity - used_area)
     avg_unused = float(unused_total / cores_used) if cores_used > 0 else float("inf")
+
+    unusable_total = sum(int(h.unusable_space) for h in used_hardcores)
+    avg_unusable_space = (
+        float(unusable_total / cores_used) if cores_used > 0 else 0.0
+    )
 
     snapshots = tuple(
         LayoutCoreSnapshot(
@@ -213,6 +220,8 @@ def pack_layout(
         used_area=int(used_area),
         unused_area_total=unused_total,
         avg_unused_area_per_core=avg_unused,
+        unusable_space_total=int(unusable_total),
+        avg_unusable_space_per_core=avg_unusable_space,
         error=None,
         used_core_softcore_counts=tuple(hc.softcore_count for hc in used_hardcores),
         used_core_snapshots=snapshots,

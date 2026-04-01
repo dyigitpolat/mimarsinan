@@ -45,7 +45,7 @@ class IRMapping:
         firing_mode: str = "Default",
         max_axons: int | None = None,
         max_neurons: int | None = None,
-        allow_core_coalescing: bool = False,
+        allow_coalescing: bool = False,
         hardware_bias: bool = False,
     ):
         self.nodes: List[IRNode] = []
@@ -55,7 +55,7 @@ class IRMapping:
         self.firing_mode = firing_mode
         self.max_axons = max_axons
         self.max_neurons = max_neurons
-        self.allow_core_coalescing = bool(allow_core_coalescing)
+        self.allow_coalescing = bool(allow_coalescing)
         self.hardware_bias = bool(hardware_bias)
 
         assert firing_mode in ("Default", "Novena", "TTFS"), \
@@ -405,7 +405,7 @@ class IRMapping:
         max_axons — hardware packing (HardCoreMapping) handles axon
         constraints via core fusion.
 
-        ``allow_core_coalescing`` only controls whether coalescing
+        ``allow_coalescing`` only controls whether coalescing
         metadata (group_id / role) is attached to wide cores.
         """
         fc_weights = self._to_numpy(fc_weights)
@@ -460,7 +460,7 @@ class IRMapping:
         mode = compute_fc_tiling_mode(
             in_features, out_features,
             self.max_axons, self.max_neurons,
-            has_bias, self.hardware_bias, self.allow_core_coalescing,
+            has_bias, self.hardware_bias, self.allow_coalescing,
         )
 
         if mode == "coalescing":
@@ -739,7 +739,7 @@ def map_model_to_ir(
     firing_mode: str = "Default",
     max_axons: int | None = None,
     max_neurons: int | None = None,
-    allow_core_coalescing: bool = False,
+    allow_coalescing: bool = False,
     hardware_bias: bool = False,
 ) -> IRGraph:
     """
@@ -751,7 +751,7 @@ def map_model_to_ir(
         firing_mode: Firing mode ("Default" or "Novena").
         max_axons: Maximum axons per core.
         max_neurons: Maximum neurons per core.
-        allow_core_coalescing: Whether to allow expanding core widths.
+        allow_coalescing: Whether to allow expanding core widths.
         hardware_bias: Whether to use dedicated bias registers.
 
     Returns:
@@ -762,7 +762,7 @@ def map_model_to_ir(
         firing_mode=firing_mode,
         max_axons=max_axons,
         max_neurons=max_neurons,
-        allow_core_coalescing=allow_core_coalescing,
+        allow_coalescing=allow_coalescing,
         hardware_bias=hardware_bias,
     )
     return ir_mapping.map(model_representation)

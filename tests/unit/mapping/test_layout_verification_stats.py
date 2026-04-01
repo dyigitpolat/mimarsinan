@@ -41,14 +41,14 @@ def _pack_and_stats(
     core_types: list[LayoutHardCoreType],
     *,
     allow_neuron_splitting: bool = False,
-    allow_axon_coalescing: bool = False,
+    allow_coalescing: bool = False,
 ) -> LayoutVerificationStats:
     """Pack and build stats in one step (convenience)."""
     return build_layout_verification_stats(
         softcores=softcores,
         core_types=core_types,
         allow_neuron_splitting=allow_neuron_splitting,
-        allow_axon_coalescing=allow_axon_coalescing,
+        allow_coalescing=allow_coalescing,
     )
 
 
@@ -173,6 +173,25 @@ class TestKnownWaste:
         # Wasted neurons: (16-8)/16 = 50%
         assert stats.total_wasted_axons_pct == pytest.approx(0.0)
         assert stats.total_wasted_neurons_pct == pytest.approx(50.0)
+        # Internal fragmentation (unusable L-shaped strips) vs leftover rectangular capacity
+        assert stats.unused_area_total == int(16 * 16 - 2 * 8 * 4)
+        assert stats.unusable_space_total > 0
+        assert stats.fragmentation_pct == pytest.approx(
+            stats.unusable_space_total / float(16 * 16) * 100.0,
+        )
+
+
+class TestFragmentationMetrics:
+    """unusable_space aggregate and fragmentation_pct vs perfect-fit packing."""
+
+    def test_perfect_fit_zero_fragmentation(self):
+        scs = _make_softcores([(16, 8)])
+        hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=1)]
+        stats = _pack_and_stats(scs, hw)
+        assert stats.feasible
+        assert stats.unusable_space_total == 0
+        assert stats.fragmentation_pct == pytest.approx(0.0)
+        assert stats.unused_area_total == 0
 
 
 class TestPerCoreMinAvgMax:
@@ -202,7 +221,7 @@ class TestCoalescingStats:
         """A 32-axon softcore on 16-axon hardware produces coalesced fragments."""
         scs = _make_softcores([(32, 8)])
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=4)]
-        stats = _pack_and_stats(scs, hw, allow_axon_coalescing=True)
+        stats = _pack_and_stats(scs, hw, allow_coalescing=True)
 
         assert stats.feasible
         # 32 axons / 16 max = 2 fragments, so 1 extra fragment introduced
@@ -211,7 +230,7 @@ class TestCoalescingStats:
     def test_no_coalescing_when_disabled(self):
         scs = _make_softcores([(8, 4)])
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=1)]
-        stats = _pack_and_stats(scs, hw, allow_axon_coalescing=False)
+        stats = _pack_and_stats(scs, hw, allow_coalescing=False)
 
         assert stats.coalesced_cores == 0
 
@@ -248,7 +267,7 @@ class TestCombinedFeatures:
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=16, count=64)]
         stats = _pack_and_stats(
             scs, hw,
-            allow_axon_coalescing=True,
+            allow_coalescing=True,
             allow_neuron_splitting=True,
         )
 
@@ -316,7 +335,7 @@ class TestCoalescingGroupDistribution:
         """One 32-axon softcore on 16-axon hw → one coalescing group of size 2."""
         scs = _make_softcores([(32, 8)])
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=4)]
-        stats = _pack_and_stats(scs, hw, allow_axon_coalescing=True)
+        stats = _pack_and_stats(scs, hw, allow_coalescing=True)
 
         assert stats.coalescing_group_count == 1
         assert stats.coalescing_frags_per_group_min == pytest.approx(2.0)
@@ -327,7 +346,7 @@ class TestCoalescingGroupDistribution:
         """32-axon and 48-axon softcores on 16-axon hw → two groups of sizes 2 and 3."""
         scs = _make_softcores([(32, 4), (48, 4)])
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=4, count=8)]
-        stats = _pack_and_stats(scs, hw, allow_axon_coalescing=True)
+        stats = _pack_and_stats(scs, hw, allow_coalescing=True)
 
         assert stats.coalescing_group_count == 2
         assert stats.coalescing_frags_per_group_min == pytest.approx(2.0)
@@ -339,7 +358,7 @@ class TestCoalescingGroupDistribution:
         """Softcore fits in one core — no coalescing groups."""
         scs = _make_softcores([(8, 4)])
         hw = [LayoutHardCoreType(max_axons=16, max_neurons=8, count=1)]
-        stats = _pack_and_stats(scs, hw, allow_axon_coalescing=True)
+        stats = _pack_and_stats(scs, hw, allow_coalescing=True)
 
         assert stats.coalescing_group_count == 0
         assert stats.coalescing_frags_per_group_min == pytest.approx(0.0)
@@ -601,7 +620,7 @@ class TestChipLevelViaVerifyHardwareConfig:
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
-            allow_axon_coalescing=False,
+            allow_coalescing=False,
             allow_neuron_splitting=False,
         )
         assert result["feasible"] is False
@@ -620,7 +639,7 @@ class TestChipLevelViaVerifyHardwareConfig:
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
-            allow_axon_coalescing=True,
+            allow_coalescing=True,
             allow_neuron_splitting=True,
         )
         stats = result["stats"]
@@ -976,7 +995,7 @@ class TestUnifiedSchedulingVerifier:
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
-            allow_axon_coalescing=True,
+            allow_coalescing=True,
             allow_neuron_splitting=True,
         )
         assert result["feasible"] is False
@@ -993,7 +1012,7 @@ class TestUnifiedSchedulingVerifier:
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
-            allow_axon_coalescing=True,
+            allow_coalescing=True,
             allow_neuron_splitting=True,
         )
         assert result["feasible"] is True
@@ -1015,7 +1034,7 @@ class TestUnifiedSchedulingVerifier:
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
-            allow_axon_coalescing=True,
+            allow_coalescing=True,
             allow_neuron_splitting=True,
         )
         assert result["feasible"] is True
@@ -1036,7 +1055,7 @@ class TestUnifiedSchedulingVerifier:
         result = verify_hardware_config(
             scs, core_types,
             allow_scheduling=True,
-            allow_axon_coalescing=False,
+            allow_coalescing=False,
             allow_neuron_splitting=True,
         )
         assert result["feasible"] is True

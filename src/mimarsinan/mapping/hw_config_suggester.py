@@ -194,7 +194,7 @@ def _pack_with_two_types(
     total_count: int,
     *,
     allow_neuron_splitting: bool = False,
-    allow_axon_coalescing: bool = False,
+    allow_coalescing: bool = False,
 ) -> tuple[bool, int | None, tuple[int, ...] | None]:
     """Pack with two core types (50/50 split). Return (feasible, cores_used, used_core_softcore_counts)."""
     c1, c2 = (total_count + 1) // 2, total_count // 2
@@ -208,7 +208,7 @@ def _pack_with_two_types(
         softcores=list(softcores),
         core_types=hw_types,
         allow_neuron_splitting=allow_neuron_splitting,
-        allow_axon_coalescing=allow_axon_coalescing,
+        allow_coalescing=allow_coalescing,
     )
     if not result.feasible:
         return False, None, None
@@ -288,7 +288,7 @@ def _count_cores_needed_two_types(
     safety_margin: float,
     *,
     allow_neuron_splitting: bool = False,
-    allow_axon_coalescing: bool = False,
+    allow_coalescing: bool = False,
 ) -> int:
     """Minimum total pool size (with 50/50 split) for packing to succeed, plus safety margin."""
     n_sc = len(softcores)
@@ -299,7 +299,7 @@ def _count_cores_needed_two_types(
         feasible, _, _ = _pack_with_two_types(
             softcores, type1, type2, upper,
             allow_neuron_splitting=allow_neuron_splitting,
-            allow_axon_coalescing=allow_axon_coalescing,
+            allow_coalescing=allow_coalescing,
         )
         if feasible:
             break
@@ -312,7 +312,7 @@ def _count_cores_needed_two_types(
         feasible, _, _ = _pack_with_two_types(
             softcores, type1, type2, mid,
             allow_neuron_splitting=allow_neuron_splitting,
-            allow_axon_coalescing=allow_axon_coalescing,
+            allow_coalescing=allow_coalescing,
         )
         if feasible:
             upper = mid
@@ -394,14 +394,14 @@ def suggest_hardware_config(
         return _count_cores_needed_two_types(
             softcores_list, type1_, type2_, safety_margin,
             allow_neuron_splitting=allow_neuron_splitting,
-            allow_axon_coalescing=allow_coalescing,
+            allow_coalescing=allow_coalescing,
         )
 
     def _pack(type1_: tuple, type2_: tuple, total_: int):
         return _pack_with_two_types(
             softcores_list, type1_, type2_, total_,
             allow_neuron_splitting=allow_neuron_splitting,
-            allow_axon_coalescing=allow_coalescing,
+            allow_coalescing=allow_coalescing,
         )
 
     # Determine which dimensions are flexible (may grow during iteration).
@@ -631,7 +631,7 @@ def suggest_hardware_config_for_model(
         threshold_groups=threshold_groups,
         pruning_fraction=pruning_fraction,
         threshold_seed=threshold_seed,
-        allow_core_coalescing=allow_coalescing,
+        allow_coalescing=allow_coalescing,
         hardware_bias=hardware_bias,
     )
 

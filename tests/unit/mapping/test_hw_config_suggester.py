@@ -300,7 +300,7 @@ class TestSuggestHardwareConfig:
         max_ax = max(sc.input_count for sc in softcores)
         assert max(a1, a2) >= max_ax, "at least one type should cover max axon count"
         # Feasibility check (with coalescing enabled for packing).
-        verification = verify_hardware_config(softcores, result.core_types, allow_axon_coalescing=True)
+        verification = verify_hardware_config(softcores, result.core_types, allow_coalescing=True)
         assert verification["feasible"]
 
     def test_combined_coalescing_and_splitting_128x256_on_16x16(self):
@@ -319,7 +319,7 @@ class TestSuggestHardwareConfig:
             softcores=softcores,
             core_types=hw_types,
             allow_neuron_splitting=True,
-            allow_axon_coalescing=True,
+            allow_coalescing=True,
         )
         assert result.feasible, f"Combined coalescing+splitting failed: {result.error}"
         assert result.cores_used == 128  # 8 coalescing × 16 splits
@@ -338,7 +338,7 @@ class TestSuggestHardwareConfig:
         verification = verify_hardware_config(
             softcores, suggestion.core_types,
             allow_neuron_splitting=True,
-            allow_axon_coalescing=True,
+            allow_coalescing=True,
         )
         assert verification["feasible"], (
             f"Combined suggest→verify failed: {verification['errors']}"
@@ -380,7 +380,7 @@ class TestSuggestHardwareConfig:
             assert ct["max_neurons"] >= 64, f"Coalescing-only type has insufficient neurons: {ct}"
         verification = verify_hardware_config(
             softcores, suggestion.core_types,
-            allow_axon_coalescing=True,
+            allow_coalescing=True,
         )
         assert verification["feasible"], (
             f"Coalescing-only suggest→verify failed: {verification['errors']}"

@@ -8,8 +8,8 @@ in the deployment pipeline.
 | File | Step Class | Pipeline Phase |
 |------|-----------|----------------|
 | `activation_utils.py` | `has_non_relu_activations`, `RELU_COMPATIBLE_TYPES` | Shared helper for activation steps |
-| `architecture_search_step.py` | `ArchitectureSearchStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`) |
-| `model_configuration_step.py` | `ModelConfigurationStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`) |
+| `architecture_search_step.py` | `ArchitectureSearchStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`; sets `allow_coalescing` from pipeline config and normalizes via `mapping.coalescing.normalize_coalescing_config`) |
+| `model_configuration_step.py` | `ModelConfigurationStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`; sets `allow_coalescing` the same way) |
 | `model_building_step.py` | `ModelBuildingStep` | Model construction |
 | `pretraining_step.py` | `PretrainingStep` | Training |
 | `activation_analysis_step.py` | `ActivationAnalysisStep` | Quantization prep |

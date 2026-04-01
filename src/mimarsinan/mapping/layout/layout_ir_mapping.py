@@ -35,7 +35,7 @@ class LayoutIRMapping:
     threshold_groups: int = 1
     threshold_seed: int = 0
     pruning_fraction: float = 0.0
-    allow_core_coalescing: bool = False
+    allow_coalescing: bool = False
     hardware_bias: bool = False
 
     def __post_init__(self):
@@ -424,7 +424,7 @@ class LayoutIRMapping:
         mode = compute_fc_tiling_mode(
             in_features, out_features,
             self.max_axons, self.max_neurons,
-            has_bias, self.hardware_bias, self.allow_core_coalescing,
+            has_bias, self.hardware_bias, self.allow_coalescing,
         )
 
         if mode == "coalescing":

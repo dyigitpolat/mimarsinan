@@ -89,7 +89,7 @@ def _get_layout_result_from_request(body: dict):
     threshold_groups = int(body.get("threshold_groups", 1))
     pruning_fraction = float(body.get("pruning_fraction", 0.0))
     threshold_seed = int(body.get("threshold_seed", 0))
-    allow_core_coalescing = bool(body.get("allow_coalescing", False))
+    allow_coalescing = bool(body.get("allow_coalescing", False))
     hardware_bias = bool(body.get("hardware_bias", False))
 
     builder_cls = BUILDERS_REGISTRY.get(model_type)
@@ -144,7 +144,7 @@ def _get_layout_result_from_request(body: dict):
         threshold_groups=threshold_groups,
         pruning_fraction=pruning_fraction,
         threshold_seed=threshold_seed,
-        allow_core_coalescing=allow_core_coalescing,
+        allow_coalescing=allow_coalescing,
         hardware_bias=hardware_bias,
     )
     if not result.feasible:
@@ -531,7 +531,7 @@ def create_app(
             result = verify_hardware_config(
                 softcores, core_types,
                 allow_neuron_splitting=allow_neuron_splitting,
-                allow_axon_coalescing=allow_coalescing,
+                allow_coalescing=allow_coalescing,
                 allow_scheduling=allow_scheduling,
             )
             stats_out = {

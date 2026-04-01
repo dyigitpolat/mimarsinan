@@ -65,7 +65,7 @@ def verify_soft_core_mapping(
     threshold_groups: int = 1,
     pruning_fraction: float = 0.0,
     threshold_seed: int = 0,
-    allow_core_coalescing: bool = False,
+    allow_coalescing: bool = False,
     hardware_bias: bool = False,
 ) -> MappingVerificationResult:
     """Verify that a mapper-graph model representation can be laid out as soft cores.
@@ -87,7 +87,7 @@ def verify_soft_core_mapping(
         as a random row/column reduction on each softcore.
     threshold_seed:
         RNG seed for deterministic threshold-group assignment.
-    allow_core_coalescing:
+    allow_coalescing:
         If True, enable layout-level axon tiling via coalescing (wide FC
         layers keep their full width and hardware fuses physical cores).
     hardware_bias:
@@ -104,7 +104,7 @@ def verify_soft_core_mapping(
             threshold_groups=threshold_groups,
             threshold_seed=threshold_seed,
             pruning_fraction=pruning_fraction,
-            allow_core_coalescing=allow_core_coalescing,
+            allow_coalescing=allow_coalescing,
             hardware_bias=hardware_bias,
         )
         softcores = layout.collect_layout_softcores(model_repr)
@@ -155,7 +155,7 @@ def verify_hardware_config(
     core_types: List[Dict[str, Any]],
     *,
     allow_neuron_splitting: bool = False,
-    allow_axon_coalescing: bool = False,
+    allow_coalescing: bool = False,
     allow_scheduling: bool = False,
 ) -> Dict[str, Any]:
     """Check whether a hardware core configuration is sufficient for the given softcores.
@@ -169,7 +169,7 @@ def verify_hardware_config(
     allow_neuron_splitting:
         If True, soft cores may be split along the neuron dimension during
         packing, so the dimension pre-check only requires axon coverage.
-    allow_axon_coalescing:
+    allow_coalescing:
         If True, soft cores whose input count exceeds a single core's max_axons
         are coalesced across multiple hardware cores, so the pre-check only
         requires neuron coverage.
@@ -223,10 +223,10 @@ def verify_hardware_config(
     # When scheduling is enabled, coalescing/splitting fragments can be distributed
     # across passes, so dimension constraints are always satisfiable.
     # When only one feature is active (no scheduling), the non-split dimension is still a hard constraint.
-    if not (allow_axon_coalescing and allow_neuron_splitting) and not allow_scheduling:
+    if not (allow_coalescing and allow_neuron_splitting) and not allow_scheduling:
         at_least_one_covers_largest = False
         for hw in hw_types:
-            axon_ok = allow_axon_coalescing or hw.max_axons >= max_req_axons
+            axon_ok = allow_coalescing or hw.max_axons >= max_req_axons
             neuron_ok = allow_neuron_splitting or hw.max_neurons >= max_req_neurons
             if axon_ok and neuron_ok:
                 at_least_one_covers_largest = True
@@ -238,7 +238,7 @@ def verify_hardware_config(
                     f"No core type fits the largest soft core's axon count ({max_req_axons} axons). "
                     "At least one type must have max_axons >= this value (neurons will be split)."
                 )
-            elif allow_axon_coalescing:
+            elif allow_coalescing:
                 field_errors["core_types"] = (
                     f"No core type fits the largest soft core's neuron count ({max_req_neurons} neurons). "
                     "At least one type must have max_neurons >= this value (axons will be coalesced)."
@@ -258,7 +258,7 @@ def verify_hardware_config(
         softcores=softcores,
         core_types=hw_types,
         allow_neuron_splitting=allow_neuron_splitting,
-        allow_axon_coalescing=allow_axon_coalescing,
+        allow_coalescing=allow_coalescing,
     )
 
     # When scheduling is enabled and single-pass packing fails, partition
@@ -279,7 +279,7 @@ def verify_hardware_config(
         common_est_kwargs = dict(
             max_hw_axons=max_hw_ax,
             max_hw_neurons=max_hw_neu,
-            allow_coalescing=allow_axon_coalescing,
+            allow_coalescing=allow_coalescing,
             allow_splitting=allow_neuron_splitting,
             core_types=hw_types,
         )
@@ -320,7 +320,7 @@ def verify_hardware_config(
                         softcores=pass_scs,
                         core_types=hw_types,
                         allow_neuron_splitting=allow_neuron_splitting,
-                        allow_axon_coalescing=allow_axon_coalescing,
+                        allow_coalescing=allow_coalescing,
                     )
                     if pr.feasible:
                         best_pass_result = pr
@@ -359,7 +359,7 @@ def verify_hardware_config(
         max_hw_neu = max(hw.max_neurons for hw in hw_types) if hw_types else 1
         per_sc_costs = []
         for sc in softcores:
-            ax_f = math.ceil(sc.input_count / max_hw_ax) if allow_axon_coalescing else 1
+            ax_f = math.ceil(sc.input_count / max_hw_ax) if allow_coalescing else 1
             neu_f = math.ceil(sc.output_count / max_hw_neu) if allow_neuron_splitting else 1
             per_sc_costs.append(ax_f * neu_f)
 

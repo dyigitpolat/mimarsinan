@@ -407,7 +407,7 @@ def estimate_passes_for_layout(
                     softcores=pass_scs,
                     core_types=list(core_types),
                     allow_neuron_splitting=allow_splitting,
-                    allow_axon_coalescing=allow_coalescing,
+                    allow_coalescing=allow_coalescing,
                 )
                 return pr.feasible
             except Exception:
@@ -475,7 +475,7 @@ def estimate_passes_for_layout_validated(
                 softcores=pass_scs,
                 core_types=list(core_types),
                 allow_neuron_splitting=allow_splitting,
-                allow_axon_coalescing=allow_coalescing,
+                allow_coalescing=allow_coalescing,
             )
             return pr.feasible
         except Exception:

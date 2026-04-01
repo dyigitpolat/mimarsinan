@@ -68,8 +68,8 @@ class TestIRMappingMapFC:
         assert len(out.flatten()) == 10
 
     def test_wide_layer_psum_decomposition(self):
-        """Wide layers exceeding max_axons use psum decomposition (allow_core_coalescing=False)."""
-        m = IRMapping(max_axons=6, max_neurons=64, allow_core_coalescing=False)
+        """Wide layers exceeding max_axons use psum decomposition (allow_coalescing=False)."""
+        m = IRMapping(max_axons=6, max_neurons=64, allow_coalescing=False)
         sources = np.array([IRSource(-2, i) for i in range(10)])
         out_shape = np.array([4])
         w = torch.randn(4, 10)
@@ -85,8 +85,8 @@ class TestIRMappingMapFC:
         assert 'accum' in roles
 
     def test_wide_layer_coalescing_single_core(self):
-        """Wide layers with allow_core_coalescing=True produce a single wide core."""
-        m = IRMapping(max_axons=6, max_neurons=64, allow_core_coalescing=True)
+        """Wide layers with allow_coalescing=True produce a single wide core."""
+        m = IRMapping(max_axons=6, max_neurons=64, allow_coalescing=True)
         sources = np.array([IRSource(-2, i) for i in range(10)])
         out_shape = np.array([4])
         w = torch.randn(4, 10)
