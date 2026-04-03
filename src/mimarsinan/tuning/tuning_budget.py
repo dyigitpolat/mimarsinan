@@ -41,7 +41,7 @@ class TuningBudget:
         validation_steps = max(1, min(32, check_interval))
 
         lr_num_probes = max(2, int(math.sqrt(float(check_interval))))
-        lr_steps_per_probe = max(1, check_interval // lr_num_probes)
+        lr_steps_per_probe = max(1, check_interval)
         tolerance_probe_steps = check_interval
 
         if val_set_size is not None and val_batch_size is not None:

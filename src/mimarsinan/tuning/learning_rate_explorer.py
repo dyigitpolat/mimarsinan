@@ -61,6 +61,8 @@ class LRRangeFinder:
     def find_best_lr(self) -> float:
         state = self.clone_state()
         try:
+            baseline = float(self.validate_fn())
+
             accs: list[float] = []
             lrs: list[float] = []
             for i in range(self.num_probes):
@@ -74,6 +76,15 @@ class LRRangeFinder:
                 lrs.append(float(lr))
 
             sm = _smooth(accs)
+            best_val = max(sm)
+            worst_val = min(sm)
+
+            if baseline > 1e-6 and best_val < baseline * 0.9:
+                return lrs[0]
+
+            if best_val - worst_val < 1e-4:
+                return (self.lr_min * self.lr_max) ** 0.5
+
             best_i = max(range(len(sm)), key=lambda j: sm[j])
             return lrs[best_i]
         finally:

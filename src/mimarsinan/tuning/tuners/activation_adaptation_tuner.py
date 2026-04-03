@@ -26,10 +26,18 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
     def _get_extra_state(self):
-        return self.adaptation_manager.activation_adaptation_rate
+        base_acts = [
+            (p.base_activation, p.base_activation_name)
+            for p in self.model.get_perceptrons()
+        ]
+        return (self.adaptation_manager.activation_adaptation_rate, base_acts)
 
     def _set_extra_state(self, extra):
-        self.adaptation_manager.activation_adaptation_rate = extra
+        rate, base_acts = extra
+        self.adaptation_manager.activation_adaptation_rate = rate
+        for p, (ba, ban) in zip(self.model.get_perceptrons(), base_acts):
+            p.base_activation = ba
+            p.base_activation_name = ban
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
@@ -46,8 +54,7 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
             needs_relu_adaptation,
         )
 
-        pre_commit_state = self._clone_state()
-        pre_commit_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        self._continue_to_full_rate()
 
         for p in self.model.get_perceptrons():
             if needs_relu_adaptation(p):
@@ -58,14 +65,18 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
-        post_commit_acc = self.trainer.test()
+        lr = self._find_lr()
+        self.trainer.train_steps_until_target(
+            lr,
+            self._budget.max_training_steps,
+            self._get_target(),
+            0,
+            validation_n_batches=self._budget.validation_steps,
+            check_interval=self._budget.check_interval,
+            patience=3,
+        )
 
-        if post_commit_acc < self.target_adjuster.floor:
-            self._restore_state(pre_commit_state)
-            self._committed_metric = pre_commit_acc
-        else:
-            self._committed_metric = post_commit_acc
-
+        self._committed_metric = self.trainer.test()
         return self._committed_metric
 
     def validate(self):

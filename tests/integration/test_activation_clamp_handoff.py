@@ -71,7 +71,7 @@ _TTFS_CONFIG_OVERRIDES = {
     "thresholding_mode": "<=",
     "activation_quantization": False,
     "weight_quantization": True,
-    "tuning_budget_scale": 2.5,
+    "tuning_budget_scale": 1.0,
     "tuner_calibrate_smooth_tolerance": False,
     "lr_range_min": 1e-5,
     "lr_range_max": 1e-3,

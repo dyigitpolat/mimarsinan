@@ -145,7 +145,6 @@ class TestLRRangeFinder:
 
     def test_all_lrs_destructive_picks_smallest(self):
         """When every LR degrades accuracy, the smallest (least harmful) wins."""
-        probe_accs = []
 
         class MockTrainer:
             def __init__(self):
@@ -159,7 +158,6 @@ class TestLRRangeFinder:
         def mock_validate():
             lr = tr._current_lr
             acc = max(0.01, 0.30 - lr * 100)
-            probe_accs.append((lr, acc))
             return acc
 
         finder = LRRangeFinder(
@@ -175,4 +173,36 @@ class TestLRRangeFinder:
         lr = finder.find_best_lr()
         assert lr == pytest.approx(1e-3), (
             f"When all LRs degrade, smallest should win; got {lr}"
+        )
+
+    def test_baseline_sanity_returns_lr_min_when_all_probes_degrade(self):
+        """When best probe accuracy is < 90% of baseline, lr_min is returned."""
+        call_idx = [0]
+
+        class MockTrainer:
+            def train_n_steps(self, lr, steps):
+                pass
+
+        tr = MockTrainer()
+
+        def mock_validate():
+            idx = call_idx[0]
+            call_idx[0] += 1
+            if idx == 0:
+                return 0.80  # baseline
+            return 0.05  # all probes catastrophic
+
+        finder = LRRangeFinder(
+            trainer=tr,
+            clone_state=lambda: None,
+            restore_state=lambda s: None,
+            lr_min=1e-5,
+            lr_max=1e-1,
+            num_probes=5,
+            steps_per_probe=3,
+            validate_fn=mock_validate,
+        )
+        lr = finder.find_best_lr()
+        assert lr == pytest.approx(1e-5), (
+            f"When all probes degrade below 90% baseline, should return lr_min; got {lr}"
         )

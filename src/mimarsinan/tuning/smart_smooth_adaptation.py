@@ -7,6 +7,13 @@ each cycle:
     for each cycle:
         find largest r such that A(T(r, M)) >= (1 - tol) * target
         apply T(r, M)  then  R(M, lr, budget)
+
+The adaptation function may return the *committed* rate (float).  When the
+returned value is less than the proposed rate, the loop treats the cycle as
+a rollback: ``t`` is reset to the committed rate and the maximum allowed
+step for the next cycle is halved.  This prevents ``t`` from diverging from
+the actual model state and guarantees termination (max_step shrinks toward
+min_step).
 """
 
 from __future__ import annotations
@@ -44,8 +51,8 @@ class SmartSmoothAdaptation:
         if step_size < self.min_step and self.min_step < halfway:
             self.min_step *= 2.0
 
-    def _find_step_size(self, t: float) -> float:
-        step_size = (1.0 - t) * 2
+    def _find_step_size(self, t: float, max_step: float = float("inf")) -> float:
+        step_size = min((1.0 - t) * 2, max_step)
         state = self.clone_state()
 
         current_metric = 0.0
@@ -60,19 +67,28 @@ class SmartSmoothAdaptation:
 
         self._adjust_minimum_step(step_size, t)
 
-        if step_size > 1.0:
-            step_size = 1.0
-
+        step_size = min(step_size, max_step, 1.0)
         return step_size
 
     def adapt_smoothly(self, max_cycles: Optional[int] = None) -> None:
         t = 0.0
         cycles = 0
+        rate_ceiling = 1.0
         while t < 1 and (not max_cycles or cycles < max_cycles):
+            available = rate_ceiling - t
+            if available < self.min_step:
+                break
             if self.before_cycle is not None:
                 self.before_cycle()
-            step_size = self._find_step_size(t)
-            t += step_size
-            interpolated = [i(t) for i in self.interpolators]
-            self.adaptation_fn(*interpolated)
+            step_size = self._find_step_size(t, available)
+            t_proposed = min(t + step_size, rate_ceiling)
+            interpolated = [i(t_proposed) for i in self.interpolators]
+            result = self.adaptation_fn(*interpolated)
+
+            if result is not None and float(result) < t_proposed - 1e-9:
+                t = float(result)
+                rate_ceiling = (t + t_proposed) / 2
+            else:
+                t = t_proposed
+                rate_ceiling = 1.0
             cycles += 1

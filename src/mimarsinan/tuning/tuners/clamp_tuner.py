@@ -193,5 +193,21 @@ class ClampTuner(SmoothAdaptationTuner):
         return self.trainer.test()
 
     def _after_run(self):
+        self._continue_to_full_rate()
+
+        self.adaptation_manager.clamp_rate = 1.0
+        for p in self.model.get_perceptrons():
+            self.adaptation_manager.update_activation(self.pipeline.config, p)
+
+        lr = self._find_lr()
+        self.trainer.train_steps_until_target(
+            lr,
+            self._budget.max_training_steps,
+            self._get_target(),
+            0,
+            validation_n_batches=self._budget.validation_steps,
+            check_interval=self._budget.check_interval,
+            patience=3,
+        )
         self._final_metric = self.trainer.test()
         return self._final_metric
