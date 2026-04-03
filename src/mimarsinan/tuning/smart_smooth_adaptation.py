@@ -1,75 +1,78 @@
-from mimarsinan.tuning.basic_smooth_adaptation import BasicSmoothAdaptation
-from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
+"""Smooth adaptation via greedy step-size bisection.
 
-class SmartSmoothAdaptation(BasicSmoothAdaptation):
+Given transformation T, evaluation A, and recovery R, finds the schedule
+r_1, r_2, ... with sum(r_i) = 1 by probing the largest tolerable step at
+each cycle:
+
+    for each cycle:
+        find largest r such that A(T(r, M)) >= (1 - tol) * target
+        apply T(r, M)  then  R(M, lr, budget)
+"""
+
+from __future__ import annotations
+
+from typing import Callable, List, Optional
+
+
+class SmartSmoothAdaptation:
+    """Greedy bisection loop for smooth rate-based adaptation."""
+
     def __init__(
-        self, adaptation_function,
-        state_clone_function, state_restore_function,
-        evaluation_function, interpolators, target_metric,
-        before_cycle=None,
-        initial_tolerance_fn=None,
+        self,
+        adaptation_fn: Callable,
+        clone_state: Callable[[], object],
+        restore_state: Callable[[object], None],
+        evaluate_fn: Callable,
+        interpolators: List,
+        get_target: Callable[[], float],
+        tolerance: float,
+        min_step: float,
+        before_cycle: Optional[Callable[[], None]] = None,
     ):
-
-        super().__init__(adaptation_function, interpolators)
-        self.state_clone_function = state_clone_function
-        self.state_restore_function = state_restore_function
-        self.evaluation_function = evaluation_function
-        self.min_step = 0.001
-        self.tolerance = 0.01
-
-        self.original_target = target_metric
-        self.target_adjuster = AdaptationTargetAdjuster(self.original_target)
+        self.adaptation_fn = adaptation_fn
+        self.clone_state = clone_state
+        self.restore_state = restore_state
+        self.evaluate_fn = evaluate_fn
+        self.interpolators = interpolators
+        self.get_target = get_target
+        self.tolerance = float(tolerance)
+        self.min_step = float(min_step)
         self.before_cycle = before_cycle
-        self.initial_tolerance_fn = initial_tolerance_fn
 
-    def _adjust_minimum_step(self, step_size, t):
+    def _adjust_minimum_step(self, step_size: float, t: float) -> None:
         halfway = (1 - t) / 2
-        step_size_is_too_small = step_size < self.min_step
-        min_step_is_within_halfway = self.min_step < halfway
-
-        if step_size_is_too_small and min_step_is_within_halfway:
+        if step_size < self.min_step and self.min_step < halfway:
             self.min_step *= 2.0
-            self.tolerance *= 1.5
 
-    def _find_step_size(self, t):
-        step_size = (1 - t) * 2
-        state = self.state_clone_function()
+    def _find_step_size(self, t: float) -> float:
+        step_size = (1.0 - t) * 2
+        state = self.clone_state()
 
-        current_metric = 0
-        tolerable_metric = self.target_adjuster.get_target() * (1.0 - self.tolerance)
+        current_metric = 0.0
+        tolerable_metric = self.get_target() * (1.0 - self.tolerance)
         while current_metric < tolerable_metric and step_size > self.min_step:
             step_size /= 2
-            print("step_size: ", step_size)
-            
             next_t = t + step_size
-            current_metric = self.evaluation_function(*[i(next_t) for i in self.interpolators])
-            print("current_metric_: ", current_metric)
-            
-            self.state_restore_function(state)
+            current_metric = self.evaluate_fn(
+                *[i(next_t) for i in self.interpolators]
+            )
+            self.restore_state(state)
 
         self._adjust_minimum_step(step_size, t)
 
-        print("current_metric: ", current_metric)
-        if step_size > 1.0: 
+        if step_size > 1.0:
             step_size = 1.0
-            
+
         return step_size
 
-    def adapt_smoothly(self, max_cycles = None):
-        if self.initial_tolerance_fn is not None:
-            self.tolerance = self.initial_tolerance_fn()
-
-        t = 0
+    def adapt_smoothly(self, max_cycles: Optional[int] = None) -> None:
+        t = 0.0
         cycles = 0
         while t < 1 and (not max_cycles or cycles < max_cycles):
             if self.before_cycle is not None:
                 self.before_cycle()
             step_size = self._find_step_size(t)
             t += step_size
-            interpolated_params = [i(t) for i in self.interpolators]
-            print("START ADAPTATION")
-            self.adaptation_function(*interpolated_params)
-            print("END ADAPTATION")
-            self.target_adjuster.update_target(self.evaluation_function(*interpolated_params))
+            interpolated = [i(t) for i in self.interpolators]
+            self.adaptation_fn(*interpolated)
             cycles += 1
-

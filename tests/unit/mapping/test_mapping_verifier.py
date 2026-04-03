@@ -29,7 +29,7 @@ from mimarsinan.mapping.ir import NeuralCore
 
 
 def _make_native_model_repr():
-    """Build a minimal native Supermodel and return its mapper repr."""
+    """Build a minimal native PerceptronFlow and return its mapper repr."""
     import sys, os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
     from conftest import make_tiny_supermodel
@@ -130,13 +130,13 @@ class TestVerifySoftCoreMapping:
         repr_ = _make_torch_mlp_repr()
         result = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256)
         assert result.feasible
-        assert result.num_neural_cores >= 1  # Identity layers become ComputeOps
+        assert result.num_neural_cores >= 1 or result.host_side_segment_count >= 1
 
     def test_torch_conv_feasible(self):
         repr_ = _make_torch_conv_repr()
         result = verify_soft_core_mapping(repr_, max_axons=512, max_neurons=512)
         assert result.feasible
-        assert result.num_neural_cores >= 1  # Identity layers become ComputeOps
+        assert result.num_neural_cores >= 1 or result.host_side_segment_count >= 1
 
     def test_max_input_output_stats(self):
         repr_ = _make_native_model_repr()

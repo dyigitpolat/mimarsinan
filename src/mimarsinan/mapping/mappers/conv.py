@@ -221,9 +221,20 @@ class Conv2DPerceptronMapper(Mapper):
         s_h, s_w = self.stride
         p_h, p_w = self.padding
         d_h, d_w = self.dilation
-
         h_out = (h_in + 2 * p_h - d_h * (k_h - 1) - 1) // s_h + 1
         w_out = (w_in + 2 * p_w - d_w * (k_w - 1) - 1) // s_w + 1
+
+        if getattr(self.perceptron, "is_encoding_layer", False):
+            flat_in = np.array(input_sources, dtype=object).flatten()
+            out = ir_mapping.add_compute_op(
+                input_sources=flat_in,
+                op_type="module",
+                params={"module": self, "input_shape": (c_in, h_in, w_in)},
+                input_shape=(c_in, h_in, w_in),
+                output_shape=(self.out_channels, h_out, w_out),
+                name=self.name,
+            )
+            return out.reshape(self.out_channels, h_out, w_out)
 
         off_source = IRSource(node_id=-1, index=0)
         if p_h > 0 or p_w > 0:

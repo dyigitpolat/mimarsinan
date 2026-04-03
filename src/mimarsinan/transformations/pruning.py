@@ -20,7 +20,7 @@ def _collect_activation_stats(model, data_loader, device, num_batches=5):
     - output_importance: Mean absolute value per output neuron (row significance)
 
     Args:
-        model: The Supermodel (or any model with get_perceptrons()).
+        model: Any model with ``get_perceptrons()`` (e.g. ``PerceptronFlow`` / converted flow).
         data_loader: DataLoader providing input batches.
         device: Torch device.
         num_batches: Number of batches to average over.

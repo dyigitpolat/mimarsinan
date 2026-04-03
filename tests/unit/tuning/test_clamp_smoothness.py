@@ -15,6 +15,7 @@ from mimarsinan.models.layers import (
     NestedAdjustmentStrategy,
     DifferentiableClamp,
 )
+from mimarsinan.tuning.adaptation_manager import AdaptationManager
 
 
 def _make_activations_with_outliers(n=1000, scale=2.0, outlier_frac=0.05):
@@ -105,3 +106,15 @@ class TestNestedStrategyDiscontinuity:
         grad_diff = (grad_999 - grad_100).abs().max().item()
         assert grad_diff < 0.01, \
             f"MixOnly gradient difference at boundary should be tiny, got {grad_diff}"
+
+    def test_adaptation_manager_uses_mix_only_for_clamp(self):
+        """Clamp adaptation should avoid the random-mask jump near rate=1.0."""
+
+        class _Perceptron:
+            def __init__(self, scale):
+                self.activation_scale = torch.tensor(scale)
+
+        decorator = AdaptationManager().get_rate_adjusted_clamp_decorator(
+            _Perceptron(2.0)
+        )
+        assert isinstance(decorator.adjustment_strategy, MixAdjustmentStrategy)

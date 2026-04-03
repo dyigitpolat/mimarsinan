@@ -319,13 +319,12 @@ class SoftCoreMappingStep(PipelineStep):
         # graphs and graphs containing ComputeOps (sync barriers handled in SpikingUnifiedCoreFlow).
         try:
             device = self.pipeline.config["device"]
-            # Single input activation: get_preprocessor() (e.g. InputCQ) already includes in_act
-            preprocessor = model.get_preprocessor()
+            # Raw batch tensors; encoding is handled by host-side encoding ComputeOps in IR.
             flow = SpikingUnifiedCoreFlow(
                 self.pipeline.config["input_shape"],
                 ir_graph,
                 int(self.pipeline.config["simulation_steps"]),
-                preprocessor,
+                None,
                 self.pipeline.config["firing_mode"],
                 self.pipeline.config["spike_generation_mode"],
                 self.pipeline.config["thresholding_mode"],

@@ -1,12 +1,12 @@
-"""End-to-end numerical assurance: original model vs converted Supermodel.
+"""End-to-end numerical assurance: original model vs converted PerceptronFlow.
 
 Tests that the full torch conversion pipeline (FX trace → representability →
-mapper DAG → Supermodel) preserves forward-pass fidelity for each supported
+mapper DAG → ``ConvertedModelFlow``) preserves forward-pass fidelity for each supported
 model architecture. Failures here manifest as catastrophic accuracy loss
 after the TorchMappingStep in the deployment pipeline.
 
-These tests bypass InputCQ by calling supermodel.perceptron_flow(x) directly,
-isolating the mapper DAG from input quantization.
+These tests call ``convert_torch_model`` output ``(x)`` directly,
+isolating the mapper DAG from any legacy input preprocessor.
 """
 
 import pytest
@@ -113,7 +113,7 @@ class TestE2ENumericalAssurance:
         x = torch.randn(8, *input_shape)
         with torch.no_grad():
             orig = model(x)
-            converted = supermodel.perceptron_flow(x)
+            converted = supermodel(x)
 
         assert orig.shape == converted.shape
         diff = (orig - converted).abs().max().item()
@@ -136,7 +136,7 @@ class TestE2ENumericalAssurance:
         x = torch.randn(16, *input_shape)
         with torch.no_grad():
             orig_pred = model(x).argmax(dim=1)
-            conv_pred = supermodel.perceptron_flow(x).argmax(dim=1)
+            conv_pred = supermodel(x).argmax(dim=1)
 
         agreement = (orig_pred == conv_pred).float().mean().item()
         assert agreement == 1.0, (
@@ -158,7 +158,7 @@ class TestE2ENumericalAssurance:
             model(torch.randn(2, *input_shape))
 
         supermodel = convert_torch_model(model, input_shape=input_shape, num_classes=num_classes)
-        mapper_repr = supermodel.perceptron_flow.get_mapper_repr()
+        mapper_repr = supermodel.get_mapper_repr()
         mapper_repr._ensure_exec_graph()
 
         perceptron_mappers = [
@@ -194,7 +194,7 @@ class TestTorchMLPMixerE2E:
         x = torch.randn(4, 1, 28, 28)
         with torch.no_grad():
             orig = model(x)
-            converted = supermodel.perceptron_flow(x)
+            converted = supermodel(x)
 
         diff = (orig - converted).abs().max().item()
         assert diff < 1e-3, f"TorchMLPMixer max diff {diff:.6f}"

@@ -64,18 +64,12 @@ class TestAdaptationManagerStress:
 
         x = torch.randn(2, 16)
         out = p(x)
-        # NaN propagation is expected — if it doesn't crash, that's fine
-        # but we should document whether NaN is produced
         if torch.isnan(out).any():
-            pass  # Expected: NaN propagates
+            pass
         else:
-            pass  # Unexpected but not a failure
+            pass
 
     def test_zero_activation_scale(self):
-        """
-        activation_scale=0 means the clamp range is [0, 0], so all output
-        should be zero.
-        """
         am = AdaptationManager()
         am.clamp_rate = 1.0
         p = self._make_perceptron()
@@ -89,6 +83,21 @@ class TestAdaptationManagerStress:
             "With activation_scale=0 and clamp_rate=1, output should be all zeros"
 
 
+def _make_ssa(adapt_fn, evaluate_fn, clone=None, restore=None,
+              interpolators=None, target=0.9, tolerance=0.01, min_step=0.001):
+    """Helper to build SmartSmoothAdaptation with new constructor."""
+    return SmartSmoothAdaptation(
+        adaptation_fn=adapt_fn,
+        clone_state=clone or (lambda: None),
+        restore_state=restore or (lambda s: None),
+        evaluate_fn=evaluate_fn,
+        interpolators=interpolators or [lambda t: t],
+        get_target=lambda: target,
+        tolerance=tolerance,
+        min_step=min_step,
+    )
+
+
 class TestSmartSmoothAdaptationStress:
     def test_metric_always_zero_forces_min_step(self):
         """When metric is always 0 (far below target), adaptation should
@@ -98,16 +107,9 @@ class TestSmartSmoothAdaptationStress:
         def adapt_fn(rate):
             call_count[0] += 1
 
-        def evaluate(rate):
-            return 0.0  # Always fails to meet target
-
-        ssa = SmartSmoothAdaptation(
-            adapt_fn, lambda: None, lambda s: None,
-            evaluate, [lambda t: t], 0.9
-        )
+        ssa = _make_ssa(adapt_fn, lambda rate: 0.0, target=0.9)
         ssa.adapt_smoothly(max_cycles=5)
 
-        # Should have run some cycles even though metric is terrible
         assert call_count[0] > 0
         assert call_count[0] <= 5
 
@@ -118,23 +120,13 @@ class TestSmartSmoothAdaptationStress:
         def adapt_fn(rate):
             rates_used.append(rate)
 
-        def evaluate(rate):
-            return 1.0  # Always exceeds target
-
-        ssa = SmartSmoothAdaptation(
-            adapt_fn, lambda: None, lambda s: None,
-            evaluate, [lambda t: t], 0.9
-        )
+        ssa = _make_ssa(adapt_fn, lambda rate: 1.0, target=0.9)
         ssa.adapt_smoothly(max_cycles=20)
 
         assert rates_used[-1] >= 0.99, \
-            f"Should reach t≈1.0 quickly, last rate: {rates_used[-1]}"
+            f"Should reach t~1.0 quickly, last rate: {rates_used[-1]}"
 
     def test_state_restoration_on_bad_step(self):
-        """
-        When a step's metric is bad, SmartSmoothAdaptation should restore
-        state before trying a smaller step.
-        """
         state = [0]
         restore_count = [0]
 
@@ -147,30 +139,26 @@ class TestSmartSmoothAdaptationStress:
 
         def evaluate(rate):
             if rate > 0.5:
-                return 0.1  # Bad
-            return 0.95  # Good
+                return 0.1
+            return 0.95
 
-        ssa = SmartSmoothAdaptation(
-            lambda r: None, clone, restore,
-            evaluate, [lambda t: t], 0.9
-        )
+        ssa = _make_ssa(lambda r: None, evaluate, clone=clone, restore=restore, target=0.9)
         ssa.adapt_smoothly(max_cycles=10)
 
         assert restore_count[0] > 0, \
             "State should be restored when metric drops"
 
     def test_multiple_interpolators(self):
-        """Multiple interpolators should each receive the current t value."""
         received = []
 
         def adapt_fn(a, b, c):
             received.append((a, b, c))
 
-        ssa = SmartSmoothAdaptation(
-            adapt_fn, lambda: None, lambda s: None,
+        ssa = _make_ssa(
+            adapt_fn,
             lambda a, b, c: 0.95,
-            [lambda t: t, lambda t: t * 2, lambda t: t * 3],
-            0.9
+            interpolators=[lambda t: t, lambda t: t * 2, lambda t: t * 3],
+            target=0.9,
         )
         ssa.adapt_smoothly(max_cycles=3)
 

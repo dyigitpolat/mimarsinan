@@ -1,52 +1,41 @@
 {
-    "pipeline_mode": "phased",
-
-    "experiment_name": "mnist_th",
-    "generated_files_path": "./generated",
-    "data_provider_name": "MNIST_DataProvider",
-
-    "platform_constraints": {
-        "cores": [
-            {
-                "max_axons": 1024,
-                "max_neurons": 1024,
-                "count": 4
-            }
-        ],
-
+  "pipeline_mode": "phased",
+  "experiment_name": "mnist_th",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
         "max_axons": 1024,
         "max_neurons": 1024,
-        "target_tq": 16,
-        "simulation_steps": 16,
-        "weight_bits": 6
+        "count": 4
+      }
+    ],
+    "max_axons": 1024,
+    "max_neurons": 1024,
+    "target_tq": 16,
+    "simulation_steps": 16,
+    "weight_bits": 6
+  },
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 10,
+    "degradation_tolerance": 0.9,
+    "configuration_mode": "user",
+    "model_type": "simple_mlp",
+    "nas_cycles": 2,
+    "nas_batch_size": 4,
+    "nas_workers": 2,
+    "model_config": {
+      "base_activation": "ReLU",
+      "mlp_width_1": 512,
+      "mlp_width_2": 256
     },
-
-    "deployment_parameters": {
-        "lr": 0.001,
-        "training_epochs": 10,
-        "tuner_epochs": 3,
-
-        "degradation_tolerance": 0.9,
-
-        "configuration_mode": "user",
-        "model_type": "simple_mlp",
-
-        "nas_cycles": 2,
-        "nas_batch_size": 4,
-        "nas_workers": 2,
-           
-        "model_config": {
-            "base_activation": "ReLU",
-
-            "mlp_width_1": 512,
-            "mlp_width_2": 256
-        },
-
-        "spike_generation_mode": "Uniform",
-        "firing_mode": "Default",
-        "thresholding_mode": "<="
-    },
-
-    "target_metric_override": null,
-    "start_step": "CoreFlow Tuning"
+    "spike_generation_mode": "Uniform",
+    "firing_mode": "Default",
+    "thresholding_mode": "<=",
+    "tuning_budget_scale": 1.0
+  },
+  "target_metric_override": null,
+  "start_step": "CoreFlow Tuning"
 }

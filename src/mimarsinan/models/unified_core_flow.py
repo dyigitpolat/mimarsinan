@@ -90,7 +90,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         input_shape,
         ir_graph: IRGraph,
         simulation_length: int,
-        preprocessor: nn.Module,
+        preprocessor: nn.Module | None = None,
         firing_mode: str = "Default",
         spike_mode: str = "Uniform",
         thresholding_mode: str = "<",
@@ -103,7 +103,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         self.nodes = ir_graph.nodes
         self.output_sources = ir_graph.output_sources
         self.simulation_length = simulation_length
-        self.preprocessor = preprocessor
+        self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
         self.firing_mode = firing_mode
         self.spike_mode = spike_mode
         self.thresholding_mode = thresholding_mode
@@ -827,7 +827,7 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
         input_shape,
         ir_graph: IRGraph,
         simulation_length: int,
-        preprocessor: nn.Module,
+        preprocessor: nn.Module | None = None,
         firing_mode: str = "Default",
         thresholding_mode: str = "<",
         spiking_mode: str = "rate",

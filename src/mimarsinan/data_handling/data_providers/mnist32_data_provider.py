@@ -31,7 +31,7 @@ class MNIST32_DataProvider(DataProvider):
             root=self.datasets_path, train=True, download=True, transform=tfm
         )
 
-        training_validation_split = 0.99
+        training_validation_split = 0.95
         base_training_length = len(base_training_dataset)
         training_length = int(base_training_length * training_validation_split)
         validation_length = base_training_length - training_length

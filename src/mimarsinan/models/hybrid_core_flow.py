@@ -68,7 +68,7 @@ class SpikingHybridCoreFlow(nn.Module):
         input_shape,
         hybrid_mapping: HybridHardCoreMapping,
         simulation_length: int,
-        preprocessor: nn.Module,
+        preprocessor: nn.Module | None = None,
         firing_mode: str = "Default",
         spike_mode: str = "Uniform",
         thresholding_mode: str = "<",
@@ -79,7 +79,7 @@ class SpikingHybridCoreFlow(nn.Module):
         self.input_shape = input_shape
         self.hybrid_mapping = hybrid_mapping
         self.simulation_length = int(simulation_length)
-        self.preprocessor = preprocessor
+        self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
 
         self.firing_mode = firing_mode
         self.spike_mode = spike_mode

@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from mimarsinan.mapping.chip_latency import ChipLatency
@@ -79,7 +80,8 @@ def _emit_and_compile_segment(
 
 
 class SimulationRunner:
-    def __init__(self, pipeline, mapping, simulation_length, preprocessor):
+    def __init__(self, pipeline, mapping, simulation_length, preprocessor=None):
+        self._preprocessor = preprocessor if preprocessor is not None else nn.Identity()
         self.spike_generation_mode = pipeline.config["spike_generation_mode"]
         self.firing_mode = pipeline.config["firing_mode"]
         self.spiking_mode = pipeline.config.get("spiking_mode", "rate")
@@ -103,7 +105,7 @@ class SimulationRunner:
 
         try:
             for xs, ys in test_loader:
-                self.test_input.extend(preprocessor(xs).detach())
+                self.test_input.extend(self._preprocessor(xs).detach())
                 self.test_targets.extend(ys)
 
             self.test_data = [*zip(np.stack(self.test_input), np.stack(self.test_targets))]

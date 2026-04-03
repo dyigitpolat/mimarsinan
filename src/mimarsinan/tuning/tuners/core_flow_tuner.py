@@ -41,7 +41,7 @@ class CoreFlowTuner:
     4. Repeat for a few tuning cycles
     """
 
-    def __init__(self, pipeline, ir_graph, preprocessor: nn.Module):
+    def __init__(self, pipeline, ir_graph, preprocessor: nn.Module | None = None):
         self.pipeline = pipeline
         self.device = pipeline.config["device"]
         self.data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
@@ -55,7 +55,7 @@ class CoreFlowTuner:
         self.thresholding_mode = pipeline.config["thresholding_mode"]
         self.spiking_mode = pipeline.config.get("spiking_mode", "rate")
 
-        self.preprocessor = preprocessor
+        self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
         self.ir_graph = copy.deepcopy(ir_graph)
 
         self.accuracy = None

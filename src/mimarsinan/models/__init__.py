@@ -19,4 +19,3 @@ from mimarsinan.models.layers import (
     MaxValueScaler,
     FrozenStatsMaxValueScaler,
 )
-from mimarsinan.models.supermodel import Supermodel

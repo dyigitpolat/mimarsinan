@@ -1,5 +1,5 @@
 """
-Public API for converting native PyTorch models to mimarsinan Supermodels.
+Public API for converting native PyTorch models to mimarsinan PerceptronFlow (ConvertedModelFlow).
 """
 
 from __future__ import annotations
@@ -17,8 +17,7 @@ from mimarsinan.torch_mapping.representability_analyzer import (
 )
 from mimarsinan.torch_mapping.mapper_graph_converter import MapperGraphConverter
 from mimarsinan.torch_mapping.converted_model_flow import ConvertedModelFlow
-from mimarsinan.models.supermodel import Supermodel
-from mimarsinan.models.preprocessing.input_cq import InputCQ
+from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
 
 def check_representability(
@@ -52,25 +51,25 @@ def convert_torch_model(
     num_classes: int,
     device: Union[torch.device, str] = "cpu",
     Tq: int = 64,
-) -> Supermodel:
-    """Convert a trained native PyTorch model to a mimarsinan ``Supermodel``.
+) -> ConvertedModelFlow:
+    """Convert a trained native PyTorch model to a ``ConvertedModelFlow``.
 
     Steps:
         1. Trace the model with ``torch.fx``.
         2. Validate representability.
         3. Convert to a Mapper DAG with Perceptron wrappers.
         4. Transfer trained weights.
-        5. Wrap in ``ConvertedModelFlow`` + ``Supermodel``.
+        5. Build ``ConvertedModelFlow`` and mark encoding-layer perceptrons.
 
     Args:
         model: A trained ``nn.Module``.
         input_shape: Input shape without batch, e.g. ``(3, 32, 32)``.
         num_classes: Number of output classes.
         device: Device for the tracing/warmup passes.
-        Tq: Input quantization levels (passed to ``InputCQ`` preprocessor).
+        Tq: Unused (kept for API compatibility); input quantization is not applied here.
 
     Returns:
-        A ``Supermodel`` ready for the adaptation / quantization pipeline.
+        A ``ConvertedModelFlow`` ready for the adaptation / quantization pipeline.
 
     Raises:
         TracingError: If the model cannot be symbolically traced.
@@ -93,27 +92,18 @@ def convert_torch_model(
     mapper_repr = converter.convert(report)
 
     flow = ConvertedModelFlow(device, mapper_repr)
+    mark_encoding_layers(flow.get_mapper_repr())
 
-    preprocessor = InputCQ(Tq)
-    supermodel = Supermodel(
-        device=device,
-        input_shape=input_shape,
-        num_classes=num_classes,
-        preprocessor=preprocessor,
-        perceptron_flow=flow,
-        Tq=Tq,
-    )
-
-    supermodel = supermodel.to(device)
+    flow = flow.to(device)
 
     # Warmup forward pass to initialise any lazy modules (e.g. LazyBatchNorm1d
     # inside Conv2DPerceptronMapper).
     try:
-        supermodel.eval()
+        flow.eval()
         with torch.no_grad():
             dummy = torch.zeros(1, *input_shape, device=device)
-            _ = supermodel(dummy)
+            _ = flow(dummy)
     except Exception as e:
         print(f"[convert_torch_model] Warmup forward failed (non-fatal): {e}")
 
-    return supermodel
+    return flow

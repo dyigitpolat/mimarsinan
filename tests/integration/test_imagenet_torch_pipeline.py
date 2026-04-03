@@ -7,7 +7,7 @@ ImageNet + torchvision pretrained models: pipeline integration (build order).
    ``IMAGENET1K_V1`` weights (see ``Weights.meta['_metrics']``).
 
 2. For CNN architectures (**``torch_squeezenet11``**, **``torch_vgg16``**), continues
-   with **Torch Mapping** and runs the same random indices through the ``Supermodel``.
+   with **Torch Mapping** and runs the same random indices through the converted ``ConvertedModelFlow``.
 
    **``torch_vit``** stops after step 1: native ViT matches published top-1 on random
    batches, but ``TorchMappingStep`` validation currently fails on the converted
@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import mimarsinan.data_handling.data_providers  # noqa: F401 — register ImageNet provider
 
-from mimarsinan.models.supermodel import Supermodel
+from mimarsinan.torch_mapping.converted_model_flow import ConvertedModelFlow
 
 
 def _load_dotenv_for_integration_gate() -> None:
@@ -246,7 +246,7 @@ def test_imagenet_pretrained_torch_random_batches_and_mapping(tmp_path, model_ty
         "deployment_parameters": {
             "lr": 0.0001,
             "training_epochs": 1,
-            "tuner_epochs": 1,
+            "tuning_budget_scale": 1.0,
             "degradation_tolerance": 0.0,
             "configuration_mode": "user",
             "model_type": model_type,
@@ -313,17 +313,17 @@ def test_imagenet_pretrained_torch_random_batches_and_mapping(tmp_path, model_ty
 
     pipeline.run_from("Torch Mapping", stop_step="Torch Mapping")
 
-    supermodel = pipeline.cache.get("Torch Mapping.model")
-    assert supermodel is not None
-    assert isinstance(supermodel, Supermodel)
-    supermodel = supermodel.to(device)
-    supermodel.eval()
+    mapped_flow = pipeline.cache.get("Torch Mapping.model")
+    assert mapped_flow is not None
+    assert isinstance(mapped_flow, ConvertedModelFlow)
+    mapped_flow = mapped_flow.to(device)
+    mapped_flow.eval()
 
     subset = Subset(val_ds, idx)
     loader = DataLoader(subset, batch_size=_RANDOM_BATCH_SIZE, shuffle=False, num_workers=0)
     with torch.no_grad():
         for xb, _ in loader:
             xb = xb.to(device)
-            out = supermodel(xb)
+            out = mapped_flow(xb)
             assert out.shape[0] == xb.shape[0]
             assert torch.isfinite(out).all()

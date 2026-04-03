@@ -34,7 +34,6 @@
   "deployment_parameters": {
     "lr": 0.001,
     "training_epochs": 10,
-    "tuner_epochs": 5,
     "nas_cycles": 5,
     "nas_batch_size": 5,
     "nas_workers": 1,
@@ -80,7 +79,8 @@
     "thresholding_mode": "<=",
     "max_simulation_samples": 500,
     "pruning": true,
-    "pruning_fraction": 0.3
+    "pruning_fraction": 0.3,
+    "tuning_budget_scale": 1.0
   },
   "target_metric_override": 0.95,
   "start_step": null,

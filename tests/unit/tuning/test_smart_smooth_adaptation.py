@@ -5,29 +5,34 @@ import pytest
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 
 
+def _make_ssa(adapt_fn, evaluate_fn, clone=None, restore=None,
+              interpolators=None, target=0.9, tolerance=0.01, min_step=0.001,
+              before_cycle=None):
+    return SmartSmoothAdaptation(
+        adaptation_fn=adapt_fn,
+        clone_state=clone or (lambda: None),
+        restore_state=restore or (lambda s: None),
+        evaluate_fn=evaluate_fn,
+        interpolators=interpolators or [lambda t: t],
+        get_target=lambda: target,
+        tolerance=tolerance,
+        min_step=min_step,
+        before_cycle=before_cycle,
+    )
+
+
 class TestSmartSmoothAdaptation:
     def test_constant_metric_completes(self):
         """With a constant evaluator that always returns target, adaptation should reach t=1."""
         target = 0.9
-        state = [0]
         adapt_log = []
 
-        def adapt_fn(rate):
-            adapt_log.append(rate)
-
-        def clone():
-            return state[0]
-
-        def restore(s):
-            state[0] = s
-
-        def evaluate(rate):
-            return target
-
-        interpolators = [lambda t: t]
-
-        ssa = SmartSmoothAdaptation(
-            adapt_fn, clone, restore, evaluate, interpolators, target
+        ssa = _make_ssa(
+            lambda rate: adapt_log.append(rate),
+            lambda rate: target,
+            clone=lambda: 0,
+            restore=lambda s: None,
+            target=target,
         )
         ssa.adapt_smoothly(max_cycles=20)
 
@@ -37,15 +42,10 @@ class TestSmartSmoothAdaptation:
     def test_max_cycles_respected(self):
         adapt_calls = []
 
-        def adapt_fn(rate):
-            adapt_calls.append(rate)
-
-        def evaluate(rate):
-            return 0.95
-
-        ssa = SmartSmoothAdaptation(
-            adapt_fn, lambda: None, lambda s: None,
-            evaluate, [lambda t: t], 0.95
+        ssa = _make_ssa(
+            lambda rate: adapt_calls.append(rate),
+            lambda rate: 0.95,
+            target=0.95,
         )
         ssa.adapt_smoothly(max_cycles=3)
         assert len(adapt_calls) <= 3
@@ -54,87 +54,84 @@ class TestSmartSmoothAdaptation:
         """When metric drops, the adaptation should take smaller steps."""
         step_sizes = []
 
-        def adapt_fn(rate):
-            step_sizes.append(rate)
-
-        call_count = [0]
-
-        def evaluate(rate):
-            call_count[0] += 1
-            if rate > 0.5:
-                return 0.1
-            return 0.9
-
-        ssa = SmartSmoothAdaptation(
-            adapt_fn, lambda: None, lambda s: None,
-            evaluate, [lambda t: t], 0.9
+        ssa = _make_ssa(
+            lambda rate: step_sizes.append(rate),
+            lambda rate: 0.1 if rate > 0.5 else 0.9,
+            target=0.9,
         )
         ssa.adapt_smoothly(max_cycles=10)
         assert len(step_sizes) > 0
 
     def test_before_cycle_called_once_per_cycle(self):
-        """before_cycle callback should be invoked at the start of each adaptation cycle."""
         before_cycle_calls = []
 
-        def before_cycle():
-            before_cycle_calls.append(1)
-
-        def adapt_fn(rate):
-            pass
-
-        def evaluate(rate):
-            # Return low metric so step_size is halved and we get multiple cycles
-            return 0.1
-
-        ssa = SmartSmoothAdaptation(
-            adapt_fn,
-            lambda: None,
-            lambda s: None,
-            evaluate,
-            [lambda t: t],
-            0.9,
-            before_cycle=before_cycle,
+        ssa = _make_ssa(
+            lambda rate: None,
+            lambda rate: 0.1,
+            target=0.9,
+            before_cycle=lambda: before_cycle_calls.append(1),
         )
         ssa.adapt_smoothly(max_cycles=3)
-        assert len(before_cycle_calls) == 3, "before_cycle should be called once per cycle"
+        assert len(before_cycle_calls) == 3
 
-    def test_initial_tolerance_fn_sets_tolerance_before_cycles(self):
-        """Optional calibration hook runs once and sets self.tolerance."""
-        tol_calls = []
-
-        def initial_tolerance_fn():
-            tol_calls.append(1)
-            return 0.07
-
-        def adapt_fn(rate):
-            pass
-
-        def evaluate(rate):
-            return 1.0
-
-        ssa = SmartSmoothAdaptation(
-            adapt_fn,
-            lambda: None,
-            lambda s: None,
-            evaluate,
-            [lambda t: t],
-            0.9,
-            initial_tolerance_fn=initial_tolerance_fn,
+    def test_tolerance_set_at_construction(self):
+        """Tolerance is passed at construction, not via initial_tolerance_fn."""
+        ssa = _make_ssa(
+            lambda r: None,
+            lambda rate: 1.0,
+            target=0.9,
+            tolerance=0.07,
         )
-        ssa.adapt_smoothly(max_cycles=1)
-
-        assert tol_calls == [1]
         assert ssa.tolerance == pytest.approx(0.07)
 
-    def test_initial_tolerance_fn_none_unchanged_default(self):
-        ssa = SmartSmoothAdaptation(
-            lambda r: None,
-            lambda: None,
-            lambda s: None,
-            lambda rate: 1.0,
-            [lambda t: t],
-            0.9,
-            initial_tolerance_fn=None,
+    def test_tolerance_stable_across_cycles(self):
+        """Tolerance must not escalate when _adjust_minimum_step fires."""
+        ssa = _make_ssa(
+            lambda rate: None,
+            lambda rate: 0.0,
+            target=0.9,
+            tolerance=0.01,
         )
-        ssa.adapt_smoothly(max_cycles=1)
-        assert ssa.tolerance == 0.01
+        initial_tolerance = ssa.tolerance
+        ssa.adapt_smoothly(max_cycles=10)
+        assert ssa.tolerance == pytest.approx(initial_tolerance)
+
+    def test_first_step_size_at_t0_probes_full_range(self):
+        """At t=0, _find_step_size should start with step_size = (1.0 - t) * 2 = 2.0,
+        and after the first halving, probe at rate 1.0."""
+        probed_rates = []
+
+        ssa = _make_ssa(
+            lambda r: None,
+            lambda rate: (probed_rates.append(rate), 1.0)[1],
+            target=0.9,
+        )
+        step = ssa._find_step_size(0)
+        assert len(probed_rates) >= 1
+        assert probed_rates[0] == pytest.approx(1.0)
+        assert step == pytest.approx(1.0)
+
+    def test_get_target_callable_used(self):
+        """SmartSmoothAdaptation reads the target via get_target callable."""
+        current_target = [0.9]
+
+        def get_target():
+            return current_target[0]
+
+        ssa = SmartSmoothAdaptation(
+            adaptation_fn=lambda r: None,
+            clone_state=lambda: None,
+            restore_state=lambda s: None,
+            evaluate_fn=lambda rate: 0.95,
+            interpolators=[lambda t: t],
+            get_target=get_target,
+            tolerance=0.01,
+            min_step=0.001,
+        )
+
+        tolerable = ssa.get_target() * (1.0 - ssa.tolerance)
+        assert tolerable == pytest.approx(0.9 * 0.99)
+
+        current_target[0] = 0.8
+        tolerable = ssa.get_target() * (1.0 - ssa.tolerance)
+        assert tolerable == pytest.approx(0.8 * 0.99)

@@ -286,6 +286,68 @@ class TestStepCleanup:
         assert step.cleanup_called == [True], "cleanup() should be called in finally when validate() raises"
 
 
+class TestPipelineMetric:
+    """Tests for pipeline_metric() auto-discovery and pipeline usage."""
+
+    def test_pipeline_metric_fallback_to_validate(self, tmp_path):
+        """Without a trainer/tuner, pipeline_metric() returns validate()."""
+        p = Pipeline(str(tmp_path / "cache"))
+        step = ProducerStep(p, value=1)
+        step.name = "produce"
+        assert step.pipeline_metric() == step.validate()
+
+    def test_pipeline_metric_discovers_trainer_test(self, tmp_path):
+        """When step.trainer has test(), pipeline_metric() calls it."""
+
+        class TrainerStub:
+            def test(self):
+                return 0.99
+
+        p = Pipeline(str(tmp_path / "cache"))
+        step = ProducerStep(p, value=1)
+        step.name = "produce"
+        step.trainer = TrainerStub()
+        assert step.pipeline_metric() == pytest.approx(0.99)
+
+    def test_pipeline_metric_discovers_tuner_trainer(self, tmp_path):
+        """When step.tuner.trainer has test(), pipeline_metric() calls it."""
+
+        class TrainerStub:
+            def test(self):
+                return 0.88
+
+        class TunerStub:
+            def __init__(self):
+                self.trainer = TrainerStub()
+
+        p = Pipeline(str(tmp_path / "cache"))
+        step = ProducerStep(p, value=1)
+        step.name = "produce"
+        step.tuner = TunerStub()
+        assert step.pipeline_metric() == pytest.approx(0.88)
+
+    def test_pipeline_uses_pipeline_metric_for_target(self, tmp_path):
+        """Pipeline._run_step sets target metric from pipeline_metric(), not validate()."""
+
+        class MetricStep(PipelineStep):
+            def __init__(self, pipeline):
+                super().__init__([], ["data"], [], [], pipeline)
+
+            def process(self):
+                self.add_entry("data", 1)
+
+            def validate(self):
+                return 0.50
+
+            def pipeline_metric(self):
+                return 0.95
+
+        p = Pipeline(str(tmp_path / "cache"))
+        p.add_pipeline_step("ms", MetricStep(p))
+        p.run()
+        assert p.get_target_metric() == pytest.approx(0.95)
+
+
 class TestPipelineRunFrom:
     def test_run_from_requires_valid_step(self, tmp_path):
         p = Pipeline(str(tmp_path / "cache"))

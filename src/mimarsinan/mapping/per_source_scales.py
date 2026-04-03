@@ -55,6 +55,8 @@ def compute_per_source_scales(model_repr):
             parts = [out_scales[d] for d in deps if d in out_scales]
             if len(parts) >= 2:
                 s_a, s_b = parts[0], parts[1]
+                if s_a.shape != s_b.shape:
+                    s_a, s_b = _broadcast_scale_pair(s_a, s_b)
                 s_combined = (s_a + s_b) / 2.0
                 out_scales[node] = s_combined
                 # Store per-element rescale factors so _exec_add can produce
@@ -70,6 +72,33 @@ def compute_per_source_scales(model_repr):
             src = _first_source_scales(deps, out_scales)
             if src is not None:
                 out_scales[node] = src
+
+
+def _broadcast_scale_pair(s_a, s_b):
+    """Expand the shorter scale vector to match the longer one.
+
+    Uses repeat_interleave when lengths are divisible (same logic as
+    _assign_per_input_scales for spatial expansion). Falls back to
+    broadcasting the mean when no clean factor exists.
+    """
+    n_a, n_b = len(s_a), len(s_b)
+    if n_a == n_b:
+        return s_a, s_b
+    if n_a < n_b:
+        short, long_, n_s, n_l = s_a, s_b, n_a, n_b
+        flipped = True
+    else:
+        short, long_, n_s, n_l = s_b, s_a, n_b, n_a
+        flipped = False
+
+    if n_l % n_s == 0:
+        expanded = short.repeat_interleave(n_l // n_s)
+    else:
+        expanded = torch.full((n_l,), short.mean().item())
+
+    if flipped:
+        return expanded, long_
+    return long_, expanded
 
 
 def _first_source_scales(deps, out_scales):

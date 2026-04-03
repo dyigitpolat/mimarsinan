@@ -111,7 +111,7 @@ class TestToleranceConfigFromPipeline:
     def test_defaults(self):
         cfg = tolerance_config_from_pipeline_config({})
         assert cfg.delta_t_schedule[0] == 1.0
-        assert cfg.residual_threshold == 1e-3
+        assert cfg.residual_threshold == pytest.approx(0.02)
         assert cfg.tolerance_min == 0.01
         assert cfg.tolerance_max == 0.15
 

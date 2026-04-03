@@ -10,7 +10,7 @@ def _divisors(n: int) -> list[int]:
 
 @ModelRegistry.register("mlp_mixer", label="MLP Mixer", category="torch")
 class TorchMLPMixerBuilder:
-    """Builds native nn.Module MLP-Mixer; TorchMappingStep converts to Supermodel."""
+    """Builds native nn.Module MLP-Mixer; TorchMappingStep converts to ``ConvertedModelFlow``."""
 
     def __init__(self, device, input_shape, num_classes, pipeline_config):
         self.device = device

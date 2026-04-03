@@ -38,7 +38,7 @@ class TestModelBuildingStep:
         assert "ModelBuilding.model" in mock_pipeline.cache
         assert "ModelBuilding.adaptation_manager" in mock_pipeline.cache
 
-    def test_model_is_supermodel(self, mock_pipeline):
+    def test_model_is_perceptron_flow(self, mock_pipeline):
         step = self._make_step(mock_pipeline)
         step.run()
 

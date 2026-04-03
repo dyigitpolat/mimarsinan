@@ -137,7 +137,7 @@ class Pipeline:
 
         try:
             step.run()
-            self.set_target_metric(step.validate())
+            self.set_target_metric(step.pipeline_metric())
             self.save_cache()
 
             for entry in step.clears:

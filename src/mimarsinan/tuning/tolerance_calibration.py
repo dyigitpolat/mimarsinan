@@ -19,7 +19,7 @@ class ToleranceCalibrationConfig:
     """Controls probe ladder and how instant-drop tolerance is derived."""
 
     delta_t_schedule: Tuple[float, ...] = (1.0, 0.5, 0.25, 0.125, 0.0625)
-    residual_threshold: float = 1e-3
+    residual_threshold: float = 0.02
     tolerance_min: float = 0.01
     tolerance_max: float = 0.15
     baseline_epsilon: float = 1e-9
@@ -72,7 +72,7 @@ def tolerance_config_from_pipeline_config(
     return ToleranceCalibrationConfig(
         delta_t_schedule=delta_t_schedule,
         residual_threshold=float(
-            pipeline_config.get("tuner_smooth_tolerance_residual_threshold", 1e-3)
+            pipeline_config.get("tuner_smooth_tolerance_residual_threshold", 0.02)
         ),
         tolerance_min=float(pipeline_config.get("tuner_smooth_tolerance_min", 0.01)),
         tolerance_max=float(pipeline_config.get("tuner_smooth_tolerance_max", 0.15)),
@@ -111,14 +111,17 @@ def make_smooth_tolerance_calibration_fn(
     train_validation_epochs: Callable[[float, int, int], float],
     lr_probe: LrProbeSpec,
     before_cycle: Optional[Callable[[], None]] = None,
+    train_n_steps: Optional[Callable[[float, int], None]] = None,
+    train_probe_steps: int = 1,
 ) -> Callable[[], float]:
     """
     Factory for ``SmartSmoothAdaptation``'s ``initial_tolerance_fn``.
 
     Runs one calibration pass: optional ``before_cycle``, baseline validation,
     then resolves probe LR via :func:`effective_probe_lr`, then for each
-    ``delta_t`` clones state, evaluates at ``rate=delta_t``, trains exactly
-    one epoch at that LR, validates, restores. Returns
+    ``delta_t`` clones state, evaluates at ``rate=delta_t``, trains a short
+    step run at that LR (``train_n_steps`` when provided, else one epoch via
+    ``train_validation_epochs``), validates, restores. Returns
     :func:`estimate_tolerable_instant_drop` over those probes.
     """
 
@@ -133,7 +136,10 @@ def make_smooth_tolerance_calibration_fn(
             state = clone_state()
             try:
                 instant = float(evaluate_at_rate(delta_t))
-                train_validation_epochs(lr_epoch, 1, 0)
+                if train_n_steps is not None:
+                    train_n_steps(lr_epoch, max(1, int(train_probe_steps)))
+                else:
+                    train_validation_epochs(lr_epoch, 1, 0)
                 recovered = float(validate_fn())
                 return instant, recovered
             finally:
@@ -154,6 +160,8 @@ def initial_tolerance_fn_for_pipeline_if_enabled(
     train_validation_epochs: Callable[[float, int, int], float],
     lr_probe: LrProbeSpec,
     before_cycle: Optional[Callable[[], None]] = None,
+    train_n_steps: Optional[Callable[[float, int], None]] = None,
+    train_probe_steps: int = 1,
 ) -> Optional[Callable[[], float]]:
     """
     Returns ``None`` when ``tuner_calibrate_smooth_tolerance`` is false
@@ -170,4 +178,6 @@ def initial_tolerance_fn_for_pipeline_if_enabled(
         train_validation_epochs=train_validation_epochs,
         lr_probe=lr_probe,
         before_cycle=before_cycle,
+        train_n_steps=train_n_steps,
+        train_probe_steps=train_probe_steps,
     )

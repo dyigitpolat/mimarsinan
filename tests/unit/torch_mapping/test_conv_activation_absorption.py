@@ -172,7 +172,7 @@ class TestConv2dNumericalFidelity:
         x = torch.randn(4, 1, 8, 8)
         with torch.no_grad():
             orig = model(x)
-            converted = supermodel.perceptron_flow(x)
+            converted = supermodel(x)
 
         diff = (orig - converted).abs().max().item()
         assert diff < 1e-3, (

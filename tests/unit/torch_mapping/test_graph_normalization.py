@@ -480,7 +480,7 @@ class TestBNFoldFusionPerceptronProperties:
         """
         from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper
         _, supermodel = _warmup_and_convert(LinearBNLinearNoActClassifier)
-        mapper_repr = supermodel.perceptron_flow.get_mapper_repr()
+        mapper_repr = supermodel.get_mapper_repr()
         mapper_repr._ensure_exec_graph()
 
         perceptron_mappers = [
@@ -510,7 +510,7 @@ class TestBNFoldFusionPerceptronProperties:
 
 
 class TestBNFoldFusionNumericalEquivalence:
-    """Full pipeline numerical equivalence: original model vs converted Supermodel
+    """Full pipeline numerical equivalence: original model vs converted flow
     for models that exercise BN-fold fusion.
     """
 
@@ -524,7 +524,7 @@ class TestBNFoldFusionNumericalEquivalence:
         x = torch.randn(8, 1, 8, 8)
         with torch.no_grad():
             orig = model(x)
-            converted = supermodel.perceptron_flow(x)
+            converted = supermodel(x)
 
         diff = (orig - converted).abs().max().item()
         assert diff < 1e-3, (
@@ -541,7 +541,7 @@ class TestBNFoldFusionNumericalEquivalence:
         x = torch.randn(16, 1, 8, 8)
         with torch.no_grad():
             orig_pred = model(x).argmax(dim=1)
-            conv_pred = supermodel.perceptron_flow(x).argmax(dim=1)
+            conv_pred = supermodel(x).argmax(dim=1)
 
         agreement = (orig_pred == conv_pred).float().mean().item()
         assert agreement == 1.0, (
@@ -578,7 +578,7 @@ def _compute_activation_scales(supermodel, x):
         p.activation.decorate(SavedTensorDecorator())
 
     with torch.no_grad():
-        supermodel.perceptron_flow(x)
+        supermodel(x)
 
     scales = []
     for p in perceptrons:
@@ -713,7 +713,7 @@ class TestAdaptationParameterConsistency:
         self._apply_adaptation(supermodel, x)
         supermodel.eval()
         with torch.no_grad():
-            out = supermodel.perceptron_flow(x)
+            out = supermodel(x)
         assert out.shape == (8, 10)
         assert torch.isfinite(out).all(), "Non-finite output after adaptation"
 
@@ -724,7 +724,7 @@ class TestAdaptationParameterConsistency:
         self._apply_adaptation(supermodel, x)
         supermodel.eval()
         with torch.no_grad():
-            out = supermodel.perceptron_flow(x)
+            out = supermodel(x)
         assert out.shape == (8, 10)
         assert torch.isfinite(out).all()
 

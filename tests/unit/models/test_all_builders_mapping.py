@@ -58,7 +58,7 @@ def _build_and_get_mapper_repr(model_type, input_shape, num_classes, model_confi
         )
         return supermodel.get_mapper_repr()
     else:
-        # Native model: raw_model IS the Supermodel — run a dummy forward to
+        # Native model: raw_model IS the PerceptronFlow — run a dummy forward to
         # initialize LazyBatchNorm and other lazy modules before mapping.
         raw_model.eval()
         with torch.no_grad():
@@ -85,14 +85,21 @@ def _check_builder(model_type, input_shape, num_classes, model_config,
     assert result.feasible, (
         f"{model_type}: soft-core mapping failed: {result.error}"
     )
-    assert result.num_neural_cores > 0, f"{model_type}: no neural cores"
-    assert result.max_input_size > 0
-    assert result.max_output_size > 0
+    assert result.num_neural_cores > 0 or result.host_side_segment_count > 0, (
+        f"{model_type}: no neural cores and no host ComputeOps"
+    )
+    if result.softcores:
+        assert result.max_input_size > 0
+        assert result.max_output_size > 0
 
-    # Step 2: suggest hardware config
+    # Step 2: suggest hardware config (requires layout softcores; host-only IR has none)
     suggestion = suggest_hardware_config(result.softcores)
-    assert suggestion.total_cores > 0, f"{model_type}: suggestion has 0 cores"
-    assert len(suggestion.core_types) >= 1, f"{model_type}: suggestion has no core types"
+    if result.softcores:
+        assert suggestion.total_cores > 0, f"{model_type}: suggestion has 0 cores"
+        assert len(suggestion.core_types) >= 1, f"{model_type}: suggestion has no core types"
+    else:
+        assert suggestion.total_cores == 0
+        assert "softcores" in suggestion.rationale.lower() or "nothing" in suggestion.rationale.lower()
 
     return result, suggestion
 
@@ -127,10 +134,11 @@ class TestSimpleMLPBuilder:
             num_classes=10,
             model_config={"mlp_width_1": 128, "mlp_width_2": 64},
         )
-        verification = verify_hardware_config(result.softcores, suggestion.core_types)
-        assert verification["feasible"], (
-            f"Suggested config not feasible: {verification['errors']}"
-        )
+        if result.softcores:
+            verification = verify_hardware_config(result.softcores, suggestion.core_types)
+            assert verification["feasible"], (
+                f"Suggested config not feasible: {verification['errors']}"
+            )
 
 
 # ══════════════════════════════════════════════════════════
@@ -165,8 +173,9 @@ class TestTorchSequentialLinearBuilderMapping:
             num_classes=10,
             model_config={"hidden_dims": [128]},
         )
-        v = verify_hardware_config(result.softcores, suggestion.core_types)
-        assert v["feasible"]
+        if result.softcores:
+            v = verify_hardware_config(result.softcores, suggestion.core_types)
+            assert v["feasible"]
 
 
 class TestTorchSequentialConvBuilderMapping:
@@ -200,8 +209,10 @@ class TestTorchSequentialConvBuilderMapping:
 
         ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=1024, max_neurons=1024)
         ir_graph = ir.map(mapper_repr)
-        assert len(ir_graph.get_neural_cores()) >= 2
-        assert len(ir_graph.get_compute_ops()) >= 1  # MaxPool
+        n_nc = len(ir_graph.get_neural_cores())
+        n_co = len(ir_graph.get_compute_ops())
+        assert n_co >= 1  # MaxPool and/or encoding host ops
+        assert n_nc + n_co >= 3  # encoding + pool + FC may all be ComputeOps
 
     def test_suggestion_sufficient(self):
         from mimarsinan.mapping.mapping_verifier import verify_hardware_config
@@ -213,8 +224,9 @@ class TestTorchSequentialConvBuilderMapping:
             max_axons=2048,
             max_neurons=1024,
         )
-        v = verify_hardware_config(result.softcores, suggestion.core_types)
-        assert v["feasible"]
+        if result.softcores:
+            v = verify_hardware_config(result.softcores, suggestion.core_types)
+            assert v["feasible"]
 
 
 class TestMlpMixerBuilderMapping:
@@ -259,8 +271,9 @@ class TestMlpMixerBuilderMapping:
             max_axons=2048,
             max_neurons=2048,
         )
-        v = verify_hardware_config(result.softcores, suggestion.core_types)
-        assert v["feasible"]
+        if result.softcores:
+            v = verify_hardware_config(result.softcores, suggestion.core_types)
+            assert v["feasible"]
 
 
 # ══════════════════════════════════════════════════════════
@@ -543,10 +556,11 @@ def test_lightweight_builders_mapping(model_type, input_shape, num_classes, conf
         model_type, input_shape, num_classes, config, max_ax, max_neu
     )
     assert result.feasible
-    assert result.num_neural_cores > 0
+    assert result.num_neural_cores > 0 or result.host_side_segment_count > 0
 
     # Verify the suggestion is actually sufficient
-    verification = verify_hardware_config(result.softcores, suggestion.core_types)
-    assert verification["feasible"], (
-        f"{model_type}: Suggested config not feasible: {verification['errors']}"
-    )
+    if result.softcores:
+        verification = verify_hardware_config(result.softcores, suggestion.core_types)
+        assert verification["feasible"], (
+            f"{model_type}: Suggested config not feasible: {verification['errors']}"
+        )

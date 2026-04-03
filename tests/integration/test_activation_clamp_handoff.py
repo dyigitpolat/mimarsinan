@@ -42,8 +42,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 from conftest import (
     MockPipeline,
     MockDataProviderFactory,
-    make_tiny_supermodel,
     default_config,
+    make_activation_scale_stats,
+    make_tiny_supermodel,
     TinyDataProvider,
 )
 
@@ -70,7 +71,10 @@ _TTFS_CONFIG_OVERRIDES = {
     "thresholding_mode": "<=",
     "activation_quantization": False,
     "weight_quantization": True,
-    "tuner_epochs": 3,
+    "tuning_budget_scale": 2.5,
+    "tuner_calibrate_smooth_tolerance": False,
+    "lr_range_min": 1e-5,
+    "lr_range_max": 1e-3,
 }
 
 # Minimum accuracy a randomly-initialised model must reach after pretraining
@@ -117,9 +121,6 @@ def _make_leakyrelu_model():
     adaptation accuracy readings on the tiny test dataset.
     """
     from conftest import TinyPerceptronFlow
-    from mimarsinan.models.supermodel import Supermodel
-    from mimarsinan.models.preprocessing.input_cq import InputCQ
-
     # Build flow WITHOUT batchnorm.
     class _NoBNFlow(TinyPerceptronFlow):
         def __init__(self, input_shape, num_classes):
@@ -147,8 +148,10 @@ def _make_leakyrelu_model():
             self._mapper_repr = ModelRepresentation(out)
 
     from mimarsinan.tuning.adaptation_manager import AdaptationManager as AM
-    flow = _NoBNFlow((1, 8, 8), 4)
-    model = Supermodel("cpu", (1, 8, 8), 4, InputCQ(4), flow, 4)
+    model = _NoBNFlow((1, 8, 8), 4)
+    for p in model.get_perceptrons():
+        p.is_encoding_layer = True
+        break
 
     cfg = default_config()
     am = AM()
@@ -256,6 +259,7 @@ class TestTTFSLeakyReLUAccuracyChain:
           accuracy dropped from ~0.95 to ~0.68 (28% drop).
         After the fix: ClampTuner always runs → recovery training maintains accuracy.
         """
+        torch.manual_seed(42)
         pipeline = _make_ttfs_pipeline(tmp_path)
         model = _make_leakyrelu_model()
         am = AdaptationManager()
@@ -401,6 +405,11 @@ class TestClampAdaptationAlwaysTrainsInTTFS:
         pipeline.seed("adaptation_manager", am, step_name="Activation Adaptation")
         scales = [1.0] * len(model.get_perceptrons())
         pipeline.seed("activation_scales", scales, step_name="Activation Analysis")
+        pipeline.seed(
+            "activation_scale_stats",
+            make_activation_scale_stats(model, scales, num_batches=2),
+            step_name="Activation Analysis",
+        )
 
         clamp_step = ClampAdaptationStep(pipeline)
         clamp_step.name = "Clamp Adaptation"
@@ -506,6 +515,11 @@ class TestAdaptationMetricConsistency:
         pipeline.seed("adaptation_manager", am, step_name="Activation Adaptation")
         scales = [1.0] * len(model.get_perceptrons())
         pipeline.seed("activation_scales", scales, step_name="Activation Analysis")
+        pipeline.seed(
+            "activation_scale_stats",
+            make_activation_scale_stats(model, scales, num_batches=2),
+            step_name="Activation Analysis",
+        )
 
         _, step = _run_step(ClampAdaptationStep, "Clamp Adaptation", pipeline)
 
@@ -517,3 +531,33 @@ class TestAdaptationMetricConsistency:
         )
         assert isinstance(result, float)
         assert 0.0 <= result <= 1.0
+
+    def test_clamp_step_validate_is_stable_after_run(self, tmp_path):
+        """ClampAdaptationStep.validate() must not resample a new noisy minibatch."""
+        pipeline = _make_ttfs_pipeline(tmp_path)
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+
+        pipeline.seed("model", model, step_name="Activation Adaptation")
+        pipeline.seed("adaptation_manager", am, step_name="Activation Adaptation")
+        scales = [1.0] * len(model.get_perceptrons())
+        pipeline.seed("activation_scales", scales, step_name="Activation Analysis")
+        pipeline.seed(
+            "activation_scale_stats",
+            make_activation_scale_stats(model, scales, num_batches=2),
+            step_name="Activation Analysis",
+        )
+
+        step = ClampAdaptationStep(pipeline)
+        step.name = "Clamp Adaptation"
+        pipeline.prepare_step(step)
+        step.run()
+
+        v1 = step.validate()
+        v2 = step.validate()
+
+        assert v1 == pytest.approx(v2), (
+            "ClampAdaptationStep.validate() must return a stable final metric "
+            "instead of sampling a fresh validation minibatch each time."
+        )
+        step.cleanup()

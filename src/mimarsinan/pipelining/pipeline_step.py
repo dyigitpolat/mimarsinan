@@ -24,6 +24,24 @@ class PipelineStep:
     def validate(self):
         raise NotImplementedError
 
+    def pipeline_metric(self):
+        """Definitive metric for pipeline progression — used by ``Pipeline``
+        to set ``__target_metric`` after each step.
+
+        Auto-discovers a ``BasicTrainer`` (via ``self.tuner.trainer`` or
+        ``self.trainer``) and calls ``test()`` for a full-test-set evaluation.
+        Falls back to ``validate()`` when no trainer is available.
+        """
+        tuner = getattr(self, "tuner", None)
+        if tuner is not None:
+            trainer = getattr(tuner, "trainer", None)
+            if trainer is not None and hasattr(trainer, "test"):
+                return trainer.test()
+        trainer = getattr(self, "trainer", None)
+        if trainer is not None and hasattr(trainer, "test"):
+            return trainer.test()
+        return self.validate()
+
     def cleanup(self):
         """Release resources acquired during process() (e.g. DataLoader workers).
 
