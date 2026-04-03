@@ -68,8 +68,8 @@ class ImageNet_DataProvider(DataProvider):
     to that directory and uses it as the torchvision ``ImageNet`` root. Otherwise
     ``datasets_path`` is the root. See `torchvision.datasets.ImageNet`.
 
-    **Validation** is a small tail of the **training** split (same convention as
-    MNIST/CIFAR-10): ``training_validation_split`` (default 0.99) for training, remainder
+    **Validation** is a tail of the **training** split (same convention as
+    MNIST/CIFAR-10): ``training_validation_split`` (default 0.95) for training, remainder
     for validation, with eval-style preprocessing on the validation subset only.
 
     **Test** uses the official ``split="val"`` set (held-out; no public test labels in ILSVRC).
@@ -77,7 +77,7 @@ class ImageNet_DataProvider(DataProvider):
 
     DISPLAY_LABEL = "ImageNet (224×224×3, 1000 classes)"
 
-    training_validation_split = 0.99
+    training_validation_split = 0.95
 
     def __init__(self, datasets_path, *, seed: int | None = 0):
         super().__init__(datasets_path, seed=seed)

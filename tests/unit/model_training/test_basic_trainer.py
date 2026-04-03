@@ -88,3 +88,40 @@ class TestBasicTrainer:
         trainer = _make_trainer()
         trainer.set_validation_batch_size(5)
         assert trainer.validation_batch_size == 5
+
+    def test_train_n_steps_runs_requested_steps(self):
+        trainer = _make_trainer()
+        steps = [0]
+        orig = trainer._optimize
+
+        def counted_opt(x, y, opt, scaler):
+            steps[0] += 1
+            return orig(x, y, opt, scaler)
+
+        trainer._optimize = counted_opt  # type: ignore[method-assign]
+        trainer.train_n_steps(lr=0.01, steps=4, warmup_steps=0)
+        assert steps[0] == 4
+
+    def test_validate_n_batches_averages(self):
+        trainer = _make_trainer()
+        a1 = trainer.validate_n_batches(3)
+        assert isinstance(a1, float)
+        assert 0.0 <= a1 <= 1.0
+
+    def test_train_steps_until_target_respects_max_steps(self):
+        trainer = _make_trainer()
+        trainer.train_steps_until_target(
+            lr=0.01, max_steps=2, target_accuracy=1.0, warmup_steps=0, validation_n_batches=1
+        )
+
+    def test_train_one_step_can_return_post_update_probe_loss(self):
+        trainer = _make_trainer()
+        batch = trainer.next_training_batch()
+        loss = trainer.train_one_step(
+            0.01,
+            batch=batch,
+            eval_batch=batch,
+            return_post_update_loss=True,
+        )
+        assert isinstance(loss, float)
+        assert loss >= 0.0

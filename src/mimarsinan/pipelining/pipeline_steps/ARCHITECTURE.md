@@ -12,10 +12,10 @@ in the deployment pipeline.
 | `model_configuration_step.py` | `ModelConfigurationStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`; sets `allow_coalescing` the same way) |
 | `model_building_step.py` | `ModelBuildingStep` | Model construction |
 | `pretraining_step.py` | `PretrainingStep` | Training |
-| `activation_analysis_step.py` | `ActivationAnalysisStep` | Quantization prep |
+| `activation_analysis_step.py` | `ActivationAnalysisStep` | Quantization prep (sampled multi-batch activation quantiles; writes `activation_scales` and `activation_scale_stats`) |
 | `activation_adaptation_step.py` | `ActivationAdaptationStep` | Activation adaptation (always runs: gradual ReLU replacement via ActivationAdaptationTuner) |
-| `clamp_adaptation_step.py` | `ClampAdaptationStep` | Quantization/TTFS clamping (runs when activation_quantization or TTFS mode; always uses ClampTuner — fast-path removed) |
-| `activation_shift_step.py` | `ActivationShiftStep` | Quantization (bakes shift into bias for rate-coded; TTFS shift compensation deferred to SoftCoreMappingStep) |
+| `clamp_adaptation_step.py` | `ClampAdaptationStep` | Quantization/TTFS clamping (runs when activation_quantization or TTFS mode; consumes `activation_scale_stats`; always uses ClampTuner with eval-safe multi-batch clamp probes and a cached final full-test metric) |
+| `activation_shift_step.py` | `ActivationShiftStep` | Quantization (delegates recovery to `ActivationShiftTuner`; rate-coded mode bakes shift into effective bias before step-budgeted recovery, while TTFS bias compensation remains deferred to `SoftCoreMappingStep`) |
 | `activation_quantization_step.py` | `ActivationQuantizationStep` | Quantization |
 | `weight_quantization_step.py` | `WeightQuantizationStep` | Quantization |
 | `quantization_verification_step.py` | `QuantizationVerificationStep` | Verification |
@@ -56,13 +56,21 @@ source scales is used as a uniform fallback.
 
 ### Activation adaptation: Clamp vs Activation Adaptation
 
+`ActivationAnalysisStep` now calibrates activation scales from a bounded
+multi-batch validation sample instead of a single minibatch. Bare activations
+from freshly torch-mapped models are wrapped temporarily so `SavedTensorDecorator`
+can observe them without mutating the long-term model structure. The scale
+policy is a true count-based quantile (`torch.quantile(..., interpolation="higher")`)
+over sampled positive activations, and the step emits `activation_scale_stats`
+with per-layer names, sample counts, and scale summary stats for downstream
+diagnostics.
+
 **Activation Adaptation** always runs immediately after Activation Analysis in
 all pipeline configurations: it replaces non-ReLU chip-targeted bases (GELU,
 LeakyReLU) with ReLU when any exist; it does not apply activation_scales or
-set clamp_rate.  `ActivationAdaptationStep.validate()` returns the metric
-cached in `ActivationAdaptationTuner._committed_metric` (measured once,
-immediately after the ReLU commit) rather than calling `validate()` again
-on a new minibatch.
+set clamp_rate.  `ActivationAdaptationStep.validate()` delegates to
+`tuner.validate()`, which returns the cached metric from `_after_run()`
+(measured once via `trainer.test()` after the ReLU commit).
 
 When `activation_quantization` is True or spiking is TTFS, **Clamp
 Adaptation** runs next.  `ClampAdaptationStep` **always uses `ClampTuner`**
@@ -75,7 +83,23 @@ False — but the model still needs recovery training to work within the clamped
 range.  Applying hard clamping (clamp_rate=1.0) without training caused a
 ~28% accuracy drop in TTFS+LeakyReLU deployments (0.95→0.68 on MNIST).
 `ClampTuner` uses `SmartSmoothAdaptation` to ramp clamp_rate from 0→1 with
-recovery training at each step, restoring accuracy.
+recovery training at each step, restoring accuracy. Its instant probe is now
+eval-only: it scores candidate clamp rates with
+`validate_n_batches(validation_steps)` instead of `train_one_step(0)` plus
+single-batch `validate()`, so BatchNorm/dropout state is untouched and the
+step-search metric matches the shared tuner loop's recovery metric semantics.
+`ClampAdaptationStep` passes through `activation_scale_stats` so `ClampTuner`
+can reject scale/order mismatches before mutating model state, and the step
+caches a final `trainer.test()` result so repeated `validate()` calls do not
+re-sample new minibatches.
+
+**Activation Shift** now uses `ActivationShiftTuner` instead of owning a raw
+`BasicTrainer` loop. The structural shift application is unchanged: rate-coded
+mode bakes the shift into effective bias and enables the shift decorator,
+while TTFS still defers bias compensation until `SoftCoreMappingStep`. Only the
+recovery path changed: after the shift is applied, the tuner uses the same
+`TuningBudget`-derived step counts, LR search, multi-batch validation, and
+cached final full-test metric style used elsewhere in the tuning stack.
 
 Shared logic for detecting non-ReLU activations lives in `activation_utils.py`
 (`has_non_relu_activations`, `needs_relu_adaptation`, `RELU_COMPATIBLE_TYPES`).

@@ -78,6 +78,19 @@ class BasicTrainer:
 
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
+    def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int):
+        """Cosine schedule over ``total_steps`` gradient updates (not full epochs)."""
+        optimizer = torch.optim.Adam(
+            self.model.parameters(), lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5
+        )
+        if total_steps > 0:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
+            )
+        else:
+            scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
+        return optimizer, scheduler, torch.amp.GradScaler("cuda")
+
     def _backward_pass_on_loss(self, x, y, scaler):
         self.model.train()
         with torch.amp.autocast("cuda"):
@@ -138,41 +151,167 @@ class BasicTrainer:
         acc = correct / total
         self._report("Test accuracy", acc)
         return acc
-    
-    def validate(self):
+
+    def next_validation_batch(self):
+        """Return the next validation minibatch, rewinding on exhaustion."""
         try:
             x, y = next(self.val_iter)
         except StopIteration:
             self.val_iter = iter(self.validation_loader)
             x, y = next(self.val_iter)
+        return x, y
 
-        self.model.eval()
-        acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
-        self._report("Validation accuracy", acc)
-        return acc
-    
-    def validate_train(self):
+    def iter_validation_batches(self, n_batches: int):
+        """Yield ``n_batches`` validation minibatches with iterator wraparound."""
+        for _ in range(int(n_batches)):
+            yield self.next_validation_batch()
+
+    def next_training_batch(self):
+        """Return the next training minibatch, rewinding on exhaustion."""
         try:
             x, y = next(self.train_iter)
         except StopIteration:
             self.train_iter = iter(self.train_loader)
             x, y = next(self.train_iter)
+        return x, y
 
+    def evaluate_loss_on_batch(self, batch) -> float:
+        """Evaluate loss on a fixed batch without updating model weights."""
+        x, y = batch
+        self.model.eval()
+        with torch.no_grad():
+            x, y = x.to(self.device), y.to(self.device)
+            loss = self.loss_function(self.model, x, y)
+        return float(loss.detach().item()) if hasattr(loss, "detach") else float(loss)
+    
+    def validate(self):
+        x, y = self.next_validation_batch()
+        self.model.eval()
+        acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
+        self._report("Validation accuracy", acc)
+        return acc
+
+    def validate_n_batches(self, n_batches: int) -> float:
+        """Average classification accuracy over ``n_batches`` validation minibatches."""
+        if n_batches <= 0:
+            return 0.0
+        self.model.eval()
+        total = 0
+        correct = 0
+        with torch.no_grad():
+            for x, y in self.iter_validation_batches(int(n_batches)):
+                x, y = x.to(self.device), y.to(self.device)
+                _, predicted = self.model(x).max(1)
+                total += float(y.size(0))
+                correct += float(predicted.eq(y).sum().item())
+        acc = correct / total if total else 0.0
+        self._report("Validation accuracy", acc)
+        return acc
+    
+    def validate_train(self):
+        x, y = self.next_training_batch()
         self.model.train()
         acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
         self._report("Validation accuracy on train set", acc)
         return acc
 
-    def train_one_step(self, lr):
+    def train_n_steps(self, lr, steps: int, warmup_steps: int = 0):
+        """Run exactly ``steps`` gradient updates (plus optional LR warmup steps)."""
+        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler_steps(lr, steps)
+        if warmup_steps > 0:
+            scheduler = warmup_scheduler.GradualWarmupScheduler(
+                optimizer,
+                multiplier=1.0,
+                total_epoch=warmup_steps,
+                after_scheduler=scheduler,
+            )
+        total = int(steps) + int(warmup_steps)
+        for _ in range(total):
+            try:
+                x, y = next(self.train_iter)
+            except StopIteration:
+                self.train_iter = iter(self.train_loader)
+                x, y = next(self.train_iter)
+            x, y = x.to(self.device), y.to(self.device)
+            self._optimize(x, y, optimizer, scaler)
+            scheduler.step()
+            self._report("LR", optimizer.param_groups[0]["lr"])
+
+    def train_steps_until_target(
+        self,
+        lr,
+        max_steps,
+        target_accuracy,
+        warmup_steps=0,
+        *,
+        validation_n_batches: int = 1,
+        check_interval: int = 1,
+        patience: int = 3,
+    ):
+        """Train until target reached, converged, or ``max_steps`` exhausted.
+
+        Progress is checked every ``check_interval`` steps. Training stops early
+        when the target is met or when ``patience`` consecutive checks show no
+        improvement (convergence).
+        """
+        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler_steps(lr, max_steps)
+        if warmup_steps > 0:
+            scheduler = warmup_scheduler.GradualWarmupScheduler(
+                optimizer, multiplier=1.0, total_epoch=warmup_steps, after_scheduler=scheduler
+            )
+        total = int(max_steps) + int(warmup_steps)
+        n_val = max(1, int(validation_n_batches))
+        interval = max(1, int(check_interval))
+
+        best_acc = 0.0
+        stale_checks = 0
+
+        for step_idx in range(total):
+            x, y = self.next_training_batch()
+            x, y = x.to(self.device), y.to(self.device)
+            self._optimize(x, y, optimizer, scaler)
+            scheduler.step()
+            self._report("LR", optimizer.param_groups[0]["lr"])
+
+            if (step_idx + 1) % interval == 0 or step_idx == total - 1:
+                acc = self.validate_n_batches(n_val)
+                if acc >= target_accuracy:
+                    for _ in range(2):
+                        x, y = self.next_training_batch()
+                        x, y = x.to(self.device), y.to(self.device)
+                        self._optimize(x, y, optimizer, scaler)
+                        scheduler.step()
+                    break
+                if acc > best_acc + 1e-3:
+                    best_acc = acc
+                    stale_checks = 0
+                else:
+                    stale_checks += 1
+                    if stale_checks >= patience:
+                        break
+
+        self.test()
+        return self.validate_n_batches(n_val)
+
+    def train_one_step(
+        self,
+        lr,
+        *,
+        batch=None,
+        eval_batch=None,
+        return_post_update_loss: bool = False,
+    ):
         optimizer, _, scaler = self._get_optimizer_and_scheduler(lr, epochs=0)
-        try:
-            x, y = next(self.train_iter)
-        except StopIteration:
-            self.train_iter = iter(self.train_loader)
-            x, y = next(self.train_iter)
-            
+        if batch is None:
+            x, y = self.next_training_batch()
+        else:
+            x, y = batch
         x, y = x.to(self.device), y.to(self.device)
-        self._optimize(x, y, optimizer, scaler)
+        loss = self._optimize(x, y, optimizer, scaler)
+        if return_post_update_loss:
+            probe_batch = eval_batch if eval_batch is not None else (x, y)
+            return self.evaluate_loss_on_batch(probe_batch)
+        return float(loss.detach().item()) if hasattr(loss, "detach") else float(loss)
     
     def train_n_epochs(self, lr, epochs, warmup_epochs = 0):
         return self.train_until_target_accuracy(lr, epochs, 1.0, warmup_epochs)

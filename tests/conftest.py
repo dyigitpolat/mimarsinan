@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
-from mimarsinan.models.supermodel import Supermodel
 from mimarsinan.models.layers import (
     TransformedActivation,
     ClampDecorator,
@@ -66,12 +65,12 @@ class MockPipeline:
         result = mock.cache["SomeStep.model"]
     """
 
-    def __init__(self, config=None, working_directory=None):
+    def __init__(self, config=None, working_directory=None, data_provider_factory=None):
         self.cache = {}
         self.key_translations = {}
         self.config = config or default_config()
         self.working_directory = working_directory or tempfile.mkdtemp()
-        self.data_provider_factory = MockDataProviderFactory()
+        self.data_provider_factory = data_provider_factory or MockDataProviderFactory()
         self.loss = BasicClassificationLoss()
         self.reporter = _NoopReporter()
         self._target_metric = 0.0
@@ -173,9 +172,6 @@ class TinyDataProvider(DataProvider):
     def get_training_batch_size(self):
         return min(4, len(self._ds))
 
-    def get_validation_batch_size(self):
-        return len(self._ds)
-
     def get_test_batch_size(self):
         return len(self._ds)
 
@@ -183,9 +179,10 @@ class TinyDataProvider(DataProvider):
 class MockDataProviderFactory:
     """Factory that returns TinyDataProvider."""
 
-    def __init__(self, input_shape=(1, 8, 8), num_classes=4):
+    def __init__(self, input_shape=(1, 8, 8), num_classes=4, size=10):
         self._input_shape = input_shape
         self._num_classes = num_classes
+        self._size = size
         self._provider = None
 
     def create(self):
@@ -193,6 +190,7 @@ class MockDataProviderFactory:
             self._provider = TinyDataProvider(
                 input_shape=self._input_shape,
                 num_classes=self._num_classes,
+                size=self._size,
             )
         return self._provider
 
@@ -207,7 +205,8 @@ def default_config():
         "target_tq": 4,
         "weight_bits": 8,
         "training_epochs": 1,
-        "tuner_epochs": 1,
+        "tuning_budget_scale": 1.0,
+        "tuner_calibrate_smooth_tolerance": False,
         "lr": 0.001,
         "weight_quantization": False,
         "activation_quantization": False,
@@ -266,12 +265,13 @@ class TinyPerceptronFlow(PerceptronFlow):
 
 
 def make_tiny_supermodel(input_shape=(1, 8, 8), num_classes=4, tq=4):
-    """Build a minimal Supermodel for testing, with proper activation setup."""
-    from mimarsinan.models.preprocessing.input_cq import InputCQ
+    """Build a minimal PerceptronFlow for testing, with proper activation setup."""
     from mimarsinan.tuning.adaptation_manager import AdaptationManager
 
-    flow = TinyPerceptronFlow(input_shape, num_classes)
-    model = Supermodel("cpu", input_shape, num_classes, InputCQ(tq), flow, tq)
+    model = TinyPerceptronFlow(input_shape, num_classes)
+    for p in model.get_perceptrons():
+        p.is_encoding_layer = True
+        break
 
     am = AdaptationManager()
     cfg = default_config()
@@ -284,6 +284,46 @@ def make_tiny_supermodel(input_shape=(1, 8, 8), num_classes=4, tq=4):
     with torch.no_grad():
         model(torch.randn(2, *input_shape))
     return model
+
+
+def make_activation_scale_stats(
+    model,
+    scales,
+    *,
+    num_batches=1,
+    quantile=0.99,
+    max_samples_per_batch=0,
+):
+    """Minimal activation-scale metadata for tests that seed pipeline cache entries."""
+    layers = []
+    for idx, (perceptron, scale) in enumerate(zip(model.get_perceptrons(), scales)):
+        s = float(scale)
+        layers.append(
+            {
+                "index": idx,
+                "name": perceptron.name,
+                "scale": s,
+                "sample_count": 0,
+                "active_sample_count": 0,
+                "sample_min": s,
+                "sample_median": s,
+                "sample_max": s,
+                "saturation_ratio": 0.0,
+            }
+        )
+
+    scale_values = [float(s) for s in scales] or [1.0]
+    return {
+        "num_batches": int(num_batches),
+        "quantile": float(quantile),
+        "max_samples_per_batch": int(max_samples_per_batch),
+        "summary": {
+            "min_scale": min(scale_values),
+            "median_scale": sorted(scale_values)[len(scale_values) // 2],
+            "max_scale": max(scale_values),
+        },
+        "layers": layers,
+    }
 
 
 def make_tiny_ir_graph(in_dim=8, hidden_dim=4, out_dim=4):

@@ -592,8 +592,8 @@ def test_ttfs_pipeline_artifacts():
     # Pipeline saves (model, device) tuple
     model = loaded[0] if isinstance(loaded, tuple) else loaded
 
-    # Build preprocessor like the pipeline does
-    preprocessor = nn.Sequential(model.get_preprocessor(), model.in_act)
+    # Raw tensors; encoding is in IR (pipeline no longer wraps InputCQ + in_act).
+    preprocessor = nn.Identity()
 
     cores = ir_graph.get_neural_cores()
     print(f"  IR Graph: {len(cores)} neural cores")

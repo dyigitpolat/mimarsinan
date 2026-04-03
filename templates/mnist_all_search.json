@@ -31,7 +31,6 @@
   "deployment_parameters": {
     "lr": 0.001,
     "training_epochs": 20,
-    "tuner_epochs": 3,
     "degradation_tolerance": 0.1,
     "model_config_mode": "search",
     "hw_config_mode": "search",
@@ -75,7 +74,8 @@
       "max_regen_rounds": 10
     },
     "max_simulation_samples": 100,
-    "allow_scheduling": true
+    "allow_scheduling": true,
+    "tuning_budget_scale": 1.0
   },
   "target_metric_override": null,
   "start_step": null,

@@ -1,3 +1,1 @@
-"""Input preprocessing modules."""
-
-from mimarsinan.models.preprocessing.input_cq import InputCQ
+"""Input preprocessing modules (legacy InputCQ removed; use encoding layers in IR)."""

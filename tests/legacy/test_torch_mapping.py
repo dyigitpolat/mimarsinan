@@ -258,15 +258,13 @@ class TestConversion:
 class TestConvertedModelFlow:
     def test_get_perceptrons(self):
         model = SimpleMLP(in_features=16)
-        supermodel = convert_torch_model(model, input_shape=(16,), num_classes=10)
-        flow = supermodel.perceptron_flow
+        flow = convert_torch_model(model, input_shape=(16,), num_classes=10)
         assert isinstance(flow, ConvertedModelFlow)
         assert len(flow.get_perceptrons()) >= 1
 
     def test_get_mapper_repr(self):
         model = SimpleMLP(in_features=16)
-        supermodel = convert_torch_model(model, input_shape=(16,), num_classes=10)
-        flow = supermodel.perceptron_flow
+        flow = convert_torch_model(model, input_shape=(16,), num_classes=10)
         mapper_repr = flow.get_mapper_repr()
         assert mapper_repr is not None
 

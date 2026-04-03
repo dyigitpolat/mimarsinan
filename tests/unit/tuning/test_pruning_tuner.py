@@ -181,7 +181,17 @@ class TestPruningTuner:
             pruning_fraction=0.25,
         )
         # Low validation (0.5) so adapter takes small steps and runs 3 cycles before t>=1
-        tuner.trainer = type("T", (), {"validate": lambda self: 0.5, "train_one_step": lambda self, lr: None, "train_until_target_accuracy": lambda self, *a: None})()
+        tuner.trainer = type(
+            "T",
+            (),
+            {
+                "validate": lambda self: 0.5,
+                "validate_n_batches": lambda self, n: 0.5,
+                "train_one_step": lambda self, lr: None,
+                "train_until_target_accuracy": lambda self, *a: None,
+                "train_steps_until_target": lambda self, *a, **k: None,
+            },
+        )()
         tuner.trainer.validation_loader = [(torch.randn(2, 1, 8, 8), torch.zeros(2, dtype=torch.long))]
         collect_calls = []
 

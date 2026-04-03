@@ -31,7 +31,6 @@
   "deployment_parameters": {
     "lr": 0.001,
     "training_epochs": 10,
-    "tuner_epochs": 1,
     "degradation_tolerance": 0.1,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
@@ -52,7 +51,8 @@
     "weight_quantization": true,
     "pruning": true,
     "pruning_fraction": 0.3,
-    "allow_scheduling": true
+    "allow_scheduling": true,
+    "tuning_budget_scale": 1.0
   },
   "target_metric_override": null,
   "start_step": null,

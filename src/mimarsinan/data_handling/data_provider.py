@@ -96,7 +96,12 @@ class DataProvider:
         return self.get_training_set_size() // 100
     
     def get_validation_batch_size(self):
-        return self.get_validation_set_size()
+        """Match training minibatch size; never exceed the validation set size."""
+        train_bs = self.get_training_batch_size()
+        n_val = self.get_validation_set_size()
+        if n_val <= 0:
+            return max(1, train_bs)
+        return min(max(1, train_bs), n_val)
     
     def get_test_batch_size(self):
         return self.get_test_set_size()

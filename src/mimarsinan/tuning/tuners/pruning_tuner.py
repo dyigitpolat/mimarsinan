@@ -5,22 +5,20 @@ the start of each adaptation cycle, then smoothly shrinks the targeted pruned
 weights towards zero for that cycle. Unpruned weights are left free to train
 and heal the network capacity loss.
 """
+
 import copy
+
 import torch
 
-from mimarsinan.tuning.tuners.perceptron_tuner import PerceptronTuner
 from mimarsinan.transformations.pruning import (
     _collect_activation_stats,
     apply_pruning_masks,
     compute_masks_from_importance,
 )
-from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
-from mimarsinan.tuning.tolerance_calibration import (
-    initial_tolerance_fn_for_pipeline_if_enabled,
-)
-from mimarsinan.tuning.basic_interpolation import BasicInterpolation
+from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
 
-class PruningTuner(PerceptronTuner):
+
+class PruningTuner(SmoothAdaptationTuner):
     def __init__(
         self,
         pipeline,
@@ -30,26 +28,18 @@ class PruningTuner(PerceptronTuner):
         adaptation_manager,
         pruning_fraction,
     ):
-        super().__init__(
-            pipeline, 
-            model, 
-            target_accuracy, 
-            lr)
+        super().__init__(pipeline, model, target_accuracy, lr)
 
         self.target_accuracy = target_accuracy
-
         self.lr = lr
         self.adaptation_manager = adaptation_manager
         self.pruning_fraction = pruning_fraction
-
-        self.device = pipeline.config['device']
-        self.epochs = max(pipeline.config.get('tuner_epochs', 5), 3)
+        self._device = pipeline.config["device"]
 
         self.base_row_imp = []
         self.base_col_imp = []
-
-    def _get_target_decay(self):
-        return 0.99
+        self.original_weights = []
+        self.original_biases = []
 
     def _get_masks(self, rate):
         perceptrons = self.model.get_perceptrons()
@@ -65,14 +55,12 @@ class PruningTuner(PerceptronTuner):
         )
 
     def _refresh_pruning_importance(self):
-        """Recompute activation-based row/column importance for the current model.
-        Called at the start of each adaptation cycle so the pruning set is fresh.
-        """
+        """Recompute activation-based row/column importance for the current model."""
         perceptrons = self.model.get_perceptrons()
         activation_stats = _collect_activation_stats(
             self.model,
             self.trainer.validation_loader,
-            self.device,
+            self._device,
             num_batches=5,
         )
         self.base_row_imp.clear()
@@ -114,12 +102,59 @@ class PruningTuner(PerceptronTuner):
                         module.bias.data[b_m] = t_b
                 return hook
 
-            hooks.append(p.layer.register_forward_pre_hook(make_hook(p.layer, prune_mask, target_w, b_mask, target_b)))
+            hooks.append(
+                p.layer.register_forward_pre_hook(
+                    make_hook(p.layer, prune_mask, target_w, b_mask, target_b)
+                )
+            )
         return hooks
+
+    def _before_cycle(self):
+        self._refresh_pruning_importance()
+
+    def _update_and_evaluate(self, rate):
+        rate = min(max(rate, 0.0), 1.0)
+        perceptrons = self.model.get_perceptrons()
+        target_row_masks, target_col_masks = self._get_masks(rate)
+        for i, p in enumerate(perceptrons):
+            apply_pruning_masks(
+                p, target_row_masks[i], target_col_masks[i],
+                rate, self.original_weights[i], self.original_biases[i],
+            )
+        hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
+        self.trainer.train_one_step(self.lr)
+        for hook in hooks:
+            hook.remove()
+        for i, p in enumerate(perceptrons):
+            apply_pruning_masks(
+                p, target_row_masks[i], target_col_masks[i],
+                rate, self.original_weights[i], self.original_biases[i],
+            )
+        return self.trainer.validate_n_batches(self._budget.eval_n_batches)
+
+    def _adaptation(self, rate):
+        rate = min(max(rate, 0.0), 1.0)
+        self.pipeline.reporter.report("Tuning Rate", rate)
+        self._update_and_evaluate(rate)
+        target_row_masks, target_col_masks = self._get_masks(rate)
+        hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
+        self.trainer.train_steps_until_target(
+            self.lr,
+            self._budget.max_training_steps,
+            self.target_adjuster.get_target(),
+            0,
+            validation_n_batches=self._budget.validation_steps,
+            check_interval=self._budget.check_interval,
+            patience=3,
+        )
+        for hook in hooks:
+            hook.remove()
+        self._update_and_evaluate(rate)
+        acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        self.target_adjuster.update_target(acc)
 
     def run(self, max_cycles=None):
         perceptrons = self.model.get_perceptrons()
-        n_layers = len(perceptrons)
 
         initial_acc = self.trainer.validate()
         print(f"[PruningTuner] Initial accuracy: {initial_acc:.4f}")
@@ -133,83 +168,67 @@ class PruningTuner(PerceptronTuner):
             else:
                 self.original_biases.append(None)
 
-        def _update_and_eval(rate):
-            rate = min(max(rate, 0.0), 1.0)  # Clamp overshoot bug
-            target_row_masks, target_col_masks = self._get_masks(rate)
-            for i, p in enumerate(perceptrons):
-                apply_pruning_masks(p, target_row_masks[i], target_col_masks[i], rate, self.original_weights[i], self.original_biases[i])
-            hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
-            self.trainer.train_one_step(self.lr / 2.0)
-            for hook in hooks:
-                hook.remove()
-            for i, p in enumerate(perceptrons):
-                apply_pruning_masks(p, target_row_masks[i], target_col_masks[i], rate, self.original_weights[i], self.original_biases[i])
-            return self.trainer.validate()
+        from mimarsinan.tuning.basic_interpolation import BasicInterpolation
+        from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
+        from mimarsinan.tuning.tolerance_calibration import (
+            initial_tolerance_fn_for_pipeline_if_enabled,
+        )
+        from mimarsinan.tuning.tuning_budget import min_step_for_smooth_adaptation
 
-        def _adaptation(rate):
-            rate = min(max(rate, 0.0), 1.0)
-            self.pipeline.reporter.report("Tuning Rate", rate)
-            _update_and_eval(rate)
-            target_row_masks, target_col_masks = self._get_masks(rate)
-            hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
-            self.trainer.train_until_target_accuracy(self.lr, self.epochs, self.target_adjuster.get_target(), 0)
-            for hook in hooks:
-                hook.remove()
-            _update_and_eval(rate)
-            acc = self.trainer.validate()
-            self.target_adjuster.update_target(acc)
-
-        before_cycle = lambda: self._refresh_pruning_importance()
         initial_tol_fn = initial_tolerance_fn_for_pipeline_if_enabled(
             self.pipeline.config,
             clone_state=lambda: copy.deepcopy(self.model.state_dict()),
             restore_state=lambda state: self.model.load_state_dict(state),
-            evaluate_at_rate=_update_and_eval,
-            validate_fn=self.trainer.validate,
-            train_validation_epochs=lambda lr, n, w: self.trainer.train_validation_epochs(
-                lr, n, w
-            ),
+            evaluate_at_rate=self._update_and_evaluate,
+            validate_fn=lambda: self.trainer.validate_n_batches(self._budget.eval_n_batches),
+            train_validation_epochs=lambda lr, n, w: self.trainer.train_validation_epochs(lr, n, w),
             lr_probe=self.lr,
-            before_cycle=before_cycle,
+            before_cycle=self._before_cycle,
+            train_n_steps=lambda lr, n: self.trainer.train_n_steps(lr, n),
+            train_probe_steps=self._budget.tolerance_probe_steps,
         )
+
+        tolerance = initial_tol_fn() if initial_tol_fn else 0.05
+
         adapter = SmartSmoothAdaptation(
-            _adaptation,
+            self._adaptation,
             lambda: copy.deepcopy(self.model.state_dict()),
             lambda state: self.model.load_state_dict(state),
-            _update_and_eval,
+            self._update_and_evaluate,
             [BasicInterpolation(0.0, 1.0)],
-            self.target_adjuster.get_target(),
-            before_cycle=before_cycle,
-            initial_tolerance_fn=initial_tol_fn,
+            get_target=self._get_target,
+            tolerance=tolerance,
+            min_step=min_step_for_smooth_adaptation(self.pipeline, self._budget),
+            before_cycle=self._before_cycle,
         )
-        if initial_tol_fn is None:
-            adapter.tolerance = 0.05
 
-        print(f"[PruningTuner] Starting fractional discrete adaptation...")
+        print("[PruningTuner] Starting fractional discrete adaptation...")
         adapter.adapt_smoothly(max_cycles=max_cycles)
 
-        _update_and_eval(1.0)
-        
+        self._update_and_evaluate(1.0)
+
         final_acc = self.trainer.validate()
         print(f"[PruningTuner] Final overall accuracy: {final_acc:.4f}")
-        
+
         row_masks, col_masks = self._get_masks(1.0)
         for i, p in enumerate(perceptrons):
             pruned_rows = (~row_masks[i]).sum().item()
             pruned_cols = (~col_masks[i]).sum().item()
-            print(f"[PruningTuner] Perceptron {i}: rows {pruned_rows}/{row_masks[i].shape[0]} pruned, cols {pruned_cols}/{col_masks[i].shape[0]} pruned")
-        
-        # Register 1D pruning masks as persistent buffers for IR pruning (lossless; no 2D recovery).
+            print(
+                f"[PruningTuner] Perceptron {i}: rows {pruned_rows}/{row_masks[i].shape[0]} pruned, "
+                f"cols {pruned_cols}/{col_masks[i].shape[0]} pruned"
+            )
+
         for i, p in enumerate(perceptrons):
             rm = row_masks[i]
             cm = col_masks[i]
-            # True = pruned (same convention as get_initial_pruning_masks_from_model)
-            p.layer.register_buffer("prune_row_mask", (~rm).clone())  # out_f
-            p.layer.register_buffer("prune_col_mask", (~cm).clone())  # in_f
-            # Legacy 2D/bias for any code that still reads them
-            p.layer.register_buffer("prune_mask", ((~rm).unsqueeze(1) | (~cm).unsqueeze(0)).clone())
+            p.layer.register_buffer("prune_row_mask", (~rm).clone())
+            p.layer.register_buffer("prune_col_mask", (~cm).clone())
+            p.layer.register_buffer(
+                "prune_mask",
+                ((~rm).unsqueeze(1) | (~cm).unsqueeze(0)).clone(),
+            )
             if p.layer.bias is not None:
                 p.layer.register_buffer("prune_bias_mask", (~rm).clone())
 
         return final_acc
-

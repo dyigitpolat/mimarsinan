@@ -36,7 +36,7 @@ class CIFAR10_DataProvider(DataProvider):
             root=self.datasets_path, train=True, download=download,
             transform=test_validation_transform)
         
-        training_validation_split = 0.99
+        training_validation_split = 0.95
         training_length = int(len(training_dataset) * training_validation_split)
         
         self.training_dataset = torch.utils.data.Subset(

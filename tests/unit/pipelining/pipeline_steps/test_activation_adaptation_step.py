@@ -117,7 +117,7 @@ class TestActivationAdaptationStepRates:
 
         mock_pipeline.config.update(default_config())
         mock_pipeline.config["activation_quantization"] = False
-        mock_pipeline.config["tuner_epochs"] = 1
+        mock_pipeline.config["tuning_budget_scale"] = 1.0
         mock_pipeline.seed("model", model, step_name="Activation Analysis")
         mock_pipeline.seed("adaptation_manager", am, step_name="Activation Analysis")
 
@@ -146,7 +146,7 @@ class TestActivationAdaptationStepRates:
 
         mock_pipeline.config.update(default_config())
         mock_pipeline.config["activation_quantization"] = False
-        mock_pipeline.config["tuner_epochs"] = 1
+        mock_pipeline.config["tuning_budget_scale"] = 1.0
         mock_pipeline.seed("model", model, step_name="Activation Analysis")
         mock_pipeline.seed("adaptation_manager", am, step_name="Activation Analysis")
 
@@ -228,7 +228,7 @@ class TestActivationAdaptationCommit:
 
         mock_pipeline.config.update(default_config())
         mock_pipeline.config["activation_quantization"] = False
-        mock_pipeline.config["tuner_epochs"] = 1
+        mock_pipeline.config["tuning_budget_scale"] = 1.0
         mock_pipeline.seed("model", model, step_name="Activation Analysis")
         mock_pipeline.seed("adaptation_manager", am, step_name="Activation Analysis")
 
@@ -245,26 +245,18 @@ class TestActivationAdaptationCommit:
             f"metric, not advance the iterator each call. Got {val1} then {val2}."
         )
 
-    def test_validate_does_not_call_tuner_when_metric_is_cached(self, mock_pipeline):
-        """validate() must not call tuner.validate() when _committed_metric exists.
+    def test_validate_returns_cached_metric_from_tuner(self, mock_pipeline):
+        """Step.validate() delegates to tuner.validate(), which returns the
+        cached metric from _after_run() without re-running test()."""
 
-        Python evaluates function arguments eagerly, so
-        getattr(obj, "_committed_metric", obj.validate()) still calls
-        obj.validate() even when _committed_metric is present. That would
-        advance the validation iterator and emit a noisy metric even though the
-        cached metric is returned.
-        """
-
-        class _ExplodingTuner:
+        class _CachingTuner:
             _committed_metric = 0.75
 
             def validate(self):
-                raise AssertionError(
-                    "tuner.validate() must not be called when _committed_metric exists"
-                )
+                return self._committed_metric
 
         step = ActivationAdaptationStep(mock_pipeline)
-        step.tuner = _ExplodingTuner()
+        step.tuner = _CachingTuner()
 
         assert step.validate() == 0.75
 
@@ -293,7 +285,7 @@ class TestActivationAdaptationCommit:
 
         mock_pipeline.config.update(default_config())
         mock_pipeline.config["activation_quantization"] = False
-        mock_pipeline.config["tuner_epochs"] = 1
+        mock_pipeline.config["tuning_budget_scale"] = 1.0
         mock_pipeline.seed("model", model, step_name="Activation Analysis")
         mock_pipeline.seed("adaptation_manager", am, step_name="Activation Analysis")
 

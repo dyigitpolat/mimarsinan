@@ -590,7 +590,7 @@ function buildConfig() {
   const dp = {
     lr,
     training_epochs: weightMode === 'train' ? parseInt(v('trainingEpochs')) : undefined,
-    tuner_epochs: parseInt(v('tunerEpochs')),
+    tuning_budget_scale: parseFloat(v('tuningBudgetScale')),
     degradation_tolerance: parseFloat(v('degradationTolerance')),
     model_config_mode: configMode,
     hw_config_mode: hwMode,
@@ -772,7 +772,7 @@ function loadStateFromConfig(config) {
   setVal('weightSource', dp.weight_source);
   setVal('lrPretrained', dp.finetune_lr != null ? dp.finetune_lr : dp.lr);
   setVal('finetuneEpochs', dp.finetune_epochs);
-  setVal('tunerEpochs', dp.tuner_epochs);
+  setVal('tuningBudgetScale', dp.tuning_budget_scale);
   setVal('degradationTolerance', dp.degradation_tolerance);
 
   const hwMode = dp.hw_config_mode || 'fixed';

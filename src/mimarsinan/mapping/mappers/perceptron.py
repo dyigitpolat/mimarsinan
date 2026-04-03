@@ -45,6 +45,16 @@ class PerceptronMapper(Mapper):
         layer_sources = self.source_mapper.map_to_ir(ir_mapping)
         layer_sources = layer_sources.transpose()
 
+        # Encoding as a single host ComputeOp only when this FC applies to one column of
+        # sources (plain MLP). Multi-column (e.g. Mixer token grid) must use map_fc tiling.
+        if getattr(self.perceptron, "is_encoding_layer", False):
+            if layer_sources.ndim == 1 or (
+                layer_sources.ndim == 2 and layer_sources.shape[1] == 1
+            ):
+                return self._map_to_ir_as_encoding_compute_op(
+                    ir_mapping, layer_sources, layer_weights, layer_biases
+                )
+
         normalization = getattr(self.perceptron, "normalization", None)
         normalization_type = type(normalization).__name__ if normalization is not None else None
         activation_type = resolve_activation_type(self.perceptron)
@@ -65,6 +75,23 @@ class PerceptronMapper(Mapper):
         )
 
         return layer_sources.transpose()
+
+    def _map_to_ir_as_encoding_compute_op(self, ir_mapping, layer_sources, layer_weights, _layer_biases):
+        """Host-side full ``Perceptron`` forward as a single ``ComputeOp(module)``."""
+        in_features = int(layer_weights.shape[1])
+        out_features = int(layer_weights.shape[0])
+
+        flat_in = np.array(layer_sources, dtype=object).flatten()
+
+        out = ir_mapping.add_compute_op(
+            input_sources=flat_in,
+            op_type="module",
+            params={"module": self.perceptron, "input_shape": (in_features,)},
+            input_shape=(in_features,),
+            output_shape=(out_features,),
+            name=getattr(self.perceptron, "name", None),
+        )
+        return out.transpose()
 
     def _forward_impl(self, x):
         return self.perceptron(x)

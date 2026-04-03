@@ -42,8 +42,8 @@ class TestTorchMLPMixerCore:
 class TestTorchMLPMixerCoreConversion:
     """Verify conversion fidelity and that all mixer FCs are chip-packaged perceptrons."""
 
-    def test_supermodel_forward_matches_original(self):
-        """Supermodel output must numerically match the original model."""
+    def test_converted_flow_forward_matches_original(self):
+        """Converted flow output must numerically match the original model."""
         from mimarsinan.torch_mapping.converter import convert_torch_model
 
         model = TorchMLPMixerCore(
@@ -56,18 +56,18 @@ class TestTorchMLPMixerCoreConversion:
             fc_w_2=64,
         )
         model.eval()
-        supermodel = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
-        supermodel.eval()
+        flow = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
+        flow.eval()
 
         x = torch.randn(4, 1, 28, 28)
         with torch.no_grad():
             orig_out = model(x)
-            super_out = supermodel.perceptron_flow(x)
+            conv_out = flow(x)
 
-        assert orig_out.shape == super_out.shape
-        assert torch.allclose(orig_out, super_out, atol=1e-3), (
-            f"Output mismatch — max diff: {(orig_out - super_out).abs().max().item():.6f}. "
-            "The Supermodel forward pass does not faithfully reproduce the original model."
+        assert orig_out.shape == conv_out.shape
+        assert torch.allclose(orig_out, conv_out, atol=1e-3), (
+            f"Output mismatch — max diff: {(orig_out - conv_out).abs().max().item():.6f}. "
+            "The converted flow does not faithfully reproduce the original model."
         )
 
     def test_all_mixer_fc_perceptrons_chip_supported(self):
@@ -90,8 +90,8 @@ class TestTorchMLPMixerCoreConversion:
             fc_w_2=32,
         )
         model.eval()
-        supermodel = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
-        perceptrons = supermodel.get_perceptrons()
+        flow = convert_torch_model(model, input_shape=(1, 28, 28), num_classes=10)
+        perceptrons = flow.get_perceptrons()
 
         assert len(perceptrons) == 9, (
             f"Expected 9 perceptrons (1 patch + 8 mixer FCs). Got {len(perceptrons)}."

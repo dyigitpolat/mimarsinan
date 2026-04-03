@@ -92,7 +92,7 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         model, total_params = problem._build_model(mc, pcfg)
         assert total_params > 0
         assert hasattr(model, "get_mapper_repr"), (
-            "Model should be converted to Supermodel (has get_mapper_repr)"
+            "Model should be converted to torch-mapped flow (has get_mapper_repr)"
         )
 
     def test_collect_softcores_succeeds(self):

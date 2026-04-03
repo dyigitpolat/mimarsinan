@@ -62,7 +62,10 @@ class TestTinyDataProvider:
     def test_batch_sizes(self):
         dp = TinyDataProvider(size=20)
         assert dp.get_training_batch_size() <= 20
-        assert dp.get_validation_batch_size() == 20
+        # Validation uses training minibatch size, capped by val set size (Phase 6).
+        assert dp.get_validation_batch_size() == min(
+            dp.get_training_batch_size(), dp.get_validation_set_size()
+        )
         assert dp.get_test_batch_size() == 20
 
     def test_set_sizes(self):

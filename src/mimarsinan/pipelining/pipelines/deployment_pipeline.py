@@ -207,9 +207,11 @@ class DeploymentPipeline(Pipeline):
 
     default_deployment_parameters: dict = {
         "lr": 0.001,
+        "lr_range_min": 1e-5,
+        "lr_range_max": 1e-1,
         "training_epochs": 10,
-        "tuner_epochs": 3,
-        "tuner_calibrate_smooth_tolerance": False,
+        "tuning_budget_scale": 1.0,
+        "tuner_calibrate_smooth_tolerance": True,
         "tuner_smooth_tolerance_residual_threshold": 1e-3,
         "tuner_smooth_tolerance_min": 0.01,
         "tuner_smooth_tolerance_max": 0.15,

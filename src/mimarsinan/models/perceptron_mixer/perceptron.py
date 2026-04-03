@@ -59,6 +59,9 @@ class Perceptron(nn.Module):
 
         self.per_input_scales = None
 
+        # True for the first perceptron of each neural segment (host-side ComputeOp in IR).
+        self.is_encoding_layer = False
+
     def set_parameter_scale(self, new_scale):
         if isinstance(new_scale, float):
             new_scale = torch.tensor(new_scale)

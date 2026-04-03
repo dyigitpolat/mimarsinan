@@ -7,30 +7,31 @@ specific transformations while maintaining accuracy.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `basic_tuner.py` | `BasicTuner` | Base tuner using `WeightTransformTrainer` and `SmartSmoothAdaptation`; optional `initial_tolerance_fn` from `tolerance_calibration.initial_tolerance_fn_for_pipeline_if_enabled` when `tuner_calibrate_smooth_tolerance` is true |
-| `perceptron_tuner.py` | `PerceptronTuner` | Base for per-perceptron tuners using `BasicTrainer`; same optional smooth-tolerance calibration wiring |
-| `perceptron_transform_tuner.py` | `PerceptronTransformTuner` | Base for tuners using `PerceptronTransformTrainer`; same optional calibration wiring |
-| `activation_adaptation_tuner.py` | `ActivationAdaptationTuner` | Gradually blends non-ReLU activations toward ReLU via `ActivationReplacementDecorator`. `run()` iterates `model.get_perceptrons()` — which already excludes Identity (host-side) perceptrons via the mapper eligibility contract — and commits all non-ReLU-compatible bases to `LeakyGradReLU` (ReLU). Resets `activation_adaptation_rate=0`, measures accuracy **once** via `trainer.test()` on the full test set, and caches it in `_committed_metric`. Callers must read `_committed_metric` instead of calling `validate()` again to avoid advancing the validation iterator. |
-| `clamp_tuner.py` | `ClampTuner` | Introduces activation clamping progressively |
+| `../unified_tuner.py` | `TunerBase`, `SmoothAdaptationTuner` | `TunerBase`: shared infrastructure (pipeline, model, trainer, budget, target adjuster, LR finder). `SmoothAdaptationTuner`: the single orchestration loop; subclasses implement `_update_and_evaluate(rate)` |
+| `perceptron_transform_tuner.py` | `PerceptronTransformTuner` | Extends `SmoothAdaptationTuner`; uses `PerceptronTransformTrainer`; stochastic mixing of previous/new perceptron transforms |
+| `activation_adaptation_tuner.py` | `ActivationAdaptationTuner` | Gradually blends non-ReLU activations toward ReLU; `_after_run()` commits to LeakyGradReLU and caches metric via `trainer.test()`; includes commit guard: if post-commit accuracy falls below `target_adjuster.floor`, restores pre-commit state; `validate()` returns cached metric |
+| `clamp_tuner.py` | `ClampTuner` | Introduces activation clamping progressively; validates `activation_scales`, logs diagnostics, probes saturation; caches final `trainer.test()` metric |
+| `activation_shift_tuner.py` | `ActivationShiftTuner` | Extends `TunerBase` (not smooth adaptation); applies shift once, recovers with LR-search + step-training; caches final `trainer.test()` metric |
 | `activation_quantization_tuner.py` | `ActivationQuantizationTuner` | Quantizes activations to Tq levels |
-| `normalization_aware_perceptron_quantization_tuner.py` | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights with normalization awareness |
-| `core_flow_tuner.py` | `CoreFlowTuner` | Adjusts spiking thresholds on IR graph (rate-coded mode only) |
+| `normalization_aware_perceptron_quantization_tuner.py` | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights with normalization awareness; extends `PerceptronTransformTuner` |
+| `core_flow_tuner.py` | `CoreFlowTuner` | Adjusts spiking thresholds on IR graph (standalone, not in tuner hierarchy) |
 | `noise_tuner.py` | `NoiseTuner` | Introduces training noise |
-| `pruning_tuner.py` | `PruningTuner` | Gradually zeros least-significant rows/columns; recomputes importance at the start of each adaptation cycle; static `adapter.tolerance = 0.05` when calibration is off |
+| `pruning_tuner.py` | `PruningTuner` | Gradually zeros least-significant rows/columns; recomputes importance at each cycle; overrides `_adaptation` and `_before_cycle` |
 
 ## Tuner Hierarchy
 
 ```
-BasicTuner (WeightTransformTrainer)
-PerceptronTuner (BasicTrainer, per-perceptron)
-├── ActivationAdaptationTuner
-├── ClampTuner
-├── ActivationQuantizationTuner
-├── NoiseTuner
-└── PruningTuner (per-cycle importance refresh via before_cycle)
-PerceptronTransformTuner (PerceptronTransformTrainer)
-└── NormalizationAwarePerceptronQuantizationTuner
-CoreFlowTuner (operates on IRGraph, not model)
+TunerBase
+├── SmoothAdaptationTuner
+│   ├── ActivationAdaptationTuner
+│   ├── ClampTuner
+│   ├── ActivationQuantizationTuner
+│   ├── NoiseTuner
+│   ├── PruningTuner (overrides _adaptation, _before_cycle)
+│   └── PerceptronTransformTuner (PerceptronTransformTrainer)
+│       └── NormalizationAwarePerceptronQuantizationTuner
+└── ActivationShiftTuner (one-shot, not smooth adaptation)
+CoreFlowTuner (standalone, operates on IRGraph)
 ```
 
 ## Dependencies
@@ -44,4 +45,7 @@ CoreFlowTuner (operates on IRGraph, not model)
 
 ## Exported API (\_\_init\_\_.py)
 
-All tuner classes.
+`TunerBase`, `SmoothAdaptationTuner`, `ClampTuner`, `ActivationAdaptationTuner`,
+`ActivationQuantizationTuner`, `ActivationShiftTuner`,
+`NormalizationAwarePerceptronQuantizationTuner`, `CoreFlowTuner`, `NoiseTuner`,
+`PerceptronTransformTuner`, `PruningTuner`.

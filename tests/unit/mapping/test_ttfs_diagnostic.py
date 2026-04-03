@@ -35,7 +35,7 @@ def _build_small_mixer():
 
 
 def _convert_to_supermodel(model, input_shape, num_classes=4):
-    """Convert TorchMLPMixer to Supermodel via convert_torch_model."""
+    """Convert TorchMLPMixer to ``ConvertedModelFlow`` via convert_torch_model."""
     from mimarsinan.torch_mapping.converter import convert_torch_model
     supermodel = convert_torch_model(model, input_shape, num_classes, device="cpu", Tq=4)
     return supermodel
@@ -107,9 +107,8 @@ class TestTTFSDiagnostic:
         x = torch.rand(4, *input_shape)
         with torch.no_grad():
             orig_out = model(x)
-            # supermodel uses perceptron_flow(preprocessor(x)), but preprocessor is
-            # InputCQ which changes the input. Use mapper_repr directly.
-            super_out = supermodel.perceptron_flow.get_mapper_repr()(x)
+            # Compare through mapper DAG (same as flow forward for raw x).
+            super_out = supermodel.get_mapper_repr()(x)
 
         conv_diff = (orig_out - super_out).abs().max().item()
         assert conv_diff < 1e-3, (
@@ -121,7 +120,7 @@ class TestTTFSDiagnostic:
 
         # Verify BN fusion didn't break anything
         with torch.no_grad():
-            fused_out = supermodel.perceptron_flow.get_mapper_repr()(x)
+            fused_out = supermodel.get_mapper_repr()(x)
         fusion_diff = (orig_out - fused_out).abs().max().item()
         assert fusion_diff < 1e-3, (
             f"BN fusion broke model: max diff {fusion_diff:.6f}"
@@ -132,7 +131,7 @@ class TestTTFSDiagnostic:
 
         # Compare TTFS output
         with torch.no_grad():
-            float_out = supermodel.perceptron_flow.get_mapper_repr()(x)
+            float_out = supermodel.get_mapper_repr()(x)
             flow_out = flow(x)
 
         # They may differ by a constant factor (activation_scale), but
@@ -443,7 +442,7 @@ class TestTTFSDiagnostic:
         # Compare outputs
         x = torch.rand(4, *input_shape)
         with torch.no_grad():
-            float_out = supermodel.perceptron_flow.get_mapper_repr()(x)
+            float_out = supermodel.get_mapper_repr()(x)
             flow_out = flow(x)
 
         max_diff = (float_out - flow_out).abs().max().item()

@@ -38,13 +38,6 @@ class ActivationAdaptationStep(PipelineStep):
 
     def validate(self):
         if self.tuner is not None:
-            # Return the metric measured right after the ReLU commit, cached in
-            # run(). Avoid eager evaluation of tuner.validate(): using
-            # getattr(..., self.tuner.validate()) would still advance the
-            # iterator and emit a noisy minibatch metric even when the cached
-            # metric exists.
-            if hasattr(self.tuner, "_committed_metric"):
-                return self.tuner._committed_metric
             return self.tuner.validate()
         return self.pipeline.get_target_metric()
 
@@ -57,13 +50,13 @@ class ActivationAdaptationStep(PipelineStep):
                 self.pipeline,
                 model=model,
                 target_accuracy=self.pipeline.get_target_metric(),
-                lr=self.pipeline.config["lr"] * 1e-3,
+                lr=self.pipeline.config["lr"],
                 adaptation_manager=adaptation_manager,
             )
-            self.tuner.run()
+            result = self.tuner.run()
             print(
                 "[ActivationAdaptationStep] Gradual ReLU adaptation done; "
-                f"accuracy: {self.tuner._committed_metric:.4f}"
+                f"accuracy: {result:.4f}"
             )
         else:
             print(

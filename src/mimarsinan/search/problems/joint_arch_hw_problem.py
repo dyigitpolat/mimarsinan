@@ -508,7 +508,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         return model, total_params
 
     def _ensure_mapper_repr(self, model):
-        """Convert to Supermodel if the model lacks ``get_mapper_repr``."""
+        """Convert via torch mapping if the model lacks ``get_mapper_repr``."""
         if hasattr(model, "get_mapper_repr"):
             return model
         from mimarsinan.torch_mapping.converter import convert_torch_model

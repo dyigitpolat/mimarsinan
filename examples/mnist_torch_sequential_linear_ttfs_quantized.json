@@ -4,12 +4,23 @@
   "experiment_name": "0000xmnist_torch_sequential_linear_ttfs_quantized",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
-
   "platform_constraints": {
     "cores": [
-      { "max_axons": 256, "max_neurons": 256, "count": 150 },
-      { "max_axons": 512, "max_neurons": 512, "count": 100 },
-      { "max_axons": 1024, "max_neurons": 1024, "count": 50 }
+      {
+        "max_axons": 256,
+        "max_neurons": 256,
+        "count": 150
+      },
+      {
+        "max_axons": 512,
+        "max_neurons": 512,
+        "count": 100
+      },
+      {
+        "max_axons": 1024,
+        "max_neurons": 1024,
+        "count": 50
+      }
     ],
     "max_axons": 1024,
     "max_neurons": 1024,
@@ -18,16 +29,18 @@
     "weight_bits": 8,
     "allow_coalescing": false
   },
-
   "deployment_parameters": {
     "lr": 0.001,
     "training_epochs": 10,
-    "tuner_epochs": 3,
     "degradation_tolerance": 0.95,
     "configuration_mode": "user",
     "model_type": "torch_sequential_linear",
     "model_config": {
-      "hidden_dims": [512, 256, 128]
+      "hidden_dims": [
+        512,
+        256,
+        128
+      ]
     },
     "spiking_mode": "ttfs_quantized",
     "weight_quantization": true,
@@ -36,9 +49,9 @@
     "pruning_fraction": 0.9,
     "spike_generation_mode": "TTFS",
     "firing_mode": "TTFS",
-    "thresholding_mode": "<="
+    "thresholding_mode": "<=",
+    "tuning_budget_scale": 1.0
   },
-
   "target_metric_override": null,
   "start_step": null,
   "stop_step": null

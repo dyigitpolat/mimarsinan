@@ -6,9 +6,6 @@ import torch
 import torch.nn as nn
 import functools
 
-def _copy_param(param_to, param_from):
-    with torch.no_grad():
-        param_to.data.copy_(param_from.data.clone())
 
 class PerceptronTransformTrainer(BasicTrainer):
     def __init__(
@@ -83,4 +80,13 @@ class PerceptronTransformTrainer(BasicTrainer):
             optimizer, lr_lambda = lambda epoch: 1)
         scheduler = identity_scheduler
         
+        return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
+
+    def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int):
+        optimizer = torch.optim.Adam(
+            self.aux_model.parameters(), lr=lr, weight_decay=0, betas=(self.beta1, self.beta2)
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
+        )
         return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)

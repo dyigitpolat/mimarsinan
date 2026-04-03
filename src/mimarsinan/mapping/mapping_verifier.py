@@ -75,7 +75,7 @@ def verify_soft_core_mapping(
     model_repr:
         A ``ModelRepresentation`` (or any object exposing ``map_to_ir(mapping)``)
         for a native mimarsinan model, OR the ``mapper_repr`` obtained from a
-        torch-converted ``Supermodel`` via ``supermodel.get_mapper_repr()``.
+        torch-converted flow via ``get_mapper_repr()`` (e.g. ``ConvertedModelFlow``).
     max_axons:
         Maximum axon count per hardware core.
     max_neurons:
@@ -122,6 +122,35 @@ def verify_soft_core_mapping(
         )
 
     if not softcores:
+        # Layout only instantiates softcores for NeuralCore nodes. Encoding layers and
+        # many torch-converted modules map to host ComputeOps only; IR is still valid.
+        try:
+            from mimarsinan.mapping.ir_mapping import IRMapping
+
+            irm = IRMapping(
+                q_max=1,
+                firing_mode="Default",
+                max_axons=max_axons,
+                max_neurons=max_neurons,
+            )
+            ir_graph = irm.map(model_repr)
+            n_nc = len(ir_graph.get_neural_cores())
+            n_co = len(ir_graph.get_compute_ops())
+            if n_nc > 0 or n_co > 0:
+                return MappingVerificationResult(
+                    feasible=True,
+                    softcores=[],
+                    num_neural_cores=n_nc,
+                    max_input_size=0,
+                    max_output_size=0,
+                    total_area=0,
+                    host_side_segment_count=n_co,
+                    layout_preview=getattr(layout, "layout_preview", None),
+                    error=None,
+                )
+        except Exception:
+            pass
+
         return MappingVerificationResult(
             feasible=False,
             softcores=[],

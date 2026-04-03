@@ -1,4 +1,4 @@
-"""Tests for Supermodel: forward, perceptrons, mapper repr."""
+"""Tests for tiny PerceptronFlow fixtures: forward, perceptrons, mapper repr."""
 
 import pytest
 import torch
@@ -6,7 +6,7 @@ import torch
 from conftest import make_tiny_supermodel
 
 
-class TestSupermodel:
+class TestTinyPerceptronFlow:
     def test_forward_shape(self):
         m = make_tiny_supermodel(input_shape=(1, 8, 8), num_classes=4)
         m.eval()
@@ -25,10 +25,11 @@ class TestSupermodel:
         mr = m.get_mapper_repr()
         assert mr is not None
 
-    def test_get_preprocessor(self):
+    def test_get_input_activation(self):
         m = make_tiny_supermodel()
-        pp = m.get_preprocessor()
-        assert pp is not None
+        ia = m.get_input_activation()
+        x = torch.randn(2, 1, 8, 8)
+        assert torch.allclose(ia(x), x)
 
     def test_different_input_shapes(self):
         for shape in [(1, 4, 4), (3, 8, 8)]:
@@ -38,11 +39,7 @@ class TestSupermodel:
                 out = m(torch.randn(2, *shape))
             assert out.shape == (2, 2)
 
-    def test_in_act_clamps_to_01(self):
+    def test_first_perceptron_marked_encoding(self):
         m = make_tiny_supermodel()
-        x_large = torch.ones(1, 1, 8, 8) * 5.0
-        pp = m.get_preprocessor()
-        preprocessed = pp(x_large)
-        activated = m.in_act(preprocessed)
-        assert activated.max() <= 1.0 + 1e-6
-        assert activated.min() >= -1e-6
+        assert m.get_perceptrons()[0].is_encoding_layer is True
+        assert m.get_perceptrons()[1].is_encoding_layer is False

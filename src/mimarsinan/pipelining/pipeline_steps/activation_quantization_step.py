@@ -22,7 +22,7 @@ class ActivationQuantizationStep(PipelineStep):
             model = self.get_entry('model'),
             target_tq = self.pipeline.config['target_tq'],
             target_accuracy = self.pipeline.get_target_metric(),
-            lr = self.pipeline.config['lr'] * 0.01, 
+            lr = self.pipeline.config['lr'], 
             adaptation_manager = self.get_entry('adaptation_manager'))
         self.tuner.run()
 

@@ -92,7 +92,7 @@ class DataLoaderFactory:
     def create_validation_loader(self, batch_size, data_provider):
         return self._get_torch_dataloader(
             data_provider._get_validation_dataset(),
-            batch_size=batch_size, shuffle=True, mp_safe=data_provider.is_mp_safe())
+            batch_size=batch_size, shuffle=False, mp_safe=data_provider.is_mp_safe())
     
     def create_test_loader(self, batch_size, data_provider):
         return self._get_torch_dataloader(

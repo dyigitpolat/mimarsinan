@@ -1,11 +1,9 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-
   "experiment_name": "0cifar10_vit_user",
   "generated_files_path": "./generated",
   "data_provider_name": "CIFAR10_DataProvider",
-
   "platform_constraints": {
     "cores": [
       {
@@ -19,24 +17,18 @@
         "count": 500
       }
     ],
-
     "max_axons": 1024,
     "max_neurons": 1024,
     "target_tq": 32,
     "simulation_steps": 32,
     "weight_bits": 8
   },
-
   "deployment_parameters": {
     "lr": 0.001,
     "training_epochs": 2,
-    "tuner_epochs": 5,
-
     "degradation_tolerance": 0.1,
-
     "configuration_mode": "user",
     "model_type": "vit",
-
     "model_config": {
       "base_activation": "ReLU",
       "patch_size": 4,
@@ -46,20 +38,16 @@
       "mlp_ratio": 4,
       "dropout": 0.1
     },
-
     "spiking_mode": "ttfs",
     "weight_quantization": false,
     "activation_quantization": false,
-
     "spike_generation_mode": "TTFS",
     "firing_mode": "TTFS",
     "thresholding_mode": "<=",
-
-    "max_simulation_samples": 10
+    "max_simulation_samples": 10,
+    "tuning_budget_scale": 1.0
   },
-
   "target_metric_override": null,
   "start_step": "Simulation",
   "stop_step": null
 }
-

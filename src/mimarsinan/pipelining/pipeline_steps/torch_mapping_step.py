@@ -1,5 +1,5 @@
 """
-TorchMappingStep -- convert a native PyTorch model to a mimarsinan Supermodel.
+TorchMappingStep -- convert a native PyTorch model to a mimarsinan PerceptronFlow.
 
 Inserted after Pretraining and before the first adaptation / quantization
 step.  Traces the trained model, validates representability, constructs the
@@ -21,16 +21,15 @@ import torch
 
 
 class TorchMappingStep(PipelineStep):
-    """Convert a trained native PyTorch model into a Supermodel.
+    """Convert a trained native PyTorch model into a ``ConvertedModelFlow``.
 
     This step:
       1. Traces the model with ``torch.fx``.
       2. Validates that every operation is representable.
       3. Converts the FX graph to a Mapper DAG, transferring trained weights
-         and preserving per-layer activation types.
-      4. Wraps the result in a ``Supermodel``.
-      5. Sets up Perceptron activations via ``AdaptationManager``.
-      6. Optionally verifies forward-pass equivalence with the original model.
+         and preserving per-layer activation types (encoding layers flagged).
+      4. Sets up Perceptron activations via ``AdaptationManager``.
+      5. Optionally verifies forward-pass equivalence with the original model.
     """
 
     def __init__(self, pipeline):
@@ -56,7 +55,7 @@ class TorchMappingStep(PipelineStep):
 
         native_model = self.get_entry("model")
 
-        supermodel = convert_torch_model(
+        flow = convert_torch_model(
             native_model,
             input_shape=tuple(self.pipeline.config["input_shape"]),
             num_classes=self.pipeline.config["num_classes"],
@@ -65,27 +64,27 @@ class TorchMappingStep(PipelineStep):
         )
 
         adaptation_manager = AdaptationManager()
-        for perceptron in supermodel.get_perceptrons():
+        for perceptron in flow.get_perceptrons():
             adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
-        self._verify_equivalence(native_model, supermodel)
+        self._verify_equivalence(native_model, flow)
 
         self.trainer = BasicTrainer(
-            supermodel,
+            flow,
             self.pipeline.config["device"],
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss,
         )
         self.trainer.report_function = self.pipeline.reporter.report
 
-        self.update_entry("model", supermodel, "torch_model")
+        self.update_entry("model", flow, "torch_model")
         self.add_entry("adaptation_manager", adaptation_manager, "pickle")
 
-        print(f"[TorchMappingStep] Converted native model to Supermodel")
-        print(f"  Perceptrons: {len(supermodel.get_perceptrons())}")
+        print(f"[TorchMappingStep] Converted native model to torch-mapped PerceptronFlow")
+        print(f"  Perceptrons: {len(flow.get_perceptrons())}")
         print(f"  Validation: {self.validate()}")
 
-    def _verify_equivalence(self, native_model, supermodel):
+    def _verify_equivalence(self, native_model, flow):
         """Best-effort check that the converted model matches the original."""
         try:
             device = self.pipeline.config["device"]
@@ -93,11 +92,11 @@ class TorchMappingStep(PipelineStep):
             dummy = torch.randn(2, *input_shape, device=device)
 
             native_model.eval().to(device)
-            supermodel.eval().to(device)
+            flow.eval().to(device)
 
             with torch.no_grad():
                 native_out = native_model(dummy)
-                super_out = supermodel(dummy)
+                super_out = flow(dummy)
 
             if native_out.shape != super_out.shape:
                 print(

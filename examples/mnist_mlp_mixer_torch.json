@@ -1,55 +1,55 @@
 {
-    "seed": 0,
-    "pipeline_mode": "phased",
-    "experiment_name": "08zzmy_deployment",
-    "generated_files_path": "./generated",
-    "data_provider_name": "MNIST_DataProvider",
-    "platform_constraints": {
-      "cores": [
-        {
-          "max_axons": 512,
-          "max_neurons": 128,
-          "count": 100,
-          "has_bias": true
-        },
-        {
-          "max_axons": 128,
-          "max_neurons": 512,
-          "count": 100,
-          "has_bias": true
-        }
-      ],
-      "max_axons": 512,
-      "max_neurons": 512,
-      "target_tq": 32,
-      "simulation_steps": 32,
-      "weight_bits": 8,
-      "has_bias": true
-    },
-    "deployment_parameters": {
-      "lr": 0.001,
-      "training_epochs": 8,
-      "tuner_epochs": 3,
-      "degradation_tolerance": 0.1,
-      "configuration_mode": "user",
-      "model_type": "mlp_mixer",
-      "model_config": {
-        "base_activation": "LeakyReLU",
-        "patch_n_1": 4,
-        "patch_m_1": 4,
-        "patch_c_1": 32,
-        "fc_w_1": 64,
-        "fc_w_2": 64
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "08zzmy_deployment",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 512,
+        "max_neurons": 128,
+        "count": 100,
+        "has_bias": true
       },
-      "spiking_mode": "ttfs",
-      "firing_mode": "TTFS",
-      "spike_generation_mode": "TTFS",
-      "thresholding_mode": "<=",
-      "activation_quantization": false,
-      "weight_quantization": true,
-      "max_simulation_samples": 200
+      {
+        "max_axons": 128,
+        "max_neurons": 512,
+        "count": 100,
+        "has_bias": true
+      }
+    ],
+    "max_axons": 512,
+    "max_neurons": 512,
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8,
+    "has_bias": true
+  },
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 8,
+    "degradation_tolerance": 0.1,
+    "configuration_mode": "user",
+    "model_type": "mlp_mixer",
+    "model_config": {
+      "base_activation": "LeakyReLU",
+      "patch_n_1": 4,
+      "patch_m_1": 4,
+      "patch_c_1": 32,
+      "fc_w_1": 64,
+      "fc_w_2": 64
     },
-    "target_metric_override": null,
-    "start_step": "Normalization Fusion",
-    "stop_step": null
-  }
+    "spiking_mode": "ttfs",
+    "firing_mode": "TTFS",
+    "spike_generation_mode": "TTFS",
+    "thresholding_mode": "<=",
+    "activation_quantization": false,
+    "weight_quantization": true,
+    "max_simulation_samples": 200,
+    "tuning_budget_scale": 1.0
+  },
+  "target_metric_override": null,
+  "start_step": "Normalization Fusion",
+  "stop_step": null
+}
