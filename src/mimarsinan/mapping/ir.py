@@ -515,7 +515,7 @@ class ComputeOp(IRNode):
         if "bias" in self.params and self.params["bias"] is not None:
             bias = torch.tensor(self.params["bias"], dtype=x.dtype, device=x.device)
             out = out + bias
-        return out.view(out.shape[0], -1)
+        return out.reshape(out.shape[0], -1)
 
     def _exec_module(self, x: torch.Tensor) -> torch.Tensor:
         """Execute a generic PyTorch module stored in params.
@@ -551,7 +551,7 @@ class ComputeOp(IRNode):
             out = module(*call_args, **module_kwargs)
         if output_index is not None:
             out = out[output_index]
-        return out.view(out.shape[0], -1)
+        return out.reshape(out.shape[0], -1)
 
 
 # ---------------------------------------------------------------------------

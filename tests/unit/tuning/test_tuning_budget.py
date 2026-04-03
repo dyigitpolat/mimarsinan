@@ -20,15 +20,12 @@ class TestTuningBudget:
         assert b2.max_training_steps >= b1.max_training_steps
         assert b1.check_interval == b2.check_interval
 
-    def test_lr_total_cost_proportional_to_check_interval(self):
-        """Total LR finder cost (probes * steps) should be ~check_interval, not check_interval^2."""
+    def test_lr_steps_per_probe_matches_check_interval(self):
+        """Each LR probe trains for a full check_interval to reliably detect instability."""
         import math
         b = TuningBudget.from_dataset(50000, 100, budget_scale=1.0)
-        # check_interval = 22; sqrt(22) ~ 4
         assert b.lr_num_probes == max(2, int(math.sqrt(b.check_interval)))
-        assert b.lr_steps_per_probe == b.check_interval // b.lr_num_probes
-        total = b.lr_num_probes * b.lr_steps_per_probe
-        assert total <= b.check_interval
+        assert b.lr_steps_per_probe == b.check_interval
 
     def test_tolerance_probe_steps_equals_check_interval(self):
         b = TuningBudget.from_dataset(50000, 100, budget_scale=1.0)

@@ -27,8 +27,12 @@ class TestSmartSmoothAdaptation:
         target = 0.9
         adapt_log = []
 
+        def adapt_fn(rate):
+            adapt_log.append(rate)
+            return rate  # signal success
+
         ssa = _make_ssa(
-            lambda rate: adapt_log.append(rate),
+            adapt_fn,
             lambda rate: target,
             clone=lambda: 0,
             restore=lambda s: None,
@@ -110,6 +114,43 @@ class TestSmartSmoothAdaptation:
         assert len(probed_rates) >= 1
         assert probed_rates[0] == pytest.approx(1.0)
         assert step == pytest.approx(1.0)
+
+    def test_rollback_resets_t_and_halves_max_step(self):
+        """When adaptation_fn returns a rate lower than proposed, t resets and
+        max_step shrinks to prevent retrying the same failed step."""
+        adapt_log = []
+        rollback_until = [0.5]
+
+        def adapt_fn(rate):
+            adapt_log.append(rate)
+            if rate > rollback_until[0]:
+                return 0.0  # signal rollback to t=0
+            return rate
+
+        ssa = _make_ssa(
+            adapt_fn,
+            lambda rate: 0.95,
+            target=0.9,
+            min_step=0.01,
+        )
+        ssa.adapt_smoothly(max_cycles=30)
+
+        failed = [r for r in adapt_log if r > rollback_until[0]]
+        succeeded = [r for r in adapt_log if r <= rollback_until[0]]
+        assert len(failed) >= 1, "Should attempt at least one step beyond rollback_until"
+        assert len(succeeded) >= 1, "Should succeed at smaller steps"
+
+    def test_rollback_none_is_backward_compatible(self):
+        """When adaptation_fn returns None, t always advances (old behavior)."""
+        adapt_log = []
+
+        ssa = _make_ssa(
+            lambda rate: adapt_log.append(rate),
+            lambda rate: 0.95,
+            target=0.9,
+        )
+        ssa.adapt_smoothly(max_cycles=5)
+        assert len(adapt_log) == 5 or adapt_log[-1] >= 0.99
 
     def test_get_target_callable_used(self):
         """SmartSmoothAdaptation reads the target via get_target callable."""

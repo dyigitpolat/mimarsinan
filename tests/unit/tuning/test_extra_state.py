@@ -44,7 +44,8 @@ class TestActivationAdaptationExtraState:
 
         state = tuner._clone_state()
         _, extra = state
-        assert extra == pytest.approx(0.6)
+        rate, base_acts = extra
+        assert rate == pytest.approx(0.6)
 
     def test_restore_resets_activation_rate(self, tuner):
         state_at_zero = tuner._clone_state()
@@ -56,6 +57,24 @@ class TestActivationAdaptationExtraState:
 
         tuner._restore_state(state_at_zero)
         assert tuner.adaptation_manager.activation_adaptation_rate == pytest.approx(0.0)
+
+    def test_clone_captures_base_activation(self, tuner):
+        """base_activation must be part of the extra state snapshot."""
+        from mimarsinan.models.perceptron_mixer.perceptron import make_activation
+
+        perceptrons = list(tuner.model.get_perceptrons())
+        original_names = [p.base_activation_name for p in perceptrons]
+
+        state = tuner._clone_state()
+
+        for p in perceptrons:
+            p.base_activation = make_activation("ReLU")
+            p.base_activation_name = "ReLU"
+
+        tuner._restore_state(state)
+
+        for p, orig_name in zip(tuner.model.get_perceptrons(), original_names):
+            assert p.base_activation_name == orig_name
 
     def test_forward_pass_consistent_after_restore(self, tuner):
         """After restore, the model's forward pass should produce the same

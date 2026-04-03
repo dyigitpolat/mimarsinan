@@ -170,6 +170,7 @@ class TestPruningTuner:
         from mimarsinan.transformations.pruning import _collect_activation_stats
 
         mock = MockPipeline()
+        mock.config["training_epochs"] = 10
         model = make_tiny_supermodel()
         am = AdaptationManager()
         tuner = PruningTuner(

@@ -21,10 +21,14 @@ class _DummyTuner(SmoothAdaptationTuner):
         self.update_calls = []
         self._validate_sequence = []
         self._validate_idx = 0
+        self._committed_rate = 0.0
 
     def _update_and_evaluate(self, rate):
         self.update_calls.append(rate)
         return 0.0
+
+    def _find_lr(self):
+        return 0.001
 
     def set_validate_sequence(self, seq):
         """Set a sequence of values that validate_n_batches will return."""
@@ -32,7 +36,9 @@ class _DummyTuner(SmoothAdaptationTuner):
         self._validate_idx = 0
 
     def _patch_validate(self):
-        """Replace trainer.validate_n_batches with a deterministic sequence."""
+        """Replace trainer.validate_n_batches with a deterministic sequence
+        and stub out train_steps_until_target so only _adaptation's own
+        validate_n_batches call consumes from the sequence."""
         tuner = self
 
         def _mock_validate_n_batches(n):
@@ -43,6 +49,7 @@ class _DummyTuner(SmoothAdaptationTuner):
             return tuner._validate_sequence[-1] if tuner._validate_sequence else 0.5
 
         self.trainer.validate_n_batches = _mock_validate_n_batches
+        self.trainer.train_steps_until_target = lambda *a, **kw: None
 
 
 class TestRollback:
@@ -56,29 +63,31 @@ class TestRollback:
         tuner._rollback_tolerance = 0.05
         return tuner
 
-    def test_no_rollback_when_accuracy_holds(self, setup):
-        """If post_acc >= pre_acc - margin, no rollback occurs."""
+    def test_no_rollback_when_accuracy_above_threshold(self, setup):
+        """If post_acc >= target * (1 - tolerance), no rollback occurs."""
         tuner = setup
-        tuner.set_validate_sequence([0.80, 0.78])
+        # threshold = 0.9 * (1 - 0.05) = 0.855
+        tuner.set_validate_sequence([0.87])
         tuner._patch_validate()
 
-        states_before = {k: v.clone() for k, v in tuner.model.state_dict().items()}
-
-        tuner._adaptation(0.5)
+        result = tuner._adaptation(0.5)
 
         assert tuner.update_calls == [0.5]
-        assert tuner.target_adjuster.target_metric <= tuner.target_adjuster.original_metric
+        assert result == 0.5
+        assert tuner._committed_rate == 0.5
 
-    def test_rollback_when_accuracy_drops_badly(self, setup):
-        """If post_acc < pre_acc - margin, state is restored."""
+    def test_rollback_when_accuracy_below_threshold(self, setup):
+        """If post_acc < target * (1 - tolerance), state is restored."""
         tuner = setup
-        tuner.set_validate_sequence([0.80, 0.10])
+        # threshold = 0.855; post_acc = 0.10 → rollback
+        tuner.set_validate_sequence([0.10])
         tuner._patch_validate()
 
         pre_state = {k: v.clone() for k, v in tuner.model.state_dict().items()}
 
-        tuner._adaptation(0.5)
+        result = tuner._adaptation(0.5)
 
+        assert result == 0.0, "Should return committed_rate (0.0) on rollback"
         for k, v in tuner.model.state_dict().items():
             assert torch.allclose(v, pre_state[k], atol=1e-6), (
                 f"Parameter {k} should be restored after rollback"
@@ -88,9 +97,8 @@ class TestRollback:
         """On rollback the model state is restored to pre-cycle, so the target
         adjuster must not be called at all -- the target stays exactly as it was."""
         tuner = setup
-        pre_acc = 0.80
-        catastrophic_acc = 0.01
-        tuner.set_validate_sequence([pre_acc, catastrophic_acc])
+        # threshold = 0.855; post_acc = 0.01 → rollback
+        tuner.set_validate_sequence([0.01])
         tuner._patch_validate()
 
         original_target = tuner.target_adjuster.target_metric
@@ -102,23 +110,26 @@ class TestRollback:
             f"Expected {original_target}, got {tuner.target_adjuster.target_metric}"
         )
 
-    def test_rollback_margin_scales_with_target(self, setup):
-        """The margin = target * tolerance, so higher targets allow larger absolute margins."""
+    def test_rollback_threshold_is_target_based(self, setup):
+        """Rollback uses target * (1 - tolerance), not pre_acc - margin."""
         tuner = setup
         tuner._rollback_tolerance = 0.1
-        target = tuner._get_target()
-        margin = target * 0.1
+        # threshold = 0.9 * (1 - 0.1) = 0.81
 
-        tuner.set_validate_sequence([0.80, 0.80 - margin + 0.001])
+        # Just above threshold → no rollback
+        tuner.set_validate_sequence([0.82])
         tuner._patch_validate()
+        result = tuner._adaptation(0.5)
+        assert result == 0.5
 
-        pre_state = {k: v.clone() for k, v in tuner.model.state_dict().items()}
-        tuner._adaptation(0.5)
-
+        # Below threshold for the (decayed) target → rollback
         tuner._validate_idx = 0
-        tuner.set_validate_sequence([0.80, 0.80 - margin - 0.01])
+        decayed_target = tuner.target_adjuster.get_target()
+        threshold = decayed_target * (1.0 - 0.1)
+        tuner.set_validate_sequence([threshold - 0.01])
         tuner._patch_validate()
-        tuner._adaptation(0.5)
+        result = tuner._adaptation(0.6)
+        assert result == 0.5  # rolled back to last committed rate
 
 
 class TestToleranceSafetyFactor:
