@@ -48,15 +48,15 @@ class TestTuningBudget:
             val_set_size=3000, val_batch_size=128,
         )
         total_val_batches = 3000 // 128  # 23
-        assert b.eval_n_batches == max(b.validation_steps, min(128, total_val_batches))
+        assert b.eval_n_batches == max(b.validation_steps, total_val_batches)
         assert b.eval_n_batches >= b.validation_steps
 
-    def test_eval_n_batches_capped_at_128_for_large_val(self):
+    def test_eval_n_batches_uses_full_val_set(self):
         b = TuningBudget.from_dataset(
             1_000_000, 16,
             val_set_size=64000, val_batch_size=16,
         )
-        assert b.eval_n_batches == 128
+        assert b.eval_n_batches == 64000 // 16  # full validation set
 
     def test_tuning_budget_from_pipeline_uses_config_scale(self):
         factory = MockDataProviderFactory()

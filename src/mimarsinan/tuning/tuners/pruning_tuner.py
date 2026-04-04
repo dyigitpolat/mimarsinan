@@ -13,7 +13,7 @@ from mimarsinan.transformations.pruning import (
     apply_pruning_masks,
     compute_masks_from_importance,
 )
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner, CATASTROPHIC_DROP_FACTOR
 
 
 class PruningTuner(SmoothAdaptationTuner):
@@ -141,7 +141,7 @@ class PruningTuner(SmoothAdaptationTuner):
         instant_acc = self._update_and_evaluate(rate)
 
         # Fast-fail
-        catastrophic_floor = self._get_target() * 0.1
+        catastrophic_floor = self._get_target() * CATASTROPHIC_DROP_FACTOR
         if instant_acc is not None and float(instant_acc) < catastrophic_floor:
             self._restore_state(pre_state)
             return self._committed_rate
