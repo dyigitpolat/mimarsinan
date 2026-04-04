@@ -74,11 +74,20 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
                 )
 
     def _adaptation(self, rate):
+        """Recovery training at a given rate, with rollback."""
         self.pipeline.reporter.report(self.name, rate)
         self.pipeline.reporter.report("Adaptation target", self._get_target())
-        self.trainer.perceptron_transformation = self._mixed_transform(rate)
 
-        self._update_and_evaluate(rate)
+        pre_state = self._clone_state()
+
+        self.trainer.perceptron_transformation = self._mixed_transform(rate)
+        instant_acc = self._update_and_evaluate(rate)
+
+        # Fast-fail
+        catastrophic_floor = self._get_target() * 0.1
+        if instant_acc is not None and float(instant_acc) < catastrophic_floor:
+            self._restore_state(pre_state)
+            return self._committed_rate
 
         lr = self._find_lr()
         self.trainer.train_steps_until_target(
@@ -91,5 +100,13 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
             patience=3,
         )
 
-        acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
-        self.target_adjuster.update_target(acc)
+        post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+
+        threshold = self._get_target() * (1.0 - self._rollback_tolerance)
+        if post_acc < threshold:
+            self._restore_state(pre_state)
+            return self._committed_rate
+        else:
+            self.target_adjuster.update_target(post_acc)
+            self._committed_rate = rate
+            return rate

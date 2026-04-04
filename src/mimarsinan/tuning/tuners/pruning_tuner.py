@@ -6,8 +6,6 @@ weights towards zero for that cycle. Unpruned weights are left free to train
 and heal the network capacity loss.
 """
 
-import copy
-
 import torch
 
 from mimarsinan.transformations.pruning import (
@@ -133,9 +131,21 @@ class PruningTuner(SmoothAdaptationTuner):
         return self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
     def _adaptation(self, rate):
+        """Recovery training at a given prune rate, with rollback."""
         rate = min(max(rate, 0.0), 1.0)
         self.pipeline.reporter.report("Tuning Rate", rate)
-        self._update_and_evaluate(rate)
+        self.pipeline.reporter.report("Adaptation target", self._get_target())
+
+        pre_state = self._clone_state()
+
+        instant_acc = self._update_and_evaluate(rate)
+
+        # Fast-fail
+        catastrophic_floor = self._get_target() * 0.1
+        if instant_acc is not None and float(instant_acc) < catastrophic_floor:
+            self._restore_state(pre_state)
+            return self._committed_rate
+
         target_row_masks, target_col_masks = self._get_masks(rate)
         hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
         self.trainer.train_steps_until_target(
@@ -149,16 +159,21 @@ class PruningTuner(SmoothAdaptationTuner):
         )
         for hook in hooks:
             hook.remove()
+
         self._update_and_evaluate(rate)
-        acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
-        self.target_adjuster.update_target(acc)
+        post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
-    def run(self, max_cycles=None):
+        threshold = self._get_target() * (1.0 - self._rollback_tolerance)
+        if post_acc < threshold:
+            self._restore_state(pre_state)
+            return self._committed_rate
+        else:
+            self.target_adjuster.update_target(post_acc)
+            self._committed_rate = rate
+            return rate
+
+    def _init_original_weights(self):
         perceptrons = self.model.get_perceptrons()
-
-        initial_acc = self.trainer.validate()
-        print(f"[PruningTuner] Initial accuracy: {initial_acc:.4f}")
-
         self.original_weights = []
         self.original_biases = []
         for p in perceptrons:
@@ -168,43 +183,19 @@ class PruningTuner(SmoothAdaptationTuner):
             else:
                 self.original_biases.append(None)
 
-        from mimarsinan.tuning.basic_interpolation import BasicInterpolation
-        from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
-        from mimarsinan.tuning.tolerance_calibration import (
-            initial_tolerance_fn_for_pipeline_if_enabled,
-        )
-        from mimarsinan.tuning.tuning_budget import min_step_for_smooth_adaptation
+    def run(self, max_cycles=None):
+        perceptrons = self.model.get_perceptrons()
 
-        initial_tol_fn = initial_tolerance_fn_for_pipeline_if_enabled(
-            self.pipeline.config,
-            clone_state=lambda: copy.deepcopy(self.model.state_dict()),
-            restore_state=lambda state: self.model.load_state_dict(state),
-            evaluate_at_rate=self._update_and_evaluate,
-            validate_fn=lambda: self.trainer.validate_n_batches(self._budget.eval_n_batches),
-            train_validation_epochs=lambda lr, n, w: self.trainer.train_validation_epochs(lr, n, w),
-            lr_probe=self.lr,
-            before_cycle=self._before_cycle,
-            train_n_steps=lambda lr, n: self.trainer.train_n_steps(lr, n),
-            train_probe_steps=self._budget.tolerance_probe_steps,
-        )
+        initial_acc = self.trainer.validate()
+        print(f"[PruningTuner] Initial accuracy: {initial_acc:.4f}")
 
-        tolerance = initial_tol_fn() if initial_tol_fn else 0.05
+        self._init_original_weights()
 
-        adapter = SmartSmoothAdaptation(
-            self._adaptation,
-            lambda: copy.deepcopy(self.model.state_dict()),
-            lambda state: self.model.load_state_dict(state),
-            self._update_and_evaluate,
-            [BasicInterpolation(0.0, 1.0)],
-            get_target=self._get_target,
-            tolerance=tolerance,
-            min_step=min_step_for_smooth_adaptation(self.pipeline, self._budget),
-            before_cycle=self._before_cycle,
-        )
-
+        # Use base class adaptation loop
         print("[PruningTuner] Starting fractional discrete adaptation...")
-        adapter.adapt_smoothly(max_cycles=max_cycles)
+        super().run()
 
+        # Final commit at full prune rate
         self._update_and_evaluate(1.0)
 
         final_acc = self.trainer.validate()

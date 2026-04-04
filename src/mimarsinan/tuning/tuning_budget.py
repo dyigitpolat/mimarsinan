@@ -23,6 +23,7 @@ class TuningBudget:
     lr_steps_per_probe: int
     lr_num_probes: int
     tolerance_probe_steps: int
+    max_lr_exploration_steps: int = 0
 
     @staticmethod
     def from_dataset(
@@ -40,9 +41,9 @@ class TuningBudget:
         max_training_steps = max(1, int(float(steps_per_epoch) * float(budget_scale) * 3))
         validation_steps = max(1, min(32, check_interval))
 
-        lr_num_probes = max(2, int(math.sqrt(float(check_interval))))
-        lr_steps_per_probe = max(1, check_interval)
-        tolerance_probe_steps = check_interval
+        lr_num_probes = min(8, max(2, int(math.sqrt(float(check_interval)))))
+        lr_steps_per_probe = min(50, max(1, check_interval))
+        tolerance_probe_steps = min(50, check_interval)
 
         if val_set_size is not None and val_batch_size is not None:
             total_val_batches = max(1, int(val_set_size) // max(1, int(val_batch_size)))
@@ -58,6 +59,7 @@ class TuningBudget:
             lr_steps_per_probe=lr_steps_per_probe,
             lr_num_probes=lr_num_probes,
             tolerance_probe_steps=tolerance_probe_steps,
+            max_lr_exploration_steps=lr_steps_per_probe * lr_num_probes,
         )
 
     @staticmethod

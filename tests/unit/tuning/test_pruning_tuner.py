@@ -191,8 +191,12 @@ class TestPruningTuner:
                 "train_one_step": lambda self, lr: None,
                 "train_until_target_accuracy": lambda self, *a: None,
                 "train_steps_until_target": lambda self, *a, **k: None,
+                "test": lambda self: 0.5,
+                "train_n_steps": lambda self, lr, n: None,
             },
         )()
+        tuner.trainer.model = model
+        tuner.trainer.report_function = lambda *a: None
         tuner.trainer.validation_loader = [(torch.randn(2, 1, 8, 8), torch.zeros(2, dtype=torch.long))]
         collect_calls = []
 

@@ -20,9 +20,6 @@ from mimarsinan.tuning.learning_rate_explorer import (
     restore_state_for_trainer,
 )
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
-from mimarsinan.tuning.tolerance_calibration import (
-    initial_tolerance_fn_for_pipeline_if_enabled,
-)
 from mimarsinan.tuning.tuning_budget import (
     min_step_for_smooth_adaptation,
     tuning_budget_from_pipeline,
@@ -151,7 +148,13 @@ class SmoothAdaptationTuner(TunerBase):
 
         pre_state = self._clone_state()
 
-        self._update_and_evaluate(rate)
+        instant_acc = self._update_and_evaluate(rate)
+
+        # Fast-fail: skip expensive LR exploration + training if model collapsed
+        catastrophic_floor = self._get_target() * 0.1
+        if instant_acc is not None and float(instant_acc) < catastrophic_floor:
+            self._restore_state(pre_state)
+            return self._committed_rate
 
         lr = self._find_lr()
         self.trainer.train_steps_until_target(
@@ -179,9 +182,9 @@ class SmoothAdaptationTuner(TunerBase):
         """Continue gradual adaptation from committed rate toward 1.0.
 
         When the main SmartSmoothAdaptation loop exits before reaching
-        rate=1.0 (e.g. rate_ceiling narrowed), this drives the remaining
-        distance using the same _adaptation() mechanism with rollback so
-        that the final commit is not a catastrophic one-shot jump.
+        rate=1.0, this drives the remaining distance using the same
+        _adaptation() mechanism with rollback so that the final commit
+        is not a catastrophic one-shot jump.  Capped to avoid runaway cost.
         """
         current = self._committed_rate
         if current >= 1.0 - 1e-6:
@@ -189,7 +192,7 @@ class SmoothAdaptationTuner(TunerBase):
 
         remaining = 1.0 - current
         step = remaining / 4.0
-        max_attempts = 20
+        max_attempts = min(20, max(4, int(1.0 / max(step, 1e-6))))
         attempts = 0
 
         while current < 1.0 - 1e-6 and attempts < max_attempts:
@@ -209,28 +212,9 @@ class SmoothAdaptationTuner(TunerBase):
     def run(self):
         self._committed_rate = 0.0
 
-        initial_tol_fn = initial_tolerance_fn_for_pipeline_if_enabled(
-            self.pipeline.config,
-            clone_state=self._clone_state,
-            restore_state=self._restore_state,
-            evaluate_at_rate=self._update_and_evaluate,
-            validate_fn=lambda: self.trainer.validate_n_batches(
-                self._budget.eval_n_batches
-            ),
-            train_validation_epochs=lambda lr, n, w: self.trainer.train_validation_epochs(
-                lr, n, w
-            ),
-            lr_probe=self._find_lr,
-            train_n_steps=lambda lr, n: self.trainer.train_n_steps(lr, n),
-            train_probe_steps=self._budget.tolerance_probe_steps,
-        )
-
-        calibrated = (
-            initial_tol_fn()
-            if initial_tol_fn
-            else float(self.pipeline.config.get("degradation_tolerance", 0.05))
-        )
-        effective_tolerance = calibrated * TOLERANCE_SAFETY_FACTOR
+        effective_tolerance = float(
+            self.pipeline.config.get("degradation_tolerance", 0.05)
+        ) * TOLERANCE_SAFETY_FACTOR
         self._rollback_tolerance = effective_tolerance
 
         ms = min_step_for_smooth_adaptation(self.pipeline, self._budget)
@@ -241,12 +225,8 @@ class SmoothAdaptationTuner(TunerBase):
 
         adapter = SmartSmoothAdaptation(
             self._adaptation,
-            self._clone_state,
-            self._restore_state,
-            self._update_and_evaluate,
             interpolators=[BasicInterpolation(0.0, 1.0)],
             get_target=self._get_target,
-            tolerance=effective_tolerance,
             min_step=ms,
             before_cycle=self._before_cycle,
         )
