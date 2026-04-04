@@ -48,6 +48,7 @@ class LRRangeFinder:
         num_probes: int,
         steps_per_probe: int,
         validate_fn: Callable[[], float],
+        max_total_steps: int | None = None,
     ):
         self.trainer = trainer
         self.clone_state = clone_state
@@ -57,6 +58,7 @@ class LRRangeFinder:
         self.num_probes = max(2, int(num_probes))
         self.steps_per_probe = max(1, int(steps_per_probe))
         self.validate_fn = validate_fn
+        self.max_total_steps = max_total_steps
 
     def find_best_lr(self) -> float:
         state = self.clone_state()
@@ -65,15 +67,24 @@ class LRRangeFinder:
 
             accs: list[float] = []
             lrs: list[float] = []
+            cumulative_steps = 0
             for i in range(self.num_probes):
                 self.restore_state(state)
                 lr = self.lr_min * (self.lr_max / self.lr_min) ** (
                     i / max(1, self.num_probes - 1)
                 )
                 self.trainer.train_n_steps(lr, self.steps_per_probe)
+                cumulative_steps += self.steps_per_probe
                 acc = float(self.validate_fn())
                 accs.append(acc)
                 lrs.append(float(lr))
+
+                # Early exit: model collapsed — higher LRs will be worse
+                if acc < baseline * 0.1 and i > 0:
+                    break
+                # Budget cap
+                if self.max_total_steps and cumulative_steps >= self.max_total_steps:
+                    break
 
             sm = _smooth(accs)
             best_val = max(sm)
@@ -120,4 +131,5 @@ def find_lr_range_for_trainer(
         num_probes=budget.lr_num_probes,
         steps_per_probe=budget.lr_steps_per_probe,
         validate_fn=validate_fn,
+        max_total_steps=budget.max_lr_exploration_steps,
     ).find_best_lr()

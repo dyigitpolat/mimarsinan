@@ -25,7 +25,7 @@ class _DummyTuner(SmoothAdaptationTuner):
 
     def _update_and_evaluate(self, rate):
         self.update_calls.append(rate)
-        return 0.0
+        return 0.5  # non-catastrophic instant accuracy (above 10% of target)
 
     def _find_lr(self):
         return 0.001
