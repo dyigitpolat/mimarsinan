@@ -183,6 +183,32 @@ class PruningTuner(SmoothAdaptationTuner):
             else:
                 self.original_biases.append(None)
 
+    def _force_to_full_rate(self):
+        """Apply full pruning with LR finding and recovery training.
+
+        Called when smooth adaptation + _continue_to_full_rate couldn't
+        reach rate 1.0. Pruning MUST complete, so no rollback.
+        """
+        self._refresh_pruning_importance()
+        self._update_and_evaluate(1.0)
+
+        target_row_masks, target_col_masks = self._get_masks(1.0)
+        hooks = self._register_hooks(target_row_masks, target_col_masks, 1.0)
+        lr = self._find_lr()
+        self.trainer.train_steps_until_target(
+            lr,
+            self._budget.max_training_steps,
+            self._get_target(),
+            0,
+            validation_n_batches=self._budget.validation_steps,
+            check_interval=self._budget.check_interval,
+            patience=3,
+        )
+        for hook in hooks:
+            hook.remove()
+        self._update_and_evaluate(1.0)
+        self._committed_rate = 1.0
+
     def run(self, max_cycles=None):
         perceptrons = self.model.get_perceptrons()
 
@@ -195,8 +221,11 @@ class PruningTuner(SmoothAdaptationTuner):
         print("[PruningTuner] Starting fractional discrete adaptation...")
         super().run()
 
-        # Final commit at full prune rate
-        self._update_and_evaluate(1.0)
+        # Ensure pruning reaches rate 1.0
+        if self._committed_rate < 1.0 - 1e-6:
+            self._force_to_full_rate()
+        else:
+            self._update_and_evaluate(1.0)  # Clean re-apply
 
         final_acc = self.trainer.validate()
         print(f"[PruningTuner] Final overall accuracy: {final_acc:.4f}")
