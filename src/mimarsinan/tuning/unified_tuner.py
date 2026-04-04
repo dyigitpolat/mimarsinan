@@ -35,6 +35,15 @@ boundary as the operating tolerance provides a margin of safety so that
 step search stays conservative and rollback triggers reliably.
 """
 
+CATASTROPHIC_DROP_FACTOR = 0.8
+"""Fast-fail threshold as a fraction of the adaptation target.
+
+If the instant accuracy after applying a transformation drops below
+``target * CATASTROPHIC_DROP_FACTOR``, the cycle is abandoned immediately
+without wasting compute on LR exploration and recovery training.
+A value of 0.8 means any >20% instant drop is treated as unrecoverable.
+"""
+
 
 class TunerBase:
     """Shared infrastructure for all tuners (except CoreFlowTuner).
@@ -72,7 +81,7 @@ class TunerBase:
             self.pipeline,
             self._budget,
             validate_fn=lambda: self.trainer.validate_n_batches(
-                self._budget.validation_steps
+                self._budget.eval_n_batches
             ),
         )
 
@@ -151,7 +160,7 @@ class SmoothAdaptationTuner(TunerBase):
         instant_acc = self._update_and_evaluate(rate)
 
         # Fast-fail: skip expensive LR exploration + training if model collapsed
-        catastrophic_floor = self._get_target() * 0.1
+        catastrophic_floor = self._get_target() * CATASTROPHIC_DROP_FACTOR
         if instant_acc is not None and float(instant_acc) < catastrophic_floor:
             self._restore_state(pre_state)
             return self._committed_rate
@@ -231,6 +240,9 @@ class SmoothAdaptationTuner(TunerBase):
             before_cycle=self._before_cycle,
         )
         adapter.adapt_smoothly(max_cycles=max_cycles)
+
+        if self._committed_rate < 1.0 - 1e-6:
+            self._continue_to_full_rate()
 
         return self._after_run()
 

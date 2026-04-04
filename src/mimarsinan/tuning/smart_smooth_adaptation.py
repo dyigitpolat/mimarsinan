@@ -41,7 +41,7 @@ class SmartSmoothAdaptation:
     def adapt_smoothly(self, max_cycles: Optional[int] = None) -> None:
         t = 0.0
         cycles = 0
-        step = 1.0  # start aggressive; fast-fail in _adaptation handles bad rates cheaply
+        step = 0.5  # moderate start; reaches 1.0 in 3-4 cycles via 1.5x growth
 
         while t < 1.0 - 1e-6 and (not max_cycles or cycles < max_cycles):
             if step < self.min_step:

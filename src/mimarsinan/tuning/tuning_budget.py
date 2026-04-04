@@ -47,7 +47,7 @@ class TuningBudget:
 
         if val_set_size is not None and val_batch_size is not None:
             total_val_batches = max(1, int(val_set_size) // max(1, int(val_batch_size)))
-            eval_n_batches = max(validation_steps, min(128, total_val_batches))
+            eval_n_batches = max(validation_steps, total_val_batches)
         else:
             eval_n_batches = validation_steps
 

@@ -130,12 +130,12 @@ class TestSmartSmoothAdaptation:
         ssa = _make_ssa(adapt_fn, min_step=0.01)
         ssa.adapt_smoothly(max_cycles=20)
 
-        # First attempt is at 1.0, rollback → step halves to 0.5
-        # Second at 0.5, rollback → step halves to 0.25
-        # Third at 0.25, commit
-        assert proposed_rates[0] == pytest.approx(1.0)
-        assert proposed_rates[1] == pytest.approx(0.5)
-        assert proposed_rates[2] == pytest.approx(0.25)
+        # First attempt is at 0.5, rollback → step halves to 0.25
+        # Second at 0.25, rollback → step halves to 0.125
+        # Third at 0.125, commit
+        assert proposed_rates[0] == pytest.approx(0.5)
+        assert proposed_rates[1] == pytest.approx(0.25)
+        assert proposed_rates[2] == pytest.approx(0.125)
 
     def test_multiple_interpolators(self):
         received = []
@@ -166,5 +166,5 @@ class TestSmartSmoothAdaptation:
         ssa = _make_ssa(adapt_fn, min_step=0.1)
         ssa.adapt_smoothly(max_cycles=100)
 
-        # step starts at 1.0, halves: 0.5, 0.25, 0.125, 0.0625 < 0.1 → stop
-        assert call_count[0] <= 4
+        # step starts at 0.5, halves: 0.25, 0.125, 0.0625 < 0.1 → stop
+        assert call_count[0] <= 3

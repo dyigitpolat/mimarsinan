@@ -9,6 +9,7 @@ from conftest import MockPipeline, make_tiny_supermodel, default_config
 from mimarsinan.tuning.unified_tuner import (
     SmoothAdaptationTuner,
     TOLERANCE_SAFETY_FACTOR,
+    CATASTROPHIC_DROP_FACTOR,
 )
 
 
@@ -25,7 +26,7 @@ class _DummyTuner(SmoothAdaptationTuner):
 
     def _update_and_evaluate(self, rate):
         self.update_calls.append(rate)
-        return 0.5  # non-catastrophic instant accuracy (above 10% of target)
+        return 0.8  # non-catastrophic instant accuracy (above 80% of target)
 
     def _find_lr(self):
         return 0.001
@@ -136,6 +137,10 @@ class TestToleranceSafetyFactor:
     def test_safety_factor_value(self):
         """TOLERANCE_SAFETY_FACTOR must be 0.5 (half the calibrated tolerance)."""
         assert TOLERANCE_SAFETY_FACTOR == 0.5
+
+    def test_catastrophic_drop_factor_value(self):
+        """CATASTROPHIC_DROP_FACTOR must be 0.8 (fast-fail below 80% of target)."""
+        assert CATASTROPHIC_DROP_FACTOR == 0.8
 
     def test_safety_factor_applied_in_run(self, tmp_path):
         """run() must scale calibrated tolerance by TOLERANCE_SAFETY_FACTOR

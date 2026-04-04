@@ -25,6 +25,15 @@ import torch
 import torch.nn.functional as F
 
 
+def _broadcast_scale_to_dim(scale: torch.Tensor, target_dim: int) -> torch.Tensor:
+    """Expand a 1-D scale vector to *target_dim* using repeat or mean-fill."""
+    if scale.shape[0] == target_dim:
+        return scale
+    if target_dim % scale.shape[0] == 0:
+        return scale.repeat_interleave(target_dim // scale.shape[0])
+    return torch.full((target_dim,), scale.mean().item(), dtype=scale.dtype, device=scale.device)
+
+
 # ---------------------------------------------------------------------------
 # WeightBank: Shared weight storage for conv-style layers
 # ---------------------------------------------------------------------------
@@ -487,9 +496,13 @@ class ComputeOp(IRNode):
         scale_a = self.params.get("scale_a", None)
         scale_b = self.params.get("scale_b", None)
         if scale_a is not None and scale_b is not None:
-            sa = torch.tensor(scale_a, dtype=x.dtype, device=x.device).unsqueeze(0)
-            sb = torch.tensor(scale_b, dtype=x.dtype, device=x.device).unsqueeze(0)
-            return sa * a + sb * b
+            sa = _broadcast_scale_to_dim(
+                torch.tensor(scale_a, dtype=x.dtype, device=x.device), half
+            )
+            sb = _broadcast_scale_to_dim(
+                torch.tensor(scale_b, dtype=x.dtype, device=x.device), half
+            )
+            return sa.unsqueeze(0) * a + sb.unsqueeze(0) * b
         return a + b
 
     def _exec_mean(self, x: torch.Tensor) -> torch.Tensor:
