@@ -58,7 +58,7 @@ class TestHierarchy:
 
 
 class TestAdaptationTargetAdjusterDecay:
-    """Proportional decay with midpoint pull for large misses."""
+    """Proportional decay for misses, growth for hits."""
 
     def test_growth_when_above_target_after_decay(self):
         from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
@@ -75,14 +75,12 @@ class TestAdaptationTargetAdjusterDecay:
             adj.update_target(1.0)
         assert adj.target_metric <= 0.90
 
-    def test_midpoint_pull_for_large_miss(self):
-        """With a low floor ratio, the midpoint should dominate over decay."""
+    def test_decay_uses_multiplicative_factor(self):
+        """A miss applies pure multiplicative decay, regardless of miss size."""
         from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
         adj = AdaptationTargetAdjuster(0.90, floor_ratio=0.1)
         adj.update_target(0.50)
-        midpoint = (0.90 + 0.50) / 2.0
-        decayed = 0.90 * adj.decay
-        expected = max(min(decayed, midpoint), adj.floor)
+        expected = max(0.90 * adj.decay, adj.floor)
         assert adj.target_metric == pytest.approx(expected)
 
     def test_target_never_exceeds_original(self):
@@ -99,19 +97,18 @@ class TestAdaptationTargetAdjusterDecay:
             adj.update_target(0.0)
         assert adj.target_metric >= adj.floor
 
-    def test_midpoint_faster_than_pure_multiplicative(self):
-        """When the miss is large, midpoint pull should produce a lower
-        target than pure multiplicative decay (before floor)."""
+    def test_large_miss_same_decay_as_small_miss(self):
+        """Decay rate is independent of miss magnitude — only the decay
+        factor matters, preventing aggressive target ratcheting."""
         from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
-        adj = AdaptationTargetAdjuster(0.90, floor_ratio=0.1)
-        adj.update_target(0.10)
-        midpoint = (0.90 + 0.10) / 2.0
-        decayed = 0.90 * adj.decay
-        assert midpoint < decayed, "midpoint should be lower than decayed"
-        assert adj.target_metric == pytest.approx(max(midpoint, adj.floor))
+        adj_small = AdaptationTargetAdjuster(0.90, floor_ratio=0.1)
+        adj_large = AdaptationTargetAdjuster(0.90, floor_ratio=0.1)
+        adj_small.update_target(0.85)  # small miss
+        adj_large.update_target(0.10)  # large miss
+        assert adj_small.target_metric == pytest.approx(adj_large.target_metric)
 
-    def test_floor_limits_midpoint_pull(self):
-        """Floor ratio limits how low the target can go via midpoint pull."""
+    def test_floor_limits_decay(self):
+        """Floor ratio limits how low the target can go via decay."""
         from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
         adj = AdaptationTargetAdjuster(0.90, floor_ratio=0.90)
         adj.update_target(0.10)

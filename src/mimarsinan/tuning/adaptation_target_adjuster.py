@@ -36,9 +36,7 @@ class AdaptationTargetAdjuster:
                 self.target_metric * self.growth, self.original_metric
             )
         else:
-            decayed = self.target_metric * self.decay
-            midpoint = (self.target_metric + new_metric) / 2.0
-            self.target_metric = min(decayed, midpoint)
+            self.target_metric = self.target_metric * self.decay
         self.target_metric = max(self.target_metric, self.floor)
         self.target_metric = min(self.target_metric, self.original_metric)
 
