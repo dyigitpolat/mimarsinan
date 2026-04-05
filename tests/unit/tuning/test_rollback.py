@@ -8,7 +8,6 @@ from conftest import MockPipeline, make_tiny_supermodel, default_config
 
 from mimarsinan.tuning.unified_tuner import (
     SmoothAdaptationTuner,
-    TOLERANCE_SAFETY_FACTOR,
     CATASTROPHIC_DROP_FACTOR,
 )
 
@@ -133,26 +132,17 @@ class TestRollback:
         assert result == 0.5  # rolled back to last committed rate
 
 
-class TestToleranceSafetyFactor:
-    def test_safety_factor_value(self):
-        """TOLERANCE_SAFETY_FACTOR must be 0.5 (half the calibrated tolerance)."""
-        assert TOLERANCE_SAFETY_FACTOR == 0.5
-
-    def test_catastrophic_drop_factor_value(self):
-        """CATASTROPHIC_DROP_FACTOR must be 0.8 (fast-fail below 80% of target)."""
-        assert CATASTROPHIC_DROP_FACTOR == 0.8
-
-    def test_safety_factor_applied_in_run(self, tmp_path):
-        """run() must scale calibrated tolerance by TOLERANCE_SAFETY_FACTOR
-        before passing it to SmartSmoothAdaptation and _rollback_tolerance."""
+class TestDirectToleranceSemantic:
+    def test_tolerance_used_directly(self, tmp_path):
+        """degradation_tolerance is used directly as rollback tolerance."""
         cfg = default_config()
+        cfg["degradation_tolerance"] = 0.08
         cfg["tuning_budget_scale"] = 1.0
         pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
         model = make_tiny_supermodel()
         tuner = _DummyTuner(pipeline, model, target_accuracy=0.9, lr=0.001)
+        assert tuner._rollback_tolerance == pytest.approx(0.08)
 
-        calibrated = 0.10
-        expected = calibrated * TOLERANCE_SAFETY_FACTOR
-
-        tuner._rollback_tolerance = expected
-        assert tuner._rollback_tolerance == pytest.approx(expected)
+    def test_catastrophic_drop_factor_value(self):
+        """CATASTROPHIC_DROP_FACTOR must be 0.8 (fast-fail below 80% of target)."""
+        assert CATASTROPHIC_DROP_FACTOR == 0.8

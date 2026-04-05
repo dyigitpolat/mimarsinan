@@ -13,7 +13,7 @@
   "deployment_parameters": {
     "lr": 0.001,
     "training_epochs": 50,
-    "degradation_tolerance": 0.9,
+    "degradation_tolerance": 0.1,
     "configuration_mode": "user",
     "model_type": "simple_mlp",
     "nas_cycles": 2,

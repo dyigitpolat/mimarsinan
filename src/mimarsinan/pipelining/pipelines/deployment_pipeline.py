@@ -217,7 +217,7 @@ class DeploymentPipeline(Pipeline):
         "tuner_smooth_tolerance_max": 0.15,
         "tuner_smooth_tolerance_baseline_epsilon": 1e-9,
         "tuner_smooth_tolerance_lr_scale": 1.0,
-        "degradation_tolerance": 0.95,
+        "degradation_tolerance": 0.05,
         "model_config_mode": "user",
         "hw_config_mode": "fixed",
         "spiking_mode": "rate",
@@ -278,8 +278,6 @@ class DeploymentPipeline(Pipeline):
         self.config["device"] = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
-
-        self.tolerance = self.config["degradation_tolerance"]
 
         # Spiking-mode defaults.
         # The user only needs to set ``spiking_mode``; firing_mode,

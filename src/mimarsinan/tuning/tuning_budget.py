@@ -33,6 +33,7 @@ class TuningBudget:
         *,
         val_set_size: int | None = None,
         val_batch_size: int | None = None,
+        degradation_tolerance: float = 0.05,
     ) -> TuningBudget:
         """All fields derived from ``check_interval = sqrt(SPE)``."""
         bs = max(1, int(batch_size))
@@ -47,7 +48,10 @@ class TuningBudget:
 
         if val_set_size is not None and val_batch_size is not None:
             total_val_batches = max(1, int(val_set_size) // max(1, int(val_batch_size)))
-            eval_n_batches = max(validation_steps, total_val_batches)
+            d = max(0.01, float(degradation_tolerance))
+            min_eval_samples = max(256, math.ceil(4.0 / (d * d)))
+            stat_batches = math.ceil(min_eval_samples / max(1, int(val_batch_size)))
+            eval_n_batches = max(validation_steps, min(total_val_batches, stat_batches))
         else:
             eval_n_batches = validation_steps
 
@@ -66,6 +70,7 @@ class TuningBudget:
     def from_data_provider(
         data_provider: DataProvider,
         budget_scale: float = 1.0,
+        degradation_tolerance: float = 0.05,
     ) -> TuningBudget:
         return TuningBudget.from_dataset(
             data_provider.get_training_set_size(),
@@ -73,6 +78,7 @@ class TuningBudget:
             budget_scale,
             val_set_size=data_provider.get_validation_set_size(),
             val_batch_size=data_provider.get_validation_batch_size(),
+            degradation_tolerance=degradation_tolerance,
         )
 
 
@@ -82,7 +88,9 @@ def tuning_budget_from_pipeline(pipeline) -> TuningBudget:
 
     dp = DataLoaderFactory(pipeline.data_provider_factory).create_data_provider()
     return TuningBudget.from_data_provider(
-        dp, float(pipeline.config.get("tuning_budget_scale", 1.0))
+        dp,
+        float(pipeline.config.get("tuning_budget_scale", 1.0)),
+        degradation_tolerance=float(pipeline.config.get("degradation_tolerance", 0.05)),
     )
 
 

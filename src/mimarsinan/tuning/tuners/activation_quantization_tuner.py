@@ -21,7 +21,6 @@ class ActivationQuantizationTuner(SmoothAdaptationTuner):
         self.adaptation_manager.quantization_rate = rate
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
-        self.trainer.train_one_step(0)
         return self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
     def _after_run(self):
