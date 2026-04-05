@@ -28,7 +28,7 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "tuner_smooth_tolerance_baseline_epsilon": 1e-9,
     "tuner_smooth_tolerance_lr_scale": 1.0,
     "tuner_target_floor_ratio": 0.90,
-    "degradation_tolerance": 0.95,
+    "degradation_tolerance": 0.05,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "rate",

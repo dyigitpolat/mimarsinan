@@ -32,7 +32,7 @@
   "deployment_parameters": {
     "lr": 0.001,
     "training_epochs": 10,
-    "degradation_tolerance": 0.95,
+    "degradation_tolerance": 0.05,
     "configuration_mode": "user",
     "model_type": "torch_sequential_linear",
     "model_config": {

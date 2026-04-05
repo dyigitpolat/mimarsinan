@@ -26,15 +26,6 @@ from mimarsinan.tuning.tuning_budget import (
 )
 
 
-TOLERANCE_SAFETY_FACTOR = 0.5
-"""Fraction of the calibrated tolerance used for step search and rollback.
-
-Calibration discovers the maximum instant accuracy drop from which
-recovery training can restore performance.  Using a fraction of that
-boundary as the operating tolerance provides a margin of safety so that
-step search stays conservative and rollback triggers reliably.
-"""
-
 CATASTROPHIC_DROP_FACTOR = 0.8
 """Fast-fail threshold as a fraction of the adaptation target.
 
@@ -107,7 +98,7 @@ class SmoothAdaptationTuner(TunerBase):
         self._committed_rate = 0.0
         self._rollback_tolerance = float(
             pipeline.config.get("degradation_tolerance", 0.05)
-        ) * TOLERANCE_SAFETY_FACTOR
+        )
 
     def _update_and_evaluate(self, rate):
         """Apply transformation T at *rate* and return a validation metric."""
@@ -221,10 +212,9 @@ class SmoothAdaptationTuner(TunerBase):
     def run(self):
         self._committed_rate = 0.0
 
-        effective_tolerance = float(
+        self._rollback_tolerance = float(
             self.pipeline.config.get("degradation_tolerance", 0.05)
-        ) * TOLERANCE_SAFETY_FACTOR
-        self._rollback_tolerance = effective_tolerance
+        )
 
         ms = min_step_for_smooth_adaptation(self.pipeline, self._budget)
         max_cycles = max(

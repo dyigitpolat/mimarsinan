@@ -12,7 +12,7 @@
     },
     "data_provider_name": "mnist",
     "training_epochs": 20,
-    "degradation_tolerance": 0.9,
+    "degradation_tolerance": 0.1,
     "spiking_mode": "ttfs",
     "spike_generation_mode": "TTFS",
     "firing_mode": "TTFS",
