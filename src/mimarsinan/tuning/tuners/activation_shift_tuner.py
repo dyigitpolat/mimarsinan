@@ -69,5 +69,4 @@ class ActivationShiftTuner(TunerBase):
             patience=3,
         )
         self._final_metric = self.trainer.test()
-        self.target_adjuster.update_target(self._final_metric)
         return self._final_metric

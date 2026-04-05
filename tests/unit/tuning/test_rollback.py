@@ -122,7 +122,7 @@ class TestRollback:
         result = tuner._adaptation(0.5)
         assert result == 0.5
 
-        # Below threshold for the (decayed) target → rollback
+        # Below threshold for the current target → rollback
         tuner._validate_idx = 0
         decayed_target = tuner.target_adjuster.get_target()
         threshold = decayed_target * (1.0 - 0.1)

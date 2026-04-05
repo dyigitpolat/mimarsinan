@@ -174,7 +174,6 @@ class SmoothAdaptationTuner(TunerBase):
             self._restore_state(pre_state)
             return self._committed_rate
         else:
-            self.target_adjuster.update_target(post_acc)
             self._committed_rate = rate
             return rate
 
@@ -216,6 +215,23 @@ class SmoothAdaptationTuner(TunerBase):
             self.pipeline.config.get("degradation_tolerance", 0.05)
         )
 
+        # ------------------------------------------------------------------
+        # One-shot: try full transformation in a single cycle.
+        # For light transformations (clamp, activation, quantization), this
+        # typically succeeds — reducing 5-20 gradual cycles to just one.
+        # For heavy transformations (pruning), instant accuracy drops below
+        # CATASTROPHIC_DROP_FACTOR, triggering fast-fail with full state
+        # restoration and zero wasted compute.
+        # ------------------------------------------------------------------
+        self._before_cycle()
+        self._adaptation(1.0)
+        if self._committed_rate >= 1.0 - 1e-6:
+            return self._after_run()
+
+        # ------------------------------------------------------------------
+        # Gradual fallback: one-shot failed, so use SmartSmoothAdaptation
+        # to incrementally drive rate from committed_rate toward 1.0.
+        # ------------------------------------------------------------------
         ms = min_step_for_smooth_adaptation(self.pipeline, self._budget)
         max_cycles = max(
             10,
