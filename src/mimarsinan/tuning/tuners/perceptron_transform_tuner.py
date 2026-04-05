@@ -107,6 +107,5 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
             self._restore_state(pre_state)
             return self._committed_rate
         else:
-            self.target_adjuster.update_target(post_acc)
             self._committed_rate = rate
             return rate

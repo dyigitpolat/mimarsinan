@@ -307,6 +307,11 @@ class DeploymentPipeline(Pipeline):
             self.config.setdefault("spike_generation_mode", "Deterministic")
             self.config.setdefault("thresholding_mode", "<")
 
+        # Connect degradation_tolerance config to pipeline's step-level assertion.
+        # tolerance = 1 - degradation_tolerance: with degradation_tolerance=0.05,
+        # this gives tolerance=0.95 (allow up to 5% accuracy drop per step).
+        self.tolerance = 1.0 - float(self.config.get("degradation_tolerance", 0.05))
+
     def _display_config(self):
         spiking = self.config.get("spiking_mode", "rate")
         search_mode = derive_search_mode(self.config)
