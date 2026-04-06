@@ -63,8 +63,9 @@ class TestCommitBehavior:
         assert tuner.validate() == metric
         assert tuner.validate() == metric
 
-    def test_floor_derived_from_target(self, setup):
-        """The floor should be target * floor_ratio, as defined by AdaptationTargetAdjuster."""
+    def test_floor_derived_from_degradation_tolerance(self, setup):
+        """The floor should be target * (1 - degradation_tolerance)."""
         tuner, _ = setup
-        expected_floor = 0.9 * 0.90
+        dt = float(tuner.pipeline.config.get("degradation_tolerance", 0.05))
+        expected_floor = 0.9 * (1.0 - dt)
         assert tuner.target_adjuster.floor == pytest.approx(expected_floor, rel=0.01)

@@ -24,6 +24,16 @@ class TuningBudget:
     lr_num_probes: int
     tolerance_probe_steps: int
     max_lr_exploration_steps: int = 0
+    eval_sample_count: int = 0
+
+    def accuracy_se(self) -> float:
+        """Bernoulli worst-case standard error for the evaluation metric.
+
+        ``0.5 / sqrt(n)`` where *n* is the number of samples used by
+        ``validate_n_batches(eval_n_batches)``.  Every accuracy-comparison
+        threshold in the tuning system is a multiple of this quantity.
+        """
+        return 0.5 / math.sqrt(max(1, self.eval_sample_count))
 
     @staticmethod
     def from_dataset(
@@ -47,13 +57,16 @@ class TuningBudget:
         tolerance_probe_steps = min(50, check_interval)
 
         if val_set_size is not None and val_batch_size is not None:
-            total_val_batches = max(1, int(val_set_size) // max(1, int(val_batch_size)))
+            vbs = max(1, int(val_batch_size))
+            total_val_batches = max(1, int(val_set_size) // vbs)
             d = max(0.01, float(degradation_tolerance))
             min_eval_samples = max(256, math.ceil(4.0 / (d * d)))
-            stat_batches = math.ceil(min_eval_samples / max(1, int(val_batch_size)))
+            stat_batches = math.ceil(min_eval_samples / vbs)
             eval_n_batches = max(validation_steps, min(total_val_batches, stat_batches))
+            eval_sample_count = eval_n_batches * vbs
         else:
             eval_n_batches = validation_steps
+            eval_sample_count = eval_n_batches * max(1, bs)
 
         return TuningBudget(
             max_training_steps=max_training_steps,
@@ -64,6 +77,7 @@ class TuningBudget:
             lr_num_probes=lr_num_probes,
             tolerance_probe_steps=tolerance_probe_steps,
             max_lr_exploration_steps=lr_steps_per_probe * lr_num_probes,
+            eval_sample_count=eval_sample_count,
         )
 
     @staticmethod

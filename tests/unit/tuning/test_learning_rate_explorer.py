@@ -55,7 +55,7 @@ class TestLRRangeFinder:
             def __init__(self):
                 self._current_lr = 0.0
 
-            def train_n_steps(self, lr, steps):
+            def train_n_steps(self, lr, steps, **kwargs):
                 self._current_lr = lr
 
         tr = MockTrainer()
@@ -80,8 +80,6 @@ class TestLRRangeFinder:
             validate_fn=mock_validate,
         )
         lr = finder.find_best_lr()
-        # Smoothing pulls the peak slightly toward the 0.70 region, but
-        # the selected LR must still be well below the destructive range.
         assert lr < 0.01, (
             f"Should pick LR below the destructive region, got {lr}"
         )
@@ -95,7 +93,7 @@ class TestLRRangeFinder:
             def __init__(self):
                 self._current_lr = 0.0
 
-            def train_n_steps(self, lr, steps):
+            def train_n_steps(self, lr, steps, **kwargs):
                 self._current_lr = lr
 
         tr = MockTrainer()
@@ -124,7 +122,7 @@ class TestLRRangeFinder:
         calls = []
 
         class CountingTrainer:
-            def train_n_steps(self, lr, steps):
+            def train_n_steps(self, lr, steps, **kwargs):
                 calls.append((lr, steps))
 
         tr = CountingTrainer()
@@ -150,7 +148,7 @@ class TestLRRangeFinder:
             def __init__(self):
                 self._current_lr = 0.0
 
-            def train_n_steps(self, lr, steps):
+            def train_n_steps(self, lr, steps, **kwargs):
                 self._current_lr = lr
 
         tr = MockTrainer()
@@ -180,7 +178,7 @@ class TestLRRangeFinder:
         call_idx = [0]
 
         class MockTrainer:
-            def train_n_steps(self, lr, steps):
+            def train_n_steps(self, lr, steps, **kwargs):
                 pass
 
         tr = MockTrainer()

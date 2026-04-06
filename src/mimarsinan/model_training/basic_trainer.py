@@ -215,9 +215,19 @@ class BasicTrainer:
         self._report("Validation accuracy on train set", acc)
         return acc
 
-    def train_n_steps(self, lr, steps: int, warmup_steps: int = 0):
-        """Run exactly ``steps`` gradient updates (plus optional LR warmup steps)."""
+    def train_n_steps(self, lr, steps: int, warmup_steps: int = 0, *, constant_lr: bool = False):
+        """Run exactly ``steps`` gradient updates (plus optional LR warmup steps).
+
+        When *constant_lr* is True the learning rate is held fixed for the
+        entire run instead of following a CosineAnnealing schedule.  This is
+        used by the LR range finder so that each probe reflects the sustained
+        effect of a candidate LR, not its rapidly-decayed tail.
+        """
         optimizer, scheduler, scaler = self._get_optimizer_and_scheduler_steps(lr, steps)
+        if constant_lr:
+            scheduler = torch.optim.lr_scheduler.ConstantLR(
+                optimizer, factor=1.0, total_iters=0
+            )
         if warmup_steps > 0:
             scheduler = warmup_scheduler.GradualWarmupScheduler(
                 optimizer,

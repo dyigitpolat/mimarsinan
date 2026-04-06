@@ -21,13 +21,18 @@ class AdaptationTargetAdjuster:
 
     @classmethod
     def from_pipeline(cls, original_target, pipeline):
-        """Build adjuster using validation-set-sized decay and pipeline-configured floor ratio."""
+        """Build adjuster using validation-set-sized decay and pipeline-derived floor.
+
+        The floor ratio is ``1 - degradation_tolerance`` so that the target
+        can relax exactly as far as the pipeline allows — no further.
+        """
         from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
         dp = DataLoaderFactory(pipeline.data_provider_factory).create_data_provider()
         n = dp.get_validation_set_size()
         decay = target_decay_from_validation_samples(n)
-        floor_ratio = float(pipeline.config.get("tuner_target_floor_ratio", 0.90))
+        dt = float(pipeline.config.get("degradation_tolerance", 0.05))
+        floor_ratio = 1.0 - dt
         return cls(original_target, decay, floor_ratio)
 
     def update_target(self, new_metric):

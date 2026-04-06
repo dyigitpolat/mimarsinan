@@ -64,9 +64,11 @@ class ActivationShiftTuner(TunerBase):
             self._budget.max_training_steps,
             self._get_target(),
             0,
-            validation_n_batches=self._budget.validation_steps,
+            validation_n_batches=self._budget.eval_n_batches,
             check_interval=self._budget.check_interval,
-            patience=3,
+            patience=5,
+            min_steps=self._budget.check_interval * 3,
+            min_improvement=self._budget.accuracy_se(),
         )
         self._final_metric = self.trainer.test()
         return self._final_metric

@@ -60,8 +60,10 @@ class TestAfterRunTarget:
                           adaptation_manager=am)
         assert tuner._get_target() == 0.88
 
-    def test_target_unchanged_after_full_run(self, pipeline):
-        """After a full run() cycle, _get_target() still returns original."""
+    def test_target_calibrated_from_baseline_after_run(self, pipeline):
+        """After run(), _get_target() returns the baseline validation accuracy
+        (calibrated from validate_n_batches at rate 0.0), not the originally
+        passed target_accuracy."""
         model = make_tiny_supermodel()
         am = AdaptationManager()
         tuner = ActivationQuantizationTuner(
@@ -69,4 +71,8 @@ class TestAfterRunTarget:
             adaptation_manager=am,
         )
         tuner.run()
-        assert tuner._get_target() == 0.90
+        # After baseline calibration, the target must reflect actual model
+        # performance (a small random model on tiny data), NOT the originally
+        # passed 0.90.
+        assert tuner._get_target() != 0.90
+        assert 0.0 <= tuner._get_target() <= 1.0

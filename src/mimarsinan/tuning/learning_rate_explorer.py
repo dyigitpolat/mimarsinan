@@ -35,7 +35,13 @@ def restore_state_for_trainer(trainer, state: Any) -> None:
 
 
 class LRRangeFinder:
-    """Exponential sweep selecting the LR with the best validation accuracy."""
+    """Exponential sweep selecting the largest non-destructive LR.
+
+    The heuristic picks the highest LR whose validation accuracy does not
+    drop below ``baseline - margin`` (where *margin* is typically the
+    accuracy standard error from the tuning budget).  This maximises
+    recovery speed while staying within the noise floor.
+    """
 
     def __init__(
         self,
@@ -49,6 +55,7 @@ class LRRangeFinder:
         steps_per_probe: int,
         validate_fn: Callable[[], float],
         max_total_steps: int | None = None,
+        margin: float = 0.005,
     ):
         self.trainer = trainer
         self.clone_state = clone_state
@@ -59,6 +66,7 @@ class LRRangeFinder:
         self.steps_per_probe = max(1, int(steps_per_probe))
         self.validate_fn = validate_fn
         self.max_total_steps = max_total_steps
+        self.margin = float(margin)
 
     def find_best_lr(self) -> float:
         state = self.clone_state()
@@ -73,55 +81,55 @@ class LRRangeFinder:
                 lr = self.lr_min * (self.lr_max / self.lr_min) ** (
                     i / max(1, self.num_probes - 1)
                 )
-                self.trainer.train_n_steps(lr, self.steps_per_probe)
+                self.trainer.train_n_steps(lr, self.steps_per_probe, constant_lr=True)
                 cumulative_steps += self.steps_per_probe
                 acc = float(self.validate_fn())
                 accs.append(acc)
                 lrs.append(float(lr))
 
-                # Early exit: model collapsed — higher LRs will be worse
                 if acc < baseline * 0.1 and i > 0:
                     break
-                # Budget cap
                 if self.max_total_steps and cumulative_steps >= self.max_total_steps:
                     break
 
-            sm = _smooth(accs)
-            best_val = max(sm)
-            worst_val = min(sm)
+            threshold = baseline - self.margin
+            non_destructive = [
+                (lr, acc) for lr, acc in zip(lrs, accs) if acc >= threshold
+            ]
+            if non_destructive:
+                return max(non_destructive, key=lambda x: x[0])[0]
 
-            if baseline > 1e-6 and best_val < baseline * 0.9:
-                return lrs[0]
-
-            if best_val - worst_val < 1e-4:
-                return (self.lr_min * self.lr_max) ** 0.5
-
-            best_i = max(range(len(sm)), key=lambda j: sm[j])
-            return lrs[best_i]
+            return max(zip(lrs, accs), key=lambda x: x[1])[0]
         finally:
             self.restore_state(state)
 
 
-def _smooth(values: list[float], window: int = 5) -> list[float]:
-    if not values:
-        return []
-    w = max(1, min(window, len(values)))
-    out: list[float] = []
-    for i in range(len(values)):
-        lo = max(0, i - w // 2)
-        hi = min(len(values), lo + w)
-        chunk = values[lo:hi]
-        out.append(sum(chunk) / len(chunk))
-    return out
-
 
 def find_lr_range_for_trainer(
-    trainer, pipeline, budget: TuningBudget, *, validate_fn: Callable[[], float]
+    trainer,
+    pipeline,
+    budget: TuningBudget,
+    *,
+    validate_fn: Callable[[], float],
+    anchor_lr: float | None = None,
 ) -> float:
-    """Run :class:`LRRangeFinder` with budget-derived probe parameters."""
+    """Run :class:`LRRangeFinder` with budget-derived probe parameters.
+
+    When *anchor_lr* is provided the sweep range is centred on that LR
+    (one order of magnitude each direction) instead of spanning the full
+    config range.  This keeps probes relevant when ``pipeline_lr`` is far
+    from the default ``[1e-5, 1e-1]`` band (e.g. ImageNet at 1e-4).
+    """
     cfg = pipeline.config
-    lr_min = float(cfg.get("lr_range_min", 1e-5))
-    lr_max = float(cfg.get("lr_range_max", 1e-1))
+    if anchor_lr is not None:
+        lr_min = anchor_lr / 10.0
+        lr_max = anchor_lr * 10.0
+    else:
+        lr_min = float(cfg.get("lr_range_min", 1e-5))
+        lr_max = float(cfg.get("lr_range_max", 1e-1))
+
+    margin = budget.accuracy_se()
+
     return LRRangeFinder(
         trainer=trainer,
         clone_state=lambda: clone_state_for_trainer(trainer),
@@ -132,4 +140,5 @@ def find_lr_range_for_trainer(
         steps_per_probe=budget.lr_steps_per_probe,
         validate_fn=validate_fn,
         max_total_steps=budget.max_lr_exploration_steps,
+        margin=margin,
     ).find_best_lr()

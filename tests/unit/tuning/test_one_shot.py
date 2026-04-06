@@ -37,6 +37,8 @@ class _OneShotTrackingTuner(SmoothAdaptationTuner):
 
     def _after_run(self):
         self._after_run_called = True
+        self._continue_to_full_rate()
+        self._committed_rate = 1.0
         return self._post_acc_fn(1.0)
 
     def _patch_trainer(self):
@@ -148,27 +150,32 @@ class TestOneShotFailure:
         assert len(update_rates) > 1, "Must fall back to gradual adaptation"
 
     def test_rollback_fail_falls_back(self, setup):
-        """If rate=1.0 passes catastrophic check but fails rollback check,
+        """If rate=1.0 passes catastrophic check but fails the test() gate,
         model state is restored and gradual loop runs."""
         tuner = setup
 
-        call_count = [0]
+        test_call_count = [0]
 
-        def post_acc(rate):
-            call_count[0] += 1
-            if call_count[0] <= 1:
-                return 0.80  # Below rollback threshold 0.855 for first attempt
-            return 0.87  # Subsequent attempts pass
+        def high_val(rate):
+            return 0.87
 
         tuner._instant_acc_fn = lambda r: 0.85  # passes catastrophic
-        tuner._post_acc_fn = post_acc
+        tuner._post_acc_fn = high_val
         tuner._patch_trainer()
+
+        orig_test = tuner.trainer.test
+        def mock_test():
+            test_call_count[0] += 1
+            if test_call_count[0] <= 1:
+                return 0.70  # Below strict threshold for the first test() gate
+            return 0.87
+        tuner.trainer.test = mock_test
 
         tuner.run()
 
         update_rates = [r for tag, r in tuner.adaptation_calls if tag == "update"]
         assert update_rates[0] == 1.0, "First attempt must be one-shot"
-        assert len(update_rates) > 1, "Must fall back after one-shot rollback"
+        assert len(update_rates) > 1, "Must fall back after one-shot test gate rejection"
 
     def test_state_restored_after_failed_one_shot(self, setup):
         """Model parameters are identical before and after a failed one-shot."""
