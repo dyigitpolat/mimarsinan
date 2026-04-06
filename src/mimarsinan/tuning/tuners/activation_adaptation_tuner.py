@@ -70,12 +70,13 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
             self._budget.max_training_steps,
             self._get_target(),
             0,
-            validation_n_batches=self._budget.validation_steps,
+            validation_n_batches=self._budget.eval_n_batches,
             check_interval=self._budget.check_interval,
-            patience=3,
+            patience=5,
+            min_steps=self._budget.check_interval * 3,
         )
 
-        self._committed_metric = self.trainer.test()
+        self._committed_metric = self._ensure_pipeline_threshold()
         return self._committed_metric
 
     def validate(self):

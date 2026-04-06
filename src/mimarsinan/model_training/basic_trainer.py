@@ -247,12 +247,17 @@ class BasicTrainer:
         validation_n_batches: int = 1,
         check_interval: int = 1,
         patience: int = 3,
+        min_steps: int = 0,
+        min_improvement: float = 1e-3,
     ):
         """Train until target reached, converged, or ``max_steps`` exhausted.
 
         Progress is checked every ``check_interval`` steps. Training stops early
         when the target is met or when ``patience`` consecutive checks show no
-        improvement (convergence).
+        improvement of at least ``min_improvement`` (convergence). Patience-based
+        stopping is suppressed until at least ``min_steps`` gradient steps have
+        been executed, giving the optimizer a minimum runway before convergence
+        detection kicks in.
         """
         optimizer, scheduler, scaler = self._get_optimizer_and_scheduler_steps(lr, max_steps)
         if warmup_steps > 0:
@@ -262,6 +267,8 @@ class BasicTrainer:
         total = int(max_steps) + int(warmup_steps)
         n_val = max(1, int(validation_n_batches))
         interval = max(1, int(check_interval))
+        min_s = max(0, int(min_steps))
+        imp_eps = float(min_improvement)
 
         best_acc = 0.0
         stale_checks = 0
@@ -282,12 +289,12 @@ class BasicTrainer:
                         self._optimize(x, y, optimizer, scaler)
                         scheduler.step()
                     break
-                if acc > best_acc + 1e-3:
+                if acc > best_acc + imp_eps:
                     best_acc = acc
                     stale_checks = 0
                 else:
                     stale_checks += 1
-                    if stale_checks >= patience:
+                    if step_idx + 1 >= min_s and stale_checks >= patience:
                         break
 
         self.test()

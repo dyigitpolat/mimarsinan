@@ -1,0 +1,275 @@
+"""Tests for the adaptation tuning fixes:
+
+- PruningTuner uses base-class _adaptation (with LR search, not fixed LR)
+- PruningTuner._update_and_evaluate is pure evaluation (no training step)
+- _recovery_training_hooks protocol injects hooks during recovery
+- _ensure_pipeline_threshold retries when test accuracy is marginal
+- train_steps_until_target respects min_steps before patience kicks in
+"""
+
+import pytest
+import torch
+import torch.nn as nn
+from unittest.mock import patch, MagicMock
+
+from conftest import default_config, MockPipeline, make_tiny_supermodel
+from mimarsinan.tuning.adaptation_manager import AdaptationManager
+
+
+class TestPruningTunerUsesLRSearch:
+    """PruningTuner must use _find_lr() (via base-class _adaptation) instead
+    of a fixed pretrain LR for recovery training."""
+
+    def test_no_adaptation_override(self):
+        """PruningTuner should not define its own _adaptation method — it
+        should rely on the base class."""
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+
+        assert PruningTuner._adaptation is SmoothAdaptationTuner._adaptation
+
+    def test_recovery_hooks_protocol_exists(self):
+        """PruningTuner must override _recovery_training_hooks."""
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+
+        assert PruningTuner._recovery_training_hooks is not SmoothAdaptationTuner._recovery_training_hooks
+
+    def test_base_class_recovery_hooks_returns_empty(self):
+        """The default _recovery_training_hooks returns an empty list."""
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        obj = object.__new__(SmoothAdaptationTuner)
+        assert obj._recovery_training_hooks(0.5) == []
+
+
+class TestPruningTunerUpdateAndEvaluate:
+    """_update_and_evaluate must only apply masks and validate — no training."""
+
+    def test_no_train_one_step_call(self):
+        """_update_and_evaluate should not call trainer.train_one_step."""
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+
+        mock = MockPipeline()
+        ce = nn.CrossEntropyLoss()
+        mock.loss = lambda model, x, y: ce(model(x), y)
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+
+        tuner = PruningTuner(
+            pipeline=mock,
+            model=model,
+            target_accuracy=0.0,
+            lr=0.001,
+            adaptation_manager=am,
+            pruning_fraction=0.25,
+        )
+
+        for p in model.get_perceptrons():
+            w = p.layer.weight.data
+            tuner.base_row_imp.append(w.abs().sum(dim=1))
+            tuner.base_col_imp.append(w.abs().sum(dim=0))
+        tuner._init_original_weights()
+
+        with patch.object(tuner.trainer, 'train_one_step') as mock_train:
+            tuner._update_and_evaluate(0.5)
+            mock_train.assert_not_called()
+
+
+class TestRecoveryHooksProtocol:
+    """_recovery_training_hooks returns live PyTorch forward-pre-hooks."""
+
+    def test_pruning_hooks_are_returned_and_removable(self):
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+
+        mock = MockPipeline()
+        ce = nn.CrossEntropyLoss()
+        mock.loss = lambda model, x, y: ce(model(x), y)
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+
+        tuner = PruningTuner(
+            pipeline=mock,
+            model=model,
+            target_accuracy=0.0,
+            lr=0.001,
+            adaptation_manager=am,
+            pruning_fraction=0.25,
+        )
+
+        for p in model.get_perceptrons():
+            w = p.layer.weight.data
+            tuner.base_row_imp.append(w.abs().sum(dim=1))
+            tuner.base_col_imp.append(w.abs().sum(dim=0))
+        tuner._init_original_weights()
+
+        hooks = tuner._recovery_training_hooks(0.5)
+        assert len(hooks) > 0, "Pruning hooks should be returned for non-zero rate"
+
+        for h in hooks:
+            assert hasattr(h, 'remove'), "Each hook must be removable"
+            h.remove()
+
+
+class TestEnsurePipelineThreshold:
+    """_ensure_pipeline_threshold retries when test accuracy is below threshold."""
+
+    def test_passes_when_above_threshold(self):
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+
+        mock = MockPipeline()
+        ce = nn.CrossEntropyLoss()
+        mock.loss = lambda model, x, y: ce(model(x), y)
+        model = make_tiny_supermodel()
+
+        tuner = SmoothAdaptationTuner.__new__(SmoothAdaptationTuner)
+        tuner.pipeline = mock
+        tuner.model = model
+        tuner.pipeline_lr = 0.001
+        tuner._rollback_tolerance = 0.05
+        tuner._pipeline_tolerance = 0.05
+        tuner.target_adjuster = MagicMock()
+        tuner.target_adjuster.get_target.return_value = 0.90
+        tuner._budget = MagicMock()
+        tuner._budget.max_training_steps = 100
+        tuner._budget.eval_n_batches = 5
+        tuner._budget.check_interval = 10
+        tuner.trainer = MagicMock()
+        tuner.trainer.test.return_value = 0.90
+
+        result = tuner._ensure_pipeline_threshold()
+        assert result == 0.90
+        tuner.trainer.train_steps_until_target.assert_not_called()
+
+    def test_retries_when_below_threshold(self):
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+
+        mock = MockPipeline()
+        ce = nn.CrossEntropyLoss()
+        mock.loss = lambda model, x, y: ce(model(x), y)
+        model = make_tiny_supermodel()
+
+        tuner = SmoothAdaptationTuner.__new__(SmoothAdaptationTuner)
+        tuner.pipeline = mock
+        tuner.model = model
+        tuner.pipeline_lr = 0.001
+        tuner._rollback_tolerance = 0.05
+        tuner._pipeline_tolerance = 0.05
+        tuner.target_adjuster = MagicMock()
+        tuner.target_adjuster.get_target.return_value = 0.90
+        tuner._budget = MagicMock()
+        tuner._budget.max_training_steps = 100
+        tuner._budget.eval_n_batches = 5
+        tuner._budget.check_interval = 10
+        tuner.trainer = MagicMock()
+        tuner.trainer.test.side_effect = [0.80, 0.88]
+
+        tuner._find_lr = MagicMock(return_value=0.001)
+
+        result = tuner._ensure_pipeline_threshold()
+        tuner.trainer.train_steps_until_target.assert_called_once()
+        assert result == 0.88
+
+
+class TestMinStepsInTraining:
+    """train_steps_until_target's min_steps prevents premature patience stopping."""
+
+    def test_min_steps_prevents_early_patience_stop(self):
+        from mimarsinan.model_training.basic_trainer import BasicTrainer
+        from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+        from conftest import MockDataProviderFactory
+
+        factory = MockDataProviderFactory()
+        dl_factory = DataLoaderFactory(factory, num_workers=0)
+        model = make_tiny_supermodel()
+        loss = nn.CrossEntropyLoss()
+
+        trainer = BasicTrainer(
+            model, "cpu", dl_factory,
+            lambda m, x, y: loss(m(x), y),
+        )
+
+        steps_executed = [0]
+        orig_optimize = trainer._optimize
+
+        def counting_optimize(*args, **kwargs):
+            steps_executed[0] += 1
+            return orig_optimize(*args, **kwargs)
+
+        trainer._optimize = counting_optimize
+
+        # validate_n_batches always returns 0.5 — never reaches target 1.0,
+        # and never improves, so patience would trigger without min_steps.
+        trainer.validate_n_batches = lambda n: 0.5
+        trainer.test = lambda: 0.5
+
+        trainer.train_steps_until_target(
+            lr=0.001,
+            max_steps=100,
+            target_accuracy=1.0,
+            validation_n_batches=1,
+            check_interval=1,
+            patience=1,
+            min_steps=20,
+        )
+
+        assert steps_executed[0] >= 20, (
+            f"Expected at least 20 steps with min_steps=20, got {steps_executed[0]}"
+        )
+
+    def test_without_min_steps_patience_stops_early(self):
+        """Without min_steps, patience=1 stops training within a few steps."""
+        from mimarsinan.model_training.basic_trainer import BasicTrainer
+        from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+        from conftest import MockDataProviderFactory
+
+        factory = MockDataProviderFactory()
+        dl_factory = DataLoaderFactory(factory, num_workers=0)
+        model = make_tiny_supermodel()
+        loss = nn.CrossEntropyLoss()
+
+        trainer = BasicTrainer(
+            model, "cpu", dl_factory,
+            lambda m, x, y: loss(m(x), y),
+        )
+
+        steps_executed = [0]
+        orig_optimize = trainer._optimize
+
+        def counting_optimize(*args, **kwargs):
+            steps_executed[0] += 1
+            return orig_optimize(*args, **kwargs)
+
+        trainer._optimize = counting_optimize
+        trainer.validate_n_batches = lambda n: 0.5
+        trainer.test = lambda: 0.5
+
+        trainer.train_steps_until_target(
+            lr=0.001,
+            max_steps=100,
+            target_accuracy=1.0,
+            validation_n_batches=1,
+            check_interval=1,
+            patience=1,
+            min_steps=0,
+        )
+
+        assert steps_executed[0] < 10, (
+            f"Without min_steps, patience=1 should stop early, got {steps_executed[0]}"
+        )
+
+
+class TestPruningTunerAfterRun:
+    """PruningTuner._after_run uses LR search and returns test accuracy."""
+
+    def test_after_run_defined(self):
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+
+        assert PruningTuner._after_run is not SmoothAdaptationTuner._after_run
+
+    def test_after_run_calls_ensure_pipeline_threshold(self):
+        """_after_run must call _ensure_pipeline_threshold as a safety net."""
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        import inspect
+        source = inspect.getsource(PruningTuner._after_run)
+        assert "_ensure_pipeline_threshold" in source

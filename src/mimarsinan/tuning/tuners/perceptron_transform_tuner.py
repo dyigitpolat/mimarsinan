@@ -13,7 +13,11 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.perceptron_transform_trainer import (
     PerceptronTransformTrainer,
 )
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner, CATASTROPHIC_DROP_FACTOR
+from mimarsinan.tuning.unified_tuner import (
+    SmoothAdaptationTuner,
+    CATASTROPHIC_DROP_FACTOR,
+    _RECOVERY_PATIENCE,
+)
 
 
 class PerceptronTransformTuner(SmoothAdaptationTuner):
@@ -95,9 +99,10 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
             self._budget.max_training_steps,
             self._get_target(),
             0,
-            validation_n_batches=self._budget.validation_steps,
+            validation_n_batches=self._budget.eval_n_batches,
             check_interval=self._budget.check_interval,
-            patience=3,
+            patience=_RECOVERY_PATIENCE,
+            min_steps=self._budget.check_interval * 3,
         )
 
         post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
