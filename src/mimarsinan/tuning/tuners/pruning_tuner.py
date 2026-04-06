@@ -4,6 +4,11 @@ This tuner recomputes activation-based significance (row/column importance) at
 the start of each adaptation cycle, then smoothly shrinks the targeted pruned
 weights towards zero for that cycle. Unpruned weights are left free to train
 and heal the network capacity loss.
+
+Uses the base-class ``_adaptation()`` loop (with LR search, rollback, and
+recovery training).  Pruning-specific forward-pre-hooks that enforce the
+mask pattern during recovery training are injected via
+``_recovery_training_hooks(rate)``.
 """
 
 import torch
@@ -13,7 +18,7 @@ from mimarsinan.transformations.pruning import (
     apply_pruning_masks,
     compute_masks_from_importance,
 )
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner, CATASTROPHIC_DROP_FACTOR
+from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner, _RECOVERY_PATIENCE
 
 
 class PruningTuner(SmoothAdaptationTuner):
@@ -38,6 +43,8 @@ class PruningTuner(SmoothAdaptationTuner):
         self.base_col_imp = []
         self.original_weights = []
         self.original_biases = []
+
+    # -- Mask computation -------------------------------------------------------
 
     def _get_masks(self, rate):
         perceptrons = self.model.get_perceptrons()
@@ -74,6 +81,8 @@ class PruningTuner(SmoothAdaptationTuner):
             else:
                 self.base_col_imp.append(w.abs().sum(dim=0))
 
+    # -- Hook management --------------------------------------------------------
+
     def _register_hooks(self, target_row_masks, target_col_masks, rate):
         hooks = []
         for i, p in enumerate(self.model.get_perceptrons()):
@@ -107,10 +116,27 @@ class PruningTuner(SmoothAdaptationTuner):
             )
         return hooks
 
+    # -- Base-class protocol overrides ------------------------------------------
+
+    def _find_lr(self):
+        """LR search clamped to a safe range around the pipeline LR.
+
+        Pruning hooks constrain gradients during recovery.  The LR finder
+        (only 4 probes spanning 4 orders of magnitude) often returns
+        values 100x too small or 100x too large.  Clamping to
+        ``[pipeline_lr, pipeline_lr * 5]`` keeps recovery effective and
+        stable — the lower bound matches the proven pre-refactor
+        behaviour; the upper bound prevents the occasional catastrophic
+        outlier from destabilising the model.
+        """
+        found = super()._find_lr()
+        return min(max(found, self.pipeline_lr), self.pipeline_lr * 5)
+
     def _before_cycle(self):
         self._refresh_pruning_importance()
 
-    def _update_and_evaluate(self, rate):
+    def _apply_masks(self, rate):
+        """Apply pruning masks at *rate* to model weights (no training)."""
         rate = min(max(rate, 0.0), 1.0)
         perceptrons = self.model.get_perceptrons()
         target_row_masks, target_col_masks = self._get_masks(rate)
@@ -119,57 +145,19 @@ class PruningTuner(SmoothAdaptationTuner):
                 p, target_row_masks[i], target_col_masks[i],
                 rate, self.original_weights[i], self.original_biases[i],
             )
-        hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
-        self.trainer.train_one_step(self.lr)
-        for hook in hooks:
-            hook.remove()
-        for i, p in enumerate(perceptrons):
-            apply_pruning_masks(
-                p, target_row_masks[i], target_col_masks[i],
-                rate, self.original_weights[i], self.original_biases[i],
-            )
+
+    def _update_and_evaluate(self, rate):
+        """Apply pruning masks and evaluate — pure evaluation, no training."""
+        self._apply_masks(rate)
         return self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
-    def _adaptation(self, rate):
-        """Recovery training at a given prune rate, with rollback."""
+    def _recovery_training_hooks(self, rate):
+        """Return forward-pre-hooks that enforce the pruning pattern during recovery."""
         rate = min(max(rate, 0.0), 1.0)
-        self.pipeline.reporter.report("Tuning Rate", rate)
-        self.pipeline.reporter.report("Adaptation target", self._get_target())
-
-        pre_state = self._clone_state()
-
-        instant_acc = self._update_and_evaluate(rate)
-
-        # Fast-fail
-        catastrophic_floor = self._get_target() * CATASTROPHIC_DROP_FACTOR
-        if instant_acc is not None and float(instant_acc) < catastrophic_floor:
-            self._restore_state(pre_state)
-            return self._committed_rate
-
         target_row_masks, target_col_masks = self._get_masks(rate)
-        hooks = self._register_hooks(target_row_masks, target_col_masks, rate)
-        self.trainer.train_steps_until_target(
-            self.lr,
-            self._budget.max_training_steps,
-            self.target_adjuster.get_target(),
-            0,
-            validation_n_batches=self._budget.validation_steps,
-            check_interval=self._budget.check_interval,
-            patience=3,
-        )
-        for hook in hooks:
-            hook.remove()
+        return self._register_hooks(target_row_masks, target_col_masks, rate)
 
-        self._update_and_evaluate(rate)
-        post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
-
-        threshold = self._get_target() * (1.0 - self._rollback_tolerance)
-        if post_acc < threshold:
-            self._restore_state(pre_state)
-            return self._committed_rate
-        else:
-            self._committed_rate = rate
-            return rate
+    # -- Weight snapshot --------------------------------------------------------
 
     def _init_original_weights(self):
         perceptrons = self.model.get_perceptrons()
@@ -182,31 +170,64 @@ class PruningTuner(SmoothAdaptationTuner):
             else:
                 self.original_biases.append(None)
 
+    # -- Forced completion (pruning must finish) --------------------------------
+
     def _force_to_full_rate(self):
-        """Apply full pruning with LR finding and recovery training.
+        """Gradually push pruning to full rate without rollback.
 
-        Called when smooth adaptation + _continue_to_full_rate couldn't
-        reach rate 1.0. Pruning MUST complete, so no rollback.
+        Uses 3-4 increments from the current committed rate to 1.0,
+        each with a full epoch of guaranteed training before patience
+        checks kick in, so sub-0.1%-per-check improvements accumulate.
         """
-        self._refresh_pruning_importance()
-        self._update_and_evaluate(1.0)
+        current = self._committed_rate
+        remaining = 1.0 - current
+        n_increments = max(3, min(6, int(remaining / 0.15) + 1))
 
-        target_row_masks, target_col_masks = self._get_masks(1.0)
-        hooks = self._register_hooks(target_row_masks, target_col_masks, 1.0)
-        lr = self._find_lr()
-        self.trainer.train_steps_until_target(
-            lr,
-            self._budget.max_training_steps,
-            self._get_target(),
-            0,
-            validation_n_batches=self._budget.validation_steps,
-            check_interval=self._budget.check_interval,
-            patience=3,
-        )
-        for hook in hooks:
-            hook.remove()
-        self._update_and_evaluate(1.0)
+        for i in range(1, n_increments + 1):
+            target = current + remaining * i / n_increments
+            target = min(target, 1.0)
+
+            self._refresh_pruning_importance()
+            self._apply_masks(target)
+
+            hooks = self._recovery_training_hooks(target)
+            try:
+                lr = self._find_lr()
+                self.trainer.train_steps_until_target(
+                    lr,
+                    self._budget.max_training_steps * 2,
+                    self._get_target(),
+                    0,
+                    validation_n_batches=self._budget.eval_n_batches,
+                    check_interval=self._budget.check_interval,
+                    patience=_RECOVERY_PATIENCE * 2,
+                    min_steps=self._budget.max_training_steps,
+                    min_improvement=1e-4,
+                )
+            finally:
+                for h in hooks:
+                    h.remove()
+
+        self._apply_masks(1.0)
         self._committed_rate = 1.0
+
+    # -- _after_run with final recovery -----------------------------------------
+
+    def _after_run(self):
+        """Final recovery after adaptation completes.
+
+        The base ``run()`` already calls ``_continue_to_full_rate()`` before
+        this method.  If the rate is still below 1.0, we use the gradual
+        ``_force_to_full_rate()`` (which includes recovery at each increment).
+        Then a single final recovery pass + safety-net check.
+        """
+        if self._committed_rate < 1.0 - 1e-6:
+            self._force_to_full_rate()
+
+        self._apply_masks(1.0)
+        return self._ensure_pipeline_threshold()
+
+    # -- Main entry point -------------------------------------------------------
 
     def run(self, max_cycles=None):
         perceptrons = self.model.get_perceptrons()
@@ -216,17 +237,10 @@ class PruningTuner(SmoothAdaptationTuner):
 
         self._init_original_weights()
 
-        # Use base class adaptation loop
         print("[PruningTuner] Starting fractional discrete adaptation...")
         super().run()
 
-        # Ensure pruning reaches rate 1.0
-        if self._committed_rate < 1.0 - 1e-6:
-            self._force_to_full_rate()
-        else:
-            self._update_and_evaluate(1.0)  # Clean re-apply
-
-        final_acc = self.trainer.validate()
+        final_acc = self.trainer.test()
         print(f"[PruningTuner] Final overall accuracy: {final_acc:.4f}")
 
         row_masks, col_masks = self._get_masks(1.0)
