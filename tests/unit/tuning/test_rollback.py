@@ -94,8 +94,8 @@ class TestRollback:
             )
 
     def test_target_unchanged_on_rollback(self, setup):
-        """On rollback the model state is restored to pre-cycle, so the target
-        adjuster must not be called at all -- the target stays exactly as it was."""
+        """On rollback the target must remain unchanged — relaxation only
+        triggers after multiple consecutive small committed steps."""
         tuner = setup
         # threshold = 0.855; post_acc = 0.01 → rollback
         tuner.set_validate_sequence([0.01])
@@ -105,8 +105,9 @@ class TestRollback:
 
         tuner._adaptation(0.5)
 
+        assert tuner._committed_rate == 0.0, "Should rollback"
         assert tuner.target_adjuster.target_metric == original_target, (
-            "On rollback, target must remain completely unchanged. "
+            "On rollback, target must remain unchanged. "
             f"Expected {original_target}, got {tuner.target_adjuster.target_metric}"
         )
 
@@ -133,15 +134,16 @@ class TestRollback:
 
 
 class TestDirectToleranceSemantic:
-    def test_tolerance_used_directly(self, tmp_path):
-        """degradation_tolerance is used directly as rollback tolerance."""
+    def test_tolerance_noise_only(self, tmp_path):
+        """rollback tolerance = 3 * accuracy_se (noise only, decoupled from dt)."""
         cfg = default_config()
         cfg["degradation_tolerance"] = 0.08
         cfg["tuning_budget_scale"] = 1.0
         pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
         model = make_tiny_supermodel()
         tuner = _DummyTuner(pipeline, model, target_accuracy=0.9, lr=0.001)
-        assert tuner._rollback_tolerance == pytest.approx(0.08)
+        se = tuner._budget.accuracy_se()
+        assert tuner._rollback_tolerance == pytest.approx(3 * se)
 
     def test_catastrophic_drop_factor_value(self):
         """CATASTROPHIC_DROP_FACTOR must be 0.8 (fast-fail below 80% of target)."""

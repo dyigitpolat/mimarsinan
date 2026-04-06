@@ -33,6 +33,8 @@ def test_activation_shift_step_uses_step_budgeted_training(monkeypatch, mock_pip
         validation_n_batches=1,
         check_interval=1,
         patience=3,
+        min_steps=0,
+        min_improvement=1e-3,
     ):
         calls["lr"] = lr
         calls["max_steps"] = max_steps
@@ -41,6 +43,8 @@ def test_activation_shift_step_uses_step_budgeted_training(monkeypatch, mock_pip
         calls["validation_n_batches"] = validation_n_batches
         calls["check_interval"] = check_interval
         calls["patience"] = patience
+        calls["min_steps"] = min_steps
+        calls["min_improvement"] = min_improvement
         return target_accuracy
 
     monkeypatch.setattr(BasicTrainer, "train_until_target_accuracy", fail_epoch_path)

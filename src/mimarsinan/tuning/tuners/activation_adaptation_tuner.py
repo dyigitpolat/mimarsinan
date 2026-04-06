@@ -60,6 +60,7 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
                 p.base_activation = make_activation("ReLU")
                 p.base_activation_name = "ReLU"
 
+        self._committed_rate = 1.0
         self.adaptation_manager.activation_adaptation_rate = 0.0
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
@@ -74,6 +75,7 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
             check_interval=self._budget.check_interval,
             patience=5,
             min_steps=self._budget.check_interval * 3,
+            min_improvement=self._budget.accuracy_se(),
         )
 
         self._committed_metric = self._ensure_pipeline_threshold()

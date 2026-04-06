@@ -118,20 +118,6 @@ class PruningTuner(SmoothAdaptationTuner):
 
     # -- Base-class protocol overrides ------------------------------------------
 
-    def _find_lr(self):
-        """LR search clamped to a safe range around the pipeline LR.
-
-        Pruning hooks constrain gradients during recovery.  The LR finder
-        (only 4 probes spanning 4 orders of magnitude) often returns
-        values 100x too small or 100x too large.  Clamping to
-        ``[pipeline_lr, pipeline_lr * 5]`` keeps recovery effective and
-        stable — the lower bound matches the proven pre-refactor
-        behaviour; the upper bound prevents the occasional catastrophic
-        outlier from destabilising the model.
-        """
-        found = super()._find_lr()
-        return min(max(found, self.pipeline_lr), self.pipeline_lr * 5)
-
     def _before_cycle(self):
         self._refresh_pruning_importance()
 
@@ -202,7 +188,7 @@ class PruningTuner(SmoothAdaptationTuner):
                     check_interval=self._budget.check_interval,
                     patience=_RECOVERY_PATIENCE * 2,
                     min_steps=self._budget.max_training_steps,
-                    min_improvement=1e-4,
+                    min_improvement=self._budget.accuracy_se() / 2,
                 )
             finally:
                 for h in hooks:

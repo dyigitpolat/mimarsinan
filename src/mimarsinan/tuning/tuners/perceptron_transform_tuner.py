@@ -15,7 +15,6 @@ from mimarsinan.model_training.perceptron_transform_trainer import (
 )
 from mimarsinan.tuning.unified_tuner import (
     SmoothAdaptationTuner,
-    CATASTROPHIC_DROP_FACTOR,
     _RECOVERY_PATIENCE,
 )
 
@@ -77,21 +76,13 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
                     )
                 )
 
-    def _adaptation(self, rate):
-        """Recovery training at a given rate, with rollback."""
-        self.pipeline.reporter.report(self.name, rate)
-        self.pipeline.reporter.report("Adaptation target", self._get_target())
+    def _after_run(self):
+        self._continue_to_full_rate()
 
-        pre_state = self._clone_state()
-
-        self.trainer.perceptron_transformation = self._mixed_transform(rate)
-        instant_acc = self._update_and_evaluate(rate)
-
-        # Fast-fail
-        catastrophic_floor = self._get_target() * CATASTROPHIC_DROP_FACTOR
-        if instant_acc is not None and float(instant_acc) < catastrophic_floor:
-            self._restore_state(pre_state)
-            return self._committed_rate
+        self._committed_rate = 1.0
+        self.trainer.perceptron_transformation = self._mixed_transform(1.0)
+        with torch.no_grad():
+            self.trainer._update_and_transform_model()
 
         lr = self._find_lr()
         self.trainer.train_steps_until_target(
@@ -103,14 +94,6 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
             check_interval=self._budget.check_interval,
             patience=_RECOVERY_PATIENCE,
             min_steps=self._budget.check_interval * 3,
+            min_improvement=self._budget.accuracy_se(),
         )
-
-        post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
-
-        threshold = self._get_target() * (1.0 - self._rollback_tolerance)
-        if post_acc < threshold:
-            self._restore_state(pre_state)
-            return self._committed_rate
-        else:
-            self._committed_rate = rate
-            return rate
+        return self._ensure_pipeline_threshold()

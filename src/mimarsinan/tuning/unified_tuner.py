@@ -38,6 +38,12 @@ A value of 0.8 means any >20% instant drop is treated as unrecoverable.
 _RECOVERY_PATIENCE = 5
 """Default patience (consecutive stale checks) for recovery training."""
 
+_SMALL_STEP_THRESHOLD = 0.01
+"""Committed rate delta below which a step is considered 'small' (1%)."""
+
+_STUCK_STREAK_REQUIRED = 3
+"""Consecutive small committed steps before the target is relaxed."""
+
 
 class TunerBase:
     """Shared infrastructure for all tuners (except CoreFlowTuner).
@@ -77,18 +83,15 @@ class TunerBase:
             self.trainer.close()
 
     def _find_lr(self):
-        found = find_lr_range_for_trainer(
+        return find_lr_range_for_trainer(
             self.trainer,
             self.pipeline,
             self._budget,
             validate_fn=lambda: self.trainer.validate_n_batches(
                 self._budget.eval_n_batches
             ),
+            anchor_lr=self.pipeline_lr,
         )
-        # The LR finder can be overly conservative when recovery hooks
-        # (e.g. pruning masks) constrain the model.  Ensure the recovery
-        # LR is never more than 10x below the pipeline's pretrain LR.
-        return max(found, self.pipeline_lr * 0.1)
 
     def _get_target(self):
         return self.target_adjuster.get_target()
@@ -111,11 +114,12 @@ class SmoothAdaptationTuner(TunerBase):
     def __init__(self, pipeline, model, target_accuracy, lr):
         super().__init__(pipeline, model, target_accuracy, lr)
         self._committed_rate = 0.0
-        pipeline_dt = float(
+        self._pipeline_tolerance = float(
             pipeline.config.get("degradation_tolerance", 0.05)
         )
-        self._pipeline_tolerance = pipeline_dt
-        self._rollback_tolerance = max(pipeline_dt, 0.02)
+        se = self._budget.accuracy_se()
+        self._rollback_tolerance = 3 * se
+        self._small_step_streak = 0
 
     def _update_and_evaluate(self, rate):
         """Apply transformation T at *rate* and return a validation metric."""
@@ -180,18 +184,40 @@ class SmoothAdaptationTuner(TunerBase):
             self._restore_state(pre_state)
             return self._committed_rate
 
+        se = self._budget.accuracy_se()
+        near_target = (
+            instant_acc is not None
+            and instant_acc >= self._get_target() * (1.0 - self._rollback_tolerance)
+        )
+
+        if near_target:
+            lr = self.pipeline_lr
+        else:
+            lr = self._find_lr()
+
+        gap = (
+            max(0.0, self._get_target() - float(instant_acc))
+            if instant_acc is not None
+            else 1.0
+        )
+        budget_fraction = max(0.1, min(1.0, gap / max(se, 0.01)))
+        recovery_steps = max(
+            self._budget.check_interval * 3,
+            int(self._budget.max_training_steps * budget_fraction),
+        )
+
         hooks = self._recovery_training_hooks(rate)
         try:
-            lr = self._find_lr()
             self.trainer.train_steps_until_target(
                 lr,
-                self._budget.max_training_steps,
+                recovery_steps,
                 self._get_target(),
                 0,
                 validation_n_batches=self._budget.eval_n_batches,
                 check_interval=self._budget.check_interval,
                 patience=_RECOVERY_PATIENCE,
                 min_steps=self._budget.check_interval * 3,
+                min_improvement=se,
             )
         finally:
             for h in hooks:
@@ -203,9 +229,31 @@ class SmoothAdaptationTuner(TunerBase):
         if post_acc < threshold:
             self._restore_state(pre_state)
             return self._committed_rate
+
+        if rate >= 1.0 - 1e-6:
+            test_acc = self.trainer.test()
+            strict_threshold = (
+                self.target_adjuster.original_metric
+                * (1.0 - self._pipeline_tolerance)
+            )
+            if test_acc < strict_threshold:
+                self._restore_state(pre_state)
+                return self._committed_rate
+
+        committed_step = rate - self._committed_rate
+        self._committed_rate = rate
+
+        if committed_step < _SMALL_STEP_THRESHOLD:
+            self._small_step_streak += 1
         else:
-            self._committed_rate = rate
-            return rate
+            self._small_step_streak = 0
+
+        if self._small_step_streak >= _STUCK_STREAK_REQUIRED:
+            midpoint = (post_acc + self._get_target()) / 2.0
+            self.target_adjuster.update_target(midpoint)
+            self._small_step_streak = 0
+
+        return rate
 
     # -- Safety net -------------------------------------------------------------
 
@@ -220,7 +268,8 @@ class SmoothAdaptationTuner(TunerBase):
         sub-0.1% per-check improvements can accumulate rather than
         triggering premature convergence.  Returns the final test metric.
         """
-        threshold = self._get_target() * (1.0 - self._pipeline_tolerance)
+        original = self.target_adjuster.original_metric
+        threshold = original * (1.0 - self._pipeline_tolerance)
         test_acc = self.trainer.test()
         if test_acc >= threshold:
             return test_acc
@@ -234,13 +283,13 @@ class SmoothAdaptationTuner(TunerBase):
                 self.trainer.train_steps_until_target(
                     lr_to_use,
                     self._budget.max_training_steps * 3,
-                    self._get_target(),
+                    original,
                     0,
                     validation_n_batches=self._budget.eval_n_batches,
                     check_interval=self._budget.check_interval,
                     patience=_RECOVERY_PATIENCE * 4,
                     min_steps=self._budget.max_training_steps,
-                    min_improvement=1e-4,
+                    min_improvement=self._budget.accuracy_se() / 2,
                 )
             finally:
                 for h in hooks:
@@ -288,16 +337,17 @@ class SmoothAdaptationTuner(TunerBase):
 
     def run(self):
         self._committed_rate = 0.0
+        self._small_step_streak = 0
 
-        pipeline_dt = float(
+        self._pipeline_tolerance = float(
             self.pipeline.config.get("degradation_tolerance", 0.05)
         )
-        self._pipeline_tolerance = pipeline_dt
-        # The adaptation rollback must be more permissive than the pipeline
-        # tolerance so the bisection search can make progress.  The safety
-        # net (_ensure_pipeline_threshold) enforces the strict pipeline
-        # threshold at the very end.
-        self._rollback_tolerance = max(pipeline_dt, 0.02)
+        se = self._budget.accuracy_se()
+        self._rollback_tolerance = 3 * se
+
+        baseline_val = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        self.target_adjuster.target_metric = baseline_val
+        self.target_adjuster.original_metric = baseline_val
 
         # ------------------------------------------------------------------
         # One-shot: try full transformation in a single cycle.
@@ -310,17 +360,22 @@ class SmoothAdaptationTuner(TunerBase):
         self._before_cycle()
         self._adaptation(1.0)
         if self._committed_rate >= 1.0 - 1e-6:
-            return self._after_run()
+            result = self._after_run()
+            assert self._committed_rate >= 1.0 - 1e-6, (
+                f"Tuning rate must reach 1.0 by the end of the step, "
+                f"but _committed_rate is {self._committed_rate:.6f}"
+            )
+            return result
 
         # ------------------------------------------------------------------
         # Gradual fallback: one-shot failed, so use SmartSmoothAdaptation
         # to incrementally drive rate from committed_rate toward 1.0.
         # ------------------------------------------------------------------
         ms = min_step_for_smooth_adaptation(self.pipeline, self._budget)
-        max_cycles = max(
+        max_cycles = min(30, max(
             10,
             self._budget.max_training_steps // max(1, self._budget.check_interval),
-        )
+        ))
 
         adapter = SmartSmoothAdaptation(
             self._adaptation,
@@ -334,7 +389,12 @@ class SmoothAdaptationTuner(TunerBase):
         if self._committed_rate < 1.0 - 1e-6:
             self._continue_to_full_rate()
 
-        return self._after_run()
+        result = self._after_run()
+        assert self._committed_rate >= 1.0 - 1e-6, (
+            f"Tuning rate must reach 1.0 by the end of the step, "
+            f"but _committed_rate is {self._committed_rate:.6f}"
+        )
+        return result
 
 
 # Backward-compatible aliases used by tuners/__init__.py and existing imports.

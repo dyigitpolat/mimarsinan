@@ -41,6 +41,7 @@ class NoiseTuner(SmoothAdaptationTuner):
             check_interval=self._budget.check_interval,
             patience=5,
             min_steps=self._budget.check_interval * 3,
+            min_improvement=self._budget.accuracy_se(),
         )
         return self._ensure_pipeline_threshold()
 

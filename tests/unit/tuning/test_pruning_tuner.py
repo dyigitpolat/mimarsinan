@@ -181,18 +181,28 @@ class TestPruningTuner:
             adaptation_manager=am,
             pruning_fraction=0.25,
         )
-        # Low validation (0.5) so adapter takes small steps and runs 3 cycles before t>=1
+        # Baseline calibration returns 0.99 (high target).
+        # After pruning, validate returns 0.5 — well below target — so the
+        # one-shot at rate 1.0 triggers catastrophic fast-fail and the adapter
+        # falls through to gradual cycles.
+        validate_call_count = [0]
+        def _mock_validate_n_batches(self_unused, n):
+            validate_call_count[0] += 1
+            if validate_call_count[0] <= 1:
+                return 0.99
+            return 0.5
+
         tuner.trainer = type(
             "T",
             (),
             {
                 "validate": lambda self: 0.5,
-                "validate_n_batches": lambda self, n: 0.5,
+                "validate_n_batches": _mock_validate_n_batches,
                 "train_one_step": lambda self, lr: None,
                 "train_until_target_accuracy": lambda self, *a: None,
                 "train_steps_until_target": lambda self, *a, **k: None,
                 "test": lambda self: 0.5,
-                "train_n_steps": lambda self, lr, n: None,
+                "train_n_steps": lambda self, lr, n, **kw: None,
             },
         )()
         tuner.trainer.model = model

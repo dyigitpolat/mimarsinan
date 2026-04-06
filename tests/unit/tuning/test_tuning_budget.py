@@ -1,5 +1,6 @@
 """Tests for TuningBudget and tuning_budget_from_pipeline."""
 
+import math
 import pytest
 
 from mimarsinan.tuning.tuning_budget import TuningBudget, tuning_budget_from_pipeline
@@ -101,3 +102,140 @@ class TestTuningBudget:
         b = TuningBudget.from_dataset(10000, 100, budget_scale=1.0)
         spe = 10000 // 100  # 100
         assert b.max_training_steps == 3 * spe
+
+    def test_eval_sample_count_with_val_info(self):
+        b = TuningBudget.from_dataset(
+            50000, 100,
+            val_set_size=10000, val_batch_size=128,
+        )
+        assert b.eval_sample_count == b.eval_n_batches * 128
+
+    def test_eval_sample_count_without_val_info(self):
+        b = TuningBudget.from_dataset(50000, 100, budget_scale=1.0)
+        assert b.eval_sample_count == b.eval_n_batches * 100
+
+    def test_accuracy_se_formula(self):
+        b = TuningBudget.from_dataset(
+            50000, 100,
+            val_set_size=10000, val_batch_size=128,
+        )
+        expected = 0.5 / math.sqrt(b.eval_sample_count)
+        assert b.accuracy_se() == pytest.approx(expected)
+
+    def test_accuracy_se_mnist_like(self):
+        """MNIST-like: ~10k eval samples -> SE ~0.005."""
+        b = TuningBudget.from_dataset(
+            60000, 128,
+            val_set_size=10000, val_batch_size=128,
+        )
+        assert 0.003 < b.accuracy_se() < 0.01
+
+    def test_accuracy_se_imagenet_like(self):
+        """ImageNet-like with tight tolerance: many eval samples -> small SE."""
+        b = TuningBudget.from_dataset(
+            1_200_000, 128,
+            val_set_size=50000, val_batch_size=128,
+            degradation_tolerance=0.01,
+        )
+        assert 0.001 < b.accuracy_se() < 0.005
+
+    def test_accuracy_se_default_nonzero(self):
+        """accuracy_se() is positive even with minimal eval_sample_count."""
+        b = TuningBudget(
+            max_training_steps=100, check_interval=10,
+            validation_steps=1, eval_n_batches=1,
+            lr_steps_per_probe=10, lr_num_probes=2,
+            tolerance_probe_steps=10, eval_sample_count=0,
+        )
+        assert b.accuracy_se() == 0.5  # 0.5 / sqrt(1)
+
+
+class TestLRRangeFinderHeuristic:
+    """The LR finder picks the largest non-destructive LR."""
+
+    def test_picks_largest_non_destructive(self):
+        from mimarsinan.tuning.learning_rate_explorer import LRRangeFinder
+
+        current_acc = [0.90]
+        accs_by_lr = {0.001: 0.90, 0.01: 0.89, 0.1: 0.50}
+
+        def fake_train(self_unused, lr, steps, **kwargs):
+            rounded = min(accs_by_lr, key=lambda k: abs(k - lr))
+            current_acc[0] = accs_by_lr[rounded]
+
+        finder = LRRangeFinder(
+            trainer=type("T", (), {"train_n_steps": fake_train})(),
+            clone_state=lambda: current_acc[0],
+            restore_state=lambda s: current_acc.__setitem__(0, s),
+            lr_min=0.001,
+            lr_max=0.1,
+            num_probes=3,
+            steps_per_probe=1,
+            validate_fn=lambda: current_acc[0],
+            margin=0.02,
+        )
+        best = finder.find_best_lr()
+        assert best == pytest.approx(0.01)
+
+    def test_fallback_to_best_acc_when_all_destructive(self):
+        from mimarsinan.tuning.learning_rate_explorer import LRRangeFinder
+
+        current_acc = [0.90]
+        probe_idx = [0]
+
+        def fake_train(self_unused, lr, steps, **kwargs):
+            current_acc[0] = 0.80 - probe_idx[0] * 0.05
+            probe_idx[0] += 1
+
+        def fake_restore(s):
+            current_acc[0] = s
+
+        finder = LRRangeFinder(
+            trainer=type("T", (), {"train_n_steps": fake_train})(),
+            clone_state=lambda: current_acc[0],
+            restore_state=fake_restore,
+            lr_min=0.001,
+            lr_max=0.1,
+            num_probes=3,
+            steps_per_probe=1,
+            validate_fn=lambda: current_acc[0],
+            margin=0.02,
+        )
+        best = finder.find_best_lr()
+        assert best == pytest.approx(0.001)
+
+    def test_anchor_lr_narrows_range(self):
+        from mimarsinan.tuning.learning_rate_explorer import find_lr_range_for_trainer
+        from unittest.mock import MagicMock
+
+        trainer = MagicMock()
+        trainer.train_n_steps = MagicMock()
+        pipeline = MagicMock()
+        pipeline.config = {"lr_range_min": 1e-5, "lr_range_max": 1e-1}
+
+        budget = MagicMock()
+        budget.lr_num_probes = 3
+        budget.lr_steps_per_probe = 1
+        budget.max_lr_exploration_steps = 100
+        budget.accuracy_se.return_value = 0.005
+
+        call_count = [0]
+        def fake_validate():
+            call_count[0] += 1
+            return 0.90
+
+        probed_lrs = []
+        orig_train = trainer.train_n_steps
+        def capture_lr(lr, steps, **kwargs):
+            probed_lrs.append(lr)
+        trainer.train_n_steps = capture_lr
+
+        find_lr_range_for_trainer(
+            trainer, pipeline, budget,
+            validate_fn=fake_validate,
+            anchor_lr=0.001,
+        )
+
+        for lr in probed_lrs:
+            assert lr >= 0.0001 - 1e-9
+            assert lr <= 0.01 + 1e-9

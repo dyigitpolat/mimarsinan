@@ -196,6 +196,7 @@ class ClampTuner(SmoothAdaptationTuner):
         self._continue_to_full_rate()
 
         self.adaptation_manager.clamp_rate = 1.0
+        self._committed_rate = 1.0
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
@@ -209,6 +210,7 @@ class ClampTuner(SmoothAdaptationTuner):
             check_interval=self._budget.check_interval,
             patience=5,
             min_steps=self._budget.check_interval * 3,
+            min_improvement=self._budget.accuracy_se(),
         )
         self._final_metric = self._ensure_pipeline_threshold()
         return self._final_metric

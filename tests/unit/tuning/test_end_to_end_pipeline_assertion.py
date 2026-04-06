@@ -154,8 +154,12 @@ class TestActivationAdaptationMechanics:
     and _get_target() returns the original value after run().
     """
 
-    def test_target_stays_fixed_through_adaptation(self, tmp_path):
-        """_get_target() returns original target after full run()."""
+    def test_target_bounded_through_adaptation(self, tmp_path):
+        """After run(), target stays between floor and original_metric.
+
+        The target may relax if the tuner gets stuck with tiny committed
+        steps, but must never drop below the floor (original * (1 - dt)).
+        """
         torch.manual_seed(42)
         pipeline = _make_pipeline(tmp_path)
         model = make_tiny_supermodel()
@@ -175,8 +179,12 @@ class TestActivationAdaptationMechanics:
         original_target = tuner._get_target()
         tuner.run()
 
-        assert tuner._get_target() == original_target, (
-            f"Target decayed from {original_target} to {tuner._get_target()}"
+        final_target = tuner._get_target()
+        assert final_target >= tuner.target_adjuster.floor, (
+            f"Target {final_target} dropped below floor {tuner.target_adjuster.floor}"
+        )
+        assert final_target <= original_target, (
+            f"Target {final_target} exceeded original {original_target}"
         )
 
     def test_tuner_completes_without_error(self, tmp_path):

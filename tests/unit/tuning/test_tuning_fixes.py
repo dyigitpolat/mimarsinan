@@ -5,6 +5,8 @@
 - _recovery_training_hooks protocol injects hooks during recovery
 - _ensure_pipeline_threshold retries when test accuracy is marginal
 - train_steps_until_target respects min_steps before patience kicks in
+- One-shot test gate rejects rate=1.0 commits that fail test() threshold
+- Baseline calibration sets tuner target from validate_n_batches at rate 0.0
 """
 
 import pytest
@@ -129,10 +131,12 @@ class TestEnsurePipelineThreshold:
         tuner._pipeline_tolerance = 0.05
         tuner.target_adjuster = MagicMock()
         tuner.target_adjuster.get_target.return_value = 0.90
+        tuner.target_adjuster.original_metric = 0.90
         tuner._budget = MagicMock()
         tuner._budget.max_training_steps = 100
         tuner._budget.eval_n_batches = 5
         tuner._budget.check_interval = 10
+        tuner._budget.accuracy_se.return_value = 0.005
         tuner.trainer = MagicMock()
         tuner.trainer.test.return_value = 0.90
 
@@ -156,10 +160,12 @@ class TestEnsurePipelineThreshold:
         tuner._pipeline_tolerance = 0.05
         tuner.target_adjuster = MagicMock()
         tuner.target_adjuster.get_target.return_value = 0.90
+        tuner.target_adjuster.original_metric = 0.90
         tuner._budget = MagicMock()
         tuner._budget.max_training_steps = 100
         tuner._budget.eval_n_batches = 5
         tuner._budget.check_interval = 10
+        tuner._budget.accuracy_se.return_value = 0.005
         tuner.trainer = MagicMock()
         tuner.trainer.test.side_effect = [0.80, 0.88]
 
@@ -273,3 +279,119 @@ class TestPruningTunerAfterRun:
         import inspect
         source = inspect.getsource(PruningTuner._after_run)
         assert "_ensure_pipeline_threshold" in source
+
+    def test_pruning_tuner_has_no_find_lr_override(self):
+        """PruningTuner should use the base-class _find_lr (no override)."""
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.unified_tuner import TunerBase
+
+        assert PruningTuner._find_lr is TunerBase._find_lr
+
+
+class TestOneShotTestGate:
+    """When _adaptation commits at rate=1.0, it must also pass test()."""
+
+    def _make_tuner(self):
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+
+        tuner = SmoothAdaptationTuner.__new__(SmoothAdaptationTuner)
+        tuner.name = "Tuning Rate"
+        tuner.pipeline = MagicMock()
+        tuner.pipeline.reporter = MagicMock()
+        tuner.model = MagicMock()
+        tuner.pipeline_lr = 0.001
+        tuner._committed_rate = 0.0
+        tuner._rollback_tolerance = 0.05
+        tuner._pipeline_tolerance = 0.01
+        tuner._small_step_streak = 0
+        tuner.target_adjuster = MagicMock()
+        tuner.target_adjuster.get_target.return_value = 0.90
+        tuner.target_adjuster.original_metric = 0.90
+        tuner._budget = MagicMock()
+        tuner._budget.max_training_steps = 100
+        tuner._budget.eval_n_batches = 5
+        tuner._budget.check_interval = 10
+        tuner._budget.accuracy_se.return_value = 0.005
+        tuner.trainer = MagicMock()
+        tuner._find_lr = MagicMock(return_value=0.001)
+        tuner._update_and_evaluate = MagicMock(return_value=0.90)
+        tuner._recovery_training_hooks = MagicMock(return_value=[])
+        tuner._clone_state = MagicMock(return_value=("state", None))
+        tuner._restore_state = MagicMock()
+        return tuner
+
+    def test_oneshot_rejected_when_test_fails(self):
+        """rate=1.0 commit is rejected if test() falls below strict threshold."""
+        tuner = self._make_tuner()
+        tuner.trainer.validate_n_batches.return_value = 0.90
+        tuner.trainer.test.return_value = 0.88
+
+        result = tuner._adaptation(1.0)
+        assert result == 0.0
+        tuner._restore_state.assert_called()
+
+    def test_oneshot_accepted_when_test_passes(self):
+        """rate=1.0 commit succeeds when both validate and test pass."""
+        tuner = self._make_tuner()
+        tuner.trainer.validate_n_batches.return_value = 0.90
+        tuner.trainer.test.return_value = 0.90
+
+        result = tuner._adaptation(1.0)
+        assert result == 1.0
+        assert tuner._committed_rate == 1.0
+
+    def test_sub_one_rate_skips_test_gate(self):
+        """Rates below 1.0 do not trigger the test() gate."""
+        tuner = self._make_tuner()
+        tuner.trainer.validate_n_batches.return_value = 0.90
+
+        result = tuner._adaptation(0.5)
+        assert result == 0.5
+        tuner.trainer.test.assert_not_called()
+
+
+class TestBaselineCalibration:
+    """run() sets tuner target from validate_n_batches at rate 0.0."""
+
+    def test_target_set_from_validation(self):
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+
+        mock = MockPipeline()
+        ce = nn.CrossEntropyLoss()
+        mock.loss = lambda model, x, y: ce(model(x), y)
+        model = make_tiny_supermodel()
+
+        tuner = SmoothAdaptationTuner.__new__(SmoothAdaptationTuner)
+        tuner.name = "Tuning Rate"
+        tuner.pipeline = mock
+        tuner.model = model
+        tuner.pipeline_lr = 0.001
+        tuner._budget = MagicMock()
+        tuner._budget.accuracy_se.return_value = 0.005
+        tuner._budget.eval_n_batches = 5
+        tuner._budget.max_training_steps = 100
+        tuner._budget.check_interval = 10
+        tuner.target_adjuster = MagicMock()
+        tuner.target_adjuster.get_target.return_value = 0.85
+        tuner.target_adjuster.original_metric = 0.85
+        tuner.trainer = MagicMock()
+        tuner.trainer.validate_n_batches.return_value = 0.87
+
+        tuner._update_and_evaluate = MagicMock(return_value=0.87)
+        tuner._before_cycle = MagicMock()
+        tuner._after_run = MagicMock(return_value=0.87)
+        tuner._recovery_training_hooks = MagicMock(return_value=[])
+        tuner._clone_state = MagicMock(return_value=("state", None))
+        tuner._restore_state = MagicMock()
+        tuner.trainer.test.return_value = 0.87
+
+        tuner._committed_rate = 0.0
+        tuner._small_step_streak = 0
+        tuner._pipeline_tolerance = 0.05
+        tuner._rollback_tolerance = 0.065
+        tuner._find_lr = MagicMock(return_value=0.001)
+
+        tuner.run()
+
+        assert tuner.target_adjuster.target_metric == 0.87
+        assert tuner.target_adjuster.original_metric == 0.87

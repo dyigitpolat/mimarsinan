@@ -62,11 +62,11 @@ def test_default_floor_ratio():
     assert math.isclose(adj.floor, 0.90)
 
 
-def test_from_pipeline_reads_floor_ratio_config():
+def test_from_pipeline_derives_floor_from_degradation_tolerance():
     from conftest import MockPipeline, default_config
 
     cfg = default_config()
-    cfg["tuner_target_floor_ratio"] = 0.85
+    cfg["degradation_tolerance"] = 0.05
     pipe = MockPipeline(config=cfg)
     adj = AdaptationTargetAdjuster.from_pipeline(0.9, pipe)
-    assert math.isclose(adj.floor, 0.9 * 0.85)
+    assert math.isclose(adj.floor, 0.9 * (1.0 - 0.05))
