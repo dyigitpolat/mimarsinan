@@ -46,9 +46,20 @@ class PipelineStep:
         """Release resources acquired during process() (e.g. DataLoader workers).
 
         Called by the pipeline after validate(), in a finally block so it runs
-        even if later pipeline logic fails. Override to close trainers, loaders, etc.
+        even if later pipeline logic fails.
+
+        Auto-discovers tuners (via ``self.tuner``) and trainers (via
+        ``self.trainer``) and closes their DataLoader workers to prevent
+        multiprocessing cleanup errors at process exit.
+        Subclasses may override for additional cleanup.
         """
-        pass
+        tuner = getattr(self, "tuner", None)
+        if tuner is not None and hasattr(tuner, "close"):
+            tuner.close()
+            return
+        trainer = getattr(self, "trainer", None)
+        if trainer is not None and hasattr(trainer, "close"):
+            trainer.close()
 
     def get_entry(self, key):
         assert key in self.requires, f"A non-required entry ({key}) cannot be retrieved from the cache."

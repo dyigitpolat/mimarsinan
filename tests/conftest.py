@@ -216,6 +216,7 @@ def default_config():
         "max_simulation_samples": -1,
         "input_shape": (1, 8, 8),
         "num_classes": 4,
+        "num_workers": 0,
     }
 
 
