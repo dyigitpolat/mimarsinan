@@ -13,17 +13,24 @@ from __future__ import annotations
 import copy
 from typing import Any, Callable
 
+import torch
+
 from mimarsinan.tuning.tuning_budget import TuningBudget
 
 
 def clone_state_for_trainer(trainer) -> Any:
-    """Snapshot trainable weights; supports BasicTrainer and aux-model trainers."""
+    """Snapshot trainable weights to CPU; supports BasicTrainer and aux-model trainers.
+
+    Cloning to CPU keeps GPU memory free for training buffers (optimizer
+    momentum, gradients, activations).  ``load_state_dict`` uses in-place
+    ``copy_()`` which handles CPU→GPU transfer transparently on restore.
+    """
     if hasattr(trainer, "aux_model"):
         return (
-            copy.deepcopy(trainer.aux_model.state_dict()),
-            copy.deepcopy(trainer.model.state_dict()),
+            {k: v.detach().clone().cpu() for k, v in trainer.aux_model.state_dict().items()},
+            {k: v.detach().clone().cpu() for k, v in trainer.model.state_dict().items()},
         )
-    return copy.deepcopy(trainer.model.state_dict())
+    return {k: v.detach().clone().cpu() for k, v in trainer.model.state_dict().items()}
 
 
 def restore_state_for_trainer(trainer, state: Any) -> None:
@@ -87,6 +94,10 @@ class LRRangeFinder:
                 accs.append(acc)
                 lrs.append(float(lr))
 
+                # Free optimizer/scaler memory from train_n_steps before next probe.
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
                 if acc < baseline * 0.1 and i > 0:
                     break
                 if self.max_total_steps and cumulative_steps >= self.max_total_steps:
@@ -98,7 +109,6 @@ class LRRangeFinder:
             ]
             if non_destructive:
                 return max(non_destructive, key=lambda x: x[0])[0]
-
             return max(zip(lrs, accs), key=lambda x: x[1])[0]
         finally:
             self.restore_state(state)

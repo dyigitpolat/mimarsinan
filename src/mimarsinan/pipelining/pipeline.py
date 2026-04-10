@@ -1,5 +1,8 @@
-from mimarsinan.pipelining.cache.pipeline_cache import PipelineCache
+import gc
 
+import torch
+
+from mimarsinan.pipelining.cache.pipeline_cache import PipelineCache
 from mimarsinan.common.file_utils import prepare_containing_directory
 
 class Pipeline:
@@ -118,6 +121,12 @@ class Pipeline:
     def register_pre_step_hook(self, hook):
         self.pre_step_hooks.append(hook)
 
+    def _release_gpu_memory(self):
+        """Release unreferenced GPU memory between pipeline steps."""
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def _create_real_key(self, client_step_name, key):
         return client_step_name + '.' + key
 
@@ -139,6 +148,7 @@ class Pipeline:
             step.run()
             self.set_target_metric(step.pipeline_metric())
             self.save_cache()
+            self.cache.offload_torch_models_to_cpu()
 
             for entry in step.clears:
                 self.cache.remove(self._create_real_key(step.name, entry))
@@ -160,6 +170,7 @@ class Pipeline:
                 hook(name, step)
         finally:
             step.cleanup()
+            self._release_gpu_memory()
 
     def _find_starting_step_idx(self, step_name):
         requirements = self._get_all_requirements(step_name)

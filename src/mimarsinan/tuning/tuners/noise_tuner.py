@@ -26,6 +26,7 @@ class NoiseTuner(SmoothAdaptationTuner):
 
     def _after_run(self):
         self._continue_to_full_rate()
+        self._committed_rate = 1.0
 
         self.adaptation_manager.noise_rate = 1.0
         for p in self.model.get_perceptrons():

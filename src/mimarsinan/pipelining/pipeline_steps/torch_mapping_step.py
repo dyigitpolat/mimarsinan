@@ -68,6 +68,8 @@ class TorchMappingStep(PipelineStep):
             adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         self._verify_equivalence(native_model, flow)
+        native_model.cpu()
+        del native_model
 
         self.trainer = BasicTrainer(
             flow,

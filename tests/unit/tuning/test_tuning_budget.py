@@ -50,17 +50,15 @@ class TestTuningBudget:
         )
         assert b.eval_n_batches >= b.validation_steps
 
-    def test_eval_n_batches_capped_statistically(self):
+    def test_eval_n_batches_uses_full_val_set(self):
         b = TuningBudget.from_dataset(
             1_000_000, 16,
             val_set_size=64000, val_batch_size=16,
         )
         total_val_batches = 64000 // 16  # 4000
-        # default d=0.05: min_eval_samples=max(256,1600)=1600, stat_batches=100
-        assert b.eval_n_batches == 100
-        assert b.eval_n_batches < total_val_batches
+        assert b.eval_n_batches == total_val_batches
 
-    def test_eval_n_batches_scales_with_tolerance(self):
+    def test_eval_n_batches_equals_full_val_set_regardless_of_tolerance(self):
         tight = TuningBudget.from_dataset(
             1_000_000, 16,
             val_set_size=64000, val_batch_size=16,
@@ -71,16 +69,9 @@ class TestTuningBudget:
             val_set_size=64000, val_batch_size=16,
             degradation_tolerance=0.10,
         )
-        assert tight.eval_n_batches > loose.eval_n_batches
-
-    def test_eval_n_batches_never_exceeds_full_val_set(self):
-        b = TuningBudget.from_dataset(
-            1_000_000, 16,
-            val_set_size=64000, val_batch_size=16,
-            degradation_tolerance=0.001,
-        )
         total_val_batches = 64000 // 16
-        assert b.eval_n_batches <= total_val_batches
+        assert tight.eval_n_batches == total_val_batches
+        assert loose.eval_n_batches == total_val_batches
 
     def test_tuning_budget_from_pipeline_uses_config_scale(self):
         factory = MockDataProviderFactory()

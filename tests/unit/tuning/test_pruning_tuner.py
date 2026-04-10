@@ -196,7 +196,7 @@ class TestPruningTuner:
             "T",
             (),
             {
-                "validate": lambda self: 0.5,
+                "validate": lambda self: 0.99,
                 "validate_n_batches": _mock_validate_n_batches,
                 "train_one_step": lambda self, lr: None,
                 "train_until_target_accuracy": lambda self, *a: None,

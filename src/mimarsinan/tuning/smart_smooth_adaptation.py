@@ -54,11 +54,9 @@ class SmartSmoothAdaptation:
             result = self.adaptation_fn(*interpolated)
 
             if result is not None and float(result) < t_proposed - 1e-9:
-                # Rollback: adaptation_fn returned committed rate < proposed
                 t = float(result)
                 step /= 2.0
             else:
-                # Commit
                 t = t_proposed
                 remaining = 1.0 - t
                 step = min(step * 1.5, remaining) if remaining > 1e-6 else step

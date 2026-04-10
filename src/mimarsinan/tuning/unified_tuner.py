@@ -114,6 +114,7 @@ class SmoothAdaptationTuner(TunerBase):
     def __init__(self, pipeline, model, target_accuracy, lr):
         super().__init__(pipeline, model, target_accuracy, lr)
         self._committed_rate = 0.0
+        self._natural_rate = 0.0
         self._pipeline_tolerance = float(
             pipeline.config.get("degradation_tolerance", 0.05)
         )
@@ -184,40 +185,20 @@ class SmoothAdaptationTuner(TunerBase):
             self._restore_state(pre_state)
             return self._committed_rate
 
-        se = self._budget.accuracy_se()
-        near_target = (
-            instant_acc is not None
-            and instant_acc >= self._get_target() * (1.0 - self._rollback_tolerance)
-        )
-
-        if near_target:
-            lr = self.pipeline_lr
-        else:
-            lr = self._find_lr()
-
-        gap = (
-            max(0.0, self._get_target() - float(instant_acc))
-            if instant_acc is not None
-            else 1.0
-        )
-        budget_fraction = max(0.1, min(1.0, gap / max(se, 0.01)))
-        recovery_steps = max(
-            self._budget.check_interval * 3,
-            int(self._budget.max_training_steps * budget_fraction),
-        )
+        lr = self._find_lr()
 
         hooks = self._recovery_training_hooks(rate)
         try:
             self.trainer.train_steps_until_target(
                 lr,
-                recovery_steps,
+                self._budget.max_training_steps,
                 self._get_target(),
                 0,
                 validation_n_batches=self._budget.eval_n_batches,
                 check_interval=self._budget.check_interval,
                 patience=_RECOVERY_PATIENCE,
                 min_steps=self._budget.check_interval * 3,
-                min_improvement=se,
+                min_improvement=self._budget.accuracy_se(),
             )
         finally:
             for h in hooks:
@@ -337,6 +318,7 @@ class SmoothAdaptationTuner(TunerBase):
 
     def run(self):
         self._committed_rate = 0.0
+        self._natural_rate = 0.0
         self._small_step_streak = 0
 
         self._pipeline_tolerance = float(
@@ -345,21 +327,18 @@ class SmoothAdaptationTuner(TunerBase):
         se = self._budget.accuracy_se()
         self._rollback_tolerance = 3 * se
 
-        baseline_val = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        baseline_val = self.trainer.validate()
         self.target_adjuster.target_metric = baseline_val
         self.target_adjuster.original_metric = baseline_val
+        self.target_adjuster.floor = baseline_val * (1.0 - self._pipeline_tolerance)
 
         # ------------------------------------------------------------------
         # One-shot: try full transformation in a single cycle.
-        # For light transformations (clamp, activation, quantization), this
-        # typically succeeds — reducing 5-20 gradual cycles to just one.
-        # For heavy transformations (pruning), instant accuracy drops below
-        # CATASTROPHIC_DROP_FACTOR, triggering fast-fail with full state
-        # restoration and zero wasted compute.
         # ------------------------------------------------------------------
         self._before_cycle()
         self._adaptation(1.0)
         if self._committed_rate >= 1.0 - 1e-6:
+            self._natural_rate = self._committed_rate
             result = self._after_run()
             assert self._committed_rate >= 1.0 - 1e-6, (
                 f"Tuning rate must reach 1.0 by the end of the step, "
@@ -388,6 +367,16 @@ class SmoothAdaptationTuner(TunerBase):
 
         if self._committed_rate < 1.0 - 1e-6:
             self._continue_to_full_rate()
+
+        self._natural_rate = self._committed_rate
+
+        if self._natural_rate < 1.0 - 1e-6:
+            import warnings
+            warnings.warn(
+                f"{self.__class__.__name__}: natural adaptation reached only "
+                f"{self._natural_rate:.4f}; _after_run will force to 1.0",
+                stacklevel=2,
+            )
 
         result = self._after_run()
         assert self._committed_rate >= 1.0 - 1e-6, (

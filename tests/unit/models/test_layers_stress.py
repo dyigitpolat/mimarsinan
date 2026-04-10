@@ -89,13 +89,13 @@ class TestStaircaseFunctionStress:
 
 
 class TestDifferentiableClampStress:
-    def test_gradient_far_below_min_decays(self):
-        """Gradient should decay exponentially for values far below the clamp."""
+    def test_gradient_far_below_min_is_floored(self):
+        """Floored exponential: far outside the range, gradient = _CLAMP_LEAK floor."""
         x = torch.tensor([-10.0], requires_grad=True)
         y = DifferentiableClamp.apply(x, torch.tensor(0.0), torch.tensor(1.0))
         y.backward()
-        assert x.grad.item() < 1e-3, \
-            "Gradient should be very small far below clamp range"
+        assert x.grad.item() == pytest.approx(0.01), \
+            "Far-out-of-range gradient should be clamped to _CLAMP_LEAK floor"
 
     def test_equal_min_max(self):
         """When min == max, all values should clamp to that single value."""
