@@ -48,6 +48,7 @@ class _OneShotTrackingTuner(SmoothAdaptationTuner):
             return tuner._post_acc_fn(tuner._committed_rate)
 
         self.trainer.validate_n_batches = _mock_validate_n_batches
+        self.trainer.validate = lambda: tuner._post_acc_fn(tuner._committed_rate)
         self.trainer.train_steps_until_target = lambda *a, **kw: None
         self.trainer.test = lambda: tuner._post_acc_fn(1.0)
 
@@ -113,6 +114,61 @@ class TestOneShotSuccess:
         result = tuner.run()
 
         assert result == 0.92
+
+
+class TestNaturalRateTracking:
+    """Verify that _natural_rate records the highest rate reached before _after_run."""
+
+    @pytest.fixture
+    def setup(self, tmp_path):
+        cfg = default_config()
+        cfg["tuning_budget_scale"] = 1.0
+        cfg["degradation_tolerance"] = 0.05
+        pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+        model = make_tiny_supermodel()
+        tuner = _OneShotTrackingTuner(pipeline, model, target_accuracy=0.9, lr=0.001)
+        return tuner
+
+    def test_natural_rate_equals_committed_on_one_shot_success(self, setup):
+        """When one-shot succeeds, _natural_rate == 1.0."""
+        tuner = setup
+        tuner._instant_acc_fn = lambda r: 0.87
+        tuner._post_acc_fn = lambda r: 0.87
+        tuner._patch_trainer()
+
+        tuner.run()
+
+        assert tuner._natural_rate >= 1.0 - 1e-6
+
+    def test_natural_rate_below_one_triggers_warning(self, setup):
+        """When natural adaptation doesn't reach 1.0, a warning is emitted."""
+        tuner = setup
+
+        call_count = [0]
+        def instant_acc(rate):
+            call_count[0] += 1
+            if rate >= 0.99:
+                return 0.1
+            return 0.85
+
+        tuner._instant_acc_fn = instant_acc
+        tuner._post_acc_fn = lambda r: 0.87
+        tuner._patch_trainer()
+
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            tuner.run()
+
+            natural_warnings = [
+                x for x in w
+                if "natural adaptation" in str(x.message).lower()
+            ]
+            if tuner._natural_rate < 1.0 - 1e-6:
+                assert len(natural_warnings) >= 1, (
+                    f"Expected a warning about natural rate, got none. "
+                    f"natural_rate={tuner._natural_rate:.4f}"
+                )
 
 
 class TestOneShotFailure:

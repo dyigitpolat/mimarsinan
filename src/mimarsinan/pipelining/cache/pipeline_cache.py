@@ -80,5 +80,11 @@ class PipelineCache:
     def __contains__(self, name):
         return name in self.cache
     
+    def offload_torch_models_to_cpu(self):
+        """Move all cached torch models to CPU to free GPU memory."""
+        for name, (obj, strategy) in self.cache.items():
+            if strategy == "torch_model" and hasattr(obj, 'cpu'):
+                obj.cpu()
+
     def __iter__(self):
         return iter(self.cache)

@@ -375,6 +375,7 @@ class TestBaselineCalibration:
         tuner.target_adjuster.get_target.return_value = 0.85
         tuner.target_adjuster.original_metric = 0.85
         tuner.trainer = MagicMock()
+        tuner.trainer.validate.return_value = 0.87
         tuner.trainer.validate_n_batches.return_value = 0.87
 
         tuner._update_and_evaluate = MagicMock(return_value=0.87)

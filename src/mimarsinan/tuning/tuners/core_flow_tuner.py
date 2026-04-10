@@ -60,6 +60,19 @@ class CoreFlowTuner:
 
         self.accuracy = None
 
+        # Single shared trainer for validation/testing — avoids creating
+        # disposable BasicTrainers (and their DataLoader workers) per call.
+        self._trainer = BasicTrainer(
+            nn.Identity(), self.device, self.data_loader_factory, None
+        )
+        self._trainer.report_function = self.report_function
+
+    def close(self):
+        """Shut down DataLoader workers owned by this tuner."""
+        if self._trainer is not None:
+            self._trainer.close()
+            self._trainer = None
+
     def _make_stable_flow(self) -> StableSpikingUnifiedCoreFlow:
         return StableSpikingUnifiedCoreFlow(
             self.input_shape,
@@ -84,14 +97,12 @@ class CoreFlowTuner:
         )
 
     def _validate(self, flow) -> float:
-        trainer = BasicTrainer(flow.to(self.device), self.device, self.data_loader_factory, None)
-        trainer.report_function = self.report_function
-        return trainer.validate()
-    
+        self._trainer.model = flow.to(self.device)
+        return self._trainer.validate()
+
     def _test(self, flow) -> float:
-        trainer = BasicTrainer(flow.to(self.device), self.device, self.data_loader_factory, None)
-        trainer.report_function = self.report_function
-        return trainer.test()
+        self._trainer.model = flow.to(self.device)
+        return self._trainer.test()
 
     def run(
         self,

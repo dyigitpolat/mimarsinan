@@ -30,7 +30,8 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
 
     def load(self, cache_directory):
         (object, device) = torch.load(f"{cache_directory}/{self.filename}.pt", map_location=torch.device('cpu'), weights_only=False)
-        return object.to(device)
+        object._cached_original_device = device
+        return object  # stay on CPU; consumers move to device as needed
 
     def store(self, cache_directory, object):
         if hasattr(object, "device"):
@@ -42,6 +43,7 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
 
         object.cpu()
         torch.save((object, device), f"{cache_directory}/{self.filename}.pt")
+        object.to(device)  # restore original placement — no mutation visible to caller
 
 class PickleLoadStoreStrategy(LoadStoreStrategy):
     def __init__(self, filename):

@@ -701,7 +701,7 @@ Each decorator has `input_transform(x)` and `output_transform(x)` methods. `Deco
 
 Key custom functions:
 - **`LeakyGradReLU`**: ReLU in forward, leaky gradient in backward (avoids dead neurons during quantization-aware training)
-- **`DifferentiableClamp`**: Clamp in forward, exponential decay gradients outside bounds
+- **`DifferentiableClamp`**: Clamp in forward, floored exponential in backward (gradient = 1.0 inside range, smoothly decaying exponential outside with 0.01 floor — provides smooth boundary regularisation while preventing gradient death)
 - **`StaircaseFunction`**: Quantization (floor) in forward, straight-through gradient in backward
 
 ### 6.5 Model Builders

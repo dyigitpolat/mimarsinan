@@ -53,16 +53,13 @@ class TuningBudget:
         validation_steps = max(1, min(32, check_interval))
 
         lr_num_probes = min(8, max(2, int(math.sqrt(float(check_interval)))))
-        lr_steps_per_probe = min(50, max(1, check_interval))
+        lr_steps_per_probe = max(1, check_interval)
         tolerance_probe_steps = min(50, check_interval)
 
         if val_set_size is not None and val_batch_size is not None:
             vbs = max(1, int(val_batch_size))
             total_val_batches = max(1, int(val_set_size) // vbs)
-            d = max(0.01, float(degradation_tolerance))
-            min_eval_samples = max(256, math.ceil(4.0 / (d * d)))
-            stat_batches = math.ceil(min_eval_samples / vbs)
-            eval_n_batches = max(validation_steps, min(total_val_batches, stat_batches))
+            eval_n_batches = max(validation_steps, total_val_batches)
             eval_sample_count = eval_n_batches * vbs
         else:
             eval_n_batches = validation_steps
@@ -98,9 +95,7 @@ class TuningBudget:
 
 def tuning_budget_from_pipeline(pipeline) -> TuningBudget:
     """Build a :class:`TuningBudget` from ``pipeline.config`` and data provider."""
-    from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-
-    dp = DataLoaderFactory(pipeline.data_provider_factory).create_data_provider()
+    dp = pipeline.data_provider_factory.create()
     return TuningBudget.from_data_provider(
         dp,
         float(pipeline.config.get("tuning_budget_scale", 1.0)),
@@ -110,9 +105,7 @@ def tuning_budget_from_pipeline(pipeline) -> TuningBudget:
 
 def max_total_training_steps(pipeline) -> int:
     """Upper bound on gradient steps for full ``training_epochs`` (for ``SmartSmoothAdaptation`` ``min_step``)."""
-    from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-
-    dp = DataLoaderFactory(pipeline.data_provider_factory).create_data_provider()
+    dp = pipeline.data_provider_factory.create()
     bs = max(1, dp.get_training_batch_size())
     spe = max(1, (dp.get_training_set_size() + bs - 1) // bs)
     te = max(1, int(pipeline.config.get("training_epochs", 10)))

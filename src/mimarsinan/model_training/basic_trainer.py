@@ -118,8 +118,8 @@ class BasicTrainer:
             loss = self._optimize(x, y, optimizer, scaler)
             hook_handle.remove()
             
-            self._report("Training loss", loss)
-        
+            self._report("Training loss", loss.detach().item())
+
         scheduler.step()
         self._report("LR", optimizer.param_groups[0]["lr"])
         return tracker.get_accuracy()
@@ -246,6 +246,7 @@ class BasicTrainer:
             self._optimize(x, y, optimizer, scaler)
             scheduler.step()
             self._report("LR", optimizer.param_groups[0]["lr"])
+        del optimizer, scheduler, scaler
 
     def train_steps_until_target(
         self,
@@ -307,6 +308,7 @@ class BasicTrainer:
                     if step_idx + 1 >= min_s and stale_checks >= patience:
                         break
 
+        del optimizer, scheduler, scaler
         self.test()
         return self.validate_n_batches(n_val)
 

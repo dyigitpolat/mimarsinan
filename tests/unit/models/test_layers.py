@@ -100,11 +100,13 @@ class TestDifferentiableClamp:
         y.backward()
         assert x.grad.item() == pytest.approx(1.0)
 
-    def test_gradient_below_is_exponential(self):
+    def test_gradient_below_is_floored_exponential(self):
         x = torch.tensor([-1.0], requires_grad=True)
         y = DifferentiableClamp.apply(x, torch.tensor(0.0), torch.tensor(1.0))
         y.backward()
-        assert 0 < x.grad.item() < 1.0
+        import math
+        expected = math.exp(-1.0)  # exp(x - a) = exp(-1 - 0) ≈ 0.368
+        assert x.grad.item() == pytest.approx(expected, rel=1e-4)
 
 
 # ---------------------------------------------------------------------------
