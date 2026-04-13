@@ -46,6 +46,25 @@ import torch
 
 from mimarsinan.pipelining.search_mode import derive_search_mode  # noqa: F401 — re-export
 
+
+def _select_device() -> torch.device:
+    """Pick the CUDA device with the most free memory, or CPU if none available."""
+    if not torch.cuda.is_available():
+        return torch.device("cpu")
+    n = torch.cuda.device_count()
+    if n <= 1:
+        return torch.device("cuda:0")
+    best_idx, best_free = 0, -1
+    for i in range(n):
+        free, _ = torch.cuda.mem_get_info(i)
+        if free > best_free:
+            best_free = free
+            best_idx = i
+    device = torch.device(f"cuda:{best_idx}")
+    print(f"[DeviceSelect] Using {device} ({best_free / (1 << 30):.1f} GiB free out of {n} GPUs)")
+    return device
+
+
 # ── Step groups ─────────────────────────────────────────────────────────────
 
 # Activation Analysis always runs (produces activation_scales for IR).
@@ -275,9 +294,7 @@ class DeploymentPipeline(Pipeline):
         self.config["input_shape"] = data_provider.get_input_shape()
         self.config["input_size"] = int(np.prod(self.config["input_shape"]))
         self.config["num_classes"] = data_provider.get_prediction_mode().num_classes
-        self.config["device"] = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        self.config["device"] = _select_device()
 
         # Spiking-mode defaults.
         # The user only needs to set ``spiking_mode``; firing_mode,
