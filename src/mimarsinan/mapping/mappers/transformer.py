@@ -20,7 +20,7 @@ class LayerNormMapper(Mapper):
 
     def __init__(self, source_mapper, layer_norm: nn.LayerNorm, name: str = "LayerNorm"):
         super().__init__(source_mapper)
-        self._ln_container = [layer_norm]
+        self._ln_container = nn.ModuleList([layer_norm])
         self.name = str(name)
 
     @property
@@ -94,7 +94,7 @@ class ConstantPrependMapper(Mapper):
 
     def __init__(self, source_mapper, constant_param: nn.Parameter, name: str = "CLSPrepend"):
         super().__init__(source_mapper)
-        self._constant_container = [constant_param]
+        self._constant_container = nn.ParameterList([constant_param])
         self.name = str(name)
 
     @property
@@ -133,7 +133,7 @@ class ConstantAddMapper(Mapper):
 
     def __init__(self, source_mapper, constant_param: nn.Parameter, name: str = "PosEmbedAdd"):
         super().__init__(source_mapper)
-        self._constant_container = [constant_param]
+        self._constant_container = nn.ParameterList([constant_param])
         self.name = str(name)
 
     @property
