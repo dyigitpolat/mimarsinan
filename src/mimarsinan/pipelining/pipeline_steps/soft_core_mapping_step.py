@@ -28,11 +28,11 @@ class SoftCoreMappingStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
-        m = getattr(self, "_last_metric", None)
-        return m if m is not None else self.pipeline.get_target_metric()
+        if self.trainer is not None:
+            return self.trainer.validate()
+        return self.pipeline.get_target_metric()
 
     def process(self):
-        self._last_metric = None
         model = self.get_entry("fused_model")
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
@@ -83,12 +83,12 @@ class SoftCoreMappingStep(PipelineStep):
           except Exception as e:
               print(f"[SoftCoreMappingStep] Flowchart generation failed (non-fatal): {e}")
         
-        self._validator = BasicTrainer(
+        self.trainer = BasicTrainer(
             model,
             self.pipeline.config['device'],
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
-        validator = self._validator
+        validator = self.trainer
 
         from mimarsinan.mapping.per_source_scales import compute_per_source_scales
         compute_per_source_scales(model.get_mapper_repr())
@@ -331,20 +331,17 @@ class SoftCoreMappingStep(PipelineStep):
                 spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
             )
             flow = flow.to(device)
-            acc = BasicTrainer(
+            spiking_trainer = BasicTrainer(
                 flow,
                 self.pipeline.config["device"],
                 DataLoaderFactory(self.pipeline.data_provider_factory),
                 None,
-            ).test()
-            self._last_metric = float(acc)
+            )
+            acc = spiking_trainer.test()
+            spiking_trainer.close()
             print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
         except Exception as e:
             print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
-
-    def cleanup(self):
-        if getattr(self, "_validator", None) is not None:
-            self._validator.close()
 
     def _calculate_input_activation_scales(self, model, validator, rate):
         for perceptron in model.get_perceptrons():
