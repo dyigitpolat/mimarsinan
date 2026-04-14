@@ -16,6 +16,11 @@ class NoisyDropout(nn.Module):
         self.noise_radius = noise_radius
 
     def forward(self, x):
+        # Rate=0 is the common case during non-noise tuning cycles; skip the
+        # two torch.rand allocations and the dropout + mix ops entirely.
+        if self.rate == 0.0:
+            return x
+
         random_mask = torch.rand(x.shape, device=x.device)
         random_mask = (random_mask < self.rate).float()
 
@@ -173,11 +178,28 @@ class RateAdjustedDecorator:
         self.decorator = decorator
         self.adjustment_strategy = adjustment_strategy
 
+    # Rate=0 is the identity (all strategies reduce to "return base"), so skip
+    # the inner decorator call and the adjustment tensor ops. Rate=1 with
+    # Mix/RandomMask/Nested strategies collapses to "return target" (mask is
+    # fully 1 everywhere: rand() < 1.0 is always True since rand() is [0,1)).
+    # Note: rate=0 short-circuit with RandomMask-based strategies skips a
+    # torch.rand() call that the un-optimized path would consume; this shifts
+    # global RNG state slightly but has no semantic effect on outputs.
     def input_transform(self, x):
-        return self.adjustment_strategy.adjust(x, self.decorator.input_transform(x), self.rate)
+        if self.rate == 0.0:
+            return x
+        target = self.decorator.input_transform(x)
+        if self.rate == 1.0:
+            return target
+        return self.adjustment_strategy.adjust(x, target, self.rate)
 
     def output_transform(self, x):
-        return self.adjustment_strategy.adjust(x, self.decorator.output_transform(x), self.rate)
+        if self.rate == 0.0:
+            return x
+        target = self.decorator.output_transform(x)
+        if self.rate == 1.0:
+            return target
+        return self.adjustment_strategy.adjust(x, target, self.rate)
 
 
 class NestedDecoration:
