@@ -25,7 +25,9 @@ class AdaptationManager(nn.Module):
         decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
         decorators.append(
             self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
-        if not use_ttfs:
+        if not use_ttfs and self.shift_rate != 0.0:
+            # At shift_rate==0 the amount is a zero tensor; ShiftDecorator would
+            # still execute torch.sub(x, 0) every forward. Omit entirely.
             decorators.append(self.get_shift_decorator(pipeline_config, perceptron))
 
         perceptron.set_activation(
