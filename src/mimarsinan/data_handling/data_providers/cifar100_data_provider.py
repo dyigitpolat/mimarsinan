@@ -11,34 +11,32 @@ import os
 class CIFAR100_DataProvider(DataProvider):
     DISPLAY_LABEL = "CIFAR-100 (32×32×3, 100 classes)"
 
-    def __init__(self, datasets_path, *, seed: int | None = 0):
-        super().__init__(datasets_path, seed=seed)
+    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None):
+        super().__init__(datasets_path, seed=seed, preprocessing=preprocessing)
 
         path_str = str(self.datasets_path + '/cifar-100-python')
         download = not os.path.exists(path_str)
 
-        train_transform = transforms.Compose([
+        train_transform = self._apply_preprocessing([
             transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
-            transforms.ToTensor()
-            #transforms.Normalize([0, 0, 0], [1, 1, 1])
-        ])
+            transforms.ToTensor(),
+        ], train=True)
 
-        test_validation_transform = transforms.Compose([
-            transforms.ToTensor()
-            #transforms.Normalize([0, 0, 0], [1, 1, 1])
-        ])
+        test_validation_transform = self._apply_preprocessing([
+            transforms.ToTensor(),
+        ], train=False)
 
         training_dataset = torchvision.datasets.CIFAR100(
             root=self.datasets_path, train=True, download=download,
             transform=train_transform)
-        
+
         validation_dataset = torchvision.datasets.CIFAR100(
             root=self.datasets_path, train=True, download=download,
             transform=test_validation_transform)
-        
+
         training_validation_split = 0.95
         training_length = int(len(training_dataset) * training_validation_split)
-        
+
         self.training_dataset = torch.utils.data.Subset(
             training_dataset, range(0, training_length))
         self.validation_dataset = torch.utils.data.Subset(

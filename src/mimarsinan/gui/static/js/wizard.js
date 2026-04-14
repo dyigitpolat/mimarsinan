@@ -621,6 +621,65 @@ function buildConfig() {
     delete dp.training_epochs;
   }
 
+  // Batch size (applies to both train-from-scratch and fine-tune paths)
+  const batchSizeVal = v('batchSize');
+  if (batchSizeVal !== '' && batchSizeVal != null) {
+    const bs = parseInt(batchSizeVal);
+    if (!isNaN(bs) && bs > 0) dp.batch_size = bs;
+  }
+
+  // Input preprocessing (resize + normalize)
+  const resizeToVal = v('preprocessResizeTo');
+  const normalizeVal = v('preprocessNormalize');
+  const interpolationVal = v('preprocessInterpolation') || 'bicubic';
+  const hasResize = resizeToVal !== '' && resizeToVal != null && parseInt(resizeToVal) > 0;
+  const hasNormalize = normalizeVal !== '' && normalizeVal != null;
+  if (hasResize || hasNormalize) {
+    const preproc = { interpolation: interpolationVal };
+    if (hasResize) preproc.resize_to = parseInt(resizeToVal);
+    if (hasNormalize) preproc.normalize = normalizeVal;
+    dp.preprocessing = preproc;
+  }
+
+  // Training recipe (fully optional: any non-empty field triggers emission)
+  const recipeFields = {
+    optimizer: v('recipeOptimizer'),
+    scheduler: v('recipeScheduler'),
+    weight_decay: v('recipeWeightDecay'),
+    warmup_ratio: v('recipeWarmupRatio'),
+    grad_clip_norm: v('recipeGradClipNorm'),
+    layer_wise_lr_decay: v('recipeLayerwiseLrDecay'),
+    label_smoothing: v('recipeLabelSmoothing'),
+    beta1: v('recipeBeta1'),
+    beta2: v('recipeBeta2'),
+  };
+  const hasAnyRecipeField = Object.entries(recipeFields)
+    .filter(([k]) => k !== 'scheduler') // scheduler has a default so ignore for "set" detection
+    .some(([, val]) => val !== '' && val != null);
+  if (hasAnyRecipeField) {
+    const recipe = {};
+    if (recipeFields.optimizer) recipe.optimizer = recipeFields.optimizer;
+    if (recipeFields.scheduler) recipe.scheduler = recipeFields.scheduler;
+    if (recipeFields.weight_decay !== '' && recipeFields.weight_decay != null)
+      recipe.weight_decay = parseFloat(recipeFields.weight_decay);
+    if (recipeFields.warmup_ratio !== '' && recipeFields.warmup_ratio != null)
+      recipe.warmup_ratio = parseFloat(recipeFields.warmup_ratio);
+    if (recipeFields.grad_clip_norm !== '' && recipeFields.grad_clip_norm != null)
+      recipe.grad_clip_norm = parseFloat(recipeFields.grad_clip_norm);
+    if (recipeFields.layer_wise_lr_decay !== '' && recipeFields.layer_wise_lr_decay != null)
+      recipe.layer_wise_lr_decay = parseFloat(recipeFields.layer_wise_lr_decay);
+    if (recipeFields.label_smoothing !== '' && recipeFields.label_smoothing != null)
+      recipe.label_smoothing = parseFloat(recipeFields.label_smoothing);
+    const b1 = recipeFields.beta1, b2 = recipeFields.beta2;
+    if ((b1 !== '' && b1 != null) || (b2 !== '' && b2 != null)) {
+      recipe.betas = [
+        b1 !== '' && b1 != null ? parseFloat(b1) : 0.9,
+        b2 !== '' && b2 != null ? parseFloat(b2) : 0.999,
+      ];
+    }
+    dp.training_recipe = recipe;
+  }
+
   // NAS / search config
   const needsSearch = configMode === 'search' || hwMode === 'search';
   if (needsSearch) {
@@ -772,6 +831,31 @@ function loadStateFromConfig(config) {
   setVal('weightSource', dp.weight_source);
   setVal('lrPretrained', dp.finetune_lr != null ? dp.finetune_lr : dp.lr);
   setVal('finetuneEpochs', dp.finetune_epochs);
+
+  // Batch size + preprocessing restoration
+  setVal('batchSize', dp.batch_size != null ? dp.batch_size : '');
+  const pp = dp.preprocessing || {};
+  setVal('preprocessResizeTo', pp.resize_to != null ? pp.resize_to : '');
+  setVal('preprocessInterpolation', pp.interpolation || 'bicubic');
+  setVal('preprocessNormalize', pp.normalize != null ? pp.normalize : '');
+
+  // Training recipe restoration
+  const tr = dp.training_recipe || {};
+  setVal('recipeOptimizer', tr.optimizer || '');
+  setVal('recipeScheduler', tr.scheduler || 'cosine');
+  setVal('recipeWeightDecay', tr.weight_decay != null ? tr.weight_decay : '');
+  setVal('recipeWarmupRatio', tr.warmup_ratio != null ? tr.warmup_ratio : '');
+  setVal('recipeGradClipNorm', tr.grad_clip_norm != null ? tr.grad_clip_norm : '');
+  setVal('recipeLayerwiseLrDecay', tr.layer_wise_lr_decay != null ? tr.layer_wise_lr_decay : '');
+  setVal('recipeLabelSmoothing', tr.label_smoothing != null ? tr.label_smoothing : '');
+  if (Array.isArray(tr.betas) && tr.betas.length === 2) {
+    setVal('recipeBeta1', tr.betas[0]);
+    setVal('recipeBeta2', tr.betas[1]);
+  } else {
+    setVal('recipeBeta1', '');
+    setVal('recipeBeta2', '');
+  }
+
   setVal('tuningBudgetScale', dp.tuning_budget_scale);
   setVal('degradationTolerance', dp.degradation_tolerance);
 

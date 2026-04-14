@@ -17,15 +17,13 @@ class MNIST32_DataProvider(DataProvider):
       32 -> 16 -> 8 -> 4 -> 2 -> 1
     """
 
-    def __init__(self, datasets_path, *, seed: int | None = 0):
-        super().__init__(datasets_path, seed=seed)
+    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None):
+        super().__init__(datasets_path, seed=seed, preprocessing=preprocessing)
 
-        tfm = transforms.Compose(
-            [
-                transforms.Resize((32, 32)),
-                transforms.ToTensor(),
-            ]
-        )
+        tfm = self._apply_preprocessing([
+            transforms.Resize((32, 32)),
+            transforms.ToTensor(),
+        ], train=False)
 
         base_training_dataset = torchvision.datasets.MNIST(
             root=self.datasets_path, train=True, download=True, transform=tfm
