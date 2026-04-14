@@ -22,29 +22,18 @@ class NoiseTuner(SmoothAdaptationTuner):
             self.adaptation_manager.noise_rate = rate
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
         self.trainer.train_one_step(self.lr)
-        return self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _after_run(self):
         self._continue_to_full_rate()
-        self._committed_rate = 1.0
 
         self.adaptation_manager.noise_rate = 1.0
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
-        lr = self._find_lr()
-        self.trainer.train_steps_until_target(
-            lr,
-            self._budget.max_training_steps,
-            self._get_target(),
-            0,
-            validation_n_batches=self._budget.eval_n_batches,
-            check_interval=self._budget.check_interval,
-            patience=5,
-            min_steps=self._budget.check_interval * 3,
-            min_improvement=self._budget.accuracy_se(),
-        )
-        return self._ensure_pipeline_threshold()
+        final_acc = self._ensure_pipeline_threshold()
+        self._committed_rate = 1.0
+        return final_acc
 
     def run(self):
         super().run()

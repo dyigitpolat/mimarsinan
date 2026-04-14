@@ -132,7 +132,7 @@ def find_lr_range_for_trainer(
     """
     cfg = pipeline.config
     if anchor_lr is not None:
-        lr_min = anchor_lr / 10.0
+        lr_min = anchor_lr / 100.0
         lr_max = anchor_lr * 10.0
     else:
         lr_min = float(cfg.get("lr_range_min", 1e-5))

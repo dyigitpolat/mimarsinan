@@ -50,6 +50,24 @@ from mimarsinan.mapping.ir import ComputeOp, IRSource
 from mimarsinan.mapping.spike_source_spans import SpikeSourceSpan, compress_spike_sources
 
 
+# Precision for on-chip spiking compute.
+#
+# The C++ nevresim simulator uses:
+#   * int-weight rate-coded path: exact integer arithmetic
+#     (weight_t = int, MembranePotential<weight_t> = int, spike_t = int_fast8_t).
+#   * TTFS paths: IEEE-754 64-bit float (signal_t = double).
+#
+# PyTorch defaulting to float32 here introduces ~1e-7 roundoff per operation,
+# which accumulates and — most importantly — flips ``ceil`` / threshold
+# comparisons for neurons whose membrane potential lands near θ, producing
+# per-sample prediction differences vs the C++ simulator.  Using float64
+# matches C++'s double for TTFS and exactly represents integer sums up to
+# 2**53 for rate-coded mode (far larger than any practical axon × weight
+# range), restoring bit-for-bit equivalence at the cost of ~2× compute
+# time on GPU.  These flows run once per pipeline so the cost is acceptable.
+_COMPUTE_DTYPE = torch.float64
+
+
 class SpikingHybridCoreFlow(nn.Module):
     """
     Execute a HybridHardCoreMapping using a global state buffer.
@@ -138,10 +156,10 @@ class SpikingHybridCoreFlow(nn.Module):
     ) -> torch.Tensor:
         """Build a segment's composite input tensor from the state buffer."""
         total_size = max((s.offset + s.size for s in input_map), default=0)
-        inp = torch.zeros(batch_size, total_size, device=device)
+        inp = torch.zeros(batch_size, total_size, device=device, dtype=_COMPUTE_DTYPE)
         for s in input_map:
             buf = state_buffer[s.node_id]
-            inp[:, s.offset : s.offset + s.size] = buf[:, :s.size]
+            inp[:, s.offset : s.offset + s.size] = buf[:, :s.size].to(_COMPUTE_DTYPE)
         return inp
 
     @staticmethod
@@ -163,18 +181,18 @@ class SpikingHybridCoreFlow(nn.Module):
     ) -> torch.Tensor:
         """Assemble the network's final output from the state buffer."""
         output_sources = self.hybrid_mapping.output_sources.flatten()
-        out = torch.zeros(batch_size, len(output_sources), device=device)
+        out = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
         for idx, src in enumerate(output_sources):
             if not isinstance(src, IRSource):
                 continue
             if src.is_off():
                 continue
             elif src.is_input():
-                out[:, idx] = original_input[:, src.index]
+                out[:, idx] = original_input[:, src.index].to(_COMPUTE_DTYPE)
             elif src.is_always_on():
                 out[:, idx] = 1.0
             else:
-                out[:, idx] = state_buffer[src.node_id][:, src.index]
+                out[:, idx] = state_buffer[src.node_id][:, src.index].to(_COMPUTE_DTYPE)
         return out
 
     # ---------------------------------------------------------------------
@@ -238,31 +256,34 @@ class SpikingHybridCoreFlow(nn.Module):
             output_spans = compress_spike_sources(list(output_sources.flatten()))
 
         core_params = [
-            torch.tensor(core.core_matrix.T, dtype=torch.float32, device=device)
+            torch.tensor(core.core_matrix.T, dtype=_COMPUTE_DTYPE, device=device)
             for core in cores
         ]
         thresholds = [
-            torch.tensor(float(core.threshold), dtype=torch.float32, device=device)
+            torch.tensor(float(core.threshold), dtype=_COMPUTE_DTYPE, device=device)
             for core in cores
         ]
         # Hardware-bias tensors (dedicated bias register, not always-on axon row).
         hw_biases = [
-            torch.tensor(core.hardware_bias, dtype=torch.float32, device=device)
+            torch.tensor(core.hardware_bias, dtype=_COMPUTE_DTYPE, device=device)
             if getattr(core, "hardware_bias", None) is not None else None
             for core in cores
         ]
 
         ops = {"<": torch.lt, "<=": torch.le}
 
-        buffers = [torch.zeros(batch_size, core.get_output_count(), device=device) for core in cores]
-        memb = [torch.zeros(batch_size, core.get_output_count(), device=device) for core in cores]
+        buffers = [torch.zeros(batch_size, core.get_output_count(), device=device, dtype=_COMPUTE_DTYPE) for core in cores]
+        memb = [torch.zeros(batch_size, core.get_output_count(), device=device, dtype=_COMPUTE_DTYPE) for core in cores]
 
-        output_counts = torch.zeros(batch_size, len(output_sources), device=device)
+        output_counts = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
 
-        zeros_in = torch.zeros(batch_size, input_size, device=device)
+        zeros_in = torch.zeros(batch_size, input_size, device=device, dtype=_COMPUTE_DTYPE)
         input_signals = [
-            torch.zeros(batch_size, core.get_input_count(), device=device) for core in cores
+            torch.zeros(batch_size, core.get_input_count(), device=device, dtype=_COMPUTE_DTYPE) for core in cores
         ]
+
+        # Spike train arrives as float32 from spike generators; cast to compute dtype once.
+        input_spike_train = input_spike_train.to(_COMPUTE_DTYPE)
 
         for cycle in range(cycles):
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
@@ -289,7 +310,7 @@ class SpikingHybridCoreFlow(nn.Module):
                     memb_i += hw_biases[core_idx]
 
                 fired = ops[self.thresholding_mode](thresholds[core_idx], memb_i)
-                buffers[core_idx] = fired.float()
+                buffers[core_idx] = fired.to(_COMPUTE_DTYPE)
 
                 if self.firing_mode == "Novena":
                     memb_i[fired] = 0.0
@@ -358,26 +379,29 @@ class SpikingHybridCoreFlow(nn.Module):
             output_spans = compress_spike_sources(list(output_sources.flatten()))
 
         core_params = [
-            torch.tensor(core.core_matrix.T, dtype=torch.float32, device=device)
+            torch.tensor(core.core_matrix.T, dtype=_COMPUTE_DTYPE, device=device)
             for core in cores
         ]
         thresholds = [
-            torch.tensor(float(core.threshold), dtype=torch.float32, device=device)
+            torch.tensor(float(core.threshold), dtype=_COMPUTE_DTYPE, device=device)
             for core in cores
         ]
         # Hardware-bias tensors (dedicated bias register, not always-on axon row).
         hw_biases = [
-            torch.tensor(core.hardware_bias, dtype=torch.float32, device=device)
+            torch.tensor(core.hardware_bias, dtype=_COMPUTE_DTYPE, device=device)
             if getattr(core, "hardware_bias", None) is not None else None
             for core in cores
         ]
 
+        # Cast inputs to compute dtype to match C++ double precision.
+        input_activations = input_activations.to(_COMPUTE_DTYPE)
+
         buffers = [
-            torch.zeros(batch_size, core.get_output_count(), device=device)
+            torch.zeros(batch_size, core.get_output_count(), device=device, dtype=_COMPUTE_DTYPE)
             for core in cores
         ]
         input_signals = [
-            torch.zeros(batch_size, core.get_input_count(), device=device)
+            torch.zeros(batch_size, core.get_input_count(), device=device, dtype=_COMPUTE_DTYPE)
             for core in cores
         ]
 
@@ -409,7 +433,7 @@ class SpikingHybridCoreFlow(nn.Module):
                 # Hardware naturally clamps (V > θ fires immediately → rate 1).
                 buffers[ci] = (out / thresholds[ci]).clamp(0.0, 1.0)
 
-        output = torch.zeros(batch_size, len(output_sources), device=device)
+        output = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
         for sp in output_spans:
             d0 = int(sp.dst_start)
             d1 = int(sp.dst_end)
@@ -453,8 +477,11 @@ class SpikingHybridCoreFlow(nn.Module):
         device = x.device
         quantized = self.spiking_mode == "ttfs_quantized"
 
-        state_buffer: Dict[int, torch.Tensor] = {-2: x}
-        scales = getattr(self.hybrid_mapping, "node_activation_scales", {})
+        # Cast input to compute dtype so the state buffer is uniformly typed.
+        x_compute = x.to(_COMPUTE_DTYPE)
+        state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
+        out_scales = getattr(self.hybrid_mapping, "node_activation_scales", {})
+        in_scales = getattr(self.hybrid_mapping, "node_input_activation_scales", out_scales)
 
         for stage in self.hybrid_mapping.stages:
             if stage.kind == "neural":
@@ -469,20 +496,26 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
-                scale = scales.get(op.id, 1.0)
-                gathered = op.gather_inputs(x, state_buffer)
-                if abs(scale - 1.0) > 1e-9:
-                    gathered = gathered * scale
+                in_scale = in_scales.get(op.id, 1.0)
+                out_scale = out_scales.get(op.id, 1.0)
+                # Host-side compute ops execute a Python torch module.  C++
+                # SimulationRunner._execute_compute_op_np runs them in float32;
+                # match that here so PyTorch and C++ agree bit-for-bit.
+                x_f32 = x.to(torch.float32)
+                sb_f32 = {k: v.to(torch.float32) for k, v in state_buffer.items()}
+                gathered = op.gather_inputs(x_f32, sb_f32)
+                if abs(in_scale - 1.0) > 1e-9:
+                    gathered = gathered * in_scale
                 result = op.execute_on_gathered(gathered)
-                if abs(scale - 1.0) > 1e-9:
-                    result = result / scale
-                state_buffer[op.id] = result
+                if abs(out_scale - 1.0) > 1e-9:
+                    result = result / out_scale
+                state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
 
             else:
                 raise ValueError(f"Invalid hybrid stage kind: {stage.kind}")
 
-        final = self._gather_final_output(state_buffer, x, batch_size, device)
-        return final * float(T)
+        final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
+        return final.to(torch.float32) * float(T)
 
     # ---------------------------------------------------------------------
     # Rate-coded forward (state-buffer driven)
@@ -493,7 +526,8 @@ class SpikingHybridCoreFlow(nn.Module):
         device = x.device
         T = self.simulation_length
 
-        state_buffer: Dict[int, torch.Tensor] = {-2: x}
+        x_compute = x.to(_COMPUTE_DTYPE)
+        state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
 
         for stage in self.hybrid_mapping.stages:
             if stage.kind == "neural":
@@ -502,10 +536,11 @@ class SpikingHybridCoreFlow(nn.Module):
                 )
                 seg_input_rates_clamped = seg_input_rates.clamp(0.0, 1.0)
                 spike_train = torch.zeros(
-                    T, batch_size, seg_input_rates_clamped.shape[1], device=device
+                    T, batch_size, seg_input_rates_clamped.shape[1], device=device,
+                    dtype=_COMPUTE_DTYPE,
                 )
                 for cycle in range(T):
-                    spike_train[cycle] = self.to_spikes(seg_input_rates_clamped, cycle)
+                    spike_train[cycle] = self.to_spikes(seg_input_rates_clamped, cycle).to(_COMPUTE_DTYPE)
 
                 counts = self._run_neural_segment_rate(
                     stage, input_spike_train=spike_train
@@ -516,11 +551,14 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
-                result = op.execute(x, state_buffer)
-                state_buffer[op.id] = result
+                # Match C++ path: compute ops run in float32.
+                x_f32 = x.to(torch.float32)
+                sb_f32 = {k: v.to(torch.float32) for k, v in state_buffer.items()}
+                result = op.execute(x_f32, sb_f32)
+                state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
 
             else:
                 raise ValueError(f"Invalid hybrid stage kind: {stage.kind}")
 
-        final = self._gather_final_output(state_buffer, x, batch_size, device)
-        return final * float(T)
+        final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
+        return final.to(torch.float32) * float(T)

@@ -434,6 +434,7 @@ class MapperGraphConverter(
             return self._get_mapper(node.args[0])
         return None
 
+
     def _get_input_shape(self, node: fx.Node) -> Optional[Tuple[int, ...]]:
         """Get the input tensor shape (with batch) from ShapeProp metadata."""
         if len(node.args) >= 1 and isinstance(node.args[0], fx.Node):

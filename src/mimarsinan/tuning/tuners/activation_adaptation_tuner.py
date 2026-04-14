@@ -18,6 +18,10 @@ from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
 
 
 class ActivationAdaptationTuner(SmoothAdaptationTuner):
+
+    _budget_multiplier = 2.0
+    _skip_one_shot = True
+
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.adaptation_manager = adaptation_manager
@@ -45,7 +49,7 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         self.adaptation_manager.activation_adaptation_rate = rate
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
-        return self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _after_run(self):
         from mimarsinan.models.perceptron_mixer.perceptron import make_activation
@@ -60,25 +64,12 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
                 p.base_activation = make_activation("ReLU")
                 p.base_activation_name = "ReLU"
 
-        self._committed_rate = 1.0
         self.adaptation_manager.activation_adaptation_rate = 0.0
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
-        lr = self._find_lr()
-        self.trainer.train_steps_until_target(
-            lr,
-            self._budget.max_training_steps,
-            self._get_target(),
-            0,
-            validation_n_batches=self._budget.eval_n_batches,
-            check_interval=self._budget.check_interval,
-            patience=5,
-            min_steps=self._budget.check_interval * 3,
-            min_improvement=self._budget.accuracy_se(),
-        )
-
         self._committed_metric = self._ensure_pipeline_threshold()
+        self._committed_rate = 1.0
         return self._committed_metric
 
     def validate(self):

@@ -249,7 +249,12 @@ class TestMlpMixerBuilderMapping:
             max_neurons=2048,
         )
 
-    def test_produces_multiple_cores(self):
+    def test_produces_zero_cores_fully_host_side(self):
+        """TorchMLPMixer deploys fully host-side: patch_embed (no act) emits
+        raw unbounded values; downstream token/channel fc1 Perceptrons are
+        marked as encoding layers and map to host-side ComputeOps wrapping
+        the full Perceptron forward. No chip-side softcores remain.
+        """
         result, _ = _check_builder(
             "mlp_mixer",
             input_shape=(1, 28, 28),
@@ -258,8 +263,7 @@ class TestMlpMixerBuilderMapping:
             max_axons=2048,
             max_neurons=2048,
         )
-        # MLP-Mixer has many FC layers so should produce many cores
-        assert result.num_neural_cores >= 4
+        assert result.num_neural_cores == 0
 
     def test_suggestion_sufficient(self):
         from mimarsinan.mapping.mapping_verifier import verify_hardware_config
@@ -485,7 +489,11 @@ class TestGELUActivationIRMapping:
             "GELU simple_mlp layout pass produced no neural cores."
         )
 
-    def test_mlp_mixer_gelu_layout_produces_neural_cores(self):
+    def test_mlp_mixer_gelu_layout_is_fully_host_side(self):
+        """GELU MLP-Mixer deploys fully host-side (same reason as ReLU variant):
+        patch_embed has no activation, so all downstream fc1+GELU Perceptrons
+        are encoding-layer host-side ComputeOps. No chip-side softcores.
+        """
         result, _ = _check_builder(
             "mlp_mixer",
             input_shape=(1, 8, 8),
@@ -497,9 +505,7 @@ class TestGELUActivationIRMapping:
             max_axons=2048,
             max_neurons=2048,
         )
-        assert result.num_neural_cores > 0, (
-            "GELU mlp_mixer layout pass produced no neural cores."
-        )
+        assert result.num_neural_cores == 0
 
     def test_gelu_actual_ir_creates_neural_cores(self):
         """GELU perceptrons must map to NeuralCores (any nonlinearity is a perceptron)."""

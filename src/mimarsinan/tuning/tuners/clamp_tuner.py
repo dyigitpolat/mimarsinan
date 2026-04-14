@@ -185,7 +185,7 @@ class ClampTuner(SmoothAdaptationTuner):
         self.adaptation_manager.clamp_rate = rate
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
-        return self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def validate(self):
         if self._final_metric is not None:
@@ -196,21 +196,9 @@ class ClampTuner(SmoothAdaptationTuner):
         self._continue_to_full_rate()
 
         self.adaptation_manager.clamp_rate = 1.0
-        self._committed_rate = 1.0
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
-        lr = self._find_lr()
-        self.trainer.train_steps_until_target(
-            lr,
-            self._budget.max_training_steps,
-            self._get_target(),
-            0,
-            validation_n_batches=self._budget.eval_n_batches,
-            check_interval=self._budget.check_interval,
-            patience=5,
-            min_steps=self._budget.check_interval * 3,
-            min_improvement=self._budget.accuracy_se(),
-        )
         self._final_metric = self._ensure_pipeline_threshold()
+        self._committed_rate = 1.0
         return self._final_metric

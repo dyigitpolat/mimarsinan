@@ -303,7 +303,10 @@ class TestOneShotTestGate:
         tuner._committed_rate = 0.0
         tuner._rollback_tolerance = 0.05
         tuner._pipeline_tolerance = 0.01
-        tuner._small_step_streak = 0
+        tuner._missed_target_streak = 0
+        tuner._test_baseline = 0.90
+        tuner._validation_baseline = 0.90
+        tuner._pre_relaxation_target = None
         tuner.target_adjuster = MagicMock()
         tuner.target_adjuster.get_target.return_value = 0.90
         tuner.target_adjuster.original_metric = 0.90
@@ -321,10 +324,13 @@ class TestOneShotTestGate:
         return tuner
 
     def test_oneshot_rejected_when_test_fails(self):
-        """rate=1.0 commit is rejected if test() falls below strict threshold."""
+        """rate=1.0 commit is rejected if test() falls below
+        ``test_baseline - rollback_tolerance``."""
         tuner = self._make_tuner()
         tuner.trainer.validate_n_batches.return_value = 0.90
-        tuner.trainer.test.return_value = 0.88
+        # test_baseline = 0.90, rollback_tolerance = 0.05 → strict = 0.85.
+        # test = 0.80 is below strict → rollback.
+        tuner.trainer.test.return_value = 0.80
 
         result = tuner._adaptation(1.0)
         assert result == 0.0

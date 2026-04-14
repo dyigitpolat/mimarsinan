@@ -145,6 +145,7 @@ class TestNoiseTunerPassesPipeline:
         )
 
 
+@pytest.mark.slow
 class TestActivationAdaptationMechanics:
     """ActivationAdaptation (LeakyReLU -> ReLU) is a heavy transformation
     that is unreliable on tiny random datasets.  The existing integration

@@ -77,11 +77,20 @@ class TestAfterRunForcesFullRate:
         source = inspect.getsource(PerceptronTransformTuner._after_run)
         assert "_update_and_transform_model" in source
 
-    def test_after_run_source_passes_min_improvement(self):
-        source = inspect.getsource(PerceptronTransformTuner._after_run)
-        assert "min_improvement" in source
+    def test_after_run_delegates_recovery_to_ensure_pipeline_threshold(self):
+        """_after_run no longer runs unconditional recovery training; that's
+        delegated to _ensure_pipeline_threshold which only trains when needed
+        and saves/restores state to never make things worse."""
+        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        source_after = inspect.getsource(PerceptronTransformTuner._after_run)
+        # _after_run does NOT call train_steps_until_target directly
+        assert "train_steps_until_target" not in source_after
+        # but _ensure_pipeline_threshold does, with min_improvement
+        source_ept = inspect.getsource(SmoothAdaptationTuner._ensure_pipeline_threshold)
+        assert "min_improvement" in source_ept
 
 
+@pytest.mark.slow
 class TestRollbackIncludesAuxModel:
     """clone/restore must round-trip both model and aux_model."""
 
@@ -152,8 +161,8 @@ class TestTestGateActiveForWeightQuantization:
         return tuner
 
     def test_test_gate_rejects_bad_test_accuracy(self, tuner):
-        """If test() returns below strict threshold, one-shot at rate=1.0
-        should be rolled back (committed_rate stays 0.0)."""
+        """If test() drops below ``test_baseline - noise_margin``, one-shot
+        at rate=1.0 should be rolled back (committed_rate stays 0.0)."""
         tuner._committed_rate = 0.0
 
         tuner.trainer.validate_n_batches = lambda n: 0.88
@@ -163,6 +172,10 @@ class TestTestGateActiveForWeightQuantization:
         baseline = tuner.trainer.validate_n_batches(tuner._budget.eval_n_batches)
         tuner.target_adjuster.target_metric = baseline
         tuner.target_adjuster.original_metric = baseline
+        # Set explicit baselines so the strict gate has a well-defined reference
+        # (bypassing run()'s noise calibration that would otherwise be used).
+        tuner._test_baseline = 0.88
+        tuner._rollback_tolerance = 0.05
 
         tuner._adaptation(1.0)
 
@@ -183,9 +196,9 @@ class TestActivationShiftTunerMinImprovement:
         tuner = ActivationShiftTuner(pipeline, model, 0.9, 0.001, am)
         assert tuner._budget.accuracy_se() > 0
 
-    def test_uses_eval_n_batches_not_validation_steps(self):
+    def test_uses_budget_eval_batches_not_validation_steps(self):
         source = inspect.getsource(ActivationShiftTuner.run)
-        assert "eval_n_batches" in source
+        assert "progress_eval_batches" in source or "eval_n_batches" in source
         assert "validation_steps" not in source
 
     def test_passes_min_improvement(self):

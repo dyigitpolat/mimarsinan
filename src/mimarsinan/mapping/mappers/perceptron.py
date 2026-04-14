@@ -45,15 +45,14 @@ class PerceptronMapper(Mapper):
         layer_sources = self.source_mapper.map_to_ir(ir_mapping)
         layer_sources = layer_sources.transpose()
 
-        # Encoding as a single host ComputeOp only when this FC applies to one column of
-        # sources (plain MLP). Multi-column (e.g. Mixer token grid) must use map_fc tiling.
+        # Encoding-layer Perceptrons run host-side as ComputeOps wrapping
+        # the full Perceptron forward (including the tunable TransformedActivation
+        # chain). This covers both plain MLP (single-column source) and Mixer
+        # token-grid layouts (multi-column: one ComputeOp per token position).
         if getattr(self.perceptron, "is_encoding_layer", False):
-            if layer_sources.ndim == 1 or (
-                layer_sources.ndim == 2 and layer_sources.shape[1] == 1
-            ):
-                return self._map_to_ir_as_encoding_compute_op(
-                    ir_mapping, layer_sources, layer_weights, layer_biases
-                )
+            return self._map_to_ir_as_encoding_compute_op(
+                ir_mapping, layer_sources, layer_weights, layer_biases
+            )
 
         normalization = getattr(self.perceptron, "normalization", None)
         normalization_type = type(normalization).__name__ if normalization is not None else None
@@ -77,12 +76,40 @@ class PerceptronMapper(Mapper):
         return layer_sources.transpose()
 
     def _map_to_ir_as_encoding_compute_op(self, ir_mapping, layer_sources, layer_weights, _layer_biases):
-        """Host-side full ``Perceptron`` forward as a single ``ComputeOp(module)``."""
+        """Host-side full ``Perceptron`` forward as one ``ComputeOp(module)``.
+
+        ``layer_sources`` is shaped ``(in_features,)`` for single-column
+        (plain MLP) or ``(in_features, num_instances)`` for multi-column
+        (e.g. Mixer token grid). In the multi-column case we emit one
+        ComputeOp per token position, all sharing the same Perceptron module
+        (so a single set of tunable parameters / activation decorators drives
+        every column) — same pattern as ``ModuleComputeMapper._map_to_ir``.
+        """
         in_features = int(layer_weights.shape[1])
         out_features = int(layer_weights.shape[0])
 
-        flat_in = np.array(layer_sources, dtype=object).flatten()
+        src_arr = np.array(layer_sources, dtype=object)
+        if src_arr.ndim == 2 and src_arr.shape[1] > 1:
+            # Multi-column: one ComputeOp per column. ``src_arr[:, i]`` has
+            # shape ``(in_features,)``.
+            num_instances = int(src_arr.shape[1])
+            outputs = []
+            base_name = getattr(self.perceptron, "name", None)
+            for i in range(num_instances):
+                col_sources = np.array(src_arr[:, i], dtype=object).flatten()
+                col_out = ir_mapping.add_compute_op(
+                    input_sources=col_sources,
+                    op_type="module",
+                    params={"module": self.perceptron, "input_shape": (in_features,)},
+                    input_shape=(in_features,),
+                    output_shape=(out_features,),
+                    name=(f"{base_name}_col{i}" if base_name else None),
+                )
+                outputs.append(np.array(col_out, dtype=object).flatten())
+            result = np.stack(outputs, axis=1)  # (out_features, num_instances)
+            return result.transpose()  # (num_instances, out_features)
 
+        flat_in = src_arr.flatten()
         out = ir_mapping.add_compute_op(
             input_sources=flat_in,
             op_type="module",

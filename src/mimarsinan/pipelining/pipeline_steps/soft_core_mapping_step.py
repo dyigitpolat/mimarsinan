@@ -26,11 +26,40 @@ class SoftCoreMappingStep(PipelineStep):
         updates = []
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
+        self.trainer = None
+        self._soft_core_spiking_metric = None
+        self._ttfs_shift_applied = False
 
     def validate(self):
+        # When the TTFS shift was baked into biases, the fused FP model's own
+        # evaluation is no longer meaningful (the decorator chain still subtracts
+        # the shift, so the effective compensation is doubled).  Report the
+        # spiking-sim metric instead, which matches the deployment behavior.
+        if self._ttfs_shift_applied and self._soft_core_spiking_metric is not None:
+            return self._soft_core_spiking_metric
         if self.trainer is not None:
             return self.trainer.validate()
         return self.pipeline.get_target_metric()
+
+    def pipeline_metric(self):
+        """Pipeline metric for Soft Core Mapping.
+
+        In ``ttfs_quantized`` mode with activation quantization, the fused
+        floating-point model's biases are modified in-place by the TTFS shift
+        compensation (see ``process()`` below).  That shift aligns the
+        quantization staircase for the spiking simulation but makes
+        ``trainer.test()`` on the FP model meaningless (the decorator chain
+        already subtracts an equivalent shift, so applying another shift to the
+        bias yields a doubly-shifted output).  In that specific mode only, we
+        report the spiking-simulation metric which is the actual representation
+        of what will be deployed.
+
+        In all other modes the FP model is unmodified by this step and
+        ``trainer.test()`` remains the correct metric.
+        """
+        if self._ttfs_shift_applied and self._soft_core_spiking_metric is not None:
+            return self._soft_core_spiking_metric
+        return super().pipeline_metric()
 
     def process(self):
         model = self.get_entry("fused_model")
@@ -122,10 +151,21 @@ class SoftCoreMappingStep(PipelineStep):
             from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
             tq = self.pipeline.config["target_tq"]
             for perceptron in model.get_perceptrons():
+                # Encoding-layer Perceptrons run host-side as ComputeOps
+                # wrapping the full ``Perceptron.forward`` (with its
+                # ``TransformedActivation`` decorator chain, whose
+                # ``QuantizeDecorator`` already applies the training
+                # ``+ shift``). Adding a bias shift here would double-shift
+                # them; it must only be applied to chip-side NeuralCore
+                # Perceptrons that use the plain TTFS formula
+                # ``floor(V*tq)/tq``.
+                if getattr(perceptron, "is_encoding_layer", False):
+                    continue
                 shift = calculate_activation_shift(tq, perceptron.activation_scale)
                 bias_shift = shift / perceptron.activation_scale
                 PerceptronTransformer().apply_effective_bias_transform(
                     perceptron, lambda b, s=bias_shift: b + s)
+            self._ttfs_shift_applied = True
 
         bits = self.pipeline.config['weight_bits']
         q_max = (2 ** (bits - 1)) - 1
@@ -339,6 +379,7 @@ class SoftCoreMappingStep(PipelineStep):
             )
             acc = spiking_trainer.test()
             spiking_trainer.close()
+            self._soft_core_spiking_metric = float(acc)
             print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
         except Exception as e:
             print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
