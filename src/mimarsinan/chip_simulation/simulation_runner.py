@@ -337,7 +337,8 @@ class SimulationRunner:
         stages = hybrid.stages
         num_samples = len(self.test_data)
         is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
-        scales = getattr(hybrid, "node_activation_scales", {})
+        out_scales = getattr(hybrid, "node_activation_scales", {})
+        in_scales = getattr(hybrid, "node_input_activation_scales", out_scales)
 
         original_input = np.stack([d[0] for d in self.test_data])
         original_input = original_input.reshape(original_input.shape[0], -1)
@@ -378,11 +379,15 @@ class SimulationRunner:
                 assert stage.compute_op is not None
                 print(f"  Executing compute op '{stage.name}' on host")
 
+                op_id = stage.compute_op.id
+                ttfs_in_scale = in_scales.get(op_id, 1.0) if is_ttfs else 1.0
+                ttfs_out_scale = out_scales.get(op_id, 1.0) if is_ttfs else 1.0
                 result = self._execute_compute_op_np(
                     stage.compute_op, original_input, state_buffer,
-                    ttfs_scale=scales.get(stage.compute_op.id, 1.0) if is_ttfs else 1.0,
+                    ttfs_in_scale=ttfs_in_scale,
+                    ttfs_out_scale=ttfs_out_scale,
                 )
-                state_buffer[stage.compute_op.id] = result
+                state_buffer[op_id] = result
 
             else:
                 raise ValueError(f"Unknown hybrid stage kind: {stage.kind}")
@@ -426,25 +431,34 @@ class SimulationRunner:
         op: ComputeOp,
         original_input: np.ndarray,
         state_buffer: Dict[int, np.ndarray],
-        ttfs_scale: float = 1.0,
+        ttfs_in_scale: float = 1.0,
+        ttfs_out_scale: float | None = None,
     ) -> np.ndarray:
         """Execute a ComputeOp on host using the state buffer.
 
-        When ``ttfs_scale != 1.0`` (TTFS mode with activation_scale > 1),
-        the gathered input is rescaled from [0, 1] back to training range
-        before execution, and the output is normalised back, matching the
-        fix in ``SpikingHybridCoreFlow._forward_ttfs``.
+        In TTFS mode the gathered input is rescaled by ``ttfs_in_scale`` to
+        bring NeuralCore-sourced values from [0, 1] back to training range
+        before running the op's module, and the output is divided by
+        ``ttfs_out_scale`` to bring it back to TTFS [0, 1] range for
+        downstream NeuralCores.
+
+        For encoding-layer ComputeOps (sources are raw input) ``ttfs_in_scale``
+        is 1.0 (no rescale) while ``ttfs_out_scale`` is the wrapped
+        Perceptron's activation_scale.
         """
+        if ttfs_out_scale is None:
+            ttfs_out_scale = ttfs_in_scale
+
         x_torch = torch.tensor(original_input, dtype=torch.float32)
         buffers_torch = {
             k: torch.tensor(v, dtype=torch.float32) for k, v in state_buffer.items()
         }
         gathered = op.gather_inputs(x_torch, buffers_torch)
-        if abs(ttfs_scale - 1.0) > 1e-9:
-            gathered = gathered * ttfs_scale
+        if abs(ttfs_in_scale - 1.0) > 1e-9:
+            gathered = gathered * ttfs_in_scale
         result = op.execute_on_gathered(gathered)
-        if abs(ttfs_scale - 1.0) > 1e-9:
-            result = result / ttfs_scale
+        if abs(ttfs_out_scale - 1.0) > 1e-9:
+            result = result / ttfs_out_scale
         return result.detach().numpy()
 
     @staticmethod

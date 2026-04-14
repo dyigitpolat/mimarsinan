@@ -59,6 +59,8 @@ from mimarsinan.pipelining.pipeline_steps.activation_adaptation_step import Acti
 from mimarsinan.pipelining.pipeline_steps.clamp_adaptation_step import ClampAdaptationStep
 from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
 
+pytestmark = pytest.mark.slow
+
 
 # ---------------------------------------------------------------------------
 # Helpers

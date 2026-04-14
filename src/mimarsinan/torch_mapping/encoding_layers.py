@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import torch.nn as nn
+
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ModuleComputeMapper
 from mimarsinan.mapping.mappers.conv import (
     Conv2DPerceptronMapper,
     Conv1DPerceptronMapper,
@@ -24,7 +26,6 @@ _PERCEPTRON_MAPPER_TYPES = (PerceptronMapper, Conv2DPerceptronMapper, Conv1DPerc
 _BARE_CONV_MAPPER_TYPES = (Conv2DMapper, Conv1DMapper)
 
 # Pooling maps to ComputeOp in IR — next conv/FC perceptron starts a new segment.
-# (Do not list ModuleComputeMapper: it is also used for patch Linear / token-mix Linears.)
 _BOUNDARY_MAPPER_TYPES = (
     MaxPool2DMapper,
     AvgPool2DMapper,
@@ -36,15 +37,41 @@ def _is_perceptron_holder(node) -> bool:
     return isinstance(node, _PERCEPTRON_MAPPER_TYPES)
 
 
+def _wraps_unbounded_raw_linear_or_conv(mapper) -> bool:
+    """True if a ``ModuleComputeMapper`` wraps a bare ``nn.Linear``/``Conv`` (or
+    ``nn.Sequential`` starting with one) — i.e. its output is raw, signed,
+    unbounded values that need a trailing activation before spike encoding.
+
+    Bounded-output modules (pool, layernorm, function wrappers) return False —
+    the walk continues past them as before.
+    """
+    module = getattr(mapper, "module", None)
+    if module is None:
+        return False
+    if isinstance(module, (nn.Linear, nn.Conv1d, nn.Conv2d)):
+        return True
+    if isinstance(module, nn.Sequential) and len(module) > 0:
+        return isinstance(module[0], (nn.Linear, nn.Conv1d, nn.Conv2d))
+    return False
+
+
 def _is_encoding_segment_start(node) -> bool:
-    """True if this perceptron starts a segment (raw input or after a ComputeOp boundary).
+    """True if this perceptron starts a segment — its input is not a clean
+    spike stream and so its forward must run host-side as a ComputeOp.
 
-    Walks ``source_mapper`` upward: structural mappers (Einops, reshape, etc.) are
-    transparent. Stops at:
+    Walks ``source_mapper`` upward: structural mappers (Einops, reshape, etc.)
+    are transparent. Stops at:
 
-    * Another perceptron mapper → not an encoding start.
+    * Another perceptron mapper → not an encoding start (upstream is on-chip
+      spike output).
     * ``InputMapper`` → encoding (first neural op from raw input).
-    * Pooling / ``ModuleComputeMapper`` → encoding (after host-side ComputeOp).
+    * Pooling boundary → encoding (after host-side ComputeOp).
+    * ``ModuleComputeMapper`` wrapping a bare Linear/Conv → encoding.
+      That upstream ComputeOp produces unbounded raw values, so this
+      Perceptron cannot consume them on-chip (spike encoding undefined);
+      it must run host-side where the activation closes the segment.
+    * ``ModuleComputeMapper`` wrapping a bounded op (pool, layernorm,
+      generic function wrapper) → transparent; keep walking.
     """
     src = node.source_mapper
     while src is not None:
@@ -55,6 +82,8 @@ def _is_encoding_segment_start(node) -> bool:
         if isinstance(src, InputMapper):
             return True
         if isinstance(src, _BOUNDARY_MAPPER_TYPES):
+            return True
+        if isinstance(src, ModuleComputeMapper) and _wraps_unbounded_raw_linear_or_conv(src):
             return True
         src = src.source_mapper
     return False

@@ -82,11 +82,17 @@ class PerceptronTransformTrainer(BasicTrainer):
         
         return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
 
-    def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int):
+    def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
         optimizer = torch.optim.Adam(
             self.aux_model.parameters(), lr=lr, weight_decay=0, betas=(self.beta1, self.beta2)
         )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
-        )
+        if constant_lr or total_steps <= 0:
+            warmup_iters = max(1, int(total_steps * 0.05)) if total_steps > 0 else 1
+            scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_iters
+            )
+        else:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
+            )
         return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)

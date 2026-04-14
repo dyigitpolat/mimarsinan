@@ -10,7 +10,9 @@ import torch
 
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 import mimarsinan.data_handling.data_providers.mnist_data_provider  # noqa: F401 (register)
-from mimarsinan.models.builders.torch_mlp_mixer_builder import TorchMLPMixerBuilder
+from mimarsinan.models.builders.torch_mlp_mixer_core_builder import (
+    TorchMLPMixerCoreBuilder,
+)
 from mimarsinan.search.problems.joint_arch_hw_problem import JointArchHwProblem
 from mimarsinan.search.results import resolve_active_objectives
 
@@ -67,10 +69,10 @@ def _make_problem(
         target_tq=32,
         lr=0.001,
         search_mode=search_mode,
-        builder_factory=TorchMLPMixerBuilder,
+        builder_factory=TorchMLPMixerCoreBuilder,
         arch_options=(),
         model_config_assembler=lambda raw: raw,
-        validate_fn=TorchMLPMixerBuilder.validate_config,
+        validate_fn=TorchMLPMixerCoreBuilder.validate_config,
         active_objective_names=objective_names,
         accuracy_seed=0,
         warmup_fraction=0.10,
@@ -223,9 +225,9 @@ class TestAgentEvolveLikeConfigs:
             {"base_activation": "LeakyReLU", "fc_w_1": 192, "fc_w_2": 256,
              "patch_c_1": 128, "patch_m_1": 14, "patch_n_1": 14},
             {"cores": [
-                {"count": 200, "max_axons": 384, "max_neurons": 384},
-                {"count": 200, "max_axons": 512, "max_neurons": 512},
-                {"count": 200, "max_axons": 384, "max_neurons": 384},
+                {"count": 800, "max_axons": 384, "max_neurons": 384},
+                {"count": 800, "max_axons": 512, "max_neurons": 512},
+                {"count": 800, "max_axons": 384, "max_neurons": 384},
             ]},
         ),
     ]

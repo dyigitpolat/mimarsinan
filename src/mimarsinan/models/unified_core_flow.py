@@ -40,6 +40,17 @@ from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore, WeightBank
 from mimarsinan.mapping.ir_source_spans import IRSourceSpan, compress_ir_sources
 
 
+# Precision for on-chip spiking compute.  Matches the C++ nevresim simulator:
+# TTFS paths use ``signal_t = double``; quantised rate-coded paths use
+# integer arithmetic.  PyTorch's default float32 has only ~7 decimal digits
+# and flips ``ceil`` / threshold decisions for neurons whose V lands near θ.
+# Using float64 matches C++'s double for TTFS and exactly represents integer
+# sums up to 2**53 for rate-coded mode (far larger than any practical axon ×
+# weight range).  The ~2× GPU cost is acceptable because these flows run
+# once per pipeline (not during tuning).
+_COMPUTE_DTYPE = torch.float64
+
+
 def _ttfs_activation_from_type(activation_type: str | None):
     """Resolve activation function for TTFS from IR activation_type string.
 
@@ -204,23 +215,73 @@ class SpikingUnifiedCoreFlow(nn.Module):
         # PyTorch module (un-scaled weights + bias).  To keep the bias term
         # correct we must re-scale their input back to training range before
         # execution and normalise the output back afterwards.
+        # TTFS ComputeOp scaling.  Two distinct scales per ComputeOp:
+        #
+        #   ``_ttfs_node_input_scale[op.id]``  — factor to multiply the
+        #     gathered input by to bring it into training range before
+        #     running the op's module.  NeuralCore-source inputs arrive
+        #     normalised to [0, 1] via ``(S - k_fire)/S`` so they must be
+        #     rescaled by the source activation_scale.  Raw-input sources
+        #     (encoding-layer ops whose sources are the original model input)
+        #     are already in training range and MUST NOT be rescaled.
+        #
+        #   ``_ttfs_node_output_scale[op.id]`` — factor to divide the module
+        #     output by to bring it back into TTFS [0, 1] range for downstream
+        #     NeuralCores whose ``W_eff`` assumes ``per_input_scales == this
+        #     op's output scale``.  For Perceptron-wrapped ops the output
+        #     scale is the Perceptron's own activation_scale (set by clamp
+        #     adaptation); for generic ops it's the average of source scales
+        #     (``compute_per_source_scales`` uses the same average for the
+        #     downstream ``per_input_scales``).
+        #
+        # Before this fix both scales were equal (``_ttfs_node_output_scale``
+        # only), which produced wrong results for encoding-layer perceptrons
+        # wrapped as ``ComputeOp(module)``: their raw input was spuriously
+        # multiplied by activation_scale, distorting the module's forward.
+        from mimarsinan.mapping.hybrid_hardcore_mapping import (
+            _perceptron_wrapped_activation_scale,
+        )
         self._ttfs_node_output_scale: Dict[int, float] = {}
+        self._ttfs_node_input_scale: Dict[int, float] = {}
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                self._ttfs_node_output_scale[node.id] = float(
+                s = float(
                     node.activation_scale.item()
                     if hasattr(node.activation_scale, "item")
                     else node.activation_scale
                 )
+                self._ttfs_node_output_scale[node.id] = s
+                # Neural cores don't use the input-rescale path.
+                self._ttfs_node_input_scale[node.id] = s
             elif isinstance(node, ComputeOp):
+                module = (node.params or {}).get("module")
+                wrapped_scale = _perceptron_wrapped_activation_scale(module)
                 src_scales: list[float] = []
+                all_raw_inputs = True
                 for src in node.input_sources.flatten():
                     src_id = int(src.node_id) if hasattr(src, "node_id") else int(src)
                     if src_id >= 0:
+                        all_raw_inputs = False
                         src_scales.append(self._ttfs_node_output_scale.get(src_id, 1.0))
-                self._ttfs_node_output_scale[node.id] = (
-                    sum(src_scales) / len(src_scales) if src_scales else 1.0
-                )
+
+                # Input rescale: no-op when all sources are raw input
+                # (encoding path); otherwise average of source scales.
+                if all_raw_inputs:
+                    self._ttfs_node_input_scale[node.id] = 1.0
+                else:
+                    self._ttfs_node_input_scale[node.id] = (
+                        sum(src_scales) / len(src_scales) if src_scales else 1.0
+                    )
+
+                # Output normalise: Perceptron-wrapped ops use the wrapped
+                # activation_scale so state_buffer values sit in [0, 1],
+                # matching what a NeuralCore would emit.  Generic ops use
+                # the same average as the input rescale (preserves prior
+                # behaviour for add/mean/etc.).
+                if wrapped_scale is not None:
+                    self._ttfs_node_output_scale[node.id] = wrapped_scale
+                else:
+                    self._ttfs_node_output_scale[node.id] = self._ttfs_node_input_scale[node.id]
 
     # ---------------------------------------------------------------------
     # Spike generation (must match SpikingCoreFlow semantics)
@@ -554,26 +615,29 @@ class SpikingUnifiedCoreFlow(nn.Module):
         batch_size = x.shape[0]
         device = x.device
 
+        # Use float64 on-chip to match C++ ``double`` precision.
+        x_compute = x.to(_COMPUTE_DTYPE)
+
         activation_cache: Dict[int, torch.Tensor] = {}
         self._last_core_spike_counts: Dict[int, float] = {}
 
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                weight = self._get_weight(node)
+                weight = self._get_weight(node).to(_COMPUTE_DTYPE)
                 t_idx = self._get_threshold_idx(node)
-                threshold = self.thresholds[t_idx]
+                threshold = self.thresholds[t_idx].to(_COMPUTE_DTYPE)
 
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
-                inp = torch.zeros(batch_size, in_dim, device=device)
+                inp = torch.zeros(batch_size, in_dim, device=device, dtype=_COMPUTE_DTYPE)
                 self._fill_activation_from_ir_spans(
-                    inp, x=x, activation_cache=activation_cache, spans=spans
+                    inp, x=x_compute, activation_cache=activation_cache, spans=spans
                 )
 
                 out = torch.matmul(weight, inp.T).T
                 # Hardware-bias: add dedicated bias register
                 if node.id in self._hw_bias_params:
-                    out = out + self._hw_bias_params[node.id]
+                    out = out + self._hw_bias_params[node.id].to(_COMPUTE_DTYPE)
 
                 # Apply activation: resolve from activation_type (may be compound
                 # string e.g. "LeakyReLU + ClampDecorator, QuantizeDecorator").
@@ -598,13 +662,13 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 raise TypeError(f"Unknown node type: {type(node)}")
 
         output_sources = list(self.output_sources.flatten())
-        output_signals = torch.zeros(batch_size, len(output_sources), device=device)
+        output_signals = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
         self._fill_activation_from_ir_spans(
-            output_signals, x=x, activation_cache=activation_cache, spans=self._output_spans
+            output_signals, x=x_compute, activation_cache=activation_cache, spans=self._output_spans
         )
 
         self.total_spikes = 0.0
-        return output_signals
+        return output_signals.to(torch.float32)
 
     # -----------------------------------------------------------------
     # TTFS quantized (analytical closed-form)
@@ -630,26 +694,31 @@ class SpikingUnifiedCoreFlow(nn.Module):
         device = x.device
         S = self.simulation_length
 
+        # Use float64 on-chip to match C++ ``double`` precision.  Without
+        # this, ``ceil(S * (1 - V/θ))`` flips by ±1 on boundary values and
+        # produces per-sample prediction differences vs the C++ simulator.
+        x_compute = x.to(_COMPUTE_DTYPE)
+
         activation_cache: Dict[int, torch.Tensor] = {}
         self._last_core_spike_counts: Dict[int, float] = {}
 
         for node in self.nodes:
             if isinstance(node, NeuralCore):
-                weight = self._get_weight(node)
+                weight = self._get_weight(node).to(_COMPUTE_DTYPE)
                 t_idx = self._get_threshold_idx(node)
-                threshold = self.thresholds[t_idx]
+                threshold = self.thresholds[t_idx].to(_COMPUTE_DTYPE)
 
                 spans = self._input_spans[int(node.id)]
                 in_dim = int(len(node.input_sources.flatten()))
-                inp = torch.zeros(batch_size, in_dim, device=device)
+                inp = torch.zeros(batch_size, in_dim, device=device, dtype=_COMPUTE_DTYPE)
                 self._fill_activation_from_ir_spans(
-                    inp, x=x, activation_cache=activation_cache, spans=spans
+                    inp, x=x_compute, activation_cache=activation_cache, spans=spans
                 )
 
                 V = torch.matmul(weight, inp.T).T
                 # Hardware-bias: add dedicated bias register
                 if node.id in self._hw_bias_params:
-                    V = V + self._hw_bias_params[node.id]
+                    V = V + self._hw_bias_params[node.id].to(_COMPUTE_DTYPE)
                 safe_thresh = threshold.clamp(min=1e-12)
                 k_fire_raw = torch.ceil(S * (1.0 - V / safe_thresh))
                 fires = k_fire_raw < S
@@ -768,14 +837,15 @@ class SpikingUnifiedCoreFlow(nn.Module):
             inp, x=x, activation_cache=activation_cache, spans=spans
         )
 
-        scale = self._ttfs_node_output_scale.get(node.id, 1.0)
-        if abs(scale - 1.0) > 1e-9:
-            inp = inp * scale
+        in_scale = self._ttfs_node_input_scale.get(node.id, 1.0)
+        out_scale = self._ttfs_node_output_scale.get(node.id, 1.0)
+        if abs(in_scale - 1.0) > 1e-9:
+            inp = inp * in_scale
 
         out = node.execute_on_gathered(inp)
 
-        if abs(scale - 1.0) > 1e-9:
-            out = out / scale
+        if abs(out_scale - 1.0) > 1e-9:
+            out = out / out_scale
 
         return out
 

@@ -78,17 +78,24 @@ class BasicTrainer:
 
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
-    def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int):
-        """Cosine schedule over ``total_steps`` gradient updates (not full epochs)."""
+    def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
+        """Schedule over ``total_steps`` gradient updates.
+
+        When *constant_lr* is ``True`` the learning rate stays fixed after a
+        short linear warmup (5% of steps).  Otherwise cosine annealing is used.
+        """
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5
         )
-        if total_steps > 0:
+        if constant_lr or total_steps <= 0:
+            warmup_iters = max(1, int(total_steps * 0.05)) if total_steps > 0 else 1
+            scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_iters
+            )
+        else:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
             )
-        else:
-            scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
     def _backward_pass_on_loss(self, x, y, scaler):
@@ -263,6 +270,10 @@ class BasicTrainer:
     ):
         """Train until target reached, converged, or ``max_steps`` exhausted.
 
+        Uses constant LR with linear warmup (5% of steps) for predictable
+        behavior regardless of when convergence triggers.  Saves the best
+        model state and restores it on exit.
+
         Progress is checked every ``check_interval`` steps. Training stops early
         when the target is met or when ``patience`` consecutive checks show no
         improvement of at least ``min_improvement`` (convergence). Patience-based
@@ -270,7 +281,9 @@ class BasicTrainer:
         been executed, giving the optimizer a minimum runway before convergence
         detection kicks in.
         """
-        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler_steps(lr, max_steps)
+        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler_steps(
+            lr, max_steps, constant_lr=True
+        )
         if warmup_steps > 0:
             scheduler = warmup_scheduler.GradualWarmupScheduler(
                 optimizer, multiplier=1.0, total_epoch=warmup_steps, after_scheduler=scheduler
@@ -281,7 +294,21 @@ class BasicTrainer:
         min_s = max(0, int(min_steps))
         imp_eps = float(min_improvement)
 
+        # Use the shared clone/restore helpers so that trainers with an
+        # ``aux_model`` (e.g. PerceptronTransformTrainer, where
+        # ``_update_and_transform_model`` regenerates self.model from aux
+        # every forward pass) round-trip BOTH models.  Without this the
+        # best-state restore only fixes self.model; the next
+        # ``_update_and_transform_model`` call regenerates self.model from
+        # the last (possibly worse) aux_model, silently destroying the
+        # best state we preserved.
+        from mimarsinan.tuning.learning_rate_explorer import (
+            clone_state_for_trainer,
+            restore_state_for_trainer,
+        )
+
         best_acc = 0.0
+        best_state = None
         stale_checks = 0
 
         for step_idx in range(total):
@@ -294,6 +321,7 @@ class BasicTrainer:
             if (step_idx + 1) % interval == 0 or step_idx == total - 1:
                 acc = self.validate_n_batches(n_val)
                 if acc >= target_accuracy:
+                    best_state = clone_state_for_trainer(self)
                     for _ in range(2):
                         x, y = self.next_training_batch()
                         x, y = x.to(self.device), y.to(self.device)
@@ -302,13 +330,16 @@ class BasicTrainer:
                     break
                 if acc > best_acc + imp_eps:
                     best_acc = acc
+                    best_state = clone_state_for_trainer(self)
                     stale_checks = 0
                 else:
                     stale_checks += 1
                     if step_idx + 1 >= min_s and stale_checks >= patience:
                         break
 
-        del optimizer, scheduler, scaler
+        if best_state is not None:
+            restore_state_for_trainer(self, best_state)
+        del optimizer, scheduler, scaler, best_state
         self.test()
         return self.validate_n_batches(n_val)
 

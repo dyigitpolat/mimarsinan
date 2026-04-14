@@ -60,14 +60,23 @@ class HybridHardCoreMapping:
     ``output_sources`` mirrors the original IRGraph output_sources so the
     runtime can assemble the final network output from the state buffer.
 
-    ``node_activation_scales`` maps original IR ``node_id`` to the
-    ``activation_scale`` float.  Used by ``SpikingHybridCoreFlow`` in TTFS
-    mode to rescale ComputeOp inputs/outputs so bias terms remain correct.
+    ``node_activation_scales`` maps original IR ``node_id`` to the *output*
+    ``activation_scale`` (the divisor that normalises the op's training-range
+    output back to TTFS [0, 1] for downstream NeuralCores).
+
+    ``node_input_activation_scales`` maps original IR ``node_id`` to the
+    *input* rescale factor (the multiplier that brings gathered inputs from
+    TTFS [0, 1] back to training range before running the op's module).
+    Distinct from ``node_activation_scales`` for encoding-layer ComputeOps
+    whose sources are the raw model input (already in training range, so
+    in_scale=1.0) but whose output must still be divided by the wrapped
+    Perceptron's activation_scale.
     """
 
     stages: List[HybridStage]
     output_sources: np.ndarray = field(default_factory=lambda: np.array([], dtype=object))
     node_activation_scales: dict[int, float] = field(default_factory=dict)
+    node_input_activation_scales: dict[int, float] = field(default_factory=dict)
 
     def get_compute_ops(self) -> List[ComputeOp]:
         return [s.compute_op for s in self.stages if s.kind == "compute" and s.compute_op is not None]
@@ -472,12 +481,24 @@ def _flush_scheduled_segment(
 
 
 def _compute_node_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
-    """Extract per-node activation scales from an IRGraph.
+    """Extract per-node *output* scales from an IRGraph.
 
-    For NeuralCores the scale is ``activation_scale``.  For ComputeOps the
-    scale is the average of the scales of the nodes feeding into it (a
-    pass-through heuristic that works for scale-equivariant ops like pooling
-    and for bias-carrying ops like nn.Linear).
+    This is the scale downstream consumers assume — the divisor applied to
+    the op's training-range output before storing it in the state buffer,
+    so that values land in the TTFS [0, 1] convention used by NeuralCore
+    effective weights.
+
+    See also :func:`_compute_node_input_activation_scales` for the scale
+    applied when *rescaling* gathered inputs back to training range.
+
+    * NeuralCores: their own ``activation_scale``.
+    * ComputeOps wrapping a Perceptron / PerceptronMapper: the wrapped
+      Perceptron's ``activation_scale`` (its output is in
+      ``[0, activation_scale]`` after the decorator chain, and the
+      downstream NeuralCore's ``per_input_scales`` equals that same value).
+    * Generic ComputeOps: average of source scales (pass-through heuristic
+      that matches ``compute_per_source_scales``'s downstream per-input
+      assignment for scale-equivariant and bias-carrying ops).
     """
     scales: dict[int, float] = {}
     for node in ir_graph.nodes:
@@ -485,6 +506,12 @@ def _compute_node_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
             s = node.activation_scale
             scales[node.id] = float(s.item() if hasattr(s, "item") else s)
         elif isinstance(node, ComputeOp):
+            module = (node.params or {}).get("module")
+            wrapped_scale = _perceptron_wrapped_activation_scale(module)
+            if wrapped_scale is not None:
+                scales[node.id] = wrapped_scale
+                continue
+
             src_scales: list[float] = []
             for src in node.input_sources.flatten():
                 if isinstance(src, IRSource) and src.node_id >= 0:
@@ -493,6 +520,66 @@ def _compute_node_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
                 sum(src_scales) / len(src_scales) if src_scales else 1.0
             )
     return scales
+
+
+def _compute_node_input_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
+    """Input-rescale factors for ComputeOps.
+
+    Applied by consumers as ``gathered = gathered * in_scale`` before running
+    the op's module.  Differs from the output scale for encoding-layer
+    ComputeOps whose sources are the raw model input (already in training
+    range — no rescale needed).
+
+    * Source-from-node ComputeOps: average of source (output) scales.
+    * All-raw-input ComputeOps (encoding path): ``1.0`` (no rescale).
+    * NeuralCores: their activation_scale (unused by the compute-op path,
+      populated for API symmetry).
+    """
+    out_scales = _compute_node_activation_scales(ir_graph)
+    in_scales: dict[int, float] = {}
+    for node in ir_graph.nodes:
+        if isinstance(node, NeuralCore):
+            in_scales[node.id] = out_scales[node.id]
+        elif isinstance(node, ComputeOp):
+            src_scales: list[float] = []
+            all_raw = True
+            for src in node.input_sources.flatten():
+                if isinstance(src, IRSource) and src.node_id >= 0:
+                    all_raw = False
+                    src_scales.append(out_scales.get(src.node_id, 1.0))
+            if all_raw:
+                in_scales[node.id] = 1.0
+            else:
+                in_scales[node.id] = (
+                    sum(src_scales) / len(src_scales) if src_scales else 1.0
+                )
+    return in_scales
+
+
+def _perceptron_wrapped_activation_scale(module) -> float | None:
+    """Return the activation_scale of a Perceptron / PerceptronMapper wrapped
+    as a ``ComputeOp(module)``, or ``None`` if *module* doesn't carry one.
+
+    Encoding-layer perceptrons (first layer of a neural segment) are mapped
+    to ``ComputeOp(op_type="module")`` that holds either the Perceptron
+    directly (from ``PerceptronMapper._map_to_ir_as_encoding_compute_op``)
+    or the Conv2DPerceptronMapper (from ``Conv2DPerceptronMapper._map_to_ir``).
+    Both expose ``activation_scale`` via ``module.activation_scale`` or
+    ``module.perceptron.activation_scale`` respectively.
+    """
+    if module is None:
+        return None
+    s = getattr(module, "activation_scale", None)
+    if s is None:
+        perceptron = getattr(module, "perceptron", None)
+        if perceptron is not None:
+            s = getattr(perceptron, "activation_scale", None)
+    if s is None:
+        return None
+    try:
+        return float(s.item() if hasattr(s, "item") else s)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_hybrid_hard_core_mapping(
@@ -566,13 +653,16 @@ def build_hybrid_hard_core_mapping(
     output_sources = ir_graph.output_sources.copy()
     _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
 
-    # Build node_activation_scales for TTFS ComputeOp bias rescaling.
+    # Build per-node scales for TTFS ComputeOp input rescaling and output
+    # normalisation.  See dataclass docstring for semantics.
     node_activation_scales = _compute_node_activation_scales(ir_graph)
+    node_input_activation_scales = _compute_node_input_activation_scales(ir_graph)
 
     return HybridHardCoreMapping(
         stages=stages,
         output_sources=output_sources,
         node_activation_scales=node_activation_scales,
+        node_input_activation_scales=node_input_activation_scales,
     )
 
 

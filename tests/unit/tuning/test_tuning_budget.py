@@ -12,7 +12,7 @@ class TestTuningBudget:
         b = TuningBudget.from_dataset(dataset_size=50000, batch_size=100, budget_scale=1.0)
         # steps_per_epoch = 500; check_interval = sqrt(500) ~ 22
         assert b.check_interval == 22
-        assert b.max_training_steps == 500 * 3  # 3x budget
+        assert b.max_training_steps == 500  # 1x SPE budget
         assert b.validation_steps >= 1
 
     def test_from_dataset_budget_scale(self):
@@ -21,23 +21,28 @@ class TestTuningBudget:
         assert b2.max_training_steps >= b1.max_training_steps
         assert b1.check_interval == b2.check_interval
 
-    def test_lr_steps_per_probe_matches_check_interval(self):
-        """Each LR probe trains for a full check_interval to reliably detect instability."""
-        import math
+    def test_lr_probe_budget_capped(self):
+        """LR probe count and step budget are capped to keep exploration cheap."""
         b = TuningBudget.from_dataset(50000, 100, budget_scale=1.0)
-        assert b.lr_num_probes == max(2, int(math.sqrt(b.check_interval)))
-        assert b.lr_steps_per_probe == b.check_interval
+        assert b.lr_num_probes == 8
+        assert b.lr_steps_per_probe <= 30
+        # Large dataset must not blow up
+        big = TuningBudget.from_dataset(1_000_000, 100, budget_scale=1.0)
+        assert big.lr_num_probes == 8
+        assert big.lr_steps_per_probe <= 30
 
     def test_tolerance_probe_steps_equals_check_interval(self):
         b = TuningBudget.from_dataset(50000, 100, budget_scale=1.0)
         assert b.tolerance_probe_steps == b.check_interval
 
-    def test_no_hardcoded_lr_bounds(self):
-        """LR fields must scale with dataset, not be clamped to fixed bounds."""
+    def test_lr_fields_capped_for_large_datasets(self):
+        """LR fields are capped to keep per-cycle cost bounded on large datasets."""
         small = TuningBudget.from_dataset(100, 10, budget_scale=1.0)
         large = TuningBudget.from_dataset(1_000_000, 100, budget_scale=1.0)
-        assert small.lr_num_probes < large.lr_num_probes
-        assert small.lr_steps_per_probe < large.lr_steps_per_probe
+        assert small.lr_num_probes <= large.lr_num_probes
+        # large dataset doesn't blow up the probe step budget
+        assert large.lr_steps_per_probe <= 30
+        assert large.lr_num_probes <= 8
 
     def test_eval_n_batches_defaults_to_validation_steps_without_val_info(self):
         b = TuningBudget.from_dataset(50000, 100, budget_scale=1.0)
@@ -50,15 +55,19 @@ class TestTuningBudget:
         )
         assert b.eval_n_batches >= b.validation_steps
 
-    def test_eval_n_batches_uses_full_val_set(self):
+    def test_eval_n_batches_capped_for_large_val_set(self):
+        """For huge validation sets, eval_n_batches is capped to keep cost bounded."""
         b = TuningBudget.from_dataset(
             1_000_000, 16,
             val_set_size=64000, val_batch_size=16,
         )
         total_val_batches = 64000 // 16  # 4000
-        assert b.eval_n_batches == total_val_batches
+        # Capped well below the full val set
+        assert b.eval_n_batches < total_val_batches
+        # Sample count is enough for tight rollback decisions (SE < 0.01)
+        assert b.eval_sample_count >= 2500
 
-    def test_eval_n_batches_equals_full_val_set_regardless_of_tolerance(self):
+    def test_eval_n_batches_consistent_regardless_of_tolerance(self):
         tight = TuningBudget.from_dataset(
             1_000_000, 16,
             val_set_size=64000, val_batch_size=16,
@@ -69,9 +78,9 @@ class TestTuningBudget:
             val_set_size=64000, val_batch_size=16,
             degradation_tolerance=0.10,
         )
-        total_val_batches = 64000 // 16
-        assert tight.eval_n_batches == total_val_batches
-        assert loose.eval_n_batches == total_val_batches
+        # eval_n_batches is determined by val set size and a global cap,
+        # not by degradation_tolerance.
+        assert tight.eval_n_batches == loose.eval_n_batches
 
     def test_tuning_budget_from_pipeline_uses_config_scale(self):
         factory = MockDataProviderFactory()
@@ -89,10 +98,10 @@ class TestTuningBudget:
         b = TuningBudget.from_data_provider(dp)
         assert b.eval_n_batches >= b.validation_steps
 
-    def test_3x_budget_multiplier(self):
+    def test_1x_budget_multiplier(self):
         b = TuningBudget.from_dataset(10000, 100, budget_scale=1.0)
         spe = 10000 // 100  # 100
-        assert b.max_training_steps == 3 * spe
+        assert b.max_training_steps == spe
 
     def test_eval_sample_count_with_val_info(self):
         b = TuningBudget.from_dataset(
@@ -122,13 +131,14 @@ class TestTuningBudget:
         assert 0.003 < b.accuracy_se() < 0.01
 
     def test_accuracy_se_imagenet_like(self):
-        """ImageNet-like with tight tolerance: many eval samples -> small SE."""
+        """ImageNet-like with capped eval_n_batches: SE bounded for rollback decisions."""
         b = TuningBudget.from_dataset(
             1_200_000, 128,
             val_set_size=50000, val_batch_size=128,
             degradation_tolerance=0.01,
         )
-        assert 0.001 < b.accuracy_se() < 0.005
+        # eval_n_batches is capped, so SE is tied to the cap (~5000 samples)
+        assert 0.001 < b.accuracy_se() < 0.02
 
     def test_accuracy_se_default_nonzero(self):
         """accuracy_se() is positive even with minimal eval_sample_count."""
@@ -228,5 +238,5 @@ class TestLRRangeFinderHeuristic:
         )
 
         for lr in probed_lrs:
-            assert lr >= 0.0001 - 1e-9
-            assert lr <= 0.01 + 1e-9
+            assert lr >= 0.00001 - 1e-9  # anchor/100
+            assert lr <= 0.01 + 1e-9     # anchor*10

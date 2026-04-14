@@ -25,6 +25,7 @@ class TuningBudget:
     tolerance_probe_steps: int
     max_lr_exploration_steps: int = 0
     eval_sample_count: int = 0
+    progress_eval_batches: int = 16
 
     def accuracy_se(self) -> float:
         """Bernoulli worst-case standard error for the evaluation metric.
@@ -48,22 +49,36 @@ class TuningBudget:
         """All fields derived from ``check_interval = sqrt(SPE)``."""
         bs = max(1, int(batch_size))
         steps_per_epoch = max(1, int(dataset_size) // bs)
-        check_interval = max(1, int(math.sqrt(float(steps_per_epoch))))
-        max_training_steps = max(1, int(float(steps_per_epoch) * float(budget_scale) * 3))
+        # check_interval capped to keep recovery cycles short on large datasets.
+        # 100 training steps between validations is enough to detect convergence.
+        check_interval = max(1, min(100, int(math.sqrt(float(steps_per_epoch)))))
+        # max_training_steps capped at 2000 -- pretrained models recover in
+        # far fewer steps; longer runs are diminishing returns.
+        spe_budget = int(float(steps_per_epoch) * float(budget_scale))
+        max_training_steps = max(1, min(2000, spe_budget))
         validation_steps = max(1, min(32, check_interval))
 
-        lr_num_probes = min(8, max(2, int(math.sqrt(float(check_interval)))))
-        lr_steps_per_probe = max(1, check_interval)
+        # LR probes need only enough steps to detect destructive divergence.
+        # 30 steps is sufficient; 8 probes total covers anchor/100 to anchor*10.
+        lr_num_probes = 8
+        lr_steps_per_probe = min(30, check_interval)
         tolerance_probe_steps = min(50, check_interval)
 
         if val_set_size is not None and val_batch_size is not None:
             vbs = max(1, int(val_batch_size))
             total_val_batches = max(1, int(val_set_size) // vbs)
-            eval_n_batches = max(validation_steps, total_val_batches)
+            # Cap eval_n_batches so commit/rollback decisions stay <30s.
+            # SE = 0.5/sqrt(N) -> 5000 samples gives SE=0.007, plenty for
+            # rollback decisions where rollback_tolerance >= 0.005.
+            target_eval_samples = 5000
+            target_batches = max(1, target_eval_samples // vbs)
+            eval_n_batches = max(validation_steps, min(target_batches, total_val_batches))
             eval_sample_count = eval_n_batches * vbs
         else:
             eval_n_batches = validation_steps
             eval_sample_count = eval_n_batches * max(1, bs)
+
+        progress_eval_batches = max(1, min(16, eval_n_batches))
 
         return TuningBudget(
             max_training_steps=max_training_steps,
@@ -75,6 +90,7 @@ class TuningBudget:
             tolerance_probe_steps=tolerance_probe_steps,
             max_lr_exploration_steps=lr_steps_per_probe * lr_num_probes,
             eval_sample_count=eval_sample_count,
+            progress_eval_batches=progress_eval_batches,
         )
 
     @staticmethod

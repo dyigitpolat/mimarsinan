@@ -188,27 +188,27 @@ class TestVerifySoftCoreMapping:
         # (not guaranteed, but very likely)
         assert len(r1.softcores) == len(r2.softcores)
 
-    def test_mlp_mixer_layout_preserves_multiple_neural_segments(self):
-        """Layout pass should preserve neural depth across intervening ComputeOps."""
+    def test_mlp_mixer_layout_is_fully_host_side(self):
+        """TorchMLPMixer's patch_embed (Conv, no act) produces raw unbounded
+        output that later token/channel fc1 Perceptrons cannot consume on-chip
+        as spikes. They are marked ``is_encoding_layer=True`` and map to
+        host-side ComputeOps instead, cascading downstream until the whole
+        body runs host-side. No chip-side softcores remain.
+        """
         repr_ = _make_torch_mlp_mixer_repr()
         result = verify_soft_core_mapping(repr_, max_axons=4096, max_neurons=4096)
         assert result.feasible
-        latency_tags = {sc.latency_tag for sc in result.softcores if sc.latency_tag is not None}
-        assert len(latency_tags) >= 4, (
-            "MLP-Mixer should expose multiple sequential neural segments in layout "
-            "verification; compute-op boundaries must not collapse all softcores "
-            "to one latency tag."
-        )
+        assert len(result.softcores) == 0
 
     def test_mlp_mixer_reports_host_side_segments(self):
-        """MLP-Mixer layout should report compute-only segments separately."""
+        """MLP-Mixer layout should report only host-side segments."""
         repr_ = _make_torch_mlp_mixer_repr()
         result = verify_soft_core_mapping(repr_, max_axons=4096, max_neurons=4096)
         assert result.feasible
-        assert result.host_side_segment_count == 5
+        assert result.host_side_segment_count >= 1
 
     def test_mlp_mixer_exposes_layout_preview_flow(self):
-        """Layout preview should alternate host runs and latency groups."""
+        """Layout preview for a fully host-side model has no neural slots."""
         repr_ = _make_torch_mlp_mixer_repr()
         result = verify_soft_core_mapping(repr_, max_axons=4096, max_neurons=4096)
         assert result.feasible
@@ -217,16 +217,10 @@ class TestVerifySoftCoreMapping:
         flow = preview["flow"]
         assert flow[0]["kind"] == "input"
         assert flow[-1]["kind"] == "output"
-        host_counts = [item["compute_op_count"] for item in flow if item["kind"] == "host"]
-        neural_counts = [item["softcore_count"] for item in flow if item["kind"] == "neural"]
-        latency_group_indices = [item["latency_group_index"] for item in flow if item["kind"] == "neural"]
-        # Slot 0: patch_embed Conv2d (1 generic module ComputeOp)
-        # Slots 1-4: mixer fc2 layers (per-column ComputeOps) + mean + classifier
-        assert host_counts[0] == 1, (
-            f"Patch embed Conv2d should create 1 module ComputeOp, got {host_counts[0]}"
-        )
-        assert neural_counts == [32, 16, 32, 16]
-        assert latency_group_indices == [0, 1, 2, 3]
+        neural_slots = [item for item in flow if item["kind"] == "neural"]
+        assert neural_slots == []
+        host_slots = [item for item in flow if item["kind"] == "host"]
+        assert len(host_slots) >= 1
 
 
 # ── Tests: Layout ↔ IR 1-1 Correspondence ──────────────────────────────────

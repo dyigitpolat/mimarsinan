@@ -22,6 +22,10 @@ from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner, _RECOVERY_PAT
 
 
 class PruningTuner(SmoothAdaptationTuner):
+
+    _budget_multiplier = 2.0
+    _skip_one_shot = True
+
     def __init__(
         self,
         pipeline,
@@ -135,7 +139,7 @@ class PruningTuner(SmoothAdaptationTuner):
     def _update_and_evaluate(self, rate):
         """Apply pruning masks and evaluate — pure evaluation, no training."""
         self._apply_masks(rate)
-        return self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _recovery_training_hooks(self, rate):
         """Return forward-pre-hooks that enforce the pruning pattern during recovery."""
@@ -181,13 +185,13 @@ class PruningTuner(SmoothAdaptationTuner):
                 lr = self._find_lr()
                 self.trainer.train_steps_until_target(
                     lr,
-                    self._budget.max_training_steps * 2,
+                    self._budget.max_training_steps,
                     self._get_target(),
                     0,
-                    validation_n_batches=self._budget.eval_n_batches,
+                    validation_n_batches=self._budget.progress_eval_batches,
                     check_interval=self._budget.check_interval,
-                    patience=_RECOVERY_PATIENCE * 2,
-                    min_steps=self._budget.max_training_steps,
+                    patience=_RECOVERY_PATIENCE,
+                    min_steps=self._budget.check_interval * 3,
                     min_improvement=self._budget.accuracy_se() / 2,
                 )
             finally:

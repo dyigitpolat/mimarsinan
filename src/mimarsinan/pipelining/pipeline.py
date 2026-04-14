@@ -144,6 +144,8 @@ class Pipeline:
         assert all([self._translate_key(step.name, requirement) in self.cache for requirement in step.requires]), \
             f"Pipeline error: Some requirements are not found in the cache."
 
+        step.pipeline_previous_metric = previous_metric
+
         try:
             step.run()
             self.set_target_metric(step.pipeline_metric())

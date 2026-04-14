@@ -219,11 +219,16 @@ class TestOneShotFailure:
         tuner._post_acc_fn = high_val
         tuner._patch_trainer()
 
-        orig_test = tuner.trainer.test
+        # Call 1 (run baseline capture): high — the "pre-tuning" test metric.
+        # Call 2 (rate=1.0 gate inside _adaptation): low — drops significantly
+        # below baseline - noise, forcing test_gate_fail + fallback.
+        # Call 3+ (gradual cycle gates, recovery): high again.
         def mock_test():
             test_call_count[0] += 1
-            if test_call_count[0] <= 1:
-                return 0.70  # Below strict threshold for the first test() gate
+            if test_call_count[0] == 1:
+                return 0.87  # run() baseline
+            if test_call_count[0] == 2:
+                return 0.70  # one-shot at rate=1.0 fails strict gate
             return 0.87
         tuner.trainer.test = mock_test
 
