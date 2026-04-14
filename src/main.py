@@ -34,10 +34,14 @@ def _parse_deployment_config(deployment_config):
     data_provider_name = deployment_config['data_provider_name']
     seed = deployment_config.get("seed", 0)
     datasets_path = deployment_config.get("datasets_path", "./datasets")
-    data_provider_factory = BasicDataProviderFactory(data_provider_name, datasets_path, seed=seed)
 
     deployment_name = deployment_config['experiment_name']
     deployment_parameters = dict(deployment_config['deployment_parameters'])
+
+    preprocessing = deployment_parameters.get("preprocessing")
+    data_provider_factory = BasicDataProviderFactory(
+        data_provider_name, datasets_path, seed=seed, preprocessing=preprocessing
+    )
 
     platform_constraints_raw = deployment_config.get("platform_constraints", {})
 

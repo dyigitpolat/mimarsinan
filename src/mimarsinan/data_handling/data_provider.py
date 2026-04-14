@@ -40,12 +40,28 @@ class RegressionMode:
     
 
 class DataProvider:
-    def __init__(self, datasets_path, *, seed: int | None = 0):
+    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None):
+        from mimarsinan.data_handling.preprocessing import resolve_preprocessing
+
         self.datasets_path = datasets_path
         self.seed = int(seed) if seed is not None else None
+        self._preprocessing_spec = resolve_preprocessing(preprocessing)
 
         self._input_shape = None
         self._output_shape = None
+
+    def _apply_preprocessing(self, base_transforms, train: bool = False):
+        """Wrap a provider's native transform list with the configured preprocessing.
+
+        Providers should call this on their ``train_transform`` / ``eval_transform``
+        lists; when no preprocessing is configured the list is returned as a
+        :class:`torchvision.transforms.Compose` unchanged.
+        """
+        import torchvision.transforms as _T
+
+        if self._preprocessing_spec is None:
+            return _T.Compose(list(base_transforms))
+        return self._preprocessing_spec.compose(base_transforms)
 
     def _get_split_generator(self):
         """

@@ -280,6 +280,85 @@
             </div>
 
             <div class="divider"></div>
+            <div class="sub-section-title">Batch & Input Preprocessing</div>
+            <div class="field-grid">
+              <div class="field">
+                <label class="field-label">Batch size <span class="hint">(blank = auto)</span></label>
+                <input type="number" id="batchSize" value="" min="1" step="1" oninput="update()" placeholder="auto">
+              </div>
+              <div class="field">
+                <label class="field-label">Resize input to <span class="hint">square px; blank = native</span></label>
+                <input type="number" id="preprocessResizeTo" value="" min="1" step="1" oninput="update()" placeholder="none">
+              </div>
+              <div class="field">
+                <label class="field-label">Resize interpolation</label>
+                <select id="preprocessInterpolation" onchange="update()">
+                  <option value="bicubic" selected>bicubic</option>
+                  <option value="bilinear">bilinear</option>
+                  <option value="nearest">nearest</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">Normalize</label>
+                <select id="preprocessNormalize" onchange="update()">
+                  <option value="" selected>none</option>
+                  <option value="imagenet">imagenet</option>
+                  <option value="cifar">cifar</option>
+                  <option value="cifar10">cifar10</option>
+                  <option value="cifar100">cifar100</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+            <div class="sub-section-title">Training Recipe <span class="hint">(optional; blank fields keep legacy behavior)</span></div>
+            <div class="field-grid">
+              <div class="field">
+                <label class="field-label">Optimizer</label>
+                <select id="recipeOptimizer" onchange="update()">
+                  <option value="" selected>default (legacy)</option>
+                  <option value="adam">adam</option>
+                  <option value="adamw">adamw</option>
+                  <option value="sgd">sgd</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">Scheduler</label>
+                <select id="recipeScheduler" onchange="update()">
+                  <option value="cosine" selected>cosine</option>
+                  <option value="constant">constant</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">Weight decay</label>
+                <input type="number" id="recipeWeightDecay" value="" step="0.001" min="0" oninput="update()" placeholder="0.05">
+              </div>
+              <div class="field">
+                <label class="field-label">Warmup ratio <span class="hint">fraction of total epochs</span></label>
+                <input type="number" id="recipeWarmupRatio" value="" step="0.01" min="0" max="1" oninput="update()" placeholder="0.1">
+              </div>
+              <div class="field">
+                <label class="field-label">Grad clip norm <span class="hint">0 = off</span></label>
+                <input type="number" id="recipeGradClipNorm" value="" step="0.1" min="0" oninput="update()" placeholder="1.0">
+              </div>
+              <div class="field">
+                <label class="field-label">Layer-wise LR decay <span class="hint">1.0 = off</span></label>
+                <input type="number" id="recipeLayerwiseLrDecay" value="" step="0.05" min="0" max="1" oninput="update()" placeholder="0.75">
+              </div>
+              <div class="field">
+                <label class="field-label">Label smoothing</label>
+                <input type="number" id="recipeLabelSmoothing" value="" step="0.01" min="0" max="1" oninput="update()" placeholder="0.1">
+              </div>
+              <div class="field">
+                <label class="field-label">Beta1 / Beta2</label>
+                <div style="display:flex;gap:6px">
+                  <input type="number" id="recipeBeta1" value="" step="0.001" min="0" max="1" oninput="update()" placeholder="0.9" style="flex:1">
+                  <input type="number" id="recipeBeta2" value="" step="0.001" min="0" max="1" oninput="update()" placeholder="0.999" style="flex:1">
+                </div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
             <div class="field-grid">
               <div class="field">
                 <label class="field-label">Tuning budget scale <span class="hint">√(steps/epoch) multiplier</span></label>

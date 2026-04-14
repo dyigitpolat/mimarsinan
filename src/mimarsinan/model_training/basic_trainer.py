@@ -1,5 +1,10 @@
 from mimarsinan.model_training.training_utilities import AccuracyTracker
 from mimarsinan.data_handling.data_loader_factory import shutdown_data_loader
+from mimarsinan.model_training.training_recipe import (
+    TrainingRecipe,
+    build_optimizer,
+    build_scheduler,
+)
 
 import warmup_scheduler
 import torch
@@ -7,9 +12,10 @@ import torch
 
 class BasicTrainer:
     def __init__(
-            self, model, device, data_loader_factory, loss_function):
+            self, model, device, data_loader_factory, loss_function, recipe: TrainingRecipe | None = None):
         self.model = model.to(device)
         self.device = device
+        self.recipe = recipe
 
         self.data_loader_factory = data_loader_factory
         self.data_provider = data_loader_factory.create_data_provider()
@@ -67,9 +73,14 @@ class BasicTrainer:
             self.report_function(metric_name, metric_value)
 
     def _get_optimizer_and_scheduler(self, lr, epochs):
+        if self.recipe is not None and epochs > 0:
+            optimizer = build_optimizer(self.model, lr, self.recipe)
+            scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=epochs)
+            return optimizer, scheduler, torch.amp.GradScaler("cuda")
+
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr = lr, betas = (self.beta1, self.beta2), weight_decay=5e-5)
-        
+
         if epochs > 0:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max = epochs, eta_min = lr * 1e-3)
@@ -108,7 +119,10 @@ class BasicTrainer:
     def _optimize(self, x, y, optimizer, scaler):
         optimizer.zero_grad()
         loss = self._backward_pass_on_loss(x, y, scaler)
-        #TODO: clip grad
+        clip = getattr(self.recipe, "grad_clip_norm", 0.0) if self.recipe is not None else 0.0
+        if clip and clip > 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), float(clip))
         scaler.step(optimizer)
         scaler.update()
 
@@ -374,6 +388,9 @@ class BasicTrainer:
         """
         optimizer, scheduler, scaler = self._get_optimizer_and_scheduler(lr, n)
 
+        if self.recipe is not None:
+            warmup_epochs = 0
+
         if warmup_epochs > 0:
             scheduler = warmup_scheduler.GradualWarmupScheduler(
                 optimizer,
@@ -392,6 +409,11 @@ class BasicTrainer:
 
     def train_until_target_accuracy(self, lr, max_epochs, target_accuracy, warmup_epochs):
         optimizer, scheduler, scaler = self._get_optimizer_and_scheduler(lr, max_epochs)
+
+        # When a recipe is active, warmup is already built into the scheduler
+        # via SequentialLR — do not double-wrap.
+        if self.recipe is not None:
+            warmup_epochs = 0
 
         if warmup_epochs > 0:
             scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=warmup_epochs, after_scheduler=scheduler)

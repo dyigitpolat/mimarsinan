@@ -9,12 +9,15 @@ import torch
 class MNIST_DataProvider(DataProvider):
     DISPLAY_LABEL = "MNIST (28×28, 10 classes)"
 
-    def __init__(self, datasets_path, *, seed: int | None = 0):
-        super().__init__(datasets_path, seed=seed)
+    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None):
+        super().__init__(datasets_path, seed=seed, preprocessing=preprocessing)
+
+        train_transform = self._apply_preprocessing([transforms.ToTensor()], train=True)
+        eval_transform = self._apply_preprocessing([transforms.ToTensor()], train=False)
 
         base_training_dataset = torchvision.datasets.MNIST(
             root=self.datasets_path, train=True, download=True,
-            transform=transforms.ToTensor())
+            transform=train_transform)
 
         training_validation_split = 0.95
         
@@ -30,7 +33,7 @@ class MNIST_DataProvider(DataProvider):
 
         self.test_dataset = torchvision.datasets.MNIST(
             root=self.datasets_path, train=False, download=True,
-            transform=transforms.ToTensor())
+            transform=eval_transform)
 
     def _get_training_dataset(self):
         return self.training_dataset

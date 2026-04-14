@@ -8,6 +8,7 @@ Optionally fine-tunes for a configurable number of epochs after loading.
 
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.model_training.training_recipe import build_recipe
 from mimarsinan.model_training.weight_loading import resolve_weight_strategy
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
@@ -80,19 +81,29 @@ class WeightPreloadingStep(PipelineStep):
             print(f"  Unexpected keys ({len(unexpected)}): {unexpected[:5]}{'...' if len(unexpected) > 5 else ''}")
 
         finetune_epochs = int(self.pipeline.config.get("finetune_epochs", 0))
+        recipe = build_recipe(self.pipeline.config)
 
         self.trainer = BasicTrainer(
             model,
             device,
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss,
+            recipe=recipe,
         )
         self.trainer.report_function = self.pipeline.reporter.report
 
+        batch_size = self.pipeline.config.get("batch_size")
+        if batch_size is not None:
+            self.trainer.set_training_batch_size(int(batch_size))
+
         if finetune_epochs > 0:
             lr = self.pipeline.config.get("finetune_lr", self.pipeline.config["lr"])
-            print(f"[WeightPreloadingStep] Fine-tuning for {finetune_epochs} epochs (lr={lr})")
-            self.trainer.train_n_epochs(lr, finetune_epochs, warmup_epochs=5)
+            recipe_tag = f" recipe={recipe.optimizer}" if recipe is not None else ""
+            print(f"[WeightPreloadingStep] Fine-tuning for {finetune_epochs} epochs (lr={lr}{recipe_tag})")
+            # When a recipe is active the trainer's scheduler owns warmup
+            # via SequentialLR; otherwise fall back to the legacy 5-epoch warmup.
+            warmup_epochs = 0 if recipe is not None else 5
+            self.trainer.train_n_epochs(lr, finetune_epochs, warmup_epochs=warmup_epochs)
         else:
             print("[WeightPreloadingStep] No fine-tuning (finetune_epochs=0)")
 

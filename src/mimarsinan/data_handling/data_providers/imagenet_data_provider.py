@@ -79,8 +79,12 @@ class ImageNet_DataProvider(DataProvider):
 
     training_validation_split = 0.95
 
-    def __init__(self, datasets_path, *, seed: int | None = 0):
-        super().__init__(datasets_path, seed=seed)
+    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None):
+        # ImageNet provider supplies its own well-tuned RandomResizedCrop /
+        # CenterCrop pipeline; accept ``preprocessing`` for API parity with
+        # the factory but ignore it so we do not double-resize or break
+        # ImageNet-standard eval preprocessing.
+        super().__init__(datasets_path, seed=seed, preprocessing=None)
 
         root = _ensure_imagenet_symlink(str(self.datasets_path))
         if not os.path.isdir(root):
