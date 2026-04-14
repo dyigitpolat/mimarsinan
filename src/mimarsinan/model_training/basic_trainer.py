@@ -363,7 +363,6 @@ class BasicTrainer:
         if best_state is not None:
             restore_state_for_trainer(self, best_state)
         del optimizer, scheduler, scaler, best_state
-        self.test()
         return self.validate_n_batches(n_val)
 
     def train_one_step(

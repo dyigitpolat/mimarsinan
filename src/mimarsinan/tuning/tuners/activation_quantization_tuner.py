@@ -8,6 +8,7 @@ class ActivationQuantizationTuner(SmoothAdaptationTuner):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.target_tq = target_tq
         self.adaptation_manager = adaptation_manager
+        self._final_metric = None
 
     def _get_extra_state(self):
         return self.adaptation_manager.quantization_rate
@@ -23,6 +24,11 @@ class ActivationQuantizationTuner(SmoothAdaptationTuner):
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
+    def validate(self):
+        if self._final_metric is not None:
+            return self._final_metric
+        return self.trainer.validate()
+
     def _after_run(self):
         self._continue_to_full_rate()
 
@@ -30,10 +36,9 @@ class ActivationQuantizationTuner(SmoothAdaptationTuner):
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
-        final_acc = self._ensure_pipeline_threshold()
+        self._final_metric = self._ensure_pipeline_threshold()
         self._committed_rate = 1.0
-        return final_acc
+        return self._final_metric
 
     def run(self):
-        super().run()
-        return self.trainer.validate()
+        return super().run()

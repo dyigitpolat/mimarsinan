@@ -25,6 +25,7 @@ from mimarsinan.tuning.learning_rate_explorer import (
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.tuning.tuning_budget import (
     min_step_for_smooth_adaptation,
+    resolve_tuning_batch_size,
     tuning_budget_from_pipeline,
 )
 
@@ -88,7 +89,7 @@ class TunerBase:
 
     def _create_trainer(self):
         num_workers = self.pipeline.config.get("num_workers", 4)
-        return BasicTrainer(
+        trainer = BasicTrainer(
             self.model,
             self.pipeline.config["device"],
             DataLoaderFactory(self.pipeline.data_provider_factory,
@@ -96,6 +97,14 @@ class TunerBase:
             self.pipeline.loss,
             recipe=self._tuning_recipe(),
         )
+        # Tuning uses a smaller training batch than the training/fine-tuning
+        # phase: smaller per-step activation memory, more gradient updates per
+        # epoch of data. Validation/test loaders keep their original batch
+        # size so eval cost and noise are unchanged.
+        tuning_bs = resolve_tuning_batch_size(self.pipeline, trainer.training_batch_size)
+        if tuning_bs != trainer.training_batch_size:
+            trainer.set_training_batch_size(tuning_bs)
+        return trainer
 
     def close(self):
         """Shut down DataLoader workers owned by this tuner."""
@@ -113,11 +122,35 @@ class TunerBase:
             anchor_lr=self.pipeline_lr,
         )
 
+    # -- LR cache ---------------------------------------------------------------
+    # The optimal recovery LR barely changes between adjacent rates for a
+    # pretrained model, so probe once per tuner run and reuse across cycles.
+    # Invalidated on rollback / stuck-streak / safety-net re-probe.
+
+    def _get_cached_lr(self):
+        if getattr(self, "_cached_lr", None) is None:
+            self._cached_lr = self._find_lr()
+        return self._cached_lr
+
+    def _invalidate_lr_cache(self):
+        self._cached_lr = None
+
     def _get_target(self):
         return self.target_adjuster.get_target()
 
     def validate(self):
         return self.trainer.validate()
+
+    @property
+    def final_metric(self):
+        """Cached final test-consistent metric set by ``_after_run``.
+
+        ``None`` before the tuner has finished; a float on the test-set
+        scale afterwards. Used by :meth:`PipelineStep.pipeline_metric`
+        to avoid a redundant ``trainer.test()`` pass after the tuner
+        already computed one internally.
+        """
+        return getattr(self, "_final_metric", None)
 
     def run(self):
         raise NotImplementedError
@@ -146,6 +179,7 @@ class SmoothAdaptationTuner(TunerBase):
         self._test_baseline = None
         self._validation_baseline = None
         self._cycle_log = []
+        self._cached_lr = None
 
     def _update_and_evaluate(self, rate):
         """Apply transformation T at *rate* and return a validation metric."""
@@ -224,7 +258,7 @@ class SmoothAdaptationTuner(TunerBase):
             return self._committed_rate
 
         t0 = time.time()
-        lr = self._find_lr()
+        lr = self._get_cached_lr()
         t_lr = time.time() - t0
         self.pipeline.reporter.report("LR_found", lr)
         self.pipeline.reporter.report("T_find_lr_sec", t_lr)
@@ -255,6 +289,7 @@ class SmoothAdaptationTuner(TunerBase):
         rollback_threshold = pre_cycle_acc - noise_margin
         if post_acc < rollback_threshold:
             self._restore_state(pre_state)
+            self._invalidate_lr_cache()
             if hasattr(self, "_cycle_log"): self._cycle_log.append({
                 "rate": rate, "committed": self._committed_rate,
                 "instant_acc": float(instant_acc) if instant_acc is not None else None,
@@ -278,6 +313,7 @@ class SmoothAdaptationTuner(TunerBase):
                 )
             if test_acc < strict_threshold:
                 self._restore_state(pre_state)
+                self._invalidate_lr_cache()
                 if hasattr(self, "_cycle_log"): self._cycle_log.append({
                     "rate": rate, "committed": self._committed_rate,
                     "pre_cycle_acc": float(pre_cycle_acc),
@@ -311,6 +347,7 @@ class SmoothAdaptationTuner(TunerBase):
             self._pre_relaxation_target = self._get_target()
             self.target_adjuster.update_target(post_acc)
             self._missed_target_streak = 0
+            self._invalidate_lr_cache()
 
         if hasattr(self, "_cycle_log"): self._cycle_log.append({
             "rate": rate, "committed": self._committed_rate,
@@ -346,10 +383,16 @@ class SmoothAdaptationTuner(TunerBase):
 
         best_state = self._clone_state()
 
-        for attempt, lr_to_use in enumerate([
-            self._find_lr(),
-            self.pipeline_lr,
-        ]):
+        # Attempt 1: LR from the run's cache (probe if empty -- rare, only
+        # happens if the safety net is called before any cycle completed).
+        # Attempt 2: pipeline-configured LR as the fallback. Forcing a fresh
+        # probe here rarely beats ``pipeline_lr`` after the cached LR already
+        # failed, so we skip the extra probe to keep the safety net bounded.
+        def _attempt_lrs():
+            yield self._get_cached_lr()
+            yield self.pipeline_lr
+
+        for attempt, lr_to_use in enumerate(_attempt_lrs()):
             hooks = self._recovery_training_hooks(1.0)
             try:
                 self.trainer.train_steps_until_target(
@@ -418,6 +461,7 @@ class SmoothAdaptationTuner(TunerBase):
         self._small_step_streak = 0
         self._pre_relaxation_target = None
         self._cycle_log = []
+        self._cached_lr = None
 
         self._pipeline_tolerance = float(
             self.pipeline.config.get("degradation_tolerance", 0.05)

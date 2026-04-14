@@ -215,7 +215,8 @@ class PruningTuner(SmoothAdaptationTuner):
             self._force_to_full_rate()
 
         self._apply_masks(1.0)
-        return self._ensure_pipeline_threshold()
+        self._final_metric = self._ensure_pipeline_threshold()
+        return self._final_metric
 
     # -- Main entry point -------------------------------------------------------
 
@@ -230,7 +231,7 @@ class PruningTuner(SmoothAdaptationTuner):
         print("[PruningTuner] Starting fractional discrete adaptation...")
         super().run()
 
-        final_acc = self.trainer.test()
+        final_acc = self._final_metric if self._final_metric is not None else self.trainer.test()
         print(f"[PruningTuner] Final overall accuracy: {final_acc:.4f}")
 
         row_masks, col_masks = self._get_masks(1.0)

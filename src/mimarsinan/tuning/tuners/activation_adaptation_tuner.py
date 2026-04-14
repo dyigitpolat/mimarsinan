@@ -69,6 +69,7 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         self._committed_metric = self._ensure_pipeline_threshold()
+        self._final_metric = self._committed_metric
         self._committed_rate = 1.0
         return self._committed_metric
 
