@@ -40,12 +40,13 @@ class RegressionMode:
     
 
 class DataProvider:
-    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None):
+    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
         from mimarsinan.data_handling.preprocessing import resolve_preprocessing
 
         self.datasets_path = datasets_path
         self.seed = int(seed) if seed is not None else None
         self._preprocessing_spec = resolve_preprocessing(preprocessing)
+        self._batch_size_override = int(batch_size) if batch_size else None
 
         self._input_shape = None
         self._output_shape = None
@@ -109,8 +110,10 @@ class DataProvider:
         return self.get_prediction_mode().create_loss()
     
     def get_training_batch_size(self):
+        if self._batch_size_override is not None:
+            return self._batch_size_override
         return self.get_training_set_size() // 100
-    
+
     def get_validation_batch_size(self):
         """Match training minibatch size; never exceed the validation set size."""
         train_bs = self.get_training_batch_size()
@@ -118,9 +121,20 @@ class DataProvider:
         if n_val <= 0:
             return max(1, train_bs)
         return min(max(1, train_bs), n_val)
-    
+
     def get_test_batch_size(self):
-        return self.get_test_set_size()
+        """Default to the training batch size, capped at the test-set size.
+
+        The legacy default (full test set in one batch) OOMs on any non-trivial
+        input (e.g. ViT-B/16 at 224x224 -> ~22 GiB for 10k CIFAR-10 test images).
+        The trainer's ``test()`` method iterates the loader, so a sub-full-set
+        batch size is always correct.
+        """
+        train_bs = self.get_training_batch_size()
+        n_test = self.get_test_set_size()
+        if n_test <= 0:
+            return max(1, train_bs)
+        return min(max(1, train_bs), n_test)
     
     def get_training_set_size(self):
         return len(self._get_training_dataset())

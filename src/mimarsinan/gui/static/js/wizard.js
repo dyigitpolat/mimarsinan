@@ -678,6 +678,11 @@ function buildConfig() {
       ];
     }
     dp.training_recipe = recipe;
+    // Optional: reuse the same recipe for the SNN adaptation / tuning phase.
+    const applyToTuning = document.getElementById('recipeApplyToTuning');
+    if (applyToTuning && applyToTuning.checked) {
+      dp.tuning_recipe = { ...recipe };
+    }
   }
 
   // NAS / search config
@@ -855,6 +860,9 @@ function loadStateFromConfig(config) {
     setVal('recipeBeta1', '');
     setVal('recipeBeta2', '');
   }
+  // "Apply recipe to tuning" checkbox — on iff tuning_recipe is present.
+  const applyToTuningEl = document.getElementById('recipeApplyToTuning');
+  if (applyToTuningEl) applyToTuningEl.checked = !!dp.tuning_recipe;
 
   setVal('tuningBudgetScale', dp.tuning_budget_scale);
   setVal('degradationTolerance', dp.degradation_tolerance);

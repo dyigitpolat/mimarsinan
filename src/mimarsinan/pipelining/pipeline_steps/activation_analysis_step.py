@@ -14,6 +14,13 @@ MIN_SCALE = 1e-6
 MIN_ANALYSIS_BATCHES = 2
 MAX_ANALYSIS_BATCHES = 32
 MAX_SAMPLES_PER_BATCH = 8192
+# The SavedTensorDecorator stores a reference to every perceptron's full
+# forward-pass output tensor simultaneously. On large-input backbones
+# (e.g. ViT-B/16 at 224x224) this snowballs: ~12 encoder blocks with
+# several perceptrons each * batch * seq_len * hidden_dim easily exceeds
+# 20 GiB when the training batch size is carried over. Cap the batch
+# here so the step stays memory-safe regardless of the training recipe.
+ANALYSIS_BATCH_SIZE_CAP = 16
 
 
 def _analysis_batch_count(pipeline) -> int:
@@ -116,8 +123,14 @@ def _activation_scale_stats(
 
 
 def _attach_saved_tensor_decorator(perceptron):
-    """Attach a SavedTensorDecorator and return a cleanup callback."""
-    decorator = SavedTensorDecorator()
+    """Attach a sampling ``SavedTensorDecorator`` and return a cleanup callback.
+
+    ``sample_to_cpu=True`` pushes the subsampling + CPU transfer into the
+    decorator itself so the GPU activation is released immediately after
+    ``output_transform`` runs -- essential to avoid OOM when attaching
+    decorators to every perceptron of a large-input backbone.
+    """
+    decorator = SavedTensorDecorator(sample_to_cpu=True, max_samples=MAX_SAMPLES_PER_BATCH)
     activation = perceptron.activation
     if hasattr(activation, "decorate") and hasattr(activation, "pop_decorator"):
         activation.decorate(decorator)
@@ -163,6 +176,17 @@ class ActivationAnalysisStep(PipelineStep):
             self.pipeline.config['device'],
             DataLoaderFactory(self.pipeline.data_provider_factory),
             self.pipeline.loss)
+
+        # Shrink the validation batch below the pipeline default for this
+        # step only: decorators pin every perceptron's full output tensor
+        # in VRAM until after the forward pass completes. An explicit
+        # ``activation_analysis_batch_size`` override wins; otherwise cap
+        # at ANALYSIS_BATCH_SIZE_CAP. Never upsize.
+        override = self.pipeline.config.get("activation_analysis_batch_size")
+        current_val_bs = self.trainer.validation_batch_size
+        target_bs = int(override) if override else min(current_val_bs, ANALYSIS_BATCH_SIZE_CAP)
+        if target_bs > 0 and target_bs < current_val_bs:
+            self.trainer.set_validation_batch_size(target_bs)
 
         perceptrons = list(model.get_perceptrons())
         decorators = []

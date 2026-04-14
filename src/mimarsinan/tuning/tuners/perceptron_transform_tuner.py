@@ -30,6 +30,7 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
             self._data_loader_factory,
             self._pipeline_loss,
             self._mixed_transform(1.0),
+            recipe=self._tuning_recipe(),
         )
         return trainer
 

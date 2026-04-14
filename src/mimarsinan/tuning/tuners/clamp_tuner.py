@@ -98,7 +98,10 @@ class ClampTuner(SmoothAdaptationTuner):
 
         decorators = []
         for perceptron in perceptrons:
-            decorator = SavedTensorDecorator()
+            # sample_to_cpu avoids pinning every perceptron's full output
+            # in VRAM during the forward pass; the saturation ratio is a
+            # distribution statistic that is unbiased under subsampling.
+            decorator = SavedTensorDecorator(sample_to_cpu=True)
             perceptron.activation.decorate(decorator)
             decorators.append(decorator)
 

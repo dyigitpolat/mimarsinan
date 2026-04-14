@@ -103,6 +103,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "batch_size",
     "preprocessing",
     "training_recipe",
+    "tuning_recipe",
+    "activation_analysis_batch_size",
     "generate_visualizations",
     "max_simulation_samples",
     "seed",

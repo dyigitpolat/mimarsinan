@@ -7,12 +7,13 @@ class DataProviderFactory:
 class BasicDataProviderFactory(DataProviderFactory):
     _provider_registry = {}
 
-    def __init__(self, name: str, datasets_path: str, *, seed: int | None = 0, cache: bool = True, preprocessing=None):
+    def __init__(self, name: str, datasets_path: str, *, seed: int | None = 0, cache: bool = True, preprocessing=None, batch_size=None):
         self._name = name
         self._datasets_path = datasets_path
         self._seed = seed
         self._cache = bool(cache)
         self._preprocessing = preprocessing
+        self._batch_size = batch_size
         self._cached_provider: DataProvider | None = None
         
         if self._name not in self._provider_registry:
@@ -40,12 +41,20 @@ class BasicDataProviderFactory(DataProviderFactory):
                 self._datasets_path,
                 seed=self._seed,
                 preprocessing=self._preprocessing,
+                batch_size=self._batch_size,
             )
         except TypeError:
             try:
-                provider = provider_cls(self._datasets_path, seed=self._seed)
+                provider = provider_cls(
+                    self._datasets_path,
+                    seed=self._seed,
+                    preprocessing=self._preprocessing,
+                )
             except TypeError:
-                provider = provider_cls(self._datasets_path)
+                try:
+                    provider = provider_cls(self._datasets_path, seed=self._seed)
+                except TypeError:
+                    provider = provider_cls(self._datasets_path)
 
         if self._cache:
             self._cached_provider = provider

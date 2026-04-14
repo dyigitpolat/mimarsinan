@@ -1,4 +1,8 @@
 from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.model_training.training_recipe import (
+    build_optimizer,
+    build_scheduler,
+)
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 
 import copy
@@ -9,9 +13,10 @@ import functools
 
 class PerceptronTransformTrainer(BasicTrainer):
     def __init__(
-            self, model, device, data_provider_factory, loss_function, perceptron_transformation):
+            self, model, device, data_provider_factory, loss_function, perceptron_transformation,
+            recipe=None):
 
-        super().__init__(model, device, data_provider_factory, loss_function)
+        super().__init__(model, device, data_provider_factory, loss_function, recipe=recipe)
         self.aux_model = copy.deepcopy(self.model).to(self.device)
         self.perceptron_transformation = perceptron_transformation
 
@@ -79,7 +84,18 @@ class PerceptronTransformTrainer(BasicTrainer):
             self._transfer_gradients_to_aux()
         return loss
 
+    def _params_to_optimize(self):
+        # The optimizer steps aux_model, so gradient clipping must target its
+        # parameters (gradients are transferred from self.model -> self.aux_model
+        # in _backward_pass_on_loss).
+        return self.aux_model.parameters()
+
     def _get_optimizer_and_scheduler(self, lr, epochs):
+        if self.recipe is not None and epochs > 0:
+            optimizer = build_optimizer(self.aux_model, lr, self.recipe)
+            scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=epochs)
+            return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
+
         optimizer = torch.optim.Adam(
             self.aux_model.parameters(), lr = lr, weight_decay=0, betas=(self.beta1, self.beta2))
 
@@ -90,6 +106,11 @@ class PerceptronTransformTrainer(BasicTrainer):
         return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
 
     def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
+        if self.recipe is not None and total_steps > 0 and not constant_lr:
+            optimizer = build_optimizer(self.aux_model, lr, self.recipe)
+            scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=int(total_steps))
+            return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
+
         optimizer = torch.optim.Adam(
             self.aux_model.parameters(), lr=lr, weight_decay=0, betas=(self.beta1, self.beta2)
         )

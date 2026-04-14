@@ -389,7 +389,10 @@ class SoftCoreMappingStep(PipelineStep):
             if not isinstance(perceptron.input_activation, TransformedActivation):
                 perceptron.input_activation = TransformedActivation(perceptron.input_activation, [])
                 
-            perceptron.input_activation.decorate(SavedTensorDecorator())
+            # sample_to_cpu prevents decorators from pinning every perceptron's
+            # input tensor in VRAM during the forward pass; the downstream
+            # histogram-based quantile is unbiased under subsampling.
+            perceptron.input_activation.decorate(SavedTensorDecorator(sample_to_cpu=True))
 
         validator.validate()
 
@@ -402,24 +405,27 @@ class SoftCoreMappingStep(PipelineStep):
                     f"Perceptron '{getattr(perceptron, 'name', '<unnamed>')}' did not record any inputs. "
                     "This typically happens when a Mapper's forward bypasses `perceptron.input_activation`."
                 )
-            in_min = saved_tensor_dec.latest_input.min()
-            in_max = saved_tensor_dec.latest_input.max()
+            # The saved tensor may live on CPU (sample_to_cpu decorator) or on
+            # the pipeline device (legacy path). Keep histogram math on the
+            # tensor's own device so the two paths share one code branch.
             x = saved_tensor_dec.latest_input
-            
+            in_min = x.min()
+            in_max = x.max()
+
             bins = 1000
             activation_hist = torch.histc(x.flatten(), bins=bins, min=in_min.item(), max=in_max.item())
-            bin_edges = torch.linspace(in_min.item(), in_max.item(), steps=bins+1).to(self.pipeline.config['device'])
+            bin_edges = torch.linspace(in_min.item(), in_max.item(), steps=bins+1, device=activation_hist.device)
 
-            activation_hist *= bin_edges[1:].to(self.pipeline.config['device'])
+            activation_hist *= bin_edges[1:]
             activation_hist[activation_hist < 0] = 0
             hist_sum = activation_hist.sum()
             cumulative_hist = activation_hist.cumsum(0)
             cumulative_hist /= hist_sum
 
             clip_rate = 0.999
-            
+
             # # find the index of the bin which first exceeds the rate
-            index = (cumulative_hist > clip_rate).flatten().nonzero()[0].to(self.pipeline.config['device'])
+            index = (cumulative_hist > clip_rate).flatten().nonzero()[0]
             clipped_act_scale = bin_edges[index].item()
 
             target_act_scale = (in_max * (1.0 - rate) + rate * clipped_act_scale) 
