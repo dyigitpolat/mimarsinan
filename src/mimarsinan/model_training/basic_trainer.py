@@ -116,13 +116,22 @@ class BasicTrainer:
         scaler.scale(loss).backward()
         return loss
     
+    def _params_to_optimize(self):
+        """Parameters that the optimizer actually steps.
+
+        Subclasses that optimize a companion model (e.g.
+        :class:`PerceptronTransformTrainer` optimizes ``self.aux_model``)
+        override this so gradient clipping targets the correct parameters.
+        """
+        return self.model.parameters()
+
     def _optimize(self, x, y, optimizer, scaler):
         optimizer.zero_grad()
         loss = self._backward_pass_on_loss(x, y, scaler)
         clip = getattr(self.recipe, "grad_clip_norm", 0.0) if self.recipe is not None else 0.0
         if clip and clip > 0:
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), float(clip))
+            torch.nn.utils.clip_grad_norm_(self._params_to_optimize(), float(clip))
         scaler.step(optimizer)
         scaler.update()
 

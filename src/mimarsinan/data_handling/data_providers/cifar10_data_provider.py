@@ -11,8 +11,8 @@ import os
 class CIFAR10_DataProvider(DataProvider):
     DISPLAY_LABEL = "CIFAR-10 (32×32×3, 10 classes)"
 
-    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None):
-        super().__init__(datasets_path, seed=seed, preprocessing=preprocessing)
+    def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
+        super().__init__(datasets_path, seed=seed, preprocessing=preprocessing, batch_size=batch_size)
 
         path_str = str(self.datasets_path + '/cifar-10-batches-py')
         download = not os.path.exists(path_str)

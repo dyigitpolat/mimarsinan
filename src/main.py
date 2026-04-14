@@ -39,8 +39,10 @@ def _parse_deployment_config(deployment_config):
     deployment_parameters = dict(deployment_config['deployment_parameters'])
 
     preprocessing = deployment_parameters.get("preprocessing")
+    batch_size = deployment_parameters.get("batch_size")
     data_provider_factory = BasicDataProviderFactory(
-        data_provider_name, datasets_path, seed=seed, preprocessing=preprocessing
+        data_provider_name, datasets_path,
+        seed=seed, preprocessing=preprocessing, batch_size=batch_size,
     )
 
     platform_constraints_raw = deployment_config.get("platform_constraints", {})

@@ -92,9 +92,9 @@ class WeightPreloadingStep(PipelineStep):
         )
         self.trainer.report_function = self.pipeline.reporter.report
 
-        batch_size = self.pipeline.config.get("batch_size")
-        if batch_size is not None:
-            self.trainer.set_training_batch_size(int(batch_size))
+        # Batch sizing is now enforced globally at the DataProvider level
+        # (see BasicDataProviderFactory(..., batch_size=...)), so the trainer
+        # loaders already reflect the configured batch size for all splits.
 
         if finetune_epochs > 0:
             lr = self.pipeline.config.get("finetune_lr", self.pipeline.config["lr"])

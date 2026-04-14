@@ -14,6 +14,7 @@ import time
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.model_training.training_recipe import build_recipe
 from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.learning_rate_explorer import (
@@ -74,6 +75,17 @@ class TunerBase:
         self.trainer = self._create_trainer()
         self.trainer.report_function = pipeline.reporter.report
 
+    def _tuning_recipe(self):
+        """Recipe for tuning-phase trainers (explicit opt-in via ``tuning_recipe``).
+
+        Returns ``None`` when the user has not configured ``tuning_recipe``,
+        which preserves the legacy Adam/AdamW dynamics that existing SNN
+        adaptation code relies on. We do NOT fall back to ``training_recipe``
+        on purpose: fine-tuning recipes (LLRD + wd=0.05) are tuned for
+        transfer learning and can destabilize rate-based adaptation loops.
+        """
+        return build_recipe(self.pipeline.config, key="tuning_recipe")
+
     def _create_trainer(self):
         num_workers = self.pipeline.config.get("num_workers", 4)
         return BasicTrainer(
@@ -82,6 +94,7 @@ class TunerBase:
             DataLoaderFactory(self.pipeline.data_provider_factory,
                               num_workers=num_workers),
             self.pipeline.loss,
+            recipe=self._tuning_recipe(),
         )
 
     def close(self):

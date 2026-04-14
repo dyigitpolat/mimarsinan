@@ -48,20 +48,56 @@ class NoiseDecorator:
 
 
 class SavedTensorDecorator(nn.Module):
-    def __init__(self):
+    """Captures layer I/O for inspection.
+
+    Default mode stores a **reference** to the tensor (fast, zero-copy),
+    which is appropriate when the saved tensor feeds into a differentiable
+    loss (see :class:`CustomClassificationLoss`). For statistics collection
+    -- activation scale estimation, clamp saturation checks, input
+    histograms -- use ``sample_to_cpu=True``. In that mode the decorator
+    immediately detaches, subsamples (deterministic linspace), and moves
+    the tensor to CPU inside the forward pass, so the GPU activation can
+    be freed as soon as the forward continues.
+
+    This is the only sustainable approach for large-input backbones (e.g.
+    ViT-B/16 at 224x224): without sampling, every perceptron's full output
+    tensor stays pinned in VRAM for the whole forward, which compounds to
+    >20 GiB on CIFAR-10 + batch 128 and OOMs any step that attaches saved
+    decorators to all perceptrons simultaneously.
+
+    When ``sample_to_cpu`` is enabled, consumers receive a flat 1-D float32
+    CPU tensor of length ``min(numel, max_samples)``. All distribution-level
+    consumers (quantiles, histograms, saturation ratios) are accurate under
+    subsampling.
+    """
+
+    def __init__(self, *, sample_to_cpu: bool = False, max_samples: int = 8192):
         super(SavedTensorDecorator, self).__init__()
         self.latest_input = None
         self.latest_output = None
+        self._sample_to_cpu = bool(sample_to_cpu)
+        self._max_samples = int(max_samples) if max_samples and max_samples > 0 else 0
+
+    def _maybe_sample(self, x):
+        if not self._sample_to_cpu:
+            return x
+        flat = x.detach().reshape(-1).to(torch.float32)
+        if self._max_samples <= 0 or flat.numel() <= self._max_samples:
+            return flat.cpu()
+        idx = torch.linspace(
+            0, flat.numel() - 1, steps=self._max_samples, device=flat.device
+        ).round().long()
+        return flat.index_select(0, idx).cpu()
 
     def input_transform(self, x):
         if len(x.shape) > 1:
-            self.latest_input = x
+            self.latest_input = self._maybe_sample(x)
 
         return x
 
     def output_transform(self, x):
         if len(x.shape) > 1:
-            self.latest_output = x
+            self.latest_output = self._maybe_sample(x)
 
         return x
 

@@ -65,18 +65,26 @@ class TrainingRecipe:
 DEFAULT_RECIPE_FIELDS = {f.name for f in TrainingRecipe.__dataclass_fields__.values()}
 
 
-def build_recipe(config: dict) -> Optional[TrainingRecipe]:
-    """Return a ``TrainingRecipe`` from ``config["training_recipe"]``, or ``None``.
+def build_recipe(config: dict, key: str = "training_recipe") -> Optional[TrainingRecipe]:
+    """Return a ``TrainingRecipe`` from ``config[key]``, or ``None``.
 
-    Returning ``None`` signals to :class:`BasicTrainer` that legacy behavior
-    should run -- crucial for SNN tuning paths that rely on specific optimizer
-    dynamics.
+    Returning ``None`` signals to trainers that legacy behavior should run --
+    crucial for SNN tuning paths that rely on specific optimizer dynamics
+    when no recipe is explicitly configured.
+
+    The ``key`` parameter lets callers distinguish between multiple recipes
+    in the same config (e.g. ``training_recipe`` for fine-tuning vs.
+    ``tuning_recipe`` for SNN adaptation loops). Each recipe is strictly
+    opt-in -- there is no cross-fallback because a fine-tuning recipe
+    (AdamW + large wd + LLRD) can destabilize rate-based SNN adaptation
+    loops. Callers wanting the same recipe for both stages should set
+    both keys explicitly.
     """
-    block = config.get("training_recipe")
+    block = config.get(key)
     if not block:
         return None
     if not isinstance(block, dict):
-        raise TypeError(f"training_recipe must be a dict, got {type(block)!r}")
+        raise TypeError(f"{key} must be a dict, got {type(block)!r}")
 
     kwargs = {k: v for k, v in block.items() if k in DEFAULT_RECIPE_FIELDS}
     if "betas" in kwargs and kwargs["betas"] is not None:
