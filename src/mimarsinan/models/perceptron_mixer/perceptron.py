@@ -92,15 +92,21 @@ class Perceptron(nn.Module):
         self.scaler = scaler
 
     def forward(self, x):
-        x = self.input_activation(x)
-        
+        # input_activation and scaler are nn.Identity throughout training/tuning
+        # (only set to something else during soft-core-mapping, post-tuning).
+        # Skip their __call__ + hook machinery when that's the case.
+        if not isinstance(self.input_activation, nn.Identity):
+            x = self.input_activation(x)
+
         out = self.layer(x)
-        out = self.normalization(out)
-        out = self.scaler(out)
+        if not isinstance(self.normalization, nn.Identity):
+            out = self.normalization(out)
+        if not isinstance(self.scaler, nn.Identity):
+            out = self.scaler(out)
 
         out = self.activation(out)
-        
-        if self.training:
+
+        if self.training and not isinstance(self.regularization, nn.Identity):
             out = self.regularization(out)
-        
+
         return out

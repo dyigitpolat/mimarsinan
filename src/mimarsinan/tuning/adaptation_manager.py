@@ -22,9 +22,14 @@ class AdaptationManager(nn.Module):
         if self.activation_adaptation_rate > 0:
             decorators.append(
                 self.get_rate_adjusted_activation_replacement_decorator(perceptron))
-        decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
-        decorators.append(
-            self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
+        # Each rate-adjusted decorator short-circuits internally at rate==0 but
+        # still costs a Python call per forward. update_activation is invoked
+        # whenever a rate changes, so we can safely omit inactive decorators.
+        if self.clamp_rate != 0.0:
+            decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
+        if self.quantization_rate != 0.0:
+            decorators.append(
+                self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
         if not use_ttfs and self.shift_rate != 0.0:
             # At shift_rate==0 the amount is a zero tensor; ShiftDecorator would
             # still execute torch.sub(x, 0) every forward. Omit entirely.
@@ -32,11 +37,17 @@ class AdaptationManager(nn.Module):
 
         perceptron.set_activation(
             TransformedActivation(perceptron.base_activation, decorators))
-        
-        target_noise_amount = (1.0 / (pipeline_config['target_tq'] * 2.5))
-        perceptron.set_regularization(
-            NoisyDropout(torch.tensor(0.0), self.noise_rate, target_noise_amount * perceptron.activation_scale)
-        )
+
+        # When noise_rate==0, use nn.Identity so Perceptron.forward's isinstance
+        # check skips the regularization call entirely (NoisyDropout would
+        # otherwise short-circuit internally but still cost one Python call).
+        if self.noise_rate > 0:
+            target_noise_amount = (1.0 / (pipeline_config['target_tq'] * 2.5))
+            perceptron.set_regularization(
+                NoisyDropout(torch.tensor(0.0), self.noise_rate, target_noise_amount * perceptron.activation_scale)
+            )
+        else:
+            perceptron.set_regularization(nn.Identity())
 
         # perceptron.set_scaler(
         #     TransformedActivation(

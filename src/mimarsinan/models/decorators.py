@@ -14,6 +14,10 @@ class NoisyDropout(nn.Module):
         self.dropout_p = dropout_p
         self.rate = rate
         self.noise_radius = noise_radius
+        # Cache the Dropout module instead of instantiating one per forward.
+        # dropout_p may be a 0-d tensor; nn.Dropout wants a float.
+        p = float(dropout_p.item()) if isinstance(dropout_p, torch.Tensor) else float(dropout_p)
+        self._dropout = nn.Dropout(p)
 
     def forward(self, x):
         # Rate=0 is the common case during non-noise tuning cycles; skip the
@@ -24,7 +28,7 @@ class NoisyDropout(nn.Module):
         random_mask = torch.rand(x.shape, device=x.device)
         random_mask = (random_mask < self.rate).float()
 
-        out = nn.Dropout(self.dropout_p)(x)
+        out = self._dropout(x)
         out = out + self.noise_radius * torch.rand_like(out) - 0.5 * self.noise_radius
         return random_mask * out + (1.0 - random_mask) * x
 
@@ -33,12 +37,14 @@ class NoiseDecorator:
     def __init__(self, rate, noise_radius):
         self.rate = rate
         self.noise_radius = noise_radius
+        # Cache the NoisyDropout module instead of instantiating one per forward.
+        self._noise = NoisyDropout(torch.tensor(0.0), self.rate, self.noise_radius)
 
     def input_transform(self, x):
-        return nn.Identity()(x)
+        return x
 
     def output_transform(self, x):
-        return NoisyDropout(torch.tensor(0.0), self.rate, self.noise_radius)(x)
+        return self._noise(x)
 
 
 class SavedTensorDecorator(nn.Module):
@@ -51,13 +57,13 @@ class SavedTensorDecorator(nn.Module):
         if len(x.shape) > 1:
             self.latest_input = x
 
-        return nn.Identity()(x)
+        return x
 
     def output_transform(self, x):
         if len(x.shape) > 1:
             self.latest_output = x
 
-        return nn.Identity()(x)
+        return x
 
 
 class StatsDecorator:
@@ -88,7 +94,7 @@ class StatsDecorator:
             self.in_hist = torch.histc(x.flatten(), bins=100, min=self.in_min.item(), max=self.in_max.item())
             self.in_hist_bin_edges = torch.linspace(self.in_min.item(), self.in_max.item(), steps=101)
 
-        return nn.Identity()(x)
+        return x
 
     def output_transform(self, x):
         if len(x.shape) > 1:
@@ -100,7 +106,7 @@ class StatsDecorator:
             self.out_hist = torch.histc(x.flatten(), bins=100, min=self.out_min.item(), max=self.out_max.item())
             self.out_hist_bin_edges = torch.linspace(self.out_min.item(), self.out_max.item(), steps=101)
 
-        return nn.Identity()(x)
+        return x
 
 
 class ShiftDecorator:
@@ -112,7 +118,7 @@ class ShiftDecorator:
         return torch.sub(x, self.shift)
 
     def output_transform(self, x):
-        return nn.Identity()(x)
+        return x
 
 
 class ScaleDecorator:
@@ -120,7 +126,7 @@ class ScaleDecorator:
         self.scale = scale
 
     def input_transform(self, x):
-        return nn.Identity()(x)
+        return x
 
     def output_transform(self, x):
         self.scale = self.scale.to(x.device)
@@ -133,7 +139,7 @@ class ClampDecorator:
         self.clamp_max = clamp_max
 
     def input_transform(self, x):
-        return nn.Identity()(x)
+        return x
 
     def output_transform(self, x):
         self.clamp_min = self.clamp_min.to(x.device)
@@ -147,7 +153,7 @@ class QuantizeDecorator:
         self.c = c
 
     def input_transform(self, x):
-        return nn.Identity()(x)
+        return x
 
     def output_transform(self, x):
         self.levels_before_c = self.levels_before_c.to(x.device)
@@ -262,7 +268,7 @@ class AnyDecorator:
         self.module = any_module
 
     def input_transform(self, x):
-        return nn.Identity()(x)
+        return x
 
     def output_transform(self, x):
         return self.module(x)

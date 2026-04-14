@@ -36,24 +36,25 @@ class TransformedActivation(nn.Module):
         super(TransformedActivation, self).__init__()
         self.base_activation = base_activation
         self.decorators = decorators
-        self._update_activation()
 
     def decorate(self, decorator):
         self.decorators.append(decorator)
-        self._update_activation()
 
     def pop_decorator(self):
-        popped_decorator = self.decorators.pop()
-        self._update_activation()
-        return popped_decorator
+        return self.decorators.pop()
 
     def forward(self, x):
-        return self.act(x)
-
-    def _update_activation(self):
-        self.act = self.base_activation
-        for decorator in self.decorators:
-            self.act = DecoratedActivation(self.act, decorator)
+        # Flattened equivalent of the previous nested-DecoratedActivation chain:
+        #   DecoratedActivation(DecoratedActivation(base, d0), d1)(x)
+        # The outermost decorator's input_transform runs first, its
+        # output_transform runs last — hence reversed for inputs, forward for
+        # outputs. Avoids N nn.Module wrappers per forward (one per decorator).
+        for dec in reversed(self.decorators):
+            x = dec.input_transform(x)
+        x = self.base_activation(x)
+        for dec in self.decorators:
+            x = dec.output_transform(x)
+        return x
 
 
 class FrozenStatsNormalization(nn.Module):
