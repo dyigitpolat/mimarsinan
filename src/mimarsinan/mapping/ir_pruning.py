@@ -151,8 +151,11 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             initial_pruned_per_bank[bank_id] = (ir_row_mask, ir_col_mask)
 
     # 3) Fallback: 1:1 order-based (no provenance). Support both legacy bias row (nr == in_f+1) and hardware_bias (nr == in_f).
-    if len(initial_pruned_per_node) == 0 and len(initial_pruned_per_bank) == 0 and len(neural_cores) == len(perceptrons):
-        for i, (node, p) in enumerate(zip(neural_cores, perceptrons)):
+    # Encoding perceptrons (is_encoding_layer=True) emit ComputeOps instead of NeuralCores, so exclude
+    # them from the 1:1 count match — otherwise fallback silently disables when any layer is subsumed host-side.
+    chip_perceptrons = [p for p in perceptrons if not getattr(p, "is_encoding_layer", False)]
+    if len(initial_pruned_per_node) == 0 and len(initial_pruned_per_bank) == 0 and len(neural_cores) == len(chip_perceptrons):
+        for i, (node, p) in enumerate(zip(neural_cores, chip_perceptrons)):
             row_pruned, col_pruned = _perceptron_masks(p)
             if row_pruned is None:
                 continue
@@ -335,6 +338,26 @@ def prune_ir_graph(
             init_rows = pre_r if pre_r else None
             init_cols = pre_c if pre_c else None
 
+        # Intersect mask-based prunes with value-zero rows/cols.
+        # Pruning at the perceptron level zeroes W[r,:] and b[r] for pruned output
+        # rows, which produces activation(0)=0 during training — BUT downstream
+        # normalization fusion rewrites bias to (0 - mean)*u + beta, so the pruned
+        # neuron's IR bias row becomes a non-zero constant. Physically removing
+        # that neuron from the IR graph drops the constant input that downstream
+        # cores were trained to read, breaking accuracy. The safe rule: only
+        # drop a row/col that is value-zero in the mapped matrix. Masks remain
+        # the authoritative source for WHICH axes were structurally pruned, but
+        # can only act where the actual core_matrix agrees (zero contribution).
+        if init_rows is not None:
+            value_zero_rows = {
+                i for i in range(n_axons) if np.abs(mat[i, :]).sum() < zero_threshold
+            }
+            value_zero_cols = {
+                j for j in range(n_neurons) if np.abs(mat[:, j]).sum() < zero_threshold
+            }
+            init_rows = init_rows & value_zero_rows
+            init_cols = init_cols & value_zero_cols
+
         zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
             mat,
             zero_threshold=zero_threshold,
@@ -492,6 +515,17 @@ def prune_ir_graph(
         exempt_c = frozenset(bank_exempt_cols)
         if init is not None and len(init[0]) == n_axons and len(init[1]) == n_neurons:
             zero_rows, zero_cols = _masks_to_sets(init[0], init[1])
+            # Same rationale as Phase 1: restrict mask-marked prunes to rows/cols that
+            # are value-zero in the bank matrix, so neurons with residual non-zero
+            # bias (post-fusion) are not dropped.
+            value_zero_rows = {
+                i for i in range(n_axons) if np.abs(mat[i, :]).sum() < zero_threshold
+            }
+            value_zero_cols = {
+                j for j in range(n_neurons) if np.abs(mat[:, j]).sum() < zero_threshold
+            }
+            zero_rows = zero_rows & value_zero_rows
+            zero_cols = zero_cols & value_zero_cols
             zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
                 mat,
                 zero_threshold=zero_threshold,

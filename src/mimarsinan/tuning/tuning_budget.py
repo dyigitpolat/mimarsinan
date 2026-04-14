@@ -45,17 +45,29 @@ class TuningBudget:
         val_set_size: int | None = None,
         val_batch_size: int | None = None,
         degradation_tolerance: float = 0.05,
+        tuning_batch_size: int | None = None,
     ) -> TuningBudget:
-        """All fields derived from ``check_interval = sqrt(SPE)``."""
-        bs = max(1, int(batch_size))
-        steps_per_epoch = max(1, int(dataset_size) // bs)
+        """Budget derived from the *tuning* batch size.
+
+        ``batch_size`` is the training batch size; ``tuning_batch_size``
+        overrides it for the tuning phase alone (``None`` keeps the
+        training batch size, preserving legacy behavior). Smaller tuning
+        batches ⇒ more gradient updates per epoch of data, finer
+        recovery, and lower activation memory; the sample-count budget
+        (recovery_samples ≈ 1 epoch × budget_scale) is invariant under
+        the batch-size change.
+        """
+        train_bs = max(1, int(batch_size))
+        tuning_bs = max(1, int(tuning_batch_size)) if tuning_batch_size is not None else train_bs
+        steps_per_epoch = max(1, int(dataset_size) // tuning_bs)
         # check_interval capped to keep recovery cycles short on large datasets.
         # 100 training steps between validations is enough to detect convergence.
         check_interval = max(1, min(100, int(math.sqrt(float(steps_per_epoch)))))
-        # max_training_steps capped at 2000 -- pretrained models recover in
-        # far fewer steps; longer runs are diminishing returns.
+        # Recovery budget is sample-based (≈ budget_scale × 1 epoch of data),
+        # so smaller tuning batches give proportionally more gradient steps.
+        # Cap raised to 4000 so the common bs//4 default does not get pinned.
         spe_budget = int(float(steps_per_epoch) * float(budget_scale))
-        max_training_steps = max(1, min(2000, spe_budget))
+        max_training_steps = max(1, min(4000, spe_budget))
         validation_steps = max(1, min(32, check_interval))
 
         # LR probes need only enough steps to detect destructive divergence.
@@ -76,7 +88,7 @@ class TuningBudget:
             eval_sample_count = eval_n_batches * vbs
         else:
             eval_n_batches = validation_steps
-            eval_sample_count = eval_n_batches * max(1, bs)
+            eval_sample_count = eval_n_batches * max(1, tuning_bs)
 
         progress_eval_batches = max(1, min(16, eval_n_batches))
 
@@ -98,6 +110,8 @@ class TuningBudget:
         data_provider: DataProvider,
         budget_scale: float = 1.0,
         degradation_tolerance: float = 0.05,
+        *,
+        tuning_batch_size: int | None = None,
     ) -> TuningBudget:
         return TuningBudget.from_dataset(
             data_provider.get_training_set_size(),
@@ -106,21 +120,45 @@ class TuningBudget:
             val_set_size=data_provider.get_validation_set_size(),
             val_batch_size=data_provider.get_validation_batch_size(),
             degradation_tolerance=degradation_tolerance,
+            tuning_batch_size=tuning_batch_size,
         )
+
+
+def resolve_tuning_batch_size(pipeline, training_batch_size: int) -> int:
+    """Resolve the tuning-phase batch size from ``pipeline.config``.
+
+    Explicit ``tuning_batch_size`` in config wins. Otherwise defaults to
+    ``max(16, training_batch_size // 4)`` — smaller batches keep the
+    tuning phase light (less activation memory, finer gradient updates),
+    independent of the training-phase batch size. Users can opt out by
+    setting ``tuning_batch_size`` equal to ``batch_size``.
+    """
+    cfg_val = pipeline.config.get("tuning_batch_size")
+    if cfg_val is not None:
+        return max(1, int(cfg_val))
+    return max(16, max(1, int(training_batch_size)) // 4)
 
 
 def tuning_budget_from_pipeline(pipeline) -> TuningBudget:
     """Build a :class:`TuningBudget` from ``pipeline.config`` and data provider."""
     dp = pipeline.data_provider_factory.create()
+    tuning_bs = resolve_tuning_batch_size(pipeline, dp.get_training_batch_size())
     return TuningBudget.from_data_provider(
         dp,
         float(pipeline.config.get("tuning_budget_scale", 1.0)),
         degradation_tolerance=float(pipeline.config.get("degradation_tolerance", 0.05)),
+        tuning_batch_size=tuning_bs,
     )
 
 
 def max_total_training_steps(pipeline) -> int:
-    """Upper bound on gradient steps for full ``training_epochs`` (for ``SmartSmoothAdaptation`` ``min_step``)."""
+    """Upper bound on gradient steps for full ``training_epochs`` (for ``SmartSmoothAdaptation`` ``min_step``).
+
+    Intentionally keyed to the *training* batch size — this is the upper
+    bound of a full training run, not the tuning budget, so it must not
+    collapse when the tuning batch size is larger than the dataset (as it
+    trivially is on unit-test fixtures).
+    """
     dp = pipeline.data_provider_factory.create()
     bs = max(1, dp.get_training_batch_size())
     spe = max(1, (dp.get_training_set_size() + bs - 1) // bs)

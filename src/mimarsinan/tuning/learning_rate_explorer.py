@@ -94,10 +94,6 @@ class LRRangeFinder:
                 accs.append(acc)
                 lrs.append(float(lr))
 
-                # Free optimizer/scaler memory from train_n_steps before next probe.
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
                 if acc < baseline * 0.1 and i > 0:
                     break
                 if self.max_total_steps and cumulative_steps >= self.max_total_steps:
@@ -112,6 +108,8 @@ class LRRangeFinder:
             return max(zip(lrs, accs), key=lambda x: x[1])[0]
         finally:
             self.restore_state(state)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
 
 
