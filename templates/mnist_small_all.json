@@ -52,7 +52,33 @@
     "pruning": true,
     "pruning_fraction": 0.3,
     "allow_scheduling": true,
-    "tuning_budget_scale": 1.0
+    "tuning_budget_scale": 1.0,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "weight_decay": 0.05,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "scheduler": "cosine",
+      "warmup_ratio": 0.1,
+      "grad_clip_norm": 1.0,
+      "layer_wise_lr_decay": 0.75,
+      "label_smoothing": 0.1
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "weight_decay": 0.01,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "scheduler": "cosine",
+      "warmup_ratio": 0.0,
+      "grad_clip_norm": 1.0,
+      "layer_wise_lr_decay": 1.0,
+      "label_smoothing": 0.0
+    }
   },
   "target_metric_override": null,
   "start_step": null,

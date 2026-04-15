@@ -15,6 +15,32 @@ from typing import Dict, Set
 
 # ── Defaults (must stay in sync with pipeline behavior) ─────────────────────
 
+# Default training / tuning recipes. These mirror the recipe block used in
+# ``templates/cifar_vit_pretrained.json`` so new configs pick up the same
+# AdamW + cosine + warmup + LLRD + label-smoothing setup as the reference ViT
+# template out of the box.
+DEFAULT_TRAINING_RECIPE: Dict[str, object] = {
+    "optimizer": "adamw",
+    "weight_decay": 0.05,
+    "betas": [0.9, 0.999],
+    "scheduler": "cosine",
+    "warmup_ratio": 0.1,
+    "grad_clip_norm": 1.0,
+    "layer_wise_lr_decay": 0.75,
+    "label_smoothing": 0.1,
+}
+
+DEFAULT_TUNING_RECIPE: Dict[str, object] = {
+    "optimizer": "adamw",
+    "weight_decay": 0.01,
+    "betas": [0.9, 0.999],
+    "scheduler": "cosine",
+    "warmup_ratio": 0.0,
+    "grad_clip_norm": 1.0,
+    "layer_wise_lr_decay": 1.0,
+    "label_smoothing": 0.0,
+}
+
 DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "lr": 0.001,
     "lr_range_min": 1e-5,
@@ -33,6 +59,8 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "hw_config_mode": "fixed",
     "spiking_mode": "rate",
     "allow_scheduling": False,
+    "training_recipe": dict(DEFAULT_TRAINING_RECIPE),
+    "tuning_recipe": dict(DEFAULT_TUNING_RECIPE),
 }
 
 DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
@@ -113,7 +141,23 @@ CONFIG_KEYS_SET: Set[str] = {
 
 def get_default_deployment_parameters() -> Dict[str, object]:
     """Return a copy of default deployment parameters."""
-    return dict(DEFAULT_DEPLOYMENT_PARAMETERS)
+    out = dict(DEFAULT_DEPLOYMENT_PARAMETERS)
+    # Deep-copy mutable recipe blocks so callers can mutate freely.
+    if "training_recipe" in out:
+        out["training_recipe"] = dict(out["training_recipe"])
+    if "tuning_recipe" in out:
+        out["tuning_recipe"] = dict(out["tuning_recipe"])
+    return out
+
+
+def get_default_training_recipe() -> Dict[str, object]:
+    """Return a copy of the default training recipe (AdamW + cosine + LLRD)."""
+    return dict(DEFAULT_TRAINING_RECIPE)
+
+
+def get_default_tuning_recipe() -> Dict[str, object]:
+    """Return a copy of the default tuning recipe (AdamW, no LLRD, no warmup)."""
+    return dict(DEFAULT_TUNING_RECIPE)
 
 
 def get_default_platform_constraints() -> Dict[str, object]:

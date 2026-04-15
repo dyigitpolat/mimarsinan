@@ -241,6 +241,28 @@ class DeploymentPipeline(Pipeline):
         "hw_config_mode": "fixed",
         "spiking_mode": "rate",
         "allow_scheduling": False,
+        # Recipe defaults match templates/cifar_vit_pretrained.json. Mirrored in
+        # config_schema/defaults.py: DEFAULT_TRAINING_RECIPE / DEFAULT_TUNING_RECIPE.
+        "training_recipe": {
+            "optimizer": "adamw",
+            "weight_decay": 0.05,
+            "betas": [0.9, 0.999],
+            "scheduler": "cosine",
+            "warmup_ratio": 0.1,
+            "grad_clip_norm": 1.0,
+            "layer_wise_lr_decay": 0.75,
+            "label_smoothing": 0.1,
+        },
+        "tuning_recipe": {
+            "optimizer": "adamw",
+            "weight_decay": 0.01,
+            "betas": [0.9, 0.999],
+            "scheduler": "cosine",
+            "warmup_ratio": 0.0,
+            "grad_clip_norm": 1.0,
+            "layer_wise_lr_decay": 1.0,
+            "label_smoothing": 0.0,
+        },
     }
 
     default_platform_constraints: dict = {

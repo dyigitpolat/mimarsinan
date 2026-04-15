@@ -394,9 +394,16 @@ class HardCoreMapping:
             orig_offset = getattr(core, "neuron_offset_in_original", 0)
 
             # Fragment 1: first `available_neurons` columns
+            # Deep-copy axon_sources: fragments must NOT share SpikeSource instances,
+            # because remap_sources mutates .core_/.neuron_ in place. Sharing causes
+            # double-remap (hardcore key not in neuron_mapping → KeyError) when both
+            # fragments are remapped in the same pass.
             frag1 = SoftCore(
                 core_matrix=core.core_matrix[:, :available_neurons].copy(),
-                axon_sources=list(core.axon_sources),
+                axon_sources=[
+                    SpikeSource(s.core_, s.neuron_, s.is_input_, s.is_off_, s.is_always_on_)
+                    for s in core.axon_sources
+                ],
                 id=core.id,
                 activation_scale=core.activation_scale,
                 parameter_scale=core.parameter_scale,
@@ -414,10 +421,13 @@ class HardCoreMapping:
             if getattr(core, "hardware_bias", None) is not None:
                 frag1.hardware_bias = core.hardware_bias[:available_neurons].copy()
 
-            # Fragment 2: remaining columns
+            # Fragment 2: remaining columns (see frag1 comment re: axon_sources deep copy).
             frag2 = SoftCore(
                 core_matrix=core.core_matrix[:, available_neurons:].copy(),
-                axon_sources=list(core.axon_sources),
+                axon_sources=[
+                    SpikeSource(s.core_, s.neuron_, s.is_input_, s.is_off_, s.is_always_on_)
+                    for s in core.axon_sources
+                ],
                 id=core.id,
                 activation_scale=core.activation_scale,
                 parameter_scale=core.parameter_scale,

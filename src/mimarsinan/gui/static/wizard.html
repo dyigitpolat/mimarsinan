@@ -311,14 +311,14 @@
             </div>
 
             <div class="divider"></div>
-            <div class="sub-section-title">Training Recipe <span class="hint">(optional; blank fields keep legacy behavior)</span></div>
+            <div class="sub-section-title">Training Recipe <span class="hint">(AdamW + cosine + warmup + LLRD + label smoothing defaults)</span></div>
             <div class="field-grid">
               <div class="field">
                 <label class="field-label">Optimizer</label>
                 <select id="recipeOptimizer" onchange="update()">
-                  <option value="" selected>default (legacy)</option>
+                  <option value="">default (legacy)</option>
                   <option value="adam">adam</option>
-                  <option value="adamw">adamw</option>
+                  <option value="adamw" selected>adamw</option>
                   <option value="sgd">sgd</option>
                 </select>
               </div>
@@ -331,35 +331,35 @@
               </div>
               <div class="field">
                 <label class="field-label">Weight decay</label>
-                <input type="number" id="recipeWeightDecay" value="" step="0.001" min="0" oninput="update()" placeholder="0.05">
+                <input type="number" id="recipeWeightDecay" value="0.05" step="0.001" min="0" oninput="update()" placeholder="0.05">
               </div>
               <div class="field">
                 <label class="field-label">Warmup ratio <span class="hint">fraction of total epochs</span></label>
-                <input type="number" id="recipeWarmupRatio" value="" step="0.01" min="0" max="1" oninput="update()" placeholder="0.1">
+                <input type="number" id="recipeWarmupRatio" value="0.1" step="0.01" min="0" max="1" oninput="update()" placeholder="0.1">
               </div>
               <div class="field">
                 <label class="field-label">Grad clip norm <span class="hint">0 = off</span></label>
-                <input type="number" id="recipeGradClipNorm" value="" step="0.1" min="0" oninput="update()" placeholder="1.0">
+                <input type="number" id="recipeGradClipNorm" value="1.0" step="0.1" min="0" oninput="update()" placeholder="1.0">
               </div>
               <div class="field">
                 <label class="field-label">Layer-wise LR decay <span class="hint">1.0 = off</span></label>
-                <input type="number" id="recipeLayerwiseLrDecay" value="" step="0.05" min="0" max="1" oninput="update()" placeholder="0.75">
+                <input type="number" id="recipeLayerwiseLrDecay" value="0.75" step="0.05" min="0" max="1" oninput="update()" placeholder="0.75">
               </div>
               <div class="field">
                 <label class="field-label">Label smoothing</label>
-                <input type="number" id="recipeLabelSmoothing" value="" step="0.01" min="0" max="1" oninput="update()" placeholder="0.1">
+                <input type="number" id="recipeLabelSmoothing" value="0.1" step="0.01" min="0" max="1" oninput="update()" placeholder="0.1">
               </div>
               <div class="field">
                 <label class="field-label">Beta1 / Beta2</label>
                 <div style="display:flex;gap:6px">
-                  <input type="number" id="recipeBeta1" value="" step="0.001" min="0" max="1" oninput="update()" placeholder="0.9" style="flex:1">
-                  <input type="number" id="recipeBeta2" value="" step="0.001" min="0" max="1" oninput="update()" placeholder="0.999" style="flex:1">
+                  <input type="number" id="recipeBeta1" value="0.9" step="0.001" min="0" max="1" oninput="update()" placeholder="0.9" style="flex:1">
+                  <input type="number" id="recipeBeta2" value="0.999" step="0.001" min="0" max="1" oninput="update()" placeholder="0.999" style="flex:1">
                 </div>
               </div>
               <div class="field">
                 <label class="field-label">Apply to SNN tuning phase too <span class="hint">(off = tuning uses legacy Adam)</span></label>
                 <label style="display:flex;align-items:center;gap:6px;font-size:0.9em">
-                  <input type="checkbox" id="recipeApplyToTuning" onchange="update()">
+                  <input type="checkbox" id="recipeApplyToTuning" onchange="update()" checked>
                   <span>Reuse recipe for adaptation tuners</span>
                 </label>
               </div>
