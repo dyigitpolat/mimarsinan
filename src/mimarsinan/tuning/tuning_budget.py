@@ -84,7 +84,8 @@ class TuningBudget:
             # rollback decisions where rollback_tolerance >= 0.005.
             target_eval_samples = 5000
             target_batches = max(1, target_eval_samples // vbs)
-            eval_n_batches = max(validation_steps, min(target_batches, total_val_batches))
+            min_eval_batches = min(validation_steps, total_val_batches)
+            eval_n_batches = max(min_eval_batches, min(target_batches, total_val_batches))
             eval_sample_count = eval_n_batches * vbs
         else:
             eval_n_batches = validation_steps
