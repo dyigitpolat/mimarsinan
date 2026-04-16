@@ -294,6 +294,7 @@ function groupMetricsByCategory(names) {
   for (const name of names) {
     const l = name.toLowerCase();
     if (l.includes('loss')) add('Loss', name);
+    else if (l.includes('adaptation target')) add('Accuracy', name);
     else if (l.includes('accuracy') || l.includes('acc')) add('Accuracy', name);
     else if (l === 'lr' || l.includes('learning rate')) add('Learning Rate', name);
     else if (l.includes('adaptation') || l.includes('tuning rate')) add('Adaptation', name);

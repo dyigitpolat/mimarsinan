@@ -68,7 +68,7 @@ export function renderAdaptationTab(adaptMgr, model, metrics, container) {
     }
   }
 
-  const adaptMetrics = Object.keys(metrics || {}).filter(n => { const l = n.toLowerCase(); return l.includes('tuning rate') || l.includes('adaptation'); });
+  const adaptMetrics = Object.keys(metrics || {}).filter(n => { const l = n.toLowerCase(); if (l.includes('adaptation target')) return false; return l.includes('tuning rate') || l.includes('adaptation'); });
   if (adaptMetrics.length > 0) html += '<div class="card" style="margin-bottom:20px"><div class="card-header">Adaptation Rate Timeline</div><div class="card-body"><div id="ad-timeline" style="min-height:220px"></div></div></div>';
   if (hasAct || hasParam) html += '<div class="card" style="margin-bottom:20px"><div class="card-header">Per-Layer Scale Comparison</div><div class="card-body"><div id="ad-scales" style="min-height:220px"></div></div></div>';
   if (layers.some(l => l.weight?.histogram)) html += '<div class="card" style="margin-bottom:20px"><div class="card-header">Weight Distributions</div><div class="card-body"><div id="ad-dist" style="min-height:220px"></div></div></div>';
