@@ -67,6 +67,7 @@ def hard_cores_to_chip(
     neurons_per_core,
     leak,
     weight_type,
+    threshold_type=None,
 ):
     """
     Convert a HardCoreMapping into a ChipModel for nevresim.
@@ -163,6 +164,7 @@ def hard_cores_to_chip(
         output_sources,
         hardcores,
         weight_type,
+        threshold_type=threshold_type,
     )
 
     chip.load_from_json(chip.get_chip_json())

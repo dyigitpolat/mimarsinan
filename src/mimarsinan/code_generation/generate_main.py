@@ -9,6 +9,7 @@ def _build_chip_and_exec_decl(
     firing_mode: str,
     spike_gen_mode: str,
     weight_type: str,
+    threshold_type: str,
     simulation_length: int,
     latency: int,
     output_count: int,
@@ -29,7 +30,7 @@ def _build_chip_and_exec_decl(
         # Continuous / analytical TTFS — single-pass, no cycles.
         return (
             f"static constinit auto chip = \n"
-            f"        generate_chip<TTFSAnalyticalCompute, {weight_type}>();\n"
+            f"        generate_chip<TTFSAnalyticalCompute, {weight_type}, {threshold_type}>();\n"
             f"\n"
             f"    using exec = TTFSContinuousExecution;"
         )
@@ -39,7 +40,7 @@ def _build_chip_and_exec_decl(
         # active cycle, Phase 2 (fire-once + ramp) on subsequent cycles.
         return (
             f"static constinit auto chip = \n"
-            f"        generate_chip<TTFSQuantizedCompute<{simulation_length}>, {weight_type}>();\n"
+            f"        generate_chip<TTFSQuantizedCompute<{simulation_length}>, {weight_type}, {threshold_type}>();\n"
             f"\n"
             f"    using exec = TTFSExecution<{simulation_length}, {latency}>;"
         )
@@ -47,7 +48,7 @@ def _build_chip_and_exec_decl(
         # Rate-coded modes (Default, Novena).
         return (
             f"static constinit auto chip = \n"
-            f"        generate_chip<SpikingCompute<{firing_mode}FirePolicy>, {weight_type}>();\n"
+            f"        generate_chip<SpikingCompute<{firing_mode}FirePolicy>, {weight_type}, {threshold_type}>();\n"
             f"\n"
             f"    using exec = SpikingExecution<"
             f"{simulation_length}, {latency}, {output_count}, "
@@ -56,11 +57,23 @@ def _build_chip_and_exec_decl(
         )
 
 
-def get_config(spike_gen_mode="Stochastic", firing_mode="Default", weight_type="double", spiking_mode="rate"):
+def get_config(
+    spike_gen_mode="Stochastic",
+    firing_mode="Default",
+    weight_type="double",
+    spiking_mode="rate",
+    threshold_type=None,
+):
+    # threshold_type defaults to weight_type: single-type (rate-coded,
+    # hardware-accurate integer arithmetic) is the historic behaviour.
+    # TTFS callers should set threshold_type="double" explicitly.
+    if threshold_type is None:
+        threshold_type = weight_type
     return {
         "spike_gen_mode": spike_gen_mode,
         "firing_mode": firing_mode,
         "weight_type": weight_type,
+        "threshold_type": threshold_type,
         "spiking_mode": spiking_mode,
     }
 
@@ -83,6 +96,7 @@ def generate_main_function(
         firing_mode=simulation_config["firing_mode"],
         spike_gen_mode=simulation_config["spike_gen_mode"],
         weight_type=simulation_config["weight_type"],
+        threshold_type=simulation_config["threshold_type"],
         simulation_length=simulation_length,
         latency=latency,
         output_count=output_count,
@@ -98,6 +112,7 @@ def generate_main_function(
         output_count,           # {6}
         latency,                # {7}
         chip_exec_decl,         # {8}  ← chip + exec declarations
+        simulation_config["threshold_type"],   # {9}  ← threshold_t typedef
     )
 
     main_cpp_filename = "{}/main/main.cpp".format(generated_files_path)

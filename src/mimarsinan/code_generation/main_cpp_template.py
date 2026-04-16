@@ -23,14 +23,15 @@ main_cpp_template = \
 #include <cstdlib>
 
 namespace nevresim::tests {{
-    
+
 void test_main(int start, int end)
 {{
     using weight_t = {5};
+    using threshold_t = {9};
 
     {8}
 
-    load_weights<weight_t>(
+    load_weights<weight_t, threshold_t>(
         chip, "{0}/weights/chip_weights.txt");
 
     for(int idx = start; idx < end; ++idx)

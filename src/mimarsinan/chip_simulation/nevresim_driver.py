@@ -8,21 +8,41 @@ import numpy as np
 import json
 
 
+def _python_to_cpp_type_name(py_type) -> str:
+    """Map a Python numeric type to its C++ template-argument string.
+
+    Python's ``float`` is 64-bit IEEE-754, but C++'s ``float`` is 32-bit —
+    using ``float.__name__`` directly would silently downcast to single
+    precision on load.  ``double`` is the correct C++ equivalent for a
+    Python-float-precision value.
+    """
+    if py_type is float:
+        return "double"
+    return py_type.__name__
+
+
 class NevresimDriver:
     nevresim_path = None
 
     def __init__(
         self, input_buffer_size, hard_core_mapping, generated_files_path, weight_type,
         spike_generation_mode="Stochastic", firing_mode="Default", spiking_mode="rate",
-        verbose=True,
+        threshold_type=None, verbose=True,
     ):
-        """Create driver and emit chip artifacts (JSON, weights, chip code). Does not compile."""
+        """Create driver and emit chip artifacts (JSON, weights, chip code). Does not compile.
+
+        ``threshold_type`` is the Python numeric type used for the per-core
+        threshold; it is decoupled from ``weight_type`` so integer-weighted
+        chips can carry non-integer thresholds (TTFS ``scale = q_max/max|W|``)
+        without truncation.  If unset, defaults to ``weight_type``.
+        """
         assert NevresimDriver.nevresim_path is not None, "nevresim path is not set."
 
         self.spike_generation_mode = spike_generation_mode
         self.firing_mode = firing_mode
         self.spiking_mode = spiking_mode
         self.weight_type = weight_type
+        self.threshold_type = threshold_type if threshold_type is not None else weight_type
 
         self.chip = hard_cores_to_chip(
             input_buffer_size,
@@ -30,7 +50,8 @@ class NevresimDriver:
             hard_core_mapping.axons_per_core,
             hard_core_mapping.neurons_per_core,
             leak=0,
-            weight_type=self.weight_type)
+            weight_type=self.weight_type,
+            threshold_type=self.threshold_type)
 
         chip_json = self.chip.get_chip_json()
         with open(generated_files_path + "/chip.json", "w") as f:
@@ -55,11 +76,13 @@ class NevresimDriver:
         """Generate main.cpp only (no compilation)."""
         if verbose:
             print(f"spiking mode: {self.spiking_mode}, firing mode: {self.firing_mode}")
+        wt_cpp = _python_to_cpp_type_name(self.weight_type)
+        tt_cpp = _python_to_cpp_type_name(self.threshold_type)
         generate_main_function(
             self.generated_files_path, max_input_count, self.chip.output_size, simulation_length, latency,
             main_cpp_template, get_config(
                 self.spike_generation_mode, self.firing_mode,
-                self.weight_type.__name__, self.spiking_mode),
+                wt_cpp, self.spiking_mode, threshold_type=tt_cpp),
             verbose=verbose)
 
     def emit_main_and_compile(

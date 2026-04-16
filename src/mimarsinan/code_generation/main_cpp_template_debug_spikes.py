@@ -19,17 +19,18 @@ main_cpp_template_debug_spikes = \
 #include <cstdlib>
 
 namespace nevresim::tests {{
-    
+
 void test_main(int start, int end)
 {{
     using weight_t = {5};
+    using threshold_t = {7};
 
-    static constinit auto chip = 
-        generate_chip<SpikingCompute<{4}FirePolicy>, weight_t>();
-    
+    static constinit auto chip =
+        generate_chip<SpikingCompute<{4}FirePolicy>, weight_t, threshold_t>();
+
     using exec = SpikingExecution<1, 0, {6}, {3}SpikeGenerator, weight_t, {4}FirePolicy>;
 
-    load_weights<weight_t>(
+    load_weights<weight_t, threshold_t>(
         chip, "{0}/weights/chip_weights.txt");
 
     for(int idx = start; idx < end; ++idx)
