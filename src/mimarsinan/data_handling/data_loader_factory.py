@@ -1,8 +1,59 @@
 import atexit
+import os
 
 from mimarsinan.data_handling.data_provider import DataProvider
 
 import torch
+import torch.multiprocessing as torch_mp
+
+
+_RESOURCE_DEBUG = os.environ.get("MIMARSINAN_RESOURCE_DEBUG") == "1"
+
+# DataLoader workers never touch CUDA in the parent's device context, so we
+# avoid the global ``spawn`` start method (set in ``src/init.py`` for
+# NevresimDriver / CUDA-aware ProcessPoolExecutors). ``forkserver`` forks from
+# a clean, CUDA-free helper process, which bypasses the ~170 MiB-per-worker
+# dataset pickle-over-pipe path that was failing with truncated pickles under
+# accumulated resource pressure.
+_DATALOADER_MP_CONTEXT = torch_mp.get_context("forkserver")
+
+
+def _resource_snapshot(tag):
+    if not _RESOURCE_DEBUG:
+        return
+    import sys
+    try:
+        pid = os.getpid()
+        try:
+            fd_count = len(os.listdir(f"/proc/{pid}/fd"))
+        except OSError:
+            fd_count = -1
+        try:
+            shm = os.listdir("/dev/shm")
+            shm_count = len(shm)
+            sem_count = sum(1 for n in shm if n.startswith("sem."))
+        except OSError:
+            shm_count = -1
+            sem_count = -1
+        rss_kb = -1
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        rss_kb = int(line.split()[1])
+                        break
+        except OSError:
+            pass
+        import multiprocessing as _mp
+        children = len(_mp.active_children())
+        print(
+            f"[resource] {tag} pid={pid} rss_kb={rss_kb} "
+            f"fd={fd_count} shm={shm_count} sem={sem_count} children={children}",
+            file=sys.stderr,
+            flush=True,
+        )
+    except Exception:
+        pass
 
 
 def _unregister_dataloader_atexit_handlers(it):
@@ -47,6 +98,7 @@ def shutdown_data_loader(loader):
         return
     if getattr(loader, "num_workers", 0) == 0:
         return
+    _resource_snapshot("shutdown:enter")
     try:
         it = getattr(loader, "_iterator", None)
         if it is not None and hasattr(it, "_shutdown_workers"):
@@ -56,6 +108,7 @@ def shutdown_data_loader(loader):
             loader._iterator = None
     except Exception:
         pass
+    _resource_snapshot("shutdown:exit")
 
 
 class DataLoaderFactory:
@@ -76,10 +129,11 @@ class DataLoaderFactory:
             workers = self._num_workers
             pw = self._persistent_workers
 
+        mp_ctx = _DATALOADER_MP_CONTEXT if workers > 0 else None
         return torch.utils.data.DataLoader(
-            dataset, batch_size=batch_size, shuffle=shuffle, 
+            dataset, batch_size=batch_size, shuffle=shuffle,
             num_workers=workers, pin_memory=self._pin_memory,
-            persistent_workers=pw)
+            persistent_workers=pw, multiprocessing_context=mp_ctx)
     
     def create_data_provider(self) -> DataProvider:
         return self._data_provider_factory.create()
