@@ -325,6 +325,7 @@ class SmoothAdaptationTuner(TunerBase):
                 return self._committed_rate
 
         self._committed_rate = rate
+        self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
 
         # Stuck detection: count cycles whose post_acc did NOT reach the
         # current target (within noise). "Small committed-rate delta" is NOT
@@ -528,6 +529,7 @@ class SmoothAdaptationTuner(TunerBase):
                     f"Tuning rate must reach 1.0 by the end of the step, "
                     f"but _committed_rate is {self._committed_rate:.6f}"
                 )
+                self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
                 self._log_cycle_summary()
                 return result
 
@@ -568,6 +570,7 @@ class SmoothAdaptationTuner(TunerBase):
             f"Tuning rate must reach 1.0 by the end of the step, "
             f"but _committed_rate is {self._committed_rate:.6f}"
         )
+        self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
         self._log_cycle_summary()
         return result
 
