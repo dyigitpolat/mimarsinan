@@ -239,6 +239,7 @@ class SmoothAdaptationTuner(TunerBase):
         """
         t_cycle_start = time.time()
         self.pipeline.reporter.report(self.name, rate)
+        self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
         self.pipeline.reporter.report("Adaptation target", self._get_target())
 
         pre_state = self._clone_state()
