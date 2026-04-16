@@ -125,3 +125,29 @@ class TestBasicTrainer:
         )
         assert isinstance(loss, float)
         assert loss >= 0.0
+
+    def test_test_honors_max_batches(self):
+        """test(max_batches=N) stops at N batches; 0 returns 0.0 without iterating."""
+        trainer = _make_trainer()
+        trainer.set_test_batch_size(1)
+        total_test = len(trainer.test_loader)
+        assert total_test >= 2, "test set too small for this invariant"
+
+        # Count forward passes by monkey-patching the model __call__.
+        orig_forward = trainer.model.forward
+        call_count = [0]
+
+        def counted_forward(x):
+            call_count[0] += 1
+            return orig_forward(x)
+
+        trainer.model.forward = counted_forward  # type: ignore[method-assign]
+
+        acc = trainer.test(max_batches=1)
+        assert call_count[0] == 1, f"expected 1 forward pass, got {call_count[0]}"
+        assert isinstance(acc, float)
+
+        call_count[0] = 0
+        acc0 = trainer.test(max_batches=0)
+        assert call_count[0] == 0
+        assert acc0 == 0.0

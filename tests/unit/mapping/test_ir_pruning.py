@@ -153,7 +153,7 @@ class TestPruneIRGraph:
         assert len(pruned.nodes) == 0
 
     def test_sets_pre_pruning_snapshot_for_gui(self):
-        """When rows/cols are pruned, nodes get pre_pruning_heatmap and masks for soft-core viz."""
+        """When rows/cols are pruned, nodes get pre_pruning_heatmap (opt-in) and masks for soft-core viz."""
         w = np.array([
             [1.0, 0.0, 3.0],
             [0.0, 0.0, 0.0],
@@ -164,10 +164,16 @@ class TestPruneIRGraph:
         out_src = _make_source_array([(0, 0), (0, 1), (0, 2)])
         graph = IRGraph(nodes=[core], output_sources=out_src)
 
-        pruned = prune_ir_graph(graph)
+        # Default: heatmap is skipped to avoid tens-of-GB bloat on large models.
+        pruned_no_hm = prune_ir_graph(graph)
+        assert pruned_no_hm.nodes[0].pre_pruning_heatmap is None
+
+        # Opt-in: heatmap is stored as a float32 ndarray (not a Python list).
+        pruned = prune_ir_graph(graph, store_heatmap=True)
         pruned_core = pruned.nodes[0]
         assert pruned_core.pre_pruning_heatmap is not None
-        assert isinstance(pruned_core.pre_pruning_heatmap, list)
+        assert isinstance(pruned_core.pre_pruning_heatmap, np.ndarray)
+        assert pruned_core.pre_pruning_heatmap.dtype == np.float32
         # After compaction, masks are re-set to post-compaction shape (all-False).
         assert pruned_core.pruned_row_mask is not None
         assert pruned_core.pruned_col_mask is not None
@@ -298,6 +304,7 @@ class TestPruneIRGraph:
         pruned = prune_ir_graph(
             graph,
             initial_pruned_per_bank={0: (row_mask, col_mask)},
+            store_heatmap=True,
         )
         pruned_node = pruned.nodes[0]
         assert pruned_node.pre_pruning_heatmap is not None
@@ -366,6 +373,7 @@ class TestPruneIRGraph:
         pruned = prune_ir_graph(
             graph,
             initial_pruned_per_bank={0: ([False, True, False, False], [False, True, False, False])},
+            store_heatmap=True,
         )
         snap = snapshot_ir_graph(pruned)
         nodes_info = snap["nodes"]

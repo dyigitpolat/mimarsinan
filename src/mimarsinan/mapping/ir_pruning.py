@@ -242,6 +242,7 @@ def prune_ir_graph(
     *,
     initial_pruned_per_node: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
     initial_pruned_per_bank: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
+    store_heatmap: bool = False,
 ) -> IRGraph:
     """Remove zeroed rows and columns from all NeuralCores in the IR graph.
 
@@ -252,16 +253,20 @@ def prune_ir_graph(
     initial masks are provided, infers initial set from matrix values below
     zero_threshold.
 
-    Returns a new IRGraph with compacted cores and rewired sources.
+    When ``store_heatmap`` is True, each compacted NeuralCore retains its
+    pre-pruning weight matrix as ``pre_pruning_heatmap`` (float32 ndarray)
+    for GUI visualization. This defaults to False because the heatmap can
+    be tens of GB on large models (one copy per core) and is never read at
+    runtime.
+
+    Mutates ``ir_graph`` in place. Callers that need the original graph
+    must clone it before calling; all current callers immediately reassign
+    the return value and do not retain the pre-pruned graph.
     """
     if not ir_graph.nodes:
-        return IRGraph(
-            nodes=[],
-            output_sources=ir_graph.output_sources.copy() if ir_graph.output_sources.size else ir_graph.output_sources,
-            weight_banks=copy.deepcopy(ir_graph.weight_banks),
-        )
+        return ir_graph
 
-    graph = copy.deepcopy(ir_graph)
+    graph = ir_graph
 
     # Pre-Phase: record dead structure without mutating core_matrix.
     # Rows with input source -1 are dead; columns not read by any consumer are dead.
@@ -407,7 +412,9 @@ def prune_ir_graph(
                 "At least one output neuron must remain; check initial pruning masks and propagation."
             )
 
-    # Before compacting: store pre-pruning heatmap and masks for GUI (soft-core viz)
+    # Before compacting: store pre-pruning heatmap (optional, viz-only) and masks.
+    # The heatmap is skipped by default because a full-matrix copy per core can
+    # consume tens of GB on large models and is never read at runtime.
     for node in graph.nodes:
         if not isinstance(node, NeuralCore) or node.core_matrix is None:
             continue
@@ -415,7 +422,10 @@ def prune_ir_graph(
         n_axons, n_neurons = mat.shape
         zero_cols = pruned_neurons.get(node.id, set())
         zero_rows_set = pruned_rows.get(node.id, set())
-        node.pre_pruning_heatmap = np.copy(mat).tolist()
+        if store_heatmap:
+            node.pre_pruning_heatmap = np.asarray(mat, dtype=np.float32)
+        else:
+            node.pre_pruning_heatmap = None
         node.pruned_col_mask = [j in zero_cols for j in range(n_neurons)]
         node.pruned_row_mask = [r in zero_rows_set for r in range(n_axons)]
 
@@ -449,19 +459,24 @@ def prune_ir_graph(
         mat = node.core_matrix
         n_axons = mat.shape[0]
         zero_rows_set = pruned_rows.get(node.id, set())
-        keep_rows = [int(r) for r in range(n_axons) if r not in zero_rows_set]
+        if not zero_rows_set:
+            continue
 
-        if len(keep_rows) < n_axons:
-            flat_src = node.input_sources.flatten()
-            if len(keep_rows) > 0:
-                node.core_matrix = mat[keep_rows, :]
-                node.input_sources = np.array(
-                    [flat_src[r] for r in keep_rows], dtype=object
-                )
-            else:
-                # All rows pruned — keep a 1-row zero matrix
-                node.core_matrix = mat[:1, :] * 0.0
-                node.input_sources = np.array([flat_src[0]], dtype=object)
+        keep_row_idx = np.fromiter(
+            (r for r in range(n_axons) if r not in zero_rows_set),
+            dtype=np.int64,
+            count=n_axons - len(zero_rows_set),
+        )
+
+        flat_src = node.input_sources.flatten()
+        if keep_row_idx.size > 0:
+            node.core_matrix = mat[keep_row_idx, :]
+            # Object-array fancy indexing avoids the Python list + np.array round-trip.
+            node.input_sources = flat_src[keep_row_idx]
+        else:
+            # All rows pruned — keep a 1-row zero matrix
+            node.core_matrix = mat[:1, :] * 0.0
+            node.input_sources = flat_src[:1]
 
     # After Phase 4: align mask lengths with post-compaction matrix for non–bank-backed cores.
     # (Bank-backed nodes get masks in Phase 5.) Post-compaction there are no pruned rows/cols left.
@@ -518,10 +533,20 @@ def prune_ir_graph(
             # Per-node effective matrix shape (same as get_core_matrix will return)
             if node.weight_row_slice is not None:
                 start, end = node.weight_row_slice
-                node.pre_pruning_heatmap = np.copy(bank.core_matrix[:, start:end]).tolist()
+                if store_heatmap:
+                    node.pre_pruning_heatmap = np.asarray(
+                        bank.core_matrix[:, start:end], dtype=np.float32
+                    )
+                else:
+                    node.pre_pruning_heatmap = None
                 node.pruned_col_mask = pruned_col_mask_full[start:end]
             else:
-                node.pre_pruning_heatmap = np.copy(bank.core_matrix).tolist()
+                if store_heatmap:
+                    node.pre_pruning_heatmap = np.asarray(
+                        bank.core_matrix, dtype=np.float32
+                    )
+                else:
+                    node.pre_pruning_heatmap = None
                 node.pruned_col_mask = pruned_col_mask_full
             node.pruned_row_mask = pruned_row_mask
 

@@ -166,11 +166,13 @@ class BasicTrainer:
             
         return correct / total
     
-    def test(self):
+    def test(self, max_batches: int | None = None):
         total = 0
         correct = 0
         with torch.no_grad():
-            for (x, y) in self.test_loader:
+            for batch_idx, (x, y) in enumerate(self.test_loader):
+                if max_batches is not None and batch_idx >= int(max_batches):
+                    break
                 self.model.eval()
                 self.model = self.model.to(self.device)
                 x, y = x.to(self.device), y.to(self.device)
@@ -178,6 +180,8 @@ class BasicTrainer:
                 total += float(y.size(0))
                 correct += float(predicted.eq(y).sum().item())
 
+        if total <= 0:
+            return 0.0
         acc = correct / total
         self._report("Test accuracy", acc)
         return acc

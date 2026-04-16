@@ -275,35 +275,43 @@ class Conv2DPerceptronMapper(Mapper):
             bank_ids.append(bank_id)
             start_idx = end_idx
 
+        # Vectorize patch extraction: build all (h_out*w_out) patches as a
+        # single (n_positions, patch_size) object ndarray, replacing a
+        # four-deep Python for-loop. For ViT-B/16 @ 224×224 this collapses
+        # 196 * (3*16*16) = 150,528 list appends into one numpy advanced-
+        # indexing call.
+        h_base = np.arange(h_out) * s_h          # (h_out,)
+        w_base = np.arange(w_out) * s_w          # (w_out,)
+        kh_off = np.arange(k_h) * d_h            # (k_h,)
+        kw_off = np.arange(k_w) * d_w            # (k_w,)
+        # Shape the index grids so that the final broadcast is (h_out, w_out, c_in, k_h, k_w)
+        h_idx = (h_base[:, None, None, None, None] + kh_off[None, None, None, :, None])
+        w_idx = (w_base[None, :, None, None, None] + kw_off[None, None, None, None, :])
+        c_idx = np.arange(self.in_channels)[None, None, :, None, None]
+        h_idx_b, w_idx_b, c_idx_b = np.broadcast_arrays(h_idx, w_idx, c_idx)
+        # (h_out, w_out, c_in, k_h, k_w) of IRSource objects
+        patches = input_sources[c_idx_b, h_idx_b, w_idx_b]
+        # Flatten per-position to (h_out*w_out, patch_size)
+        n_positions = h_out * w_out
+        patch_size = self.in_channels * k_h * k_w
+        patches_flat = patches.reshape(n_positions, patch_size)
+
         all_output_sources = []
-
-        for oh in range(h_out):
-            for ow in range(w_out):
-                h_start = oh * s_h
-                w_start = ow * s_w
-
-                patch_sources = []
-                for c in range(self.in_channels):
-                    for kh in range(k_h):
-                        for kw in range(k_w):
-                            r = h_start + kh * d_h
-                            c_idx = w_start + kw * d_w
-                            patch_sources.append(input_sources[c, r, c_idx])
-
-                patch_sources = np.array(patch_sources)
-
-                position_outputs = []
-                for g_idx, bank_id in enumerate(bank_ids):
-                    core_outputs = ir_mapping.add_shared_neural_core(
-                        input_sources=patch_sources,
-                        weight_bank_id=bank_id,
-                        has_bias=has_bias,
-                        name=f"{self.name}_pos{oh}_{ow}_g{g_idx}",
-                        activation_type=activation_type,
-                        perceptron_index=getattr(self, "perceptron_index", None),
-                    )
-                    position_outputs.append(core_outputs)
-                all_output_sources.append(np.concatenate(position_outputs))
+        for pos in range(n_positions):
+            oh, ow = divmod(pos, w_out)
+            patch_sources = patches_flat[pos]
+            position_outputs = []
+            for g_idx, bank_id in enumerate(bank_ids):
+                core_outputs = ir_mapping.add_shared_neural_core(
+                    input_sources=patch_sources,
+                    weight_bank_id=bank_id,
+                    has_bias=has_bias,
+                    name=f"{self.name}_pos{oh}_{ow}_g{g_idx}",
+                    activation_type=activation_type,
+                    perceptron_index=getattr(self, "perceptron_index", None),
+                )
+                position_outputs.append(core_outputs)
+            all_output_sources.append(np.concatenate(position_outputs))
 
         output_array = np.stack(all_output_sources, axis=0)
         output_array = output_array.T
