@@ -2,6 +2,16 @@ import os
 import sys
 sys.path.append('./src')
 
+# cuBLAS sgemm picks a parallel-reduction order per launch based on workspace
+# availability; without this env var the float32 matmul in
+# ``SpikingUnifiedCoreFlow._forward_ttfs_quantized`` accumulates in slightly
+# different orders across calls, flipping ``ceil(S*(1-V/θ))`` on near-boundary
+# neurons and producing ~3 pp accuracy drift. Setting ``:4096:8`` pins
+# cuBLAS to a stable reduction path with no measurable wall-time cost on
+# modern GPUs. Must be set before any CUDA context (hence before
+# ``enable_cuda_debug`` below and before any ``torch`` import).
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
 # `--debug` must take effect before any CUDA context is created. Strip the
 # flag from argv here (before importing mimarsinan) and set the env vars.
 _DEBUG_FLAG = "--debug"
@@ -10,20 +20,6 @@ if DEBUG_ENABLED:
     sys.argv = [a for a in sys.argv if a != _DEBUG_FLAG]
     from mimarsinan.common.diagnostics import enable_cuda_debug
     enable_cuda_debug()
-
-# Opt-in deterministic mode: ``DETERMINISTIC=1 python run.py ...`` forces
-# cuBLAS deterministic algorithms + seeds the global RNG. Used to verify
-# whether observed run-to-run variance is CUDA non-determinism or a real
-# state bug. Must be set before importing torch.
-if os.environ.get("DETERMINISTIC"):
-    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-    import torch
-    # warn_only=False so any non-deterministic op raises and points us at
-    # the specific call site to investigate/replace.
-    torch.use_deterministic_algorithms(True, warn_only=False)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    torch.manual_seed(0)
 
 from src.init import init
 from src.main import main, run_pipeline_from_config

@@ -129,10 +129,6 @@ class ModelRepresentation:
         """Execute the mapper graph as a single source of truth for forward."""
         self._ensure_exec_graph()
 
-        for node in self._exec_order:
-            node._cached_output = None
-            node._cached_input_id = None
-
         # When cuda_debug is on, sync after every node's forward so an async
         # CUDA assert is attributed to the mapper that triggered it instead of
         # whichever later op happens to hit the first sync point.

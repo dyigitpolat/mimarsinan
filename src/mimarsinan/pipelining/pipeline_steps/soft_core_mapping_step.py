@@ -398,7 +398,6 @@ class SoftCoreMappingStep(PipelineStep):
         # itself consumes only the IR graph; evicting the FP model frees headroom and
         # defragments the CUDA allocator before the sim's own parameter upload.
         device = self.pipeline.config["device"]
-        sim_cap = int(self.pipeline.config.get("simulation_batch_size", 8))
         sim_batches = self.pipeline.config.get("simulation_batch_count", None)
 
         try:
@@ -409,12 +408,20 @@ class SoftCoreMappingStep(PipelineStep):
             torch.cuda.empty_cache()
 
         spiking_trainer = None
-        # One halve-and-retry is enough signal that VRAM is genuinely tight;
-        # beyond that, fall through to the non-fatal log.
-        attempt_cap = sim_cap
+        # Use the data provider's default test batch size — matches HardCoreMappingStep.
+        # The SCM and HCM forwards are numerically equivalent on the same IR graph,
+        # but per-operator cuBLAS kernel selection is batch-shape-dependent and can
+        # produce ~1e-7 float drift.  The ``ceil(S*(1 - V/θ))`` TTFS step amplifies
+        # that drift into k_fire flips, which compound over ~100 NeuralCore layers
+        # into argmax flips and a 4-5 pp accuracy gap between the two reports.
+        # Running sim_test at the same batch size as HCM keeps the two metrics aligned.
+        #
+        # On OOM, halve the batch size and retry once.
+        attempt_cap = None  # None => keep provider default
         for attempt in range(2):
             try:
-                with _phase(f"sim_construct[cap={attempt_cap}]"):
+                cap_tag = "default" if attempt_cap is None else str(attempt_cap)
+                with _phase(f"sim_construct[cap={cap_tag}]"):
                     flow = SpikingUnifiedCoreFlow(
                         self.pipeline.config["input_shape"],
                         ir_graph,
@@ -433,17 +440,9 @@ class SoftCoreMappingStep(PipelineStep):
                     DataLoaderFactory(self.pipeline.data_provider_factory),
                     None,
                 )
-                current_bs = spiking_trainer.test_batch_size
-                spiking_trainer.set_test_batch_size(min(current_bs, attempt_cap))
-                # Seed the global RNG just before the sim test so any
-                # NoisyDropout / RateAdjustedDecorator in the model's
-                # Perceptron chains (residual state from adaptation tuning)
-                # samples from a fixed starting point.  This narrows but does
-                # not eliminate run-to-run variance — CUDA float32 matmul
-                # reduction order still contributes ~0.4 pp on deep pipelines.
-                # Set ``DETERMINISTIC=1`` at ``run.py`` invocation for stricter
-                # enforcement when the extra variance is not acceptable.
-                torch.manual_seed(0)
+                if attempt_cap is not None:
+                    current_bs = spiking_trainer.test_batch_size
+                    spiking_trainer.set_test_batch_size(min(current_bs, attempt_cap))
                 with _phase(f"sim_test[batches={sim_batches}]"):
                     acc = spiking_trainer.test(max_batches=sim_batches)
                 spiking_trainer.close()
@@ -467,10 +466,14 @@ class SoftCoreMappingStep(PipelineStep):
                 if not is_oom or attempt >= 1:
                     print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
                     break
-                attempt_cap = max(1, attempt_cap // 2)
+                # OOM fallback cap (default 8).  Note: running at a different
+                # batch size than HCM will produce a slightly different reported
+                # accuracy due to cuBLAS kernel-selection drift, but this only
+                # kicks in when the default batch would OOM.
+                attempt_cap = int(self.pipeline.config.get("simulation_batch_size", 8))
                 print(
-                    f"[SoftCoreMappingStep] Soft-core sim OOM at cap={sim_cap}; "
-                    f"retrying once at cap={attempt_cap}."
+                    f"[SoftCoreMappingStep] Soft-core sim OOM at default batch size; "
+                    f"retrying once with batch size capped at {attempt_cap}."
                 )
             except Exception as e:
                 if spiking_trainer is not None:

@@ -33,8 +33,6 @@ class Mapper(nn.Module):
         self._source_mapper_container = [source_mapper]
         self.sources = None
         self._cached_mapping = None
-        self._cached_output = None
-        self._cached_input_id = None
         self._ir_sources = None
         self._cached_ir_mapping = None
 
@@ -55,8 +53,6 @@ class Mapper(nn.Module):
     def clear_cache(self):
         self.sources = None
         self._cached_mapping = None
-        self._cached_output = None
-        self._cached_input_id = None
         self._ir_sources = None
         self._cached_ir_mapping = None
 
@@ -84,12 +80,16 @@ class Mapper(nn.Module):
         )
 
     def forward(self, x):
-        if self._cached_input_id == id(x) and self._cached_output is not None:
-            return self._cached_output
-        out = self._forward_impl(x)
-        self._cached_input_id = id(x)
-        self._cached_output = out
-        return out
+        # No caching: ``ModelRepresentation.__call__`` is the only primary entry
+        # point and already memoises node outputs in its local ``values`` dict
+        # (each node visited once per traversal).  A previous ``id(x)``-keyed
+        # cache here was dead code in the primary path AND actively broken when
+        # a Mapper is called as a ComputeOp module from ``SpikingUnifiedCoreFlow``
+        # — Python recycles tensor ids and the CUDA allocator recycles data
+        # pointers, so across successive ``BasicTrainer.test()`` runs we would
+        # return a prior run's stale cached output (wrong batch dim → crash, or
+        # right batch dim but wrong content → non-deterministic accuracy).
+        return self._forward_impl(x)
 
     def _forward_impl(self, x):
         raise NotImplementedError

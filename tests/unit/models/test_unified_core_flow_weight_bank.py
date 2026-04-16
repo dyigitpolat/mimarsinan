@@ -57,7 +57,7 @@ class TestBankParamRegistration:
         # New packed-buffer layout: no per-core nn.Parameter list; owned cores
         # are tracked in ``_owned_spans`` and thresholds in ``_thresholds_packed``.
         assert len(flow._bank_params) == 1
-        assert len(flow._owned_spans) == 0
+        assert len(flow.neural_core_params) == 0
         assert flow._thresholds_packed.numel() == 16
 
 
@@ -117,4 +117,4 @@ class TestMixedOwnedAndBank:
         assert out.shape == (1, 1)
 
         assert len(flow._bank_params) == 1
-        assert len(flow._owned_spans) == 1
+        assert len(flow.neural_core_params) == 1
