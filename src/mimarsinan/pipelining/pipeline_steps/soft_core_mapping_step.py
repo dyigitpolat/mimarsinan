@@ -435,6 +435,15 @@ class SoftCoreMappingStep(PipelineStep):
                 )
                 current_bs = spiking_trainer.test_batch_size
                 spiking_trainer.set_test_batch_size(min(current_bs, attempt_cap))
+                # Seed the global RNG just before the sim test so any
+                # NoisyDropout / RateAdjustedDecorator in the model's
+                # Perceptron chains (residual state from adaptation tuning)
+                # samples from a fixed starting point.  This narrows but does
+                # not eliminate run-to-run variance — CUDA float32 matmul
+                # reduction order still contributes ~0.4 pp on deep pipelines.
+                # Set ``DETERMINISTIC=1`` at ``run.py`` invocation for stricter
+                # enforcement when the extra variance is not acceptable.
+                torch.manual_seed(0)
                 with _phase(f"sim_test[batches={sim_batches}]"):
                     acc = spiking_trainer.test(max_batches=sim_batches)
                 spiking_trainer.close()

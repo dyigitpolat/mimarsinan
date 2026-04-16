@@ -1,3 +1,4 @@
+import os
 import sys
 sys.path.append('./src')
 
@@ -9,6 +10,20 @@ if DEBUG_ENABLED:
     sys.argv = [a for a in sys.argv if a != _DEBUG_FLAG]
     from mimarsinan.common.diagnostics import enable_cuda_debug
     enable_cuda_debug()
+
+# Opt-in deterministic mode: ``DETERMINISTIC=1 python run.py ...`` forces
+# cuBLAS deterministic algorithms + seeds the global RNG. Used to verify
+# whether observed run-to-run variance is CUDA non-determinism or a real
+# state bug. Must be set before importing torch.
+if os.environ.get("DETERMINISTIC"):
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    import torch
+    # warn_only=False so any non-deterministic op raises and points us at
+    # the specific call site to investigate/replace.
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.manual_seed(0)
 
 from src.init import init
 from src.main import main, run_pipeline_from_config
