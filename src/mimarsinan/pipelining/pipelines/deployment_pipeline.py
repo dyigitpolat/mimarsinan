@@ -35,6 +35,9 @@ These flags can be set explicitly in the JSON to override presets.
 
 from __future__ import annotations
 
+import os
+import sys
+
 from mimarsinan.pipelining.pipeline import Pipeline
 from mimarsinan.pipelining.model_registry import ModelRegistry
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
@@ -350,6 +353,28 @@ class DeploymentPipeline(Pipeline):
         # tolerance = 1 - degradation_tolerance: with degradation_tolerance=0.05,
         # this gives tolerance=0.95 (allow up to 5% accuracy drop per step).
         self.tolerance = 1.0 - float(self.config.get("degradation_tolerance", 0.05))
+
+        if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":
+            self.config.setdefault("cuda_debug", True)
+        self.cuda_debug = bool(self.config.get("cuda_debug", False))
+
+        self._validate_config()
+
+    def _validate_config(self):
+        """Non-fatal sanity checks. Any finding is a stderr warning, not an abort."""
+        model_name = self.config.get("model_name") or self.config.get("model_type", "")
+        act_q = bool(self.config.get("activation_quantization", False))
+        spiking = self.config.get("spiking_mode", "rate")
+        clamp_in_play = act_q or spiking in ("ttfs", "ttfs_quantized")
+
+        if "vit" in model_name.lower() and clamp_in_play and not self.cuda_debug:
+            print(
+                "[DeploymentPipeline] ViT + Clamp Adaptation detected without "
+                "cuda_debug. If you hit a CUDA device-side assert, re-run with "
+                "--debug (or set deployment_parameters.cuda_debug=true) to get "
+                "a precise traceback.",
+                file=sys.stderr,
+            )
 
     def _display_config(self):
         spiking = self.config.get("spiking_mode", "rate")

@@ -98,12 +98,19 @@ def convert_torch_model(
 
     # Warmup forward pass to initialise any lazy modules (e.g. LazyBatchNorm1d
     # inside Conv2DPerceptronMapper).
+    import os
+    debug = os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1"
     try:
         flow.eval()
         with torch.no_grad():
             dummy = torch.zeros(1, *input_shape, device=device)
             _ = flow(dummy)
     except Exception as e:
-        print(f"[convert_torch_model] Warmup forward failed (non-fatal): {e}")
+        if debug:
+            raise
+        print(
+            f"[convert_torch_model] Warmup forward failed (non-fatal): "
+            f"{type(e).__name__}: {e}"
+        )
 
     return flow

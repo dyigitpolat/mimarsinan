@@ -1,6 +1,15 @@
 import sys
 sys.path.append('./src')
 
+# `--debug` must take effect before any CUDA context is created. Strip the
+# flag from argv here (before importing mimarsinan) and set the env vars.
+_DEBUG_FLAG = "--debug"
+DEBUG_ENABLED = _DEBUG_FLAG in sys.argv
+if DEBUG_ENABLED:
+    sys.argv = [a for a in sys.argv if a != _DEBUG_FLAG]
+    from mimarsinan.common.diagnostics import enable_cuda_debug
+    enable_cuda_debug()
+
 from src.init import init
 from src.main import main, run_pipeline_from_config
 
@@ -19,6 +28,9 @@ def _run_headless(config_path: str) -> None:
 
     with open(config_path, 'r') as f:
         deployment_config = json.load(f)
+
+    if DEBUG_ENABLED:
+        deployment_config.setdefault("deployment_parameters", {})["cuda_debug"] = True
 
     parsed = _parse_deployment_config(deployment_config)
     working_dir = parsed["working_directory"]

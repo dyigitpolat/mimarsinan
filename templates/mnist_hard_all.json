@@ -32,7 +32,7 @@
     "lr": 0.001,
     "training_epochs": 10,
     "tuning_budget_scale": 1,
-    "degradation_tolerance": 0.01,
+    "degradation_tolerance": 0.05,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "model_type": "mlp_mixer_core",
@@ -52,33 +52,33 @@
     "weight_quantization": true,
     "pruning": true,
     "pruning_fraction": 0.3,
-    "allow_scheduling": true,
     "training_recipe": {
       "optimizer": "adamw",
+      "scheduler": "cosine",
       "weight_decay": 0.05,
+      "warmup_ratio": 0.1,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 0.75,
+      "label_smoothing": 0.1,
       "betas": [
         0.9,
         0.999
-      ],
-      "scheduler": "cosine",
-      "warmup_ratio": 0.1,
-      "grad_clip_norm": 1.0,
-      "layer_wise_lr_decay": 0.75,
-      "label_smoothing": 0.1
+      ]
     },
     "tuning_recipe": {
       "optimizer": "adamw",
-      "weight_decay": 0.01,
+      "scheduler": "cosine",
+      "weight_decay": 0.05,
+      "warmup_ratio": 0.1,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 0.75,
+      "label_smoothing": 0.1,
       "betas": [
         0.9,
         0.999
-      ],
-      "scheduler": "cosine",
-      "warmup_ratio": 0.0,
-      "grad_clip_norm": 1.0,
-      "layer_wise_lr_decay": 1.0,
-      "label_smoothing": 0.0
-    }
+      ]
+    },
+    "allow_scheduling": true
   },
   "target_metric_override": null,
   "start_step": null,
