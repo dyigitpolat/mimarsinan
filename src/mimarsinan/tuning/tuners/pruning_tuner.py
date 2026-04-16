@@ -325,12 +325,26 @@ class PruningTuner(SmoothAdaptationTuner):
         The base ``run()`` already calls ``_continue_to_full_rate()`` before
         this method.  If the rate is still below 1.0, we use the gradual
         ``_force_to_full_rate()`` (which includes recovery at each increment).
-        Then a single final recovery pass + safety-net check.
+
+        Enforcement (buffer registration + forward-pre-hooks + BN stat
+        zeroing) runs BEFORE ``_ensure_pipeline_threshold`` so that the
+        tuner's ``_final_metric`` reflects the exact model the rest of the
+        pipeline will consume. Without this ordering, zeroing BN
+        ``running_mean`` / ``beta`` at pruned rows after the measurement
+        silently changes the forward output — the next step (Activation
+        Analysis) then sees a different model than ``previous_metric``
+        was computed on, producing a spurious "accuracy dropped" failure.
         """
         if self._committed_rate < 1.0 - 1e-6:
             self._force_to_full_rate()
 
         self._apply_masks(1.0)
+
+        perceptrons = self.model.get_perceptrons()
+        row_masks, col_masks = self._get_masks(1.0)
+        self._register_prune_buffers(perceptrons, row_masks, col_masks)
+        self._enforce_pruning_persistently(perceptrons, row_masks, col_masks)
+
         self._final_metric = self._ensure_pipeline_threshold()
         return self._final_metric
 
@@ -361,6 +375,16 @@ class PruningTuner(SmoothAdaptationTuner):
                 f"cols {pruned_cols}/{col_masks[i].shape[0]} pruned"
             )
 
+        return final_acc
+
+    # -- Pruning mask buffers (read by the module-level pre-hooks) -------------
+
+    def _register_prune_buffers(self, perceptrons, row_masks, col_masks):
+        """Register the mask buffers the pre-hooks read from.
+
+        Idempotent — ``register_buffer`` replaces any buffer with the same
+        name, so calling this multiple times at rate=1.0 is safe.
+        """
         for i, p in enumerate(perceptrons):
             rm = row_masks[i]
             cm = col_masks[i]
@@ -372,10 +396,6 @@ class PruningTuner(SmoothAdaptationTuner):
             )
             if p.layer.bias is not None:
                 p.layer.register_buffer("prune_bias_mask", (~rm).clone())
-
-        self._enforce_pruning_persistently(perceptrons, row_masks, col_masks)
-
-        return final_acc
 
     # -- Persistent enforcement through downstream training phases -------------
 
