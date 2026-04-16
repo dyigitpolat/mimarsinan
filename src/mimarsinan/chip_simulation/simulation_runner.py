@@ -41,6 +41,7 @@ def _emit_and_compile_segment(
     input_size: int,
     latency: int,
     weight_type,
+    threshold_type,
     spike_generation_mode: str,
     firing_mode: str,
     spiking_mode: str,
@@ -60,6 +61,7 @@ def _emit_and_compile_segment(
         spike_generation_mode=spike_generation_mode,
         firing_mode=firing_mode,
         spiking_mode=spiking_mode,
+        threshold_type=threshold_type,
         verbose=False,
     )
     driver.emit_main(num_samples, sim_length, latency, verbose=False)
@@ -88,6 +90,16 @@ class SimulationRunner:
 
         wt_q = pipeline.config.get("weight_quantization", True)
         self.weight_type = int if wt_q else float
+
+        # Threshold is decoupled from weight_type — nevresim's
+        # ``ChipConfiguration`` now carries its own ``ThresholdType``.  In TTFS
+        # modes the per-core threshold is ``scale = q_max / max(|W|)``, a
+        # non-integer Python float; force ``double`` (Python ``float``) so the
+        # C++ loader keeps full float64 precision.  Rate-coded paths stay with
+        # integer threshold (== weight_type) for hardware-accurate integer
+        # membrane arithmetic and no serialisation precision loss.
+        is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
+        self.threshold_type = float if is_ttfs else self.weight_type
 
         self.input_size = pipeline.config["input_size"]
         self.num_classes = pipeline.config["num_classes"]
@@ -164,6 +176,7 @@ class SimulationRunner:
             spike_generation_mode=self.spike_generation_mode,
             firing_mode=self.firing_mode,
             spiking_mode=self.spiking_mode,
+            threshold_type=self.threshold_type,
         )
 
         simulation_steps = int(self.simulation_length)
@@ -265,6 +278,7 @@ class SimulationRunner:
                     _emit_and_compile_segment,
                     seg_idx, seg_dir, seg_mapping, input_size, latency,
                     self.weight_type,
+                    self.threshold_type,
                     self.spike_generation_mode,
                     self.firing_mode,
                     self.spiking_mode,
@@ -319,6 +333,7 @@ class SimulationRunner:
             spike_generation_mode=self.spike_generation_mode,
             firing_mode=self.firing_mode,
             spiking_mode=self.spiking_mode,
+            threshold_type=self.threshold_type,
         )
         return driver.predict_spiking_raw(
             input_data,

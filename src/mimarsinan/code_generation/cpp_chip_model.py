@@ -134,7 +134,8 @@ class Core:
 class ChipModel:
     def __init__(
         self, axons = 0, neurons = 0, cores = 0, inputs = 0, outputs = 0, leak = 0,
-        connections_list = [], output_list = [], cores_list = [], weight_type = float):
+        connections_list = [], output_list = [], cores_list = [],
+        weight_type = float, threshold_type = None):
 
         self.axon_count = axons
         self.neuron_count = neurons
@@ -143,6 +144,12 @@ class ChipModel:
         self.output_size = outputs
         self.leak = leak
         self.weight_type = weight_type
+        # ``threshold_type`` is the C++ type used for the per-core threshold.
+        # It is independent of ``weight_type`` so integer-weighted chips can
+        # still carry a non-integer threshold (e.g. ``scale = q_max / max|W|``
+        # in TTFS mode) without truncation.  If unset, defaults to ``weight_type``
+        # for backward compat with the legacy single-type C++ template.
+        self.threshold_type = threshold_type if threshold_type is not None else weight_type
 
         self.connections: list[Connection] = connections_list
         self.output_buffer: list[SpikeSource] = output_list
@@ -195,10 +202,11 @@ consteval auto generate_outputs()
     return outs;
 }}
 
-template <typename ComputePolicy, typename WeightType>
+template <typename ComputePolicy, typename WeightType, typename ThresholdType>
 consteval auto generate_chip()
 {{
     using weight_t = WeightType;
+    using threshold_t = ThresholdType;
     constexpr std::size_t axon_count{{{0}}};
     constexpr std::size_t neuron_count{{{1}}};
     constexpr std::size_t core_count{{{2}}};
@@ -209,6 +217,7 @@ consteval auto generate_chip()
 
     using Cfg = nevresim::ChipConfiguration<
         weight_t,
+        threshold_t,
         axon_count,
         neuron_count,
         core_count,
@@ -251,11 +260,14 @@ consteval auto generate_chip()
 
     def get_weights_string(self):
         wt = self.weight_type
+        tt = self.threshold_type
         parts: list[str] = []
         for core in self.cores:
             parts.append(str(core.latency))
             for neuron in core.neurons:
-                parts.append(str(wt(neuron.thresh)))
+                # Threshold uses its own type — must not be truncated when
+                # weight_type is int but threshold is a non-integer scale.
+                parts.append(str(tt(neuron.thresh)))
                 parts.append(str(wt(neuron.bias)))
                 parts.extend(str(wt(w)) for w in neuron.weights)
         return ' '.join(parts) + ' '
@@ -277,7 +289,7 @@ consteval auto generate_chip()
             core_params = []
             for neuron in core.neurons:
                 core_params.append({
-                    "threshold": self.weight_type(neuron.thresh),
+                    "threshold": self.threshold_type(neuron.thresh),
                     "bias": self.weight_type(neuron.bias),
                     "weights": [self.weight_type(w) for w in neuron.weights]
                 })

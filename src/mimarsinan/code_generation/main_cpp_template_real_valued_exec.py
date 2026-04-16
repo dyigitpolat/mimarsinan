@@ -16,17 +16,18 @@ main_cpp_template_real_valued_exec = \
 #include <cstdlib>
 
 namespace nevresim::tests {{
-    
+
 void test_main(int start, int end)
 {{
     using weight_t = float;
+    using threshold_t = float;
 
-    static constinit auto chip = 
-        generate_chip<RealValuedCompute, weight_t>();
+    static constinit auto chip =
+        generate_chip<RealValuedCompute, weight_t, threshold_t>();
 
     using exec = RealValuedExecution;
 
-    load_weights<weight_t>(
+    load_weights<weight_t, threshold_t>(
         chip, "{0}/weights/chip_weights.txt");
 
     for(int idx = start; idx < end; ++idx)
