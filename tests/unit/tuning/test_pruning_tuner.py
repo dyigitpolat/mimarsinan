@@ -217,3 +217,140 @@ class TestPruningTuner:
         with patch("mimarsinan.tuning.tuners.pruning_tuner._collect_activation_stats", side_effect=counting_collect):
             tuner.run(max_cycles=3)
         assert len(collect_calls) >= 3, "Activation stats should be collected at least once per cycle (3 cycles)"
+
+    def test_pruned_set_grows_monotonically_with_rate(self):
+        """Regression: pruned set at rate r₂ must be a superset of the set at r₁ < r₂.
+
+        Pre-fix, per-cycle importance refresh could flip which row was the
+        "least important" near the k_r boundary, producing a different pruned
+        subset at rates 0.8550 and 0.8551 — the mask churn that caused
+        catastrophic fast-fails in Pruning Adaptation. With the monotonic
+        fix, once an index is pruned it stays pruned at all higher rates.
+        """
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+
+        mock = MockPipeline()
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+        tuner = PruningTuner(
+            pipeline=mock, model=model,
+            target_accuracy=0.0, lr=0.001,
+            adaptation_manager=am, pruning_fraction=0.5,
+        )
+        tuner._persistent_pruned_rows = [set() for _ in range(len(model.get_perceptrons()))]
+        tuner._persistent_pruned_cols = [set() for _ in range(len(model.get_perceptrons()))]
+
+        # Populate importance with values designed to have near-ties at the
+        # boundary, so unstable sort would flip ranks across refreshes.
+        for i, p in enumerate(model.get_perceptrons()):
+            out_f, in_f = p.layer.weight.data.shape
+            tuner.base_row_imp.append(torch.linspace(0.0, 1.0, out_f))
+            tuner.base_col_imp.append(torch.linspace(0.0, 1.0, in_f))
+
+        # Simulate a sequence of rate proposals that exercise the bisection
+        # pattern (bounce around a committed rate near a k_r boundary).
+        pruned_sets_by_rate = []
+        for rate in [0.10, 0.30, 0.50, 0.49, 0.51, 0.70, 0.65, 0.90, 1.0]:
+            tuner._get_masks(rate)
+            pruned_sets_by_rate.append(
+                [set(s) for s in tuner._persistent_pruned_rows]
+            )
+
+        # Monotonic invariant: every subsequent snapshot is a superset of all prior ones.
+        for k in range(1, len(pruned_sets_by_rate)):
+            for i, (prev, cur) in enumerate(
+                zip(pruned_sets_by_rate[k - 1], pruned_sets_by_rate[k])
+            ):
+                assert prev.issubset(cur), (
+                    f"perceptron {i}: set at step {k} lost indices from step {k-1}: "
+                    f"{prev - cur}"
+                )
+
+    def test_enforcement_hooks_are_pickle_safe(self):
+        """Regression: the persistent pruning hooks must survive ``torch.save``.
+
+        The pipeline pickles the adaptation_manager and the model between
+        steps. Closures captured inside ``_enforce_pruning_persistently``
+        would fail with ``Can't pickle local object`` — module-level hook
+        functions backed by buffers survive instead.
+        """
+        import io
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+
+        mock = MockPipeline()
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+        tuner = PruningTuner(
+            pipeline=mock, model=model,
+            target_accuracy=0.0, lr=0.001,
+            adaptation_manager=am, pruning_fraction=0.5,
+        )
+        perceptrons = model.get_perceptrons()
+        for p in perceptrons:
+            w = p.layer.weight.data
+            tuner.base_row_imp.append(w.abs().sum(dim=1))
+            tuner.base_col_imp.append(w.abs().sum(dim=0))
+        tuner._persistent_pruned_rows = [set() for _ in perceptrons]
+        tuner._persistent_pruned_cols = [set() for _ in perceptrons]
+
+        row_masks, col_masks = tuner._get_masks(1.0)
+        for i, p in enumerate(perceptrons):
+            rm, cm = row_masks[i], col_masks[i]
+            p.layer.register_buffer("prune_row_mask", (~rm).clone())
+            p.layer.register_buffer("prune_col_mask", (~cm).clone())
+            p.layer.register_buffer(
+                "prune_mask",
+                ((~rm).unsqueeze(1) | (~cm).unsqueeze(0)).clone(),
+            )
+            if p.layer.bias is not None:
+                p.layer.register_buffer("prune_bias_mask", (~rm).clone())
+        tuner._enforce_pruning_persistently(perceptrons, row_masks, col_masks)
+
+        buf = io.BytesIO()
+        torch.save(model, buf)
+        buf.seek(0)
+        reloaded = torch.load(buf, weights_only=False)
+
+        x = torch.randn(1, 1, 8, 8)
+        out_orig = model(x)
+        out_reloaded = reloaded(x)
+        assert torch.allclose(out_orig, out_reloaded, atol=1e-5), (
+            "Model forward diverged after pickle round-trip — hooks lost or buffers corrupted."
+        )
+
+    def test_rollback_restores_persistent_pruned_sets(self):
+        """Rollback must discard any pruned-set expansion from the failed cycle.
+
+        The base-class rollback path calls ``_restore_state`` with the
+        ``(model_state, extra_state)`` tuple captured before the cycle.
+        PruningTuner's ``_get_extra_state`` / ``_set_extra_state`` must
+        snapshot and restore ``_persistent_pruned_rows`` / ``_persistent_pruned_cols``.
+        """
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+
+        mock = MockPipeline()
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+        tuner = PruningTuner(
+            pipeline=mock, model=model,
+            target_accuracy=0.0, lr=0.001,
+            adaptation_manager=am, pruning_fraction=0.5,
+        )
+        n = len(model.get_perceptrons())
+        tuner._persistent_pruned_rows = [{0} for _ in range(n)]
+        tuner._persistent_pruned_cols = [{1} for _ in range(n)]
+
+        snapshot = tuner._get_extra_state()
+
+        # Simulate a cycle that expands the persistent sets (as _get_masks does).
+        for s in tuner._persistent_pruned_rows:
+            s.add(99)
+        for s in tuner._persistent_pruned_cols:
+            s.add(99)
+
+        tuner._set_extra_state(snapshot)
+
+        for s in tuner._persistent_pruned_rows:
+            assert s == {0}, f"rollback should restore rows to {{0}}, got {s}"
+        for s in tuner._persistent_pruned_cols:
+            assert s == {1}, f"rollback should restore cols to {{1}}, got {s}"

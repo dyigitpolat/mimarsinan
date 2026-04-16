@@ -315,17 +315,7 @@ def prune_ir_graph(
         mat = node.core_matrix  # (axons, neurons)
         n_axons, n_neurons = mat.shape
         exempt_r = frozenset(input_buffer_rows.get(node.id, set()))
-        exempt_c = set(output_buffer_cols.get(node.id, set()))
-        # Exempt cols whose hardware_bias is non-zero: propagation operates only on
-        # the weight matrix and would otherwise drop cols that still emit a
-        # non-zero constant via hw_bias (common post-normalization-fusion for
-        # pruned output rows), breaking downstream math.
-        _hw_bias = getattr(node, "hardware_bias", None)
-        if _hw_bias is not None:
-            for _j in range(min(n_neurons, len(_hw_bias))):
-                if abs(float(_hw_bias[_j])) >= zero_threshold:
-                    exempt_c.add(_j)
-        exempt_c = frozenset(exempt_c)
+        exempt_c = frozenset(output_buffer_cols.get(node.id, set()))
 
         init = init_node.get(node.id)
         if init is not None:
@@ -347,33 +337,6 @@ def prune_ir_graph(
         else:
             init_rows = pre_r if pre_r else None
             init_cols = pre_c if pre_c else None
-
-        # Intersect mask-based prunes with value-zero rows/cols.
-        # Pruning at the perceptron level zeroes W[r,:] and b[r] for pruned output
-        # rows, which produces activation(0)=0 during training — BUT downstream
-        # normalization fusion rewrites bias to (0 - mean)*u + beta, so the pruned
-        # neuron's IR bias row becomes a non-zero constant. Physically removing
-        # that neuron from the IR graph drops the constant input that downstream
-        # cores were trained to read, breaking accuracy. The safe rule: only
-        # drop a row/col that is value-zero in the mapped matrix. Masks remain
-        # the authoritative source for WHICH axes were structurally pruned, but
-        # can only act where the actual core_matrix agrees (zero contribution).
-        # When hardware_bias=True the bias lives on a separate 1D array, not in
-        # core_matrix, so col pruning must also inspect that array.
-        if init_rows is not None:
-            hw_bias = getattr(node, "hardware_bias", None)
-            value_zero_rows = {
-                i for i in range(n_axons) if np.abs(mat[i, :]).sum() < zero_threshold
-            }
-            def _col_is_value_zero(j):
-                if np.abs(mat[:, j]).sum() >= zero_threshold:
-                    return False
-                if hw_bias is not None and abs(float(hw_bias[j])) >= zero_threshold:
-                    return False
-                return True
-            value_zero_cols = {j for j in range(n_neurons) if _col_is_value_zero(j)}
-            init_rows = init_rows & value_zero_rows
-            init_cols = init_cols & value_zero_cols
 
         zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
             mat,
@@ -529,57 +492,9 @@ def prune_ir_graph(
             graph, bank_id, input_buffer_rows, output_buffer_cols
         )
         exempt_r = frozenset(bank_exempt_rows)
-        # Any bank-shared core whose hardware_bias is non-zero at col j means the
-        # bank cannot safely drop col j (that core would lose its constant bias).
-        _hw_exempt_cols = set(bank_exempt_cols)
-        for _sn in graph.nodes:
-            if not isinstance(_sn, NeuralCore) or getattr(_sn, "weight_bank_id", None) != bank_id:
-                continue
-            _hb = getattr(_sn, "hardware_bias", None)
-            if _hb is None:
-                continue
-            _slice = getattr(_sn, "weight_row_slice", None)
-            _offset = _slice[0] if _slice is not None else 0
-            for _k in range(len(_hb)):
-                if abs(float(_hb[_k])) >= zero_threshold:
-                    _gj = _offset + _k
-                    if _gj < n_neurons:
-                        _hw_exempt_cols.add(_gj)
-        exempt_c = frozenset(_hw_exempt_cols)
+        exempt_c = frozenset(bank_exempt_cols)
         if init is not None and len(init[0]) == n_axons and len(init[1]) == n_neurons:
             zero_rows, zero_cols = _masks_to_sets(init[0], init[1])
-            # Same rationale as Phase 1: restrict mask-marked prunes to rows/cols that
-            # are value-zero in the bank matrix, so neurons with residual non-zero
-            # bias (post-fusion) are not dropped. Banks are weight-only; per-core
-            # hardware_bias lives on the nodes that share the bank, so a bank col
-            # that is weight-zero but carries a non-zero bias on any sharing core
-            # must NOT be pruned at bank level.
-            value_zero_rows = {
-                i for i in range(n_axons) if np.abs(mat[i, :]).sum() < zero_threshold
-            }
-            sharing_nodes = [
-                n for n in graph.nodes
-                if isinstance(n, NeuralCore) and getattr(n, "weight_bank_id", None) == bank_id
-            ]
-            def _bank_col_is_value_zero(j):
-                if np.abs(mat[:, j]).sum() >= zero_threshold:
-                    return False
-                for sn in sharing_nodes:
-                    hw_bias = getattr(sn, "hardware_bias", None)
-                    if hw_bias is None:
-                        continue
-                    local_j = j
-                    if getattr(sn, "weight_row_slice", None) is not None:
-                        start, end = sn.weight_row_slice
-                        if j < start or j >= end:
-                            continue
-                        local_j = j - start
-                    if local_j < len(hw_bias) and abs(float(hw_bias[local_j])) >= zero_threshold:
-                        return False
-                return True
-            value_zero_cols = {j for j in range(n_neurons) if _bank_col_is_value_zero(j)}
-            zero_rows = zero_rows & value_zero_rows
-            zero_cols = zero_cols & value_zero_cols
             zero_rows, zero_cols = compute_propagated_pruned_rows_cols(
                 mat,
                 zero_threshold=zero_threshold,

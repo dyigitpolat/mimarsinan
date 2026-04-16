@@ -1,0 +1,46 @@
+{
+  "pipeline_mode": "phased",
+  "experiment_name": "cifar10_torch_vit",
+  "generated_files_path": "./generated",
+  "data_provider_name": "CIFAR10_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 2048,
+        "max_neurons": 600,
+        "count": 500
+      },
+      {
+        "max_axons": 600,
+        "max_neurons": 2048,
+        "count": 500
+      }
+    ],
+    "max_axons": 2048,
+    "max_neurons": 2048,
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8
+  },
+  "deployment_parameters": {
+    "lr": 0.0001,
+    "training_epochs": 2,
+    "degradation_tolerance": 0.1,
+    "configuration_mode": "user",
+    "model_type": "torch_vit",
+    "weight_source": "torchvision",
+    "model_config": {
+      "base_activation": "ReLU"
+    },
+    "spiking_mode": "ttfs",
+    "weight_quantization": false,
+    "activation_quantization": true,
+    "spike_generation_mode": "TTFS",
+    "firing_mode": "TTFS",
+    "thresholding_mode": "<=",
+    "max_simulation_samples": 10,
+    "tuning_budget_scale": 0.25
+  },
+  "target_metric_override": null,
+  "start_step": "Torch Mapping"
+}

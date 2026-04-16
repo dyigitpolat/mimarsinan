@@ -7,6 +7,9 @@ load all mapper classes from mapping_utils.
 
 from __future__ import annotations
 
+import os
+
+import torch
 import torch.nn as nn
 
 
@@ -130,14 +133,30 @@ class ModelRepresentation:
             node._cached_output = None
             node._cached_input_id = None
 
+        # When cuda_debug is on, sync after every node's forward so an async
+        # CUDA assert is attributed to the mapper that triggered it instead of
+        # whichever later op happens to hit the first sync point.
+        cuda_debug = (
+            os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1" and torch.cuda.is_available()
+        )
+
         values = {}
         for node in self._exec_order:
             d = self._deps.get(node, [])
-            if len(d) == 0:
-                values[node] = node.forward(x)
-            elif len(d) == 1:
-                values[node] = node.forward(values[d[0]])
-            else:
-                values[node] = node.forward(tuple(values[dep] for dep in d))
+            try:
+                if len(d) == 0:
+                    values[node] = node.forward(x)
+                elif len(d) == 1:
+                    values[node] = node.forward(values[d[0]])
+                else:
+                    values[node] = node.forward(tuple(values[dep] for dep in d))
+                if cuda_debug:
+                    torch.cuda.synchronize()
+            except Exception as exc:
+                node_name = getattr(node, "name", None) or type(node).__name__
+                raise RuntimeError(
+                    f"[ModelRepresentation] forward failed at node "
+                    f"{type(node).__name__}(name={node_name!r})"
+                ) from exc
 
         return values[self.output_layer_mapper]

@@ -1,9 +1,11 @@
 import gc
+import sys
 
 import torch
 
 from mimarsinan.pipelining.cache.pipeline_cache import PipelineCache
 from mimarsinan.common.file_utils import prepare_containing_directory
+from mimarsinan.common.diagnostics import cuda_guard
 
 class Pipeline:
     def __init__(self, working_directory) -> None:
@@ -146,8 +148,23 @@ class Pipeline:
 
         step.pipeline_previous_metric = previous_metric
 
+        cuda_debug = bool(getattr(self, "cuda_debug", False))
         try:
-            step.run()
+            try:
+                with cuda_guard(name, enabled=cuda_debug):
+                    step.run()
+            except Exception:
+                if cuda_debug:
+                    req_keys = [self._translate_key(step.name, r) for r in step.requires]
+                    prod_keys = [self._create_real_key(step.name, p) for p in step.promises]
+                    print(
+                        f"[Pipeline] Step '{name}' failed. "
+                        f"requires={req_keys} promises={prod_keys}. "
+                        f"Resume with: python run.py --headless <config.json> "
+                        f"--resume-from \"{name}\" --debug",
+                        file=sys.stderr,
+                    )
+                raise
             self.set_target_metric(step.pipeline_metric())
             self.save_cache()
             self.cache.offload_torch_models_to_cpu()

@@ -17,8 +17,7 @@ class LeakyGradReLUFunction(Function):
     @staticmethod
     def backward(ctx, grad_output):
         input, = ctx.saved_tensors
-        grad_input = grad_output.clone()
-        grad_input[input < 0] *= ctx.negative_slope
+        grad_input = torch.where(input < 0, grad_output * ctx.negative_slope, grad_output)
         return grad_input, None
 
 
@@ -64,15 +63,22 @@ class DifferentiableClamp(Function):
         a = a.clone().detach().to(x.device)
         b = b.clone().detach().to(x.device)
 
+        assert a.dim() <= 0 and b.dim() <= 0, (
+            f"DifferentiableClamp expects scalar bounds; got a.shape={tuple(a.shape)}, "
+            f"b.shape={tuple(b.shape)}"
+        )
+
         ctx.save_for_backward(x, a, b)
         return torch.clamp(x, a, b)
 
     @staticmethod
     def backward(ctx, grad_output):
         x, a, b = ctx.saved_tensors
-        grad = torch.ones_like(x)
-        below = x < a
-        above = x > b
-        grad[below] = torch.clamp_min(torch.exp(x[below] - a), _CLAMP_LEAK)
-        grad[above] = torch.clamp_min(torch.exp(b - x[above]), _CLAMP_LEAK)
+        below_grad = torch.clamp_min(torch.exp(x - a), _CLAMP_LEAK)
+        above_grad = torch.clamp_min(torch.exp(b - x), _CLAMP_LEAK)
+        grad = torch.where(
+            x < a,
+            below_grad,
+            torch.where(x > b, above_grad, torch.ones_like(x)),
+        )
         return grad_output * grad, None, None

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import torch
 import torch.nn as nn
 
@@ -87,6 +89,13 @@ class SavedTensorDecorator(nn.Module):
         idx = torch.linspace(
             0, flat.numel() - 1, steps=self._max_samples, device=flat.device
         ).round().long()
+        # Belt-and-braces: linspace endpoint is theoretically in-bounds, but
+        # clamp in case of any float32 rounding drift for very large flats.
+        idx.clamp_(0, flat.numel() - 1)
+        # Under cuda_debug, sync before the first .cpu() so an async failure
+        # from a prior forward kernel surfaces at its own mapper, not here.
+        if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1" and flat.is_cuda:
+            torch.cuda.synchronize()
         return flat.index_select(0, idx).cpu()
 
     def input_transform(self, x):
