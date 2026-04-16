@@ -9,6 +9,7 @@ from mimarsinan.models.layers import TransformedActivation
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.common.diagnostics import phase_profiler
 
 import numpy as np
 import torch.nn as nn
@@ -119,8 +120,13 @@ class SoftCoreMappingStep(PipelineStep):
             self.pipeline.loss)
         validator = self.trainer
 
+        _PHASE_TAG = "SoftCoreMappingStep"
+        def _phase(name):
+            return phase_profiler(_PHASE_TAG, name)
+
         from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-        compute_per_source_scales(model.get_mapper_repr())
+        with _phase("compute_per_source_scales"):
+            compute_per_source_scales(model.get_mapper_repr())
 
         act_q = bool(self.pipeline.config.get("activation_quantization", False))
 
@@ -183,7 +189,8 @@ class SoftCoreMappingStep(PipelineStep):
         mapper_repr = model.get_mapper_repr()
         if hasattr(mapper_repr, "assign_perceptron_indices"):
             mapper_repr.assign_perceptron_indices()
-        ir_graph = ir_mapping.map(mapper_repr)
+        with _phase("ir_mapping.map"):
+            ir_graph = ir_mapping.map(mapper_repr)
 
         # Apply chip quantization to NeuralCores: scale weights into [q_min, q_max],
         # round to integers, and set parameter_scale = 1.0. When weight_quantization is False,
@@ -193,71 +200,81 @@ class SoftCoreMappingStep(PipelineStep):
         # For bank-backed cores quantization is applied once per WeightBank.
         wt_q = bool(self.pipeline.config.get("weight_quantization", False))
         from mimarsinan.mapping.ir import WeightBank
-        if not wt_q:
-            for bank in ir_graph.weight_banks.values():
-                bank.parameter_scale = torch.tensor(1.0)
-            for node in ir_graph.nodes:
-                if isinstance(node, NeuralCore):
-                    node.threshold = 1.0
-                    node.parameter_scale = torch.tensor(1.0)
-        else:
-            q_min = -(2 ** (bits - 1))
-            eps = 1e-12
-            quantized_banks: set[int] = set()
-            bank_scale_used: dict[int, float] = {}
-            for bank_id, bank in ir_graph.weight_banks.items():
-                ps = float(
-                    bank.parameter_scale.item()
-                    if hasattr(bank.parameter_scale, "item")
-                    else bank.parameter_scale
-                )
-                if abs(ps) > eps:
-                    scale = ps
-                else:
-                    w_max = float(np.max(np.abs(bank.core_matrix)))
-                    w_max = max(w_max, eps)
-                    scale = q_max / w_max
-                W_q = np.round(bank.core_matrix * scale).astype(np.float64)
-                W_q = np.clip(W_q, q_min, q_max)
-                bank.core_matrix = W_q
-                bank.parameter_scale = torch.tensor(1.0)
-                quantized_banks.add(bank_id)
-                bank_scale_used[bank_id] = scale
-
-            for node in ir_graph.nodes:
-                if isinstance(node, NeuralCore):
-                    if node.has_weight_bank():
-                        if node.weight_bank_id in quantized_banks:
-                            scale_used = bank_scale_used[node.weight_bank_id]
-                            node.threshold = scale_used
-                            node.parameter_scale = torch.tensor(1.0)
-                            if node.hardware_bias is not None:
-                                node.hardware_bias = np.round(node.hardware_bias * scale_used)
-                    else:
-                        ps = float(
-                            node.parameter_scale.item()
-                            if hasattr(node.parameter_scale, "item")
-                            else node.parameter_scale
-                        )
-                        if abs(ps) > eps:
-                            scale = ps
-                        else:
-                            w_max = float(np.max(np.abs(node.core_matrix)))
-                            w_max = max(w_max, eps)
-                            scale = q_max / w_max
-                        W_q = np.round(node.core_matrix * scale).astype(np.float64)
-                        W_q = np.clip(W_q, q_min, q_max)
-                        node.core_matrix = W_q
-                        node.threshold = scale
+        # After quantization, weights are integers in [q_min, q_max]; store in the
+        # smallest integer dtype that fits so the IR artifact (and in-memory
+        # footprint) is proportional to the quantization precision, not float64.
+        # SpikingUnifiedCoreFlow upcasts to torch.float64 per-forward, so the
+        # precision of spiking simulation is unchanged.
+        q_dtype = np.int8 if bits <= 8 else np.int16
+        with _phase("weight_quantization"):
+            if not wt_q:
+                for bank in ir_graph.weight_banks.values():
+                    bank.parameter_scale = torch.tensor(1.0)
+                for node in ir_graph.nodes:
+                    if isinstance(node, NeuralCore):
+                        node.threshold = 1.0
                         node.parameter_scale = torch.tensor(1.0)
-                        # Scale hardware_bias by the same factor as the weights so that
-                        # act(W_q @ inp + b_hw) / threshold = act(W_eff @ inp + b_eff).
-                        # Without this, b_eff is effectively divided by `scale` (≈127 for 8-bit).
-                        if node.hardware_bias is not None:
-                            node.hardware_bias = np.round(node.hardware_bias * scale)
+            else:
+                q_min = -(2 ** (bits - 1))
+                eps = 1e-12
+                quantized_banks: set[int] = set()
+                bank_scale_used: dict[int, float] = {}
+                for bank_id, bank in ir_graph.weight_banks.items():
+                    ps = float(
+                        bank.parameter_scale.item()
+                        if hasattr(bank.parameter_scale, "item")
+                        else bank.parameter_scale
+                    )
+                    if abs(ps) > eps:
+                        scale = ps
+                    else:
+                        w_max = float(np.max(np.abs(bank.core_matrix)))
+                        w_max = max(w_max, eps)
+                        scale = q_max / w_max
+                    W_q = np.clip(np.round(bank.core_matrix * scale), q_min, q_max).astype(q_dtype)
+                    bank.core_matrix = W_q
+                    bank.parameter_scale = torch.tensor(1.0)
+                    quantized_banks.add(bank_id)
+                    bank_scale_used[bank_id] = scale
+
+                for node in ir_graph.nodes:
+                    if isinstance(node, NeuralCore):
+                        if node.has_weight_bank():
+                            if node.weight_bank_id in quantized_banks:
+                                scale_used = bank_scale_used[node.weight_bank_id]
+                                node.threshold = scale_used
+                                node.parameter_scale = torch.tensor(1.0)
+                                if node.hardware_bias is not None:
+                                    node.hardware_bias = np.round(
+                                        node.hardware_bias * scale_used
+                                    ).astype(q_dtype)
+                        else:
+                            ps = float(
+                                node.parameter_scale.item()
+                                if hasattr(node.parameter_scale, "item")
+                                else node.parameter_scale
+                            )
+                            if abs(ps) > eps:
+                                scale = ps
+                            else:
+                                w_max = float(np.max(np.abs(node.core_matrix)))
+                                w_max = max(w_max, eps)
+                                scale = q_max / w_max
+                            W_q = np.clip(np.round(node.core_matrix * scale), q_min, q_max).astype(q_dtype)
+                            node.core_matrix = W_q
+                            node.threshold = scale
+                            node.parameter_scale = torch.tensor(1.0)
+                            # Scale hardware_bias by the same factor as the weights so that
+                            # act(W_q @ inp + b_hw) / threshold = act(W_eff @ inp + b_eff).
+                            # Without this, b_eff is effectively divided by `scale` (≈127 for 8-bit).
+                            if node.hardware_bias is not None:
+                                node.hardware_bias = np.round(
+                                    node.hardware_bias * scale
+                                ).astype(q_dtype)
 
         # Calculate latencies for all neural cores in the IR graph
-        max_latency = IRLatency(ir_graph).calculate()
+        with _phase("ir_latency"):
+            max_latency = IRLatency(ir_graph).calculate()
         print(f"[SoftCoreMappingStep] IR Graph max latency: {max_latency}")
 
         # Compact the IR graph by removing zeroed rows/columns when pruning was applied.
@@ -295,14 +312,18 @@ class SoftCoreMappingStep(PipelineStep):
                     )
             except Exception:
                 pass
-            ir_graph = prune_ir_graph(
-                ir_graph,
-                initial_pruned_per_node=initial_node if initial_node else None,
-                initial_pruned_per_bank=initial_bank if initial_bank else None,
-            )
+            store_heatmap = bool(self.pipeline.config.get("generate_visualizations", False))
+            with _phase("prune_ir_graph"):
+                ir_graph = prune_ir_graph(
+                    ir_graph,
+                    initial_pruned_per_node=initial_node if initial_node else None,
+                    initial_pruned_per_bank=initial_bank if initial_bank else None,
+                    store_heatmap=store_heatmap,
+                )
             print(f"[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
-        
-        self.add_entry("ir_graph", ir_graph, 'pickle')
+
+        with _phase("pickle_save"):
+            self.add_entry("ir_graph", ir_graph, 'pickle')
 
         if self.pipeline.config.get("generate_visualizations", False):
           # Write IRGraph visualizations.
@@ -357,32 +378,84 @@ class SoftCoreMappingStep(PipelineStep):
         # Always report a *soft-core* spiking simulation result at this stage (pre-tuning),
         # so it's easy to compare before/after CoreFlow Tuning. Works for both neural-only
         # graphs and graphs containing ComputeOps (sync barriers handled in SpikingUnifiedCoreFlow).
+        #
+        # Memory hygiene: the fused FP model was moved to GPU for BasicTrainer but the sim
+        # itself consumes only the IR graph; evicting the FP model frees headroom and
+        # defragments the CUDA allocator before the sim's own parameter upload.
+        device = self.pipeline.config["device"]
+        sim_cap = int(self.pipeline.config.get("simulation_batch_size", 8))
+        sim_batches = self.pipeline.config.get("simulation_batch_count", None)
+
         try:
-            device = self.pipeline.config["device"]
-            # Raw batch tensors; encoding is handled by host-side encoding ComputeOps in IR.
-            flow = SpikingUnifiedCoreFlow(
-                self.pipeline.config["input_shape"],
-                ir_graph,
-                int(self.pipeline.config["simulation_steps"]),
-                None,
-                self.pipeline.config["firing_mode"],
-                self.pipeline.config["spike_generation_mode"],
-                self.pipeline.config["thresholding_mode"],
-                spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
-            )
-            flow = flow.to(device)
-            spiking_trainer = BasicTrainer(
-                flow,
-                self.pipeline.config["device"],
-                DataLoaderFactory(self.pipeline.data_provider_factory),
-                None,
-            )
-            acc = spiking_trainer.test()
-            spiking_trainer.close()
-            self._soft_core_spiking_metric = float(acc)
-            print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
-        except Exception as e:
-            print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
+            model.to("cpu")
+        except Exception:
+            pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        spiking_trainer = None
+        # One halve-and-retry is enough signal that VRAM is genuinely tight;
+        # beyond that, fall through to the non-fatal log.
+        attempt_cap = sim_cap
+        for attempt in range(2):
+            try:
+                with _phase(f"sim_construct[cap={attempt_cap}]"):
+                    flow = SpikingUnifiedCoreFlow(
+                        self.pipeline.config["input_shape"],
+                        ir_graph,
+                        int(self.pipeline.config["simulation_steps"]),
+                        None,
+                        self.pipeline.config["firing_mode"],
+                        self.pipeline.config["spike_generation_mode"],
+                        self.pipeline.config["thresholding_mode"],
+                        spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
+                    )
+                with _phase("sim_to_device"):
+                    flow = flow.to(device)
+                spiking_trainer = BasicTrainer(
+                    flow,
+                    device,
+                    DataLoaderFactory(self.pipeline.data_provider_factory),
+                    None,
+                )
+                current_bs = spiking_trainer.test_batch_size
+                spiking_trainer.set_test_batch_size(min(current_bs, attempt_cap))
+                with _phase(f"sim_test[batches={sim_batches}]"):
+                    acc = spiking_trainer.test(max_batches=sim_batches)
+                spiking_trainer.close()
+                self._soft_core_spiking_metric = float(acc)
+                print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
+                break
+            except RuntimeError as e:
+                # torch.cuda.OutOfMemoryError subclasses RuntimeError in recent
+                # PyTorch; older versions raise a plain RuntimeError with
+                # "out of memory" in the message. Detect by message to cover both.
+                oom_cls = getattr(torch.cuda, "OutOfMemoryError", ())
+                is_oom = isinstance(e, oom_cls) or "out of memory" in str(e).lower()
+                if spiking_trainer is not None:
+                    try:
+                        spiking_trainer.close()
+                    except Exception:
+                        pass
+                    spiking_trainer = None
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                if not is_oom or attempt >= 1:
+                    print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
+                    break
+                attempt_cap = max(1, attempt_cap // 2)
+                print(
+                    f"[SoftCoreMappingStep] Soft-core sim OOM at cap={sim_cap}; "
+                    f"retrying once at cap={attempt_cap}."
+                )
+            except Exception as e:
+                if spiking_trainer is not None:
+                    try:
+                        spiking_trainer.close()
+                    except Exception:
+                        pass
+                print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
+                break
 
     def _calculate_input_activation_scales(self, model, validator, rate):
         for perceptron in model.get_perceptrons():

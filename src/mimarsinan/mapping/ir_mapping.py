@@ -247,22 +247,23 @@ class IRMapping:
         in_features = len(ir_input_list)
         out_features = weights.shape[0]
 
+        # Construct core_matrix directly from the weight transpose; this avoids
+        # the np.zeros+fill pattern (2 passes over the matrix) from older code.
+        w_np = self._to_numpy(weights)
         hardware_bias_arr = None
         if biases is not None:
             if self.hardware_bias:
-                # Hardware-bias mode: bias in dedicated register, no axon slot consumed
-                core_matrix = np.zeros((in_features, out_features), dtype=float)
-                core_matrix[:, :] = self._to_numpy(weights).T
+                # Hardware-bias mode: bias in dedicated register, no axon slot consumed.
+                core_matrix = np.ascontiguousarray(w_np.T, dtype=float)
                 hardware_bias_arr = self._to_numpy(biases).flatten()
             else:
-                # Legacy always-on mode: bias occupies the last axon row
-                core_matrix = np.zeros((in_features + 1, out_features), dtype=float)
-                core_matrix[:in_features, :] = self._to_numpy(weights).T
+                # Legacy always-on mode: bias occupies the last axon row.
+                core_matrix = np.empty((in_features + 1, out_features), dtype=float)
+                core_matrix[:in_features, :] = w_np.T
                 core_matrix[-1, :] = self._to_numpy(biases).flatten()
                 ir_input_list.append(IRSource(node_id=-3, index=0))
         else:
-            core_matrix = np.zeros((in_features, out_features), dtype=float)
-            core_matrix[:, :] = self._to_numpy(weights).T
+            core_matrix = np.ascontiguousarray(w_np.T, dtype=float)
 
         neural_core = NeuralCore(
             id=node_id,
@@ -712,19 +713,35 @@ class IRMapping:
         return np.concatenate(all_output_sources)
 
     def _convert_sources(self, sources: np.ndarray) -> np.ndarray:
-        """Convert SpikeSource or IRSource array to IRSource array."""
-        flat = sources.flatten()
-        result = []
+        """Convert SpikeSource or IRSource array to IRSource array.
 
-        for src in flat:
+        Fast path: if every element is already an IRSource we return a shallow
+        copy of the input (object refs, not new IRSource instances). This
+        avoids ~150k Python-level allocations per Conv2D mapping for ViT-B/16.
+        The slow path converts element-by-element into a pre-allocated object
+        ndarray (still faster than the old list → np.array round-trip).
+        """
+        flat = sources.reshape(-1)
+        if flat.size == 0:
+            return np.empty(sources.shape, dtype=object)
+
+        # Fast path: uniform IRSource ndarray → no per-element work needed.
+        first = flat[0]
+        if isinstance(first, IRSource):
+            # Assume homogeneity (the common case); isinstance() on every
+            # element is pure Python and dominates on large flat arrays.
+            return np.asarray(sources, dtype=object)
+
+        result = np.empty(flat.shape, dtype=object)
+        for i in range(flat.size):
+            src = flat[i]
             if isinstance(src, IRSource):
-                result.append(src)
+                result[i] = src
             elif hasattr(src, "is_input_"):  # SpikeSource
-                result.append(spike_source_to_ir_source(src))
+                result[i] = spike_source_to_ir_source(src)
             else:
                 raise TypeError(f"Unknown source type: {type(src)}")
-
-        return np.array(result).reshape(sources.shape)
+        return result.reshape(sources.shape)
 
     def _to_numpy(self, tensor_or_array) -> np.ndarray:
         """Convert tensor to numpy array."""

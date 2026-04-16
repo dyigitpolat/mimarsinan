@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+import time
 import traceback
 
 
@@ -45,6 +46,61 @@ def describe_tensor(t) -> str:
         parts.append(f"has_nan={bool(torch.isnan(t).any().item())}")
         parts.append(f"has_inf={bool(torch.isinf(t).any().item())}")
     return ", ".join(parts)
+
+
+def _rss_mib() -> float:
+    """Current resident-set size in MiB, or 0.0 if unavailable."""
+    try:
+        with open("/proc/self/statm") as f:
+            rss_pages = int(f.read().split()[1])
+        return rss_pages * (os.sysconf("SC_PAGE_SIZE") / (1 << 20))
+    except Exception:
+        return 0.0
+
+
+@contextlib.contextmanager
+def phase_profiler(tag: str, name: str, *, sink=None):
+    """Time a block and print peak CPU RSS delta + CUDA peak allocation.
+
+    Intended for instrumenting large pipeline steps so the dominant sub-phase
+    is self-identifying. ``tag`` is a prefix shown in the log line (e.g. the
+    step name); ``name`` is the sub-phase label. ``sink`` is an optional
+    callable that receives the fully-formatted line; when ``None`` the line
+    is printed.
+    """
+    import torch
+
+    cuda_ok = torch.cuda.is_available()
+    if cuda_ok:
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+    t0 = time.perf_counter()
+    rss0 = _rss_mib()
+    try:
+        yield
+    finally:
+        if cuda_ok:
+            try:
+                torch.cuda.synchronize()
+            except Exception:
+                pass
+        elapsed = time.perf_counter() - t0
+        rss_delta = _rss_mib() - rss0
+        if cuda_ok:
+            cuda_peak = torch.cuda.max_memory_allocated() / (1 << 20)
+            line = (
+                f"[{tag}] phase={name} t={elapsed:.2f}s "
+                f"rss_delta={rss_delta:+.1f} MiB cuda_peak={cuda_peak:.1f} MiB"
+            )
+        else:
+            line = (
+                f"[{tag}] phase={name} t={elapsed:.2f}s "
+                f"rss_delta={rss_delta:+.1f} MiB"
+            )
+        if sink is not None:
+            sink(line)
+        else:
+            print(line)
 
 
 @contextlib.contextmanager

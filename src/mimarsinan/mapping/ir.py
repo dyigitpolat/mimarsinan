@@ -199,8 +199,8 @@ class NeuralCore(IRNode):
     # When None, bias is encoded as the last axon row wired to IRSource(-3, 0) (legacy mode).
     hardware_bias: np.ndarray | None = None
 
-    # Pre-pruning snapshot for GUI (set by ir_pruning before compacting)
-    pre_pruning_heatmap: list | None = None  # full matrix (axons, neurons) as list of lists for soft-core viz
+    # Pre-pruning snapshot for GUI (set by ir_pruning before compacting, opt-in via store_heatmap)
+    pre_pruning_heatmap: "np.ndarray | None" = None  # full matrix (axons, neurons) float32 ndarray for soft-core viz; None by default
     pre_pruning_row_mask: list | None = None  # pre-compaction row mask for GUI red markings (same length as pre_pruning_heatmap rows)
     pre_pruning_col_mask: list | None = None  # pre-compaction col mask for GUI red markings (same length as pre_pruning_heatmap cols)
     pruned_row_mask: list | None = None  # bool per row (True = pruned); post-compaction length for soft-core conversion

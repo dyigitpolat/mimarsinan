@@ -43,7 +43,14 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
 
         object.cpu()
         torch.save((object, device), f"{cache_directory}/{self.filename}.pt")
-        object.to(device)  # restore original placement — no mutation visible to caller
+        # Restore original placement. If the originally-recorded device is no
+        # longer visible (e.g. the process was launched with a narrower
+        # CUDA_VISIBLE_DEVICES than when the object was first loaded), fall
+        # back to CPU so cache persistence does not crash mid-save.
+        try:
+            object.to(device)
+        except Exception:
+            pass
 
 class PickleLoadStoreStrategy(LoadStoreStrategy):
     def __init__(self, filename):
