@@ -318,6 +318,83 @@ class TestPruningTuner:
             "Model forward diverged after pickle round-trip — hooks lost or buffers corrupted."
         )
 
+    def test_enforcement_runs_before_final_metric_measurement(self):
+        """Regression: ``_enforce_pruning_persistently`` must run *before*
+        ``_ensure_pipeline_threshold`` calls ``trainer.test()``.
+
+        Pre-fix: enforcement (which zeros BN ``running_mean`` and ``beta``
+        at pruned rows) ran at the end of ``run()``, *after* the tuner's
+        ``_final_metric`` was captured. The cached metric was measured
+        on a pre-enforcement model; the next pipeline step then tested a
+        post-enforcement (different) model and saw a spurious accuracy
+        drop — surfacing at "Activation Analysis" (a step that doesn't
+        conceptually change the model) as a tolerance failure.
+        """
+        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+
+        mock = MockPipeline()
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+        tuner = PruningTuner(
+            pipeline=mock, model=model,
+            target_accuracy=0.0, lr=0.001,
+            adaptation_manager=am, pruning_fraction=0.5,
+        )
+        tuner._init_original_weights()
+        perceptrons = model.get_perceptrons()
+        tuner._persistent_pruned_rows = [set() for _ in perceptrons]
+        tuner._persistent_pruned_cols = [set() for _ in perceptrons]
+        for p in perceptrons:
+            w = p.layer.weight.data
+            tuner.base_row_imp.append(w.abs().sum(dim=1))
+            tuner.base_col_imp.append(w.abs().sum(dim=0))
+
+        # Prime BN running_mean with a non-zero value on every row so we
+        # can detect whether enforcement's row-zeroing ran by the time
+        # test() is called.
+        bn = perceptrons[0].normalization
+        with torch.no_grad():
+            bn.running_mean.fill_(0.5)
+
+        captured = {}
+
+        def _capture_test(_self):
+            captured["running_mean_at_test_time"] = bn.running_mean.clone()
+            return 1.0  # satisfy pipeline-threshold safety net
+
+        tuner.trainer = type(
+            "T", (),
+            {
+                "test": _capture_test,
+                "validate": lambda self: 1.0,
+                "validate_n_batches": lambda self, n: 1.0,
+                "train_one_step": lambda self, lr: None,
+                "train_steps_until_target": lambda self, *a, **k: None,
+                "train_n_steps": lambda self, *a, **k: None,
+            },
+        )()
+        tuner.trainer.model = model
+        tuner.trainer.report_function = lambda *a: None
+        tuner.trainer.validation_loader = [
+            (torch.randn(2, 1, 8, 8), torch.zeros(2, dtype=torch.long))
+        ]
+
+        tuner._committed_rate = 1.0
+        tuner._after_run()
+
+        rm_at_test = captured["running_mean_at_test_time"]
+        row_masks, _ = tuner._get_masks(1.0)
+        pruned_rows_mask = ~row_masks[0]
+        assert pruned_rows_mask.any(), (
+            "test precondition: expected some pruned rows at rate=1.0 "
+            "so we can check enforcement ordering"
+        )
+        assert torch.all(rm_at_test[pruned_rows_mask] == 0.0), (
+            "BN running_mean at pruned rows must be zero when trainer.test() "
+            "is called from _ensure_pipeline_threshold — otherwise the tuner's "
+            "_final_metric reflects a different model than the pipeline consumes."
+        )
+
     def test_rollback_restores_persistent_pruned_sets(self):
         """Rollback must discard any pruned-set expansion from the failed cycle.
 
