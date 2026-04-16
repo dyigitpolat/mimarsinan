@@ -1,4 +1,6 @@
 import gc
+import multiprocessing
+import os
 import sys
 
 import torch
@@ -6,6 +8,46 @@ import torch
 from mimarsinan.pipelining.cache.pipeline_cache import PipelineCache
 from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.common.diagnostics import cuda_guard, phase_profiler
+
+
+_RESOURCE_DEBUG = os.environ.get("MIMARSINAN_RESOURCE_DEBUG") == "1"
+
+
+def _log_resource_snapshot(tag):
+    """One-line stderr snapshot of process resources. No-op unless MIMARSINAN_RESOURCE_DEBUG=1."""
+    if not _RESOURCE_DEBUG:
+        return
+    try:
+        pid = os.getpid()
+        try:
+            fd_count = len(os.listdir(f"/proc/{pid}/fd"))
+        except OSError:
+            fd_count = -1
+        try:
+            shm = os.listdir("/dev/shm")
+            shm_count = len(shm)
+            sem_count = sum(1 for n in shm if n.startswith("sem."))
+        except OSError:
+            shm_count = -1
+            sem_count = -1
+        rss_kb = -1
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        rss_kb = int(line.split()[1])
+                        break
+        except OSError:
+            pass
+        children = len(multiprocessing.active_children())
+        print(
+            f"[resource] {tag} pid={pid} rss_kb={rss_kb} "
+            f"fd={fd_count} shm={shm_count} sem={sem_count} children={children}",
+            file=sys.stderr,
+            flush=True,
+        )
+    except Exception:
+        pass
 
 class Pipeline:
     def __init__(self, working_directory) -> None:
@@ -137,6 +179,7 @@ class Pipeline:
 
     def _run_step(self, name, step):
         print(f"Running '{name}'...")
+        _log_resource_snapshot(f"pre:{name}")
 
         for hook in self.pre_step_hooks:
             hook(name, step)
@@ -192,6 +235,7 @@ class Pipeline:
         finally:
             step.cleanup()
             self._release_gpu_memory()
+            _log_resource_snapshot(f"post:{name}")
 
     def _find_starting_step_idx(self, step_name):
         requirements = self._get_all_requirements(step_name)
