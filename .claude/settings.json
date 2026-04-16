@@ -1,8 +1,0 @@
-{
-  "defaultMode": "bypassPermissions",
-  "permissions": {
-    "allow": [
-      "Bash(python -m pytest tests/unit/mapping/ tests/unit/models/ -x -q)"
-    ]
-  }
-}
