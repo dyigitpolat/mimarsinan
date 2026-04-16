@@ -150,4 +150,4 @@ scratch_main.py
 data/
 
 .agents
-.cursor
+.cursor.claude
