@@ -791,6 +791,15 @@ class SpikingUnifiedCoreFlow(nn.Module):
         # flips ``ceil(S*(1-V/θ))`` on a handful of boundary neurons per batch
         # which is acceptable for SCM validation but not for deployment ship checks.
         x_compute = x.to(compute_dtype)
+        # Quantise the raw input to the same ``k/S`` grid that every NeuralCore's
+        # output lives on (``(S - k_fire)/S``). Any node fed directly from raw
+        # input (``kind == "input"`` span) otherwise sees a continuous float,
+        # which makes the downstream ``ceil(S*(1 - V/θ))`` flip under float32
+        # precision. After this snap ``V = W_int @ (k/S)`` is an exact rational
+        # and only ``θ`` itself introduces float imprecision. Note: encoding
+        # ComputeOps apply their own training-time quantisation internally, so
+        # re-quantising their input here is a no-op when the grid matches.
+        x_compute = torch.round(x_compute * S) / S
 
         activation_cache: Dict[int, torch.Tensor] = {}
         self._last_core_spike_counts: Dict[int, float] = {}

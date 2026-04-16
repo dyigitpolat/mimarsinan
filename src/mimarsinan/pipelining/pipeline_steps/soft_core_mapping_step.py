@@ -113,16 +113,17 @@ class SoftCoreMappingStep(PipelineStep):
           except Exception as e:
               print(f"[SoftCoreMappingStep] Flowchart generation failed (non-fatal): {e}")
         
-        self.trainer = BasicTrainer(
-            model,
-            self.pipeline.config['device'],
-            DataLoaderFactory(self.pipeline.data_provider_factory),
-            self.pipeline.loss)
-        validator = self.trainer
-
         _PHASE_TAG = "SoftCoreMappingStep"
         def _phase(name):
             return phase_profiler(_PHASE_TAG, name)
+
+        with _phase("basic_trainer_ctor"):
+            self.trainer = BasicTrainer(
+                model,
+                self.pipeline.config['device'],
+                DataLoaderFactory(self.pipeline.data_provider_factory),
+                self.pipeline.loss)
+        validator = self.trainer
 
         from mimarsinan.mapping.per_source_scales import compute_per_source_scales
         with _phase("compute_per_source_scales"):
@@ -147,6 +148,14 @@ class SoftCoreMappingStep(PipelineStep):
         # ShiftDecorator is missing.  Baking it into the effective bias
         # aligns the two staircases exactly.
         #
+        # IDEMPOTENCY: applying the shift is *not* idempotent — each call
+        # overwrites ``perceptron.layer.bias.data`` with ``(old + s) * act_scale``
+        # (see ``apply_effective_bias_transform``).  Historically the model
+        # was re-saved after every SCM run so a resumed or repeated SCM
+        # accumulated the shift on every re-run, slowly degrading soft-core
+        # simulation accuracy.  Mark each perceptron after the first shift
+        # and skip it on subsequent invocations.
+        #
         # For ttfs (continuous) this is NOT applied: the simulation uses
         # bare relu(V)/threshold without an upper clamp, so the extra
         # shift would push some outputs above 1.0 and overflow into
@@ -167,10 +176,16 @@ class SoftCoreMappingStep(PipelineStep):
                 # ``floor(V*tq)/tq``.
                 if getattr(perceptron, "is_encoding_layer", False):
                     continue
+                if getattr(perceptron, "_ttfs_shift_baked_into_bias", False):
+                    # Shift already baked in (persisted via a prior SCM save);
+                    # a second application would double-shift and degrade
+                    # soft-core sim accuracy.
+                    continue
                 shift = calculate_activation_shift(tq, perceptron.activation_scale)
                 bias_shift = shift / perceptron.activation_scale
                 PerceptronTransformer().apply_effective_bias_transform(
                     perceptron, lambda b, s=bias_shift: b + s)
+                perceptron._ttfs_shift_baked_into_bias = True
             self._ttfs_shift_applied = True
 
         bits = self.pipeline.config['weight_bits']
