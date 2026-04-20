@@ -176,7 +176,6 @@ class SmoothAdaptationTuner(TunerBase):
         self._missed_target_streak = 0
         self._pipeline_hard_floor = None
         self._pre_relaxation_target = None
-        self._test_baseline = None
         self._validation_baseline = None
         self._cycle_log = []
         self._cached_lr = None
@@ -222,6 +221,39 @@ class SmoothAdaptationTuner(TunerBase):
         restore_state_for_trainer(self.trainer, model_state)
         if extra is not None:
             self._set_extra_state(extra)
+
+    # -- Absolute-floor helpers -------------------------------------------------
+
+    def _absolute_post_acc_floor(self):
+        """Baseline-anchored absolute floor for the per-cycle rollback gate.
+
+        Returns the stricter of two floors:
+
+        * ``_validation_baseline * (1 - degradation_tolerance)`` — the same
+          relative tolerance the pipeline enforces, but anchored to the
+          pre-adaptation baseline instead of ``pre_cycle_acc``. This is
+          the primary guard against cumulative drift across many cycles.
+        * ``_pipeline_hard_floor`` — the cross-step budget floor (see
+          ``pipelining/accuracy_budget.py``). When set, it is at least as
+          strict as the baseline-anchored floor and encodes the combined
+          per-step + cross-step budget.
+
+        Returns ``None`` when neither floor is available (the tuner was
+        constructed without ``run()``, e.g. in unit tests). Callers fall
+        back to the relative gate in that case.
+        """
+        baseline = getattr(self, "_validation_baseline", None)
+        pipeline_floor = getattr(self, "_pipeline_hard_floor", None)
+        tolerance = getattr(self, "_pipeline_tolerance", None)
+
+        floors = []
+        if baseline is not None and tolerance is not None:
+            floors.append(float(baseline) * (1.0 - float(tolerance)))
+        if pipeline_floor is not None:
+            floors.append(float(pipeline_floor))
+        if not floors:
+            return None
+        return max(floors)
 
     # -- Core adaptation cycle --------------------------------------------------
 
@@ -287,7 +319,18 @@ class SmoothAdaptationTuner(TunerBase):
         # Per-step rollback gate: compare post_acc to the pre-step accuracy,
         # not to the tuner's (possibly decayed) target. Any drop beyond
         # measurement noise is a regression and must be rolled back.
-        rollback_threshold = pre_cycle_acc - noise_margin
+        relative_threshold = pre_cycle_acc - noise_margin
+        # Absolute rollback gate: anchor the floor to the baseline captured
+        # once at run start, so per-cycle drops within ``noise_margin``
+        # cannot compound across cycles. The effective rollback threshold
+        # is the *stricter* of the two gates. When the baseline has not
+        # been seeded yet (e.g. in unit tests that invoke ``_adaptation``
+        # without calling ``run()``), this reduces to the relative gate.
+        absolute_floor = self._absolute_post_acc_floor()
+        if absolute_floor is not None:
+            rollback_threshold = max(relative_threshold, absolute_floor)
+        else:
+            rollback_threshold = relative_threshold
         if post_acc < rollback_threshold:
             self._restore_state(pre_state)
             self._invalidate_lr_cache()
@@ -301,26 +344,28 @@ class SmoothAdaptationTuner(TunerBase):
             return self._committed_rate
 
         if rate >= 1.0 - 1e-6:
-            test_acc = self.trainer.test()
-            # Strict internal gate: test_acc must be within noise of the test
-            # baseline captured once at run start. The pipeline hard floor is
-            # only the safety net (in _ensure_pipeline_threshold).
-            test_baseline = getattr(self, "_test_baseline", None)
-            if test_baseline is not None:
-                strict_threshold = float(test_baseline) - noise_margin
+            # Strict internal gate at full rate: post_acc (validation) must
+            # stay within the noise margin of the validation baseline captured
+            # once at run start. Previously this gate ran ``trainer.test()``,
+            # but that leaked test-set information into the adaptation loop.
+            # The pipeline-level assertion in ``_run_step`` remains the
+            # authoritative cross-step test-set gate.
+            val_baseline = getattr(self, "_validation_baseline", None)
+            if val_baseline is not None:
+                strict_threshold = float(val_baseline) - noise_margin
             else:
                 strict_threshold = (
                     float(self.target_adjuster.original_metric) - noise_margin
                 )
-            if test_acc < strict_threshold:
+            if post_acc < strict_threshold:
                 self._restore_state(pre_state)
                 self._invalidate_lr_cache()
                 if hasattr(self, "_cycle_log"): self._cycle_log.append({
                     "rate": rate, "committed": self._committed_rate,
                     "pre_cycle_acc": float(pre_cycle_acc),
-                    "post_acc": float(post_acc), "test_acc": float(test_acc),
+                    "post_acc": float(post_acc),
                     "strict_threshold": strict_threshold, "lr": lr,
-                    "outcome": "test_gate_fail", "elapsed_sec": time.time() - t_cycle_start,
+                    "outcome": "strict_gate_fail", "elapsed_sec": time.time() - t_cycle_start,
                 })
                 return self._committed_rate
 
@@ -348,6 +393,17 @@ class SmoothAdaptationTuner(TunerBase):
             # actually reaches the original target.
             self._pre_relaxation_target = self._get_target()
             self.target_adjuster.update_target(post_acc)
+            # Clamp the decayed target to the baseline-anchored absolute
+            # floor in addition to the adjuster's own ratio-based floor.
+            # Without this, the tuner can relax its target below the
+            # cumulative drift guard that ``_adaptation`` enforces on
+            # ``post_acc``, producing a state where cycles commit while
+            # simultaneously reporting "missed target".
+            abs_floor = self._absolute_post_acc_floor()
+            if abs_floor is not None:
+                self.target_adjuster.target_metric = max(
+                    self.target_adjuster.target_metric, abs_floor
+                )
             self._missed_target_streak = 0
             self._invalidate_lr_cache()
 
@@ -362,34 +418,39 @@ class SmoothAdaptationTuner(TunerBase):
 
     # -- Safety net -------------------------------------------------------------
 
-    def _ensure_pipeline_threshold(self):
-        """Last-resort recovery if test accuracy is below the pipeline threshold.
+    def _attempt_recovery_if_below_floor(self):
+        """Last-resort recovery when **validation** is below the pipeline floor.
 
-        Uses the pipeline hard floor (derived from the previous step's test
-        metric) when available, otherwise falls back to
-        ``original_metric * (1 - pipeline_tolerance)``.
+        Test-set isolation: this method NEVER calls ``trainer.test()``.
+        The pipeline's step-level assertion in ``Pipeline._run_step``
+        (via ``PipelineStep.pipeline_metric()``) is the single place
+        that reads the test set.
 
-        Saves the pre-recovery state and restores it if a recovery attempt
-        makes accuracy worse, so this safety net can never harm the model.
+        Behaviour:
+        - If ``_pipeline_hard_floor`` is ``None`` (floor not seeded yet),
+          return the latest ``validate()`` without attempting recovery.
+        - If ``validate()`` already meets the floor, return that value.
+        - Otherwise, try up to two short recovery training passes. Track
+          the best validation seen and restore that state at exit.
+        - If the best validation is still below the floor after both
+          attempts, emit a ``UserWarning`` (the pipeline's step-level
+          assertion is the definitive failure gate; this warning lets
+          callers see that the tuner gave up).
+
+        Returns the best validation metric observed — a float on the
+        validation scale (NOT the test scale). Downstream consumers of
+        ``_final_metric`` should not treat this as a test-scale number.
         """
         hard_floor = getattr(self, "_pipeline_hard_floor", None)
-        if hard_floor is not None:
-            threshold = hard_floor
-        else:
-            original = self.target_adjuster.original_metric
-            threshold = original * (1.0 - self._pipeline_tolerance)
 
-        best_test = self.trainer.test()
-        if best_test >= threshold:
-            return best_test
+        best_val = float(self.trainer.validate())
+        if hard_floor is None:
+            return best_val
+        if best_val >= hard_floor:
+            return best_val
 
         best_state = self._clone_state()
 
-        # Attempt 1: LR from the run's cache (probe if empty -- rare, only
-        # happens if the safety net is called before any cycle completed).
-        # Attempt 2: pipeline-configured LR as the fallback. Forcing a fresh
-        # probe here rarely beats ``pipeline_lr`` after the cached LR already
-        # failed, so we skip the extra probe to keep the safety net bounded.
         def _attempt_lrs():
             yield self._get_cached_lr()
             yield self.pipeline_lr
@@ -411,16 +472,111 @@ class SmoothAdaptationTuner(TunerBase):
             finally:
                 for h in hooks:
                     h.remove()
-            test_acc = self.trainer.test()
-            if test_acc > best_test:
-                best_test = test_acc
+            val_acc = float(self.trainer.validate())
+            if val_acc > best_val:
+                best_val = val_acc
                 best_state = self._clone_state()
-            if best_test >= threshold:
+            if best_val >= hard_floor:
                 self._restore_state(best_state)
-                return best_test
+                return best_val
 
         self._restore_state(best_state)
-        return best_test
+        if best_val < hard_floor:
+            import warnings
+            warnings.warn(
+                f"{self.__class__.__name__}: could not recover validation "
+                f"above pipeline floor after retries "
+                f"(best_validation={best_val:.4f}, floor={hard_floor:.4f}). "
+                "The pipeline's step-level test assertion will determine "
+                "whether this step fails overall.",
+                stacklevel=2,
+            )
+        return best_val
+
+    # Backwards-compatible alias. All internal callers should use the new
+    # ``_attempt_recovery_if_below_floor`` name; this alias keeps older
+    # callers (and subclasses that override it) working without a churn.
+    def _ensure_pipeline_threshold(self):
+        return self._attempt_recovery_if_below_floor()
+
+    # -- Post-step stabilization ------------------------------------------------
+
+    def _stabilization_budget(self):
+        """Number of gradient steps for the final rate=1.0 stabilization pass.
+
+        Returns ``2 * self._budget.max_training_steps`` by default. Subclasses
+        can return ``None`` (or ``0``) to disable stabilization entirely —
+        useful for tuners that are cheap to rerun or whose transformation is
+        a no-op at rate=1.0.
+        """
+        return 2 * int(self._budget.max_training_steps)
+
+    def _stabilize_at_full_rate(self):
+        """Extra training at rate=1.0 after ``_after_run`` has committed.
+
+        Runs a single ``train_steps_until_target`` call with the cached LR
+        and ``2 * max_training_steps`` of budget while the rate=1.0 recovery
+        hooks are installed. The trainer's built-in best-state tracking
+        means this pass can only improve or preserve the model it was given
+        — it cannot introduce a regression beyond measurement noise.
+
+        Contract / preconditions:
+
+        * Only runs when ``_committed_rate`` is already at 1.0 (it is a
+          stabilization pass, not a rate transition).
+        * Never calls ``trainer.test()`` (single-measurement rule).
+        * Recovery hooks are installed/removed using ``try/finally`` so
+          pruning / decorator invariants are enforced throughout and
+          released even on exception.
+        * A pre-call validation and a post-call validation are compared;
+          if the post-stabilization validation drops more than
+          ``_rollback_tolerance`` below pre, the pre-stabilization state
+          is restored.
+        """
+        if self._committed_rate < 1.0 - 1e-6:
+            return
+        budget = self._stabilization_budget()
+        if budget is None or int(budget) <= 0:
+            return
+        budget = int(budget)
+
+        lr = self._get_cached_lr()
+
+        pre_state = self._clone_state()
+        try:
+            pre_val = float(self.trainer.validate())
+        except Exception:
+            pre_val = None
+
+        hooks = self._recovery_training_hooks(1.0)
+        try:
+            self.trainer.train_steps_until_target(
+                lr,
+                budget,
+                self._get_target(),
+                0,
+                validation_n_batches=self._budget.progress_eval_batches,
+                check_interval=self._budget.check_interval,
+                patience=_RECOVERY_PATIENCE,
+                min_steps=self._budget.check_interval * 3,
+                min_improvement=self._budget.accuracy_se() / 2,
+            )
+        finally:
+            for h in hooks:
+                h.remove()
+
+        if pre_val is not None:
+            try:
+                post_val = float(self.trainer.validate())
+            except Exception:
+                post_val = None
+            if post_val is not None and post_val < pre_val - self._rollback_tolerance:
+                self._restore_state(pre_state)
+                self._invalidate_lr_cache()
+                self.pipeline.reporter.report(
+                    f"{self.name} stabilization rollback",
+                    {"pre": pre_val, "post": post_val},
+                )
 
     # -- Gradual completion -----------------------------------------------------
 
@@ -470,12 +626,34 @@ class SmoothAdaptationTuner(TunerBase):
         )
 
         # Pipeline hard gate: the floor the test metric must stay above.
-        # Derived from the previous step's test accuracy so it matches
-        # the pipeline assertion exactly.
-        # The tuner NEVER uses test() to derive training decisions -- this
-        # is only a go/no-go gate.  No test-set data leak.
+        # Routed through ``pipeline.accuracy_budget`` so the floor is
+        # ``max(previous_test * (1 - tolerance), reference - budget_total)``:
+        # per-step and cross-step budgets combined.
+        #
+        # Before the budget is seeded (no positive test metric observed
+        # yet -- e.g. Architecture Search / Model Building / Model
+        # Configuration), the floor is left as ``None`` and the tuner
+        # skips the pipeline-facing assertion; no test-set data leak
+        # because the floor is derived only from measurements the
+        # pipeline has already committed at previous-step exit.
         pipeline_prev = getattr(self.pipeline, "get_target_metric", lambda: None)()
-        if pipeline_prev is not None and float(pipeline_prev) > 0:
+        budget = getattr(self.pipeline, "accuracy_budget", None)
+        if (
+            pipeline_prev is not None
+            and float(pipeline_prev) > 0
+            and budget is not None
+        ):
+            self._pipeline_hard_floor = budget.step_floor(
+                previous_metric=float(pipeline_prev),
+                per_step_tolerance=self._pipeline_tolerance,
+            )
+            if self._pipeline_hard_floor <= 0.0:
+                # Budget unseeded -> no cross-step floor; fall back to the
+                # per-step floor so we retain the previous behavior.
+                self._pipeline_hard_floor = float(pipeline_prev) * (
+                    1.0 - self._pipeline_tolerance
+                )
+        elif pipeline_prev is not None and float(pipeline_prev) > 0:
             self._pipeline_hard_floor = float(pipeline_prev) * (1.0 - self._pipeline_tolerance)
         else:
             self._pipeline_hard_floor = None
@@ -500,10 +678,11 @@ class SmoothAdaptationTuner(TunerBase):
         self.target_adjuster.original_metric = baseline_val
         self.target_adjuster.floor = baseline_val * (1.0 - self._pipeline_tolerance)
 
-        # Baselines for the internal rate=1.0 gate (captured once per run, no
-        # test-set data leak: test_baseline is used only as a go/no-go gate).
+        # Validation baseline for the internal rate=1.0 gate. The tuner
+        # NEVER calls ``trainer.test()``; the pipeline's centralised
+        # ``PipelineStep.pipeline_metric()`` runs the one-and-only test()
+        # pass per step at step exit.
         self._validation_baseline = baseline_val
-        self._test_baseline = self.trainer.test()
 
         self.pipeline.reporter.report("BUDGET", {
             "max_training_steps": self._budget.max_training_steps,
@@ -529,6 +708,7 @@ class SmoothAdaptationTuner(TunerBase):
                     f"Tuning rate must reach 1.0 by the end of the step, "
                     f"but _committed_rate is {self._committed_rate:.6f}"
                 )
+                self._stabilize_at_full_rate()
                 self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
                 self._log_cycle_summary()
                 return result
@@ -570,6 +750,7 @@ class SmoothAdaptationTuner(TunerBase):
             f"Tuning rate must reach 1.0 by the end of the step, "
             f"but _committed_rate is {self._committed_rate:.6f}"
         )
+        self._stabilize_at_full_rate()
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
         self._log_cycle_summary()
         return result

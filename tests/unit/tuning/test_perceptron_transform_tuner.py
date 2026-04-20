@@ -79,14 +79,18 @@ class TestAfterRunForcesFullRate:
 
     def test_after_run_delegates_recovery_to_ensure_pipeline_threshold(self):
         """_after_run no longer runs unconditional recovery training; that's
-        delegated to _ensure_pipeline_threshold which only trains when needed
-        and saves/restores state to never make things worse."""
+        delegated to the validation-only safety net
+        (``_attempt_recovery_if_below_floor``, aliased as
+        ``_ensure_pipeline_threshold``) which only trains when needed and
+        saves/restores state to never make things worse."""
         from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
         source_after = inspect.getsource(PerceptronTransformTuner._after_run)
         # _after_run does NOT call train_steps_until_target directly
         assert "train_steps_until_target" not in source_after
-        # but _ensure_pipeline_threshold does, with min_improvement
-        source_ept = inspect.getsource(SmoothAdaptationTuner._ensure_pipeline_threshold)
+        # but _attempt_recovery_if_below_floor does, with min_improvement
+        source_ept = inspect.getsource(
+            SmoothAdaptationTuner._attempt_recovery_if_below_floor
+        )
         assert "min_improvement" in source_ept
 
 
@@ -145,9 +149,16 @@ class TestRollbackIncludesAuxModel:
             ), f"model param {key} not restored after rollback"
 
 
-class TestTestGateActiveForWeightQuantization:
-    """The base-class test gate (rate >= 1.0 -> test() check) must be active
-    for NormalizationAwarePerceptronQuantizationTuner."""
+class TestStrictGateActiveForWeightQuantization:
+    """The base-class strict validation gate (rate >= 1.0 ->
+    ``_validation_baseline`` check) must be active for
+    ``NormalizationAwarePerceptronQuantizationTuner``.
+
+    Note: this used to be a ``trainer.test()``-based gate. It has been
+    changed to a ``validate()``-based gate to eliminate test-set data
+    leakage in the tuner loop. ``trainer.test()`` is only called by
+    ``PipelineStep.pipeline_metric()`` at step exit.
+    """
 
     @pytest.fixture
     def tuner(self, tmp_path):
@@ -160,27 +171,33 @@ class TestTestGateActiveForWeightQuantization:
         )
         return tuner
 
-    def test_test_gate_rejects_bad_test_accuracy(self, tuner):
-        """If test() drops below ``test_baseline - noise_margin``, one-shot
-        at rate=1.0 should be rolled back (committed_rate stays 0.0)."""
+    def test_strict_gate_rejects_bad_validation_accuracy(self, tuner):
+        """If post_acc (validation) drops below ``_validation_baseline -
+        rollback_tolerance``, the rate=1.0 one-shot is rolled back."""
         tuner._committed_rate = 0.0
 
-        tuner.trainer.validate_n_batches = lambda n: 0.88
+        # pre_cycle_acc baseline high; post_acc below strict gate.
+        # ``validate_n_batches`` is called twice per ``_adaptation``:
+        # once before ``_update_and_evaluate`` (pre_cycle_acc), once
+        # after recovery (post_acc). Use side_effect to return
+        # different values.
+        call_values = [0.88, 0.50]
+        def _validate_n_batches(_n):
+            return call_values.pop(0) if call_values else 0.50
+        tuner.trainer.validate_n_batches = _validate_n_batches
         tuner.trainer.train_steps_until_target = lambda *a, **kw: None
-        tuner.trainer.test = lambda: 0.50
 
-        baseline = tuner.trainer.validate_n_batches(tuner._budget.eval_n_batches)
-        tuner.target_adjuster.target_metric = baseline
-        tuner.target_adjuster.original_metric = baseline
-        # Set explicit baselines so the strict gate has a well-defined reference
-        # (bypassing run()'s noise calibration that would otherwise be used).
-        tuner._test_baseline = 0.88
+        tuner.target_adjuster.target_metric = 0.88
+        tuner.target_adjuster.original_metric = 0.88
+        tuner._validation_baseline = 0.88
         tuner._rollback_tolerance = 0.05
 
         tuner._adaptation(1.0)
 
         assert tuner._committed_rate < 1.0 - 1e-6, (
-            "One-shot should be rejected when test() is below strict threshold"
+            "One-shot should be rejected when validation is below strict "
+            "threshold (validation_baseline 0.88 - tolerance 0.05 = 0.83, "
+            "post 0.50)"
         )
 
 

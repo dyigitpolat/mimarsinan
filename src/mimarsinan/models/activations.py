@@ -58,27 +58,46 @@ formula ``W_eff = per_input_scales * W / activation_scale``.
 
 
 class DifferentiableClamp(Function):
+    """Differentiable clamp with optional gradient flow to the bounds.
+
+    Forward: ``out = clamp(x, a, b)``.
+
+    Backward wrt ``x`` uses the floored-exponential STE: full gradient
+    inside ``[a, b]``, smoothly-decaying (floored) gradient outside. This
+    gently regularises weights to stay within the clamp range without
+    killing gradients.
+
+    Backward wrt ``a`` and ``b``: a gradient is returned whenever the
+    input tensor is not ``detach()``ed. When the saturating side is
+    active (``x < a`` for ``a``, ``x > b`` for ``b``) the clamp output is
+    exactly the bound, so ``d output / d bound = 1``; elsewhere the
+    gradient is zero. This is what lets ``ClampDecorator`` use a learnable
+    scale parameter for the upper bound.
+    """
+
     @staticmethod
     def forward(ctx, x, a, b):
-        a = a.clone().detach().to(x.device)
-        b = b.clone().detach().to(x.device)
-
         assert a.dim() <= 0 and b.dim() <= 0, (
             f"DifferentiableClamp expects scalar bounds; got a.shape={tuple(a.shape)}, "
             f"b.shape={tuple(b.shape)}"
         )
-
-        ctx.save_for_backward(x, a, b)
-        return torch.clamp(x, a, b)
+        a_dev = a.to(x.device)
+        b_dev = b.to(x.device)
+        ctx.save_for_backward(x, a_dev, b_dev)
+        return torch.clamp(x, a_dev, b_dev)
 
     @staticmethod
     def backward(ctx, grad_output):
         x, a, b = ctx.saved_tensors
         below_grad = torch.clamp_min(torch.exp(x - a), _CLAMP_LEAK)
         above_grad = torch.clamp_min(torch.exp(b - x), _CLAMP_LEAK)
-        grad = torch.where(
+        grad_x = torch.where(
             x < a,
             below_grad,
             torch.where(x > b, above_grad, torch.ones_like(x)),
         )
-        return grad_output * grad, None, None
+        # For a/b: gradient is 1 where saturation pins output to the
+        # bound, 0 elsewhere. Sum over the input tensor (bounds are scalars).
+        grad_a = (grad_output * (x < a).to(grad_output.dtype)).sum()
+        grad_b = (grad_output * (x > b).to(grad_output.dtype)).sum()
+        return grad_output * grad_x, grad_a, grad_b

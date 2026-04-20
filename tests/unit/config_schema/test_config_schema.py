@@ -20,9 +20,6 @@ class TestDefaults:
         assert "lr" in d
         assert "training_epochs" in d
         assert "tuning_budget_scale" in d
-        assert d.get("tuner_calibrate_smooth_tolerance") is True
-        assert "tuner_smooth_tolerance_residual_threshold" in d
-        assert d.get("tuner_smooth_tolerance_lr_scale") == 1.0
         assert "degradation_tolerance" in d
         assert "model_config_mode" in d
         assert "hw_config_mode" in d

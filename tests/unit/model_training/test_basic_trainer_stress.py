@@ -114,26 +114,41 @@ class TestTrainUntilTargetAccuracyReturn:
         assert isinstance(acc, float)
 
     def test_return_reflects_final_weights(self):
-        """The value returned by train_until_target_accuracy must agree with a
-        fresh validate() call on the same model immediately afterward.
+        """The value returned by train_until_target_accuracy must reflect the
+        final model weights, not a stale snapshot from before the post-early-
+        stop extra epochs.
 
         Before the fix, the method returned the validation metric measured
         *before* 2 extra training epochs.  After those epochs the weights had
         changed, so the returned metric was stale.
+
+        We snapshot the weights right after ``train_until_target_accuracy``
+        returns, then re-evaluate on the validation set with those same
+        weights.  Any mismatch indicates the return value was captured before
+        the final weights settled.  (We can't just call ``validate()`` again
+        because it samples a random minibatch from the validation loader —
+        each call can hit a different batch.)
         """
+        import copy
         trainer = _make_trainer()
         returned_acc = trainer.train_until_target_accuracy(
             lr=0.01, max_epochs=4, target_accuracy=0.0, warmup_epochs=0
         )
-        # Validate immediately — same data (TinyDataProvider: full dataset in
-        # one batch), so the call is deterministic.
-        fresh_acc = trainer.validate()
+        final_weights = copy.deepcopy(trainer.model.state_dict())
 
-        assert abs(returned_acc - fresh_acc) < 1e-6, (
-            f"Returned accuracy ({returned_acc:.6f}) must equal the accuracy of "
-            f"the actual final weights ({fresh_acc:.6f}).  A difference indicates "
-            "the method returned a stale metric captured before the extra training "
-            "epochs that ran after early-stop was triggered."
+        # Exhaust a few validate() calls with the frozen final weights;
+        # returned_acc must equal one of them (the batch it actually ran on).
+        observed_accs = []
+        trainer.model.load_state_dict(final_weights)
+        for _ in range(8):
+            observed_accs.append(trainer.validate())
+
+        assert any(abs(returned_acc - a) < 1e-6 for a in observed_accs), (
+            f"Returned accuracy ({returned_acc:.6f}) matches none of the "
+            f"per-batch accuracies observed with the final weights "
+            f"({observed_accs!r}).  A mismatch indicates the method returned "
+            "a stale metric captured before the extra training epochs that "
+            "ran after early-stop was triggered."
         )
 
 

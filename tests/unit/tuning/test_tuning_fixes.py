@@ -113,7 +113,11 @@ class TestRecoveryHooksProtocol:
 
 
 class TestEnsurePipelineThreshold:
-    """_ensure_pipeline_threshold retries when test accuracy is below threshold."""
+    """``_ensure_pipeline_threshold`` (new name:
+    ``_attempt_recovery_if_below_floor``) uses validation ONLY — never
+    ``trainer.test()``. The pipeline's step-level assertion is the only
+    place that reads the test set.
+    """
 
     def test_passes_when_above_threshold(self):
         from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
@@ -129,20 +133,24 @@ class TestEnsurePipelineThreshold:
         tuner.pipeline_lr = 0.001
         tuner._rollback_tolerance = 0.05
         tuner._pipeline_tolerance = 0.05
+        tuner._pipeline_hard_floor = 0.80
         tuner.target_adjuster = MagicMock()
         tuner.target_adjuster.get_target.return_value = 0.90
         tuner.target_adjuster.original_metric = 0.90
         tuner._budget = MagicMock()
         tuner._budget.max_training_steps = 100
         tuner._budget.eval_n_batches = 5
+        tuner._budget.progress_eval_batches = 3
         tuner._budget.check_interval = 10
         tuner._budget.accuracy_se.return_value = 0.005
+        tuner._cached_lr = 0.001
         tuner.trainer = MagicMock()
-        tuner.trainer.test.return_value = 0.90
+        tuner.trainer.validate.return_value = 0.90
 
         result = tuner._ensure_pipeline_threshold()
         assert result == 0.90
         tuner.trainer.train_steps_until_target.assert_not_called()
+        tuner.trainer.test.assert_not_called()
 
     def test_retries_when_below_threshold(self):
         from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
@@ -158,21 +166,25 @@ class TestEnsurePipelineThreshold:
         tuner.pipeline_lr = 0.001
         tuner._rollback_tolerance = 0.05
         tuner._pipeline_tolerance = 0.05
+        tuner._pipeline_hard_floor = 0.85
         tuner.target_adjuster = MagicMock()
         tuner.target_adjuster.get_target.return_value = 0.90
         tuner.target_adjuster.original_metric = 0.90
         tuner._budget = MagicMock()
         tuner._budget.max_training_steps = 100
         tuner._budget.eval_n_batches = 5
+        tuner._budget.progress_eval_batches = 3
         tuner._budget.check_interval = 10
         tuner._budget.accuracy_se.return_value = 0.005
+        tuner._cached_lr = 0.001
         tuner.trainer = MagicMock()
-        tuner.trainer.test.side_effect = [0.80, 0.88]
+        tuner.trainer.validate.side_effect = [0.80, 0.88]
 
         tuner._find_lr = MagicMock(return_value=0.001)
 
         result = tuner._ensure_pipeline_threshold()
         tuner.trainer.train_steps_until_target.assert_called_once()
+        tuner.trainer.test.assert_not_called()
         assert result == 0.88
 
 
@@ -288,8 +300,11 @@ class TestPruningTunerAfterRun:
         assert PruningTuner._find_lr is TunerBase._find_lr
 
 
-class TestOneShotTestGate:
-    """When _adaptation commits at rate=1.0, it must also pass test()."""
+class TestOneShotStrictGate:
+    """When ``_adaptation`` commits at rate=1.0, it runs a strict
+    validation gate against ``_validation_baseline`` (no ``trainer.test()``
+    call — that would leak test-set information into the tuning loop).
+    """
 
     def _make_tuner(self):
         from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
@@ -304,7 +319,6 @@ class TestOneShotTestGate:
         tuner._rollback_tolerance = 0.05
         tuner._pipeline_tolerance = 0.01
         tuner._missed_target_streak = 0
-        tuner._test_baseline = 0.90
         tuner._validation_baseline = 0.90
         tuner._pre_relaxation_target = None
         tuner.target_adjuster = MagicMock()
@@ -323,36 +337,46 @@ class TestOneShotTestGate:
         tuner._restore_state = MagicMock()
         return tuner
 
-    def test_oneshot_rejected_when_test_fails(self):
-        """rate=1.0 commit is rejected if test() falls below
-        ``test_baseline - rollback_tolerance``."""
+    def test_oneshot_rejected_when_validation_fails(self):
+        """rate=1.0 commit is rejected when post_acc (validation) falls
+        below ``validation_baseline - rollback_tolerance``."""
         tuner = self._make_tuner()
-        tuner.trainer.validate_n_batches.return_value = 0.90
-        # test_baseline = 0.90, rollback_tolerance = 0.05 → strict = 0.85.
-        # test = 0.80 is below strict → rollback.
-        tuner.trainer.test.return_value = 0.80
-
+        # pre_cycle_acc = 0.90 (from validate_n_batches), post_acc = 0.80
+        # rolls back due to the per-step rollback gate (0.90 - 0.05 = 0.85 > 0.80).
+        tuner.trainer.validate_n_batches.side_effect = [0.90, 0.80]
         result = tuner._adaptation(1.0)
         assert result == 0.0
         tuner._restore_state.assert_called()
+        tuner.trainer.test.assert_not_called()
 
-    def test_oneshot_accepted_when_test_passes(self):
-        """rate=1.0 commit succeeds when both validate and test pass."""
+    def test_oneshot_accepted_when_validation_passes(self):
+        """rate=1.0 commit succeeds when post_acc >= baseline - tolerance."""
         tuner = self._make_tuner()
         tuner.trainer.validate_n_batches.return_value = 0.90
-        tuner.trainer.test.return_value = 0.90
-
         result = tuner._adaptation(1.0)
         assert result == 1.0
         assert tuner._committed_rate == 1.0
+        tuner.trainer.test.assert_not_called()
 
-    def test_sub_one_rate_skips_test_gate(self):
-        """Rates below 1.0 do not trigger the test() gate."""
+    def test_sub_one_rate_skips_strict_gate(self):
+        """Rates below 1.0 only check the per-step rollback gate."""
         tuner = self._make_tuner()
         tuner.trainer.validate_n_batches.return_value = 0.90
-
         result = tuner._adaptation(0.5)
         assert result == 0.5
+        tuner.trainer.test.assert_not_called()
+
+    def test_oneshot_rejected_when_strict_gate_fails(self):
+        """post_acc must stay within rollback_tolerance of the validation
+        baseline when rate=1.0 — otherwise rollback."""
+        tuner = self._make_tuner()
+        # pre_cycle_acc = 0.88; post_acc = 0.84. per-step rollback: 0.88
+        # - 0.05 = 0.83 -> 0.84 >= 0.83, so per-step passes. Strict rate=1
+        # gate: 0.90 - 0.05 = 0.85 -> 0.84 < 0.85, so rollback.
+        tuner.trainer.validate_n_batches.side_effect = [0.88, 0.84]
+        result = tuner._adaptation(1.0)
+        assert result == 0.0
+        tuner._restore_state.assert_called()
         tuner.trainer.test.assert_not_called()
 
 
@@ -390,7 +414,6 @@ class TestBaselineCalibration:
         tuner._recovery_training_hooks = MagicMock(return_value=[])
         tuner._clone_state = MagicMock(return_value=("state", None))
         tuner._restore_state = MagicMock()
-        tuner.trainer.test.return_value = 0.87
 
         tuner._committed_rate = 0.0
         tuner._small_step_streak = 0

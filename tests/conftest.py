@@ -206,7 +206,6 @@ def default_config():
         "weight_bits": 8,
         "training_epochs": 1,
         "tuning_budget_scale": 1.0,
-        "tuner_calibrate_smooth_tolerance": False,
         "lr": 0.001,
         "weight_quantization": False,
         "activation_quantization": False,

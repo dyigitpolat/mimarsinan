@@ -9,7 +9,7 @@ pipeline steps and hardware mapping.
 |------|---------|---------|
 | `perceptron_transformer.py` | `PerceptronTransformer` | Computes effective weights/biases by fusing normalization; uses `per_input_scales` for per-channel input scaling. `apply_effective_bias_transform` and `apply_effective_bias_transform_to_norm` are no-ops when `layer.bias is None` (bias-less perceptrons). |
 | `weight_quantization.py` | `TensorQuantization` | Symmetric tensor quantization to N-bit integers |
-| `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization` | Weight quantization that accounts for normalization parameters |
+| `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization` | Weight quantization that accounts for normalization parameters. Accepts a `rate` argument and linearly interpolates in weight-value space between the FP and fully-quantized effective weights (`rate == 0` is identity, `rate == 1` matches the legacy full-quantization output). `parameter_scale` is always set to the full-range scale so downstream IR mapping is unaffected by rate |
 | `chip_quantization.py` | `ChipQuantization` | Chip-level quantization utilities |
 | `weight_clipping.py` | `SoftTensorClipping`, `clip_core_weights` | Soft weight clipping for training stability |
 | `transformation_utils.py` | `transform_np_array` | Low-level numpy array quantization helper |

@@ -320,7 +320,7 @@ class TestPruningTuner:
 
     def test_enforcement_runs_before_final_metric_measurement(self):
         """Regression: ``_enforce_pruning_persistently`` must run *before*
-        ``_ensure_pipeline_threshold`` calls ``trainer.test()``.
+        ``_ensure_pipeline_threshold`` measures final accuracy.
 
         Pre-fix: enforcement (which zeros BN ``running_mean`` and ``beta``
         at pruned rows) ran at the end of ``run()``, *after* the tuner's
@@ -329,6 +329,10 @@ class TestPruningTuner:
         post-enforcement (different) model and saw a spurious accuracy
         drop — surfacing at "Activation Analysis" (a step that doesn't
         conceptually change the model) as a tolerance failure.
+
+        Note: the safety net now uses ``trainer.validate()`` (NOT
+        ``trainer.test()``) to eliminate test-set data leakage. This
+        regression test follows that change.
         """
         from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
 
@@ -351,22 +355,23 @@ class TestPruningTuner:
 
         # Prime BN running_mean with a non-zero value on every row so we
         # can detect whether enforcement's row-zeroing ran by the time
-        # test() is called.
+        # the safety net's first validation is taken.
         bn = perceptrons[0].normalization
         with torch.no_grad():
             bn.running_mean.fill_(0.5)
 
         captured = {}
 
-        def _capture_test(_self):
-            captured["running_mean_at_test_time"] = bn.running_mean.clone()
+        def _capture_validate(_self):
+            if "running_mean_at_metric_time" not in captured:
+                captured["running_mean_at_metric_time"] = bn.running_mean.clone()
             return 1.0  # satisfy pipeline-threshold safety net
 
         tuner.trainer = type(
             "T", (),
             {
-                "test": _capture_test,
-                "validate": lambda self: 1.0,
+                "test": lambda self: 1.0,
+                "validate": _capture_validate,
                 "validate_n_batches": lambda self, n: 1.0,
                 "train_one_step": lambda self, lr: None,
                 "train_steps_until_target": lambda self, *a, **k: None,
@@ -382,16 +387,17 @@ class TestPruningTuner:
         tuner._committed_rate = 1.0
         tuner._after_run()
 
-        rm_at_test = captured["running_mean_at_test_time"]
+        rm_at_metric = captured["running_mean_at_metric_time"]
         row_masks, _ = tuner._get_masks(1.0)
         pruned_rows_mask = ~row_masks[0]
         assert pruned_rows_mask.any(), (
             "test precondition: expected some pruned rows at rate=1.0 "
             "so we can check enforcement ordering"
         )
-        assert torch.all(rm_at_test[pruned_rows_mask] == 0.0), (
-            "BN running_mean at pruned rows must be zero when trainer.test() "
-            "is called from _ensure_pipeline_threshold — otherwise the tuner's "
+        assert torch.all(rm_at_metric[pruned_rows_mask] == 0.0), (
+            "BN running_mean at pruned rows must be zero when "
+            "trainer.validate() is called from _attempt_recovery_if_below_floor "
+            "(aliased _ensure_pipeline_threshold) — otherwise the tuner's "
             "_final_metric reflects a different model than the pipeline consumes."
         )
 

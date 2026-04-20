@@ -51,7 +51,7 @@ class ActivationShiftTuner(TunerBase):
     def validate(self):
         if self._final_metric is not None:
             return self._final_metric
-        return self.trainer.test()
+        return self.trainer.validate()
 
     def run(self):
         self._apply_shift()
@@ -70,5 +70,7 @@ class ActivationShiftTuner(TunerBase):
             min_steps=self._budget.check_interval * 3,
             min_improvement=self._budget.accuracy_se(),
         )
-        self._final_metric = self.trainer.test()
+        # Tuner internals never call ``trainer.test()`` — the pipeline's
+        # ``PipelineStep.pipeline_metric()`` owns the single test() pass.
+        self._final_metric = self.trainer.validate()
         return self._final_metric

@@ -74,7 +74,6 @@ _TTFS_CONFIG_OVERRIDES = {
     "activation_quantization": False,
     "weight_quantization": True,
     "tuning_budget_scale": 1.0,
-    "tuner_calibrate_smooth_tolerance": False,
     "lr_range_min": 1e-5,
     "lr_range_max": 1e-3,
 }
@@ -457,16 +456,17 @@ class TestAdaptationMetricConsistency:
         )
         step.cleanup()
 
-    def test_committed_metric_equals_full_test_accuracy(self, tmp_path):
-        """_committed_metric must equal trainer.test() on the same model weights.
+    def test_committed_metric_never_reads_test_set(self, tmp_path, monkeypatch):
+        """_committed_metric must come from trainer.validate() — never test().
 
-        trainer.validate() evaluates only one minibatch; on MNIST this can
-        produce values as low as 0.63 even when the true test accuracy is 0.96.
-        That noisy value then becomes the ClampTuner recovery target, causing
-        it to aim for 0.63 instead of 0.96.
-
-        Using trainer.test() (full test split) eliminates this noise.
+        Under the single-measurement rule, tuner internals never call
+        trainer.test(); the step's test metric is computed exactly once by
+        PipelineStep.pipeline_metric() at step exit. This test monkeypatches
+        trainer.test() to raise, so any stray call during _after_run /
+        _ensure_pipeline_threshold is caught immediately.
         """
+        from mimarsinan.model_training.basic_trainer import BasicTrainer
+
         pipeline = _make_ttfs_pipeline(tmp_path)
         model = _make_leakyrelu_model()
         am = AdaptationManager()
@@ -479,25 +479,21 @@ class TestAdaptationMetricConsistency:
         step = ActivationAdaptationStep(pipeline)
         step.name = "Activation Adaptation"
         pipeline.prepare_step(step)
+
+        def _forbidden_test(self, *args, **kwargs):
+            raise AssertionError(
+                "trainer.test() must NOT be called inside tuner internals."
+            )
+
+        monkeypatch.setattr(BasicTrainer, "test", _forbidden_test)
+
         step.run()
 
         assert step.tuner is not None, "Tuner must run for LeakyReLU model"
         committed = step.tuner._committed_metric
-
-        # Independently measure on the full test set.
-        from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-        from mimarsinan.model_training.basic_trainer import BasicTrainer
-
-        dlf = DataLoaderFactory(pipeline.data_provider_factory, num_workers=0)
-        fresh_trainer = BasicTrainer(model, "cpu", dlf, pipeline.loss)
-        fresh_test_acc = fresh_trainer.test()
-        fresh_trainer.close()
-
-        assert committed == fresh_test_acc, (
-            f"_committed_metric ({committed:.4f}) must match trainer.test() "
-            f"({fresh_test_acc:.4f}) on the same model weights.  "
-            "If they differ, _committed_metric came from validate() "
-            "(single noisy batch) instead of the full test set."
+        assert committed is not None, "_committed_metric must be set after _after_run"
+        assert 0.0 <= committed <= 1.0, (
+            f"_committed_metric ({committed}) must be a valid accuracy in [0, 1]."
         )
         step.cleanup()
 
