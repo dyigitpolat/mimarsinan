@@ -56,14 +56,16 @@ class TestAdaptationNotOverridden:
 
 class TestAfterRunForcesFullRate:
     """_after_run() must force perceptron_transformation to rate=1.0,
-    do recovery training, and call _ensure_pipeline_threshold()."""
+    do recovery training, and call _ensure_validation_threshold()."""
 
     def test_after_run_overridden(self):
         assert PerceptronTransformTuner._after_run is not SmoothAdaptationTuner._after_run
 
-    def test_after_run_source_calls_ensure_pipeline_threshold(self):
+    def test_after_run_source_calls_ensure_validation_threshold(self):
         source = inspect.getsource(PerceptronTransformTuner._after_run)
-        assert "_ensure_pipeline_threshold" in source
+        # Phase A3: _ensure_pipeline_threshold -> _ensure_validation_threshold
+        # (validation-only recovery; the pipeline owns the test-set gate).
+        assert "_ensure_validation_threshold" in source
 
     def test_after_run_source_forces_full_rate_transform(self):
         source = inspect.getsource(PerceptronTransformTuner._after_run)
@@ -77,17 +79,19 @@ class TestAfterRunForcesFullRate:
         source = inspect.getsource(PerceptronTransformTuner._after_run)
         assert "_update_and_transform_model" in source
 
-    def test_after_run_delegates_recovery_to_ensure_pipeline_threshold(self):
+    def test_after_run_delegates_recovery_to_ensure_validation_threshold(self):
         """_after_run no longer runs unconditional recovery training; that's
-        delegated to _ensure_pipeline_threshold which only trains when needed
+        delegated to _ensure_validation_threshold which only trains when needed
         and saves/restores state to never make things worse."""
         from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
         source_after = inspect.getsource(PerceptronTransformTuner._after_run)
         # _after_run does NOT call train_steps_until_target directly
         assert "train_steps_until_target" not in source_after
-        # but _ensure_pipeline_threshold does, with min_improvement
-        source_ept = inspect.getsource(SmoothAdaptationTuner._ensure_pipeline_threshold)
-        assert "min_improvement" in source_ept
+        # but _ensure_validation_threshold does, with min_improvement
+        source_evt = inspect.getsource(
+            SmoothAdaptationTuner._ensure_validation_threshold
+        )
+        assert "min_improvement" in source_evt
 
 
 @pytest.mark.slow
@@ -145,8 +149,8 @@ class TestRollbackIncludesAuxModel:
             ), f"model param {key} not restored after rollback"
 
 
-class TestTestGateActiveForWeightQuantization:
-    """The base-class test gate (rate >= 1.0 -> test() check) must be active
+class TestValidationGateActiveForWeightQuantization:
+    """The base-class rate=1.0 validation gate (Phase A1) must be active
     for NormalizationAwarePerceptronQuantizationTuner."""
 
     @pytest.fixture
@@ -160,27 +164,39 @@ class TestTestGateActiveForWeightQuantization:
         )
         return tuner
 
-    def test_test_gate_rejects_bad_test_accuracy(self, tuner):
-        """If test() drops below ``test_baseline - noise_margin``, one-shot
-        at rate=1.0 should be rolled back (committed_rate stays 0.0)."""
+    def test_validation_gate_rejects_bad_strict_validation(self, tuner):
+        """If the strict validation probe at rate=1.0 falls below the
+        validation baseline minus rollback tolerance, the one-shot commit
+        must be rolled back (committed_rate stays 0.0)."""
         tuner._committed_rate = 0.0
 
-        tuner.trainer.validate_n_batches = lambda n: 0.88
+        call_seq = {"n": 0}
+        # First validate_n_batches call is pre-cycle (baseline),
+        # second is post-cycle evaluation (above the target to reach
+        # rate=1.0 commit path), third is the strict rate=1.0 gate
+        # which we make fail by returning 0.50.
+        def _val_seq(_n):
+            call_seq["n"] += 1
+            if call_seq["n"] == 1:
+                return 0.88  # pre-cycle
+            if call_seq["n"] == 2:
+                return 0.88  # post-cycle (>= target)
+            return 0.50      # strict rate=1.0 probe -> fail
+        tuner.trainer.validate_n_batches = _val_seq
         tuner.trainer.train_steps_until_target = lambda *a, **kw: None
-        tuner.trainer.test = lambda: 0.50
+        tuner.trainer.test = lambda: (_ for _ in ()).throw(
+            AssertionError("trainer.test() must not be called from tuner code")
+        )
 
-        baseline = tuner.trainer.validate_n_batches(tuner._budget.eval_n_batches)
-        tuner.target_adjuster.target_metric = baseline
-        tuner.target_adjuster.original_metric = baseline
-        # Set explicit baselines so the strict gate has a well-defined reference
-        # (bypassing run()'s noise calibration that would otherwise be used).
-        tuner._test_baseline = 0.88
+        tuner.target_adjuster.target_metric = 0.88
+        tuner.target_adjuster.original_metric = 0.88
+        tuner._validation_baseline = 0.88
         tuner._rollback_tolerance = 0.05
 
         tuner._adaptation(1.0)
 
         assert tuner._committed_rate < 1.0 - 1e-6, (
-            "One-shot should be rejected when test() is below strict threshold"
+            "One-shot should be rejected when strict validation gate fails"
         )
 
 

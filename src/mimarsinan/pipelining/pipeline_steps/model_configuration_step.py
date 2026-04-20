@@ -13,7 +13,14 @@ class ModelConfigurationStep(PipelineStep):
     Emits ``platform_constraints_resolved`` and a default
     ``scaled_simulation_length`` so that downstream mapping / simulation
     steps always have them.
+
+    This is a pure configuration step with no trainer and no evaluable
+    metric; ``skip_from_floor_check = True`` (Phase B3) opts it out of
+    the pipeline's accuracy-drop assertion so it does not reset the
+    running ``previous_metric`` chain or falsely trip the global floor.
     """
+
+    skip_from_floor_check = True
 
     def __init__(self, pipeline):
         requires = []

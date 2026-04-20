@@ -36,8 +36,11 @@ class ActivationQuantizationTuner(SmoothAdaptationTuner):
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
-        self._final_metric = self._ensure_pipeline_threshold()
-        self._committed_rate = 1.0
+        recovered_val = self._ensure_validation_threshold()
+        if recovered_val >= self._validation_floor_for_commit():
+            self._committed_rate = 1.0
+        self._final_metric = recovered_val
+        self._flush_enforcement_hooks()
         return self._final_metric
 
     def run(self):

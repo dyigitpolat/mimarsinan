@@ -349,10 +349,16 @@ class DeploymentPipeline(Pipeline):
             self.config.setdefault("spike_generation_mode", "Deterministic")
             self.config.setdefault("thresholding_mode", "<")
 
-        # Connect degradation_tolerance config to pipeline's step-level assertion.
-        # tolerance = 1 - degradation_tolerance: with degradation_tolerance=0.05,
-        # this gives tolerance=0.95 (allow up to 5% accuracy drop per step).
-        self.tolerance = 1.0 - float(self.config.get("degradation_tolerance", 0.05))
+        # Connect degradation_tolerance config to pipeline's step-level
+        # assertion AND to the cross-step global floor (Phase A2).  The
+        # per-step tolerance prevents any single step from regressing more
+        # than this fraction of the previous step's metric; the global
+        # floor (anchored on the FP-baseline test metric) caps the
+        # CUMULATIVE drop across all steps.  Both use the same budget
+        # fraction by default so the "total" and "per-step" budgets agree.
+        dt = float(self.config.get("degradation_tolerance", 0.05))
+        self.tolerance = 1.0 - dt
+        self.degradation_tolerance = dt
 
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":
             self.config.setdefault("cuda_debug", True)

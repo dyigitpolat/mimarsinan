@@ -184,6 +184,29 @@ class ClampTuner(SmoothAdaptationTuner):
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
+    def _enable_learnable_ceiling(self, flag: bool):
+        """Toggle gradient tracking on each perceptron's log clamp ceiling
+        (Phase B2).  Enabling it inside the tuner's main loop means the
+        optimizer built by ``BasicTrainer`` picks the ceiling up via
+        ``self.model.parameters()`` and adjusts it alongside the weights.
+        We disable it again at the end of the tuner so the learnt value
+        behaves like a frozen scale for every downstream step -- exactly
+        the contract the rest of the pipeline assumes."""
+        for perceptron in self.model.get_perceptrons():
+            perceptron.log_clamp_ceiling.requires_grad_(bool(flag))
+
+    def run(self):
+        # Turn on gradient flow for the learnable clamp ceiling for the
+        # duration of this tuner; the parent ``SmoothAdaptationTuner.run``
+        # will call ``_after_run`` (see below) which consolidates the
+        # learnt value back into ``activation_scale`` and disables
+        # requires_grad again.
+        self._enable_learnable_ceiling(True)
+        try:
+            return super().run()
+        finally:
+            self._enable_learnable_ceiling(False)
+
     def _update_and_evaluate(self, rate):
         self.adaptation_manager.clamp_rate = rate
         for perceptron in self.model.get_perceptrons():
@@ -191,9 +214,11 @@ class ClampTuner(SmoothAdaptationTuner):
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def validate(self):
+        # Validation-only. The pipeline runs trainer.test() once per step
+        # from PipelineStep.pipeline_metric; tuners must not.
         if self._final_metric is not None:
             return self._final_metric
-        return self.trainer.test()
+        return self.trainer.validate()
 
     def _after_run(self):
         self._continue_to_full_rate()
@@ -202,6 +227,29 @@ class ClampTuner(SmoothAdaptationTuner):
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
-        self._final_metric = self._ensure_pipeline_threshold()
-        self._committed_rate = 1.0
+        recovered_val = self._ensure_validation_threshold()
+        # Only mark the rate committed if recovery actually met the floor.
+        # See A4: the previous unconditional assignment masked real failures
+        # and moved the pipeline-assertion failure to a later, less-actionable
+        # spot.
+        if recovered_val >= self._validation_floor_for_commit():
+            self._committed_rate = 1.0
+        # Consolidate the learnt per-perceptron clamp ceiling back into
+        # ``activation_scale`` (Phase B2).  Downstream steps (activation
+        # shift, activation quantisation) read ``activation_scale`` to
+        # derive their own scales, so we need the static scalar to match
+        # the ceiling we just learnt.  ``set_activation_scale`` also
+        # reseeds ``log_clamp_ceiling`` to ``log(new_scale)`` so the two
+        # stay consistent even if a later tuner re-enables gradients.
+        with torch.no_grad():
+            for perceptron in self.model.get_perceptrons():
+                learnt = perceptron.effective_clamp_ceiling().detach().clone()
+                perceptron.set_activation_scale(float(learnt.item()))
+        # Rebuild decorators so any cached ceiling references in the
+        # current TransformedActivation chain pick up the consolidated
+        # scale immediately.
+        for perceptron in self.model.get_perceptrons():
+            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        self._final_metric = recovered_val
+        self._flush_enforcement_hooks()
         return self._final_metric

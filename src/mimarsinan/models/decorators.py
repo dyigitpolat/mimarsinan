@@ -192,6 +192,30 @@ class ClampDecorator:
         return DifferentiableClamp.apply(x, self.clamp_min, self.clamp_max)
 
 
+class LearnableClampDecorator:
+    """Clamp decorator whose ceiling is taken live from a ``Perceptron``'s
+    ``effective_clamp_ceiling()`` each forward pass.  This is the Phase-B2
+    variant that lets ``ClampTuner`` drive the ceiling with gradient
+    descent: once ``perceptron.log_clamp_ceiling.requires_grad`` is True,
+    the forward pass builds a fresh ``exp(log_clamp_ceiling)`` tensor per
+    call so gradients flow back into the log-space parameter.  When
+    ``requires_grad`` is False the behaviour is identical to the plain
+    ``ClampDecorator`` -- the ceiling is just a frozen number.
+    """
+
+    def __init__(self, perceptron, clamp_min):
+        self.perceptron = perceptron
+        self.clamp_min = clamp_min
+
+    def input_transform(self, x):
+        return x
+
+    def output_transform(self, x):
+        self.clamp_min = self.clamp_min.to(x.device)
+        ceiling = self.perceptron.effective_clamp_ceiling().to(x.device)
+        return DifferentiableClamp.apply(x, self.clamp_min, ceiling)
+
+
 class QuantizeDecorator:
     def __init__(self, levels_before_c, c):
         self.levels_before_c = levels_before_c

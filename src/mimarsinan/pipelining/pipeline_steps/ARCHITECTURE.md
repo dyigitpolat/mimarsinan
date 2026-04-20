@@ -11,7 +11,8 @@ in the deployment pipeline.
 | `architecture_search_step.py` | `ArchitectureSearchStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`; sets `allow_coalescing` from pipeline config and normalizes via `mapping.coalescing.normalize_coalescing_config`) |
 | `model_configuration_step.py` | `ModelConfigurationStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`; sets `allow_coalescing` the same way) |
 | `model_building_step.py` | `ModelBuildingStep` | Model construction |
-| `pretraining_step.py` | `PretrainingStep` | Training |
+| `pretraining_step.py` | `PretrainingStep` | Training — anchors `pipeline.baseline_test_metric` via the pipeline's auto-seed of the first non-zero `pipeline_metric()` |
+| `pruning_adaptation_step.py` | `PruningAdaptationStep` | **Runs first in the transform chain** (immediately after Pretraining / Weight Preloading and before any activation or weight quantisation step). Gradual structured pruning via `PruningTuner`. This ordering lets downstream analysis and quantisation see the final topology, so their scales are not invalidated by a later pruning shock. |
 | `activation_analysis_step.py` | `ActivationAnalysisStep` | Quantization prep (sampled multi-batch activation quantiles; writes `activation_scales` and `activation_scale_stats`) |
 | `activation_adaptation_step.py` | `ActivationAdaptationStep` | Activation adaptation (always runs: gradual ReLU replacement via ActivationAdaptationTuner) |
 | `clamp_adaptation_step.py` | `ClampAdaptationStep` | Quantization/TTFS clamping (runs when activation_quantization or TTFS mode; consumes `activation_scale_stats`; always uses ClampTuner with eval-safe multi-batch clamp probes and a cached final full-test metric) |

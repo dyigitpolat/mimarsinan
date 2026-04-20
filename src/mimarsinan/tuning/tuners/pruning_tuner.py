@@ -345,7 +345,10 @@ class PruningTuner(SmoothAdaptationTuner):
         self._register_prune_buffers(perceptrons, row_masks, col_masks)
         self._enforce_pruning_persistently(perceptrons, row_masks, col_masks)
 
-        self._final_metric = self._ensure_pipeline_threshold()
+        self._final_metric = self._ensure_validation_threshold()
+        # Flush enforcement hooks so downstream steps read the
+        # post-recovery, pre-hook-applied model state (A5).
+        self._flush_enforcement_hooks()
         return self._final_metric
 
     # -- Main entry point -------------------------------------------------------
@@ -363,8 +366,15 @@ class PruningTuner(SmoothAdaptationTuner):
         print("[PruningTuner] Starting fractional discrete adaptation...")
         super().run()
 
-        final_acc = self._final_metric if self._final_metric is not None else self.trainer.test()
-        print(f"[PruningTuner] Final overall accuracy: {final_acc:.4f}")
+        # Final reporting: validation-only. The pipeline runs trainer.test()
+        # exactly once per step via PipelineStep.pipeline_metric; tuners must
+        # not hit the test set directly.
+        final_acc = (
+            self._final_metric
+            if self._final_metric is not None
+            else self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        )
+        print(f"[PruningTuner] Final overall validation accuracy: {final_acc:.4f}")
 
         row_masks, col_masks = self._get_masks(1.0)
         for i, p in enumerate(perceptrons):

@@ -81,6 +81,9 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
         with torch.no_grad():
             self.trainer._update_and_transform_model()
 
-        final_acc = self._ensure_pipeline_threshold()
-        self._committed_rate = 1.0
-        return final_acc
+        recovered_val = self._ensure_validation_threshold()
+        if recovered_val >= self._validation_floor_for_commit():
+            self._committed_rate = 1.0
+        self._final_metric = recovered_val
+        self._flush_enforcement_hooks()
+        return recovered_val

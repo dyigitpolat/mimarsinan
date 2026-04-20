@@ -15,6 +15,7 @@ from mimarsinan.models.decorators import (
     ActivationReplacementDecorator,
     AnyDecorator,
     ClampDecorator,
+    LearnableClampDecorator,
     DecoratedActivation,
     MixAdjustmentStrategy,
     NestedAdjustmentStrategy,

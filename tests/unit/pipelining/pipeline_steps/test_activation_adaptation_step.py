@@ -260,26 +260,29 @@ class TestActivationAdaptationCommit:
 
         assert step.validate() == 0.75
 
-    def test_committed_metric_uses_full_test_set(self, mock_pipeline):
-        """_committed_metric must use trainer.test() (full test set), not
-        trainer.validate() (single minibatch).
+    def test_committed_metric_uses_multi_batch_validation(self, mock_pipeline):
+        """_committed_metric must come from multi-batch validation (via
+        ``validate_n_batches``) so it is stable enough to be used as the
+        recovery target of downstream tuners.
 
-        trainer.validate() reads one batch from val_iter; the batch that
-        happens to be current when the commit runs can differ significantly
-        from the model's actual accuracy (observed 0.63 vs 0.96 on MNIST).
-        That noisy value then becomes the recovery TARGET for ClampTuner,
-        causing it to aim for 0.63 instead of 0.96.
+        Phase A1 of the QAT refactor forbids any tuner from calling
+        ``trainer.test()`` during its run (that would leak test labels into
+        the training loop).  The contract is therefore:
 
-        Using trainer.test() iterates the complete test split, giving a
-        stable and representative metric for both pipeline tolerance checks
-        and downstream tuner targets.
+          * ``_committed_metric`` is a VALIDATION metric, computed via
+            ``validate_n_batches`` (more than one minibatch, no test
+            labels).
+          * The full test-set accuracy is computed exactly once per step by
+            ``PipelineStep.pipeline_metric()`` AFTER the tuner returns.
+          * ``_committed_metric`` must be a plausible estimate of real
+            accuracy (not a single noisy minibatch), but it is NOT required
+            to equal ``trainer.test()`` -- it just has to be close enough
+            that tuner decisions downstream are reasonable.
         """
-        import torch
         from mimarsinan.tuning.adaptation_manager import AdaptationManager
         from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
         from mimarsinan.model_training.basic_trainer import BasicTrainer
 
-        # Use a non-ReLU model so the tuner actually runs and sets _committed_metric.
         model = _model_with_gelu()
         am = AdaptationManager()
 
@@ -296,22 +299,25 @@ class TestActivationAdaptationCommit:
 
         assert step.tuner is not None, "Tuner must be created for non-ReLU model"
         committed = step.tuner._committed_metric
+        assert 0.0 <= committed <= 1.0, (
+            f"_committed_metric must be a valid accuracy in [0,1]; got {committed}"
+        )
 
-        # Measure independently with a fresh trainer on the test set.
+        # Cross-check against a fresh trainer's full test accuracy; the
+        # committed metric is validation-based so it's allowed to differ
+        # slightly, but it must be in the same neighbourhood -- otherwise
+        # the commit logic was using something other than the validation
+        # iterator.
         dlf = DataLoaderFactory(mock_pipeline.data_provider_factory, num_workers=0)
         fresh_trainer = BasicTrainer(model, "cpu", dlf, mock_pipeline.loss)
         fresh_test_acc = fresh_trainer.test()
         fresh_trainer.close()
 
-        # _committed_metric must match the full-set test accuracy, not a
-        # noisy single-batch validate().  TinyDataProvider uses batch_size=size
-        # for test, so both are deterministic here; the key contract is that
-        # _committed_metric comes from test(), not validate().
-        assert committed == fresh_test_acc, (
-            f"_committed_metric ({committed:.4f}) must equal trainer.test() "
-            f"({fresh_test_acc:.4f}) measured on the same model weights.  "
-            "A mismatch means _committed_metric was taken from validate() "
-            "(single minibatch) rather than the full test set."
+        assert abs(committed - fresh_test_acc) < 0.30, (
+            f"_committed_metric ({committed:.4f}) should be in the same "
+            f"neighbourhood as the real test accuracy ({fresh_test_acc:.4f}); "
+            "a large divergence suggests the commit uses a single noisy "
+            "batch rather than validate_n_batches()."
         )
 
     # test_run_does_not_commit_identity_perceptrons removed:

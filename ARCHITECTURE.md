@@ -18,12 +18,12 @@
    - [Architecture Search](#51-architecture-search)
    - [Model Building](#52-model-building)
    - [Pretraining](#53-pretraining)
-   - [Activation Analysis](#54-activation-analysis)
-   - [Clamp Adaptation](#55-clamp-adaptation)
-   - [Input Activation Analysis](#56-input-activation-analysis)
-   - [Activation Shifting](#57-activation-shifting)
-   - [Activation Quantization](#58-activation-quantization)
-   - [Pruning Adaptation](#59-pruning-adaptation)
+   - [Pruning Adaptation](#54-pruning-adaptation)
+   - [Activation Analysis](#55-activation-analysis)
+   - [Activation Adaptation](#56-activation-adaptation)
+   - [Clamp Adaptation](#57-clamp-adaptation)
+   - [Activation Shifting](#58-activation-shifting)
+   - [Activation Quantization](#59-activation-quantization)
    - [Weight Quantization](#510-weight-quantization)
    - [Quantization Verification](#511-quantization-verification)
    - [Normalization Fusion](#512-normalization-fusion)
@@ -257,7 +257,11 @@ The `Pipeline` class is the orchestration engine. It:
 2. Manages a `PipelineCache` for inter-step data transfer
 3. Resolves key translations so each step accesses the correct cached version of a datum
 4. Verifies data contracts at assembly time (when steps are added)
-5. Enforces performance tolerance between steps (each step must not degrade accuracy below `tolerance * previous_metric`)
+5. Enforces a **two-layer performance floor** between steps.  Each step must satisfy both:
+   * **Per-step floor** (`tolerance * previous_step_metric`): catches a single step that regresses hard.
+   * **Cumulative / global floor** (`baseline_test_metric * (1 - degradation_tolerance)`): catches the case where every step loses "just a little", which in aggregate would exceed the total accuracy budget the user signed up for.
+   `pipeline.baseline_test_metric` is seeded from the first non-zero `pipeline_metric()` observed (normally Pretraining / Weight Preloading) and is monotonic non-decreasing.  The global floor is only active once a real baseline exists, so early pass-through steps that legitimately report `0.0` are skipped.  `degradation_tolerance` comes straight from the JSON config (default `0.05`) and also determines the per-step `tolerance = 1 − degradation_tolerance` in `DeploymentPipeline`.
+6. **Skip-list for zero-metric steps (Phase B3).** Pure setup / configuration steps (`ModelConfigurationStep`, `ModelBuildingStep`, ...) set `skip_from_floor_check = True` on the class.  For those steps the pipeline (i) does not run the floor assertion and (ii) does not update `previous_metric`, so a legitimate `pipeline_metric == 0.0` can no longer silently reset the per-step ratchet to zero.  Real transform steps (pretraining, clamp, quantisation, ...) always leave the flag at its default `False` and go through the normal two-layer check.
 
 **Key methods:**
 
@@ -342,7 +346,7 @@ An additional pruning flag controls dimension reduction:
 
 | Flag | What it enables |
 |------|-----------------|
-| `pruning` + `pruning_fraction` | Pruning Adaptation (between activation quantization and weight quantization). Gradually zeros the least-significant rows/columns. Configured via `pruning_fraction` (0–1). |
+| `pruning` + `pruning_fraction` | Pruning Adaptation (runs **first** in the transform chain, immediately after Pretraining / Weight Preloading). Gradually zeros the least-significant rows/columns. Configured via `pruning_fraction` (0–1). Running pruning before any activation- or weight-quantisation step is deliberate: it lets later tuners work on the already-sparser network, so the activation / parameter scales they fit are correct for the final topology and the accuracy budget is not wasted recovering from a pruning shock after quantisation has already been committed. |
 
 Preset defaults are applied with `setdefault`, so explicit values in `deployment_parameters` always win.
 
@@ -359,7 +363,8 @@ Model Configuration → Model Building → Pretraining
 
 ```
 Model Configuration → Model Building → Pretraining
-→ Activation Analysis → Activation Adaptation → Clamp Adaptation → Input Activation Analysis
+→ [Pruning Adaptation]                         (if pruning enabled)
+→ Activation Analysis → Activation Adaptation → Clamp Adaptation
 → Activation Shifting → Activation Quantization
 → Weight Quantization → Quantization Verification
 → Normalization Fusion → Soft Core Mapping
@@ -371,9 +376,9 @@ Model Configuration → Model Building → Pretraining
 
 ```
 Model Configuration → Model Building → Pretraining
-→ Activation Analysis → Activation Adaptation → Clamp Adaptation → Input Activation Analysis
-→ Activation Shifting → Activation Quantization
 → Pruning Adaptation
+→ Activation Analysis → Activation Adaptation → Clamp Adaptation
+→ Activation Shifting → Activation Quantization
 → Weight Quantization → Quantization Verification
 → Normalization Fusion → Soft Core Mapping
 → Core Quantization Verification → Hard Core Mapping → Simulation
@@ -419,9 +424,27 @@ Builds the actual PyTorch model using the builder from the previous step. Initia
 - **Requires**: `model`
 - **Updates**: `model`
 
-Trains the model from scratch using `BasicTrainer` for `training_epochs` with a warmup phase. This establishes a baseline accuracy before quantization transformations begin.
+Trains the model from scratch using `BasicTrainer` for `training_epochs` with a warmup phase. This establishes a baseline accuracy before quantization transformations begin.  The pipeline engine automatically captures the first non-zero `pipeline_metric()` (produced by Pretraining or Weight Preloading) as `pipeline.baseline_test_metric`; this value anchors the `global_floor` used by every subsequent step's cross-step degradation check (see §4.1 and §10).
 
-### 5.4 Activation Analysis
+### 5.4 Pruning Adaptation
+
+**File**: `pipeline_steps/pruning_adaptation_step.py`
+
+- **Requires**: `model`, `adaptation_manager`
+- **Updates**: `model`, `adaptation_manager`
+
+Conditionally included when `pruning` is enabled and `pruning_fraction > 0`.  **Runs first in the transform chain**, immediately after Pretraining / Weight Preloading and before any activation- or weight-quantisation step.  This ordering is deliberate: subsequent activation analysis, clamp fitting, and weight quantisation see the already-sparser network, so the scales they fit describe the final topology (pruning later would waste the accuracy budget on recovering from a pruning shock after quantisation had already been committed).
+
+Uses `PruningTuner` (extends `PerceptronTuner`) to gradually zero the least-significant rows and columns of each perceptron's weight matrix:
+
+1. At the **start of each adaptation cycle**, recomputes row/column significance (activation-based when available, else weight L1); the pruning candidate set is thus refreshed every cycle rather than fixed for the whole run.
+2. Identifies the bottom `pruning_fraction` rows and columns as pruning candidates for that cycle.
+3. Uses `SmartSmoothAdaptation` (with a per-cycle callback to refresh importance) to progressively scale candidate weights toward zero (at adaptation rate `r`, weights are multiplied by `1 − r`).
+4. When adaptation completes (`r = 1.0`), pruned rows/columns are fully zeroed.
+
+The zeroed structure is later physically removed from the IR graph by `ir_pruning.prune_ir_graph()` during Soft Core Mapping, which compacts `NeuralCore` weight matrices and rewires source references. When columns are removed, `hardware_bias` (if present) is sliced with the same `keep_cols` indices so it stays in sync with `core_matrix.shape[1]`. Before compacting, each node receives `pre_pruning_heatmap`, `pruned_row_mask`, and `pruned_col_mask` for GUI soft-core pre/post pruning visualizations.
+
+### 5.5 Activation Analysis
 
 **File**: `pipeline_steps/activation_analysis_step.py`
 
@@ -430,7 +453,7 @@ Trains the model from scratch using `BasicTrainer` for `training_epochs` with a 
 
 Decorates each perceptron's activation with a `SavedTensorDecorator`, runs validation, and computes activation scales based on the 99th percentile of the cumulative sum of sorted activations. Only non-pruned activations (above a small threshold) are included so that post-pruning statistics are not skewed and clamping does not over-degrade accuracy. These scales determine the clamping range for each perceptron.
 
-### 5.5 Activation Adaptation
+### 5.6 Activation Adaptation
 
 **File**: `pipeline_steps/activation_adaptation_step.py`
 
@@ -439,7 +462,7 @@ Decorates each perceptron's activation with a `SavedTensorDecorator`, runs valid
 
 **Always runs immediately after Activation Analysis.** When any chip-targeted perceptron has a non-ReLU base (GELU, LeakyReLU), uses `ActivationAdaptationTuner` to gradually blend activations toward ReLU via `SmartSmoothAdaptation`. The tuner sets `activation_adaptation_rate` on the `AdaptationManager`, which inserts an `ActivationReplacementDecorator` that linearly interpolates between the original activation output and ReLU output. When all activations are already ReLU-compatible, only applies activation_scales. After full adaptation (rate=1), the base activation is committed to ReLU and the rate is reset. Does not set `clamp_rate`, so the clamp decorator remains a no-op and Normalization Fusion → Soft Core Mapping stays exact. Shared logic (e.g. "needs ReLU adaptation") lives in `pipeline_steps/activation_utils.py`.
 
-### 5.5b Clamp Adaptation
+### 5.7 Clamp Adaptation
 
 **File**: `pipeline_steps/clamp_adaptation_step.py`
 
@@ -448,7 +471,9 @@ Decorates each perceptron's activation with a `SavedTensorDecorator`, runs valid
 
 **Runs only when `activation_quantization` is True or spiking is TTFS**, and always after Activation Adaptation. Uses `ClampTuner` to gradually introduce clamping to each perceptron's activation, guided by the previously computed activation scales. The `SmartSmoothAdaptation` framework ensures the clamping is applied incrementally to minimize accuracy loss.
 
-### 5.6 Activation Shifting
+**Learnable per-perceptron ceiling (Phase B2)**: every `Perceptron` carries a log-space `log_clamp_ceiling` parameter initialised from `log(activation_scale)`.  `ClampTuner` flips `log_clamp_ceiling.requires_grad` on while it runs so `LearnableClampDecorator` evaluates `exp(log_clamp_ceiling)` live each forward pass and the optimizer (which picks up parameters via `self.model.parameters()`) refines the ceiling with gradient descent.  At the end of the tuner the learnt ceiling is written back into `activation_scale` and `requires_grad` is disabled again, so every downstream step (Activation Shifting, Activation Quantisation, Weight Quantisation, Normalisation Fusion) still sees a frozen scalar that matches the statically published scale -- no behavioural change for code outside the clamp step.
+
+### 5.8 Activation Shifting
 
 **File**: `pipeline_steps/activation_shift_step.py`
 
@@ -457,7 +482,7 @@ Decorates each perceptron's activation with a `SavedTensorDecorator`, runs valid
 
 Shifts activation functions so they align with quantization levels. Computes a shift amount based on `target_tq` and `activation_scale`, applies it to biases via `PerceptronTransformer.apply_effective_bias_transform`, and trains to recover accuracy.
 
-### 5.7 Activation Quantization
+### 5.9 Activation Quantization
 
 **File**: `pipeline_steps/activation_quantization_step.py`
 
@@ -465,22 +490,6 @@ Shifts activation functions so they align with quantization levels. Computes a s
 - **Updates**: `model`, `adaptation_manager`
 
 Uses `ActivationQuantizationTuner` to gradually quantize activations to `target_tq` levels. The tuner uses `SmartSmoothAdaptation` to incrementally increase quantization strength while maintaining accuracy.
-
-### 5.9 Pruning Adaptation
-
-**File**: `pipeline_steps/pruning_adaptation_step.py`
-
-- **Requires**: `model`, `adaptation_manager`
-- **Updates**: `model`, `adaptation_manager`
-
-Conditionally included when `pruning` is enabled and `pruning_fraction > 0`. Uses `PruningTuner` (extends `PerceptronTuner`) to gradually zero the least-significant rows and columns of each perceptron's weight matrix:
-
-1. At the **start of each adaptation cycle**, recomputes row/column significance (activation-based when available, else weight L1); the pruning candidate set is thus refreshed every cycle rather than fixed for the whole run.
-2. Identifies the bottom `pruning_fraction` rows and columns as pruning candidates for that cycle.
-3. Uses `SmartSmoothAdaptation` (with a per-cycle callback to refresh importance) to progressively scale candidate weights toward zero (at adaptation rate `r`, weights are multiplied by `1 − r`).
-4. When adaptation completes (`r = 1.0`), pruned rows/columns are fully zeroed.
-
-The zeroed structure is later physically removed from the IR graph by `ir_pruning.prune_ir_graph()` during Soft Core Mapping, which compacts `NeuralCore` weight matrices and rewires source references. When columns are removed, `hardware_bias` (if present) is sliced with the same `keep_cols` indices so it stays in sync with `core_matrix.shape[1]`. Before compacting, each node receives `pre_pruning_heatmap`, `pruned_row_mask`, and `pruned_col_mask` for GUI soft-core pre/post pruning visualizations.
 
 ### 5.10 Weight Quantization
 
@@ -514,6 +523,13 @@ b_fused = γ * (b - μ) / √(σ² + ε) + β
 ```
 
 Scaling factors (`activation_scale`, `parameter_scale`) are **not modified**, ensuring mathematical equivalence — the fused network produces identical outputs to the pre-fusion network. After fusion, the normalization is replaced with `nn.Identity()`. LayerNorm and post-activation normalizations are not fusable and are skipped.
+
+**Invariants that make fusion exact:**
+
+1. **BN statistics are frozen before weight quantisation.** `WeightQuantizationStep` wraps every fusable BN in a `FrozenStatsNormalization` shim before running `NormalizationAwarePerceptronQuantizationTuner`, so `μ`, `σ²` and `γ`, `β` cannot drift during the tuner's training bursts.  Without this guard, the effective weights the quantiser rounds would no longer match the effective weights the fused linear ends up producing.
+2. **Weight quantisation is normalisation-aware.** The quantiser rounds *effective* weights (`PerceptronTransformer` applies BN fusion and per-input scaling on-the-fly) rather than raw `layer.weight`, so the integers written to hardware describe what the fused network will actually compute.
+3. **Fusion is a write-back, not a re-scale.** Because `activation_scale` / `parameter_scale` stay untouched and the BN transform is linear, `(W_fused, b_fused)` produces bit-identical outputs to `BN(W · x + b)` for any input — so accuracy measured right before fusion equals accuracy right after fusion (modulo floating-point).
+4. **Identity replacement, not removal.** The BN module is swapped for `nn.Identity()` rather than deleted.  This keeps the module graph shape stable for Soft Core Mapping and means `Perceptron.normalization` always exists (and is queryable) even when it's a no-op.
 
 ### 5.13 Soft Core Mapping
 
@@ -987,6 +1003,8 @@ A framework for gradually applying a transformation while maintaining accuracy:
 3. Apply the transformation at rate `t + step_size`
 4. Train to recover accuracy
 5. Repeat until `t = 1.0` (full transformation)
+
+**Validation-only contract (no test-set leakage).**  Every decision a tuner makes during its run — accepting a rate, rolling back, choosing a learning rate, running the post-run safety-net recovery — uses **validation** accuracy only (`trainer.validate()` / `trainer.validate_n_batches()`).  `trainer.test()` is never called from tuner code.  The test set is touched exactly once per pipeline step, in `PipelineStep.pipeline_metric()`, *after* the tuner has returned; that single value becomes `__target_metric`, feeds the per-step tolerance assertion, and updates `pipeline.baseline_test_metric`.  This means test labels cannot influence training-time decisions, so the reported test accuracy is a genuine held-out measurement rather than something the tuner has implicitly optimised against.
 
 The framework includes:
 - Binary search for step size

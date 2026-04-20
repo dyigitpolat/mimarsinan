@@ -1,4 +1,13 @@
 class PipelineStep:
+    # Phase B3 skip-list: subclasses that do not produce a meaningful test
+    # metric (pure configuration / model-building / mapping steps whose
+    # ``validate()`` just forwards the running target) should set
+    # ``skip_from_floor_check = True``.  The pipeline engine then skips
+    # both floor assertions for that step AND leaves ``previous_metric``
+    # untouched so the next real step is still compared to the last
+    # observed baseline instead of a bogus 0.0.
+    skip_from_floor_check: bool = False
+
     def __init__(self, requires, promises, updates, clears, pipeline):
         self.name = self.__class__.__name__
         self.requires = requires
@@ -25,20 +34,26 @@ class PipelineStep:
         raise NotImplementedError
 
     def pipeline_metric(self):
-        """Definitive metric for pipeline progression — used by ``Pipeline``
-        to set ``__target_metric`` after each step.
+        """Definitive metric for pipeline progression.
 
-        Prefers a tuner's cached ``final_metric`` (set at the end of
-        ``_after_run``) to avoid an extra full-test-set pass after the
-        tuner already ran ``test()`` internally. Falls back to
-        ``trainer.test()`` when no cached metric is available, and to
-        ``validate()`` when no trainer is present.
+        Called by ``Pipeline._run_step`` to set ``__target_metric`` and to
+        enforce the step-level hard-floor assertion. This is the ONLY place
+        in the framework allowed to hit the test set -- tuners run entirely
+        on validation. Running ``trainer.test()`` here, after the tuner has
+        already finalised the model, keeps the test labels out of any
+        training-time decision (rate commits, rollback gates, LR probes).
+
+        Resolution order:
+        1. A tuner attached to the step is preferred -- its ``trainer``
+           already has loaders warm. We run its ``trainer.test()`` here.
+        2. The step's own ``trainer`` (for steps that don't use a tuner).
+        3. The step's ``validate()`` (for pass-through / mapping steps
+           that never touch a trainer -- these steps must ensure
+           ``validate()`` returns a metric on the same scale as
+           ``trainer.test()`` or simply defers to ``pipeline.get_target_metric()``).
         """
         tuner = getattr(self, "tuner", None)
         if tuner is not None:
-            cached = getattr(tuner, "final_metric", None)
-            if cached is not None:
-                return float(cached)
             trainer = getattr(tuner, "trainer", None)
             if trainer is not None and hasattr(trainer, "test"):
                 return trainer.test()

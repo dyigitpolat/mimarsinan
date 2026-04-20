@@ -206,37 +206,48 @@ class TestOneShotFailure:
         assert len(update_rates) > 1, "Must fall back to gradual adaptation"
 
     def test_rollback_fail_falls_back(self, setup):
-        """If rate=1.0 passes catastrophic check but fails the test() gate,
-        model state is restored and gradual loop runs."""
+        """If rate=1.0 passes catastrophic check but fails the rate=1.0
+        validation gate, model state is restored and gradual loop runs.
+
+        The rate=1.0 strict gate is now validation-based (Phase A1); the
+        former test()-gate leaked test labels into the rollback decision.
+        """
         tuner = setup
 
-        test_call_count = [0]
-
-        def high_val(rate):
-            return 0.87
-
         tuner._instant_acc_fn = lambda r: 0.85  # passes catastrophic
-        tuner._post_acc_fn = high_val
+        tuner._post_acc_fn = lambda r: 0.87
         tuner._patch_trainer()
 
-        # Call 1 (run baseline capture): high — the "pre-tuning" test metric.
-        # Call 2 (rate=1.0 gate inside _adaptation): low — drops significantly
-        # below baseline - noise, forcing test_gate_fail + fallback.
-        # Call 3+ (gradual cycle gates, recovery): high again.
-        def mock_test():
-            test_call_count[0] += 1
-            if test_call_count[0] == 1:
-                return 0.87  # run() baseline
-            if test_call_count[0] == 2:
-                return 0.70  # one-shot at rate=1.0 fails strict gate
+        # validate_n_batches is called many times in _adaptation:
+        # - Once pre-cycle (baseline),
+        # - Once post-cycle (post_acc),
+        # - Once for the strict rate=1.0 gate.
+        # We sabotage the strict gate (3rd call during the one-shot) to
+        # be well below ``validation_baseline - rollback_tolerance``.
+        val_call_count = [0]
+        def mock_validate(_n):
+            val_call_count[0] += 1
+            # The run() noise calibration uses the first two calls, then
+            # _adaptation uses the pre/post/strict sequence.
+            # Make only the strict probes after baseline fail hard.
+            if val_call_count[0] <= 2:
+                return 0.87  # noise calibration (run())
+            if val_call_count[0] == 5:
+                return 0.40  # strict rate=1.0 gate -> reject
             return 0.87
-        tuner.trainer.test = mock_test
+        tuner.trainer.validate_n_batches = mock_validate
+        # Ensure the tuner never hits trainer.test() -- A1 invariant.
+        tuner.trainer.test = lambda: (_ for _ in ()).throw(
+            AssertionError("trainer.test() must not be called from tuner code")
+        )
 
         tuner.run()
 
         update_rates = [r for tag, r in tuner.adaptation_calls if tag == "update"]
         assert update_rates[0] == 1.0, "First attempt must be one-shot"
-        assert len(update_rates) > 1, "Must fall back after one-shot test gate rejection"
+        assert len(update_rates) > 1, (
+            "Must fall back after one-shot validation gate rejection"
+        )
 
     def test_state_restored_after_failed_one_shot(self, setup):
         """Model parameters are identical before and after a failed one-shot."""

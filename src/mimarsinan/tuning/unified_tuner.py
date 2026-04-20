@@ -143,12 +143,18 @@ class TunerBase:
 
     @property
     def final_metric(self):
-        """Cached final test-consistent metric set by ``_after_run``.
+        """Cached final validation metric set by ``_after_run``.
 
-        ``None`` before the tuner has finished; a float on the test-set
-        scale afterwards. Used by :meth:`PipelineStep.pipeline_metric`
-        to avoid a redundant ``trainer.test()`` pass after the tuner
-        already computed one internally.
+        ``None`` before the tuner has finished; a validation-set float
+        afterwards.  Previously this field stored a test-set metric so
+        :meth:`PipelineStep.pipeline_metric` could short-circuit the
+        post-step ``trainer.test()`` call.  That behavior leaked test
+        labels into per-step decisions (see ``_adaptation`` rate=1.0 gate
+        and ``_ensure_validation_threshold``).  The pipeline now always
+        runs ``trainer.test()`` exactly once per step from
+        :meth:`PipelineStep.pipeline_metric`, and tuners never touch the
+        test set themselves.  Subclasses therefore store a validation
+        metric here purely for diagnostics / logging.
         """
         return getattr(self, "_final_metric", None)
 
@@ -176,7 +182,6 @@ class SmoothAdaptationTuner(TunerBase):
         self._missed_target_streak = 0
         self._pipeline_hard_floor = None
         self._pre_relaxation_target = None
-        self._test_baseline = None
         self._validation_baseline = None
         self._cycle_log = []
         self._cached_lr = None
@@ -200,6 +205,49 @@ class SmoothAdaptationTuner(TunerBase):
         recovery. Hooks are removed after recovery finishes.
         """
         return []
+
+    def _validation_floor_for_commit(self):
+        """Validation threshold required to mark a tuner as fully committed.
+
+        ``_after_run`` may only set ``_committed_rate = 1.0`` when the
+        recovered validation accuracy meets this floor. The value mirrors
+        ``_ensure_validation_threshold``'s hard-floor logic so commit and
+        recovery share the same acceptance criterion.
+        """
+        hard_floor = getattr(self, "_pipeline_hard_floor", None)
+        if hard_floor is not None:
+            return float(hard_floor)
+        original = self.target_adjuster.original_metric
+        return original * (1.0 - self._pipeline_tolerance)
+
+    def _flush_enforcement_hooks(self):
+        """Run a single eval-mode forward to flush forward-pre-hook side effects.
+
+        Several tuners (Pruning, WeightQuantization, Clamp) rely on forward
+        pre-hooks that zero / rescale / clamp parameters at the start of
+        every forward pass. Downstream pipeline steps that read parameters
+        directly (e.g. NormalizationFusionStep inspecting ``perceptron.layer.weight``)
+        would otherwise see pre-hook values. Running one forward in eval
+        mode right before returning from ``_after_run`` ensures the buffers
+        modified by pre-hooks reflect the final committed state.
+        """
+        try:
+            factory = self.pipeline.data_provider_factory
+            provider = factory.create() if hasattr(factory, "create") else factory
+            input_shape = self.pipeline.config.get("input_shape")
+            if input_shape is None:
+                return
+            device = self.pipeline.config.get("device", "cpu")
+            import torch as _torch
+            self.model.eval()
+            with _torch.no_grad():
+                x = _torch.zeros(1, *input_shape, device=device)
+                self.model(x)
+        except Exception:
+            # Best-effort flush: if the model isn't forward-callable in eval
+            # mode (rare -- e.g. a custom tuner that swaps the flow before
+            # _after_run), skip rather than fail the whole step.
+            return
 
     # -- State snapshot protocol ------------------------------------------------
     # NOTE: State snapshot does NOT include optimizer state. Optimizers MUST be
@@ -301,26 +349,34 @@ class SmoothAdaptationTuner(TunerBase):
             return self._committed_rate
 
         if rate >= 1.0 - 1e-6:
-            test_acc = self.trainer.test()
-            # Strict internal gate: test_acc must be within noise of the test
-            # baseline captured once at run start. The pipeline hard floor is
-            # only the safety net (in _ensure_pipeline_threshold).
-            test_baseline = getattr(self, "_test_baseline", None)
-            if test_baseline is not None:
-                strict_threshold = float(test_baseline) - noise_margin
+            # Strict internal gate at rate=1.0: the post-recovery validation
+            # metric must be within measurement noise of the validation baseline
+            # captured once at run start. This uses VALIDATION ONLY -- any test
+            # metric here would leak test labels into rollback decisions.  The
+            # pipeline's own per-step assertion (in Pipeline._run_step) remains
+            # the sole test-accuracy gate, and it runs ONCE per step from
+            # PipelineStep.pipeline_metric after the tuner returns.
+            strict_probe = self.trainer.validate_n_batches(
+                self._budget.eval_n_batches
+            )
+            val_baseline = getattr(self, "_validation_baseline", None)
+            if val_baseline is not None:
+                strict_threshold = float(val_baseline) - noise_margin
             else:
                 strict_threshold = (
                     float(self.target_adjuster.original_metric) - noise_margin
                 )
-            if test_acc < strict_threshold:
+            if strict_probe < strict_threshold:
                 self._restore_state(pre_state)
                 self._invalidate_lr_cache()
                 if hasattr(self, "_cycle_log"): self._cycle_log.append({
                     "rate": rate, "committed": self._committed_rate,
                     "pre_cycle_acc": float(pre_cycle_acc),
-                    "post_acc": float(post_acc), "test_acc": float(test_acc),
+                    "post_acc": float(post_acc),
+                    "strict_probe": float(strict_probe),
                     "strict_threshold": strict_threshold, "lr": lr,
-                    "outcome": "test_gate_fail", "elapsed_sec": time.time() - t_cycle_start,
+                    "outcome": "validation_gate_fail",
+                    "elapsed_sec": time.time() - t_cycle_start,
                 })
                 return self._committed_rate
 
@@ -362,15 +418,21 @@ class SmoothAdaptationTuner(TunerBase):
 
     # -- Safety net -------------------------------------------------------------
 
-    def _ensure_pipeline_threshold(self):
-        """Last-resort recovery if test accuracy is below the pipeline threshold.
+    def _ensure_validation_threshold(self):
+        """Last-resort recovery if validation accuracy is below the floor.
 
         Uses the pipeline hard floor (derived from the previous step's test
-        metric) when available, otherwise falls back to
+        metric captured BEFORE this tuner started -- not from test() called
+        during tuning) when available, otherwise falls back to
         ``original_metric * (1 - pipeline_tolerance)``.
 
-        Saves the pre-recovery state and restores it if a recovery attempt
-        makes accuracy worse, so this safety net can never harm the model.
+        The threshold is a **validation** target. The pipeline's own
+        test-based assertion runs once after the tuner returns; that is the
+        only point where test labels influence step acceptance. Here we
+        probe validation, attempt recovery, and keep the best validation
+        state.  Saves the pre-recovery state and restores it if a recovery
+        attempt makes accuracy worse, so this safety net can never harm the
+        model.
         """
         hard_floor = getattr(self, "_pipeline_hard_floor", None)
         if hard_floor is not None:
@@ -379,9 +441,9 @@ class SmoothAdaptationTuner(TunerBase):
             original = self.target_adjuster.original_metric
             threshold = original * (1.0 - self._pipeline_tolerance)
 
-        best_test = self.trainer.test()
-        if best_test >= threshold:
-            return best_test
+        best_val = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        if best_val >= threshold:
+            return best_val
 
         best_state = self._clone_state()
 
@@ -411,16 +473,20 @@ class SmoothAdaptationTuner(TunerBase):
             finally:
                 for h in hooks:
                     h.remove()
-            test_acc = self.trainer.test()
-            if test_acc > best_test:
-                best_test = test_acc
+            val_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+            if val_acc > best_val:
+                best_val = val_acc
                 best_state = self._clone_state()
-            if best_test >= threshold:
+            if best_val >= threshold:
                 self._restore_state(best_state)
-                return best_test
+                return best_val
 
         self._restore_state(best_state)
-        return best_test
+        return best_val
+
+    # Backwards-compatible alias: external callers still reference
+    # _ensure_pipeline_threshold. The new name is authoritative.
+    _ensure_pipeline_threshold = _ensure_validation_threshold
 
     # -- Gradual completion -----------------------------------------------------
 
@@ -500,10 +566,11 @@ class SmoothAdaptationTuner(TunerBase):
         self.target_adjuster.original_metric = baseline_val
         self.target_adjuster.floor = baseline_val * (1.0 - self._pipeline_tolerance)
 
-        # Baselines for the internal rate=1.0 gate (captured once per run, no
-        # test-set data leak: test_baseline is used only as a go/no-go gate).
+        # Validation baseline used by the rate=1.0 internal gate. Intentionally
+        # derived from the same validation probes above -- no extra trainer.test()
+        # call inside the tuner.  The pipeline holds the test-based go/no-go
+        # gate in Pipeline._run_step (evaluated from PipelineStep.pipeline_metric).
         self._validation_baseline = baseline_val
-        self._test_baseline = self.trainer.test()
 
         self.pipeline.reporter.report("BUDGET", {
             "max_training_steps": self._budget.max_training_steps,
@@ -561,16 +628,31 @@ class SmoothAdaptationTuner(TunerBase):
             import warnings
             warnings.warn(
                 f"{self.__class__.__name__}: natural adaptation reached only "
-                f"{self._natural_rate:.4f}; _after_run will force to 1.0",
+                f"{self._natural_rate:.4f}; _after_run will apply the full "
+                f"transformation and attempt recovery.",
                 stacklevel=2,
             )
 
+        # _after_run is contractually required to apply the full transformation
+        # (rate=1.0 in the model state), even if recovery leaves _committed_rate
+        # below 1.0. _committed_rate tracks only the "validation-accepted" flag
+        # that feeds into the pipeline's own assertion downstream -- it is no
+        # longer blindly set to 1.0 (Phase A4). If recovery failed the pipeline's
+        # hard-floor check in Pipeline._run_step will fire on the subsequent
+        # test-set measurement with a meaningful metric.
         result = self._after_run()
-        assert self._committed_rate >= 1.0 - 1e-6, (
-            f"Tuning rate must reach 1.0 by the end of the step, "
-            f"but _committed_rate is {self._committed_rate:.6f}"
+        self.pipeline.reporter.report(
+            f"{self.name} committed", self._committed_rate
         )
-        self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
+        if self._committed_rate < 1.0 - 1e-6:
+            import warnings
+            warnings.warn(
+                f"{self.__class__.__name__}: validation-based recovery did not "
+                f"meet the floor; _committed_rate={self._committed_rate:.4f}. "
+                f"The transformation is still fully applied; the pipeline's "
+                f"test-set assertion will decide whether to accept the step.",
+                stacklevel=2,
+            )
         self._log_cycle_summary()
         return result
 

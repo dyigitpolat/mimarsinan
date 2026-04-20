@@ -100,9 +100,13 @@ class CoreFlowTuner:
         self._trainer.model = flow.to(self.device)
         return self._trainer.validate()
 
-    def _test(self, flow) -> float:
-        self._trainer.model = flow.to(self.device)
-        return self._trainer.test()
+    # The tuner owns ``_trainer`` and exposes it as ``trainer`` so
+    # PipelineStep.pipeline_metric can run the single post-step
+    # trainer.test() pass against the final tuned model.  The tuner itself
+    # never calls test() -- all in-tuner decisions use validation.
+    @property
+    def trainer(self):
+        return self._trainer
 
     def run(
         self,
@@ -213,10 +217,13 @@ class CoreFlowTuner:
         for core_idx, core in enumerate(cores):
             core.threshold = max(1.0, round(best_thresholds[core_idx]))
 
-        # Step 4: Final quantization and test
+        # Step 4: Final validation pass on the tuned IR. The pipeline's
+        # PipelineStep.pipeline_metric will run trainer.test() itself once
+        # the step completes -- tuner code must never hit the test set.
         spiking_flow = self._make_spiking_flow().to(self.device)
-        self.accuracy = self._test(spiking_flow)
-        print(f"  Final SpikingUnifiedCoreFlow Accuracy: {self.accuracy}")
+        self._trainer.model = spiking_flow
+        self.accuracy = self._validate(spiking_flow)
+        print(f"  Final SpikingUnifiedCoreFlow validation accuracy: {self.accuracy}")
 
         return CoreFlowTuningResult(
             tuned_ir_graph=self.ir_graph,

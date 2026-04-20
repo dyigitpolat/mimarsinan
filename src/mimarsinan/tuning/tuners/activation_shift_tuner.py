@@ -49,9 +49,11 @@ class ActivationShiftTuner(TunerBase):
                 self.adaptation_manager.update_activation(config, perceptron)
 
     def validate(self):
+        # Validation-only.  The pipeline calls trainer.test() exactly once,
+        # from PipelineStep.pipeline_metric after this tuner returns.
         if self._final_metric is not None:
             return self._final_metric
-        return self.trainer.test()
+        return self.trainer.validate()
 
     def run(self):
         self._apply_shift()
@@ -70,5 +72,7 @@ class ActivationShiftTuner(TunerBase):
             min_steps=self._budget.check_interval * 3,
             min_improvement=self._budget.accuracy_se(),
         )
-        self._final_metric = self.trainer.test()
+        self._final_metric = self.trainer.validate_n_batches(
+            self._budget.eval_n_batches
+        )
         return self._final_metric

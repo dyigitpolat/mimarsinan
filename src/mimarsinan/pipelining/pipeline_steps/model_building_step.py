@@ -5,6 +5,13 @@ import torch
 
 
 class ModelBuildingStep(PipelineStep):
+    # Model construction is a setup step with no test metric (``validate``
+    # just returns the running target).  Opted out of the Phase-B3 floor
+    # check so an early 0.0 ``pipeline_metric`` -- which would otherwise
+    # predate the first trained baseline -- does not clobber
+    # ``previous_metric`` when reasoning about later steps.
+    skip_from_floor_check = True
+
     def __init__(self, pipeline):
         requires = ["model_config", "model_builder"]
         promises = ["model", "adaptation_manager"]

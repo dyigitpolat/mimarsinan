@@ -207,7 +207,9 @@ class TestPipelineRun:
         bad = PerformanceDropStep(p, metric=0.01)
         p.add_pipeline_step("good", good)
         p.add_pipeline_step("bad", bad)
-        with pytest.raises(AssertionError, match="performance"):
+        # With Phase A2 the assertion message distinguishes per-step vs.
+        # cumulative-floor failure; both are legitimate tolerance violations.
+        with pytest.raises(AssertionError, match="performance|floor|tolerance|limits"):
             p.run()
 
     def test_stop_step(self, tmp_path):
@@ -264,7 +266,7 @@ class TestStepCleanup:
         failing = CleanupTrackingStep(p, promises_data=False, metric=0.01)
         p.add_pipeline_step("bad", failing)
 
-        with pytest.raises(AssertionError, match="performance"):
+        with pytest.raises(AssertionError, match="performance|floor|tolerance|limits"):
             p.run()
 
         assert failing.cleanup_called == [True], (

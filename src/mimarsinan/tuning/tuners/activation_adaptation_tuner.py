@@ -68,10 +68,13 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
-        self._committed_metric = self._ensure_pipeline_threshold()
-        self._final_metric = self._committed_metric
-        self._committed_rate = 1.0
-        return self._committed_metric
+        recovered_val = self._ensure_validation_threshold()
+        self._committed_metric = recovered_val
+        self._final_metric = recovered_val
+        if recovered_val >= self._validation_floor_for_commit():
+            self._committed_rate = 1.0
+        self._flush_enforcement_hooks()
+        return recovered_val
 
     def validate(self):
         if hasattr(self, "_committed_metric") and self._committed_metric is not None:

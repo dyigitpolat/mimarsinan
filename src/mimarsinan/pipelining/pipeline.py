@@ -60,6 +60,12 @@ class Pipeline:
 
         self.tolerance = 0.95
 
+        # Fraction of the baseline test metric that constitutes the global
+        # (cross-step) accuracy-drop budget. global_floor = baseline * (1 -
+        # degradation_tolerance).  DeploymentPipeline overrides this from the
+        # user's config; the default mirrors the legacy per-step tolerance.
+        self.degradation_tolerance = 0.05
+
         self.load_cache()
         if '__target_metric' not in self.cache.keys():
             self.set_target_metric(0.0)
@@ -159,6 +165,44 @@ class Pipeline:
     def set_target_metric(self, target_metric):
         self.cache.add('__target_metric', target_metric)
 
+    # -- Baseline / cross-step accuracy budget (Phase A2) --------------------
+    #
+    # ``baseline_test_metric`` is the first-known good test-set accuracy of
+    # the FP model.  It is set once by whichever step first produces the
+    # fully-trained FP weights (typically Pretraining or WeightPreloading)
+    # via ``set_baseline_test_metric``.  Subsequent calls with lower values
+    # are ignored -- the baseline is monotonic non-decreasing.  Early
+    # non-training steps (ModelConfiguration, ArchitectureSearch) publish
+    # 0.0 as their pipeline metric, which simply leaves the baseline unset
+    # and the global floor at 0.0 (no cross-step constraint yet).
+    #
+    # ``global_floor`` = baseline * (1 - degradation_tolerance) -- cumulative
+    # across all steps.  The per-step assertion in _run_step enforces
+    #   new_metric >= max(previous_metric * self.tolerance, global_floor)
+    # so multiple individually-small drops cannot cumulatively exceed the
+    # user's total degradation budget.
+
+    @property
+    def baseline_test_metric(self):
+        if '__baseline_test_metric' not in self.cache.keys():
+            return None
+        return self.cache.get('__baseline_test_metric')
+
+    def set_baseline_test_metric(self, metric: float):
+        """Publish a new test-set baseline; ignored if lower than current."""
+        current = self.baseline_test_metric
+        metric = float(metric)
+        if current is None or metric > current:
+            self.cache.add('__baseline_test_metric', metric)
+
+    @property
+    def global_floor(self) -> float:
+        """Lower bound on the pipeline metric across all remaining steps."""
+        baseline = self.baseline_test_metric
+        if baseline is None:
+            return 0.0
+        return baseline * (1.0 - float(self.degradation_tolerance))
+
     def register_post_step_hook(self, hook):
         self.post_step_hooks.append(hook)
 
@@ -208,7 +252,25 @@ class Pipeline:
                         file=sys.stderr,
                     )
                 raise
-            self.set_target_metric(step.pipeline_metric())
+            metric = step.pipeline_metric()
+            # A step that opts out of the floor check (Phase B3) -- typically
+            # a pass-through / setup step whose pipeline_metric is
+            # legitimately 0 because it never touches a trainer -- must not
+            # be asserted against the previous step's metric, and must not
+            # overwrite ``previous_metric`` with 0.0.  Keeping the running
+            # target intact means the next real step is still compared to
+            # the last meaningful baseline, so a skipped step cannot silently
+            # reset the per-step tolerance gate to 0.
+            skipped = bool(getattr(step, "skip_from_floor_check", False))
+            if not skipped:
+                self.set_target_metric(metric)
+                # Auto-seed the FP-baseline from the first non-zero pipeline
+                # metric.  Pretraining / WeightPreloading are the first steps
+                # to return a real number; earlier pass-through steps report
+                # 0.0 and are deliberately skipped (see baseline_test_metric's
+                # monotonic guard).
+                if metric > 0 and self.baseline_test_metric is None:
+                    self.set_baseline_test_metric(metric)
             with phase_profiler(f"Pipeline::{name}", "save_cache"):
                 self.save_cache()
             with phase_profiler(f"Pipeline::{name}", "offload_torch_models_to_cpu"):
@@ -227,8 +289,25 @@ class Pipeline:
             assert all([self._create_real_key(step.name, entry) in self.cache for entry in step.updates]), \
                 f"Pipeline error: New values of some updated entries are not found in the cache."
 
-            assert self.get_target_metric() >= previous_metric * self.tolerance, \
-                f"[{step.name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {self.tolerance}) = {previous_metric * self.tolerance}"
+            if not skipped:
+                per_step_floor = previous_metric * self.tolerance
+                cross_step_floor = self.global_floor
+                required = max(per_step_floor, cross_step_floor)
+                current = self.get_target_metric()
+                if current < required:
+                    if cross_step_floor >= per_step_floor and current < cross_step_floor:
+                        raise AssertionError(
+                            f"[{step.name}] step failed the cumulative global floor: "
+                            f"{current:.4f} < global_floor={cross_step_floor:.4f} "
+                            f"(baseline={self.baseline_test_metric}, "
+                            f"degradation_tolerance={self.degradation_tolerance})"
+                        )
+                    raise AssertionError(
+                        f"[{step.name}] step failed to retain performance within "
+                        f"tolerable limits: {current:.4f} < "
+                        f"(previous={previous_metric} * tolerance={self.tolerance}) = "
+                        f"{per_step_floor:.4f}"
+                    )
 
             for hook in self.post_step_hooks:
                 hook(name, step)
