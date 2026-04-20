@@ -489,7 +489,7 @@ Shifts activation functions so they align with quantization levels. Computes a s
 - **Requires**: `model`, `adaptation_manager`
 - **Updates**: `model`, `adaptation_manager`
 
-Uses `ActivationQuantizationTuner` to gradually quantize activations to `target_tq` levels. The tuner uses `SmartSmoothAdaptation` to incrementally increase quantization strength while maintaining accuracy.
+Uses `ActivationQuantizationTuner` to quantize activations to `target_tq` levels.  The tuner probes per-perceptron sensitivity once, then uses `SmartSmoothAdaptation` to incrementally enable the hard `QuantizeDecorator` (`StaircaseFunction`, STE backward) on more perceptrons at a time -- one perceptron per cycle-step in ascending-sensitivity order.  There is no smooth annealing inside a single layer; once a perceptron is in the "enabled" set its activation is bit-exact with the post-mapping numeric path.
 
 ### 5.10 Weight Quantization
 
@@ -499,6 +499,8 @@ Uses `ActivationQuantizationTuner` to gradually quantize activations to `target_
 - **Updates**: `model`
 
 Calls `compute_per_source_scales` first so that `per_input_scales` is available during quantization (effective-weight calibration depends on it). Freezes normalization layer statistics, then uses `NormalizationAwarePerceptronQuantizationTuner` to quantize weights to `weight_bits` precision. The quantization is normalization-aware: it computes effective weights (fusing normalization) before quantizing.
+
+**LSQ + STE quantizer (Phase C1).**  Each perceptron carries an `LSQQuantizer` child module (`perceptron.weight_quantizer`) installed by `NormalizationAwarePerceptronQuantizationTuner` *before* the trainer deepcopies the model.  The quantizer stores the step size as a learnable log-space parameter (`log_scale`) seeded from the max-abs of the effective weight; subsequent training steps refine it with gradient descent through a straight-through estimator on the rounding operation.  Because LSQ is fully differentiable, the tuner no longer interpolates "FP weights" and "quantized weights" via a random Bernoulli mask -- `PerceptronTransformTuner._mixed_perceptron_transform` deterministically applies the quantization at any positive rate.  At the end of the step the quantized values are baked into `perceptron.layer.weight.data` (the closed-form `parameter_scale = 1 / step` is also republished) so every downstream non-differentiable step (mapping, simulation, verification) sees the same integer-grid snapshot it always has.
 
 ### 5.11 Quantization Verification
 
@@ -619,7 +621,10 @@ forward(x):
     out = normalization(out)       # BatchNorm or Identity
     out = scaler(out)              # MaxValueScaler or Identity
     out = activation(out)          # LeakyGradReLU + decorators
-    out = regularization(out)      # NoisyDropout (training only)
+    out = regularization(out)      # nn.Identity (training-time stochastic
+                                   #   regularization was removed in D3
+                                   #   along with the unused NoisyDropout
+                                   #   decorator)
     return out
 ```
 
@@ -701,14 +706,13 @@ Activations are composable via a decorator pattern:
 TransformedActivation
   ├── base_activation (LeakyGradReLU)
   └── decorators[]
-       ├── ClampDecorator         — Clamps output to [min, max]
-       ├── QuantizeDecorator      — Applies staircase quantization
-       ├── ShiftDecorator         — Shifts input by an offset
-       ├── ScaleDecorator         — Scales output
-       ├── NoiseDecorator         — Adds noise during training
-       ├── SavedTensorDecorator   — Records activations for analysis
-       ├── StatsDecorator         — Computes activation statistics
-       └── RateAdjustedDecorator  — Gradually blends base ↔ decorated output
+       ├── ClampDecorator            — Clamps output to [min, max]
+       ├── LearnableClampDecorator   — B2 learnable per-perceptron ceiling
+       ├── QuantizeDecorator         — Hard staircase with STE-style backward (the sole activation quantiser; the annealed DSQ path was deleted)
+       ├── ShiftDecorator            — Shifts input by an offset
+       ├── SavedTensorDecorator      — Records activations for analysis
+       ├── StatsDecorator            — Computes activation statistics
+       └── RateAdjustedDecorator     — Gradually blends base ↔ decorated output
 ```
 
 Each decorator has `input_transform(x)` and `output_transform(x)` methods. `DecoratedActivation` composes them: `output_transform(base_activation(input_transform(x)))`.
@@ -986,8 +990,14 @@ class AdaptationManager:
     clamp_rate: float      # 0.0 → 1.0 (no clamp → full clamp)
     shift_rate: float      # 0.0 → 1.0
     quantization_rate: float
-    scale_rate: float
-    noise_rate: float
+    activation_adaptation_rate: float
+    # Phase D3 removed the unused ``scale_rate`` / ``noise_rate`` fields
+    # and the stochastic-noise branch from ``update_activation``.  The
+    # annealed DSQ activation quantiser (Phase C2) was subsequently
+    # deleted as well -- the binary-discrete per-layer rollout driven by
+    # ``ActivationQuantizationTuner`` (hard ``QuantizeDecorator`` with
+    # STE-style backward, enabled one perceptron at a time in
+    # sensitivity order) made the continuous schedule obsolete.
 ```
 
 `update_activation(pipeline_config, perceptron)` rebuilds the perceptron's activation as a `TransformedActivation` with `RateAdjustedDecorator`s for clamping, quantization, and shifting. The rates control how aggressively each transformation is applied, allowing gradual introduction.
@@ -1004,14 +1014,19 @@ A framework for gradually applying a transformation while maintaining accuracy:
 4. Train to recover accuracy
 5. Repeat until `t = 1.0` (full transformation)
 
-**Validation-only contract (no test-set leakage).**  Every decision a tuner makes during its run — accepting a rate, rolling back, choosing a learning rate, running the post-run safety-net recovery — uses **validation** accuracy only (`trainer.validate()` / `trainer.validate_n_batches()`).  `trainer.test()` is never called from tuner code.  The test set is touched exactly once per pipeline step, in `PipelineStep.pipeline_metric()`, *after* the tuner has returned; that single value becomes `__target_metric`, feeds the per-step tolerance assertion, and updates `pipeline.baseline_test_metric`.  This means test labels cannot influence training-time decisions, so the reported test accuracy is a genuine held-out measurement rather than something the tuner has implicitly optimised against.
+**Validation-only contract (no test-set leakage).**  Every decision a tuner makes during its run — accepting a rate, rolling back, choosing a learning rate, running the post-run safety-net recovery — uses **validation** accuracy only.  As of Phase D2, tuners route those decisions through the two explicit APIs on `BasicTrainer`:
+
+- `trainer.validate_fast()` — cheap subset (`progress_eval_batches`), used for LR probes and per-cycle progress inside `_update_and_evaluate`.
+- `trainer.validate_full()` — full validation loader (`eval_n_batches`), used for rollback, the strict rate=1.0 gate, baseline noise calibration, the safety-net recovery probe, and the tuner's public `validate()` hook.
+
+`trainer.test()` is never called from tuner code.  The test set is touched exactly once per pipeline step, in `PipelineStep.pipeline_metric()`, *after* the tuner has returned; that single value becomes `__target_metric`, feeds the per-step tolerance assertion, and updates `pipeline.baseline_test_metric`.  This means test labels cannot influence training-time decisions, so the reported test accuracy is a genuine held-out measurement rather than something the tuner has implicitly optimised against.
 
 The framework includes:
 - Binary search for step size
 - State save/restore (clone/restore model state)
 - Target adjustment (dynamically adjusts expected accuracy based on observed degradation)
 - Optional `before_cycle` callback: when provided, it is invoked at the start of each adaptation cycle (before finding the step size), so tuners can refresh internal state (e.g. PruningTuner recomputes row/column importance).
-- Optional **tolerance calibration** (`tuning/tolerance_calibration.py`): when `tuner_calibrate_smooth_tolerance` is true in the pipeline config, tuners pass `initial_tolerance_fn` into `SmartSmoothAdaptation`. Before the first adaptation cycle, it probes a ladder of relative step sizes `delta_t` (default 1.0, 0.5, 0.25, …), and for each probe applies the same instant evaluation as step search, runs exactly one epoch via `BasicTrainer.train_validation_epochs` (no full `test()` pass), and restores state. The first probe whose post-epoch residual vs baseline is within `tuner_smooth_tolerance_residual_threshold` sets the initial instant-drop tolerance (clamped by `tuner_smooth_tolerance_min` / `tuner_smooth_tolerance_max`). **Probe learning rate** is resolved by `effective_probe_lr`: optional fixed `tuner_smooth_tolerance_lr`, otherwise the tuner-supplied `lr_probe` (float or zero-arg callable invoked once after optional `before_cycle` and baseline validation), multiplied by `tuner_smooth_tolerance_lr_scale` (default 1.0). `BasicTuner` passes the `_find_lr` method so exploration runs at the same timing as adaptation. When calibration is off, behavior matches the previous defaults (`0.01` default; `PruningTuner` still sets `0.05` unless calibration is enabled).
+- Phase D3 removed the `tuning/tolerance_calibration.py` probe-ladder module as dead code -- no pipeline step ever enabled it, and the LSQ weight-quantisation path now handles "how aggressive is the first step" via the tuner's baseline-calibrated target adjuster instead of a hand-tuned residual threshold.
 
 ### 10.4 Tuner Hierarchy
 
@@ -1023,10 +1038,9 @@ All tuners extend `BasicTuner`, which uses `SmartSmoothAdaptation`:
 |-------|---------|
 | `ActivationAdaptationTuner` | Gradually blends non-ReLU activations toward ReLU |
 | `ClampTuner` | Introduces activation clamping |
-| `ActivationQuantizationTuner` | Quantizes activations to Tq levels |
+| `ActivationQuantizationTuner` | Quantizes activations to Tq levels via per-layer binary-discrete rollout (hard `QuantizeDecorator` with STE backward, enabled in ascending-sensitivity order one perceptron at a time). |
 | `PruningTuner` | Gradually zeros least-significant weight rows/columns |
 | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights (normalization-aware) |
-| `NoiseTuner` | Introduces training noise |
 | `CoreFlowTuner` | Tunes spiking thresholds (operates on IRGraph, not model) |
 
 `PruningTuner` extends `PerceptronTuner` and applies pruning masks (from `transformations/pruning.py`) that scale the bottom `pruning_fraction` of rows and columns by `(1 − rate)`. It uses `SmartSmoothAdaptation`'s `before_cycle` callback to recompute activation-based row/column importance at the start of each cycle, so the pruning candidate set is updated every cycle rather than fixed once. The zeroed structure is later compacted from the IR graph by `ir_pruning.prune_ir_graph()` (see §8.4).

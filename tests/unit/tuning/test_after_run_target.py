@@ -12,7 +12,6 @@ from conftest import MockPipeline, make_tiny_supermodel, default_config
 
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner
-from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 
 
@@ -52,13 +51,6 @@ class TestAfterRunTarget:
             adaptation_manager=am,
         )
         assert tuner._get_target() == 0.90
-
-    def test_noise_tuner_target_is_original(self, pipeline):
-        model = make_tiny_supermodel()
-        am = AdaptationManager()
-        tuner = NoiseTuner(pipeline, model, target_accuracy=0.88, lr=0.001,
-                          adaptation_manager=am)
-        assert tuner._get_target() == 0.88
 
     def test_target_calibrated_from_baseline_after_run(self, pipeline):
         """After run(), _get_target() returns the baseline validation accuracy

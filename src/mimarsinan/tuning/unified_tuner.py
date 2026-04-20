@@ -10,6 +10,7 @@ _before_cycle() / _after_run() / _recovery_training_hooks(rate).
 
 from __future__ import annotations
 
+import logging
 import time
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
@@ -28,6 +29,9 @@ from mimarsinan.tuning.tuning_budget import (
     resolve_tuning_batch_size,
     tuning_budget_from_pipeline,
 )
+
+
+_LOG = logging.getLogger(__name__)
 
 
 CATASTROPHIC_DROP_FACTOR = 0.8
@@ -76,6 +80,14 @@ class TunerBase:
         self.trainer = self._create_trainer()
         self.trainer.report_function = pipeline.reporter.report
 
+        # Phase D2: align the trainer's two-tier validation API with this
+        # tuner's budget so ``validate_fast`` is the fast per-cycle probe
+        # and ``validate_full`` is the rollback / safety-net probe.  All
+        # tuner call sites route through these two methods instead of
+        # passing budget sizes to ``validate_n_batches`` by hand.
+        self.trainer.set_fast_validation_batches(self._budget.progress_eval_batches)
+        self.trainer.set_full_validation_batches(self._budget.eval_n_batches)
+
     def _tuning_recipe(self):
         """Recipe for tuning-phase trainers (explicit opt-in via ``tuning_recipe``).
 
@@ -116,9 +128,7 @@ class TunerBase:
             self.trainer,
             self.pipeline,
             self._budget,
-            validate_fn=lambda: self.trainer.validate_n_batches(
-                self._budget.progress_eval_batches
-            ),
+            validate_fn=self.trainer.validate_fast,
             anchor_lr=self.pipeline_lr,
         )
 
@@ -139,7 +149,11 @@ class TunerBase:
         return self.target_adjuster.get_target()
 
     def validate(self):
-        return self.trainer.validate()
+        # Phase D2: the tuner's public validation hook feeds pipeline-step
+        # progress reports and PipelineStep.validate(); callers treat it as
+        # a full-set metric, so route through ``validate_full`` instead of
+        # the single-batch ``trainer.validate()``.
+        return self.trainer.validate_full()
 
     @property
     def final_metric(self):
@@ -195,7 +209,7 @@ class SmoothAdaptationTuner(TunerBase):
 
     def _after_run(self):
         """Called after adaptation completes. Returns the final metric."""
-        return self.trainer.validate()
+        return self.trainer.validate_full()
 
     def _recovery_training_hooks(self, rate):
         """Return a list of hooks to keep active during recovery training.
@@ -291,7 +305,7 @@ class SmoothAdaptationTuner(TunerBase):
         self.pipeline.reporter.report("Adaptation target", self._get_target())
 
         pre_state = self._clone_state()
-        pre_cycle_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        pre_cycle_acc = self.trainer.validate_full()
 
         instant_acc = self._update_and_evaluate(rate)
 
@@ -329,7 +343,7 @@ class SmoothAdaptationTuner(TunerBase):
             for h in hooks:
                 h.remove()
 
-        post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        post_acc = self.trainer.validate_full()
 
         noise_margin = self._rollback_tolerance
         # Per-step rollback gate: compare post_acc to the pre-step accuracy,
@@ -356,9 +370,7 @@ class SmoothAdaptationTuner(TunerBase):
             # pipeline's own per-step assertion (in Pipeline._run_step) remains
             # the sole test-accuracy gate, and it runs ONCE per step from
             # PipelineStep.pipeline_metric after the tuner returns.
-            strict_probe = self.trainer.validate_n_batches(
-                self._budget.eval_n_batches
-            )
+            strict_probe = self.trainer.validate_full()
             val_baseline = getattr(self, "_validation_baseline", None)
             if val_baseline is not None:
                 strict_threshold = float(val_baseline) - noise_margin
@@ -418,21 +430,34 @@ class SmoothAdaptationTuner(TunerBase):
 
     # -- Safety net -------------------------------------------------------------
 
-    def _ensure_validation_threshold(self):
-        """Last-resort recovery if validation accuracy is below the floor.
+    def _attempt_recovery_if_below_floor(self):
+        """Best-effort safety net: try to recover validation accuracy if
+        it is below the pipeline's hard floor.
 
-        Uses the pipeline hard floor (derived from the previous step's test
-        metric captured BEFORE this tuner started -- not from test() called
-        during tuning) when available, otherwise falls back to
-        ``original_metric * (1 - pipeline_tolerance)``.
+        Phase D1 contract:
+          * Called **once**, at the very end of every tuner's
+            ``_after_run``.
+          * Uses ``trainer.validate_full`` (validation only, full-tier
+            Phase-D2 API) to decide whether to attempt recovery and to
+            score recovery attempts.  ``trainer.test()`` is never
+            called from here -- the pipeline-level assertion in
+            ``Pipeline._run_step`` remains the single test-based gate.
+          * Recovery training reuses the cached LR (the LR that the
+            tuner converged on during its main loop) as attempt 1, then
+            ``pipeline_lr`` as attempt 2.  No extra LR probes.
+          * Returns the best validation accuracy reached.  When that
+            value is still below the floor after all attempts, a
+            **warning is logged** so the failure is visible in logs
+            (rather than silently propagating an inconsistent state).
+            The pipeline's hard-floor assertion will then fail loudly
+            via the test-set probe, with the warning providing a
+            breadcrumb for the cause.
 
-        The threshold is a **validation** target. The pipeline's own
-        test-based assertion runs once after the tuner returns; that is the
-        only point where test labels influence step acceptance. Here we
-        probe validation, attempt recovery, and keep the best validation
-        state.  Saves the pre-recovery state and restores it if a recovery
-        attempt makes accuracy worse, so this safety net can never harm the
-        model.
+        Renamed from ``_ensure_validation_threshold`` /
+        ``_ensure_pipeline_threshold`` because the old names overstated
+        the guarantee (the helper *attempts* recovery; success is not
+        guaranteed) -- the new name makes the best-effort semantics
+        explicit at every call site.
         """
         hard_floor = getattr(self, "_pipeline_hard_floor", None)
         if hard_floor is not None:
@@ -441,7 +466,7 @@ class SmoothAdaptationTuner(TunerBase):
             original = self.target_adjuster.original_metric
             threshold = original * (1.0 - self._pipeline_tolerance)
 
-        best_val = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        best_val = self.trainer.validate_full()
         if best_val >= threshold:
             return best_val
 
@@ -473,7 +498,7 @@ class SmoothAdaptationTuner(TunerBase):
             finally:
                 for h in hooks:
                     h.remove()
-            val_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+            val_acc = self.trainer.validate_full()
             if val_acc > best_val:
                 best_val = val_acc
                 best_state = self._clone_state()
@@ -482,11 +507,27 @@ class SmoothAdaptationTuner(TunerBase):
                 return best_val
 
         self._restore_state(best_state)
+        # Phase D1: surface the failure rather than silently returning a
+        # below-floor value.  The pipeline's per-step assertion will fail
+        # right after this tuner returns; the warning makes the cause
+        # discoverable in logs without having to re-run with extra
+        # instrumentation.
+        _LOG.warning(
+            "[%s] safety-net recovery could not bring validation above "
+            "the floor: best_val=%.4f < threshold=%.4f (hard_floor=%s); "
+            "the pipeline test-set assertion is expected to fail next.",
+            self.name,
+            float(best_val),
+            float(threshold),
+            "set" if hard_floor is not None else "fallback",
+        )
         return best_val
 
-    # Backwards-compatible alias: external callers still reference
-    # _ensure_pipeline_threshold. The new name is authoritative.
-    _ensure_pipeline_threshold = _ensure_validation_threshold
+    # Backwards-compatible aliases: external callers (and old tests) may
+    # still reference the legacy names.  The Phase D1 authoritative name
+    # is ``_attempt_recovery_if_below_floor``; new code MUST use it.
+    _ensure_validation_threshold = _attempt_recovery_if_below_floor
+    _ensure_pipeline_threshold = _attempt_recovery_if_below_floor
 
     # -- Gradual completion -----------------------------------------------------
 
@@ -547,9 +588,12 @@ class SmoothAdaptationTuner(TunerBase):
             self._pipeline_hard_floor = None
 
         se = self._budget.accuracy_se()
-        # Empirical noise calibration: measure actual validation variance
-        val_a = self.trainer.validate_n_batches(self._budget.eval_n_batches)
-        val_b = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        # Empirical noise calibration: measure actual validation variance.
+        # Uses full-tier validation so the noise estimate matches the
+        # statistical power of the rollback / safety-net probes that this
+        # run will subsequently take.
+        val_a = self.trainer.validate_full()
+        val_b = self.trainer.validate_full()
         empirical_noise = abs(val_a - val_b)
         # Strict no-loss intent: tolerance is just measurement noise, not a
         # per-step accuracy budget. Floor at 0.005 (always at least half a

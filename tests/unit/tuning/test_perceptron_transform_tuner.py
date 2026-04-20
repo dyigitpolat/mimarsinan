@@ -4,7 +4,8 @@ Verifies:
 - _adaptation() is NOT overridden: the base SmoothAdaptationTuner._adaptation()
   is used, which includes the one-shot test gate, min_improvement, and hooks.
 - _after_run() forces rate=1.0, does recovery training, and calls
-  _ensure_pipeline_threshold().
+  _attempt_recovery_if_below_floor() (renamed from
+  _ensure_pipeline_threshold / _ensure_validation_threshold in D1).
 - Rollback correctly saves/restores both model and aux_model state dicts.
 - ActivationShiftTuner passes min_improvement to recovery training.
 """
@@ -56,16 +57,18 @@ class TestAdaptationNotOverridden:
 
 class TestAfterRunForcesFullRate:
     """_after_run() must force perceptron_transformation to rate=1.0,
-    do recovery training, and call _ensure_validation_threshold()."""
+    do recovery training, and call _attempt_recovery_if_below_floor()
+    (Phase D1 rename)."""
 
     def test_after_run_overridden(self):
         assert PerceptronTransformTuner._after_run is not SmoothAdaptationTuner._after_run
 
-    def test_after_run_source_calls_ensure_validation_threshold(self):
+    def test_after_run_source_calls_attempt_recovery(self):
         source = inspect.getsource(PerceptronTransformTuner._after_run)
-        # Phase A3: _ensure_pipeline_threshold -> _ensure_validation_threshold
-        # (validation-only recovery; the pipeline owns the test-set gate).
-        assert "_ensure_validation_threshold" in source
+        # Phase D1: the authoritative name is
+        # ``_attempt_recovery_if_below_floor``.  The legacy aliases
+        # still resolve but new code must use the new name.
+        assert "_attempt_recovery_if_below_floor" in source
 
     def test_after_run_source_forces_full_rate_transform(self):
         source = inspect.getsource(PerceptronTransformTuner._after_run)
@@ -79,17 +82,18 @@ class TestAfterRunForcesFullRate:
         source = inspect.getsource(PerceptronTransformTuner._after_run)
         assert "_update_and_transform_model" in source
 
-    def test_after_run_delegates_recovery_to_ensure_validation_threshold(self):
+    def test_after_run_delegates_recovery_to_attempt_recovery(self):
         """_after_run no longer runs unconditional recovery training; that's
-        delegated to _ensure_validation_threshold which only trains when needed
-        and saves/restores state to never make things worse."""
+        delegated to _attempt_recovery_if_below_floor (Phase D1 rename),
+        which only trains when needed and saves/restores state to never
+        make things worse."""
         from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
         source_after = inspect.getsource(PerceptronTransformTuner._after_run)
-        # _after_run does NOT call train_steps_until_target directly
+        # _after_run does NOT call train_steps_until_target directly.
         assert "train_steps_until_target" not in source_after
-        # but _ensure_validation_threshold does, with min_improvement
+        # but _attempt_recovery_if_below_floor does, with min_improvement.
         source_evt = inspect.getsource(
-            SmoothAdaptationTuner._ensure_validation_threshold
+            SmoothAdaptationTuner._attempt_recovery_if_below_floor
         )
         assert "min_improvement" in source_evt
 

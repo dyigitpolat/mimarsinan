@@ -256,7 +256,7 @@ class PruningTuner(SmoothAdaptationTuner):
     def _update_and_evaluate(self, rate):
         """Apply pruning masks and evaluate — pure evaluation, no training."""
         self._apply_masks(rate)
-        return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
+        return self.trainer.validate_fast()
 
     def _recovery_training_hooks(self, rate):
         """Return forward-pre-hooks that enforce the pruning pattern during recovery."""
@@ -327,7 +327,7 @@ class PruningTuner(SmoothAdaptationTuner):
         ``_force_to_full_rate()`` (which includes recovery at each increment).
 
         Enforcement (buffer registration + forward-pre-hooks + BN stat
-        zeroing) runs BEFORE ``_ensure_pipeline_threshold`` so that the
+        zeroing) runs BEFORE ``_attempt_recovery_if_below_floor`` so that the
         tuner's ``_final_metric`` reflects the exact model the rest of the
         pipeline will consume. Without this ordering, zeroing BN
         ``running_mean`` / ``beta`` at pruned rows after the measurement
@@ -345,7 +345,7 @@ class PruningTuner(SmoothAdaptationTuner):
         self._register_prune_buffers(perceptrons, row_masks, col_masks)
         self._enforce_pruning_persistently(perceptrons, row_masks, col_masks)
 
-        self._final_metric = self._ensure_validation_threshold()
+        self._final_metric = self._attempt_recovery_if_below_floor()
         # Flush enforcement hooks so downstream steps read the
         # post-recovery, pre-hook-applied model state (A5).
         self._flush_enforcement_hooks()
@@ -372,7 +372,7 @@ class PruningTuner(SmoothAdaptationTuner):
         final_acc = (
             self._final_metric
             if self._final_metric is not None
-            else self.trainer.validate_n_batches(self._budget.eval_n_batches)
+            else self.trainer.validate_full()
         )
         print(f"[PruningTuner] Final overall validation accuracy: {final_acc:.4f}")
 

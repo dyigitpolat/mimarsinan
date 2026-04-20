@@ -198,6 +198,8 @@ class TestPruningTuner:
             {
                 "validate": lambda self: 0.99,
                 "validate_n_batches": _mock_validate_n_batches,
+                "validate_fast": lambda self: _mock_validate_n_batches(self, 1),
+                "validate_full": lambda self: _mock_validate_n_batches(self, 1),
                 "train_one_step": lambda self, lr: None,
                 "train_until_target_accuracy": lambda self, *a: None,
                 "train_steps_until_target": lambda self, *a, **k: None,
@@ -377,6 +379,8 @@ class TestPruningTuner:
                 "test": _fail_test,
                 "validate": lambda self: 1.0,
                 "validate_n_batches": _capture_validate_n_batches,
+                "validate_fast": lambda self: _capture_validate_n_batches(self, 1),
+                "validate_full": lambda self: _capture_validate_n_batches(self, 1),
                 "train_one_step": lambda self, lr: None,
                 "train_steps_until_target": lambda self, *a, **k: None,
                 "train_n_steps": lambda self, *a, **k: None,

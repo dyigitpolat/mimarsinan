@@ -8,18 +8,15 @@ from mimarsinan.models.layers import (
     LeakyGradReLU,
     StaircaseFunction,
     DifferentiableClamp,
-    NoisyDropout,
     SavedTensorDecorator,
     StatsDecorator,
     ShiftDecorator,
-    ScaleDecorator,
     ClampDecorator,
     QuantizeDecorator,
     TransformedActivation,
     DecoratedActivation,
     RateAdjustedDecorator,
     MixAdjustmentStrategy,
-    RandomMaskAdjustmentStrategy,
     NestedDecoration,
     MaxValueScaler,
     FrozenStatsNormalization,
@@ -149,13 +146,6 @@ class TestShiftDecorator:
         assert d.output_transform(x).item() == 1.0
 
 
-class TestScaleDecorator:
-    def test_scales_output(self):
-        d = ScaleDecorator(torch.tensor(2.0))
-        x = torch.tensor([3.0])
-        assert d.output_transform(x).item() == pytest.approx(6.0)
-
-
 class TestSavedTensorDecorator:
     def test_saves_output(self):
         d = SavedTensorDecorator()
@@ -201,21 +191,22 @@ class TestTransformedActivation:
 
     def test_decorate_and_pop(self):
         ta = TransformedActivation(nn.Identity(), [])
-        ta.decorate(ScaleDecorator(torch.tensor(3.0)))
+        ta.decorate(ShiftDecorator(torch.tensor(1.0)))
         x = torch.tensor([2.0])
-        assert ta(x).item() == pytest.approx(6.0)
+        # ShiftDecorator subtracts on input_transform, identity on output.
+        assert ta(x).item() == pytest.approx(1.0)
 
         popped = ta.pop_decorator()
-        assert isinstance(popped, ScaleDecorator)
+        assert isinstance(popped, ShiftDecorator)
         assert ta(x).item() == pytest.approx(2.0)
 
     def test_multiple_decorators_compose(self):
         clamp = ClampDecorator(torch.tensor(0.0), torch.tensor(1.0))
-        scale = ScaleDecorator(torch.tensor(2.0))
-        ta = TransformedActivation(LeakyGradReLU(), [clamp, scale])
+        shift = ShiftDecorator(torch.tensor(-0.5))
+        ta = TransformedActivation(LeakyGradReLU(), [clamp, shift])
         x = torch.tensor([5.0])
         out = ta(x)
-        assert out.item() <= 2.0
+        assert out.item() <= 1.0
 
     def test_pop_from_empty_raises(self):
         ta = TransformedActivation(nn.Identity(), [])

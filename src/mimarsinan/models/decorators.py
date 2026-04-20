@@ -10,45 +10,6 @@ import torch.nn as nn
 from mimarsinan.models.activations import DifferentiableClamp, StaircaseFunction
 
 
-class NoisyDropout(nn.Module):
-    def __init__(self, dropout_p, rate, noise_radius):
-        super(NoisyDropout, self).__init__()
-        self.dropout_p = dropout_p
-        self.rate = rate
-        self.noise_radius = noise_radius
-        # Cache the Dropout module instead of instantiating one per forward.
-        # dropout_p may be a 0-d tensor; nn.Dropout wants a float.
-        p = float(dropout_p.item()) if isinstance(dropout_p, torch.Tensor) else float(dropout_p)
-        self._dropout = nn.Dropout(p)
-
-    def forward(self, x):
-        # Rate=0 is the common case during non-noise tuning cycles; skip the
-        # two torch.rand allocations and the dropout + mix ops entirely.
-        if self.rate == 0.0:
-            return x
-
-        random_mask = torch.rand(x.shape, device=x.device)
-        random_mask = (random_mask < self.rate).float()
-
-        out = self._dropout(x)
-        out = out + self.noise_radius * torch.rand_like(out) - 0.5 * self.noise_radius
-        return random_mask * out + (1.0 - random_mask) * x
-
-
-class NoiseDecorator:
-    def __init__(self, rate, noise_radius):
-        self.rate = rate
-        self.noise_radius = noise_radius
-        # Cache the NoisyDropout module instead of instantiating one per forward.
-        self._noise = NoisyDropout(torch.tensor(0.0), self.rate, self.noise_radius)
-
-    def input_transform(self, x):
-        return x
-
-    def output_transform(self, x):
-        return self._noise(x)
-
-
 class SavedTensorDecorator(nn.Module):
     """Captures layer I/O for inspection.
 
@@ -166,18 +127,6 @@ class ShiftDecorator:
         return x
 
 
-class ScaleDecorator:
-    def __init__(self, scale):
-        self.scale = scale
-
-    def input_transform(self, x):
-        return x
-
-    def output_transform(self, x):
-        self.scale = self.scale.to(x.device)
-        return self.scale * x
-
-
 class ClampDecorator:
     def __init__(self, clamp_min, clamp_max):
         self.clamp_min = clamp_min
@@ -228,23 +177,6 @@ class QuantizeDecorator:
         self.levels_before_c = self.levels_before_c.to(x.device)
         self.c = self.c.to(x.device)
         return StaircaseFunction.apply(x, self.levels_before_c / self.c)
-
-
-class RandomMaskAdjustmentStrategy:
-    def adjust(self, base, target, rate):
-        random_mask = torch.rand(base.shape, device=base.device)
-        random_mask = (random_mask < rate).float()
-        return random_mask * target + (1.0 - random_mask) * base
-
-
-class NestedAdjustmentStrategy:
-    def __init__(self, strategies):
-        self.strategies = strategies
-
-    def adjust(self, base, target, rate):
-        for strategy in self.strategies:
-            target = strategy.adjust(base, target, rate)
-        return target
 
 
 class RateAdjustedDecorator:
@@ -330,14 +262,3 @@ class ActivationReplacementDecorator:
         target_out = self.target_activation(self._saved_input)
         self._saved_input = None
         return target_out
-
-
-class AnyDecorator:
-    def __init__(self, any_module):
-        self.module = any_module
-
-    def input_transform(self, x):
-        return x
-
-    def output_transform(self, x):
-        return self.module(x)

@@ -121,6 +121,13 @@ class TestTrainUntilTargetAccuracyReturn:
         *before* 2 extra training epochs.  After those epochs the weights had
         changed, so the returned metric was stale.
         """
+        # Pin the RNG so this test is independent of how much
+        # ``torch.rand`` upstream tests in the suite have consumed.  The
+        # invariant under test is "returned == fresh validate()", which
+        # is independent of the actual data; we just need a regime where
+        # the model can drive its accuracy past zero in two extra epochs
+        # so that the post-extra-epoch metric differs from the pre one.
+        torch.manual_seed(0)
         trainer = _make_trainer()
         returned_acc = trainer.train_until_target_accuracy(
             lr=0.01, max_epochs=4, target_accuracy=0.0, warmup_epochs=0

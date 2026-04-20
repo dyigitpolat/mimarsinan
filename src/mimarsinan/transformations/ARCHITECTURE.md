@@ -8,8 +8,9 @@ pipeline steps and hardware mapping.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `perceptron_transformer.py` | `PerceptronTransformer` | Computes effective weights/biases by fusing normalization; uses `per_input_scales` for per-channel input scaling. `apply_effective_bias_transform` and `apply_effective_bias_transform_to_norm` are no-ops when `layer.bias is None` (bias-less perceptrons). |
-| `weight_quantization.py` | `TensorQuantization` | Symmetric tensor quantization to N-bit integers |
-| `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization` | Weight quantization that accounts for normalization parameters |
+| `weight_quantization.py` | `TensorQuantization` | Symmetric tensor quantization to N-bit integers (legacy closed-form path retained for non-QAT call sites) |
+| `lsq_quantization.py` | `LSQQuantizer`, `ste_round` | LSQ (Learnable Step-Size Quantization) `nn.Module` with a log-space learnable step and a straight-through estimator for the rounding op.  Forward = clamp+STE-round; backward gives gradients to both the input weights and `log_scale`.  Phase C1 replacement for the rate-mixed FP/Q interpolation that used to happen inside `NormalizationAwarePerceptronQuantization`. |
+| `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization` | Weight quantization that accounts for normalization parameters.  **Phase C1**: lazily attaches an `LSQQuantizer` to the perceptron (`perceptron.weight_quantizer`), seeds its step from the effective weight max-abs the first time, then uses it to bake hard-quantized weights into `layer.weight.data` while also publishing the legacy `parameter_scale = q_max / max(|w|)` for downstream code that still reads it. |
 | `chip_quantization.py` | `ChipQuantization` | Chip-level quantization utilities |
 | `weight_clipping.py` | `SoftTensorClipping`, `clip_core_weights` | Soft weight clipping for training stability |
 | `transformation_utils.py` | `transform_np_array` | Low-level numpy array quantization helper |

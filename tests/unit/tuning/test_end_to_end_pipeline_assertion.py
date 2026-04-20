@@ -24,7 +24,6 @@ from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 from mimarsinan.tuning.tuners.activation_adaptation_tuner import ActivationAdaptationTuner
 from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner
-from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation
@@ -115,33 +114,6 @@ class TestActivationQuantizationPassesPipeline:
         assert final_acc >= pretrained_acc * tolerance, (
             f"ActivationQuantizationTuner: {final_acc:.4f} < "
             f"{pretrained_acc:.4f} * {tolerance}"
-        )
-
-
-class TestNoiseTunerPassesPipeline:
-    def test_noise_tuner_retains_accuracy(self, tmp_path):
-        """NoiseTuner result must satisfy pipeline tolerance."""
-        torch.manual_seed(42)
-        pipeline = _make_pipeline(tmp_path)
-        model = make_tiny_supermodel()
-        am = AdaptationManager()
-        for p in model.get_perceptrons():
-            am.update_activation(pipeline.config, p)
-
-        pretrained_acc = _pretrain(model, pipeline, epochs=15)
-        if pretrained_acc < _MIN_PRETRAINED_ACC:
-            pytest.skip(f"Pretrained acc {pretrained_acc:.2f} too low")
-
-        tuner = NoiseTuner(
-            pipeline, model, target_accuracy=pretrained_acc,
-            lr=0.001, adaptation_manager=am,
-        )
-        tuner.run()
-
-        final_acc = tuner.trainer.test()
-        tolerance = 1.0 - pipeline.config["degradation_tolerance"]
-        assert final_acc >= pretrained_acc * tolerance, (
-            f"NoiseTuner: {final_acc:.4f} < {pretrained_acc:.4f} * {tolerance}"
         )
 
 

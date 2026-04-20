@@ -3,7 +3,8 @@
 - PruningTuner uses base-class _adaptation (with LR search, not fixed LR)
 - PruningTuner._update_and_evaluate is pure evaluation (no training step)
 - _recovery_training_hooks protocol injects hooks during recovery
-- _ensure_pipeline_threshold retries when test accuracy is marginal
+- _attempt_recovery_if_below_floor (was _ensure_pipeline_threshold, D1)
+  retries when validation accuracy is marginal
 - train_steps_until_target respects min_steps before patience kicks in
 - One-shot test gate rejects rate=1.0 commits that fail test() threshold
 - Baseline calibration sets tuner target from validate_n_batches at rate 0.0
@@ -147,6 +148,8 @@ class TestEnsureValidationThreshold:
         tuner._budget.accuracy_se.return_value = 0.005
         tuner.trainer = MagicMock()
         tuner.trainer.validate_n_batches.return_value = 0.90
+        tuner.trainer.validate_fast.return_value = 0.90
+        tuner.trainer.validate_full.return_value = 0.90
 
         result = tuner._ensure_validation_threshold()
         assert result == 0.90
@@ -178,7 +181,10 @@ class TestEnsureValidationThreshold:
         tuner._budget.check_interval = 10
         tuner._budget.accuracy_se.return_value = 0.005
         tuner.trainer = MagicMock()
-        tuner.trainer.validate_n_batches.side_effect = [0.80, 0.88]
+        # Safety-net probes run through ``validate_full`` (Phase D2):
+        # first call scores the current state, each subsequent call
+        # scores a recovery attempt.
+        tuner.trainer.validate_full.side_effect = [0.80, 0.88]
 
         tuner._find_lr = MagicMock(return_value=0.001)
 
@@ -285,12 +291,14 @@ class TestPruningTunerAfterRun:
 
         assert PruningTuner._after_run is not SmoothAdaptationTuner._after_run
 
-    def test_after_run_calls_ensure_pipeline_threshold(self):
-        """_after_run must call _ensure_pipeline_threshold as a safety net."""
+    def test_after_run_calls_attempt_recovery(self):
+        """_after_run must call ``_attempt_recovery_if_below_floor`` as
+        a safety net (Phase D1 rename of the legacy
+        ``_ensure_pipeline_threshold`` / ``_ensure_validation_threshold``)."""
         from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
         import inspect
         source = inspect.getsource(PruningTuner._after_run)
-        assert "_ensure_pipeline_threshold" in source
+        assert "_attempt_recovery_if_below_floor" in source
 
     def test_pruning_tuner_has_no_find_lr_override(self):
         """PruningTuner should use the base-class _find_lr (no override)."""
@@ -330,13 +338,15 @@ class TestOneShotValidationGate:
         tuner._budget.check_interval = 10
         tuner._budget.accuracy_se.return_value = 0.005
         tuner.trainer = MagicMock()
-        # validate_n_batches is called several times in _adaptation:
-        # (1) pre-cycle validation (via MagicMock default)
+        # ``_adaptation`` routes all three probes through
+        # ``validate_full`` (Phase D2):
+        # (1) pre-cycle validation
         # (2) post-cycle validation
         # (3) the rate=1.0 strict validation gate
-        tuner.trainer.validate_n_batches.side_effect = [
+        tuner.trainer.validate_full.side_effect = [
             pre_cycle_val, post_cycle_val, strict_val, strict_val, strict_val
         ]
+        tuner.trainer.validate_fast.return_value = post_cycle_val
         tuner._find_lr = MagicMock(return_value=0.001)
         tuner._update_and_evaluate = MagicMock(return_value=post_cycle_val)
         tuner._recovery_training_hooks = MagicMock(return_value=[])
@@ -403,6 +413,11 @@ class TestBaselineCalibration:
         tuner.trainer = MagicMock()
         tuner.trainer.validate.return_value = 0.87
         tuner.trainer.validate_n_batches.return_value = 0.87
+        # Phase D2: baseline calibration and rollback probes both run
+        # through ``validate_full``; LR/per-cycle probes use
+        # ``validate_fast``.
+        tuner.trainer.validate_full.return_value = 0.87
+        tuner.trainer.validate_fast.return_value = 0.87
 
         tuner._update_and_evaluate = MagicMock(return_value=0.87)
         tuner._before_cycle = MagicMock()

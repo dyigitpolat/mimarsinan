@@ -12,12 +12,10 @@ from mimarsinan.models.layers import (
     LeakyGradReLU,
     StaircaseFunction,
     DifferentiableClamp,
-    NoisyDropout,
     TransformedActivation,
     DecoratedActivation,
     ClampDecorator,
     QuantizeDecorator,
-    ScaleDecorator,
     ShiftDecorator,
     MaxValueScaler,
     MixAdjustmentStrategy,
@@ -163,26 +161,25 @@ class TestMaxValueScalerStress:
 class TestDecoratorCompositionOrder:
     """Verify that decorator composition order matters and is correct."""
 
-    def test_clamp_then_scale_vs_scale_then_clamp(self):
-        """
-        Clamp[0,1] then Scale(2) should give output in [0,2].
-        Scale(2) then Clamp[0,1] should give output in [0,1].
-        These must produce different results for x > 0.5.
-        """
-        x = torch.tensor([0.8])
+    def test_clamp_then_quantize_vs_quantize_then_clamp(self):
+        """Composition order must matter: clamping first constrains the
+        range the quantizer sees, whereas quantizing first can yield a
+        level whose centre sits above the clamp ceiling and then gets
+        clipped.  The two compositions must produce different
+        outputs."""
+        x = torch.tensor([0.9])
 
-        clamp = ClampDecorator(torch.tensor(0.0), torch.tensor(1.0))
-        scale = ScaleDecorator(torch.tensor(2.0))
+        clamp = ClampDecorator(torch.tensor(0.0), torch.tensor(0.5))
+        levels_before_c = torch.tensor(3.0)
+        c = torch.tensor(1.0)
+        quantize = QuantizeDecorator(levels_before_c, c)
 
-        ta1 = TransformedActivation(nn.Identity(), [clamp, scale])
-        out1 = ta1(x)  # clamp to [0,1] then scale by 2 → 1.6
+        ta1 = TransformedActivation(nn.Identity(), [clamp, quantize])
+        out1 = ta1(x)
+        ta2 = TransformedActivation(nn.Identity(), [quantize, clamp])
+        out2 = ta2(x)
 
-        ta2 = TransformedActivation(nn.Identity(), [scale, clamp])
-        out2 = ta2(x)  # scale by 2 to 1.6, then clamp to [0,1] → 1.0
-
-        assert out1.item() == pytest.approx(1.6, abs=0.1)
-        assert out2.item() == pytest.approx(1.0, abs=0.01)
-        assert abs(out1.item() - out2.item()) > 0.1, \
+        assert not torch.allclose(out1, out2), \
             "Composition order should matter"
 
     def test_shift_then_relu(self):
@@ -217,15 +214,6 @@ class TestTransformedActivationStress:
         x = torch.tensor([1.0, -1.0])
         expected = LeakyGradReLU()(x)
         assert torch.allclose(ta(x), expected)
-
-    def test_many_decorators_dont_overflow(self):
-        """Stack many scale decorators and verify numerical stability."""
-        decorators = [ScaleDecorator(torch.tensor(1.001)) for _ in range(100)]
-        ta = TransformedActivation(nn.Identity(), decorators)
-        x = torch.tensor([1.0])
-        out = ta(x)
-        expected = 1.001 ** 100
-        assert out.item() == pytest.approx(expected, rel=0.01)
 
     def test_quantize_decorator_known_values(self):
         """

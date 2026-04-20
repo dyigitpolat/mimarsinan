@@ -18,7 +18,6 @@ from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 from mimarsinan.tuning.tuners.activation_quantization_tuner import (
     ActivationQuantizationTuner,
 )
-from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 
 
 def _make_pipeline(tmp_path):
@@ -137,60 +136,55 @@ class TestClampTunerExtraState:
 
 
 class TestActivationQuantizationExtraState:
+    """Post-DSQ ``ActivationQuantizationTuner`` stores per-perceptron
+    quantisation-rate overrides (not the scalar ``quantization_rate``)
+    in its ``_get_extra_state`` payload.  The scalar no longer drives
+    the rollout at all -- per-perceptron ``set_per_perceptron_rate``
+    entries are the schedule -- so clone/restore must round-trip those."""
+
     @pytest.fixture
     def tuner(self, tmp_path):
         pipeline = _make_pipeline(tmp_path)
         model = make_tiny_supermodel()
+        for i, p in enumerate(model.get_perceptrons()):
+            p.name = f"layer_{i}"
         am = AdaptationManager()
         for p in model.get_perceptrons():
             am.update_activation(pipeline.config, p)
         return ActivationQuantizationTuner(pipeline, model, 4, 0.9, 0.001, am)
 
-    def test_clone_captures_quantization_rate(self, tuner):
-        tuner.adaptation_manager.quantization_rate = 0.3
+    def test_clone_captures_per_perceptron_overrides(self, tuner):
+        tuner.adaptation_manager.set_per_perceptron_rate(
+            "quantization_rate", "layer_0", 1.0
+        )
         for p in tuner.model.get_perceptrons():
             tuner.adaptation_manager.update_activation(tuner.pipeline.config, p)
 
         state = tuner._clone_state()
         _, extra = state
-        assert extra == pytest.approx(0.3)
+        overrides = extra["per_perceptron_quant_overrides"]
+        assert overrides.get("layer_0") == pytest.approx(1.0)
+        assert "layer_1" not in overrides
 
-    def test_restore_resets_quantization_rate(self, tuner):
-        state_at_zero = tuner._clone_state()
+    def test_restore_resets_overrides_to_snapshot(self, tuner):
+        """Baseline snapshot has no overrides; after we install one
+        and restore, the dict must be empty again."""
+        baseline = tuner._clone_state()
 
-        tuner.adaptation_manager.quantization_rate = 0.9
+        tuner.adaptation_manager.set_per_perceptron_rate(
+            "quantization_rate", "layer_0", 1.0
+        )
         for p in tuner.model.get_perceptrons():
             tuner.adaptation_manager.update_activation(tuner.pipeline.config, p)
+        assert (
+            tuner.adaptation_manager._per_perceptron_rates["quantization_rate"]
+            .get("layer_0") == 1.0
+        )
 
-        tuner._restore_state(state_at_zero)
-        assert tuner.adaptation_manager.quantization_rate == pytest.approx(0.0)
+        tuner._restore_state(baseline)
+        assert (
+            tuner.adaptation_manager._per_perceptron_rates["quantization_rate"]
+            == {}
+        )
 
 
-class TestNoiseTunerExtraState:
-    @pytest.fixture
-    def tuner(self, tmp_path):
-        pipeline = _make_pipeline(tmp_path)
-        model = make_tiny_supermodel()
-        am = AdaptationManager()
-        for p in model.get_perceptrons():
-            am.update_activation(pipeline.config, p)
-        return NoiseTuner(pipeline, model, 0.9, 0.001, am)
-
-    def test_clone_captures_noise_rate(self, tuner):
-        tuner.adaptation_manager.noise_rate = 0.4
-        for p in tuner.model.get_perceptrons():
-            tuner.adaptation_manager.update_activation(tuner.pipeline.config, p)
-
-        state = tuner._clone_state()
-        _, extra = state
-        assert extra == pytest.approx(0.4)
-
-    def test_restore_resets_noise_rate(self, tuner):
-        state_at_zero = tuner._clone_state()
-
-        tuner.adaptation_manager.noise_rate = 0.6
-        for p in tuner.model.get_perceptrons():
-            tuner.adaptation_manager.update_activation(tuner.pipeline.config, p)
-
-        tuner._restore_state(state_at_zero)
-        assert tuner.adaptation_manager.noise_rate == pytest.approx(0.0)

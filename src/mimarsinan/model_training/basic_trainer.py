@@ -40,6 +40,23 @@ class BasicTrainer:
         self.beta1 = 0.9
         self.beta2 = 0.99
 
+        # Phase D2 two-tier validation:
+        #   * ``validate_fast`` -> in-flight LR probes & per-cycle progress.
+        #     Default to at most 16 batches (matches TuningBudget.progress_eval_batches).
+        #   * ``validate_full`` -> rollback / safety-net / baseline probes.
+        #     Default to the entire validation loader so callers that never
+        #     configure a budget still get an honest "full-set" metric.
+        # Tuners overwrite these in ``TunerBase`` via
+        # ``set_fast_validation_batches`` / ``set_full_validation_batches``
+        # so the two tiers align with ``progress_eval_batches`` and
+        # ``eval_n_batches`` respectively.
+        try:
+            full_default = max(1, len(self.validation_loader))
+        except TypeError:
+            full_default = 1
+        self._fast_n_batches = min(16, full_default)
+        self._full_n_batches = full_default
+
     def set_training_batch_size(self, batch_size):
         self.training_batch_size = batch_size
         self.train_loader = self.data_loader_factory.create_training_loader(
@@ -51,6 +68,16 @@ class BasicTrainer:
         self.validation_loader = self.data_loader_factory.create_validation_loader(
             self.validation_batch_size, self.data_provider)
         self.val_iter = iter(self.validation_loader)
+        # Keep the two-tier defaults in sync with the new loader length.
+        # Explicit overrides via ``set_fast_validation_batches`` /
+        # ``set_full_validation_batches`` still win because tuners call
+        # those setters after changing the validation batch size.
+        try:
+            full_default = max(1, len(self.validation_loader))
+        except TypeError:
+            full_default = 1
+        self._fast_n_batches = min(self._fast_n_batches, full_default)
+        self._full_n_batches = full_default
 
     def set_test_batch_size(self, batch_size):
         self.test_batch_size = batch_size
@@ -241,6 +268,50 @@ class BasicTrainer:
         acc = correct / total if total else 0.0
         self._report("Validation accuracy", acc)
         return acc
+
+    def set_fast_validation_batches(self, n_batches: int) -> None:
+        """Configure ``validate_fast``'s batch count (Phase D2).
+
+        ``validate_fast`` is the explicit API for in-flight LR probes
+        and per-cycle progress checks inside tuners; it must stay
+        cheap (a small, fixed-size subset).  Tuners set this to their
+        budget's ``progress_eval_batches``.
+        """
+        self._fast_n_batches = max(1, int(n_batches))
+
+    def set_full_validation_batches(self, n_batches: int) -> None:
+        """Configure ``validate_full``'s batch count (Phase D2).
+
+        ``validate_full`` is the explicit API for rollback / safety-net
+        / baseline decisions; it must reflect the entire validation
+        loader (up to the cap the tuning budget computes for its
+        per-cycle wall-clock ceiling).  Tuners set this to their
+        budget's ``eval_n_batches``.
+        """
+        self._full_n_batches = max(1, int(n_batches))
+
+    def validate_fast(self) -> float:
+        """Phase D2 fast-tier validation.
+
+        Evaluates on a small subset (``_fast_n_batches``, default 16)
+        for LR probes and per-cycle progress checks.  Cheap by design:
+        callers that need a statistically-strong metric (rollback,
+        safety-net, baseline) must use :meth:`validate_full` instead.
+        """
+        return self.validate_n_batches(self._fast_n_batches)
+
+    def validate_full(self) -> float:
+        """Phase D2 full-tier validation.
+
+        Evaluates on the full validation set (``_full_n_batches``,
+        default = ``len(validation_loader)``).  This is the metric
+        used for rollback decisions, safety-net recovery acceptance,
+        and the baseline probe at the start of every tuner's main
+        loop.  Intentionally heavier than :meth:`validate_fast` --
+        callers that want an in-flight probe should use
+        :meth:`validate_fast`.
+        """
+        return self.validate_n_batches(self._full_n_batches)
     
     def validate_train(self):
         x, y = self.next_training_batch()

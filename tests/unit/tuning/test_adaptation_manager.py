@@ -25,7 +25,6 @@ class TestAdaptationManager:
         assert am.clamp_rate == 0.0
         assert am.shift_rate == 0.0
         assert am.quantization_rate == 0.0
-        assert am.noise_rate == 0.0
 
     def test_update_activation_sets_transformed(self):
         am = AdaptationManager()

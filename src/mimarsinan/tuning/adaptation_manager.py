@@ -14,10 +14,15 @@ _KNOWN_RATE_FIELDS: frozenset = frozenset({
     "clamp_rate",
     "shift_rate",
     "quantization_rate",
-    "scale_rate",
     "pruning_rate",
-    "noise_rate",
 })
+"""The live rate dimensions driven by pipeline tuners.
+
+Phase D3 removed ``noise_rate`` (no live tuner writes it -- ``NoiseTuner``
+was never instantiated by any pipeline step) and ``scale_rate`` (the
+``ScaleDecorator`` path was deleted as dead code).  Reintroducing either
+name here without a corresponding tuner resurrects dead schedulers --
+add the tuner first, then the rate."""
 
 
 class AdaptationManager(nn.Module):
@@ -32,10 +37,7 @@ class AdaptationManager(nn.Module):
         self.clamp_rate = 0.0
         self.shift_rate = 0.0
         self.quantization_rate = 0.0
-        self.scale_rate = 0.0
         self.pruning_rate = 0.0
-
-        self.noise_rate = 0.0
 
         # Per-perceptron overrides: {rate_name: {perceptron_name: float}}.
         # ``get_rate`` looks up the override first and falls back to the
@@ -188,7 +190,6 @@ class AdaptationManager(nn.Module):
         clamp_rate = self.get_rate("clamp_rate", perceptron)
         quant_rate = self.get_rate("quantization_rate", perceptron)
         shift_rate = self.get_rate("shift_rate", perceptron)
-        noise_rate = self.get_rate("noise_rate", perceptron)
 
         decorators = []
         if aa_rate > 0:
@@ -220,27 +221,14 @@ class AdaptationManager(nn.Module):
         perceptron.set_activation(
             TransformedActivation(perceptron.base_activation, decorators))
 
-        # When noise_rate==0, use nn.Identity so Perceptron.forward's isinstance
-        # check skips the regularization call entirely (NoisyDropout would
-        # otherwise short-circuit internally but still cost one Python call).
-        if noise_rate > 0:
-            target_noise_amount = (1.0 / (pipeline_config['target_tq'] * 2.5))
-            perceptron.set_regularization(
-                NoisyDropout(torch.tensor(0.0), noise_rate, target_noise_amount * perceptron.activation_scale)
-            )
-        else:
-            perceptron.set_regularization(nn.Identity())
+        # Regularization is left at its default (``nn.Identity`` -- set in
+        # ``Perceptron.__init__``).  Phase D3 deleted the only caller that
+        # installed anything non-trivial here (the stochastic-noise branch
+        # driven by the now-removed noise tuner), so there is nothing to
+        # wire up -- rebuilding the activation chain above is the full
+        # contract of ``update_activation``.
 
-        # perceptron.set_scaler(
-        #     TransformedActivation(
-        #         nn.Identity(),
-        #         [RateAdjustedDecorator(
-        #             self.scale_rate, 
-        #             ScaleDecorator(1.0 / perceptron.scale_factor), 
-        #             MixAdjustmentStrategy())]
-        #     )
-        # )
-        
+
     def get_rate_adjusted_activation_replacement_decorator(self, perceptron, rate=None):
         """Gradually blend the base activation toward LeakyGradReLU (chip ReLU)."""
         from mimarsinan.models.activations import LeakyGradReLU
@@ -289,16 +277,15 @@ class AdaptationManager(nn.Module):
         else:
             shift_back_amount = -shift * shift_rate
 
-        return RateAdjustedDecorator(
-            quant_rate,
-            NestedDecoration(
-                [ShiftDecorator(shift_back_amount),
-                QuantizeDecorator(torch.tensor(pipeline_config["target_tq"]), perceptron.activation_scale)]),
-            NestedAdjustmentStrategy([RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]))
-    
-    # def get_rate_adjusted_scale_decorator(self, perceptron):
-    #     return RateAdjustedDecorator(
-    #         self.scale_rate, 
-    #         AnyDecorator(perceptron.scaler), 
-    #         MixAdjustmentStrategy())
-    
+        # ``quant_rate`` is a binary gate here: any non-zero value installs
+        # the hard ``StaircaseFunction``-backed ``QuantizeDecorator``
+        # (bit-exact with the post-mapping numeric path).  Cycle-by-cycle
+        # rollout is driven externally by ``ActivationQuantizationTuner``
+        # via per-perceptron overrides -- the decorator itself has no
+        # smooth-annealing mode.  ``update_activation`` short-circuits the
+        # ``quant_rate == 0`` case before it ever calls this factory.
+        target_tq = torch.tensor(pipeline_config["target_tq"])
+        return NestedDecoration([
+            ShiftDecorator(shift_back_amount),
+            QuantizeDecorator(target_tq, perceptron.activation_scale),
+        ])

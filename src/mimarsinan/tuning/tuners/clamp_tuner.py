@@ -211,14 +211,14 @@ class ClampTuner(SmoothAdaptationTuner):
         self.adaptation_manager.clamp_rate = rate
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
-        return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
+        return self.trainer.validate_fast()
 
     def validate(self):
         # Validation-only. The pipeline runs trainer.test() once per step
         # from PipelineStep.pipeline_metric; tuners must not.
         if self._final_metric is not None:
             return self._final_metric
-        return self.trainer.validate()
+        return self.trainer.validate_full()
 
     def _after_run(self):
         self._continue_to_full_rate()
@@ -227,7 +227,7 @@ class ClampTuner(SmoothAdaptationTuner):
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
 
-        recovered_val = self._ensure_validation_threshold()
+        recovered_val = self._attempt_recovery_if_below_floor()
         # Only mark the rate committed if recovery actually met the floor.
         # See A4: the previous unconditional assignment masked real failures
         # and moved the pipeline-assertion failure to a later, less-actionable

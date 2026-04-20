@@ -49,7 +49,7 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         self.adaptation_manager.activation_adaptation_rate = rate
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
-        return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
+        return self.trainer.validate_fast()
 
     def _after_run(self):
         from mimarsinan.models.perceptron_mixer.perceptron import make_activation
@@ -68,7 +68,7 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
-        recovered_val = self._ensure_validation_threshold()
+        recovered_val = self._attempt_recovery_if_below_floor()
         self._committed_metric = recovered_val
         self._final_metric = recovered_val
         if recovered_val >= self._validation_floor_for_commit():
@@ -79,4 +79,4 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
     def validate(self):
         if hasattr(self, "_committed_metric") and self._committed_metric is not None:
             return self._committed_metric
-        return self.trainer.validate()
+        return self.trainer.validate_full()
