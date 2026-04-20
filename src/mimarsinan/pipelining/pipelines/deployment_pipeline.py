@@ -233,12 +233,6 @@ class DeploymentPipeline(Pipeline):
         "lr_range_max": 1e-1,
         "training_epochs": 10,
         "tuning_budget_scale": 1.0,
-        "tuner_calibrate_smooth_tolerance": True,
-        "tuner_smooth_tolerance_residual_threshold": 1e-3,
-        "tuner_smooth_tolerance_min": 0.01,
-        "tuner_smooth_tolerance_max": 0.15,
-        "tuner_smooth_tolerance_baseline_epsilon": 1e-9,
-        "tuner_smooth_tolerance_lr_scale": 1.0,
         "degradation_tolerance": 0.05,
         "model_config_mode": "user",
         "hw_config_mode": "fixed",
@@ -353,6 +347,16 @@ class DeploymentPipeline(Pipeline):
         # tolerance = 1 - degradation_tolerance: with degradation_tolerance=0.05,
         # this gives tolerance=0.95 (allow up to 5% accuracy drop per step).
         self.tolerance = 1.0 - float(self.config.get("degradation_tolerance", 0.05))
+
+        # Cross-step accuracy budget. Default to 2x the per-step
+        # degradation_tolerance if not explicitly configured; that is a
+        # conservative default that at least catches 3+ adjacent full-
+        # tolerance drops. Set ``degradation_budget_total`` explicitly in
+        # the run config to widen/narrow it.
+        default_budget = 2.0 * float(self.config.get("degradation_tolerance", 0.05))
+        self.accuracy_budget.budget_total = float(
+            self.config.get("degradation_budget_total", default_budget)
+        )
 
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":
             self.config.setdefault("cuda_debug", True)

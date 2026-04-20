@@ -206,37 +206,48 @@ class TestOneShotFailure:
         assert len(update_rates) > 1, "Must fall back to gradual adaptation"
 
     def test_rollback_fail_falls_back(self, setup):
-        """If rate=1.0 passes catastrophic check but fails the test() gate,
-        model state is restored and gradual loop runs."""
+        """If rate=1.0 passes catastrophic check but fails the validation
+        strict gate (post_acc < baseline - rollback_tolerance), model state
+        is restored and gradual loop runs.
+
+        The rate=1.0 strict gate no longer calls ``trainer.test()`` — the
+        pipeline's ``PipelineStep.pipeline_metric()`` owns the single
+        test() pass per step, and the tuning loop uses only validation.
+        """
         tuner = setup
 
-        test_call_count = [0]
-
-        def high_val(rate):
-            return 0.87
-
         tuner._instant_acc_fn = lambda r: 0.85  # passes catastrophic
-        tuner._post_acc_fn = high_val
-        tuner._patch_trainer()
 
-        # Call 1 (run baseline capture): high — the "pre-tuning" test metric.
-        # Call 2 (rate=1.0 gate inside _adaptation): low — drops significantly
-        # below baseline - noise, forcing test_gate_fail + fallback.
-        # Call 3+ (gradual cycle gates, recovery): high again.
-        def mock_test():
-            test_call_count[0] += 1
-            if test_call_count[0] == 1:
-                return 0.87  # run() baseline
-            if test_call_count[0] == 2:
+        # Track which rate the last ``_update_and_evaluate`` applied so
+        # ``validate_n_batches`` can distinguish pre_cycle_acc (before the
+        # transformation) from post_acc (after the transformation at that
+        # rate). Rate=1.0 must produce post_acc below the strict gate;
+        # rates below 1.0 recover fully.
+        state = {"applied_rate": 0.0}
+
+        original_update = tuner._update_and_evaluate
+
+        def tracked_update(rate):
+            state["applied_rate"] = rate
+            return original_update(rate)
+
+        tuner._update_and_evaluate = tracked_update
+
+        def _mock_validate_n_batches(_n):
+            applied = state["applied_rate"]
+            if applied >= 0.99:
                 return 0.70  # one-shot at rate=1.0 fails strict gate
             return 0.87
-        tuner.trainer.test = mock_test
+
+        tuner.trainer.validate_n_batches = _mock_validate_n_batches
+        tuner.trainer.validate = lambda: 0.87
+        tuner.trainer.train_steps_until_target = lambda *a, **kw: None
 
         tuner.run()
 
         update_rates = [r for tag, r in tuner.adaptation_calls if tag == "update"]
         assert update_rates[0] == 1.0, "First attempt must be one-shot"
-        assert len(update_rates) > 1, "Must fall back after one-shot test gate rejection"
+        assert len(update_rates) > 1, "Must fall back after one-shot strict gate rejection"
 
     def test_state_restored_after_failed_one_shot(self, setup):
         """Model parameters are identical before and after a failed one-shot."""

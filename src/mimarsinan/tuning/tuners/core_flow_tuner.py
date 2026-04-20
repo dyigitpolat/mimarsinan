@@ -73,6 +73,17 @@ class CoreFlowTuner:
             self._trainer.close()
             self._trainer = None
 
+    @property
+    def trainer(self):
+        """Expose the internal trainer for ``PipelineStep.pipeline_metric()``.
+
+        ``pipeline_metric()`` uses this to run the single authoritative
+        ``trainer.test()`` pass per step. The trainer's ``model`` is the
+        last spiking flow used during tuning, which is the final model
+        the downstream pipeline will consume.
+        """
+        return self._trainer
+
     def _make_stable_flow(self) -> StableSpikingUnifiedCoreFlow:
         return StableSpikingUnifiedCoreFlow(
             self.input_shape,
@@ -100,9 +111,9 @@ class CoreFlowTuner:
         self._trainer.model = flow.to(self.device)
         return self._trainer.validate()
 
-    def _test(self, flow) -> float:
-        self._trainer.model = flow.to(self.device)
-        return self._trainer.test()
+    # Note: ``_test`` was removed. Tuner internals never call
+    # ``trainer.test()``; the pipeline's ``PipelineStep.pipeline_metric()``
+    # owns the single test() pass per step.
 
     def run(
         self,
@@ -213,10 +224,11 @@ class CoreFlowTuner:
         for core_idx, core in enumerate(cores):
             core.threshold = max(1.0, round(best_thresholds[core_idx]))
 
-        # Step 4: Final quantization and test
+        # Step 4: Final quantization and validation (authoritative test
+        # metric is computed later by PipelineStep.pipeline_metric()).
         spiking_flow = self._make_spiking_flow().to(self.device)
-        self.accuracy = self._test(spiking_flow)
-        print(f"  Final SpikingUnifiedCoreFlow Accuracy: {self.accuracy}")
+        self.accuracy = self._validate(spiking_flow)
+        print(f"  Final SpikingUnifiedCoreFlow Validation Accuracy: {self.accuracy}")
 
         return CoreFlowTuningResult(
             tuned_ir_graph=self.ir_graph,

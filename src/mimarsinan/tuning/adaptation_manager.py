@@ -101,11 +101,4 @@ class AdaptationManager(nn.Module):
                 [ShiftDecorator(shift_back_amount), 
                 QuantizeDecorator(torch.tensor(pipeline_config["target_tq"]), perceptron.activation_scale)]),
             NestedAdjustmentStrategy([RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]))
-            #RandomMaskAdjustmentStrategy())
-    
-    # def get_rate_adjusted_scale_decorator(self, perceptron):
-    #     return RateAdjustedDecorator(
-    #         self.scale_rate, 
-    #         AnyDecorator(perceptron.scaler), 
-    #         MixAdjustmentStrategy())
     

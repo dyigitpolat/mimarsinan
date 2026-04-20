@@ -363,8 +363,9 @@ class PruningTuner(SmoothAdaptationTuner):
         print("[PruningTuner] Starting fractional discrete adaptation...")
         super().run()
 
-        final_acc = self._final_metric if self._final_metric is not None else self.trainer.test()
-        print(f"[PruningTuner] Final overall accuracy: {final_acc:.4f}")
+        final_acc = self._final_metric if self._final_metric is not None else self.trainer.validate()
+        print(f"[PruningTuner] Final validation accuracy: {final_acc:.4f} "
+              "(authoritative test metric set by PipelineStep.pipeline_metric())")
 
         row_masks, col_masks = self._get_masks(1.0)
         for i, p in enumerate(perceptrons):

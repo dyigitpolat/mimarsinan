@@ -260,26 +260,20 @@ class TestActivationAdaptationCommit:
 
         assert step.validate() == 0.75
 
-    def test_committed_metric_uses_full_test_set(self, mock_pipeline):
-        """_committed_metric must use trainer.test() (full test set), not
-        trainer.validate() (single minibatch).
+    def test_committed_metric_comes_from_validation_not_test(
+        self, mock_pipeline, monkeypatch
+    ):
+        """_committed_metric must come from trainer.validate() (or
+        validate_n_batches), NEVER from trainer.test().
 
-        trainer.validate() reads one batch from val_iter; the batch that
-        happens to be current when the commit runs can differ significantly
-        from the model's actual accuracy (observed 0.63 vs 0.96 on MNIST).
-        That noisy value then becomes the recovery TARGET for ClampTuner,
-        causing it to aim for 0.63 instead of 0.96.
-
-        Using trainer.test() iterates the complete test split, giving a
-        stable and representative metric for both pipeline tolerance checks
-        and downstream tuner targets.
+        Under the "single-measurement rule" refactor, tuner internals must
+        not read the test set at all — trainer.test() is reserved for
+        PipelineStep.pipeline_metric() at step exit. This test monkeypatches
+        trainer.test() to raise, so any accidental test-set access during
+        _after_run / _ensure_pipeline_threshold is caught immediately.
         """
-        import torch
         from mimarsinan.tuning.adaptation_manager import AdaptationManager
-        from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-        from mimarsinan.model_training.basic_trainer import BasicTrainer
 
-        # Use a non-ReLU model so the tuner actually runs and sets _committed_metric.
         model = _model_with_gelu()
         am = AdaptationManager()
 
@@ -292,26 +286,24 @@ class TestActivationAdaptationCommit:
         step = ActivationAdaptationStep(mock_pipeline)
         step.name = "Activation Adaptation"
         mock_pipeline.prepare_step(step)
+
+        from mimarsinan.model_training.basic_trainer import BasicTrainer
+
+        def _forbidden_test(self, *args, **kwargs):
+            raise AssertionError(
+                "trainer.test() must NOT be called inside tuner internals "
+                "(single-measurement rule). Use trainer.validate() instead."
+            )
+
+        monkeypatch.setattr(BasicTrainer, "test", _forbidden_test)
+
         step.run()
 
         assert step.tuner is not None, "Tuner must be created for non-ReLU model"
         committed = step.tuner._committed_metric
-
-        # Measure independently with a fresh trainer on the test set.
-        dlf = DataLoaderFactory(mock_pipeline.data_provider_factory, num_workers=0)
-        fresh_trainer = BasicTrainer(model, "cpu", dlf, mock_pipeline.loss)
-        fresh_test_acc = fresh_trainer.test()
-        fresh_trainer.close()
-
-        # _committed_metric must match the full-set test accuracy, not a
-        # noisy single-batch validate().  TinyDataProvider uses batch_size=size
-        # for test, so both are deterministic here; the key contract is that
-        # _committed_metric comes from test(), not validate().
-        assert committed == fresh_test_acc, (
-            f"_committed_metric ({committed:.4f}) must equal trainer.test() "
-            f"({fresh_test_acc:.4f}) measured on the same model weights.  "
-            "A mismatch means _committed_metric was taken from validate() "
-            "(single minibatch) rather than the full test set."
+        assert committed is not None, "_committed_metric must be set after _after_run"
+        assert 0.0 <= committed <= 1.0, (
+            f"_committed_metric ({committed}) must be a valid accuracy in [0, 1]."
         )
 
     # test_run_does_not_commit_identity_perceptrons removed:

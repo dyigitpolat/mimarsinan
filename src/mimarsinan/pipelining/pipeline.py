@@ -5,6 +5,7 @@ import sys
 
 import torch
 
+from mimarsinan.pipelining.accuracy_budget import AccuracyBudget
 from mimarsinan.pipelining.cache.pipeline_cache import PipelineCache
 from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.common.diagnostics import cuda_guard, phase_profiler
@@ -63,6 +64,8 @@ class Pipeline:
         self.load_cache()
         if '__target_metric' not in self.cache.keys():
             self.set_target_metric(0.0)
+
+        self.accuracy_budget = AccuracyBudget(budget_total=0.0)
 
         self.post_step_hooks: list = []
         self.pre_step_hooks: list = []
@@ -208,7 +211,10 @@ class Pipeline:
                         file=sys.stderr,
                     )
                 raise
-            self.set_target_metric(step.pipeline_metric())
+            step_metric = step.pipeline_metric()
+            self.set_target_metric(step_metric)
+            self.accuracy_budget.observe(step_metric)
+            self.accuracy_budget.warn_if_over_budget(step.name)
             with phase_profiler(f"Pipeline::{name}", "save_cache"):
                 self.save_cache()
             with phase_profiler(f"Pipeline::{name}", "offload_torch_models_to_cpu"):

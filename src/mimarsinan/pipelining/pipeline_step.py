@@ -28,17 +28,22 @@ class PipelineStep:
         """Definitive metric for pipeline progression — used by ``Pipeline``
         to set ``__target_metric`` after each step.
 
-        Prefers a tuner's cached ``final_metric`` (set at the end of
-        ``_after_run``) to avoid an extra full-test-set pass after the
-        tuner already ran ``test()`` internally. Falls back to
-        ``trainer.test()`` when no cached metric is available, and to
-        ``validate()`` when no trainer is present.
+        Test-set isolation rule: this is the **one** place in the pipeline
+        that is allowed to call ``trainer.test()``. Tuner internals must
+        NEVER call ``test()`` (any validation / rollback / safety-net
+        decision must use ``validate()`` or ``validate_n_batches``).
+
+        Resolution order:
+        1. If the step exposes a ``tuner`` with a live ``trainer``, call
+           ``trainer.test()`` on the tuner's trainer.
+        2. Else if the step exposes its own ``trainer``, call
+           ``trainer.test()``.
+        3. Else fall back to ``self.validate()`` (tuners that don't own a
+           PyTorch model — e.g. CoreFlowTuner — report their own final
+           metric via ``validate()``).
         """
         tuner = getattr(self, "tuner", None)
         if tuner is not None:
-            cached = getattr(tuner, "final_metric", None)
-            if cached is not None:
-                return float(cached)
             trainer = getattr(tuner, "trainer", None)
             if trainer is not None and hasattr(trainer, "test"):
                 return trainer.test()

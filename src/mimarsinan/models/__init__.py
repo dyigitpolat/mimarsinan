@@ -11,7 +11,6 @@ from mimarsinan.models.layers import (
     QuantizeDecorator,
     ShiftDecorator,
     ScaleDecorator,
-    NoiseDecorator,
     SavedTensorDecorator,
     StatsDecorator,
     RateAdjustedDecorator,
