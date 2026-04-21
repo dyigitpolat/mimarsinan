@@ -20,7 +20,7 @@ in the deployment pipeline.
 | `weight_quantization_step.py` | `WeightQuantizationStep` | Quantization |
 | `quantization_verification_step.py` | `QuantizationVerificationStep` | Verification |
 | `normalization_fusion_step.py` | `NormalizationFusionStep` | Optimization |
-| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (computes per-source input scales via `compute_per_source_scales`; adds TTFS shift compensation; scales and rounds `hardware_bias` by the quantization factor during weight quantization; reduces effective `max_axons` by 1 when `hardware_bias=False` to account for the always-on bias axon) |
+| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (computes per-source input scales via `compute_per_source_scales`; adds TTFS shift compensation; scales and rounds `hardware_bias` by the quantization factor during weight quantization; reduces effective `max_axons` by 1 when `hardware_bias=False` to account for the always-on bias axon; by default retains pre-compaction weight heatmaps on each `NeuralCore` for the monitor GUI's pre-vs-post pruning views — controlled by `store_pre_pruning_heatmap` (default `true`), independent from `generate_visualizations` which governs graphviz DOT output) |
 | `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification |
 | `core_flow_tuning_step.py` | `CoreFlowTuningStep` | Tuning |
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping (passes `allow_scheduling` from `platform_constraints_resolved` to `build_hybrid_hard_core_mapping`; reports per-segment pass counts when scheduled) |
