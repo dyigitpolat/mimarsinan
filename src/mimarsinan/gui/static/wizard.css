@@ -760,6 +760,65 @@ option {
   background: #fff;
 }
 
+/* ─── Reuse-recipe row + collapsible drawer ──────────────── */
+/* The ``.recipe-reuse-row`` stacks a full-width toggle-row above an
+   animated drawer that exposes the dedicated tuning-recipe fields. The
+   parent is a vertical flex so both children span 100% of the column,
+   independent of the training-recipe ``.field-grid`` geometry above. */
+.recipe-reuse-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Make the toggle-row label/switch sit on a single line. The label
+   uses a subtle right-side chevron that rotates when the drawer
+   opens — it reads as "expand for details". */
+.recipe-reuse-row .toggle-row {
+  padding: 12px 16px;
+}
+
+.recipe-reuse-row .toggle-label {
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The drawer itself animates open; when closed it takes zero vertical
+   space so the divider below abuts the toggle-row. ``.field-grid``
+   inside the drawer keeps the standard 2-column training-recipe
+   layout (via the existing `.field-grid` rules). */
+.recipe-drawer {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  padding: 0 14px;
+  border-left: 2px solid var(--accent-blue);
+  background: rgba(59, 130, 246, 0.04);
+  border-radius: 0 8px 8px 0;
+  transition: max-height 220ms ease, opacity 180ms ease, padding 180ms ease;
+}
+
+.recipe-drawer.open {
+  max-height: 800px;
+  opacity: 1;
+  padding: 14px;
+}
+
+/* Reuse OFF → the row picks up an accent-blue left bar so the user
+   can see at a glance which mode they're in; the drawer below already
+   has a matching accent-blue left border for visual continuity. */
+.recipe-reuse-row .toggle-row:not(.on) {
+  border-left: 3px solid var(--accent-blue);
+  padding-left: 13px; /* preserve interior width after the 3px border */
+}
+
 /* ─── Segmented Control ──────────────────────────────────── */
 .seg-control {
   display: flex;

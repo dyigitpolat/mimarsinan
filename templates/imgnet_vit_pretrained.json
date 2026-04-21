@@ -29,7 +29,11 @@
   },
   "deployment_parameters": {
     "lr": 0.0001,
-    "tuning_budget_scale": 1,
+    "batch_size": 64,
+    "tuning_batch_size": 32,
+    "tuning_budget_scale": 0.5,
+    "max_simulation_samples": 500,
+    "simulation_batch_count": 4,
     "degradation_tolerance": 0.1,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
