@@ -327,7 +327,13 @@ class SoftCoreMappingStep(PipelineStep):
                     )
             except Exception:
                 pass
-            store_heatmap = bool(self.pipeline.config.get("generate_visualizations", False))
+            # ``store_pre_pruning_heatmap`` controls whether we hold a pre-compaction
+            # copy of each NeuralCore's weight matrix on the node. This powers the
+            # GUI monitor's "before/after pruning" views (IR Graph + Hardware tabs)
+            # and is *independent* from ``generate_visualizations`` (which only
+            # controls graphviz DOT/SVG dumps on disk). Default True so the
+            # monitor works out of the box; memory-constrained runs can opt out.
+            store_heatmap = bool(self.pipeline.config.get("store_pre_pruning_heatmap", True))
             with _phase("prune_ir_graph"):
                 ir_graph = prune_ir_graph(
                     ir_graph,

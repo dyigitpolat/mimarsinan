@@ -120,6 +120,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_recipe",
     "activation_analysis_batch_size",
     "generate_visualizations",
+    "store_pre_pruning_heatmap",
     "max_simulation_samples",
     "seed",
 }

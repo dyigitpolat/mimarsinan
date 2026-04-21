@@ -81,19 +81,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ── Refresh loop ─────────────────────────────────────────────────────────
-// `scheduleStepDetailRefresh` coalesces step-detail refetches so a burst
-// of WS events (step_started -> pipeline_overview -> step_completed)
-// fires a single REST GET for /api/steps/{name}. Pipeline bar/cards are
-// updated synchronously from the WS `pipeline_overview` payload.
-let _detailTimer = null;
+// Leading-edge throttle for step-detail REST refetches. We *fire
+// immediately* on the first call so step_started -> DOM scaffold latency
+// is dominated by the REST RTT (~50 ms) rather than the old trailing
+// 200 ms debounce. Subsequent calls inside the cooldown window coalesce
+// into at most one trailing refresh — still enough to collapse a burst
+// of WS lifecycle events (step_started -> step_completed) into a single
+// follow-up fetch when metrics keep flooding.
+const _DETAIL_COOLDOWN_MS = 200;
+let _detailLastRunAt = 0;
+let _detailTrailingTimer = null;
 function scheduleStepDetailRefresh() {
-  if (_detailTimer) return;
-  _detailTimer = setTimeout(() => {
-    _detailTimer = null;
+  if (!state.selectedStep) return;
+  const now = performance.now();
+  const since = now - _detailLastRunAt;
+  if (since >= _DETAIL_COOLDOWN_MS && !_detailTrailingTimer) {
+    _detailLastRunAt = now;
+    refreshStepDetail(state.selectedStep, state, fetchJSON).catch(() => {});
+    return;
+  }
+  // Inside cooldown — queue exactly one trailing refresh so we don't
+  // miss the last update in a burst.
+  if (_detailTrailingTimer) return;
+  const wait = Math.max(_DETAIL_COOLDOWN_MS - since, 0);
+  _detailTrailingTimer = setTimeout(() => {
+    _detailTrailingTimer = null;
+    _detailLastRunAt = performance.now();
     if (state.selectedStep) {
       refreshStepDetail(state.selectedStep, state, fetchJSON).catch(() => {});
     }
-  }, 200);
+  }, wait);
 }
 
 function applyPipelineOverviewFromWS(overview) {
@@ -115,11 +132,37 @@ function applyPipelineOverviewFromWS(overview) {
       state.selectedStep = cur;
       state.activeTab = null;
       state.lastDetailJSON = null;
+      // Give the user immediate visual feedback that we've switched —
+      // without this, the panel keeps showing the *previous* step's
+      // data until the REST fetch returns (one RTT + any throttle
+      // window), which reads as "the step switch is lagging by several
+      // seconds". A lightweight placeholder is far better UX than
+      // stale data.
+      showStepDetailLoading(cur);
       scheduleStepDetailRefresh();
     }
   }
   updateErrorBanner(state.pipeline);
   if (!state.pollOk) { state.pollOk = true; updateConnectionDot(); }
+}
+
+// Render a short "loading" placeholder in the step-detail panel so the
+// UI never appears frozen on the previous step during a transition.
+// ``refreshStepDetail`` overwrites this the moment its REST response
+// arrives.
+function showStepDetailLoading(stepName) {
+  const panel = document.getElementById('step-detail');
+  if (!panel) return;
+  const safe = stepName == null ? '' : String(stepName).replace(/[&<>"]/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+  ));
+  panel.innerHTML = `
+    <div class="step-detail-header">
+      <h2>${safe}</h2>
+      <span class="badge running">loading…</span>
+    </div>
+    <div class="tabs" id="step-tabs"></div>
+    <div id="step-tab-content"><div class="empty-state">Loading step detail…</div></div>`;
 }
 
 let _prevAlive = true;
@@ -211,7 +254,16 @@ function handleWSMessage(msg) {
     delete state.metricBuffers[msg.step];
     delete state.seenSeqs[msg.step];
     if (state.searchEvents) delete state.searchEvents[msg.step];
-    if (state.autoFollow) { state.selectedStep = msg.step; state.activeTab = null; state.lastDetailJSON = null; }
+    if (state.autoFollow) {
+      state.selectedStep = msg.step;
+      state.activeTab = null;
+      state.lastDetailJSON = null;
+      // Swap the panel to a loading placeholder right now — otherwise
+      // the previous step's DOM (and its stale empty-state "No metrics
+      // recorded") would remain visible until the REST response lands,
+      // which users perceive as the monitor being frozen for seconds.
+      showStepDetailLoading(msg.step);
+    }
     // Step detail (metrics, snapshot) still needs a REST fetch — the
     // WS overview only carries step lifecycle state, not the heavy
     // per-step payload.
@@ -220,7 +272,18 @@ function handleWSMessage(msg) {
   if (msg.type === 'step_completed' || msg.type === 'step_failed') scheduleStepDetailRefresh();
   if (msg.type === 'metric') {
     bufferMetric(msg.step, msg.name, msg.value, msg.seq, msg.timestamp);
-    if (state.selectedStep === msg.step) scheduleLiveChartUpdate(msg.step);
+    if (state.selectedStep === msg.step) {
+      scheduleLiveChartUpdate(msg.step);
+      // If the step-detail panel hasn't rendered yet (i.e. the metrics
+      // tab DOM scaffold isn't in place), buffered metrics would be
+      // invisible until the next refresh. Kick a leading-edge refresh
+      // right now so the user sees points the moment they arrive,
+      // instead of waiting for a step_started debounce window.
+      const panel = document.getElementById('step-detail');
+      if (!panel || !panel.querySelector('.step-detail-header')) {
+        scheduleStepDetailRefresh();
+      }
+    }
   }
   if (msg.type === 'console_log') {
     state.consoleOffset++;

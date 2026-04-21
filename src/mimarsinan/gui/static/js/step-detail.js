@@ -141,10 +141,36 @@ export function updateLiveCharts(stepName, state) {
   const activeTab = document.querySelector('#step-tabs .tab-btn.active');
   if (!activeTab || activeTab.dataset.tab !== 'metrics') return;
   const metrics = getStepMetrics(stepName, state);
-  if (Object.keys(metrics).length === 0) return;
+  const plottableNames = Object.keys(metrics).filter(n => n !== 'search_event');
+  if (plottableNames.length === 0) return;
   const stepStartTime = state.pipeline?.steps?.find(s => s.name === stepName)?.start_time;
   const stepStartSec = stepStartTime != null ? (stepStartTime > 1e12 ? stepStartTime / 1000 : stepStartTime) : null;
-  const groups = groupMetricsByCategory(Object.keys(metrics));
+  const groups = groupMetricsByCategory(plottableNames);
+
+  // First-metric scaffold: when the metrics tab was previously rendered
+  // with an empty buffer, ``renderMetricsTab`` emitted a "No metrics
+  // recorded" empty-state and *no* chart containers. The same applies
+  // when a brand-new metric group shows up that wasn't present at the
+  // last full render. In either case, ``Plotly.extendTraces`` has no
+  // DOM node to write to and silently does nothing — which is what
+  // made the Metrics tab appear frozen until the user manually clicked
+  // the tab. Detect the missing scaffold and rebuild the tab from the
+  // live buffers. This is a pure client-side recovery; no REST fetch.
+  const groupNames = Object.keys(groups);
+  const anyMissing = groupNames.some(
+    g => document.getElementById(`mc-${cssId(g)}`) == null
+  );
+  if (anyMissing) {
+    const content = document.getElementById('step-tab-content');
+    if (content) {
+      renderMetricsTab(metrics, content, stepStartSec);
+      // ``renderMetricsTab`` freshly plots every group, so bookkeeping
+      // on the previous chart DOMs is already reset inside
+      // ``plotMetricGroup``. Nothing more to do this tick.
+      return;
+    }
+  }
+
   for (const [group, metricNames] of Object.entries(groups)) {
     const el = document.getElementById(`mc-${cssId(group)}`);
     if (!el || !el.data) continue;
@@ -254,7 +280,18 @@ function ingestServerMetrics(stepName, serverMetrics, state) {
   }
 }
 
-function getStepMetrics(stepName, state) { return state.metricBuffers[stepName] || {}; }
+// Return the *live* metric buffer for ``stepName`` — always lazily
+// creating the entry in ``state.metricBuffers`` so every caller sees
+// the same object reference. Without this, a caller that hit an
+// undefined bucket would get a throwaway ``{}``; a later
+// ``bufferMetric`` would then assign a *new* ``{}`` to state and any
+// reference cached by a closure (e.g. the tab ``onclick`` handler or
+// ``renderTabs``/``renderMetricsTab``) would stay stale and keep
+// showing "No metrics recorded" even though metrics were arriving.
+function getStepMetrics(stepName, state) {
+  if (!state.metricBuffers[stepName]) state.metricBuffers[stepName] = {};
+  return state.metricBuffers[stepName];
+}
 
 // ── Tab system ───────────────────────────────────────────────────────────
 function determineTabs(detail, metrics) {

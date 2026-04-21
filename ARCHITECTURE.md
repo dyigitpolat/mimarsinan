@@ -215,6 +215,7 @@ The JSON configuration specifies:
 | `pruning` | Boolean; enables the Pruning Adaptation step (see §5.9) |
 | `pruning_fraction` | Float (0–1); fraction of least-significant rows/columns to prune (e.g. `0.05`) |
 | `generate_visualizations` | Boolean (default `false`); enables SVG/PNG visualization output in Soft Core and Hard Core mapping steps |
+| `store_pre_pruning_heatmap` | Boolean (default `true`); controls whether Soft Core Mapping retains a pre-compaction weight copy on each `NeuralCore`. Powers the monitor GUI's IR Graph / Hardware pre-vs-post pruning heatmap views. Set to `false` to save memory on very large models at the cost of losing those views. Independent from `generate_visualizations` (graphviz DOT/SVG dumps). |
 
 ### Platform Constraints Protocol
 
