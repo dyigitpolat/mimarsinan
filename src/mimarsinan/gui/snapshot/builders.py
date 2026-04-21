@@ -18,6 +18,52 @@ logger = logging.getLogger("mimarsinan.gui")
 
 from .helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
 from mimarsinan.common.layer_key import layer_key_from_node_name
+from mimarsinan.gui.resources import ResourceDescriptor
+
+
+# --- Resource kinds (stable string constants used in URL paths) -----------
+# Bump cautiously: frontend URL builders hard-code these.
+RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
+RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
+RESOURCE_KIND_IR_BANK_HEATMAP = "ir_bank_heatmap"
+RESOURCE_KIND_HARD_CORE_HEATMAP = "hard_core_heatmap"
+RESOURCE_KIND_CONNECTIVITY = "connectivity"
+RESOURCE_KIND_PRUNING_LAYER_HEATMAP = "pruning_layer_heatmap"
+
+
+def _make_heatmap_producer(
+    matrix: Any,
+    *,
+    pruned_row_mask: list | None = None,
+    pruned_col_mask: list | None = None,
+):
+    """Build a zero-arg closure that renders *matrix* to PNG bytes lazily.
+
+    The matrix is deep-copied into a plain NumPy array at capture time so
+    the closure is isolated from subsequent pipeline mutation (next-step
+    reassignment, in-place updates, tensor frees). Mask lists are coerced
+    to plain Python lists for the same reason.
+
+    This is critical because the snapshot may be rendered much later — on
+    first HTTP fetch from the ``ResourceStore`` — by which point the
+    pipeline may have mutated the original arrays.
+    """
+    try:
+        matrix_copy: Any = np.asarray(matrix).copy()
+    except Exception:
+        matrix_copy = matrix
+    rr = list(pruned_row_mask) if pruned_row_mask is not None else None
+    cc = list(pruned_col_mask) if pruned_col_mask is not None else None
+
+    def produce() -> bytes:
+        from mimarsinan.gui.heatmap_renderer import render_heatmap_png_bytes
+        return render_heatmap_png_bytes(
+            matrix_copy,
+            pruned_row_mask=rr,
+            pruned_col_mask=cc,
+        )
+
+    return produce
 
 def snapshot_model(model: Any) -> dict:
     """Extract per-layer weight/bias statistics and architecture info."""
@@ -111,16 +157,20 @@ def _get_model_perceptrons(model: Any) -> list:
     return []
 
 
-def snapshot_pruning_layers(model: Any) -> dict:
-    """Extract per-layer weight heatmaps with pruning masks for the Pruning Adaptation step.
+def snapshot_pruning_layers(model: Any) -> tuple[dict, list[ResourceDescriptor]]:
+    """Extract per-layer weight-heatmap summaries + lazy heatmap descriptors.
 
-    Only includes perceptrons that have both prune_row_mask and prune_col_mask buffers
-    with lengths matching layer.weight.shape. Returns image data URIs only (no raw matrices).
+    The returned summary **never** embeds image bytes: each layer carries
+    ``has_heatmap: True`` and the caller is expected to resolve the image
+    through ``/api/steps/{step}/resources/pruning_layer_heatmap/layer/{idx}``
+    (served from the registered :class:`ResourceDescriptor`).
+
+    Only includes perceptrons that have both ``prune_row_mask`` and
+    ``prune_col_mask`` buffers with lengths matching ``layer.weight.shape``.
     """
-    from mimarsinan.gui.heatmap_renderer import render_heatmap_png_data_uri
-
     perceptrons = _get_model_perceptrons(model)
     layers_out: list[dict] = []
+    descriptors: list[ResourceDescriptor] = []
 
     for idx, p in enumerate(perceptrons):
         layer = getattr(p, "layer", None)
@@ -136,28 +186,34 @@ def snapshot_pruning_layers(model: Any) -> dict:
         col_list = prune_col.detach().cpu().tolist()
         if len(row_list) != out_f or len(col_list) != in_f:
             continue
-        try:
-            heatmap_uri = render_heatmap_png_data_uri(
-                weight,
-                pruned_row_mask=row_list,
-                pruned_col_mask=col_list,
-            )
-        except Exception:
-            logger.debug("Failed to render pruning heatmap for layer %s", idx, exc_info=True)
-            continue
         layer_name = getattr(p, "name", f"perceptron_{idx}")
         pruned_rows = sum(1 for x in row_list if x)
         pruned_cols = sum(1 for x in col_list if x)
+        rid = f"layer/{idx}"
         layers_out.append({
             "layer_index": idx,
             "layer_name": str(layer_name),
             "shape": [int(out_f), int(in_f)],
             "pruned_rows": int(pruned_rows),
             "pruned_cols": int(pruned_cols),
-            "heatmap_image": heatmap_uri,
+            "has_heatmap": True,
+            "heatmap_resource": {
+                "kind": RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
+                "rid": rid,
+            },
         })
+        descriptors.append(ResourceDescriptor(
+            kind=RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
+            rid=rid,
+            producer=_make_heatmap_producer(
+                weight,
+                pruned_row_mask=row_list,
+                pruned_col_mask=col_list,
+            ),
+            media_type="image/png",
+        ))
 
-    return {"layers": layers_out}
+    return {"layers": layers_out}, descriptors
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +221,15 @@ def snapshot_pruning_layers(model: Any) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def snapshot_ir_graph(ir_graph: Any) -> dict:
+def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
     """Extract topology, core stats, thresholds, latencies from an IRGraph.
+
+    Returns ``(summary_dict, resource_descriptors)``. The summary never
+    embeds PNG bytes; per-node heatmaps and per-weight-bank heatmaps are
+    exposed as ``has_heatmap`` / ``has_pre_pruning`` flags with a
+    ``heatmap_resource`` / ``pre_pruning_resource`` descriptor hint the
+    frontend uses to construct
+    ``/api/steps/{step}/resources/{kind}/{rid}`` URLs.
 
     Includes layer-group annotations and pre-computed group summaries for
     the layered topology frontend view.  Special virtual nodes (input,
@@ -175,29 +238,38 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
     Nodes receive a ``topo_order`` field (their index in the topologically
     sorted ``ir_graph.nodes``) so that the frontend can interleave ComputeOps
     at their correct position in the data flow.
-
-    Weight banks are emitted once (heatmap image per bank) so the frontend can
-    avoid redundant soft-core heatmap visualizations. Heatmap images are
-    generated on the backend; only image data URIs are sent, not weight matrices.
     """
-    from mimarsinan.gui.heatmap_renderer import render_heatmap_png_data_uri
     from mimarsinan.mapping.ir import NeuralCore, ComputeOp
 
     nodes_info: list[dict] = []
     edges: list[dict] = []
+    descriptors: list[ResourceDescriptor] = []
 
     neural_cores = []
     compute_ops = []
 
-    # Emit one heatmap image per weight bank (backend-rendered, no raw matrices)
+    # One heatmap resource per weight bank (backend-rendered on first request,
+    # not embedded in the summary JSON).
     weight_banks: dict = {}
     try:
         for bank_id, bank in getattr(ir_graph, "weight_banks", {}).items():
             try:
-                uri = render_heatmap_png_data_uri(bank.core_matrix)
-                weight_banks[int(bank_id)] = {"heatmap_image": uri}
+                rid = f"bank/{int(bank_id)}"
+                weight_banks[int(bank_id)] = {
+                    "has_heatmap": True,
+                    "heatmap_resource": {
+                        "kind": RESOURCE_KIND_IR_BANK_HEATMAP,
+                        "rid": rid,
+                    },
+                }
+                descriptors.append(ResourceDescriptor(
+                    kind=RESOURCE_KIND_IR_BANK_HEATMAP,
+                    rid=rid,
+                    producer=_make_heatmap_producer(bank.core_matrix),
+                    media_type="image/png",
+                ))
             except Exception:
-                logger.debug("Failed to render heatmap for weight bank %s", bank_id, exc_info=True)
+                logger.debug("Failed to register heatmap for weight bank %s", bank_id, exc_info=True)
     except Exception:
         pass
 
@@ -241,28 +313,48 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
             info["coalescing_role"] = node.coalescing_role
             if node.weight_bank_id is not None:
                 info["weight_bank_id"] = int(node.weight_bank_id)
-            # Emit per-core heatmap for every NeuralCore (owned and bank-backed)
-            try:
-                info["heatmap_image"] = render_heatmap_png_data_uri(mat)
-            except Exception:
-                logger.debug("Failed to render heatmap for core %s", node.id, exc_info=True)
+            # Register a heatmap resource for every NeuralCore (owned and bank-backed).
+            core_rid = f"core/{int(node.id)}"
+            info["has_heatmap"] = True
+            info["heatmap_resource"] = {
+                "kind": RESOURCE_KIND_IR_CORE_HEATMAP,
+                "rid": core_rid,
+            }
+            descriptors.append(ResourceDescriptor(
+                kind=RESOURCE_KIND_IR_CORE_HEATMAP,
+                rid=core_rid,
+                producer=_make_heatmap_producer(mat),
+                media_type="image/png",
+            ))
+
             pre = getattr(node, "pre_pruning_heatmap", None)
-            # Use pre-compaction masks for red markings when present (non–bank-backed cores after ir_pruning)
+            # Use pre-compaction masks for red markings when present
+            # (non–bank-backed cores after ir_pruning).
             row_mask = getattr(node, "pre_pruning_row_mask", None) or getattr(node, "pruned_row_mask", None)
             col_mask = getattr(node, "pre_pruning_col_mask", None) or getattr(node, "pruned_col_mask", None)
             if pre is not None and row_mask is not None and col_mask is not None:
                 try:
                     pre_arr = np.array(pre, dtype=np.float64)
                     if pre_arr.shape[0] == len(row_mask) and pre_arr.shape[1] == len(col_mask):
-                        info["pre_pruning_heatmap_image"] = render_heatmap_png_data_uri(
-                            pre_arr,
-                            pruned_row_mask=row_mask,
-                            pruned_col_mask=col_mask,
-                        )
+                        info["has_pre_pruning"] = True
+                        info["pre_pruning_resource"] = {
+                            "kind": RESOURCE_KIND_IR_CORE_PRE_PRUNING,
+                            "rid": core_rid,
+                        }
                         info["pre_pruning_axons"] = int(pre_arr.shape[0])
                         info["pre_pruning_neurons"] = int(pre_arr.shape[1])
+                        descriptors.append(ResourceDescriptor(
+                            kind=RESOURCE_KIND_IR_CORE_PRE_PRUNING,
+                            rid=core_rid,
+                            producer=_make_heatmap_producer(
+                                pre_arr,
+                                pruned_row_mask=list(row_mask),
+                                pruned_col_mask=list(col_mask),
+                            ),
+                            media_type="image/png",
+                        ))
                 except Exception:
-                    logger.debug("Failed to render pre-pruning heatmap for core %s", node.id, exc_info=True)
+                    logger.debug("Failed to register pre-pruning heatmap for core %s", node.id, exc_info=True)
             neural_cores.append(info)
         else:
             info["layer_group"] = node.name
@@ -312,7 +404,7 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
     axon_counts = [c["axons"] for c in neural_cores]
     neuron_counts = [c["neurons"] for c in neural_cores]
 
-    return {
+    summary = {
         "num_nodes": len(ir_graph.nodes),
         "num_neural_cores": len(neural_cores),
         "num_compute_ops": len(compute_ops),
@@ -328,6 +420,7 @@ def snapshot_ir_graph(ir_graph: Any) -> dict:
         "neuron_counts": neuron_counts,
         "compute_op_types": list({c["op_type"] for c in compute_ops}),
     }
+    return summary, descriptors
 
 
 def _merge_consecutive_compute_groups(groups: list[dict]) -> list[dict]:
@@ -605,11 +698,44 @@ def _group_consecutive_compute_stages(stages: list[dict]) -> list[dict]:
     return result
 
 
-def snapshot_hard_core_mapping(mapping: Any) -> dict:
-    """Extract utilization, packing, stage flow, and per-core detail from HybridHardCoreMapping."""
+def _make_connectivity_producer(hcm: Any, segment_index: int):
+    """Zero-arg closure extracting connectivity spans for *hcm* on first request.
+
+    Captures *hcm* by reference. The hard-core mapping is finalized in the
+    Hard Core Mapping step and must not be mutated by downstream steps; if
+    that invariant changes, this closure will need to snapshot the
+    relevant fields eagerly.
+    """
+    def produce() -> list[dict]:
+        try:
+            return _extract_core_connectivity(hcm, segment_index)
+        except Exception:
+            logger.debug(
+                "Lazy connectivity extraction failed for segment %d",
+                segment_index,
+                exc_info=True,
+            )
+            return []
+    return produce
+
+
+def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescriptor]]:
+    """Extract utilization, packing, stage flow, and per-core detail.
+
+    Returns ``(summary_dict, resource_descriptors)``. The summary omits two
+    classes of heavy payload:
+
+    * Per-core PNG heatmaps (previously embedded as base64 data URIs).
+      Replaced with ``has_heatmap: True`` + ``heatmap_resource`` hints.
+    * Per-stage ``connectivity`` span arrays (often thousands of entries
+      for big models). Replaced with ``has_connectivity: True`` and the
+      stable ``segment_index`` so the frontend can fetch spans on click
+      via ``/api/steps/{step}/resources/connectivity/seg/{segment_index}``.
+    """
     stages_info: list[dict] = []
     all_core_utils: list[dict] = []
     neural_segment_idx = 0
+    descriptors: list[ResourceDescriptor] = []
 
     for i, stage in enumerate(mapping.stages):
         stage_info: dict = {"index": i, "kind": stage.kind, "name": stage.name}
@@ -645,12 +771,23 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
                     "latency": core.latency,
                 }
                 try:
-                    from mimarsinan.gui.heatmap_renderer import render_heatmap_png_data_uri as _render_heatmap
-                    core_d["heatmap_image"] = _render_heatmap(core.core_matrix)
-                    core_d["heatmap_axons"] = core.core_matrix.shape[0]
-                    core_d["heatmap_neurons"] = core.core_matrix.shape[1]
+                    mat = core.core_matrix
+                    rid = f"seg/{seg_idx}/core/{ci}"
+                    core_d["has_heatmap"] = True
+                    core_d["heatmap_resource"] = {
+                        "kind": RESOURCE_KIND_HARD_CORE_HEATMAP,
+                        "rid": rid,
+                    }
+                    core_d["heatmap_axons"] = int(mat.shape[0])
+                    core_d["heatmap_neurons"] = int(mat.shape[1])
+                    descriptors.append(ResourceDescriptor(
+                        kind=RESOURCE_KIND_HARD_CORE_HEATMAP,
+                        rid=rid,
+                        producer=_make_heatmap_producer(mat),
+                        media_type="image/png",
+                    ))
                 except Exception:
-                    logger.debug("Failed to render heatmap for core %d", ci, exc_info=True)
+                    logger.debug("Failed to register heatmap for hard core %d", ci, exc_info=True)
                 placements = getattr(hcm, "soft_core_placements_per_hard_core", None)
                 if placements is None:
                     raise ValueError(
@@ -684,10 +821,20 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
             stage_info["num_cores"] = len(hcm.cores)
             stage_info["cores"] = cores_detail
 
-            try:
-                stage_info["connectivity"] = _extract_core_connectivity(hcm, seg_idx)
-            except Exception:
-                logger.debug("Failed to extract connectivity for stage %d", i, exc_info=True)
+            # Connectivity is fetched on click; register a descriptor instead
+            # of extracting (and serialising) the whole span list here.
+            conn_rid = f"seg/{seg_idx}"
+            stage_info["has_connectivity"] = True
+            stage_info["connectivity_resource"] = {
+                "kind": RESOURCE_KIND_CONNECTIVITY,
+                "rid": conn_rid,
+            }
+            descriptors.append(ResourceDescriptor(
+                kind=RESOURCE_KIND_CONNECTIVITY,
+                rid=conn_rid,
+                producer=_make_connectivity_producer(hcm, seg_idx),
+                media_type="application/json",
+            ))
 
             try:
                 stage_info["input_map"] = [
@@ -716,7 +863,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
     global_core_layout = _compute_global_core_layout(stages_info)
 
     utilizations = [c["utilization"] for c in all_core_utils]
-    return {
+    summary = {
         "num_stages": len(mapping.stages),
         "num_neural_segments": len(mapping.get_neural_segments()),
         "num_compute_ops": len(mapping.get_compute_ops()),
@@ -727,6 +874,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> dict:
         "utilization_histogram": _histogram(np.array(utilizations)) if utilizations else None,
         "mean_utilization": float(np.mean(utilizations)) if utilizations else 0.0,
     }
+    return summary, descriptors
 
 
 def _compute_global_core_layout(stages: list[dict]) -> list[dict]:
@@ -909,7 +1057,7 @@ def build_step_snapshot(
     pipeline: Any,
     step_name: str,
     step: Any = None,
-) -> tuple[dict, dict[str, str]]:
+) -> tuple[dict, dict[str, str], list[ResourceDescriptor]]:
     """Build a rich snapshot from the pipeline cache after a step completes.
 
     If *step* is provided (or resolved from pipeline.steps by step_name), only
@@ -919,11 +1067,19 @@ def build_step_snapshot(
     included and snapshot_key_kinds is empty.
 
     Returns:
-        (snapshot_dict, snapshot_key_kinds) where snapshot_key_kinds maps
-        snapshot key to "new" or "edited".
+        ``(snapshot_dict, snapshot_key_kinds, resource_descriptors)``.
+
+        * ``snapshot_dict`` is lightweight JSON-safe metadata only; PNG
+          heatmaps and connectivity arrays are **not** embedded.
+        * ``snapshot_key_kinds`` maps snapshot key to ``"new"`` / ``"edited"``.
+        * ``resource_descriptors`` is a flat list aggregated across all
+          sub-builders; the caller (``GUIHandle.on_step_end``) forwards it
+          to the :class:`ResourceStore` so heatmaps/connectivity can be
+          fetched on demand.
     """
     snapshot: dict = {"step_name": step_name}
     snapshot_key_kinds: dict[str, str] = {}
+    descriptors: list[ResourceDescriptor] = []
     cache = pipeline.cache
 
     if step is None:
@@ -960,7 +1116,9 @@ def build_step_snapshot(
 
         elif short == "ir_graph":
             try:
-                snapshot["ir_graph"] = snapshot_ir_graph(cache.get(key))
+                ir_summary, ir_descs = snapshot_ir_graph(cache.get(key))
+                snapshot["ir_graph"] = ir_summary
+                descriptors.extend(ir_descs)
                 if step is not None:
                     snapshot_key_kinds["ir_graph"] = kind
             except Exception:
@@ -968,7 +1126,9 @@ def build_step_snapshot(
 
         elif short == "hard_core_mapping":
             try:
-                snapshot["hard_core_mapping"] = snapshot_hard_core_mapping(cache.get(key))
+                hcm_summary, hcm_descs = snapshot_hard_core_mapping(cache.get(key))
+                snapshot["hard_core_mapping"] = hcm_summary
+                descriptors.extend(hcm_descs)
                 if step is not None:
                     snapshot_key_kinds["hard_core_mapping"] = kind
             except Exception:
@@ -1013,7 +1173,9 @@ def build_step_snapshot(
             short = key.split(".", 1)[-1] if "." in key else key
             if short == "ir_graph":
                 try:
-                    snapshot["ir_graph"] = snapshot_ir_graph(cache.get(key))
+                    ir_summary, ir_descs = snapshot_ir_graph(cache.get(key))
+                    snapshot["ir_graph"] = ir_summary
+                    descriptors.extend(ir_descs)
                     break
                 except Exception:
                     logger.debug("Failed to snapshot ir_graph for hardware tab from key %r", key, exc_info=True)
@@ -1025,7 +1187,9 @@ def build_step_snapshot(
             if short in ("model", "fused_model"):
                 try:
                     model_obj = cache.get(key)
-                    snapshot["pruning_layers"] = snapshot_pruning_layers(model_obj)
+                    pr_summary, pr_descs = snapshot_pruning_layers(model_obj)
+                    snapshot["pruning_layers"] = pr_summary
+                    descriptors.extend(pr_descs)
                     if step is not None:
                         snapshot_key_kinds["pruning_layers"] = "new"
                 except Exception:
@@ -1040,4 +1204,4 @@ def build_step_snapshot(
             "cache_entries": ", ".join(sorted(set(cache_keys))) or "none",
         }
 
-    return snapshot, snapshot_key_kinds
+    return snapshot, snapshot_key_kinds, descriptors

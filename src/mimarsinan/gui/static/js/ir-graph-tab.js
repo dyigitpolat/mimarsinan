@@ -13,8 +13,10 @@
  * Perceptron (group) detail includes soft-core pre/post pruning heatmaps,
  * with weight banks reused to avoid redundant visualizations. */
 import { esc, safeReact, plotHistogram } from './util.js';
+import { imgSrcAttr } from './resource-urls.js';
 
-// Heatmap images are generated on the backend; frontend only displays heatmap_image (data URI).
+// Heatmap images are served lazily from /api/.../resources/ endpoints;
+// snapshots only carry `{kind, rid}` references.
 
 window._irGraphState = window._irGraphState || { selectedTier: null, detailGroup: null, selectedEdge: null };
 
@@ -588,14 +590,17 @@ function buildGroupDetail(g, nodeById, irGraph) {
       heatmapGroups.get(key).coreNames.push(c.name);
       continue;
     }
-    const postUri = bankId != null ? weightBanks[bankId]?.heatmap_image : c.heatmap_image;
+    const bank = bankId != null ? weightBanks[bankId] : null;
+    const postResource = bankId != null ? bank?.heatmap_resource : c.heatmap_resource;
+    const postUri = imgSrcAttr(postResource);
     if (!postUri) continue;
+    const preResource = c.pre_pruning_resource || null;
     const entry = {
       title: bankId != null ? `Weight bank ${bankId}` : `Core ${c.id}`,
       coreIds: [c.id],
       coreNames: [c.name],
       postImageUri: postUri,
-      preImageUri: c.pre_pruning_heatmap_image || null,
+      preImageUri: imgSrcAttr(preResource) || null,
       postAxons: c.axons ?? 0,
       postNeurons: c.neurons ?? 0,
       preAxons: c.pre_pruning_axons ?? null,
@@ -654,10 +659,10 @@ function buildGroupDetail(g, nodeById, irGraph) {
     if (entry.preImageUri) {
       const dimLabel = entry.preAxons != null && entry.preNeurons != null ? ` (${entry.preAxons}×${entry.preNeurons})` : '';
       const style = preSize ? `width:${preSize.w}px;height:${preSize.h}px;display:block;object-fit:fill;border:1px solid #2e3140;border-radius:4px` : 'max-width:280px;height:auto;display:block;border:1px solid #2e3140;border-radius:4px';
-      html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Pre-pruning${dimLabel}</div><img src="${entry.preImageUri}" alt="Pre-pruning" class="ir-softcore-heatmap-img" style="${style}"></div>`;
+      html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Pre-pruning${dimLabel}</div><img src="${entry.preImageUri}" alt="Pre-pruning" loading="lazy" decoding="async" class="ir-softcore-heatmap-img" style="${style}"></div>`;
     }
     const postDimLabel = ` (${entry.postAxons}×${entry.postNeurons})`;
-    html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Post-pruning${postDimLabel}</div><img src="${entry.postImageUri}" alt="Post-pruning" class="ir-softcore-heatmap-img" style="width:${postSize.w}px;height:${postSize.h}px;display:block;object-fit:fill;border:1px solid #2e3140;border-radius:4px"></div>`;
+    html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Post-pruning${postDimLabel}</div><img src="${entry.postImageUri}" alt="Post-pruning" loading="lazy" decoding="async" class="ir-softcore-heatmap-img" style="width:${postSize.w}px;height:${postSize.h}px;display:block;object-fit:fill;border:1px solid #2e3140;border-radius:4px"></div>`;
     html += '</div></div></div>';
   }
 

@@ -16,7 +16,7 @@ import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -157,6 +157,43 @@ def _get_softcores_from_request(body: dict):
     return _get_layout_result_from_request(body).softcores
 
 
+_RESOURCE_MEDIA_TYPE_BY_KIND = {
+    # Heatmap kinds → image/png
+    "ir_core_heatmap": "image/png",
+    "ir_core_pre_pruning": "image/png",
+    "ir_bank_heatmap": "image/png",
+    "hard_core_heatmap": "image/png",
+    "pruning_layer_heatmap": "image/png",
+    # JSON resource kinds
+    "connectivity": "application/json",
+}
+
+
+def _serve_resource_from_disk(
+    working_dir: str | None,
+    step_name: str,
+    kind: str,
+    rid: str,
+) -> Response:
+    """Load a resource file written by the snapshot executor and return it
+    with the correct Content-Type. Used for cross-process resource serving
+    (historical runs and subprocess-spawned active runs that persist lazy
+    outputs to ``_GUI_STATE/resources/``).
+    """
+    from mimarsinan.gui.persistence import load_resource_from_disk
+
+    media_type = _RESOURCE_MEDIA_TYPE_BY_KIND.get(kind)
+    if media_type is None:
+        return JSONResponse(status_code=404, content={"error": f"unknown resource kind {kind!r}"})
+    if not working_dir:
+        return JSONResponse(status_code=404, content={"error": "run not found"})
+    payload = load_resource_from_disk(working_dir, step_name, kind, rid, media_type=media_type)
+    if payload is None:
+        return JSONResponse(status_code=404, content={"error": "resource not found"})
+    headers = {"Cache-Control": "public, max-age=3600, immutable"}
+    return Response(content=payload, media_type=media_type, headers=headers)
+
+
 def create_app(
     collector: "DataCollector",
     run_config_fn: Callable[[dict, "DataCollector"], None] | None = None,
@@ -166,6 +203,7 @@ def create_app(
         list_runs, get_run_config, get_run_pipeline,
         get_run_step_detail as hist_step_detail,
         get_run_console_logs,
+        get_runs_root, _validate_run_id,
     )
     from mimarsinan.gui.persistence import load_console_logs
     from mimarsinan.gui.templates import (
@@ -196,15 +234,73 @@ def create_app(
         return collector.get_pipeline_overview()
 
     @app.get("/api/steps/{step_name}")
-    def step_detail(step_name: str):
-        detail = collector.get_step_detail(step_name)
+    def step_detail(step_name: str, request: Request, since_seq: int = 0):
+        """Step detail with HTTP ETag caching + ``since_seq`` metric pagination.
+
+        * ``If-None-Match`` → 304 when the ``snapshot_etag`` matches. The
+          frontend uses this during idle live-training polls so unchanged
+          snapshots don't re-ship the whole payload.
+        * ``?since_seq=N`` filters the ``metrics`` list to ``seq > N``. The
+          ``latest_metric_seq`` in the payload lets the client advance its
+          cursor even when the filtered list is empty.
+        """
+        etag = collector.get_step_snapshot_etag(step_name)
+        if etag is None:
+            return JSONResponse(status_code=404, content={"error": "step not found"})
+        inm = request.headers.get("if-none-match")
+        if inm and inm == etag:
+            return Response(status_code=304, headers={"ETag": etag})
+        detail = collector.get_step_detail(step_name, since_seq=since_seq)
         if detail is None:
-            return {"error": "step not found"}
-        return detail
+            return JSONResponse(status_code=404, content={"error": "step not found"})
+        return _SafeJSONResponse(content=detail, headers={"ETag": etag})
 
     @app.get("/api/steps/{step_name}/metrics")
     def step_metrics(step_name: str):
         return collector.get_step_metrics(step_name)
+
+    # -- Lazy resources (heatmaps / connectivity for the live run) ------------
+
+    @app.get("/api/steps/{step_name}/resources/{kind}/{rid:path}")
+    def step_resource(step_name: str, kind: str, rid: str):
+        """Fetch a lazy resource for a live step.
+
+        Tries the in-memory :class:`ResourceStore` first (live run owned
+        by this server process); falls back to the on-disk persisted
+        copy (populated by the snapshot executor) so resources keep
+        working after server restarts.
+        """
+        store = collector.get_resource_store()
+        media_type = _RESOURCE_MEDIA_TYPE_BY_KIND.get(kind)
+        if media_type is None:
+            return JSONResponse(status_code=404, content={"error": f"unknown resource kind {kind!r}"})
+        if store is not None:
+            if media_type == "image/png":
+                hit = store.get_bytes(step_name, kind, rid)
+                if hit is not None:
+                    payload, mt = hit
+                    return Response(
+                        content=payload,
+                        media_type=mt,
+                        headers={"Cache-Control": "public, max-age=3600, immutable"},
+                    )
+            else:
+                payload = store.get_json(step_name, kind, rid)
+                if payload is not None:
+                    return _SafeJSONResponse(
+                        content=payload,
+                        headers={"Cache-Control": "public, max-age=3600, immutable"},
+                    )
+        working_dir = None
+        try:
+            from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline  # noqa: F401
+        except Exception:
+            pass
+        # No explicit working_dir is exposed here — disk fallback is only
+        # available for subprocess/historical runs (handled by the mirror
+        # endpoints below). For the primary collector, if the in-memory
+        # store missed, the resource simply isn't available.
+        return JSONResponse(status_code=404, content={"error": "resource not found"})
 
     @app.get("/api/metrics")
     def all_metrics():
@@ -295,6 +391,23 @@ def create_app(
     def api_run_console(run_id: str, offset: int = 0):
         return get_run_console_logs(run_id, offset=offset)
 
+    @app.get("/api/runs/{run_id}/steps/{step_name}/resources/{kind}/{rid:path}")
+    def api_run_step_resource(run_id: str, step_name: str, kind: str, rid: str):
+        """Serve a lazy resource for a historical run from its on-disk cache.
+
+        Legacy runs that were persisted before the lazy-resource split
+        naturally return 404 — they never wrote the standalone PNG/JSON
+        files (this matches the ``newonly`` rollout decision).
+        """
+        try:
+            _validate_run_id(run_id)
+        except ValueError:
+            return JSONResponse(status_code=400, content={"error": "invalid run_id"})
+        run_dir = os.path.join(get_runs_root(), run_id)
+        if not os.path.isdir(run_dir):
+            return JSONResponse(status_code=404, content={"error": "run not found"})
+        return _serve_resource_from_disk(run_dir, step_name, kind, rid)
+
     @app.get("/api/runs/{run_id}/discovered")
     def api_run_discovered(run_id: str):
         """Return discovered architectural parameters from a previous search run.
@@ -383,6 +496,20 @@ def create_app(
             return JSONResponse(status_code=404, content={"error": "not found"})
         ok = process_manager.kill_run(run_id)
         return {"killed": ok}
+
+    @app.get("/api/active_runs/{run_id}/steps/{step_name}/resources/{kind}/{rid:path}")
+    def api_active_step_resource(run_id: str, step_name: str, kind: str, rid: str):
+        """Serve a lazy resource for a subprocess-spawned active run.
+
+        The child writes resources to ``_GUI_STATE/resources/...`` via
+        the snapshot executor; the parent server reads those files here.
+        """
+        if process_manager is None:
+            return JSONResponse(status_code=404, content={"error": "not found"})
+        working_dir = process_manager.get_working_dir(run_id)
+        if working_dir is None:
+            return JSONResponse(status_code=404, content={"error": "run not found"})
+        return _serve_resource_from_disk(working_dir, step_name, kind, rid)
 
     @app.get("/api/active_runs/{run_id}/console")
     def api_active_console(run_id: str, offset: int = 0):
@@ -671,6 +798,54 @@ def create_app(
             pass
         finally:
             collector.remove_ws_listener(ws)
+
+    # -- Real-time streaming for subprocess-spawned active runs ----------------
+    #
+    # Previously the frontend polled ``/api/active_runs/{rid}/pipeline`` and
+    # ``.../steps/{name}`` every 3 s, so every metric arrived in visibly
+    # batched flushes. ``ActiveRunHub`` tails the subprocess's
+    # ``live_metrics.jsonl`` and ``steps.json`` files and pushes per-line
+    # events over this WS so the charts update at ~20 Hz instead.
+    if process_manager is not None:
+        from mimarsinan.gui.active_run_stream import ActiveRunHub
+
+        def _active_overview(run_id: str):
+            try:
+                return process_manager.get_run_detail(run_id)
+            except Exception:
+                return None
+
+        active_hub = ActiveRunHub(
+            get_working_dir=process_manager.get_working_dir,
+            build_overview=_active_overview,
+        )
+        # Expose on the app so tests and shutdown hooks can inspect it.
+        app.state.active_run_hub = active_hub
+
+        @app.websocket("/ws/active_runs/{run_id}")
+        async def active_run_ws(ws: WebSocket, run_id: str):
+            await ws.accept()
+            loop = asyncio.get_event_loop()
+
+            def _send(msg: dict) -> None:
+                # Tailer threads call this; schedule the actual write on
+                # the event loop so slow clients never stall the tailer.
+                try:
+                    asyncio.run_coroutine_threadsafe(ws.send_json(msg), loop)
+                except Exception:
+                    logger.debug("Failed to schedule active-run WS send", exc_info=True)
+
+            subscribed = active_hub.subscribe(run_id, ws, _send)
+            if not subscribed:
+                await ws.close(code=1008)
+                return
+            try:
+                while True:
+                    await ws.receive_text()
+            except WebSocketDisconnect:
+                pass
+            finally:
+                active_hub.unsubscribe(run_id, ws)
 
     # -- Static files ----------------------------------------------------------
 

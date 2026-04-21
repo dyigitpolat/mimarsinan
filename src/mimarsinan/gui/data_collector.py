@@ -12,7 +12,10 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Iterable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mimarsinan.gui.resources import ResourceDescriptor, ResourceStore
 
 logger = logging.getLogger("mimarsinan.gui")
 
@@ -52,6 +55,10 @@ class StepRecord:
     snapshot: dict | None = None
     snapshot_key_kinds: dict | None = None  # snapshot key -> "new" | "edited"
     error: str | None = None  # set when step_failed; shown in step detail
+    # Monotonic version bumped each time the snapshot or terminal state
+    # is written. Used to build a stable HTTP ETag for /api/steps/{name}
+    # so the frontend can short-circuit identical polls.
+    snapshot_version: int = 0
 
 
 class DataCollector:
@@ -74,6 +81,25 @@ class DataCollector:
         self._pipeline_thread: Optional[threading.Thread] = None
         self._metric_callback: Any = None
         self._console_callback: Any = None
+
+        self._resource_store: Optional["ResourceStore"] = None
+
+    # -- Resource store wiring -------------------------------------------------
+
+    def set_resource_store(self, store: "ResourceStore | None") -> None:
+        """Attach a lazy :class:`ResourceStore` for step-scoped heavy artifacts.
+
+        Snapshot builders emit ``ResourceDescriptor`` objects alongside the
+        lightweight summary dict; when set, the collector routes those
+        descriptors to *store* on ``step_completed`` and evicts them on
+        ``step_started`` so re-runs never serve stale bytes.
+        """
+        with self._lock:
+            self._resource_store = store
+
+    def get_resource_store(self) -> "ResourceStore | None":
+        with self._lock:
+            return self._resource_store
 
     # -- Pipeline thread (for graceful exit) -----------------------------------
 
@@ -126,8 +152,13 @@ class DataCollector:
             rec.target_metric = None
             rec.snapshot = None
             rec.snapshot_key_kinds = None
+            rec.snapshot_version += 1
             self._metrics = [m for m in self._metrics if m.step_name != step_name]
+            store = self._resource_store
+        if store is not None:
+            store.clear_step(step_name)
         self._broadcast({"type": "step_started", "step": step_name})
+        self._broadcast_pipeline_overview()
 
     def step_completed(
         self,
@@ -135,6 +166,7 @@ class DataCollector:
         target_metric: float | None = None,
         snapshot: dict | None = None,
         snapshot_key_kinds: dict | None = None,
+        resources: Iterable["ResourceDescriptor"] | None = None,
     ) -> None:
         with self._lock:
             rec = self._steps.get(step_name)
@@ -146,13 +178,19 @@ class DataCollector:
                     rec.snapshot = snapshot
                 if snapshot_key_kinds is not None:
                     rec.snapshot_key_kinds = snapshot_key_kinds
+                rec.snapshot_version += 1
             if self._current_step == step_name:
                 self._current_step = None
+            store = self._resource_store
+        if resources and store is not None:
+            for desc in resources:
+                store.put(step_name, desc)
         self._broadcast({
             "type": "step_completed",
             "step": step_name,
             "target_metric": target_metric,
         })
+        self._broadcast_pipeline_overview()
 
     def step_failed(self, step_name: str, error: str = "") -> None:
         with self._lock:
@@ -161,9 +199,11 @@ class DataCollector:
                 rec.status = StepStatus.FAILED
                 rec.end_time = time.time()
                 rec.error = error or None
+                rec.snapshot_version += 1
             if self._current_step == step_name:
                 self._current_step = None
         self._broadcast({"type": "step_failed", "step": step_name, "error": error})
+        self._broadcast_pipeline_overview()
 
     def add_step_from_persisted(
         self,
@@ -298,11 +338,31 @@ class DataCollector:
                 "config": self._pipeline_config,
             }
 
-    def get_step_detail(self, step_name: str) -> dict | None:
+    def get_step_detail(
+        self,
+        step_name: str,
+        *,
+        since_seq: int = 0,
+    ) -> dict | None:
+        """Return step detail, optionally filtering metrics to ``seq > since_seq``.
+
+        The returned payload includes:
+
+        * ``snapshot_etag`` — monotonic token ``W/"{step}-{version}"``.
+          The version advances on ``step_started`` / ``step_completed`` /
+          ``step_failed`` but *not* on metric appends, so clients can set
+          ``If-None-Match`` and get ``304 Not Modified`` during live
+          training while still streaming new metrics via ``since_seq``.
+        * ``latest_metric_seq`` — highest metric seq for this step (even
+          if the filtered ``metrics`` list is empty), so the client can
+          advance its cursor without waiting for a non-empty response.
+        """
         with self._lock:
             rec = self._steps.get(step_name)
             if rec is None:
                 return None
+            step_metrics = [m for m in self._metrics if m.step_name == step_name]
+            latest_metric_seq = max((m.seq for m in step_metrics), default=0)
             metrics = [
                 {
                     "seq": m.seq,
@@ -311,8 +371,8 @@ class DataCollector:
                     "timestamp": m.timestamp,
                     "global_step": m.global_step,
                 }
-                for m in self._metrics
-                if m.step_name == step_name
+                for m in step_metrics
+                if m.seq > since_seq
             ]
             return {
                 "name": rec.name,
@@ -322,10 +382,20 @@ class DataCollector:
                 "duration": (rec.end_time - rec.start_time) if rec.start_time and rec.end_time else None,
                 "target_metric": rec.target_metric,
                 "metrics": metrics,
+                "latest_metric_seq": latest_metric_seq,
                 "snapshot": rec.snapshot,
                 "snapshot_key_kinds": rec.snapshot_key_kinds,
+                "snapshot_etag": _build_snapshot_etag(rec),
                 "error": rec.error,
             }
+
+    def get_step_snapshot_etag(self, step_name: str) -> str | None:
+        """Cheap ETag lookup for HTTP handlers doing ``If-None-Match`` checks."""
+        with self._lock:
+            rec = self._steps.get(step_name)
+            if rec is None:
+                return None
+            return _build_snapshot_etag(rec)
 
     def get_step_metrics(self, step_name: str) -> list[dict]:
         with self._lock:
@@ -353,6 +423,29 @@ class DataCollector:
                 }
                 for m in self._metrics
             ]
+
+    # -- Pipeline overview broadcasts ------------------------------------------
+
+    def _broadcast_pipeline_overview(self) -> None:
+        """Push a full pipeline overview to WS listeners.
+
+        Frontends relied on a 5 s REST poll (``/api/pipeline``) to learn
+        about step transitions; piggy-backing an overview message on
+        every step_started / step_completed / step_failed lets the UI
+        update instantly while still allowing the poll to serve as a
+        cheap watchdog.
+
+        We reuse :meth:`get_pipeline_overview` (which handles its own
+        locking + semantic-group lookup) and forward the result via the
+        existing broadcast path, so the message is sanitized the same
+        way as all other WS payloads.
+        """
+        try:
+            overview = self.get_pipeline_overview()
+        except Exception:
+            logger.debug("Failed to build pipeline overview for broadcast", exc_info=True)
+            return
+        self._broadcast({"type": "pipeline_overview", **overview})
 
     # -- WebSocket listener management ----------------------------------------
 
@@ -401,6 +494,19 @@ class DataCollector:
                 for ws in dead:
                     if ws in self._ws_listeners:
                         self._ws_listeners.remove(ws)
+
+
+def _build_snapshot_etag(rec: StepRecord) -> str:
+    """Construct a weak HTTP ETag for a step record.
+
+    Format: ``W/"{step_name}-{status}-{version}"``. The status component
+    makes ``pending`` → ``running`` → ``completed``/``failed`` transitions
+    visible even if ``snapshot_version`` somehow stays the same
+    (defensive; normally the version advances at every lifecycle edge).
+    We use a weak validator because the payload is not byte-stable (JSON
+    key ordering etc.) — only its logical content version matters.
+    """
+    return f'W/"{rec.name}-{rec.status.value}-{rec.snapshot_version}"'
 
 
 def _to_json_safe(value: Any) -> Any:

@@ -81,7 +81,10 @@ def _run_headless(config_path: str) -> None:
         except Exception:
             resolved_start_step = parsed["start_step"]
 
+    from mimarsinan.gui.resources import ResourceStore
+
     collector = DataCollector()
+    collector.set_resource_store(ResourceStore())
     gui = GUIHandle(pipeline, collector, persist_metrics=True, capture_stdio=False)
     collector._metric_callback = gui.on_metric
     pipeline.reporter = CompositeReporter([reporter, gui.reporter])
@@ -119,6 +122,14 @@ def _run_headless(config_path: str) -> None:
     finally:
         try:
             reporter.finish()
+        except Exception:
+            pass
+        try:
+            # Drain the snapshot executor so all pending step_completed
+            # broadcasts and steps.json persistence flush before the
+            # hard _exit below (which skips atexit handlers).
+            gui.wait_snapshots_idle(timeout=30.0)
+            gui.shutdown()
         except Exception:
             pass
         try:

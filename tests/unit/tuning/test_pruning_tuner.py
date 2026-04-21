@@ -1,10 +1,17 @@
 """Tests for PruningTuner and AdaptationManager pruning_rate integration."""
 
+import contextlib
 import pytest
 import torch
 import torch.nn as nn
 import copy
 from unittest.mock import patch
+
+
+@contextlib.contextmanager
+def _noop_validation_context(self, kind):
+    """Test stand-in for ``BasicTrainer.validation_context``."""
+    yield
 
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
@@ -203,6 +210,7 @@ class TestPruningTuner:
                 "train_steps_until_target": lambda self, *a, **k: None,
                 "test": lambda self: 0.5,
                 "train_n_steps": lambda self, lr, n, **kw: None,
+                "validation_context": _noop_validation_context,
             },
         )()
         tuner.trainer.model = model

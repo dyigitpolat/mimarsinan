@@ -112,15 +112,20 @@ class TunerBase:
             self.trainer.close()
 
     def _find_lr(self):
-        return find_lr_range_for_trainer(
-            self.trainer,
-            self.pipeline,
-            self._budget,
-            validate_fn=lambda: self.trainer.validate_n_batches(
-                self._budget.progress_eval_batches
-            ),
-            anchor_lr=self.pipeline_lr,
-        )
+        # All validations triggered by the LR range finder are *probes*:
+        # they evaluate transient states to choose an LR and are discarded
+        # before any commit. Tag them so the Accuracy panel can render
+        # them as a separate trace from committed tuning progress.
+        with self.trainer.validation_context("probe"):
+            return find_lr_range_for_trainer(
+                self.trainer,
+                self.pipeline,
+                self._budget,
+                validate_fn=lambda: self.trainer.validate_n_batches(
+                    self._budget.progress_eval_batches
+                ),
+                anchor_lr=self.pipeline_lr,
+            )
 
     # -- LR cache ---------------------------------------------------------------
     # The optimal recovery LR barely changes between adjacent rates for a
@@ -277,7 +282,11 @@ class SmoothAdaptationTuner(TunerBase):
         pre_state = self._clone_state()
         pre_cycle_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
-        instant_acc = self._update_and_evaluate(rate)
+        # Post-transformation instant evaluation is a step-size probe: the
+        # rate may be rejected and rolled back, so these measurements do
+        # not reflect committed tuning progress.
+        with self.trainer.validation_context("probe"):
+            instant_acc = self._update_and_evaluate(rate)
 
         # Fast-fail: skip expensive LR exploration + training if model collapsed
         catastrophic_floor = self._get_target() * CATASTROPHIC_DROP_FACTOR
@@ -343,31 +352,21 @@ class SmoothAdaptationTuner(TunerBase):
             })
             return self._committed_rate
 
-        if rate >= 1.0 - 1e-6:
-            # Strict internal gate at full rate: post_acc (validation) must
-            # stay within the noise margin of the validation baseline captured
-            # once at run start. Previously this gate ran ``trainer.test()``,
-            # but that leaked test-set information into the adaptation loop.
-            # The pipeline-level assertion in ``_run_step`` remains the
-            # authoritative cross-step test-set gate.
-            val_baseline = getattr(self, "_validation_baseline", None)
-            if val_baseline is not None:
-                strict_threshold = float(val_baseline) - noise_margin
-            else:
-                strict_threshold = (
-                    float(self.target_adjuster.original_metric) - noise_margin
-                )
-            if post_acc < strict_threshold:
-                self._restore_state(pre_state)
-                self._invalidate_lr_cache()
-                if hasattr(self, "_cycle_log"): self._cycle_log.append({
-                    "rate": rate, "committed": self._committed_rate,
-                    "pre_cycle_acc": float(pre_cycle_acc),
-                    "post_acc": float(post_acc),
-                    "strict_threshold": strict_threshold, "lr": lr,
-                    "outcome": "strict_gate_fail", "elapsed_sec": time.time() - t_cycle_start,
-                })
-                return self._committed_rate
+        # NOTE: A rate=1.0 "strict gate" requiring ``post_acc >= val_baseline
+        # - noise_margin`` used to live here. It was unreachable for
+        # transformations that inherently change the model's ceiling — e.g.
+        # aggressive activation quantization at target_tq=4 genuinely
+        # settles ~2–3 pp below the FP baseline. With the strict gate in
+        # place every rate=1.0 cycle rolled back, SmartSmoothAdaptation
+        # shaved toward 1.0 in ever-smaller slivers (0.998, 0.9998,
+        # 0.99998, ...), and the step never truly committed at full rate;
+        # ``_continue_to_full_rate`` then flipped quantization_rate to 1.0
+        # without any training at that exact state, leaving a ~3–4 pp
+        # unrecovered gap. The pipeline hard floor (test-set budget) and
+        # the relative rollback gate (per-cycle no-regression within noise)
+        # together already enforce both the hard cross-step constraint and
+        # per-cycle non-regression, so a separate baseline-anchored strict
+        # gate is redundant. Removed intentionally.
 
         self._committed_rate = rate
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
@@ -549,11 +548,9 @@ class SmoothAdaptationTuner(TunerBase):
 
         # Stabilization LR: the cached LR is biased toward values selected
         # for rate transitions (large deltas). At committed rate=1.0 the
-        # model is already near the quantized fixed point, so use a gentler
-        # LR to avoid the "oscillate around the local minimum" failure mode
-        # that the single-batch pre/post comparison used to mask as a
-        # rollback. Clamp at ``pipeline_lr`` so a coarser cached LR cannot
-        # run away here.
+        # model is already near the quantized fixed point, so clamp to at
+        # most ``pipeline_lr`` — the full budget runs long enough that a
+        # coarser cached LR just overshoots the local minimum.
         lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
 
         n_eval = self._budget.eval_n_batches

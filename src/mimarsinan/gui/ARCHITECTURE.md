@@ -9,19 +9,60 @@ model types, and config schema; POST `/api/run` starts a pipeline from the wizar
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `__init__.py` | `GUIHandle`, `start_gui`, `_TeeStream` | Facade: creates collector, reporter; installs `_TeeStream` on `sys.stdout`/`sys.stderr` to capture console output into DataCollector; optional `start_step` backfills skipped steps from cache for browsing |
-| `data_collector.py` | `DataCollector`, `MetricEvent`, `ConsoleLogEntry`, `StepRecord` | Thread-safe in-memory store; broadcasts metric, step lifecycle, and console log events via WebSocket |
+| `__init__.py` | `GUIHandle`, `start_gui`, `_TeeStream` | Facade: creates collector, reporter; installs `_TeeStream` on `sys.stdout`/`sys.stderr` to capture console output into DataCollector; optional `start_step` backfills skipped steps from cache for browsing. `GUIHandle` owns a `SnapshotExecutor` that offloads post-step bookkeeping (snapshot persistence, resource materialisation) off the pipeline thread; `on_step_end` calls `target_metric` and `build_step_snapshot` synchronously then hands the rest (`step_completed`, `save_step_to_persisted`, `save_resource_to_disk`) to that executor. `GUIHandle.wait_snapshots_idle` / `shutdown` drain it before process exit. |
+| `data_collector.py` | `DataCollector`, `MetricEvent`, `ConsoleLogEntry`, `StepRecord` | Thread-safe in-memory store; broadcasts metric, step lifecycle, console log, and `pipeline_overview` events via WebSocket. Maintains a `snapshot_version` per step; `get_step_detail(name, since_seq=N)` returns a weak HTTP ETag (`W/"{step}-{status}-{version}"`), metrics filtered to `seq > N`, and a `latest_metric_seq` cursor so frontends can poll incrementally. |
+| `resources.py` | `ResourceDescriptor`, `ResourceStore` | Step-scoped, thread-safe cache for *lazy* resources (heatmap PNGs, connectivity JSON). `ResourceDescriptor` bundles `(kind, rid, producer, media_type)`; the producer is a zero-arg callable invoked on first fetch and memoised per-step. `clear_step` evicts and bumps a per-step version counter (called on `step_started` to invalidate stale URLs). |
+| `snapshot_executor.py` | `SnapshotExecutor` | Single-worker FIFO queue used by `GUIHandle` to decouple heavy post-step I/O (steps.json rewrite, on-disk resource persistence) from the pipeline thread. Exceptions in jobs are logged but never crash the worker. |
+| `active_run_stream.py` | `ActiveRunHub` | Ref-counted per-run file tailers that push `live_metrics.jsonl` lines and `steps.json` mtime changes over the `/ws/active_runs/{run_id}` WebSocket to the parent GUI. Replaces the 3 s poll previously used for subprocess-spawned active runs so charts update at ~20 Hz. Stops the tailer threads when the last subscriber disconnects. |
 | `reporter.py` | `GUIReporter` | Implements `Reporter` protocol; forwards metrics to `DataCollector` |
 | `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (e.g. default + GUI) |
 | `server.py` | `start_server`, `create_app`, `_gui_entry_url`, `_schedule_open_browser` | FastAPI + Uvicorn server in a daemon thread; optional `run_config_fn` for POST `/api/run`. On startup prints a single welcome URL and opens it via `webbrowser.open` (after a short delay); set `MIMARSINAN_GUI_NO_BROWSER=1` to skip opening a browser. |
-| `snapshot/` | `build_step_snapshot`, `snapshot_model`, `snapshot_pruning_layers`, `snapshot_ir_graph`, `snapshot_hard_core_mapping`, `snapshot_search_result`, `snapshot_adaptation_manager` | Package: `helpers.py` (numeric/dict helpers, cache key map), `builders.py` (all snapshot builders); pure functions extracting JSON-safe snapshots; step-specific tabs and new/edited kinds. **Pruning**: `snapshot_pruning_layers(model)` extracts per-layer weight heatmaps with pruning masks (red lines) for the Pruning Adaptation step; `build_step_snapshot` adds `pruning_layers` when step is Pruning Adaptation. Hardware snapshot: per-placement `utilization_frac`, `constituent_count` per core, and when a core is fused, `fused_axon_boundaries` and `fused_component_count` for GUI boundaries and badges. |
-| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted`, `write_persisted_steps_replace`, `save_run_info`, `update_run_status`, `load_run_info`, `append_live_metric`, `load_live_metrics`, `append_console_log`, `load_console_logs` | Load/save step state to `_GUI_STATE/steps.json` for backfill; `write_persisted_steps_replace` atomically replaces the whole steps map (used after backfilling skipped steps so the monitor sees completed steps on disk); run lifecycle metadata in `_GUI_STATE/run_info.json`; streaming metrics in `_GUI_STATE/live_metrics.jsonl`; stdout/stderr log lines in `_GUI_STATE/console.jsonl` |
+| `snapshot/` | `build_step_snapshot`, `snapshot_model`, `snapshot_pruning_layers`, `snapshot_ir_graph`, `snapshot_hard_core_mapping`, `snapshot_search_result`, `snapshot_adaptation_manager` | Package: `helpers.py` (numeric/dict helpers, cache key map), `builders.py` (all snapshot builders); builders now return `(summary_dict, list[ResourceDescriptor])`: heavy artefacts (per-layer / per-core / pre-pruning heatmap PNGs, per-stage connectivity span arrays) are **not** embedded in the summary. Each emits `has_<thing>: true` plus a `<thing>_resource: {kind, rid}` hint, and the descriptor list carries a zero-arg producer closure that materialises the bytes / JSON on demand. Producers deep-copy mutable NumPy matrices at creation time so deferred materialisation is immune to later pipeline mutations. `build_step_snapshot` aggregates descriptors across sub-builders and returns `(snapshot, snapshot_key_kinds, resource_descriptors)`. **Pruning**: `snapshot_pruning_layers(model)` extracts per-layer weight heatmaps with pruning masks (red lines) for the Pruning Adaptation step; `build_step_snapshot` adds `pruning_layers` when step is Pruning Adaptation. Hardware snapshot: per-placement `utilization_frac`, `constituent_count` per core, and when a core is fused, `fused_axon_boundaries` and `fused_component_count` for GUI boundaries and badges. |
+| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted`, `write_persisted_steps_replace`, `save_resource_to_disk`, `load_resource_from_disk`, `load_persisted_steps_cache_clear`, `save_run_info`, `update_run_status`, `load_run_info`, `append_live_metric`, `load_live_metrics`, `append_console_log`, `load_console_logs` | Load/save step state to `_GUI_STATE/steps.json` for backfill; `load_persisted_steps` is fronted by an LRU cache keyed on `(abspath, mtime_ns, size)` so repeated historical / active-run polls don't re-parse large JSON. `save_step_to_persisted` / `write_persisted_steps_replace` take a per-file lock so the pipeline thread (`on_step_start` → `status=running`) and the snapshot executor thread (`_finalize` → `status=completed`) cannot clobber each other's read-modify-write cycles (previously fast steps like `Model Configuration` / `Model Building` could intermittently end up with no `completed` entry on disk). `_sanitize_path_segment` normalises unsafe characters to `_` rather than rejecting them so step names containing spaces (e.g. `Hard Core Mapping`, `Soft Core Mapping`, `Pruning Adaptation`) round-trip through `_resource_disk_path` without crashing the snapshot executor. Lazy resources materialised by the snapshot executor are persisted under `_GUI_STATE/resources/{step}/{kind}/{rid}.{ext}` so historical and subprocess-spawned active runs can be served from disk. Streaming metrics land in `_GUI_STATE/live_metrics.jsonl`; stdout/stderr log lines in `_GUI_STATE/console.jsonl` |
 | `process_manager.py` | `ProcessManager`, `ManagedRun`, `_start_console_reader` | Spawns headless pipeline processes with `stdout=PIPE, stderr=PIPE`; background reader threads drain both pipes and write tagged lines to `_GUI_STATE/console.jsonl`; tracks runs via filesystem polling, provides status/metrics/step detail APIs, kill with SIGTERM→SIGKILL escalation. `get_run_detail` exposes `status` and `error` fields from `run_info.json` so the UI can display error banners on failure. |
 | `run_cache_seed.py` | `copy_pipeline_cache_from_previous_run`, `copy_steps_json_from_previous_run` | Edit & continue: copies pipeline cache files and optionally `_GUI_STATE/steps.json` from the prior run so `run_from` has cache entries and backfill can restore full step snapshots for the monitor |
 | `runs.py` | `list_runs`, `get_run_config`, `get_run_pipeline`, `get_run_step_detail`, `get_run_console_logs` | Discover and load historical pipeline runs from the generated files directory; `get_run_console_logs` reads `console.jsonl` for the console tab |
 | `templates.py` | `list_templates`, `get_template`, `save_template`, `delete_template`, `name_and_deployment_from_post_body` | CRUD for deployment configuration templates saved as JSON files. Files are a **flat deployment dict** (same shape as `get_run_config`). `save_template` sets `experiment_name` on the stored copy to the given template display name (so lists and wizard load show the template label, not the originating run name). POST `/api/templates` accepts `{name, config}` or a flat deployment body. |
 | `wizard_config_builder.py` | `build_deployment_config_from_state` | Builds complete deployment config from wizard UI state, applying defaults and presets |
 | `heatmap_renderer.py` | `render_heatmap_png_data_uri` | Renders weight matrices as PNG data URIs for GUI; no raw matrices sent to frontend |
+
+### Lazy Resource URL Contract
+
+Heavy artefacts previously inlined as base64 data URIs in step snapshots (core /
+weight-bank / pre-pruning heatmap PNGs, per-stage connectivity span arrays) are
+now fetched lazily. Snapshot payloads carry only `has_<thing>: true` flags and
+a `<thing>_resource: {kind, rid}` hint; the browser resolves those hints against
+one of three endpoint prefixes:
+
+| Run kind | Prefix |
+|----------|--------|
+| live (current process) | `/api/steps/{step}/resources/{kind}/{rid}` |
+| historical (completed) | `/api/runs/{run_id}/steps/{step}/resources/{kind}/{rid}` |
+| active subprocess      | `/api/active_runs/{run_id}/steps/{step}/resources/{kind}/{rid}` |
+
+`{kind}` is one of the `RESOURCE_KIND_*` constants exported from `snapshot/`:
+`ir_core_heatmap`, `ir_core_pre_pruning`, `ir_weight_bank_heatmap`,
+`hard_core_heatmap`, `pruning_layer_heatmap`, `connectivity`. The live handler
+materialises the resource through the in-memory `ResourceStore`; the historical
+and active-run handlers stream the corresponding file from
+`_GUI_STATE/resources/…`. A matching `Content-Type` (`image/png` or
+`application/json`) is set per-kind; legacy runs that pre-date the split return
+404, which the frontend treats as "no thumbnail available".
+
+### Step Detail ETag Contract
+
+`GET /api/steps/{step_name}` returns a weak HTTP ETag of the form
+`W/"{step}-{status}-{snapshot_version}"`. `snapshot_version` is bumped on each
+step lifecycle transition (start, complete, fail) but **not** on metric
+appends — metrics stream over the WebSocket. The endpoint also accepts
+`?since_seq=N` and filters `detail.metrics` to `seq > N`; the response includes
+`latest_metric_seq` so the client can advance its cursor across polls.
+
+Clients send `If-None-Match` on subsequent polls and receive `304 Not Modified`
+when the snapshot is unchanged, sidestepping the entire snapshot payload.
+Step-detail polls run on a 30 s watchdog interval; actual updates arrive via
+the WebSocket `pipeline_overview` broadcast, which the `DataCollector` emits on
+every step lifecycle event.
 
 ### Step Status Persistence Contract
 
@@ -63,7 +104,10 @@ Active-run cards use **incremental DOM updates**: on each poll only changed fiel
 
 Single-page application using ES modules and Plotly.js. See `static/js/` for
 modular visualization components (overview, model, IR graph, hardware, search,
-scales, pruning, live-search tabs). **Pruning tab**: shown for the Pruning Adaptation step; lists layers with per-layer weight heatmaps (red lines for pruned rows/columns, same convention as IR Graph and Hardware) and a layer browser (list + detail panel). **Hardware tab**: shows soft-core and fused hardware-core boundaries
+scales, pruning, live-search tabs). **`resource-urls.js`** holds the step+run
+context and resolves `{kind, rid}` hints to fully-qualified resource URLs for
+live / historical / active-subprocess runs; tab modules stay stateless and
+import `imgSrcAttr` / `resourceUrl` from it. **Pruning tab**: shown for the Pruning Adaptation step; lists layers with per-layer weight heatmaps (red lines for pruned rows/columns, same convention as IR Graph and Hardware) and a layer browser (list + detail panel). **Hardware tab**: shows soft-core and fused hardware-core boundaries
 on miniview and detail heatmaps; "Constituents (N)" table with ID, dimensions,
 utilization per constituent; clicking a constituent or heatmap region opens
 soft-core detail with "Located in" (segment, hard core, region) for two-way
@@ -141,7 +185,9 @@ and `done()` never triggers an unwanted `autoFillHardware`. Toggles restored fro
 JSON use `forced=false` so they remain editable; spiking/hardware dependency
 rules still apply via `applySpikingDeps` / `applyHwDeps` after load.
 
-**Monitor connection dot** (`#conn-dot`, `static/js/main.js`): the status dot reflects WebSocket connectivity for in-process runs (no `run_id` param) and HTTP polling health (`pollOk`) for run-id-scoped active and historical runs where WebSocket is not used.
+**Monitor connection dot** (`#conn-dot`, `static/js/main.js`): the status dot reflects WebSocket connectivity for in-process runs (no `run_id` param) and for subprocess-spawned active runs (which now use `/ws/active_runs/{run_id}`); historical (finished) runs continue to fall back to HTTP polling health (`pollOk`).
+
+**Realtime update path** (`main.js`, `step-detail.js`): `refreshPipeline` is downgraded from a 5 s poll to a 30 s watchdog — live pipeline overview is driven by the `pipeline_overview` WebSocket message (`applyPipelineOverviewFromWS`). Subprocess-spawned active runs (`?run_id=…` with an alive child) use a dedicated `/ws/active_runs/{run_id}` channel (`connectActiveRunWebSocket`) whose events are emitted by `ActiveRunHub` tailing the child's `live_metrics.jsonl` and `steps.json`. `refreshStepDetail` is ETag-aware: it sends `If-None-Match` (seeded from the last response's `ETag` header) and `?since_seq=N` (the last `latest_metric_seq` it saw). A `304 Not Modified` keeps the DOM unchanged and only re-renders charts. On step switch the cached ETag is bypassed so the panel rebuilds. Live chart updates use a `requestAnimationFrame` coalescer (replacing the old 500 ms `setTimeout`) and prefer `Plotly.extendTraces` for incremental redraws — each chart tracks its trace names and last point counts so only new metric points are appended. Structural changes (new trace, run reset) fall back to `Plotly.react`. Lazy heatmap `<img>`s are emitted with `loading="lazy" decoding="async"`. Connectivity spans for the hardware tab are fetched on first click via `/api/.../resources/connectivity/seg/{idx}` and memoised in a per-session `Map` keyed by the resolved URL (see `resource-urls.js`, `hardware-tab.js`).
 
 **Monitor plots** (step-detail metrics tab, scales-tab adaptation, search-tab): legends
 are placed outside the plot area to the right (`x: 1.02`, `margin.r: 100`). Accuracy
@@ -195,6 +241,7 @@ gen counter, valid/failed counts, Pareto size, and elapsed time.
 - `GET /api/active_runs/{run_id}/steps/{step_name}` — step detail with live metrics
 - `GET /api/active_runs/{run_id}/console?offset=N` — console log entries from `console.jsonl` (stdout+stderr)
 - `DELETE /api/active_runs/{run_id}` — terminate a running process
+- `GET /api/active_runs/{run_id}/steps/{step_name}/resources/{kind}/{rid}` — serve a lazy resource written to the subprocess's `_GUI_STATE/resources/…` directory by its snapshot executor
 
 ## Historical Run API Endpoints
 
@@ -203,10 +250,13 @@ gen counter, valid/failed counts, Pareto size, and elapsed time.
 - `GET /api/runs/{run_id}/pipeline` — pipeline overview of a past run
 - `GET /api/runs/{run_id}/steps/{step_name}` — step detail of a past run
 - `GET /api/runs/{run_id}/console?offset=N` — console log entries for a past run
+- `GET /api/runs/{run_id}/steps/{step_name}/resources/{kind}/{rid}` — serve a lazy heatmap PNG or connectivity JSON from the run's on-disk resource cache (legacy runs that predate the split return 404)
 
 ## In-Process API Endpoints
 
 - `GET /api/console_logs?offset=N` — console log entries from in-process DataCollector (WebSocket also pushes `console_log` events)
+- `GET /api/steps/{step_name}` — returns step detail with a weak ETag. Accepts `If-None-Match` (→ `304 Not Modified` on unchanged snapshot) and `?since_seq=N` (filters `metrics` to `seq > N`; response includes `latest_metric_seq`)
+- `GET /api/steps/{step_name}/resources/{kind}/{rid}` — serve a lazy heatmap PNG or connectivity JSON from the live `ResourceStore`. Producers are invoked exactly once per step on first demand and memoised until the next `step_started`
 
 ## Template API Endpoints
 
