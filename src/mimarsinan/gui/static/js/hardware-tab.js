@@ -1,5 +1,52 @@
-/* Hardware mapping tab — consistent layout, side-based connectivity, buffer lines. */
+/* Hardware mapping tab — consistent layout, side-based connectivity, buffer lines.
+ * Heatmaps and connectivity spans are loaded lazily from
+ * /api/.../resources/ endpoints; the snapshot payload only carries
+ * `{kind, rid}` descriptor hints. */
+import { imgSrcAttr, resourceUrl, getResourceContext } from './resource-urls.js';
 import { esc, safeReact, plotHistogram } from './util.js';
+
+// Per-session cache of connectivity span lists keyed by the resolved
+// resource URL (which embeds step + run context + segment). A Map —
+// not a plain object — so it survives iteration and has O(1) size().
+// This stops the same connectivity JSON from being re-fetched every
+// time the user toggles a hard-core selection.
+const _connectivityCache = new Map();
+const _connectivityInflight = new Map();
+
+// Resolve connectivity spans for a stage, fetching them lazily on
+// first demand. Returns either the cached array or ``null`` when a
+// fetch is still in flight; in that case ``onLoaded`` is invoked with
+// the array once it arrives so the caller can repaint.
+function getConnectivitySpans(stage, onLoaded) {
+  if (!stage) return null;
+  if (Array.isArray(stage.connectivity)) return stage.connectivity; // legacy
+  if (!stage.has_connectivity || !stage.connectivity_resource) return [];
+  const url = resourceUrl(stage.connectivity_resource, getResourceContext());
+  if (!url) return [];
+  if (_connectivityCache.has(url)) return _connectivityCache.get(url);
+  if (!_connectivityInflight.has(url)) {
+    _connectivityInflight.set(url, (async () => {
+      try {
+        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!res.ok) { _connectivityCache.set(url, []); return []; }
+        const data = await res.json();
+        const spans = Array.isArray(data?.spans) ? data.spans
+          : (Array.isArray(data) ? data : []);
+        _connectivityCache.set(url, spans);
+        return spans;
+      } catch (_) {
+        _connectivityCache.set(url, []);
+        return [];
+      } finally {
+        _connectivityInflight.delete(url);
+      }
+    })());
+  }
+  if (typeof onLoaded === 'function') {
+    _connectivityInflight.get(url).then(onLoaded);
+  }
+  return null;
+}
 
 function _resolveLayerLabel(irNodeId, irGraph) {
   if (!irGraph || !irGraph.nodes) return '\u2014';
@@ -94,12 +141,13 @@ function buildCoreDetailPanelHtml(segIdx, core, irGraph) {
   const nTotal = Math.max(1, core.heatmap_neurons || core.neurons_per_core);
   const fusedBoundaries = core.fused_axon_boundaries;
   let html = '<div class="hw-core-detail-panel">';
-  if (core.heatmap_image) {
+  const coreHeatmapUrl = imgSrcAttr(core.heatmap_resource);
+  if (coreHeatmapUrl) {
     const hmA = core.heatmap_axons || core.axons_per_core;
     const hmN = core.heatmap_neurons || core.neurons_per_core;
     const ar = Math.max(1, hmN) / Math.max(1, hmA);
     html += `<div class="hw-core-detail-heatmap-wrap" style="aspect-ratio: ${ar}; max-height: 240px; position:relative">`;
-    html += `<img src="${core.heatmap_image.replace(/"/g, '&quot;')}" alt="Core ${core.core_index} heatmap" class="hw-core-detail-heatmap">`;
+    html += `<img src="${coreHeatmapUrl}" alt="Core ${core.core_index} heatmap" loading="lazy" decoding="async" class="hw-core-detail-heatmap">`;
     for (let pi = 0; pi < placements.length; pi++) {
       const pl = placements[pi];
       const top = (pl.axon_offset / aTotal) * 100;
@@ -206,7 +254,9 @@ function buildSoftCoreDetailPanelHtml(nodeId, irGraph, origin) {
     html += `<tr><td>Parameter scale</td><td>${node.parameter_scale != null ? Number(node.parameter_scale).toFixed(4) : '—'}</td></tr>`;
     html += `<tr><td>Sparsity</td><td>${node.weight_stats ? (node.weight_stats.sparsity * 100).toFixed(1) + '%' : '—'}</td></tr>`;
     html += '</table>';
-    if (node.heatmap_image || node.pre_pruning_heatmap_image) {
+    const nodeHeatmapUrl = imgSrcAttr(node.heatmap_resource);
+    const nodePreHeatmapUrl = imgSrcAttr(node.pre_pruning_resource);
+    if (nodeHeatmapUrl || nodePreHeatmapUrl) {
       const HW_SOFT_MAX = 200;
       const MIN_HEATMAP_VIEW_WIDTH = 80;
       const MIN_HEATMAP_VIEW_HEIGHT = 80;
@@ -250,17 +300,17 @@ function buildSoftCoreDetailPanelHtml(nodeId, irGraph, origin) {
       html += '<div class="hw-softcore-heatmaps-scroll" style="max-height:320px;max-width:100%;overflow:auto">';
       html += '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start">';
       let preSz = null;
-      if (node.pre_pruning_heatmap_image) {
+      if (nodePreHeatmapUrl) {
         const preLabel = (preAx != null && preNu != null) ? ` (${preAx}×${preNu})` : '';
         preSz = (preAx != null && preNu != null) ? softHeatmapSizePre(preAx, preNu) : { w: HW_SOFT_MAX, h: HW_SOFT_MAX };
-        html += `<div class="hw-softcore-heatmap-wrap"><div class="section-label" style="font-size:9px;margin-bottom:2px">Pre-pruning${preLabel}</div><img src="${node.pre_pruning_heatmap_image.replace(/"/g, '&quot;')}" alt="Pre-pruning" class="hw-softcore-heatmap" style="width:${preSz.w}px;height:${preSz.h}px;object-fit:fill"></div>`;
+        html += `<div class="hw-softcore-heatmap-wrap"><div class="section-label" style="font-size:9px;margin-bottom:2px">Pre-pruning${preLabel}</div><img src="${nodePreHeatmapUrl}" alt="Pre-pruning" loading="lazy" decoding="async" class="hw-softcore-heatmap" style="width:${preSz.w}px;height:${preSz.h}px;object-fit:fill"></div>`;
       }
-      if (node.heatmap_image) {
+      if (nodeHeatmapUrl) {
         const postAxNum = node.axons ?? 0;
         const postNuNum = node.neurons ?? 0;
         const postLabel = (postAxNum && postNuNum) ? ` (${postAxNum}×${postNuNum})` : '';
         const postSz = softHeatmapSizePost(postAxNum, postNuNum, preSz, preAx ?? 0, preNu ?? 0);
-        html += `<div class="hw-softcore-heatmap-wrap"><div class="section-label" style="font-size:9px;margin-bottom:2px">Post-pruning${postLabel}</div><img src="${node.heatmap_image.replace(/"/g, '&quot;')}" alt="Post-pruning" class="hw-softcore-heatmap" style="width:${postSz.w}px;height:${postSz.h}px;object-fit:fill"></div>`;
+        html += `<div class="hw-softcore-heatmap-wrap"><div class="section-label" style="font-size:9px;margin-bottom:2px">Post-pruning${postLabel}</div><img src="${nodeHeatmapUrl}" alt="Post-pruning" loading="lazy" decoding="async" class="hw-softcore-heatmap" style="width:${postSz.w}px;height:${postSz.h}px;object-fit:fill"></div>`;
       }
       html += '</div></div></div>';
     }
@@ -522,8 +572,9 @@ function buildSegmentDetail(stage, segIdx, selCoreIdx, globalLayout) {
     cell += `<span class="hw-core-id">${core.core_index}</span>`;
     cell += '<div class="hw-core-cell-main">';
     cell += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}" style="${coreStyle};position:relative">`;
-    if (core.heatmap_image) {
-      cell += `<img class="hw-core-canvas" src="${core.heatmap_image}" style="width:100%;height:100%;display:block;object-fit:fill" draggable="false">`;
+    const cellHeatmapUrl = imgSrcAttr(core.heatmap_resource);
+    if (cellHeatmapUrl) {
+      cell += `<img class="hw-core-canvas" src="${cellHeatmapUrl}" loading="lazy" decoding="async" style="width:100%;height:100%;display:block;object-fit:fill" draggable="false">`;
     }
     const placements = core.mapped_placements || [];
     const aTotal = Math.max(1, core.heatmap_axons || core.axons_per_core);
@@ -630,9 +681,13 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   const stage = hw.stages.find(s => s.kind === 'neural' && (s.segment_index ?? s.index) === segIdx);
   if (!stage) return;
 
-  if (!stage.connectivity) return;
-
-  const spans = stage.connectivity;
+  // Connectivity is fetched lazily on click. While the fetch is in
+  // flight getConnectivitySpans returns null; we schedule a redraw
+  // so the overlay paints as soon as the JSON arrives.
+  const spans = getConnectivitySpans(stage, () => {
+    drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey);
+  });
+  if (!spans || spans.length === 0) return;
   const incoming = spans.filter(sp => sp.dst_core === selCoreIdx && sp.kind !== 'off');
   const outgoing = spans.filter(sp => sp.src_core === selCoreIdx && sp.kind !== 'off');
   if (incoming.length === 0 && outgoing.length === 0) return;
@@ -975,4 +1030,6 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   }
 }
 
-// Heatmap images are generated on the backend; frontend displays heatmap_image (data URI) only.
+// Heatmap images are generated on the backend lazily and fetched via
+// /api/.../resources/{kind}/{rid}. The snapshot payload only carries
+// {kind, rid} hints.

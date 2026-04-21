@@ -13,29 +13,31 @@ from typing import Sequence
 import numpy as np
 
 
-def render_heatmap_png_data_uri(
+def render_heatmap_png_bytes(
     matrix: np.ndarray,
     *,
     pruned_row_mask: Sequence[bool] | None = None,
     pruned_col_mask: Sequence[bool] | None = None,
     max_size: int = 1024,
     dpi: int = 150,
-) -> str:
-    """Render a 2D weight matrix as a PNG heatmap and return a data URI.
+) -> bytes:
+    """Render a 2D weight matrix as a PNG heatmap and return raw PNG bytes.
 
-    The heatmap is created from the full matrix; the output image dimensions
-    are capped at max_size per axis. Red is reserved for pruned row/col lines
-    only; the weight colormap avoids red (blue–cyan–green–yellow).
+    This is the transport-friendly variant used by the lazy
+    :class:`~mimarsinan.gui.resources.ResourceStore`: the GUI server streams
+    the bytes directly with ``Content-Type: image/png`` instead of embedding
+    a multi-megabyte base64 data URI inside a JSON snapshot.
 
-    Returns:
-        String of the form "data:image/png;base64,..." for use as img src.
+    See :func:`render_heatmap_png_data_uri` for the colormap / pruning-line
+    contract — both functions share the same implementation and differ only
+    in the returned representation.
     """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     if matrix.size == 0:
-        return _empty_image_data_uri()
+        return _empty_image_bytes()
 
     h, w = matrix.shape
     # Preserve aspect ratio when capping: scale so the longer side is max_size
@@ -95,16 +97,47 @@ def render_heatmap_png_data_uri(
     )
     plt.close(fig)
     buf.seek(0)
-    b64 = base64.b64encode(buf.read()).decode("ascii")
+    return buf.read()
+
+
+def render_heatmap_png_data_uri(
+    matrix: np.ndarray,
+    *,
+    pruned_row_mask: Sequence[bool] | None = None,
+    pruned_col_mask: Sequence[bool] | None = None,
+    max_size: int = 1024,
+    dpi: int = 150,
+) -> str:
+    """Render a 2D weight matrix as a PNG heatmap and return a base64 data URI.
+
+    Kept for callers (and legacy tests) that still want an inline
+    ``data:image/png;base64,...`` string. New code should prefer
+    :func:`render_heatmap_png_bytes` + the
+    :class:`~mimarsinan.gui.resources.ResourceStore`.
+    """
+    png = render_heatmap_png_bytes(
+        matrix,
+        pruned_row_mask=pruned_row_mask,
+        pruned_col_mask=pruned_col_mask,
+        max_size=max_size,
+        dpi=dpi,
+    )
+    b64 = base64.b64encode(png).decode("ascii")
     return f"data:image/png;base64,{b64}"
 
 
+_EMPTY_PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n"
+    b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
+    b"\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def _empty_image_bytes() -> bytes:
+    """Return a minimal 1x1 dark PNG as raw bytes."""
+    return _EMPTY_PNG_BYTES
+
+
 def _empty_image_data_uri() -> str:
-    """Return a minimal 1x1 dark PNG as data URI."""
-    # Minimal valid 1x1 gray PNG (IHDR + IDAT + IEND)
-    png = (
-        b"\x89PNG\r\n\x1a\n"
-        b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
-        b"\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
-    )
-    return f"data:image/png;base64,{base64.b64encode(png).decode('ascii')}"
+    """Return a minimal 1x1 dark PNG as data URI (legacy helper)."""
+    return f"data:image/png;base64,{base64.b64encode(_EMPTY_PNG_BYTES).decode('ascii')}"

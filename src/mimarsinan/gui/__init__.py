@@ -23,13 +23,16 @@ from typing import Any
 from mimarsinan.gui.data_collector import DataCollector
 from mimarsinan.gui.persistence import (
     load_persisted_steps,
+    save_resource_to_disk,
     save_step_to_persisted,
     write_persisted_steps_replace,
     append_live_metric,
     append_console_log,
 )
 from mimarsinan.gui.reporter import GUIReporter
+from mimarsinan.gui.resources import ResourceStore
 from mimarsinan.gui.snapshot import build_step_snapshot
+from mimarsinan.gui.snapshot_executor import SnapshotExecutor
 
 
 class _TeeStream(io.RawIOBase):
@@ -99,12 +102,16 @@ class GUIHandle:
         collector: DataCollector,
         persist_metrics: bool = False,
         capture_stdio: bool = True,
+        snapshot_executor: SnapshotExecutor | None = None,
     ) -> None:
         self.pipeline = pipeline
         self.collector = collector
         self.reporter = GUIReporter(collector)
         self._persist_metrics = persist_metrics
         self._capture_stdio = capture_stdio
+        # Owned unless the caller injected one (tests typically inject).
+        self._owns_snapshot_executor = snapshot_executor is None
+        self._snapshot_executor = snapshot_executor or SnapshotExecutor()
 
         self._orig_stdout = sys.stdout
         self._orig_stderr = sys.stderr
@@ -156,40 +163,104 @@ class GUIHandle:
             append_live_metric(working_dir, step_name, metric_name, value, seq, timestamp)
 
     def on_step_end(self, step_name: str, step: Any) -> None:
+        # Read the target metric synchronously while the pipeline is still
+        # in its post-step state — after we return, the next step may run
+        # on the pipeline thread and mutate ``pipeline.get_target_metric``.
         try:
             raw = self.pipeline.get_target_metric()
             target_metric = float(raw) if raw is not None else None
         except Exception:
             target_metric = None
+
+        # Build the snapshot synchronously on the pipeline thread so the
+        # traversal reads a consistent view of pipeline state. Snapshot
+        # builders defer the *expensive* parts (matplotlib PNG encoding,
+        # connectivity span extraction) into zero-arg ``ResourceDescriptor``
+        # closures that capture deep copies of the relevant arrays, so
+        # invoking those closures later (on the SnapshotExecutor worker or
+        # inside an HTTP handler) is safe even after the pipeline mutates
+        # the original tensors.
         try:
-            snapshot, snapshot_key_kinds = build_step_snapshot(
+            snapshot, snapshot_key_kinds, resource_descriptors = build_step_snapshot(
                 self.pipeline, step_name, step=step
             )
         except Exception as e:
             self.collector.step_failed(step_name, error=str(e))
             return
-        self.collector.step_completed(
-            step_name,
-            target_metric=target_metric,
-            snapshot=snapshot,
-            snapshot_key_kinds=snapshot_key_kinds,
-        )
-        # Persist this step so it can be restored when starting from a later step
+
         working_dir = getattr(self.pipeline, "working_directory", None)
-        if working_dir:
-            detail = self.collector.get_step_detail(step_name)
-            if detail:
-                save_step_to_persisted(
-                    working_dir,
-                    step_name,
-                    detail.get("start_time"),
-                    detail.get("end_time"),
-                    detail.get("target_metric"),
-                    detail.get("metrics", []),
-                    detail.get("snapshot"),
-                    detail.get("snapshot_key_kinds"),
-                    status="completed",
-                )
+
+        def _finalize() -> None:
+            self.collector.step_completed(
+                step_name,
+                target_metric=target_metric,
+                snapshot=snapshot,
+                snapshot_key_kinds=snapshot_key_kinds,
+                resources=resource_descriptors,
+            )
+            if working_dir:
+                detail = self.collector.get_step_detail(step_name)
+                if detail:
+                    save_step_to_persisted(
+                        working_dir,
+                        step_name,
+                        detail.get("start_time"),
+                        detail.get("end_time"),
+                        detail.get("target_metric"),
+                        detail.get("metrics", []),
+                        detail.get("snapshot"),
+                        detail.get("snapshot_key_kinds"),
+                        status="completed",
+                    )
+                # Materialize heavy resources to disk so the parent GUI
+                # server (watching this subprocess via ProcessManager)
+                # can serve them via /api/active_runs/.../resources/...
+                # without needing in-process access to the ResourceStore.
+                for desc in resource_descriptors:
+                    try:
+                        payload = desc.producer()
+                    except Exception:
+                        import logging as _logging
+                        _logging.getLogger("mimarsinan.gui").debug(
+                            "Resource producer failed for %s/%s", desc.kind, desc.rid,
+                            exc_info=True,
+                        )
+                        continue
+                    if desc.media_type == "image/png":
+                        if isinstance(payload, (bytes, bytearray)):
+                            save_resource_to_disk(
+                                working_dir, step_name, desc.kind, desc.rid,
+                                bytes(payload), media_type=desc.media_type,
+                            )
+                    elif desc.media_type == "application/json":
+                        import json as _json
+                        try:
+                            encoded = _json.dumps(payload).encode("utf-8")
+                        except (TypeError, ValueError):
+                            continue
+                        save_resource_to_disk(
+                            working_dir, step_name, desc.kind, desc.rid,
+                            encoded, media_type=desc.media_type,
+                        )
+
+        # Offload collector bookkeeping and disk persistence so the
+        # pipeline thread returns immediately to run the next step. The
+        # executor is single-worker, so step_completed broadcasts remain
+        # in submission order (see SnapshotExecutor docstring).
+        self._snapshot_executor.submit(_finalize)
+
+    def shutdown(self) -> None:
+        """Drain and join the snapshot executor (flush pending persistence)."""
+        if self._owns_snapshot_executor:
+            self._snapshot_executor.shutdown()
+
+    def wait_snapshots_idle(self, timeout: float | None = None) -> bool:
+        """Block until all queued snapshot jobs are flushed.
+
+        Primarily used by tests and shutdown paths that need ``steps.json``
+        fully written before inspecting disk.
+        """
+        return self._snapshot_executor.wait_idle(timeout=timeout)
 
 
 def start_gui(
@@ -208,6 +279,10 @@ def start_gui(
     from mimarsinan.gui.server import start_server
 
     collector = DataCollector()
+    # Attach a resource store so snapshot builders' lazy descriptors are
+    # routed to a step-scoped cache that the HTTP resource endpoints
+    # (heatmaps, connectivity) can fetch from.
+    collector.set_resource_store(ResourceStore())
 
     step_names = [name for name, _ in pipeline.steps]
     config = getattr(pipeline, "config", {})
@@ -218,7 +293,8 @@ def start_gui(
         _backfill_skipped_steps(pipeline, collector, step_names, start_step)
 
     start_server(collector, host=host, port=port)
-    return GUIHandle(pipeline, collector)
+    handle = GUIHandle(pipeline, collector)
+    return handle
 
 
 def _backfill_skipped_steps(
@@ -253,17 +329,19 @@ def _backfill_skipped_steps(
         else:
             step = step_by_name.get(step_name)
             try:
-                snapshot, snapshot_key_kinds = build_step_snapshot(
+                snapshot, snapshot_key_kinds, resource_descriptors = build_step_snapshot(
                     pipeline, step_name, step=step
                 )
             except Exception:
                 snapshot = None
                 snapshot_key_kinds = None
+                resource_descriptors = []
             collector.step_completed(
                 step_name,
                 target_metric=None,
                 snapshot=snapshot,
                 snapshot_key_kinds=snapshot_key_kinds,
+                resources=resource_descriptors,
             )
 
     # Persist skipped steps to disk so the monitor / active-run APIs can browse them.

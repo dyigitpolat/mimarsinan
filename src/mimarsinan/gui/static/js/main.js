@@ -63,20 +63,63 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshPipeline();
   if (!state.historicalRunId) {
     connectWebSocket();
-    setInterval(refreshPipeline, 5000);
+    // 30 s watchdog — the server pushes pipeline_overview on every step
+    // lifecycle event via WS, so this poll is purely a safety net for
+    // cases where the WS connection drops silently.
+    setInterval(refreshPipeline, 30000);
     setInterval(() => { if (state.activeMainTab === 'console') refreshConsoleLogs(); }, 2000);
   } else if (_isActiveRun) {
-    setInterval(refreshPipeline, 3000);
+    // Active (subprocess) runs stream metrics + pipeline_overview via
+    // /ws/active_runs/{rid} instead of polling, so the charts update at
+    // ~20 Hz instead of 3-second batches. The 30 s watchdog still polls
+    // the overview in case the WS drops silently.
+    connectActiveRunWebSocket(state.historicalRunId);
+    setInterval(refreshPipeline, 30000);
     setInterval(() => { if (state.activeMainTab === 'console') refreshConsoleLogs(); }, 2000);
   }
   setInterval(updateElapsedTimer, 1000);
 });
 
 // ── Refresh loop ─────────────────────────────────────────────────────────
-let _refreshTimer = null;
-function scheduleRefresh() {
-  if (_refreshTimer) return;
-  _refreshTimer = setTimeout(() => { _refreshTimer = null; refreshPipeline(); }, 200);
+// `scheduleStepDetailRefresh` coalesces step-detail refetches so a burst
+// of WS events (step_started -> pipeline_overview -> step_completed)
+// fires a single REST GET for /api/steps/{name}. Pipeline bar/cards are
+// updated synchronously from the WS `pipeline_overview` payload.
+let _detailTimer = null;
+function scheduleStepDetailRefresh() {
+  if (_detailTimer) return;
+  _detailTimer = setTimeout(() => {
+    _detailTimer = null;
+    if (state.selectedStep) {
+      refreshStepDetail(state.selectedStep, state, fetchJSON).catch(() => {});
+    }
+  }, 200);
+}
+
+function applyPipelineOverviewFromWS(overview) {
+  // Match the /api/pipeline payload shape so downstream renderers don't
+  // care whether the data came over WS or HTTP.
+  state.pipeline = {
+    steps: overview.steps || [],
+    current_step: overview.current_step,
+    config: overview.config ?? state.pipeline?.config,
+    is_alive: true,
+  };
+  renderPipelineBar(state.pipeline, state.selectedStep);
+  renderOverviewCards(state.pipeline);
+  if (state.activeMainTab === 'config') renderConfig(state.pipeline.config);
+
+  if (state.autoFollow && state.pipeline.current_step) {
+    const cur = state.pipeline.current_step;
+    if (state.selectedStep !== cur) {
+      state.selectedStep = cur;
+      state.activeTab = null;
+      state.lastDetailJSON = null;
+      scheduleStepDetailRefresh();
+    }
+  }
+  updateErrorBanner(state.pipeline);
+  if (!state.pollOk) { state.pollOk = true; updateConnectionDot(); }
 }
 
 let _prevAlive = true;
@@ -138,15 +181,43 @@ function connectWebSocket() {
   ws.onmessage = (evt) => { try { handleWSMessage(JSON.parse(evt.data)); } catch (e) { /* ignore parse errors */ } };
 }
 
+// Subprocess-spawned active runs use a dedicated WS endpoint that tails
+// the child's live_metrics.jsonl and steps.json for per-event push,
+// eliminating the 3-second polling jank. The reconnect loop is identical
+// to the in-process /ws channel so a momentary disconnect auto-recovers.
+function connectActiveRunWebSocket(runId) {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = `${proto}://${location.host}/ws/active_runs/${encodeURIComponent(runId)}`;
+  const ws = new WebSocket(url);
+  ws.onopen = () => { state.connected = true; state.ws = ws; updateConnectionDot(); };
+  ws.onclose = () => {
+    state.connected = false;
+    updateConnectionDot();
+    setTimeout(() => connectActiveRunWebSocket(runId), 3000);
+  };
+  ws.onmessage = (evt) => { try { handleWSMessage(JSON.parse(evt.data)); } catch (e) { /* ignore parse errors */ } };
+}
+
 function handleWSMessage(msg) {
+  if (msg.type === 'pipeline_overview') {
+    // The collector piggy-backs a full overview on every step lifecycle
+    // event, so we can update the bar + cards synchronously without
+    // touching the network. This is what lets us drop the 5 s poll to
+    // a 30 s watchdog.
+    applyPipelineOverviewFromWS(msg);
+    return;
+  }
   if (msg.type === 'step_started') {
     delete state.metricBuffers[msg.step];
     delete state.seenSeqs[msg.step];
     if (state.searchEvents) delete state.searchEvents[msg.step];
     if (state.autoFollow) { state.selectedStep = msg.step; state.activeTab = null; state.lastDetailJSON = null; }
-    scheduleRefresh();
+    // Step detail (metrics, snapshot) still needs a REST fetch — the
+    // WS overview only carries step lifecycle state, not the heavy
+    // per-step payload.
+    scheduleStepDetailRefresh();
   }
-  if (msg.type === 'step_completed' || msg.type === 'step_failed') scheduleRefresh();
+  if (msg.type === 'step_completed' || msg.type === 'step_failed') scheduleStepDetailRefresh();
   if (msg.type === 'metric') {
     bufferMetric(msg.step, msg.name, msg.value, msg.seq, msg.timestamp);
     if (state.selectedStep === msg.step) scheduleLiveChartUpdate(msg.step);
@@ -180,19 +251,33 @@ function bufferMetric(step, name, value, seq, timestamp) {
   state.metricBuffers[step][name].push({ seq, timestamp: timestamp || Date.now() / 1000, value: parseFloat(value) });
 }
 
-let _liveTimer = null;
+// Coalesce bursts of metric messages into a single repaint per animation
+// frame. rAF is the natural rate for smooth UI updates, replaces the old
+// 500 ms debounce which produced visibly jerky lines during heavy
+// training metric rates.
+let _liveRaf = 0;
+let _liveDirtyStep = null;
 function scheduleLiveChartUpdate(stepName) {
-  if (_liveTimer) return;
-  _liveTimer = setTimeout(() => { _liveTimer = null; updateLiveCharts(stepName, state); }, 500);
+  _liveDirtyStep = stepName;
+  if (_liveRaf) return;
+  _liveRaf = requestAnimationFrame(() => {
+    _liveRaf = 0;
+    const target = _liveDirtyStep;
+    _liveDirtyStep = null;
+    if (target) updateLiveCharts(target, state);
+  });
 }
 
 // ── UI helpers ───────────────────────────────────────────────────────────
 function updateConnectionDot() {
   const dot = document.getElementById('conn-dot');
   if (!dot) return;
-  const healthy = state.historicalRunId ? state.pollOk : state.connected;
+  // Live runs and active subprocess runs both stream over WS now;
+  // only finished/historical runs rely on HTTP polling.
+  const usesWebSocket = !state.historicalRunId || _isActiveRun;
+  const healthy = usesWebSocket ? state.connected : state.pollOk;
   dot.className = 'status-dot ' + (healthy ? 'connected' : 'disconnected');
-  dot.title = state.historicalRunId ? 'HTTP polling' : 'WebSocket';
+  dot.title = usesWebSocket ? 'WebSocket' : 'HTTP polling';
 }
 
 function updateElapsedTimer() {

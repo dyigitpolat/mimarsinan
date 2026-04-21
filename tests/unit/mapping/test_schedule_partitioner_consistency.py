@@ -170,7 +170,7 @@ class TestSnapshotScheduleMetadata:
         if not has_scheduled_stages:
             pytest.skip("No multi-pass needed for this config")
 
-        snap = snapshot_hard_core_mapping(hm)
+        snap, _descs = snapshot_hard_core_mapping(hm)
         for stage in snap["stages"]:
             if stage["kind"] == "neural" and "schedule_pass_index" in stage:
                 assert isinstance(stage["schedule_pass_index"], int)
@@ -195,7 +195,7 @@ class TestSnapshotScheduleMetadata:
             allow_scheduling=False,
         )
 
-        snap = snapshot_hard_core_mapping(hm)
+        snap, _descs = snapshot_hard_core_mapping(hm)
         for stage in snap["stages"]:
             if stage["kind"] == "neural":
                 assert "schedule_pass_index" not in stage

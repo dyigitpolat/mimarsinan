@@ -353,8 +353,12 @@ class TestPruneIRGraph:
         assert len(soft.output_sources) == 2
 
     def test_snapshot_includes_heatmap_and_pre_pruning_for_bank_backed(self):
-        """snapshot_ir_graph returns heatmap_image and pre_pruning_heatmap_image for bank-backed node with masks."""
-        from mimarsinan.gui.snapshot import snapshot_ir_graph
+        """snapshot_ir_graph advertises heatmap + pre-pruning as lazy resources."""
+        from mimarsinan.gui.snapshot import (
+            snapshot_ir_graph,
+            RESOURCE_KIND_IR_CORE_HEATMAP,
+            RESOURCE_KIND_IR_CORE_PRE_PRUNING,
+        )
 
         bank = WeightBank(id=0, core_matrix=np.ones((4, 4), dtype=np.float64))
         src = _make_source_array([(-2, 0), (-2, 1), (-2, 2), (-3, 0)])
@@ -375,12 +379,19 @@ class TestPruneIRGraph:
             initial_pruned_per_bank={0: ([False, True, False, False], [False, True, False, False])},
             store_heatmap=True,
         )
-        snap = snapshot_ir_graph(pruned)
+        snap, descriptors = snapshot_ir_graph(pruned)
         nodes_info = snap["nodes"]
         assert len(nodes_info) == 1
         info = nodes_info[0]
-        assert "heatmap_image" in info and info["heatmap_image"] is not None
-        assert "pre_pruning_heatmap_image" in info and info["pre_pruning_heatmap_image"] is not None
+        assert info.get("has_heatmap") is True
+        assert info.get("has_pre_pruning") is True
+        # No base64 bytes in the summary — resources are fetched via descriptors.
+        assert "heatmap_image" not in info
+        assert "pre_pruning_heatmap_image" not in info
+
+        kinds = {d.kind for d in descriptors}
+        assert RESOURCE_KIND_IR_CORE_HEATMAP in kinds
+        assert RESOURCE_KIND_IR_CORE_PRE_PRUNING in kinds
 
 
 def _make_mock_perceptron(out_f: int, in_f: int, row_pruned_indices=None, col_pruned_indices=None):

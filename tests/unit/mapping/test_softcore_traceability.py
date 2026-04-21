@@ -74,7 +74,7 @@ class TestSnapshotMappedPlacements:
         ir = _make_two_core_ir()
         cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 5}]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
-        snap = snapshot_hard_core_mapping(hm)
+        snap, _descs = snapshot_hard_core_mapping(hm)
 
         neural_stages = [s for s in snap["stages"] if s.get("kind") == "neural" and s.get("cores")]
         assert len(neural_stages) >= 1
@@ -95,7 +95,7 @@ class TestSnapshotMappedPlacements:
         ir = _make_two_core_ir()
         cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 5}]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
-        snap = snapshot_hard_core_mapping(hm)
+        snap, _descs = snapshot_hard_core_mapping(hm)
 
         neural_stages = [s for s in snap["stages"] if s.get("kind") == "neural" and s.get("cores")]
         assert len(neural_stages) >= 1
@@ -137,7 +137,7 @@ class TestSnapshotMappedPlacements:
         ir = _make_two_core_ir()
         cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 5}]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
-        snap = snapshot_hard_core_mapping(hm)
+        snap, _descs = snapshot_hard_core_mapping(hm)
         for stage in snap["stages"]:
             if stage.get("kind") != "neural" or "cores" not in stage:
                 continue
@@ -161,7 +161,7 @@ class TestSnapshotMappedPlacements:
         ir = IRGraph(nodes=[c], output_sources=out)
         cores_config = [{"max_axons": 64, "max_neurons": 32, "count": 4}]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
-        snap = snapshot_hard_core_mapping(hm)
+        snap, _descs = snapshot_hard_core_mapping(hm)
         neural_stages = [s for s in snap["stages"] if s.get("kind") == "neural" and s.get("cores")]
         assert len(neural_stages) == 1
         core_d = neural_stages[0]["cores"][0]

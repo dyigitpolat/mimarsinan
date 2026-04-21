@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 from mimarsinan.model_training.training_utilities import AccuracyTracker
 from mimarsinan.data_handling.data_loader_factory import shutdown_data_loader
 from mimarsinan.model_training.training_recipe import (
@@ -40,6 +42,8 @@ class BasicTrainer:
         self.beta1 = 0.9
         self.beta2 = 0.99
 
+        self._validation_context = None
+
     def set_training_batch_size(self, batch_size):
         self.training_batch_size = batch_size
         self.train_loader = self.data_loader_factory.create_training_loader(
@@ -71,6 +75,35 @@ class BasicTrainer:
     def _report(self, metric_name, metric_value):
         if self.report_function is not None:
             self.report_function(metric_name, metric_value)
+
+    def _validation_metric_name(self, base: str) -> str:
+        """Suffix validation metric names with the active validation context.
+
+        Tuners wrap exploratory validations (LR probes, rate-proposal
+        evaluations) in :meth:`validation_context` so the Accuracy panel
+        can render committed tuning progress and exploratory probes as
+        distinct traces on the same chart. When no context is active the
+        name is emitted unchanged, preserving backwards compatibility.
+        """
+        kind = getattr(self, "_validation_context", None)
+        if kind is None:
+            return base
+        return f"{base} ({kind})"
+
+    @contextmanager
+    def validation_context(self, kind: str | None):
+        """Tag validation metrics reported inside the block with ``kind``.
+
+        Reentrant: nested contexts restore the previous kind on exit, and
+        the previous kind is restored even if an exception propagates
+        through the ``with`` block.
+        """
+        previous = getattr(self, "_validation_context", None)
+        self._validation_context = str(kind) if kind else None
+        try:
+            yield
+        finally:
+            self._validation_context = previous
 
     def _get_optimizer_and_scheduler(self, lr, epochs):
         if self.recipe is not None and epochs > 0:
@@ -222,7 +255,7 @@ class BasicTrainer:
         x, y = self.next_validation_batch()
         self.model.eval()
         acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
-        self._report("Validation accuracy", acc)
+        self._report(self._validation_metric_name("Validation accuracy"), acc)
         return acc
 
     def validate_n_batches(self, n_batches: int) -> float:
@@ -239,14 +272,16 @@ class BasicTrainer:
                 total += float(y.size(0))
                 correct += float(predicted.eq(y).sum().item())
         acc = correct / total if total else 0.0
-        self._report("Validation accuracy", acc)
+        self._report(self._validation_metric_name("Validation accuracy"), acc)
         return acc
     
     def validate_train(self):
         x, y = self.next_training_batch()
         self.model.train()
         acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
-        self._report("Validation accuracy on train set", acc)
+        self._report(
+            self._validation_metric_name("Validation accuracy on train set"), acc
+        )
         return acc
 
     def train_n_steps(self, lr, steps: int, warmup_steps: int = 0, *, constant_lr: bool = False):

@@ -1,6 +1,7 @@
 /* Pruning tab: per-layer weight heatmaps with pruning masks (red lines).
  * Shown for the Pruning Adaptation step; same red-line convention as IR Graph and Hardware. */
 import { esc } from './util.js';
+import { imgSrcAttr } from './resource-urls.js';
 
 const MAX_HEATMAP_PX = 400;
 
@@ -69,9 +70,10 @@ export function renderPruningTab(pruningData, container) {
         <tr><td>Pruned rows</td><td>${layer.pruned_rows ?? 0}</td></tr>
         <tr><td>Pruned cols</td><td>${layer.pruned_cols ?? 0}</td></tr>
       </table>`;
-    const uri = (layer.heatmap_image || '').replace(/"/g, '&quot;');
-    heatmapEl.innerHTML = uri
-      ? `<img src="${uri}" alt="Weight heatmap with pruning masks" class="pruning-detail-heatmap" style="border:1px solid var(--border-color, #2e3140);border-radius:4px">`
+    const uri = imgSrcAttr(layer.heatmap_resource);
+    const showImg = uri && (layer.has_heatmap || layer.heatmap_resource);
+    heatmapEl.innerHTML = showImg
+      ? `<img src="${uri}" alt="Weight heatmap with pruning masks" loading="lazy" decoding="async" class="pruning-detail-heatmap" style="border:1px solid var(--border-color, #2e3140);border-radius:4px">`
       : '<div class="empty-state">No heatmap</div>';
   }
 

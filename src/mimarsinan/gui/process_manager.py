@@ -372,6 +372,13 @@ class ProcessManager:
             "snapshot_key_kinds": sd.get("snapshot_key_kinds"),
         }
 
+    def get_working_dir(self, run_id: str) -> str | None:
+        """Return the working directory for *run_id*, or ``None`` if unknown."""
+        managed = self._runs.get(run_id)
+        if managed is None:
+            return None
+        return managed.working_dir
+
     def kill_run(self, run_id: str) -> bool:
         """Terminate a running subprocess.
 

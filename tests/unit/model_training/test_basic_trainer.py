@@ -126,6 +126,71 @@ class TestBasicTrainer:
         assert isinstance(loss, float)
         assert loss >= 0.0
 
+    def test_validation_context_tags_metric_name(self):
+        """Inside ``validation_context("probe")`` the metric name is suffixed."""
+        trainer = _make_trainer()
+        reported = []
+        trainer.report_function = lambda name, val: reported.append((name, val))
+
+        trainer.validate_n_batches(1)
+        with trainer.validation_context("probe"):
+            trainer.validate_n_batches(1)
+        trainer.validate()
+
+        names = [n for (n, _) in reported]
+        assert "Validation accuracy" in names
+        assert "Validation accuracy (probe)" in names
+        assert names.count("Validation accuracy (probe)") == 1
+
+    def test_validation_context_none_is_untagged(self):
+        trainer = _make_trainer()
+        reported = []
+        trainer.report_function = lambda name, val: reported.append((name, val))
+
+        with trainer.validation_context(None):
+            trainer.validate_n_batches(1)
+        assert reported and reported[-1][0] == "Validation accuracy"
+
+    def test_validation_context_is_reentrant_and_restores(self):
+        """Nested contexts restore the previous kind on exit."""
+        trainer = _make_trainer()
+        reported = []
+        trainer.report_function = lambda name, val: reported.append((name, val))
+
+        with trainer.validation_context("progress"):
+            trainer.validate_n_batches(1)
+            with trainer.validation_context("probe"):
+                trainer.validate_n_batches(1)
+            trainer.validate_n_batches(1)
+
+        names = [n for (n, _) in reported]
+        assert names == [
+            "Validation accuracy (progress)",
+            "Validation accuracy (probe)",
+            "Validation accuracy (progress)",
+        ]
+
+    def test_validation_context_restores_on_exception(self):
+        trainer = _make_trainer()
+        reported = []
+        trainer.report_function = lambda name, val: reported.append((name, val))
+
+        try:
+            with trainer.validation_context("probe"):
+                raise RuntimeError("boom")
+        except RuntimeError:
+            pass
+        trainer.validate_n_batches(1)
+        assert reported[-1][0] == "Validation accuracy"
+
+    def test_validation_context_applies_to_validate_train(self):
+        trainer = _make_trainer()
+        reported = []
+        trainer.report_function = lambda name, val: reported.append((name, val))
+        with trainer.validation_context("probe"):
+            trainer.validate_train()
+        assert reported[-1][0] == "Validation accuracy on train set (probe)"
+
     def test_test_honors_max_batches(self):
         """test(max_batches=N) stops at N batches; 0 returns 0.0 without iterating."""
         trainer = _make_trainer()

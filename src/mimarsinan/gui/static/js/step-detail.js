@@ -7,13 +7,21 @@ import { renderSearchTab } from './search-tab.js';
 import { renderActivationsTab, renderAdaptationTab } from './scales-tab.js';
 import { renderPruningTab } from './pruning-tab.js';
 import { initSearchLive, detachSearchLive, replaySearchEvents, syncSearchEventsFromState } from './search-live.js';
+import { setResourceContext } from './resource-urls.js';
 
 // ── Public API ───────────────────────────────────────────────────────────
+// Per-step ETag + metric-cursor cache shared across refreshStepDetail
+// calls. `_etagCache[step]` is the last ``If-None-Match`` value the
+// server handed us; `_sinceSeqCache[step]` is the largest metric seq
+// we've ingested so the server only has to ship new points.
+const _etagCache = {};
+const _sinceSeqCache = {};
+const _detailCache = {};
+
 export async function refreshStepDetail(stepName, state, fetchJSON) {
   const panel = document.getElementById('step-detail');
   if (!panel) return;
 
-  let detail;
   let stepsBase;
   if (state.historicalRunId && state.isActiveRun) {
     stepsBase = `/api/active_runs/${encodeURIComponent(state.historicalRunId)}/steps`;
@@ -22,9 +30,55 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   } else {
     stepsBase = '/api/steps';
   }
-  try { detail = await fetchJSON(`${stepsBase}/${encodeURIComponent(stepName)}`); }
-  catch (e) { panel.innerHTML = '<div class="empty-state">Failed to load step detail</div>'; return; }
+
+  const sinceSeq = _sinceSeqCache[stepName] || 0;
+  const url = `${stepsBase}/${encodeURIComponent(stepName)}?since_seq=${sinceSeq}`;
+
+  // Only the primary /api/steps endpoint currently supports ETag/304.
+  // Historical and active-run mirrors keep the plain path for now.
+  // Skip the conditional request when the panel was cleared (step
+  // switch / tab reset): we need the full body to rebuild DOM.
+  const canUseEtag = stepsBase === '/api/steps' && state.lastDetailJSON != null;
+  const ifNoneMatch = canUseEtag ? _etagCache[stepName] : null;
+
+  let detail;
+  try {
+    if (canUseEtag) {
+      const headers = {};
+      if (ifNoneMatch) headers['If-None-Match'] = ifNoneMatch;
+      const res = await fetch(url, { headers });
+      if (res.status === 304) {
+        // Snapshot is unchanged; keep the cached detail, still ingest
+        // nothing (server returned no body). But metrics may have
+        // advanced via WS in the meantime — trigger a chart refresh.
+        const cached = _detailCache[stepName];
+        if (cached) updateLiveCharts(stepName, state);
+        return;
+      }
+      if (!res.ok) {
+        panel.innerHTML = '<div class="empty-state">Failed to load step detail</div>';
+        return;
+      }
+      detail = await res.json();
+      const newEtag = res.headers.get('etag') || res.headers.get('ETag');
+      if (newEtag) _etagCache[stepName] = newEtag;
+    } else {
+      detail = await fetchJSON(url);
+    }
+  } catch (e) {
+    panel.innerHTML = '<div class="empty-state">Failed to load step detail</div>';
+    return;
+  }
   if (detail.error) { panel.innerHTML = `<div class="empty-state">${esc(detail.error)}</div>`; return; }
+  _detailCache[stepName] = detail;
+
+  // Advance the cursor so the next poll asks only for newer metrics.
+  if (typeof detail.latest_metric_seq === 'number') {
+    _sinceSeqCache[stepName] = detail.latest_metric_seq;
+  } else if (Array.isArray(detail.metrics) && detail.metrics.length > 0) {
+    const maxSeq = detail.metrics.reduce((m, x) => Math.max(m, x.seq || 0), _sinceSeqCache[stepName] || 0);
+    _sinceSeqCache[stepName] = maxSeq;
+  }
 
   const prevCount = _totalMetricPoints(stepName, state);
   const prevSearchLen = (state.searchEvents && state.searchEvents[stepName])
@@ -93,29 +147,80 @@ export function updateLiveCharts(stepName, state) {
   const groups = groupMetricsByCategory(Object.keys(metrics));
   for (const [group, metricNames] of Object.entries(groups)) {
     const el = document.getElementById(`mc-${cssId(group)}`);
-    if (!el || !el.data) return;
-    const allTraces = metricNames.map(name => {
-      let points = metrics[name] || [];
-      if (stepStartSec != null) {
-        points = points.filter(p => p.timestamp >= stepStartSec);
+    if (!el || !el.data) continue;
+
+    // Incremental fast path: if this chart has the same trace layout
+    // we last drew, we can call Plotly.extendTraces with only the new
+    // points per trace. This is orders of magnitude cheaper than
+    // Plotly.react for high-frequency metrics (training loss at
+    // batch granularity can flood at hundreds of Hz).
+    const trackedNames = el._mimarsinanTraceNames;
+    const structureMatches =
+      Array.isArray(trackedNames) &&
+      trackedNames.length === metricNames.length &&
+      trackedNames.every((n, i) => n === metricNames[i]);
+
+    if (structureMatches) {
+      const lastCounts = el._mimarsinanTraceCounts || [];
+      const newXs = [];
+      const newYs = [];
+      const traceIndices = [];
+      let grew = false;
+      for (let i = 0; i < metricNames.length; i++) {
+        const name = metricNames[i];
+        let points = metrics[name] || [];
+        if (stepStartSec != null) points = points.filter(p => p.timestamp >= stepStartSec);
+        const prev = lastCounts[i] || 0;
+        if (points.length > prev) {
+          grew = true;
+          const slice = points.slice(prev);
+          newXs.push(stepStartSec != null
+            ? slice.map(p => p.timestamp - stepStartSec)
+            : slice.map((_, j) => prev + j));
+          newYs.push(slice.map(p => p.value));
+          traceIndices.push(i);
+          lastCounts[i] = points.length;
+        }
       }
-      const x = stepStartSec != null ? points.map(p => (p.timestamp - stepStartSec)) : points.map((_, i) => i);
-      const y = points.map(p => p.value);
-      return { x, y, name };
-    });
-    const xMax = computeGroupXMax(allTraces);
-    const traces = allTraces.map(({ x, y, name }) => {
-      let xOut = x, yOut = y;
-      if (x.length === 1 && xMax != null) {
-        xOut = [x[0], xMax];
-        yOut = [y[0], y[0]];
+      if (grew) {
+        try {
+          Plotly.extendTraces(el, { x: newXs, y: newYs }, traceIndices);
+        } catch (_) {
+          // Fall through to full redraw if Plotly state desynced.
+          _fullRedraw(el, group, metricNames, metrics, stepStartSec);
+          continue;
+        }
+        el._mimarsinanTraceCounts = lastCounts;
       }
-      return { x: xOut, y: yOut, name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
-    });
-    const layout = { ...el.layout };
-    if (group === 'Accuracy' || group === 'Adaptation') layout.yaxis = { ...(layout.yaxis || {}), range: [0, 1] };
-    Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
+      continue;
+    }
+
+    _fullRedraw(el, group, metricNames, metrics, stepStartSec);
   }
+}
+
+function _fullRedraw(el, group, metricNames, metrics, stepStartSec) {
+  const allTraces = metricNames.map(name => {
+    let points = metrics[name] || [];
+    if (stepStartSec != null) points = points.filter(p => p.timestamp >= stepStartSec);
+    const x = stepStartSec != null ? points.map(p => (p.timestamp - stepStartSec)) : points.map((_, i) => i);
+    const y = points.map(p => p.value);
+    return { x, y, name, pointCount: points.length };
+  });
+  const xMax = computeGroupXMax(allTraces);
+  const traces = allTraces.map(({ x, y, name }) => {
+    let xOut = x, yOut = y;
+    if (x.length === 1 && xMax != null) {
+      xOut = [x[0], xMax];
+      yOut = [y[0], y[0]];
+    }
+    return { x: xOut, y: yOut, name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
+  });
+  const layout = { ...el.layout };
+  if (group === 'Accuracy' || group === 'Adaptation') layout.yaxis = { ...(layout.yaxis || {}), range: [0, 1] };
+  Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
+  el._mimarsinanTraceNames = metricNames.slice();
+  el._mimarsinanTraceCounts = allTraces.map(t => t.pointCount);
 }
 
 // ── Metrics ingestion ────────────────────────────────────────────────────
@@ -201,6 +306,14 @@ function renderTabs(stepName, tabs, detail, metrics, state) {
 
 function renderTabContent(stepName, tab, detail, metrics, container, state) {
   if (tab !== 'live_search') detachSearchLive();
+  // Install resource context for any lazy <img>/fetch inside the tab
+  // renderers. Tabs themselves stay stateless and import
+  // resourceUrl() from resource-urls.js.
+  setResourceContext({
+    stepName,
+    historicalRunId: state.historicalRunId || null,
+    isActiveRun: !!state.isActiveRun,
+  });
   const snap = detail.snapshot || {};
   const stepStartTime = detail.start_time != null ? (detail.start_time > 1e12 ? detail.start_time / 1000 : detail.start_time) : null;
   switch (tab) {
@@ -250,7 +363,7 @@ function plotMetricGroup(group, metricNames, metrics, stepStartTime) {
     }
     const x = stepStartTime != null ? points.map(p => (p.timestamp - stepStartTime)) : points.map((_, i) => i);
     const y = points.map(p => p.value);
-    return { x, y, name };
+    return { x, y, name, pointCount: points.length };
   });
   const xMax = computeGroupXMax(allTraces);
   const traces = allTraces.map(({ x, y, name }) => {
@@ -272,6 +385,10 @@ function plotMetricGroup(group, metricNames, metrics, stepStartTime) {
     layoutOpts.yaxis = { range: [0, 1] };
   }
   safeReact(el, traces, layoutOpts);
+  // Record trace layout so the WS-driven fast path (updateLiveCharts)
+  // can extendTraces incrementally instead of rebuilding the chart.
+  el._mimarsinanTraceNames = metricNames.slice();
+  el._mimarsinanTraceCounts = allTraces.map(t => t.pointCount);
 }
 
 function computeGroupXMax(traces) {
