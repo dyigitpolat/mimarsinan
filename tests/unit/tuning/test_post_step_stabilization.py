@@ -189,9 +189,12 @@ class TestStabilizationCall:
                 p.data.fill_(999.0)
 
         tuner.trainer.train_steps_until_target = _fake_train
-        # Validation dips after training.
+        # Validation dips after training. Stabilization now uses
+        # ``validate_n_batches`` (multi-batch) rather than the single-batch
+        # ``validate()`` whose 3σ ≈ 3.8% on MNIST would otherwise trip the
+        # rollback gate on pure noise.
         validation_sequence = [0.85, 0.40]
-        tuner.trainer.validate = lambda: (
+        tuner.trainer.validate_n_batches = lambda n: (
             validation_sequence.pop(0) if validation_sequence else 0.40
         )
 

@@ -443,7 +443,14 @@ class SmoothAdaptationTuner(TunerBase):
         """
         hard_floor = getattr(self, "_pipeline_hard_floor", None)
 
-        best_val = float(self.trainer.validate())
+        # Use the budgeted multi-batch validation. ``trainer.validate()`` is
+        # a single minibatch and its variance (3σ ≈ 3.8% on MNIST's 570-sample
+        # batch) far exceeds ``_rollback_tolerance``, so gating recovery on
+        # it fires on noise alone. ``validate_n_batches(eval_n_batches)``
+        # is the same measurement used by every rollback / commit decision
+        # in ``_adaptation``.
+        n_eval = self._budget.eval_n_batches
+        best_val = float(self.trainer.validate_n_batches(n_eval))
         if hard_floor is None:
             return best_val
         if best_val >= hard_floor:
@@ -472,7 +479,7 @@ class SmoothAdaptationTuner(TunerBase):
             finally:
                 for h in hooks:
                     h.remove()
-            val_acc = float(self.trainer.validate())
+            val_acc = float(self.trainer.validate_n_batches(n_eval))
             if val_acc > best_val:
                 best_val = val_acc
                 best_state = self._clone_state()
@@ -540,14 +547,45 @@ class SmoothAdaptationTuner(TunerBase):
             return
         budget = int(budget)
 
-        lr = self._get_cached_lr()
+        # Stabilization LR: the cached LR is biased toward values selected
+        # for rate transitions (large deltas). At committed rate=1.0 the
+        # model is already near the quantized fixed point, so use a gentler
+        # LR to avoid the "oscillate around the local minimum" failure mode
+        # that the single-batch pre/post comparison used to mask as a
+        # rollback. Clamp at ``pipeline_lr`` so a coarser cached LR cannot
+        # run away here.
+        lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
 
+        n_eval = self._budget.eval_n_batches
         pre_state = self._clone_state()
         try:
-            pre_val = float(self.trainer.validate())
+            # Multi-batch validation: single-batch ``trainer.validate()`` has
+            # 3σ ≈ 3.8% on MNIST (SE = 0.013 on 570 samples), which exceeds
+            # ``_rollback_tolerance`` and was triggering noise-driven
+            # rollbacks that threw away genuine improvements from the
+            # stabilization pass.
+            pre_val = float(self.trainer.validate_n_batches(n_eval))
         except Exception:
             pre_val = None
 
+        # Stabilization wants the full budget: best-state tracking inside
+        # ``train_steps_until_target`` already guards against regression, so
+        # patience-based early-stop here only truncates slow-but-real
+        # consolidation. Aggressive quantization (e.g. target_tq=4 on MNIST)
+        # plateaus validation at a noise band ~0.01 wide, which exceeds
+        # ``min_improvement``; with the default patience of 5 the pass
+        # exits after ~100 effective steps and a ~3% gap is left on the
+        # table. Raising patience to budget/check_interval (i.e. "never
+        # patience-exit") turns stabilization into "use the whole budget
+        # and restore the peak", which is what the invariant actually
+        # promises. Use ``eval_n_batches`` (rollback-grade) for the per-
+        # interval check so best-state selection doesn't latch onto a
+        # single lucky 1-batch reading.
+        progress_n = max(
+            self._budget.progress_eval_batches,
+            self._budget.eval_n_batches,
+        )
+        max_patience = max(_RECOVERY_PATIENCE, budget // max(1, self._budget.check_interval))
         hooks = self._recovery_training_hooks(1.0)
         try:
             self.trainer.train_steps_until_target(
@@ -555,10 +593,10 @@ class SmoothAdaptationTuner(TunerBase):
                 budget,
                 self._get_target(),
                 0,
-                validation_n_batches=self._budget.progress_eval_batches,
+                validation_n_batches=progress_n,
                 check_interval=self._budget.check_interval,
-                patience=_RECOVERY_PATIENCE,
-                min_steps=self._budget.check_interval * 3,
+                patience=max_patience,
+                min_steps=budget,
                 min_improvement=self._budget.accuracy_se() / 2,
             )
         finally:
@@ -567,7 +605,7 @@ class SmoothAdaptationTuner(TunerBase):
 
         if pre_val is not None:
             try:
-                post_val = float(self.trainer.validate())
+                post_val = float(self.trainer.validate_n_batches(n_eval))
             except Exception:
                 post_val = None
             if post_val is not None and post_val < pre_val - self._rollback_tolerance:

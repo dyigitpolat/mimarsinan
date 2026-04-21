@@ -362,7 +362,11 @@ class TestPruningTuner:
 
         captured = {}
 
-        def _capture_validate(_self):
+        def _capture_validate(_self, *_a, **_k):
+            # Captures at the first call of either validate or
+            # validate_n_batches — the safety net switched to
+            # ``validate_n_batches`` to avoid single-batch noise, so this
+            # test must accept whichever entry point the tuner uses.
             if "running_mean_at_metric_time" not in captured:
                 captured["running_mean_at_metric_time"] = bn.running_mean.clone()
             return 1.0  # satisfy pipeline-threshold safety net
@@ -372,7 +376,7 @@ class TestPruningTuner:
             {
                 "test": lambda self: 1.0,
                 "validate": _capture_validate,
-                "validate_n_batches": lambda self, n: 1.0,
+                "validate_n_batches": _capture_validate,
                 "train_one_step": lambda self, lr: None,
                 "train_steps_until_target": lambda self, *a, **k: None,
                 "train_n_steps": lambda self, *a, **k: None,

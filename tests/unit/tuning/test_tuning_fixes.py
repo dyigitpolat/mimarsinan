@@ -145,7 +145,11 @@ class TestEnsurePipelineThreshold:
         tuner._budget.accuracy_se.return_value = 0.005
         tuner._cached_lr = 0.001
         tuner.trainer = MagicMock()
-        tuner.trainer.validate.return_value = 0.90
+        # Safety net now uses ``validate_n_batches(eval_n_batches)`` (multi-
+        # minibatch) rather than single-batch ``validate()`` whose 3σ on
+        # MNIST (≈3.8% on a 570-sample batch) exceeded the rollback
+        # tolerance and caused noise-driven false rollbacks.
+        tuner.trainer.validate_n_batches.return_value = 0.90
 
         result = tuner._ensure_pipeline_threshold()
         assert result == 0.90
@@ -178,7 +182,7 @@ class TestEnsurePipelineThreshold:
         tuner._budget.accuracy_se.return_value = 0.005
         tuner._cached_lr = 0.001
         tuner.trainer = MagicMock()
-        tuner.trainer.validate.side_effect = [0.80, 0.88]
+        tuner.trainer.validate_n_batches.side_effect = [0.80, 0.88]
 
         tuner._find_lr = MagicMock(return_value=0.001)
 
@@ -401,6 +405,7 @@ class TestBaselineCalibration:
         tuner._budget.eval_n_batches = 5
         tuner._budget.max_training_steps = 100
         tuner._budget.check_interval = 10
+        tuner._budget.progress_eval_batches = 3
         tuner.target_adjuster = MagicMock()
         tuner.target_adjuster.get_target.return_value = 0.85
         tuner.target_adjuster.original_metric = 0.85

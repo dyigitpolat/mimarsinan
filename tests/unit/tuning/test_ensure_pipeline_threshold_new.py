@@ -63,7 +63,11 @@ def _make_tuner_under_test(tmp_path, *, floor, lr=0.001):
 class TestSkipsWhenAboveFloor:
     def test_returns_best_validate_when_above_floor(self, tmp_path):
         tuner = _make_tuner_under_test(tmp_path, floor=0.80)
-        tuner.trainer.validate.return_value = 0.90
+        # The safety net uses ``validate_n_batches(eval_n_batches)`` rather
+        # than single-batch ``validate()``: a single minibatch (≈570 MNIST
+        # samples) has 3σ ≈ 3.8%, which exceeds the rollback tolerance and
+        # produces noise-driven false rollbacks.
+        tuner.trainer.validate_n_batches.return_value = 0.90
         tuner._find_lr = MagicMock(return_value=0.001)
 
         result = tuner._attempt_recovery_if_below_floor()
@@ -75,8 +79,8 @@ class TestSkipsWhenAboveFloor:
 class TestRecoversWhenBelowFloor:
     def test_one_attempt_recovery(self, tmp_path):
         tuner = _make_tuner_under_test(tmp_path, floor=0.80)
-        # validate below floor first, then above after training
-        tuner.trainer.validate.side_effect = [0.70, 0.85]
+        # below floor first, then above after training
+        tuner.trainer.validate_n_batches.side_effect = [0.70, 0.85]
         tuner._find_lr = MagicMock(return_value=0.001)
         tuner.trainer.train_steps_until_target = MagicMock(return_value=None)
 
@@ -87,7 +91,7 @@ class TestRecoversWhenBelowFloor:
 
     def test_no_floor_gate_no_recovery(self, tmp_path):
         tuner = _make_tuner_under_test(tmp_path, floor=None)
-        tuner.trainer.validate.return_value = 0.50
+        tuner.trainer.validate_n_batches.return_value = 0.50
         tuner._find_lr = MagicMock(return_value=0.001)
 
         result = tuner._attempt_recovery_if_below_floor()
@@ -99,8 +103,7 @@ class TestRecoversWhenBelowFloor:
 class TestBelowFloorWarning:
     def test_emits_warning_when_cannot_recover(self, tmp_path):
         tuner = _make_tuner_under_test(tmp_path, floor=0.80)
-        # validate stays below floor on every call
-        tuner.trainer.validate.return_value = 0.50
+        tuner.trainer.validate_n_batches.return_value = 0.50
         tuner._find_lr = MagicMock(return_value=0.001)
         tuner.trainer.train_steps_until_target = MagicMock(return_value=None)
 
@@ -120,7 +123,7 @@ class TestBelowFloorWarning:
 
     def test_no_warning_when_recovered(self, tmp_path):
         tuner = _make_tuner_under_test(tmp_path, floor=0.80)
-        tuner.trainer.validate.side_effect = [0.70, 0.90]
+        tuner.trainer.validate_n_batches.side_effect = [0.70, 0.90]
         tuner._find_lr = MagicMock(return_value=0.001)
         tuner.trainer.train_steps_until_target = MagicMock(return_value=None)
 
@@ -138,7 +141,7 @@ class TestBackwardsCompatibleAlias:
     def test_old_method_name_delegates_to_new_one(self, tmp_path):
         """For callsites that still reference the old name, it should work."""
         tuner = _make_tuner_under_test(tmp_path, floor=0.80)
-        tuner.trainer.validate.return_value = 0.90
+        tuner.trainer.validate_n_batches.return_value = 0.90
         tuner._find_lr = MagicMock(return_value=0.001)
 
         result = tuner._ensure_pipeline_threshold()
