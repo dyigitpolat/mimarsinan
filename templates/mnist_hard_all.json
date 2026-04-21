@@ -29,20 +29,24 @@
     "allow_neuron_splitting": true
   },
   "deployment_parameters": {
-    "lr": 0.001,
-    "training_epochs": 10,
-    "tuning_budget_scale": 1,
+    "lr": 0.003,
+    "batch_size": 128,
+    "tuning_batch_size": 64,
+    "training_epochs": 8,
+    "tuning_budget_scale": 0.35,
+    "max_simulation_samples": 500,
+    "simulation_batch_count": 4,
     "degradation_tolerance": 0.05,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "model_type": "mlp_mixer_core",
     "model_config": {
-      "base_activation": "LeakyReLU",
+      "base_activation": "ReLU",
       "patch_n_1": 4,
       "patch_m_1": 4,
-      "patch_c_1": 32,
+      "patch_c_1": 128,
       "fc_w_1": 64,
-      "fc_w_2": 64
+      "fc_w_2": 128
     },
     "spiking_mode": "ttfs_quantized",
     "firing_mode": "TTFS",
@@ -55,11 +59,11 @@
     "training_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",
-      "weight_decay": 0.05,
-      "warmup_ratio": 0.1,
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
       "grad_clip_norm": 1,
-      "layer_wise_lr_decay": 0.75,
-      "label_smoothing": 0.1,
+      "layer_wise_lr_decay": 1.0,
+      "label_smoothing": 0.0,
       "betas": [
         0.9,
         0.999
@@ -68,11 +72,11 @@
     "tuning_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",
-      "weight_decay": 0.05,
-      "warmup_ratio": 0.1,
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.0,
       "grad_clip_norm": 1,
-      "layer_wise_lr_decay": 0.75,
-      "label_smoothing": 0.1,
+      "layer_wise_lr_decay": 1.0,
+      "label_smoothing": 0.0,
       "betas": [
         0.9,
         0.999

@@ -118,6 +118,11 @@ function init() {
     renderModelConfigFields();
     renderCoreTypes();
     setToggle('hardwareBiasToggle', true);
+    // Reuse ON by default — matches the "Apply recipe to tuning" checkbox
+    // behaviour the old checkbox started in. ``loadStateFromConfig`` below
+    // will override this when a template supplies a distinct tuning_recipe.
+    setToggle('recipeApplyToTuningToggle', true);
+    applyRecipeReuseDeps();
     applySpikingDeps();
     applyHwDeps();
     onPruningFractionChange();
@@ -273,6 +278,118 @@ function handleToggleChange(id) {
   if (id === 'scheduledMappingToggle') {
     applyHwDeps();
   }
+  if (id === 'recipeApplyToTuningToggle') {
+    applyRecipeReuseDeps();
+  }
+}
+
+// When the "reuse training recipe" toggle is OFF, expose the dedicated
+// tuning-recipe drawer so the user can edit it inline. When ON, the
+// drawer is collapsed and ``generate()`` just mirrors training_recipe
+// into ``dp.tuning_recipe``.
+function applyRecipeReuseDeps() {
+  const reuse = isToggleOn('recipeApplyToTuningToggle');
+  const drawer = document.getElementById('tuningRecipeDrawer');
+  if (drawer) drawer.classList.toggle('open', !reuse);
+}
+
+// Read the dedicated tuning-recipe fields. Emits only the keys the user
+// actually supplied; absent keys stay absent so backend defaults apply
+// (matches how the training-recipe builder above behaves).
+function buildTuningRecipeFromFields() {
+  const v = (id) => document.getElementById(id)?.value;
+  const recipe = {};
+  const optimizer = v('tuningRecipeOptimizer');
+  const scheduler = v('tuningRecipeScheduler');
+  if (optimizer) recipe.optimizer = optimizer;
+  if (scheduler) recipe.scheduler = scheduler;
+  const asFloat = (raw) => (raw !== '' && raw != null ? parseFloat(raw) : null);
+  const wd = asFloat(v('tuningRecipeWeightDecay'));
+  if (wd != null) recipe.weight_decay = wd;
+  const wr = asFloat(v('tuningRecipeWarmupRatio'));
+  if (wr != null) recipe.warmup_ratio = wr;
+  const gc = asFloat(v('tuningRecipeGradClipNorm'));
+  if (gc != null) recipe.grad_clip_norm = gc;
+  const llrd = asFloat(v('tuningRecipeLayerwiseLrDecay'));
+  if (llrd != null) recipe.layer_wise_lr_decay = llrd;
+  const ls = asFloat(v('tuningRecipeLabelSmoothing'));
+  if (ls != null) recipe.label_smoothing = ls;
+  const b1 = asFloat(v('tuningRecipeBeta1'));
+  const b2 = asFloat(v('tuningRecipeBeta2'));
+  if (b1 != null || b2 != null) {
+    recipe.betas = [b1 != null ? b1 : 0.9, b2 != null ? b2 : 0.999];
+  }
+  return recipe;
+}
+
+// Populate the drawer inputs from a recipe dict. Leaves inputs blank
+// when the source recipe omits a key so the placeholders (showing
+// backend defaults) remain visible.
+//
+// Uses a local ``set`` helper because the sibling ``setVal`` in
+// ``loadStateFromConfig`` is a closure — calling it from module scope
+// raises ``ReferenceError`` and silently aborts the rest of
+// ``loadStateFromConfig`` (regressing every toggle set after this call).
+function loadTuningRecipeFields(recipe) {
+  const r = recipe || {};
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') {
+      el.value = val != null ? String(val) : '';
+    } else if (el.getAttribute('type') === 'number') {
+      el.value = val != null && val !== '' ? Number(val) : '';
+    } else {
+      el.value = val != null ? String(val) : '';
+    }
+  };
+  set('tuningRecipeOptimizer', r.optimizer || '');
+  set('tuningRecipeScheduler', r.scheduler || 'cosine');
+  set('tuningRecipeWeightDecay', r.weight_decay != null ? r.weight_decay : '');
+  set('tuningRecipeWarmupRatio', r.warmup_ratio != null ? r.warmup_ratio : '');
+  set('tuningRecipeGradClipNorm', r.grad_clip_norm != null ? r.grad_clip_norm : '');
+  set('tuningRecipeLayerwiseLrDecay', r.layer_wise_lr_decay != null ? r.layer_wise_lr_decay : '');
+  set('tuningRecipeLabelSmoothing', r.label_smoothing != null ? r.label_smoothing : '');
+  if (Array.isArray(r.betas) && r.betas.length === 2) {
+    set('tuningRecipeBeta1', r.betas[0]);
+    set('tuningRecipeBeta2', r.betas[1]);
+  } else {
+    set('tuningRecipeBeta1', '');
+    set('tuningRecipeBeta2', '');
+  }
+}
+
+// Semantic equality between two recipe dicts. Order-insensitive,
+// numerically tolerant (keeps JSON float round-trips from being
+// read as "different"), and treats missing keys on one side as
+// equal when the other side stores ``undefined``.
+function recipesAreEquivalent(a, b) {
+  const toMap = (r) => (r && typeof r === 'object' ? r : {});
+  const A = toMap(a);
+  const B = toMap(b);
+  const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+  for (const k of keys) {
+    const av = A[k];
+    const bv = B[k];
+    if (av == null && bv == null) continue;
+    if (Array.isArray(av) || Array.isArray(bv)) {
+      if (!Array.isArray(av) || !Array.isArray(bv) || av.length !== bv.length) return false;
+      for (let i = 0; i < av.length; i++) {
+        if (typeof av[i] === 'number' && typeof bv[i] === 'number') {
+          if (Math.abs(av[i] - bv[i]) > 1e-9) return false;
+        } else if (av[i] !== bv[i]) {
+          return false;
+        }
+      }
+      continue;
+    }
+    if (typeof av === 'number' && typeof bv === 'number') {
+      if (Math.abs(av - bv) > 1e-9) return false;
+      continue;
+    }
+    if (av !== bv) return false;
+  }
+  return true;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -678,10 +795,19 @@ function buildConfig() {
       ];
     }
     dp.training_recipe = recipe;
-    // Optional: reuse the same recipe for the SNN adaptation / tuning phase.
-    const applyToTuning = document.getElementById('recipeApplyToTuning');
-    if (applyToTuning && applyToTuning.checked) {
+    // Adaptation tuner recipe: either reused from training_recipe (the
+    // common case — deep-clone so backend consumers can mutate without
+    // leaking back) or read from the dedicated drawer when the user has
+    // asked for a separate recipe. ``buildTuningRecipeFromFields`` emits
+    // only the fields the user actually supplied, preserving the legacy
+    // behaviour where an absent key falls back to the recipe default.
+    if (isToggleOn('recipeApplyToTuningToggle')) {
       dp.tuning_recipe = { ...recipe };
+    } else {
+      const tuningRecipe = buildTuningRecipeFromFields();
+      if (Object.keys(tuningRecipe).length > 0) {
+        dp.tuning_recipe = tuningRecipe;
+      }
     }
   }
 
@@ -860,9 +986,21 @@ function loadStateFromConfig(config) {
     setVal('recipeBeta1', '');
     setVal('recipeBeta2', '');
   }
-  // "Apply recipe to tuning" checkbox — on iff tuning_recipe is present.
-  const applyToTuningEl = document.getElementById('recipeApplyToTuning');
-  if (applyToTuningEl) applyToTuningEl.checked = !!dp.tuning_recipe;
+  // "Reuse training recipe for SNN tuners" toggle. Default ON when:
+  //   - no ``tuning_recipe`` is present (nothing separate to honour), or
+  //   - ``tuning_recipe`` is byte-identical to ``training_recipe`` (the
+  //     config explicitly duplicates it; no editing intent).
+  // Switch OFF when a distinct tuning recipe is provided so the drawer
+  // opens with the loaded values ready to edit. Fields are always
+  // populated from ``dp.tuning_recipe`` (when present) so toggling the
+  // reuse switch never silently discards user-loaded values.
+  const reuseToggleEl = document.getElementById('recipeApplyToTuningToggle');
+  const tuningRecipePresent = dp.tuning_recipe != null && typeof dp.tuning_recipe === 'object';
+  const tuningRecipeMatches = tuningRecipePresent && recipesAreEquivalent(dp.training_recipe, dp.tuning_recipe);
+  const reuseTuning = !tuningRecipePresent || tuningRecipeMatches;
+  if (reuseToggleEl) setToggle('recipeApplyToTuningToggle', reuseTuning);
+  loadTuningRecipeFields(tuningRecipePresent ? dp.tuning_recipe : (dp.training_recipe || {}));
+  applyRecipeReuseDeps();
 
   setVal('tuningBudgetScale', dp.tuning_budget_scale);
   setVal('degradationTolerance', dp.degradation_tolerance);

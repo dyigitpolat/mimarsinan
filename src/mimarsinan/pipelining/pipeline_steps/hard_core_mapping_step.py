@@ -81,12 +81,17 @@ class HardCoreMappingStep(PipelineStep):
                 spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
             )
             flow = flow.to(device)
+            # ``simulation_batch_count`` caps the per-core test pass to
+            # keep the verification sim inside the run budget on large
+            # models; the SoftCoreMapping pass already uses the same
+            # override. ``None`` preserves the legacy full-test-set pass.
+            sim_batches = self.pipeline.config.get("simulation_batch_count", None)
             acc = BasicTrainer(
                 flow,
                 device,
                 DataLoaderFactory(self.pipeline.data_provider_factory),
                 None,
-            ).test()
+            ).test(max_batches=sim_batches)
             self._last_metric = float(acc)
             print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
         except Exception as e:

@@ -29,7 +29,10 @@
   },
   "deployment_parameters": {
     "lr": 0.0005,
-    "tuning_budget_scale": 1,
+    "tuning_batch_size": 128,
+    "tuning_budget_scale": 0.5,
+    "max_simulation_samples": 500,
+    "simulation_batch_count": 4,
     "degradation_tolerance": 0.1,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
@@ -69,11 +72,11 @@
     "tuning_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",
-      "weight_decay": 0.05,
-      "warmup_ratio": 0.1,
+      "weight_decay": 0.01,
+      "warmup_ratio": 0.0,
       "grad_clip_norm": 1,
-      "layer_wise_lr_decay": 0.75,
-      "label_smoothing": 0.1,
+      "layer_wise_lr_decay": 1.0,
+      "label_smoothing": 0.0,
       "betas": [
         0.9,
         0.999

@@ -19,15 +19,23 @@ class TorchMLPMixerCoreBuilder:
         self.pipeline_config = pipeline_config
 
     def build(self, configuration):
+        # The wizard's ``_buildHwApiBody`` may fire a layout probe before the
+        # model_config form has rendered (async schema load), in which case
+        # ``configuration`` arrives without the architecture keys. Fall back
+        # to the schema defaults so the probe produces a valid layout
+        # instead of raising a KeyError. All user-facing paths (template
+        # load, explicit run) populate the full dict before calling build.
+        schema_defaults = {f["key"]: f.get("default") for f in self.get_config_schema()}
+        cfg = {**schema_defaults, **(configuration or {})}
         return TorchMLPMixerCore(
             input_shape=tuple(self.input_shape),
             num_classes=self.num_classes,
-            patch_n_1=int(configuration["patch_n_1"]),
-            patch_m_1=int(configuration["patch_m_1"]),
-            patch_c_1=int(configuration["patch_c_1"]),
-            fc_w_1=int(configuration["fc_w_1"]),
-            fc_w_2=int(configuration["fc_w_2"]),
-            base_activation=configuration.get("base_activation", "ReLU"),
+            patch_n_1=int(cfg["patch_n_1"]),
+            patch_m_1=int(cfg["patch_m_1"]),
+            patch_c_1=int(cfg["patch_c_1"]),
+            fc_w_1=int(cfg["fc_w_1"]),
+            fc_w_2=int(cfg["fc_w_2"]),
+            base_activation=cfg.get("base_activation", "ReLU"),
         )
 
     @classmethod
