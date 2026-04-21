@@ -71,6 +71,11 @@ class PerceptronTransformTrainer(BasicTrainer):
                     aux_param.grad = grad
                 else:
                     aux_param.grad.copy_(grad)
+            # optimizer.zero_grad() only clears aux_model grads (optimizer is on
+            # aux). self.model.grad is never zeroed elsewhere, so without this
+            # line backward() accumulates a running sum across every step and
+            # the effective LR grows linearly — catastrophic at LR ≳ 1e-3.
+            param.grad = None
 
     def _backward_pass_on_loss(self, x, y, scaler):
         with torch.no_grad():
