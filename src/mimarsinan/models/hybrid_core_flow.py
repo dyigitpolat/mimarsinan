@@ -108,6 +108,19 @@ class SpikingHybridCoreFlow(nn.Module):
         assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
         assert thresholding_mode in ["<", "<="]
 
+        # Single-segment tensor cache.  Each neural segment's hw-core
+        # matrices / thresholds / hardware_bias are uploaded to device
+        # lazily and evicted as soon as a different segment is requested.
+        # Why only one at a time: a ViT-scale mapping has 12 segments
+        # each holding ~200 hw cores (~18 MB per core in float64) —
+        # caching all of them simultaneously was ~40 GB of GPU residency
+        # and caused OOM even though no single segment's weights are
+        # that large.  Segments execute sequentially in the forward loop,
+        # so a size-1 cache still eliminates redundant re-uploads within
+        # a single segment (across cycles, batches of the same shape).
+        self._segment_tensor_cache: Dict[int, dict] = {}
+        self._segment_tensor_cache_key: int | None = None
+
     # ---------------------------------------------------------------------
     # Spike generation (rate-coded modes)
     # ---------------------------------------------------------------------
@@ -221,6 +234,88 @@ class SpikingHybridCoreFlow(nn.Module):
                 continue
             out[:, d0:d1] = buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
 
+    def _get_segment_tensors(self, stage: HybridStage, device: torch.device) -> dict:
+        """Return cached (axon_spans, output_spans, core_params, thresholds,
+        hw_biases) for ``stage``; building and uploading to device on
+        first access.  Weights are immutable post-build so this cache is
+        safe — the huge CPU→GPU transfer is paid once per stage, not per
+        batch.
+        """
+        mapping = stage.hard_core_mapping
+        assert mapping is not None
+        key = id(stage)
+        cached = self._segment_tensor_cache.get(key)
+        if cached is not None and cached.get("device") == device:
+            return cached
+
+        # Evict any previously-cached segment before uploading the new
+        # one — keep GPU residency bounded to a single segment's worth
+        # of weights.  Drop hard references so the allocator can reclaim.
+        if self._segment_tensor_cache_key is not None:
+            prev = self._segment_tensor_cache.pop(
+                self._segment_tensor_cache_key, None,
+            )
+            if prev is not None:
+                prev.clear()
+            self._segment_tensor_cache_key = None
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+
+        cores = mapping.cores
+        output_sources = mapping.output_sources
+
+        # Occupied sub-rectangle per hw core.  Greedy packing fills
+        # contiguous axon/neuron offsets starting at (0, 0); axons beyond
+        # ``used_axons`` are off-sources (pure padding added at the end
+        # of packing), and neurons beyond ``used_neurons`` are zero
+        # columns that no output span references.  Simulating only the
+        # occupied slice skips the zero-padded region entirely.
+        axon_spans = []
+        for c in cores:
+            if hasattr(c, "get_axon_source_spans"):
+                axon_spans.append(c.get_axon_source_spans())
+            else:
+                axon_spans.append(compress_spike_sources(c.axon_sources))
+        if hasattr(mapping, "get_output_source_spans"):
+            output_spans = mapping.get_output_source_spans()
+        else:
+            output_spans = compress_spike_sources(list(output_sources.flatten()))
+
+        core_params = []
+        hw_biases = []
+        for core in cores:
+            ua = max(int(core.axons_per_core - core.available_axons), 1)
+            un = max(int(core.neurons_per_core - core.available_neurons), 1)
+            mat = core.core_matrix[:ua, :un]
+            core_params.append(
+                torch.tensor(mat.T, dtype=_COMPUTE_DTYPE, device=device)
+            )
+            bias = getattr(core, "hardware_bias", None)
+            if bias is None:
+                hw_biases.append(None)
+            else:
+                hw_biases.append(
+                    torch.tensor(bias[:un], dtype=_COMPUTE_DTYPE, device=device)
+                )
+        thresholds = [
+            torch.tensor(float(core.threshold), dtype=_COMPUTE_DTYPE, device=device)
+            for core in cores
+        ]
+
+        cached = dict(
+            device=device,
+            cores=cores,
+            output_sources=output_sources,
+            axon_spans=axon_spans,
+            output_spans=output_spans,
+            core_params=core_params,
+            thresholds=thresholds,
+            hw_biases=hw_biases,
+        )
+        self._segment_tensor_cache[key] = cached
+        self._segment_tensor_cache_key = key
+        return cached
+
     def _run_neural_segment_rate(
         self,
         stage: HybridStage,
@@ -241,45 +336,37 @@ class SpikingHybridCoreFlow(nn.Module):
         latency = ChipLatency(mapping).calculate()
         cycles = int(latency) + T
 
-        cores = mapping.cores
-        output_sources = mapping.output_sources
-
-        axon_spans = []
-        for c in cores:
-            if hasattr(c, "get_axon_source_spans"):
-                axon_spans.append(c.get_axon_source_spans())
-            else:
-                axon_spans.append(compress_spike_sources(c.axon_sources))
-        if hasattr(mapping, "get_output_source_spans"):
-            output_spans = mapping.get_output_source_spans()
-        else:
-            output_spans = compress_spike_sources(list(output_sources.flatten()))
-
-        core_params = [
-            torch.tensor(core.core_matrix.T, dtype=_COMPUTE_DTYPE, device=device)
-            for core in cores
-        ]
-        thresholds = [
-            torch.tensor(float(core.threshold), dtype=_COMPUTE_DTYPE, device=device)
-            for core in cores
-        ]
-        # Hardware-bias tensors (dedicated bias register, not always-on axon row).
-        hw_biases = [
-            torch.tensor(core.hardware_bias, dtype=_COMPUTE_DTYPE, device=device)
-            if getattr(core, "hardware_bias", None) is not None else None
-            for core in cores
-        ]
+        seg = self._get_segment_tensors(stage, device)
+        cores = seg["cores"]
+        output_sources = seg["output_sources"]
+        axon_spans = seg["axon_spans"]
+        output_spans = seg["output_spans"]
+        core_params = seg["core_params"]
+        thresholds = seg["thresholds"]
+        hw_biases = seg["hw_biases"]
 
         ops = {"<": torch.lt, "<=": torch.le}
 
-        buffers = [torch.zeros(batch_size, core.get_output_count(), device=device, dtype=_COMPUTE_DTYPE) for core in cores]
-        memb = [torch.zeros(batch_size, core.get_output_count(), device=device, dtype=_COMPUTE_DTYPE) for core in cores]
+        # Buffers / memb / input_signals sized to each core's occupied
+        # rectangle (frozen post-packing; read directly from the core).
+        buffers = [
+            torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
+                        device=device, dtype=_COMPUTE_DTYPE)
+            for c in cores
+        ]
+        memb = [
+            torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
+                        device=device, dtype=_COMPUTE_DTYPE)
+            for c in cores
+        ]
 
         output_counts = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
 
         zeros_in = torch.zeros(batch_size, input_size, device=device, dtype=_COMPUTE_DTYPE)
         input_signals = [
-            torch.zeros(batch_size, core.get_input_count(), device=device, dtype=_COMPUTE_DTYPE) for core in cores
+            torch.zeros(batch_size, max(int(c.axons_per_core - c.available_axons), 1),
+                        device=device, dtype=_COMPUTE_DTYPE)
+            for c in cores
         ]
 
         # Spike train arrives as float32 from spike generators; cast to compute dtype once.
@@ -364,45 +451,29 @@ class SpikingHybridCoreFlow(nn.Module):
         batch_size = input_activations.shape[0]
         device = input_activations.device
 
-        cores = mapping.cores
-        output_sources = mapping.output_sources
-
-        axon_spans = []
-        for c in cores:
-            if hasattr(c, "get_axon_source_spans"):
-                axon_spans.append(c.get_axon_source_spans())
-            else:
-                axon_spans.append(compress_spike_sources(c.axon_sources))
-        if hasattr(mapping, "get_output_source_spans"):
-            output_spans = mapping.get_output_source_spans()
-        else:
-            output_spans = compress_spike_sources(list(output_sources.flatten()))
-
-        core_params = [
-            torch.tensor(core.core_matrix.T, dtype=_COMPUTE_DTYPE, device=device)
-            for core in cores
-        ]
-        thresholds = [
-            torch.tensor(float(core.threshold), dtype=_COMPUTE_DTYPE, device=device)
-            for core in cores
-        ]
-        # Hardware-bias tensors (dedicated bias register, not always-on axon row).
-        hw_biases = [
-            torch.tensor(core.hardware_bias, dtype=_COMPUTE_DTYPE, device=device)
-            if getattr(core, "hardware_bias", None) is not None else None
-            for core in cores
-        ]
+        seg = self._get_segment_tensors(stage, device)
+        cores = seg["cores"]
+        output_sources = seg["output_sources"]
+        axon_spans = seg["axon_spans"]
+        output_spans = seg["output_spans"]
+        core_params = seg["core_params"]
+        thresholds = seg["thresholds"]
+        hw_biases = seg["hw_biases"]
 
         # Cast inputs to compute dtype to match C++ double precision.
         input_activations = input_activations.to(_COMPUTE_DTYPE)
 
+        # Buffers / input_signals sized to each core's occupied rectangle
+        # (frozen post-packing; read directly from the core).
         buffers = [
-            torch.zeros(batch_size, core.get_output_count(), device=device, dtype=_COMPUTE_DTYPE)
-            for core in cores
+            torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
+                        device=device, dtype=_COMPUTE_DTYPE)
+            for c in cores
         ]
         input_signals = [
-            torch.zeros(batch_size, core.get_input_count(), device=device, dtype=_COMPUTE_DTYPE)
-            for core in cores
+            torch.zeros(batch_size, max(int(c.axons_per_core - c.available_axons), 1),
+                        device=device, dtype=_COMPUTE_DTYPE)
+            for c in cores
         ]
 
         topo_order = sorted(range(len(cores)), key=lambda i: cores[i].latency or 0)
@@ -501,9 +572,15 @@ class SpikingHybridCoreFlow(nn.Module):
                 # Host-side compute ops execute a Python torch module.  C++
                 # SimulationRunner._execute_compute_op_np runs them in float32;
                 # match that here so PyTorch and C++ agree bit-for-bit.
-                x_f32 = x.to(torch.float32)
-                sb_f32 = {k: v.to(torch.float32) for k, v in state_buffer.items()}
-                gathered = op.gather_inputs(x_f32, sb_f32)
+                #
+                # Memory: never materialise a float32 copy of the entire
+                # state_buffer — that duplicated every prior segment's
+                # output per compute-op (2× state memory for each of ~2430
+                # ops on cifar_vit → OOM).  ``gather_inputs`` only reads
+                # the specific sources this op needs, so casting the
+                # gathered result (O(op_inputs)) is sufficient.
+                gathered = op.gather_inputs(x, state_buffer)
+                gathered = gathered.to(torch.float32)
                 if abs(in_scale - 1.0) > 1e-9:
                     gathered = gathered * in_scale
                 result = op.execute_on_gathered(gathered)
@@ -551,10 +628,12 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
-                # Match C++ path: compute ops run in float32.
-                x_f32 = x.to(torch.float32)
-                sb_f32 = {k: v.to(torch.float32) for k, v in state_buffer.items()}
-                result = op.execute(x_f32, sb_f32)
+                # Match C++ path: compute ops run in float32.  Avoid a
+                # whole-state_buffer float32 copy (see _forward_ttfs note)
+                # — gather first, cast only what's consumed.
+                gathered = op.gather_inputs(x, state_buffer)
+                gathered = gathered.to(torch.float32)
+                result = op.execute_on_gathered(gathered)
                 state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
 
             else:

@@ -168,8 +168,11 @@ def _remap_external_sources_to_segment_inputs(
 
     new_nodes: list[NeuralCore] = []
     for n in nodes:
-        n2 = copy.deepcopy(n)
-        flat = [remap_src(src) for src in n2.input_sources.flatten()]
+        # Shallow copy with fresh input_sources — avoids deep-copying
+        # ``core_matrix`` (the hot cost) since it is immutable after
+        # quantization and safely shareable across reindexed copies.
+        n2 = copy.copy(n)
+        flat = [remap_src(src) for src in n.input_sources.flatten()]
         n2.input_sources = np.array(flat, dtype=object).reshape(n.input_sources.shape)
         new_nodes.append(n2)
 
@@ -214,10 +217,25 @@ def _reindex_nodes(
     nodes: list[NeuralCore],
     reindex_maps: dict[int, dict[int, int]],
 ) -> list[NeuralCore]:
-    """Deep-copy nodes and apply compaction reindex to their input_sources."""
+    """Clone nodes with fresh input_sources and apply compaction reindex.
+
+    Uses a shallow copy plus an independent ``input_sources`` ndarray so we
+    can mutate sources without touching the originals.  Weight tensors
+    (``core_matrix``, ``hardware_bias``, heatmaps, masks) are shared by
+    reference — they are immutable after quantization/compaction and
+    deep-copying them dominated HCM build time at ViT scale
+    (numpy deep-copy was 2.7 s out of 4 s on a 708-core workload).
+    """
     result = []
     for n in nodes:
-        n2 = copy.deepcopy(n)
+        n2 = copy.copy(n)
+        # Fresh object-array for input_sources so reindex mutations do not
+        # leak into the original.  Element objects (IRSource) are small and
+        # safe to share — we only overwrite entries via .flat[i] assignment.
+        n2.input_sources = np.array(
+            n.input_sources.flatten(),
+            dtype=object,
+        ).reshape(n.input_sources.shape)
         _apply_reindex_to_ir_sources(n2.input_sources, reindex_maps)
         result.append(n2)
     return result
@@ -704,7 +722,13 @@ def _build_single_pool(
 
             # Apply compaction reindex to ComputeOp input_sources so they
             # reference the compacted neuron indices in the state buffer.
-            op_copy = copy.deepcopy(node)
+            # Use a shallow copy + fresh input_sources ndarray — deep-copying
+            # a ComputeOp also copies its ``params["module"]`` (torch nn.Module
+            # with weight tensors), which dominated HCM build at ViT scale.
+            op_copy = copy.copy(node)
+            op_copy.input_sources = np.array(
+                node.input_sources.flatten(), dtype=object,
+            ).reshape(node.input_sources.shape)
             _apply_reindex_to_ir_sources(op_copy.input_sources, all_reindex_maps)
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
             continue
@@ -764,7 +788,10 @@ def _build_scheduled(
                 current_neural = []
                 segment_index += 1
 
-            op_copy = copy.deepcopy(node)
+            op_copy = copy.copy(node)
+            op_copy.input_sources = np.array(
+                node.input_sources.flatten(), dtype=object,
+            ).reshape(node.input_sources.shape)
             _apply_reindex_to_ir_sources(op_copy.input_sources, all_reindex_maps)
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
             continue

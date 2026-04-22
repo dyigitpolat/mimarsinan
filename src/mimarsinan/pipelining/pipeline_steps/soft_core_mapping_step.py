@@ -333,7 +333,29 @@ class SoftCoreMappingStep(PipelineStep):
             # and is *independent* from ``generate_visualizations`` (which only
             # controls graphviz DOT/SVG dumps on disk). Default True so the
             # monitor works out of the box; memory-constrained runs can opt out.
+            #
+            # Memory guard: estimate the total heatmap footprint before
+            # materialising it.  For large ViT-scale models this is tens of
+            # GB (2364 × 768×3072 × 4 bytes = 22 GB for cifar_vit) — silently
+            # overwhelms machines and bloats the IR pickle to 27 GB+.  When
+            # the estimate exceeds a budget, drop heatmaps and warn.
             store_heatmap = bool(self.pipeline.config.get("store_pre_pruning_heatmap", True))
+            if store_heatmap:
+                heatmap_budget_bytes = int(self.pipeline.config.get(
+                    "pre_pruning_heatmap_budget_bytes", 2 * 1024**3,  # 2 GB
+                ))
+                est_bytes = 0
+                for nc in ir_graph.get_neural_cores():
+                    if nc.core_matrix is not None:
+                        est_bytes += nc.core_matrix.shape[0] * nc.core_matrix.shape[1] * 4  # float32
+                if est_bytes > heatmap_budget_bytes:
+                    print(
+                        f"[SoftCoreMappingStep] Pre-pruning heatmap would require "
+                        f"{est_bytes/1e9:.1f} GB (budget {heatmap_budget_bytes/1e9:.1f} GB); "
+                        f"disabling heatmap storage for this run. "
+                        f"Set `pre_pruning_heatmap_budget_bytes` higher to override."
+                    )
+                    store_heatmap = False
             with _phase("prune_ir_graph"):
                 ir_graph = prune_ir_graph(
                     ir_graph,
@@ -449,8 +471,21 @@ class SoftCoreMappingStep(PipelineStep):
                 if attempt_cap is not None:
                     current_bs = spiking_trainer.test_batch_size
                     spiking_trainer.set_test_batch_size(min(current_bs, attempt_cap))
-                with _phase(f"sim_test[batches={sim_batches}]"):
-                    acc = spiking_trainer.test(max_batches=sim_batches)
+                # Honour ``max_simulation_samples`` the same way the C++
+                # ``SimulationRunner`` does: seeded numpy.choice
+                # subsampling of the full test set.  This keeps the SCM
+                # verification metric comparable to both the HCM
+                # verification and the downstream chip-sim pass.
+                max_samples = int(self.pipeline.config.get("max_simulation_samples", 0) or 0)
+                if max_samples > 0:
+                    with _phase(f"sim_test[max_samples={max_samples}]"):
+                        acc = spiking_trainer.test_on_subsample(
+                            max_samples=max_samples,
+                            seed=int(self.pipeline.config.get("seed", 0)),
+                        )
+                else:
+                    with _phase(f"sim_test[batches={sim_batches}]"):
+                        acc = spiking_trainer.test(max_batches=sim_batches)
                 spiking_trainer.close()
                 self._soft_core_spiking_metric = float(acc)
                 print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")

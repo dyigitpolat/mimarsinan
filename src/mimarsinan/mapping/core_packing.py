@@ -75,11 +75,9 @@ def pick_best_softcore(unmapped_cores: List[SoftT]) -> SoftT:
     if not unmapped_cores:
         raise ValueError("unmapped_cores is empty")
 
-    unmapped_cores.sort(key=lambda core: core.get_input_count(), reverse=True)
-    core_a = unmapped_cores[0]
-
-    unmapped_cores.sort(key=lambda core: core.get_output_count(), reverse=True)
-    core_b = unmapped_cores[0]
+    # Single linear scan is O(n) vs two full sorts O(n log n) — same winner.
+    core_a = max(unmapped_cores, key=lambda c: c.get_input_count())
+    core_b = max(unmapped_cores, key=lambda c: c.get_output_count())
 
     if core_a.get_input_count() > core_b.get_output_count():
         return core_a
@@ -102,6 +100,8 @@ def _try_split_into_used(
     split_threshold: float,
     place: Callable[[int, HardT, SoftT], None],
     softcores: List[SoftT],
+    *,
+    candidate_indices: "list[int] | None" = None,
 ) -> bool:
     """Try to split *core* into a partially-filled used hardware core.
 
@@ -111,33 +111,39 @@ def _try_split_into_used(
     - neurons do NOT fit (the whole core is too wide)
     - remaining neurons > split_threshold × total neurons
 
+    ``candidate_indices`` restricts the scan to a pre-filtered subset
+    (e.g. only cores with a compatible threshold_group_id).  When omitted
+    the full used-core list is scanned.
+
     Returns True if a split was performed, False otherwise.
     """
     best_idx = None
     best_avail_n = -1
-    for idx, hc in enumerate(used_hardcores):
+    core_tg = getattr(core, "threshold_group_id", None)
+    core_latency = getattr(core, "latency", None)
+    core_in = core.get_input_count()
+    core_out = core.get_output_count()
+
+    iterator = (
+        ((i, used_hardcores[i]) for i in candidate_indices)
+        if candidate_indices is not None
+        else enumerate(used_hardcores)
+    )
+
+    for idx, hc in iterator:
         avail_a = getattr(hc, "available_axons", int(hc.get_input_count()))
         avail_n = getattr(hc, "available_neurons", int(hc.get_output_count()))
         total_n = int(hc.get_output_count())
         if (
-            core.get_input_count() <= avail_a
-            and core.get_output_count() > avail_n
+            core_in <= avail_a
+            and core_out > avail_n
             and avail_n > split_threshold * total_n
             and avail_n > best_avail_n
         ):
-            # Also verify threshold/latency compatibility by checking that a
-            # hypothetical full-fit would pass (except neuron count).  We rely
-            # on the caller's is_mapping_possible being captured in the closure
-            # that constructed split_softcore — for now we check the attributes
-            # directly (same logic as HardCoreMapping.map).
-            hc_threshold = getattr(hc, "threshold", None)
-            core_threshold = getattr(core, "threshold", None)
-            if hc_threshold is not None and core_threshold is not None:
-                diff_rate = abs(core_threshold - hc_threshold) / (hc_threshold + 1)
-                if diff_rate > 0.1:
-                    continue
+            hc_tg = getattr(hc, "threshold_group_id", None)
+            if hc_tg is not None and core_tg is not None and int(hc_tg) != int(core_tg):
+                continue
             hc_latency = getattr(hc, "latency", None)
-            core_latency = getattr(core, "latency", None)
             if hc_latency is not None:
                 if core_latency is None or core_latency != hc_latency:
                     continue
@@ -162,6 +168,11 @@ def _try_split_into_unused(
     split_threshold: float,
     place: Callable[[int, HardT, SoftT], None],
     softcores: List[SoftT],
+    *,
+    type_counts: "Counter | None" = None,
+    type_key: Callable[[HardT], tuple] | None = None,
+    unused_by_type: "dict | None" = None,
+    hard_type_key: Callable[[HardT], tuple] | None = None,
 ) -> bool:
     """Try to split *core* into a fresh unused hardware core.
 
@@ -188,8 +199,24 @@ def _try_split_into_unused(
         return False
 
     frag1, frag2 = split_softcore(core, best_total_n)
+    # Identity-based removal — avoids dataclass __eq__ removing the wrong instance.
+    for _i, _x in enumerate(unused_hardcores):
+        if _x is best_hc:
+            del unused_hardcores[_i]
+            break
     used_hardcores.append(best_hc)
-    unused_hardcores.remove(best_hc)
+    if type_counts is not None and type_key is not None:
+        type_counts[type_key(best_hc)] -= 1
+    if unused_by_type is not None and hard_type_key is not None:
+        tk = hard_type_key(best_hc)
+        bucket = unused_by_type.get(tk)
+        if bucket is not None:
+            for _i, _x in enumerate(bucket):
+                if _x is best_hc:
+                    del bucket[_i]
+                    break
+            if not bucket:
+                del unused_by_type[tk]
     new_idx = len(used_hardcores) - 1
     place(new_idx, used_hardcores[new_idx], frag1)
     softcores.remove(core)
@@ -250,20 +277,115 @@ def greedy_pack_softcores(
     """
 
     def _core_type_key(hc: HardT) -> tuple[int, int]:
-        return (int(hc.get_input_count()), int(hc.get_output_count()))
+        k = getattr(hc, "_type_key_cache", None)
+        if k is None:
+            k = (int(hc.get_input_count()), int(hc.get_output_count()))
+            try:
+                hc._type_key_cache = k
+            except AttributeError:
+                pass
+        return k
+
+    def _identity_remove(lst, target) -> bool:
+        """Remove ``target`` from ``lst`` by *identity* (``is``), not ``__eq__``.
+
+        LayoutHardCoreInstance uses dataclass-generated ``__eq__`` which treats
+        two fresh instances of the same (axons, neurons) as equal until one is
+        mutated.  Using ``list.remove`` would then remove the wrong object when
+        multiple equivalent fresh instances share a pool.
+        """
+        for i, x in enumerate(lst):
+            if x is target:
+                del lst[i]
+                return True
+        return False
+
+    def _soft_tg(sc) -> int | None:
+        tg = getattr(sc, "threshold_group_id", None)
+        return int(tg) if tg is not None else None
+
+    def _hard_tg(hc) -> int | None:
+        tg = getattr(hc, "threshold_group_id", None)
+        return int(tg) if tg is not None else None
+
+    # Unused pool organised by type: {type_key: [instances...]}.  Most unused
+    # cores of the same type are interchangeable at decision time, so we only
+    # evaluate one representative per type (one waste/is_mapping_possible call
+    # per type instead of per instance → ~N× speedup at cifar_vit scale).
+    unused_by_type: dict[tuple[int, int], list] = {}
+    for hc in unused_hardcores:
+        unused_by_type.setdefault(_core_type_key(hc), []).append(hc)
+
+    # Used-core index bucketed by threshold_group_id.  Each softcore only
+    # consults cores with a matching tg (plus the "not-yet-pinned" bucket
+    # whose tg is None — empty hw cores that haven't had any softcore
+    # placed yet).  Each entry is the index into used_hardcores so we can
+    # dereference the actual instance.
+    used_by_tg: dict[int | None, list[int]] = {}
+
+    def _register_used(idx: int, hc) -> None:
+        used_by_tg.setdefault(_hard_tg(hc), []).append(idx)
+
+    # Pre-populate from any pre-existing used cores — callers may invoke
+    # greedy_pack_softcores multiple times with an accumulating ``used``
+    # list (e.g. scheduled mapping passes).
+    for _i, _hc in enumerate(used_hardcores):
+        _register_used(_i, _hc)
+
+    def _reindex_used_tg(idx: int) -> None:
+        """Move a used-core index into the tg bucket that matches its current
+        hardcore tg (called after the first softcore is placed and sets it)."""
+        hc = used_hardcores[idx]
+        new_tg = _hard_tg(hc)
+        for key, bucket in used_by_tg.items():
+            if key == new_tg:
+                continue
+            if idx in bucket:
+                bucket.remove(idx)
+                used_by_tg.setdefault(new_tg, []).append(idx)
+                return
+
+    # Fast path for the default pick heuristic when splitting is off:
+    # pre-sort ascending by max(input, output) and process from the end.
+    # Saves two O(n) max() scans per placement (→ O(n²) per pack), which
+    # dominates on large models.  Disabled when split_softcore is active
+    # because splits append smaller fragments that would break the ordering.
+    _use_sort_fast_path = (
+        pick_softcore is pick_best_softcore and split_softcore is None
+    )
+    if _use_sort_fast_path:
+        softcores.sort(key=lambda c: max(c.get_input_count(), c.get_output_count()))
+
+    def _pop_unused_of_type(type_key: tuple[int, int]):
+        bucket = unused_by_type.get(type_key)
+        if not bucket:
+            return None
+        hc = bucket.pop()
+        if not bucket:
+            del unused_by_type[type_key]
+        return hc
 
     while softcores:
-        core = pick_softcore(softcores)
+        if _use_sort_fast_path:
+            core = softcores[-1]
+        else:
+            core = pick_softcore(softcores)
 
-        # --- Try used cores: pick the one with the tightest fit. ---
+        core_tg = _soft_tg(core)
+
+        # --- Try used cores (only those with a compatible threshold group). ---
         target_idx = None
         best_remaining = float("inf")
-        for idx, hc in enumerate(used_hardcores):
-            if is_mapping_possible(core, hc):
-                rem = _remaining_capacity(core, hc)
-                if rem < best_remaining:
-                    best_remaining = rem
-                    target_idx = idx
+        candidate_buckets = [used_by_tg.get(core_tg, ())]
+        candidate_buckets.append(used_by_tg.get(None, ()))
+        for bucket in candidate_buckets:
+            for idx in bucket:
+                hc = used_hardcores[idx]
+                if is_mapping_possible(core, hc):
+                    rem = _remaining_capacity(core, hc)
+                    if rem < best_remaining:
+                        best_remaining = rem
+                        target_idx = idx
 
         # --- Try neuron splitting into a used core ---
         if (
@@ -271,9 +393,15 @@ def greedy_pack_softcores(
             and split_softcore is not None
             and _is_splittable(core)
         ):
+            # Restrict the split-target search to compatible tg buckets
+            # (+ the unassigned bucket) — avoids a full O(|used|) scan
+            # when the used pool is large.
+            candidates = list(used_by_tg.get(core_tg, ()))
+            candidates.extend(used_by_tg.get(None, ()))
             if _try_split_into_used(
                 core, used_hardcores, split_softcore, split_threshold,
                 place, softcores,
+                candidate_indices=candidates,
             ):
                 continue
 
@@ -282,36 +410,48 @@ def greedy_pack_softcores(
             if not unused_hardcores:
                 raise RuntimeError("No more hard cores available")
 
-            type_counts = Counter(_core_type_key(hc) for hc in unused_hardcores)
-
-            chosen_unused = None
+            # Only evaluate one representative per type — all instances of a
+            # type are interchangeable for the scoring function.
+            chosen_type = None
             chosen_score = float("inf")
-            for hc in unused_hardcores:
+            chosen_hc = None
+            for type_key, bucket in unused_by_type.items():
+                if not bucket:
+                    continue
+                hc = bucket[-1]  # representative
                 if is_mapping_possible(core, hc):
                     waste = _placement_waste(core, hc)
-                    abundance = type_counts[_core_type_key(hc)]
+                    abundance = len(bucket)
                     score = waste / max(abundance, 1)
                     if score < chosen_score:
-                        chosen_unused = hc
+                        chosen_type = type_key
                         chosen_score = score
+                        chosen_hc = hc
 
-            if chosen_unused is None:
+            if chosen_hc is None:
                 s_a = int(core.get_input_count())
                 s_n = int(core.get_output_count())
-                avail = {k: v for k, v in type_counts.items()}
+                avail = {k: len(b) for k, b in unused_by_type.items()}
 
                 fused_hc = None
                 if fuse_hardcores is not None:
-                    for hc_type, qty in type_counts.items():
+                    for hc_type, bucket in list(unused_by_type.items()):
+                        qty = len(bucket)
                         c_a, c_n = hc_type
                         if c_n >= s_n and c_a * qty >= s_a:
                             qty_needed = (s_a + c_a - 1) // c_a
-                            fusing_hcs = [hc for hc in unused_hardcores if _core_type_key(hc) == hc_type][:qty_needed]
+                            fusing_hcs = bucket[-qty_needed:]
                             temp_fused = fuse_hardcores(fusing_hcs)
                             if is_mapping_possible(core, temp_fused):
                                 fused_hc = temp_fused
                                 for hc in fusing_hcs:
-                                    unused_hardcores.remove(hc)
+                                    _identity_remove(unused_hardcores, hc)
+                                # Drop the last ``qty_needed`` slice from bucket
+                                # by identity — matches ``fusing_hcs`` since we
+                                # sliced from the same list.
+                                del bucket[-qty_needed:]
+                                if not bucket:
+                                    del unused_by_type[hc_type]
                                 break
 
                 # --- Try neuron splitting into an unused core (last resort) ---
@@ -323,12 +463,17 @@ def greedy_pack_softcores(
                     if _try_split_into_unused(
                         core, used_hardcores, unused_hardcores,
                         split_softcore, split_threshold, place, softcores,
+                        type_counts=None, type_key=None,
+                        unused_by_type=unused_by_type,
+                        hard_type_key=_core_type_key,
                     ):
                         continue
 
                 if fused_hc is not None:
                     used_hardcores.append(fused_hc)
-                    target_idx = len(used_hardcores) - 1
+                    new_idx = len(used_hardcores) - 1
+                    _register_used(new_idx, fused_hc)
+                    target_idx = new_idx
                 else:
                     raise RuntimeError(
                         f"No more hard cores available: softcore ({s_a} axons, "
@@ -336,9 +481,26 @@ def greedy_pack_softcores(
                         f"even with coalescing. Remaining types: {avail}"
                     )
             else:
-                used_hardcores.append(chosen_unused)
-                unused_hardcores.remove(chosen_unused)
-                target_idx = len(used_hardcores) - 1
+                _identity_remove(unused_hardcores, chosen_hc)
+                bucket = unused_by_type[chosen_type]
+                # chosen_hc was bucket[-1] (the representative); pop it.
+                if bucket and bucket[-1] is chosen_hc:
+                    bucket.pop()
+                else:
+                    _identity_remove(bucket, chosen_hc)
+                if not bucket:
+                    del unused_by_type[chosen_type]
+                used_hardcores.append(chosen_hc)
+                new_idx = len(used_hardcores) - 1
+                _register_used(new_idx, chosen_hc)
+                target_idx = new_idx
 
         place(target_idx, used_hardcores[target_idx], core)
-        softcores.remove(core)
+        # The place callback may have just assigned the hardcore's
+        # threshold_group_id (first softcore in this core).  Re-bucket so
+        # subsequent lookups by tg find it.
+        _reindex_used_tg(target_idx)
+        if _use_sort_fast_path:
+            softcores.pop()
+        else:
+            softcores.remove(core)

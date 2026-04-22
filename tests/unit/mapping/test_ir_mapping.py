@@ -14,7 +14,7 @@ class TestIRMappingBasic:
         sources = np.array([IRSource(-2, 0), IRSource(-2, 1)])
         w = torch.tensor([[1.0, 0.5], [0.3, 0.7]])
         b = torch.tensor([0.1, 0.2])
-        out = m.add_neural_core(sources, w, b)
+        out = m.add_neural_core(input_sources=sources, weights=w, biases=b)
 
         assert len(m.nodes) == 1
         core = m.nodes[0]
@@ -25,7 +25,7 @@ class TestIRMappingBasic:
     def test_add_compute_op(self):
         m = IRMapping()
         sources = np.array([IRSource(-2, i) for i in range(4)])
-        out = m.add_compute_op(sources, "flatten", {})
+        out = m.add_compute_op(input_sources=sources, op_type="flatten", params={})
         assert len(m.nodes) == 1
         assert m.nodes[0].op_type == "flatten"
         assert len(out.flatten()) == 4
@@ -34,9 +34,9 @@ class TestIRMappingBasic:
         m = IRMapping()
         s1 = np.array([IRSource(-2, 0)])
         w = torch.tensor([[1.0]])
-        m.add_neural_core(s1, w)
-        m.add_compute_op(s1, "identity", {})
-        m.add_neural_core(s1, w)
+        m.add_neural_core(input_sources=s1, weights=w)
+        m.add_compute_op(input_sources=s1, op_type="identity", params={})
+        m.add_neural_core(input_sources=s1, weights=w)
 
         ids = [n.id for n in m.nodes]
         assert ids == [0, 1, 2]

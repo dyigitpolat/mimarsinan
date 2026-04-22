@@ -347,12 +347,20 @@ function updateElapsedTimer() {
   if (!state.pipeline) return;
   const running = (state.pipeline.steps || []).find(s => s.status === 'running');
   const el = document.getElementById('elapsed-time');
-  if (!el) return;
-  if (running?.start_time != null) {
-    const elapsed = elapsedFromStepStart(running.start_time);
-    el.textContent = fmtDuration(elapsed);
-    el.style.display = 'inline';
-  } else el.style.display = 'none';
+  if (el) {
+    if (running?.start_time != null) {
+      const elapsed = elapsedFromStepStart(running.start_time);
+      el.textContent = fmtDuration(elapsed);
+      el.style.display = 'inline';
+    } else el.style.display = 'none';
+  }
+  // Re-render the overview cards so the running step's bar in the
+  // timing chart grows in real time.  Previously the chart only refreshed
+  // on WS ``pipeline_overview`` events (step lifecycle edges) + a 30 s
+  // poll, so a long-running step looked frozen for up to 30 s.
+  if (running && state.activeMainTab === 'overview') {
+    renderOverviewCards(state.pipeline);
+  }
 }
 
 function setupMainTabs() {

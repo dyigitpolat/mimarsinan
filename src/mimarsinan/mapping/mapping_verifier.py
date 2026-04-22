@@ -62,9 +62,6 @@ def verify_soft_core_mapping(
     max_axons: int,
     max_neurons: int,
     *,
-    threshold_groups: int = 1,
-    pruning_fraction: float = 0.0,
-    threshold_seed: int = 0,
     allow_coalescing: bool = False,
     hardware_bias: bool = False,
 ) -> MappingVerificationResult:
@@ -80,13 +77,6 @@ def verify_soft_core_mapping(
         Maximum axon count per hardware core.
     max_neurons:
         Maximum neuron count per hardware core.
-    threshold_groups:
-        Number of threshold groups to simulate (random assignment).
-    pruning_fraction:
-        Expected pruning fraction (0–1). The estimator applies 80% of this
-        as a random row/column reduction on each softcore.
-    threshold_seed:
-        RNG seed for deterministic threshold-group assignment.
     allow_coalescing:
         If True, enable layout-level axon tiling via coalescing (wide FC
         layers keep their full width and hardware fuses physical cores).
@@ -101,9 +91,6 @@ def verify_soft_core_mapping(
         layout = LayoutIRMapping(
             max_axons=max_axons,
             max_neurons=max_neurons,
-            threshold_groups=threshold_groups,
-            threshold_seed=threshold_seed,
-            pruning_fraction=pruning_fraction,
             allow_coalescing=allow_coalescing,
             hardware_bias=hardware_bias,
         )

@@ -8,14 +8,20 @@ from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
 
 
 def _make_two_core_ir():
-    """Neural-only IR: 4 inputs -> core0 (4 neurons) -> core1 (2 neurons)."""
+    """Neural-only IR: 4 inputs -> core0 (4 neurons) -> core1 (2 neurons).
+
+    Both cores carry ``perceptron_index=0`` so they share a threshold group
+    and may be packed into one hardcore (exercising the traceability path).
+    """
     w1 = np.ones((5, 4), dtype=np.float32) * 0.1
     s1 = np.array([IRSource(-2, i) for i in range(4)] + [IRSource(-3, 0)], dtype=object)
-    c1 = NeuralCore(id=0, name="h", input_sources=s1, core_matrix=w1, latency=0)
+    c1 = NeuralCore(id=0, name="h", input_sources=s1, core_matrix=w1, latency=0,
+                    perceptron_index=0)
 
     w2 = np.ones((5, 2), dtype=np.float32) * 0.1
     s2 = np.array([IRSource(0, i) for i in range(4)] + [IRSource(-3, 0)], dtype=object)
-    c2 = NeuralCore(id=1, name="o", input_sources=s2, core_matrix=w2, latency=0)
+    c2 = NeuralCore(id=1, name="o", input_sources=s2, core_matrix=w2, latency=0,
+                    perceptron_index=0)
 
     out = np.array([IRSource(1, 0), IRSource(1, 1)], dtype=object)
     return IRGraph(nodes=[c1, c2], output_sources=out)

@@ -131,6 +131,7 @@ class SoftCore:
         psum_role: str | None = None,
         coalescing_group_id: int | None = None,
         coalescing_role: str | None = None,
+        threshold_group_id: int | None = None,
     ):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
@@ -140,6 +141,17 @@ class SoftCore:
         self.activation_scale = activation_scale
         self.parameter_scale = parameter_scale
         self.threshold = 1.0
+
+        # Packing constraint: two softcores may share a hardcore only when
+        # their ``threshold_group_id`` matches.  Derived from
+        # ``NeuralCore.perceptron_index`` so cores produced by the same
+        # perceptron (output-tiles, psum fragments, shared-bank positions)
+        # naturally share a hw core while cores from different perceptrons
+        # (with different quantization scales / thresholds) do not.
+        #
+        # ``None`` means "unique group" — falls back to ``-id - 1`` at pack
+        # time, which never collides with any non-negative perceptron index.
+        self.threshold_group_id = threshold_group_id
 
         # Optional debug/IR metadata
         self.name = name
@@ -187,7 +199,13 @@ class HardCore:
         self.neurons_per_core = neurons_per_core
         self.has_bias_capability = has_bias_capability
 
-        self.core_matrix = np.zeros((axons_per_core, neurons_per_core))
+        # Lazy allocation: the zero matrix is only materialised on first
+        # ``add_softcore`` using the softcore's dtype.  Previously this was
+        # a float64 dense zero matrix eagerly allocated *per hw core*, so a
+        # 2720-core pool of (768, 3072) cores ate 64 GB before any mapping
+        # started — enough to OOM a large ViT run and bloat the HCM pickle
+        # to 264 GB.  Lazy + correct-dtype avoids both.
+        self.core_matrix = None
         self.axon_sources = []
 
         self.available_axons = axons_per_core
@@ -197,6 +215,7 @@ class HardCore:
         self.activation_scale = None
         self.parameter_scale = None
         self.threshold = None
+        self.threshold_group_id: int | None = None
         self.latency = None
 
         # Hardware-bias: per-neuron bias stored in dedicated register.
@@ -213,14 +232,23 @@ class HardCore:
         return self.neurons_per_core
 
     def add_softcore(self, softcore):
-        assert self.available_axons >= softcore.get_input_count() 
-        assert self.available_neurons >= softcore.get_output_count()            
+        assert self.available_axons >= softcore.get_input_count()
+        assert self.available_neurons >= softcore.get_output_count()
 
         axon_offset = self.axons_per_core - self.available_axons
         neuron_offset = self.neurons_per_core - self.available_neurons
-        
+
+        # Lazy zero-matrix allocation with the softcore's dtype.  For
+        # quantized runs (int8 weights) this is 8× smaller than float64.
+        if self.core_matrix is None:
+            sc_dtype = getattr(softcore.core_matrix, "dtype", None)
+            dtype = sc_dtype if sc_dtype is not None else np.float64
+            self.core_matrix = np.zeros(
+                (self.axons_per_core, self.neurons_per_core), dtype=dtype,
+            )
+
         self.core_matrix[
-            axon_offset : axon_offset+softcore.get_input_count(), 
+            axon_offset : axon_offset+softcore.get_input_count(),
             neuron_offset : neuron_offset+softcore.get_output_count()] \
                 = softcore.core_matrix
 
@@ -237,6 +265,12 @@ class HardCore:
 
         if self.threshold is None:
             self.threshold = softcore.threshold
+
+        if self.threshold_group_id is None:
+            tg = getattr(softcore, "threshold_group_id", None)
+            self.threshold_group_id = (
+                int(tg) if tg is not None else -(int(softcore.id) + 1)
+            )
 
         if self.input_activation_scale is None:
             self.input_activation_scale = softcore.input_activation_scale
@@ -336,13 +370,17 @@ class HardCoreMapping:
                 (target_core_idx, target_neuron_idx)
                 
     def map(self, softcore_mapping, *, allow_neuron_splitting: bool = False):
+        def _soft_tg(core):
+            tg = getattr(core, "threshold_group_id", None)
+            return int(tg) if tg is not None else -(int(core.id) + 1)
+
         def is_mapping_possible(core, hardcore):
-            tolerance = 0.1
-            if hardcore.threshold is not None:
-                threshold_diff = abs(core.threshold - hardcore.threshold)
-                diff_rate = threshold_diff / (hardcore.threshold + 1)
-            else:
-                diff_rate = 0.0
+            # Threshold-group match: softcores from the same perceptron share
+            # one id and thus one hardcore; others do not.  An empty hardcore
+            # (group_id is None) accepts any softcore.
+            if hardcore.threshold_group_id is not None:
+                if hardcore.threshold_group_id != _soft_tg(core):
+                    return False
 
             # Latency check: both must have same latency value
             # If hardcore is empty (latency=None), any core can start it
@@ -354,7 +392,6 @@ class HardCoreMapping:
                 latency_ok = (core.latency is not None and core.latency == hardcore.latency)
 
             return \
-                diff_rate <= tolerance and \
                 core.get_input_count() <= hardcore.available_axons and \
                 core.get_output_count() <= hardcore.available_neurons and \
                 latency_ok

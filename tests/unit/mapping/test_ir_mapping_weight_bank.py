@@ -101,8 +101,8 @@ class TestMapProducesGraphWithBanks:
         class FakeRepr:
             def map_to_ir(self_, ir_mapping):
                 src = np.array([_inp(0), _inp(1), _inp(2)])
-                out1 = ir_mapping.add_shared_neural_core(src, bank_id, has_bias=False, name="c0")
-                out2 = ir_mapping.add_shared_neural_core(src, bank_id, has_bias=False, name="c1")
+                out1 = ir_mapping.add_shared_neural_core(input_sources=src, weight_bank_id=bank_id, has_bias=False, name="c0")
+                out2 = ir_mapping.add_shared_neural_core(input_sources=src, weight_bank_id=bank_id, has_bias=False, name="c1")
                 return np.concatenate([out1, out2])
 
         graph = ir.map(FakeRepr())
@@ -122,8 +122,8 @@ class TestMapProducesGraphWithBanks:
 
         src = np.array([_inp(0), _inp(1), _inp(2)])
 
-        ir.add_shared_neural_core(src, bank_id, has_bias=False, name="shared")
-        ir.add_neural_core(src, weights=np.eye(2, 3), name="owned")
+        ir.add_shared_neural_core(input_sources=src, weight_bank_id=bank_id, has_bias=False, name="shared")
+        ir.add_neural_core(input_sources=src, weights=np.eye(2, 3), name="owned")
 
         assert len(ir.nodes) == 2
         assert ir.nodes[0].has_weight_bank()

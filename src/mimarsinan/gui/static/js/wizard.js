@@ -1423,9 +1423,21 @@ function _buildHwApiBody() {
     model_type: state.modelType,
     input_shape: (function () {
       const dp = v('dataProvider') || '';
-      // Best-effort: derive from data provider name; fallback to 1,28,28
-      if (dp.includes('CIFAR')) return [3, 32, 32];
+      // Honour the preprocessing resize_to so the wizard builds the model at
+      // the same spatial resolution as the deployment pipeline.  Without this
+      // the wizard would build a ViT for 32x32 while the deployment pipeline
+      // (which applies the configured resize_to=224 via the data provider
+      // preprocessing) builds a ViT for 224x224 — producing wildly different
+      // softcore counts and a falsely-feasible mapping report.
+      const resizeRaw = v('preprocessResizeTo');
+      const resizeVal = (resizeRaw !== '' && resizeRaw != null) ? parseInt(resizeRaw) : NaN;
+      const resize = (!isNaN(resizeVal) && resizeVal > 0) ? resizeVal : null;
+      if (dp.includes('CIFAR')) return [3, resize || 32, resize || 32];
+      if (dp.includes('IMAGENET') || dp.includes('ImageNet') || dp.includes('IMGNET')) {
+        return [3, resize || 224, resize || 224];
+      }
       if (dp.includes('ECG')) return [1, 140];
+      if (resize) return [1, resize, resize];
       return [1, 28, 28];
     })(),
     num_classes: 10,

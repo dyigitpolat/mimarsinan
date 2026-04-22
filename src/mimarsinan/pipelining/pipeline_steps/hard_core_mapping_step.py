@@ -24,11 +24,30 @@ class HardCoreMappingStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
+        """Return the hard-core simulation accuracy.
+
+        When the simulation failed (OOM, CUDA error, etc.) we deliberately
+        surface 0.0 rather than falling back to the pipeline's target
+        metric.  Falling back to the target silently masked mapping
+        failures: the step reported the pre-mapping reference accuracy as
+        if the sim had succeeded.  Returning 0.0 lets the pipeline's
+        cross-step accuracy budget see the real drop and react.
+        """
+        if getattr(self, "_last_metric_is_failure", False):
+            return 0.0
         m = getattr(self, "_last_metric", None)
-        return m if m is not None else self.pipeline.get_target_metric()
+        if m is not None:
+            return m
+        # No sim ran AND no explicit failure flag — conservative behavior
+        # is to treat the step as untested and defer to the target.  This
+        # branch is reached only when the try/except block was skipped
+        # entirely (e.g. a future refactor that bypasses the sim), which
+        # we don't currently do.
+        return self.pipeline.get_target_metric()
 
     def process(self):
         self._last_metric = None
+        self._last_metric_is_failure = False
         model = self.get_entry("model")
         ir_graph = self.get_entry('ir_graph')
         sim_len = int(self.get_entry("scaled_simulation_length"))
@@ -86,17 +105,37 @@ class HardCoreMappingStep(PipelineStep):
             # models; the SoftCoreMapping pass already uses the same
             # override. ``None`` preserves the legacy full-test-set pass.
             sim_batches = self.pipeline.config.get("simulation_batch_count", None)
-            acc = BasicTrainer(
+            trainer = BasicTrainer(
                 flow,
                 device,
                 DataLoaderFactory(self.pipeline.data_provider_factory),
                 None,
-            ).test(max_batches=sim_batches)
+            )
+            # Honour ``max_simulation_samples`` with the same seeded
+            # subsampling as ``SimulationRunner`` and the SCM
+            # verification — keeps the three metrics comparable.
+            max_samples = int(self.pipeline.config.get("max_simulation_samples", 0) or 0)
+            if max_samples > 0:
+                acc = trainer.test_on_subsample(
+                    max_samples=max_samples,
+                    seed=int(self.pipeline.config.get("seed", 0)),
+                )
+            else:
+                acc = trainer.test(max_batches=sim_batches)
             self._last_metric = float(acc)
             print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
         except Exception as e:
-            print(f"[HardCoreMappingStep] Hard-core simulation test failed (non-fatal): {e}")
+            # The sim is the only check that this step produced a working
+            # hardcore program.  If it fails, ``validate()`` must surface
+            # the failure — previously we left ``_last_metric = None`` and
+            # ``validate`` silently fell back to the pre-mapping target
+            # accuracy, so a crashed sim looked like a clean pass.  Mark
+            # the step explicitly as failed so ``validate`` returns 0.0
+            # and the accuracy-budget gate fires.
+            print(f"[HardCoreMappingStep] Hard-core simulation test FAILED: {e}")
             traceback.print_exc()
+            self._last_metric = None
+            self._last_metric_is_failure = True
 
         # Visualize the hybrid program (stage-level) + each neural segment's HardCoreMapping.
         if self.pipeline.config.get("generate_visualizations", False):

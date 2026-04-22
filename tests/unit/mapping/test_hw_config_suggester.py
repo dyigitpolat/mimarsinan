@@ -454,8 +454,6 @@ class TestSuggestHardwareConfigForModel:
             model_repr,
             max_axons=256,
             max_neurons=256,
-            threshold_groups=2,
-            pruning_fraction=0.3,
             hardware_bias=False,
         )
         # Also get the actual softcores and verify the suggestion against them
@@ -463,8 +461,6 @@ class TestSuggestHardwareConfigForModel:
             model_repr,
             max_axons=256,
             max_neurons=256,
-            threshold_groups=2,
-            pruning_fraction=0.3,
             hardware_bias=False,
         )
         assert layout_result.feasible
@@ -518,8 +514,8 @@ class TestSuggestHardwareConfigForModel:
         assert result.total_cores == 0
         assert "failed" in result.rationale.lower()
 
-    def test_with_pruning_and_threshold_groups(self):
-        """Pruning and threshold groups are factored in correctly."""
+    def test_deterministic_suggestion(self):
+        """Two identical calls should produce identical suggestions (no RNG)."""
         import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
         from conftest import make_tiny_supermodel
@@ -527,18 +523,11 @@ class TestSuggestHardwareConfigForModel:
         model = make_tiny_supermodel(input_shape=(1, 8, 8), num_classes=4)
         model_repr = model.get_mapper_repr()
 
-        # Suggestion without pruning
-        r_no_prune = suggest_hardware_config_for_model(
+        r1 = suggest_hardware_config_for_model(
             model_repr, max_axons=256, max_neurons=256,
-            pruning_fraction=0.0,
         )
-        # Suggestion with heavy pruning (model should need fewer/smaller cores)
-        r_pruned = suggest_hardware_config_for_model(
+        r2 = suggest_hardware_config_for_model(
             model_repr, max_axons=256, max_neurons=256,
-            pruning_fraction=0.7,
         )
-        # Both should be valid (non-empty)
-        assert r_no_prune.total_cores > 0
-        assert r_pruned.total_cores > 0
-        # After pruning, total cores should be <= unpruned (heuristic not guaranteed but typical)
-        assert r_pruned.total_cores <= r_no_prune.total_cores * 2
+        assert r1.core_types == r2.core_types
+        assert r1.total_cores == r2.total_cores
