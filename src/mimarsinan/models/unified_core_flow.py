@@ -899,15 +899,16 @@ class SpikingUnifiedCoreFlow(nn.Module):
         """
         spans = self._input_spans[int(node.id)]
         in_dim = int(len(node.input_sources.flatten()))
-        # Gather in float32 to match HCM's C++-equivalent path.  Cast raw input
-        # and every activation_cache entry explicitly first so the
-        # fill-by-assignment below preserves float32 semantics (matches
-        # ``SpikingHybridCoreFlow._forward_ttfs`` lines 504-505).
-        x_f32 = x.to(torch.float32)
-        cache_f32 = {k: v.to(torch.float32) for k, v in activation_cache.items()}
+        # Gather in float32 to match HCM's C++-equivalent path.  Previously
+        # we materialised ``{k: v.to(torch.float32) for k, v in cache.items()}``
+        # per compute-op, duplicating the entire activation cache (2× state
+        # memory) at every ComputeOp — OOM'd the GPU on cifar_vit-scale IRs
+        # with 2430 ops.  Slice-assignment into a float32 ``inp`` already
+        # downcasts the source tensors element-wise, so the dict copy is
+        # unnecessary.
         inp = torch.zeros(batch_size, in_dim, device=device, dtype=torch.float32)
         self._fill_activation_from_ir_spans(
-            inp, x=x_f32, activation_cache=cache_f32, spans=spans
+            inp, x=x, activation_cache=activation_cache, spans=spans,
         )
 
         in_scale = self._ttfs_node_input_scale.get(node.id, 1.0)

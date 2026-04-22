@@ -219,6 +219,52 @@ class BasicTrainer:
         self._report("Test accuracy", acc)
         return acc
 
+    def test_on_subsample(self, *, max_samples: int, seed: int = 0):
+        """Run test over a deterministic subsample of the test set.
+
+        Mirrors ``SimulationRunner``'s subsampling exactly: collect the
+        full test set, seed ``numpy.random.RandomState(seed)`` and
+        ``rng.choice(total, size=max_samples, replace=False)``.  The
+        selected samples are then re-batched at the test loader's batch
+        size.  Callers can cap a verification pass without sampling
+        drift between SCM, HCM, and the C++ chip-simulation runner.
+        """
+        import numpy as np
+
+        xs_all: list[torch.Tensor] = []
+        ys_all: list[torch.Tensor] = []
+        with torch.no_grad():
+            for x, y in self.test_loader:
+                for i in range(x.shape[0]):
+                    xs_all.append(x[i])
+                    ys_all.append(y[i])
+        total_samples = len(xs_all)
+        if total_samples == 0:
+            return 0.0
+        if max_samples and 0 < max_samples < total_samples:
+            rng = np.random.RandomState(int(seed))
+            indices = rng.choice(total_samples, size=int(max_samples), replace=False)
+            xs_all = [xs_all[i] for i in indices]
+            ys_all = [ys_all[i] for i in indices]
+
+        bs = int(self.test_batch_size)
+        total = 0
+        correct = 0
+        with torch.no_grad():
+            for start in range(0, len(xs_all), bs):
+                x = torch.stack(xs_all[start:start + bs]).to(self.device)
+                y = torch.stack(ys_all[start:start + bs]).to(self.device)
+                self.model.eval()
+                self.model = self.model.to(self.device)
+                _, predicted = self.model(x).max(1)
+                total += float(y.size(0))
+                correct += float(predicted.eq(y).sum().item())
+        if total <= 0:
+            return 0.0
+        acc = correct / total
+        self._report("Test accuracy (subsample)", acc)
+        return acc
+
     def next_validation_batch(self):
         """Return the next validation minibatch, rewinding on exhaustion."""
         try:

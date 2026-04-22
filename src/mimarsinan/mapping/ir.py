@@ -762,6 +762,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
                 f"pruned_col_mask len={len(pruned_col_mask)}. Masks must match matrix shape (fix in ir_pruning)."
             )
 
+    pi = getattr(neural_core, "perceptron_index", None)
     soft = SoftCore(
         core_matrix=core_matrix,
         axon_sources=axon_sources,
@@ -774,6 +775,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         psum_role=neural_core.psum_role,
         coalescing_group_id=neural_core.coalescing_group_id,
         coalescing_role=neural_core.coalescing_role,
+        threshold_group_id=int(pi) if pi is not None else None,
     )
     if pruned_row_mask is not None and pruned_col_mask is not None:
         soft.pruned_row_mask = pruned_row_mask

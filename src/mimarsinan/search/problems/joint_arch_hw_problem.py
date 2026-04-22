@@ -536,13 +536,15 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         layout_mapper = LayoutIRMapping(
             max_axons=max_ax,
             max_neurons=max_neu,
-            threshold_groups=1,
-            threshold_seed=int(self.accuracy_seed),
-            pruning_fraction=float(self.pruning_fraction),
             allow_coalescing=bool(pcfg.get("allow_coalescing", False)),
             hardware_bias=bool(pcfg.get("has_bias", False)),
         )
-        softcores = layout_mapper.collect_layout_softcores(model.get_mapper_repr())
+        mapper_repr = model.get_mapper_repr()
+        # Populate perceptron_index on the mapper graph so threshold groups
+        # are assigned consistently with the real SoftCoreMappingStep.
+        if hasattr(mapper_repr, "assign_perceptron_indices"):
+            mapper_repr.assign_perceptron_indices()
+        softcores = layout_mapper.collect_layout_softcores(mapper_repr)
         host_segments = getattr(layout_mapper, "host_side_segment_count", 0)
         return softcores, host_segments
 

@@ -61,21 +61,22 @@ class _SafeJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
-# Large bound used for the layout estimation pass so we always capture natural
-# softcore sizes without hitting any tiling/splitting check inside LayoutIRMapping.
-# This is intentionally much larger than any realistic layer dimension.
-_LAYOUT_PASS_LIMIT = 1 << 20  # ~1M axons/neurons — effectively unconstrained
-
-
-def _get_layout_result_from_request(body: dict):
+def _get_layout_result_from_request(
+    body: dict,
+    *,
+    tiling_max_axons: int | None = None,
+    tiling_max_neurons: int | None = None,
+):
     """Build a model repr and run layout mapping, returning the verification result.
 
     Handles both native (simple_mlp) and torch (torch_sequential_linear, etc.) builders
     by delegating to the appropriate builder class.
 
-    The layout pass itself uses _LAYOUT_PASS_LIMIT so that no tiling or error
-    triggers inside LayoutIRMapping — we want the natural (unsplit) softcore
-    shapes regardless of the user's hardware target.
+    ``tiling_max_axons`` / ``tiling_max_neurons`` override the layout pass's
+    tiling bounds so the wizard can match the pipeline's ``max(core_types)``
+    resolution.  When omitted, ``body["max_axons"]``/``body["max_neurons"]``
+    are used (appropriate for the auto-suggester path which has no fixed
+    core_types yet).
     """
     from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
     from mimarsinan.models.builders import BUILDERS_REGISTRY
@@ -86,11 +87,14 @@ def _get_layout_result_from_request(body: dict):
     input_shape = tuple(int(x) for x in body.get("input_shape", [1, 28, 28]))
     num_classes = int(body.get("num_classes", 10))
     model_config = body.get("model_config", {})
-    threshold_groups = int(body.get("threshold_groups", 1))
-    pruning_fraction = float(body.get("pruning_fraction", 0.0))
-    threshold_seed = int(body.get("threshold_seed", 0))
     allow_coalescing = bool(body.get("allow_coalescing", False))
     hardware_bias = bool(body.get("hardware_bias", False))
+    effective_max_axons = int(
+        tiling_max_axons if tiling_max_axons is not None else body.get("max_axons", 1024)
+    )
+    effective_max_neurons = int(
+        tiling_max_neurons if tiling_max_neurons is not None else body.get("max_neurons", 1024)
+    )
 
     builder_cls = BUILDERS_REGISTRY.get(model_type)
     if builder_cls is None:
@@ -135,15 +139,18 @@ def _get_layout_result_from_request(body: dict):
                 pass
         model_repr = raw_model.get_mapper_repr()
 
-    # Use the large layout-pass limit (not the user's max_axons/max_neurons) so
-    # that LayoutIRMapping never tiles or errors — we need the natural softcore sizes.
+    # Populate perceptron_index on the mapper graph so threshold groups
+    # are assigned consistently with SoftCoreMappingStep.
+    if hasattr(model_repr, "assign_perceptron_indices"):
+        model_repr.assign_perceptron_indices()
+
+    # Use the same tiling bounds that the real pipeline uses (max across
+    # the user's core types), so LayoutIRMapping produces byte-identical
+    # softcore shapes to IRMapping.
     result = verify_soft_core_mapping(
         model_repr,
-        max_axons=_LAYOUT_PASS_LIMIT,
-        max_neurons=_LAYOUT_PASS_LIMIT,
-        threshold_groups=threshold_groups,
-        pruning_fraction=pruning_fraction,
-        threshold_seed=threshold_seed,
+        max_axons=effective_max_axons,
+        max_neurons=effective_max_neurons,
         allow_coalescing=allow_coalescing,
         hardware_bias=hardware_bias,
     )
@@ -633,11 +640,11 @@ def create_app(
                 input_shape: list[int],
                 num_classes: int,
                 model_config: dict,
-                threshold_groups: int,
-                pruning_fraction: float,
-                threshold_seed: int,
+                max_axons / max_neurons: int (optional, used for model-building size hints;
+                    the layout tiling pass uses max across the user's core_types).
             }
-            core_types: [{max_axons, max_neurons, count}, ...]
+            core_types: [{max_axons, max_neurons, count, has_bias}, ...]
+            allow_neuron_splitting / allow_coalescing / allow_scheduling: bool (default false).
         """
         try:
             from mimarsinan.mapping.mapping_verifier import (
@@ -645,13 +652,28 @@ def create_app(
                 verify_hardware_config,
             )
             mr = dict(body.get("model_repr_json", {}))
+            core_types = body.get("core_types", [])
+            # Tiling must match what the pipeline's SoftCoreMappingStep does:
+            # max across all user-defined core types.
+            if core_types:
+                tile_max_ax = max(int(ct["max_axons"]) for ct in core_types)
+                tile_max_neu = max(int(ct["max_neurons"]) for ct in core_types)
+                mr["allow_coalescing"] = bool(body.get("allow_coalescing", False))
+                mr["hardware_bias"] = all(
+                    bool(ct.get("has_bias", True)) for ct in core_types
+                )
+            else:
+                tile_max_ax = int(mr.get("max_axons", 1024))
+                tile_max_neu = int(mr.get("max_neurons", 1024))
             # Ensure native models are built with a reasonable minimum layer size.
-            # _get_softcores_from_request uses _LAYOUT_PASS_LIMIT for the layout pass itself.
             mr["max_axons"] = max(int(mr.get("max_axons", 1024)), 4096)
             mr["max_neurons"] = max(int(mr.get("max_neurons", 1024)), 4096)
-            layout_result = _get_layout_result_from_request(mr)
+            layout_result = _get_layout_result_from_request(
+                mr,
+                tiling_max_axons=tile_max_ax,
+                tiling_max_neurons=tile_max_neu,
+            )
             softcores = layout_result.softcores
-            core_types = body.get("core_types", [])
             allow_neuron_splitting = bool(body.get("allow_neuron_splitting", False))
             allow_coalescing = bool(body.get("allow_coalescing", False))
             allow_scheduling = bool(body.get("allow_scheduling", False))
@@ -708,9 +730,9 @@ def create_app(
             input_shape: list[int]
             num_classes: int
             model_config: dict        (builder configuration)
-            threshold_groups: int     (default 1)
-            pruning_fraction: float   (default 0.0)
-            threshold_seed: int       (default 0)
+            max_axons / max_neurons: int (layer sizing bounds — also used as
+                the tiling bound for the layout pass, since the auto-suggester
+                has no user-defined core_types yet).
             allow_coalescing: bool    (default false)
             hardware_bias: bool       (default true)
             axon_granularity: int     (default 1)
@@ -719,7 +741,6 @@ def create_app(
         try:
             from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config, suggest_hardware_config_scheduled
             # Ensure native models are built with a reasonable minimum layer size.
-            # _get_softcores_from_request uses _LAYOUT_PASS_LIMIT for the layout pass itself.
             layout_body = dict(body)
             layout_body["max_axons"] = max(int(body.get("max_axons", 1024)), 4096)
             layout_body["max_neurons"] = max(int(body.get("max_neurons", 1024)), 4096)

@@ -1,27 +1,55 @@
-# mapping/layout/ -- Layout Estimation for Architecture Search
+# mapping/layout/ — Shape-Only Mapping (Single Source of Truth)
 
-Provides lightweight, shape-only layout estimation used during architecture
-search to evaluate hardware feasibility without constructing full models or
-weight matrices.
+`LayoutIRMapping` is the single source of truth for every mapping
+decision: tiling mode (`single` / `output_tiled` / `psum` / `coalescing`),
+bias-axon counting, psum decomposition parameters, shared-bank wiring,
+latency / segment / threshold-group assignment.
+
+The real `mapping.ir_mapping.IRMapping` is a subclass that overrides
+the emission hooks (`add_neural_core`, `add_shared_neural_core`,
+`add_compute_op`, `register_weight_bank`) to additionally attach weight
+material and build an `IRGraph`.  Both paths therefore emit byte-identical
+softcore shapes for the same input model — the wizard / architecture-search
+flow stops at the shape-only layer while the deployment pipeline continues
+to materialise weights.
+
+## Threshold groups
+
+`threshold_group_id = perceptron_index`: every softcore produced by a
+single perceptron (output-tiles, psum fragments, shared-bank positions)
+shares one integer id, and the packer treats group-id equality as the
+sharing-compatibility rule.  Softcores without a `perceptron_index`
+(e.g. synthesised accumulator cores) fall back to a unique negative id
+(never collides with a non-negative perceptron index).
+
+This mirrors the real pipeline's behaviour: shared-weight cores end up
+with identical quantization scales (→ identical float thresholds), so
+"same perceptron" is a byte-accurate proxy for "same threshold class"
+without requiring trained weights.
 
 ## Key Components
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutCoreSnapshot`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results. `LayoutHardCoreInstance.softcore_count` tracks placements; `LayoutHardCoreInstance.unusable_space` accumulates strip-shaped packing inefficiency; `LayoutPackingResult` includes `unused_area_total`, `unusable_space_total`, and `avg_unusable_space_per_core`; `LayoutCoreSnapshot` captures per-used-core axon/neuron usage for stats; `LayoutPackingResult.used_core_snapshots` holds one snapshot per used core; `coalesced_fragment_count` and `split_fragment_count` count packing feature usage. |
-| `layout_ir_mapping.py` | `LayoutIRMapping` | Collects `LayoutSoftCoreSpec`s from mapper graph traversal (shape only, no weights). Supports `allow_coalescing` and `hardware_bias` flags for axon tiling: wide FC layers emit psum-decomposed or coalescing-tiled softcores matching `IRMapping` core counts. Structural decisions (bias counting, wide-layer detection, psum params) delegated to shared `mapping_structure` helpers. **Pruning estimation** (`collect_layout_softcores`): applies 80% of pruning fraction with pessimistic heuristics — output-layer columns protected, per-bank uniform reduction, per-bank threshold group assignment. |
-| `layout_packer.py` | `pack_layout` | Packs layout softcores into layout hardcores using `greedy_pack_softcores`; successful result includes `used_core_softcore_counts` and `used_core_snapshots`. |
+| `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutCoreSnapshot`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results. |
+| `layout_ir_mapping.py` | `LayoutIRMapping` | Shape-only mapping backend shared by the wizard, architecture search, and the real `IRMapping` (as its base class).  Owns every structural decision. |
+| `layout_packer.py` | `pack_layout` | Wraps `greedy_pack_softcores` around layout types. |
 
 ## Dependencies
 
-- **Internal**: `mapping.ir` (`IRSource`), `mapping.mapping_structure` (`compute_core_input_count`, `compute_fc_tiling_mode`, `compute_psum_params`), `mapping.core_packing` (`greedy_pack_softcores`).
+- **Internal**: `mapping.ir` (`IRSource`), `mapping.mapping_structure`
+  (`compute_core_input_count`, `compute_fc_tiling_mode`,
+  `compute_psum_params`), `mapping.core_packing`
+  (`greedy_pack_softcores`).
 - **External**: `numpy`.
 
 ## Dependents
 
-- `search.problems.joint_arch_hw_problem` uses `LayoutIRMapping` and `pack_layout`
-  for hardware feasibility evaluation during architecture search.
+- `mapping.ir_mapping.IRMapping` — subclasses `LayoutIRMapping`.
+- `mapping.mapping_verifier.verify_soft_core_mapping` — wizard-facing
+  feasibility check.
+- `search.problems.joint_arch_hw_problem` — hw-aware architecture search.
 
-## Exported API (\_\_init\_\_.py)
+## Exported API (`__init__.py`)
 
-All layout types (including `LayoutCoreSnapshot`), `LayoutIRMapping`, and `pack_layout`.
+All layout types, `LayoutIRMapping`, and `pack_layout`.

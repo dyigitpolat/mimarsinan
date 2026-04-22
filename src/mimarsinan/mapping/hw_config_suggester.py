@@ -39,18 +39,16 @@ Search: start from minimal (H, W) for coverage; if the occupancy constraint
 fails, increase H and/or W and retry until it passes or an iteration limit
 is reached. Pool size per (H, W) is found by binary search plus safety margin.
 
-Important: both the auto-config pass (``api_hw_config_auto``) and the
-verification pass (``api_hw_config_verify``) run layout mapping with a
-very large unconstrained bound (_LAYOUT_PASS_LIMIT in server.py) so that
-both see identical naturally-sized softcores regardless of the user's
-hardware target.
+The layout pass uses the caller's ``max_axons``/``max_neurons`` (which the
+wizard / search path sets to the max across user-defined core types) so
+that softcore shapes are byte-identical to what ``IRMapping`` produces in
+the real pipeline.
 
 Typical usage:
     from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
     from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config
 
-    result = verify_soft_core_mapping(model_repr, max_axons=1<<20, max_neurons=1<<20,
-                                      threshold_groups=4, pruning_fraction=0.5)
+    result = verify_soft_core_mapping(model_repr, max_axons=3072, max_neurons=3072)
     suggestion = suggest_hardware_config(result.softcores,
                                          allow_coalescing=False,
                                          hardware_bias=True)
@@ -281,6 +279,51 @@ def _occupancy_ok(counts: tuple[int, ...] | None, min_frac: float = 0.5, min_per
     return n_ok > len(counts) * min_frac
 
 
+def _count_per_type_usage(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    type1: tuple[int, int],
+    type2: tuple[int, int],
+    c1_hint: int,
+    c2_hint: int,
+    *,
+    allow_neuron_splitting: bool = False,
+    allow_coalescing: bool = False,
+) -> tuple[int | None, int | None]:
+    """Pack with an abundant pool of both types, then report per-type usage.
+
+    Returns ``(t1_used, t2_used)`` where each value is the number of
+    hardware cores of that type that actually hosted at least one
+    softcore.  Used to prune an over-allocated type from the suggestion.
+
+    Returns ``(None, None)`` on infeasibility so the caller falls back to
+    the original suggestion.
+    """
+    # Give each type a generous count so packing is definitely feasible
+    # even under strict per-perceptron threshold grouping.
+    pool1 = max(c1_hint, len(softcores))
+    pool2 = max(c2_hint, len(softcores))
+    hw_types = [
+        LayoutHardCoreType(max_axons=type1[0], max_neurons=type1[1], count=pool1),
+        LayoutHardCoreType(max_axons=type2[0], max_neurons=type2[1], count=pool2),
+    ]
+    result = pack_layout(
+        softcores=list(softcores),
+        core_types=hw_types,
+        allow_neuron_splitting=allow_neuron_splitting,
+        allow_coalescing=allow_coalescing,
+    )
+    if not result.feasible or result.used_core_snapshots is None:
+        return None, None
+    t1_used = 0
+    t2_used = 0
+    for snap in result.used_core_snapshots:
+        if (snap.axons_per_core, snap.neurons_per_core) == (type1[0], type1[1]):
+            t1_used += 1
+        elif (snap.axons_per_core, snap.neurons_per_core) == (type2[0], type2[1]):
+            t2_used += 1
+    return t1_used, t2_used
+
+
 def _count_cores_needed_two_types(
     softcores: Sequence[LayoutSoftCoreSpec],
     type1: tuple[int, int],
@@ -290,7 +333,15 @@ def _count_cores_needed_two_types(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
 ) -> int:
-    """Minimum total pool size (with 50/50 split) for packing to succeed, plus safety margin."""
+    """Minimum total pool size (with 50/50 split) for packing to succeed, plus safety margin.
+
+    Uses exponential doubling to find a feasible size, then a small bounded
+    binary-search refinement (6 steps max) to tighten the estimate without
+    blowing out the pack count.  Full binary search was ~log2(n) extra
+    packs per call and dominated suggester runtime at cifar_vit scale; the
+    bounded variant keeps the worst-case overestimate at ~2× while cutting
+    pack calls from O(log n) to a constant.
+    """
     n_sc = len(softcores)
     if not n_sc:
         return 0
@@ -306,8 +357,11 @@ def _count_cores_needed_two_types(
         upper *= 2
     else:
         return max(1, int(math.ceil(n_sc * (1.0 + safety_margin))))
+
     lower = 1
-    while lower < upper:
+    for _ in range(6):
+        if lower >= upper:
+            break
         mid = (lower + upper) // 2
         feasible, _, _ = _pack_with_two_types(
             softcores, type1, type2, mid,
@@ -318,9 +372,9 @@ def _count_cores_needed_two_types(
             upper = mid
         else:
             lower = mid + 1
-    min_feasible = lower
-    padded = int(math.ceil(min_feasible * (1.0 + safety_margin)))
-    return max(padded, min_feasible + 1)
+
+    padded = int(math.ceil(upper * (1.0 + safety_margin)))
+    return max(padded, upper + 1)
 
 
 # ---------------------------------------------------------------------------
@@ -414,19 +468,76 @@ def suggest_hardware_config(
     # When splitting/coalescing is enabled the whole point is smaller cores —
     # skip the occupancy check (which forces growth until many softcores share
     # a core) and accept any feasible packing.
+    #
+    # Also skip when the softcore set partitions into many threshold groups:
+    # per-perceptron threshold grouping guarantees that softcores from
+    # different perceptrons cannot share a hardcore, so ``≥4 softcores per
+    # used core'' is impossible whenever the largest group has <4 softcores.
+    # Forcing growth in that regime explodes core dimensions with no benefit.
+    group_sizes: Dict[int, int] = {}
+    for _sc in softcores_list:
+        tg = int(_sc.threshold_group_id)
+        group_sizes[tg] = group_sizes.get(tg, 0) + 1
+    largest_group = max(group_sizes.values()) if group_sizes else 0
+    n_groups = len(group_sizes)
+
     skip_occupancy = allow_neuron_splitting or allow_coalescing
+
+    # Track the smallest-area feasible config seen so far.  The growth
+    # loop chases occupancy (>50% of used cores host ≥4 softcores) which
+    # can inflate dimensions drastically when softcores nearly saturate
+    # the hw (cifar_vit style per-perceptron grouping).  We keep the
+    # tightest feasible config as a fallback if the total allocated area
+    # grows past a reasonable multiple of the first feasible area.
+    first_feasible_area: int | None = None
+    first_feasible: tuple[tuple[int, int], int] | None = None  # ((h, w), total)
+    _no_progress_iters = 0
+    _last_used_count: int | None = None
+
+    def _area_for(h_: int, w_: int, total_: int) -> int:
+        types = _make_types(h_, w_)
+        c1_, c2_ = (total_ + 1) // 2, total_ // 2
+        return types[0][0] * types[0][1] * c1_ + types[1][0] * types[1][1] * c2_
 
     for _ in range(max_iter):
         types_spec = _make_types(h, w)
         type1, type2 = types_spec[0], types_spec[1]
         total = _count(type1, type2)
+        if skip_occupancy:
+            c1, c2 = (total + 1) // 2, total // 2
+            best_hw = (h, w)
+            best_counts = (c1, c2)
+            best_total = total
+            break
         feasible, cores_used, counts = _pack(type1, type2, total)
+        if feasible and first_feasible is None:
+            first_feasible = ((h, w), total)
+            first_feasible_area = _area_for(h, w, total)
         if not feasible or counts is None:
             if grow_h:
                 h = int(math.ceil(h * 1.25)) if h else 1
             w = int(math.ceil(w * 1.25)) if w else 1
             continue
-        if skip_occupancy or _occupancy_ok(counts):
+        if _occupancy_ok(counts):
+            c1, c2 = (total + 1) // 2, total // 2
+            best_hw = (h, w)
+            best_counts = (c1, c2)
+            best_total = total
+            break
+        # Growth-progress guard: track the number of *used* cores across
+        # iterations (= len(counts)).  When used-count doesn't drop for
+        # 3 consecutive growth iterations, each hw core still hosts only
+        # 1 softcore and further growth won't fix it (typical under
+        # strict per-perceptron threshold grouping with saturating
+        # softcores).  Fall back to first feasible config.
+        used_count = len(counts) if counts else 0
+        if _last_used_count is not None and used_count >= _last_used_count:
+            _no_progress_iters += 1
+        else:
+            _no_progress_iters = 0
+        _last_used_count = used_count
+        if first_feasible is not None and _no_progress_iters >= 3:
+            (h, w), total = first_feasible
             c1, c2 = (total + 1) // 2, total // 2
             best_hw = (h, w)
             best_counts = (c1, c2)
@@ -452,6 +563,41 @@ def suggest_hardware_config(
     types_spec = _make_types(h, w)
     type1, type2 = types_spec[0], types_spec[1]
 
+    # Prune unused types: when all softcores fit into one type and the
+    # other type goes unused (or gets over-allocated), redistribute.
+    # Count actual per-type usage at the chosen dimensions.
+    t1_used, t2_used = _count_per_type_usage(
+        softcores_list, type1, type2, c1, c2,
+        allow_neuron_splitting=allow_neuron_splitting,
+        allow_coalescing=allow_coalescing,
+    )
+    # Trigger rebalance only when the unused type's allocation is
+    # *substantial* (>= 8 cores).  Below that the waste is minor and
+    # rebalancing can subtly pessimise the occupancy distribution the
+    # growth loop deliberately searched for.
+    _unused_alloc = 0
+    if t1_used == 0:
+        _unused_alloc = c1
+    elif t2_used == 0:
+        _unused_alloc = c2
+    if (
+        t1_used is not None
+        and t2_used is not None
+        and (t1_used == 0 or t2_used == 0)
+        and (t1_used + t2_used) > 0
+        and _unused_alloc >= 8
+    ):
+        # One type went completely unused — reallocate its budget to the
+        # other.  Leave a single token instance of the unused type so the
+        # two-type contract holds for downstream stats/UI, and scale the
+        # used type to (actual_use + safety_margin).  This is the main
+        # quality fix for per-perceptron-grouped models (e.g. cifar_vit)
+        # where all softcores flow to one aspect ratio.
+        def _scale(used: int) -> int:
+            return max(used + 1, int(math.ceil(used * (1.0 + safety_margin))))
+        c1 = _scale(t1_used) if t1_used > 0 else 1
+        c2 = _scale(t2_used) if t2_used > 0 else 1
+
     core_types: List[Dict[str, Any]] = [
         {
             "max_axons": type1[0],
@@ -466,6 +612,7 @@ def suggest_hardware_config(
             "has_bias": hardware_bias,
         },
     ]
+    best_total = c1 + c2
 
     rationale_parts = [
         f"{len(softcores)} softcores \u2192 two types {type1[0]}\u00d7{type1[1]} and {type2[0]}\u00d7{type2[1]}, "
@@ -607,9 +754,6 @@ def suggest_hardware_config_for_model(
     *,
     max_axons: int,
     max_neurons: int,
-    threshold_groups: int = 1,
-    pruning_fraction: float = 0.0,
-    threshold_seed: int = 0,
     allow_coalescing: bool = False,
     hardware_bias: bool = True,
     axon_granularity: int = 1,
@@ -617,20 +761,13 @@ def suggest_hardware_config_for_model(
     safety_margin: float = 0.15,
     allow_neuron_splitting: bool = False,
 ) -> HardwareSuggestion:
-    """Convenience wrapper: run layout mapping then suggest hardware config.
-
-    Parameters are the same as ``verify_soft_core_mapping`` plus those of
-    ``suggest_hardware_config``.
-    """
+    """Convenience wrapper: run layout mapping then suggest hardware config."""
     from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
 
     result = verify_soft_core_mapping(
         model_repr,
         max_axons=max_axons,
         max_neurons=max_neurons,
-        threshold_groups=threshold_groups,
-        pruning_fraction=pruning_fraction,
-        threshold_seed=threshold_seed,
         allow_coalescing=allow_coalescing,
         hardware_bias=hardware_bias,
     )

@@ -190,14 +190,24 @@ class GUIHandle:
 
         working_dir = getattr(self.pipeline, "working_directory", None)
 
+        # Broadcast step_completed synchronously so the UI never sees the
+        # previous step "still running" while the next step's
+        # ``step_started`` has already fired.  The pipeline-thread ordering
+        # of broadcasts must be ``started:A → completed:A → started:B``;
+        # previously the completion was queued to a background executor
+        # so ``started:B`` could be broadcast before ``completed:A``,
+        # giving the monitor two concurrently "running" steps.  Disk
+        # persistence (PNG/JSON resource materialisation) remains
+        # deferred because it's heavy and order-insensitive.
+        self.collector.step_completed(
+            step_name,
+            target_metric=target_metric,
+            snapshot=snapshot,
+            snapshot_key_kinds=snapshot_key_kinds,
+            resources=resource_descriptors,
+        )
+
         def _finalize() -> None:
-            self.collector.step_completed(
-                step_name,
-                target_metric=target_metric,
-                snapshot=snapshot,
-                snapshot_key_kinds=snapshot_key_kinds,
-                resources=resource_descriptors,
-            )
             if working_dir:
                 detail = self.collector.get_step_detail(step_name)
                 if detail:

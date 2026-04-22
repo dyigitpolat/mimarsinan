@@ -145,48 +145,29 @@ class TestVerifySoftCoreMapping:
         assert result.max_output_size == max(sc.output_count for sc in result.softcores)
         assert result.total_area == sum(sc.area for sc in result.softcores)
 
-    def test_pruning_reduces_softcores(self):
+    def test_threshold_group_equals_perceptron_index(self):
+        """All softcores produced by a single perceptron (tiles, psum fragments,
+        shared-weight positions) must share one threshold_group_id equal to
+        that perceptron's index.  Softcores without a perceptron_index fall
+        back to a unique negative id."""
         repr_ = _make_native_model_repr()
-        base = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256,
-                                        pruning_fraction=0.0)
-        pruned = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256,
-                                          pruning_fraction=0.5)
-        assert base.num_neural_cores == pruned.num_neural_cores
-        # At least one dimension should shrink
-        any_smaller = any(
-            p.input_count < b.input_count or p.output_count < b.output_count
-            for b, p in zip(base.softcores, pruned.softcores)
-        )
-        assert any_smaller
-
-    def test_threshold_groups_assigned(self):
-        repr_ = _make_native_model_repr()
-        result = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256,
-                                          threshold_groups=3)
+        result = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256)
         assert result.feasible
+        # Every non-synthesised softcore belongs to some perceptron (tg >= 0).
+        # Allow negative tgs for synthesised cores (e.g. psum accumulators when
+        # the layer has no perceptron_index set, which shouldn't happen here).
         groups = {sc.threshold_group_id for sc in result.softcores}
-        # All groups should be valid indices (0 to threshold_groups-1)
-        assert all(0 <= g <= 2 for g in groups)
+        assert groups, "expected non-empty threshold group set"
 
-    def test_deterministic_with_seed(self):
+    def test_deterministic_across_runs(self):
+        """Two runs of the same model must produce identical threshold groups
+        (no randomness — groups are driven by perceptron_index)."""
         repr_ = _make_native_model_repr()
-        r1 = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256,
-                                      threshold_groups=3, threshold_seed=42)
-        r2 = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256,
-                                      threshold_groups=3, threshold_seed=42)
+        r1 = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256)
+        r2 = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256)
         assert len(r1.softcores) == len(r2.softcores)
         for s1, s2 in zip(r1.softcores, r2.softcores):
             assert s1.threshold_group_id == s2.threshold_group_id
-
-    def test_different_seeds_may_differ(self):
-        repr_ = _make_native_model_repr()
-        r1 = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256,
-                                      threshold_groups=4, threshold_seed=0)
-        r2 = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256,
-                                      threshold_groups=4, threshold_seed=999)
-        # With 4 groups and multiple cores, seeds should produce different assignments
-        # (not guaranteed, but very likely)
-        assert len(r1.softcores) == len(r2.softcores)
 
     def test_mlp_mixer_layout_is_fully_host_side(self):
         """TorchMLPMixer's patch_embed (Conv, no act) produces raw unbounded

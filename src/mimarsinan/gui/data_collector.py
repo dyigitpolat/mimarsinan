@@ -481,9 +481,28 @@ class DataCollector:
             try:
                 loop = ws._loop if hasattr(ws, "_loop") else None
                 if loop is not None and loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        ws.send_json(safe_message), loop
+                    # Wait for the send to actually complete before the
+                    # next broadcast is scheduled.  Without this, two
+                    # back-to-back broadcasts from the pipeline thread
+                    # (e.g. ``step_completed:A`` then ``step_started:B``)
+                    # are submitted as independent asyncio tasks that
+                    # can interleave at ``await`` points inside
+                    # ``ws.send_json`` — the UI then sees B "start"
+                    # before A's "completed" frame arrives and renders
+                    # both steps as concurrently running.  A short
+                    # timeout bounds the pipeline thread's blocking in
+                    # case a listener is stuck.
+                    fut = asyncio.run_coroutine_threadsafe(
+                        ws.send_json(safe_message), loop,
                     )
+                    try:
+                        fut.result(timeout=2.0)
+                    except Exception:
+                        logger.debug(
+                            "WebSocket send timed out or failed; dropping listener",
+                            exc_info=True,
+                        )
+                        dead.append(ws)
                 else:
                     dead.append(ws)
             except Exception:
