@@ -76,6 +76,7 @@ class ImageNet_DataProvider(DataProvider):
     """
 
     DISPLAY_LABEL = "ImageNet (224×224×3, 1000 classes)"
+    SUPPORTS_PREPROCESSING = False
 
     training_validation_split = 0.95
 

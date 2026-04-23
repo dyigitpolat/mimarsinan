@@ -47,6 +47,77 @@ function ensureModelConfigSchema(modelTypeId) {
     });
 }
 
+// Cache of preprocessing-aware dataset metadata keyed by
+// "<providerId>|<resize_to>|<normalize>|<interpolation>".  Populated lazily
+// via GET /api/data_providers/{id}/metadata so the wizard never has to
+// guess input_shape / num_classes from the provider name.
+const DATA_PROVIDER_METADATA_CACHE = {};
+
+function _metadataCacheKey(providerId, resizeTo, normalize, interpolation) {
+  return [
+    providerId || '',
+    resizeTo != null ? String(resizeTo) : '',
+    normalize || '',
+    interpolation || '',
+  ].join('|');
+}
+
+function fetchDataProviderMetadata(providerId, resizeTo, normalize, interpolation) {
+  const key = _metadataCacheKey(providerId, resizeTo, normalize, interpolation);
+  if (DATA_PROVIDER_METADATA_CACHE[key]) return DATA_PROVIDER_METADATA_CACHE[key];
+  const params = new URLSearchParams();
+  if (resizeTo != null && resizeTo > 0) params.set('resize_to', String(resizeTo));
+  if (normalize) params.set('normalize', normalize);
+  if (interpolation) params.set('interpolation', interpolation);
+  const qs = params.toString();
+  const url = '/api/data_providers/' + encodeURIComponent(providerId) + '/metadata'
+    + (qs ? '?' + qs : '');
+  const promise = fetch(url)
+    .then(function (r) {
+      if (!r.ok) throw new Error('metadata fetch failed: HTTP ' + r.status);
+      return r.json();
+    })
+    .catch(function (err) {
+      // Drop failed entries from the cache so the next attempt retries.
+      delete DATA_PROVIDER_METADATA_CACHE[key];
+      throw err;
+    });
+  DATA_PROVIDER_METADATA_CACHE[key] = promise;
+  return promise;
+}
+
+// Last successfully resolved metadata for the selected provider +
+// preprocessing.  `_buildHwApiBody` reads from this synchronously, so the
+// wizard re-fetches metadata whenever the data provider or the
+// preprocessing drawer changes and stores the result here.
+let _currentDataProviderMetadata = null;
+
+function refreshCurrentDataProviderMetadata() {
+  const providerId = v('dataProvider');
+  if (!providerId) {
+    _currentDataProviderMetadata = null;
+    return Promise.resolve(null);
+  }
+  const rawResize = v('preprocessResizeTo');
+  const resizeVal = (rawResize !== '' && rawResize != null) ? parseInt(rawResize) : NaN;
+  const resizeTo = (!isNaN(resizeVal) && resizeVal > 0) ? resizeVal : null;
+  const normalize = v('preprocessNormalize') || null;
+  const interpolation = v('preprocessInterpolation') || null;
+  return fetchDataProviderMetadata(providerId, resizeTo, normalize, interpolation)
+    .then(function (md) {
+      if (md && md.error) {
+        _currentDataProviderMetadata = null;
+        return null;
+      }
+      _currentDataProviderMetadata = md;
+      return md;
+    })
+    .catch(function () {
+      _currentDataProviderMetadata = null;
+      return null;
+    });
+}
+
 // ── Hardcoded fallbacks (used only if API unavailable) ───────
 
 // ── State ──────────────────────────────────────────────────
@@ -1117,7 +1188,31 @@ function renderJson(obj) {
     .replace(/:\s*(null)/g, (m, val) => `: <span class="null">${val}</span>`);
 }
 
+// Last metadata cache-key we kicked a fetch for, so update() can dedupe
+// the network call when nothing relevant changed (data provider,
+// preprocessing drawer).  When the resolved shape/classes differ, the
+// fetch's .then() re-schedules update() so downstream stages (hw-config
+// verify/suggest, JSON preview) re-render with the new values.
+let _lastMetadataKey = null;
+
+function _maybeRefreshMetadata() {
+  const providerId = v('dataProvider');
+  if (!providerId) return;
+  const rawResize = v('preprocessResizeTo');
+  const resizeVal = (rawResize !== '' && rawResize != null) ? parseInt(rawResize) : NaN;
+  const resizeTo = (!isNaN(resizeVal) && resizeVal > 0) ? resizeVal : null;
+  const normalize = v('preprocessNormalize') || '';
+  const interpolation = v('preprocessInterpolation') || '';
+  const key = _metadataCacheKey(providerId, resizeTo, normalize, interpolation);
+  if (key === _lastMetadataKey) return;
+  _lastMetadataKey = key;
+  refreshCurrentDataProviderMetadata().then(function (md) {
+    if (md) update();
+  });
+}
+
 function update() {
+  _maybeRefreshMetadata();
   syncWtQuantToggle();
   document.getElementById('jsonOutput').innerHTML = renderJson(buildConfig());
   schedulePipelineStepsUpdate();
@@ -1419,28 +1514,21 @@ function _buildHwApiBody() {
   const thresholdGroups = parseInt(document.getElementById('maxThresholdGroups')?.value || '1') || 1;
   const targetTq = parseInt(document.getElementById('targetTq')?.value || '32') || 32;
 
+  // The authoritative input_shape / num_classes come from
+  // GET /api/data_providers/{id}/metadata (fed through the preprocessing
+  // drawer).  `_currentDataProviderMetadata` is the last successful fetch;
+  // if absent (first render or fetch failure) we fall back to minimal
+  // defaults and let the server surface a feasibility error.
+  const md = _currentDataProviderMetadata;
+  const inputShape = (md && Array.isArray(md.input_shape) && md.input_shape.length)
+    ? md.input_shape.slice()
+    : [1, 28, 28];
+  const numClasses = (md && Number.isFinite(md.num_classes)) ? md.num_classes : 10;
+
   return {
     model_type: state.modelType,
-    input_shape: (function () {
-      const dp = v('dataProvider') || '';
-      // Honour the preprocessing resize_to so the wizard builds the model at
-      // the same spatial resolution as the deployment pipeline.  Without this
-      // the wizard would build a ViT for 32x32 while the deployment pipeline
-      // (which applies the configured resize_to=224 via the data provider
-      // preprocessing) builds a ViT for 224x224 — producing wildly different
-      // softcore counts and a falsely-feasible mapping report.
-      const resizeRaw = v('preprocessResizeTo');
-      const resizeVal = (resizeRaw !== '' && resizeRaw != null) ? parseInt(resizeRaw) : NaN;
-      const resize = (!isNaN(resizeVal) && resizeVal > 0) ? resizeVal : null;
-      if (dp.includes('CIFAR')) return [3, resize || 32, resize || 32];
-      if (dp.includes('IMAGENET') || dp.includes('ImageNet') || dp.includes('IMGNET')) {
-        return [3, resize || 224, resize || 224];
-      }
-      if (dp.includes('ECG')) return [1, 140];
-      if (resize) return [1, resize, resize];
-      return [1, 28, 28];
-    })(),
-    num_classes: 10,
+    input_shape: inputShape,
+    num_classes: numClasses,
     model_config: modelConfig,
     max_axons: maxAx,
     max_neurons: maxNeu,

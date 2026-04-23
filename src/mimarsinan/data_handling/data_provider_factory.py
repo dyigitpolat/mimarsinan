@@ -63,7 +63,12 @@ class BasicDataProviderFactory(DataProviderFactory):
 
     @classmethod
     def list_registered(cls) -> list[dict]:
-        """Return list of registered provider ids and display labels (for GUI)."""
+        """Return list of registered provider ids, labels, and static capabilities (for GUI).
+
+        ``input_shape`` / ``num_classes`` are NOT included here because they
+        require instantiating the provider, which may load a non-trivial
+        dataset from disk.  Use :meth:`get_metadata` per-provider for that.
+        """
         import mimarsinan.data_handling.data_providers  # noqa: F401 - populate registry
         result = []
         for name in sorted(cls._provider_registry.keys()):
@@ -71,5 +76,48 @@ class BasicDataProviderFactory(DataProviderFactory):
             label = getattr(provider_cls, "DISPLAY_LABEL", None)
             if label is None:
                 label = name.replace("_DataProvider", "").replace("_", " ")
-            result.append({"id": name, "label": label})
+            result.append({
+                "id": name,
+                "label": label,
+                "supports_preprocessing": bool(getattr(provider_cls, "SUPPORTS_PREPROCESSING", True)),
+            })
         return result
+
+    @classmethod
+    def get_metadata(
+        cls,
+        name: str,
+        datasets_path: str = "./datasets",
+        *,
+        preprocessing=None,
+    ) -> dict:
+        """Instantiate ``name`` with ``preprocessing`` and report its shape / classes.
+
+        Returns ``{"id", "label", "input_shape", "num_classes",
+        "supports_preprocessing"}``.  Raises :class:`ValueError` for unknown
+        providers; instantiation errors (e.g. ImageNet root missing) propagate
+        so the caller can report them.
+        """
+        import mimarsinan.data_handling.data_providers  # noqa: F401 - populate registry
+        if name not in cls._provider_registry:
+            raise ValueError(f"Data provider {name!r} not registered.")
+        provider_cls = cls._provider_registry[name]
+
+        factory = cls(
+            name, datasets_path,
+            seed=0, cache=False, preprocessing=preprocessing,
+        )
+        provider = factory.create()
+        shape = tuple(int(d) for d in provider.get_input_shape())
+
+        label = getattr(provider_cls, "DISPLAY_LABEL", None)
+        if label is None:
+            label = name.replace("_DataProvider", "").replace("_", " ")
+
+        return {
+            "id": name,
+            "label": label,
+            "input_shape": list(shape),
+            "num_classes": int(provider.get_output_shape()),
+            "supports_preprocessing": bool(getattr(provider_cls, "SUPPORTS_PREPROCESSING", True)),
+        }

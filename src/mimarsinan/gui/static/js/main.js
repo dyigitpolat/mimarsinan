@@ -215,11 +215,24 @@ function updateErrorBanner(pipeline) {
   banner.textContent = 'Pipeline failed: ' + pipeline.error;
 }
 
+// Highest ``event_seq`` observed on the WS so a reconnect can ask the
+// server to replay any step_started / step_completed / step_failed events
+// that arrived while we were disconnected.  Persists across the reconnect
+// backoff — the server keeps a ring buffer of the last ~512 events.
+let _lastWsEventSeq = 0;
+
 // ── WebSocket ────────────────────────────────────────────────────────────
 function connectWebSocket() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => { state.connected = true; state.ws = ws; updateConnectionDot(); };
+  ws.onopen = () => {
+    state.connected = true;
+    state.ws = ws;
+    updateConnectionDot();
+    try {
+      ws.send(JSON.stringify({ type: 'resume', last_seq: _lastWsEventSeq }));
+    } catch (e) { /* send may race onopen — harmless to skip */ }
+  };
   ws.onclose = () => { state.connected = false; updateConnectionDot(); setTimeout(connectWebSocket, 3000); };
   ws.onmessage = (evt) => { try { handleWSMessage(JSON.parse(evt.data)); } catch (e) { /* ignore parse errors */ } };
 }
@@ -242,6 +255,9 @@ function connectActiveRunWebSocket(runId) {
 }
 
 function handleWSMessage(msg) {
+  if (msg && typeof msg.event_seq === 'number' && msg.event_seq > _lastWsEventSeq) {
+    _lastWsEventSeq = msg.event_seq;
+  }
   if (msg.type === 'pipeline_overview') {
     // The collector piggy-backs a full overview on every step lifecycle
     // event, so we can update the bar + cards synchronously without

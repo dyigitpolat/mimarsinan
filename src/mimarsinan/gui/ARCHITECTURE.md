@@ -92,7 +92,8 @@ Active-run cards use **incremental DOM updates**: on each poll only changed fiel
 
 ### Wizard and config APIs (when started with `--ui`)
 
-- `GET /api/data_providers` — list registered data providers (id, label).
+- `GET /api/data_providers` — list registered data providers (`id`, `label`, `supports_preprocessing`).
+- `GET /api/data_providers/{id}/metadata?resize_to=&normalize=&interpolation=&datasets_path=` — instantiate the provider with the wizard's preprocessing and report `{input_shape, num_classes, supports_preprocessing}`.  Wizard calls this whenever the data provider or preprocessing drawer changes so it never has to guess input shape from the provider name.
 - `GET /api/model_types` — list model types (id, label, category).
 - `GET /api/model_config_schema/{model_type}` — config fields for dynamic form generation.
 - `POST /api/run` — body = full deployment config JSON; creates pipeline, attaches collector, runs in background thread; returns 202.
