@@ -127,6 +127,75 @@ class SpikingHybridCoreFlow(nn.Module):
         self._segment_tensor_cache: Dict[int, dict] = {}
         self._segment_tensor_cache_key: int | None = None
 
+    def _build_consumer_counts(self) -> Dict[int, int]:
+        """Return ``{node_id: number_of_downstream_reads}`` for the mapping.
+
+        A node is consumed by:
+          * every NEURAL stage's ``input_map`` entry pointing at it;
+          * every COMPUTE op whose ``input_sources`` references it;
+          * the final ``output_sources`` of the HybridHardCoreMapping
+            (``_gather_final_output`` reads those at the end).
+
+        The counts are used to prune ``state_buffer`` entries as soon as
+        their last consumer has run — crucial for ViT-scale mappings
+        where state_buffer would otherwise retain ~2400 intermediate
+        compute-op tensors through the whole forward (GB of growth per
+        batch within a single forward pass).
+        """
+        cached = getattr(self.hybrid_mapping, "_consumer_counts_cache", None)
+        if cached is not None:
+            return cached
+
+        counts: Dict[int, int] = {}
+
+        def _bump(nid: int) -> None:
+            counts[nid] = counts.get(nid, 0) + 1
+
+        for stage in self.hybrid_mapping.stages:
+            if stage.kind == "neural":
+                for s in stage.input_map:
+                    if s.node_id is not None and int(s.node_id) >= 0:
+                        _bump(int(s.node_id))
+            elif stage.kind == "compute":
+                op = stage.compute_op
+                assert op is not None
+                for src in op.input_sources.flatten():
+                    if isinstance(src, IRSource) and src.node_id >= 0:
+                        _bump(int(src.node_id))
+
+        for src in self.hybrid_mapping.output_sources.flatten():
+            if isinstance(src, IRSource) and src.node_id >= 0:
+                _bump(int(src.node_id))
+
+        try:
+            self.hybrid_mapping._consumer_counts_cache = counts
+        except (AttributeError, TypeError):
+            pass
+        return counts
+
+    @staticmethod
+    def _decref_consumers(
+        state_buffer: Dict[int, torch.Tensor],
+        remaining: Dict[int, int],
+        src_ids,
+    ) -> None:
+        """Decrement ``remaining[nid]`` for each source; drop state_buffer
+        entries whose refcount hits 0.  ``src_ids`` is an iterable of
+        already-resolved node_ids (ints).
+        """
+        for nid in src_ids:
+            if nid < 0:
+                continue
+            r = remaining.get(nid)
+            if r is None:
+                continue
+            r -= 1
+            if r <= 0:
+                remaining.pop(nid, None)
+                state_buffer.pop(nid, None)
+            else:
+                remaining[nid] = r
+
     def _evict_segment_cache(self) -> None:
         """Drop the currently cached segment's GPU tensors.
 
@@ -659,6 +728,13 @@ class SpikingHybridCoreFlow(nn.Module):
         out_scales = getattr(self.hybrid_mapping, "node_activation_scales", {})
         in_scales = getattr(self.hybrid_mapping, "node_input_activation_scales", out_scales)
 
+        # Pre-computed downstream-consumer counts for every node_id.
+        # During the forward we decrement per consumption and drop
+        # state_buffer entries whose refcount hits 0 so intermediate
+        # tensors die as soon as possible — prevents GB-scale growth
+        # within a single forward on long compute-op chains (ViT).
+        remaining = dict(self._build_consumer_counts())
+
         for stage in self.hybrid_mapping.stages:
             if stage.kind == "neural":
                 seg_input = self._assemble_segment_input(
@@ -668,6 +744,12 @@ class SpikingHybridCoreFlow(nn.Module):
                     stage, input_activations=seg_input, quantized=quantized
                 )
                 self._store_segment_output(stage.output_map, state_buffer, seg_output)
+                # Release every state_buffer entry that fed this segment
+                # and has no remaining consumers downstream.
+                self._decref_consumers(
+                    state_buffer, remaining,
+                    (int(s.node_id) for s in stage.input_map),
+                )
 
             elif stage.kind == "compute":
                 op = stage.compute_op
@@ -679,11 +761,9 @@ class SpikingHybridCoreFlow(nn.Module):
                 # match that here so PyTorch and C++ agree bit-for-bit.
                 #
                 # Memory: never materialise a float32 copy of the entire
-                # state_buffer — that duplicated every prior segment's
-                # output per compute-op (2× state memory for each of ~2430
-                # ops on cifar_vit → OOM).  ``gather_inputs`` only reads
-                # the specific sources this op needs, so casting the
-                # gathered result (O(op_inputs)) is sufficient.
+                # state_buffer — ``gather_inputs`` only reads the specific
+                # sources this op needs, so casting the gathered result
+                # (O(op_inputs)) is sufficient.
                 gathered = op.gather_inputs(x, state_buffer)
                 gathered = gathered.to(torch.float32)
                 if abs(in_scale - 1.0) > 1e-9:
@@ -692,6 +772,12 @@ class SpikingHybridCoreFlow(nn.Module):
                 if abs(out_scale - 1.0) > 1e-9:
                     result = result / out_scale
                 state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
+                # Drop any source whose last consumer was this op.
+                self._decref_consumers(
+                    state_buffer, remaining,
+                    (int(src.node_id) for src in op.input_sources.flatten()
+                     if isinstance(src, IRSource) and src.node_id >= 0),
+                )
 
             else:
                 raise ValueError(f"Invalid hybrid stage kind: {stage.kind}")
@@ -711,6 +797,10 @@ class SpikingHybridCoreFlow(nn.Module):
         x_compute = x.to(_COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
 
+        # See _forward_ttfs for the rationale; same refcount-prune
+        # strategy prevents state_buffer growth within a forward.
+        remaining = dict(self._build_consumer_counts())
+
         for stage in self.hybrid_mapping.stages:
             if stage.kind == "neural":
                 seg_input_rates = self._assemble_segment_input(
@@ -729,6 +819,10 @@ class SpikingHybridCoreFlow(nn.Module):
                 )
                 seg_output_rates = counts / float(T)
                 self._store_segment_output(stage.output_map, state_buffer, seg_output_rates)
+                self._decref_consumers(
+                    state_buffer, remaining,
+                    (int(s.node_id) for s in stage.input_map),
+                )
 
             elif stage.kind == "compute":
                 op = stage.compute_op
@@ -740,6 +834,11 @@ class SpikingHybridCoreFlow(nn.Module):
                 gathered = gathered.to(torch.float32)
                 result = op.execute_on_gathered(gathered)
                 state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
+                self._decref_consumers(
+                    state_buffer, remaining,
+                    (int(src.node_id) for src in op.input_sources.flatten()
+                     if isinstance(src, IRSource) and src.node_id >= 0),
+                )
 
             else:
                 raise ValueError(f"Invalid hybrid stage kind: {stage.kind}")

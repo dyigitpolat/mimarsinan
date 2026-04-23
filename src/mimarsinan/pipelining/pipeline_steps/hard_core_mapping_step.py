@@ -8,9 +8,42 @@ from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
 
+import torch
 import torch.nn as nn
 import traceback
 import os
+
+
+def _vram_probe(tag: str) -> None:
+    """Opt-in VRAM + RSS probe.
+
+    Enabled when ``MIMARSINAN_VRAM_PROBE=1`` so we can drop
+    instrumentation into the HCM step without paying sync costs in
+    production runs.  Prints one line with RSS / CUDA allocated /
+    CUDA reserved (MiB) and the current peak.
+    """
+    if os.environ.get("MIMARSINAN_VRAM_PROBE") != "1":
+        return
+    try:
+        import psutil
+        rss = psutil.Process(os.getpid()).memory_info().rss
+    except Exception:
+        rss = 0
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        alc = torch.cuda.memory_allocated()
+        rsv = torch.cuda.memory_reserved()
+        peak = torch.cuda.max_memory_allocated()
+    else:
+        alc = rsv = peak = 0
+    print(
+        f"[VRAM::HCM] {tag:<52} "
+        f"RSS={rss/1e6:8.1f} MB  "
+        f"alc={alc/1e6:8.1f} MB  "
+        f"rsv={rsv/1e6:8.1f} MB  "
+        f"peak={peak/1e6:8.1f} MB",
+        flush=True,
+    )
 
 class HardCoreMappingStep(PipelineStep):
 
@@ -48,10 +81,12 @@ class HardCoreMappingStep(PipelineStep):
     def process(self):
         self._last_metric = None
         self._last_metric_is_failure = False
+        _vram_probe("process_entry")
         model = self.get_entry("model")
         ir_graph = self.get_entry('ir_graph')
         sim_len = int(self.get_entry("scaled_simulation_length"))
         platform_constraints = self.get_entry("platform_constraints_resolved")
+        _vram_probe("after_load_entries")
 
         hybrid_mapping = build_hybrid_hard_core_mapping(
             ir_graph=ir_graph,
@@ -84,8 +119,10 @@ class HardCoreMappingStep(PipelineStep):
                 f"{len(compute_ops)} compute ops"
             )
 
+        _vram_probe("after_build_hybrid")
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")
-        
+        _vram_probe("after_pickle_save")
+
         # Run a spiking simulation test to verify the hard-core mapping
         try:
             device = self.pipeline.config["device"]
@@ -100,6 +137,7 @@ class HardCoreMappingStep(PipelineStep):
                 spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
             )
             flow = flow.to(device)
+            _vram_probe("after_flow_to_device")
             # ``simulation_batch_count`` caps the per-core test pass to
             # keep the verification sim inside the run budget on large
             # models; the SoftCoreMapping pass already uses the same
@@ -115,6 +153,7 @@ class HardCoreMappingStep(PipelineStep):
             # subsampling as ``SimulationRunner`` and the SCM
             # verification — keeps the three metrics comparable.
             max_samples = int(self.pipeline.config.get("max_simulation_samples", 0) or 0)
+            _vram_probe("before_test")
             if max_samples > 0:
                 acc = trainer.test_on_subsample(
                     max_samples=max_samples,
@@ -122,6 +161,7 @@ class HardCoreMappingStep(PipelineStep):
                 )
             else:
                 acc = trainer.test(max_batches=sim_batches)
+            _vram_probe("after_test")
             self._last_metric = float(acc)
             print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
         except Exception as e:
