@@ -74,15 +74,3 @@ def get_pipeline_step_names_for_config(config: dict) -> List[str]:
     Delegates to the single source of truth in ``deployment_pipeline``.
     """
     return [name for name, _ in get_pipeline_step_specs(config)]
-
-
-def get_data_provider_descriptions() -> Dict[str, str]:
-    """Short description per data provider for the wizard."""
-    return {
-        "MNIST_DataProvider": "MNIST 28x28 grayscale, 10 classes",
-        "CIFAR10_DataProvider": "CIFAR-10 32x32 RGB, 10 classes",
-        "CIFAR100_DataProvider": "CIFAR-100 32x32 RGB, 100 classes",
-        "ECG_DataProvider": "ECG dataset",
-        "MNIST32_DataProvider": "MNIST resized to 32x32",
-        "ImageNet_DataProvider": "ImageNet ILSVRC2012 224x224 RGB, 1000 classes",
-    }

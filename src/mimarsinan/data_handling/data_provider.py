@@ -40,6 +40,11 @@ class RegressionMode:
     
 
 class DataProvider:
+    # Providers whose transforms hard-code the input shape (e.g. ImageNet
+    # uses RandomResizedCrop(224) unconditionally) set this to False so
+    # the wizard disables the resize / normalize controls for them.
+    SUPPORTS_PREPROCESSING = True
+
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
         from mimarsinan.data_handling.preprocessing import resolve_preprocessing
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Optional, TYPE_CHECKING
@@ -84,6 +85,14 @@ class DataCollector:
 
         self._resource_store: Optional["ResourceStore"] = None
 
+        # Monotonic sequence for step-lifecycle events so a reconnecting WS
+        # client can ask the server to replay anything it missed.  Bounded
+        # deque caps memory — in practice a pipeline emits a handful of
+        # lifecycle events per step, so 512 covers even a deep run with
+        # several restarts.
+        self._event_seq: int = 0
+        self._event_buffer: deque[dict] = deque(maxlen=512)
+
     # -- Resource store wiring -------------------------------------------------
 
     def set_resource_store(self, store: "ResourceStore | None") -> None:
@@ -157,7 +166,7 @@ class DataCollector:
             store = self._resource_store
         if store is not None:
             store.clear_step(step_name)
-        self._broadcast({"type": "step_started", "step": step_name})
+        self._broadcast_lifecycle({"type": "step_started", "step": step_name})
         self._broadcast_pipeline_overview()
 
     def step_completed(
@@ -185,7 +194,7 @@ class DataCollector:
         if resources and store is not None:
             for desc in resources:
                 store.put(step_name, desc)
-        self._broadcast({
+        self._broadcast_lifecycle({
             "type": "step_completed",
             "step": step_name,
             "target_metric": target_metric,
@@ -202,7 +211,7 @@ class DataCollector:
                 rec.snapshot_version += 1
             if self._current_step == step_name:
                 self._current_step = None
-        self._broadcast({"type": "step_failed", "step": step_name, "error": error})
+        self._broadcast_lifecycle({"type": "step_failed", "step": step_name, "error": error})
         self._broadcast_pipeline_overview()
 
     def add_step_from_persisted(
@@ -458,6 +467,63 @@ class DataCollector:
             if ws in self._ws_listeners:
                 self._ws_listeners.remove(ws)
 
+    # -- WS resume protocol ----------------------------------------------------
+
+    def _broadcast_lifecycle(self, message: dict) -> None:
+        """Tag *message* with a monotonic ``event_seq`` and buffer it.
+
+        Used for ``step_started`` / ``step_completed`` / ``step_failed`` so a
+        reconnecting client that sends ``{"type":"resume","last_seq":N}`` can
+        replay everything it missed.  Broadcast happens after buffering.
+        """
+        with self._lock:
+            self._event_seq += 1
+            tagged = dict(message)
+            tagged["event_seq"] = self._event_seq
+            self._event_buffer.append(tagged)
+        self._broadcast(tagged)
+
+    def get_current_event_seq(self) -> int:
+        with self._lock:
+            return self._event_seq
+
+    def replay_events_since(self, ws: Any, last_seq: int) -> None:
+        """Send every buffered lifecycle event with ``event_seq > last_seq`` to *ws*.
+
+        Also pushes a fresh ``pipeline_overview`` at the end so the bar
+        re-synchronises even when lifecycle events rolled out of the ring
+        or when the disconnect spanned multiple step edges (without this
+        the UI kept rendering the pre-disconnect ``current_step`` and
+        could show several steps as concurrently running).
+        """
+        import asyncio
+
+        with self._lock:
+            pending = [e for e in self._event_buffer if e.get("event_seq", 0) > last_seq]
+        loop = ws._loop if hasattr(ws, "_loop") else None
+        if loop is None or not loop.is_running():
+            return
+        for evt in pending:
+            try:
+                fut = asyncio.run_coroutine_threadsafe(ws.send_json(evt), loop)
+                fut.result(timeout=2.0)
+            except Exception:
+                logger.warning("WS resume replay failed; aborting", exc_info=True)
+                return
+        # Fresh overview so the pipeline bar reflects current_step /
+        # per-step status regardless of which lifecycle events were buffered.
+        try:
+            overview = self.get_pipeline_overview()
+        except Exception:
+            return
+        try:
+            fut = asyncio.run_coroutine_threadsafe(
+                ws.send_json({"type": "pipeline_overview", **overview}), loop,
+            )
+            fut.result(timeout=2.0)
+        except Exception:
+            logger.warning("WS resume overview push failed", exc_info=True)
+
     def _broadcast(self, message: dict) -> None:
         import asyncio
         import math
@@ -498,7 +564,10 @@ class DataCollector:
                     try:
                         fut.result(timeout=2.0)
                     except Exception:
-                        logger.debug(
+                        # Promoted from DEBUG: dropped listeners correlate
+                        # with missed step_started/completed events in the
+                        # monitor UI, so surface these in default logs.
+                        logger.warning(
                             "WebSocket send timed out or failed; dropping listener",
                             exc_info=True,
                         )
@@ -506,7 +575,10 @@ class DataCollector:
                 else:
                     dead.append(ws)
             except Exception:
-                logger.debug("Failed to broadcast to WebSocket, removing listener", exc_info=True)
+                logger.warning(
+                    "Failed to broadcast to WebSocket, removing listener",
+                    exc_info=True,
+                )
                 dead.append(ws)
         if dead:
             with self._lock:

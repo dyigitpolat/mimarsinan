@@ -333,6 +333,70 @@ def create_app(
         from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
         return BasicDataProviderFactory.list_registered()
 
+    # In-process cache so the wizard's per-keystroke metadata fetch never
+    # re-downloads datasets or re-reads ImageNet's devkit.  Key is the full
+    # tuple the client can vary; entries never expire (registry is fixed).
+    _metadata_cache: dict[tuple, dict] = {}
+    _metadata_cache_lock = threading.Lock()
+
+    @app.get("/api/data_providers/{provider_id}/metadata")
+    async def api_data_provider_metadata(
+        provider_id: str,
+        resize_to: int | None = None,
+        normalize: str | None = None,
+        interpolation: str | None = None,
+        datasets_path: str | None = None,
+    ):
+        """Return preprocessing-aware ``{input_shape, num_classes, ...}``.
+
+        Runs the (potentially dataset-loading) provider instantiation on a
+        worker thread so the FastAPI threadpool stays available for WS
+        broadcasts and other requests.  Results are cached in-process.
+        """
+        from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
+        preprocessing = None
+        if resize_to is not None or normalize:
+            preprocessing = {}
+            if resize_to is not None and int(resize_to) > 0:
+                preprocessing["resize_to"] = int(resize_to)
+            if normalize:
+                preprocessing["normalize"] = normalize
+            if interpolation:
+                preprocessing["interpolation"] = interpolation
+            if not preprocessing:
+                preprocessing = None
+
+        cache_key = (
+            provider_id,
+            datasets_path or "./datasets",
+            resize_to if resize_to and int(resize_to) > 0 else None,
+            (normalize or None),
+            (interpolation or None),
+        )
+        with _metadata_cache_lock:
+            hit = _metadata_cache.get(cache_key)
+        if hit is not None:
+            return hit
+
+        def _load():
+            return BasicDataProviderFactory.get_metadata(
+                provider_id,
+                datasets_path or "./datasets",
+                preprocessing=preprocessing,
+            )
+
+        try:
+            result = await asyncio.to_thread(_load)
+        except ValueError as e:
+            return JSONResponse(status_code=404, content={"error": str(e)})
+        except Exception as e:
+            logger.exception("data_provider_metadata failed")
+            return JSONResponse(status_code=503, content={"error": str(e)})
+
+        with _metadata_cache_lock:
+            _metadata_cache[cache_key] = result
+        return result
+
     @app.get("/api/model_types")
     def api_model_types():
         from mimarsinan.pipelining.model_registry import get_model_types
@@ -631,22 +695,15 @@ def create_app(
         return result
 
     @app.post("/api/hw_config_verify")
-    def api_hw_config_verify(body: dict):
+    async def api_hw_config_verify(body: dict):
         """Verify that a hardware core config can fit the given model's softcores.
 
-        Request body:
-            model_repr_json: {
-                model_type: str,
-                input_shape: list[int],
-                num_classes: int,
-                model_config: dict,
-                max_axons / max_neurons: int (optional, used for model-building size hints;
-                    the layout tiling pass uses max across the user's core_types).
-            }
-            core_types: [{max_axons, max_neurons, count, has_bias}, ...]
-            allow_neuron_splitting / allow_coalescing / allow_scheduling: bool (default false).
+        Heavy (full layout + pack).  Offloaded via ``asyncio.to_thread`` so
+        a rapid-fire sequence of wizard edits (debounced at 250 ms) cannot
+        saturate the default FastAPI threadpool and stall every other
+        request including the ones feeding the monitor UI.
         """
-        try:
+        def _run():
             from mimarsinan.mapping.mapping_verifier import (
                 verify_soft_core_mapping,
                 verify_hardware_config,
@@ -717,30 +774,23 @@ def create_app(
                 }
                 resp["schedule_info"] = si_clean
             return resp
+
+        try:
+            return await asyncio.to_thread(_run)
         except Exception as e:
             logger.exception("hw_config_verify failed")
             return JSONResponse(status_code=400, content={"error": str(e)})
 
     @app.post("/api/hw_config_auto")
-    def api_hw_config_auto(body: dict):
+    async def api_hw_config_auto(body: dict):
         """Auto-suggest a hardware configuration for the given model.
 
-        Request body keys (from wizard state):
-            model_type: str
-            input_shape: list[int]
-            num_classes: int
-            model_config: dict        (builder configuration)
-            max_axons / max_neurons: int (layer sizing bounds — also used as
-                the tiling bound for the layout pass, since the auto-suggester
-                has no user-defined core_types yet).
-            allow_coalescing: bool    (default false)
-            hardware_bias: bool       (default true)
-            axon_granularity: int     (default 1)
-            neuron_granularity: int   (default 1)
+        Heavy (greedy pack + layout per iteration).  Offloaded the same
+        way as ``hw_config_verify`` so the FastAPI threadpool stays free
+        for WS broadcasts and other REST calls under rapid wizard edits.
         """
-        try:
+        def _run():
             from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config, suggest_hardware_config_scheduled
-            # Ensure native models are built with a reasonable minimum layer size.
             layout_body = dict(body)
             layout_body["max_axons"] = max(int(body.get("max_axons", 1024)), 4096)
             layout_body["max_neurons"] = max(int(body.get("max_neurons", 1024)), 4096)
@@ -772,6 +822,9 @@ def create_app(
                 "num_passes": suggestion.num_passes,
                 "estimated_latency_multiplier": suggestion.estimated_latency_multiplier,
             }
+
+        try:
+            return await asyncio.to_thread(_run)
         except Exception as e:
             logger.exception("hw_config_auto failed")
             return JSONResponse(status_code=400, content={"error": str(e)})
@@ -814,7 +867,21 @@ def create_app(
         collector.add_ws_listener(ws)
         try:
             while True:
-                await ws.receive_text()
+                raw = await ws.receive_text()
+                # Clients send ``{"type":"resume","last_seq":N}`` right
+                # after (re)connect to get any lifecycle events that were
+                # broadcast while the socket was down.  Parse is best-effort
+                # — garbled messages are ignored so the listener stays up.
+                try:
+                    msg = json.loads(raw)
+                except Exception:
+                    continue
+                if isinstance(msg, dict) and msg.get("type") == "resume":
+                    try:
+                        last_seq = int(msg.get("last_seq", 0) or 0)
+                    except Exception:
+                        last_seq = 0
+                    collector.replay_events_since(ws, last_seq)
         except WebSocketDisconnect:
             pass
         finally:

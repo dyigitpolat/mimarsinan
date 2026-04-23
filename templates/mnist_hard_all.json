@@ -7,20 +7,20 @@
   "platform_constraints": {
     "cores": [
       {
-        "max_axons": 32,
-        "max_neurons": 64,
+        "max_axons": 256,
+        "max_neurons": 2048,
         "count": 40,
         "has_bias": true
       },
       {
-        "max_axons": 64,
-        "max_neurons": 32,
-        "count": 40,
+        "max_axons": 2048,
+        "max_neurons": 256,
+        "count": 35,
         "has_bias": true
       }
     ],
-    "max_axons": 64,
-    "max_neurons": 64,
+    "max_axons": 2048,
+    "max_neurons": 2048,
     "target_tq": 4,
     "simulation_steps": 4,
     "weight_bits": 5,
@@ -30,12 +30,8 @@
   },
   "deployment_parameters": {
     "lr": 0.003,
-    "batch_size": 128,
-    "tuning_batch_size": 64,
     "training_epochs": 8,
     "tuning_budget_scale": 0.35,
-    "max_simulation_samples": 500,
-    "simulation_batch_count": 4,
     "degradation_tolerance": 0.05,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
@@ -56,14 +52,15 @@
     "weight_quantization": true,
     "pruning": true,
     "pruning_fraction": 0.3,
+    "batch_size": 128,
     "training_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",
       "weight_decay": 0.0001,
       "warmup_ratio": 0.05,
       "grad_clip_norm": 1,
-      "layer_wise_lr_decay": 1.0,
-      "label_smoothing": 0.0,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
       "betas": [
         0.9,
         0.999
@@ -73,15 +70,16 @@
       "optimizer": "adamw",
       "scheduler": "cosine",
       "weight_decay": 0.0001,
-      "warmup_ratio": 0.0,
+      "warmup_ratio": 0,
       "grad_clip_norm": 1,
-      "layer_wise_lr_decay": 1.0,
-      "label_smoothing": 0.0,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
       "betas": [
         0.9,
         0.999
       ]
     },
+    "max_simulation_samples": 500,
     "allow_scheduling": true
   },
   "target_metric_override": null,
