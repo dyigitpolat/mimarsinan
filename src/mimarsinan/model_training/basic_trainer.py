@@ -1,3 +1,4 @@
+import os
 from contextlib import contextmanager
 
 from mimarsinan.model_training.training_utilities import AccuracyTracker
@@ -250,13 +251,39 @@ class BasicTrainer:
         bs = int(self.test_batch_size)
         total = 0
         correct = 0
+        # Opt-in VRAM probe — logs per-batch CUDA allocated / reserved
+        # at the verification sim's batch boundaries so we can distinguish
+        # within-forward growth from cross-batch drift.
+        _probe = os.environ.get("MIMARSINAN_VRAM_PROBE") == "1"
         with torch.no_grad():
-            for start in range(0, len(xs_all), bs):
+            for batch_idx, start in enumerate(range(0, len(xs_all), bs)):
                 x = torch.stack(xs_all[start:start + bs]).to(self.device)
                 y = torch.stack(ys_all[start:start + bs]).to(self.device)
                 self.model.eval()
                 self.model = self.model.to(self.device)
+                if _probe and torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                    alc = torch.cuda.memory_allocated()
+                    rsv = torch.cuda.memory_reserved()
+                    peak = torch.cuda.max_memory_allocated()
+                    print(
+                        f"[VRAM::batch {batch_idx:03d}] pre_forward  "
+                        f"alc={alc/1e6:8.1f} MB  rsv={rsv/1e6:8.1f} MB  "
+                        f"peak={peak/1e6:8.1f} MB",
+                        flush=True,
+                    )
                 _, predicted = self.model(x).max(1)
+                if _probe and torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                    alc = torch.cuda.memory_allocated()
+                    rsv = torch.cuda.memory_reserved()
+                    peak = torch.cuda.max_memory_allocated()
+                    print(
+                        f"[VRAM::batch {batch_idx:03d}] post_forward "
+                        f"alc={alc/1e6:8.1f} MB  rsv={rsv/1e6:8.1f} MB  "
+                        f"peak={peak/1e6:8.1f} MB",
+                        flush=True,
+                    )
                 total += float(y.size(0))
                 correct += float(predicted.eq(y).sum().item())
         if total <= 0:
