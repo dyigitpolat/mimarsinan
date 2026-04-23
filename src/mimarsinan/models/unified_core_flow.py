@@ -490,9 +490,16 @@ class SpikingUnifiedCoreFlow(nn.Module):
         - **TTFS_Quantized**: true cycle-based simulation (Phase 1 + Phase 2
           time-stepping with fire-once semantics).
         """
-        if self.spiking_mode in self._TTFS_SPIKING_MODES:
-            return self._forward_ttfs(x)
-        return self._forward_rate(x)
+        try:
+            if self.spiking_mode in self._TTFS_SPIKING_MODES:
+                return self._forward_ttfs(x)
+            return self._forward_rate(x)
+        finally:
+            # Return per-forward transient CUDA blocks to the driver so
+            # reserved memory does not climb across batches on long
+            # verification sims.  Mirrors the HCM forward's cleanup.
+            if isinstance(x, torch.Tensor) and x.is_cuda:
+                torch.cuda.empty_cache()
 
     def _forward_rate(self, x: torch.Tensor) -> torch.Tensor:
         """Rate-coded forward pass (Default / Novena)."""
@@ -996,9 +1003,15 @@ class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
 
         For TTFS modes, delegates to the parent TTFS forward (already deterministic).
         """
-        if self.spiking_mode in self._TTFS_SPIKING_MODES:
-            return self._forward_ttfs(x)
-        return self._forward_stable_rate(x)
+        try:
+            if self.spiking_mode in self._TTFS_SPIKING_MODES:
+                return self._forward_ttfs(x)
+            return self._forward_stable_rate(x)
+        finally:
+            # Same per-forward empty_cache hook as the base class — keeps
+            # reserved CUDA memory flat across batches.
+            if isinstance(x, torch.Tensor) and x.is_cuda:
+                torch.cuda.empty_cache()
 
     def _forward_stable_rate(self, x: torch.Tensor) -> torch.Tensor:
         """Rate-coded stable forward pass."""

@@ -223,30 +223,68 @@ class BasicTrainer:
     def test_on_subsample(self, *, max_samples: int, seed: int = 0):
         """Run test over a deterministic subsample of the test set.
 
-        Mirrors ``SimulationRunner``'s subsampling exactly: collect the
-        full test set, seed ``numpy.random.RandomState(seed)`` and
-        ``rng.choice(total, size=max_samples, replace=False)``.  The
-        selected samples are then re-batched at the test loader's batch
-        size.  Callers can cap a verification pass without sampling
-        drift between SCM, HCM, and the C++ chip-simulation runner.
+        Mirrors ``SimulationRunner``'s subsampling exactly: seed
+        ``numpy.random.RandomState(seed)`` and
+        ``rng.choice(total, size=max_samples, replace=False)`` over the
+        logical test-set size, then iterate the loader and retain only
+        samples whose global indices were selected.  Callers can cap a
+        verification pass without sampling drift between SCM, HCM, and
+        the C++ chip-simulation runner.
+
+        Memory note: prior revisions eagerly materialised the full test
+        set into two lists before subsampling — for CIFAR-10 at
+        ``resize_to=224`` that's ~6 GB of CPU RAM just to pick 500
+        samples.  We now compute the index set up-front and retain only
+        those samples during the loader pass.
         """
         import numpy as np
 
-        xs_all: list[torch.Tensor] = []
-        ys_all: list[torch.Tensor] = []
-        with torch.no_grad():
-            for x, y in self.test_loader:
-                for i in range(x.shape[0]):
-                    xs_all.append(x[i])
-                    ys_all.append(y[i])
-        total_samples = len(xs_all)
-        if total_samples == 0:
-            return 0.0
-        if max_samples and 0 < max_samples < total_samples:
-            rng = np.random.RandomState(int(seed))
-            indices = rng.choice(total_samples, size=int(max_samples), replace=False)
-            xs_all = [xs_all[i] for i in indices]
-            ys_all = [ys_all[i] for i in indices]
+        try:
+            total_samples = len(self.data_provider._get_test_dataset())
+        except Exception:
+            total_samples = None
+
+        if total_samples is None or total_samples <= 0:
+            # Unknown dataset length — fall back to eager collection.
+            xs_all: list[torch.Tensor] = []
+            ys_all: list[torch.Tensor] = []
+            with torch.no_grad():
+                for x, y in self.test_loader:
+                    for i in range(x.shape[0]):
+                        xs_all.append(x[i])
+                        ys_all.append(y[i])
+            total_samples = len(xs_all)
+            if total_samples == 0:
+                return 0.0
+            if max_samples and 0 < max_samples < total_samples:
+                rng = np.random.RandomState(int(seed))
+                indices = rng.choice(total_samples, size=int(max_samples), replace=False)
+                xs_all = [xs_all[i] for i in indices]
+                ys_all = [ys_all[i] for i in indices]
+        else:
+            if max_samples and 0 < max_samples < total_samples:
+                rng = np.random.RandomState(int(seed))
+                selected = set(int(i) for i in rng.choice(
+                    total_samples, size=int(max_samples), replace=False,
+                ))
+            else:
+                selected = None  # keep all
+
+            xs_all = []
+            ys_all = []
+            with torch.no_grad():
+                global_idx = 0
+                for x, y in self.test_loader:
+                    bsz = int(x.shape[0])
+                    for i in range(bsz):
+                        if selected is None or global_idx in selected:
+                            xs_all.append(x[i])
+                            ys_all.append(y[i])
+                        global_idx += 1
+                    if selected is not None and len(xs_all) >= len(selected):
+                        break
+            if not xs_all:
+                return 0.0
 
         bs = int(self.test_batch_size)
         total = 0
