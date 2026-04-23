@@ -41,6 +41,12 @@ class SoftCoreMapping:
 
         assert firing_mode in ["Default", "Novena", "TTFS"]
 
+        # Raw bank matrices keyed by bank_id.  Populated by
+        # ``ir_graph_to_soft_core_mapping`` for bank-backed IR graphs so
+        # the downstream ``HardCoreMapping`` can share a single GPU
+        # tensor per bank across many placements at simulation time.
+        self.weight_banks: dict[int, "object"] = {}
+
         self._psum_group_counter = 0
         self._output_source_spans = None
 

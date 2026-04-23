@@ -54,6 +54,19 @@ def compact_soft_core_mapping(cores, output_sources):
 
         if len(keep_rows) < n_axons or len(keep_cols) < n_neurons:
             n_compacted += 1
+            # Bank-backed cores invariant: bank-level pruning at IR time
+            # (src/mimarsinan/mapping/ir_pruning.py) must have already
+            # absorbed the pruning mask, so here ``keep_rows == range(n_axons)``
+            # and ``keep_cols == range(n_neurons)``.  If that invariant is
+            # violated the per-core compaction would mutate ``core_matrix``
+            # into a shape that no longer matches the shared bank slice,
+            # so drop the bank reference for this core and fall back to
+            # dense (sim will upload a small private tile instead).
+            if getattr(core, "weight_bank_id", None) is not None:
+                core.weight_bank_id = None
+                core.bank_axon_slice = None
+                core.bank_neuron_slice = None
+                core.bank_includes_bias_row = False
             if keep_rows and keep_cols:
                 core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
                 core.axon_sources = [core.axon_sources[r] for r in keep_rows]
@@ -132,6 +145,10 @@ class SoftCore:
         coalescing_group_id: int | None = None,
         coalescing_role: str | None = None,
         threshold_group_id: int | None = None,
+        weight_bank_id: int | None = None,
+        bank_axon_slice: tuple[int, int] | None = None,
+        bank_neuron_slice: tuple[int, int] | None = None,
+        bank_includes_bias_row: bool = False,
     ):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
@@ -159,6 +176,33 @@ class SoftCore:
         self.psum_role = psum_role
         self.coalescing_group_id = coalescing_group_id
         self.coalescing_role = coalescing_role
+
+        # Weight-bank provenance (optional; populated by
+        # ``neural_core_to_soft_core`` when the IR node was bank-backed).
+        # When ``weight_bank_id`` is not None, ``core_matrix`` equals the
+        # bank slice at construction time (kept for CPU consumers: packer
+        # blit, compaction, codegen).  The HCM GPU sim uses the bank
+        # reference instead to share tensors across softcores that point
+        # at the same bank.
+        #
+        # ``bank_neuron_slice`` = (start, end) into the bank's OUTPUT
+        # (column) axis — matches IR's ``NeuralCore.weight_row_slice``
+        # which also slices axis-1 of ``bank.core_matrix`` (shape
+        # ``(in_features, out_features)``).
+        #
+        # ``bank_axon_slice`` = (start, end) into the bank's INPUT (row)
+        # axis; ``None`` means "full axon range".  Populated by
+        # axon-coalescing and axon-split fragments so they can index the
+        # parent bank's row range.
+        #
+        # ``bank_includes_bias_row`` — True iff this softcore's final
+        # axon is the bank's always-on bias row (legacy non-
+        # ``hardware_bias`` path).  The sim uses it to decide whether to
+        # include the bank's last row in the matmul.
+        self.weight_bank_id = weight_bank_id
+        self.bank_axon_slice = bank_axon_slice
+        self.bank_neuron_slice = bank_neuron_slice
+        self.bank_includes_bias_row = bool(bank_includes_bias_row)
 
         # Hardware-bias mode: when set, bias lives in a dedicated register
         # (not as an always-on axon row).  Shape: (neurons,).
@@ -317,6 +361,12 @@ class HardCoreMapping:
         # placement dicts: {"ir_node_id", "axon_offset", "neuron_offset", "axons", "neurons"}
         self.soft_core_placements_per_hard_core = []
 
+        # Raw bank matrices (bank_id → np.ndarray of shape
+        # (in_features, out_features)).  Populated by ``map`` from the
+        # input ``SoftCoreMapping.weight_banks`` so the GPU sim path can
+        # upload each bank exactly once per segment.
+        self.weight_banks: dict[int, "object"] = {}
+
         self.unusable_space = 0
         self._output_source_spans = None
 
@@ -354,6 +404,27 @@ class HardCoreMapping:
             "coalescing_group_id": getattr(softcore, "coalescing_group_id", None),
             "coalescing_role": getattr(softcore, "coalescing_role", None),
         }
+        # Bank provenance — recorded when the softcore came from a
+        # shared WeightBank so the GPU sim can read the bank once and
+        # slice instead of materialising a per-placement dense tile.
+        # ``bank_axon_range`` defaults to (0, axons) when the softcore
+        # didn't set an explicit slice (full-row case).  Bias-row
+        # awareness is preserved so the sim can include/exclude the
+        # bank's final always-on row.
+        bank_id = getattr(softcore, "weight_bank_id", None)
+        if bank_id is not None:
+            placement["weight_bank_id"] = int(bank_id)
+            bas = getattr(softcore, "bank_axon_slice", None)
+            bns = getattr(softcore, "bank_neuron_slice", None)
+            placement["bank_axon_range"] = (
+                (int(bas[0]), int(bas[1])) if bas is not None else (0, int(axons))
+            )
+            placement["bank_neuron_range"] = (
+                (int(bns[0]), int(bns[1])) if bns is not None else (0, int(neurons))
+            )
+            placement["bank_includes_bias_row"] = bool(
+                getattr(softcore, "bank_includes_bias_row", False)
+            )
         if getattr(softcore, "split_group_id", None) is not None:
             orig_offset = getattr(softcore, "neuron_offset_in_original", 0)
             placement["split_group_id"] = softcore.split_group_id
@@ -370,6 +441,14 @@ class HardCoreMapping:
                 (target_core_idx, target_neuron_idx)
                 
     def map(self, softcore_mapping, *, allow_neuron_splitting: bool = False):
+        # Propagate bank matrices from the softcore mapping so the GPU
+        # sim can access the canonical bank array per bank_id without
+        # needing a reference back to the IRGraph.  Banks are immutable
+        # once IR pruning + quantization have run.
+        banks = getattr(softcore_mapping, "weight_banks", None)
+        if banks:
+            self.weight_banks = dict(banks)
+
         def _soft_tg(core):
             tg = getattr(core, "threshold_group_id", None)
             return int(tg) if tg is not None else -(int(core.id) + 1)
@@ -457,6 +536,16 @@ class HardCoreMapping:
             frag1.split_original_neurons = original_neurons
             if getattr(core, "hardware_bias", None) is not None:
                 frag1.hardware_bias = core.hardware_bias[:available_neurons].copy()
+            # Propagate bank provenance with a composed neuron slice so
+            # the fragment indexes the same bank at a narrower column
+            # range.  Both fragments keep the parent's axon slice and
+            # bias-row bit verbatim.
+            if getattr(core, "weight_bank_id", None) is not None:
+                bns = getattr(core, "bank_neuron_slice", None) or (0, original_neurons)
+                frag1.weight_bank_id = core.weight_bank_id
+                frag1.bank_axon_slice = core.bank_axon_slice
+                frag1.bank_neuron_slice = (int(bns[0]), int(bns[0] + available_neurons))
+                frag1.bank_includes_bias_row = core.bank_includes_bias_row
 
             # Fragment 2: remaining columns (see frag1 comment re: axon_sources deep copy).
             frag2 = SoftCore(
@@ -481,6 +570,12 @@ class HardCoreMapping:
             frag2.split_original_neurons = original_neurons
             if getattr(core, "hardware_bias", None) is not None:
                 frag2.hardware_bias = core.hardware_bias[available_neurons:].copy()
+            if getattr(core, "weight_bank_id", None) is not None:
+                bns = getattr(core, "bank_neuron_slice", None) or (0, original_neurons)
+                frag2.weight_bank_id = core.weight_bank_id
+                frag2.bank_axon_slice = core.bank_axon_slice
+                frag2.bank_neuron_slice = (int(bns[0] + available_neurons), int(bns[1]))
+                frag2.bank_includes_bias_row = core.bank_includes_bias_row
 
             return frag1, frag2
 

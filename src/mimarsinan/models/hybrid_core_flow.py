@@ -32,7 +32,6 @@ Two deployment modes for TTFS (selected via ``spiking_mode``):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Dict
 
 import torch
@@ -108,18 +107,48 @@ class SpikingHybridCoreFlow(nn.Module):
         assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
         assert thresholding_mode in ["<", "<="]
 
-        # Single-segment tensor cache.  Each neural segment's hw-core
-        # matrices / thresholds / hardware_bias are uploaded to device
-        # lazily and evicted as soon as a different segment is requested.
-        # Why only one at a time: a ViT-scale mapping has 12 segments
-        # each holding ~200 hw cores (~18 MB per core in float64) —
-        # caching all of them simultaneously was ~40 GB of GPU residency
-        # and caused OOM even though no single segment's weights are
-        # that large.  Segments execute sequentially in the forward loop,
-        # so a size-1 cache still eliminates redundant re-uploads within
-        # a single segment (across cycles, batches of the same shape).
+        # Segment tensor cache — **single-segment LRU**.
+        #
+        # Rationale: for ViT-scale mappings (cifar_vit = 12 neural
+        # segments × ~3 GB of float64 weights each) a "cache all"
+        # strategy needs 40+ GB of permanent GPU residency before any
+        # activations exist — OOMs on realistic budgets.  A 1-segment
+        # cache keeps active weight residency bounded to the largest
+        # single segment's size.  Segments execute sequentially inside
+        # a single forward so intra-segment cache hits (cycles, output
+        # spans) still skip redundant uploads.
+        #
+        # To bound CUDA allocator fragmentation caused by evict/upload
+        # round-robin across 12 segments × N batches, we also call
+        # ``torch.cuda.empty_cache()`` ONCE per ``forward`` (in
+        # ``_release_cuda_blocks_after_forward``) — not per-stage.  One
+        # sync per batch is cheap vs. many GB of reserved-but-unused
+        # blocks the allocator would otherwise hold.
         self._segment_tensor_cache: Dict[int, dict] = {}
         self._segment_tensor_cache_key: int | None = None
+
+    def _evict_segment_cache(self) -> None:
+        """Drop the currently cached segment's GPU tensors.
+
+        Explicitly clears every list / dict in the cached payload so no
+        stale tensor refs keep CUDA blocks pinned.  Does NOT call
+        ``empty_cache`` — that's deferred to one call per forward.
+        """
+        prev_key = self._segment_tensor_cache_key
+        if prev_key is None:
+            return
+        prev = self._segment_tensor_cache.pop(prev_key, None)
+        self._segment_tensor_cache_key = None
+        if prev is None:
+            return
+        for k in ("core_params", "hw_biases", "thresholds"):
+            v = prev.get(k)
+            if v is not None:
+                v.clear()
+        bt = prev.get("bank_tensors")
+        if bt is not None:
+            bt.clear()
+        prev.clear()
 
     # ---------------------------------------------------------------------
     # Spike generation (rate-coded modes)
@@ -248,28 +277,17 @@ class SpikingHybridCoreFlow(nn.Module):
         if cached is not None and cached.get("device") == device:
             return cached
 
-        # Evict any previously-cached segment before uploading the new
-        # one — keep GPU residency bounded to a single segment's worth
-        # of weights.  Drop hard references so the allocator can reclaim.
-        if self._segment_tensor_cache_key is not None:
-            prev = self._segment_tensor_cache.pop(
-                self._segment_tensor_cache_key, None,
-            )
-            if prev is not None:
-                prev.clear()
-            self._segment_tensor_cache_key = None
-            if device.type == "cuda":
-                torch.cuda.empty_cache()
+        # Evict prior segment before uploading this one — keeps GPU
+        # residency bounded to one segment's weights (see __init__).
+        self._evict_segment_cache()
 
         cores = mapping.cores
         output_sources = mapping.output_sources
+        weight_banks = getattr(mapping, "weight_banks", None) or {}
+        placements_per_core = getattr(
+            mapping, "soft_core_placements_per_hard_core", []
+        )
 
-        # Occupied sub-rectangle per hw core.  Greedy packing fills
-        # contiguous axon/neuron offsets starting at (0, 0); axons beyond
-        # ``used_axons`` are off-sources (pure padding added at the end
-        # of packing), and neurons beyond ``used_neurons`` are zero
-        # columns that no output span references.  Simulating only the
-        # occupied slice skips the zero-padded region entirely.
         axon_spans = []
         for c in cores:
             if hasattr(c, "get_axon_source_spans"):
@@ -281,22 +299,96 @@ class SpikingHybridCoreFlow(nn.Module):
         else:
             output_spans = compress_spike_sources(list(output_sources.flatten()))
 
-        core_params = []
+        # --- Per-hw-core weight resolution -------------------------------
+        # Goal: ONE matmul per hw core per cycle (the pre-refactor fast
+        # path), plus bank dedup across hw cores when possible.
+        #
+        # Strategy per hw core:
+        #   * Zero-copy bank view: when the hw core's placements form a
+        #     single bank-backed rectangle that exactly covers the
+        #     occupied (used_ax × used_neu) space, we reference the bank
+        #     tensor via a view (no CPU→GPU copy beyond the bank itself).
+        #     Multiple hw cores pointing at the same bank share memory.
+        #   * Dense tile: otherwise upload ``core.core_matrix[:used_ax, :used_neu].T``
+        #     as a single tensor — identical to the pre-refactor path.
+        #
+        # Per-placement ``_accumulate_placements_into`` is kept ONLY for
+        # the rare multi-bank-per-hw-core case (never observed in
+        # practice but supported for completeness).  Falls back to the
+        # blitted dense matrix (safe + simple) instead.
+        bank_tensors: dict[int, torch.Tensor] = {}
+
+        def _ensure_bank_tensor(bid: int) -> torch.Tensor:
+            t = bank_tensors.get(bid)
+            if t is not None:
+                return t
+            bank_mat = weight_banks.get(int(bid))
+            if bank_mat is None:
+                raise KeyError(
+                    f"HardCoreMapping references bank_id={bid} but "
+                    f"mapping.weight_banks does not contain it — "
+                    f"ir_graph_to_soft_core_mapping must propagate the bank."
+                )
+            # Upload once in (out_features, in_features).  Slicing then
+            # yields a (neurons, axons) matmul-ready matrix.
+            t = torch.tensor(bank_mat.T, dtype=_COMPUTE_DTYPE, device=device)
+            bank_tensors[int(bid)] = t
+            return t
+
+        core_params: list[torch.Tensor] = []
         hw_biases = []
-        for core in cores:
-            ua = max(int(core.axons_per_core - core.available_axons), 1)
-            un = max(int(core.neurons_per_core - core.available_neurons), 1)
-            mat = core.core_matrix[:ua, :un]
-            core_params.append(
-                torch.tensor(mat.T, dtype=_COMPUTE_DTYPE, device=device)
+        for core_idx, core in enumerate(cores):
+            used_ax = max(int(core.axons_per_core - core.available_axons), 1)
+            used_neu = max(int(core.neurons_per_core - core.available_neurons), 1)
+
+            placement_dicts = (
+                placements_per_core[core_idx]
+                if core_idx < len(placements_per_core)
+                else []
             )
+
+            core_weight: torch.Tensor | None = None
+
+            # Fast-path: a single bank-backed placement that exactly
+            # covers the hw core's occupied rectangle → zero-copy view.
+            if len(placement_dicts) == 1:
+                pd = placement_dicts[0]
+                bid = pd.get("weight_bank_id")
+                ao = int(pd.get("axon_offset", 0))
+                ne_off = int(pd.get("neuron_offset", 0))
+                a = int(pd.get("axons", 0))
+                n = int(pd.get("neurons", 0))
+                if (
+                    bid is not None
+                    and ao == 0 and ne_off == 0
+                    and a == used_ax and n == used_neu
+                ):
+                    bank_t = _ensure_bank_tensor(int(bid))
+                    ba0, ba1 = pd.get("bank_axon_range") or (0, a)
+                    bn0, bn1 = pd.get("bank_neuron_range") or (0, n)
+                    # (neurons, axons) view — no copy.
+                    core_weight = bank_t[int(bn0):int(bn1), int(ba0):int(ba1)]
+
+            # Default path: upload the blitted dense matrix slice — same
+            # single-tensor single-matmul behaviour as pre-refactor.
+            if core_weight is None:
+                tile = core.core_matrix[:used_ax, :used_neu]
+                core_weight = torch.tensor(
+                    tile.T, dtype=_COMPUTE_DTYPE, device=device,
+                )
+
+            core_params.append(core_weight)
+
             bias = getattr(core, "hardware_bias", None)
             if bias is None:
                 hw_biases.append(None)
             else:
                 hw_biases.append(
-                    torch.tensor(bias[:un], dtype=_COMPUTE_DTYPE, device=device)
+                    torch.tensor(
+                        bias[:used_neu], dtype=_COMPUTE_DTYPE, device=device,
+                    )
                 )
+
         thresholds = [
             torch.tensor(float(core.threshold), dtype=_COMPUTE_DTYPE, device=device)
             for core in cores
@@ -308,6 +400,7 @@ class SpikingHybridCoreFlow(nn.Module):
             output_sources=output_sources,
             axon_spans=axon_spans,
             output_spans=output_spans,
+            bank_tensors=bank_tensors,
             core_params=core_params,
             thresholds=thresholds,
             hw_biases=hw_biases,
@@ -524,13 +617,25 @@ class SpikingHybridCoreFlow(nn.Module):
     # Public forward
     # ---------------------------------------------------------------------
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.preprocessor(x)
-        x = x.view(x.shape[0], -1)
+        try:
+            x = self.preprocessor(x)
+            x = x.view(x.shape[0], -1)
 
-        if self.spiking_mode in self._TTFS_SPIKING_MODES:
-            return self._forward_ttfs(x)
+            if self.spiking_mode in self._TTFS_SPIKING_MODES:
+                return self._forward_ttfs(x)
 
-        return self._forward_rate(x)
+            return self._forward_rate(x)
+        finally:
+            # Evict the segment cached after the last stage AND release
+            # per-forward transient blocks back to the driver.  Without
+            # this, reserved CUDA memory climbs across batches (segments
+            # and per-forward buffers churn through allocator blocks of
+            # varying sizes, fragmenting the pool).  One sync per batch
+            # is cheap vs. the alternative (tens of GB of reserved-but-
+            # unused memory accumulating).
+            self._evict_segment_cache()
+            if isinstance(x, torch.Tensor) and x.is_cuda:
+                torch.cuda.empty_cache()
 
     # ---------------------------------------------------------------------
     # TTFS forward (state-buffer driven)
