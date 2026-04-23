@@ -763,6 +763,38 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
             )
 
     pi = getattr(neural_core, "perceptron_index", None)
+
+    # Bank provenance.  When the IR node is bank-backed we preserve the
+    # bank_id + slice so the HCM GPU sim can share a single resident
+    # tensor per bank (instead of uploading one copy per position).
+    # ``core_matrix`` is still materialised above for CPU consumers
+    # (packer blit, compaction, codegen) — the two paths stay
+    # consistent at construction time.
+    bank_axon_slice = None
+    bank_neuron_slice = None
+    bank_includes_bias_row = False
+    if neural_core.has_weight_bank() and graph is not None:
+        bank = graph.get_weight_bank(neural_core.weight_bank_id)
+        bank_in, bank_out = bank.core_matrix.shape
+        # ``weight_row_slice`` in the IR slices the bank's COLUMN (output)
+        # axis despite its name — matches ``(start, end)`` into
+        # ``bank.core_matrix[:, start:end]``.
+        wrs = neural_core.weight_row_slice
+        bank_neuron_slice = (
+            (int(wrs[0]), int(wrs[1])) if wrs is not None else (0, bank_out)
+        )
+        # The last axon source is always-on when this core is bias-
+        # augmented in the legacy non-``hardware_bias`` path (the bank
+        # matrix then has an extra final row holding the bias).
+        last_is_always_on = (
+            len(axon_sources) > 0
+            and getattr(axon_sources[-1], "is_always_on_", False)
+        )
+        bank_includes_bias_row = bool(
+            last_is_always_on and bank.hardware_bias is None and bank_in > 0
+        )
+        bank_axon_slice = (0, bank_in)
+
     soft = SoftCore(
         core_matrix=core_matrix,
         axon_sources=axon_sources,
@@ -776,6 +808,13 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         coalescing_group_id=neural_core.coalescing_group_id,
         coalescing_role=neural_core.coalescing_role,
         threshold_group_id=int(pi) if pi is not None else None,
+        weight_bank_id=(
+            int(neural_core.weight_bank_id)
+            if neural_core.has_weight_bank() else None
+        ),
+        bank_axon_slice=bank_axon_slice,
+        bank_neuron_slice=bank_neuron_slice,
+        bank_includes_bias_row=bank_includes_bias_row,
     )
     if pruned_row_mask is not None and pruned_col_mask is not None:
         soft.pruned_row_mask = pruned_row_mask
@@ -814,18 +853,25 @@ def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):
         )
     
     soft_core_mapping = SoftCoreMapping()
-    
+
+    # Expose raw bank matrices so the downstream HardCoreMapping / HCM
+    # simulator can share one GPU tensor per bank across all placements.
+    soft_core_mapping.weight_banks = {
+        bid: bank.core_matrix
+        for bid, bank in (ir_graph.weight_banks or {}).items()
+    }
+
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
             soft_core = neural_core_to_soft_core(node, graph=ir_graph)
             soft_core.threshold = node.threshold
             soft_core.latency = node.latency
             soft_core_mapping.cores.append(soft_core)
-    
+
     soft_core_mapping.output_sources = [
         ir_source_to_spike_source(src) for src in ir_graph.output_sources.flatten()
     ]
-    
+
     return soft_core_mapping
 
 
