@@ -39,8 +39,7 @@ class PipelineStep:
         2. Else if the step exposes its own ``trainer``, call
            ``trainer.test()``.
         3. Else fall back to ``self.validate()`` (tuners that don't own a
-           PyTorch model — e.g. CoreFlowTuner — report their own final
-           metric via ``validate()``).
+           PyTorch model report their own final metric via ``validate()``).
         """
         tuner = getattr(self, "tuner", None)
         if tuner is not None:

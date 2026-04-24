@@ -86,7 +86,7 @@ class SimulationRunner:
         self._preprocessor = preprocessor if preprocessor is not None else nn.Identity()
         self.spike_generation_mode = pipeline.config["spike_generation_mode"]
         self.firing_mode = pipeline.config["firing_mode"]
-        self.spiking_mode = pipeline.config.get("spiking_mode", "rate")
+        self.spiking_mode = pipeline.config.get("spiking_mode", "lif")
 
         wt_q = pipeline.config.get("weight_quantization", True)
         self.weight_type = int if wt_q else float
@@ -95,8 +95,8 @@ class SimulationRunner:
         # ``ChipConfiguration`` now carries its own ``ThresholdType``.  In TTFS
         # modes the per-core threshold is ``scale = q_max / max(|W|)``, a
         # non-integer Python float; force ``double`` (Python ``float``) so the
-        # C++ loader keeps full float64 precision.  Rate-coded paths stay with
-        # integer threshold (== weight_type) for hardware-accurate integer
+        # C++ loader keeps full float64 precision.  LIF (rate-coded) paths stay
+        # with integer threshold (== weight_type) for hardware-accurate integer
         # membrane arithmetic and no serialisation precision loss.
         is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
         self.threshold_type = float if is_ttfs else self.weight_type

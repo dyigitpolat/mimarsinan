@@ -480,20 +480,22 @@ function applySpikingDeps() {
     else setToggle('wtQuantToggle', true, true);
   }
 
-  if (mode === 'rate') {
-    // Rate-coded defaults: Uniform / Default / <=
+  if (mode === 'lif') {
+    // LIF defaults: Uniform / Default / < (strict), matching nevresim rate-mode
+    // and SpikingJelly IFNode(v_reset=None) semantics.
     document.getElementById('firingMode').value = 'Default';
     document.getElementById('spikeGenMode').value = 'Uniform';
-    document.getElementById('thresholdMode').value = '<=';
-    // Rate-coded deployment requires activation quantization
-    setToggle('actQuantToggle', true, true);
+    document.getElementById('thresholdMode').value = '<';
+    // LIFActivation subsumes clamp / shift / activation-quantization, so
+    // activation_quantization is forced OFF for LIF.
+    setToggle('actQuantToggle', false, true);
     setWtQuantFromHw();
     applyHwDeps();
     deps.push({ text: 'Firing: Default', active: true });
     deps.push({ text: 'Spike Gen: Uniform', active: true });
-    deps.push({ text: 'Threshold: ≤', active: true });
-    deps.push({ text: 'CoreFlow Tuning: included', active: true });
-    deps.push({ text: 'Activation Quant: forced ON', forced: true });
+    deps.push({ text: 'Threshold: <', active: true });
+    deps.push({ text: 'LIF Adaptation: included', active: true });
+    deps.push({ text: 'Activation Quant: subsumed by LIF', forced: true });
   } else if (mode === 'ttfs') {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
@@ -504,7 +506,6 @@ function applySpikingDeps() {
     deps.push({ text: 'Firing: TTFS', forced: true });
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
     deps.push({ text: 'Threshold: ≤', forced: true });
-    deps.push({ text: 'CoreFlow Tuning: skipped', active: true });
     deps.push({ text: 'Cycles: not used (analytical TTFS)', forced: true });
   } else if (mode === 'ttfs_quantized') {
     document.getElementById('firingMode').value = 'TTFS';
@@ -517,7 +518,6 @@ function applySpikingDeps() {
     deps.push({ text: 'Firing: TTFS', forced: true });
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
     deps.push({ text: 'Activation Quant: forced ON', forced: true });
-    deps.push({ text: 'CoreFlow Tuning: skipped', active: true });
   }
 
   depsEl.innerHTML = deps.map(d =>
@@ -748,7 +748,9 @@ function buildConfig() {
 
   const floatWeights = isToggleOn('floatWeightsToggle');
   const wtQuant = !floatWeights;
-  const actQuant = (spikingMode === 'rate' || spikingMode === 'ttfs_quantized');
+  // LIF mode subsumes activation quantization; only TTFS-quantized still needs
+  // the explicit discrete-levels chain.
+  const actQuant = (spikingMode === 'ttfs_quantized');
   const pruning = isToggleOn('pruningToggle');
   let pipelineMode;
   if (floatWeights) {
@@ -913,6 +915,7 @@ function buildConfig() {
   if (maxSim > 0) dp.max_simulation_samples = maxSim;
 
   dp.allow_scheduling = isToggleOn('scheduledMappingToggle');
+  dp.enable_loihi_simulation = isToggleOn('loihiSimulationToggle');
 
   // platform_constraints
   let platformConstraints;
@@ -1113,7 +1116,7 @@ function loadStateFromConfig(config) {
   }
 
   setToggleFromConfig('floatWeightsToggle', dp.weight_quantization === false);
-  setSegVal('spikingMode', dp.spiking_mode || 'rate');
+  setSegVal('spikingMode', dp.spiking_mode || 'lif');
   setVal('firingMode', dp.firing_mode);
   setVal('spikeGenMode', dp.spike_generation_mode);
   setVal('thresholdMode', dp.thresholding_mode);
@@ -1134,6 +1137,7 @@ function loadStateFromConfig(config) {
     }
     setToggleFromConfig('scheduledMappingToggle', allowSched);
   })();
+  setToggleFromConfig('loihiSimulationToggle', !!dp.enable_loihi_simulation);
   applySpikingDeps();
   applyHwDeps();
   onPruningFractionChange();

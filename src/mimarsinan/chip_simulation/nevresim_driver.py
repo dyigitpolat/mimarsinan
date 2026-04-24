@@ -26,7 +26,7 @@ class NevresimDriver:
 
     def __init__(
         self, input_buffer_size, hard_core_mapping, generated_files_path, weight_type,
-        spike_generation_mode="Stochastic", firing_mode="Default", spiking_mode="rate",
+        spike_generation_mode="Stochastic", firing_mode="Default", spiking_mode="lif",
         threshold_type=None, verbose=True,
     ):
         """Create driver and emit chip artifacts (JSON, weights, chip code). Does not compile.

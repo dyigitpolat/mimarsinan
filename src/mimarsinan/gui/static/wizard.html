@@ -552,7 +552,7 @@
             <div class="field" style="margin-bottom:14px">
               <label class="field-label">Spiking Mode</label>
               <div class="seg-control" id="spikingMode">
-                <div class="seg-btn active rose" data-val="rate" onclick="setSegment(this)">Rate-coded</div>
+                <div class="seg-btn active rose" data-val="lif" onclick="setSegment(this)">LIF</div>
                 <div class="seg-btn" data-val="ttfs" onclick="setSegment(this)">TTFS</div>
                 <div class="seg-btn" data-val="ttfs_quantized" onclick="setSegment(this)">TTFS Quantized</div>
               </div>
@@ -580,6 +580,13 @@
                 <label class="field-label">Scheduled Mapping <span class="hint">reuse cores over time</span></label>
                 <div class="toggle-row" id="scheduledMappingToggle" onclick="toggleClick(this)">
                   <span class="toggle-label" style="font-size:0.78rem">Scheduling</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">Loihi Simulation <span class="hint">run Lava-based Loihi pass after nevresim (LIF only)</span></label>
+                <div class="toggle-row" id="loihiSimulationToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Loihi</span>
                   <div class="toggle-switch"></div>
                 </div>
               </div>

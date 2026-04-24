@@ -9,6 +9,7 @@ from mimarsinan.models.activations import (
     DifferentiableClamp,
     LeakyGradReLU,
     LeakyGradReLUFunction,
+    LIFActivation,
     StaircaseFunction,
 )
 from mimarsinan.models.decorators import (

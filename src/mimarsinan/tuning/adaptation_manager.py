@@ -6,7 +6,7 @@ import torch.nn as nn
 class AdaptationManager(nn.Module):
     def __init__(self):
         super(AdaptationManager, self).__init__()
-        
+
         self.activation_adaptation_rate = 0.0
         self.clamp_rate = 0.0
         self.shift_rate = 0.0
@@ -16,8 +16,18 @@ class AdaptationManager(nn.Module):
 
         self.noise_rate = 0.0
 
+        # Set True by LIFAdaptationStep once per-Perceptron base_activation has
+        # been swapped to LIFActivation.  When active, clamp/quant/shift
+        # decorators are subsumed by the LIF forward (output is already in
+        # [0, activation_scale] and quantised to T+1 levels) and must be
+        # skipped — applying them on top of LIF would double-quantize or
+        # reintroduce shifts the LIF neuron has already implicitly handled.
+        self.lif_active = False
+
     def update_activation(self, pipeline_config, perceptron):
-        use_ttfs = pipeline_config.get("spiking_mode", "rate") in ("ttfs", "ttfs_quantized")
+        spiking_mode = pipeline_config.get("spiking_mode", "lif")
+        use_ttfs = spiking_mode in ("ttfs", "ttfs_quantized")
+        lif_subsumes_decorators = self.lif_active or spiking_mode == "lif"
         decorators = []
         if self.activation_adaptation_rate > 0:
             decorators.append(
@@ -25,12 +35,12 @@ class AdaptationManager(nn.Module):
         # Each rate-adjusted decorator short-circuits internally at rate==0 but
         # still costs a Python call per forward. update_activation is invoked
         # whenever a rate changes, so we can safely omit inactive decorators.
-        if self.clamp_rate != 0.0:
+        if not lif_subsumes_decorators and self.clamp_rate != 0.0:
             decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
-        if self.quantization_rate != 0.0:
+        if not lif_subsumes_decorators and self.quantization_rate != 0.0:
             decorators.append(
                 self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
-        if not use_ttfs and self.shift_rate != 0.0:
+        if not lif_subsumes_decorators and not use_ttfs and self.shift_rate != 0.0:
             # At shift_rate==0 the amount is a zero tensor; ShiftDecorator would
             # still execute torch.sub(x, 0) every forward. Omit entirely.
             decorators.append(self.get_shift_decorator(pipeline_config, perceptron))
@@ -85,8 +95,8 @@ class AdaptationManager(nn.Module):
     
     def get_rate_adjusted_quantization_decorator(self, pipeline_config, perceptron):
         # For TTFS: shift the other way — use shift_back = -shift so ReLU sees (x + shift) → staircase(ReLU(x + shift)).
-        # For rate: shift_back = -shift * shift_rate to undo the outer shift.
-        use_ttfs = pipeline_config.get("spiking_mode", "rate") in ("ttfs", "ttfs_quantized")
+        # For LIF/rate: shift_back = -shift * shift_rate to undo the outer shift.
+        use_ttfs = pipeline_config.get("spiking_mode", "lif") in ("ttfs", "ttfs_quantized")
         shift = calculate_activation_shift(
             pipeline_config["target_tq"], perceptron.activation_scale
         )

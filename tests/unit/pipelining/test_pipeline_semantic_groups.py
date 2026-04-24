@@ -20,7 +20,7 @@ def _base_config(**overrides) -> dict:
     return {
         "model_config_mode": "user",
         "hw_config_mode": "fixed",
-        "spiking_mode": "rate",
+        "spiking_mode": "lif",
         "activation_quantization": False,
         "weight_quantization": False,
         "pruning": False,
@@ -36,8 +36,9 @@ class TestSemanticGroupMapCoverage:
     """_SEMANTIC_GROUP_BY_STEP_CLASS must cover every class returned by get_pipeline_step_specs."""
 
     @pytest.mark.parametrize("config_overrides,label", [
-        ({}, "rate / no quant"),
+        ({}, "lif / no quant"),
         ({"spiking_mode": "ttfs", "activation_quantization": True, "weight_quantization": True}, "ttfs / full quant"),
+        ({"spiking_mode": "lif", "enable_loihi_simulation": True}, "lif / loihi"),
         ({"model_type": "torch_custom", "weight_quantization": True}, "torch / weight quant"),
         ({"pruning": True, "pruning_fraction": 0.3}, "pruning"),
         ({"configuration_mode": "nas"}, "nas"),
@@ -99,8 +100,10 @@ class TestKnownStepGroupMappings:
         assert groups["Clamp Adaptation"] == "activation"
 
     def test_activation_quantization_steps_group(self):
+        # Activation-quant chain is only in play for non-LIF modes (LIF
+        # subsumes clamp/shift/quantize via LIFActivation).
         groups = get_pipeline_semantic_group_by_step_name(
-            _base_config(activation_quantization=True)
+            _base_config(spiking_mode="ttfs_quantized", activation_quantization=True)
         )
         assert groups["Activation Shifting"] == "activation_quantization"
         assert groups["Activation Quantization"] == "activation_quantization"
@@ -126,14 +129,23 @@ class TestKnownStepGroupMappings:
         )
         assert groups["Core Quantization Verification"] == "core_verification"
 
-    def test_coreflow_tuning_only_in_rate_mode(self):
-        rate_groups = get_pipeline_semantic_group_by_step_name(_base_config(spiking_mode="rate"))
-        assert "CoreFlow Tuning" in rate_groups
-        assert rate_groups["CoreFlow Tuning"] == "coreflow_tuning"
+    def test_lif_adaptation_only_in_lif_mode(self):
+        lif_groups = get_pipeline_semantic_group_by_step_name(_base_config(spiking_mode="lif"))
+        assert "LIF Adaptation" in lif_groups
+        assert lif_groups["LIF Adaptation"] == "activation"
         ttfs_groups = get_pipeline_semantic_group_by_step_name(
             _base_config(spiking_mode="ttfs")
         )
-        assert "CoreFlow Tuning" not in ttfs_groups
+        assert "LIF Adaptation" not in ttfs_groups
+
+    def test_loihi_simulation_gated_by_flag(self):
+        off_groups = get_pipeline_semantic_group_by_step_name(_base_config())
+        assert "Loihi Simulation" not in off_groups
+        on_groups = get_pipeline_semantic_group_by_step_name(
+            _base_config(enable_loihi_simulation=True)
+        )
+        assert "Loihi Simulation" in on_groups
+        assert on_groups["Loihi Simulation"] == "simulation"
 
     def test_hard_core_mapping_group(self):
         groups = get_pipeline_semantic_group_by_step_name(_base_config())

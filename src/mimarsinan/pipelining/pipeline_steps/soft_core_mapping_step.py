@@ -133,7 +133,7 @@ class SoftCoreMappingStep(PipelineStep):
 
         # ttfs_quantized is only relevant with activation quantization; without it, deployment may diverge from training.
         # Plain ttfs uses continuous TTFS and does not require activation_quantization.
-        spiking_mode = self.pipeline.config.get("spiking_mode", "rate")
+        spiking_mode = self.pipeline.config.get("spiking_mode", "lif")
         if spiking_mode == "ttfs_quantized" and not act_q:
             print(
                 "[SoftCoreMappingStep] Warning: ttfs_quantized is on but activation_quantization is off; "
@@ -161,7 +161,7 @@ class SoftCoreMappingStep(PipelineStep):
         # shift would push some outputs above 1.0 and overflow into
         # downstream layers.  The ttfs_quantized formula naturally clamps
         # via k_fire.clamp(0, S-1).
-        if self.pipeline.config.get("spiking_mode", "rate") == "ttfs_quantized" and act_q:
+        if self.pipeline.config.get("spiking_mode", "lif") == "ttfs_quantized" and act_q:
             from mimarsinan.tuning.shift_calculation import calculate_activation_shift
             from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
             tq = self.pipeline.config["target_tq"]
@@ -458,7 +458,7 @@ class SoftCoreMappingStep(PipelineStep):
                         self.pipeline.config["firing_mode"],
                         self.pipeline.config["spike_generation_mode"],
                         self.pipeline.config["thresholding_mode"],
-                        spiking_mode=self.pipeline.config.get("spiking_mode", "rate"),
+                        spiking_mode=self.pipeline.config.get("spiking_mode", "lif"),
                     )
                 with _phase("sim_to_device"):
                     flow = flow.to(device)

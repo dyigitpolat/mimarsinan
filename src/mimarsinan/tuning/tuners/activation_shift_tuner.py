@@ -17,7 +17,7 @@ class ActivationShiftTuner(TunerBase):
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.adaptation_manager = adaptation_manager
-        self._use_ttfs = pipeline.config.get("spiking_mode", "rate") in (
+        self._use_ttfs = pipeline.config.get("spiking_mode", "lif") in (
             "ttfs",
             "ttfs_quantized",
         )

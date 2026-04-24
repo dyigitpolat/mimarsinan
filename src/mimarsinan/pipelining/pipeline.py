@@ -181,6 +181,8 @@ class Pipeline:
         return self.key_translations[client_step_name][key]
 
     def _run_step(self, name, step):
+        import time as _time
+        _t0_step = _time.time()
         print(f"Running '{name}'...")
         _log_resource_snapshot(f"pre:{name}")
 
@@ -242,6 +244,14 @@ class Pipeline:
             step.cleanup()
             self._release_gpu_memory()
             _log_resource_snapshot(f"post:{name}")
+            dt = _time.time() - _t0_step
+            final_metric = self.get_target_metric()
+            delta = final_metric - previous_metric
+            print(
+                f"[PROFILE] step='{name}' wall={dt:7.2f}s "
+                f"metric={final_metric:.4f} "
+                f"Δ={delta:+.4f} (prev={previous_metric:.4f})"
+            )
 
     def _find_starting_step_idx(self, step_name):
         requirements = self._get_all_requirements(step_name)
