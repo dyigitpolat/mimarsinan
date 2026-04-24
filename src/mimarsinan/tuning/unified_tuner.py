@@ -47,7 +47,7 @@ _STUCK_STREAK_REQUIRED = 3
 
 
 class TunerBase:
-    """Shared infrastructure for all tuners (except CoreFlowTuner).
+    """Shared infrastructure for all tuners.
 
     Provides pipeline access, model, trainer, budget, target adjuster,
     LR finder, and validate().  Subclasses implement run().

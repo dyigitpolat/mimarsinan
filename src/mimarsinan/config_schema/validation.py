@@ -56,7 +56,7 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
                 errors.append("Search is active but arch_search is missing or not a dict")
 
         # TTFS consistency
-        spiking = dp.get("spiking_mode", "rate")
+        spiking = dp.get("spiking_mode", "lif")
         if spiking in ("ttfs", "ttfs_quantized"):
             if dp.get("firing_mode") != "TTFS":
                 errors.append(
@@ -82,7 +82,7 @@ def validate_merged_config(flat: Dict[str, Any]) -> List[str]:
         errors.append("Merged config must be a dict")
         return errors
 
-    spiking = flat.get("spiking_mode", "rate")
+    spiking = flat.get("spiking_mode", "lif")
     if spiking in ("ttfs", "ttfs_quantized"):
         if flat.get("firing_mode") != "TTFS":
             errors.append(

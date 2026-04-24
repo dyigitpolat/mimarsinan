@@ -13,9 +13,10 @@ from .quantization_verification_step import QuantizationVerificationStep
 from .normalization_fusion_step import NormalizationFusionStep
 from .soft_core_mapping_step import SoftCoreMappingStep
 from .core_quantization_verification_step import CoreQuantizationVerificationStep
-from .core_flow_tuning_step import CoreFlowTuningStep
+from .lif_adaptation_step import LIFAdaptationStep
 from .hard_core_mapping_step import HardCoreMappingStep
 from .simulation_step import SimulationStep
+from .loihi_simulation_step import LoihiSimulationStep
 from .torch_mapping_step import TorchMappingStep
 from .weight_preloading_step import WeightPreloadingStep
 

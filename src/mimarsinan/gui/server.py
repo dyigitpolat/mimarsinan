@@ -633,17 +633,44 @@ def create_app(
                 seg_pass_assignments[seg_id] = [(0, neural_items)]
                 continue
 
-            # Use the partitioner's authoritative pass lists directly.
-            # Each pass_list entry is a list of LayoutSoftCoreSpec objects;
-            # len(pl) is the exact softcore count for that pass.
+            # Preserve the latency-group box structure **within each pass**.
+            # For every pass the splitter returned, bucket its softcores by
+            # ``latency_tag`` and emit one neural item per bucket, carrying
+            # that bucket's softcore count and (stable) latency_group_index
+            # inherited from the original segment preview.  The miniview
+            # therefore renders the same per-latency-group boxes as before,
+            # just repeated per pass with sync-barrier markers in between.
+            item_by_latency = {
+                int(it.get("latency_tag", 0)): it
+                for it in neural_items
+                if it.get("kind") == "neural" and it.get("latency_tag") is not None
+            }
+            fallback_template = (
+                dict(neural_items[0]) if neural_items else
+                {"kind": "neural", "latency_group_index": 0, "latency_tag": 0,
+                 "softcore_count": 0, "segment_count": 1}
+            )
+
             passes = []
             for pi, pass_list in enumerate(pass_lists):
-                if neural_items:
-                    template = dict(neural_items[0])
-                else:
-                    template = {"kind": "neural", "latency_group_index": 0, "latency_tag": 0, "softcore_count": 0, "segment_count": 1}
-                template["softcore_count"] = len(pass_list)
-                passes.append((pi, [template]))
+                bucket: Dict[int, int] = {}
+                for sc in pass_list:
+                    lat = int(sc.latency_tag) if getattr(sc, "latency_tag", None) is not None else 0
+                    bucket[lat] = bucket.get(lat, 0) + 1
+                pass_items = []
+                for lat in sorted(bucket.keys()):
+                    template = dict(item_by_latency.get(lat, fallback_template))
+                    template["latency_tag"] = lat
+                    template["softcore_count"] = bucket[lat]
+                    # Re-anchor ``latency_group_index`` so adjacent passes
+                    # render their boxes in the same canonical order as the
+                    # original unscheduled preview.
+                    if lat not in item_by_latency:
+                        template.setdefault("latency_group_index", len(item_by_latency) + lat)
+                    pass_items.append(template)
+                if not pass_items:
+                    pass_items = [dict(fallback_template) | {"softcore_count": len(pass_list)}]
+                passes.append((pi, pass_items))
 
             seg_pass_assignments[seg_id] = passes
 

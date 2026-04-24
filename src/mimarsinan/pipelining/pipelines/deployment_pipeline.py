@@ -9,17 +9,24 @@ Pipeline mode  (``pipeline_mode`` in JSON — selects a preset)
   ``"phased"``   Pretraining + activation quantization + weight quantization.
 
 Spiking mode  (``spiking_mode`` in ``deployment_parameters``)
-  ``"rate"``     Rate-coded SNN.  CoreFlow tuning step is included.
+  ``"lif"``      LIF (cycle-accurate integrate-and-fire) deployment.  A
+                 dedicated LIF Adaptation step swaps each Perceptron's base
+                 activation to :class:`LIFActivation` and runs a
+                 knowledge-distillation recovery loop; Clamp / Shifting /
+                 Activation Quantization are skipped because LIFActivation
+                 subsumes them.
   ``"ttfs"``     Time-to-first-spike SNN.  Analytical ReLU↔TTFS mapping.
+  ``"ttfs_quantized"``  Cycle-based quantised TTFS.
 
 Activation adaptation
   Activation Analysis always runs. Activation Adaptation always runs next:
   it replaces non-ReLU chip-targeted perceptrons (e.g. GELU, LeakyReLU) with
   ReLU when needed and applies activation_scales in all cases. When
-  ``activation_quantization`` is True OR ``spiking_mode`` is ``"ttfs"`` or
-  ``"ttfs_quantized"``, Clamp Adaptation then runs: trains with a
-  ClampDecorator so the model operates within the TTFS saturation range
-  (relu(V)/θ clamped to 1.0 in hardware).
+  ``spiking_mode`` is ``"lif"``, LIF Adaptation runs after that and the
+  clamp/shift/quantize steps are skipped.  When ``spiking_mode`` is TTFS or
+  ``activation_quantization`` is True, Clamp Adaptation then runs instead:
+  it trains with a ClampDecorator so the model operates within the TTFS
+  saturation range (relu(V)/θ clamped to 1.0 in hardware).
 
 Quantization flags  (booleans in ``deployment_parameters``)
   ``activation_quantization``
@@ -109,6 +116,7 @@ _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
     ActivationAnalysisStep:             "activation",
     ActivationAdaptationStep:           "activation",
     ClampAdaptationStep:                "activation",
+    LIFAdaptationStep:                  "activation",
     ActivationShiftStep:                "activation_quantization",
     ActivationQuantizationStep:         "activation_quantization",
     WeightQuantizationStep:             "weight_quantization",
@@ -116,9 +124,9 @@ _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
     NormalizationFusionStep:            "normalization",
     SoftCoreMappingStep:                "soft_mapping",
     CoreQuantizationVerificationStep:   "core_verification",
-    CoreFlowTuningStep:                 "coreflow_tuning",
     HardCoreMappingStep:                "hardware",
     SimulationStep:                     "simulation",
+    LoihiSimulationStep:                "simulation",
 }
 
 
@@ -153,13 +161,14 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     DeploymentPipeline._assemble_steps() and by the wizard API for preview.
     """
     search_mode = derive_search_mode(config)
-    spiking = config.get("spiking_mode", "rate")
+    spiking = config.get("spiking_mode", "lif")
     act_q = config.get("activation_quantization", False)
     wt_q = config.get("weight_quantization", False)
     pruning = config.get("pruning", False)
     pruning_fraction = float(config.get("pruning_fraction", 0.0))
     weight_source = config.get("weight_source")
     model_type = config.get("model_type", "")
+    loihi_sim = bool(config.get("enable_loihi_simulation", False))
 
     specs: list[tuple[str, type]] = []
 
@@ -190,16 +199,23 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     # Activation Analysis always runs (activation_scales for IR).
     # Activation Adaptation always runs next: ReLU replacement when any
     # chip-targeted perceptron is non-ReLU, scales applied in all cases.
-    # When act_q or TTFS, Clamp Adaptation runs after (clamp for quant/TTFS).
     specs.append(_ACTIVATION_ANALYSIS_STEP)
     specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
-    if act_q or spiking in ("ttfs", "ttfs_quantized"):
-        specs.append(_CLAMP_ADAPTATION_STEP)
 
-    # Full activation quantization (Shifting + Quantization) is only
-    # needed when discrete activation levels are required.
-    if act_q:
-        specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
+    if spiking == "lif":
+        # LIF mode: the base activation itself becomes a multi-step IF
+        # neuron, which already clamps to [0, activation_scale] and
+        # quantises to T + 1 levels.  Clamp / Shift / Activation Quantization
+        # would double-apply those semantics and mis-align the staircase
+        # boundaries, so they are skipped.  LIFAdaptationStep runs a KD
+        # recovery against the pre-LIF snapshot.
+        specs.append(("LIF Adaptation", LIFAdaptationStep))
+    else:
+        # TTFS and legacy flows keep the clamp / shift / quantization chain.
+        if act_q or spiking in ("ttfs", "ttfs_quantized"):
+            specs.append(_CLAMP_ADAPTATION_STEP)
+        if act_q:
+            specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
 
     # ── Weight Quantization ─────────────────────────────────────────
     if wt_q:
@@ -213,13 +229,12 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
             ("Core Quantization Verification", CoreQuantizationVerificationStep)
         )
 
-    # ── CoreFlow Tuning (rate-coded only) ───────────────────────────
-    if spiking == "rate":
-        specs.append(("CoreFlow Tuning", CoreFlowTuningStep))
-
     # ── Hardware Deployment ─────────────────────────────────────────
     specs.append(("Hard Core Mapping", HardCoreMappingStep))
     specs.append(("Simulation", SimulationStep))
+
+    if loihi_sim:
+        specs.append(("Loihi Simulation", LoihiSimulationStep))
 
     return specs
 
@@ -236,7 +251,8 @@ class DeploymentPipeline(Pipeline):
         "degradation_tolerance": 0.05,
         "model_config_mode": "user",
         "hw_config_mode": "fixed",
-        "spiking_mode": "rate",
+        "spiking_mode": "lif",
+        "enable_loihi_simulation": False,
         "allow_scheduling": False,
         # Recipe defaults match templates/cifar_vit_pretrained.json. Mirrored in
         # config_schema/defaults.py: DEFAULT_TRAINING_RECIPE / DEFAULT_TUNING_RECIPE.
@@ -318,10 +334,10 @@ class DeploymentPipeline(Pipeline):
         # Spiking-mode defaults.
         # The user only needs to set ``spiking_mode``; firing_mode,
         # spike_generation_mode and thresholding_mode are derived automatically.
+        #   "lif"            → cycle-accurate integrate-and-fire (Python + C++)
         #   "ttfs"           → analytical / continuous TTFS (Python + C++)
         #   "ttfs_quantized" → cycle-based quantised TTFS  (Python + C++)
-        #   anything else    → rate-coded (Default)
-        spiking = self.config.get("spiking_mode", "rate")
+        spiking = self.config.get("spiking_mode", "lif")
         if spiking in ("ttfs", "ttfs_quantized"):
             self.config.setdefault("firing_mode", "TTFS")
             self.config.setdefault("spike_generation_mode", "TTFS")
@@ -339,8 +355,12 @@ class DeploymentPipeline(Pipeline):
                     f"got '{self.config['spike_generation_mode']}'"
                 )
         else:
+            # LIF (rate-coded integrate-and-fire) defaults.  ``Uniform`` spike
+            # generation is deterministic and stable; subtractive-reset
+            # ``Default`` firing + strict ``<`` thresholding match nevresim
+            # rate-mode and SpikingJelly ``IFNode(v_reset=None)`` exactly.
             self.config.setdefault("firing_mode", "Default")
-            self.config.setdefault("spike_generation_mode", "Deterministic")
+            self.config.setdefault("spike_generation_mode", "Uniform")
             self.config.setdefault("thresholding_mode", "<")
 
         # Connect degradation_tolerance config to pipeline's step-level assertion.
@@ -368,8 +388,8 @@ class DeploymentPipeline(Pipeline):
         """Non-fatal sanity checks. Any finding is a stderr warning, not an abort."""
         model_name = self.config.get("model_name") or self.config.get("model_type", "")
         act_q = bool(self.config.get("activation_quantization", False))
-        spiking = self.config.get("spiking_mode", "rate")
-        clamp_in_play = act_q or spiking in ("ttfs", "ttfs_quantized")
+        spiking = self.config.get("spiking_mode", "lif")
+        clamp_in_play = (spiking != "lif") and (act_q or spiking in ("ttfs", "ttfs_quantized"))
 
         if "vit" in model_name.lower() and clamp_in_play and not self.cuda_debug:
             print(
@@ -381,7 +401,7 @@ class DeploymentPipeline(Pipeline):
             )
 
     def _display_config(self):
-        spiking = self.config.get("spiking_mode", "rate")
+        spiking = self.config.get("spiking_mode", "lif")
         search_mode = derive_search_mode(self.config)
         act_q = self.config.get("activation_quantization", False)
         wt_q = self.config.get("weight_quantization", False)

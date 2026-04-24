@@ -341,7 +341,41 @@ def _flush_neural_segment(
         current_offset += size
 
     hard = HardCoreMapping(shared_pool)
-    hard.map(soft, allow_neuron_splitting=allow_neuron_splitting)
+    try:
+        hard.map(soft, allow_neuron_splitting=allow_neuron_splitting)
+    except RuntimeError as e:
+        # Rich diagnostic — the layout mapper pre-validated this sub-segment
+        # via ``pack_layout`` but the real greedy packer on ``SoftCore``s
+        # disagreed.  Expose the exact softcore shapes + their threshold
+        # groups so we can triangulate the divergence (typically a mismatch
+        # between ``SoftCore.threshold_group_id`` and its ``LayoutSoftCoreSpec``
+        # counterpart, or pruning changing axon counts between layout time
+        # and hard-core mapping time).
+        group_ids: Dict[object, int] = {}
+        rows = []
+        for sc in soft.cores:
+            tg = getattr(sc, "threshold_group_id", None)
+            pi = getattr(sc, "perceptron_index", None)
+            tg_val = tg if tg is not None else f"fallback(-{sc.id + 1})"
+            group_ids.setdefault(tg_val, 0)
+            group_ids[tg_val] += 1
+            rows.append(
+                f"    id={sc.id} name={sc.name!r} axons={sc.get_input_count()} "
+                f"neurons={sc.get_output_count()} perc_idx={pi} tg={tg}"
+            )
+        hw_summary = ", ".join(
+            f"{hc.axons_per_core}x{hc.neurons_per_core} count={hc.axons_per_core}"
+            for hc in shared_pool[:3]
+        )
+        diag = (
+            f"Hard-core packing failed in segment '{name}': {e}.\n"
+            f"  Sub-segment softcores: {len(soft.cores)}\n"
+            f"  Distinct threshold groups: {len(group_ids)} "
+            f"(most: {sorted(group_ids.items(), key=lambda kv: -kv[1])[:3]})\n"
+            f"  Pool size: {len(shared_pool)} (types head: {hw_summary})\n"
+            f"  Softcore heads:\n" + "\n".join(rows[:5])
+        )
+        raise RuntimeError(diag) from e
 
     return HybridStage(
         kind="neural",
@@ -418,84 +452,42 @@ def _flush_scheduled_segment(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
 ) -> tuple[list[HybridStage], dict[int, dict[int, int]]]:
-    """Flush a neural segment as one or more scheduled passes.
+    """Flush a neural segment as a single scheduled pass.
 
-    Each pass gets a **fresh** hardware core pool (same physical cores
-    reprogrammed).  Returns all stages and the accumulated reindex maps.
+    One segment → one ``HybridStage``.  The layout mapper has already
+    inserted sync barriers (= segment boundaries) wherever the hardware
+    cannot hold the combined cores, so any segment reaching this call
+    must fit the physical core pool.  We call ``_flush_neural_segment``
+    exactly once against a fresh pool; if the packer cannot place every
+    core, we let the ``RuntimeError`` propagate — that is an infeasible
+    template the user must fix, not a case to silently split.
 
-    Cores passed in must already be reindexed with any cross-segment
-    compaction maps (the caller handles this).  This function only applies
-    intra-segment inter-pass reindex (``seg_reindex_all``) to subsequent
-    passes.
-
-    If the initial partition produces a pass that fails to pack, the pass
-    is automatically halved and retried until each sub-pass packs or
-    contains only a single core.
+    Latency-group pass splitting was previously performed here.  It
+    counted each IR NeuralCore as ≥ 1 hardware core and therefore
+    over-partitioned segments that the layout packer would fit in one
+    pass.  The simulator then treated every sub-pass as a sync barrier
+    (rate-level handoff between cores), breaking cycle-accurate LIF
+    semantics and causing SCM / HCM / nevresim accuracy drift.
     """
-    from mimarsinan.mapping.schedule_partitioner import (
-        effective_core_budget,
-        partition_segment_into_passes,
-    )
-
-    budget = effective_core_budget(cores_config)
-    max_hw_axons = max(int(ct["max_axons"]) for ct in cores_config) if cores_config else 0
-    max_hw_neurons = max(int(ct["max_neurons"]) for ct in cores_config) if cores_config else 0
-
-    # Validate that every wide core's coalescing group fits in a single pass.
     if allow_coalescing:
         _validate_coalescing_budget(
             current_neural, cores_config, allow_neuron_splitting,
         )
 
-    passes = partition_segment_into_passes(
-        current_neural, budget,
-        max_hw_axons=max_hw_axons,
-        max_hw_neurons=max_hw_neurons,
-        allow_coalescing=allow_coalescing,
-        allow_splitting=allow_neuron_splitting,
+    shared_pool = _make_available_hardware_cores(cores_config)
+    stage, seg_reindex_all = _flush_neural_segment(
+        current_neural=current_neural,
+        consumed_by=consumed_by,
+        shared_pool=shared_pool,
+        weight_banks=weight_banks,
+        name=segment_label,
+        allow_neuron_splitting=allow_neuron_splitting,
+        skip_coalescing_check=True,
     )
+    stage.schedule_segment_index = segment_index
+    stage.schedule_pass_index = 0
 
-    stages: list[HybridStage] = []
-    seg_reindex_all: dict[int, dict[int, int]] = {}
-
-    def _flush_or_split(pass_cores, pass_idx):
-        """Flush a pre-reindexed pass. On failure, split and retry."""
-        fresh_pool = _make_available_hardware_cores(cores_config)
-        try:
-            stage, pass_reindex = _flush_neural_segment(
-                current_neural=pass_cores,
-                consumed_by=consumed_by,
-                shared_pool=fresh_pool,
-                weight_banks=weight_banks,
-                name=f"{segment_label}_pass{pass_idx}",
-                allow_neuron_splitting=allow_neuron_splitting,
-                skip_coalescing_check=True,
-            )
-            stage.schedule_segment_index = segment_index
-            stage.schedule_pass_index = pass_idx
-            stages.append(stage)
-            seg_reindex_all.update(pass_reindex)
-        except RuntimeError:
-            if len(pass_cores) > 1:
-                mid = len(pass_cores) // 2
-                snapshot = dict(seg_reindex_all)
-                _flush_or_split(pass_cores[:mid], pass_idx)
-                delta = {k: v for k, v in seg_reindex_all.items() if k not in snapshot}
-                second = _reindex_nodes(pass_cores[mid:], delta) if delta else pass_cores[mid:]
-                _flush_or_split(second, pass_idx + 1000)
-                return
-            raise
-
-    for pass_idx, pass_cores in enumerate(passes):
-        if seg_reindex_all:
-            pass_cores = _reindex_nodes(pass_cores, seg_reindex_all)
-        _flush_or_split(pass_cores, pass_idx)
-
-    for i, stage in enumerate(stages):
-        if stage.schedule_segment_index == segment_index:
-            stage.schedule_pass_index = i
-
-    return stages, seg_reindex_all
+    return [stage], seg_reindex_all
 
 
 def _compute_node_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
@@ -750,6 +742,150 @@ def _build_single_pool(
         all_reindex_maps.update(seg_reindex)
 
 
+def _split_segment_by_capacity(
+    cores: list[NeuralCore],
+    cores_config: Sequence[dict],
+    *,
+    allow_coalescing: bool,
+    allow_neuron_splitting: bool,
+) -> list[list[NeuralCore]]:
+    """Wrap :func:`split_softcores_by_capacity` for a list of IR NeuralCores.
+
+    Converts each NeuralCore to a ``LayoutSoftCoreSpec`` shape, delegates
+    to the shared layout-side splitter (so the wizard's capacity analysis
+    and the hard-core mapper's capacity analysis always agree), then maps
+    the resulting sub-segment groupings back onto the original NeuralCore
+    list order.
+    """
+    if not cores:
+        return []
+
+    from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
+    from mimarsinan.mapping.schedule_partitioner import split_softcores_by_capacity
+
+    hw_types = [
+        LayoutHardCoreType(
+            max_axons=int(ct["max_axons"]),
+            max_neurons=int(ct["max_neurons"]),
+            count=int(ct["count"]),
+        )
+        for ct in cores_config
+    ]
+
+    # Mirror ``LayoutIRMapping._finalize_softcores``: the threshold group a
+    # softcore belongs to is its owning Perceptron, so all NeuralCores tiled
+    # out of one Perceptron (conv positions, psum fragments, output tiling)
+    # share a group id and pack together under ``pack_layout``'s group
+    # constraint.  Using ``NeuralCore.threshold_group_id`` directly would
+    # miss this — that attribute is often ``None`` on IR cores, which
+    # previously made ``_to_spec`` fall back to unique-per-index groups and
+    # fragmented the capacity split into one pass per softcore.  Fall back
+    # to a unique negative id only when there is no perceptron_index, so
+    # standalone non-Perceptron cores (e.g. synthesised accumulators) are
+    # kept isolated as before.
+    specs: list[LayoutSoftCoreSpec] = []
+    spec_to_core: dict[int, NeuralCore] = {}
+    for idx, core in enumerate(cores):
+        lat = int(core.latency) if core.latency is not None else 0
+        pi = getattr(core, "perceptron_index", None)
+        tg = int(pi) if pi is not None else -(idx + 1)
+        spec = LayoutSoftCoreSpec(
+            input_count=int(len(core.input_sources.flatten())),
+            output_count=int(core.get_output_count()),
+            threshold_group_id=tg,
+            latency_tag=lat,
+            segment_id=0,
+            name=core.name,
+        )
+        specs.append(spec)
+        spec_to_core[id(spec)] = core
+
+    sub_specs = split_softcores_by_capacity(
+        specs,
+        hw_types,
+        allow_coalescing=allow_coalescing,
+        allow_splitting=allow_neuron_splitting,
+    )
+    return [[spec_to_core[id(s)] for s in sub] for sub in sub_specs]
+
+
+def _flush_scheduled_subsegments(
+    *,
+    cores: list[NeuralCore],
+    consumed_by: dict[int, set[int]],
+    cores_config: Sequence[dict],
+    weight_banks: dict,
+    segment_index_start: int,
+    segment_label_base: str,
+    allow_neuron_splitting: bool,
+    allow_coalescing: bool,
+    all_reindex_maps: dict[int, dict[int, int]],
+    stages: list[HybridStage],
+) -> int:
+    """Flush one IR segment, splitting by capacity into one or more stages.
+
+    The layout-side splitter (``split_softcores_by_capacity``) produces an
+    initial partition validated via ``pack_layout``.  The real hard-core
+    packer (``SoftCoreMapping.map`` → ``greedy_pack_softcores`` with
+    ``fuse_hardcores``) is authoritative for deployment: if it fails to
+    pack a sub-segment the layout thought was fine, we halve that
+    sub-segment and retry each half with a fresh pool, recursively, until
+    it fits or it is a singleton softcore.  Singleton failure = genuine
+    infeasibility; the error propagates unchanged.
+
+    This halving fallback is *only* for layout-vs-real-packer divergence
+    (e.g. greedy ordering choosing different core types on tight
+    configs).  It never re-introduces latency-group splitting — each
+    halved piece still contains the full latency stack that lived inside
+    the sub-segment the layout produced.  If this fallback fires often,
+    the fix is to make the layout-side estimator use the same packer
+    path as the real flusher; this wrapper keeps the pipeline running in
+    the meantime.
+    """
+    sub_segments = _split_segment_by_capacity(
+        cores,
+        cores_config,
+        allow_coalescing=allow_coalescing,
+        allow_neuron_splitting=allow_neuron_splitting,
+    )
+    if not sub_segments:
+        return segment_index_start
+
+    def _flush_or_halve(sub_cores, sub_label, sub_idx):
+        if all_reindex_maps:
+            sub_cores_reindexed = _reindex_nodes(sub_cores, all_reindex_maps)
+        else:
+            sub_cores_reindexed = sub_cores
+        try:
+            seg_stages, seg_reindex = _flush_scheduled_segment(
+                current_neural=sub_cores_reindexed,
+                consumed_by=consumed_by,
+                cores_config=cores_config,
+                weight_banks=weight_banks,
+                segment_index=segment_index_start + sub_idx,
+                segment_label=sub_label,
+                allow_neuron_splitting=allow_neuron_splitting,
+                allow_coalescing=allow_coalescing,
+            )
+            stages.extend(seg_stages)
+            all_reindex_maps.update(seg_reindex)
+            return 1
+        except RuntimeError:
+            if len(sub_cores) <= 1:
+                raise
+            mid = len(sub_cores) // 2
+            left_count = _flush_or_halve(sub_cores[:mid], f"{sub_label}_h0", sub_idx)
+            right_count = _flush_or_halve(sub_cores[mid:], f"{sub_label}_h1", sub_idx + left_count)
+            return left_count + right_count
+
+    offset = 0
+    for sub_idx, sub_cores in enumerate(sub_segments):
+        label = segment_label_base if len(sub_segments) == 1 else f"{segment_label_base}_cap{sub_idx}"
+        offset += _flush_or_halve(sub_cores, label, offset)
+
+    return segment_index_start + offset
+
+
 def _build_scheduled(
     *,
     ir_graph: IRGraph,
@@ -760,7 +896,9 @@ def _build_scheduled(
     allow_neuron_splitting: bool,
     allow_coalescing: bool = False,
 ) -> None:
-    """Scheduled compilation: fresh core pool per pass, segments may be split."""
+    """Scheduled compilation: fresh core pool per pass, over-sized segments
+    are split at capacity boundaries so each emitted neural stage fits in a
+    single pass."""
     segment_index = 0
 
     current_neural: list[NeuralCore] = []
@@ -771,22 +909,19 @@ def _build_scheduled(
 
         if isinstance(node, ComputeOp):
             if current_neural:
-                if all_reindex_maps:
-                    current_neural = _reindex_nodes(current_neural, all_reindex_maps)
-                seg_stages, seg_reindex = _flush_scheduled_segment(
-                    current_neural=current_neural,
+                segment_index = _flush_scheduled_subsegments(
+                    cores=current_neural,
                     consumed_by=consumed_by,
                     cores_config=cores_config,
                     weight_banks=ir_graph.weight_banks,
-                    segment_index=segment_index,
-                    segment_label=f"neural_segment_until:{node.name}",
+                    segment_index_start=segment_index,
+                    segment_label_base=f"neural_segment_until:{node.name}",
                     allow_neuron_splitting=allow_neuron_splitting,
                     allow_coalescing=allow_coalescing,
+                    all_reindex_maps=all_reindex_maps,
+                    stages=stages,
                 )
-                stages.extend(seg_stages)
-                all_reindex_maps.update(seg_reindex)
                 current_neural = []
-                segment_index += 1
 
             op_copy = copy.copy(node)
             op_copy.input_sources = np.array(
@@ -799,17 +934,15 @@ def _build_scheduled(
         raise TypeError(f"Unknown IR node type in hybrid compilation: {type(node)}")
 
     if current_neural:
-        if all_reindex_maps:
-            current_neural = _reindex_nodes(current_neural, all_reindex_maps)
-        seg_stages, seg_reindex = _flush_scheduled_segment(
-            current_neural=current_neural,
+        _flush_scheduled_subsegments(
+            cores=current_neural,
             consumed_by=consumed_by,
             cores_config=cores_config,
             weight_banks=ir_graph.weight_banks,
-            segment_index=segment_index,
-            segment_label="neural_segment_final",
+            segment_index_start=segment_index,
+            segment_label_base="neural_segment_final",
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
+            all_reindex_maps=all_reindex_maps,
+            stages=stages,
         )
-        stages.extend(seg_stages)
-        all_reindex_maps.update(seg_reindex)

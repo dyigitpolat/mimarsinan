@@ -17,8 +17,8 @@ the IR into physical hardware cores.
 | `chip_export.py` | `hard_cores_to_chip`, `generate_core_weights`, `generate_core_connection_info`, `to_numpy` | Converts `HardCoreMapping` → `ChipModel` for nevresim. Single consumer: `chip_simulation.nevresim_driver`. |
 | `softcore_mapping.py` | `SoftCore`, `HardCore`, `HardCoreMapping`, `compact_soft_core_mapping` | Logical-to-physical core representations and packing. **Bias chain**: `SoftCore.hardware_bias` and `HardCore.hardware_bias` carry dedicated per-neuron bias arrays through the packing pipeline; `HardCore.add_softcore()` copies bias into the correct neuron slice; `compact_soft_core_mapping` compacts `hardware_bias` alongside pruned columns. When `hardware_bias` is set, no always-on axon row exists. Legacy mode: `HardCore.has_bias_capability` (from `cores_config["has_bias"]`); codegen folds the last matrix row into per-neuron bias. Two-way traceability: `neuron_mapping` (soft→hard); `soft_core_placements_per_hard_core` (hard→soft) for overlay/UI. **Fused cores**: when the packer fuses multiple physical HardCores via `fuse_hardcores`, the returned fused HardCore has optional `fused_component_axons` (list of axon counts per component) set in `HardCoreMapping.map()` for GUI boundary and badge display. |
 | `core_packing.py` | `greedy_pack_softcores`, `pre_allocate_coalescing_groups` | Generic best-fit greedy bin-packing algorithm; `pre_allocate_coalescing_groups` reserves dedicated `HardCore`s for coalescing partial softcores (which occupy the full axon width and cannot share a core via diagonal packing) before the main greedy pass |
-| `hybrid_hardcore_mapping.py` | `HybridHardCoreMapping`, `HybridStage`, `SegmentIOSlice`, `build_hybrid_hard_core_mapping`, `_validate_coalescing_budget` | Multi-segment deployable program with state-buffer I/O. `HybridStage` carries optional `schedule_segment_index` / `schedule_pass_index` metadata for scheduled mapping. When `allow_scheduling=True`, `build_hybrid_hard_core_mapping` allocates a **fresh** hardware core pool per pass (same physical cores reprogrammed) instead of a single shared pool, enabling models that need more cores than available. `_flush_or_split` handles packing failures by binary-splitting multi-core passes. **Coalescing integrity**: `_validate_coalescing_budget` enforces that every wide NeuralCore's coalescing group fits within a single core type's count — the hardware lacks membrane-potential initialization across passes, so partial sums cannot be accumulated temporally. If no core type has sufficient count, a descriptive `RuntimeError` is raised. `node_activation_scales` maps IR node_id → activation_scale float; used by `SpikingHybridCoreFlow` in TTFS mode to rescale ComputeOp inputs/outputs so bias terms remain correct. |
-| `schedule_partitioner.py` | `partition_segment_into_passes`, `estimate_passes_for_layout`, `estimate_passes_for_layout_validated`, `effective_core_budget`, `_validate_and_split_passes`, `_make_softcore_fragment_expander` | Partitions a neural segment's cores into sequential schedule passes via a **unified** generic algorithm (`_partition_with_latencies`) that accepts any object with `get_input_count()`/`get_output_count()`. Both `partition_segment_into_passes` (NeuralCore) and `estimate_passes_for_layout` (LayoutSoftCoreSpec) delegate to the same algorithm, ensuring identical pass counts for identical shapes. `effective_core_budget` computes the 0.8× heterogeneous-discount budget used by both the wizard verifier and hybrid mapping builder. `_compute_core_latencies` saves/restores original `NeuralCore.latency` to avoid mutation. `_validate_and_split_passes` mirrors the build-time `_flush_or_split` pattern: validates each pass with a caller-provided packing function and splits failing passes recursively; accepts an optional `fragment_expander` callback and `max_per_pass` — when a single-item pass fails, the expander produces fragment-sized sub-softcores which are distributed into sub-passes and validated recursively. `_make_softcore_fragment_expander` creates a **splitting-only** fragment expander for `LayoutSoftCoreSpec`: fragments are split along the neuron dimension only while retaining the full axon width. Coalescing groups must fit within a single core type's count — if no type can satisfy the coalescing requirement, the expander returns `None` (infeasible). When `core_types` is passed to `estimate_passes_for_layout`, each proposed pass is validated with `pack_layout` against the real typed hardware, with fragment expansion enabled; `estimate_passes_for_layout_validated` additionally returns a feasibility flag. |
+| `hybrid_hardcore_mapping.py` | `HybridHardCoreMapping`, `HybridStage`, `SegmentIOSlice`, `build_hybrid_hard_core_mapping`, `_validate_coalescing_budget` | Multi-segment deployable program with state-buffer I/O. **Each neural segment → exactly one `HybridStage` of `kind="neural"`**. Segment boundaries come solely from ComputeOp sync barriers (inserted upstream by the layout mapper); the hard-core mapper does not sub-split within a segment. When `allow_scheduling=True`, each barrier-separated segment is packed onto a fresh hardware pool (same physical cores reprogrammed between segments); within a segment the combined cores must fit in one pass — if the packer runs out of cores, the `RuntimeError` is propagated unchanged so the infeasibility is loud. `_flush_neural_segment_scheduled` performs this single-pass flush; `_validate_coalescing_budget` enforces that every wide NeuralCore's coalescing group fits within a single core type's count. `node_activation_scales` maps IR node_id → activation_scale float; used by `SpikingHybridCoreFlow` in TTFS mode to rescale ComputeOp inputs/outputs so bias terms remain correct. |
+| `schedule_partitioner.py` | `partition_segment_into_passes`, `estimate_passes_for_layout`, `estimate_passes_for_layout_validated`, `effective_core_budget` | Segment-level pass accounting. Historical multi-pass sub-splitting has been removed: every neural segment becomes exactly one pass, and segment boundaries are set by the layout mapper alone. `partition_segment_into_passes` is the identity on the segment's cores (preserved for ABI). `estimate_passes_for_layout` reports one pass per distinct `segment_id`; `estimate_passes_for_layout_validated` additionally runs `pack_layout` on each segment to report feasibility. `effective_core_budget` retains the 0.8× heterogeneous-discount used by the wizard and hard-core mapper. |
 | `chip_latency.py` | `ChipLatency` | Calculates chip simulation latency from core graph; raises if mapping has no output_sources. |
 | `ir_latency.py` | `IRLatency` | Computes per-node latency tiers in the IR graph |
 | `ir_pruning_analysis.py` | `get_neural_segments`, `compute_segment_io_exemption` | Pure graph queries: neural segments and per-node I/O exemption. Used by `ir_pruning`. |
@@ -61,29 +61,25 @@ reusing the same physical hardware cores.  This trades latency for chip area.
 state-buffer execution model in `SpikingHybridCoreFlow` handles inter-pass data
 handoff identically to inter-segment handoff, requiring zero changes to the simulator.
 
-**Partitioning algorithm** (`schedule_partitioner.py`):
-1. Compute latency per core within the segment (save/restore to avoid mutating originals).
-2. Group by latency; greedily assign groups to passes (increasing latency order).
-3. If a single latency group exceeds available cores, bin-pack its atomic units
-   using first-fit-decreasing.
-4. `effective_core_budget()` computes the budget: for heterogeneous core configs
-   the total is reduced by 20% to account for per-type scarcity.  Both the wizard
-   verifier and the hybrid mapping builder call this function so they agree.
-5. The layout-level estimator (`estimate_passes_for_layout`) and the build-time
-   partitioner (`partition_segment_into_passes`) share the same core algorithm
-   (`_partition_with_latencies`) — identical shapes and budget produce identical
-   pass counts.
-6. When `core_types` (typed hardware) is provided, `estimate_passes_for_layout`
-   validates each proposed pass with `pack_layout` against the real core types
-   and splits failing passes recursively via `_validate_and_split_passes`.
-   When a single softcore's neuron-splitting fragments exceed the available
-   core count, the fragment expander (via `_make_softcore_fragment_expander`)
-   produces splitting-only sub-softcores and distributes them across sub-passes.
-   Coalescing groups must fit within a single core type's count; if no type
-   can satisfy the coalescing requirement the configuration is infeasible.
-   Each sub-pass is validated against the real hardware — no synthetic configs
-   or fallbacks are needed.  This ensures the wizard's pass count, feasibility,
-   and utilization metrics match the actual mapper.
+**Partitioning (single-pass-per-segment contract)**:
+1. Segmentation is entirely the layout mapper's responsibility.  It inserts
+   sync barriers (= segment boundaries) wherever the packer cannot place
+   the combined cores on the available hardware.  The wizard's neural-segment
+   count therefore already reflects the final deployment.
+2. The hard-core mapper flushes each segment **as one pass** by calling
+   `_flush_neural_segment` against a fresh hardware pool.  No latency-group
+   sub-splitting, no bin-packing retry loop, no `_flush_or_split` recursion.
+3. If the packer cannot place every core in a segment, the `RuntimeError`
+   propagates — this is a loud failure.  The user either up-sizes the
+   hardware config or inserts an explicit barrier in the model.  We never
+   silently rate-aggregate between latency groups (which would break
+   cycle-accurate LIF semantics on the simulator and misrepresent chip
+   behaviour).
+4. `effective_core_budget()` still reports the 0.8× heterogeneous-discount
+   total so the wizard and mapper share one budget number.
+5. `estimate_passes_for_layout` / `estimate_passes_for_layout_validated`
+   return one entry per `segment_id` and, in the typed variant, validate
+   that segment's softcores pack as a whole via `pack_layout`.
 
 **Coalescing constraint**: all coalescing cores for a single NeuralCore (wide
 axon tiling) must reside in the **same** pass.  The hardware lacks

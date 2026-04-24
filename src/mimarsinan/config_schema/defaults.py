@@ -51,7 +51,7 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "degradation_tolerance": 0.05,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    "spiking_mode": "rate",
+    "spiking_mode": "lif",
     "allow_scheduling": False,
     "training_recipe": dict(DEFAULT_TRAINING_RECIPE),
     "tuning_recipe": dict(DEFAULT_TUNING_RECIPE),

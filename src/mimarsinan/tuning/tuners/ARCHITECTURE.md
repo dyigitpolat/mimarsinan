@@ -14,7 +14,7 @@ specific transformations while maintaining accuracy.
 | `activation_shift_tuner.py` | `ActivationShiftTuner` | Extends `TunerBase` (not smooth adaptation); applies shift once, recovers with LR-search + step-training using `min_improvement=accuracy_se()` and `eval_n_batches`; caches final `trainer.test()` metric |
 | `activation_quantization_tuner.py` | `ActivationQuantizationTuner` | Quantizes activations to Tq levels |
 | `normalization_aware_perceptron_quantization_tuner.py` | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights with normalization awareness; extends `PerceptronTransformTuner` |
-| `core_flow_tuner.py` | `CoreFlowTuner` | Adjusts spiking thresholds on IR graph (standalone, not in tuner hierarchy) |
+| `lif_adaptation_tuner.py` | `LIFAdaptationTuner` | Knowledge-distillation recovery after swapping Perceptron `base_activation` to `LIFActivation`; teacher = frozen pre-LIF snapshot, student = LIF-ified model; loss = α·CE + (1−α)·T²·KL (T=3, α=0.3, matching `spikingjelly-example/train.py`) |
 | `noise_tuner.py` | `NoiseTuner` | Introduces training noise |
 | `pruning_tuner.py` | `PruningTuner` | Gradually zeros least-significant rows/columns; recomputes importance at each cycle; overrides `_before_cycle`, `_recovery_training_hooks`, `_after_run`, `_update_and_evaluate`; uses base-class `_find_lr` (anchored LR search); `_force_to_full_rate` drives pruning from committed rate to 1.0 in gradual increments with `min_improvement=accuracy_se()/2`; uses base-class `_adaptation` with LR search |
 
@@ -31,7 +31,7 @@ TunerBase
 │   └── PerceptronTransformTuner (PerceptronTransformTrainer)
 │       └── NormalizationAwarePerceptronQuantizationTuner
 └── ActivationShiftTuner (one-shot, not smooth adaptation)
-CoreFlowTuner (standalone, operates on IRGraph)
+LIFAdaptationTuner (standalone; knowledge-distillation recovery after LIF swap)
 ```
 
 ## Dependencies
@@ -47,7 +47,7 @@ CoreFlowTuner (standalone, operates on IRGraph)
 
 `TunerBase`, `SmoothAdaptationTuner`, `ClampTuner`, `ActivationAdaptationTuner`,
 `ActivationQuantizationTuner`, `ActivationShiftTuner`,
-`NormalizationAwarePerceptronQuantizationTuner`, `CoreFlowTuner`, `NoiseTuner`,
+`NormalizationAwarePerceptronQuantizationTuner`, `LIFAdaptationTuner`, `NoiseTuner`,
 `PerceptronTransformTuner`, `PruningTuner`.
 
 ## Per-cycle frozen mask (PerceptronTransformTuner)

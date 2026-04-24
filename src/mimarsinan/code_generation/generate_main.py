@@ -61,10 +61,10 @@ def get_config(
     spike_gen_mode="Stochastic",
     firing_mode="Default",
     weight_type="double",
-    spiking_mode="rate",
+    spiking_mode="lif",
     threshold_type=None,
 ):
-    # threshold_type defaults to weight_type: single-type (rate-coded,
+    # threshold_type defaults to weight_type: single-type (LIF / rate-coded,
     # hardware-accurate integer arithmetic) is the historic behaviour.
     # TTFS callers should set threshold_type="double" explicitly.
     if threshold_type is None:

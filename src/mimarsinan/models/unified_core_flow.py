@@ -4,8 +4,12 @@ UnifiedCoreFlow: Simulation that supports both neural cores and compute ops.
 This module provides a spiking simulator for the unified IRGraph (NeuralCore + ComputeOp),
 including correct sync-barrier semantics for ComputeOps (rate -> op -> respike).
 
-Supports both rate-coded (Default/Novena) and Time-to-First-Spike (TTFS)
-firing modes.
+Supports both LIF (cycle-accurate integrate-and-fire, Default/Novena firing)
+and Time-to-First-Spike (TTFS) modes.  "LIF" is the user-facing name for the
+rate-coded cycle-based simulation — each input value is encoded as a uniform
+rate spike train, neurons integrate input current per cycle and fire on
+subtractive reset (``memb[fired] -= threshold``), and outputs are
+spike-count rates over T cycles.
 
 TTFS mode implements the B1-model from:
   Stanojevic et al., "High-performance deep spiking neural networks with
@@ -108,7 +112,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         firing_mode: str = "Default",
         spike_mode: str = "Uniform",
         thresholding_mode: str = "<",
-        spiking_mode: str = "rate",
+        spiking_mode: str = "lif",
         compute_dtype: torch.dtype = _COMPUTE_DTYPE,
     ):
         super().__init__()
@@ -493,7 +497,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         try:
             if self.spiking_mode in self._TTFS_SPIKING_MODES:
                 return self._forward_ttfs(x)
-            return self._forward_rate(x)
+            return self._forward_lif(x)
         finally:
             # Return per-forward transient CUDA blocks to the driver so
             # reserved memory does not climb across batches on long
@@ -501,8 +505,8 @@ class SpikingUnifiedCoreFlow(nn.Module):
             if isinstance(x, torch.Tensor) and x.is_cuda:
                 torch.cuda.empty_cache()
 
-    def _forward_rate(self, x: torch.Tensor) -> torch.Tensor:
-        """Rate-coded forward pass (Default / Novena)."""
+    def _forward_lif(self, x: torch.Tensor) -> torch.Tensor:
+        """LIF (rate-coded integrate-and-fire) forward pass (Default / Novena)."""
         x = self.preprocessor(x)
         x = x.view(x.shape[0], -1)
 
@@ -962,162 +966,3 @@ class SpikingUnifiedCoreFlow(nn.Module):
             if isinstance(node, NeuralCore):
                 t = node.threshold
                 self._set_threshold(node, float(t.item()) if hasattr(t, "item") else float(t))
-
-
-class StableSpikingUnifiedCoreFlow(SpikingUnifiedCoreFlow):
-    """
-    Stable (deterministic) version of SpikingUnifiedCoreFlow.
-    
-    Uses deterministic/front-loaded spike generation for consistent spike rates
-    that can be used as tuning targets for the regular spiking flow.
-
-    For TTFS mode, the stable flow is identical to the regular TTFS flow
-    (since TTFS is inherently deterministic: single-spike encoding).
-    """
-
-    def __init__(
-        self,
-        input_shape,
-        ir_graph: IRGraph,
-        simulation_length: int,
-        preprocessor: nn.Module | None = None,
-        firing_mode: str = "Default",
-        thresholding_mode: str = "<",
-        spiking_mode: str = "rate",
-    ):
-        # Force deterministic spike mode for stability
-        super().__init__(
-            input_shape,
-            ir_graph,
-            simulation_length,
-            preprocessor,
-            firing_mode,
-            spike_mode="Uniform",  # Uniform is deterministic and stable
-            thresholding_mode=thresholding_mode,
-            spiking_mode=spiking_mode,
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Execute stable spiking simulation and track per-core spike counts.
-
-        For TTFS modes, delegates to the parent TTFS forward (already deterministic).
-        """
-        try:
-            if self.spiking_mode in self._TTFS_SPIKING_MODES:
-                return self._forward_ttfs(x)
-            return self._forward_stable_rate(x)
-        finally:
-            # Same per-forward empty_cache hook as the base class — keeps
-            # reserved CUDA memory flat across batches.
-            if isinstance(x, torch.Tensor) and x.is_cuda:
-                torch.cuda.empty_cache()
-
-    def _forward_stable_rate(self, x: torch.Tensor) -> torch.Tensor:
-        """Rate-coded stable forward pass."""
-        x = self.preprocessor(x)
-        x = x.view(x.shape[0], -1)
-
-        batch_size = x.shape[0]
-        device = x.device
-
-        T = self.simulation_length
-
-        # Generate input spike train (T, B, in)
-        input_spike_train = torch.zeros(T, batch_size, x.shape[1], device=device)
-        for cycle in range(T):
-            input_spike_train[cycle] = self.to_spikes(x, cycle)
-
-        spike_train_cache: Dict[int, torch.Tensor] = {}
-        self._last_core_spike_counts = {}
-
-        ops = {"<": torch.lt, "<=": torch.le}
-
-        for node_idx, node in enumerate(self.nodes):
-            if isinstance(node, NeuralCore):
-                weight = self._get_weight(node).to(torch.float32)
-                threshold = self._get_threshold(node)
-                hw_bias = self._get_hw_bias(node)
-
-                spans = self._input_spans[int(node.id)]
-                in_dim = int(len(node.input_sources.flatten()))
-                out_dim = self._id_to_out_dim[node.id]
-
-                memb = torch.zeros(batch_size, out_dim, device=device)
-                out_train = torch.zeros(T, batch_size, out_dim, device=device)
-                inp = torch.zeros(batch_size, in_dim, device=device)
-                total_spikes = 0.0
-
-                for cycle in range(T):
-                    self._fill_signal_tensor_from_spans(
-                        inp,
-                        spike_train_cache=spike_train_cache,
-                        input_spike_train=input_spike_train,
-                        batch_size=batch_size,
-                        device=device,
-                        spans=spans,
-                        cycle=cycle,
-                    )
-
-                    contribution = torch.matmul(weight, inp.T).T
-                    if hw_bias is not None:
-                        contribution = contribution + hw_bias
-                    memb += contribution
-                    fired = ops[self.thresholding_mode](threshold, memb)
-                    out_train[cycle] = fired.float()
-                    total_spikes += fired.float().sum().item()
-
-                    if self.firing_mode == "Novena":
-                        memb[fired] = 0.0
-                    elif self.firing_mode == "Default":
-                        memb[fired] -= threshold
-
-                spike_train_cache[node.id] = out_train
-                self._last_core_spike_counts[node.id] = total_spikes / (batch_size * out_dim * T + 1e-9)
-
-            elif isinstance(node, ComputeOp):
-                spans = self._input_spans[int(node.id)]
-                in_dim = int(len(node.input_sources.flatten()))
-                in_rates = torch.zeros(batch_size, in_dim, device=device)
-                self._fill_rate_tensor_from_spans(
-                    in_rates,
-                    spike_train_cache=spike_train_cache,
-                    input_spike_train=input_spike_train,
-                    spans=spans,
-                )
-
-                y_rates = node.execute_on_gathered(in_rates)
-                y_rates = y_rates.view(batch_size, -1).clamp(0.0, 1.0)
-
-                out_train = torch.zeros(T, batch_size, y_rates.shape[1], device=device)
-                for cycle in range(T):
-                    out_train[cycle] = self.to_spikes(y_rates, cycle)
-
-                spike_train_cache[node.id] = out_train
-            else:
-                raise TypeError(f"Unknown node type: {type(node)}")
-
-            for released_id in self._release_at_step.get(node_idx, ()):
-                spike_train_cache.pop(released_id, None)
-
-        # Gather output spike counts
-        output_sources = list(self.output_sources.flatten())
-        output_signals = torch.zeros(batch_size, len(output_sources), device=device)
-        for cycle in range(T):
-            for sp in self._output_spans:
-                d0 = int(sp.dst_start)
-                d1 = int(sp.dst_end)
-                if sp.kind == "off":
-                    continue
-                if sp.kind == "on":
-                    output_signals[:, d0:d1] += 1.0
-                    continue
-                if sp.kind == "input":
-                    output_signals[:, d0:d1] += input_spike_train[cycle][:, int(sp.src_start):int(sp.src_end)]
-                    continue
-                output_signals[:, d0:d1] += spike_train_cache[int(sp.src_node_id)][cycle][:, int(sp.src_start):int(sp.src_end)]
-
-        self.total_spikes = torch.sum(output_signals).item()
-        return output_signals
-
-
