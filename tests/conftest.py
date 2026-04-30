@@ -18,7 +18,9 @@ import numpy as np
 _repo_root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(_repo_root, "src"))
 sys.path.insert(0, os.path.join(_repo_root, "spikingjelly"))
-sys.path.insert(0, os.path.join(_repo_root, "lava", "src"))
+# Lava is installed as ``lava-nc`` from PyPI in the env310 venv; no
+# sys.path injection needed and importing the vendored ``lava/src/``
+# tree on Python 3.12 silently breaks dataclasses.
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
