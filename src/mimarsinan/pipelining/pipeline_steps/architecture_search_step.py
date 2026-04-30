@@ -298,7 +298,6 @@ class ArchitectureSearchStep(PipelineStep):
             "model_builder",
             "platform_constraints_resolved",
             "architecture_search_result",
-            "scaled_simulation_length",
         ]
         updates = []
         clears = []
@@ -344,8 +343,6 @@ class ArchitectureSearchStep(PipelineStep):
 
         self.add_entry("platform_constraints_resolved", pcfg)
         self.add_entry("architecture_search_result", {"search_mode": "fixed"})
-        sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
-        self.add_entry("scaled_simulation_length", sim_steps)
 
     # ------------------------------------------------------------------ #
     # Search mode — run optimisation
@@ -558,5 +555,3 @@ class ArchitectureSearchStep(PipelineStep):
         normalize_coalescing_config(platform_constraints)
         self.add_entry("platform_constraints_resolved", platform_constraints)
         self.add_entry("architecture_search_result", {**result_json, **discovered})
-        sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
-        self.add_entry("scaled_simulation_length", sim_steps)

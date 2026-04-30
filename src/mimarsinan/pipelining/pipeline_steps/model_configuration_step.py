@@ -10,9 +10,9 @@ class ModelConfigurationStep(PipelineStep):
     Used when ``search_mode == "fixed"`` (no architecture search).
     Takes model_config directly from ``pipeline.config['model_config']``.
 
-    Emits ``platform_constraints_resolved`` and a default
-    ``scaled_simulation_length`` so that downstream mapping / simulation
-    steps always have them.
+    Emits ``platform_constraints_resolved``. Simulation length is read
+    directly from ``pipeline.config['simulation_steps']`` by every
+    downstream consumer — there is no separate "scaled" version.
     """
 
     def __init__(self, pipeline):
@@ -21,7 +21,6 @@ class ModelConfigurationStep(PipelineStep):
             "model_config",
             "model_builder",
             "platform_constraints_resolved",
-            "scaled_simulation_length",
         ]
         updates = []
         clears = []
@@ -66,7 +65,3 @@ class ModelConfigurationStep(PipelineStep):
             pcfg[CANONICAL_KEY] = False
         normalize_coalescing_config(pcfg)
         self.add_entry("platform_constraints_resolved", pcfg)
-
-        # --- Emit default simulation length ---
-        sim_steps = int(round(self.pipeline.config.get("simulation_steps", 32)))
-        self.add_entry("scaled_simulation_length", sim_steps)

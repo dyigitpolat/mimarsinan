@@ -39,6 +39,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.chip_simulation.hybrid_execution import (
+    assemble_segment_input_torch,
+    decref_consumers,
+    execute_compute_op_torch,
+    gather_final_output_torch,
+    store_segment_output_torch,
+)
 from mimarsinan.chip_simulation.spike_recorder import (
     CoreSpikeCounts,
     RunRecord,
@@ -192,22 +199,7 @@ class SpikingHybridCoreFlow(nn.Module):
         remaining: Dict[int, int],
         src_ids,
     ) -> None:
-        """Decrement ``remaining[nid]`` for each source; drop state_buffer
-        entries whose refcount hits 0.  ``src_ids`` is an iterable of
-        already-resolved node_ids (ints).
-        """
-        for nid in src_ids:
-            if nid < 0:
-                continue
-            r = remaining.get(nid)
-            if r is None:
-                continue
-            r -= 1
-            if r <= 0:
-                remaining.pop(nid, None)
-                state_buffer.pop(nid, None)
-            else:
-                remaining[nid] = r
+        decref_consumers(state_buffer, remaining, src_ids)
 
     def _evict_segment_cache(self) -> None:
         """Drop the currently cached segment's GPU tensors.
@@ -269,7 +261,7 @@ class SpikingHybridCoreFlow(nn.Module):
         raise ValueError("Invalid spike mode: " + str(self.spike_mode))
 
     # ---------------------------------------------------------------------
-    # State-buffer helpers
+    # State-buffer helpers (thin wrappers around hybrid_execution)
     # ---------------------------------------------------------------------
     @staticmethod
     def _assemble_segment_input(
@@ -278,13 +270,9 @@ class SpikingHybridCoreFlow(nn.Module):
         batch_size: int,
         device: torch.device,
     ) -> torch.Tensor:
-        """Build a segment's composite input tensor from the state buffer."""
-        total_size = max((s.offset + s.size for s in input_map), default=0)
-        inp = torch.zeros(batch_size, total_size, device=device, dtype=_COMPUTE_DTYPE)
-        for s in input_map:
-            buf = state_buffer[s.node_id]
-            inp[:, s.offset : s.offset + s.size] = buf[:, :s.size].to(_COMPUTE_DTYPE)
-        return inp
+        return assemble_segment_input_torch(
+            input_map, state_buffer, batch_size, device, _COMPUTE_DTYPE,
+        )
 
     @staticmethod
     def _store_segment_output(
@@ -292,9 +280,7 @@ class SpikingHybridCoreFlow(nn.Module):
         state_buffer: Dict[int, torch.Tensor],
         output_tensor: torch.Tensor,
     ) -> None:
-        """Parse a segment's output tensor into the state buffer."""
-        for s in output_map:
-            state_buffer[s.node_id] = output_tensor[:, s.offset : s.offset + s.size]
+        store_segment_output_torch(output_map, state_buffer, output_tensor)
 
     def _gather_final_output(
         self,
@@ -303,21 +289,14 @@ class SpikingHybridCoreFlow(nn.Module):
         batch_size: int,
         device: torch.device,
     ) -> torch.Tensor:
-        """Assemble the network's final output from the state buffer."""
-        output_sources = self.hybrid_mapping.output_sources.flatten()
-        out = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
-        for idx, src in enumerate(output_sources):
-            if not isinstance(src, IRSource):
-                continue
-            if src.is_off():
-                continue
-            elif src.is_input():
-                out[:, idx] = original_input[:, src.index].to(_COMPUTE_DTYPE)
-            elif src.is_always_on():
-                out[:, idx] = 1.0
-            else:
-                out[:, idx] = state_buffer[src.node_id][:, src.index].to(_COMPUTE_DTYPE)
-        return out
+        return gather_final_output_torch(
+            self.hybrid_mapping.output_sources,
+            state_buffer,
+            original_input,
+            batch_size,
+            device,
+            _COMPUTE_DTYPE,
+        )
 
     # ---------------------------------------------------------------------
     # Segment execution helpers (unchanged internal mechanics)
@@ -823,25 +802,14 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
-                in_scale = in_scales.get(op.id, 1.0)
-                out_scale = out_scales.get(op.id, 1.0)
-                # Host-side compute ops execute a Python torch module.  C++
-                # SimulationRunner._execute_compute_op_np runs them in float32;
-                # match that here so PyTorch and C++ agree bit-for-bit.
-                #
-                # Memory: never materialise a float32 copy of the entire
-                # state_buffer — ``gather_inputs`` only reads the specific
-                # sources this op needs, so casting the gathered result
-                # (O(op_inputs)) is sufficient.
-                gathered = op.gather_inputs(x, state_buffer)
-                gathered = gathered.to(torch.float32)
-                if abs(in_scale - 1.0) > 1e-9:
-                    gathered = gathered * in_scale
-                result = op.execute_on_gathered(gathered)
-                if abs(out_scale - 1.0) > 1e-9:
-                    result = result / out_scale
-                state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
-                # Drop any source whose last consumer was this op.
+                state_buffer[op.id] = execute_compute_op_torch(
+                    op,
+                    x,
+                    state_buffer,
+                    in_scale=in_scales.get(op.id, 1.0),
+                    out_scale=out_scales.get(op.id, 1.0),
+                    output_dtype=_COMPUTE_DTYPE,
+                )
                 self._decref_consumers(
                     state_buffer, remaining,
                     (int(src.node_id) for src in op.input_sources.flatten()
@@ -855,16 +823,140 @@ class SpikingHybridCoreFlow(nn.Module):
         return final.to(torch.float32) * float(T)
 
     # ---------------------------------------------------------------------
+    # Encoding-layer spike-train extraction
+    # ---------------------------------------------------------------------
+    @staticmethod
+    def _resolve_lif_perceptron(module):
+        """Return the inner ``Perceptron`` with LIFActivation, or None.
+
+        Encoding-layer ComputeOps wrap either a Perceptron directly or a
+        Mapper that holds one (e.g. ``PerceptronMapper``,
+        ``Conv2DPerceptronMapper``). In LIF mode, when the wrapped
+        Perceptron's activation is a ``LIFActivation``, we can ask it to
+        emit its actual ``(T, B, ...)`` spike train instead of a mean
+        rate — preserving the cycle-accurate spike timing through the
+        compute boundary.
+        """
+        from mimarsinan.models.activations import LIFActivation
+
+        if module is None:
+            return None
+        candidate = getattr(module, "perceptron", module)
+        activation = getattr(candidate, "activation", None)
+        if isinstance(activation, LIFActivation) and hasattr(candidate, "forward_spiking"):
+            return candidate
+        return None
+
+    def _build_segment_input_spike_train(
+        self,
+        stage,
+        seg_input_rates_clamped: torch.Tensor,
+        state_buffer_spikes: Dict[int, torch.Tensor],
+        *,
+        T: int,
+        batch_size: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Assemble a ``(T, B, in_size)`` spike train for a neural segment.
+
+        For each ``SegmentIOSlice`` in ``stage.input_map``: when the
+        producing node already has a spike train cached
+        (``state_buffer_spikes`` — populated by encoding-layer compute
+        ops with LIFActivation), we slice that train directly so the
+        downstream segment integrates the cycle-accurate LIF firing
+        pattern. Otherwise we fall back to ``to_uniform_spikes`` on the
+        rate, which is the long-standing behaviour for sources that
+        don't carry a spike train (raw input -2, NeuralCore outputs that
+        already went through a rate boundary, generic ComputeOp results).
+        """
+        in_size = seg_input_rates_clamped.shape[1]
+        spike_train = torch.zeros(
+            T, batch_size, in_size, device=device, dtype=_COMPUTE_DTYPE,
+        )
+        # First pass: write spike-train slices from any source that has one.
+        # We track which destination ranges were filled this way so we can
+        # skip the uniform-encoding fill below.
+        filled_ranges: list[tuple[int, int]] = []
+        for s in stage.input_map:
+            train = state_buffer_spikes.get(s.node_id)
+            if train is None:
+                continue
+            spike_train[:, :, s.offset : s.offset + s.size] = (
+                train[:, :, : s.size].to(_COMPUTE_DTYPE)
+            )
+            filled_ranges.append((s.offset, s.offset + s.size))
+
+        if not filled_ranges:
+            for cycle in range(T):
+                spike_train[cycle] = self.to_spikes(
+                    seg_input_rates_clamped, cycle,
+                ).to(_COMPUTE_DTYPE)
+            return spike_train
+
+        # Mixed sources: uniform-encode the rate, then overwrite with
+        # any LIF spike-train ranges captured above. (Cheaper than the
+        # alternative of generating uniform spikes column-by-column.)
+        encoded = torch.zeros_like(spike_train)
+        for cycle in range(T):
+            encoded[cycle] = self.to_spikes(
+                seg_input_rates_clamped, cycle,
+            ).to(_COMPUTE_DTYPE)
+        for lo, hi in filled_ranges:
+            encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
+        return encoded
+
+    def _try_emit_encoding_spike_train(self, op, x: torch.Tensor) -> torch.Tensor | None:
+        """When ``op`` is an encoding-layer Perceptron with LIFActivation,
+        run its ``forward_spiking`` on ``op.gather_inputs(x, ...)`` (raw
+        input only — encoding layers source from -2 by definition) and
+        return the ``(T, B, D)`` spike train. Returns ``None`` otherwise.
+        """
+        if self.spiking_mode != "lif":
+            return None
+        module = (op.params or {}).get("module") if hasattr(op, "params") else None
+        perceptron = self._resolve_lif_perceptron(module)
+        if perceptron is None:
+            return None
+        # Encoding layers have all-raw-input sources (compute-op invariant
+        # from ``compute_per_source_scales``). Gather + reshape to the
+        # module's expected input layout the same way ``execute`` does.
+        gathered = op.gather_inputs(x, {})
+        if op.input_shape is not None:
+            gathered = gathered.view(gathered.shape[0], *op.input_shape)
+        spikes = perceptron.forward_spiking(gathered)
+        # Spikes are produced under the LIF effective-weight formulation
+        # (``Linear / activation_scale``). They're already in {0, 1}; no
+        # extra division by activation_scale is needed for the spike
+        # train. Flatten any spatial dims so downstream segment input
+        # gather can slice into a 1-D feature axis.
+        T_ax = spikes.shape[0]
+        B = spikes.shape[1]
+        spikes = spikes.reshape(T_ax, B, -1)
+        return spikes
+
+    # ---------------------------------------------------------------------
     # Rate-coded forward (state-buffer driven)
     # ---------------------------------------------------------------------
     def _forward_rate(self, x: torch.Tensor) -> torch.Tensor:
-        """Rate-coded forward pass using the global state buffer."""
+        """Rate-coded forward pass using the global state buffer.
+
+        Encoding-layer ComputeOps wrapping a Perceptron with
+        ``LIFActivation`` produce a real ``(T, B, D)`` spike train via
+        :meth:`_try_emit_encoding_spike_train`. The next neural segment
+        consumes that spike train verbatim through ``state_buffer_spikes``
+        instead of re-encoding the rate uniformly — preserving the LIF
+        spike-timing phase that ``to_uniform_spikes`` would otherwise
+        overwrite.
+        """
         batch_size = x.shape[0]
         device = x.device
         T = self.simulation_length
 
         x_compute = x.to(_COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
+        # Parallel buffer of spike trains for entries produced by encoding
+        # layers; consumed by the next neural-segment input assembly.
+        state_buffer_spikes: Dict[int, torch.Tensor] = {}
         out_scales = getattr(self.hybrid_mapping, "node_activation_scales", {})
         in_scales = getattr(self.hybrid_mapping, "node_input_activation_scales", out_scales)
 
@@ -878,12 +970,14 @@ class SpikingHybridCoreFlow(nn.Module):
                     stage.input_map, state_buffer, batch_size, device
                 )
                 seg_input_rates_clamped = seg_input_rates.clamp(0.0, 1.0)
-                spike_train = torch.zeros(
-                    T, batch_size, seg_input_rates_clamped.shape[1], device=device,
-                    dtype=_COMPUTE_DTYPE,
+                spike_train = self._build_segment_input_spike_train(
+                    stage,
+                    seg_input_rates_clamped,
+                    state_buffer_spikes,
+                    T=T,
+                    batch_size=batch_size,
+                    device=device,
                 )
-                for cycle in range(T):
-                    spike_train[cycle] = self.to_spikes(seg_input_rates_clamped, cycle).to(_COMPUTE_DTYPE)
 
                 # Build a recording slot for this neural stage when the
                 # parity harness has installed a recorder.  ``cores`` is
@@ -921,23 +1015,32 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
-                in_scale = in_scales.get(op.id, 1.0)
-                out_scale = out_scales.get(op.id, 1.0)
-                # Match TTFS path: rescale inputs into training range before
-                # running the host module, and rescale outputs back into
-                # [0, 1] rate range so the next neural segment's input
-                # clamp is a no-op (not a data-loss truncation).
-                gathered = op.gather_inputs(x, state_buffer)
-                gathered = gathered.to(torch.float32)
-                if abs(in_scale - 1.0) > 1e-9:
-                    gathered = gathered * in_scale
-                result = op.execute_on_gathered(gathered)
-                if abs(out_scale - 1.0) > 1e-9:
-                    result = result / out_scale
+                # Use the shared compute-op helper so SCM/HCM/Sim all run
+                # the host op through identical arithmetic. We need the
+                # pre-cast float32 result to record into the run-record,
+                # so we run the helper without the dtype cast and cast
+                # afterwards.
+                result = execute_compute_op_torch(
+                    op,
+                    x,
+                    state_buffer,
+                    in_scale=in_scales.get(op.id, 1.0),
+                    out_scale=out_scales.get(op.id, 1.0),
+                )
                 state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
+
+                # If this compute stage is an encoding-layer Perceptron
+                # with LIFActivation, re-run it with ``forward_spiking``
+                # to capture the actual ``(T, B, D)`` spike train. The
+                # next neural segment will read this train verbatim
+                # instead of re-encoding the rate uniformly.
+                spike_train = self._try_emit_encoding_spike_train(op, x)
+                if spike_train is not None:
+                    state_buffer_spikes[op.id] = spike_train
+
                 if self._recorder is not None:
                     # Snapshot the float32 rate output the next neural
-                    # stage would consume.  Loihi harness mode reuses
+                    # stage would consume. Loihi harness mode reuses
                     # this verbatim instead of re-running the host op.
                     self._recorder.compute_outputs[int(op.id)] = (
                         result.detach().to(torch.float32).cpu().numpy()

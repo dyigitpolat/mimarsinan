@@ -18,6 +18,13 @@ from mimarsinan.mapping.hybrid_hardcore_mapping import (
 )
 from mimarsinan.mapping.ir import ComputeOp, IRSource
 from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+from mimarsinan.chip_simulation.hybrid_execution import (
+    assemble_segment_input_numpy,
+    execute_compute_op_numpy,
+    gather_final_output_numpy,
+    store_segment_output_numpy,
+)
+from mimarsinan.chip_simulation.test_subsample import compute_test_subsample_indices
 from mimarsinan.chip_simulation.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.compile_nevresim import compile_simulator
 from mimarsinan.chip_simulation.execute_nevresim import execute_simulator
@@ -124,11 +131,18 @@ class SimulationRunner:
         finally:
             shutdown_data_loader(test_loader)
 
-        max_samples = pipeline.config.get("max_simulation_samples", 0)
+        # Use the shared subsample helper so SCM, HCM, and nevresim
+        # always evaluate on the same indices when seed + max_samples
+        # match. ``BasicTrainer.test_on_subsample`` calls the same
+        # helper.
+        max_samples = int(pipeline.config.get("max_simulation_samples", 0) or 0)
         total_samples = len(self.test_data)
         if max_samples and 0 < max_samples < total_samples:
-            rng = np.random.RandomState(pipeline.config.get("seed", 0))
-            indices = rng.choice(total_samples, size=max_samples, replace=False)
+            indices = compute_test_subsample_indices(
+                total_samples=total_samples,
+                seed=int(pipeline.config.get("seed", 0)),
+                max_samples=max_samples,
+            )
             self.test_data = [self.test_data[i] for i in indices]
             self.test_input = [self.test_input[i] for i in indices]
             self.test_targets = [self.test_targets[i] for i in indices]
@@ -416,7 +430,7 @@ class SimulationRunner:
         return self._evaluate_chip_output(predictions)
 
     # ------------------------------------------------------------------
-    # State-buffer helpers (numpy)
+    # State-buffer helpers (numpy) — thin wrappers around hybrid_execution
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -425,12 +439,7 @@ class SimulationRunner:
         state_buffer: Dict[int, np.ndarray],
         num_samples: int,
     ) -> np.ndarray:
-        total_size = max((s.offset + s.size for s in input_map), default=0)
-        inp = np.zeros((num_samples, total_size), dtype=np.float32)
-        for s in input_map:
-            buf = state_buffer[s.node_id]
-            inp[:, s.offset : s.offset + s.size] = buf[:, :s.size]
-        return inp
+        return assemble_segment_input_numpy(input_map, state_buffer, num_samples)
 
     @staticmethod
     def _store_segment_output_np(
@@ -438,8 +447,7 @@ class SimulationRunner:
         state_buffer: Dict[int, np.ndarray],
         output: np.ndarray,
     ) -> None:
-        for s in output_map:
-            state_buffer[s.node_id] = output[:, s.offset : s.offset + s.size]
+        store_segment_output_numpy(output_map, state_buffer, output)
 
     @staticmethod
     def _execute_compute_op_np(
@@ -449,32 +457,13 @@ class SimulationRunner:
         ttfs_in_scale: float = 1.0,
         ttfs_out_scale: float | None = None,
     ) -> np.ndarray:
-        """Execute a ComputeOp on host using the state buffer.
-
-        In TTFS mode the gathered input is rescaled by ``ttfs_in_scale`` to
-        bring NeuralCore-sourced values from [0, 1] back to training range
-        before running the op's module, and the output is divided by
-        ``ttfs_out_scale`` to bring it back to TTFS [0, 1] range for
-        downstream NeuralCores.
-
-        For encoding-layer ComputeOps (sources are raw input) ``ttfs_in_scale``
-        is 1.0 (no rescale) while ``ttfs_out_scale`` is the wrapped
-        Perceptron's activation_scale.
-        """
-        if ttfs_out_scale is None:
-            ttfs_out_scale = ttfs_in_scale
-
-        x_torch = torch.tensor(original_input, dtype=torch.float32)
-        buffers_torch = {
-            k: torch.tensor(v, dtype=torch.float32) for k, v in state_buffer.items()
-        }
-        gathered = op.gather_inputs(x_torch, buffers_torch)
-        if abs(ttfs_in_scale - 1.0) > 1e-9:
-            gathered = gathered * ttfs_in_scale
-        result = op.execute_on_gathered(gathered)
-        if abs(ttfs_out_scale - 1.0) > 1e-9:
-            result = result / ttfs_out_scale
-        return result.detach().numpy()
+        return execute_compute_op_numpy(
+            op,
+            original_input,
+            state_buffer,
+            in_scale=ttfs_in_scale,
+            out_scale=ttfs_out_scale,
+        )
 
     @staticmethod
     def _gather_final_output_np(
@@ -483,20 +472,9 @@ class SimulationRunner:
         original_input: np.ndarray,
         num_samples: int,
     ) -> np.ndarray:
-        flat_sources = output_sources.flatten()
-        out = np.zeros((num_samples, len(flat_sources)), dtype=np.float32)
-        for idx, src in enumerate(flat_sources):
-            if not isinstance(src, IRSource):
-                continue
-            if src.is_off():
-                continue
-            elif src.is_input():
-                out[:, idx] = original_input[:, src.index]
-            elif src.is_always_on():
-                out[:, idx] = 1.0
-            else:
-                out[:, idx] = state_buffer[src.node_id][:, src.index]
-        return out
+        return gather_final_output_numpy(
+            output_sources, state_buffer, original_input, num_samples,
+        )
 
     # ------------------------------------------------------------------
     # Public entry point

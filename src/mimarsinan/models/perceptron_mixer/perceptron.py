@@ -110,3 +110,32 @@ class Perceptron(nn.Module):
             out = self.regularization(out)
 
         return out
+
+    def forward_spiking(self, x):
+        """Encoding-layer spiking forward — return ``(T, B, ...)`` spike train.
+
+        Mirrors :meth:`forward` up to the activation, then asks the
+        ``LIFActivation`` to emit its actual cycle-by-cycle spike train
+        rather than its mean-rate reduction. The downstream neural
+        segment then consumes the LIF spike timing exactly, instead of
+        having a uniform re-encoding overwrite the LIF firing phases.
+
+        Raises ``ValueError`` when ``self.activation`` is not a
+        ``LIFActivation``: there is no spike-train semantics to expose.
+        """
+        from mimarsinan.models.activations import LIFActivation
+
+        if not isinstance(self.activation, LIFActivation):
+            raise ValueError(
+                "Perceptron.forward_spiking requires self.activation to be "
+                "LIFActivation; got " + type(self.activation).__name__
+            )
+        if not isinstance(self.input_activation, nn.Identity):
+            x = self.input_activation(x)
+        out = self.layer(x)
+        if not isinstance(self.normalization, nn.Identity):
+            out = self.normalization(out)
+        if not isinstance(self.scaler, nn.Identity):
+            out = self.scaler(out)
+        # (T, B, ...) binary spike train
+        return self.activation.forward_spiking(out)

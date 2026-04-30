@@ -1,18 +1,18 @@
-"""Lava process-graph Loihi simulation of a ``HybridHardCoreMapping``.
+"""Host-scheduled Lava Loihi simulation of a ``HybridHardCoreMapping``.
 
-Per neural segment, per hard core the runner builds a literal Lava process
-graph::
+Per neural segment, the runner schedules hard cores on the host so routing,
+buffer latching, and active windows match ``SpikingHybridCoreFlow`` exactly.
+Each individual hard core still runs its Dense + ``SubtractiveLIFReset``
+dynamics through Lava::
 
-    RingBuffer(input_spikes) → Dense(weights) → SubtractiveLIFReset → RingBuffer(output)
+    RingBuffer(input_spikes) -> Dense(weights) -> SubtractiveLIFReset -> RingBuffer(output)
 
 ``SubtractiveLIFReset`` is a one-off subclass of ``lava.proc.lif.process.LIF``
 with a float model that (a) has no current or voltage decay (du = dv = 0
-with u treated as direct synaptic input via du=1 semantics) and (b) applies
+with u treated as direct synaptic input via du=1 semantics), (b) applies
 subtractive reset on spike (``v -= vth``) to match nevresim's
-``firing_mode='Default'`` semantics exactly.  The model also applies the
-periodic state reset behaviour of ``LIFReset`` so the same graph can
-process many input samples in sequence — samples are packed into the time
-dimension and separated by a per-window warmup + reset phase.
+``firing_mode='Default'`` semantics exactly, and (c) gates integration to the
+same active window used by the HCM recorder.
 
 Host-side responsibilities (CPU, not Loihi):
 
@@ -26,9 +26,9 @@ Host-side responsibilities (CPU, not Loihi):
 * Sequencing stages in topological order and threading rates through a
   shared ``state_buffer`` keyed by IR node id.
 
-The runner emits per-stage timing and per-sample agreement profiling to
-make end-to-end debugging tractable (see ``run`` and
-``_RunProfile``).
+The strict correctness surface is ``run_segments_from_reference()``, which
+compares Lava neural-segment spike counts against an HCM ``RunRecord``.
+``run()`` remains an optional exploratory classification-accuracy runner.
 """
 
 from __future__ import annotations
@@ -42,6 +42,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.hybrid_execution import (
+    assemble_segment_input_numpy,
+    execute_compute_op_numpy,
+    gather_final_output_numpy,
+    store_segment_output_numpy,
+)
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 from mimarsinan.chip_simulation.spike_recorder import (
     CoreSpikeCounts,
@@ -53,6 +59,7 @@ from mimarsinan.mapping.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
 )
+from mimarsinan.mapping.chip_latency import ChipLatency
 from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
 
 
@@ -65,6 +72,7 @@ from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
 
 _SUBTRACTIVE_LIF_CLS = None
 _LAVA_SHIMS_INSTALLED = False
+_LAVA_DTYPE = np.float64
 
 
 def _install_lava_compat_shims() -> None:
@@ -93,6 +101,7 @@ def _install_lava_compat_shims() -> None:
     import sys
     import importlib.util
     import multiprocessing as mp
+    import torch.multiprocessing as torch_mp
 
     # --- (1) source-rewrite var_model.py to use default_factory ----------
     name = "lava.magma.compiler.var_model"
@@ -115,20 +124,37 @@ def _install_lava_compat_shims() -> None:
             sys.modules[name] = module
             exec(compile(src, spec.origin, "exec"), module.__dict__)
 
-    # --- (2) wrap mp.set_start_method so lava's unconditional 'fork' call
-    # becomes a no-op when a start method is already set upstream ---------
-    real_set = mp.set_start_method
+    # --- (2) wrap set_start_method so lava's unconditional 'fork' call
+    # becomes a no-op when a start method is already set upstream. Patch
+    # both stdlib multiprocessing and torch.multiprocessing; they usually
+    # share the same function object, but spawned children may import either
+    # module first while unpickling Lava runtime state.
+    #
+    # Belt-and-suspenders: the vendored
+    # ``lava/.../message_infrastructure/multiprocessing.py`` is now also
+    # idempotent (gated on ``get_start_method(allow_none=True) is None``),
+    # which is the actual fix for spawned workers — the shim below cannot
+    # reach a worker's interpreter before lava is imported during
+    # unpickling. We keep the parent-side patch as defense in depth.
+    def _patch_start_method(module) -> None:
+        real_set = module.set_start_method
+        if getattr(real_set, "_mimarsinan_lava_safe", False):
+            return
 
-    def _safe_set(method, force=False):  # type: ignore[no-redef]
-        try:
-            current = mp.get_start_method(allow_none=True)
-        except Exception:
-            current = None
-        if force or current is None:
-            real_set(method, force=force)
-        # else: already set by upstream code (e.g. our 'spawn' init); skip.
+        def _safe_set(method, force=False):  # type: ignore[no-redef]
+            try:
+                current = module.get_start_method(allow_none=True)
+            except Exception:
+                current = None
+            if force or current is None:
+                real_set(method, force=force)
+            # else: already set by upstream code (e.g. our 'spawn' init); skip.
 
-    mp.set_start_method = _safe_set  # type: ignore[assignment]
+        _safe_set._mimarsinan_lava_safe = True  # type: ignore[attr-defined]
+        module.set_start_method = _safe_set  # type: ignore[assignment]
+
+    _patch_start_method(mp)
+    _patch_start_method(torch_mp)
     _LAVA_SHIMS_INSTALLED = True
 
 
@@ -212,6 +238,54 @@ class _RunProfile:
         print(f"  Σ total : {self.total_seconds:7.2f}s")
 
 
+@dataclass(frozen=True)
+class _SegmentTiming:
+    """Logical sample layout for one Lava neural-segment run."""
+
+    T: int
+    segment_latency: int
+    sample_stride: int
+    pad_head: int = 2
+    pipeline_delay: int = 1
+    tail: int = 3
+
+    @classmethod
+    def from_mapping(cls, mapping: HardCoreMapping, T: int) -> "_SegmentTiming":
+        latency = int(ChipLatency(mapping).calculate())
+        return cls(T=int(T), segment_latency=latency, sample_stride=int(T) + latency)
+
+    @property
+    def warmup_cycles(self) -> int:
+        return self.sample_stride
+
+    @property
+    def logical_start(self) -> int:
+        return self.pad_head + self.warmup_cycles + self.pipeline_delay
+
+    def total_steps(self, n_samples: int) -> int:
+        return self.pad_head + self.warmup_cycles + n_samples * self.sample_stride + self.tail
+
+    def core_latency(self, core: HardCore) -> int:
+        return max(int(core.latency) if core.latency is not None else 0, 0)
+
+    def active_start(self, core: HardCore) -> int:
+        # Lava process ``time_step`` is one-based relative to sink buffer
+        # indices.  ``logical_start`` is a zero-based sink index, so add one
+        # when programming reset/active phases inside the process model.
+        return (self.logical_start + self.core_latency(core) + 1) % self.sample_stride
+
+    def sample_start(self) -> int:
+        return (self.logical_start + 1) % self.sample_stride
+
+    def extract_logical(self, raw: np.ndarray, n_samples: int) -> np.ndarray:
+        """Return ``raw`` as (channels, samples, logical_cycles_per_sample)."""
+        start = self.logical_start
+        end = start + n_samples * self.sample_stride
+        return np.asarray(raw[:, start:end], dtype=_LAVA_DTYPE).reshape(
+            raw.shape[0], n_samples, self.sample_stride,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Runner.
 # ---------------------------------------------------------------------------
@@ -234,11 +308,26 @@ class LavaLoihiRunner:
         mapping: HybridHardCoreMapping,
         simulation_length: int,
         preprocessor: nn.Module | None = None,
+        *,
+        thresholding_mode: str = "<",
     ):
         self.pipeline = pipeline
         self.mapping = mapping
         self.T = int(simulation_length)
         self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
+        # Thresholding mode plumbs through to the LIF process model so its
+        # firing comparator matches HCM/nevresim. ``pipeline``'s config is
+        # the source of truth when present; the harness-mode constructor
+        # (pipeline=None) uses the explicit ``thresholding_mode`` kwarg.
+        if pipeline is not None:
+            thresholding_mode = pipeline.config.get(
+                "thresholding_mode", thresholding_mode,
+            )
+        if thresholding_mode not in ("<", "<="):
+            raise ValueError(
+                f"thresholding_mode must be '<' or '<='; got {thresholding_mode!r}"
+            )
+        self.thresholding_mode = str(thresholding_mode)
 
         # ``pipeline=None`` is the harness-mode escape hatch used by the
         # spike-parity test, where samples are supplied directly and we
@@ -250,12 +339,12 @@ class LavaLoihiRunner:
             self._data_loader_factory = None
         else:
             self.device = pipeline.config["device"]
-            # Cap the Loihi pass separately from nevresim so a slow Lava runtime
-            # doesn't explode the overall pipeline budget.  Default: 50 samples.
+            # Exploratory accuracy mode only. The production Loihi pipeline
+            # step uses one-sample spike parity via run_segments_from_reference.
             self.max_samples = int(
                 pipeline.config.get(
                     "max_loihi_samples",
-                    min(50, int(pipeline.config.get("max_simulation_samples", 500))),
+                    1,
                 )
             )
 
@@ -372,19 +461,19 @@ class LavaLoihiRunner:
         pad_head_block = np.zeros((n_in, PAD_HEAD), dtype=np.float32)
         warmup = input_spikes[:, :T]
         tail_block = np.zeros((n_in, TAIL), dtype=np.float32)
-        data = np.concatenate([pad_head_block, warmup, input_spikes, tail_block], axis=1).astype(np.float32)
+        data = np.concatenate([pad_head_block, warmup, input_spikes, tail_block], axis=1).astype(_LAVA_DTYPE)
         total_steps = data.shape[1]
 
-        reset_offset = (PAD_HEAD + T + PIPELINE_DELAY) % T
+        reset_offset = (PAD_HEAD + T + PIPELINE_DELAY + 1) % T
 
         if hardware_bias is None:
-            bias_mant = np.zeros((n_out,), dtype=np.float32)
+            bias_mant = np.zeros((n_out,), dtype=_LAVA_DTYPE)
         else:
-            bias_mant = np.asarray(hardware_bias, dtype=np.float32).reshape(-1)
+            bias_mant = np.asarray(hardware_bias, dtype=_LAVA_DTYPE).reshape(-1)
 
         SubLIF = _subtractive_lif_cls()
         src = Source(data=data)
-        dense = Dense(weights=weights.astype(np.float32))
+        dense = Dense(weights=weights.astype(_LAVA_DTYPE))
         lif = SubLIF(
             shape=(n_out,),
             du=1,
@@ -393,6 +482,7 @@ class LavaLoihiRunner:
             bias_mant=bias_mant,
             reset_interval=T,
             reset_offset=reset_offset,
+            thresholding_mode=self.thresholding_mode,
         )
         sink = Sink(shape=(n_out,), buffer=total_steps)
 
@@ -410,222 +500,151 @@ class LavaLoihiRunner:
             lif.stop()
 
         start = PAD_HEAD + T + PIPELINE_DELAY
-        return np.asarray(raw[:, start : start + N * T], dtype=np.float32)
+        return np.asarray(raw[:, start : start + N * T], dtype=_LAVA_DTYPE)
 
     # -------------------------------------------------------- segment execution
 
-    def _run_neural_segment(
+    def _run_neural_segment_scheduled(
         self,
         seg: HardCoreMapping,
         seg_input_rates: np.ndarray,
         *,
         recorder_seg: SegmentSpikeRecord | None = None,
     ) -> np.ndarray:
-        """Execute one neural segment as a SINGLE Lava process graph.
-
-        Build one Lava graph where:
-        * a :class:`Source` supplies segment input spikes,
-        * an "always-on" :class:`Source` (constant 1s) supplies bias axons,
-        * every hard core becomes a :class:`SubtractiveLIFReset` with one
-          :class:`Dense` edge per distinct upstream source.  Edges summed
-          into each LIF's ``a_in`` reproduce the core's weighted input.
-        * each LIF is probed by a :class:`Sink` so the host can read spike
-          trains back after the run.
-
-        This matches how a Loihi deployment of the same mapping is
-        structured: one compiled chip program per segment, with all cores
-        executing in parallel inside a single run.  Running as a single
-        graph also amortises Lava's Python-runtime compile + teardown
-        costs, which per-core graph construction turned into an
-        O(N_cores × seconds) bottleneck.
-
-        Parameters
-        ----------
-        seg              : the segment's HardCoreMapping.
-        seg_input_rates  : (N, seg_in_size) input rates in [0, 1].
-
-        Returns
-        -------
-        seg_output_rates : (N, output_count) output rates in [0, 1],
-                           ordered per ``seg.output_sources``.
-        """
-        from collections import defaultdict
-        from lava.magma.core.run_conditions import RunSteps
-        from lava.magma.core.run_configs import Loihi2SimCfg
-        from lava.proc.dense.process import Dense
-        from lava.proc.io.sink import RingBuffer as Sink
-        from lava.proc.io.source import RingBuffer as Source
-
+        """Execute a segment with host-scheduled routing and Lava per-core LIF."""
         from mimarsinan.mapping.spike_source_spans import compress_spike_sources
 
-        SubLIF = _subtractive_lif_cls()
-
         T = self.T
-        PAD_HEAD = 2
-        TAIL = 3
-        PIPELINE_DELAY = 1  # one Lava send/recv cycle per process
-
         N = seg_input_rates.shape[0]
         seg_in_size = seg_input_rates.shape[1]
+        timing = _SegmentTiming.from_mapping(seg, T)
 
-        # Encode segment input spikes: (seg_in, N, T) → (seg_in, N*T).
         seg_input_spikes = _uniform_rate_encode(seg_input_rates, T)
-        packed_input = seg_input_spikes.transpose(1, 0, 2).reshape(seg_in_size, N * T)
+        seg_input_logical = np.zeros(
+            (seg_in_size, N, timing.sample_stride), dtype=_LAVA_DTYPE,
+        )
+        seg_input_logical[:, :, :T] = seg_input_spikes.transpose(1, 0, 2)
 
-        # Pad + warmup so reset boundaries align with sample windows.
-        pad_head_block = np.zeros((seg_in_size, PAD_HEAD), dtype=np.float32)
-        warmup = packed_input[:, :T]
-        tail_block = np.zeros((seg_in_size, TAIL), dtype=np.float32)
-        seg_data = np.concatenate(
-            [pad_head_block, warmup, packed_input, tail_block], axis=1
-        ).astype(np.float32)
-        total_steps = seg_data.shape[1]
-        reset_offset = (PAD_HEAD + T + PIPELINE_DELAY) % T
+        core_output_spikes: Dict[int, np.ndarray] = {}
+        core_buffer_spikes: Dict[int, np.ndarray] = {}
 
-        # ------------------------------------------------------------------
-        # Build the Lava graph.
-        # ------------------------------------------------------------------
+        def _used_axons(core: HardCore) -> int:
+            return max(int(core.axons_per_core - core.available_axons), 1)
 
-        seg_input_src = Source(data=seg_data)
-        always_on_src = Source(data=np.ones((1, total_steps), dtype=np.float32))
+        def _used_neurons(core: HardCore) -> int:
+            return max(int(core.neurons_per_core - core.available_neurons), 1)
 
-        lifs: Dict[int, object] = {}
-        sinks: Dict[int, object] = {}
-        core_out_sizes: Dict[int, int] = {}
-
-        # Cores in allocation order; wire latency-independent since Lava
-        # resolves timing via the graph connections.
-        for core_idx, core in enumerate(seg.cores):
-            n_out = int(core.neurons_per_core)
-            core_out_sizes[core_idx] = n_out
-
-            bias_vec = (
-                np.asarray(core.hardware_bias, dtype=np.float32).reshape(-1)
-                if core.hardware_bias is not None
-                else np.zeros((n_out,), dtype=np.float32)
+        deps = {
+            idx: sorted(
+                {
+                    int(sp.src_core)
+                    for sp in core.get_axon_source_spans()
+                    if sp.kind == "core"
+                }
             )
+            for idx, core in enumerate(seg.cores)
+        }
+        topo_order: list[int] = []
+        visiting: set[int] = set()
+        visited: set[int] = set()
 
-            lif = SubLIF(
-                shape=(n_out,),
-                du=1,
-                dv=0,
-                vth=float(core.threshold),
-                bias_mant=bias_vec,
-                reset_interval=T,
-                reset_offset=reset_offset,
-            )
-            lifs[core_idx] = lif
+        def visit(idx: int) -> None:
+            if idx in visited:
+                return
+            if idx in visiting:
+                raise RuntimeError(f"Cycle detected in neural segment at core {idx}")
+            visiting.add(idx)
+            for dep in deps[idx]:
+                visit(dep)
+            visiting.remove(idx)
+            visited.add(idx)
+            topo_order.append(idx)
 
-            sink = Sink(shape=(n_out,), buffer=total_steps)
-            lif.s_out.connect(sink.a_in)
-            sinks[core_idx] = sink
-
-        # Keep a handle on one process so we can drive lif.run()/stop() later.
-        anchor = next(iter(lifs.values()))
-
-        def _edge_weights(core, group_spans, src_n: int) -> np.ndarray:
-            """Build (n_out, src_n) Dense weights for a (src → core) edge."""
-            n_out = int(core.neurons_per_core)
-            W = np.zeros((n_out, src_n), dtype=np.float32)
-            # core.core_matrix has shape (axons, neurons); row a gives the
-            # weights-per-neuron for axon a.
-            core_mat = np.asarray(core.core_matrix, dtype=np.float32)
-            for sp in group_spans:
-                d0 = int(sp.dst_start)
-                length = int(sp.length)
-                s0 = int(sp.src_start)
-                # axon d0..d0+length gets src neurons s0..s0+length
-                W[:, s0 : s0 + length] = core_mat[d0 : d0 + length, :].T
-            return W
-
-        def _bias_weights(core, group_spans) -> np.ndarray:
-            """Collapse all always-on axons into a single column vector.
-
-            Always-on axons fire 1 every cycle; their contribution is just
-            the row-sum of ``core_matrix`` at those axon indices.
-            """
-            n_out = int(core.neurons_per_core)
-            W = np.zeros((n_out, 1), dtype=np.float32)
-            core_mat = np.asarray(core.core_matrix, dtype=np.float32)
-            for sp in group_spans:
-                d0 = int(sp.dst_start)
-                length = int(sp.length)
-                W[:, 0] += core_mat[d0 : d0 + length, :].sum(axis=0)
-            return W
-
-        # Keep references so Lava doesn't GC edge processes before run.
-        all_edges = []
-
-        for core_idx, core in enumerate(seg.cores):
-            lif_k = lifs[core_idx]
-            spans = core.get_axon_source_spans()
-
-            # Group spans by (kind, src_core).  ``on``/``off`` are handled
-            # specially below.
-            groups: Dict[tuple, list] = defaultdict(list)
-            for sp in spans:
-                if sp.kind == "off":
-                    continue
-                groups[(sp.kind, int(sp.src_core))].append(sp)
-
-            for (kind, src_core_id), span_list in groups.items():
-                if kind == "on":
-                    W = _bias_weights(core, span_list)
-                    dense = Dense(weights=W)
-                    always_on_src.s_out.connect(dense.s_in)
-                    dense.a_out.connect(lif_k.a_in)
-                    all_edges.append(dense)
-                elif kind == "input":
-                    W = _edge_weights(core, span_list, seg_in_size)
-                    dense = Dense(weights=W)
-                    seg_input_src.s_out.connect(dense.s_in)
-                    dense.a_out.connect(lif_k.a_in)
-                    all_edges.append(dense)
-                elif kind == "core":
-                    if src_core_id not in lifs:
-                        raise RuntimeError(
-                            f"Segment references unknown source core id {src_core_id}"
-                        )
-                    src_n = core_out_sizes[src_core_id]
-                    W = _edge_weights(core, span_list, src_n)
-                    dense = Dense(weights=W)
-                    lifs[src_core_id].s_out.connect(dense.s_in)
-                    dense.a_out.connect(lif_k.a_in)
-                    all_edges.append(dense)
-                else:
-                    raise ValueError(f"Unknown span kind: {kind}")
-
-        # ------------------------------------------------------------------
-        # Execute.
-        # ------------------------------------------------------------------
+        for idx in sorted(
+            range(len(seg.cores)),
+            key=lambda i: (timing.core_latency(seg.cores[i]), i),
+        ):
+            visit(idx)
 
         import time as _time
         t0 = _time.time()
-        try:
-            anchor.run(
-                condition=RunSteps(num_steps=total_steps),
-                run_cfg=Loihi2SimCfg(select_tag="floating_pt"),
+        for core_idx in topo_order:
+            core = seg.cores[core_idx]
+            latency = timing.core_latency(core)
+            used_ax = _used_axons(core)
+            used_neu = _used_neurons(core)
+            active_input = np.zeros((used_ax, N, T), dtype=_LAVA_DTYPE)
+
+            for sp in core.get_axon_source_spans():
+                d0 = int(sp.dst_start)
+                if d0 >= used_ax:
+                    continue
+                end = min(int(sp.dst_end), used_ax)
+                take = end - d0
+                if sp.kind == "off":
+                    continue
+                if sp.kind == "on":
+                    active_input[d0:end, :, :] = 1.0
+                    continue
+                if sp.kind == "input":
+                    s0 = int(sp.src_start)
+                    active_input[d0:end, :, :] = seg_input_logical[
+                        s0:s0 + take, :, latency:latency + T,
+                    ]
+                    continue
+
+                src_core_id = int(sp.src_core)
+                if src_core_id not in core_buffer_spikes:
+                    raise RuntimeError(
+                        f"Core {core_idx} depends on core {src_core_id}, "
+                        "but the source has not been scheduled yet."
+                    )
+                s0 = int(sp.src_start)
+                for local_cycle in range(T):
+                    src_cycle = latency + local_cycle - 1
+                    if src_cycle < 0:
+                        continue
+                    active_input[d0:end, :, local_cycle] = core_buffer_spikes[
+                        src_core_id
+                    ][s0:s0 + take, :, src_cycle]
+
+            weights = np.asarray(
+                core.core_matrix[:used_ax, :used_neu], dtype=_LAVA_DTYPE,
+            ).T
+            hardware_bias = (
+                np.asarray(core.hardware_bias[:used_neu], dtype=_LAVA_DTYPE)
+                if getattr(core, "hardware_bias", None) is not None
+                else None
             )
-            # Pull each LIF's spike train off the sink.
-            core_output_spikes: Dict[int, np.ndarray] = {}
-            start = PAD_HEAD + T + PIPELINE_DELAY
-            for core_idx, sink in sinks.items():
-                raw = np.asarray(sink.data.get(), dtype=np.float32)
-                core_output_spikes[core_idx] = raw[:, start : start + N * T]
-        finally:
-            anchor.stop()
+            active_output = self._run_core_lava(
+                weights=weights,
+                threshold=float(core.threshold),
+                hardware_bias=hardware_bias,
+                input_spikes=active_input.reshape(used_ax, N * T),
+            ).reshape(used_neu, N, T)
+
+            full_output = np.zeros(
+                (int(core.neurons_per_core), N, timing.sample_stride),
+                dtype=_LAVA_DTYPE,
+            )
+            full_output[:used_neu, :, latency:latency + T] = active_output
+            core_output_spikes[core_idx] = full_output
+
+            buffered = full_output.copy()
+            hold_start = latency + T
+            if hold_start < timing.sample_stride:
+                buffered[:, :, hold_start:] = buffered[:, :, hold_start - 1:hold_start]
+            core_buffer_spikes[core_idx] = buffered
+
         print(
-            f"  [LavaLoihiRunner] segment run: {len(lifs)} cores, "
-            f"{len(all_edges)} dense edges, {total_steps} cycles, "
-            f"{_time.time() - t0:.1f}s"
+            f"  [LavaLoihiRunner] scheduled segment run: {len(seg.cores)} cores, "
+            f"{timing.total_steps(N)} logical cycles, {_time.time() - t0:.1f}s"
         )
 
-        # ------------------------------------------------------------------
-        # Gather the segment's output rates per ``seg.output_sources``.
-        # ------------------------------------------------------------------
-
         out_size = len(seg.output_sources)
-        seg_out_spikes = np.zeros((out_size, N * T), dtype=np.float32)
+        seg_out_spikes = np.zeros(
+            (out_size, N, timing.sample_stride), dtype=_LAVA_DTYPE,
+        )
         out_spans = compress_spike_sources(seg.output_sources)
         for sp in out_spans:
             d0 = int(sp.dst_start)
@@ -633,52 +652,40 @@ class LavaLoihiRunner:
             if sp.kind == "off":
                 continue
             if sp.kind == "on":
-                seg_out_spikes[d0:d1, :] = 1.0
+                seg_out_spikes[d0:d1, :, :] = 1.0
                 continue
             if sp.kind == "input":
-                seg_out_spikes[d0:d1, :] = packed_input[
-                    int(sp.src_start) : int(sp.src_end), :
+                seg_out_spikes[d0:d1, :, :] = seg_input_logical[
+                    int(sp.src_start) : int(sp.src_end), :, :
                 ]
                 continue
-            src_core_id = int(sp.src_core)
-            seg_out_spikes[d0:d1, :] = core_output_spikes[src_core_id][
-                int(sp.src_start) : int(sp.src_end), :
+            seg_out_spikes[d0:d1, :, :] = core_buffer_spikes[int(sp.src_core)][
+                int(sp.src_start) : int(sp.src_end), :, :
             ]
 
-        seg_out_rates = seg_out_spikes.reshape(out_size, N, T).mean(axis=2).T
+        seg_out_counts = seg_out_spikes.sum(axis=2).T
+        seg_out_rates = seg_out_counts / float(T)
 
-        # Per-core spike-count recording.  Mirrors what HCM's
-        # ``_run_neural_segment_rate`` records when its recorder is set.
-        # Per-core *output* counts are read directly from the trimmed
-        # spike trains.  Per-core *input* counts are reconstructed
-        # host-side by walking each core's axon spans and summing the
-        # corresponding upstream output (or segment input) trains over
-        # the same T cycles the LIF integrated.
         if recorder_seg is not None:
             assert N == 1, "Spike recording requires a single sample (N == 1)"
+            recorder_seg.seg_output_spike_count = seg_out_counts[0].astype(np.int64)
             for core_idx, core in enumerate(seg.cores):
-                used_ax = max(int(core.axons_per_core - core.available_axons), 1)
-                used_neu = max(int(core.neurons_per_core - core.available_neurons), 1)
+                used_ax = _used_axons(core)
+                used_neu = _used_neurons(core)
+                latency = timing.core_latency(core)
+                active_slice = slice(latency, latency + T)
 
-                # Output: trim Lava sink data to the cells this core
-                # actually uses.  ``core_output_spikes`` is shape
-                # (neurons_per_core, N*T); slice to (used_neu, T).
-                out_train = core_output_spikes[core_idx][:used_neu, :T]
-                out_count = out_train.sum(axis=1).astype(np.int64)
+                out_count = core_output_spikes[core_idx][
+                    :used_neu, 0, active_slice
+                ].sum(axis=1).astype(np.int64)
 
-                # Input: reconstruct the per-axon spike train this LIF
-                # would have seen by walking the core's axon spans over
-                # the same trimmed T-cycle window.  Always-on axons fire
-                # every cycle, hence T per axon.
                 in_count = np.zeros(used_ax, dtype=np.int64)
-                spans = core.get_axon_source_spans()
                 n_always_on = 0
-                for sp in spans:
+                for sp in core.get_axon_source_spans():
                     d0 = int(sp.dst_start)
-                    length = int(sp.length)
                     if d0 >= used_ax:
                         continue
-                    end = min(d0 + length, used_ax)
+                    end = min(int(sp.dst_end), used_ax)
                     take = end - d0
                     if sp.kind == "off":
                         continue
@@ -688,13 +695,15 @@ class LavaLoihiRunner:
                         continue
                     if sp.kind == "input":
                         s0 = int(sp.src_start)
-                        in_count[d0:end] += packed_input[s0:s0 + take, :T].sum(axis=1).astype(np.int64)
+                        in_count[d0:end] += seg_input_logical[
+                            s0:s0 + take, 0, active_slice
+                        ].sum(axis=1).astype(np.int64)
                         continue
-                    # kind == "core"
-                    src_core_id = int(sp.src_core)
                     s0 = int(sp.src_start)
-                    in_count[d0:end] += core_output_spikes[src_core_id][
-                        s0:s0 + take, :T
+                    src_start = max(latency - 1, 0)
+                    src_end = max(latency + T - 1, 0)
+                    in_count[d0:end] += core_buffer_spikes[int(sp.src_core)][
+                        s0:s0 + take, 0, src_start:src_end
                     ].sum(axis=1).astype(np.int64)
 
                 recorder_seg.cores.append(
@@ -711,6 +720,35 @@ class LavaLoihiRunner:
                 )
 
         return seg_out_rates.astype(np.float32)
+
+    def _run_neural_segment(
+        self,
+        seg: HardCoreMapping,
+        seg_input_rates: np.ndarray,
+        *,
+        recorder_seg: SegmentSpikeRecord | None = None,
+    ) -> np.ndarray:
+        """Execute one neural segment with HCM-equivalent Lava core dynamics.
+
+        Host-side scheduling assembles each core's active-window input train
+        from the segment input and latched upstream core buffers.  Each core's
+        Dense + subtractive LIF dynamics still run through Lava, but routing
+        follows the exact cycle windows and buffer-latch semantics used by
+        ``SpikingHybridCoreFlow``.
+
+        Parameters
+        ----------
+        seg              : the segment's HardCoreMapping.
+        seg_input_rates  : (N, seg_in_size) input rates in [0, 1].
+
+        Returns
+        -------
+        seg_output_rates : (N, output_count) output rates in [0, 1],
+                           ordered per ``seg.output_sources``.
+        """
+        return self._run_neural_segment_scheduled(
+            seg, seg_input_rates, recorder_seg=recorder_seg,
+        )
 
     # -------------------------------------------------------- top-level run
 
@@ -733,11 +771,11 @@ class LavaLoihiRunner:
             if stage.kind == "neural":
                 seg = stage.hard_core_mapping
                 assert seg is not None
-                seg_input = SimulationRunner._assemble_segment_input_np(
+                seg_input = assemble_segment_input_numpy(
                     stage.input_map, state_buffer, N
                 )
                 seg_output = self._run_neural_segment(seg, seg_input)
-                SimulationRunner._store_segment_output_np(
+                store_segment_output_numpy(
                     stage.output_map, state_buffer, seg_output
                 )
                 self._profile.stages.append(
@@ -751,10 +789,10 @@ class LavaLoihiRunner:
                 op_id = stage.compute_op.id
                 ttfs_in_scale = in_scales.get(op_id, 1.0) if is_ttfs else 1.0
                 ttfs_out_scale = out_scales.get(op_id, 1.0) if is_ttfs else 1.0
-                result = SimulationRunner._execute_compute_op_np(
+                result = execute_compute_op_numpy(
                     stage.compute_op, x_flat, state_buffer,
-                    ttfs_in_scale=ttfs_in_scale,
-                    ttfs_out_scale=ttfs_out_scale,
+                    in_scale=ttfs_in_scale,
+                    out_scale=ttfs_out_scale,
                 )
                 state_buffer[op_id] = result
                 self._profile.stages.append(
@@ -766,7 +804,7 @@ class LavaLoihiRunner:
             else:
                 raise ValueError(f"Unknown HybridStage kind: {stage.kind}")
 
-        final = SimulationRunner._gather_final_output_np(
+        final = gather_final_output_numpy(
             self.mapping.output_sources, state_buffer, x_flat, N
         )
         preds = np.argmax(final, axis=1)
@@ -841,14 +879,10 @@ class LavaLoihiRunner:
                     seg, seg_input_rates, recorder_seg=actual_seg,
                 )
 
-                # Output spike count: rates × T are the integer totals
-                # each output line emitted over the T-cycle window.  The
-                # rates are already trimmed-mean of the trimmed spike
-                # train, so multiplying back gives the same per-line
-                # totals HCM accumulates into ``output_counts``.
-                actual_seg.seg_output_spike_count = (
-                    np.rint(seg_out_rates[0] * self.T).astype(np.int64)
-                )
+                if actual_seg.seg_output_spike_count.size == 0:
+                    actual_seg.seg_output_spike_count = (
+                        np.rint(seg_out_rates[0] * self.T).astype(np.int64)
+                    )
 
                 out.segments[stage_index] = actual_seg
         finally:

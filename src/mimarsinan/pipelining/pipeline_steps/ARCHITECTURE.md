@@ -20,12 +20,12 @@ in the deployment pipeline.
 | `weight_quantization_step.py` | `WeightQuantizationStep` | Quantization |
 | `quantization_verification_step.py` | `QuantizationVerificationStep` | Verification |
 | `normalization_fusion_step.py` | `NormalizationFusionStep` | Optimization |
-| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (computes per-source input scales via `compute_per_source_scales`; adds TTFS shift compensation; scales and rounds `hardware_bias` by the quantization factor during weight quantization; reduces effective `max_axons` by 1 when `hardware_bias=False` to account for the always-on bias axon; by default retains pre-compaction weight heatmaps on each `NeuralCore` for the monitor GUI's pre-vs-post pruning views — controlled by `store_pre_pruning_heatmap` (default `true`), independent from `generate_visualizations` which governs graphviz DOT output) |
+| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (computes per-source input scales via `compute_per_source_scales`; adds TTFS shift compensation; runs soft-core spiking simulation as the step metric using `simulation_steps` cycles; scales and rounds `hardware_bias` by the quantization factor during weight quantization; reduces effective `max_axons` by 1 when `hardware_bias=False` to account for the always-on bias axon; by default retains pre-compaction weight heatmaps on each `NeuralCore` for the monitor GUI's pre-vs-post pruning views — controlled by `store_pre_pruning_heatmap` (default `true`), independent from `generate_visualizations` which governs graphviz DOT output) |
 | `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification |
 | `lif_adaptation_step.py` | `LIFAdaptationStep` | Activation adaptation (LIF mode only; swaps Perceptron `base_activation` to `LIFActivation` and runs KD recovery with the pre-LIF snapshot as teacher) |
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping (passes `allow_scheduling` from `platform_constraints_resolved` to `build_hybrid_hard_core_mapping`; reports per-segment pass counts when scheduled) |
 | `simulation_step.py` | `SimulationStep` | Verification |
-| `loihi_simulation_step.py` | `LoihiSimulationStep` | Verification (optional; runs Lava-based LIF simulation of the hard-core mapping when `enable_loihi_simulation` is set) |
+| `loihi_simulation_step.py` | `LoihiSimulationStep` | Verification (optional; when `enable_loihi_simulation` is set, runs one deterministic sample through HCM recording and Lava neural-segment replay, failing on any spike-record diff instead of reporting independent Loihi accuracy) |
 | `torch_mapping_step.py` | `TorchMappingStep` | Model conversion (torch_* types) |
 | `weight_preloading_step.py` | `WeightPreloadingStep` | Load pretrained weights (replaces Pretraining) |
 
@@ -152,6 +152,22 @@ layout estimation correctly account for this reserved slot.
 `ModelConfigurationStep` and `ArchitectureSearchStep` propagate the `has_bias`
 flag from the pipeline config to `platform_constraints_resolved` cores so that
 `SoftCoreMappingStep` can resolve the hardware-bias mode correctly.
+
+### Deployment Accuracy Semantics
+
+`SoftCoreMappingStep` runs the soft-core spiking simulation as the step metric
+using `simulation_steps` cycles per sample plus per-core latency cycles for
+warmup, and the same `max_simulation_samples` / `seed` policy used by downstream
+simulation steps. SCM, HCM, and nevresim must produce identical numbers on the
+same test subsample — they are functionally equivalent simulations of the same
+mapped graph, and any divergence is a bug.
+
+`LoihiSimulationStep` is not an accuracy step.  It selects one deterministic
+test sample (`loihi_parity_sample_index`, default `0`), builds an HCM
+`RunRecord`, replays each neural segment through Lava with
+`LavaLoihiRunner.run_segments_from_reference()`, and fails the pipeline with a
+localized spike-record diff if segment inputs, per-core inputs/outputs, or
+segment outputs diverge.
 
 ## Exported API (\_\_init\_\_.py)
 

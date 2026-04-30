@@ -160,11 +160,10 @@ def main() -> None:
     spike = dp.get("spike_generation_mode", "TTFS")
     thresh = dp.get("thresholding_mode", "<=")
     spiking = dp.get("spiking_mode", "ttfs_quantized")
-    try:
-        with open(args.run_dir / "Model Configuration.scaled_simulation_length.json") as f:
-            sim_len = int(json.load(f))
-    except Exception:
-        sim_len = int(run_config.get("platform_constraints", {}).get("simulation_steps", 32))
+    sim_len = int(
+        run_config.get("simulation_steps")
+        or run_config.get("platform_constraints", {}).get("simulation_steps", 32)
+    )
     # MNIST default; override via env if needed.
     input_shape = tuple(int(x) for x in os.environ.get("INPUT_SHAPE", "1,28,28").split(","))
     print(f"Sim config: T={sim_len}, firing={firing}, spike={spike}, "

@@ -215,6 +215,8 @@ def default_config():
         "spiking_mode": "rate",
         "firing_mode": "Default",
         "spike_generation_mode": "Deterministic",
+        "thresholding_mode": "<",
+        "simulation_steps": 4,
         "max_simulation_samples": -1,
         "input_shape": (1, 8, 8),
         "num_classes": 4,
