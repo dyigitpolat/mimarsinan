@@ -188,6 +188,26 @@ body {
   .pruning-panels { flex-direction: column; }
 }
 
+/* Hardware workbench responsive collapse */
+@media (max-width: 1100px) {
+  .hw-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+  }
+  .hw-rail {
+    flex-direction: row; max-height: none;
+    overflow-x: auto; overflow-y: hidden;
+    border-right: none; border-bottom: 1px solid var(--border);
+    position: relative; top: auto;
+  }
+  .hw-rail-item { width: 200px; flex-shrink: 0; min-height: 64px; }
+  .hw-canvas-wrap { border-right: none; }
+  .hw-inspector {
+    position: relative; max-height: 480px;
+    border-left: none; border-top: 1px solid var(--border);
+  }
+}
+
 /* ═══════════ IR Graph — PlotNeuralNet / NN-SVG Style ═══════════ */
 .ir-dag-viewport {
   overflow: auto; max-height: 600px; position: relative; cursor: grab;
@@ -237,46 +257,418 @@ body {
   overflow-x: auto;
   margin-bottom: 12px;
 }
-/* ═══════════ Hardware — Stage Flow ═══════════ */
-.stage-flow { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 12px 0; width: 100%; }
-.stage-flow-row {
-  display: flex; flex-direction: row; justify-content: center; align-items: stretch; gap: 16px;
-  width: 100%; min-height: 0;
+/* ═══════════ Hardware — Workbench ═══════════ */
+:root {
+  --hw-neural-1: #1c2447;
+  --hw-neural-2: #283566;
+  --hw-compute-1: #2a2018;
+  --hw-compute-2: #463024;
+  --hw-flow-in: #34d399;
+  --hw-flow-out: #fb923c;
+  --hw-rail-bg: #16181f;
 }
-.stage-flow-column {
-  display: flex; flex-direction: column; align-items: center; gap: 0;
-  flex: 0 0 auto; min-width: 0;
+
+.hw-workbench-card {
+  background: var(--bg-card);
+  /* The base .card rule sets overflow:hidden, which would scope any
+     position:sticky children to this card's content box and break the
+     rail/inspector "follow on scroll" behaviour. The workbench children
+     stay within their own bounds, so dropping overflow is safe. */
+  overflow: visible;
 }
-.stage-block-with-detail {
-  display: flex; flex-direction: row; align-items: stretch; gap: 12px;
-  width: fit-content; max-width: 100%;
+.hw-workbench-card .card-header .hw-workbench-hint {
+  font-size: 10px; font-weight: 400; text-transform: none; letter-spacing: 0;
+  color: var(--text-muted);
 }
-/* Keep segment block same width as when alone (content-sized), don't expand to 700px on click */
-.stage-block-with-detail .stage-block {
-  flex: 0 0 auto; width: fit-content; max-width: 700px; min-width: 0;
+.hw-workbench {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr) 360px;
+  align-items: stretch;
+  min-height: 520px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
-.stage-block {
-  width: 100%; max-width: 700px;
-  border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: box-shadow 0.2s;
+.hw-workbench[data-inspector-closed="true"] { grid-template-columns: 168px minmax(0, 1fr) 0; }
+.hw-workbench[data-inspector-closed="true"] .hw-inspector { width: 0; padding: 0; border-left: none; }
+
+/* ── Pipeline rail (left) ── */
+.hw-rail {
+  background: var(--hw-rail-bg);
+  border-right: 1px solid var(--border);
+  padding: 10px 8px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 6px;
+  /* Stick to the viewport so the rail follows the user as they scroll
+     the page. align-self:start keeps the grid item from stretching to
+     the full row height — without this, sticky has no headroom to slide
+     within because the item already fills its containing block. */
+  align-self: start;
+  position: sticky; top: 0;
+  max-height: 100vh;
 }
-.stage-block.neural { background: #1b2a4e; }
-.stage-block.neural:hover { box-shadow: 0 0 0 1px var(--accent-dim); }
-.stage-block.compute { background: #3a2020; max-width: 500px; }
-.stage-block-header { display: flex; align-items: center; gap: 8px; padding: 8px 14px; flex-wrap: wrap; cursor: pointer; }
-.stage-expand { color: var(--text-muted); font-size: 10px; width: 14px; flex-shrink: 0; }
-.stage-block-title { font-weight: 600; font-size: 13px; color: var(--text-primary); }
-.stage-block-info { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
-.stage-block-name { padding: 0 14px 8px; font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.stage-connector { display: flex; justify-content: center; padding: 3px 0; color: var(--text-muted); font-size: 14px; }
-.stage-detail { border-top: 1px solid var(--border); padding: 12px 14px; overflow: auto; min-width: 0; }
-.hw-segment-layout { display: flex; align-items: stretch; gap: 6px; position: relative; }
+.hw-rail::-webkit-scrollbar { width: 6px; }
+.hw-rail::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.hw-rail-item {
+  display: flex; align-items: stretch; gap: 6px;
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  padding: 0; text-align: left; cursor: pointer; color: var(--text-primary);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  font-family: inherit;
+  width: 100%; min-height: 56px;
+}
+.hw-rail-item:hover { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.08); }
+.hw-rail-item.is-focused { background: rgba(91,138,245,0.10); border-color: rgba(91,138,245,0.5); }
+.hw-rail-spine {
+  width: 3px; border-radius: 3px; flex-shrink: 0; align-self: stretch; margin: 6px 0 6px 4px;
+}
+.hw-rail-item.is-neural .hw-rail-spine { background: linear-gradient(180deg, #6c8cff, #4659b9); }
+.hw-rail-item.is-compute .hw-rail-spine { background: linear-gradient(180deg, #d6873f, #7a4422); }
+.hw-rail-body {
+  display: flex; flex-direction: column; gap: 2px; padding: 6px 6px 6px 0;
+  flex: 1 1 auto; min-width: 0;
+}
+.hw-rail-titlerow {
+  display: flex; justify-content: space-between; align-items: center; gap: 4px;
+}
+.hw-rail-title {
+  font-size: 11px; font-weight: 700; color: var(--text-primary);
+  font-family: 'JetBrains Mono', ui-monospace, monospace; letter-spacing: 0.02em;
+}
+.hw-rail-meta-num {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.hw-rail-name {
+  font-size: 10px; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hw-rail-spark { display: block; height: 18px; }
+.hw-rail-spark-svg { display: block; }
+.hw-rail-meta { display: flex; gap: 6px; font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ── Canvas (centre) ── */
+.hw-canvas-wrap {
+  display: flex; flex-direction: column; min-width: 0;
+  border-right: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(20,22,30,0.4) 0%, rgba(15,17,23,0.0) 60%);
+}
+.hw-breadcrumb {
+  position: sticky; top: 0; z-index: 4;
+  background: rgba(15,17,23,0.92);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  font-size: 11px;
+}
+.hw-breadcrumb:empty { display: none; }
+.hw-breadcrumb-token {
+  background: transparent; border: 1px solid transparent;
+  color: var(--text-secondary);
+  padding: 2px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 500; cursor: pointer; font-family: inherit;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.hw-breadcrumb-token:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border); }
+.hw-breadcrumb-token.is-static { color: var(--text-primary); cursor: default; padding: 2px 4px; }
+.hw-breadcrumb-token.is-static:hover { background: transparent; border-color: transparent; }
+.hw-breadcrumb-sep { color: var(--text-muted); font-size: 11px; }
+
+.hw-canvas {
+  flex: 1 1 auto;
+  padding: 16px 18px;
+  display: flex; flex-direction: column; align-items: stretch;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  /* position:relative makes this the containing block for the
+     connectivity SVG overlay, which is appended as a single canvas-wide
+     last child by drawConnOverlay. Tree order then guarantees the SVG
+     paints above every card / connector / buffer with no per-card
+     stacking-context fights. The breadcrumb is a sibling of the canvas
+     (in canvas-wrap), so it still keeps its z-index:4 above the arrows. */
+  position: relative;
+  isolation: isolate;
+}
+.hw-canvas::-webkit-scrollbar { width: 8px; }
+.hw-canvas::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* Stage card */
+.hw-stage-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* visible so connectivity arrows aren't clipped at the card edge —
+     the rounded corners are still respected by the header/body
+     backgrounds that sit fully inside the border. */
+  overflow: visible;
+  margin-bottom: 4px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  /* No animation. Per CSS spec, an element whose animation-name keyframes
+     touch opacity or transform forms its own stacking context for the
+     duration of the animation — and the canvas re-renders innerHTML on
+     every selection / toggle, restarting the animation on every card.
+     That meant cards were stacking-context walls during interaction,
+     bottling the connectivity SVG inside its source card so arrows
+     could never paint over neighbouring cards. Removing the animation
+     keeps the cards as plain blocks; the SVG (z-index:3, positioned)
+     now paints above all unpositioned siblings in the canvas. */
+}
+.hw-stage-card .hw-stage-header { border-radius: var(--radius) var(--radius) 0 0; }
+.hw-stage-card.is-expanded .hw-stage-header { border-radius: var(--radius) var(--radius) 0 0; }
+.hw-stage-card:not(.is-expanded) .hw-stage-header { border-radius: var(--radius); }
+.hw-stage-card .hw-stage-body { border-radius: 0 0 var(--radius) var(--radius); }
+.hw-stage-card.hw-stage-neural {
+  background: linear-gradient(180deg, var(--hw-neural-1) 0%, #161e36 100%);
+}
+.hw-stage-card.hw-stage-compute {
+  background: linear-gradient(180deg, var(--hw-compute-1) 0%, #1a1410 100%);
+}
+.hw-stage-card.is-expanded { border-color: rgba(91,138,245,0.45); box-shadow: 0 4px 18px rgba(0,0,0,0.25); }
+.hw-stage-card.hw-stage-compute.is-expanded { border-color: rgba(214,135,63,0.5); }
+.hw-stage-header {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: transparent; border: none; cursor: pointer; color: var(--text-primary);
+  font-family: inherit; text-align: left;
+  transition: background 0.12s;
+}
+.hw-stage-header:hover { background: rgba(255,255,255,0.03); }
+.hw-stage-header.is-static { cursor: default; }
+.hw-stage-header.is-static:hover { background: transparent; }
+.hw-stage-chevron {
+  font-size: 11px; color: var(--text-muted); width: 14px; text-align: center; flex-shrink: 0;
+}
+.hw-stage-chevron.is-mute { color: var(--text-muted); opacity: 0.7; }
+.hw-stage-headline {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto;
+}
+.hw-stage-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+  color: rgba(255,255,255,0.55); text-transform: uppercase;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.hw-stage-name {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hw-stage-badges { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.hw-stage-badge {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 0;
+  padding: 4px 10px; border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.06);
+  min-width: 38px;
+}
+.hw-stage-badge-num {
+  font-size: 12px; font-weight: 700; line-height: 1.1;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--text-primary);
+}
+.hw-stage-badge-num code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px; background: transparent; padding: 0; color: inherit;
+}
+.hw-stage-badge-lbl {
+  font-size: 8px; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--text-muted); text-transform: uppercase;
+}
+.hw-stage-badge.is-trace {
+  background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.3);
+  flex-direction: row; gap: 4px;
+  font-size: 11px; color: #fff; padding: 4px 8px;
+  font-weight: 600;
+  animation: pulse 2s infinite;
+}
+.hw-stage-body {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 12px 14px;
+  background: rgba(0,0,0,0.18);
+  /* overflow must be visible so connectivity SVG arrows that curve
+     beyond row-inner's box (especially span lines that exit the card
+     edge before turning toward their destination) aren't clipped. The
+     core grid is already sized to fit via the dynamic SEG_VIEW_WIDTH
+     math, so visible overflow is safe. */
+  overflow: visible;
+}
+.hw-stage-connector {
+  display: flex; justify-content: center;
+  color: var(--text-muted); font-size: 14px;
+  padding: 4px 0;
+  user-select: none;
+}
+.hw-empty {
+  text-align: center; padding: 28px 12px;
+  color: var(--text-muted); font-size: 12px;
+}
+
+/* Inspector dock (right) */
+.hw-inspector {
+  background: linear-gradient(180deg, rgba(33,36,47,0.92) 0%, rgba(22,24,31,0.92) 100%);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.18s, transform 0.18s;
+  /* Same sticky strategy as the rail — pin to viewport so the inspector
+     follows the user. align-self:start so the grid item doesn't stretch. */
+  position: sticky; top: 0;
+  align-self: start;
+  max-height: 100vh;
+}
+.hw-inspector[data-open="false"] {
+  opacity: 0; transform: translateX(8px); pointer-events: none;
+}
+.hw-inspector-bar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,0.18);
+}
+.hw-inspector-tabs { display: flex; gap: 2px; flex: 1 1 auto; min-width: 0; overflow-x: auto; }
+.hw-inspector-tab {
+  background: transparent; border: 1px solid transparent;
+  color: var(--text-muted);
+  padding: 5px 10px; border-radius: 6px; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.hw-inspector-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.hw-inspector-tab.is-active { color: var(--accent); border-color: var(--accent-dim); background: rgba(91,138,245,0.12); }
+.hw-inspector-tab.is-empty { opacity: 0.45; }
+.hw-inspector-tab.is-empty.is-active { opacity: 1; }
+.hw-inspector-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.hw-inspector-icon {
+  background: transparent; border: 1px solid transparent;
+  color: var(--text-muted); padding: 4px 8px; border-radius: 6px; cursor: pointer;
+  font-family: inherit; font-size: 12px;
+  transition: background 0.12s, color 0.12s;
+}
+.hw-inspector-icon:hover { color: var(--text-primary); background: var(--bg-hover); }
+.hw-inspector-icon.is-on { color: var(--accent); background: rgba(91,138,245,0.12); }
+.hw-inspector-body {
+  flex: 1 1 auto; overflow-y: auto;
+  padding: 14px 14px 18px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.hw-inspector-body::-webkit-scrollbar { width: 6px; }
+.hw-inspector-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.hw-insp-section { display: flex; flex-direction: column; gap: 8px; }
+.hw-insp-title {
+  font-size: 13px; font-weight: 700; color: var(--text-primary);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+.hw-insp-subtitle {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--text-muted); text-transform: uppercase;
+  margin-top: 4px;
+}
+.hw-insp-name {
+  font-size: 11px; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0;
+}
+.hw-insp-located {
+  font-size: 10px; color: var(--text-muted); margin: 0;
+  padding: 6px 8px; background: var(--bg-hover); border-radius: 6px;
+  line-height: 1.45;
+}
+.hw-insp-located-link {
+  background: transparent; border: none; color: var(--accent);
+  font-family: inherit; font-size: 10px; font-weight: 600;
+  cursor: pointer; padding: 0; margin: 0;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px;
+}
+.hw-insp-located-link:hover { color: var(--accent-cyan); }
+.hw-insp-split {
+  font-size: 10px; color: var(--hw-flow-out); margin: 0; font-style: italic;
+}
+.hw-insp-meta { font-size: 11px; }
+.hw-insp-meta td { padding: 4px 6px; vertical-align: middle; }
+.hw-insp-meta td:first-child { color: var(--text-muted); width: 38%; }
+.hw-insp-meta code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px;
+  background: var(--bg-hover); padding: 1px 5px; border-radius: 3px;
+}
+.hw-insp-utilbar {
+  display: inline-block; vertical-align: middle;
+  width: 60px; height: 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.06); overflow: hidden; margin-right: 6px;
+}
+.hw-insp-utilbar > span { display: block; height: 100%; transition: width 0.2s; }
+.hw-insp-heatmap-wrap {
+  /* width and height are set inline in JS to the exact pixel size of
+     the displayed heatmap so absolutely-positioned region overlays
+     align to the image's pixels (no letterboxing). */
+  position: relative; display: block;
+  background: var(--bg-primary); border-radius: 4px; border: 1px solid var(--border);
+  overflow: hidden;
+  align-self: flex-start;
+}
+.hw-insp-heatmap {
+  /* paired with object-fit:fill via inline style; the wrap matches the
+     image's aspect exactly, so fill stretches by 0 — no distortion,
+     and overlays align. */
+  display: block;
+  pointer-events: none;
+}
+.hw-insp-heatmap-region {
+  position: absolute; pointer-events: auto; cursor: pointer;
+  border: 1px solid rgba(91,138,245,0.55); border-radius: 2px;
+  box-sizing: border-box; transition: background 0.12s, border-color 0.12s;
+}
+.hw-insp-heatmap-region:hover {
+  background: rgba(91,138,245,0.22); border-color: var(--accent);
+}
+.hw-insp-heatmap-region.is-split {
+  border: 1.5px dashed rgba(255,152,0,0.7); background: rgba(255,152,0,0.06);
+}
+.hw-insp-heatmap-region.is-split:hover {
+  background: rgba(255,152,0,0.22); border-color: #ff9800;
+}
+.hw-insp-fused-line {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: rgba(255,193,7,0.85);
+  pointer-events: none;
+}
+.hw-insp-heatmap-row {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; padding: 6px;
+}
+.hw-insp-heatmap-tile { display: flex; flex-direction: column; gap: 3px; }
+.hw-insp-heatmap-tile-lbl {
+  font-size: 9px; color: var(--text-muted); font-weight: 600;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.hw-insp-link {
+  background: var(--bg-hover); border: 1px solid var(--border);
+  color: var(--text-primary); cursor: pointer;
+  padding: 6px 10px; border-radius: 6px;
+  font-family: inherit; font-size: 11px; font-weight: 500;
+  align-self: flex-start;
+  transition: background 0.12s, border-color 0.12s;
+}
+.hw-insp-link:hover { background: var(--accent-dim); border-color: var(--accent); }
+
+/* Constituents table inside inspector */
+.hw-constituents-table { margin: 0; font-size: 10px; }
+.hw-constituents-table th, .hw-constituents-table td { padding: 4px 6px; }
+.hw-constituent-row { cursor: pointer; transition: background 0.12s; }
+.hw-constituent-row:hover { background: var(--bg-hover); }
+.hw-constituent-id { font-weight: 700; color: var(--accent); font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.hw-trunc { max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Workbench geometry blocks (load-bearing — preserve dims) */
 .hw-segment-col {
   display: flex; flex-direction: column; gap: 6px;
-  position: relative; min-width: 0; max-width: 100%; overflow: auto;
+  position: relative; min-width: 0; max-width: 100%;
+  /* Visible so connectivity arrows can spill beyond the column's box
+     before being clipped at the stage card edge — paired with the
+     overflow:visible on .hw-stage-body above. */
+  overflow: visible;
 }
 .hw-segment-row-inner {
   display: flex; flex-direction: row; align-items: stretch; gap: 6px;
   position: relative; min-width: 0; max-width: 100%;
+  overflow: visible;
 }
 
 /* ── Hardware core grid: grouped by type, scrollable ── */
@@ -297,8 +689,20 @@ body {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .hw-core-group-label {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 9px; font-weight: 600; color: var(--text-muted);
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.hw-core-group-key {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--text-secondary);
+  font-size: 10px;
   letter-spacing: 0.02em;
+}
+.hw-core-group-count {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--text-muted);
+  font-size: 9px;
 }
 .hw-core-group-cores {
   display: grid;
@@ -321,10 +725,27 @@ body {
   flex-shrink: 0;
 }
 .hw-core-cell .hw-core-util {
-  font-size: 8px; font-weight: 600; color: var(--text-primary);
+  position: relative;
+  display: flex; align-items: center; gap: 4px;
   flex-shrink: 0;
-  text-align: center;
   width: 100%;
+  height: 10px;
+  margin-top: 2px;
+  font-size: 8px; font-weight: 600;
+  color: var(--text-primary);
+}
+.hw-core-util-bar {
+  display: block; height: 4px; border-radius: 2px;
+  background: var(--text-muted);
+  flex-shrink: 0;
+  max-width: calc(100% - 24px);
+  transition: width 0.2s, background 0.2s;
+}
+.hw-core-util-num {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px; font-weight: 600; color: var(--text-secondary);
+  flex-shrink: 0; margin-left: auto;
+  white-space: nowrap;
 }
 .hw-core {
   position: relative; border-radius: 3px; border: 1.5px solid var(--border);
@@ -335,8 +756,13 @@ body {
   /* Match heatmap background so no white padding shows if image aspect matches container */
   background: #2b303c;
 }
-.hw-core-cell:hover .hw-core { border-color: var(--accent); }
-.hw-core-selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent-dim); z-index: 1; }
+.hw-core-cell:hover .hw-core { border-color: var(--accent); transform: translateY(-1px); }
+.hw-core-selected {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-dim), 0 6px 16px rgba(91,138,245,0.35);
+  z-index: 1;
+}
+.hw-core { transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
 .hw-core-canvas {
   display: block; pointer-events: none; border-radius: 2px;
   image-rendering: auto; object-fit: contain; object-position: center;
@@ -353,6 +779,11 @@ body {
   border-color: #fff !important;
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.4), inset 0 0 4px rgba(255, 255, 255, 0.2);
   z-index: 5;
+  animation: hw-trace-pulse 1.6s ease-in-out infinite;
+}
+@keyframes hw-trace-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(255,255,255,0.35), inset 0 0 4px rgba(255,255,255,0.18); }
+  50%      { box-shadow: 0 0 18px rgba(255,255,255,0.65), inset 0 0 6px rgba(255,255,255,0.32); }
 }
 .hw-core-constituent-overlay {
   box-sizing: border-box;
@@ -369,19 +800,21 @@ body {
 }
 .hw-core-fused-badge {
   position: absolute; top: 2px; right: 2px;
-  padding: 1px 4px; border-radius: 3px;
-  font-size: 7px; font-weight: 700; line-height: 1.2;
-  background: var(--accent);
+  padding: 1px 5px; border-radius: 4px;
+  font-size: 8px; font-weight: 700; line-height: 1.2;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background: rgba(251,146,60,0.95);
   color: var(--bg-primary);
-  box-shadow: 0 0 4px var(--accent-dim);
+  box-shadow: 0 0 4px rgba(251,146,60,0.5);
   pointer-events: none;
   z-index: 3;
 }
 .hw-core-soft-badge {
   position: absolute; bottom: 2px; left: 2px;
-  padding: 1px 4px; border-radius: 3px;
-  font-size: 7px; font-weight: 700; line-height: 1.2;
-  background: rgba(76, 175, 80, 0.9);
+  padding: 1px 5px; border-radius: 4px;
+  font-size: 8px; font-weight: 700; line-height: 1.2;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background: rgba(52,211,153,0.92);
   color: var(--bg-primary);
   pointer-events: none;
   z-index: 3;
@@ -396,11 +829,19 @@ body {
   max-width: none;
   max-height: none;
 }
-/* Scrollable area for extreme-aspect heatmaps (IR graph and hardware softcore detail) */
-.ir-softcore-heatmaps-scroll,
-.hw-softcore-heatmaps-scroll {
+/* Scrollable area for extreme-aspect heatmaps (IR graph + hardware soft-core).
+   The hardware soft-core variant intentionally has no height cap so both
+   pre- and post-pruning heatmaps fit without internal scrolling — the
+   inspector body scrolls instead. The IR graph variant keeps the bordered
+   scroll behaviour (handled by inline max-height in ir-graph-tab.js). */
+.ir-softcore-heatmaps-scroll {
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.hw-softcore-heatmaps-scroll {
+  overflow: visible;
   border-radius: 4px;
   border: 1px solid var(--border);
 }
@@ -464,15 +905,16 @@ body {
 .hw-buffer-segment-active-in { background: rgba(100, 181, 246, 0.45) !important; }
 .hw-buffer-segment-active-out { background: rgba(206, 147, 216, 0.45) !important; }
 
-/* ── IO maps (legacy) ── */
-.io-map-section { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
-.io-map-label { color: var(--text-muted); font-weight: 600; font-size: 10px; text-transform: uppercase; }
-.io-map-entry { background: var(--bg-hover); padding: 2px 8px; border-radius: 4px; color: var(--text-secondary); font-size: 10px; font-family: monospace; }
-
 /* ── Connectivity overlay (SVG on top of core grid) ── */
 .hw-conn-overlay {
+  /* Mounted directly on .hw-canvas as the LAST child, with canvas as
+     the positioned containing block. Tree order alone guarantees the
+     overlay paints above every card / connector / buffer; z-index here
+     is just a safety net. The overlay spans the full canvas content
+     (width × scrollHeight) so curves can be drawn anywhere across the
+     stage flow. */
   position: absolute; top: 0; left: 0;
-  pointer-events: none; z-index: 2;
+  pointer-events: none; z-index: 3;
   display: block;
   /* SVG defaults to overflow:hidden on its viewport which clips paths
      drawn outside the nominal width/height. The overlay's width/height
@@ -488,89 +930,7 @@ body {
 .hw-conn-overlay path { pointer-events: auto; }
 .hw-conn-overlay line { pointer-events: auto; }
 
-/* Edge detail popover */
-.hw-edge-popover {
-  position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
-  background: var(--bg-secondary); border: 1px solid var(--accent);
-  border-radius: var(--radius); padding: 0; z-index: 10;
-  min-width: 220px; max-width: 340px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-}
-.hw-edge-popover-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 12px; background: var(--bg-hover); border-bottom: 1px solid var(--border);
-  font-size: 12px; font-weight: 600; color: var(--text-primary);
-}
-.hw-edge-popover .data-table { margin: 6px 0; font-size: 11px; }
-
-/* Core detail panel: next to Segment blocks (same height as flow) */
-.hw-core-detail-panel {
-  flex: 0 0 auto; min-width: 220px; max-width: 320px;
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 10px 12px; background: var(--bg-secondary);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  overflow: auto;
-}
-.hw-core-detail-heatmap-wrap {
-  position: relative; display: inline-block; max-width: 100%; align-self: flex-start;
-}
-.hw-core-detail-heatmap {
-  display: block; max-width: 100%; max-height: 240px; width: auto; height: auto;
-  object-fit: contain; border-radius: 4px; border: 1px solid var(--border);
-  pointer-events: none; /* let overlay regions receive clicks */
-}
-.hw-core-detail-heatmap-region {
-  position: absolute; pointer-events: auto; cursor: pointer;
-  border: 1px solid rgba(91, 138, 245, 0.5); border-radius: 2px;
-  box-sizing: border-box; transition: background 0.15s, border-color 0.15s;
-}
-.hw-core-detail-heatmap-region:hover {
-  background: rgba(91, 138, 245, 0.2); border-color: var(--accent);
-}
-.hw-core-detail-heatmap-region.hw-split-region {
-  border: 1.5px dashed rgba(255, 152, 0, 0.7); background: rgba(255, 152, 0, 0.08);
-}
-.hw-core-detail-heatmap-region.hw-split-region:hover {
-  background: rgba(255, 152, 0, 0.22); border-color: #ff9800;
-}
-.hw-softcore-split-info {
-  font-size: 10px; color: #ff9800; margin: 2px 0 4px 0; font-style: italic;
-}
-.hw-core-detail-fused-line {
-  position: absolute; left: 0; right: 0;
-  background: rgba(255, 193, 7, 0.9);
-  pointer-events: none; z-index: 1;
-}
-.hw-core-detail-panel .data-table { margin: 0; font-size: 11px; }
-.hw-constituents-section { margin-top: 8px; }
-.hw-constituents-section .section-label { font-size: 10px; margin-bottom: 4px; color: var(--text-muted); }
-.hw-constituents-table { margin: 0; font-size: 10px; }
-.hw-constituent-row { cursor: pointer; transition: background 0.15s; }
-.hw-constituent-row:hover { background: var(--bg-hover); }
-.hw-constituent-id { font-weight: 600; color: var(--accent); }
-.hw-softcore-located-in {
-  font-size: 10px; color: var(--text-muted); margin: 0 0 6px 0;
-  padding: 6px 8px; background: var(--bg-hover); border-radius: 4px;
-}
-
-/* Software core detail pane (to the right of hardware core detail) */
-.hw-softcore-detail-panel {
-  flex: 0 0 auto; min-width: 220px; max-width: 320px;
-  display: flex; flex-direction: column;
-  padding: 0; background: var(--bg-secondary);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  overflow: auto;
-}
-.hw-softcore-detail-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 12px; background: var(--bg-hover); border-bottom: 1px solid var(--border);
-  font-size: 12px; font-weight: 600; color: var(--text-primary);
-}
-.hw-softcore-detail-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
-.hw-softcore-name {
-  font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0;
-}
-.hw-softcore-detail-panel .data-table { margin: 0; font-size: 11px; }
-.hw-softcore-heatmap-wrap { margin-top: 8px; }
+/* Soft-core (IR weight) heatmap — sized inline by JS, contain by default. */
 .hw-softcore-heatmap {
   display: block; max-width: 100%; max-height: 200px; width: auto; height: auto;
   object-fit: contain; border-radius: 4px; border: 1px solid var(--border);
@@ -578,10 +938,12 @@ body {
 .hw-softcore-heatmap[style*="object-fit:fill"] {
   max-width: none; max-height: none;
 }
-.hw-core-detail-placeholder {
-  color: var(--text-muted); font-size: 12px; text-align: center;
-  padding: 24px 12px;
+
+/* Animate dashed flow lines on outgoing connectivity. */
+.hw-conn-overlay path.hw-conn-flow {
+  animation: hw-flow 1.6s linear infinite;
 }
+@keyframes hw-flow { from { stroke-dashoffset: 18; } to { stroke-dashoffset: 0; } }
 
 /* ── Shared connectivity chips ── */
 .conn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 11px; }
