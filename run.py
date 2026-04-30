@@ -1,11 +1,12 @@
 import os
 import sys
 sys.path.append('./src')
-# Submodules ship their own source trees; add them to sys.path so
-# ``import spikingjelly.activation_based`` and ``import lava.proc`` resolve
-# without needing a separate pip install step.
+# Spikingjelly is consumed as a vendored source tree.
 sys.path.append('./spikingjelly')
-sys.path.append('./lava/src')
+# Lava is installed as ``lava-nc`` from PyPI in the env310 venv; no
+# sys.path injection. (The repo includes a ``lava/`` submodule for
+# reference / patches, but the runtime resolves ``import lava.*`` from
+# site-packages.)
 
 # cuBLAS sgemm picks a parallel-reduction order per launch based on workspace
 # availability; without this env var the float32 matmul in

@@ -33,6 +33,7 @@ compares Lava neural-segment spike counts against an HCM ``RunRecord``.
 
 from __future__ import annotations
 
+import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -64,112 +65,72 @@ from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
 
 
 # ---------------------------------------------------------------------------
-# SubtractiveLIFReset process.  Lazy-imported so the runner module remains
-# importable even when Lava itself is broken on the host interpreter.
-# The class must live in its own module (not a closure) so Lava's process
-# model discovery (`ProcGroupDiGraphs._find_proc_models`) can re-import it.
+# SubtractiveLIFReset process. Lazy-imported so this module stays importable
+# even on hosts where Lava is missing (the production code paths surface a
+# clear ``ImportError`` only when the runner is actually constructed).
+# The class must live in its own module — Lava's process-model discovery
+# (``ProcGroupDiGraphs._find_proc_models``) re-imports the class by its
+# ``__module__``.
 # ---------------------------------------------------------------------------
 
 _SUBTRACTIVE_LIF_CLS = None
-_LAVA_SHIMS_INSTALLED = False
 _LAVA_DTYPE = np.float64
 
 
-def _install_lava_compat_shims() -> None:
-    """Apply runtime workarounds for lava issues that we cannot fix in lava.
+def _make_set_start_method_idempotent() -> None:
+    """Monkey-patch ``multiprocessing.set_start_method`` to be a no-op when
+    a context is already set (instead of raising).
 
-    Two known incompatibilities with our environment:
+    Lava's ``message_infrastructure/multiprocessing.py`` calls
+    ``mp.set_start_method('fork')`` unconditionally at import time. If the
+    parent process has already used multiprocessing (DataLoader workers,
+    nevresim's ``ProcessPoolExecutor``, anything that touches the mp
+    context) by the time Lava is imported, that call raises
+    ``RuntimeError('context has already been set')`` — even when the
+    pre-existing method is also ``'fork'``. Python's ``set_start_method``
+    is strictly one-shot.
 
-    1. ``lava.magma.compiler.var_model`` declares dataclass fields with bare
-       instance defaults (``x: ByteEncoder = ByteEncoder()``). On Python 3.11+
-       this raises ``ValueError: mutable default ... is not allowed: use
-       default_factory`` at class-definition time, so the module fails to
-       import. We pre-load a source-rewritten copy into ``sys.modules`` before
-       any lava import touches it.
-
-    2. ``lava.magma.runtime.message_infrastructure.multiprocessing`` calls
-       ``mp.set_start_method('fork')`` unconditionally at import time, which
-       collides with our project-wide ``'spawn'`` start method (set in
-       mimarsinan's init for CUDA safety). We temporarily wrap
-       ``mp.set_start_method`` so the unconditional call becomes a no-op
-       when a start method is already set.
+    We don't edit lava-nc (it's a pip-installed package). We patch our
+    own process's ``multiprocessing.set_start_method`` to swallow the
+    redundant call. Both stdlib and ``torch.multiprocessing`` typically
+    share the function object, but we patch each defensively.
     """
-    global _LAVA_SHIMS_INSTALLED
-    if _LAVA_SHIMS_INSTALLED:
-        return
-
-    import sys
-    import importlib.util
     import multiprocessing as mp
     import torch.multiprocessing as torch_mp
 
-    # --- (1) source-rewrite var_model.py to use default_factory ----------
-    name = "lava.magma.compiler.var_model"
-    if name not in sys.modules:
-        spec = importlib.util.find_spec(name)
-        if spec is not None and spec.origin:
-            with open(spec.origin) as f:
-                src = f.read()
-            if "field(default_factory=ByteEncoder)" not in src:
-                src = src.replace(
-                    "from dataclasses import dataclass, InitVar",
-                    "from dataclasses import dataclass, field, InitVar",
-                )
-                for letter in ("x", "y", "z", "p", "hi", "lo"):
-                    src = src.replace(
-                        f"{letter}: ByteEncoder = ByteEncoder()",
-                        f"{letter}: ByteEncoder = field(default_factory=ByteEncoder)",
-                    )
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[name] = module
-            exec(compile(src, spec.origin, "exec"), module.__dict__)
-
-    # --- (2) wrap set_start_method so lava's unconditional 'fork' call
-    # becomes a no-op when a start method is already set upstream. Patch
-    # both stdlib multiprocessing and torch.multiprocessing; they usually
-    # share the same function object, but spawned children may import either
-    # module first while unpickling Lava runtime state.
-    #
-    # Belt-and-suspenders: the vendored
-    # ``lava/.../message_infrastructure/multiprocessing.py`` is now also
-    # idempotent (gated on ``get_start_method(allow_none=True) is None``),
-    # which is the actual fix for spawned workers — the shim below cannot
-    # reach a worker's interpreter before lava is imported during
-    # unpickling. We keep the parent-side patch as defense in depth.
-    def _patch_start_method(module) -> None:
+    def _patch(module) -> None:
         real_set = module.set_start_method
         if getattr(real_set, "_mimarsinan_lava_safe", False):
             return
 
-        def _safe_set(method, force=False):  # type: ignore[no-redef]
-            try:
-                current = module.get_start_method(allow_none=True)
-            except Exception:
-                current = None
+        def _safe_set(method, force=False):
+            current = module.get_start_method(allow_none=True)
             if force or current is None:
                 real_set(method, force=force)
-            # else: already set by upstream code (e.g. our 'spawn' init); skip.
+            # else: already set (possibly to the same method); skip the
+            # redundant call that would otherwise raise.
 
-        _safe_set._mimarsinan_lava_safe = True  # type: ignore[attr-defined]
-        module.set_start_method = _safe_set  # type: ignore[assignment]
+        _safe_set._mimarsinan_lava_safe = True
+        module.set_start_method = _safe_set
 
-    _patch_start_method(mp)
-    _patch_start_method(torch_mp)
-    _LAVA_SHIMS_INSTALLED = True
-
-
-def _probe_lava() -> None:
-    """Import Lava and cache the SubtractiveLIFReset class on first use."""
-    global _SUBTRACTIVE_LIF_CLS
-    if _SUBTRACTIVE_LIF_CLS is not None:
-        return
-    _install_lava_compat_shims()
-    from mimarsinan.chip_simulation.subtractive_lif import SubtractiveLIFReset
-    _SUBTRACTIVE_LIF_CLS = SubtractiveLIFReset
+    _patch(mp)
+    _patch(torch_mp)
 
 
 def _subtractive_lif_cls():
-    _probe_lava()
+    """Lazy-import + cache the project's SubtractiveLIFReset class.
+
+    Installs the idempotent ``set_start_method`` shim before importing
+    Lava so that lava-nc's unconditional ``mp.set_start_method('fork')``
+    at import becomes a no-op when our process has already initialised a
+    multiprocessing context (e.g. via the nevresim Simulation step's
+    ``ProcessPoolExecutor`` or PyTorch DataLoader workers).
+    """
+    global _SUBTRACTIVE_LIF_CLS
+    if _SUBTRACTIVE_LIF_CLS is None:
+        _make_set_start_method_idempotent()
+        from mimarsinan.chip_simulation.subtractive_lif import SubtractiveLIFReset
+        _SUBTRACTIVE_LIF_CLS = SubtractiveLIFReset
     return _SUBTRACTIVE_LIF_CLS
 
 
@@ -357,7 +318,9 @@ class LavaLoihiRunner:
 
             self._data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
 
-        _probe_lava()  # surface any Lava import failures up front
+        # Eagerly resolve SubtractiveLIFReset so any Lava import failure
+        # surfaces here, not deep inside ``run_segments_from_reference``.
+        _subtractive_lif_cls()
 
         self._profile = _RunProfile()
         self._accuracy: float | None = None
@@ -568,7 +531,21 @@ class LavaLoihiRunner:
 
         import time as _time
         t0 = _time.time()
-        for core_idx in topo_order:
+        # Per-core progress prints so the operator can see where time is
+        # going; previously this segment was completely silent until all
+        # cores finished, making any stall indistinguishable from slow
+        # progress. Toggle off with ``MIMARSINAN_LOIHI_QUIET=1`` if the
+        # noise becomes a problem in production runs.
+        verbose = os.environ.get("MIMARSINAN_LOIHI_QUIET") != "1"
+        n_cores = len(topo_order)
+        if verbose:
+            print(
+                f"  [LavaLoihiRunner] segment with {n_cores} cores; T={T}, N={N} "
+                f"— per-core timing follows",
+                flush=True,
+            )
+        for step_idx, core_idx in enumerate(topo_order):
+            t_core = _time.time()
             core = seg.cores[core_idx]
             latency = timing.core_latency(core)
             used_ax = _used_axons(core)
@@ -616,12 +593,14 @@ class LavaLoihiRunner:
                 if getattr(core, "hardware_bias", None) is not None
                 else None
             )
+            t_lava = _time.time()
             active_output = self._run_core_lava(
                 weights=weights,
                 threshold=float(core.threshold),
                 hardware_bias=hardware_bias,
                 input_spikes=active_input.reshape(used_ax, N * T),
             ).reshape(used_neu, N, T)
+            lava_dt = _time.time() - t_lava
 
             full_output = np.zeros(
                 (int(core.neurons_per_core), N, timing.sample_stride),
@@ -635,10 +614,19 @@ class LavaLoihiRunner:
             if hold_start < timing.sample_stride:
                 buffered[:, :, hold_start:] = buffered[:, :, hold_start - 1:hold_start]
             core_buffer_spikes[core_idx] = buffered
+            if verbose:
+                print(
+                    f"    core {step_idx + 1:>4}/{n_cores} "
+                    f"(idx={core_idx}, ax={used_ax}, neu={used_neu}, "
+                    f"lat={latency}): lava={lava_dt*1000:7.1f}ms  "
+                    f"core_total={(_time.time() - t_core)*1000:7.1f}ms",
+                    flush=True,
+                )
 
         print(
             f"  [LavaLoihiRunner] scheduled segment run: {len(seg.cores)} cores, "
-            f"{timing.total_steps(N)} logical cycles, {_time.time() - t0:.1f}s"
+            f"{timing.total_steps(N)} logical cycles, {_time.time() - t0:.1f}s",
+            flush=True,
         )
 
         out_size = len(seg.output_sources)

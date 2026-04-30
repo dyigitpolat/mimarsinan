@@ -6,6 +6,12 @@ T-level saturated staircase rate that ``LIFActivation`` / ``nevresim``
 critical correctness check for the Loihi simulation path: if this fails,
 the Lava runtime is not matching our trained model's forward and no
 accuracy target is reachable.
+
+Every test in this file builds a fresh Lava process graph and calls
+``lif.run(...) / lif.stop()`` once per case. Each cycle pays Lava's
+compile + spawn-workers + run + stop overhead, so they are marked
+``pytest.mark.slow`` and excluded from default runs (``-m "not slow"``).
+Opt in with ``-m slow`` when validating SubtractiveLIFReset semantics.
 """
 
 from __future__ import annotations
@@ -40,11 +46,8 @@ def _run_single_core_lava(
     ``LavaLoihiRunner._run_core_lava``.
     """
     from mimarsinan.chip_simulation.lava_loihi_runner import (
-        _probe_lava,
         _subtractive_lif_cls,
     )
-
-    _probe_lava()
     from lava.magma.core.run_conditions import RunSteps
     from lava.magma.core.run_configs import Loihi2SimCfg
     from lava.proc.dense.process import Dense
@@ -97,6 +100,7 @@ def _run_single_core_lava(
     return np.asarray(raw[:, start : start + N * T], dtype=np.float32)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "rates",
     [
@@ -132,6 +136,7 @@ def test_single_core_matches_reference_staircase(rates):
         )
 
 
+@pytest.mark.slow
 def test_multi_input_multi_output_matches_reference():
     """3 inputs → 2 outputs, mixed weights."""
     from mimarsinan.chip_simulation.lava_loihi_runner import _uniform_rate_encode

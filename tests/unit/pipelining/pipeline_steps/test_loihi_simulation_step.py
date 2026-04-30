@@ -73,12 +73,13 @@ def _prepare_step(monkeypatch, *, diffs=None):
             return torch.zeros((1, 1)), _fake_record(sample_index=sample_index)
 
     class FakeRunner:
-        def __init__(self, pipeline, mapping, simulation_length):
+        def __init__(self, pipeline, mapping, simulation_length, *, thresholding_mode="<"):
             calls["runner_inits"].append(
                 {
                     "pipeline": pipeline,
                     "mapping": mapping,
                     "simulation_length": simulation_length,
+                    "thresholding_mode": thresholding_mode,
                 }
             )
 
@@ -126,6 +127,7 @@ def test_loihi_simulation_step_runs_one_sample_spike_parity(monkeypatch):
             "pipeline": None,
             "mapping": pipeline.cache["Hard Core Mapping.hard_core_mapping"],
             "simulation_length": 4,
+            "thresholding_mode": "<",
         }
     ]
     assert len(calls["hcm_samples"]) == 1

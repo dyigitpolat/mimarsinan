@@ -16,6 +16,18 @@ Skipped when:
 The harness self-check ``test_hcm_recorder_determinism`` validates the
 recorder itself (calling ``forward_with_recording`` twice on the same
 sample must yield byte-identical records).
+
+Performance note: every Lava-graph-driving test is marked
+``pytest.mark.slow`` because each one builds a fresh Source → Dense →
+SubtractiveLIFReset → Sink process graph and pays Lava's full
+compile + spawn-workers + run + stop cycle. That's tens of seconds
+*per test* in the best case (compile dominates over actual
+computation on toy graphs). Default test runs deselect with
+``-m "not slow"``; opt in with ``-m slow`` when validating Loihi
+parity. A spawned worker that crashed during import (the previous
+``var_model.py`` mutable-default bug) leaves the parent waiting on a
+dead IPC pipe and the test appears to *hang* rather than just be
+slow — that import failure is now fixed in the vendored Lava copy.
 """
 
 from __future__ import annotations
@@ -41,8 +53,8 @@ def _have_artifacts() -> bool:
 
 def _have_lava() -> bool:
     try:
-        from mimarsinan.chip_simulation.lava_loihi_runner import _probe_lava
-        _probe_lava()
+        from mimarsinan.chip_simulation.lava_loihi_runner import _subtractive_lif_cls
+        _subtractive_lif_cls()
         return True
     except Exception:
         return False
@@ -180,6 +192,7 @@ def _make_two_core_hybrid(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
 def test_loihi_delayed_core_input_window_matches_hcm():
     """Delayed cores must count segment-input axons over their active window."""
@@ -210,6 +223,7 @@ def test_loihi_delayed_core_input_window_matches_hcm():
     assert not compare_records(rec_hcm, rec_loihi)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
 def test_loihi_delayed_hardware_bias_matches_hcm_active_window():
     """Hardware bias must not integrate before a delayed core's active window."""
@@ -238,6 +252,7 @@ def test_loihi_delayed_hardware_bias_matches_hcm_active_window():
     assert not compare_records(rec_hcm, rec_loihi)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
 def test_loihi_duplicate_source_axons_accumulate_weights():
     """Multiple axons reading the same source must sum, not overwrite."""
