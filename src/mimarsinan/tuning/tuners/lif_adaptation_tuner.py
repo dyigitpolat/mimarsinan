@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.models.activations import LIFActivation
+from mimarsinan.models.activations import ChipInputQuantizer, LIFActivation
 from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
 
 
@@ -134,6 +134,26 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
             # Rebuild the TransformedActivation wrapper so the new base
             # module participates in forward passes.
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+
+            # Encoding-layer perceptrons (those whose input comes from a
+            # host-side ComputeOp — patch_embed, mean_reduce, etc.) receive
+            # continuous values that the chip will re-encode via
+            # ``to_uniform_spikes`` = ``round(T · x / ias)``.  Pre-discretise
+            # the input here during training so the student sees the same
+            # discretisation the chip will apply at deployment — closes the
+            # ~15 pp input-boundary gap between training FP forward and the
+            # spiking-sim / nevresim / Lava deployments.
+            if getattr(perceptron, "is_encoding_layer", False):
+                quantizer = ChipInputQuantizer(
+                    T=self._T,
+                    activation_scale=perceptron.input_activation_scale,
+                )
+                if isinstance(perceptron.input_activation, nn.Identity):
+                    perceptron.input_activation = quantizer
+                else:
+                    perceptron.input_activation = nn.Sequential(
+                        perceptron.input_activation, quantizer,
+                    )
 
     def _get_rates(self) -> list[float]:
         return [p.base_activation.rate for p in self.model.get_perceptrons()]

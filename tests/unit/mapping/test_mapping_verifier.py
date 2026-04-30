@@ -284,8 +284,9 @@ class TestVerifyHardwareConfig:
         assert result["errors"] == []
 
     def test_insufficient_axons_fails(self, simple_softcores):
-        # max_axons=8 < required 16; no type fits the largest softcore
-        core_types = [{"max_axons": 8, "max_neurons": 16, "count": 10}]
+        # max_axons=8 < required 16 and only 1 core → axon-fusion can't save it
+        # (fusing needs at least 2 cores combined).
+        core_types = [{"max_axons": 8, "max_neurons": 16, "count": 1}]
         result = verify_hardware_config(simple_softcores, core_types)
         assert not result["feasible"]
         assert any("axons" in e.lower() for e in result["errors"])

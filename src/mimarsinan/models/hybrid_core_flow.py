@@ -796,6 +796,8 @@ class SpikingHybridCoreFlow(nn.Module):
 
         x_compute = x.to(_COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
+        out_scales = getattr(self.hybrid_mapping, "node_activation_scales", {})
+        in_scales = getattr(self.hybrid_mapping, "node_input_activation_scales", out_scales)
 
         # See _forward_ttfs for the rationale; same refcount-prune
         # strategy prevents state_buffer growth within a forward.
@@ -827,12 +829,19 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
-                # Match C++ path: compute ops run in float32.  Avoid a
-                # whole-state_buffer float32 copy (see _forward_ttfs note)
-                # — gather first, cast only what's consumed.
+                in_scale = in_scales.get(op.id, 1.0)
+                out_scale = out_scales.get(op.id, 1.0)
+                # Match TTFS path: rescale inputs into training range before
+                # running the host module, and rescale outputs back into
+                # [0, 1] rate range so the next neural segment's input
+                # clamp is a no-op (not a data-loss truncation).
                 gathered = op.gather_inputs(x, state_buffer)
                 gathered = gathered.to(torch.float32)
+                if abs(in_scale - 1.0) > 1e-9:
+                    gathered = gathered * in_scale
                 result = op.execute_on_gathered(gathered)
+                if abs(out_scale - 1.0) > 1e-9:
+                    result = result / out_scale
                 state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
                 self._decref_consumers(
                     state_buffer, remaining,

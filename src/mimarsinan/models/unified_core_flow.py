@@ -581,8 +581,25 @@ class SpikingUnifiedCoreFlow(nn.Module):
                     spans=spans,
                 )
 
-                y_rates = node.execute_on_gathered(in_rates)
-                y_rates = y_rates.view(batch_size, -1).clamp(0.0, 1.0)
+                # Symmetric with the TTFS path: Perceptron-wrapped ComputeOps
+                # (encoding-layer perceptrons) have an internal LIFActivation
+                # whose output range is ``[0, activation_scale]``, not
+                # ``[0, 1]``.  Re-scale the module output by its wrapped
+                # ``activation_scale`` so downstream NeuralCores see a
+                # rate tensor in ``[0, 1]`` as expected.  For generic ops
+                # ``_ttfs_node_output_scale`` defaults to the input scale,
+                # a no-op for already-normalised in_rates.
+                in_scale = self._ttfs_node_input_scale.get(node.id, 1.0)
+                out_scale = self._ttfs_node_output_scale.get(node.id, 1.0)
+                if in_scale != 1.0:
+                    module_in = in_rates * in_scale
+                else:
+                    module_in = in_rates
+                y = node.execute_on_gathered(module_in)
+                y = y.view(batch_size, -1)
+                if out_scale != 1.0:
+                    y = y / out_scale
+                y_rates = y.clamp(0.0, 1.0)
 
                 out_train = torch.zeros(T, batch_size, y_rates.shape[1], device=device)
                 for cycle in range(T):

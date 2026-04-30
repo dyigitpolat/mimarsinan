@@ -42,6 +42,55 @@ class StaircaseFunction(Function):
         return grad_input, None, None
 
 
+class RoundedStaircaseFunction(Function):
+    """Nearest-neighbour quantiser ``round(x * T) / T`` with STE gradient.
+
+    Matches the chip-side input encoder (``UniformSpikeGenerator`` in
+    nevresim, ``to_uniform_spikes`` in ``SpikingUnifiedCoreFlow``) which
+    generates ``N = round(T * x)`` spikes over ``T`` cycles.  Applied to
+    encoding-layer perceptrons' input activation in LIF mode so training
+    sees the same discretised input the chip will receive at runtime.
+    """
+
+    @staticmethod
+    def forward(ctx, x, T):
+        return torch.round(x * T) / T
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.clone(), None
+
+
+class ChipInputQuantizer(nn.Module):
+    """STE round-to-chip-rate quantiser for encoding-layer inputs.
+
+    Forward: clamps into ``[0, scale]``, quantises to the nearest
+    ``scale / T`` step.  Backward is identity through the ``round`` —
+    the surrounding ``clamp`` keeps gradients finite outside the
+    representable range.  Used by ``LIFAdaptationStep`` to close the
+    20 pp input-boundary gap between training and chip deployment.
+    """
+
+    def __init__(self, T: int, activation_scale: nn.Parameter | torch.Tensor | float):
+        super().__init__()
+        self.T = int(T)
+        if isinstance(activation_scale, (int, float)):
+            activation_scale = nn.Parameter(
+                torch.tensor(float(activation_scale)), requires_grad=False
+            )
+        self.activation_scale = activation_scale
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        scale = self.activation_scale
+        if isinstance(scale, torch.Tensor):
+            safe_scale = scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
+        else:
+            safe_scale = max(float(scale), 1e-12)
+        x_norm = (x / safe_scale).clamp(0.0, 1.0)
+        x_q = RoundedStaircaseFunction.apply(x_norm, self.T)
+        return x_q * safe_scale
+
+
 _CLAMP_LEAK = 0.01
 """Minimum out-of-range gradient for DifferentiableClamp.
 

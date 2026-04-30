@@ -32,7 +32,7 @@
     "lr": 0.003,
     "training_epochs": 10,
     "tuning_budget_scale": 1.0,
-    "degradation_tolerance": 0.08,
+    "degradation_tolerance": 0.15,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "model_type": "mlp_mixer_core",

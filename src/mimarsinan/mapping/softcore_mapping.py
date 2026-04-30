@@ -449,135 +449,128 @@ class HardCoreMapping:
         if banks:
             self.weight_banks = dict(banks)
 
-        def _soft_tg(core):
-            tg = getattr(core, "threshold_group_id", None)
-            return int(tg) if tg is not None else -(int(core.id) + 1)
-
-        def is_mapping_possible(core, hardcore):
-            # Threshold-group match: softcores from the same perceptron share
-            # one id and thus one hardcore; others do not.  An empty hardcore
-            # (group_id is None) accepts any softcore.
-            if hardcore.threshold_group_id is not None:
-                if hardcore.threshold_group_id != _soft_tg(core):
-                    return False
-
-            # Latency check: both must have same latency value
-            # If hardcore is empty (latency=None), any core can start it
-            # If hardcore has a latency, core must have the SAME latency (not None)
-            if hardcore.latency is None:
-                latency_ok = True  # Empty hardcore can accept any core
-            else:
-                # Hardcore has a latency - core must match exactly
-                latency_ok = (core.latency is not None and core.latency == hardcore.latency)
-
-            return \
-                core.get_input_count() <= hardcore.available_axons and \
-                core.get_output_count() <= hardcore.available_neurons and \
-                latency_ok
+        from mimarsinan.mapping.core_packing import canonical_is_mapping_possible
+        is_mapping_possible = canonical_is_mapping_possible
 
         unmapped_cores = [core for core in softcore_mapping.cores]
 
         def place(core_idx: int, hardcore, softcore):
             self.merge_softcore_into(core_idx, hardcore, softcore)
 
-        def fuse_hardcores(hcs):
-            if not hcs:
-                raise ValueError("Cannot fuse empty list of hardcores")
-            first = hcs[0]
-            fused = HardCore(
-                axons_per_core=sum(hc.axons_per_core for hc in hcs),
-                neurons_per_core=first.neurons_per_core,
-                has_bias_capability=first.has_bias_capability
-            )
-            fused.threshold = first.threshold
-            fused.input_activation_scale = first.input_activation_scale
-            fused.activation_scale = first.activation_scale
-            fused.parameter_scale = first.parameter_scale
-            fused.latency = first.latency
-            # All fused components share the same neuron layout; copy hardware_bias.
-            fused.hardware_bias = first.hardware_bias
-            # Record fusion structure for GUI (boundaries, fused badge).
-            fused.fused_component_axons = [hc.axons_per_core for hc in hcs]
-            return fused
+        from mimarsinan.mapping.core_packing import canonical_fuse_hardcores
 
-        # --- Neuron splitting callback ---
+        def _real_fuse(hcs):
+            def _mk(*, axons, neurons, template, components):
+                fused = HardCore(
+                    axons_per_core=int(axons),
+                    neurons_per_core=int(neurons),
+                    has_bias_capability=template.has_bias_capability,
+                )
+                fused.threshold = template.threshold
+                fused.input_activation_scale = template.input_activation_scale
+                fused.activation_scale = template.activation_scale
+                fused.parameter_scale = template.parameter_scale
+                fused.latency = template.latency
+                fused.hardware_bias = template.hardware_bias
+                fused.fused_component_axons = [
+                    int(hc.axons_per_core) for hc in components
+                ]
+                return fused
+            return canonical_fuse_hardcores(hcs, make_fused=_mk)
+
+        fuse_hardcores = _real_fuse
+
+        # --- Neuron splitting callback (runtime) ---
+        # Decision layer delegates to ``canonical_split_softcore`` so the
+        # split *point* (``available_neurons``) and the two-fragment
+        # protocol stay identical between the layout packer and the
+        # runtime packer.  Only fragment *construction* is type-specific
+        # here — real SoftCores must carry over sliced weight matrices,
+        # axon sources, hardware_bias, and bank provenance.
+        from mimarsinan.mapping.core_packing import canonical_split_softcore
+
         _split_counter = [0]
 
-        def split_softcore_fn(core, available_neurons):
+        def _build_real_fragment(
+            parent,
+            *,
+            matrix_slice,
+            hardware_bias_slice,
+            bank_neuron_slice,
+            offset_delta,
+            fragment_index,
+            group_id,
+            original_neurons,
+        ):
+            frag = SoftCore(
+                core_matrix=matrix_slice,
+                axon_sources=[
+                    SpikeSource(s.core_, s.neuron_, s.is_input_, s.is_off_, s.is_always_on_)
+                    for s in parent.axon_sources
+                ],
+                id=parent.id,
+                activation_scale=parent.activation_scale,
+                parameter_scale=parent.parameter_scale,
+                input_activation_scale=parent.input_activation_scale,
+                name=parent.name,
+                psum_group_id=parent.psum_group_id,
+                psum_role=parent.psum_role,
+            )
+            frag.threshold = parent.threshold
+            frag.latency = parent.latency
+            frag.neuron_offset_in_original = (
+                getattr(parent, "neuron_offset_in_original", 0) + offset_delta
+            )
+            frag.split_group_id = group_id
+            frag.split_fragment_index = fragment_index
+            frag.split_original_neurons = original_neurons
+            if hardware_bias_slice is not None:
+                frag.hardware_bias = hardware_bias_slice
+            if bank_neuron_slice is not None:
+                frag.weight_bank_id = parent.weight_bank_id
+                frag.bank_axon_slice = parent.bank_axon_slice
+                frag.bank_neuron_slice = bank_neuron_slice
+                frag.bank_includes_bias_row = parent.bank_includes_bias_row
+            return frag
+
+        def _make_real_fragments(*, softcore, first_neurons, remaining_neurons):
             group_id = _split_counter[0]
             _split_counter[0] += 1
-            original_neurons = core.get_output_count()
-            orig_offset = getattr(core, "neuron_offset_in_original", 0)
-
-            # Fragment 1: first `available_neurons` columns
-            # Deep-copy axon_sources: fragments must NOT share SpikeSource instances,
-            # because remap_sources mutates .core_/.neuron_ in place. Sharing causes
-            # double-remap (hardcore key not in neuron_mapping → KeyError) when both
-            # fragments are remapped in the same pass.
-            frag1 = SoftCore(
-                core_matrix=core.core_matrix[:, :available_neurons].copy(),
-                axon_sources=[
-                    SpikeSource(s.core_, s.neuron_, s.is_input_, s.is_off_, s.is_always_on_)
-                    for s in core.axon_sources
-                ],
-                id=core.id,
-                activation_scale=core.activation_scale,
-                parameter_scale=core.parameter_scale,
-                input_activation_scale=core.input_activation_scale,
-                name=core.name,
-                psum_group_id=core.psum_group_id,
-                psum_role=core.psum_role,
+            total = first_neurons + remaining_neurons
+            hb = getattr(softcore, "hardware_bias", None)
+            bns = None
+            if getattr(softcore, "weight_bank_id", None) is not None:
+                bns_parent = getattr(softcore, "bank_neuron_slice", None) or (0, total)
+                bns = (
+                    (int(bns_parent[0]), int(bns_parent[0] + first_neurons)),
+                    (int(bns_parent[0] + first_neurons), int(bns_parent[1])),
+                )
+            frag1 = _build_real_fragment(
+                softcore,
+                matrix_slice=softcore.core_matrix[:, :first_neurons].copy(),
+                hardware_bias_slice=hb[:first_neurons].copy() if hb is not None else None,
+                bank_neuron_slice=bns[0] if bns is not None else None,
+                offset_delta=0,
+                fragment_index=0,
+                group_id=group_id,
+                original_neurons=total,
             )
-            frag1.threshold = core.threshold
-            frag1.latency = core.latency
-            frag1.neuron_offset_in_original = orig_offset
-            frag1.split_group_id = group_id
-            frag1.split_fragment_index = 0
-            frag1.split_original_neurons = original_neurons
-            if getattr(core, "hardware_bias", None) is not None:
-                frag1.hardware_bias = core.hardware_bias[:available_neurons].copy()
-            # Propagate bank provenance with a composed neuron slice so
-            # the fragment indexes the same bank at a narrower column
-            # range.  Both fragments keep the parent's axon slice and
-            # bias-row bit verbatim.
-            if getattr(core, "weight_bank_id", None) is not None:
-                bns = getattr(core, "bank_neuron_slice", None) or (0, original_neurons)
-                frag1.weight_bank_id = core.weight_bank_id
-                frag1.bank_axon_slice = core.bank_axon_slice
-                frag1.bank_neuron_slice = (int(bns[0]), int(bns[0] + available_neurons))
-                frag1.bank_includes_bias_row = core.bank_includes_bias_row
-
-            # Fragment 2: remaining columns (see frag1 comment re: axon_sources deep copy).
-            frag2 = SoftCore(
-                core_matrix=core.core_matrix[:, available_neurons:].copy(),
-                axon_sources=[
-                    SpikeSource(s.core_, s.neuron_, s.is_input_, s.is_off_, s.is_always_on_)
-                    for s in core.axon_sources
-                ],
-                id=core.id,
-                activation_scale=core.activation_scale,
-                parameter_scale=core.parameter_scale,
-                input_activation_scale=core.input_activation_scale,
-                name=core.name,
-                psum_group_id=core.psum_group_id,
-                psum_role=core.psum_role,
+            frag2 = _build_real_fragment(
+                softcore,
+                matrix_slice=softcore.core_matrix[:, first_neurons:].copy(),
+                hardware_bias_slice=hb[first_neurons:].copy() if hb is not None else None,
+                bank_neuron_slice=bns[1] if bns is not None else None,
+                offset_delta=first_neurons,
+                fragment_index=1,
+                group_id=group_id,
+                original_neurons=total,
             )
-            frag2.threshold = core.threshold
-            frag2.latency = core.latency
-            frag2.neuron_offset_in_original = orig_offset + available_neurons
-            frag2.split_group_id = group_id
-            frag2.split_fragment_index = 1
-            frag2.split_original_neurons = original_neurons
-            if getattr(core, "hardware_bias", None) is not None:
-                frag2.hardware_bias = core.hardware_bias[available_neurons:].copy()
-            if getattr(core, "weight_bank_id", None) is not None:
-                bns = getattr(core, "bank_neuron_slice", None) or (0, original_neurons)
-                frag2.weight_bank_id = core.weight_bank_id
-                frag2.bank_axon_slice = core.bank_axon_slice
-                frag2.bank_neuron_slice = (int(bns[0] + available_neurons), int(bns[1]))
-                frag2.bank_includes_bias_row = core.bank_includes_bias_row
-
             return frag1, frag2
+
+        def split_softcore_fn(core, available_neurons):
+            return canonical_split_softcore(
+                core, available_neurons, make_fragments=_make_real_fragments,
+            )
 
         from mimarsinan.mapping.core_packing import greedy_pack_softcores
         greedy_pack_softcores(

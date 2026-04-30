@@ -215,8 +215,10 @@ class TestWizardCapacityEstimator:
 
     def test_estimator_reports_infeasible_when_softcore_exceeds_every_hw_type(self):
         """Genuine infeasibility: a softcore whose dimensions exceed all
-        core types (and no splitting/coalescing is enabled).  Halving
-        cannot help because the unit softcore itself does not fit."""
+        core types *and* the pool is too small to fuse enough cores to
+        accommodate it.  Halving cannot help because the unit softcore
+        itself does not fit; fusion cannot help because there aren't
+        enough hw cores to combine."""
         from mimarsinan.mapping.layout.layout_types import (
             LayoutHardCoreType, LayoutSoftCoreSpec,
         )
@@ -224,6 +226,7 @@ class TestWizardCapacityEstimator:
             estimate_passes_for_layout_validated,
         )
 
+        # 64-axon softcore needs 4x 16-axon cores fused; pool has only 3.
         softcores = [
             LayoutSoftCoreSpec(
                 input_count=64, output_count=4,
@@ -231,9 +234,9 @@ class TestWizardCapacityEstimator:
                 name="oversized",
             )
         ]
-        core_types = [LayoutHardCoreType(max_axons=16, max_neurons=16, count=5)]
+        core_types = [LayoutHardCoreType(max_axons=16, max_neurons=16, count=3)]
         _, _, ok = estimate_passes_for_layout_validated(
-            softcores, max_cores_per_pass=5,
+            softcores, max_cores_per_pass=3,
             max_hw_axons=16, max_hw_neurons=16,
             allow_coalescing=False, allow_splitting=False,
             core_types=core_types,
