@@ -43,6 +43,11 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
+from mimarsinan.chip_simulation.spike_recorder import (
+    CoreSpikeCounts,
+    RunRecord,
+    SegmentSpikeRecord,
+)
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.mapping.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
@@ -235,28 +240,43 @@ class LavaLoihiRunner:
         self.T = int(simulation_length)
         self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
 
-        self.device = pipeline.config["device"]
-        # Cap the Loihi pass separately from nevresim so a slow Lava runtime
-        # doesn't explode the overall pipeline budget.  Default: 50 samples.
-        self.max_samples = int(
-            pipeline.config.get(
-                "max_loihi_samples",
-                min(50, int(pipeline.config.get("max_simulation_samples", 500))),
+        # ``pipeline=None`` is the harness-mode escape hatch used by the
+        # spike-parity test, where samples are supplied directly and we
+        # never call ``run()`` / data loaders / reporters.  We still need
+        # Lava import + the segment runner; everything else is skipped.
+        if pipeline is None:
+            self.device = None
+            self.max_samples = 0
+            self._data_loader_factory = None
+        else:
+            self.device = pipeline.config["device"]
+            # Cap the Loihi pass separately from nevresim so a slow Lava runtime
+            # doesn't explode the overall pipeline budget.  Default: 50 samples.
+            self.max_samples = int(
+                pipeline.config.get(
+                    "max_loihi_samples",
+                    min(50, int(pipeline.config.get("max_simulation_samples", 500))),
+                )
             )
-        )
 
-        spiking = pipeline.config.get("spiking_mode", "lif")
-        if spiking != "lif":
-            raise ValueError(
-                f"LavaLoihiRunner only supports spiking_mode='lif'; got {spiking!r}. "
-                "TTFS modes do not map onto Loihi LIF dynamics."
-            )
+            spiking = pipeline.config.get("spiking_mode", "lif")
+            if spiking != "lif":
+                raise ValueError(
+                    f"LavaLoihiRunner only supports spiking_mode='lif'; got {spiking!r}. "
+                    "TTFS modes do not map onto Loihi LIF dynamics."
+                )
+
+            self._data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
 
         _probe_lava()  # surface any Lava import failures up front
 
-        self._data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
         self._profile = _RunProfile()
         self._accuracy: float | None = None
+
+        # Set by ``run_segments_from_reference``; consumed by
+        # ``_run_neural_segment`` to populate per-core spike-count
+        # records into a ``RunRecord`` for diff against HCM.
+        self._recorder: RunRecord | None = None
 
     # --------------------------------------------------------------------- load
 
@@ -398,6 +418,8 @@ class LavaLoihiRunner:
         self,
         seg: HardCoreMapping,
         seg_input_rates: np.ndarray,
+        *,
+        recorder_seg: SegmentSpikeRecord | None = None,
     ) -> np.ndarray:
         """Execute one neural segment as a SINGLE Lava process graph.
 
@@ -624,6 +646,70 @@ class LavaLoihiRunner:
             ]
 
         seg_out_rates = seg_out_spikes.reshape(out_size, N, T).mean(axis=2).T
+
+        # Per-core spike-count recording.  Mirrors what HCM's
+        # ``_run_neural_segment_rate`` records when its recorder is set.
+        # Per-core *output* counts are read directly from the trimmed
+        # spike trains.  Per-core *input* counts are reconstructed
+        # host-side by walking each core's axon spans and summing the
+        # corresponding upstream output (or segment input) trains over
+        # the same T cycles the LIF integrated.
+        if recorder_seg is not None:
+            assert N == 1, "Spike recording requires a single sample (N == 1)"
+            for core_idx, core in enumerate(seg.cores):
+                used_ax = max(int(core.axons_per_core - core.available_axons), 1)
+                used_neu = max(int(core.neurons_per_core - core.available_neurons), 1)
+
+                # Output: trim Lava sink data to the cells this core
+                # actually uses.  ``core_output_spikes`` is shape
+                # (neurons_per_core, N*T); slice to (used_neu, T).
+                out_train = core_output_spikes[core_idx][:used_neu, :T]
+                out_count = out_train.sum(axis=1).astype(np.int64)
+
+                # Input: reconstruct the per-axon spike train this LIF
+                # would have seen by walking the core's axon spans over
+                # the same trimmed T-cycle window.  Always-on axons fire
+                # every cycle, hence T per axon.
+                in_count = np.zeros(used_ax, dtype=np.int64)
+                spans = core.get_axon_source_spans()
+                n_always_on = 0
+                for sp in spans:
+                    d0 = int(sp.dst_start)
+                    length = int(sp.length)
+                    if d0 >= used_ax:
+                        continue
+                    end = min(d0 + length, used_ax)
+                    take = end - d0
+                    if sp.kind == "off":
+                        continue
+                    if sp.kind == "on":
+                        n_always_on += take
+                        in_count[d0:end] += T
+                        continue
+                    if sp.kind == "input":
+                        s0 = int(sp.src_start)
+                        in_count[d0:end] += packed_input[s0:s0 + take, :T].sum(axis=1).astype(np.int64)
+                        continue
+                    # kind == "core"
+                    src_core_id = int(sp.src_core)
+                    s0 = int(sp.src_start)
+                    in_count[d0:end] += core_output_spikes[src_core_id][
+                        s0:s0 + take, :T
+                    ].sum(axis=1).astype(np.int64)
+
+                recorder_seg.cores.append(
+                    CoreSpikeCounts(
+                        core_index=core_idx,
+                        n_in_used=used_ax,
+                        n_out_used=used_neu,
+                        core_latency=int(core.latency) if core.latency is not None else -1,
+                        has_hardware_bias=getattr(core, "hardware_bias", None) is not None,
+                        n_always_on_axons=n_always_on,
+                        input_spike_count=in_count,
+                        output_spike_count=out_count,
+                    )
+                )
+
         return seg_out_rates.astype(np.float32)
 
     # -------------------------------------------------------- top-level run
@@ -695,3 +781,76 @@ class LavaLoihiRunner:
     @property
     def accuracy(self) -> float | None:
         return self._accuracy
+
+    # -------------------------------------------------------------- harness
+    def run_segments_from_reference(self, ref: RunRecord) -> RunRecord:
+        """Run *only* neural stages on Loihi using inputs taken from a
+        reference ``RunRecord`` (typically produced by HCM
+        ``forward_with_recording``).
+
+        The returned record has the same ``segments`` keys as ``ref`` and
+        the **same** ``compute_outputs`` (we copy them through verbatim
+        instead of re-executing the host modules).  This is the
+        verification-harness contract: a Loihi bug in segment N must
+        never appear as cascading divergence in segments N+1..M, because
+        each Loihi neural segment is fed HCM-vetted input.
+        """
+        assert ref.T == self.T, (
+            f"Reference T={ref.T} does not match runner T={self.T}; "
+            "check simulation_length consistency."
+        )
+
+        out = RunRecord(
+            sample_index=ref.sample_index,
+            T=ref.T,
+            segments={},
+            compute_outputs=dict(ref.compute_outputs),
+        )
+        self._recorder = out
+        try:
+            for stage_index, stage in enumerate(self.mapping.stages):
+                if stage.kind != "neural":
+                    continue
+                if stage_index not in ref.segments:
+                    raise KeyError(
+                        f"Reference RunRecord is missing segment for stage_index={stage_index} "
+                        f"({stage.name!r}); HCM may have skipped it"
+                    )
+                ref_seg = ref.segments[stage_index]
+
+                seg = stage.hard_core_mapping
+                assert seg is not None
+                seg_input_rates = ref_seg.seg_input_rates
+
+                actual_seg = SegmentSpikeRecord(
+                    stage_index=stage_index,
+                    stage_name=stage.name,
+                    schedule_segment_index=stage.schedule_segment_index,
+                    schedule_pass_index=stage.schedule_pass_index,
+                    seg_input_rates=seg_input_rates,
+                    # Encoded spike train is deterministic from rates;
+                    # recompute via the same encoder used by ``_run_neural_segment``
+                    # so a divergence here is a real encoder bug, not a copy.
+                    seg_input_spike_count=_uniform_rate_encode(seg_input_rates, self.T)[0]
+                        .sum(axis=1)
+                        .astype(np.int64),
+                    seg_output_spike_count=np.zeros(0, dtype=np.int64),
+                )
+
+                seg_out_rates = self._run_neural_segment(
+                    seg, seg_input_rates, recorder_seg=actual_seg,
+                )
+
+                # Output spike count: rates × T are the integer totals
+                # each output line emitted over the T-cycle window.  The
+                # rates are already trimmed-mean of the trimmed spike
+                # train, so multiplying back gives the same per-line
+                # totals HCM accumulates into ``output_counts``.
+                actual_seg.seg_output_spike_count = (
+                    np.rint(seg_out_rates[0] * self.T).astype(np.int64)
+                )
+
+                out.segments[stage_index] = actual_seg
+        finally:
+            self._recorder = None
+        return out
