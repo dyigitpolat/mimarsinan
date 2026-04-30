@@ -824,23 +824,12 @@ def _flush_scheduled_subsegments(
 ) -> int:
     """Flush one IR segment, splitting by capacity into one or more stages.
 
-    The layout-side splitter (``split_softcores_by_capacity``) produces an
-    initial partition validated via ``pack_layout``.  The real hard-core
-    packer (``SoftCoreMapping.map`` → ``greedy_pack_softcores`` with
-    ``fuse_hardcores``) is authoritative for deployment: if it fails to
-    pack a sub-segment the layout thought was fine, we halve that
-    sub-segment and retry each half with a fresh pool, recursively, until
-    it fits or it is a singleton softcore.  Singleton failure = genuine
-    infeasibility; the error propagates unchanged.
-
-    This halving fallback is *only* for layout-vs-real-packer divergence
-    (e.g. greedy ordering choosing different core types on tight
-    configs).  It never re-introduces latency-group splitting — each
-    halved piece still contains the full latency stack that lived inside
-    the sub-segment the layout produced.  If this fallback fires often,
-    the fix is to make the layout-side estimator use the same packer
-    path as the real flusher; this wrapper keeps the pipeline running in
-    the meantime.
+    ``split_softcores_by_capacity`` and the real hard-core packer share
+    one bin-packing algorithm (``greedy_pack_softcores`` with canonical
+    ``is_mapping_possible`` / ``fuse_hardcores`` / ``split_softcore``),
+    so any partition the layout deems feasible is also feasible for the
+    real packer.  A packing failure here therefore signals genuine
+    infeasibility — we let the ``RuntimeError`` propagate unchanged.
     """
     sub_segments = _split_segment_by_capacity(
         cores,
@@ -851,39 +840,25 @@ def _flush_scheduled_subsegments(
     if not sub_segments:
         return segment_index_start
 
-    def _flush_or_halve(sub_cores, sub_label, sub_idx):
-        if all_reindex_maps:
-            sub_cores_reindexed = _reindex_nodes(sub_cores, all_reindex_maps)
-        else:
-            sub_cores_reindexed = sub_cores
-        try:
-            seg_stages, seg_reindex = _flush_scheduled_segment(
-                current_neural=sub_cores_reindexed,
-                consumed_by=consumed_by,
-                cores_config=cores_config,
-                weight_banks=weight_banks,
-                segment_index=segment_index_start + sub_idx,
-                segment_label=sub_label,
-                allow_neuron_splitting=allow_neuron_splitting,
-                allow_coalescing=allow_coalescing,
-            )
-            stages.extend(seg_stages)
-            all_reindex_maps.update(seg_reindex)
-            return 1
-        except RuntimeError:
-            if len(sub_cores) <= 1:
-                raise
-            mid = len(sub_cores) // 2
-            left_count = _flush_or_halve(sub_cores[:mid], f"{sub_label}_h0", sub_idx)
-            right_count = _flush_or_halve(sub_cores[mid:], f"{sub_label}_h1", sub_idx + left_count)
-            return left_count + right_count
-
-    offset = 0
     for sub_idx, sub_cores in enumerate(sub_segments):
         label = segment_label_base if len(sub_segments) == 1 else f"{segment_label_base}_cap{sub_idx}"
-        offset += _flush_or_halve(sub_cores, label, offset)
+        sub_cores_reindexed = (
+            _reindex_nodes(sub_cores, all_reindex_maps) if all_reindex_maps else sub_cores
+        )
+        seg_stages, seg_reindex = _flush_scheduled_segment(
+            current_neural=sub_cores_reindexed,
+            consumed_by=consumed_by,
+            cores_config=cores_config,
+            weight_banks=weight_banks,
+            segment_index=segment_index_start + sub_idx,
+            segment_label=label,
+            allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
+        )
+        stages.extend(seg_stages)
+        all_reindex_maps.update(seg_reindex)
 
-    return segment_index_start + offset
+    return segment_index_start + len(sub_segments)
 
 
 def _build_scheduled(

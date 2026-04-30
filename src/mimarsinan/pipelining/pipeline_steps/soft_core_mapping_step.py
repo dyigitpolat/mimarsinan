@@ -31,34 +31,40 @@ class SoftCoreMappingStep(PipelineStep):
         self._soft_core_spiking_metric = None
         self._ttfs_shift_applied = False
 
+    def _should_report_spiking_metric(self) -> bool:
+        """Report the soft-core spiking-simulation metric instead of the FP
+        forward only when the FP forward is *actively wrong* relative to
+        deployment:
+
+        * ``ttfs_quantized``: the TTFS bias shift is baked in here, so the
+          decorator-chain-compensated FP forward is double-shifted relative
+          to the spiking sim — FP forward is broken and must be replaced.
+
+        For ``lif`` the FP forward's LIFActivation matches the *per-neuron*
+        deployment semantics bit-exactly (by design — it wraps the same
+        ``IFNode`` family the chip models).  Any residual gap comes from
+        ``SpikingUnifiedCoreFlow``'s known approximations (documented in
+        feedback memory as "HCM≈NF is the baseline; if SCM lags, bug is in
+        SpikingUnifiedCoreFlow"), so we keep reporting the FP metric —
+        HCM's report remains the deployment-honest number.
+        """
+        if self._soft_core_spiking_metric is None:
+            return False
+        return self._ttfs_shift_applied
+
     def validate(self):
-        # When the TTFS shift was baked into biases, the fused FP model's own
-        # evaluation is no longer meaningful (the decorator chain still subtracts
-        # the shift, so the effective compensation is doubled).  Report the
-        # spiking-sim metric instead, which matches the deployment behavior.
-        if self._ttfs_shift_applied and self._soft_core_spiking_metric is not None:
+        if self._should_report_spiking_metric():
             return self._soft_core_spiking_metric
         if self.trainer is not None:
             return self.trainer.validate()
         return self.pipeline.get_target_metric()
 
     def pipeline_metric(self):
-        """Pipeline metric for Soft Core Mapping.
-
-        In ``ttfs_quantized`` mode with activation quantization, the fused
-        floating-point model's biases are modified in-place by the TTFS shift
-        compensation (see ``process()`` below).  That shift aligns the
-        quantization staircase for the spiking simulation but makes
-        ``trainer.test()`` on the FP model meaningless (the decorator chain
-        already subtracts an equivalent shift, so applying another shift to the
-        bias yields a doubly-shifted output).  In that specific mode only, we
-        report the spiking-simulation metric which is the actual representation
-        of what will be deployed.
-
-        In all other modes the FP model is unmodified by this step and
-        ``trainer.test()`` remains the correct metric.
+        """Pipeline metric for Soft Core Mapping — see
+        :meth:`_should_report_spiking_metric` for when we return the
+        soft-core spiking sim instead of the FP-model trainer metric.
         """
-        if self._ttfs_shift_applied and self._soft_core_spiking_metric is not None:
+        if self._should_report_spiking_metric():
             return self._soft_core_spiking_metric
         return super().pipeline_metric()
 

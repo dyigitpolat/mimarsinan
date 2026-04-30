@@ -5,7 +5,10 @@ import math
 import re
 from typing import Dict, List, Sequence, Tuple
 
-from mimarsinan.mapping.core_packing import greedy_pack_softcores
+from mimarsinan.mapping.core_packing import (
+    canonical_split_softcore,
+    greedy_pack_softcores,
+)
 from mimarsinan.mapping.layout.layout_types import (
     LayoutCoreSnapshot,
     LayoutHardCoreInstance,
@@ -23,24 +26,33 @@ def _make_instances(core_types: Sequence[LayoutHardCoreType]) -> List[LayoutHard
     return out
 
 
-def _split_layout_softcore(
-    core: LayoutSoftCoreSpec,
-    available_neurons: int,
+def _make_layout_fragments(
+    *,
+    softcore: LayoutSoftCoreSpec,
+    first_neurons: int,
+    remaining_neurons: int,
 ) -> tuple[LayoutSoftCoreSpec, LayoutSoftCoreSpec]:
-    """Split a layout-only soft core spec at the given neuron boundary."""
+    """Construct two layout softcore fragments at a neuron boundary.
+
+    Mirrors the runtime-side ``_make_real_fragments`` in
+    ``softcore_mapping.py`` — both are ``make_fragments`` callbacks for
+    ``canonical_split_softcore``, so the split *decision* (boundary,
+    two-fragment protocol) is identical; only the fragment *construction*
+    differs (layout only needs shape + carried-over group/latency tags).
+    """
     frag1 = LayoutSoftCoreSpec(
-        input_count=core.input_count,
-        output_count=available_neurons,
-        threshold_group_id=core.threshold_group_id,
-        latency_tag=core.latency_tag,
-        name=f"{core.name}_split_0" if core.name else None,
+        input_count=softcore.input_count,
+        output_count=first_neurons,
+        threshold_group_id=softcore.threshold_group_id,
+        latency_tag=softcore.latency_tag,
+        name=f"{softcore.name}_split_0" if softcore.name else None,
     )
     frag2 = LayoutSoftCoreSpec(
-        input_count=core.input_count,
-        output_count=core.output_count - available_neurons,
-        threshold_group_id=core.threshold_group_id,
-        latency_tag=core.latency_tag,
-        name=f"{core.name}_split_1" if core.name else None,
+        input_count=softcore.input_count,
+        output_count=remaining_neurons,
+        threshold_group_id=softcore.threshold_group_id,
+        latency_tag=softcore.latency_tag,
+        name=f"{softcore.name}_split_1" if softcore.name else None,
     )
     return frag1, frag2
 
@@ -147,25 +159,33 @@ def pack_layout(
         split_counter[0] += 1
         root = _split_root(core.name or f"__noname_{id(core)}")
         split_lineage[root] = split_lineage.get(root, 0) + 1
-        return _split_layout_softcore(core, available_neurons)
-
-    def is_mapping_possible(core: LayoutSoftCoreSpec, hardcore: LayoutHardCoreInstance) -> bool:
-        # Threshold-group constraint: an empty hardcore can accept any group; otherwise, must match.
-        if hardcore.threshold_group_id is not None and hardcore.threshold_group_id != int(core.threshold_group_id):
-            return False
-
-        # Latency constraint: keep parity with real mapper
-        if hardcore.latency_tag is not None:
-            if core.latency_tag is None or int(core.latency_tag) != int(hardcore.latency_tag):
-                return False
-
-        return (
-            core.get_input_count() <= hardcore.available_axons
-            and core.get_output_count() <= hardcore.available_neurons
+        return canonical_split_softcore(
+            core, available_neurons, make_fragments=_make_layout_fragments,
         )
+
+    from mimarsinan.mapping.core_packing import (
+        canonical_fuse_hardcores,
+        canonical_is_mapping_possible,
+    )
+    is_mapping_possible = canonical_is_mapping_possible
 
     def place(core_idx: int, hardcore: LayoutHardCoreInstance, core: LayoutSoftCoreSpec) -> None:
         hardcore.add_softcore(core)
+
+    # Shape-only fuse for layout hardcores.  Gives the layout packer the same
+    # "try to fuse N unused cores for a wide softcore" branch the runtime
+    # packer takes, so ``greedy_pack_softcores`` explores identical decisions
+    # in both paths.
+    def _layout_fuse(hcs):
+        def _mk(*, axons, neurons, template, components):
+            inst = LayoutHardCoreInstance(
+                axons_per_core=int(axons),
+                neurons_per_core=int(neurons),
+            )
+            inst.threshold_group_id = getattr(template, "threshold_group_id", None)
+            inst.latency_tag = getattr(template, "latency_tag", None)
+            return inst
+        return canonical_fuse_hardcores(hcs, make_fused=_mk)
 
     try:
         greedy_pack_softcores(
@@ -174,6 +194,7 @@ def pack_layout(
             unused_hardcores=unused_hardcores,
             is_mapping_possible=is_mapping_possible,
             place=place,
+            fuse_hardcores=_layout_fuse,
             split_softcore=_counting_split if allow_neuron_splitting else None,
         )
     except Exception as e:

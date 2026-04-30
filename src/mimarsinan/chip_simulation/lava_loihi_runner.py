@@ -59,6 +59,72 @@ from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
 # ---------------------------------------------------------------------------
 
 _SUBTRACTIVE_LIF_CLS = None
+_LAVA_SHIMS_INSTALLED = False
+
+
+def _install_lava_compat_shims() -> None:
+    """Apply runtime workarounds for lava issues that we cannot fix in lava.
+
+    Two known incompatibilities with our environment:
+
+    1. ``lava.magma.compiler.var_model`` declares dataclass fields with bare
+       instance defaults (``x: ByteEncoder = ByteEncoder()``). On Python 3.11+
+       this raises ``ValueError: mutable default ... is not allowed: use
+       default_factory`` at class-definition time, so the module fails to
+       import. We pre-load a source-rewritten copy into ``sys.modules`` before
+       any lava import touches it.
+
+    2. ``lava.magma.runtime.message_infrastructure.multiprocessing`` calls
+       ``mp.set_start_method('fork')`` unconditionally at import time, which
+       collides with our project-wide ``'spawn'`` start method (set in
+       mimarsinan's init for CUDA safety). We temporarily wrap
+       ``mp.set_start_method`` so the unconditional call becomes a no-op
+       when a start method is already set.
+    """
+    global _LAVA_SHIMS_INSTALLED
+    if _LAVA_SHIMS_INSTALLED:
+        return
+
+    import sys
+    import importlib.util
+    import multiprocessing as mp
+
+    # --- (1) source-rewrite var_model.py to use default_factory ----------
+    name = "lava.magma.compiler.var_model"
+    if name not in sys.modules:
+        spec = importlib.util.find_spec(name)
+        if spec is not None and spec.origin:
+            with open(spec.origin) as f:
+                src = f.read()
+            if "field(default_factory=ByteEncoder)" not in src:
+                src = src.replace(
+                    "from dataclasses import dataclass, InitVar",
+                    "from dataclasses import dataclass, field, InitVar",
+                )
+                for letter in ("x", "y", "z", "p", "hi", "lo"):
+                    src = src.replace(
+                        f"{letter}: ByteEncoder = ByteEncoder()",
+                        f"{letter}: ByteEncoder = field(default_factory=ByteEncoder)",
+                    )
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            exec(compile(src, spec.origin, "exec"), module.__dict__)
+
+    # --- (2) wrap mp.set_start_method so lava's unconditional 'fork' call
+    # becomes a no-op when a start method is already set upstream ---------
+    real_set = mp.set_start_method
+
+    def _safe_set(method, force=False):  # type: ignore[no-redef]
+        try:
+            current = mp.get_start_method(allow_none=True)
+        except Exception:
+            current = None
+        if force or current is None:
+            real_set(method, force=force)
+        # else: already set by upstream code (e.g. our 'spawn' init); skip.
+
+    mp.set_start_method = _safe_set  # type: ignore[assignment]
+    _LAVA_SHIMS_INSTALLED = True
 
 
 def _probe_lava() -> None:
@@ -66,6 +132,7 @@ def _probe_lava() -> None:
     global _SUBTRACTIVE_LIF_CLS
     if _SUBTRACTIVE_LIF_CLS is not None:
         return
+    _install_lava_compat_shims()
     from mimarsinan.chip_simulation.subtractive_lif import SubtractiveLIFReset
     _SUBTRACTIVE_LIF_CLS = SubtractiveLIFReset
 

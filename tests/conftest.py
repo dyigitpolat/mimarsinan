@@ -15,7 +15,10 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+_repo_root = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, os.path.join(_repo_root, "src"))
+sys.path.insert(0, os.path.join(_repo_root, "spikingjelly"))
+sys.path.insert(0, os.path.join(_repo_root, "lava", "src"))
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
