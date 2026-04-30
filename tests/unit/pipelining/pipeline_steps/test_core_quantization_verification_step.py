@@ -45,6 +45,10 @@ def _run_soft_core_mapping_then_verification(
         platform_constraints_dict,
         step_name="Model Configuration",
     )
+    mock_pipeline.config.setdefault(
+        "simulation_steps",
+        mock_pipeline.config["target_tq"],
+    )
 
     scm = SoftCoreMappingStep(mock_pipeline)
     scm.name = "Soft Core Mapping"

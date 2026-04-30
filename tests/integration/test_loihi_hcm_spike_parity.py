@@ -32,11 +32,11 @@ import torch.nn as nn
 WORK_DIR = Path("generated/mnist_hard_all_lif_phased_deployment_run")
 IR_PICKLE = WORK_DIR / "Soft Core Mapping.ir_graph.pickle"
 PLATFORM_CFG = WORK_DIR / "Model Configuration.platform_constraints_resolved.json"
-SIM_LEN_CFG = WORK_DIR / "Model Configuration.scaled_simulation_length.json"
+RUN_CONFIG = WORK_DIR / "_RUN_CONFIG" / "config.json"
 
 
 def _have_artifacts() -> bool:
-    return IR_PICKLE.exists() and PLATFORM_CFG.exists() and SIM_LEN_CFG.exists()
+    return IR_PICKLE.exists() and PLATFORM_CFG.exists() and RUN_CONFIG.exists()
 
 
 def _have_lava() -> bool:
@@ -75,8 +75,12 @@ def _load_artifacts() -> tuple[object, dict, int]:
         ir_graph = pickle.load(f)
     with open(PLATFORM_CFG) as f:
         platform = json.load(f)
-    with open(SIM_LEN_CFG) as f:
-        sim_length = int(json.load(f))
+    with open(RUN_CONFIG) as f:
+        run_cfg = json.load(f)
+    sim_length = int(
+        run_cfg.get("simulation_steps")
+        or run_cfg.get("platform_constraints", {}).get("simulation_steps", 32)
+    )
     return ir_graph, platform, sim_length
 
 
@@ -105,6 +109,182 @@ def _build_hcm(hybrid_mapping, sim_length: int):
         thresholding_mode="<",
         spiking_mode="lif",
     ).eval()
+
+
+def _make_hard_core(
+    matrix: np.ndarray,
+    axon_sources: list,
+    *,
+    threshold: float = 1.0,
+    hardware_bias: np.ndarray | None = None,
+):
+    """Construct a minimal occupied ``HardCore`` for synthetic timing tests."""
+    from mimarsinan.mapping.softcore_mapping import HardCore
+
+    axons, neurons = matrix.shape
+    core = HardCore(axons, neurons)
+    core.core_matrix = matrix.astype(np.float32)
+    core.axon_sources = axon_sources
+    core.available_axons = 0
+    core.available_neurons = 0
+    core.threshold = float(threshold)
+    core.input_activation_scale = torch.tensor(1.0)
+    core.activation_scale = torch.tensor(1.0)
+    core.parameter_scale = torch.tensor(1.0)
+    if hardware_bias is not None:
+        core.hardware_bias = hardware_bias.astype(np.float32)
+    return core
+
+
+def _make_two_core_hybrid(
+    *,
+    delayed_core_matrix: np.ndarray,
+    delayed_core_sources: list,
+    delayed_core_threshold: float = 1.0,
+    delayed_core_hardware_bias: np.ndarray | None = None,
+):
+    from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+    from mimarsinan.mapping.hybrid_hardcore_mapping import (
+        HybridHardCoreMapping,
+        HybridStage,
+        SegmentIOSlice,
+    )
+    from mimarsinan.mapping.ir import IRSource
+    from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+
+    source_core = _make_hard_core(
+        np.asarray([[1.0]], dtype=np.float32),
+        [SpikeSource(-2, 0, is_input=True)],
+    )
+    delayed_core = _make_hard_core(
+        delayed_core_matrix,
+        delayed_core_sources,
+        threshold=delayed_core_threshold,
+        hardware_bias=delayed_core_hardware_bias,
+    )
+
+    segment = HardCoreMapping([])
+    segment.cores = [source_core, delayed_core]
+    segment.output_sources = np.asarray([SpikeSource(1, 0)], dtype=object)
+
+    stage = HybridStage(
+        kind="neural",
+        name="synthetic_delayed_segment",
+        hard_core_mapping=segment,
+        input_map=[SegmentIOSlice(node_id=-2, offset=0, size=1)],
+        output_map=[SegmentIOSlice(node_id=0, offset=0, size=1)],
+    )
+    return HybridHardCoreMapping(
+        stages=[stage],
+        output_sources=np.asarray([IRSource(node_id=0, index=0)], dtype=object),
+    )
+
+
+@pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
+def test_loihi_delayed_core_input_window_matches_hcm():
+    """Delayed cores must count segment-input axons over their active window."""
+    from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
+    from mimarsinan.chip_simulation.spike_recorder import compare_records
+    from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+
+    T = 4
+    hybrid = _make_two_core_hybrid(
+        delayed_core_matrix=np.asarray([[0.0], [1.0]], dtype=np.float32),
+        delayed_core_sources=[
+            SpikeSource(-2, 0, is_input=True),
+            SpikeSource(0, 0),
+        ],
+    )
+    hcm = _build_hcm(hybrid, T)
+
+    with torch.no_grad():
+        _, rec_hcm = hcm.forward_with_recording(torch.tensor([[0.25]], dtype=torch.float32))
+
+    delayed_core = rec_hcm.segments[0].cores[1]
+    assert delayed_core.core_latency == 1
+    assert delayed_core.input_spike_count[0] == 0
+
+    runner = LavaLoihiRunner(pipeline=None, mapping=hybrid, simulation_length=T)
+    rec_loihi = runner.run_segments_from_reference(rec_hcm)
+
+    assert not compare_records(rec_hcm, rec_loihi)
+
+
+@pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
+def test_loihi_delayed_hardware_bias_matches_hcm_active_window():
+    """Hardware bias must not integrate before a delayed core's active window."""
+    from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
+    from mimarsinan.chip_simulation.spike_recorder import compare_records
+    from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+
+    T = 4
+    hybrid = _make_two_core_hybrid(
+        delayed_core_matrix=np.asarray([[1.0]], dtype=np.float32),
+        delayed_core_sources=[SpikeSource(0, 0)],
+        delayed_core_hardware_bias=np.asarray([0.45], dtype=np.float32),
+    )
+    hcm = _build_hcm(hybrid, T)
+
+    with torch.no_grad():
+        _, rec_hcm = hcm.forward_with_recording(torch.tensor([[0.0]], dtype=torch.float32))
+
+    delayed_core = rec_hcm.segments[0].cores[1]
+    assert delayed_core.core_latency == 1
+    assert delayed_core.output_spike_count[0] == 1
+
+    runner = LavaLoihiRunner(pipeline=None, mapping=hybrid, simulation_length=T)
+    rec_loihi = runner.run_segments_from_reference(rec_hcm)
+
+    assert not compare_records(rec_hcm, rec_loihi)
+
+
+@pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
+def test_loihi_duplicate_source_axons_accumulate_weights():
+    """Multiple axons reading the same source must sum, not overwrite."""
+    from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
+    from mimarsinan.chip_simulation.spike_recorder import compare_records
+    from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+    from mimarsinan.mapping.hybrid_hardcore_mapping import (
+        HybridHardCoreMapping,
+        HybridStage,
+        SegmentIOSlice,
+    )
+    from mimarsinan.mapping.ir import IRSource
+    from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+
+    T = 4
+    segment = HardCoreMapping([])
+    segment.cores = [
+        _make_hard_core(
+            np.asarray([[2.0], [-1.0]], dtype=np.float32),
+            [
+                SpikeSource(-2, 0, is_input=True),
+                SpikeSource(-2, 0, is_input=True),
+            ],
+            threshold=0.5,
+        )
+    ]
+    segment.output_sources = np.asarray([SpikeSource(0, 0)], dtype=object)
+    stage = HybridStage(
+        kind="neural",
+        name="duplicate_source_axons",
+        hard_core_mapping=segment,
+        input_map=[SegmentIOSlice(node_id=-2, offset=0, size=1)],
+        output_map=[SegmentIOSlice(node_id=0, offset=0, size=1)],
+    )
+    hybrid = HybridHardCoreMapping(
+        stages=[stage],
+        output_sources=np.asarray([IRSource(node_id=0, index=0)], dtype=object),
+    )
+    hcm = _build_hcm(hybrid, T)
+
+    with torch.no_grad():
+        _, rec_hcm = hcm.forward_with_recording(torch.tensor([[1.0]], dtype=torch.float32))
+
+    runner = LavaLoihiRunner(pipeline=None, mapping=hybrid, simulation_length=T)
+    rec_loihi = runner.run_segments_from_reference(rec_hcm)
+
+    assert not compare_records(rec_hcm, rec_loihi)
 
 
 # ---------------------------------------------------------------------------

@@ -223,21 +223,21 @@ class BasicTrainer:
     def test_on_subsample(self, *, max_samples: int, seed: int = 0):
         """Run test over a deterministic subsample of the test set.
 
-        Mirrors ``SimulationRunner``'s subsampling exactly: seed
-        ``numpy.random.RandomState(seed)`` and
-        ``rng.choice(total, size=max_samples, replace=False)`` over the
-        logical test-set size, then iterate the loader and retain only
-        samples whose global indices were selected.  Callers can cap a
-        verification pass without sampling drift between SCM, HCM, and
-        the C++ chip-simulation runner.
+        SCM, HCM, and nevresim ``SimulationRunner`` all subsample via
+        :func:`compute_test_subsample_indices` so they see the **same**
+        samples for the same ``seed`` + ``max_samples`` — a hard
+        prerequisite for their accuracy numbers to be directly
+        comparable.
 
         Memory note: prior revisions eagerly materialised the full test
         set into two lists before subsampling — for CIFAR-10 at
         ``resize_to=224`` that's ~6 GB of CPU RAM just to pick 500
-        samples.  We now compute the index set up-front and retain only
+        samples.  We compute the index set up-front and retain only
         those samples during the loader pass.
         """
-        import numpy as np
+        from mimarsinan.chip_simulation.test_subsample import (
+            compute_test_subsample_indices,
+        )
 
         try:
             total_samples = len(self.data_provider._get_test_dataset())
@@ -245,7 +245,8 @@ class BasicTrainer:
             total_samples = None
 
         if total_samples is None or total_samples <= 0:
-            # Unknown dataset length — fall back to eager collection.
+            # Unknown dataset length — fall back to eager collection,
+            # then subsample over the realised count.
             xs_all: list[torch.Tensor] = []
             ys_all: list[torch.Tensor] = []
             with torch.no_grad():
@@ -256,19 +257,21 @@ class BasicTrainer:
             total_samples = len(xs_all)
             if total_samples == 0:
                 return 0.0
-            if max_samples and 0 < max_samples < total_samples:
-                rng = np.random.RandomState(int(seed))
-                indices = rng.choice(total_samples, size=int(max_samples), replace=False)
+            indices = compute_test_subsample_indices(
+                total_samples=total_samples,
+                seed=int(seed),
+                max_samples=int(max_samples),
+            )
+            if len(indices) < total_samples:
                 xs_all = [xs_all[i] for i in indices]
                 ys_all = [ys_all[i] for i in indices]
         else:
-            if max_samples and 0 < max_samples < total_samples:
-                rng = np.random.RandomState(int(seed))
-                selected = set(int(i) for i in rng.choice(
-                    total_samples, size=int(max_samples), replace=False,
-                ))
-            else:
-                selected = None  # keep all
+            indices = compute_test_subsample_indices(
+                total_samples=total_samples,
+                seed=int(seed),
+                max_samples=int(max_samples),
+            )
+            selected = set(indices) if len(indices) < total_samples else None
 
             xs_all = []
             ys_all = []

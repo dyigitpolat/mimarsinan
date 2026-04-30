@@ -217,6 +217,24 @@ class LIFActivation(nn.Module):
         return f"T={self.T}"
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        spikes, safe_scale = self._spikes_and_scale(x)
+        rate = spikes.mean(dim=0)
+        return rate * safe_scale
+
+    def forward_spiking(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the actual ``(T, B, ...)`` LIF spike train (binary 0/1).
+
+        The host-side encoding layer uses this so that downstream neural
+        segments consume the *real* spike timing the LIF dynamics produce
+        — not a uniform re-encoding of the rate. Re-encoding ``rate`` via
+        ``to_uniform_spikes`` preserves the spike count but shifts the
+        firing cycles, which propagates into a different membrane
+        trajectory at every receiving NeuralCore.
+        """
+        spikes, _ = self._spikes_and_scale(x)
+        return spikes
+
+    def _spikes_and_scale(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | float]:
         from spikingjelly.activation_based import functional
 
         scale = self.activation_scale
@@ -231,8 +249,6 @@ class LIFActivation(nn.Module):
         x_norm = F.relu(x) / safe_scale
         x_t = x_norm.unsqueeze(0).expand(self.T, *x_norm.shape).contiguous()
 
-        # Reset membrane state between batches to avoid cross-batch leakage.
         functional.reset_net(self.if_node)
         spikes = self.if_node(x_t)  # (T, B, ...)
-        rate = spikes.mean(dim=0)
-        return rate * safe_scale
+        return spikes, safe_scale

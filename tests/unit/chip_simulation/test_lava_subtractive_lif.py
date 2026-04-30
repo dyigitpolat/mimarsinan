@@ -14,11 +14,18 @@ import numpy as np
 import pytest
 
 
-def _reference_rate(w_dot_x: float, vth: float, T: int) -> float:
-    """Reference: subtractive-reset IF rate = min(floor(T*V/vth), T) / T."""
-    if w_dot_x <= 0.0:
-        return 0.0
-    return min(np.floor(T * w_dot_x / vth), float(T)) / float(T)
+def _reference_spikes(weights: np.ndarray, vth: float, sample_spikes: np.ndarray) -> np.ndarray:
+    """Strict-threshold subtractive IF reference for one packed sample."""
+    n_out = weights.shape[0]
+    T = sample_spikes.shape[1]
+    v = np.zeros((n_out,), dtype=np.float64)
+    out = np.zeros((n_out, T), dtype=np.float32)
+    for cycle in range(T):
+        v += weights @ sample_spikes[:, cycle]
+        fired = v > vth
+        out[:, cycle] = fired.astype(np.float32)
+        v[fired] -= vth
+    return out
 
 
 def _run_single_core_lava(
@@ -32,13 +39,17 @@ def _run_single_core_lava(
     Uses the same 2-cycle latency pad + 1-window warmup layout as
     ``LavaLoihiRunner._run_core_lava``.
     """
+    from mimarsinan.chip_simulation.lava_loihi_runner import (
+        _probe_lava,
+        _subtractive_lif_cls,
+    )
+
+    _probe_lava()
     from lava.magma.core.run_conditions import RunSteps
     from lava.magma.core.run_configs import Loihi2SimCfg
     from lava.proc.dense.process import Dense
     from lava.proc.io.sink import RingBuffer as Sink
     from lava.proc.io.source import RingBuffer as Source
-
-    from mimarsinan.chip_simulation.lava_loihi_runner import _subtractive_lif_cls
 
     SubLIF = _subtractive_lif_cls()
     total = input_spikes.shape[1]
@@ -55,7 +66,7 @@ def _run_single_core_lava(
         [pad_head_block, warmup, input_spikes, tail_block], axis=1
     ).astype(np.float32)
     total_steps = data.shape[1]
-    reset_offset = (PAD_HEAD + T + PIPELINE_DELAY) % T
+    reset_offset = (PAD_HEAD + T + PIPELINE_DELAY + 1) % T
 
     n_out = weights.shape[0]
     src = Source(data=data)
@@ -113,7 +124,9 @@ def test_single_core_matches_reference_staircase(rates):
 
     for i, r in enumerate(rates):
         actual_rate = float(out[0, i * T : (i + 1) * T].mean())
-        expected = _reference_rate(r, vth, T)
+        expected = float(
+            _reference_spikes(weights, vth, spikes[i].astype(np.float64))[0].mean()
+        )
         assert actual_rate == pytest.approx(expected, abs=1e-5), (
             f"sample {i}: input_rate={r}, expected={expected}, got={actual_rate}"
         )
@@ -137,18 +150,11 @@ def test_multi_input_multi_output_matches_reference():
     out = _run_single_core_lava(weights, vth, packed, T)
 
     for i in range(N):
+        expected_spikes = _reference_spikes(weights, vth, spikes[i].astype(np.float64))
         for j in range(2):
             actual = float(out[j, i * T : (i + 1) * T].mean())
-            # The Lava pipeline integrates over spikes that arrived each cycle,
-            # so the true expected is min(floor(T*sum_spikes/(vth)), T)/T where
-            # sum_spikes = Σ_cycles (W @ spike_vector_at_cycle).  For uniform
-            # encoding the time-averaged contribution equals W @ rates.
-            expected_current = float(weights[j] @ rates[i])
-            expected = _reference_rate(expected_current, vth, T)
-            # Tolerance: uniform-encoding quantization can shift one spike
-            # either way across T cycles when inputs aren't commensurate with
-            # T, so allow ±1/T drift.
-            assert actual == pytest.approx(expected, abs=1.0 / T + 1e-5), (
+            expected = float(expected_spikes[j].mean())
+            assert actual == pytest.approx(expected, abs=1e-5), (
                 f"(sample {i}, out {j}): expected={expected}, got={actual}, "
-                f"current={expected_current}, rates={rates[i]}"
+                f"rates={rates[i]}"
             )

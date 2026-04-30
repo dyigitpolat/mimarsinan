@@ -173,11 +173,10 @@ def main() -> None:
     spike = dp.get("spike_generation_mode", "TTFS")
     thresh = dp.get("thresholding_mode", "<=")
     spiking = dp.get("spiking_mode", "ttfs_quantized")
-    try:
-        with open(args.run_dir / "Model Configuration.scaled_simulation_length.json") as f:
-            sim_len = int(json.load(f))
-    except Exception:
-        sim_len = int(cfg.get("platform_constraints", {}).get("simulation_steps", 32))
+    sim_len = int(
+        cfg.get("simulation_steps")
+        or cfg.get("platform_constraints", {}).get("simulation_steps", 32)
+    )
     input_shape = (3, 224, 224)
     print(f"Sim config: T={sim_len}, firing={firing}, spike={spike}, thresh={thresh}, mode={spiking}, input={input_shape}")
     print(f"HybridHardCoreMapping: {len(hcm.stages)} stages")

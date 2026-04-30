@@ -8,7 +8,8 @@ from mimarsinan.models.layers import TransformedActivation
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
 from mimarsinan.common.diagnostics import phase_profiler
 
 import numpy as np
@@ -29,42 +30,16 @@ class SoftCoreMappingStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
         self.trainer = None
         self._soft_core_spiking_metric = None
-        self._ttfs_shift_applied = False
-
-    def _should_report_spiking_metric(self) -> bool:
-        """Report the soft-core spiking-simulation metric instead of the FP
-        forward only when the FP forward is *actively wrong* relative to
-        deployment:
-
-        * ``ttfs_quantized``: the TTFS bias shift is baked in here, so the
-          decorator-chain-compensated FP forward is double-shifted relative
-          to the spiking sim — FP forward is broken and must be replaced.
-
-        For ``lif`` the FP forward's LIFActivation matches the *per-neuron*
-        deployment semantics bit-exactly (by design — it wraps the same
-        ``IFNode`` family the chip models).  Any residual gap comes from
-        ``SpikingUnifiedCoreFlow``'s known approximations (documented in
-        feedback memory as "HCM≈NF is the baseline; if SCM lags, bug is in
-        SpikingUnifiedCoreFlow"), so we keep reporting the FP metric —
-        HCM's report remains the deployment-honest number.
-        """
-        if self._soft_core_spiking_metric is None:
-            return False
-        return self._ttfs_shift_applied
 
     def validate(self):
-        if self._should_report_spiking_metric():
+        if self._soft_core_spiking_metric is not None:
             return self._soft_core_spiking_metric
         if self.trainer is not None:
             return self.trainer.validate()
         return self.pipeline.get_target_metric()
 
     def pipeline_metric(self):
-        """Pipeline metric for Soft Core Mapping — see
-        :meth:`_should_report_spiking_metric` for when we return the
-        soft-core spiking sim instead of the FP-model trainer metric.
-        """
-        if self._should_report_spiking_metric():
+        if self._soft_core_spiking_metric is not None:
             return self._soft_core_spiking_metric
         return super().pipeline_metric()
 
@@ -192,7 +167,6 @@ class SoftCoreMappingStep(PipelineStep):
                 PerceptronTransformer().apply_effective_bias_transform(
                     perceptron, lambda b, s=bias_shift: b + s)
                 perceptron._ttfs_shift_baked_into_bias = True
-            self._ttfs_shift_applied = True
 
         bits = self.pipeline.config['weight_bits']
         q_max = (2 ** (bits - 1)) - 1
@@ -424,13 +398,14 @@ class SoftCoreMappingStep(PipelineStep):
             for op in compute_ops:
                 print(f"  - {op.name}: {op.op_type}")
 
-        # Always report a *soft-core* spiking simulation result at this stage (pre-tuning),
-        # so it's easy to compare before/after CoreFlow Tuning. Works for both neural-only
-        # graphs and graphs containing ComputeOps (sync barriers handled in SpikingUnifiedCoreFlow).
-        #
-        # Memory hygiene: the fused FP model was moved to GPU for BasicTrainer but the sim
-        # itself consumes only the IR graph; evicting the FP model frees headroom and
-        # defragments the CUDA allocator before the sim's own parameter upload.
+        # SCM, HCM, and nevresim must all report the same number on the
+        # same test subsample — they're three implementations of the same
+        # spiking simulation on the same mapping. To make that equality
+        # structural, SCM builds a HybridHardCoreMapping from its IR graph
+        # (the same way HCM does) and runs the simulation through
+        # ``SpikingHybridCoreFlow``. Eliminates the prior
+        # ``SpikingUnifiedCoreFlow`` divergence (float32 vs float64, no
+        # per-core latency, no segment boundaries).
         device = self.pipeline.config["device"]
         sim_batches = self.pipeline.config.get("simulation_batch_count", None)
 
@@ -442,23 +417,28 @@ class SoftCoreMappingStep(PipelineStep):
             torch.cuda.empty_cache()
 
         spiking_trainer = None
-        # Use the data provider's default test batch size — matches HardCoreMappingStep.
-        # The SCM and HCM forwards are numerically equivalent on the same IR graph,
-        # but per-operator cuBLAS kernel selection is batch-shape-dependent and can
-        # produce ~1e-7 float drift.  The ``ceil(S*(1 - V/θ))`` TTFS step amplifies
-        # that drift into k_fire flips, which compound over ~100 NeuralCore layers
-        # into argmax flips and a 4-5 pp accuracy gap between the two reports.
-        # Running sim_test at the same batch size as HCM keeps the two metrics aligned.
-        #
-        # On OOM, halve the batch size and retry once.
-        attempt_cap = None  # None => keep provider default
+        attempt_cap = None
         for attempt in range(2):
             try:
                 cap_tag = "default" if attempt_cap is None else str(attempt_cap)
+                with _phase(f"sim_build_hybrid[cap={cap_tag}]"):
+                    hybrid_mapping = build_hybrid_hard_core_mapping(
+                        ir_graph=ir_graph,
+                        cores_config=platform_constraints["cores"],
+                        allow_neuron_splitting=bool(
+                            platform_constraints.get("allow_neuron_splitting", False)
+                        ),
+                        allow_scheduling=bool(
+                            platform_constraints.get("allow_scheduling", False)
+                        ),
+                        allow_coalescing=bool(
+                            platform_constraints.get("allow_coalescing", False)
+                        ),
+                    )
                 with _phase(f"sim_construct[cap={cap_tag}]"):
-                    flow = SpikingUnifiedCoreFlow(
+                    flow = SpikingHybridCoreFlow(
                         self.pipeline.config["input_shape"],
-                        ir_graph,
+                        hybrid_mapping,
                         int(self.pipeline.config["simulation_steps"]),
                         None,
                         self.pipeline.config["firing_mode"],
@@ -477,11 +457,6 @@ class SoftCoreMappingStep(PipelineStep):
                 if attempt_cap is not None:
                     current_bs = spiking_trainer.test_batch_size
                     spiking_trainer.set_test_batch_size(min(current_bs, attempt_cap))
-                # Honour ``max_simulation_samples`` the same way the C++
-                # ``SimulationRunner`` does: seeded numpy.choice
-                # subsampling of the full test set.  This keeps the SCM
-                # verification metric comparable to both the HCM
-                # verification and the downstream chip-sim pass.
                 max_samples = int(self.pipeline.config.get("max_simulation_samples", 0) or 0)
                 if max_samples > 0:
                     with _phase(f"sim_test[max_samples={max_samples}]"):
@@ -494,12 +469,9 @@ class SoftCoreMappingStep(PipelineStep):
                         acc = spiking_trainer.test(max_batches=sim_batches)
                 spiking_trainer.close()
                 self._soft_core_spiking_metric = float(acc)
-                print(f"[SoftCoreMappingStep] Soft-core (Unified IR) Spiking Simulation Test: {acc}")
+                print(f"[SoftCoreMappingStep] Soft-core Spiking Simulation Test: {acc}")
                 break
             except RuntimeError as e:
-                # torch.cuda.OutOfMemoryError subclasses RuntimeError in recent
-                # PyTorch; older versions raise a plain RuntimeError with
-                # "out of memory" in the message. Detect by message to cover both.
                 oom_cls = getattr(torch.cuda, "OutOfMemoryError", ())
                 is_oom = isinstance(e, oom_cls) or "out of memory" in str(e).lower()
                 if spiking_trainer is not None:
@@ -511,12 +483,8 @@ class SoftCoreMappingStep(PipelineStep):
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 if not is_oom or attempt >= 1:
-                    print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
+                    print(f"[SoftCoreMappingStep] Soft-core simulation failed (non-fatal): {e}")
                     break
-                # OOM fallback cap (default 8).  Note: running at a different
-                # batch size than HCM will produce a slightly different reported
-                # accuracy due to cuBLAS kernel-selection drift, but this only
-                # kicks in when the default batch would OOM.
                 attempt_cap = int(self.pipeline.config.get("simulation_batch_size", 8))
                 print(
                     f"[SoftCoreMappingStep] Soft-core sim OOM at default batch size; "
@@ -528,7 +496,7 @@ class SoftCoreMappingStep(PipelineStep):
                         spiking_trainer.close()
                     except Exception:
                         pass
-                print(f"[SoftCoreMappingStep] Soft-core (Unified IR) simulation failed (non-fatal): {e}")
+                print(f"[SoftCoreMappingStep] Soft-core simulation failed (non-fatal): {e}")
                 break
 
     def _calculate_input_activation_scales(self, model, validator, rate):

@@ -5,7 +5,7 @@ from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 
 class SimulationStep(PipelineStep):
     def __init__(self, pipeline):
-        requires = ["hard_core_mapping", "scaled_simulation_length"]
+        requires = ["hard_core_mapping"]
         promises = []
         updates = []
         clears = []
@@ -20,7 +20,7 @@ class SimulationStep(PipelineStep):
         runner = SimulationRunner(
             self.pipeline,
             self.get_entry('hard_core_mapping'),
-            self.get_entry('scaled_simulation_length'),
+            int(self.pipeline.config["simulation_steps"]),
         )
         
         self.accuracy = runner.run()
