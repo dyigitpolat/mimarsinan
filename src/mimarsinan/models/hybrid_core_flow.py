@@ -34,10 +34,16 @@ from __future__ import annotations
 
 from typing import Dict
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.chip_simulation.spike_recorder import (
+    CoreSpikeCounts,
+    RunRecord,
+    SegmentSpikeRecord,
+)
 from mimarsinan.mapping.chip_latency import ChipLatency
 from mimarsinan.mapping.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
@@ -126,6 +132,13 @@ class SpikingHybridCoreFlow(nn.Module):
         # blocks the allocator would otherwise hold.
         self._segment_tensor_cache: Dict[int, dict] = {}
         self._segment_tensor_cache_key: int | None = None
+
+        # Set by ``forward_with_recording``; consumed by ``_forward_rate``
+        # and ``_run_neural_segment_rate`` to populate per-segment /
+        # per-core spike-count records for HCM↔Loihi parity diffing.
+        # ``None`` (the normal case) makes recording a single-branch
+        # check that has no measurable cost on the hot path.
+        self._recorder: RunRecord | None = None
 
     def _build_consumer_counts(self) -> Dict[int, int]:
         """Return ``{node_id: number_of_downstream_reads}`` for the mapping.
@@ -483,8 +496,17 @@ class SpikingHybridCoreFlow(nn.Module):
         stage: HybridStage,
         *,
         input_spike_train: torch.Tensor,
+        recorder_seg: SegmentSpikeRecord | None = None,
     ) -> torch.Tensor:
-        """Rate-coded neural segment execution.  Returns spike counts (B, out_dim)."""
+        """Rate-coded neural segment execution.  Returns spike counts (B, out_dim).
+
+        When ``recorder_seg`` is provided, per-core integer spike counts
+        are accumulated during the cycle loop and appended to
+        ``recorder_seg.cores`` after execution.  Counts are summed only
+        over each core's *active* window ``[core.latency, core.latency + T)``
+        so a deep core's "warmup" cycles (when its membrane isn't yet
+        being updated) don't inflate its input total.
+        """
         mapping = stage.hard_core_mapping
         assert mapping is not None
 
@@ -494,6 +516,11 @@ class SpikingHybridCoreFlow(nn.Module):
         batch_size = input_spike_train.shape[1]
         device = input_spike_train.device
         input_size = input_spike_train.shape[2]
+        # Per-core counts only support B=1; the parity harness asserts
+        # this in ``forward_with_recording``.
+        recording = recorder_seg is not None
+        if recording:
+            assert batch_size == 1, "Spike recording requires batch_size == 1"
 
         latency = ChipLatency(mapping).calculate()
         cycles = int(latency) + T
@@ -531,6 +558,22 @@ class SpikingHybridCoreFlow(nn.Module):
             for c in cores
         ]
 
+        # Per-core spike-count accumulators.  Allocated only when
+        # recording so the non-recording forward path stays untouched.
+        record_in_t: list[torch.Tensor] | None = None
+        record_out_t: list[torch.Tensor] | None = None
+        if recording:
+            record_in_t = [
+                torch.zeros(max(int(c.axons_per_core - c.available_axons), 1),
+                            device=device, dtype=torch.int64)
+                for c in cores
+            ]
+            record_out_t = [
+                torch.zeros(max(int(c.neurons_per_core - c.available_neurons), 1),
+                            device=device, dtype=torch.int64)
+                for c in cores
+            ]
+
         # Spike train arrives as float32 from spike generators; cast to compute dtype once.
         input_spike_train = input_spike_train.to(_COMPUTE_DTYPE)
 
@@ -566,6 +609,13 @@ class SpikingHybridCoreFlow(nn.Module):
                 elif self.firing_mode == "Default":
                     memb_i[fired] -= thresholds[core_idx]
 
+                if recording:
+                    # Accumulate counts only on cycles when the core was
+                    # actually integrating — matches the cycle window
+                    # Loihi's reset_offset reproduces.
+                    record_in_t[core_idx] += input_signals[core_idx][0].to(torch.int64)
+                    record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64)
+
             for sp in output_spans:
                 d0 = int(sp.dst_start)
                 d1 = int(sp.dst_end)
@@ -578,6 +628,25 @@ class SpikingHybridCoreFlow(nn.Module):
                     output_counts[:, d0:d1] += input_spikes[:, int(sp.src_start):int(sp.src_end)]
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+
+        if recording:
+            for core_idx, core in enumerate(cores):
+                axon_span_list = axon_spans[core_idx]
+                n_always_on = sum(
+                    int(sp.length) for sp in axon_span_list if sp.kind == "on"
+                )
+                recorder_seg.cores.append(
+                    CoreSpikeCounts(
+                        core_index=core_idx,
+                        n_in_used=max(int(core.axons_per_core - core.available_axons), 1),
+                        n_out_used=max(int(core.neurons_per_core - core.available_neurons), 1),
+                        core_latency=int(core.latency) if core.latency is not None else -1,
+                        has_hardware_bias=getattr(core, "hardware_bias", None) is not None,
+                        n_always_on_axons=n_always_on,
+                        input_spike_count=record_in_t[core_idx].cpu().numpy().astype(np.int64),
+                        output_spike_count=record_out_t[core_idx].cpu().numpy().astype(np.int64),
+                    )
+                )
 
         return output_counts
 
@@ -803,7 +872,7 @@ class SpikingHybridCoreFlow(nn.Module):
         # strategy prevents state_buffer growth within a forward.
         remaining = dict(self._build_consumer_counts())
 
-        for stage in self.hybrid_mapping.stages:
+        for stage_index, stage in enumerate(self.hybrid_mapping.stages):
             if stage.kind == "neural":
                 seg_input_rates = self._assemble_segment_input(
                     stage.input_map, state_buffer, batch_size, device
@@ -816,8 +885,25 @@ class SpikingHybridCoreFlow(nn.Module):
                 for cycle in range(T):
                     spike_train[cycle] = self.to_spikes(seg_input_rates_clamped, cycle).to(_COMPUTE_DTYPE)
 
+                # Build a recording slot for this neural stage when the
+                # parity harness has installed a recorder.  ``cores`` is
+                # populated inside ``_run_neural_segment_rate``.
+                recorder_seg: SegmentSpikeRecord | None = None
+                if self._recorder is not None:
+                    recorder_seg = SegmentSpikeRecord(
+                        stage_index=stage_index,
+                        stage_name=stage.name,
+                        schedule_segment_index=stage.schedule_segment_index,
+                        schedule_pass_index=stage.schedule_pass_index,
+                        seg_input_rates=seg_input_rates_clamped[0]
+                            .detach().to(torch.float32).cpu().numpy().reshape(1, -1),
+                        seg_input_spike_count=spike_train.sum(dim=0)[0]
+                            .to(torch.int64).cpu().numpy(),
+                        seg_output_spike_count=np.zeros(0, dtype=np.int64),
+                    )
+
                 counts = self._run_neural_segment_rate(
-                    stage, input_spike_train=spike_train
+                    stage, input_spike_train=spike_train, recorder_seg=recorder_seg,
                 )
                 seg_output_rates = counts / float(T)
                 self._store_segment_output(stage.output_map, state_buffer, seg_output_rates)
@@ -825,6 +911,12 @@ class SpikingHybridCoreFlow(nn.Module):
                     state_buffer, remaining,
                     (int(s.node_id) for s in stage.input_map),
                 )
+
+                if recorder_seg is not None:
+                    recorder_seg.seg_output_spike_count = (
+                        counts[0].to(torch.int64).cpu().numpy()
+                    )
+                    self._recorder.segments[stage_index] = recorder_seg
 
             elif stage.kind == "compute":
                 op = stage.compute_op
@@ -843,6 +935,13 @@ class SpikingHybridCoreFlow(nn.Module):
                 if abs(out_scale - 1.0) > 1e-9:
                     result = result / out_scale
                 state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
+                if self._recorder is not None:
+                    # Snapshot the float32 rate output the next neural
+                    # stage would consume.  Loihi harness mode reuses
+                    # this verbatim instead of re-running the host op.
+                    self._recorder.compute_outputs[int(op.id)] = (
+                        result.detach().to(torch.float32).cpu().numpy()
+                    )
                 self._decref_consumers(
                     state_buffer, remaining,
                     (int(src.node_id) for src in op.input_sources.flatten()
@@ -854,3 +953,34 @@ class SpikingHybridCoreFlow(nn.Module):
 
         final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
         return final.to(torch.float32) * float(T)
+
+    # ---------------------------------------------------------------------
+    # Spike-count recording entry point (used by Loihi parity harness)
+    # ---------------------------------------------------------------------
+    def forward_with_recording(
+        self, x: torch.Tensor, *, sample_index: int = 0,
+    ) -> tuple[torch.Tensor, RunRecord]:
+        """Forward a SINGLE sample and return (output, run_record).
+
+        Asserts batch_size == 1 and ``spiking_mode == 'lif'`` because:
+          * Per-core counts are aggregated assuming one sample per
+            forward, which keeps the recorder allocation small and the
+            cycle alignment unambiguous.
+          * Loihi's runner is LIF-only (TTFS does not map to its
+            SubtractiveLIFReset model), so parity is only meaningful in
+            LIF mode — the same constraint LavaLoihiRunner enforces in
+            its constructor.
+        """
+        assert x.shape[0] == 1, "forward_with_recording requires batch_size == 1"
+        assert self.spiking_mode == "lif", (
+            f"forward_with_recording requires spiking_mode='lif'; got "
+            f"{self.spiking_mode!r}"
+        )
+
+        record = RunRecord(sample_index=int(sample_index), T=int(self.simulation_length))
+        self._recorder = record
+        try:
+            out = self.forward(x)
+        finally:
+            self._recorder = None
+        return out, record
