@@ -8,19 +8,19 @@
     "cores": [
       {
         "max_axons": 256,
-        "max_neurons": 2048,
-        "count": 40,
+        "max_neurons": 512,
+        "count": 30,
         "has_bias": true
       },
       {
-        "max_axons": 2048,
+        "max_axons": 512,
         "max_neurons": 256,
-        "count": 35,
+        "count": 30,
         "has_bias": true
       }
     ],
-    "max_axons": 2048,
-    "max_neurons": 2048,
+    "max_axons": 512,
+    "max_neurons": 512,
     "target_tq": 4,
     "simulation_steps": 4,
     "weight_bits": 5,
@@ -31,7 +31,7 @@
   "deployment_parameters": {
     "lr": 0.003,
     "training_epochs": 10,
-    "tuning_budget_scale": 1.0,
+    "tuning_budget_scale": 1,
     "degradation_tolerance": 0.15,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
@@ -48,11 +48,11 @@
     "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
     "thresholding_mode": "<",
+    "activation_quantization": false,
     "weight_quantization": true,
     "pruning": true,
-    "pruning_fraction": 0.3,
+    "pruning_fraction": 0.2,
     "batch_size": 128,
-    "enable_loihi_simulation": true,
     "training_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",
@@ -80,7 +80,8 @@
       ]
     },
     "max_simulation_samples": 500,
-    "allow_scheduling": true
+    "allow_scheduling": true,
+    "enable_loihi_simulation": true
   },
   "target_metric_override": null,
   "start_step": "Soft Core Mapping",

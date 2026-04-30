@@ -112,6 +112,21 @@ class ResourceStore:
             bucket[key] = _Entry(desc)
             self._versions[step] = self._versions.get(step, 0) + 1
 
+    def prewarm(self, step: str, kind: str, rid: str) -> Any:
+        """Force materialisation of an already-registered descriptor.
+
+        Returns the materialised payload (or ``None`` on producer failure /
+        missing entry). Used by the snapshot executor to render heatmap
+        PNGs and connectivity JSON off the request thread so the first
+        HTTP fetch from the frontend hits a hot cache instead of waking
+        matplotlib (which holds the GIL and serialises across the FastAPI
+        threadpool, producing the 10+ s pause that motivated this path).
+        """
+        entry = self._lookup(step, kind, rid)
+        if entry is None:
+            return None
+        return entry.materialise()
+
     def has(self, step: str, kind: str, rid: str) -> bool:
         with self._lock:
             bucket = self._store.get(step)
