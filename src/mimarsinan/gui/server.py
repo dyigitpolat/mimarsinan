@@ -269,13 +269,20 @@ def create_app(
     # -- Lazy resources (heatmaps / connectivity for the live run) ------------
 
     @app.get("/api/steps/{step_name}/resources/{kind}/{rid:path}")
-    def step_resource(step_name: str, kind: str, rid: str):
+    async def step_resource(step_name: str, kind: str, rid: str):
         """Fetch a lazy resource for a live step.
 
         Tries the in-memory :class:`ResourceStore` first (live run owned
         by this server process); falls back to the on-disk persisted
         copy (populated by the snapshot executor) so resources keep
         working after server restarts.
+
+        Made ``async`` so the (potentially expensive) ``store.get_*``
+        materialisation runs on a worker thread via ``asyncio.to_thread``.
+        Otherwise a cold matplotlib render — which holds the GIL and can
+        take 100s of milliseconds per heatmap — would block the FastAPI
+        request handler thread directly, serialising every other GUI
+        poll (overview, metrics, console) behind it.
         """
         store = collector.get_resource_store()
         media_type = _RESOURCE_MEDIA_TYPE_BY_KIND.get(kind)
@@ -283,7 +290,7 @@ def create_app(
             return JSONResponse(status_code=404, content={"error": f"unknown resource kind {kind!r}"})
         if store is not None:
             if media_type == "image/png":
-                hit = store.get_bytes(step_name, kind, rid)
+                hit = await asyncio.to_thread(store.get_bytes, step_name, kind, rid)
                 if hit is not None:
                     payload, mt = hit
                     return Response(
@@ -292,17 +299,12 @@ def create_app(
                         headers={"Cache-Control": "public, max-age=3600, immutable"},
                     )
             else:
-                payload = store.get_json(step_name, kind, rid)
+                payload = await asyncio.to_thread(store.get_json, step_name, kind, rid)
                 if payload is not None:
                     return _SafeJSONResponse(
                         content=payload,
                         headers={"Cache-Control": "public, max-age=3600, immutable"},
                     )
-        working_dir = None
-        try:
-            from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline  # noqa: F401
-        except Exception:
-            pass
         # No explicit working_dir is exposed here — disk fallback is only
         # available for subprocess/historical runs (handled by the mirror
         # endpoints below). For the primary collector, if the in-memory

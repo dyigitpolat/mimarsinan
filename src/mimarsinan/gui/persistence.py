@@ -279,6 +279,50 @@ def save_step_to_persisted(
         _atomic_write_json(path, {"steps": existing})
 
 
+def save_step_status(
+    working_directory: str,
+    step_name: str,
+    *,
+    status: str,
+    end_time: float | None = None,
+    target_metric: float | None = None,
+) -> None:
+    """Field-wise update of a single step's lifecycle fields in steps.json.
+
+    Unlike :func:`save_step_to_persisted` this never touches the heavy
+    ``snapshot`` / ``metrics`` / ``snapshot_key_kinds`` fields — it only
+    upserts the listed lifecycle fields. Used by ``on_step_end`` to mark
+    a step ``status="completed"`` synchronously *before* the next
+    ``on_step_start`` writes ``status="running"`` for the following step;
+    without this synchronous mark, the active-run watcher reads the file
+    during the gap and sees two steps in ``running`` simultaneously,
+    showing the previous step as still active in the pipeline bar.
+
+    Holds the same per-file lock as :func:`save_step_to_persisted` so the
+    later heavy write from the snapshot executor merges cleanly on top.
+    """
+    path = _state_path(working_directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _steps_file_lock(path):
+        existing: dict[str, Any] = {}
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                existing = data.get("steps", {})
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        entry = dict(existing.get(step_name) or {})
+        entry["status"] = status
+        if end_time is not None:
+            entry["end_time"] = end_time
+        if target_metric is not None:
+            entry["target_metric"] = target_metric
+        existing[step_name] = entry
+        _atomic_write_json(path, {"steps": existing})
+
+
 # ── resources (lazy heatmaps / connectivity blobs) ─────────────────────────
 
 def _resource_root(working_directory: str) -> Path:

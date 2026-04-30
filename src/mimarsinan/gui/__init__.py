@@ -24,6 +24,7 @@ from mimarsinan.gui.data_collector import DataCollector
 from mimarsinan.gui.persistence import (
     load_persisted_steps,
     save_resource_to_disk,
+    save_step_status,
     save_step_to_persisted,
     write_persisted_steps_replace,
     append_live_metric,
@@ -207,6 +208,32 @@ class GUIHandle:
             resources=resource_descriptors,
         )
 
+        # Mark the step ``completed`` on disk SYNCHRONOUSLY before the
+        # pipeline thread runs the next step's ``on_step_start`` (which
+        # writes ``status="running"`` for that step). Without this, the
+        # active-run watcher reads ``steps.json`` during the gap, sees
+        # both steps as ``running``, and ``get_run_detail`` returns the
+        # earlier one as ``current_step`` — the pipeline bar then shows
+        # the *finished* step as the active one until the snapshot
+        # executor catches up. Field-wise upsert keeps the heavy
+        # ``snapshot`` / ``metrics`` written later by ``_finalize``.
+        end_time_now = time.time()
+        if working_dir:
+            try:
+                save_step_status(
+                    working_dir,
+                    step_name,
+                    status="completed",
+                    end_time=end_time_now,
+                    target_metric=target_metric,
+                )
+            except Exception:
+                import logging as _logging
+                _logging.getLogger("mimarsinan.gui").debug(
+                    "Synchronous status=completed write failed for %s", step_name,
+                    exc_info=True,
+                )
+
         def _finalize() -> None:
             if working_dir:
                 detail = self.collector.get_step_detail(step_name)
@@ -222,11 +249,19 @@ class GUIHandle:
                         detail.get("snapshot_key_kinds"),
                         status="completed",
                     )
-                # Materialize heavy resources to disk so the parent GUI
-                # server (watching this subprocess via ProcessManager)
-                # can serve them via /api/active_runs/.../resources/...
-                # without needing in-process access to the ResourceStore.
-                for desc in resource_descriptors:
+            # Pre-warm the in-process ResourceStore *and* (when we have a
+            # working dir) write the rendered payload to disk so live HTTP
+            # requests hit a hot cache and subprocess-monitor reads find
+            # the on-disk file. Going through ``store.prewarm`` instead of
+            # calling ``desc.producer()`` directly means the producer runs
+            # exactly once even if a fast user click races the prewarm —
+            # ``_Entry.materialise`` is itself idempotent + thread-safe.
+            store = self.collector.get_resource_store()
+            for desc in resource_descriptors:
+                payload = None
+                if store is not None:
+                    payload = store.prewarm(step_name, desc.kind, desc.rid)
+                if payload is None:
                     try:
                         payload = desc.producer()
                     except Exception:
@@ -236,22 +271,24 @@ class GUIHandle:
                             exc_info=True,
                         )
                         continue
-                    if desc.media_type == "image/png":
-                        if isinstance(payload, (bytes, bytearray)):
-                            save_resource_to_disk(
-                                working_dir, step_name, desc.kind, desc.rid,
-                                bytes(payload), media_type=desc.media_type,
-                            )
-                    elif desc.media_type == "application/json":
-                        import json as _json
-                        try:
-                            encoded = _json.dumps(payload).encode("utf-8")
-                        except (TypeError, ValueError):
-                            continue
+                if not working_dir:
+                    continue
+                if desc.media_type == "image/png":
+                    if isinstance(payload, (bytes, bytearray)):
                         save_resource_to_disk(
                             working_dir, step_name, desc.kind, desc.rid,
-                            encoded, media_type=desc.media_type,
+                            bytes(payload), media_type=desc.media_type,
                         )
+                elif desc.media_type == "application/json":
+                    import json as _json
+                    try:
+                        encoded = _json.dumps(payload).encode("utf-8")
+                    except (TypeError, ValueError):
+                        continue
+                    save_resource_to_disk(
+                        working_dir, step_name, desc.kind, desc.rid,
+                        encoded, media_type=desc.media_type,
+                    )
 
         # Offload collector bookkeeping and disk persistence so the
         # pipeline thread returns immediately to run the next step. The

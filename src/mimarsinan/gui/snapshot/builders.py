@@ -36,20 +36,30 @@ def _make_heatmap_producer(
     *,
     pruned_row_mask: list | None = None,
     pruned_col_mask: list | None = None,
+    copy: bool = True,
 ):
     """Build a zero-arg closure that renders *matrix* to PNG bytes lazily.
 
-    The matrix is deep-copied into a plain NumPy array at capture time so
-    the closure is isolated from subsequent pipeline mutation (next-step
-    reassignment, in-place updates, tensor frees). Mask lists are coerced
-    to plain Python lists for the same reason.
+    By default the matrix is deep-copied into a plain NumPy array at
+    capture time so the closure is isolated from subsequent pipeline
+    mutation (next-step reassignment, in-place updates, tensor frees).
+    Mask lists are coerced to plain Python lists for the same reason.
 
-    This is critical because the snapshot may be rendered much later — on
-    first HTTP fetch from the ``ResourceStore`` — by which point the
-    pipeline may have mutated the original arrays.
+    Pass ``copy=False`` when the caller can guarantee that *matrix* is
+    pipeline-terminal — i.e. the upstream step is the last one to write
+    it and downstream steps only read. ``hard_core_mapping`` core
+    matrices, IR ``NeuralCore.core_matrix`` (post-pruning), and
+    ``pre_pruning_heatmap`` all qualify. Skipping the copy avoids
+    duplicating GBs of weights on the pipeline thread when the snapshot
+    is built — the deep-copy was the single largest cost on big models
+    and pushed ``on_step_end`` for HCM into the multi-second range,
+    blocking the next ``step_started`` broadcast.
     """
     try:
-        matrix_copy: Any = np.asarray(matrix).copy()
+        if copy:
+            matrix_copy: Any = np.asarray(matrix).copy()
+        else:
+            matrix_copy = np.asarray(matrix)
     except Exception:
         matrix_copy = matrix
     rr = list(pruned_row_mask) if pruned_row_mask is not None else None
@@ -265,7 +275,7 @@ def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
                 descriptors.append(ResourceDescriptor(
                     kind=RESOURCE_KIND_IR_BANK_HEATMAP,
                     rid=rid,
-                    producer=_make_heatmap_producer(bank.core_matrix),
+                    producer=_make_heatmap_producer(bank.core_matrix, copy=False),
                     media_type="image/png",
                 ))
             except Exception:
@@ -323,7 +333,7 @@ def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
             descriptors.append(ResourceDescriptor(
                 kind=RESOURCE_KIND_IR_CORE_HEATMAP,
                 rid=core_rid,
-                producer=_make_heatmap_producer(mat),
+                producer=_make_heatmap_producer(mat, copy=False),
                 media_type="image/png",
             ))
 
@@ -350,6 +360,7 @@ def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
                                 pre_arr,
                                 pruned_row_mask=list(row_mask),
                                 pruned_col_mask=list(col_mask),
+                                copy=False,
                             ),
                             media_type="image/png",
                         ))
@@ -698,24 +709,62 @@ def _group_consecutive_compute_stages(stages: list[dict]) -> list[dict]:
     return result
 
 
-def _make_connectivity_producer(hcm: Any, segment_index: int):
-    """Zero-arg closure extracting connectivity spans for *hcm* on first request.
+def _make_segment_spans_extractor(hcm: Any, segment_index: int):
+    """Return a memoised zero-arg closure that yields *all* spans of a segment.
 
-    Captures *hcm* by reference. The hard-core mapping is finalized in the
-    Hard Core Mapping step and must not be mutated by downstream steps; if
-    that invariant changes, this closure will need to snapshot the
-    relevant fields eagerly.
+    Extracting spans is expensive (one ``compress_spike_sources`` per core
+    on first call) so we want to do it once per segment and reuse the
+    result across the per-core span producers below. The closure is
+    thread-safe so concurrent ``produce()`` calls from the FastAPI
+    threadpool don't double-extract.
+
+    Captures *hcm* by reference. The hard-core mapping is finalized in
+    the Hard Core Mapping step and must not be mutated by downstream
+    steps; if that invariant changes, this closure will need to snapshot
+    the relevant fields eagerly.
+    """
+    import threading
+    state: dict[str, Any] = {"spans": None}
+    lock = threading.Lock()
+
+    def get_all() -> list[dict]:
+        cached = state["spans"]
+        if cached is not None:
+            return cached
+        with lock:
+            if state["spans"] is not None:
+                return state["spans"]
+            try:
+                spans = _extract_core_connectivity(hcm, segment_index)
+            except Exception:
+                logger.debug(
+                    "Lazy connectivity extraction failed for segment %d",
+                    segment_index,
+                    exc_info=True,
+                )
+                spans = []
+            state["spans"] = spans
+            return spans
+
+    return get_all
+
+
+def _make_per_core_connectivity_producer(get_all_spans, core_index: int):
+    """Per-(segment, core) closure returning only spans touching *core_index*.
+
+    The Hardware tab only renders spans whose ``src_core`` or ``dst_core``
+    matches the user-selected core, so shipping the entire segment's
+    span list — often thousands of dicts and several MB of JSON — was
+    pure overhead. This producer filters to the single core's incoming
+    and outgoing spans, while sharing the underlying segment extraction
+    via *get_all_spans* so we never re-walk ``get_axon_source_spans``.
     """
     def produce() -> list[dict]:
-        try:
-            return _extract_core_connectivity(hcm, segment_index)
-        except Exception:
-            logger.debug(
-                "Lazy connectivity extraction failed for segment %d",
-                segment_index,
-                exc_info=True,
-            )
-            return []
+        spans = get_all_spans()
+        return [
+            sp for sp in spans
+            if sp.get("src_core") == core_index or sp.get("dst_core") == core_index
+        ]
     return produce
 
 
@@ -727,10 +776,12 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
 
     * Per-core PNG heatmaps (previously embedded as base64 data URIs).
       Replaced with ``has_heatmap: True`` + ``heatmap_resource`` hints.
-    * Per-stage ``connectivity`` span arrays (often thousands of entries
-      for big models). Replaced with ``has_connectivity: True`` and the
-      stable ``segment_index`` so the frontend can fetch spans on click
-      via ``/api/steps/{step}/resources/connectivity/seg/{segment_index}``.
+    * Per-core ``connectivity`` span arrays. Each core carries its own
+      ``connectivity_resource`` (``rid="seg/{seg}/core/{core}"``) whose
+      producer returns only the spans that touch that core. Earlier
+      versions registered a single per-segment descriptor and shipped
+      the full span list on every click — multi-MB JSON for big models,
+      queueing behind matplotlib renders on the same threadpool.
     """
     stages_info: list[dict] = []
     all_core_utils: list[dict] = []
@@ -752,6 +803,12 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                 stage_info["schedule_segment_index"] = stage.schedule_segment_index
 
             cores_detail: list[dict] = []
+            # Single shared extractor for this segment's spans — every
+            # per-core connectivity producer (registered below) routes
+            # through this so we extract+compress spike sources at most
+            # once per segment regardless of how many cores the user
+            # clicks on.
+            seg_spans_extractor = _make_segment_spans_extractor(hcm, seg_idx)
             for ci, core in enumerate(hcm.cores):
                 used_axons = core.axons_per_core - core.available_axons
                 used_neurons = core.neurons_per_core - core.available_neurons
@@ -783,11 +840,28 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     descriptors.append(ResourceDescriptor(
                         kind=RESOURCE_KIND_HARD_CORE_HEATMAP,
                         rid=rid,
-                        producer=_make_heatmap_producer(mat),
+                        producer=_make_heatmap_producer(mat, copy=False),
                         media_type="image/png",
                     ))
                 except Exception:
                     logger.debug("Failed to register heatmap for hard core %d", ci, exc_info=True)
+                # Per-core connectivity descriptor: only the spans that
+                # involve THIS core. Frontend only ever renders spans
+                # for the currently selected core, so paying per-segment
+                # JSON cost on every click was wasteful (multi-MB, queues
+                # behind matplotlib renders on the same threadpool).
+                conn_rid = f"seg/{seg_idx}/core/{ci}"
+                core_d["has_connectivity"] = True
+                core_d["connectivity_resource"] = {
+                    "kind": RESOURCE_KIND_CONNECTIVITY,
+                    "rid": conn_rid,
+                }
+                descriptors.append(ResourceDescriptor(
+                    kind=RESOURCE_KIND_CONNECTIVITY,
+                    rid=conn_rid,
+                    producer=_make_per_core_connectivity_producer(seg_spans_extractor, ci),
+                    media_type="application/json",
+                ))
                 placements = getattr(hcm, "soft_core_placements_per_hard_core", None)
                 if placements is None:
                     raise ValueError(
@@ -820,21 +894,10 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                 all_core_utils.append(core_d)
             stage_info["num_cores"] = len(hcm.cores)
             stage_info["cores"] = cores_detail
-
-            # Connectivity is fetched on click; register a descriptor instead
-            # of extracting (and serialising) the whole span list here.
-            conn_rid = f"seg/{seg_idx}"
+            # Connectivity is now per-core (registered above); the
+            # stage-level flag is kept so the frontend can decide
+            # whether to render the overlay infrastructure at all.
             stage_info["has_connectivity"] = True
-            stage_info["connectivity_resource"] = {
-                "kind": RESOURCE_KIND_CONNECTIVITY,
-                "rid": conn_rid,
-            }
-            descriptors.append(ResourceDescriptor(
-                kind=RESOURCE_KIND_CONNECTIVITY,
-                rid=conn_rid,
-                producer=_make_connectivity_producer(hcm, seg_idx),
-                media_type="application/json",
-            ))
 
             try:
                 stage_info["input_map"] = [

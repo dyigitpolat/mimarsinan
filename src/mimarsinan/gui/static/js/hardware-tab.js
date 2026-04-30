@@ -6,22 +6,31 @@ import { imgSrcAttr, resourceUrl, getResourceContext } from './resource-urls.js'
 import { esc, safeReact, plotHistogram } from './util.js';
 
 // Per-session cache of connectivity span lists keyed by the resolved
-// resource URL (which embeds step + run context + segment). A Map —
-// not a plain object — so it survives iteration and has O(1) size().
-// This stops the same connectivity JSON from being re-fetched every
-// time the user toggles a hard-core selection.
+// resource URL (which embeds step + run context + segment + core). A
+// Map — not a plain object — so it survives iteration and has O(1)
+// size(). This stops the same connectivity JSON from being re-fetched
+// every time the user re-clicks the same core.
 const _connectivityCache = new Map();
 const _connectivityInflight = new Map();
 
-// Resolve connectivity spans for a stage, fetching them lazily on
-// first demand. Returns either the cached array or ``null`` when a
-// fetch is still in flight; in that case ``onLoaded`` is invoked with
-// the array once it arrives so the caller can repaint.
-function getConnectivitySpans(stage, onLoaded) {
+// Resolve connectivity spans for the currently selected core, fetching
+// them lazily on first demand. Spans are now registered per (segment,
+// core) on the backend so this only pulls the slice we actually render.
+// Returns either the cached array or ``null`` when a fetch is still in
+// flight; in that case ``onLoaded`` is invoked with the array once it
+// arrives so the caller can repaint.
+function getConnectivitySpans(stage, coreIdx, onLoaded) {
   if (!stage) return null;
-  if (Array.isArray(stage.connectivity)) return stage.connectivity; // legacy
-  if (!stage.has_connectivity || !stage.connectivity_resource) return [];
-  const url = resourceUrl(stage.connectivity_resource, getResourceContext());
+  if (Array.isArray(stage.connectivity)) {
+    // Legacy embed-everything snapshot: filter client-side.
+    return stage.connectivity.filter(
+      sp => sp.src_core === coreIdx || sp.dst_core === coreIdx,
+    );
+  }
+  if (!stage.has_connectivity || coreIdx == null || !stage.cores) return [];
+  const core = stage.cores.find(c => c.core_index === coreIdx);
+  if (!core || !core.connectivity_resource) return [];
+  const url = resourceUrl(core.connectivity_resource, getResourceContext());
   if (!url) return [];
   if (_connectivityCache.has(url)) return _connectivityCache.get(url);
   if (!_connectivityInflight.has(url)) {
@@ -422,7 +431,17 @@ function renderStageFlow(hw, irGraph) {
     html += '</div>';
     el.innerHTML = html;
 
-    // Wait for all heatmap images to decode + double-rAF to ensure layout is settled
+    // Cells are explicitly sized in pixels (cellW × cellH on the cell,
+    // aspect-ratio + fixed dimension on the inner core div), so the
+    // overlay coordinate math does NOT need to wait for heatmap images
+    // to decode. The previous version awaited
+    // ``Promise.all([...imgs].map(img => img.decode()))`` which blocked
+    // indefinitely on cells with ``loading="lazy"`` that hadn't yet
+    // intersected the viewport — so on a tall segment, ``drawOverlays``
+    // never fired until the user scrolled, lazy images came into view,
+    // and the decode promises finally resolved (the user-visible
+    // "arrows only appear after I scroll a little" bug). Double-rAF
+    // alone is enough to settle layout.
     const drawOverlays = () => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -434,13 +453,7 @@ function renderStageFlow(hw, irGraph) {
         });
       });
     };
-    const imgs = el.querySelectorAll('img.hw-core-canvas');
-    if (imgs.length > 0) {
-      Promise.all([...imgs].map(img => img.decode ? img.decode().catch(() => {}) : Promise.resolve()))
-        .then(drawOverlays);
-    } else {
-      drawOverlays();
-    }
+    drawOverlays();
   }
 
   window._hwToggle = (si) => { expanded.has(si) ? expanded.delete(si) : expanded.add(si); selectedCore[si] = null; selectedSpan[si] = null; selectedSoftCore = null; selectedSoftCoreOrigin = null; render(); };
@@ -681,11 +694,23 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   const stage = hw.stages.find(s => s.kind === 'neural' && (s.segment_index ?? s.index) === segIdx);
   if (!stage) return;
 
-  // Connectivity is fetched lazily on click. While the fetch is in
-  // flight getConnectivitySpans returns null; we schedule a redraw
-  // so the overlay paints as soon as the JSON arrives.
-  const spans = getConnectivitySpans(stage, () => {
-    drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey);
+  // Connectivity is fetched lazily on click for the *selected* core
+  // only — the backend descriptor returns just the spans involving
+  // that core, so the JSON is small. While the fetch is in flight
+  // getConnectivitySpans returns null; we schedule a redraw so the
+  // overlay paints as soon as the JSON arrives. The redraw goes
+  // through a double-rAF so it reads rects against a settled layout
+  // — without this, the JSON-arrival redraw was the *first* time the
+  // SVG actually got built (the click-time draw bailed early on
+  // null spans), and it ran as a microtask before the click-driven
+  // reflow completed, producing arrows positioned just above the
+  // visible viewport that only "appeared" after the user scrolled.
+  const spans = getConnectivitySpans(stage, selCoreIdx, () => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey);
+      });
+    });
   });
   if (!spans || spans.length === 0) return;
   const incoming = spans.filter(sp => sp.dst_core === selCoreIdx && sp.kind !== 'off');
@@ -693,6 +718,12 @@ function drawConnOverlay(hw, segIdx, selCoreIdx, selSpanKey) {
   if (incoming.length === 0 && outgoing.length === 0) return;
 
   // Use the row that contains cores/buffers as the coordinate frame so the overlay aligns when scrolling.
+  // Force a synchronous layout pass before reading rects so the SVG and per-core
+  // rects are captured against a settled layout — without this, the first draw
+  // after a tab switch could read stale coordinates while flex/aspect-ratio
+  // sizing was still resolving, and the overlay would appear shifted until the
+  // user scrolled and triggered a repaint.
+  void rowInner.offsetHeight;
   const contRect = rowInner.getBoundingClientRect();
   if (contRect.width === 0 || contRect.height === 0) return;
   const coreByIdx = new Map();

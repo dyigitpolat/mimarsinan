@@ -473,6 +473,17 @@ body {
 .hw-conn-overlay {
   position: absolute; top: 0; left: 0;
   pointer-events: none; z-index: 2;
+  display: block;
+  /* SVG defaults to overflow:hidden on its viewport which clips paths
+     drawn outside the nominal width/height. The overlay's width/height
+     are captured from rowInner.getBoundingClientRect() at draw time,
+     but per-core rects can be measured a fraction later (after image
+     decode / final reflow) and end up slightly outside that nominal
+     box; without overflow:visible those edge cases render as the
+     overlay only appearing once the user scrolls and triggers a
+     repaint. Letting paths spill is harmless because each path is
+     anchored to a specific core's rect, not absolute viewport space. */
+  overflow: visible;
 }
 .hw-conn-overlay path { pointer-events: auto; }
 .hw-conn-overlay line { pointer-events: auto; }
