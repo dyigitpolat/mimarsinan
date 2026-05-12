@@ -1,17 +1,13 @@
 """Per-event energy & latency presets for SANA-FE architecture synthesis.
 
-Each preset is a dict of seven numbers — energy per event (J) for the
-four pipeline stages SANA-FE bills (synapse, dendrite, soma, network) and
-latency (s) for the three time-dominating stages (synapse, soma,
-network).  ``build_architecture`` injects these into the per-core
-attribute kwargs of ``sanafe.Architecture.create_core``.
+These constants are injected into the YAML that ``arch_synth.build_architecture``
+writes and ``sanafe.load_arch`` parses.  The schema matches SANA-FE's bundled
+``arch/loihi.yaml`` — keys are SANA-FE's expected attribute names (not
+mimarsinan's), so any value here can be flowed verbatim into the YAML.
 
-The Loihi numbers are the public per-event costs cited in Davies et al.
-2018 ("Loihi: a neuromorphic manycore processor with on-chip learning",
-IEEE Micro).  TrueNorth numbers come from Merolla et al. 2014 ("A
-million spiking-neuron integrated circuit ...", Science).  Both serve as
-starting points; users can override with ``arch_preset="custom"`` and a
-hand-tuned YAML.
+The Loihi numbers are the public per-event costs from Davies et al. 2018
+("Loihi: a neuromorphic manycore processor with on-chip learning",
+IEEE Micro).  TrueNorth numbers come from Merolla et al. 2014.
 """
 
 from __future__ import annotations
@@ -20,40 +16,83 @@ from typing import Dict, TypedDict
 
 
 class PerEventEnergy(TypedDict):
-    """SANA-FE per-event energy (J) and latency (s) costs."""
+    """SANA-FE-flavoured per-event energy (J) and latency (s) costs."""
+    # Tile NoC hops (one-way per cardinal direction)
+    tile_hop_energy_j: float
+    tile_hop_latency_s: float
+    # Axon IO (per message)
+    axon_in_energy_j: float
+    axon_in_latency_s: float
+    axon_out_energy_j: float
+    axon_out_latency_s: float
+    # Synapse (per spike processed at a synapse unit)
     synapse_energy_j: float
-    dendrite_energy_j: float
-    soma_energy_j: float
-    network_energy_j: float
     synapse_latency_s: float
-    soma_latency_s: float
-    network_latency_s: float
+    # Dendrite (per update)
+    dendrite_energy_j: float
+    dendrite_latency_s: float
+    # Soma — "access" runs once per neuron updated, "update" per LIF step,
+    # "spike_out" per spike emitted.  All three appear in Loihi's numbers.
+    soma_access_energy_j: float
+    soma_access_latency_s: float
+    soma_update_energy_j: float
+    soma_update_latency_s: float
+    soma_spike_out_energy_j: float
+    soma_spike_out_latency_s: float
 
 
-# Loihi 1 reference numbers (Davies 2018, Tables I-II — approximate, public).
+# Loihi 1 reference numbers (Davies 2018; public).
 LOIHI_PRESET: PerEventEnergy = {
-    "synapse_energy_j":  3.1e-12,
-    "dendrite_energy_j": 1.3e-12,
-    "soma_energy_j":     5.3e-12,
-    "network_energy_j":  1.0e-12,
-    "synapse_latency_s": 1.5e-9,
-    "soma_latency_s":    2.0e-9,
-    "network_latency_s": 5.0e-9,
+    "tile_hop_energy_j":         3.5e-12,
+    "tile_hop_latency_s":        5.0e-9,
+    "axon_in_energy_j":          0.0,
+    "axon_in_latency_s":         16.0e-9,
+    "axon_out_energy_j":         111.0e-12,
+    "axon_out_latency_s":        5.1e-9,
+    "synapse_energy_j":          35.5e-12,
+    "synapse_latency_s":         3.8e-9,
+    "dendrite_energy_j":         0.0,
+    "dendrite_latency_s":        0.0,
+    "soma_access_energy_j":      51.2e-12,
+    "soma_access_latency_s":     6.0e-9,
+    "soma_update_energy_j":      21.6e-12,
+    "soma_update_latency_s":     3.7e-9,
+    "soma_spike_out_energy_j":   69.3e-12,
+    "soma_spike_out_latency_s":  30.0e-9,
 }
 
-# TrueNorth reference numbers (Merolla 2014; ICONS / SANA-FE bundled approximations).
+# TrueNorth reference numbers (Merolla 2014; bundled approximations).
 TRUENORTH_PRESET: PerEventEnergy = {
-    "synapse_energy_j":  2.0e-13,
-    "dendrite_energy_j": 1.0e-13,
-    "soma_energy_j":     2.5e-13,
-    "network_energy_j":  5.0e-14,
-    "synapse_latency_s": 1.0e-9,
-    "soma_latency_s":    1.0e-9,
-    "network_latency_s": 4.0e-9,
+    "tile_hop_energy_j":         5.0e-14,
+    "tile_hop_latency_s":        4.0e-9,
+    "axon_in_energy_j":          0.0,
+    "axon_in_latency_s":         5.0e-9,
+    "axon_out_energy_j":         3.0e-13,
+    "axon_out_latency_s":        5.0e-9,
+    "synapse_energy_j":          2.0e-13,
+    "synapse_latency_s":         1.0e-9,
+    "dendrite_energy_j":         0.0,
+    "dendrite_latency_s":        0.0,
+    "soma_access_energy_j":      1.0e-13,
+    "soma_access_latency_s":     1.0e-9,
+    "soma_update_energy_j":      2.5e-13,
+    "soma_update_latency_s":     1.0e-9,
+    "soma_spike_out_energy_j":   3.0e-13,
+    "soma_spike_out_latency_s":  5.0e-9,
 }
-
 
 PRESETS: Dict[str, PerEventEnergy] = {
     "loihi": LOIHI_PRESET,
     "truenorth": TRUENORTH_PRESET,
 }
+
+
+# Names of the hardware units we embed into every synthesised architecture.
+# net_synth references these strings to bind neurons / connections to the
+# right hardware unit, so they are public surface — don't rename casually.
+SOMA_LIF_NAME = "lif"
+SOMA_INPUT_RANGE_NAME = "inputs"   # rendered as "inputs[0..MAX]" in YAML
+SYNAPSE_NAME = "dense_syn"
+DENDRITE_NAME = "dend"
+AXON_IN_NAME = "ax_in"
+AXON_OUT_NAME = "ax_out"

@@ -1,33 +1,34 @@
 """Build a SANA-FE Network from a single ``HardCoreMapping`` neural segment.
 
-Per segment we create:
+Hardware-faithful mapping (see ``sanafe_per_core_input_neurons`` memory):
 
-* one neuron group per ``HardCore`` (sized to the core's used neuron count),
-* one ``input`` neuron group of size ``seg_in_size`` carrying segment-input
-  spike trains injected by the runner,
-* one ``always_on`` neuron group of size 1, **only** when the segment
-  references the always-on bias source.
-
-Synapses are emitted by walking each core's ``axon_sources`` once.  An
-axon at position ``a`` of core ``c`` is connected to *every* destination
-neuron in the same core, with weights ``core.core_matrix[a, n]`` — zero
-entries are skipped to avoid wasteful synapses.  Duplicate source-spec
-axons are aggregated: two axons that read the same ``SpikeSource`` and
-target the same destination collapse into one synapse whose weight is
-their sum (matches the documented Lava+SANA-FE behaviour and is verified
-by ``test_loihi_duplicate_source_axons_accumulate_weights``).
+* Each mimarsinan ``HardCore`` maps 1:1 to one SANA-FE core.
+* For each axon ``a`` on HardCore ``c``:
+    - if ``is_off_``: skip
+    - if ``is_input_``: emit an input neuron on the **same** SANA-FE core
+      (using that core's local ``inputs[a]`` soma slot).  Multiple
+      HardCores reading the same external input each get their own copy
+      of the input neuron, fed the same spike train.
+    - if ``is_always_on_``: emit an always-on neuron on the same core.
+    - otherwise (cross-core source): connect the upstream HardCore's LIF
+      neuron directly to this HardCore's LIF neurons via NoC.
+* LIF neurons use the mimarsinan ``soma`` plugin (no Loihi compartment
+  cap).  Dendrite uses the mimarsinan ``dendrite`` plugin (no
+  ``accumulator``-style 1024 cap).  See ``arch_synth._render_arch_yaml``.
 
 Returns
 -------
 network
-    The freshly built ``sanafe.Network`` (mockable via ``_sanafe()``).
+    Freshly built ``sanafe.Network``.
 core_to_group
-    Dict ``{HardCore index → sanafe NeuronGroup}`` so the runner can
-    look up per-core neurons for spike-count extraction.
-input_group
-    The ``input`` neuron group, or ``None`` when ``seg_in_size == 0``.
-always_on_group
-    The ``always_on`` group, or ``None`` when no axon references it.
+    ``{HardCore index → sanafe NeuronGroup (LIF neurons)}``.
+core_input_neurons
+    ``{(HardCore index, axon index within that core) → sanafe Neuron}``
+    map covering every input axon.  The runner uses this to inject the
+    correct rate-encoded spike train per (core, axon) pair.
+core_always_on_neurons
+    ``{HardCore index → sanafe Neuron}`` for cores that reference the
+    always-on bias source.
 """
 
 from __future__ import annotations
@@ -37,50 +38,26 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from .arch_synth import _sanafe
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from .neuron_model import input_neuron_attributes, lif_model_attributes
+from .presets import (
+    SOMA_INPUT_RANGE_NAME, SOMA_LIF_NAME, SYNAPSE_NAME,
+)
 
 
 def _used_axons(core: Any) -> int:
-    """Number of axons that carry signal.
-
-    ``len(core.axon_sources)`` is the canonical source of truth: each
-    softcore added by ``HardCore.add_softcore`` extends the list, so the
-    list length always equals ``axons_per_core - available_axons`` for a
-    real HardCore.  The fallback for old fakes that only set
-    ``available_axons`` is the subtraction path.
-    """
     if hasattr(core, "axon_sources"):
         return len(core.axon_sources)
     return int(core.axons_per_core) - int(getattr(core, "available_axons", 0))
 
 
 def _used_neurons(core: Any) -> int:
-    """Number of neurons used by this core (excludes trailing free slots)."""
     return int(core.neurons_per_core) - int(getattr(core, "available_neurons", 0))
 
 
 def _pack_tile_index(core_global_idx: int, cores_per_tile: int) -> Tuple[int, int]:
-    """Map a flat core index to (tile_index, core_in_tile_index)."""
     if cores_per_tile <= 0:
         return 0, core_global_idx
     return core_global_idx // cores_per_tile, core_global_idx % cores_per_tile
-
-
-def _segment_needs_always_on(hcm: Any) -> bool:
-    for core in hcm.cores:
-        for s in core.axon_sources:
-            if getattr(s, "is_always_on_", False):
-                return True
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 def build_network_for_segment(
@@ -89,103 +66,138 @@ def build_network_for_segment(
     *,
     tile_offset: int,
     core_offset: int,
-    seg_in_size: int,
     cores_per_tile: int = 0,
-) -> Tuple[Any, Dict[int, Any], Optional[Any], Optional[Any]]:
-    """Construct a ``sanafe.Network`` for a single neural segment.
+) -> Tuple[
+    Any,
+    Dict[int, Any],
+    Dict[Tuple[int, int], Any],
+    Dict[int, Any],
+]:
+    """Construct a ``sanafe.Network`` for one neural segment.
 
-    Parameters
-    ----------
-    arch
-        A ``sanafe.Architecture`` (or test fake) with ``.tiles[t].cores[c]``.
-    hcm
-        A ``HardCoreMapping``-shaped object with ``.cores``.
-    tile_offset
-        First tile this segment may place cores into.  Lets multi-segment
-        runs share one ``Architecture``.
-    core_offset
-        First core within ``tile_offset`` to occupy.
-    seg_in_size
-        Width of the segment input (axons of kind ``input``).
-    cores_per_tile
-        Tile packing density; ``0`` means "all in one tile".  Must match
-        the ``ArchSpec`` used to build ``arch``.
+    Returns ``(network, core_to_group, core_input_neurons,
+    core_always_on_neurons)``.
     """
     sanafe = _sanafe()
     net = sanafe.Network()
 
-    # 1. Input + always-on groups (created up front; always-on only when needed).
-    input_group = (
-        net.create_neuron_group("input", seg_in_size, model_attributes={})
-        if seg_in_size > 0 else None
-    )
-    always_on_group = None
-    if _segment_needs_always_on(hcm):
-        always_on_group = net.create_neuron_group(
-            "always_on", 1, model_attributes={"force_spike_every_cycle": True},
-        )
-
-    # 2. One neuron group per HardCore, mapped to the spec's tile/core slot.
+    # 1. One LIF group per HardCore, mapped to its corresponding SANA-FE core.
     core_to_group: Dict[int, Any] = {}
+    core_input_neurons: Dict[Tuple[int, int], Any] = {}
+    core_always_on_neurons: Dict[int, Any] = {}
+
+    def _resolve_core(hardcore_idx: int) -> Any:
+        tile_local = core_offset + hardcore_idx
+        tile_idx, core_in_tile = _pack_tile_index(tile_local, cores_per_tile)
+        tile_idx += tile_offset
+        return arch.tiles[tile_idx].cores[core_in_tile]
+
     for core_idx, core in enumerate(hcm.cores):
+        sanafe_core = _resolve_core(core_idx)
         used_neurons = _used_neurons(core)
-        if used_neurons <= 0:
-            # Degenerate: an entirely-unused core has no neurons to simulate;
-            # skip group creation but keep the index reserved so downstream
-            # core_to_group lookups remain consistent.
-            continue
-        group = net.create_neuron_group(
-            f"core{core_idx}", used_neurons,
-            model_attributes={"threshold": float(core.threshold)},
-        )
+        used_axons = _used_axons(core)
 
-        for n_idx in range(used_neurons):
-            neuron = group[n_idx]
-            attrs: dict = {"threshold": float(core.threshold)}
-            if core.hardware_bias is not None:
-                attrs["bias"] = float(np.asarray(core.hardware_bias)[n_idx])
-            neuron.set_attributes(model_attributes=attrs)
+        # ----- LIF neurons (one group per HardCore) -----
+        if used_neurons > 0:
+            group = net.create_neuron_group(
+                f"core{core_idx}", used_neurons, model_attributes={},
+            )
+            for n_idx in range(used_neurons):
+                neuron = group[n_idx]
+                bias = None
+                if core.hardware_bias is not None:
+                    bias = float(np.asarray(core.hardware_bias)[n_idx])
+                neuron.set_attributes(
+                    soma_hw_name=SOMA_LIF_NAME,
+                    default_synapse_hw_name=SYNAPSE_NAME,
+                    log_spikes=True,
+                    model_attributes=lif_model_attributes(
+                        threshold=float(core.threshold),
+                        hardware_bias=bias,
+                    ),
+                )
+                neuron.map_to_core(sanafe_core)
+            core_to_group[core_idx] = group
 
-            tile_local = core_offset + core_idx
-            tile_idx, core_in_tile = _pack_tile_index(tile_local, cores_per_tile)
-            tile_idx += tile_offset
-            neuron.map_to_core(arch.tiles[tile_idx].cores[core_in_tile])
+        # ----- Per-axon input / always-on neurons (on the same core) -----
+        # We only materialise neurons for axons that are actually wired to
+        # an input or always-on source.  Cross-core axons are wired in
+        # step 2 below directly from the upstream LIF neuron.
+        input_axon_indices = []
+        always_on_axon_indices = []
+        for a in range(used_axons):
+            src = core.axon_sources[a]
+            if getattr(src, "is_off_", False):
+                continue
+            if getattr(src, "is_input_", False):
+                input_axon_indices.append(a)
+            elif getattr(src, "is_always_on_", False):
+                always_on_axon_indices.append(a)
 
-        core_to_group[core_idx] = group
+        if input_axon_indices:
+            in_group = net.create_neuron_group(
+                f"core{core_idx}_in", len(input_axon_indices),
+                model_attributes={},
+            )
+            for offset, a in enumerate(input_axon_indices):
+                n = in_group[offset]
+                n.set_attributes(
+                    soma_hw_name=f"{SOMA_INPUT_RANGE_NAME}[{a}]",
+                    default_synapse_hw_name=SYNAPSE_NAME,
+                    model_attributes=input_neuron_attributes(),
+                )
+                n.map_to_core(sanafe_core)
+                core_input_neurons[(core_idx, a)] = n
 
-    # 3. Wire axons.  For each (src_neuron, dst_neuron) we collapse all
-    #    contributing axons into one synapse with the summed weight.
+        if always_on_axon_indices:
+            # One always-on source per HardCore is enough; the multiple
+            # axons that read from "always-on" can all fan out from a single
+            # neuron via separate synapses (collapsed below).  We pick the
+            # first always-on axon's index as the soma slot.
+            ao_slot = always_on_axon_indices[0]
+            ao_group = net.create_neuron_group(
+                f"core{core_idx}_on", 1, model_attributes={},
+            )
+            ao_group[0].set_attributes(
+                soma_hw_name=f"{SOMA_INPUT_RANGE_NAME}[{ao_slot}]",
+                default_synapse_hw_name=SYNAPSE_NAME,
+                model_attributes=input_neuron_attributes(),
+            )
+            ao_group[0].map_to_core(sanafe_core)
+            core_always_on_neurons[core_idx] = ao_group[0]
+
+    # 2. Wire axons.  Per-axon source resolution; collapse duplicate
+    # (src_neuron, dst_neuron) pairs into one summed-weight synapse.
     for core_idx, core in enumerate(hcm.cores):
-        if core_idx not in core_to_group:
+        dst_group = core_to_group.get(core_idx)
+        if dst_group is None:
             continue
         used_axons = _used_axons(core)
         used_neurons = _used_neurons(core)
         if used_neurons <= 0:
             continue
-        accum: Dict[Tuple[int, int], float] = {}  # (src_key, dst_idx) -> weight
+
+        accum: Dict[Tuple[int, int], float] = {}  # (src_key, dst_idx) → weight
         sources_by_key: Dict[int, Any] = {}
 
-        # First pass: collapse axon weights per (source neuron object, destination index).
         for a in range(used_axons):
             src = core.axon_sources[a]
             if getattr(src, "is_off_", False):
                 continue
-
-            # Resolve source neuron (input group, always-on group, or another core's group).
+            src_neuron: Optional[Any] = None
             if getattr(src, "is_input_", False):
-                src_group = input_group
-                src_neuron_idx = int(src.neuron_)
+                src_neuron = core_input_neurons.get((core_idx, a))
             elif getattr(src, "is_always_on_", False):
-                src_group = always_on_group
-                src_neuron_idx = 0
+                src_neuron = core_always_on_neurons.get(core_idx)
             else:
-                src_core = int(src.core_)
-                src_group = core_to_group.get(src_core)
-                src_neuron_idx = int(src.neuron_)
+                src_core_idx = int(src.core_)
+                src_group = core_to_group.get(src_core_idx)
                 if src_group is None:
-                    continue   # source core was degenerate
+                    continue
+                src_neuron = src_group[int(src.neuron_)]
 
-            src_neuron = src_group[src_neuron_idx]
+            if src_neuron is None:
+                continue
             src_key = id(src_neuron)
             sources_by_key[src_key] = src_neuron
 
@@ -196,11 +208,55 @@ def build_network_for_segment(
                 key = (src_key, n_idx)
                 accum[key] = accum.get(key, 0.0) + w
 
-        # Second pass: emit one synapse per (source neuron, destination) pair.
-        dst_group = core_to_group[core_idx]
         for (src_key, n_idx), w in accum.items():
             sources_by_key[src_key].connect_to_neuron(
-                dst_group[n_idx], {"weight": w},
+                dst_group[n_idx],
+                {"weight": w, "synapse_hw_name": SYNAPSE_NAME},
             )
 
-    return net, core_to_group, input_group, always_on_group
+    return net, core_to_group, core_input_neurons, core_always_on_neurons
+
+
+# ---------------------------------------------------------------------------
+# Per-sample spike-train injection used by the runner
+# ---------------------------------------------------------------------------
+
+
+def set_input_spike_trains(
+    core_input_neurons: Dict[Tuple[int, int], Any],
+    hcm: Any,
+    encoded: np.ndarray,
+) -> None:
+    """Inject spike trains into every per-core input neuron.
+
+    For each ``(core_idx, axon_idx) → neuron`` entry in
+    ``core_input_neurons``, looks up the axon's logical input index
+    ``k = hcm.cores[core_idx].axon_sources[axon_idx].neuron_`` and feeds
+    the row ``encoded[0, k, :]`` as the neuron's ``spikes`` attribute.
+
+    ``encoded`` is the ``(1, seg_in_size, T)`` binary tensor produced by
+    ``uniform_rate_encode``.  Multiple per-core input neurons sharing the
+    same logical index ``k`` get the same spike train.
+    """
+    for (core_idx, axon_idx), neuron in core_input_neurons.items():
+        src = hcm.cores[core_idx].axon_sources[axon_idx]
+        k = int(src.neuron_)
+        if k >= encoded.shape[1]:
+            train: list[int] = []
+        else:
+            train = [int(b) for b in encoded[0, k, :].tolist()]
+        neuron.set_attributes(
+            model_attributes=input_neuron_attributes(train),
+        )
+
+
+def set_always_on_spike_trains(
+    core_always_on_neurons: Dict[int, Any],
+    T: int,
+) -> None:
+    """Always-on neurons fire every cycle: positional bit array of all 1s."""
+    train = [1] * T
+    for neuron in core_always_on_neurons.values():
+        neuron.set_attributes(
+            model_attributes=input_neuron_attributes(train),
+        )

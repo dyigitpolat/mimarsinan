@@ -1,16 +1,14 @@
 """SANA-FE Network synthesis from one ``HardCoreMapping`` neural segment.
 
-``build_network_for_segment`` walks every HardCore in a segment and:
+Hardware-faithful mapping pinned here:
 
-  * creates one SANA-FE neuron group per core,
-  * sets per-neuron attributes from ``HardCore.threshold`` and (when present)
-    ``HardCore.hardware_bias``,
-  * resolves each axon source (input / always-on / off / another core) and
-    wires weighted synapses from the source neuron(s) into this core,
-  * maps every neuron to the SANA-FE core at the position the spec assigned.
-
-The tests use a lightweight fake ``sanafe`` module so they run without
-SANA-FE installed.
+* one LIF group per HardCore on its corresponding SANA-FE core,
+* per-axon input/always-on neurons live on the **same** SANA-FE core
+  as the consuming HardCore (using local ``inputs[axon_idx]`` soma slots),
+* cross-core axons wire directly from the upstream HardCore's LIF
+  neuron — no global input host,
+* per-axon spike-train injection looks up the logical input index from
+  ``core.axon_sources[axon_idx].neuron_``.
 """
 
 from __future__ import annotations
@@ -21,7 +19,14 @@ import numpy as np
 import pytest
 
 from mimarsinan.chip_simulation.sanafe import net_synth
-from mimarsinan.chip_simulation.sanafe.net_synth import build_network_for_segment
+from mimarsinan.chip_simulation.sanafe.net_synth import (
+    build_network_for_segment,
+    set_always_on_spike_trains,
+    set_input_spike_trains,
+)
+from mimarsinan.chip_simulation.sanafe.presets import (
+    SOMA_INPUT_RANGE_NAME, SOMA_LIF_NAME, SYNAPSE_NAME,
+)
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
 
@@ -34,39 +39,39 @@ class _FakeNeuron:
     def __init__(self, group, index):
         self.group = group
         self.index = index
-        self.attributes: dict = {}
-        self.connections: list[tuple[_FakeNeuron, dict]] = []
+        self.model_attributes: dict = {}
+        self.soma_hw_name: str | None = None
+        self.default_synapse_hw_name: str | None = None
         self.mapped_core = None
+        self.connections: list[tuple[_FakeNeuron, dict]] = []
 
-    def connect_to_neuron(self, dst, attrs):
-        self.connections.append((dst, dict(attrs)))
-
-    def set_attributes(self, model_attributes=None, log_spikes=False,
-                       log_potential=False):
+    def set_attributes(self, soma_hw_name=None, default_synapse_hw_name=None,
+                       dendrite_hw_name=None, log_spikes=None, log_potential=None,
+                       model_attributes=None, soma_attributes=None,
+                       dendrite_attributes=None):
+        if soma_hw_name is not None:
+            self.soma_hw_name = soma_hw_name
+        if default_synapse_hw_name is not None:
+            self.default_synapse_hw_name = default_synapse_hw_name
         if model_attributes:
-            self.attributes.update(model_attributes)
-        self.attributes.setdefault("_log_spikes", log_spikes)
-        self.attributes.setdefault("_log_potential", log_potential)
+            self.model_attributes = dict(model_attributes)
 
     def map_to_core(self, core):
         self.mapped_core = core
 
+    def connect_to_neuron(self, dst, attrs):
+        self.connections.append((dst, dict(attrs)))
+
 
 class _FakeGroup:
-    def __init__(self, name, size, model_attributes=None):
+    def __init__(self, name, size):
         self.name = name
         self.size = size
-        self.model_attributes = dict(model_attributes or {})
         self.neurons = [_FakeNeuron(self, i) for i in range(size)]
 
-    def __iter__(self):
-        return iter(self.neurons)
-
-    def __getitem__(self, i):
-        return self.neurons[i]
-
-    def __len__(self):
-        return self.size
+    def __iter__(self): return iter(self.neurons)
+    def __getitem__(self, i): return self.neurons[i]
+    def __len__(self): return self.size
 
 
 class _FakeNetwork:
@@ -74,44 +79,26 @@ class _FakeNetwork:
         self.groups: list[_FakeGroup] = []
 
     def create_neuron_group(self, name, size, model_attributes=None):
-        g = _FakeGroup(name, size, model_attributes=model_attributes)
+        g = _FakeGroup(name, size)
         self.groups.append(g)
         return g
 
 
 def _fake_sanafe_module():
-    """Return an object that looks like the public ``sanafe`` module surface."""
     return SimpleNamespace(Network=_FakeNetwork)
 
 
 def _fake_arch(*tile_core_counts: int):
-    """Architecture-shaped object: tiles[t].cores[c] indexable."""
     tiles = []
     for t, n in enumerate(tile_core_counts):
-        cores = []
-        for c in range(n):
-            cores.append(SimpleNamespace(_tile_index=t, _core_index=c))
+        cores = [SimpleNamespace(_t=t, _c=c) for c in range(n)]
         tiles.append(SimpleNamespace(cores=cores))
     return SimpleNamespace(tiles=tiles)
 
 
-# ---------------------------------------------------------------------------
-# Fake HardCore / HardCoreMapping
-# ---------------------------------------------------------------------------
-
-
-def _fake_hard_core(
-    *,
-    axons_per_core: int,
-    neurons_per_core: int,
-    available_axons: int = 0,
-    available_neurons: int = 0,
-    threshold: float = 1.0,
-    hardware_bias: np.ndarray | None = None,
-    core_matrix: np.ndarray | None = None,
-    axon_sources: list | None = None,
-):
-    """Build a HardCore-shaped fake exposing the fields net_synth queries."""
+def _fake_hard_core(*, axons_per_core, neurons_per_core, available_axons=0,
+                    available_neurons=0, threshold=1.0, hardware_bias=None,
+                    core_matrix=None, axon_sources=None):
     if core_matrix is None:
         core_matrix = np.zeros((axons_per_core, neurons_per_core), dtype=np.float32)
     if axon_sources is None:
@@ -128,191 +115,185 @@ def _fake_hard_core(
     )
 
 
-def _fake_hcm(*cores) -> SimpleNamespace:
-    return SimpleNamespace(cores=list(cores))
+def _fake_hcm(*cores): return SimpleNamespace(cores=list(cores))
 
 
 # ---------------------------------------------------------------------------
-# Group-creation tests
+# LIF group placement: one per HardCore on its consuming SANA-FE core
 # ---------------------------------------------------------------------------
 
 
-def test_build_network_creates_neuron_group_per_hard_core(monkeypatch):
+def test_build_network_creates_one_lif_group_per_hard_core(monkeypatch):
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
     arch = _fake_arch(2)
-
     core_a = _fake_hard_core(axons_per_core=2, neurons_per_core=3)
     core_b = _fake_hard_core(axons_per_core=2, neurons_per_core=1)
-    hcm = _fake_hcm(core_a, core_b)
 
-    net, core_to_group, input_group, always_on_group = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=4,
+    _, core_to_group, _, _ = build_network_for_segment(
+        arch, _fake_hcm(core_a, core_b),
+        tile_offset=0, core_offset=0,
     )
 
     assert len(core_to_group) == 2
-    assert all(g in net.groups for g in core_to_group.values())
-    assert core_to_group[0].size == 3   # used neuron count for core_a
+    assert core_to_group[0].size == 3
     assert core_to_group[1].size == 1
 
 
-def test_build_network_input_neuron_group_size_matches_seg_in_size(monkeypatch):
+def test_build_network_lif_neurons_map_to_their_hardcore_sanafe_core(monkeypatch):
+    """Each HardCore's LIF group lands on the SANA-FE core matching its index."""
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
-    hcm = _fake_hcm(_fake_hard_core(axons_per_core=2, neurons_per_core=1))
-
-    _, _, input_group, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=5,
+    arch = _fake_arch(3)
+    cores = [_fake_hard_core(axons_per_core=1, neurons_per_core=1) for _ in range(3)]
+    _, c2g, _, _ = build_network_for_segment(
+        arch, _fake_hcm(*cores),
+        tile_offset=0, core_offset=0,
     )
-    assert input_group is not None
-    assert input_group.size == 5
+    for hc_idx, group in c2g.items():
+        for n in group:
+            assert n.mapped_core is arch.tiles[0].cores[hc_idx]
 
 
-def test_build_network_always_on_group_omitted_when_no_always_on_axons(monkeypatch):
+def test_build_network_lif_soma_hw_and_synapse_hw_are_named(monkeypatch):
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
-    hcm = _fake_hcm(_fake_hard_core(axons_per_core=2, neurons_per_core=1))
-    _, _, _, always_on = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=2,
+    _, c2g, _, _ = build_network_for_segment(
+        _fake_arch(1),
+        _fake_hcm(_fake_hard_core(axons_per_core=1, neurons_per_core=2)),
+        tile_offset=0, core_offset=0,
     )
-    assert always_on is None
+    for n in c2g[0]:
+        assert n.soma_hw_name == SOMA_LIF_NAME
+        assert n.default_synapse_hw_name == SYNAPSE_NAME
 
 
-def test_build_network_always_on_group_size_one_when_used(monkeypatch):
+def test_build_network_lif_threshold_and_bias_are_set_per_neuron(monkeypatch):
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
-    core = _fake_hard_core(
-        axons_per_core=1, neurons_per_core=1,
-        axon_sources=[SpikeSource(0, 0, False, False, True)],   # always_on axon
-        core_matrix=np.asarray([[2.0]], dtype=np.float32),
-    )
-    hcm = _fake_hcm(core)
-    _, _, _, always_on = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
-    )
-    assert always_on is not None
-    assert always_on.size == 1
-
-
-# ---------------------------------------------------------------------------
-# Per-neuron attribute tests
-# ---------------------------------------------------------------------------
-
-
-def test_build_network_threshold_per_neuron_from_core_threshold(monkeypatch):
-    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(2)
-    core_a = _fake_hard_core(axons_per_core=1, neurons_per_core=2, threshold=1.5)
-    core_b = _fake_hard_core(axons_per_core=1, neurons_per_core=2, threshold=4.0)
-    hcm = _fake_hcm(core_a, core_b)
-
-    _, core_to_group, _, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
-    )
-    for n in core_to_group[0].neurons:
-        assert n.attributes["threshold"] == 1.5
-    for n in core_to_group[1].neurons:
-        assert n.attributes["threshold"] == 4.0
-
-
-def test_build_network_hardware_bias_propagated(monkeypatch):
-    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
     bias = np.asarray([0.5, -0.25, 1.0], dtype=np.float32)
-    core = _fake_hard_core(
-        axons_per_core=1, neurons_per_core=3, hardware_bias=bias,
+    core = _fake_hard_core(axons_per_core=1, neurons_per_core=3, threshold=1.5,
+                           hardware_bias=bias)
+    _, c2g, _, _ = build_network_for_segment(
+        _fake_arch(1), _fake_hcm(core),
+        tile_offset=0, core_offset=0,
     )
-    hcm = _fake_hcm(core)
-    _, core_to_group, _, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
-    )
-    for i, n in enumerate(core_to_group[0].neurons):
-        assert n.attributes.get("bias") == pytest.approx(float(bias[i]))
+    for i, n in enumerate(c2g[0]):
+        assert n.model_attributes["threshold"] == 1.5
+        assert n.model_attributes["bias"] == pytest.approx(float(bias[i]))
 
 
 def test_build_network_no_bias_attribute_when_hardware_bias_is_none(monkeypatch):
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
     core = _fake_hard_core(axons_per_core=1, neurons_per_core=2, hardware_bias=None)
-    hcm = _fake_hcm(core)
-    _, core_to_group, _, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
-    )
-    for n in core_to_group[0].neurons:
-        assert "bias" not in n.attributes
-
-
-# ---------------------------------------------------------------------------
-# Mapping tests
-# ---------------------------------------------------------------------------
-
-
-def test_build_network_maps_neurons_to_correct_cores(monkeypatch):
-    """Each neuron's ``map_to_core`` lands on tile/core determined by tile_offset
-    and the per-segment cores_per_tile packing."""
-    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(3, 3)         # 2 tiles, each 3 cores
-    cores = [
-        _fake_hard_core(axons_per_core=1, neurons_per_core=1) for _ in range(4)
-    ]
-    hcm = _fake_hcm(*cores)
-    _, core_to_group, _, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
-        cores_per_tile=3,
-    )
-    # First 3 cores land on tile 0 cores 0..2; 4th lands on tile 1 core 0.
-    assert core_to_group[0].neurons[0].mapped_core is arch.tiles[0].cores[0]
-    assert core_to_group[1].neurons[0].mapped_core is arch.tiles[0].cores[1]
-    assert core_to_group[2].neurons[0].mapped_core is arch.tiles[0].cores[2]
-    assert core_to_group[3].neurons[0].mapped_core is arch.tiles[1].cores[0]
-
-
-def test_build_network_tile_offset_skips_leading_tiles(monkeypatch):
-    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(2, 2)
-    core = _fake_hard_core(axons_per_core=1, neurons_per_core=1)
-    hcm = _fake_hcm(core)
     _, c2g, _, _ = build_network_for_segment(
-        arch, hcm, tile_offset=1, core_offset=0, seg_in_size=1,
+        _fake_arch(1), _fake_hcm(core),
+        tile_offset=0, core_offset=0,
     )
-    assert c2g[0].neurons[0].mapped_core is arch.tiles[1].cores[0]
+    for n in c2g[0]:
+        assert "bias" not in n.model_attributes
 
 
 # ---------------------------------------------------------------------------
-# Axon-source resolution tests
+# Per-axon input neurons live on the consuming core
 # ---------------------------------------------------------------------------
 
 
-def test_build_network_input_axon_wires_from_input_group(monkeypatch):
-    """An ``is_input_`` axon wires the input neuron group's neuron[k] to this core."""
+def test_build_network_input_neuron_per_input_axon_on_same_core(monkeypatch):
+    """Each ``is_input_`` axon yields one input neuron on the consuming core."""
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
     arch = _fake_arch(1)
     core = _fake_hard_core(
-        axons_per_core=1, neurons_per_core=2,
-        axon_sources=[SpikeSource(-1, 3, True, False, False)],   # input[3]
-        core_matrix=np.asarray([[1.5, 2.5]], dtype=np.float32),
+        axons_per_core=3, neurons_per_core=2,
+        axon_sources=[
+            SpikeSource(-1, 5, True, False, False),   # input[5] at axon 0
+            SpikeSource(-1, 1, True, False, False),   # input[1] at axon 1
+            SpikeSource(-1, 0, False, True, False),   # off
+        ],
+        core_matrix=np.asarray([[1.0, 0.0], [0.0, 2.0], [0.0, 0.0]], dtype=np.float32),
     )
-    hcm = _fake_hcm(core)
-    _, c2g, input_group, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=4,
+    _, c2g, ci, _ = build_network_for_segment(
+        arch, _fake_hcm(core),
+        tile_offset=0, core_offset=0,
     )
-    # Input neuron 3 has two outgoing synapses (one per destination neuron).
-    src = input_group[3]
-    targets = {(c.group is c2g[0], c.index): w["weight"] for c, w in src.connections}
-    assert targets == {(True, 0): pytest.approx(1.5), (True, 1): pytest.approx(2.5)}
+    assert set(ci.keys()) == {(0, 0), (0, 1)}
+    # Each input neuron is on the same SANA-FE core as core 0.
+    expected_core = arch.tiles[0].cores[0]
+    for neuron in ci.values():
+        assert neuron.mapped_core is expected_core
+    # Soma hw uses the LOCAL axon index, not the logical input index.
+    assert ci[(0, 0)].soma_hw_name == f"{SOMA_INPUT_RANGE_NAME}[0]"
+    assert ci[(0, 1)].soma_hw_name == f"{SOMA_INPUT_RANGE_NAME}[1]"
 
 
-def test_build_network_core_axon_wires_from_source_core_neuron(monkeypatch):
+def test_build_network_no_input_neurons_when_no_input_axons(monkeypatch):
+    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
+    _, _, ci, ao = build_network_for_segment(
+        _fake_arch(1),
+        _fake_hcm(_fake_hard_core(axons_per_core=1, neurons_per_core=1)),
+        tile_offset=0, core_offset=0,
+    )
+    assert ci == {}
+    assert ao == {}
+
+
+def test_build_network_two_hard_cores_each_with_own_input_neurons(monkeypatch):
+    """Two HardCores reading the same logical input index get separate neurons."""
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
     arch = _fake_arch(2)
+    core_a = _fake_hard_core(
+        axons_per_core=1, neurons_per_core=1,
+        axon_sources=[SpikeSource(-1, 7, True, False, False)],
+        core_matrix=np.asarray([[1.0]], dtype=np.float32),
+    )
+    core_b = _fake_hard_core(
+        axons_per_core=1, neurons_per_core=1,
+        axon_sources=[SpikeSource(-1, 7, True, False, False)],   # same logical input
+        core_matrix=np.asarray([[1.0]], dtype=np.float32),
+    )
+    _, c2g, ci, _ = build_network_for_segment(
+        arch, _fake_hcm(core_a, core_b),
+        tile_offset=0, core_offset=0,
+    )
+    assert (0, 0) in ci and (1, 0) in ci
+    assert ci[(0, 0)].mapped_core is arch.tiles[0].cores[0]
+    assert ci[(1, 0)].mapped_core is arch.tiles[0].cores[1]
+    assert ci[(0, 0)] is not ci[(1, 0)]
+
+
+# ---------------------------------------------------------------------------
+# Connectivity
+# ---------------------------------------------------------------------------
+
+
+def test_build_network_input_axon_synapse_carries_weight_and_hw_name(monkeypatch):
+    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
+    core = _fake_hard_core(
+        axons_per_core=1, neurons_per_core=2,
+        axon_sources=[SpikeSource(-1, 3, True, False, False)],
+        core_matrix=np.asarray([[1.5, 2.5]], dtype=np.float32),
+    )
+    _, c2g, ci, _ = build_network_for_segment(
+        _fake_arch(1), _fake_hcm(core),
+        tile_offset=0, core_offset=0,
+    )
+    src = ci[(0, 0)]
+    conns = [(c.index, w) for c, w in src.connections if c.group is c2g[0]]
+    assert len(conns) == 2
+    weights_by_idx = {idx: attrs for idx, attrs in conns}
+    for attrs in weights_by_idx.values():
+        assert attrs["synapse_hw_name"] == SYNAPSE_NAME
+    assert weights_by_idx[0]["weight"] == pytest.approx(1.5)
+    assert weights_by_idx[1]["weight"] == pytest.approx(2.5)
+
+
+def test_build_network_cross_core_axon_wires_from_source_core_neuron(monkeypatch):
+    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
     src_core = _fake_hard_core(axons_per_core=1, neurons_per_core=2)
     dst_core = _fake_hard_core(
         axons_per_core=1, neurons_per_core=1,
-        axon_sources=[SpikeSource(0, 1, False, False, False)],   # core 0 neuron 1
+        axon_sources=[SpikeSource(0, 1, False, False, False)],   # core 0, neuron 1
         core_matrix=np.asarray([[3.0]], dtype=np.float32),
     )
-    hcm = _fake_hcm(src_core, dst_core)
     _, c2g, _, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
+        _fake_arch(2), _fake_hcm(src_core, dst_core),
+        tile_offset=0, core_offset=0,
     )
     src_neuron = c2g[0][1]
     assert any(
@@ -322,82 +303,118 @@ def test_build_network_core_axon_wires_from_source_core_neuron(monkeypatch):
 
 
 def test_build_network_off_axons_are_skipped(monkeypatch):
-    """``is_off_`` axons emit no synapses regardless of core_matrix value."""
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
     core = _fake_hard_core(
         axons_per_core=2, neurons_per_core=1,
         axon_sources=[
-            SpikeSource(-1, 0, False, True, False),       # off
-            SpikeSource(-1, 0, True, False, False),       # input[0]
+            SpikeSource(-1, 0, False, True, False),     # off
+            SpikeSource(-1, 0, True, False, False),     # input[0]
         ],
         core_matrix=np.asarray([[99.0], [1.0]], dtype=np.float32),
     )
-    hcm = _fake_hcm(core)
-    _, c2g, input_group, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
+    _, c2g, ci, _ = build_network_for_segment(
+        _fake_arch(1), _fake_hcm(core),
+        tile_offset=0, core_offset=0,
     )
-    # Only input[0] should connect to core 0 neuron 0; the off axon contributes nothing.
-    conns = input_group[0].connections
-    weights = [c[1]["weight"] for c in conns if c[0].group is c2g[0]]
+    # Only one input neuron, only one synapse, only the input[0] weight.
+    assert set(ci.keys()) == {(0, 1)}
+    weights = [w["weight"] for c, w in ci[(0, 1)].connections if c.group is c2g[0]]
     assert weights == [pytest.approx(1.0)]
 
 
-def test_build_network_always_on_axon_wires_from_always_on_neuron(monkeypatch):
+def test_build_network_always_on_axon_wires_from_local_always_on_neuron(monkeypatch):
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
     core = _fake_hard_core(
         axons_per_core=1, neurons_per_core=1,
         axon_sources=[SpikeSource(0, 0, False, False, True)],
         core_matrix=np.asarray([[7.0]], dtype=np.float32),
     )
-    hcm = _fake_hcm(core)
-    _, c2g, _, always_on = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
+    _, c2g, _, ao = build_network_for_segment(
+        _fake_arch(1), _fake_hcm(core),
+        tile_offset=0, core_offset=0,
     )
-    assert always_on is not None
-    on_neuron = always_on[0]
-    weights = [w["weight"] for c, w in on_neuron.connections if c.group is c2g[0]]
+    assert 0 in ao
+    weights = [w["weight"] for c, w in ao[0].connections if c.group is c2g[0]]
     assert weights == [pytest.approx(7.0)]
 
 
-def test_build_network_duplicate_axons_accumulate_weights(monkeypatch):
-    """Two axons reading the same source produce one synapse whose weight sums."""
+def test_build_network_duplicate_axons_to_same_source_accumulate_weights(monkeypatch):
+    """Two axons reading the same logical input → one synapse, summed weight."""
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
     core = _fake_hard_core(
         axons_per_core=2, neurons_per_core=1,
         axon_sources=[
-            SpikeSource(-1, 0, True, False, False),   # input[0]
-            SpikeSource(-1, 0, True, False, False),   # input[0] again
+            SpikeSource(-1, 0, True, False, False),
+            SpikeSource(-1, 0, True, False, False),
         ],
         core_matrix=np.asarray([[2.0], [3.0]], dtype=np.float32),
     )
-    hcm = _fake_hcm(core)
-    _, c2g, input_group, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
+    _, c2g, ci, _ = build_network_for_segment(
+        _fake_arch(1), _fake_hcm(core),
+        tile_offset=0, core_offset=0,
     )
-    src = input_group[0]
-    conns_to_dst = [w["weight"] for c, w in src.connections if c.group is c2g[0]]
-    # Exactly one synapse whose weight is the SUM of the two axon entries.
-    assert len(conns_to_dst) == 1
-    assert conns_to_dst[0] == pytest.approx(5.0)
+    # Two separate input neurons (one per axon), each with its own synapse.
+    src_a, src_b = ci[(0, 0)], ci[(0, 1)]
+    w_a = [w["weight"] for c, w in src_a.connections if c.group is c2g[0]]
+    w_b = [w["weight"] for c, w in src_b.connections if c.group is c2g[0]]
+    assert w_a == [pytest.approx(2.0)]
+    assert w_b == [pytest.approx(3.0)]
 
 
 def test_build_network_zero_weights_dont_create_synapses(monkeypatch):
-    """A zero entry in ``core_matrix`` must not produce a wasteful synapse."""
     monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
-    arch = _fake_arch(1)
     core = _fake_hard_core(
         axons_per_core=1, neurons_per_core=2,
         axon_sources=[SpikeSource(-1, 0, True, False, False)],
         core_matrix=np.asarray([[0.0, 4.0]], dtype=np.float32),
     )
-    hcm = _fake_hcm(core)
-    _, c2g, input_group, _ = build_network_for_segment(
-        arch, hcm, tile_offset=0, core_offset=0, seg_in_size=1,
+    _, c2g, ci, _ = build_network_for_segment(
+        _fake_arch(1), _fake_hcm(core),
+        tile_offset=0, core_offset=0,
     )
-    conns = input_group[0].connections
-    # Only neuron 1 should receive a synapse — neuron 0 had weight 0.
-    targets = [(c.index, w["weight"]) for c, w in conns if c.group is c2g[0]]
+    targets = [(c.index, w["weight"]) for c, w in ci[(0, 0)].connections if c.group is c2g[0]]
     assert targets == [(1, pytest.approx(4.0))]
+
+
+# ---------------------------------------------------------------------------
+# Per-sample spike-train injection
+# ---------------------------------------------------------------------------
+
+
+def test_set_input_spike_trains_uses_logical_input_index(monkeypatch):
+    """The runner-side spike feed must look up encoded[0, k, :] where k = src.neuron_."""
+    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
+    core = _fake_hard_core(
+        axons_per_core=2, neurons_per_core=1,
+        axon_sources=[
+            SpikeSource(-1, 5, True, False, False),   # axon 0 reads input[5]
+            SpikeSource(-1, 2, True, False, False),   # axon 1 reads input[2]
+        ],
+        core_matrix=np.ones((2, 1), dtype=np.float32),
+    )
+    hcm = _fake_hcm(core)
+    _, _, ci, _ = build_network_for_segment(
+        _fake_arch(1), hcm,
+        tile_offset=0, core_offset=0,
+    )
+    encoded = np.zeros((1, 8, 4), dtype=np.float32)
+    encoded[0, 5, :] = [1, 0, 1, 0]
+    encoded[0, 2, :] = [0, 1, 1, 0]
+    set_input_spike_trains(ci, hcm, encoded)
+    assert ci[(0, 0)].model_attributes["spikes"] == [1, 0, 1, 0]
+    assert ci[(0, 1)].model_attributes["spikes"] == [0, 1, 1, 0]
+
+
+def test_set_always_on_spike_trains_fires_every_cycle(monkeypatch):
+    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
+    core = _fake_hard_core(
+        axons_per_core=1, neurons_per_core=1,
+        axon_sources=[SpikeSource(0, 0, False, False, True)],
+        core_matrix=np.asarray([[1.0]], dtype=np.float32),
+    )
+    _, _, _, ao = build_network_for_segment(
+        _fake_arch(1), _fake_hcm(core),
+        tile_offset=0, core_offset=0,
+    )
+    set_always_on_spike_trains(ao, T=5)
+    assert ao[0].model_attributes["spikes"] == [1, 1, 1, 1, 1]

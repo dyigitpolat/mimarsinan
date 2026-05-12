@@ -2,13 +2,12 @@
 
 ``SanafeRunner.run(sample_input, sample_index)`` walks a
 ``HybridHardCoreMapping`` end-to-end: each neural stage is built as a
-SANA-FE network on a shared ``Architecture``, run through
-``SpikingChip.sim()``, and reduced to a :class:`SanafeSegmentRecord`;
-each compute stage runs host-side via ``hybrid_execution.execute_compute_op_numpy``.
+SANA-FE ``Network`` on the shared synthesised ``Architecture``, run
+through ``SpikingChip.sim()``, and reduced to a
+:class:`SanafeSegmentRecord`; each compute stage runs host-side via
+``hybrid_execution.execute_compute_op_numpy``.
 
-The runner is the only module that touches ``sanafe.SpikingChip``.  All
-SANA-FE imports are gated behind ``arch_synth._sanafe()`` so the rest of
-mimarsinan never grows a GPL-3.0 dependency at import time.
+The runner is the only module that touches ``sanafe.SpikingChip``.
 
 Single-sample only at this stage: the parity-gate use case feeds one
 deterministic test sample at a time.  Higher sample counts are handled
@@ -17,7 +16,7 @@ by the pipeline step looping over samples.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -25,14 +24,14 @@ from mimarsinan.chip_simulation._spike_encoding import uniform_rate_encode
 from mimarsinan.chip_simulation.hybrid_execution import (
     assemble_segment_input_numpy,
     execute_compute_op_numpy,
-    gather_final_output_numpy,
     store_segment_output_numpy,
 )
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
 from .arch_synth import _sanafe, build_architecture, derive_arch_spec
-from .net_synth import build_network_for_segment
-from .neuron_model import resolve_plugin_path
+from .net_synth import (
+    build_network_for_segment, set_always_on_spike_trains, set_input_spike_trains,
+)
 from .presets import PRESETS
 from .records import (
     SanafeCoreRecord,
@@ -81,7 +80,6 @@ class SanafeRunner:
         self.log_message_trace = log_message_trace
         self.cores_per_tile = cores_per_tile
 
-        # Cached on first SANA-FE touch (after run() begins).
         self._arch: Optional[Any] = None
         self._arch_name: str = "<unbuilt>"
         # White-box hook for tests; runner sets this on each chip.sim() call.
@@ -126,7 +124,6 @@ class SanafeRunner:
                     op, sample_input, state_buffer,
                     in_scale=in_scale, out_scale=out_scale,
                 )
-                # Materialize to numpy if torch tensor.
                 if hasattr(result, "detach"):
                     result = result.detach().cpu().numpy()
                 state_buffer[op.id] = np.asarray(result)
@@ -172,10 +169,6 @@ class SanafeRunner:
         )
         self._arch_name = spec.name
         self._arch = build_architecture(spec, custom_arch_path=self.custom_arch_path)
-        # Optional Strategy-B plugin path resolution (no-op when plugin absent).
-        plugin_path = resolve_plugin_path()
-        if plugin_path and hasattr(self._arch, "load_soma_plugin"):  # pragma: no cover
-            self._arch.load_soma_plugin(plugin_path, "mimarsinan_subtractive_lif")
 
     # --------------------------------------------------------------- segment
 
@@ -193,16 +186,22 @@ class SanafeRunner:
         )
         seg_in_size = int(seg_input_rates.shape[1])
 
-        # Build the per-segment SANA-FE network.
-        net, core_to_group, input_group, always_on_group = build_network_for_segment(
+        # Build the per-segment SANA-FE network.  Each HardCore in the HCM
+        # maps to one SANA-FE core; input neurons live on the consuming
+        # core (see ``sanafe_per_core_input_neurons`` memory).
+        (net, core_to_group, core_input_neurons,
+         core_always_on_neurons) = build_network_for_segment(
             self._arch, hcm,
-            tile_offset=0, core_offset=0,    # one tile per segment for now
-            seg_in_size=seg_in_size,
+            tile_offset=0, core_offset=0,
             cores_per_tile=self.cores_per_tile,
         )
 
-        # Rate-encode the input.
-        encoded = uniform_rate_encode(seg_input_rates, self.T)   # (1, D, T)
+        # Rate-encode the segment input as a (1, D, T) binary tensor.  Each
+        # (core_idx, axon_idx) input neuron gets the spike train for its
+        # logical input index ``hcm.cores[core_idx].axon_sources[axon_idx].neuron_``.
+        encoded = uniform_rate_encode(seg_input_rates, self.T)            # (1, D, T)
+        set_input_spike_trains(core_input_neurons, hcm, encoded)
+        set_always_on_spike_trains(core_always_on_neurons, self.T)
 
         # Build and run the chip.
         chip = sanafe.SpikingChip(self._arch)
@@ -211,14 +210,21 @@ class SanafeRunner:
             self.T,
             spike_trace=True,
             potential_trace=self.log_potential_trace,
-            input_spikes=encoded,
+            message_trace=self.log_message_trace,
         )
         self._last_chip = chip
 
-        # Extract per-core stats.
-        group_spike_counts = results.get("group_spike_counts", {})
+        # Parse spike_trace → per-group spike counts.  Each timestep entry
+        # is a list of "group_name.neuron_idx" strings; we tally per group.
+        # SANA-FE 2.1.1's ``net.groups`` is a dict[name, NeuronGroup]; the
+        # fake-network test surface mirrors that as a list of objects
+        # exposing ``get_name()``.
+        group_spike_counts = _spike_trace_to_group_counts(
+            results.get("spike_trace", []),
+            group_sizes=_group_name_to_size(net),
+        )
+
         per_core_records: List[SanafeCoreRecord] = []
-        seg_output_pieces: Dict[int, np.ndarray] = {}
         for core_idx, core in enumerate(hcm.cores):
             used_neu = _used_neurons(core)
             used_ax = _used_axons(core)
@@ -228,17 +234,14 @@ class SanafeRunner:
             if group is None:
                 output_count = np.zeros(used_neu, dtype=np.int64)
             else:
-                gsc = group_spike_counts.get(group.name)
-                if gsc is None:
-                    output_count = np.zeros(used_neu, dtype=np.int64)
-                else:
-                    output_count = np.asarray(gsc, dtype=np.int64)[:used_neu]
+                gsc = group_spike_counts.get(_group_name(group))
+                output_count = (np.zeros(used_neu, dtype=np.int64)
+                                if gsc is None
+                                else np.asarray(gsc, dtype=np.int64)[:used_neu])
             input_count, n_always_on = self._derive_per_core_input_counts(
-                core=core,
-                seg_input_encoded=encoded,
-                state_buffer_spikes={},   # Cross-core spike trains not modelled in
-                                          # this single-segment slice yet; refined in
-                                          # the slow integration test.
+                core=core, seg_input_encoded=encoded,
+                group_spike_counts=group_spike_counts,
+                core_to_group=core_to_group,
             )
             per_core_records.append(SanafeCoreRecord(
                 core_index=core_idx,
@@ -256,14 +259,12 @@ class SanafeRunner:
                 ),
             ))
 
-        # Per-tile aggregation (one tile per segment under default packing).
         per_tile_records = self._aggregate_per_tile(per_core_records, results)
 
-        # Segment-level output spike count: concatenate from output_map slices.
         seg_out_count = self._compute_seg_output_spike_count(
-            stage.output_map, per_core_records, hcm, state_buffer,
+            stage.output_map, per_core_records,
         )
-        seg_in_count = uniform_rate_encode(seg_input_rates, self.T)[0].sum(axis=1).astype(np.int64)
+        seg_in_count = encoded[0].sum(axis=1).astype(np.int64)
 
         seg_record = SanafeSegmentRecord(
             stage_index=stage_index,
@@ -282,18 +283,19 @@ class SanafeRunner:
             seg_output_spike_count=seg_out_count,
             per_core=per_core_records,
             per_tile=per_tile_records,
-            per_neuron_spike_trace=results.get("spike_trace"),
-            per_neuron_potential_trace=results.get("potential_trace"),
-            message_trace=results.get("message_trace"),
+            per_neuron_spike_trace=_pack_spike_trace_matrix(
+                results.get("spike_trace", []), net.groups,
+            ),
+            per_neuron_potential_trace=_pack_potential_trace(
+                results.get("potential_trace"),
+            ),
+            message_trace=_flatten_message_trace(results.get("message_trace")),
         )
 
         # Store segment output rates into the state buffer for downstream stages.
-        seg_output_rates = _seg_output_spike_count_to_rates(
-            seg_out_count, self.T,
-        ).reshape(1, -1)
-        store_segment_output_numpy(
-            stage.output_map, state_buffer, seg_output_rates,
-        )
+        seg_output_rates = (seg_out_count.astype(np.float32) / float(self.T)
+                            ).reshape(1, -1)
+        store_segment_output_numpy(stage.output_map, state_buffer, seg_output_rates)
         return seg_record
 
     # ----------------------------------------------------- per-core input
@@ -302,9 +304,10 @@ class SanafeRunner:
         self,
         *,
         core: Any,
-        seg_input_encoded: np.ndarray,   # (1, seg_in_size, T)
-        state_buffer_spikes: Dict[int, np.ndarray],
-    ) -> tuple[np.ndarray, int]:
+        seg_input_encoded: np.ndarray,            # (1, seg_in_size, T)
+        group_spike_counts: Dict[str, np.ndarray],
+        core_to_group: Dict[int, Any],
+    ) -> Tuple[np.ndarray, int]:
         """Walk this core's ``axon_sources``; build (input_spike_count, n_always_on)."""
         used_ax = _used_axons(core)
         if used_ax <= 0:
@@ -323,9 +326,17 @@ class SanafeRunner:
                 k = int(src.neuron_)
                 counts[a] = int(seg_input_encoded[0, k, :].sum())
                 continue
-            # Cross-core spikes — populated host-side from upstream output
-            # traces in the slow integration path. Default to 0 here.
-            counts[a] = 0
+            # Cross-core: pull the source core's per-neuron spike count
+            # from the spike trace.
+            src_core = int(src.core_)
+            src_neuron = int(src.neuron_)
+            src_group = core_to_group.get(src_core)
+            if src_group is None:
+                continue
+            gsc = group_spike_counts.get(_group_name(src_group))
+            if gsc is None or src_neuron >= len(gsc):
+                continue
+            counts[a] = int(gsc[src_neuron])
         return counts, n_always_on
 
     # --------------------------------------------------------- segment output
@@ -334,32 +345,14 @@ class SanafeRunner:
         self,
         output_map: List[Any],
         per_core_records: List[SanafeCoreRecord],
-        hcm: Any,
-        state_buffer: Dict[int, np.ndarray],
     ) -> np.ndarray:
-        """Concatenate per-core spike-count slices in ``output_map`` order.
-
-        Each ``output_map`` slice tells us which sub-range of which source's
-        outputs go into the segment-level output buffer.  For HCM-mapped
-        neural segments, the source node_id (e.g. the IR node id) is
-        resolved by the runner's caller — here we approximate by summing
-        per-core output counts across cores in declaration order, then
-        slicing per the output_map.  This shape is verified by the parity
-        gate at the segment-output diff layer (layer 4).
-        """
-        # Flatten all per-core output spike counts in core order; cap length
-        # at the max output_map endpoint.
         if not output_map:
-            # No outputs declared — return empty.
             return np.zeros(0, dtype=np.int64)
-
         total_size = max((s.offset + s.size for s in output_map), default=0)
         out = np.zeros(total_size, dtype=np.int64)
-        flat = np.concatenate(
-            [rec.output_spike_count for rec in per_core_records],
-            axis=0,
-        ) if per_core_records else np.zeros(0, dtype=np.int64)
-        # First output_map slice consumes leading core outputs by convention.
+        flat = (np.concatenate([rec.output_spike_count for rec in per_core_records],
+                               axis=0)
+                if per_core_records else np.zeros(0, dtype=np.int64))
         cursor = 0
         for slot in output_map:
             take = min(slot.size, max(flat.size - cursor, 0))
@@ -375,7 +368,6 @@ class SanafeRunner:
         per_core_records: List[SanafeCoreRecord],
         results: Dict[str, Any],
     ) -> List[SanafeTileRecord]:
-        """One tile per segment under the default cores_per_tile=0 packing."""
         if not per_core_records:
             return []
         return [
@@ -390,8 +382,27 @@ class SanafeRunner:
 
 
 # ---------------------------------------------------------------------------
-# Module-level helpers (mirror net_synth's "used" counters)
+# Module-level helpers
 # ---------------------------------------------------------------------------
+
+
+def _group_name(group: Any) -> str:
+    """Get a SANA-FE NeuronGroup's name (real API exposes ``get_name()``)."""
+    if hasattr(group, "get_name"):
+        return group.get_name()
+    return group.name
+
+
+def _group_name_to_size(net: Any) -> Dict[str, int]:
+    """Build ``{group_name: size}`` from either real or fake Network shape.
+
+    Real SANA-FE: ``net.groups`` is ``dict[name, NeuronGroup]``.
+    Test fakes:   ``net.groups`` is ``list[FakeGroup]``.
+    """
+    groups = net.groups
+    if isinstance(groups, dict):
+        return {name: len(g) for name, g in groups.items()}
+    return {_group_name(g): len(g) for g in groups}
 
 
 def _used_axons(core: Any) -> int:
@@ -418,7 +429,104 @@ def _energy_share(total: SanafeEnergyBreakdown, *, n_cores: int) -> SanafeEnergy
     )
 
 
-def _seg_output_spike_count_to_rates(counts: np.ndarray, T: int) -> np.ndarray:
-    if T <= 0:
-        return counts.astype(np.float32, copy=True)
-    return (counts.astype(np.float32) / float(T))
+def _spike_trace_to_group_counts(
+    spike_trace: list,
+    *,
+    group_sizes: Dict[str, int],
+) -> Dict[str, np.ndarray]:
+    """Tally SANA-FE's per-timestep firing list into per-group spike counts.
+
+    SANA-FE 2.1.1 emits each timestep as a list of strings of the form
+    ``"<group_name>.<neuron_index>"``.  We tally those into ``(n_neurons,)``
+    int arrays, one per group.  Trailing groups absent from the trace
+    are mapped to zero arrays.
+    """
+    counts: Dict[str, np.ndarray] = {
+        name: np.zeros(size, dtype=np.int64) for name, size in group_sizes.items()
+    }
+    for events in spike_trace:
+        for event in events:
+            s = str(event)
+            if "." not in s:
+                continue
+            group_name, idx_str = s.rsplit(".", 1)
+            try:
+                idx = int(idx_str)
+            except ValueError:
+                continue
+            arr = counts.get(group_name)
+            if arr is None or idx >= arr.size:
+                continue
+            arr[idx] += 1
+    return counts
+
+
+def _pack_spike_trace_matrix(
+    spike_trace: list, groups: Any,
+) -> Optional[np.ndarray]:
+    """Convert SANA-FE's per-timestep firing strings into a (sum_neurons, T) matrix.
+
+    Accepts both real SANA-FE's ``net.groups`` (dict) and test fakes (list).
+    Returns ``None`` when the trace is empty or shapeless so the snapshot
+    builder can opt out of per-neuron raster rendering cleanly.
+    """
+    if not spike_trace:
+        return None
+    # Build a name → (offset, size) map so we can index into a single matrix.
+    offsets: Dict[str, int] = {}
+    cursor = 0
+    iterable = (groups.items() if isinstance(groups, dict)
+                else ((_group_name(g), g) for g in groups))
+    for name, g in iterable:
+        offsets[name] = cursor
+        cursor += len(g)
+    if cursor == 0:
+        return None
+    T = len(spike_trace)
+    mat = np.zeros((cursor, T), dtype=np.uint8)
+    for t, events in enumerate(spike_trace):
+        for event in events:
+            s = str(event)
+            if "." not in s:
+                continue
+            group_name, idx_str = s.rsplit(".", 1)
+            if group_name not in offsets:
+                continue
+            try:
+                idx = int(idx_str)
+            except ValueError:
+                continue
+            row = offsets[group_name] + idx
+            if 0 <= row < cursor:
+                mat[row, t] = 1
+    return mat
+
+
+def _pack_potential_trace(potential_trace: Any) -> Optional[np.ndarray]:
+    """Convert SANA-FE's per-timestep potential list to a (n_logged, T) matrix.
+
+    Returns ``None`` when the trace is empty or has inconsistent shape.
+    """
+    if not potential_trace:
+        return None
+    arr = np.asarray(potential_trace, dtype=np.float32)
+    if arr.ndim != 2:
+        return None
+    # SANA-FE returns shape (T, n_logged); transpose to (n_logged, T).
+    return arr.T
+
+
+def _flatten_message_trace(message_trace: Any) -> Optional[List[dict]]:
+    """Flatten SANA-FE's per-timestep message list into a single list of dicts."""
+    if not message_trace:
+        return None
+    flat: List[dict] = []
+    for events in message_trace:
+        for ev in events:
+            if isinstance(ev, dict):
+                # Filter out placeholder entries (no real spike).
+                if ev.get("placeholder"):
+                    continue
+                flat.append({k: (float(v) if isinstance(v, float) else v)
+                             for k, v in ev.items()})
+    return flat or None

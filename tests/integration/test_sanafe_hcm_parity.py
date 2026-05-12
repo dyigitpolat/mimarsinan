@@ -1,16 +1,40 @@
 """HCM↔SANA-FE spike-count parity + rich-stats smoke on a single MNIST sample.
 
+**Status: scale-limited.**  The integration is functional through
+SANA-FE for mappings up to ~20-25 cores per neural segment.  The
+included MNIST artifact is a 47+49 core ViT-scale mapping that hits a
+SANA-FE 2.1.1 scaling cliff inside ``chip.load(net)`` / ``chip.sim()``
+(process killed before the LIF runtime check fires).  Three earlier
+bugs *were* fixed along the way:
+
+* SANA-FE 2.1.1's ``name[0..N-1]`` range shorthand on cores breaks the
+  inner ``inputs[0..K]`` soma-range expansion.  Now ``arch_synth``
+  emits one core block per core.
+* The huge ``inputs[0..K]`` soma pool used to be declared on every
+  core (most unused), which triggered SANA-FE 2.1.1's
+  ``"must update every time-step"`` runtime check.  Now declared only
+  on the input-host core (tile 0, core 0).
+* ``net_synth`` used to create one input neuron per ``seg_in_size``
+  slot, mapping all of them even when only a few were wired.  Now
+  ``net_synth`` creates input neurons only for axon-referenced
+  indices, with a logical-index → group-offset map threaded back to
+  the runner.
+
+For runs at production ViT scale, partition the mapping into smaller
+neural segments before reaching SANA-FE; the next slow integration
+file (``test_sanafe_synthetic_end_to_end.py``) exercises the runner
+on the known-good size and is the canonical "does the SANA-FE
+backend work" surface.
+
 Loads the LIF-mode MNIST artifact under
-``generated/mnist_hard_all_lif_phased_deployment_run`` (the same artifact
-the Loihi parity test consumes), then:
+``generated/mnist_hard_all_lif_phased_deployment_run*`` and:
 
   1. runs one sample through ``SpikingHybridCoreFlow`` with recording,
   2. runs the same sample through ``SanafeRunner``,
   3. asserts ``compare_records(hcm_ref, sanafe_record.to_hcm_subset())``
      returns no diffs (parity gate),
   4. asserts the SANA-FE record carries positive aggregate energy,
-     positive sim_time, and at least one NoC packet — i.e. that the rich-
-     stats payload the GUI tab consumes is non-trivial.
+     positive sim_time, and at least one NoC packet.
 
 Skipped when:
   * the LIF artifact is missing (run the pipeline first), or
@@ -29,14 +53,33 @@ import pytest
 import torch
 import torch.nn as nn
 
-WORK_DIR = Path("generated/mnist_hard_all_lif_phased_deployment_run")
-IR_PICKLE = WORK_DIR / "Soft Core Mapping.ir_graph.pickle"
-PLATFORM_CFG = WORK_DIR / "Model Configuration.platform_constraints_resolved.json"
-RUN_CONFIG = WORK_DIR / "_RUN_CONFIG" / "config.json"
+def _resolve_work_dir() -> Path | None:
+    """Find the LIF MNIST artifact directory, accepting timestamped variants.
+
+    Newer pipeline runs append ``_YYYYMMDD_HHMMSS``; older runs are unsuffixed.
+    We accept either, picking the most recently modified when several exist.
+    """
+    candidates = sorted(
+        Path("generated").glob("mnist_hard_all_lif_phased_deployment_run*"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+WORK_DIR = _resolve_work_dir()
+IR_PICKLE = WORK_DIR / "Soft Core Mapping.ir_graph.pickle" if WORK_DIR else None
+PLATFORM_CFG = WORK_DIR / "Model Configuration.platform_constraints_resolved.json" if WORK_DIR else None
+RUN_CONFIG = WORK_DIR / "_RUN_CONFIG" / "config.json" if WORK_DIR else None
 
 
 def _have_artifacts() -> bool:
-    return IR_PICKLE.exists() and PLATFORM_CFG.exists() and RUN_CONFIG.exists()
+    return bool(
+        WORK_DIR
+        and IR_PICKLE and IR_PICKLE.exists()
+        and PLATFORM_CFG and PLATFORM_CFG.exists()
+        and RUN_CONFIG and RUN_CONFIG.exists()
+    )
 
 
 def _have_sanafe() -> bool:
