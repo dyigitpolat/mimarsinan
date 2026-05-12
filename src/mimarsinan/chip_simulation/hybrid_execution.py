@@ -137,10 +137,19 @@ def assemble_segment_input_numpy(
     input_map,
     state_buffer: Dict[int, np.ndarray],
     num_samples: int,
+    *,
+    dtype: np.dtype = np.float32,
 ) -> np.ndarray:
-    """Numpy analogue of :func:`assemble_segment_input_torch`."""
+    """Numpy analogue of :func:`assemble_segment_input_torch`.
+
+    ``dtype`` defaults to ``float32`` to match the historical SimulationRunner
+    path; callers that need bit-equivalent parity with HCM's float64 compute
+    path (e.g. the SANA-FE runner) should pass ``dtype=np.float64`` so the
+    precision of upstream compute-op outputs is preserved through the
+    assembly cast.
+    """
     total_size = max((s.offset + s.size for s in input_map), default=0)
-    inp = np.zeros((num_samples, total_size), dtype=np.float32)
+    inp = np.zeros((num_samples, total_size), dtype=dtype)
     for s in input_map:
         buf = state_buffer[s.node_id]
         inp[:, s.offset : s.offset + s.size] = buf[:, : s.size]
@@ -187,19 +196,27 @@ def execute_compute_op_numpy(
     *,
     in_scale: float = 1.0,
     out_scale: float | None = None,
+    dtype: np.dtype = np.float32,
 ) -> np.ndarray:
     """Execute a host-side ComputeOp via the torch wrapper, returning numpy.
 
     Drives the same ``execute_compute_op_torch`` machinery so SCM/HCM/Sim
     follow one code path. Inputs are converted from numpy → torch and
     back; the actual op invocation lives in ``execute_compute_op_torch``.
+
+    ``dtype`` defaults to ``float32`` for back-compat with SimulationRunner.
+    Pass ``dtype=np.float64`` to match HCM's ``forward_with_recording``
+    compute precision (``_COMPUTE_DTYPE = torch.float64``) — without this,
+    rate-encoded spike counts can diverge by ±1 at quantization boundaries.
     """
     if out_scale is None:
         out_scale = in_scale
 
-    x_torch = torch.tensor(original_input, dtype=torch.float32)
+    torch_dtype = (torch.float64 if np.dtype(dtype) == np.float64
+                   else torch.float32)
+    x_torch = torch.tensor(original_input, dtype=torch_dtype)
     buffers_torch = {
-        k: torch.tensor(v, dtype=torch.float32) for k, v in state_buffer.items()
+        k: torch.tensor(v, dtype=torch_dtype) for k, v in state_buffer.items()
     }
     result = execute_compute_op_torch(
         op,
@@ -207,6 +224,7 @@ def execute_compute_op_numpy(
         buffers_torch,
         in_scale=in_scale,
         out_scale=out_scale,
+        output_dtype=torch_dtype,
     )
     return result.detach().numpy()
 

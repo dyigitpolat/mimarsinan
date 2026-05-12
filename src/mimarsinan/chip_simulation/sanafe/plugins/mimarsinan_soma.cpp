@@ -42,14 +42,37 @@ public:
     {
         // Whitelist the attribute names we accept so SANA-FE doesn't warn
         // about unknown attrs.  These mirror the SubtractiveLIFReset surface.
-        register_attributes({"threshold", "bias", "thresholding_mode"});
+        // ``active_start`` and ``active_length`` gate per-neuron integration
+        // to a fixed cycle window — needed because the SANA-FE runner
+        // simulates ``T + max_latency`` cycles to flush multi-depth
+        // cascades, but each core in HCM only integrates for exactly ``T``
+        // cycles inside ``[core.latency, T + core.latency)``.
+        register_attributes({"threshold", "bias", "thresholding_mode",
+                "active_start", "active_length"});
     }
 
     sanafe::PipelineResult update(std::size_t neuron_address,
             std::optional<double> current_in,
-            long int /*simulation_time*/) override
+            long int simulation_time) override
     {
         ensure_capacity(neuron_address);
+
+        // Active-window gate — matches HCM's per-core
+        // ``cycle >= core.latency and cycle < T + core.latency`` check
+        // (``hybrid_core_flow._run_neural_segment_rate`` line 572-574).
+        // SANA-FE's ``simulation_time`` is 1-based; we convert to the
+        // 0-based cycle the runner thinks in by subtracting 1.
+        const long int cycle = simulation_time - 1;
+        const long int start = active_start_[neuron_address];
+        const long int len = active_length_[neuron_address];
+        if (len > 0 && (cycle < start || cycle >= start + len))
+        {
+            // Outside window: do nothing (no integration, no bias, no
+            // firing).  Match HCM's ``continue`` for inactive cycles.
+            sanafe::PipelineResult idle_out;
+            idle_out.status = sanafe::idle;
+            return idle_out;
+        }
 
         // Integrate input current (du=1: current does not persist, it is
         // delivered fresh from the dendrite each cycle).
@@ -97,6 +120,8 @@ public:
         potential_.clear();
         threshold_.clear();
         bias_.clear();
+        active_start_.clear();
+        active_length_.clear();
     }
 
     // Hardware-level attributes are set once at arch-construction time.
@@ -125,6 +150,16 @@ public:
         {
             bias_[neuron_address] = static_cast<double>(param);
         }
+        else if (attribute_name == "active_start")
+        {
+            active_start_[neuron_address] =
+                    static_cast<long int>(static_cast<int>(param));
+        }
+        else if (attribute_name == "active_length")
+        {
+            active_length_[neuron_address] =
+                    static_cast<long int>(static_cast<int>(param));
+        }
     }
 
     // No ``set_attribute_edge`` override — ``SomaUnit`` marks it ``final``
@@ -135,6 +170,12 @@ private:
     std::vector<double> potential_;
     std::vector<double> threshold_;
     std::vector<double> bias_;
+    // Per-neuron active window (in cycles, 0-based).  When
+    // ``active_length_[i] == 0`` the gate is disabled and the neuron is
+    // always active — matches the pre-window behaviour for tests that
+    // never touch these attributes.
+    std::vector<long int> active_start_;
+    std::vector<long int> active_length_;
     // Strict ``<`` by default; flips to inclusive ``<=`` via hw attribute.
     bool inclusive_threshold_{false};
 
@@ -146,6 +187,8 @@ private:
             potential_.resize(new_size, 0.0);
             threshold_.resize(new_size, 1.0);   // safe non-zero default
             bias_.resize(new_size, 0.0);
+            active_start_.resize(new_size, 0L);
+            active_length_.resize(new_size, 0L);
         }
     }
 };

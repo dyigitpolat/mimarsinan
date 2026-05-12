@@ -227,7 +227,14 @@ def test_sanafe_rich_stats_smoke_total_energy_positive():
 
 
 def test_sanafe_per_neuron_spike_trace_shape_when_enabled():
-    """Optional per-neuron traces must come back with the right shape."""
+    """Optional per-neuron traces must come back with the right shape.
+
+    The runner extends the chip simulation to ``T + max_core_latency + 1``
+    cycles so multi-depth cascades flush and SANA-FE's one-cycle
+    input→synapse pipeline delay doesn't cost the depth-0 cores their
+    last integration step (see ``runner._run_neural_stage``).  So the
+    trace's time dimension is ``>= sim_length``, not strictly equal.
+    """
     from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
 
     ir_graph, platform, sim_length = _load_artifacts()
@@ -239,11 +246,9 @@ def test_sanafe_per_neuron_spike_trace_shape_when_enabled():
         arch_preset="loihi", log_potential_trace=True,
     )
     rec = runner.run(x.detach().cpu().numpy().reshape(1, -1), sample_index=0)
-    # If SANA-FE returned potential traces, every segment that exposes
-    # one must have shape (n_neurons, T).
     for seg in rec.segments.values():
         if seg.per_neuron_potential_trace is None:
             continue
         trace = np.asarray(seg.per_neuron_potential_trace)
         assert trace.ndim == 2
-        assert trace.shape[1] == sim_length
+        assert trace.shape[1] >= sim_length

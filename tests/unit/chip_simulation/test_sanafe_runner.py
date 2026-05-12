@@ -135,9 +135,13 @@ def _fake_hard_core(*, axons=2, neurons=2, threshold=1.0,
         core_matrix = np.zeros((axons, neurons), dtype=np.float32)
     if axon_sources is None:
         axon_sources = [SpikeSource(-1, i, True, False, False) for i in range(axons)]
+    # Match real-HardCore semantics: ``available_axons`` complements the
+    # number of live axon_sources so ``axons_per_core - available_axons``
+    # is the live count.
+    available_axons = max(0, axons - len(axon_sources))
     return SimpleNamespace(
         axons_per_core=axons, neurons_per_core=neurons,
-        available_axons=0, available_neurons=0,
+        available_axons=available_axons, available_neurons=0,
         threshold=threshold,
         core_matrix=core_matrix,
         axon_sources=list(axon_sources),
@@ -337,18 +341,26 @@ def test_run_returns_sanafe_run_record_for_single_neural_stage(monkeypatch):
     assert seg.per_core[0].spikes_fired == 12
 
 
-def test_run_threads_chip_sim_with_simulation_length(monkeypatch):
+def test_run_threads_chip_sim_with_extended_simulation_length(monkeypatch):
+    """Runner pads ``chip.sim`` to ``T + max_core_latency + 1`` cycles.
+
+    The +1 accounts for SANA-FE's input→synapse pipeline delay (an input
+    neuron's spike at sim_time t reaches its consumer's synapse at t+1)
+    and the ``max_core_latency`` extension lets multi-depth cascades
+    flush through within the simulation.  Here ``latency=0`` for the
+    single fake core, so we expect ``T + 0 + 1 = 33`` ticks.
+    """
     stage = _fake_stage(
         "neural", hcm=_fake_hcm(_fake_hard_core(axons=2, neurons=2)),
         input_map=[_seg_io_slice(-2, 0, 2)],
         output_map=[_seg_io_slice(0, 0, 2)],
     )
     _patch_sanafe_stack(monkeypatch)
-    _seed_chip_result(spike_trace=[[] for _ in range(32)])
+    _seed_chip_result(spike_trace=[[] for _ in range(33)])
     runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=32)
     runner.run(np.asarray([[0.0, 0.0]], dtype=np.float32), sample_index=0)
     chip = runner._last_chip
-    assert chip.last_sim["timesteps"] == 32
+    assert chip.last_sim["timesteps"] == 33
 
 
 def test_run_propagates_arch_preset_to_record(monkeypatch):
@@ -379,18 +391,23 @@ def test_run_executes_compute_stage_via_hybrid_execution(monkeypatch):
     _patch_sanafe_stack(monkeypatch)
 
     called = {}
-    def fake_compute(op_arg, original_input, state_buffer, *, in_scale, out_scale):
+    def fake_compute(op_arg, original_input, state_buffer, *,
+                     in_scale, out_scale, dtype=np.float32):
+        # Accept ``dtype`` — the runner passes ``dtype=np.float64`` so
+        # compute-op arithmetic matches HCM's ``_COMPUTE_DTYPE``.
         called["op"] = op_arg
-        return np.asarray([[3.0]], dtype=np.float32)
+        called["dtype"] = dtype
+        return np.asarray([[3.0]], dtype=dtype)
     monkeypatch.setattr(runner_mod, "execute_compute_op_numpy", fake_compute)
 
     runner = SanafeRunner(mapping=mapping, simulation_length=8)
     rec = runner.run(np.asarray([[1.0, 2.0]], dtype=np.float32), sample_index=0)
 
     assert called["op"] is op
+    assert called["dtype"] == np.float64
     assert 42 in rec.compute_outputs
     np.testing.assert_array_equal(rec.compute_outputs[42],
-                                  np.asarray([[3.0]], dtype=np.float32))
+                                  np.asarray([[3.0]], dtype=np.float64))
 
 
 def test_run_walks_stages_in_order(monkeypatch):

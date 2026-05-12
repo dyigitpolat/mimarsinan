@@ -96,13 +96,19 @@ def _fake_arch(*tile_core_counts: int):
     return SimpleNamespace(tiles=tiles)
 
 
-def _fake_hard_core(*, axons_per_core, neurons_per_core, available_axons=0,
+def _fake_hard_core(*, axons_per_core, neurons_per_core, available_axons=None,
                     available_neurons=0, threshold=1.0, hardware_bias=None,
                     core_matrix=None, axon_sources=None):
     if core_matrix is None:
         core_matrix = np.zeros((axons_per_core, neurons_per_core), dtype=np.float32)
     if axon_sources is None:
         axon_sources = []
+    # Match real-HardCore semantics: ``axons_per_core - available_axons``
+    # is the LIVE axon count.  When the test only supplies a short
+    # ``axon_sources`` list, default ``available_axons`` so the live
+    # count equals the list length.
+    if available_axons is None:
+        available_axons = max(0, axons_per_core - len(axon_sources))
     return SimpleNamespace(
         axons_per_core=axons_per_core,
         neurons_per_core=neurons_per_core,
