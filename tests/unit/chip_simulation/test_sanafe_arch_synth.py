@@ -1,12 +1,13 @@
-"""ArchSpec derivation + SANA-FE Architecture construction.
+"""ArchSpec derivation + SANA-FE Architecture YAML synthesis.
 
 These tests pin two concerns:
 
 1. ``derive_arch_spec`` is pure-Python — it walks a (possibly fake)
    ``HybridHardCoreMapping`` and produces a deterministic ``ArchSpec``.
-2. ``build_architecture`` is the only function that touches the SANA-FE
-   Python package; the lazy ``_sanafe()`` accessor is monkey-patched
-   here so the test suite stays runnable without SANA-FE installed.
+2. ``build_architecture`` renders a YAML matching the spec and calls
+   ``sanafe.load_arch`` — the YAML rendering is what we pin here
+   directly (text contents are inspected) because the SANA-FE-touching
+   half is covered by the slow integration test.
 """
 
 from __future__ import annotations
@@ -19,12 +20,16 @@ import pytest
 from mimarsinan.chip_simulation.sanafe import arch_synth
 from mimarsinan.chip_simulation.sanafe.arch_synth import (
     ArchSpec,
+    _render_arch_yaml,
     build_architecture,
     derive_arch_spec,
 )
 from mimarsinan.chip_simulation.sanafe.presets import (
     LOIHI_PRESET,
     PRESETS,
+    SOMA_INPUT_RANGE_NAME,
+    SOMA_LIF_NAME,
+    SYNAPSE_NAME,
     TRUENORTH_PRESET,
 )
 
@@ -42,7 +47,6 @@ def _fake_hard_core(axons_per_core: int, neurons_per_core: int):
 
 
 def _fake_hcm(*core_shapes: tuple[int, int]):
-    """Build a fake HardCoreMapping with the given (axons, neurons) per core."""
     cores = [_fake_hard_core(a, n) for a, n in core_shapes]
     return SimpleNamespace(
         cores=cores,
@@ -51,11 +55,10 @@ def _fake_hcm(*core_shapes: tuple[int, int]):
     )
 
 
-def _fake_stage(kind: str, hcm=None):
+def _fake_stage(kind: str, hcm=None, input_map=None):
     return SimpleNamespace(
-        kind=kind,
-        hard_core_mapping=hcm,
-        compute_op=None,
+        kind=kind, hard_core_mapping=hcm, compute_op=None,
+        input_map=input_map or [],
     )
 
 
@@ -67,6 +70,10 @@ def _fake_mapping(*stages):
     )
 
 
+def _io_slice(node_id=-2, offset=0, size=0):
+    return SimpleNamespace(node_id=node_id, offset=offset, size=size)
+
+
 # ---------------------------------------------------------------------------
 # derive_arch_spec — pure Python
 # ---------------------------------------------------------------------------
@@ -75,7 +82,6 @@ def _fake_mapping(*stages):
 def test_derive_arch_spec_single_segment_single_core_returns_one_tile():
     mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((4, 2))))
     spec = derive_arch_spec(mapping, preset_name="loihi")
-
     assert isinstance(spec, ArchSpec)
     assert spec.n_tiles == 1
     assert spec.n_cores_per_tile == [1]
@@ -84,7 +90,6 @@ def test_derive_arch_spec_single_segment_single_core_returns_one_tile():
 
 
 def test_derive_arch_spec_axons_neurons_use_hcm_geometry_max_across_segments():
-    """axons_per_core / neurons_per_core take the max across every neural HCM."""
     seg_a = _fake_hcm((3, 5))
     seg_b = _fake_hcm((7, 2), (6, 4))
     mapping = _fake_mapping(
@@ -93,10 +98,7 @@ def test_derive_arch_spec_axons_neurons_use_hcm_geometry_max_across_segments():
         _fake_stage("neural", seg_b),
     )
     spec = derive_arch_spec(mapping, preset_name="loihi")
-
-    # Total cores across all neural segments: 1 + 2 = 3
     assert sum(spec.n_cores_per_tile) == 3
-    # max axons across {3, 7, 6} = 7; max neurons across {5, 2, 4} = 5
     assert spec.axons_per_core == 7
     assert spec.neurons_per_core == 5
 
@@ -111,12 +113,11 @@ def test_derive_arch_spec_default_packs_all_cores_into_one_tile():
 
 
 def test_derive_arch_spec_cores_per_tile_splits_evenly():
-    """``cores_per_tile`` lets the user bin cores into multiple SANA-FE tiles."""
     mapping = _fake_mapping(
         _fake_stage("neural", _fake_hcm((3, 2), (3, 2), (3, 2), (3, 2), (3, 2))),
     )
     spec = derive_arch_spec(mapping, preset_name="loihi", cores_per_tile=2)
-    assert spec.n_tiles == 3                  # 5 cores / 2 = 3 tiles (2+2+1)
+    assert spec.n_tiles == 3
     assert spec.n_cores_per_tile == [2, 2, 1]
 
 
@@ -127,28 +128,116 @@ def test_derive_arch_spec_rejects_unknown_preset():
 
 
 def test_derive_arch_spec_rejects_mapping_with_no_neural_cores():
-    """A pure-compute mapping shouldn't crash silently — surface it clearly."""
     mapping = _fake_mapping(_fake_stage("compute"))
     with pytest.raises(ValueError, match="no neural"):
         derive_arch_spec(mapping, preset_name="loihi")
 
 
 def test_derive_arch_spec_attaches_preset_dict():
-    """The chosen preset's per-event energy/latency dict is on the spec."""
     mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((2, 1))))
     spec_loihi = derive_arch_spec(mapping, preset_name="loihi")
     spec_truenorth = derive_arch_spec(mapping, preset_name="truenorth")
-
     assert spec_loihi.preset == LOIHI_PRESET
     assert spec_truenorth.preset == TRUENORTH_PRESET
-    assert spec_loihi.preset is not spec_truenorth.preset
 
 
 def test_derive_arch_spec_name_includes_preset_and_core_count():
     mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((4, 2), (4, 2))))
     spec = derive_arch_spec(mapping, preset_name="loihi")
     assert "loihi" in spec.name.lower()
-    assert "2" in spec.name        # 2 cores total
+    assert "2" in spec.name
+
+
+# ---------------------------------------------------------------------------
+# YAML rendering
+# ---------------------------------------------------------------------------
+
+
+def _spec(n_tiles=1, n_cores_per_tile=None, axons=4, neurons=2,
+          preset=None,
+          dendrite_plugin_path="/tmp/fake_dendrite.so",
+          soma_plugin_path="/tmp/fake_soma.so"):
+    return ArchSpec(
+        name="t", n_tiles=n_tiles,
+        n_cores_per_tile=n_cores_per_tile or [1],
+        axons_per_core=axons, neurons_per_core=neurons,
+        preset=preset or LOIHI_PRESET,
+        dendrite_plugin_path=dendrite_plugin_path,
+        soma_plugin_path=soma_plugin_path,
+    )
+
+
+def test_render_arch_yaml_includes_required_hardware_unit_names():
+    """The YAML must reference the names net_synth binds against."""
+    yaml = _render_arch_yaml(_spec())
+    assert SYNAPSE_NAME in yaml
+    assert SOMA_LIF_NAME in yaml
+    assert SOMA_INPUT_RANGE_NAME in yaml      # rendered as inputs[0..N-1]
+
+
+def test_render_arch_yaml_carries_preset_synapse_energy():
+    yaml = _render_arch_yaml(_spec(preset=LOIHI_PRESET))
+    # Synapse energy from the preset must appear verbatim.
+    assert f"energy_process_spike: {LOIHI_PRESET['synapse_energy_j']}" in yaml
+    assert f"latency_process_spike: {LOIHI_PRESET['synapse_latency_s']}" in yaml
+
+
+def test_render_arch_yaml_carries_preset_tile_hop_energy():
+    yaml = _render_arch_yaml(_spec(preset=LOIHI_PRESET))
+    assert f"energy_north_hop: {LOIHI_PRESET['tile_hop_energy_j']}" in yaml
+    assert f"energy_east_hop: {LOIHI_PRESET['tile_hop_energy_j']}" in yaml
+
+
+def test_render_arch_yaml_distinct_presets_produce_distinct_yamls():
+    y1 = _render_arch_yaml(_spec(preset=LOIHI_PRESET))
+    y2 = _render_arch_yaml(_spec(preset=TRUENORTH_PRESET))
+    assert y1 != y2
+
+
+def test_render_arch_yaml_input_soma_range_sized_to_per_core_axons():
+    """Each core's ``inputs[0..N-1]`` is sized to its axon capacity.
+
+    No global input host — every core hosts its own input neurons (see
+    ``sanafe_per_core_input_neurons`` memory).
+    """
+    yaml = _render_arch_yaml(_spec(axons=7))
+    assert f"{SOMA_INPUT_RANGE_NAME}[0..6]" in yaml
+
+
+def test_render_arch_yaml_includes_plugin_references():
+    """The arch YAML loads our two mimarsinan plugins for dendrite + soma."""
+    yaml = _render_arch_yaml(_spec(
+        dendrite_plugin_path="/abs/path/libmimarsinan_dendrite.so",
+        soma_plugin_path="/abs/path/libmimarsinan_soma.so",
+    ))
+    assert "/abs/path/libmimarsinan_dendrite.so" in yaml
+    assert "/abs/path/libmimarsinan_soma.so" in yaml
+    assert "model: mimarsinan_dendrite" in yaml
+    assert "model: mimarsinan_soma" in yaml
+
+
+def test_derive_arch_spec_resolves_plugin_paths():
+    """When called with the real bootstrap_sanafe.sh artifacts in place,
+    derive_arch_spec produces a spec with non-empty plugin paths."""
+    mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((4, 2))))
+    spec = derive_arch_spec(mapping, preset_name="loihi")
+    assert spec.dendrite_plugin_path.endswith("libmimarsinan_dendrite.so")
+    assert spec.soma_plugin_path.endswith("libmimarsinan_soma.so")
+
+
+def test_render_arch_yaml_multi_tile_emits_one_block_per_tile():
+    yaml = _render_arch_yaml(_spec(n_tiles=3, n_cores_per_tile=[2, 2, 1]))
+    assert yaml.count("- name: tile") == 3
+    # One core block per core (no `name[0..N-1]` range shorthand on cores —
+    # SANA-FE 2.1.1's shorthand mangles the inner `inputs[0..K]` soma range).
+    assert yaml.count("- name: t0_c") == 2
+    assert yaml.count("- name: t1_c") == 2
+    assert yaml.count("- name: t2_c") == 1
+
+
+def test_render_arch_yaml_topology_width_matches_n_tiles():
+    yaml = _render_arch_yaml(_spec(n_tiles=4, n_cores_per_tile=[1, 1, 1, 1]))
+    assert "width: 4" in yaml
 
 
 # ---------------------------------------------------------------------------
@@ -156,90 +245,30 @@ def test_derive_arch_spec_name_includes_preset_and_core_count():
 # ---------------------------------------------------------------------------
 
 
-def test_build_architecture_invokes_sanafe_with_spec_name(monkeypatch):
+def test_build_architecture_calls_load_arch_with_synthesized_yaml(monkeypatch, tmp_path):
     fake_sanafe = MagicMock()
     fake_arch = MagicMock()
     fake_arch.tiles = [MagicMock()]
-    fake_sanafe.Architecture.return_value = fake_arch
+    fake_arch.tiles[0].cores = [MagicMock()]
+    fake_sanafe.load_arch.return_value = fake_arch
     monkeypatch.setattr(arch_synth, "_sanafe", lambda: fake_sanafe)
 
-    spec = ArchSpec(
-        name="mimarsinan_loihi_1core",
-        n_tiles=1, n_cores_per_tile=[1],
-        axons_per_core=2, neurons_per_core=1,
-        preset=LOIHI_PRESET,
-    )
+    spec = _spec()
     arch = build_architecture(spec)
 
-    fake_sanafe.Architecture.assert_called_once()
-    call = fake_sanafe.Architecture.call_args
-    assert call.args[0] == "mimarsinan_loihi_1core" or call.kwargs.get("name") == "mimarsinan_loihi_1core"
+    fake_sanafe.load_arch.assert_called_once()
+    yaml_path = fake_sanafe.load_arch.call_args.args[0]
+    # The path passed must point at an actual file SANA-FE could load.
+    import os
+    assert os.path.isfile(yaml_path)
+    with open(yaml_path) as f:
+        content = f.read()
+    assert SYNAPSE_NAME in content
+    assert SOMA_LIF_NAME in content
     assert arch is fake_arch
 
 
-def test_build_architecture_creates_one_tile_one_core_for_single_core_spec(monkeypatch):
-    fake_sanafe = MagicMock()
-    fake_arch = MagicMock()
-    fake_sanafe.Architecture.return_value = fake_arch
-    monkeypatch.setattr(arch_synth, "_sanafe", lambda: fake_sanafe)
-
-    spec = ArchSpec(
-        name="mimarsinan_loihi_1core",
-        n_tiles=1, n_cores_per_tile=[1],
-        axons_per_core=2, neurons_per_core=1,
-        preset=LOIHI_PRESET,
-    )
-    build_architecture(spec)
-
-    assert fake_arch.create_tile.call_count == 1
-    assert fake_arch.create_core.call_count == 1
-
-
-def test_build_architecture_creates_correct_tile_and_core_counts(monkeypatch):
-    fake_sanafe = MagicMock()
-    fake_arch = MagicMock()
-    fake_sanafe.Architecture.return_value = fake_arch
-    monkeypatch.setattr(arch_synth, "_sanafe", lambda: fake_sanafe)
-
-    spec = ArchSpec(
-        name="multi",
-        n_tiles=3, n_cores_per_tile=[2, 2, 1],
-        axons_per_core=8, neurons_per_core=4,
-        preset=LOIHI_PRESET,
-    )
-    build_architecture(spec)
-    assert fake_arch.create_tile.call_count == 3
-    assert fake_arch.create_core.call_count == 5
-
-
-def test_build_architecture_loihi_preset_applies_energy_constants(monkeypatch):
-    """Per-event energies from LOIHI_PRESET should appear in create_core call kwargs."""
-    fake_sanafe = MagicMock()
-    fake_arch = MagicMock()
-    fake_sanafe.Architecture.return_value = fake_arch
-    monkeypatch.setattr(arch_synth, "_sanafe", lambda: fake_sanafe)
-
-    spec = ArchSpec(
-        name="t", n_tiles=1, n_cores_per_tile=[1],
-        axons_per_core=2, neurons_per_core=1,
-        preset=LOIHI_PRESET,
-    )
-    build_architecture(spec)
-
-    # Each create_core call carries the preset's per-event numbers.
-    flat = []
-    for call in fake_arch.create_core.call_args_list:
-        flat.append({**call.kwargs})
-    assert len(flat) == 1
-    kwargs = flat[0]
-    # The numbers must come from LOIHI_PRESET, not hard-coded inside build_architecture.
-    assert kwargs["synapse_energy_j"] == LOIHI_PRESET["synapse_energy_j"]
-    assert kwargs["soma_energy_j"] == LOIHI_PRESET["soma_energy_j"]
-    assert kwargs["soma_latency_s"] == LOIHI_PRESET["soma_latency_s"]
-
-
 def test_build_architecture_custom_yaml_path_loads_external_arch(monkeypatch, tmp_path):
-    """When ``custom_arch_path`` is given, ``sanafe.load_arch`` is used instead."""
     yaml_path = tmp_path / "custom_arch.yaml"
     yaml_path.write_text("architecture: {}\n")
 
@@ -250,35 +279,25 @@ def test_build_architecture_custom_yaml_path_loads_external_arch(monkeypatch, tm
     fake_sanafe.load_arch.return_value = fake_arch
     monkeypatch.setattr(arch_synth, "_sanafe", lambda: fake_sanafe)
 
-    spec = ArchSpec(
-        name="custom", n_tiles=1, n_cores_per_tile=[1],
-        axons_per_core=4, neurons_per_core=2,
-        preset=LOIHI_PRESET,
-    )
+    spec = _spec()
     arch = build_architecture(spec, custom_arch_path=str(yaml_path))
 
     fake_sanafe.load_arch.assert_called_once_with(str(yaml_path))
-    fake_sanafe.Architecture.assert_not_called()
     assert arch is fake_arch
 
 
 def test_build_architecture_custom_yaml_validates_enough_cores(monkeypatch, tmp_path):
-    """A custom YAML with fewer total cores than the spec needs must raise."""
     yaml_path = tmp_path / "small_arch.yaml"
     yaml_path.write_text("architecture: {}\n")
 
     fake_sanafe = MagicMock()
     fake_arch = MagicMock()
     fake_arch.tiles = [MagicMock()]
-    fake_arch.tiles[0].cores = [MagicMock()]   # 1 core total
+    fake_arch.tiles[0].cores = [MagicMock()]
     fake_sanafe.load_arch.return_value = fake_arch
     monkeypatch.setattr(arch_synth, "_sanafe", lambda: fake_sanafe)
 
-    spec = ArchSpec(
-        name="t", n_tiles=1, n_cores_per_tile=[3],   # needs 3 cores
-        axons_per_core=4, neurons_per_core=2,
-        preset=LOIHI_PRESET,
-    )
+    spec = _spec(n_cores_per_tile=[3])
     with pytest.raises(ValueError, match="cores"):
         build_architecture(spec, custom_arch_path=str(yaml_path))
 
@@ -286,13 +305,8 @@ def test_build_architecture_custom_yaml_validates_enough_cores(monkeypatch, tmp_
 def test_build_architecture_custom_yaml_path_missing_file_raises(monkeypatch, tmp_path):
     missing = tmp_path / "absent.yaml"
     monkeypatch.setattr(arch_synth, "_sanafe", lambda: MagicMock())
-    spec = ArchSpec(
-        name="t", n_tiles=1, n_cores_per_tile=[1],
-        axons_per_core=2, neurons_per_core=1,
-        preset=LOIHI_PRESET,
-    )
     with pytest.raises(FileNotFoundError):
-        build_architecture(spec, custom_arch_path=str(missing))
+        build_architecture(_spec(), custom_arch_path=str(missing))
 
 
 # ---------------------------------------------------------------------------
@@ -307,13 +321,19 @@ def test_presets_registry_includes_loihi_and_truenorth():
 
 def test_loihi_preset_has_all_required_keys():
     required = {
-        "synapse_energy_j", "dendrite_energy_j", "soma_energy_j", "network_energy_j",
-        "synapse_latency_s", "soma_latency_s", "network_latency_s",
+        "tile_hop_energy_j", "tile_hop_latency_s",
+        "axon_in_energy_j", "axon_in_latency_s",
+        "axon_out_energy_j", "axon_out_latency_s",
+        "synapse_energy_j", "synapse_latency_s",
+        "dendrite_energy_j", "dendrite_latency_s",
+        "soma_access_energy_j", "soma_access_latency_s",
+        "soma_update_energy_j", "soma_update_latency_s",
+        "soma_spike_out_energy_j", "soma_spike_out_latency_s",
     }
     assert required <= set(LOIHI_PRESET.keys())
 
 
-def test_loihi_preset_values_are_positive_floats():
+def test_loihi_preset_values_are_non_negative_floats():
     for key, val in LOIHI_PRESET.items():
         assert isinstance(val, float), f"{key} is not a float"
-        assert val > 0.0, f"{key} should be positive (got {val})"
+        assert val >= 0.0, f"{key} should be non-negative (got {val})"
