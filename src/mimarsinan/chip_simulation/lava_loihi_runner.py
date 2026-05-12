@@ -138,33 +138,13 @@ def _subtractive_lif_cls():
 # Rate-encoded spike generators (match SpikingUnifiedCoreFlow's uniform mode).
 # ---------------------------------------------------------------------------
 
-
-def _uniform_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
-    """Uniform-rate spike encoding matching SCM ``spike_mode='Uniform'``.
-
-    Parameters
-    ----------
-    rates : (N, D) array of non-negative values in [0, 1].
-    T     : number of cycles.
-
-    Returns
-    -------
-    (N, D, T) binary spike train — for each (n, d), ``N_d = round(rate * T)``
-    spikes are placed at uniformly-spaced cycle indices.
-    """
-    rates = np.clip(rates, 0.0, 1.0)
-    N_samples, D = rates.shape
-    spikes = np.zeros((N_samples, D, T), dtype=np.float32)
-    for cycle in range(T):
-        n = np.round(rates * T).astype(np.int64)  # (N, D)
-        mask_full = (n == T)
-        mask_active = (n != 0) & (n != T) & (cycle < T)
-        n_safe = np.maximum(n, 1)
-        spacing = T / n_safe.astype(np.float64)
-        fire = mask_active & (np.floor(cycle / spacing) < n_safe) & (np.floor(cycle % spacing) == 0)
-        spikes[:, :, cycle] = fire.astype(np.float32)
-        spikes[:, :, cycle][mask_full] = 1.0
-    return spikes
+# ``_uniform_rate_encode`` is the canonical uniform-rate encoder shared with
+# the SANA-FE runner.  Defined in ``_spike_encoding.py`` so both backends
+# point at a single implementation; re-exported here under the original
+# private name for backwards compatibility with existing imports.
+from mimarsinan.chip_simulation._spike_encoding import (
+    uniform_rate_encode as _uniform_rate_encode,
+)
 
 
 # ---------------------------------------------------------------------------

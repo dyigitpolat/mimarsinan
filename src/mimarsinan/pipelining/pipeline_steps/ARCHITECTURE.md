@@ -26,6 +26,7 @@ in the deployment pipeline.
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping (passes `allow_scheduling` from `platform_constraints_resolved` to `build_hybrid_hard_core_mapping`; reports per-segment pass counts when scheduled) |
 | `simulation_step.py` | `SimulationStep` | Verification |
 | `loihi_simulation_step.py` | `LoihiSimulationStep` | Verification (optional; when `enable_loihi_simulation` is set, runs one deterministic sample through HCM recording and Lava neural-segment replay, failing on any spike-record diff instead of reporting independent Loihi accuracy) |
+| `sanafe_simulation_step.py` | `SanafeSimulationStep` | Verification + detailed stats (optional; when `enable_sanafe_simulation` is set, runs `sanafe_sample_count` deterministic samples through `SanafeRunner`; when `sanafe_parity_check` is on, also builds an HCM reference per sample and fails on any spike-count divergence via `compare_records`; `requires=["model","hard_core_mapping"]`, `promises=["sanafe_simulation_results"]`. Persists a `SanafeStepReport` the GUI's SANA-FE tab renders.) |
 | `torch_mapping_step.py` | `TorchMappingStep` | Model conversion (torch_* types) |
 | `weight_preloading_step.py` | `WeightPreloadingStep` | Load pretrained weights (replaces Pretraining) |
 

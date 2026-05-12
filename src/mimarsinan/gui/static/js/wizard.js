@@ -916,6 +916,18 @@ function buildConfig() {
 
   dp.allow_scheduling = isToggleOn('scheduledMappingToggle');
   dp.enable_loihi_simulation = isToggleOn('loihiSimulationToggle');
+  dp.enable_sanafe_simulation = isToggleOn('sanafeSimulationToggle');
+  if (dp.enable_sanafe_simulation) {
+    const archPresetEl = document.getElementById('sanafeArchPreset');
+    dp.sanafe_arch_preset = (archPresetEl && archPresetEl.value) || 'loihi';
+    const sampleCount = parseInt(v('sanafeSampleCount'), 10);
+    dp.sanafe_sample_count = (sampleCount > 0) ? sampleCount : 1;
+    const customPath = (v('sanafeCustomArchPath') || '').trim();
+    dp.sanafe_custom_arch_path = customPath || null;
+    dp.sanafe_parity_check = isToggleOn('sanafeParityCheckToggle');
+    dp.sanafe_log_potential_trace = isToggleOn('sanafeLogPotentialTraceToggle');
+    dp.sanafe_log_message_trace = isToggleOn('sanafeLogMessageTraceToggle');
+  }
 
   // platform_constraints
   let platformConstraints;
@@ -1138,6 +1150,20 @@ function loadStateFromConfig(config) {
     setToggleFromConfig('scheduledMappingToggle', allowSched);
   })();
   setToggleFromConfig('loihiSimulationToggle', !!dp.enable_loihi_simulation);
+  setToggleFromConfig('sanafeSimulationToggle', !!dp.enable_sanafe_simulation);
+  setToggleFromConfig('sanafeParityCheckToggle', dp.sanafe_parity_check !== false);
+  setToggleFromConfig('sanafeLogPotentialTraceToggle', !!dp.sanafe_log_potential_trace);
+  setToggleFromConfig('sanafeLogMessageTraceToggle', dp.sanafe_log_message_trace !== false);
+  (function applySanafePresetAndPath() {
+    const presetEl = document.getElementById('sanafeArchPreset');
+    if (presetEl) presetEl.value = dp.sanafe_arch_preset || 'loihi';
+    const pathEl = document.getElementById('sanafeCustomArchPath');
+    if (pathEl) pathEl.value = dp.sanafe_custom_arch_path || '';
+    const countEl = document.getElementById('sanafeSampleCount');
+    if (countEl && dp.sanafe_sample_count != null) {
+      countEl.value = String(dp.sanafe_sample_count);
+    }
+  })();
   applySpikingDeps();
   applyHwDeps();
   onPruningFractionChange();

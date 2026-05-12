@@ -14,6 +14,8 @@ Handles code generation, compilation, execution, and result parsing.
 | `subtractive_lif.py` | `SubtractiveLIFReset` | Lava LIF process with subtractive reset, no decay, active-window gating, and buffer-latch behavior to match HCM hard-core simulation. |
 | `compile_nevresim.py` | `compile_simulator` | Compiles generated C++ code with C++20 compiler |
 | `execute_nevresim.py` | `execute_simulator` | Runs compiled simulator binary, collects output. Defaults to `cpu_count // 2` processes when `num_proc=0`. |
+| `_spike_encoding.py` | `uniform_rate_encode` | Shared uniform-rate spike encoder. Lifted out of `lava_loihi_runner.py` so the SANA-FE runner consumes the same implementation; the Lava runner re-exports it under `_uniform_rate_encode` for back-compat. |
+| `sanafe/` (sub-package) | `SanafeRunner`, `SanafeRunRecord`, `SanafeStepReport`, ... | Optional [SANA-FE](https://github.com/SLAM-Lab/SANA-FE)-backed detailed-stats runner + arch/network synthesis + records. GPL-3.0 stays opt-in: every `sanafe` import is gated by `arch_synth._sanafe()`. See `sanafe/ARCHITECTURE.md`. |
 
 ## Dependencies
 
@@ -24,6 +26,7 @@ Handles code generation, compilation, execution, and result parsing.
 
 - `pipelining.pipeline_steps.simulation_step` uses `SimulationRunner` for final verification.
 - `pipelining.pipeline_steps.loihi_simulation_step` uses `LavaLoihiRunner` and spike record diffs for optional Loihi parity validation.
+- `pipelining.pipeline_steps.sanafe_simulation_step` uses `sanafe.SanafeRunner` + `SanafeStepReport` for optional detailed-stats collection and HCM spike-parity gating.
 - Entry point (`init.py`) sets `NevresimDriver.nevresim_path`.
 
 ## Exported API (\_\_init\_\_.py)

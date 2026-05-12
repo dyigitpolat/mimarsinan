@@ -17,6 +17,7 @@ from .lif_adaptation_step import LIFAdaptationStep
 from .hard_core_mapping_step import HardCoreMappingStep
 from .simulation_step import SimulationStep
 from .loihi_simulation_step import LoihiSimulationStep
+from .sanafe_simulation_step import SanafeSimulationStep
 from .torch_mapping_step import TorchMappingStep
 from .weight_preloading_step import WeightPreloadingStep
 

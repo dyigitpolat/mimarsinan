@@ -6,6 +6,7 @@ import { renderHardwareTab } from './hardware-tab.js';
 import { renderSearchTab } from './search-tab.js';
 import { renderActivationsTab, renderAdaptationTab } from './scales-tab.js';
 import { renderPruningTab } from './pruning-tab.js';
+import { renderSanafeTab } from './sanafe-tab.js';
 import { initSearchLive, detachSearchLive, replaySearchEvents, syncSearchEventsFromState } from './search-live.js';
 import { setResourceContext } from './resource-urls.js';
 
@@ -308,6 +309,7 @@ function determineTabs(detail, metrics) {
   if (snap.adaptation_manager) tabs.push('adaptation');
   if (snap.platform_constraints) tabs.push('constraints');
   if (snap.pruning_layers && Array.isArray(snap.pruning_layers.layers)) tabs.push('pruning');
+  if (snap.sanafe_simulation) tabs.push('sanafe');
   if (snap.step_summary) tabs.push('summary');
   if (tabs.length === 0) tabs.push('metrics');
   return tabs;
@@ -316,7 +318,7 @@ function determineTabs(detail, metrics) {
 const TAB_LABELS = {
   metrics: 'Metrics', live_search: 'Live Search', model: 'Model', ir_graph: 'IR Graph',
   hardware: 'Hardware', search: 'Search', activations: 'Activations', adaptation: 'Adaptation',
-  constraints: 'Constraints', pruning: 'Pruning', summary: 'Summary',
+  constraints: 'Constraints', pruning: 'Pruning', sanafe: 'SANA-FE', summary: 'Summary',
 };
 
 function renderTabs(stepName, tabs, detail, metrics, state) {
@@ -364,6 +366,7 @@ function renderTabContent(stepName, tab, detail, metrics, container, state) {
     case 'adaptation': renderAdaptationTab(snap.adaptation_manager, snap.model, metrics, container); break;
     case 'constraints': renderConstraintsTab(snap.platform_constraints, container); break;
     case 'pruning': renderPruningTab(snap.pruning_layers, container); break;
+    case 'sanafe': renderSanafeTab(snap.sanafe_simulation, container); break;
     case 'summary': renderSummaryTab(snap.step_summary, container); break;
     default: container.innerHTML = '<div class="empty-state">No data</div>';
   }

@@ -61,6 +61,7 @@
     - [SpikingHybridCoreFlow](#111b-spikinghybridcoreflow)
     - [Nevresim (C++ Simulator)](#112-nevresim-c-simulator)
     - [SimulationRunner](#113-simulationrunner)
+    - [SANA-FE Detailed-Stats Step (optional)](#114-sana-fe-detailed-stats-step-optional)
 12. [Architecture Search](#12-architecture-search)
     - [Search Framework](#121-search-framework)
     - [NSGA-II Optimizer](#122-nsga-ii-optimizer)
@@ -1154,6 +1155,12 @@ Orchestrates the end-to-end simulation. Supports two modes:
    - **Neural stages**: Assembles segment input from the state buffer via `input_slices`, instantiates a per-segment `NevresimDriver` with the correct `weight_type`, runs `predict_spiking_raw`, writes outputs back via `output_slices`
    - **Compute stages**: Gathers inputs from the state buffer, executes the `ComputeOp` on the host using PyTorch, writes the result back
 6. Extracts final outputs via `output_slices` and evaluates classification accuracy
+
+### 11.4 SANA-FE Detailed-Stats Step (optional)
+
+**Files**: `chip_simulation/sanafe/` (sub-package), `pipelining/pipeline_steps/sanafe_simulation_step.py`.
+
+When `enable_sanafe_simulation` is set, `SanafeSimulationStep` runs after `SimulationStep` (and after `LoihiSimulationStep` if enabled). For each of `sanafe_sample_count` deterministic samples, `SanafeRunner` builds a [SANA-FE](https://github.com/SLAM-Lab/SANA-FE) `Architecture` + per-segment `Network` from the mapping, runs `SpikingChip.sim()`, and collects per-tile / per-core energy (synapse + dendrite + soma + network), latency, NoC packet traces, and optional per-neuron spike + potential traces into a `SanafeRunRecord`. When `sanafe_parity_check` is on (default), the runner additionally projects the spike-count subset back to the HCM `RunRecord` shape (`SanafeRunRecord.to_hcm_subset()`) so `compare_records` from `spike_recorder` can diff it against the HCM reference and fail the pipeline on any divergence. Per-sample records aggregate into a `SanafeStepReport` persisted to the cache as `sanafe_simulation_results`; the GUI's SANA-FE tab consumes `to_snapshot_dict()` for summary cards, energy decomposition, per-tile and per-core heatmaps, and the NoC traffic summary. SANA-FE is GPL-3.0 and opt-in via `scripts/bootstrap_sanafe.sh` — no `sanafe` import happens at module load time.
 
 ---
 

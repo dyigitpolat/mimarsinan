@@ -57,4 +57,5 @@ _CACHE_KEY_TO_SNAPSHOT_KEY: dict[str, str] = {
     "adaptation_manager": "adaptation_manager",
     "activation_scales": "activation_scales",
     "platform_constraints_resolved": "platform_constraints",
+    "sanafe_simulation_results": "sanafe_simulation",
 }
