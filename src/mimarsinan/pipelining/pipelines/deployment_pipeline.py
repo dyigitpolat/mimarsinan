@@ -127,6 +127,7 @@ _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
     HardCoreMappingStep:                "hardware",
     SimulationStep:                     "simulation",
     LoihiSimulationStep:                "simulation",
+    SanafeSimulationStep:               "simulation",
 }
 
 
@@ -169,6 +170,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     weight_source = config.get("weight_source")
     model_type = config.get("model_type", "")
     loihi_sim = bool(config.get("enable_loihi_simulation", False))
+    sanafe_sim = bool(config.get("enable_sanafe_simulation", False))
 
     specs: list[tuple[str, type]] = []
 
@@ -236,6 +238,9 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     if loihi_sim:
         specs.append(("Loihi Simulation", LoihiSimulationStep))
 
+    if sanafe_sim:
+        specs.append(("SANA-FE Simulation", SanafeSimulationStep))
+
     return specs
 
 
@@ -253,6 +258,13 @@ class DeploymentPipeline(Pipeline):
         "hw_config_mode": "fixed",
         "spiking_mode": "lif",
         "enable_loihi_simulation": False,
+        "enable_sanafe_simulation": False,
+        "sanafe_sample_count": 1,
+        "sanafe_arch_preset": "loihi",
+        "sanafe_custom_arch_path": None,
+        "sanafe_log_potential_trace": False,
+        "sanafe_log_message_trace": True,
+        "sanafe_parity_check": True,
         "allow_scheduling": False,
         # Recipe defaults match templates/cifar_vit_pretrained.json. Mirrored in
         # config_schema/defaults.py: DEFAULT_TRAINING_RECIPE / DEFAULT_TUNING_RECIPE.

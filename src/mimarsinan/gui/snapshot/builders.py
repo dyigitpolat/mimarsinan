@@ -1111,6 +1111,63 @@ def snapshot_adaptation_manager(manager: Any) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# SANA-FE Simulation Step
+# ---------------------------------------------------------------------------
+
+
+def snapshot_sanafe_simulation(
+    report: Any,
+) -> tuple[dict, list[ResourceDescriptor]]:
+    """Build the snapshot + resource descriptors for the SANA-FE GUI tab.
+
+    The snapshot dict is the JSON-safe payload produced by
+    ``SanafeStepReport.to_snapshot_dict``.  Two PNG resources are emitted
+    per (sample, segment): a per-tile energy strip and a per-core spike
+    strip; both are rendered lazily via the shared
+    :func:`mimarsinan.gui.heatmap_renderer.render_heatmap_png_bytes`
+    helper.
+    """
+    snap = report.to_snapshot_dict() if report is not None else {
+        "arch_preset": "", "sample_indices": [], "aggregate": {}, "per_sample": [],
+    }
+    descriptors: list[ResourceDescriptor] = []
+
+    per_sample = getattr(report, "per_sample", []) or []
+    for sample_idx, sanafe_rec in enumerate(per_sample):
+        for stage_index, seg in sorted(sanafe_rec.segments.items()):
+            if seg.per_tile:
+                tile_energy = np.asarray(
+                    [t.energy.total_j for t in seg.per_tile], dtype=np.float64,
+                ).reshape(1, -1)
+                descriptors.append(ResourceDescriptor(
+                    kind="sanafe_tile_energy",
+                    rid=f"sample{sample_idx}/seg{stage_index}",
+                    producer=_make_heatmap_producer(tile_energy, copy=True),
+                    media_type="image/png",
+                ))
+            if seg.per_core:
+                core_spikes = np.asarray(
+                    [c.spikes_fired for c in seg.per_core], dtype=np.float64,
+                ).reshape(1, -1)
+                descriptors.append(ResourceDescriptor(
+                    kind="sanafe_core_spikes",
+                    rid=f"sample{sample_idx}/seg{stage_index}",
+                    producer=_make_heatmap_producer(core_spikes, copy=True),
+                    media_type="image/png",
+                ))
+                core_energy = np.asarray(
+                    [c.energy.total_j for c in seg.per_core], dtype=np.float64,
+                ).reshape(1, -1)
+                descriptors.append(ResourceDescriptor(
+                    kind="sanafe_core_energy",
+                    rid=f"sample{sample_idx}/seg{stage_index}",
+                    producer=_make_heatmap_producer(core_energy, copy=True),
+                    media_type="image/png",
+                ))
+    return snap, descriptors
+
+
+# ---------------------------------------------------------------------------
 # Pipeline cache snapshot dispatcher
 # ---------------------------------------------------------------------------
 
@@ -1229,6 +1286,16 @@ def build_step_snapshot(
                     snapshot_key_kinds["platform_constraints"] = kind
             except Exception:
                 logger.debug("Failed to snapshot platform_constraints from key %r", key, exc_info=True)
+
+        elif short == "sanafe_simulation_results":
+            try:
+                sf_summary, sf_descs = snapshot_sanafe_simulation(cache.get(key))
+                snapshot["sanafe_simulation"] = sf_summary
+                descriptors.extend(sf_descs)
+                if step is not None:
+                    snapshot_key_kinds["sanafe_simulation"] = kind
+            except Exception:
+                logger.debug("Failed to snapshot sanafe_simulation from key %r", key, exc_info=True)
 
     # Hardware tab needs ir_graph to show soft-core detail pane when clicking heatmap regions
     if "hard_core_mapping" in snapshot and "ir_graph" not in snapshot:

@@ -10,3 +10,6 @@
 [submodule "spikingjelly"]
 	path = spikingjelly
 	url = https://github.com/fangwei123456/spikingjelly
+[submodule "sana_fe"]
+	path = sana_fe
+	url = https://github.com/SLAM-Lab/SANA-FE

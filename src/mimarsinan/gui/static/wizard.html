@@ -590,6 +590,50 @@
                   <div class="toggle-switch"></div>
                 </div>
               </div>
+              <div class="field">
+                <label class="field-label">SANA-FE Simulation <span class="hint">detailed energy/latency/NoC stats + spike parity (LIF only)</span></label>
+                <div class="toggle-row" id="sanafeSimulationToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">SANA-FE</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">SANA-FE Arch Preset</label>
+                <select id="sanafeArchPreset" onchange="update()">
+                  <option value="loihi">Loihi</option>
+                  <option value="truenorth">TrueNorth</option>
+                  <option value="custom">Custom (YAML)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">SANA-FE Samples <span class="hint">deterministic test indices 0..N-1</span></label>
+                <input type="number" id="sanafeSampleCount" value="1" min="1" oninput="update()">
+              </div>
+              <div class="field">
+                <label class="field-label">SANA-FE Custom Arch YAML <span class="hint">absolute path; only when preset = custom</span></label>
+                <input type="text" id="sanafeCustomArchPath" value="" placeholder="(leave blank for preset)" oninput="update()">
+              </div>
+              <div class="field">
+                <label class="field-label">SANA-FE Parity Check <span class="hint">fail pipeline on HCM↔SANA-FE spike mismatch</span></label>
+                <div class="toggle-row on" id="sanafeParityCheckToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Parity</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">SANA-FE Potential Trace <span class="hint">log per-neuron Vm (heavy)</span></label>
+                <div class="toggle-row" id="sanafeLogPotentialTraceToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Vm trace</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">SANA-FE Message Trace <span class="hint">log NoC packet hops</span></label>
+                <div class="toggle-row on" id="sanafeLogMessageTraceToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">NoC trace</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
             </div>
             <div class="note warn hide" id="tqWarn"></div>
 
