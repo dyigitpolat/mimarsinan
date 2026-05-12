@@ -32,12 +32,24 @@ def lif_model_attributes(
     *,
     threshold: float,
     hardware_bias: Optional[float] = None,
+    active_start: Optional[int] = None,
+    active_length: Optional[int] = None,
 ) -> dict:
     """Build the ``model_attributes`` dict for a regular LIF neuron.
 
     The returned dict reproduces ``SubtractiveLIFReset`` exactly: no
     leak, subtractive reset, configurable strict-` <` firing comparator
     (SANA-FE's ``leaky_integrate_fire`` uses strict ` <` by default).
+
+    ``active_start`` / ``active_length`` are optional per-core gating
+    cycles (0-based).  When the runner pads simulation length to
+    ``T + max_latency`` to flush multi-depth cascades, each core's
+    soma must only integrate during ``[core.latency, T + core.latency)``
+    — exactly the window HCM's ``_run_neural_segment_rate`` accumulates
+    into ``record_in_t`` / ``record_out_t``.  Leaving them unset
+    (``None``) keeps the neuron active for the entire simulation,
+    preserving the pre-window default for tests built before the gate
+    existed.
     """
     attrs: dict = {
         "threshold": float(threshold),
@@ -52,6 +64,10 @@ def lif_model_attributes(
     }
     if hardware_bias is not None:
         attrs["bias"] = float(hardware_bias)
+    if active_start is not None:
+        attrs["active_start"] = int(active_start)
+    if active_length is not None:
+        attrs["active_length"] = int(active_length)
     return attrs
 
 

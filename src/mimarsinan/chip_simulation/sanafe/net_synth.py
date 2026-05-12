@@ -45,8 +45,14 @@ from .presets import (
 
 
 def _used_axons(core: Any) -> int:
-    if hasattr(core, "axon_sources"):
-        return len(core.axon_sources)
+    """Number of live axons (matches HCM's accounting).
+
+    Real ``HardCore.axon_sources`` is padded to ``axons_per_core`` with
+    trailing ``is_off_`` markers — the live count is
+    ``axons_per_core - available_axons``.  HCM's spike-recorder uses the
+    same convention, so this is what we must report on the SANA-FE side
+    to keep ``compare_records`` shape-equal.
+    """
     return int(core.axons_per_core) - int(getattr(core, "available_axons", 0))
 
 
@@ -67,6 +73,7 @@ def build_network_for_segment(
     tile_offset: int,
     core_offset: int,
     cores_per_tile: int = 0,
+    simulation_length: Optional[int] = None,
 ) -> Tuple[
     Any,
     Dict[int, Any],
@@ -77,6 +84,14 @@ def build_network_for_segment(
 
     Returns ``(network, core_to_group, core_input_neurons,
     core_always_on_neurons)``.
+
+    ``simulation_length`` is the HCM's ``T`` (logical sample length, not
+    the padded ``T + max_latency`` the runner asks the chip to simulate).
+    When supplied, each LIF neuron gets a per-core ``active_start = core.latency``
+    and ``active_length = T`` so its soma only integrates during the
+    same cycle window HCM's ``_run_neural_segment_rate`` records into.
+    When ``None`` we fall back to the always-active mode used by the
+    unit tests that predate the gate.
     """
     sanafe = _sanafe()
     net = sanafe.Network()
@@ -102,6 +117,19 @@ def build_network_for_segment(
             group = net.create_neuron_group(
                 f"core{core_idx}", used_neurons, model_attributes={},
             )
+            core_latency = (int(core.latency)
+                            if getattr(core, "latency", None) is not None
+                            else 0)
+            # ``active_start`` / ``active_length`` only when the caller
+            # passed ``simulation_length`` — see docstring for why this
+            # is opt-in.  We shift by +1 because SANA-FE delivers an input
+            # neuron's spike to its consumer's synapse on the NEXT sim
+            # cycle (one-cycle input→synapse pipeline delay) — without
+            # that offset depth-0 cores miss their first integration step.
+            active_start = ((core_latency + 1)
+                            if simulation_length is not None else None)
+            active_length = (int(simulation_length)
+                             if simulation_length is not None else None)
             for n_idx in range(used_neurons):
                 neuron = group[n_idx]
                 bias = None
@@ -114,6 +142,8 @@ def build_network_for_segment(
                     model_attributes=lif_model_attributes(
                         threshold=float(core.threshold),
                         hardware_bias=bias,
+                        active_start=active_start,
+                        active_length=active_length,
                     ),
                 )
                 neuron.map_to_core(sanafe_core)
