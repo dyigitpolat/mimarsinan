@@ -49,8 +49,30 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
                 "energy_breakdown_j": _eb_to_dict(t.energy),
                 "spikes_fired": int(t.spikes_fired),
                 "packets_sent": int(t.packets_sent),
+                "mesh_x": int(t.mesh_x),
+                "mesh_y": int(t.mesh_y),
             }
             for t in seg.per_tile
+        ],
+        "arch_geometry": (
+            {
+                "width": int(seg.arch_geometry.width),
+                "height": int(seg.arch_geometry.height),
+                "tiles_xy": [[int(x), int(y)] for x, y in seg.arch_geometry.tiles_xy],
+            }
+            if seg.arch_geometry is not None else None
+        ),
+        "noc_links": [
+            {
+                "src_tile": int(L.src_tile),
+                "dst_tile": int(L.dst_tile),
+                "src_x": int(L.src_x), "src_y": int(L.src_y),
+                "dst_x": int(L.dst_x), "dst_y": int(L.dst_y),
+                "packet_count": int(L.packet_count),
+                "spike_count": int(L.spike_count),
+                "total_hops": int(L.total_hops),
+            }
+            for L in seg.noc_links
         ],
         "per_core": [
             {

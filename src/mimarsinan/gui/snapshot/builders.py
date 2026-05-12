@@ -1120,51 +1120,20 @@ def snapshot_sanafe_simulation(
 ) -> tuple[dict, list[ResourceDescriptor]]:
     """Build the snapshot + resource descriptors for the SANA-FE GUI tab.
 
-    The snapshot dict is the JSON-safe payload produced by
-    ``SanafeStepReport.to_snapshot_dict``.  Two PNG resources are emitted
-    per (sample, segment): a per-tile energy strip and a per-core spike
-    strip; both are rendered lazily via the shared
-    :func:`mimarsinan.gui.heatmap_renderer.render_heatmap_png_bytes`
-    helper.
+    The snapshot dict (``SanafeStepReport.to_snapshot_dict``) now carries
+    everything the frontend needs to render the floorplan + per-core
+    charts + NoC overlay inline via Plotly: per-tile mesh coords, per-core
+    metrics, NoC links, and arch geometry.  No PNG strip heatmaps are
+    emitted any more — they rendered as ~1×N invisible bands and the
+    Plotly floorplan supersedes them in every way (proper 2D layout,
+    interactive hover, metric selector, NoC overlay).
     """
     snap = report.to_snapshot_dict() if report is not None else {
         "arch_preset": "", "sample_indices": [], "aggregate": {}, "per_sample": [],
     }
-    descriptors: list[ResourceDescriptor] = []
-
-    per_sample = getattr(report, "per_sample", []) or []
-    for sample_idx, sanafe_rec in enumerate(per_sample):
-        for stage_index, seg in sorted(sanafe_rec.segments.items()):
-            if seg.per_tile:
-                tile_energy = np.asarray(
-                    [t.energy.total_j for t in seg.per_tile], dtype=np.float64,
-                ).reshape(1, -1)
-                descriptors.append(ResourceDescriptor(
-                    kind="sanafe_tile_energy",
-                    rid=f"sample{sample_idx}/seg{stage_index}",
-                    producer=_make_heatmap_producer(tile_energy, copy=True),
-                    media_type="image/png",
-                ))
-            if seg.per_core:
-                core_spikes = np.asarray(
-                    [c.spikes_fired for c in seg.per_core], dtype=np.float64,
-                ).reshape(1, -1)
-                descriptors.append(ResourceDescriptor(
-                    kind="sanafe_core_spikes",
-                    rid=f"sample{sample_idx}/seg{stage_index}",
-                    producer=_make_heatmap_producer(core_spikes, copy=True),
-                    media_type="image/png",
-                ))
-                core_energy = np.asarray(
-                    [c.energy.total_j for c in seg.per_core], dtype=np.float64,
-                ).reshape(1, -1)
-                descriptors.append(ResourceDescriptor(
-                    kind="sanafe_core_energy",
-                    rid=f"sample{sample_idx}/seg{stage_index}",
-                    producer=_make_heatmap_producer(core_energy, copy=True),
-                    media_type="image/png",
-                ))
-    return snap, descriptors
+    # The frontend renders everything from the JSON snapshot; lazy PNG
+    # resources are no longer needed for this tab.
+    return snap, []
 
 
 # ---------------------------------------------------------------------------

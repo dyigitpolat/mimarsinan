@@ -119,8 +119,11 @@ def test_snapshot_sanafe_simulation_handles_empty_report():
     assert descriptors == []
 
 
-def test_snapshot_sanafe_simulation_emits_descriptors_per_segment_axis():
-    """Each (sample, segment) emits energy + spike heatmap descriptors."""
+def test_snapshot_sanafe_simulation_carries_floorplan_data_per_segment():
+    """Each (sample, segment) inlines per_tile + per_core + (optional) NoC
+    + arch_geometry into the snapshot dict so the frontend can render the
+    chip floorplan from JSON alone (no lazy PNG strip heatmaps).
+    """
     rec = _record(
         sample_index=0,
         segments={
@@ -131,15 +134,25 @@ def test_snapshot_sanafe_simulation_emits_descriptors_per_segment_axis():
     report = SanafeStepReport.from_records("loihi", [rec])
     snap, descriptors = snapshot_sanafe_simulation(report)
 
-    kinds = sorted({d.kind for d in descriptors})
-    # At minimum: per-tile energy strip + per-core spike strip per segment.
-    assert "sanafe_tile_energy" in kinds
-    assert "sanafe_core_spikes" in kinds
+    # No descriptors: the Plotly floorplan supersedes the old strip PNGs.
+    assert descriptors == []
 
-    rids = {d.rid for d in descriptors}
-    # rid carries (sample, segment) so the frontend can request by axis.
-    assert any("sample0" in r and "seg0" in r for r in rids)
-    assert any("sample0" in r and "seg1" in r for r in rids)
+    assert len(snap["per_sample"]) == 1
+    segs = snap["per_sample"][0]["segments"]
+    assert len(segs) == 2
+    for seg in segs:
+        assert isinstance(seg["per_tile"], list) and seg["per_tile"], (
+            "frontend floorplan needs at least one tile per segment"
+        )
+        for tile in seg["per_tile"]:
+            assert "mesh_x" in tile and "mesh_y" in tile
+            assert "cores" in tile
+        assert isinstance(seg["per_core"], list) and seg["per_core"]
+        # arch_geometry / noc_links are optional fields — they may be None
+        # / empty when the segment was built without an arch (test fakes)
+        # but the keys must exist so the frontend can branch safely.
+        assert "arch_geometry" in seg
+        assert "noc_links" in seg
 
 
 def test_snapshot_sanafe_simulation_descriptors_have_png_media_type():
