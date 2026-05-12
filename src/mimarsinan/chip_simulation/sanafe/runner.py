@@ -36,8 +36,10 @@ from .net_synth import (
 )
 from .presets import PRESETS
 from .records import (
+    SanafeArchGeometry,
     SanafeCoreRecord,
     SanafeEnergyBreakdown,
+    SanafeNocLink,
     SanafeRunRecord,
     SanafeSegmentRecord,
     SanafeTileRecord,
@@ -90,6 +92,10 @@ class SanafeRunner:
 
         self._arch: Optional[Any] = None
         self._arch_name: str = "<unbuilt>"
+        # Captured at ``_ensure_arch`` time and threaded into every
+        # ``SanafeSegmentRecord`` so the GUI floorplan can place cores
+        # on the actual mesh without re-deriving it from the YAML.
+        self._arch_geometry: Optional[SanafeArchGeometry] = None
         # White-box hook for tests; runner sets this on each chip.sim() call.
         self._last_chip: Optional[Any] = None
 
@@ -182,6 +188,16 @@ class SanafeRunner:
         )
         self._arch_name = spec.name
         self._arch = build_architecture(spec, custom_arch_path=self.custom_arch_path)
+        # Capture geometry once: ``arch_synth`` currently lays tiles out as
+        # a 1×N row (``height=1`` in the rendered YAML).  Tile indices map
+        # 1:1 to mesh-x; mesh-y is always 0.  The GUI floorplan stays
+        # robust if a future arch synth switches to a 2D mesh — it reads
+        # the ``tiles_xy`` map this captures.
+        n_tiles = int(spec.n_tiles)
+        tiles_xy = [[i, 0] for i in range(n_tiles)]
+        self._arch_geometry = SanafeArchGeometry(
+            width=n_tiles, height=1, tiles_xy=tiles_xy,
+        )
 
     # --------------------------------------------------------------- segment
 
@@ -382,6 +398,10 @@ class SanafeRunner:
                 results.get("potential_trace"),
             ),
             message_trace=_flatten_message_trace(results.get("message_trace")),
+            arch_geometry=self._arch_geometry,
+            noc_links=_aggregate_noc_links(
+                results.get("message_trace"), self._arch_geometry,
+            ),
         )
 
         # Store segment output rates into the state buffer for downstream
@@ -602,17 +622,75 @@ class SanafeRunner:
         per_core_records: List[SanafeCoreRecord],
         results: Dict[str, Any],
     ) -> List[SanafeTileRecord]:
+        """Partition cores into SANA-FE tiles + roll up per-tile energy.
+
+        Distribution mirrors ``arch_synth.derive_arch_spec`` /
+        ``net_synth.build_network_for_segment`` exactly:
+
+            tile_idx = (core_offset + core_position) // cores_per_tile
+
+        where ``cores_per_tile == 0`` means "one big tile holds everything".
+        Energy is roughly partitioned by the tile's share of total per-core
+        energy (the YAML-reported run total is preserved at the segment
+        level; per-tile is a split for the GUI breakdown).
+        """
         if not per_core_records:
             return []
-        return [
-            SanafeTileRecord(
-                tile_index=0,
-                cores=[c.core_index for c in per_core_records],
-                energy=SanafeEnergyBreakdown.from_sanafe_dict(results["energy"]),
-                spikes_fired=int(sum(c.spikes_fired for c in per_core_records)),
-                packets_sent=int(results.get("packets_sent", 0)),
-            )
-        ]
+        cpt = max(int(self.cores_per_tile), 0)
+        if cpt == 0:
+            cpt = len(per_core_records)  # one tile per segment
+        geom = self._arch_geometry
+        tiles: Dict[int, List[SanafeCoreRecord]] = {}
+        for pos, rec in enumerate(per_core_records):
+            tile_idx = pos // cpt
+            tiles.setdefault(tile_idx, []).append(rec)
+        # Roll up — energy is summed from the per-core estimates we
+        # already produced (those each take a 1/n_live_cores share of
+        # the run total, so summing recovers the run total).
+        seg_total = SanafeEnergyBreakdown.from_sanafe_dict(results["energy"])
+        packets_total = int(results.get("packets_sent", 0))
+        out: List[SanafeTileRecord] = []
+        n_live = sum(1 for _ in per_core_records)
+        for tile_idx in sorted(tiles.keys()):
+            cores = tiles[tile_idx]
+            tile_energy = SanafeEnergyBreakdown.zero()
+            for c in cores:
+                tile_energy = tile_energy.add(c.energy)
+            share = len(cores) / max(n_live, 1)
+            mesh_x, mesh_y = -1, -1
+            if geom and 0 <= tile_idx < len(geom.tiles_xy):
+                mesh_x, mesh_y = geom.tiles_xy[tile_idx]
+            out.append(SanafeTileRecord(
+                tile_index=tile_idx,
+                cores=[c.core_index for c in cores],
+                energy=tile_energy,
+                spikes_fired=int(sum(c.spikes_fired for c in cores)),
+                # NoC packets are run-global in SANA-FE's report; split
+                # proportional to the tile's share of live cores so the
+                # GUI heatmap has something sensible to colour by.
+                packets_sent=int(round(packets_total * share)),
+                mesh_x=int(mesh_x), mesh_y=int(mesh_y),
+            ))
+        # Preserve run-total energy on the FIRST tile if rounding losses
+        # left a gap (keeps the per-tile sum equal to the run total).
+        if out:
+            diff = seg_total.total_j - sum(t.energy.total_j for t in out)
+            if abs(diff) > 1e-18:
+                t0 = out[0]
+                out[0] = SanafeTileRecord(
+                    tile_index=t0.tile_index, cores=t0.cores,
+                    energy=SanafeEnergyBreakdown(
+                        synapse_j=t0.energy.synapse_j,
+                        dendrite_j=t0.energy.dendrite_j,
+                        soma_j=t0.energy.soma_j,
+                        network_j=t0.energy.network_j + diff,
+                        total_j=t0.energy.total_j + diff,
+                    ),
+                    spikes_fired=t0.spikes_fired,
+                    packets_sent=t0.packets_sent,
+                    mesh_x=t0.mesh_x, mesh_y=t0.mesh_y,
+                )
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -768,3 +846,64 @@ def _flatten_message_trace(message_trace: Any) -> Optional[List[dict]]:
                 flat.append({k: (float(v) if isinstance(v, float) else v)
                              for k, v in ev.items()})
     return flat or None
+
+
+def _aggregate_noc_links(
+    message_trace: Any,
+    geom: Optional[SanafeArchGeometry],
+) -> List[SanafeNocLink]:
+    """Aggregate per-cycle messages into directed (src_tile, dst_tile) links.
+
+    Powers the NoC-traffic overlay in the GUI floorplan view.  Only
+    real (non-placeholder) cross-tile messages are counted; intra-tile
+    spikes don't traverse the NoC.  Returns an empty list when SANA-FE
+    didn't record a trace (``log_message_trace=False``) or the trace is
+    structurally empty.
+    """
+    if not message_trace:
+        return []
+    bins: Dict[Tuple[int, int], Dict[str, int]] = {}
+    src_coord: Dict[int, Tuple[int, int]] = {}
+    dst_coord: Dict[int, Tuple[int, int]] = {}
+    for events in message_trace:
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("placeholder"):
+                continue
+            src_t = int(ev.get("src_tile_id", -1))
+            dst_t = int(ev.get("dest_tile_id", -1))
+            if src_t < 0 or dst_t < 0 or src_t == dst_t:
+                # Skip self-tile traffic — it doesn't cross the NoC.
+                continue
+            sx = int(ev.get("src_x", -1))
+            sy = int(ev.get("src_y", -1))
+            dx = int(ev.get("dest_x", -1))
+            dy = int(ev.get("dest_y", -1))
+            src_coord[src_t] = (sx, sy)
+            dst_coord[dst_t] = (dx, dy)
+            slot = bins.setdefault(
+                (src_t, dst_t),
+                {"packets": 0, "spikes": 0, "hops": 0},
+            )
+            slot["packets"] += 1
+            slot["spikes"] += int(ev.get("spikes", 0) or 0)
+            slot["hops"] += int(ev.get("hops", 0) or 0)
+    out: List[SanafeNocLink] = []
+    for (src_t, dst_t), b in sorted(bins.items()):
+        sx, sy = src_coord.get(src_t, (-1, -1))
+        dx, dy = dst_coord.get(dst_t, (-1, -1))
+        # Fall back to ``arch_geometry.tiles_xy`` if the message trace
+        # didn't carry coordinates (older SANA-FE builds).
+        if geom is not None:
+            if (sx < 0 or sy < 0) and 0 <= src_t < len(geom.tiles_xy):
+                sx, sy = geom.tiles_xy[src_t]
+            if (dx < 0 or dy < 0) and 0 <= dst_t < len(geom.tiles_xy):
+                dx, dy = geom.tiles_xy[dst_t]
+        out.append(SanafeNocLink(
+            src_tile=src_t, dst_tile=dst_t,
+            src_x=int(sx), src_y=int(sy),
+            dst_x=int(dx), dst_y=int(dy),
+            packet_count=int(b["packets"]),
+            spike_count=int(b["spikes"]),
+            total_hops=int(b["hops"]),
+        ))
+    return out

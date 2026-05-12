@@ -114,6 +114,11 @@ class SanafeTileRecord:
 
     Tiles are SANA-FE's outer grouping for cores.  This record is *not*
     used by the parity gate — it exists purely for the GUI / aggregation.
+
+    ``mesh_x`` / ``mesh_y`` are the tile's coordinates in the
+    architecture's NoC mesh (set when the arch synth records the
+    geometry).  Defaults of ``-1`` mean "unknown" — the floorplan view
+    falls back to row-major layout in that case.
     """
 
     tile_index: int
@@ -121,6 +126,46 @@ class SanafeTileRecord:
     energy: SanafeEnergyBreakdown
     spikes_fired: int
     packets_sent: int
+    mesh_x: int = -1
+    mesh_y: int = -1
+
+
+@dataclass
+class SanafeNocLink:
+    """Aggregated NoC traffic between a (src_tile, dst_tile) pair.
+
+    Built from SANA-FE's ``message_trace`` after the segment finishes;
+    one entry per **directed** tile pair that carried at least one
+    real (non-placeholder) spike.  Powers the NoC-traffic overlay in
+    the GUI floorplan view — the count / spikes / hops fields each
+    feed a different colormap option.
+    """
+
+    src_tile: int
+    dst_tile: int
+    src_x: int
+    src_y: int
+    dst_x: int
+    dst_y: int
+    packet_count: int
+    spike_count: int
+    total_hops: int
+
+
+@dataclass
+class SanafeArchGeometry:
+    """Lightweight 2D-mesh description for the GUI floorplan view.
+
+    Captures only what the frontend needs to render cores in their
+    physical positions: total mesh dimensions and per-tile (x, y)
+    placement.  The per-tile core list lives on ``SanafeTileRecord``
+    so each tile carries its own cores explicitly — no need to
+    duplicate it here.
+    """
+
+    width: int
+    height: int
+    tiles_xy: List[List[int]] = field(default_factory=list)  # [(x, y)] indexed by tile_index
 
 
 @dataclass
@@ -152,6 +197,9 @@ class SanafeSegmentRecord:
     per_neuron_spike_trace: Optional[np.ndarray] = None       # (n_neurons, T)
     per_neuron_potential_trace: Optional[np.ndarray] = None   # (n_neurons, T)
     message_trace: Optional[List[Dict[str, Any]]] = None
+    # GUI floorplan + NoC overlay ---------------------------------------------
+    arch_geometry: Optional["SanafeArchGeometry"] = None
+    noc_links: List["SanafeNocLink"] = field(default_factory=list)
 
 
 @dataclass
