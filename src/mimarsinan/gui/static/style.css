@@ -1032,3 +1032,431 @@ body {
 .log-line { display: block; min-height: 1.6em; padding: 0; }
 .log-stdout { color: var(--text-primary); }
 .log-stderr { color: var(--error); }
+
+/* ── SANA-FE chip floorplan (dark-cyberpunk) ────────────────────────── */
+/* CSS-grid mesh of cells (one core per cell) + decorative tile-border
+   outlines + absolutely-positioned SVG overlay for NoC curves and
+   per-mesh-edge congestion lines. */
+.sf-floorplan {
+  user-select: none;
+  display: inline-block;
+  padding: 12px; border-radius: 6px;
+  background: linear-gradient(180deg, rgba(15,23,35,0.88), rgba(8,12,20,0.88));
+  box-shadow: inset 0 0 22px rgba(91,138,245,0.05), 0 0 0 1px rgba(91,138,245,0.13);
+}
+/* Inner positioning context — abs-positioned tile contours + SVG
+ * overlay live inside this, NOT inside .sf-floorplan.  This is the
+ * fix for the "contours start at the panel outer border" bug:
+ * ``position: absolute; left: 0`` is relative to the containing
+ * block's PADDING BOX (outer padding edge), so when contours lived
+ * inside .sf-floorplan (which has 12px padding), left:1 sat 12px to
+ * the left of where the mesh's cells actually started.  This inner
+ * wrapper has no padding, so the abs coordinate system aligns 1:1
+ * with the cells. */
+.sf-floorplan-inner {
+  position: relative;
+  display: inline-block;
+}
+.sf-mesh {
+  display: grid; gap: 1px;
+  /* Mesh background is now noticeably visible so the inter-cell
+   * gaps + empty cell slots read as "chip surface" rather than
+   * "page background".  Used to be 0.05 alpha which was too subtle
+   * — the user saw the contour seemingly enclose empty space and
+   * read it as misalignment.  Now both the gaps AND the empty cells
+   * register as part of the chip. */
+  background: rgba(91,138,245,0.13);
+  padding: 1px; border-radius: 3px;
+  position: relative; z-index: 1;
+  /* border-box so the inline ``width`` JS sets fits *exactly* the
+   * grid columns + gaps + padding.  Default content-box meant the
+   * width sat 2px wider than the grid actually needed, shifting the
+   * tile-border contours by 2px relative to the cells. */
+  box-sizing: border-box;
+}
+.sf-cell {
+  width: 100%; height: 100%; min-width: 0; min-height: 0;
+  position: relative; cursor: pointer; z-index: 1;
+  transition: filter 80ms ease-out, box-shadow 80ms ease-out;
+}
+/* Empty slots inside a partially-filled tile — fully transparent so
+ * the mesh background shows through, giving an unambiguous "this
+ * slot exists but has no core mapped to it" look. */
+.sf-cell.empty {
+  background: transparent;
+  cursor: default; pointer-events: none;
+}
+/* Hover highlight: filter only — no z-index bump.  The SVG overlay
+ * sits at z-index:10 and must keep capturing mouseover events even
+ * when an underlying cell is "lit up". */
+.sf-cell:hover {
+  filter: brightness(1.55) saturate(1.2);
+  box-shadow: 0 0 0 1px #00ffff, 0 0 8px rgba(0,255,255,0.55);
+}
+/* Tile borders — pointer-events:none so the cells & SVG overlay
+   underneath stay hover-able.  Drawn with box-shadow (not border) so
+   the rect can occupy the exact cell-grid area and the contour ring
+   sits *outside* it in the inter-cell gap — gives pixel-perfect
+   alignment with the cells regardless of cell size.  z-index:15
+   keeps the contour visible above the SVG overlay (which sits at
+   z-index:10). */
+.sf-tile-border {
+  position: absolute; pointer-events: none;
+  background: transparent; border: none;
+  /* Halved per user request — the outer boundary "d" thickness is the
+   * one quantity the abs-positioned contour padding has to compensate
+   * for, so keeping it thin tightens the visible footprint. */
+  box-shadow: 0 0 0 0.7px rgba(122, 192, 255, 0.75);
+  border-radius: 3px;
+  z-index: 15;
+}
+
+.sf-noc-overlay {
+  position: absolute; top: 0; left: 0;
+  pointer-events: none; overflow: visible;
+  /* Sits above the cell grid + tile borders so curve/arrow/source
+   * hover wins when the user mouses over a path that visually crosses
+   * a cell.  Pointer-events stays off on the SVG root; each <path>,
+   * <line>, <polygon>, <circle> re-enables it for itself. */
+  z-index: 10;
+}
+.sf-noc-overlay path,
+.sf-noc-overlay line {
+  pointer-events: auto; cursor: pointer;
+  transition: opacity 80ms, stroke-width 80ms, filter 80ms;
+}
+.sf-noc-overlay path:hover,
+.sf-noc-overlay line:hover {
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.sf-noc-overlay polygon.sf-arrow,
+.sf-noc-overlay circle.sf-noc-source { pointer-events: none; }
+/* Tight, dark drop shadow applied to the *whole arrow* as a single
+ * silhouette — not to its body and head separately — so the body
+ * never casts a halo onto the head (and vice versa).
+ *
+ *   noc_congestion : the arrow is rendered as one ``<path
+ *                    class="sf-noc-arrow">`` whose outline traces
+ *                    the rectangle-body + triangle-head shape, so
+ *                    one filter on that path is enough.
+ *   noc_routes     : the bezier curve body and triangle arrow head
+ *                    stay as separate ``<path>`` + ``<polygon>`` so
+ *                    the curve can be hover-detected as a stroked
+ *                    line, but they sit inside a
+ *                    ``<g class="sf-arrow-group">`` whose group-level
+ *                    filter halos their composite silhouette as one
+ *                    unit. */
+.sf-noc-overlay g.sf-arrow-group,
+.sf-noc-overlay path.sf-noc-arrow,
+.sf-noc-overlay circle.sf-noc-source {
+  filter: drop-shadow(0 0 1.4px rgba(0,0,0,0.95));
+}
+
+/* Mesh nodes (tile representations on the NoC graph view).  Filled
+ * variant = a real tile, hollow / dimmer variant = an unallocated
+ * mesh waypoint that XY routing still passes through. */
+.sf-noc-overlay circle.sf-mesh-node {
+  fill: rgba(8, 12, 20, 0.92);
+  stroke: rgba(122, 192, 255, 0.75);
+  stroke-width: 1.4;
+  pointer-events: auto; cursor: pointer;
+  transition: stroke 100ms, fill 100ms, filter 100ms;
+}
+.sf-noc-overlay circle.sf-mesh-node:hover {
+  fill: rgba(0, 255, 255, 0.18);
+  stroke: #00ffff;
+  filter: drop-shadow(0 0 5px rgba(0,255,255,0.7));
+}
+/* Non-tile mesh waypoints share the exact same fill/stroke/size as
+ * tile-bearing nodes — no dashed/dimmer differentiation.  The
+ * tooltip on hover is what distinguishes them (waypoint shows
+ * pass-through packet counts; tile node shows the full per-tile
+ * aggregate). */
+.sf-noc-overlay circle.sf-mesh-node-empty {
+  /* Inherits .sf-mesh-node above.  Explicit declarations only here
+   * to override the previous dashed look in case any cached stylesheet
+   * still has it. */
+  fill: rgba(8, 12, 20, 0.92);
+  stroke: rgba(122, 192, 255, 0.75);
+  stroke-width: 1.4;
+  stroke-dasharray: none;
+  cursor: pointer;
+}
+.sf-noc-overlay circle.sf-mesh-node-empty:hover {
+  fill: rgba(0, 255, 255, 0.18);
+  stroke: #00ffff;
+  filter: drop-shadow(0 0 5px rgba(0,255,255,0.7));
+}
+
+/* Idle mesh edges — physical NoC links that carried zero packets in
+ * the current segment.  Drawn underneath the live edges as dashed
+ * white lines so the full graph topology is always visible. */
+.sf-noc-overlay line.sf-mesh-edge-idle {
+  stroke: rgba(255, 255, 255, 0.32);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+
+/* Mesh-edge lines used by the congestion overlay (no longer
+ * arrows-only).  Hover-interactive, glow on hover. */
+.sf-noc-overlay line.sf-noc-edge {
+  pointer-events: auto; cursor: pointer;
+  transition: opacity 80ms, stroke-width 80ms, filter 80ms;
+}
+.sf-noc-overlay line.sf-noc-edge:hover {
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.sf-noc-overlay polygon.sf-noc-edge-arrow { pointer-events: none; }
+
+/* Default curve / arrow / source colour is orange — neutral but
+   readable against the dark mesh, and visually distinct from the
+   green/red Traffic palette used by the congestion overlay.
+   Direction colouring (incoming vs outgoing) only kicks in while a
+   tile is hovered (see .sf-edge-out / .sf-edge-in classes added by
+   JS). */
+.sf-noc-overlay path.sf-edge { stroke: #ff9800; }
+.sf-noc-overlay polygon.sf-arrow      { fill: #ff9800; }
+.sf-noc-overlay circle.sf-noc-source  { fill: #ff9800; }
+.sf-noc-overlay path.sf-edge-out      { stroke: #00ffff !important; }
+.sf-noc-overlay path.sf-edge-in       { stroke: #ff4be8 !important; }
+.sf-noc-overlay polygon.sf-arrow-out  { fill: #00ffff !important; }
+.sf-noc-overlay polygon.sf-arrow-in   { fill: #ff4be8 !important; }
+.sf-noc-overlay circle.sf-noc-source-out { fill: #00ffff !important; }
+.sf-noc-overlay circle.sf-noc-source-in  { fill: #ff4be8 !important; }
+.sf-noc-overlay path.sf-edge-dim,
+.sf-noc-overlay polygon.sf-arrow-dim,
+.sf-noc-overlay circle.sf-noc-source-dim { opacity: 0.15; }
+
+/* Tooltip — fixed position so we can drop clientX/Y straight in. */
+.sf-tooltip {
+  position: fixed; pointer-events: none; z-index: 9999;
+  background: linear-gradient(180deg, rgba(14,18,28,0.97), rgba(8,11,18,0.97));
+  color: #e6f1ff;
+  padding: 8px 11px; border-radius: 5px; font-size: 11px;
+  border: 1px solid rgba(0, 255, 255, 0.35);
+  box-shadow: 0 4px 22px rgba(0,255,255,0.18), 0 0 0 1px rgba(0,0,0,0.6);
+  min-width: 200px; max-width: 340px; line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+.sf-tooltip strong { color: #00ffff; letter-spacing: 0.3px; }
+.sf-tooltip .sf-tooltip-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+}
+.sf-tooltip .sf-tooltip-row .sf-tooltip-label {
+  color: rgba(122, 192, 255, 0.7); font-weight: 400;
+}
+.sf-tooltip .sf-tooltip-section {
+  margin-top: 8px; padding-top: 5px;
+  border-top: 1px dashed rgba(122,192,255,0.18);
+  font-size: 10.5px;
+}
+.sf-tooltip .sf-tooltip-section-title {
+  font-weight: 600;
+  margin-bottom: 3px; letter-spacing: 0.5px; text-transform: uppercase;
+  font-size: 10px;
+}
+.sf-tooltip .sf-tooltip-list {
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: 10.5px; color: #b6c8df;
+}
+
+/* Per-panel body — floorplan on one side, control sidebar on the
+ * other, so the floorplan keeps its full vertical real estate. */
+.sf-panel-body {
+  display: flex; gap: 12px; align-items: flex-start;
+}
+.sf-panel-sidebar {
+  display: flex; flex-direction: column; gap: 9px;
+  min-width: 150px; padding: 8px 10px;
+  background: rgba(91,138,245,0.07);
+  border-left: 2px solid #00ffff;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.sf-panel-sidebar .sf-panel-title {
+  color: #00ffff; letter-spacing: 0.4px; font-weight: 600; font-size: 12px;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+}
+.sf-panel-sidebar .sf-control {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.sf-panel-sidebar .sf-control-label {
+  font-size: 10px; color: rgba(122, 192, 255, 0.7);
+  letter-spacing: 0.5px; text-transform: uppercase;
+}
+.sf-panel-sidebar select {
+  width: 100%;
+  background: rgba(8,12,20,0.85);
+  color: #e6f1ff;
+  border: 1px solid rgba(91,138,245,0.35);
+  border-radius: 3px; padding: 4px 6px; font-size: 11px;
+  cursor: pointer;
+}
+.sf-panel-sidebar select:hover { border-color: #00ffff; }
+.sf-panel-floor { flex: 1; min-width: 0; overflow: auto; }
+
+/* Inline colour legend — pinned to the panel sidebar below the
+ * controls so users can read the metric scale without a separate
+ * Plotly colourbar eating half the floorplan's width. */
+.sf-legend {
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px dashed rgba(122, 192, 255, 0.18);
+}
+.sf-legend + .sf-legend { margin-top: 4px; padding-top: 4px; border-top: none; }
+.sf-legend-title {
+  font-size: 9.5px; color: rgba(122, 192, 255, 0.72);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+.sf-legend-bar {
+  height: 7px; border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+}
+.sf-legend-labels {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: rgba(122, 192, 255, 0.55);
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  margin-top: 2px;
+}
+.sf-legend-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; color: #d6e2f3;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  margin: 2px 0;
+}
+.sf-legend-swatch {
+  display: inline-block; width: 14px; height: 4px;
+  border-radius: 2px;
+}
+
+/* (?) help-chip — replaces the long explanatory paragraphs.
+ * Hover any chip to read the help text in the shared sf-tooltip. */
+.sf-help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: rgba(0,255,255,0.10); color: #00ffff;
+  border: 1px solid rgba(0,255,255,0.40);
+  font-size: 9.5px; font-weight: 700;
+  margin-left: 7px; cursor: help; vertical-align: 1px;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  user-select: none;
+}
+.sf-help:hover { background: rgba(0,255,255,0.28); color: #fff; }
+
+/* Compact NoC-playback controls — single toggle + slider + cycle
+ * label on one row so the chart gets all the vertical space. */
+.sf-playback-controls {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px; margin-top: 6px;
+  background: rgba(91,138,245,0.06);
+  border-radius: 4px;
+  border: 1px solid rgba(91,138,245,0.15);
+}
+.sf-playback-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  background: rgba(0,255,255,0.10);
+  color: #00ffff;
+  border: 1px solid rgba(0,255,255,0.45);
+  border-radius: 4px;
+  cursor: pointer; font-size: 14px;
+  flex-shrink: 0;
+  transition: background 80ms;
+}
+.sf-playback-toggle:hover { background: rgba(0,255,255,0.25); }
+.sf-playback-slider {
+  flex: 1; height: 4px; min-width: 0;
+  -webkit-appearance: none; appearance: none;
+  background: linear-gradient(90deg, rgba(91,138,245,0.3), rgba(0,255,255,0.3));
+  border-radius: 2px; outline: none;
+  cursor: pointer;
+}
+.sf-playback-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #00ffff; border: 2px solid #001f2a;
+  box-shadow: 0 0 6px rgba(0,255,255,0.65);
+  cursor: pointer;
+}
+.sf-playback-slider::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #00ffff; border: 2px solid #001f2a;
+  box-shadow: 0 0 6px rgba(0,255,255,0.65);
+  cursor: pointer;
+}
+.sf-playback-cycle {
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  color: #00ffff; font-size: 12px; min-width: 78px; text-align: right;
+}
+
+/* Section header within the segment card. */
+.sf-section-title {
+  font-weight: 600; margin: 14px 0 4px 0;
+  color: #e6f1ff; letter-spacing: 0.4px;
+}
+.sf-section-title::before {
+  content: '> ';
+  color: #00ffff;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+}
+.sf-section-sub {
+  font-size: 11px; color: rgba(122, 192, 255, 0.65);
+  margin-bottom: 10px; line-height: 1.5;
+}
+
+/* Spike-raster *modal* — floats over the page with a backdrop, so
+ * an oversized raster doesn't push the rest of the segment card
+ * miles down the screen.  Centred via fixed positioning + flex on
+ * the wrapping element. */
+.sf-raster-modal {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+}
+.sf-raster-modal-content {
+  position: relative;
+  width: min(86vw, 1100px); max-height: 86vh; overflow: auto;
+  background: linear-gradient(180deg, rgba(14,18,28,0.97), rgba(8,12,20,0.97));
+  border: 1px solid rgba(0,255,255,0.35);
+  border-radius: 7px;
+  box-shadow: 0 8px 36px rgba(0,255,255,0.18), 0 0 0 1px rgba(0,0,0,0.6);
+  padding: 16px 18px 14px;
+}
+.sf-raster-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(122,192,255,0.18);
+}
+.sf-raster-modal-title {
+  color: #00ffff; font-weight: 600; font-size: 13.5px;
+  letter-spacing: 0.4px;
+}
+.sf-raster-modal-title::before { content: '◆ '; color: #ff4be8; }
+.sf-raster-modal-sub {
+  color: rgba(122,192,255,0.65); font-size: 11px;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  margin-left: 10px;
+}
+.sf-raster-modal-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 4px;
+  background: rgba(255,75,232,0.10); color: #ff4be8;
+  border: 1px solid rgba(255,75,232,0.40);
+  font-size: 18px; font-weight: 700; cursor: pointer;
+  flex-shrink: 0;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  transition: background 80ms, color 80ms;
+}
+.sf-raster-modal-close:hover {
+  background: rgba(255,75,232,0.30); color: #fff;
+}
+
+/* Big-metric chip on SANA-FE summary cards — give the value a soft
+   neon glow so the page feels less like a spreadsheet. */
+.card .big-metric .value { text-shadow: 0 0 12px currentColor; }
