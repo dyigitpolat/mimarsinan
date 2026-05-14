@@ -74,6 +74,53 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
             }
             for L in seg.noc_links
         ],
+        "noc_link_load": [
+            {
+                "from_x": int(L.from_x), "from_y": int(L.from_y),
+                "to_x": int(L.to_x), "to_y": int(L.to_y),
+                "packet_count": int(L.packet_count),
+            }
+            for L in seg.noc_link_load
+        ],
+        "cycle_energy": [
+            {
+                "cycle": int(p.cycle),
+                "synapse_j": float(p.synapse_j),
+                "dendrite_j": float(p.dendrite_j),
+                "soma_j": float(p.soma_j),
+                "network_j": float(p.network_j),
+                "total_j": float(p.total_j),
+            }
+            for p in seg.cycle_energy
+        ],
+        "cascade": [
+            {"cycle": int(p.cycle), "depth": int(p.depth), "firings": int(p.firings)}
+            for p in seg.cascade
+        ],
+        "critical_cores": [
+            {"cycle": int(p.cycle), "core_index": int(p.core_index),
+             "event_count": int(p.event_count)}
+            for p in seg.critical_cores
+        ],
+        "connectivity": [
+            {"src_core": int(e.src_core), "dst_core": int(e.dst_core),
+             "weight_sum_abs": float(e.weight_sum_abs),
+             "fan_count": int(e.fan_count)}
+            for e in seg.connectivity
+        ],
+        "hcm_diff": [
+            {"core_index": int(d.core_index),
+             "input_delta_sum": int(d.input_delta_sum),
+             "output_delta_sum": int(d.output_delta_sum)}
+            for d in seg.hcm_diff
+        ],
+        # Per-cycle ``[[sx, sy, dx, dy, count], ...]`` quintuples for
+        # the animated NoC playback.  Empty list (not None) when no
+        # message_trace was recorded — keeps the JSON shape stable.
+        "noc_traffic_per_cycle": [
+            [list(map(int, q)) for q in cycle]
+            for cycle in seg.noc_traffic_per_cycle
+        ],
         "per_core": [
             {
                 "core_index": int(c.core_index),
@@ -85,6 +132,13 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
                 "spikes_fired": int(c.spikes_fired),
                 "energy_j": float(c.energy.total_j),
                 "energy_breakdown_j": _eb_to_dict(c.energy),
+                # 2D spike raster (n_neurons × T_eff) of 0/1 ints —
+                # ``None`` when the trace was empty; powers the click-
+                # to-raster mini-view per core.  ``.tolist()`` keeps
+                # the snapshot JSON-safe.
+                "spike_raster": (
+                    None if c.spike_raster is None else c.spike_raster.tolist()
+                ),
             }
             for c in seg.per_core
         ],

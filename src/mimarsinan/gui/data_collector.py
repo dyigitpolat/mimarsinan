@@ -84,6 +84,12 @@ class DataCollector:
         self._console_callback: Any = None
 
         self._resource_store: Optional["ResourceStore"] = None
+        # Pipeline working directory — populated by :func:`start_gui` once
+        # the pipeline is bound.  Lets the live ``/api/steps/.../resources``
+        # endpoint fall back to ``_GUI_STATE/resources/...`` on disk when
+        # the in-memory ResourceStore was cleared (e.g. on a resumed run
+        # where earlier steps' descriptors were never re-registered).
+        self._working_directory: Optional[str] = None
 
         # Monotonic sequence for step-lifecycle events so a reconnecting WS
         # client can ask the server to replay anything it missed.  Bounded
@@ -109,6 +115,24 @@ class DataCollector:
     def get_resource_store(self) -> "ResourceStore | None":
         with self._lock:
             return self._resource_store
+
+    # -- Pipeline working directory (for disk-fallback resource serving) ------
+
+    def set_working_directory(self, working_dir: Optional[str]) -> None:
+        """Record the live pipeline's working directory.
+
+        Called by :func:`start_gui` immediately after binding the
+        pipeline; ``None`` clears it (e.g. on shutdown).  The HTTP
+        resource handler reads it via :meth:`get_working_directory` to
+        decide whether a disk fallback is available when the in-memory
+        store misses.
+        """
+        with self._lock:
+            self._working_directory = working_dir
+
+    def get_working_directory(self) -> Optional[str]:
+        with self._lock:
+            return self._working_directory
 
     # -- Pipeline thread (for graceful exit) -----------------------------------
 

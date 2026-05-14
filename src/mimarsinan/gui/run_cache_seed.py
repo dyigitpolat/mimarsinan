@@ -93,3 +93,38 @@ def copy_steps_json_from_previous_run(
     dest_dir = Path(dest_working_dir).resolve() / "_GUI_STATE"
     dest_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest_dir / "steps.json")
+
+
+def copy_resources_from_previous_run(
+    generated_root: str,
+    previous_run_id: str,
+    dest_working_dir: str,
+) -> None:
+    """Copy ``_GUI_STATE/resources/`` (heatmap PNGs, connectivity JSON) from a
+    previous run so the live monitor can serve images for backfilled
+    steps without re-running them.
+
+    The snapshot executor writes per-step resources here under
+    ``_GUI_STATE/resources/<step>/<kind>/<rid>.<ext>`` on completion;
+    when the fork starts with an empty in-memory ResourceStore and the
+    server's disk-fallback path (``server._serve_resource_from_disk``)
+    looks here, those files need to be present.  Pipeline cache files
+    cover the model/IR data the next *step* needs; this covers the
+    visual data the *user* expects to keep seeing for the steps they
+    inherited.
+
+    Pure ``shutil.copytree`` so atomicity/locks are not an issue —
+    the source run is read-only by the time we fork from it.
+    """
+    if not previous_run_id or not _SAFE_ID_RE.match(previous_run_id):
+        return
+    src = Path(generated_root).resolve() / previous_run_id / "_GUI_STATE" / "resources"
+    if not src.is_dir():
+        logger.debug("No resources dir at %s (skip seeding)", src)
+        return
+    dest_dir = Path(dest_working_dir).resolve() / "_GUI_STATE" / "resources"
+    try:
+        # ``dirs_exist_ok`` so a partially-warmed dest doesn't error out.
+        shutil.copytree(src, dest_dir, dirs_exist_ok=True)
+    except (OSError, shutil.Error) as e:
+        logger.warning("Failed to seed resources from %s → %s: %s", src, dest_dir, e)

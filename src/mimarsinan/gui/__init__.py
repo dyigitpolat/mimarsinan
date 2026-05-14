@@ -339,6 +339,12 @@ def start_gui(
     if start_step is not None:
         _backfill_skipped_steps(pipeline, collector, step_names, start_step)
 
+    # Thread the pipeline's working_directory into the collector so the
+    # live /api/steps/.../resources endpoint can fall back to disk when
+    # the in-memory ResourceStore is empty (resumed runs reload only
+    # snapshot metadata; the per-step PNGs sit untouched on disk).
+    collector.set_working_directory(getattr(pipeline, "working_directory", None))
+
     start_server(collector, host=host, port=port)
     handle = GUIHandle(pipeline, collector)
     return handle

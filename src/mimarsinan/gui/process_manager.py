@@ -26,6 +26,7 @@ from mimarsinan.gui.persistence import (
 )
 from mimarsinan.gui.run_cache_seed import (
     copy_pipeline_cache_from_previous_run,
+    copy_resources_from_previous_run,
     copy_steps_json_from_previous_run,
 )
 
@@ -168,6 +169,14 @@ class ProcessManager:
                 working_dir,
             )
             copy_steps_json_from_previous_run(
+                os.path.abspath(gen_root),
+                str(continue_from),
+                working_dir,
+            )
+            # Bring inherited heatmap / connectivity payloads forward too
+            # — without this the live monitor renders broken images for
+            # every backfilled step that produced lazy resources.
+            copy_resources_from_previous_run(
                 os.path.abspath(gen_root),
                 str(continue_from),
                 working_dir,

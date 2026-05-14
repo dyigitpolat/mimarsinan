@@ -103,13 +103,21 @@ def test_derive_arch_spec_axons_neurons_use_hcm_geometry_max_across_segments():
     assert spec.neurons_per_core == 5
 
 
-def test_derive_arch_spec_default_packs_all_cores_into_one_tile():
+def test_derive_arch_spec_default_picks_2d_mesh_when_cores_per_tile_unspecified():
+    """The GUI floorplan + NoC views need a 2D mesh to surface spatial
+    structure; the auto-default picks ``cores_per_tile = ceil(sqrt(N))``
+    and then derives ``mesh_width × mesh_height`` so SANA-FE's NoC and
+    our visualisation both treat the chip as a roughly-square grid.
+    For 4 cores: cores_per_tile=2, n_tiles=2, mesh=2×1.
+    """
     mapping = _fake_mapping(
         _fake_stage("neural", _fake_hcm((3, 2), (3, 2), (3, 2), (3, 2))),
     )
     spec = derive_arch_spec(mapping, preset_name="loihi")
-    assert spec.n_tiles == 1
-    assert spec.n_cores_per_tile == [4]
+    assert spec.n_tiles == 2
+    assert spec.n_cores_per_tile == [2, 2]
+    assert spec.mesh_width == 2
+    assert spec.mesh_height == 1
 
 
 def test_derive_arch_spec_cores_per_tile_splits_evenly():
@@ -156,7 +164,8 @@ def test_derive_arch_spec_name_includes_preset_and_core_count():
 def _spec(n_tiles=1, n_cores_per_tile=None, axons=4, neurons=2,
           preset=None,
           dendrite_plugin_path="/tmp/fake_dendrite.so",
-          soma_plugin_path="/tmp/fake_soma.so"):
+          soma_plugin_path="/tmp/fake_soma.so",
+          mesh_width=None, mesh_height=1):
     return ArchSpec(
         name="t", n_tiles=n_tiles,
         n_cores_per_tile=n_cores_per_tile or [1],
@@ -164,6 +173,8 @@ def _spec(n_tiles=1, n_cores_per_tile=None, axons=4, neurons=2,
         preset=preset or LOIHI_PRESET,
         dendrite_plugin_path=dendrite_plugin_path,
         soma_plugin_path=soma_plugin_path,
+        mesh_width=mesh_width if mesh_width is not None else n_tiles,
+        mesh_height=mesh_height,
     )
 
 
@@ -235,9 +246,15 @@ def test_render_arch_yaml_multi_tile_emits_one_block_per_tile():
     assert yaml.count("- name: t2_c") == 1
 
 
-def test_render_arch_yaml_topology_width_matches_n_tiles():
-    yaml = _render_arch_yaml(_spec(n_tiles=4, n_cores_per_tile=[1, 1, 1, 1]))
-    assert "width: 4" in yaml
+def test_render_arch_yaml_topology_width_matches_mesh_width():
+    """YAML emits the 2D mesh dimensions from the spec — the old 1×N
+    behaviour was replaced when the auto-default switched to a roughly
+    square mesh so the NoC visualisations have something 2D to render.
+    """
+    yaml = _render_arch_yaml(_spec(n_tiles=4, n_cores_per_tile=[1, 1, 1, 1],
+                                    mesh_width=2, mesh_height=2))
+    assert "width: 2" in yaml
+    assert "height: 2" in yaml
 
 
 # ---------------------------------------------------------------------------

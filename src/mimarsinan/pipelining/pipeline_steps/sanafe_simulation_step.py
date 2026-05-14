@@ -19,9 +19,44 @@ from typing import List
 import torch
 
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
-from mimarsinan.chip_simulation.sanafe.records import SanafeRunRecord
+from mimarsinan.chip_simulation.sanafe.records import SanafeCoreDiff, SanafeRunRecord
 from mimarsinan.chip_simulation.sanafe.stats import SanafeStepReport
 from mimarsinan.chip_simulation.spike_recorder import compare_records, format_first_diff
+
+
+def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
+    """Stamp per-core HCM↔SF deltas on each segment of ``sanafe_rec``.
+
+    The GUI floorplan "HCM diff" overlay reads ``seg.hcm_diff`` and
+    renders a diverging-colormap layer over the chip floorplan, so
+    spatial drift is visible at a glance — even on runs that pass the
+    parity gate (where all deltas are zero, the overlay just renders
+    transparent everywhere).  Skips segments that don't appear in both
+    records (no common ground to diff against).
+    """
+    ref_segs = getattr(ref, "segments", {}) or {}
+    for stage_idx, seg in sanafe_rec.segments.items():
+        ref_seg = ref_segs.get(stage_idx)
+        if ref_seg is None or not ref_seg.cores or not seg.per_core:
+            continue
+        # Align by ``core_index`` so split / coalesced cores still match.
+        ref_by_idx = {c.core_index: c for c in ref_seg.cores}
+        deltas: List[SanafeCoreDiff] = []
+        for sf in seg.per_core:
+            ref_core = ref_by_idx.get(sf.core_index)
+            if ref_core is None:
+                continue
+            in_sum_ref = int(ref_core.input_spike_count.sum())
+            in_sum_sf = int(sf.input_spike_count.sum())
+            out_sum_ref = int(ref_core.output_spike_count.sum())
+            out_sum_sf = int(sf.output_spike_count.sum())
+            deltas.append(SanafeCoreDiff(
+                core_index=int(sf.core_index),
+                # SF − HCM: positive = SF over-reports, negative = under.
+                input_delta_sum=in_sum_sf - in_sum_ref,
+                output_delta_sum=out_sum_sf - out_sum_ref,
+            ))
+        seg.hcm_diff = deltas
 from mimarsinan.data_handling.data_loader_factory import (
     DataLoaderFactory,
     shutdown_data_loader,
@@ -143,6 +178,13 @@ class SanafeSimulationStep(PipelineStep):
             sample_np = sample.detach().cpu().numpy().reshape(1, -1)
             sanafe_rec = runner.run(sample_np, sample_index=sample_idx)
             per_sample.append(sanafe_rec)
+
+            # When a HCM reference is available, attach per-core deltas to
+            # each segment so the GUI floorplan "HCM diff" overlay shows
+            # spatial drift even on runs that didn't fail the parity gate.
+            # Always-zero overlays just mean the chip simulates HCM faithfully.
+            if ref is not None:
+                _attach_per_core_deltas(ref, sanafe_rec)
 
             if parity_check and ref is not None:
                 diffs = compare_records(ref, sanafe_rec.to_hcm_subset())
