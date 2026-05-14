@@ -106,6 +106,11 @@ class SanafeCoreRecord:
     input_spike_count: np.ndarray   # (n_axons_used,) int64
     output_spike_count: np.ndarray  # (n_neurons,) int64
     energy: SanafeEnergyBreakdown   # per-core energy estimate
+    # Per-core 2D spike raster (n_neurons, T_eff) uint8 — slice of the
+    # segment-wide trace.  Powers the "click a core → see its raster"
+    # mini-view in the GUI; None when log_potential_trace=False or the
+    # group wasn't logged.
+    spike_raster: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -169,6 +174,104 @@ class SanafeArchGeometry:
 
 
 @dataclass
+class SanafeNocLinkLoad:
+    """Per-mesh-edge packet count for the NoC congestion heatmap.
+
+    A "mesh edge" is a single hop between two physically-adjacent tiles
+    in the NoC (north / east / south / west).  Aggregated by routing
+    every packet through XY-routing — first travel along x, then along
+    y — so the load on every intermediate edge is counted, not just
+    the (src_tile, dst_tile) endpoints.
+    """
+
+    from_x: int
+    from_y: int
+    to_x: int
+    to_y: int
+    packet_count: int
+
+
+@dataclass
+class SanafeCycleEnergyPoint:
+    """One row of the energy-waterfall: per-cycle event-driven energy split.
+
+    Reconstructed from per-cycle event counts × preset constants — SANA-FE
+    doesn't itself report per-cycle energy breakdowns, but we have the
+    raw counts (spike trace + message trace) and the YAML constants,
+    so we can produce a faithful breakdown for the GUI.
+    """
+
+    cycle: int
+    synapse_j: float
+    dendrite_j: float
+    soma_j: float
+    network_j: float
+    total_j: float
+
+
+@dataclass
+class SanafeCascadePoint:
+    """One row of the latency-cascade timeline: per-cycle firings per depth.
+
+    ``depth`` is the HCM core-latency layer (depth-0 = input pool,
+    depth-1 = first consumers, …).  The cascade-timeline view stacks
+    one bar per depth and shows the cycle-by-cycle firing pattern, so
+    users can see the cascade propagating through the network.
+    """
+
+    cycle: int
+    depth: int
+    firings: int
+
+
+@dataclass
+class SanafeCriticalCore:
+    """Per-cycle critical-core: the core whose event load drove sim_time.
+
+    Approximated by per-cycle event count (firings + incoming spikes)
+    — SANA-FE's actual ``sim_time = max(neuron_processing,
+    message_processing)`` is computed from the longest event chain,
+    and the busiest core is the strongest proxy for that.
+    """
+
+    cycle: int
+    core_index: int
+    event_count: int
+
+
+@dataclass
+class SanafeConnectivityEdge:
+    """Static connectivity edge: ``(src_core, dst_core)`` with summed |w|.
+
+    Built from ``HardCore.axon_sources`` × ``core_matrix`` once per
+    segment; doesn't depend on simulation activity.  Powers the
+    "connectivity overlay" view that shows routing complexity even
+    on idle networks.
+    """
+
+    src_core: int
+    dst_core: int
+    weight_sum_abs: float
+    fan_count: int
+
+
+@dataclass
+class SanafeCoreDiff:
+    """Per-core parity-gate delta (HCM expected vs SANA-FE actual).
+
+    Only populated when ``sanafe_simulation_step`` ran with parity
+    checking on and the diff was non-empty; otherwise the floorplan
+    diff overlay is disabled.  ``input_delta`` and ``output_delta``
+    are absolute deltas; positive means SANA-FE over-reported, negative
+    means under-reported.
+    """
+
+    core_index: int
+    input_delta_sum: int
+    output_delta_sum: int
+
+
+@dataclass
 class SanafeSegmentRecord:
     """Per-neural-``HybridStage`` record produced by one ``chip.sim()`` call."""
 
@@ -200,6 +303,22 @@ class SanafeSegmentRecord:
     # GUI floorplan + NoC overlay ---------------------------------------------
     arch_geometry: Optional["SanafeArchGeometry"] = None
     noc_links: List["SanafeNocLink"] = field(default_factory=list)
+    # NoC link-level congestion (per single mesh edge, XY-routed).
+    noc_link_load: List["SanafeNocLinkLoad"] = field(default_factory=list)
+    # Reconstructed per-cycle energy breakdown for the waterfall chart.
+    cycle_energy: List["SanafeCycleEnergyPoint"] = field(default_factory=list)
+    # Per-(cycle, depth) firing counts for the cascade-timeline view.
+    cascade: List["SanafeCascadePoint"] = field(default_factory=list)
+    # Per-cycle critical-core series for the critical-core highlight.
+    critical_cores: List["SanafeCriticalCore"] = field(default_factory=list)
+    # Static connectivity edges (independent of activity) for the overlay.
+    connectivity: List["SanafeConnectivityEdge"] = field(default_factory=list)
+    # Optional HCM↔SF parity-gate deltas, attached by the pipeline step.
+    hcm_diff: List["SanafeCoreDiff"] = field(default_factory=list)
+    # Per-cycle compact NoC traffic for the animated playback view.
+    # Each cycle is a list of ``[src_x, src_y, dst_x, dst_y, count]``;
+    # empty when ``log_message_trace=False``.
+    noc_traffic_per_cycle: List[List[List[int]]] = field(default_factory=list)
 
 
 @dataclass

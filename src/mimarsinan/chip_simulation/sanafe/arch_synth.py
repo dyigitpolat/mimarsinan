@@ -22,6 +22,7 @@ monkey-patch it to keep the suite runnable without SANA-FE installed.
 
 from __future__ import annotations
 
+import math
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -114,6 +115,17 @@ class ArchSpec:
     # spec-construction time so failures surface early.
     dendrite_plugin_path: str = field(default="")
     soma_plugin_path: str = field(default="")
+    # 2D NoC mesh layout — chip is ``mesh_width × mesh_height`` tiles.
+    # ``derive_arch_spec`` picks a roughly-square layout by default
+    # (``mesh_width = ceil(sqrt(n_tiles))``) so the GUI floorplan and the
+    # SANA-FE NoC routing both treat the chip as a 2D mesh.
+    mesh_width: int = 1
+    mesh_height: int = 1
+    # Final cores-per-tile (after auto-resolution of ``0``).  Stored so
+    # ``net_synth`` can pack cores into tiles using the same arithmetic
+    # the YAML synthesiser did — without this the runner and the arch
+    # disagree on which tile each core lives in.
+    cores_per_tile_resolved: int = 1
 
     @property
     def total_cores(self) -> int:
@@ -175,14 +187,30 @@ def derive_arch_spec(
         )
 
     # One SANA-FE core per HardCore — no extra input-host cores.
+    # ``cores_per_tile <= 0`` means "auto": pick ``ceil(sqrt(total_cores))``
+    # so the chip is a roughly-square 2D mesh, which makes the GUI
+    # floorplan + NoC visualisations actually 2D (a 1×N row of cores
+    # collapses both axes onto the same line and hides spatial structure).
+    # Users who want a single-tile chip can pass ``cores_per_tile=total_cores``
+    # explicitly.
     if cores_per_tile <= 0:
-        n_tiles = 1
-        n_cores_per_tile = [total_cores]
-    else:
-        n_tiles = (total_cores + cores_per_tile - 1) // cores_per_tile
-        n_cores_per_tile = [cores_per_tile] * (n_tiles - 1)
-        last = total_cores - cores_per_tile * (n_tiles - 1)
-        n_cores_per_tile.append(last)
+        cores_per_tile = max(1, math.isqrt(total_cores))
+        if cores_per_tile * cores_per_tile < total_cores:
+            cores_per_tile += 1
+    n_tiles = (total_cores + cores_per_tile - 1) // cores_per_tile
+    n_cores_per_tile = [cores_per_tile] * (n_tiles - 1)
+    last = total_cores - cores_per_tile * (n_tiles - 1)
+    n_cores_per_tile.append(last)
+
+    # 2D mesh layout for the SANA-FE NoC.  ``mesh_width = ceil(sqrt(n_tiles))``
+    # produces a roughly-square chip; remainder rows on the last row are fine
+    # — SANA-FE accepts under-filled mesh rows.  Captured into ArchSpec so
+    # the runner can stamp ``tile_index → (mesh_x, mesh_y)`` into
+    # ``SanafeArchGeometry`` for the GUI floorplan.
+    mesh_width = max(1, math.isqrt(n_tiles))
+    if mesh_width * mesh_width < n_tiles:
+        mesh_width += 1
+    mesh_height = (n_tiles + mesh_width - 1) // mesh_width
 
     name = f"mimarsinan_{preset_name}_{total_cores}core"
     return ArchSpec(
@@ -194,6 +222,9 @@ def derive_arch_spec(
         preset=preset,
         dendrite_plugin_path=dendrite_so,
         soma_plugin_path=soma_so,
+        mesh_width=mesh_width,
+        mesh_height=mesh_height,
+        cores_per_tile_resolved=cores_per_tile,
     )
 
 
@@ -307,8 +338,8 @@ def _render_arch_yaml(spec: ArchSpec) -> str:
   name: {spec.name}
   attributes:
     topology: mesh
-    width: {spec.n_tiles}
-    height: 1
+    width: {spec.mesh_width}
+    height: {spec.mesh_height}
     link_buffer_size: 16
     sync_model: fixed
     latency_sync: 0.0

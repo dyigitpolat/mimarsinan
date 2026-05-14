@@ -305,10 +305,19 @@ def create_app(
                         content=payload,
                         headers={"Cache-Control": "public, max-age=3600, immutable"},
                     )
-        # No explicit working_dir is exposed here — disk fallback is only
-        # available for subprocess/historical runs (handled by the mirror
-        # endpoints below). For the primary collector, if the in-memory
-        # store missed, the resource simply isn't available.
+        # Disk fallback: the snapshot executor writes every materialised
+        # resource to ``<working_dir>/_GUI_STATE/resources/<step>/<kind>/<rid>``
+        # on step completion (``gui/__init__.py:_finalize``), so resources
+        # survive process restarts.  When the user resumes a run (the new
+        # process starts with an empty ResourceStore — earlier steps'
+        # descriptors are never re-registered), we still have the PNG on
+        # disk.  Same code path the historical/active mirror endpoints
+        # take, just plumbed in here too.
+        working_dir = collector.get_working_directory()
+        if working_dir:
+            return await asyncio.to_thread(
+                _serve_resource_from_disk, working_dir, step_name, kind, rid,
+            )
         return JSONResponse(status_code=404, content={"error": "resource not found"})
 
     @app.get("/api/metrics")

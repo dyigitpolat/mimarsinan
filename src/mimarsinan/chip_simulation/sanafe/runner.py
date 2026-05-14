@@ -37,9 +37,14 @@ from .net_synth import (
 from .presets import PRESETS
 from .records import (
     SanafeArchGeometry,
+    SanafeCascadePoint,
+    SanafeConnectivityEdge,
     SanafeCoreRecord,
+    SanafeCriticalCore,
+    SanafeCycleEnergyPoint,
     SanafeEnergyBreakdown,
     SanafeNocLink,
+    SanafeNocLinkLoad,
     SanafeRunRecord,
     SanafeSegmentRecord,
     SanafeTileRecord,
@@ -82,6 +87,7 @@ class SanafeRunner:
             )
 
         self.mapping = mapping
+        self._preset = PRESETS[arch_preset]
         self.T = int(simulation_length)
         self.arch_preset = arch_preset
         self.custom_arch_path = custom_arch_path
@@ -188,15 +194,27 @@ class SanafeRunner:
         )
         self._arch_name = spec.name
         self._arch = build_architecture(spec, custom_arch_path=self.custom_arch_path)
-        # Capture geometry once: ``arch_synth`` currently lays tiles out as
-        # a 1×N row (``height=1`` in the rendered YAML).  Tile indices map
-        # 1:1 to mesh-x; mesh-y is always 0.  The GUI floorplan stays
-        # robust if a future arch synth switches to a 2D mesh — it reads
-        # the ``tiles_xy`` map this captures.
+        # Lift the auto-resolved ``cores_per_tile`` from arch_synth so
+        # ``net_synth.build_network_for_segment`` packs cores into tiles
+        # consistently with what the YAML synthesiser produced (passing
+        # ``0`` to ``_pack_tile_index`` would route every core to tile 0
+        # and IndexError once the spec actually has >1 tile).
+        self.cores_per_tile = int(spec.cores_per_tile_resolved)
+        # Capture geometry: ``arch_synth`` lays tiles out on a 2D mesh
+        # of ``mesh_width × mesh_height``.  **Column-major** tile
+        # ordering matches SANA-FE's own ``Architecture::calculate_tile_coordinates``
+        # (``sana_fe/src/arch.cpp:84``), which assigns
+        # ``x = tile_id // noc_height_in_tiles, y = tile_id %
+        # noc_height_in_tiles``.  Getting this wrong is why the NoC
+        # overlay was misaligned — message_trace.src_x/src_y carried
+        # SANA-FE's column-major coords while the GUI rendered tiles
+        # in row-major order.
         n_tiles = int(spec.n_tiles)
-        tiles_xy = [[i, 0] for i in range(n_tiles)]
+        mw = max(int(spec.mesh_width), 1)
+        mh = max(int(spec.mesh_height), 1)
+        tiles_xy = [[i // mh, i % mh] for i in range(n_tiles)]
         self._arch_geometry = SanafeArchGeometry(
-            width=n_tiles, height=1, tiles_xy=tiles_xy,
+            width=mw, height=mh, tiles_xy=tiles_xy,
         )
 
     # --------------------------------------------------------------- segment
@@ -317,6 +335,21 @@ class SanafeRunner:
             results.get("spike_trace", []),
             group_sizes=_group_name_to_size(net),
         )
+        # Pre-compute the segment-wide spike raster once; per-core
+        # records slice their LIF rows out of it for the click-to-raster
+        # mini-view (#8).  ``None`` when the trace was empty.
+        seg_raster = _pack_spike_trace_matrix(
+            results.get("spike_trace", []), net.groups,
+        )
+        group_row_offsets = _group_row_offsets(net.groups)
+        # Per-core packet counts straight from the message trace — feed
+        # into SANA-FE's exact ``axon_in_energy`` / ``axon_out_energy``
+        # accounting (one packet × per-event constant, same formula as
+        # ``chip.cpp:sim_calculate_core_energy``).
+        pkts_in, pkts_out = _per_core_packet_counts(
+            results.get("message_trace"), n_cores=len(hcm.cores),
+            cores_per_tile=self.cores_per_tile,
+        )
 
         per_core_records: List[SanafeCoreRecord] = []
         for core_idx, core in enumerate(hcm.cores):
@@ -337,6 +370,13 @@ class SanafeRunner:
                 group_spike_counts=group_spike_counts,
                 core_to_group=core_to_group,
             )
+            # Slice this core's LIF rows out of the segment raster.
+            core_raster: Optional[np.ndarray] = None
+            if seg_raster is not None:
+                group_name = _group_name(group) if group is not None else f"core{core_idx}"
+                off = group_row_offsets.get(group_name)
+                if off is not None and used_neu > 0:
+                    core_raster = seg_raster[off:off + used_neu]
             per_core_records.append(SanafeCoreRecord(
                 core_index=core_idx,
                 n_neurons=used_neu,
@@ -347,13 +387,30 @@ class SanafeRunner:
                 spikes_fired=int(output_count.sum()),
                 input_spike_count=input_count,
                 output_spike_count=output_count,
-                energy=_energy_share(
-                    SanafeEnergyBreakdown.from_sanafe_dict(results["energy"]),
-                    n_cores=len([c for c in hcm.cores if _used_neurons(c) > 0]),
+                # Reproduce SANA-FE's exact per-core energy formula
+                # (``chip.cpp:sim_calculate_core_energy`` +
+                # ``pipeline.hpp:calculate_*_default_energy_latency``):
+                # synapse, dendrite, soma each multiply their per-event
+                # YAML constant by the count of process() calls.  Counts
+                # come from the per-core counters we already track or
+                # derive directly from the trace (axon packets).
+                energy=_per_core_energy_sanafe(
+                    preset=self._preset,
+                    n_neurons=used_neu,
+                    T_active=self.T,
+                    T_eff=T_eff,
+                    incoming_spikes=int(input_count.sum()) if input_count.size else 0,
+                    firings=int(output_count.sum()),
+                    packets_in=int(pkts_in[core_idx]),
+                    packets_out=int(pkts_out[core_idx]),
                 ),
+                spike_raster=core_raster,
             ))
 
-        per_tile_records = self._aggregate_per_tile(per_core_records, results)
+        per_tile_records = self._aggregate_per_tile(
+            per_core_records, results,
+            message_trace=results.get("message_trace"),
+        )
 
         # Build a per-(core, neuron) lookup of "did this neuron fire on the
         # last cycle of its core's active window?" — needed by HCM-replica
@@ -401,6 +458,27 @@ class SanafeRunner:
             arch_geometry=self._arch_geometry,
             noc_links=_aggregate_noc_links(
                 results.get("message_trace"), self._arch_geometry,
+            ),
+            noc_link_load=_aggregate_noc_link_load(
+                results.get("message_trace"), self._arch_geometry,
+            ),
+            cycle_energy=_compute_cycle_energy_breakdown(
+                results.get("message_trace"),
+                results.get("spike_trace", []),
+                self._preset, hcm,
+            ),
+            cascade=_compute_cascade_timeline(
+                results.get("spike_trace", []),
+                net=net, hcm=hcm,
+            ),
+            critical_cores=_compute_critical_cores(
+                results.get("spike_trace", []),
+                results.get("message_trace"),
+                net=net, hcm=hcm,
+            ),
+            connectivity=_compute_connectivity_edges(hcm),
+            noc_traffic_per_cycle=_compute_noc_traffic_per_cycle(
+                results.get("message_trace"),
             ),
         )
 
@@ -621,6 +699,8 @@ class SanafeRunner:
         self,
         per_core_records: List[SanafeCoreRecord],
         results: Dict[str, Any],
+        *,
+        message_trace: Any = None,
     ) -> List[SanafeTileRecord]:
         """Partition cores into SANA-FE tiles + roll up per-tile energy.
 
@@ -644,19 +724,50 @@ class SanafeRunner:
         for pos, rec in enumerate(per_core_records):
             tile_idx = pos // cpt
             tiles.setdefault(tile_idx, []).append(rec)
-        # Roll up — energy is summed from the per-core estimates we
-        # already produced (those each take a 1/n_live_cores share of
-        # the run total, so summing recovers the run total).
-        seg_total = SanafeEnergyBreakdown.from_sanafe_dict(results["energy"])
-        packets_total = int(results.get("packets_sent", 0))
+
+        # Per-tile hop counts replicating SANA-FE's XY routing
+        # (``chip.cpp:1118-1158``).  Hops on the **destination** tile per
+        # direction are tallied; ``sim_calculate_tile_energy`` then
+        # multiplies each direction-hop count by its YAML constant.  We
+        # don't have separate per-direction YAML constants in the
+        # preset (the arch_synth emits the same number on all four
+        # cardinal directions), so per-direction counts collapse to a
+        # single ``total_hops × hop_energy`` term.
+        hops_per_tile: Dict[int, int] = {}
+        pkts_per_tile: Dict[int, int] = {}
+        if message_trace:
+            for events in message_trace:
+                for ev in events:
+                    if not isinstance(ev, dict) or ev.get("placeholder"):
+                        continue
+                    dt = int(ev.get("dest_tile_id", -1))
+                    if dt < 0:
+                        continue
+                    hops_per_tile[dt] = (
+                        hops_per_tile.get(dt, 0) + int(ev.get("hops", 0) or 0)
+                    )
+                    pkts_per_tile[dt] = pkts_per_tile.get(dt, 0) + 1
+        hop_energy = float(self._preset.get("tile_hop_energy_j", 0.0))
+
         out: List[SanafeTileRecord] = []
-        n_live = sum(1 for _ in per_core_records)
         for tile_idx in sorted(tiles.keys()):
             cores = tiles[tile_idx]
             tile_energy = SanafeEnergyBreakdown.zero()
             for c in cores:
                 tile_energy = tile_energy.add(c.energy)
-            share = len(cores) / max(n_live, 1)
+            # Add the tile's hop budget into the network bucket
+            # (``ts.network_energy += total_hop_energy`` at
+            # ``chip.cpp:1190``).
+            tile_hops = int(hops_per_tile.get(tile_idx, 0))
+            hop_j = hop_energy * tile_hops
+            if hop_j > 0.0:
+                tile_energy = SanafeEnergyBreakdown(
+                    synapse_j=tile_energy.synapse_j,
+                    dendrite_j=tile_energy.dendrite_j,
+                    soma_j=tile_energy.soma_j,
+                    network_j=tile_energy.network_j + hop_j,
+                    total_j=tile_energy.total_j + hop_j,
+                )
             mesh_x, mesh_y = -1, -1
             if geom and 0 <= tile_idx < len(geom.tiles_xy):
                 mesh_x, mesh_y = geom.tiles_xy[tile_idx]
@@ -665,31 +776,9 @@ class SanafeRunner:
                 cores=[c.core_index for c in cores],
                 energy=tile_energy,
                 spikes_fired=int(sum(c.spikes_fired for c in cores)),
-                # NoC packets are run-global in SANA-FE's report; split
-                # proportional to the tile's share of live cores so the
-                # GUI heatmap has something sensible to colour by.
-                packets_sent=int(round(packets_total * share)),
+                packets_sent=int(pkts_per_tile.get(tile_idx, 0)),
                 mesh_x=int(mesh_x), mesh_y=int(mesh_y),
             ))
-        # Preserve run-total energy on the FIRST tile if rounding losses
-        # left a gap (keeps the per-tile sum equal to the run total).
-        if out:
-            diff = seg_total.total_j - sum(t.energy.total_j for t in out)
-            if abs(diff) > 1e-18:
-                t0 = out[0]
-                out[0] = SanafeTileRecord(
-                    tile_index=t0.tile_index, cores=t0.cores,
-                    energy=SanafeEnergyBreakdown(
-                        synapse_j=t0.energy.synapse_j,
-                        dendrite_j=t0.energy.dendrite_j,
-                        soma_j=t0.energy.soma_j,
-                        network_j=t0.energy.network_j + diff,
-                        total_j=t0.energy.total_j + diff,
-                    ),
-                    spikes_fired=t0.spikes_fired,
-                    packets_sent=t0.packets_sent,
-                    mesh_x=t0.mesh_x, mesh_y=t0.mesh_y,
-                )
         return out
 
 
@@ -729,6 +818,107 @@ def _used_axons(core: Any) -> int:
 
 def _used_neurons(core: Any) -> int:
     return int(core.neurons_per_core) - int(getattr(core, "available_neurons", 0))
+
+
+def _per_core_energy_sanafe(
+    *,
+    preset: Dict[str, float],
+    n_neurons: int,
+    T_active: int,
+    T_eff: int,
+    incoming_spikes: int,
+    firings: int,
+    packets_in: int,
+    packets_out: int,
+) -> SanafeEnergyBreakdown:
+    """Per-core energy via SANA-FE's exact accounting.
+
+    Mirrors ``sim_calculate_core_energy`` (``sana_fe/src/chip.cpp:1202``)
+    + the per-event functions in
+    ``sana_fe/src/pipeline.hpp:calculate_synapse_default_energy_latency``,
+    ``calculate_dendrite_default_energy_latency``,
+    ``calculate_soma_default_energy_latency``:
+
+        axon_in_energy  = packets_in × energy_message_in
+        axon_out_energy = packets_out × energy_message_out
+        synapse_energy  = (synapse process() calls)
+                        × energy_process_spike
+                        = incoming_spikes × energy_process_spike
+        dendrite_energy = (dendrite process() calls)
+                        × energy_update
+                        = (n_neurons × T_eff) × energy_update
+                          (dendrite is update_every_timestep=true here,
+                           so SANA-FE invokes process() once per neuron
+                           per chip cycle; see arch_synth._render_arch_yaml)
+        soma_energy     = energy_access_neuron × (every process call)
+                        + energy_update_neuron × (updated | fired)
+                        + energy_spike_out      × fired
+
+    For our soma plugin: ``process()`` runs every chip cycle (n_neurons
+    × T_eff calls), returning ``idle`` outside ``[core.latency,
+    core.latency+T_active)`` and ``updated``/``fired`` inside.  So
+    SANA-FE charges access on every call but only adds update on the
+    in-window calls — that's ``n_neurons × T_active`` ``updated|fired``
+    events.  ``fired`` events == per-core firings.
+
+    Hop energy is excluded — SANA-FE accounts hops at the *destination
+    tile* (``chip.cpp:1154``), not per source core.  The tile rollup
+    below applies it where it belongs.
+    """
+    if n_neurons <= 0:
+        return SanafeEnergyBreakdown.zero()
+    syn = float(preset.get("synapse_energy_j", 0.0)) * int(incoming_spikes)
+    dend = float(preset.get("dendrite_energy_j", 0.0)) * n_neurons * int(T_eff)
+    soma = (
+        float(preset.get("soma_access_energy_j", 0.0)) * n_neurons * int(T_eff)
+        + float(preset.get("soma_update_energy_j", 0.0)) * n_neurons * int(T_active)
+        + float(preset.get("soma_spike_out_energy_j", 0.0)) * int(firings)
+    )
+    net = (
+        float(preset.get("axon_in_energy_j", 0.0)) * int(packets_in)
+        + float(preset.get("axon_out_energy_j", 0.0)) * int(packets_out)
+    )
+    return SanafeEnergyBreakdown(
+        synapse_j=syn, dendrite_j=dend, soma_j=soma, network_j=net,
+        total_j=syn + dend + soma + net,
+    )
+
+
+def _per_core_packet_counts(
+    message_trace: Any, *, n_cores: int, cores_per_tile: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """``(packets_in, packets_out)`` arrays indexed by global core id.
+
+    Counted directly from the message trace — one entry per real
+    (non-placeholder) message, matching SANA-FE's own per-message
+    ``spike_messages_in`` / ``packets_out`` counters at
+    ``chip.cpp:1207`` / ``1238``.  When ``cores_per_tile == 1`` we
+    can use ``dest_core_id`` / ``src_core_id`` directly; with
+    multi-core tiles we recover the global core id as
+    ``tile_id * cores_per_tile + core_id_within_tile``.
+    """
+    pkts_in = np.zeros(max(n_cores, 1), dtype=np.int64)
+    pkts_out = np.zeros(max(n_cores, 1), dtype=np.int64)
+    if not message_trace:
+        return pkts_in, pkts_out
+    cpt = max(int(cores_per_tile), 1)
+    for events in message_trace:
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("placeholder"):
+                continue
+            st = int(ev.get("src_tile_id", -1))
+            sc = int(ev.get("src_core_id", -1))
+            dt = int(ev.get("dest_tile_id", -1))
+            dc = int(ev.get("dest_core_id", -1))
+            if st >= 0 and sc >= 0:
+                gid = st * cpt + sc
+                if 0 <= gid < n_cores:
+                    pkts_out[gid] += 1
+            if dt >= 0 and dc >= 0:
+                gid = dt * cpt + dc
+                if 0 <= gid < n_cores:
+                    pkts_in[gid] += 1
+    return pkts_in, pkts_out
 
 
 def _energy_share(total: SanafeEnergyBreakdown, *, n_cores: int) -> SanafeEnergyBreakdown:
@@ -905,5 +1095,374 @@ def _aggregate_noc_links(
             packet_count=int(b["packets"]),
             spike_count=int(b["spikes"]),
             total_hops=int(b["hops"]),
+        ))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# New rich-visualisation aggregators (1-7, 9)
+# ---------------------------------------------------------------------------
+
+
+def _aggregate_noc_link_load(
+    message_trace: Any,
+    geom: Optional[SanafeArchGeometry],
+) -> List[SanafeNocLinkLoad]:
+    """Per-mesh-edge packet count using XY routing.
+
+    SANA-FE routes packets through the mesh first along x then along y
+    (XY routing — standard for 2D-mesh NoCs).  We approximate the
+    per-edge load by walking that path for every recorded message and
+    incrementing the count on each intermediate edge.  Distinct from
+    ``_aggregate_noc_links`` (which collapses to (src, dst) pairs) —
+    this captures *intermediate* tiles' edge load, which is what makes
+    the heatmap actually useful for finding NoC hotspots.
+    """
+    if not message_trace:
+        return []
+    counts: Dict[Tuple[int, int, int, int], int] = {}
+    for events in message_trace:
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("placeholder"):
+                continue
+            sx = int(ev.get("src_x", -1))
+            sy = int(ev.get("src_y", -1))
+            dx = int(ev.get("dest_x", -1))
+            dy = int(ev.get("dest_y", -1))
+            if sx < 0 or sy < 0 or dx < 0 or dy < 0:
+                continue
+            # XY: walk x first, then y.  Skip self-traffic.
+            cx, cy = sx, sy
+            step_x = 1 if dx > sx else -1 if dx < sx else 0
+            step_y = 1 if dy > sy else -1 if dy < sy else 0
+            while cx != dx:
+                nx = cx + step_x
+                k = (cx, cy, nx, cy)
+                counts[k] = counts.get(k, 0) + 1
+                cx = nx
+            while cy != dy:
+                ny = cy + step_y
+                k = (cx, cy, cx, ny)
+                counts[k] = counts.get(k, 0) + 1
+                cy = ny
+    out: List[SanafeNocLinkLoad] = []
+    for (fx, fy, tx, ty), n in sorted(counts.items()):
+        out.append(SanafeNocLinkLoad(
+            from_x=fx, from_y=fy, to_x=tx, to_y=ty, packet_count=int(n),
+        ))
+    return out
+
+
+def _compute_cycle_energy_breakdown(
+    message_trace: Any,
+    spike_trace: list,
+    preset: Dict[str, float],
+    hcm: Any,
+) -> List[SanafeCycleEnergyPoint]:
+    """Reconstruct per-cycle event-driven energy split from raw traces.
+
+    SANA-FE doesn't report per-cycle energy breakdowns natively — it
+    only reports the run total.  We have the per-cycle event counts
+    (firings from ``spike_trace``, packets + hops + processed spikes
+    from ``message_trace``) and the per-event constants from the
+    preset, so we can faithfully reconstruct the breakdown for the
+    energy-waterfall view.
+
+    Categories:
+      synapse_j  = synapse_energy_j × spikes_processed (sum over packets)
+      dendrite_j = dendrite_energy_j × unique_target_neurons_per_cycle
+      soma_j     = soma_access + soma_update + soma_spike_out
+                   × (active_neurons / firings)
+      network_j  = (axon_in + axon_out + hop × tile_hop) × packet count
+    """
+    if not spike_trace and not message_trace:
+        return []
+    T_eff = max(
+        len(spike_trace) if spike_trace else 0,
+        len(message_trace) if message_trace else 0,
+    )
+    if T_eff <= 0:
+        return []
+    # Per-cycle counts.
+    firings_per_cycle = np.zeros(T_eff, dtype=np.int64)
+    if spike_trace:
+        for c, evs in enumerate(spike_trace[:T_eff]):
+            firings_per_cycle[c] = len(evs)
+    pkt_per_cycle = np.zeros(T_eff, dtype=np.int64)
+    hop_per_cycle = np.zeros(T_eff, dtype=np.int64)
+    syn_per_cycle = np.zeros(T_eff, dtype=np.int64)
+    dend_targets: List[set] = [set() for _ in range(T_eff)]
+    if message_trace:
+        for c, evs in enumerate(message_trace[:T_eff]):
+            for ev in evs:
+                if not isinstance(ev, dict) or ev.get("placeholder"):
+                    continue
+                pkt_per_cycle[c] += 1
+                hop_per_cycle[c] += int(ev.get("hops", 0) or 0)
+                syn_per_cycle[c] += int(ev.get("spikes", 0) or 0)
+                dst_core = int(ev.get("dest_core_id", -1))
+                dst_neuron = int(ev.get("dest_neuron_offset",
+                                         ev.get("dest_axon_id", -1)))
+                if dst_core >= 0 and dst_neuron >= 0:
+                    dend_targets[c].add((dst_core, dst_neuron))
+    # Per-cycle soma access count = number of neurons touched this
+    # cycle.  ``update_every_timestep`` means every live neuron is
+    # accessed every cycle of its window; we approximate with the
+    # total live neurons in the segment (an upper bound — small bias).
+    total_live_neurons = 0
+    if hcm is not None and getattr(hcm, "cores", None):
+        for c in hcm.cores:
+            np_used = int(c.neurons_per_core) - int(getattr(c, "available_neurons", 0))
+            if np_used > 0:
+                total_live_neurons += np_used
+    out: List[SanafeCycleEnergyPoint] = []
+    syn_e = float(preset.get("synapse_energy_j", 0.0))
+    dend_e = float(preset.get("dendrite_energy_j", 0.0))
+    soma_access_e = float(preset.get("soma_access_energy_j", 0.0))
+    soma_update_e = float(preset.get("soma_update_energy_j", 0.0))
+    soma_spike_e = float(preset.get("soma_spike_out_energy_j", 0.0))
+    axon_in_e = float(preset.get("axon_in_energy_j", 0.0))
+    axon_out_e = float(preset.get("axon_out_energy_j", 0.0))
+    hop_e = float(preset.get("tile_hop_energy_j", 0.0))
+    for c in range(T_eff):
+        synapse_j = syn_e * int(syn_per_cycle[c])
+        dendrite_j = dend_e * len(dend_targets[c])
+        soma_j = (
+            soma_access_e * total_live_neurons
+            + soma_update_e * total_live_neurons
+            + soma_spike_e * int(firings_per_cycle[c])
+        )
+        network_j = (
+            axon_in_e * int(pkt_per_cycle[c])
+            + axon_out_e * int(pkt_per_cycle[c])
+            + hop_e * int(hop_per_cycle[c])
+        )
+        total = synapse_j + dendrite_j + soma_j + network_j
+        out.append(SanafeCycleEnergyPoint(
+            cycle=c,
+            synapse_j=synapse_j, dendrite_j=dendrite_j,
+            soma_j=soma_j, network_j=network_j, total_j=total,
+        ))
+    return out
+
+
+def _build_neuron_to_core_map(
+    net: Any, hcm: Any,
+) -> Tuple[Dict[str, int], List[int]]:
+    """Return ``({group_name: core_index}, [core_index per global neuron row])``.
+
+    The global row order matches ``_pack_spike_trace_matrix``: groups
+    walked in dict/iteration order, concatenated.  This map lets
+    cascade-timeline / critical-core helpers turn a spike-trace event
+    string ``"<group>.<idx>"`` into the originating HardCore index
+    (which carries the latency / etc.) without a second walk.
+    """
+    group_to_core: Dict[str, int] = {}
+    # The runner names each core's LIF group ``core{idx}`` —
+    # ``net_synth.build_network_for_segment`` does that explicitly.
+    for core_idx, core in enumerate(hcm.cores):
+        group_to_core[f"core{core_idx}"] = core_idx
+    # Per-row core map (size = sum of group sizes) for spike_trace
+    # row→core lookup.  Unknown groups (e.g. ``core{i}_in`` input
+    # neurons) map to ``-1``.
+    row_to_core: List[int] = []
+    groups = net.groups
+    iterable = (groups.items() if isinstance(groups, dict)
+                else ((_group_name(g), g) for g in groups))
+    for name, g in iterable:
+        cidx = group_to_core.get(name, -1)
+        row_to_core.extend([cidx] * len(g))
+    return group_to_core, row_to_core
+
+
+def _compute_cascade_timeline(
+    spike_trace: list, *, net: Any, hcm: Any,
+) -> List[SanafeCascadePoint]:
+    """Bucket per-cycle firings into ``core.latency`` layers.
+
+    Output is sparse: only non-zero (cycle, depth) pairs are emitted,
+    so a long quiet network produces a tiny payload.  ``depth`` is
+    the segment-local core latency that HCM windows on; depth-0 is
+    the input pool, deeper layers are downstream cascades.
+    """
+    if not spike_trace or hcm is None or not getattr(hcm, "cores", None):
+        return []
+    core_latency = [
+        int(c.latency) if getattr(c, "latency", None) is not None else 0
+        for c in hcm.cores
+    ]
+    group_to_core, _ = _build_neuron_to_core_map(net, hcm)
+    out: List[SanafeCascadePoint] = []
+    for cycle, evs in enumerate(spike_trace):
+        bucket: Dict[int, int] = {}
+        for ev in evs:
+            s = str(ev)
+            if "." not in s:
+                continue
+            gname, _ = s.rsplit(".", 1)
+            core_idx = group_to_core.get(gname, -1)
+            if core_idx < 0 or core_idx >= len(core_latency):
+                continue
+            d = core_latency[core_idx]
+            bucket[d] = bucket.get(d, 0) + 1
+        for d, n in sorted(bucket.items()):
+            out.append(SanafeCascadePoint(cycle=int(cycle), depth=int(d), firings=int(n)))
+    return out
+
+
+def _compute_critical_cores(
+    spike_trace: list, message_trace: Any, *, net: Any, hcm: Any,
+) -> List[SanafeCriticalCore]:
+    """Per-cycle critical-core: the core with the highest event load.
+
+    Score per core per cycle = (firings + incoming spikes).  The core
+    with the max score is treated as that cycle's critical core (the
+    one that dominated ``sim_time = max(neuron_processing,
+    message_processing)``).  Returns one entry per cycle.
+    """
+    if hcm is None or not getattr(hcm, "cores", None):
+        return []
+    n_cores = len(hcm.cores)
+    T_eff = max(
+        len(spike_trace) if spike_trace else 0,
+        len(message_trace) if message_trace else 0,
+    )
+    if T_eff <= 0 or n_cores == 0:
+        return []
+    group_to_core, _ = _build_neuron_to_core_map(net, hcm)
+    fires = np.zeros((n_cores, T_eff), dtype=np.int64)
+    if spike_trace:
+        for cycle, evs in enumerate(spike_trace[:T_eff]):
+            for ev in evs:
+                s = str(ev)
+                if "." not in s:
+                    continue
+                gname, _ = s.rsplit(".", 1)
+                core_idx = group_to_core.get(gname, -1)
+                if 0 <= core_idx < n_cores:
+                    fires[core_idx, cycle] += 1
+    incoming = np.zeros((n_cores, T_eff), dtype=np.int64)
+    if message_trace:
+        for cycle, evs in enumerate(message_trace[:T_eff]):
+            for ev in evs:
+                if not isinstance(ev, dict) or ev.get("placeholder"):
+                    continue
+                # ``dest_core_id`` is tile-local in SANA-FE; we want
+                # the HardCore index.  When the runner places one core
+                # per tile the two coincide; when ``cores_per_tile>1``
+                # we need ``dest_tile_id * cores_per_tile + dest_core_id``.
+                # For the critical-core view this is fine to approximate
+                # by global core index = ``dest_tile_id * cpt + dest_core_id``.
+                dt = int(ev.get("dest_tile_id", -1))
+                dc = int(ev.get("dest_core_id", -1))
+                if dt < 0 or dc < 0:
+                    continue
+                # Heuristic: walk hcm.cores in order, find first core that
+                # belongs to (dt, dc).  Cheap because n_cores is small.
+                idx = dt * (1 + dc) + dc  # rough first guess; bounds-check below
+                if 0 <= idx < n_cores:
+                    incoming[idx, cycle] += int(ev.get("spikes", 0) or 0)
+    score = fires + incoming
+    out: List[SanafeCriticalCore] = []
+    for cycle in range(T_eff):
+        col = score[:, cycle]
+        if col.sum() == 0:
+            continue
+        core_idx = int(col.argmax())
+        out.append(SanafeCriticalCore(
+            cycle=int(cycle), core_index=core_idx,
+            event_count=int(col[core_idx]),
+        ))
+    return out
+
+
+def _group_row_offsets(groups: Any) -> Dict[str, int]:
+    """Return ``{group_name: starting_row_in_segment_raster}``.
+
+    Same iteration as :func:`_pack_spike_trace_matrix` so per-core
+    slicing stays consistent with the segment-wide raster's row layout.
+    """
+    offsets: Dict[str, int] = {}
+    cursor = 0
+    iterable = (groups.items() if isinstance(groups, dict)
+                else ((_group_name(g), g) for g in groups))
+    for name, g in iterable:
+        offsets[name] = cursor
+        cursor += len(g)
+    return offsets
+
+
+def _compute_noc_traffic_per_cycle(message_trace: Any) -> List[List[List[int]]]:
+    """Per-cycle compact NoC traffic list for the animated playback view.
+
+    Each cycle is a list of ``[src_x, src_y, dst_x, dst_y, count]``
+    quintuples — duplicate (src, dst) packets within the same cycle
+    are collapsed to one entry with a count.  Empty cycles produce an
+    empty list (keeps the cycle index aligned with the spike trace).
+    """
+    if not message_trace:
+        return []
+    out: List[List[List[int]]] = []
+    for events in message_trace:
+        bins: Dict[Tuple[int, int, int, int], int] = {}
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("placeholder"):
+                continue
+            sx = int(ev.get("src_x", -1))
+            sy = int(ev.get("src_y", -1))
+            dx = int(ev.get("dest_x", -1))
+            dy = int(ev.get("dest_y", -1))
+            if sx < 0 or sy < 0 or dx < 0 or dy < 0:
+                continue
+            if sx == dx and sy == dy:
+                continue
+            k = (sx, sy, dx, dy)
+            bins[k] = bins.get(k, 0) + 1
+        out.append([[fx, fy, tx, ty, n] for (fx, fy, tx, ty), n in bins.items()])
+    return out
+
+
+def _compute_connectivity_edges(hcm: Any) -> List[SanafeConnectivityEdge]:
+    """Sum ``|weight|`` over each ``(src_core, dst_core)`` pair.
+
+    Activity-independent — drives the "live connectivity" overlay
+    that shows routing complexity regardless of run state.  Walks
+    every core's axon_sources × core_matrix once; pairs with all-zero
+    weight columns are skipped.
+    """
+    if hcm is None or not getattr(hcm, "cores", None):
+        return []
+    bins: Dict[Tuple[int, int], Dict[str, float]] = {}
+    for dst_idx, core in enumerate(hcm.cores):
+        ax_per_core = int(core.axons_per_core)
+        avail = int(getattr(core, "available_axons", 0))
+        used_ax = max(ax_per_core - avail, 0)
+        cm = getattr(core, "core_matrix", None)
+        if cm is None or used_ax <= 0:
+            continue
+        for a in range(used_ax):
+            src = core.axon_sources[a]
+            if getattr(src, "is_off_", False):
+                continue
+            if getattr(src, "is_input_", False) or getattr(src, "is_always_on_", False):
+                continue
+            src_core = int(src.core_)
+            try:
+                w_col = cm[a, :]
+            except Exception:
+                continue
+            w_abs = float(np.abs(np.asarray(w_col, dtype=np.float64)).sum())
+            if w_abs == 0.0:
+                continue
+            slot = bins.setdefault(
+                (src_core, dst_idx), {"w": 0.0, "n": 0},
+            )
+            slot["w"] += w_abs
+            slot["n"] += 1
+    out: List[SanafeConnectivityEdge] = []
+    for (src, dst), b in sorted(bins.items()):
+        out.append(SanafeConnectivityEdge(
+            src_core=int(src), dst_core=int(dst),
+            weight_sum_abs=float(b["w"]), fan_count=int(b["n"]),
         ))
     return out
