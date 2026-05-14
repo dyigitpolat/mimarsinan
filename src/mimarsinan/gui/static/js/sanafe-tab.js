@@ -1328,7 +1328,18 @@ function renderNocAnimation(elId, seg) {
     };
   });
 
-  function frameForCycle(cycleIdx) {
+  /* Per-cycle polyline data, pre-computed so the slider/playback can
+   * jump to any cycle in O(1).  ``text`` carries hovertext aligned
+   * with each (x, y) sample.
+   *
+   * Replaces the previous Plotly.addFrames + Plotly.animate plumbing:
+   * with two traces in each frame (a stable underlay reference + a
+   * per-cycle polyline) Plotly's animate-by-frame-name kept
+   * intermittently no-op'ing the polyline update — the heatmap
+   * underlay's z reference was unchanged, so Plotly's diff was
+   * skipping the whole frame.  Direct Plotly.restyle on trace 1
+   * sidesteps that machinery entirely. */
+  function buildPolyline(cycleIdx) {
     const cycle = traffic[cycleIdx] || [];
     const xs = [], ys = [], hover = [];
     cycle.forEach(([sx, sy, dx, dy, n]) => {
@@ -1339,31 +1350,30 @@ function renderNocAnimation(elId, seg) {
       ys.push(fy, ty, null);
       hover.push(label, label, '');
     });
+    return { xs, ys, hover };
+  }
+  const polylines = traffic.map((_, i) => buildPolyline(i));
+  const initialIdx = Math.max(0, traffic.findIndex(c => c.length > 0));
+  const frameCount = polylines.length;
+
+  function polylineTrace(p) {
     return {
-      data: [
-        underlay,
-        {
-          x: xs, y: ys,
-          mode: 'lines+markers',
-          line: { color: '#00ffff', width: 2 },
-          marker: { size: 6, color: '#00ffff',
-                    line: { color: 'rgba(0,0,0,0.5)', width: 0.6 } },
-          hoverinfo: 'text', text: hover,
-          showlegend: false,
-        },
-      ],
-      name: String(cycleIdx),
+      x: p.xs, y: p.ys,
+      mode: 'lines+markers',
+      line: { color: '#00ffff', width: 2 },
+      marker: { size: 6, color: '#00ffff',
+                line: { color: 'rgba(0,0,0,0.5)', width: 0.6 } },
+      hoverinfo: 'text', text: p.hover,
+      showlegend: false,
     };
   }
-  const frames = traffic.map((_, i) => frameForCycle(i));
-  const initialIdx = Math.max(0, traffic.findIndex(c => c.length > 0));
 
   /* Reverse the Y axis so z[0] / mesh_y=0 lands at the TOP of the
    * plot — matches the static floorplan's CSS-grid layout where row 0
    * is also at the top.  Plotly's default Y axis goes up, which put
    * the chip upside-down. */
   try { Plotly.purge(el); } catch (_) { /* ignore */ }
-  Plotly.newPlot(el, frames[initialIdx].data, {
+  Plotly.newPlot(el, [underlay, polylineTrace(polylines[initialIdx])], {
     height: Math.max(240, cellRows * 14 + 30),
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(8,12,20,0.6)',
@@ -1375,7 +1385,6 @@ function renderNocAnimation(elId, seg) {
     margin: { l: 10, r: 10, t: 10, b: 10 },
     shapes: tileShapes,
   });
-  Plotly.addFrames(el, frames);
 
   /* Custom HTML controls — single play/pause toggle + slider +
    * cycle-counter in one tight row, replacing Plotly's bulky
@@ -1385,10 +1394,10 @@ function renderNocAnimation(elId, seg) {
   const label  = document.getElementById(`${elId}-label`);
   if (toggle && slider && label) {
     slider.min = '0';
-    slider.max = String(frames.length - 1);
+    slider.max = String(frameCount - 1);
     slider.step = '1';
     slider.value = String(initialIdx);
-    label.textContent = `cycle ${initialIdx} / ${frames.length - 1}`;
+    label.textContent = `cycle ${initialIdx} / ${frameCount - 1}`;
 
     let cur = initialIdx;
     let playing = false;
@@ -1397,12 +1406,17 @@ function renderNocAnimation(elId, seg) {
     function jumpTo(idx) {
       cur = idx;
       slider.value = String(idx);
-      label.textContent = `cycle ${idx} / ${frames.length - 1}`;
-      Plotly.animate(el, [String(idx)], {
-        mode: 'immediate',
-        frame: { duration: 0, redraw: true },
-        transition: { duration: 0 },
-      });
+      label.textContent = `cycle ${idx} / ${frameCount - 1}`;
+      /* Update ONLY trace 1 (polyline) — trace 0 (underlay) never
+       * changes across cycles.  Plotly.restyle wants every attribute
+       * value wrapped in an array of length = traces selector, so
+       * single-trace updates use a one-element wrapper. */
+      const p = polylines[idx];
+      Plotly.restyle(el, {
+        x: [p.xs],
+        y: [p.ys],
+        text: [p.hover],
+      }, [1]);
     }
     function stopPlaying() {
       if (intervalId !== null) { clearInterval(intervalId); intervalId = null; }
@@ -1413,7 +1427,7 @@ function renderNocAnimation(elId, seg) {
       playing = true;
       toggle.textContent = '⏸';
       intervalId = window.setInterval(() => {
-        const next = (cur + 1) % frames.length;
+        const next = (cur + 1) % frameCount;
         jumpTo(next);
       }, 500);
     }
