@@ -1,6 +1,7 @@
 /* Step detail panel: tab routing, metrics tab, and simple tabs. */
 import { esc, fmtDuration, cssId, safeReact } from './util.js';
 import { renderModelTab } from './model-tab.js';
+import { buildHwStatsPanelHtml } from './hw-stats-panel.js';
 import { renderIRGraphTab } from './ir-graph-tab.js';
 import { renderHardwareTab } from './hardware-tab.js';
 import { renderSearchTab } from './search-tab.js';
@@ -8,6 +9,13 @@ import { renderActivationsTab, renderAdaptationTab } from './scales-tab.js';
 import { renderPruningTab } from './pruning-tab.js';
 import { renderSanafeTab } from './sanafe-tab.js';
 import { initSearchLive, detachSearchLive, replaySearchEvents, syncSearchEventsFromState } from './search-live.js';
+import {
+  initCompilagentLive,
+  detachCompilagentLive,
+  replayCompilagentEvents,
+  syncCompilagentEventsFromState,
+  isCompilagentEvent,
+} from './compilagent-live.js';
 import { setResourceContext } from './resource-urls.js';
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -101,7 +109,12 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   if (state.lastDetailJSON === sig && panel.querySelector('.step-detail-header')) {
     if (newCount > prevCount) updateLiveCharts(stepName, state);
     if (newSearchLen > prevSearchLen && state.activeTab === 'live_search' && state.selectedStep === stepName) {
-      syncSearchEventsFromState(stepName, state);
+      // Dispatch to whichever live monitor is currently active.
+      if (_liveMonitor === 'compilagent') {
+        syncCompilagentEventsFromState(stepName, state);
+      } else {
+        syncSearchEventsFromState(stepName, state);
+      }
     }
     return;
   }
@@ -301,6 +314,14 @@ function determineTabs(detail, metrics) {
   if (metrics['search_event'] || detail._hasSearchEvents) tabs.push('live_search');
   const snap = detail.snapshot || {};
   if (snap.model) tabs.push('model');
+  // Dedicated Mapping Performance tab — appears whenever the snapshot
+  // carries the wizard-shaped stats dict. For the Model Building step
+  // this is the planned mapping; for HCM it's the real mapping (still
+  // rendered inside the Hardware tab's workbench, so we only mount the
+  // standalone tab on the planned-mode path to avoid duplication).
+  if (snap.mapping_performance && snap.mapping_performance_mode === 'planned') {
+    tabs.push('mapping');
+  }
   if (snap.ir_graph) tabs.push('ir_graph');
   if (snap.hard_core_mapping) tabs.push('hardware');
   if (snap.search_result) tabs.push('search');
@@ -316,9 +337,10 @@ function determineTabs(detail, metrics) {
 }
 
 const TAB_LABELS = {
-  metrics: 'Metrics', live_search: 'Live Search', model: 'Model', ir_graph: 'IR Graph',
-  hardware: 'Hardware', search: 'Search', activations: 'Activations', adaptation: 'Adaptation',
-  constraints: 'Constraints', pruning: 'Pruning', sanafe: 'SANA-FE', summary: 'Summary',
+  metrics: 'Metrics', live_search: 'Live Search', model: 'Model', mapping: 'Mapping',
+  ir_graph: 'IR Graph', hardware: 'Hardware', search: 'Search', activations: 'Activations',
+  adaptation: 'Adaptation', constraints: 'Constraints', pruning: 'Pruning',
+  sanafe: 'SANA-FE', summary: 'Summary',
 };
 
 function renderTabs(stepName, tabs, detail, metrics, state) {
@@ -344,7 +366,10 @@ function renderTabs(stepName, tabs, detail, metrics, state) {
 }
 
 function renderTabContent(stepName, tab, detail, metrics, container, state) {
-  if (tab !== 'live_search') detachSearchLive();
+  if (tab !== 'live_search') {
+    detachSearchLive();
+    detachCompilagentLive();
+  }
   // Install resource context for any lazy <img>/fetch inside the tab
   // renderers. Tabs themselves stay stateless and import
   // resourceUrl() from resource-urls.js.
@@ -358,9 +383,29 @@ function renderTabContent(stepName, tab, detail, metrics, container, state) {
   switch (tab) {
     case 'metrics': renderMetricsTab(metrics, container, stepStartTime); break;
     case 'live_search': renderLiveSearchTab(stepName, detail, container, state); break;
-    case 'model': renderModelTab(snap.model, container); break;
+    case 'model':
+      // The planned Mapping Performance panel now lives in its own tab
+      // (see the 'mapping' case below); the Model tab stays focused on
+      // architecture / per-layer weight stats.
+      renderModelTab(snap.model, container);
+      break;
+    case 'mapping':
+      _renderMappingTab(
+        snap.mapping_performance,
+        snap.mapping_performance_mode || 'planned',
+        container,
+      );
+      break;
     case 'ir_graph': renderIRGraphTab(snap.ir_graph, container); break;
-    case 'hardware': renderHardwareTab(snap.hard_core_mapping, container, snap.ir_graph); break;
+    case 'hardware':
+      // HCM step ships a "real" mapping_performance dict computed from
+      // the actual cores; hardware-tab.js renders the same panel at the
+      // top of the workbench when present.
+      renderHardwareTab(
+        snap.hard_core_mapping, container, snap.ir_graph,
+        snap.mapping_performance && snap.mapping_performance_mode === 'real' ? snap.mapping_performance : null,
+      );
+      break;
     case 'search': renderSearchTab(snap.search_result, container); break;
     case 'activations': renderActivationsTab(snap.activation_scales, snap.model, container); break;
     case 'adaptation': renderAdaptationTab(snap.adaptation_manager, snap.model, metrics, container); break;
@@ -373,11 +418,56 @@ function renderTabContent(stepName, tab, detail, metrics, container, state) {
 }
 
 // ── Live search tab ──────────────────────────────────────────────────────
+
+// Tracks which optimizer's live monitor is currently mounted in the
+// container so the incremental sync path knows which `sync*FromState`
+// helper to call.
+let _liveMonitor = null;
+
+function _detectLiveMonitor(events) {
+  for (const ev of events) {
+    if (isCompilagentEvent(ev)) return 'compilagent';
+    if (ev && typeof ev === 'object' && typeof ev.type === 'string') {
+      // Any AgentEvolve-shaped type wins over no-events; compilagent
+      // emits zero AgentEvolve types, so seeing one means AgentEvolve.
+      const t = ev.type;
+      if (t === 'generation_start' || t === 'generation_complete' ||
+          t === 'candidate_result' || t === 'llm_trace' || t === 'search_complete') {
+        return 'agent_evolve';
+      }
+    }
+  }
+  return 'agent_evolve';  // default to AgentEvolve when no events yet
+}
+
 function renderLiveSearchTab(stepName, detail, container, state) {
-  initSearchLive(container);
   const fromState = (state.searchEvents && state.searchEvents[stepName]) || [];
   const events = fromState.length > 0 ? fromState : (detail._searchEvents || []);
-  if (events.length > 0) replaySearchEvents(events);
+  _liveMonitor = _detectLiveMonitor(events);
+  // Build the empty scaffold synchronously so the user sees the
+  // visualizer (header, strips, empty grids) immediately, then yield
+  // to let the browser paint before replaying historical events. For
+  // sessions with thousands of events the replay can take 100-500ms
+  // even after the per-event re-render optimizations; without this
+  // yield the user perceives the tab as "stuck on blank" for that
+  // whole window because the synchronous replay starves the paint.
+  if (_liveMonitor === 'compilagent') {
+    initCompilagentLive(container);
+    if (events.length > 0) {
+      requestAnimationFrame(() => {
+        if (!container.isConnected) return;
+        replayCompilagentEvents(events);
+      });
+    }
+  } else {
+    initSearchLive(container);
+    if (events.length > 0) {
+      requestAnimationFrame(() => {
+        if (!container.isConnected) return;
+        replaySearchEvents(events);
+      });
+    }
+  }
 }
 
 // ── Metrics tab ──────────────────────────────────────────────────────────
@@ -475,6 +565,16 @@ function renderConstraintsTab(constraints, container) {
   }
   html += '</table></div></div>';
   container.innerHTML = html;
+}
+
+function _renderMappingTab(mappingPerformance, mode, container) {
+  if (!mappingPerformance) {
+    container.innerHTML = '<div class="empty-state">No mapping performance data</div>';
+    return;
+  }
+  container.innerHTML = '<div class="hw-stats-panel">'
+    + buildHwStatsPanelHtml(mappingPerformance, mode || 'planned')
+    + '</div>';
 }
 
 function renderSummaryTab(summary, container) {

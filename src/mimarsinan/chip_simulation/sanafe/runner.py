@@ -193,7 +193,11 @@ class SanafeRunner:
             cores_per_tile=self.cores_per_tile,
         )
         self._arch_name = spec.name
-        self._arch = build_architecture(spec, custom_arch_path=self.custom_arch_path)
+        self._arch = build_architecture(
+            spec,
+            custom_arch_path=self.custom_arch_path,
+            thresholding_mode=self.thresholding_mode,
+        )
         # Lift the auto-resolved ``cores_per_tile`` from arch_synth so
         # ``net_synth.build_network_for_segment`` packs cores into tiles
         # consistently with what the YAML synthesiser produced (passing
@@ -546,22 +550,20 @@ class SanafeRunner:
         hcm: Any,
         last_active_fires: Dict[int, np.ndarray],
     ) -> np.ndarray:
-        """Gather per-output spike counts replicating HCM's per-cycle accumulator.
+        """Gather per-output spike counts matching HCM's per-source window.
 
-        HCM walks ``compress_spike_sources(mapping.output_sources)`` once
-        per simulation cycle (line 598-609 of ``hybrid_core_flow``) and
-        adds ``buffers[core][neuron]`` to ``output_counts``.  Each core's
-        buffer is updated only inside its ``[core.latency, T+core.latency)``
-        window — outside the window it keeps its **last** value.  When
-        the segment runs for ``T + depth`` cycles (where ``depth`` is
-        ``ChipLatency(mapping).calculate()`` = ``max_core_latency + 1``),
-        a core whose latency is below the segment depth sees ``depth -
-        core.latency`` "stale" cycles after its window closes.  Each
-        stale cycle the gather re-reads the neuron's final-cycle firing
-        and adds it to the total.  Net effect for a neuron that fires
-        once on the last active cycle: HCM reports ``1 + stale_cycles``,
-        not ``1``.  We replicate that exactly so the next segment's
-        seg_input matches HCM's bit-for-bit.
+        HCM (``hybrid_core_flow._run_neural_segment_rate``) walks
+        ``compress_spike_sources(mapping.output_sources)`` once per
+        simulation cycle and accumulates ``buffers[src_core][neuron]``
+        into ``output_counts`` — but **only when the source core is
+        inside its own active window** ``[core.latency, T + core.latency)``.
+        That gate keeps the per-source contribution at exactly
+        ``in_window_fires`` regardless of how far the segment's chain
+        extends past that source, so a shallow output source feeding a
+        deep segment doesn't get its last-cycle firing replayed for
+        every stale cycle.  ``last_active_fires`` is no longer needed
+        here, but the parameter is kept for ABI compatibility with
+        existing callers in this module.
         """
         flat_sources = (
             list(output_sources.flatten())
@@ -595,13 +597,6 @@ class SanafeRunner:
             rec.core_index: rec.output_spike_count for rec in per_core_records
         }
 
-        # Segment depth = ChipLatency return = max(core.latency) + 1.
-        max_lat = max(
-            (int(c.latency) if getattr(c, "latency", None) is not None else 0)
-            for c in hcm.cores
-        ) if hcm.cores else 0
-        depth = max_lat + 1
-
         spans = compress_spike_sources(flat_sources)
         for sp in spans:
             d0 = int(sp.dst_start)
@@ -609,9 +604,11 @@ class SanafeRunner:
             if sp.kind == "off":
                 continue
             if sp.kind == "on":
-                # ``on`` axons fire every cycle of the simulation — HCM
-                # gathers ``cycles = T + depth`` of them.
-                out[d0:d1] = int(T + depth)
+                # ``on`` axons contribute exactly ``T`` spikes per output —
+                # one per input-train cycle.  HCM gates the always-on
+                # accumulator on ``cycle < T`` (see
+                # ``hybrid_core_flow._run_neural_segment_rate``).
+                out[d0:d1] = int(T)
                 continue
             if sp.kind == "input":
                 # Input-typed output_sources are an unusual re-export
@@ -627,21 +624,10 @@ class SanafeRunner:
             take = min(length, max(buf.size - s0, 0))
             if take <= 0:
                 continue
+            # In-window total only — HCM gates the accumulator on the
+            # source's own active window so ``buf`` already holds
+            # exactly ``in_window_fires`` per neuron.
             out[d0:d0 + take] = buf[s0:s0 + take]
-            # Stale-cycle accumulation: each stale cycle re-reads the
-            # last-active-cycle firing pattern, so neurons that fired on
-            # the last active cycle contribute ``stale_cycles`` extra.
-            core_lat = int(getattr(hcm.cores[int(sp.src_core)], "latency",
-                                    0) or 0)
-            stale_cycles = depth - core_lat
-            if stale_cycles > 0:
-                last_fires = last_active_fires.get(int(sp.src_core))
-                if last_fires is not None and last_fires.size > 0:
-                    take_last = min(take, last_fires.size - s0)
-                    if take_last > 0:
-                        out[d0:d0 + take_last] += (
-                            stale_cycles * last_fires[s0:s0 + take_last]
-                        )
         return out
 
     def _collect_last_active_fires(

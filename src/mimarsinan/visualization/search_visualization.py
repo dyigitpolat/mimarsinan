@@ -842,6 +842,92 @@ def create_interactive_search_report(result_json: Dict[str, Any], out_path: str)
             </div>
         </div>
     </div>
+''')
+
+    # Compilagent-only "Layout details" panel. Renders one collapsible
+    # block per Pareto candidate that carries `metadata.layout` (set by
+    # `CompilagentOptimizer._build_result`). AgentEvolve / NSGA2
+    # candidates lack the field, so the panel renders empty for those
+    # runs — by design.
+    layout_pareto = [
+        c for c in (pareto or [])
+        if isinstance(c, dict)
+        and isinstance(c.get("metadata"), dict)
+        and isinstance(c["metadata"].get("layout"), dict)
+    ]
+    if layout_pareto:
+        html_parts.append('''
+    <div class="card">
+        <div class="card-title">🧩 Layout Details (Compilagent)</div>
+        <div style="padding: 0 16px 16px; max-height: 600px; overflow-y: auto;">
+''')
+        for idx, c in enumerate(layout_pareto):
+            layout = c["metadata"]["layout"]
+            summary = layout.get("summary", {}) or {}
+            per_layer = layout.get("per_layer", []) or []
+            sc_count = layout.get("softcore_count", 0)
+            frag = summary.get("fragmentation_pct", 0) or 0
+            try:
+                frag_str = f"{float(frag):.2f}"
+            except Exception:
+                frag_str = str(frag)
+            html_parts.append(
+                f'<details style="margin-bottom: 12px; padding: 8px; '
+                f'border: 1px solid #334155; border-radius: 4px;">'
+                f'<summary style="cursor: pointer; font-weight: 500;">'
+                f'Candidate #{idx} — {sc_count} softcores, '
+                f'{len(per_layer)} layers, {frag_str}% fragmentation'
+                f'</summary>'
+                f'<div style="padding: 8px 0;">'
+            )
+            html_parts.append('<table style="width: 100%; margin-bottom: 12px;"><tbody>')
+            summary_rows = [
+                ("Total cores used", summary.get("total_cores")),
+                ("Total softcores", summary.get("total_softcores")),
+                ("Neural segments", summary.get("neural_segment_count")),
+                ("Threshold groups", summary.get("threshold_group_count")),
+                ("Fragmentation %", summary.get("fragmentation_pct")),
+                ("Mapped params %", summary.get("mapped_params_pct")),
+                ("Schedule passes", summary.get("schedule_pass_count")),
+                ("Sync barriers", summary.get("schedule_sync_count")),
+            ]
+            for label, val in summary_rows:
+                if isinstance(val, float):
+                    val_str = f"{val:.2f}"
+                else:
+                    val_str = str(val) if val is not None else "-"
+                html_parts.append(
+                    f'<tr><td style="padding: 4px;">{label}</td>'
+                    f'<td style="padding: 4px;">{val_str}</td></tr>'
+                )
+            html_parts.append('</tbody></table>')
+            if per_layer:
+                html_parts.append('<div style="font-weight: 500; margin-bottom: 6px;">Per-layer breakdown</div>')
+                html_parts.append(
+                    '<table style="width: 100%; font-size: 0.9em;"><thead><tr>'
+                    '<th>Layer</th><th>Softcores</th><th>Total Area</th>'
+                    '<th>Max In</th><th>Max Out</th><th>TG</th>'
+                    '<th>Lat</th><th>Seg</th></tr></thead><tbody>'
+                )
+                for row in per_layer:
+                    html_parts.append('<tr>')
+                    html_parts.append(f'<td>{row.get("layer", "-")}</td>')
+                    html_parts.append(f'<td>{row.get("softcore_count", 0)}</td>')
+                    html_parts.append(f'<td>{row.get("total_area", 0)}</td>')
+                    html_parts.append(f'<td>{row.get("max_input_count", 0)}</td>')
+                    html_parts.append(f'<td>{row.get("max_output_count", 0)}</td>')
+                    html_parts.append(f'<td>{row.get("threshold_group_count", 0)}</td>')
+                    html_parts.append(f'<td>{row.get("latency_tag_count", 0)}</td>')
+                    html_parts.append(f'<td>{row.get("segment_count", 0)}</td>')
+                    html_parts.append('</tr>')
+                html_parts.append('</tbody></table>')
+            html_parts.append('</div></details>')
+        html_parts.append('''
+        </div>
+    </div>
+''')
+
+    html_parts.append('''
 </div>
 ''')
 

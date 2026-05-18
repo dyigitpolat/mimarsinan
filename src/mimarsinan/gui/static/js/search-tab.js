@@ -40,6 +40,19 @@ export function renderSearchTab(search, container) {
     html += '</div></div>';
   }
 
+  // Compilagent-only: per-candidate "Layout details" panel. The snapshot
+  // surfaces ``c.metadata.layout`` only for candidates produced by the
+  // compilagent optimizer; AgentEvolve / NSGA2 candidates simply do not
+  // have the field, so the panel stays hidden.
+  const candidatesWithLayout = (search.pareto_front || []).filter(
+    c => c && c.metadata && c.metadata.layout,
+  );
+  if (candidatesWithLayout.length > 0) {
+    html += '<div class="card" style="margin-bottom:20px"><div class="card-header">Layout Details (Compilagent)</div><div class="card-body scrollable">';
+    html += buildLayoutDetailsPanel(candidatesWithLayout);
+    html += '</div></div>';
+  }
+
   const histKeys = search.history?.length > 0 ? Object.keys(search.history[0] || {}).filter(k => typeof search.history[0][k] === 'number') : [];
   if (histKeys.length > 0) {
     for (const k of histKeys) {
@@ -112,4 +125,61 @@ function formatValue(v) {
   if (v == null) return '-';
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
+}
+
+function buildLayoutDetailsPanel(candidates) {
+  let html = '';
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    const layout = c.metadata.layout;
+    const summary = layout.summary || {};
+    const perLayer = layout.per_layer || [];
+    html += `<details class="layout-details" style="margin-bottom:14px">`;
+    html += `<summary style="cursor:pointer">Candidate #${i} — `;
+    html += `${layout.softcore_count || 0} softcores, `;
+    html += `${perLayer.length} layers, `;
+    html += `${(summary.fragmentation_pct || 0).toFixed?.(2) || summary.fragmentation_pct || 0}% fragmentation`;
+    html += `</summary>`;
+    html += '<div style="padding:10px 0">';
+    // Summary table
+    const summaryRows = [
+      ['Total cores used', summary.total_cores],
+      ['Total softcores', summary.total_softcores],
+      ['Neural segments', summary.neural_segment_count],
+      ['Threshold groups', summary.threshold_group_count],
+      ['Fragmentation %', summary.fragmentation_pct],
+      ['Mapped params %', summary.mapped_params_pct],
+      ['Schedule passes', summary.schedule_pass_count],
+      ['Sync barriers', summary.schedule_sync_count],
+    ];
+    html += '<table class="config-table"><tbody>';
+    for (const [label, val] of summaryRows) {
+      const display = (typeof val === 'number') ? val.toFixed(2) : (val ?? '-');
+      html += `<tr><td>${esc(label)}</td><td>${esc(String(display))}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    // Per-layer table
+    if (perLayer.length > 0) {
+      html += '<div class="section-label" style="margin-top:10px">Per-layer breakdown</div>';
+      html += '<table class="data-table"><thead><tr>';
+      html += '<th>Layer</th><th>Softcores</th><th>Total Area</th>';
+      html += '<th>Max In</th><th>Max Out</th><th>Threshold Groups</th>';
+      html += '<th>Latency Tags</th><th>Segments</th></tr></thead><tbody>';
+      for (const row of perLayer) {
+        html += '<tr>';
+        html += `<td>${esc(row.layer || '-')}</td>`;
+        html += `<td>${row.softcore_count}</td>`;
+        html += `<td>${row.total_area}</td>`;
+        html += `<td>${row.max_input_count}</td>`;
+        html += `<td>${row.max_output_count}</td>`;
+        html += `<td>${row.threshold_group_count}</td>`;
+        html += `<td>${row.latency_tag_count}</td>`;
+        html += `<td>${row.segment_count}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    html += '</div></details>';
+  }
+  return html;
 }

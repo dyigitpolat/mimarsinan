@@ -153,15 +153,106 @@ class DifferentiableClamp(Function):
         return grad_output * grad_x, grad_a, grad_b
 
 
+import math
+
+
+class _StrictHeavisideFunction(torch.autograd.Function):
+    """``(x > 0).to(x)`` forward with spikingjelly's ATan-surrogate backward.
+
+    Used by :class:`StrictATanSurrogate` to make LIF training fire under the
+    same strict ``v > v_threshold`` rule the chip path uses. The backward
+    is delegated to spikingjelly's ``atan_backward`` so gradient flow is
+    identical to the inclusive surrogate it replaces — only the forward
+    boundary changes.
+
+    Picklable because both this class and its consumer surrogate live at
+    module scope; the pipeline cache and AdaptationManager serialize the
+    live LIF model after LIF Adaptation runs.
+    """
+
+    @staticmethod
+    def forward(ctx, x, alpha):
+        if x.requires_grad:
+            ctx.save_for_backward(x)
+            ctx.alpha = alpha
+        return (x > 0).to(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # Lazy import — spikingjelly only needs to load when a LIF model
+        # actually runs a backward pass.
+        from spikingjelly.activation_based import surrogate
+
+        x, = ctx.saved_tensors
+        return surrogate.atan_backward(grad_output, x, ctx.alpha)
+
+
+class StrictATanSurrogate(nn.Module):
+    """Strict-firing analogue of spikingjelly's ``ATan`` surrogate.
+
+    spikingjelly's stock ``ATan`` returns ``heaviside(x) = (x >= 0).to(x)``
+    in its spiking forward — i.e. inclusive ``v >= v_threshold`` firing.
+    The chip path (nevresim's ``DefaultFirePolicy``,
+    :class:`SpikingHybridCoreFlow` with ``thresholding_mode='<'``,
+    SANA-FE's ``mimarsinan_soma`` in strict mode, ``SubtractiveLIFReset``
+    in strict mode) fires at strict ``memb > threshold``. This module
+    flips the heaviside boundary to ``(v > 1)`` so LIFActivation training
+    matches the chip exactly; backward keeps the ATan gradient.
+
+    Implements only the surface IFNode's torch backend needs
+    (``forward(x)`` + ``set_spiking_mode`` + ``alpha`` / ``spiking``
+    attrs), so it slots into ``neuron.IFNode(surrogate_function=...)``
+    without subclassing spikingjelly. Standalone ``nn.Module`` keeps it
+    picklable for the pipeline cache.
+    """
+
+    def __init__(self, alpha: float = 2.0, spiking: bool = True):
+        super().__init__()
+        self.alpha = float(alpha)
+        self.spiking = bool(spiking)
+
+    def set_spiking_mode(self, spiking: bool) -> None:
+        self.spiking = bool(spiking)
+
+    def extra_repr(self) -> str:
+        return f"alpha={self.alpha}, spiking={self.spiking}"
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.spiking:
+            return _StrictHeavisideFunction.apply(x, self.alpha)
+        # Primitive (non-spiking) shape: same arctan form spikingjelly's
+        # ATan uses, kept for parity with surrogate-only inspection paths.
+        return (math.pi / 2 * self.alpha * x).atan() / math.pi + 0.5
+
+
 class LIFActivation(nn.Module):
     """Multi-timestep integrate-and-fire activation with surrogate gradient.
 
     Simulates ``T`` cycles of subtractive-reset integrate-and-fire on a
-    constant pre-activation input ``x = Linear(input) + bias``.  The output
-    rate is exactly ``floor(T * relu(x) / scale) / T * scale`` — the same
-    discretisation a ``SpikingUnifiedCoreFlow`` rate-mode simulation with
-    ``firing_mode='Default'`` produces at the neuron level, so training
-    dynamics match deployment.
+    constant pre-activation input ``x = Linear(input) + bias``.
+
+    The firing comparator is chosen via ``thresholding_mode`` to mirror the
+    chip's configured policy:
+
+    * ``"<"`` (default) — chip fires at strict ``memb > threshold``
+      (``nevresim/default_fire.hpp`` is hardcoded to this; the Python sim,
+      Lava runner and SANA-FE plugin all default the same way). LIFActivation
+      swaps the surrogate's forward heaviside for a strict ``(v > 1)``
+      variant so the boundary case ``v == 1`` does *not* fire — matching
+      the chip exactly. Output rate is ``max(ceil(T * relu(x) / scale) - 1, 0)
+      / T * scale`` clamped at ``scale``: the rate staircase loses its top
+      step at each boundary ``x = k * scale / T`` exactly the way the chip
+      does.
+    * ``"<="`` — inclusive ``memb >= threshold``. Output rate is the
+      classical ``floor(T * relu(x) / scale) / T * scale`` staircase
+      (spikingjelly's stock ATan heaviside).  Pick this only when every
+      downstream chip path (Python sim, nevresim, lava, SANA-FE) is also
+      configured for ``<=``; otherwise the training optimistically reports
+      an extra fire per boundary neuron that the chip will never produce.
+
+    Strict mode forces the ``torch`` IFNode backend (cupy's kernel hardcodes
+    inclusive heaviside in its emitted CUDA code, so an in-Python surrogate
+    can't override it); inclusive mode keeps the cupy fast path on CUDA hosts.
 
     Backward uses SpikingJelly's ATan surrogate so gradients flow through
     the otherwise non-differentiable spike function.  This lets the
@@ -175,7 +266,14 @@ class LIFActivation(nn.Module):
     aligned with training semantics.
     """
 
-    def __init__(self, T: int, activation_scale: nn.Parameter | torch.Tensor | float):
+    _VALID_THRESHOLDING_MODES = ("<", "<=")
+
+    def __init__(
+        self,
+        T: int,
+        activation_scale: nn.Parameter | torch.Tensor | float,
+        thresholding_mode: str = "<",
+    ):
         super().__init__()
         self.T = int(T)
         if isinstance(activation_scale, (int, float)):
@@ -184,27 +282,39 @@ class LIFActivation(nn.Module):
             )
         self.activation_scale = activation_scale
 
+        if thresholding_mode not in self._VALID_THRESHOLDING_MODES:
+            raise ValueError(
+                f"LIFActivation thresholding_mode must be one of "
+                f"{self._VALID_THRESHOLDING_MODES!r}; got {thresholding_mode!r}"
+            )
+        self.thresholding_mode = thresholding_mode
+
         # Lazy import keeps spikingjelly out of module-import paths that
         # never exercise LIF (e.g. TTFS-only test suites).
         from spikingjelly.activation_based import neuron, surrogate
 
-        # cupy backend is the CUDA-accelerated fast path from the
-        # spikingjelly example; fall back to the torch backend when cupy
-        # isn't built against the host's CUDA/python combo.
-        backend = "cupy" if torch.cuda.is_available() else "torch"
+        if thresholding_mode == "<":
+            # Strict ``v > 1`` requires the in-Python surrogate; cupy's
+            # heaviside emits ``>=`` and would silently revert to inclusive.
+            surrogate_fn = StrictATanSurrogate()
+            preferred_backend = "torch"
+        else:
+            surrogate_fn = surrogate.ATan()
+            preferred_backend = "cupy" if torch.cuda.is_available() else "torch"
+
         try:
             self.if_node = neuron.IFNode(
                 v_threshold=1.0,
                 v_reset=None,  # subtractive (soft) reset — matches nevresim Default
-                surrogate_function=surrogate.ATan(),
+                surrogate_function=surrogate_fn,
                 step_mode="m",
-                backend=backend,
+                backend=preferred_backend,
             )
         except (ImportError, RuntimeError, AttributeError):
             self.if_node = neuron.IFNode(
                 v_threshold=1.0,
                 v_reset=None,
-                surrogate_function=surrogate.ATan(),
+                surrogate_function=surrogate_fn,
                 step_mode="m",
                 backend="torch",
             )
@@ -214,7 +324,7 @@ class LIFActivation(nn.Module):
         return "LIF"
 
     def extra_repr(self) -> str:
-        return f"T={self.T}"
+        return f"T={self.T}, thresholding_mode={self.thresholding_mode!r}"
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         spikes, safe_scale = self._spikes_and_scale(x)

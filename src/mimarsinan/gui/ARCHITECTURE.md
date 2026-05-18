@@ -222,6 +222,44 @@ clicking a row shows structured request sections and response fields (no JSON st
 dumps); long text previews show a truncation hint when applicable. Header stats show
 gen counter, valid/failed counts, Pareto size, and elapsed time.
 
+**CompilagentOptimizer event vocabulary**: when the user picks
+`arch_search.optimizer == "compilagent"`, the optimizer reuses the same
+`search_event` envelope plus three compilagent-specific event types,
+forwarded to the live monitor by `MultiObjectiveSink` (see
+`search/optimizers/compilagent/sink.py`):
+
+* `compilagent_tool_call` — fired on every `tool.call.started` /
+  `tool.call.completed` so the diagnostics column shows backend
+  introspection-tool invocations alongside AgentEvolve-style LLM traces.
+* `compilagent_compile_phase` — fired per compilagent `PassEvent`
+  (decode → validate → ...). Each fires through `_appendTraceRow` with
+  stage / name / duration_ms.
+* `compilagent_objectives_recorded` — full per-axis multi-objective dict
+  per candidate (mirrors compilagent's new `EventKind.OBJECTIVES_RECORDED`
+  channel). The optimizer also emits a synthetic `candidate_result`
+  event for each so existing AgentEvolve-style candidate cards render
+  unchanged.
+
+`CALL_KIND_LABELS` and `_renderResponseStructured` in `search-live.js`
+were extended with the new keys (`tool_name`, `phase`, `stage`, `name`,
+`duration_ms`, `objectives`, `metadata`, `candidate_id`) so the existing
+trace-row helper renders them with no parallel UI tree. The wizard's
+`compilagent_fields` schema (`gui/wizard/schema.py`) carries the
+optimizer's knobs (`model`, `harness`, `max_candidates`,
+`max_continuations`, `primary_objective`, `system_prompt_extra`); the
+`#compilagentConfig` HTML block in `wizard.html` mirrors the AgentEvolve
+extras, toggled by `_setOptimizerExtras` in `wizard.js`.
+
+**Post-run "Layout details"** (`search-tab.js`,
+`visualization/search_visualization.py`): the snapshot path round-trips
+each candidate's `metadata` field through `_search_result_to_jsonable`,
+so the per-candidate `metadata.layout` payload that
+`CompilagentOptimizer._build_result` attaches (softcore counts per
+layer, `LayoutVerificationStats` summary) appears in the search-tab and
+the static report **only** when the run was driven by the compilagent
+optimizer; AgentEvolve / NSGA2 candidates lack the field and the panel
+stays hidden.
+
 ## Dependencies
 
 - **Internal**: `common.reporter` (Reporter protocol), `mapping.ir` (for snapshots), `mapping.spike_source_spans`, `gui.heatmap_renderer` (for snapshot heatmaps).

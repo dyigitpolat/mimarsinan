@@ -10,6 +10,15 @@
     rel="stylesheet">
   <link href="/static/wizard.css" rel="stylesheet">
   <link href="/static/pipeline-step-bar.css" rel="stylesheet">
+  <link href="/static/hw-stats-panel.css" rel="stylesheet">
+  <!-- Shared Mapping-Performance renderer. Loaded as a module so its
+       ESM `export`s parse cleanly; the file also attaches a
+       window.HwStatsPanel bridge that wizard.js (a classic script with
+       inline HTML handlers, hence not module-loadable) calls into.
+       Modules are implicitly deferred, so wizard.js below MUST also be
+       `defer`red to keep the same execution order — otherwise wizard.js
+       might run its `init()` before the bridge is attached. -->
+  <script type="module" src="/static/js/hw-stats-panel.js"></script>
 </head>
 
 <body>
@@ -69,6 +78,7 @@
             <div class="seg-control" id="optimizer">
               <div class="seg-btn active violet" data-val="nsga2" onclick="setSegment(this)">NSGA-II</div>
               <div class="seg-btn" data-val="agent_evolve" onclick="setSegment(this)">Agentic Evolution</div>
+              <div class="seg-btn" data-val="compilagent" onclick="setSegment(this)">Compilagent</div>
             </div>
           </div>
 
@@ -145,6 +155,40 @@
                   <label class="field-label">Max Regen Rounds</label>
                   <input type="number" id="agentRegenRounds" value="10" min="1" oninput="update()">
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Compilagent-specific -->
+          <div id="compilagentConfig" class="cond hidden">
+            <div class="sub-section" style="margin-top:14px">
+              <div class="sub-section-title">Compilagent Session Configuration</div>
+              <div class="field-grid">
+                <div class="field">
+                  <label class="field-label">LLM Model</label>
+                  <input type="text" id="compilagentModel" value="openai:gpt-4o" oninput="update()">
+                </div>
+                <div class="field">
+                  <label class="field-label">Harness</label>
+                  <select id="compilagentHarness" onchange="update()">
+                    <option value="pydantic_ai" selected>pydantic-ai</option>
+                    <option value="claude_agent_sdk">Claude Agent SDK</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label">Max Candidates</label>
+                  <input type="number" id="compilagentMaxCandidates" value="8" min="1" oninput="update()">
+                </div>
+                <div class="field">
+                  <label class="field-label">Max Continuations</label>
+                  <input type="number" id="compilagentMaxContinuations" value="4" min="0" oninput="update()">
+                </div>
+              </div>
+              <div class="field" style="margin-top:8px">
+                <label class="field-label">System Prompt (extra)</label>
+                <textarea id="compilagentSystemPrompt" rows="3"
+                          placeholder="Additional instructions appended to the default system prompt..."
+                          oninput="update()"></textarea>
               </div>
             </div>
           </div>
@@ -729,7 +773,11 @@
 
   </div>
 
-  <script src="/static/js/wizard.js"></script>
+  <!-- ``defer`` keeps wizard.js in sync with the module-loaded
+       hw-stats-panel.js bridge above: both run after DOM-ready, in
+       source order, so window.HwStatsPanel is guaranteed to exist by
+       the time wizard.js's init() reads from it. -->
+  <script defer src="/static/js/wizard.js"></script>
 </body>
 
 </html>

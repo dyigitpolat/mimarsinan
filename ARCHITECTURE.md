@@ -65,7 +65,7 @@
 12. [Architecture Search](#12-architecture-search)
     - [Search Framework](#121-search-framework)
     - [NSGA-II Optimizer](#122-nsga-ii-optimizer)
-    - [Kedi Optimizer (LLM-based)](#123-kedi-optimizer-llm-based)
+    - [AgentEvolve / LLM Optimizers](#123-agentevolve--llm-optimizers)
     - [JointArchHwProblem](#124-jointarchhwproblem)
 13. [Data Handling](#13-data-handling)
 14. [Visualization](#14-visualization)
@@ -147,7 +147,7 @@ mimarsinan/
 │       ├── search/                 # Architecture search subsystem
 │       │   ├── problem.py          # SearchProblem protocol
 │       │   ├── results.py          # SearchResult, Candidate, ObjectiveSpec
-│       │   ├── optimizers/         # NSGA-II, Kedi LLM optimizer
+│       │   ├── optimizers/         # NSGA-II, AgentEvolve LLM, Compilagent session
 │       │   └── problems/           # Concrete search problems
 │       ├── data_handling/          # Dataset management
 │       │   ├── data_provider.py    # DataProvider base class
@@ -407,7 +407,7 @@ Either mode works with `configuration_mode: "nas"` (replaces Model Configuration
 Operates in two modes based on `configuration_mode`:
 
 - **`"user"`**: Uses the model config and core topology from `deployment_parameters` directly.
-- **`"nas"`**: Runs multi-objective optimization (NSGA-II or Kedi) via a `JointArchHwProblem` that jointly optimizes architecture parameters and hardware core-type dimensions. The problem is model-agnostic; model-specific search spaces, config assemblers, and validation functions are injected as parameters.
+- **`"nas"`**: Runs multi-objective optimization (NSGA-II, AgentEvolve, or Compilagent — selected via `arch_search.optimizer`) via a `JointArchHwProblem` that jointly optimizes architecture parameters and hardware core-type dimensions. The problem is model-agnostic; model-specific search spaces, config assemblers, and validation functions are injected as parameters.
 
 Objectives are chosen from `search.results.ALL_OBJECTIVES` (defaults via `default_objectives_for_mode`); they include `estimated_accuracy`, `total_params`, hardware utilization/wastage metrics, and `fragmentation_pct` (packing dead-zone signal).
 
@@ -1208,16 +1208,59 @@ Uses `pymoo`'s NSGA-II implementation. Handles:
 - Pareto front extraction
 - Best candidate selection (accuracy-first, then cores, unused area, params)
 
-### 12.3 Kedi Optimizer (LLM-based)
+### 12.3 AgentEvolve / LLM Optimizers
 
-**File**: `search/optimizers/kedi_optimizer.py`
+Two LLM-driven options share the same `SearchOptimizer.optimize(problem,
+reporter) -> SearchResult` interface as NSGA-II:
 
-An innovative LLM-based optimizer that uses agentic reasoning:
+**12.3.a AgentEvolveOptimizer** — `search/optimizers/agent_evolve_optimizer.py`
+
+A `pydantic-ai`-based optimizer that uses agentic reasoning:
 1. Generates initial candidates using an LLM
 2. Learns from validation/evaluation failures
 3. Consolidates constraint knowledge across generations
 4. Uses performance analysis to guide search direction
 5. Generates offspring from Pareto front patterns
+
+**12.3.b CompilagentOptimizer** — `search/optimizers/compilagent/`
+
+Drives a [compilagent](https://github.com/cursor/compilagent)
+`OptimizationSession` over a `MimarsinanLayoutBackend` that wraps the
+existing `JointArchHwProblem`. The integration:
+
+- Exposes mimarsinan's layout-mapping internals (per-softcore breakdown,
+  per-layer counts, latency tiers, full `LayoutVerificationStats`,
+  multi-objective values) to the agent through compilagent's
+  `Backend.analyze` (rich `Analysis.extra`), `CompileResult.metadata`,
+  and four read-only introspection tools (`inspect_softcores`,
+  `inspect_layer_breakdown`, `inspect_layout_stats`, `list_objectives`).
+- Round-trips a candidate `compilagent.Plan` (ordered `Intervention`s
+  with `target.kind in {"arch", "hw.core"}`) through `plan_codec` into
+  the same `(model_config, platform_constraints)` configuration the
+  other optimizers use, so `JointArchHwProblem.validate_detailed` /
+  `evaluate` are reused without a parallel HW path.
+- Uses compilagent's additive multi-objective surface
+  (`Backend.objectives_for_candidate` / `EventKind.OBJECTIVES_RECORDED`,
+  introduced in compilagent 0.2.x) so the leaderboard carries every
+  objective rather than collapsing to one axis. A `MultiObjectiveSink`
+  captures the events; the optimizer drains it and reuses
+  `agent_evolve_support`'s Pareto + minimax helpers to build the
+  returned `SearchResult` (no reimplementation).
+- Emits the same `search_event` JSON shape AgentEvolve emits, plus
+  three new compilagent-specific event types
+  (`compilagent_tool_call`, `compilagent_compile_phase`,
+  `compilagent_objectives_recorded`) that the live GUI's `search-live.js`
+  renders alongside the AgentEvolve traces.
+
+The wizard exposes the optimizer's knobs (`model`, `harness`,
+`max_candidates`, `max_continuations`, `primary_objective`,
+`system_prompt_extra`) under
+`compilagent_fields` in `gui/wizard/schema.py`, plumbed through the
+`#compilagentConfig` block in `wizard.html`. Compilagent is a hard
+dependency declared in `requirements.txt`.
+
+See `src/mimarsinan/search/optimizers/compilagent/ARCHITECTURE.md` for
+the per-module breakdown.
 
 ### 12.4 JointArchHwProblem
 

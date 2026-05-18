@@ -1,0 +1,120 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "mnist_arch_search_compilagent_sanafe",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "target_tq": 4,
+    "simulation_steps": 4,
+    "weight_bits": 5,
+    "has_bias": true,
+    "allow_coalescing": false,
+    "allow_neuron_splitting": true,
+    "search_space": {
+      "num_core_types": 1,
+      "core_type_counts": [],
+      "core_axons_bounds": [
+        128,
+        1024
+      ],
+      "core_neurons_bounds": [
+        128,
+        1024
+      ],
+      "max_threshold_groups": null
+    }
+  },
+  "deployment_parameters": {
+    "lr": 0.003,
+    "training_epochs": 10,
+    "tuning_budget_scale": 1,
+    "degradation_tolerance": 0.15,
+    "model_config_mode": "search",
+    "hw_config_mode": "search",
+    "model_type": "mlp_mixer_core",
+    "model_config": {
+      "base_activation": "LeakyReLU",
+      "patch_n_1": 4,
+      "patch_m_1": 4,
+      "patch_c_1": 32,
+      "fc_w_1": 64,
+      "fc_w_2": 64
+    },
+    "spiking_mode": "lif",
+    "firing_mode": "Default",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<",
+    "activation_quantization": false,
+    "weight_quantization": true,
+    "pruning": true,
+    "pruning_fraction": 0.2,
+    "batch_size": 128,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "arch_search": {
+      "optimizer": "compilagent",
+      "pop_size": 4,
+      "generations": 1,
+      "seed": 42,
+      "warmup_fraction": 0.1,
+      "accuracy_evaluator": "fast",
+      "extrapolation_num_train_epochs": 1,
+      "extrapolation_num_checkpoints": 5,
+      "extrapolation_target_epochs": 10,
+      "objectives": [
+        "estimated_accuracy",
+        "total_params",
+        "total_param_capacity",
+        "total_sync_barriers",
+        "param_utilization_pct",
+        "neuron_wastage_pct",
+        "axon_wastage_pct",
+        "fragmentation_pct"
+      ],
+      "training_batch_size": 256,
+      "model": "mistral:mistral-large-latest",
+      "harness": "pydantic_ai",
+      "max_candidates": 4,
+      "max_continuations": 2,
+      "system_prompt_extra": "Aim to propose at least 3 deliberately diverse candidates per batch \u2014 explore the extremes of (cores, accuracy, fragmentation) rather than clustering in one region."
+    },
+    "max_simulation_samples": 500,
+    "allow_scheduling": true,
+    "enable_loihi_simulation": false,
+    "enable_sanafe_simulation": true,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "sanafe_custom_arch_path": null,
+    "sanafe_parity_check": true,
+    "sanafe_log_potential_trace": false,
+    "sanafe_log_message_trace": true
+  },
+  "target_metric_override": null,
+  "start_step": "Architecture Search",
+  "stop_step": null
+}

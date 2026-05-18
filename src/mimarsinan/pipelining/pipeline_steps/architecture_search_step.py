@@ -13,112 +13,14 @@ from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
     resolve_active_objectives,
 )
+from mimarsinan.search.search_space_description import SearchSpaceDescription
 from mimarsinan.visualization.search_visualization import (
     create_interactive_search_report,
     write_final_population_json,
 )
 
 
-OptimizerType = Literal["nsga2", "agent_evolve"]
-
-
-# ====================================================================== #
-# Agentic Evolution config schema builders — mode-aware
-# ====================================================================== #
-
-
-def _build_agent_evolve_config_schema(
-    search_mode: str,
-    arch_options: List[Tuple[str, List[Any]]],
-    arch_cfg: Dict[str, Any],
-    target_tq: int,
-) -> Dict[str, Any]:
-    """Build the configuration schema description for Agentic Evolution LLM prompts."""
-    schema: Dict[str, Any] = {}
-
-    if search_mode in ("model", "joint"):
-        schema["model_config"] = {key: f"one of {values}" for key, values in arch_options}
-
-    if search_mode in ("hardware", "joint"):
-        num_core_types = arch_cfg.get("num_core_types", 2)
-        core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
-        core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
-        core_count_bounds = arch_cfg.get("core_count_bounds", [50, 500])
-
-        schema["platform_constraints"] = {
-            "cores": (
-                f"list of {num_core_types} objects, each with max_axons "
-                f"(int {core_axons_bounds[0]}-{core_axons_bounds[1]}, multiple of 8), "
-                f"max_neurons (int {core_neurons_bounds[0]}-{core_neurons_bounds[1]}, "
-                f"multiple of 8), count (int {core_count_bounds[0]}-{core_count_bounds[1]}). "
-                f"Different core types may have different sizes (heterogeneous)."
-            ),
-            "target_tq": f"{target_tq} (fixed)",
-            "weight_bits": "8 (fixed)",
-        }
-
-    return schema
-
-
-def _build_agent_evolve_example_config(
-    search_mode: str,
-    arch_options: List[Tuple[str, List[Any]]],
-    arch_cfg: Dict[str, Any],
-    target_tq: int,
-) -> Dict[str, Any]:
-    """Build an example configuration for Agentic Evolution LLM prompts."""
-    example: Dict[str, Any] = {}
-
-    if search_mode in ("model", "joint"):
-        example["model_config"] = {key: values[len(values) // 2] for key, values in arch_options}
-
-    if search_mode in ("hardware", "joint"):
-        num_core_types = arch_cfg.get("num_core_types", 2)
-        core_dims = [(512, 512), (1024, 1024)]
-        cores = []
-        for i in range(num_core_types):
-            ax, neu = core_dims[i % len(core_dims)]
-            cores.append({"max_axons": ax, "max_neurons": neu, "count": 200})
-
-        example["platform_constraints"] = {
-            "cores": cores,
-            "target_tq": target_tq,
-            "weight_bits": 8,
-        }
-
-    return example
-
-
-def _build_agent_evolve_constraints_desc(
-    search_mode: str,
-    arch_options: List[Tuple[str, List[Any]]],
-    arch_cfg: Dict[str, Any],
-) -> str:
-    """Build constraint description for Agentic Evolution LLM prompts."""
-    parts: List[str] = ["\nCRITICAL CONSTRAINTS:\n"]
-
-    if search_mode in ("model", "joint") and arch_options:
-        option_lines = "\n".join(f"   - {key}: must be one of {values}" for key, values in arch_options)
-        parts.append(f"1. MODEL CONFIGURATION OPTIONS:\n{option_lines}\n")
-
-    if search_mode in ("hardware", "joint"):
-        core_axons_bounds = arch_cfg.get("core_axons_bounds", [64, 1024])
-        core_neurons_bounds = arch_cfg.get("core_neurons_bounds", [64, 1024])
-        core_count_bounds = arch_cfg.get("core_count_bounds", [50, 500])
-
-        parts.append(
-            f"2. HETEROGENEOUS CORES:\n"
-            f"   Different core types may have different max_axons/max_neurons.\n"
-            f"   Softcores are tiled for the LARGEST core type and packed by the bin-packer.\n"
-        )
-        parts.append(
-            f"3. Core dimensions: max_axons and max_neurons must be multiples of 8,\n"
-            f"   axons in [{core_axons_bounds[0]}, {core_axons_bounds[1]}],\n"
-            f"   neurons in [{core_neurons_bounds[0]}, {core_neurons_bounds[1]}].\n"
-            f"   Core count in [{core_count_bounds[0]}, {core_count_bounds[1]}].\n"
-        )
-
-    return "\n".join(parts)
+OptimizerType = Literal["nsga2", "agent_evolve", "compilagent"]
 
 
 # ====================================================================== #
@@ -135,7 +37,15 @@ def _create_optimizer(
     pop_size: int,
     generations: int,
     target_tq: int = 16,
+    active_objective_names: Sequence[str] = (),
 ):
+    description = SearchSpaceDescription.from_arch_search(
+        search_mode=search_mode,
+        arch_options=arch_options,
+        arch_cfg=arch_cfg,
+        target_tq=target_tq,
+    )
+
     if optimizer_type == "agent_evolve":
         try:
             from mimarsinan.search.optimizers.agent_evolve_optimizer import AgentEvolveOptimizer
@@ -146,10 +56,12 @@ def _create_optimizer(
             max_failed_examples = arch_cfg.get("max_failed_examples", 5)
             llm_retries = arch_cfg.get("llm_retries", 3)
 
-            config_schema = _build_agent_evolve_config_schema(search_mode, arch_options, arch_cfg, target_tq)
-            example_config = _build_agent_evolve_example_config(search_mode, arch_options, arch_cfg, target_tq)
-            constraints_desc = arch_cfg.get("constraints_description") or \
-                _build_agent_evolve_constraints_desc(search_mode, arch_options, arch_cfg)
+            config_schema = description.to_agent_evolve_schema()
+            example_config = description.to_agent_evolve_example()
+            constraints_desc = (
+                arch_cfg.get("constraints_description")
+                or description.to_agent_evolve_constraints()
+            )
 
             return AgentEvolveOptimizer(
                 pop_size=pop_size,
@@ -167,6 +79,21 @@ def _create_optimizer(
         except ImportError as e:
             print(f"[ArchitectureSearchStep] Agentic Evolution optimizer not available: {e}")
             print("[ArchitectureSearchStep] Falling back to NSGA2")
+
+    if optimizer_type == "compilagent":
+        from mimarsinan.search.optimizers.compilagent import CompilagentOptimizer
+
+        return CompilagentOptimizer(
+            pop_size=int(pop_size),
+            description=description,
+            model=str(arch_cfg.get("model", "openai:gpt-4o")),
+            harness_id=str(arch_cfg.get("harness", "pydantic_ai")),
+            max_candidates=int(arch_cfg.get("max_candidates", max(pop_size, 8))),
+            max_continuations=int(arch_cfg.get("max_continuations", 4)),
+            system_prompt_extra=str(arch_cfg.get("system_prompt_extra", "")),
+            active_objective_names=tuple(active_objective_names),
+            verbose=True,
+        )
 
     return NSGA2Optimizer(
         pop_size=pop_size,
@@ -466,6 +393,7 @@ class ArchitectureSearchStep(PipelineStep):
             pop_size=pop_size,
             generations=generations,
             target_tq=int(self.pipeline.config["target_tq"]),
+            active_objective_names=active_objective_names,
         )
 
         print(f"[ArchitectureSearchStep] model_type='{model_type}' | search_mode={search_mode} "

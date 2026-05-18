@@ -1,0 +1,578 @@
+/* Live compilagent monitor — distinct from search-live.css (AgentEvolve).
+ *
+ * Color story: cyan/violet glow with darker base; matches the rest of
+ * mimarsinan's GUI but uses its own `cl-` prefix so AgentEvolve styles
+ * never bleed in.
+ */
+
+.cl-tracker {
+  --cl-bg: #0a0d14;
+  --cl-card: #11151f;
+  --cl-card-border: #1a2030;
+  --cl-text: #e2e8f0;
+  --cl-text-dim: #64748b;
+  --cl-accent: #a78bfa;        /* violet */
+  --cl-accent-cyan: #22d3ee;
+  --cl-accent-green: #34d399;
+  --cl-accent-rose: #f43f5e;
+  --cl-accent-amber: #f59e0b;
+  --cl-accent-blue: #5b8af5;
+  --cl-glow-violet: rgba(167, 139, 250, 0.18);
+  --cl-glow-cyan: rgba(34, 211, 238, 0.15);
+  --cl-radius: 10px;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--cl-text);
+}
+
+/* ─── Header ───────────────────────────────────────────────────────────── */
+
+.cl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #0e1018 0%, #15121e 100%);
+  border: 1px solid var(--cl-card-border);
+  border-radius: var(--cl-radius);
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+  box-shadow: 0 0 18px var(--cl-glow-violet);
+}
+
+.cl-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.cl-logo {
+  font-size: 22px;
+  color: var(--cl-accent);
+  text-shadow: 0 0 10px var(--cl-glow-violet);
+  animation: cl-pulse 3s ease-in-out infinite;
+}
+
+.cl-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--cl-accent);
+  text-shadow: 0 0 12px var(--cl-glow-violet);
+}
+
+.cl-subtitle {
+  font-size: 11px;
+  color: var(--cl-text-dim);
+  letter-spacing: 0.04em;
+}
+
+.cl-header-stats {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.cl-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 36px;
+}
+
+.cl-stat-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--cl-text-dim);
+}
+
+.cl-stat-val {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--cl-text);
+}
+
+.cl-val-ok    { color: var(--cl-accent-green); }
+.cl-val-fail  { color: var(--cl-accent-rose);  }
+.cl-val-pareto { color: var(--cl-accent-cyan); }
+
+.cl-session-done .cl-title {
+  animation: cl-done-glow 2s ease-in-out infinite alternate;
+}
+
+/* ─── Pareto strip ─────────────────────────────────────────────────────── */
+
+.cl-pareto-strip {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: var(--cl-card);
+  border: 1px solid var(--cl-card-border);
+  border-radius: var(--cl-radius);
+}
+
+.cl-pareto-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--cl-accent-cyan);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.cl-pareto-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.cl-pareto-placeholder {
+  font-size: 12px;
+  color: var(--cl-text-dim);
+  font-style: italic;
+}
+
+.cl-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(34, 211, 238, 0.05);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.cl-chip-rank {
+  font-weight: 700;
+  color: var(--cl-accent-cyan);
+}
+
+.cl-chip-cell {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.cl-chip-k { color: var(--cl-text-dim); }
+.cl-chip-v {
+  color: var(--cl-text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* ─── Metric leaders strip ────────────────────────────────────────────── */
+
+.cl-leaders-strip {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: var(--cl-card);
+  border: 1px solid var(--cl-card-border);
+  border-radius: var(--cl-radius);
+}
+
+.cl-leaders-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--cl-accent);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.cl-leaders-inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  min-height: 30px;
+}
+
+.cl-leaders-placeholder {
+  font-size: 12px;
+  color: var(--cl-text-dim);
+  font-style: italic;
+  grid-column: 1 / -1;
+}
+
+.cl-leader {
+  padding: 8px 10px;
+  background: rgba(167, 139, 250, 0.06);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cl-leader-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cl-leader-metric {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cl-text);
+}
+
+.cl-leader-goal {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--cl-text-dim);
+}
+
+.cl-leader-val {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--cl-accent-cyan);
+}
+
+.cl-leader-cid {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--cl-text-dim);
+}
+
+/* ─── Two-column layout ───────────────────────────────────────────────── */
+
+.cl-twocol {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.cl-col {
+  background: var(--cl-card);
+  border: 1px solid var(--cl-card-border);
+  border-radius: var(--cl-radius);
+  padding: 12px;
+  min-width: 0;       /* let the grid actually shrink the column */
+}
+
+.cl-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--cl-text-dim);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.cl-section-title-spaced { margin-top: 16px; }
+
+/* ─── Candidates ───────────────────────────────────────────────────────── */
+
+.cl-candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.cl-empty {
+  font-size: 12px;
+  color: var(--cl-text-dim);
+  font-style: italic;
+  padding: 8px 4px;
+}
+
+.cl-cand {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--cl-card-border);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.2s;
+}
+
+.cl-cand-compiling { border-color: var(--cl-accent-amber); }
+.cl-cand-ok        { border-color: var(--cl-accent-green); }
+.cl-cand-fail      { border-color: var(--cl-accent-rose); }
+.cl-cand-pareto {
+  border-color: var(--cl-accent-cyan);
+  box-shadow: 0 0 14px var(--cl-glow-cyan);
+}
+
+.cl-cand-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.cl-cand-idx {
+  font-weight: 700;
+  color: var(--cl-accent);
+  font-size: 13px;
+}
+
+.cl-cand-id {
+  font-family: ui-monospace, monospace;
+  color: var(--cl-text-dim);
+  font-size: 10px;
+}
+
+.cl-cand-status {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--cl-text-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cl-cand-desc {
+  font-size: 12px;
+  color: var(--cl-text);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cl-cand-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cl-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 2px solid var(--cl-text-dim);
+}
+
+.cl-bar--max { border-left-color: var(--cl-accent-green); }
+.cl-bar--min { border-left-color: var(--cl-accent-blue); }
+
+.cl-bar-name {
+  flex: 1;
+  color: var(--cl-text-dim);
+}
+
+.cl-bar-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--cl-text);
+}
+
+.cl-cand-diag {
+  font-size: 11px;
+  color: var(--cl-accent-rose);
+  background: rgba(244, 63, 94, 0.06);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+/* Per-metric rank chips on each candidate tile */
+
+.cl-cand-ranks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cl-rank-chip {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--cl-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.cl-rank-chip.cl-rank-best {
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--cl-accent-cyan);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  font-weight: 600;
+}
+
+/* ─── Agent stream ─────────────────────────────────────────────────────── */
+
+.cl-agent-stream {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--cl-card-border);
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+
+.cl-agent-empty {
+  color: var(--cl-text-dim);
+  font-style: italic;
+}
+
+.cl-agent-block {
+  margin-bottom: 6px;
+}
+
+.cl-agent-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cl-text-dim);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.cl-agent-thinking .cl-agent-label { color: var(--cl-accent-amber); }
+.cl-agent-text     .cl-agent-label { color: var(--cl-accent-cyan); }
+
+.cl-agent-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: ui-monospace, monospace;
+  color: var(--cl-text);
+}
+
+.cl-agent-md {
+  color: var(--cl-text);
+  line-height: 1.4;
+}
+
+.cl-agent-md p { margin: 0 0 6px 0; }
+.cl-agent-md code {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+/* ─── Activity feed ─────────────────────────────────────────────────────── */
+
+.cl-activity-feed {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cl-activity-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  border-left: 2px solid var(--cl-text-dim);
+  font-size: 11px;
+}
+
+.cl-activity-counter {
+  color: var(--cl-text-dim);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  min-width: 28px;
+  text-align: right;
+  padding-top: 1px;
+}
+
+.cl-activity-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cl-activity-label {
+  color: var(--cl-text);
+  font-weight: 500;
+}
+
+.cl-activity-detail {
+  color: var(--cl-text-dim);
+  font-size: 10px;
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.cl-activity-cid {
+  color: var(--cl-text-dim);
+  font-family: ui-monospace, monospace;
+  font-size: 9px;
+  margin-top: 1px;
+}
+
+.cl-activity-session       { border-left-color: var(--cl-accent); }
+.cl-activity-tool          { border-left-color: var(--cl-accent-blue); }
+.cl-activity-candidate     { border-left-color: var(--cl-accent-cyan); }
+.cl-activity-compile       { border-left-color: var(--cl-accent-amber); }
+.cl-activity-compile-fail  { border-left-color: var(--cl-accent-rose); }
+.cl-activity-compile-phase { border-left-color: var(--cl-text-dim); }
+.cl-activity-objectives    { border-left-color: var(--cl-accent-green); }
+.cl-activity-rejected      { border-left-color: var(--cl-accent-rose); }
+.cl-activity-guidance      { border-left-color: var(--cl-accent); }
+
+/* Collapsible <details> wrapper for long guidance text */
+
+.cl-activity-pre {
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+.cl-activity-pre summary {
+  cursor: pointer;
+  color: var(--cl-accent);
+  font-weight: 500;
+  user-select: none;
+}
+
+.cl-activity-pre pre {
+  margin: 4px 0 0 0;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--cl-card-border);
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+  color: var(--cl-text);
+}
+
+/* ─── Utility ──────────────────────────────────────────────────────────── */
+
+.cl-hidden { display: none !important; }
+
+@keyframes cl-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes cl-done-glow {
+  from { text-shadow: 0 0 8px var(--cl-glow-violet); }
+  to   { text-shadow: 0 0 18px var(--cl-glow-cyan), 0 0 24px var(--cl-glow-violet); }
+}
+
+/* Responsive: stack columns on narrow viewports */
+@media (max-width: 1100px) {
+  .cl-twocol {
+    grid-template-columns: 1fr;
+  }
+}

@@ -12,7 +12,8 @@ export function renderModelTab(model, container) {
       <div class="card"><div class="big-metric"><div class="value">${fmtNum(model.total_params)}</div><div class="label">Total Parameters</div></div></div>
       <div class="card"><div class="big-metric"><div class="value">${model.num_layers}</div><div class="label">Layers</div></div></div>
       <div class="card"><div class="big-metric"><div class="value">${firstShape}</div><div class="label">First Layer Shape</div></div></div>
-    </div>
+    </div>`;
+  html += `
     <div class="grid-2">
       <div class="card"><div class="card-header">Parameter Count per Layer</div><div class="card-body"><div id="m-param" style="min-height:180px"></div></div></div>
       <div class="card"><div class="card-header">Weight Statistics per Layer</div><div class="card-body"><div id="m-weight" style="min-height:180px"></div></div></div>
