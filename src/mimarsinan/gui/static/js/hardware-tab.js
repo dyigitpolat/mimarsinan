@@ -13,6 +13,7 @@
  */
 import { imgSrcAttr, resourceUrl, getResourceContext } from './resource-urls.js';
 import { esc, safeReact, plotHistogram } from './util.js';
+import { buildHwStatsPanelHtml } from './hw-stats-panel.js';
 
 // ── Lazy connectivity (per-core span list) ───────────────────────────────
 const _connectivityCache = new Map();
@@ -119,10 +120,23 @@ function computeGlobalLayout(hw) {
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────
-export function renderHardwareTab(hw, container, irGraph) {
+export function renderHardwareTab(hw, container, irGraph, mappingPerformance) {
   if (!hw) { container.innerHTML = '<div class="empty-state">No hardware mapping data</div>'; return; }
 
-  let html = `
+  // Real-mapping "Mapping Performance" panel — same UI as the wizard's
+  // hardware panel, but populated from the actual hard-core mapping
+  // (used vs available axons/neurons on each core that ran). Rendered
+  // above the workbench so utilization context is the first thing the
+  // user sees.
+  let hwPanelHtml = '';
+  if (mappingPerformance) {
+    hwPanelHtml =
+      '<div class="hw-stats-panel" style="margin-bottom:20px">'
+      + buildHwStatsPanelHtml(mappingPerformance, 'real')
+      + '</div>';
+  }
+
+  let html = hwPanelHtml + `
     <div class="grid-3 hw-top-metrics" style="margin-bottom:20px">
       <div class="card"><div class="big-metric"><div class="value">${hw.total_cores}</div><div class="label">Total HW Cores</div></div></div>
       <div class="card"><div class="big-metric"><div class="value">${(hw.mean_utilization * 100).toFixed(1)}%</div><div class="label">Mean Utilization</div></div></div>

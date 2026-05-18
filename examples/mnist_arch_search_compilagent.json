@@ -1,0 +1,57 @@
+{
+  "_comment": "Compilagent-driven joint NAS+HW co-search on MNIST/MLP-Mixer with LIF spiking. The optimizer drives a `compilagent.OptimizationSession` over the registered `mimarsinan_layout` backend through the pydantic-ai harness using `mistral-large-latest`. Pop size, max_candidates and option lists are kept small so a full architecture-search step finishes in a few minutes for live demos.",
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "mnist_arch_search_compilagent",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "target_tq": 16,
+    "weight_bits": 8,
+    "allow_coalescing": false,
+    "has_bias": true,
+    "search_space": {
+      "num_core_types": 1,
+      "core_axons_bounds": [128, 1024],
+      "core_neurons_bounds": [128, 1024],
+      "core_count_bounds": [50, 300]
+    }
+  },
+  "deployment_parameters": {
+    "lr": 0.001,
+    "training_epochs": 1,
+    "tuning_budget_scale": 1.0,
+    "degradation_tolerance": 0.1,
+    "model_config_mode": "search",
+    "hw_config_mode": "search",
+    "model_type": "mlp_mixer_core",
+    "arch_search": {
+      "_comment": "Compilagent session-based optimizer using pydantic-ai harness + mistral-large-latest. No primary objective \u2014 every axis is equally weighted; the agent uses pareto_front / metric_summary / query_top_candidates to navigate the multi-objective space. `objectives` is intentionally omitted so this run uses `default_objectives_for_mode('joint')` (the same 5 objectives NSGA2 and AgentEvolve get by default). Add an explicit list here to opt into a different mix \u2014 the optimizer never filters on its own.",
+      "optimizer": "compilagent",
+      "model": "mistral:mistral-large-latest",
+      "harness": "pydantic_ai",
+      "max_candidates": 4,
+      "max_continuations": 2,
+      "system_prompt_extra": "Aim to propose at least 3 deliberately diverse candidates per batch \u2014 explore the extremes of (cores, accuracy, fragmentation) rather than clustering in one region.",
+      "pop_size": 4,
+      "generations": 1,
+      "seed": 42,
+      "patch_c_1_options": [16, 32, 64],
+      "fc_w_1_options": [32, 64],
+      "fc_w_2_options": [32, 64],
+      "warmup_fraction": 0.1,
+      "training_batch_size": 256,
+      "accuracy_evaluator": "fast",
+      "extrapolation_num_train_epochs": 1,
+      "extrapolation_num_checkpoints": 5,
+      "extrapolation_target_epochs": 10
+    },
+    "spiking_mode": "lif",
+    "spike_generation_mode": "Uniform",
+    "firing_mode": "Default",
+    "thresholding_mode": "<="
+  },
+  "target_metric_override": null,
+  "start_step": "Architecture Search",
+  "stop_step": "Architecture Search"
+}

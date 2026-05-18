@@ -367,10 +367,18 @@ class DeploymentPipeline(Pipeline):
                     f"got '{self.config['spike_generation_mode']}'"
                 )
         else:
-            # LIF (rate-coded integrate-and-fire) defaults.  ``Uniform`` spike
-            # generation is deterministic and stable; subtractive-reset
-            # ``Default`` firing + strict ``<`` thresholding match nevresim
-            # rate-mode and SpikingJelly ``IFNode(v_reset=None)`` exactly.
+            # LIF (rate-coded integrate-and-fire) defaults.  ``Uniform``
+            # spike generation is deterministic and stable; subtractive-
+            # reset ``Default`` firing pairs with the strict ``<``
+            # threshold comparator that nevresim's DefaultFirePolicy
+            # (``threshold < membrane_potential``) hardcodes.
+            #
+            # Note: SpikingJelly's ``IFNode`` itself fires at the inclusive
+            # ``v >= v_threshold`` boundary; the alignment to the chip's
+            # strict comparator lives in ``LIFActivation`` (it offsets its
+            # internal ``v_threshold`` when ``thresholding_mode='<'``).
+            # The same config key therefore drives training and every chip
+            # path, so changing it here flips both together.
             self.config.setdefault("firing_mode", "Default")
             self.config.setdefault("spike_generation_mode", "Uniform")
             self.config.setdefault("thresholding_mode", "<")

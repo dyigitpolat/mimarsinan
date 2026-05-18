@@ -306,7 +306,24 @@ function handleSegmentChange(controlId, val) {
     updateObjectiveCheckboxes();
   }
   if (controlId === 'optimizer') {
-    document.getElementById('agentEvolveConfig').className = 'cond ' + (val === 'agent_evolve' ? 'visible' : 'hidden');
+    _setOptimizerExtras(val);
+  }
+}
+
+// Toggle the optimizer-specific config blocks. Each entry maps a
+// ``data-val`` on the optimizer segmented control to the id of the
+// extras panel that should be visible. Adding a fourth optimizer in
+// the future means appending one (val, panelId) pair here -- this
+// helper exists to keep that change one-line.
+const _OPTIMIZER_EXTRAS = [
+  ['agent_evolve', 'agentEvolveConfig'],
+  ['compilagent', 'compilagentConfig'],
+];
+function _setOptimizerExtras(val) {
+  for (const [optVal, panelId] of _OPTIMIZER_EXTRAS) {
+    const el = document.getElementById(panelId);
+    if (!el) continue;
+    el.className = 'cond ' + (val === optVal ? 'visible' : 'hidden');
   }
 }
 
@@ -909,6 +926,14 @@ function buildConfig() {
       dp.arch_search.candidates_per_batch = parseInt(v('agentCandidates'));
       dp.arch_search.max_regen_rounds = parseInt(v('agentRegenRounds'));
     }
+    if (optimizerType === 'compilagent') {
+      dp.arch_search.model = v('compilagentModel');
+      dp.arch_search.harness = v('compilagentHarness');
+      dp.arch_search.max_candidates = parseInt(v('compilagentMaxCandidates'));
+      dp.arch_search.max_continuations = parseInt(v('compilagentMaxContinuations'));
+      const sysExtra = v('compilagentSystemPrompt');
+      if (sysExtra) dp.arch_search.system_prompt_extra = sysExtra;
+    }
   }
 
   const maxSim = parseInt(v('maxSimulationSamples'), 10);
@@ -1188,6 +1213,11 @@ function loadStateFromConfig(config) {
   setVal('agentModel', arch.agent_model);
   setVal('agentCandidates', arch.candidates_per_batch);
   setVal('agentRegenRounds', arch.max_regen_rounds);
+  setVal('compilagentModel', arch.model);
+  setVal('compilagentHarness', arch.harness);
+  setVal('compilagentMaxCandidates', arch.max_candidates);
+  setVal('compilagentMaxContinuations', arch.max_continuations);
+  setVal('compilagentSystemPrompt', arch.system_prompt_extra || '');
 
   window.__wizardStartStep = config.start_step != null ? config.start_step : null;
   window.__wizardStopStep = config.stop_step != null ? config.stop_step : null;
@@ -1837,263 +1867,26 @@ function _renderHwStats(statsOrState) {
 
   var stats = statsOrState;
 
-  if (!stats.feasible) {
-    panel.className = 'hw-stats-panel hw-stats-state-error';
+  // Single source of truth for the success / infeasible panel
+  // rendering: hw-stats-panel.js. wizard.html loads it as a module
+  // and that module attaches window.HwStatsPanel for this classic
+  // script to call into. Falls back to a placeholder if the bridge
+  // hasn't initialized yet (defer ordering should prevent it; the
+  // guard keeps the wizard usable if hw-stats-panel.js fails to
+  // load).
+  if (!window.HwStatsPanel || typeof window.HwStatsPanel.buildHwStatsPanelHtml !== 'function') {
+    panel.className = 'hw-stats-panel hw-stats-state-loading';
     panel.innerHTML =
       '<div class="hw-stats-header">' +
         '<span class="hw-stats-title">Mapping Performance</span>' +
-        '<span class="hw-stats-badge error">Infeasible</span>' +
-      '</div>' +
-      '<div class="hw-stats-empty-msg">Hardware configuration cannot fit all soft cores \u2014 adjust core types.</div>';
+        '<span class="hw-stats-badge loading">Loading…</span>' +
+      '</div>';
     return;
   }
-
-  // Scheduled mapping: show pass count in the stats header badge
-  var scheduleBadge = '';
-  if (stats.schedule_pass_count && stats.schedule_pass_count > 1) {
-    scheduleBadge = ' \u2022 Scheduled';
-  }
-
-  // ── Helpers ─────────────────────────────────────────────
-  function fmt(v) { return v != null ? v.toFixed(1) : '\u2014'; }
-  function fmtInt(v) { return v != null ? String(v) : '\u2014'; }
-  function fmtNum(v) {
-    if (v == null) return '\u2014';
-    var n = Number(v);
-    return Number.isInteger(n) ? String(n) : n.toFixed(1);
-  }
-
-  function barColor(pct) {
-    if (pct >= 70) return 'green';
-    if (pct >= 40) return 'amber';
-    return 'rose';
-  }
-
-  function wasteBarColor(pct) {
-    if (pct <= 30) return 'green';
-    if (pct <= 60) return 'amber';
-    return 'rose';
-  }
-
-  function healthBar(label, pct, colorFn) {
-    var p = Math.max(0, Math.min(100, pct != null ? pct : 0));
-    var cls = colorFn(p);
-    return '<div class="hw-health-bar">' +
-      '<span class="hw-health-bar-label">' + _escHtml(label) + '</span>' +
-      '<div class="hw-health-bar-track"><div class="hw-health-bar-fill ' + cls + '" style="width:' + p.toFixed(1) + '%"></div></div>' +
-      '<span class="hw-health-bar-value">' + fmt(pct) + '%</span>' +
-      '</div>';
-  }
-
-  function miniBar(pct, colorFn) {
-    var p = Math.max(0, Math.min(100, pct != null ? pct : 0));
-    var cls = colorFn(p);
-    return '<div class="hw-per-core-cell">' +
-      '<div class="hw-per-core-bar-row">' +
-        '<div class="hw-per-core-track"><div class="hw-per-core-fill ' + cls + '" style="width:' + p.toFixed(1) + '%"></div></div>' +
-        '<span class="hw-per-core-value">' + fmt(pct) + '%</span>' +
-      '</div></div>';
-  }
-
-  function perCoreRow(label, min, avg, max, colorFn) {
-    return '<div class="hw-per-core-label">' + _escHtml(label) + '</div>' +
-      miniBar(min, colorFn) + miniBar(avg, colorFn) + miniBar(max, colorFn);
-  }
-
-  function detailChip(lbl, val) {
-    return '<span class="hw-detail-chip"><span class="hw-detail-chip-lbl">' +
-      _escHtml(lbl) + '</span>' + _escHtml(fmtNum(val)) + '</span>';
-  }
-
-  function renderLayoutPreview(preview) {
-    if (!preview || !Array.isArray(preview.flow) || preview.flow.length === 0) return '';
-
-    var hasScheduling = preview.schedule_sync_count > 0;
-
-    var items = preview.flow.map(function (item) {
-      if (item.kind === 'input' || item.kind === 'output') {
-        return '<div class="hw-layout-mini-endcap ' + item.kind + '">' +
-          '<span>' + item.kind.toUpperCase() + '</span>' +
-          '</div>';
-      }
-      if (item.kind === 'host') {
-        if (item.schedule_sync) {
-          // Schedule sync barrier — same visual weight as host-ops, red accent
-          return '<div class="hw-layout-mini-host hw-layout-mini-schedule-sync">' +
-            '<div class="hw-layout-mini-host-box">' +
-            '<div class="hw-layout-mini-host-label">\u21bb sync</div>' +
-            '<div class="hw-layout-mini-host-sub">pass</div>' +
-            '</div>' +
-            '</div>';
-        }
-        return '<div class="hw-layout-mini-host">' +
-          '<div class="hw-layout-mini-host-box">' +
-          '<div class="hw-layout-mini-host-label">' + fmtInt(item.compute_op_count) + ' ops</div>' +
-          '<div class="hw-layout-mini-host-sub">host</div>' +
-          '</div>' +
-          '</div>';
-      }
-      if (item.kind === 'neural') {
-        return '<div class="hw-layout-mini-lat-group">' +
-          '<div class="hw-layout-mini-lat-label">' + fmtInt(item.latency_group_index) + '</div>' +
-          '<div class="hw-layout-mini-lat-bar">' + fmtInt(item.softcore_count) + '</div>' +
-          '</div>';
-      }
-      return '';
-    }).filter(Boolean);
-
-    var flowHtml = items.map(function (itemHtml, idx) {
-      if (idx === items.length - 1) return itemHtml;
-      return itemHtml + '<div class="hw-layout-mini-arrow">\u2192</div>';
-    }).join('');
-
-    var title = hasScheduling ? 'Mapping Miniview (Scheduled)' : 'Mapping Miniview';
-    return '<div class="hw-layout-mini-wrap">' +
-      '<div class="hw-stats-section-label">' + title + '</div>' +
-      '<div class="hw-layout-mini-flow">' + flowHtml + '</div>' +
-      '</div>';
-  }
-
-  // ── Build HTML ──────────────────────────────────────────
-  var html =
-    '<div class="hw-stats-header">' +
-      '<span class="hw-stats-title">Mapping Performance</span>' +
-      '<span class="hw-stats-badge ok">Verified' + scheduleBadge + '</span>' +
-    '</div>';
-
-  // Count cards — always-present topology overview
-  var segmentCard = (stats.neural_segment_count > 0)
-    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.neural_segment_count) + '</div><div class="hw-stat-card-label">Neural Segments</div></div>'
-    : '';
-  var scheduleSyncs = stats.schedule_sync_count
-    || (stats.layout_preview && stats.layout_preview.schedule_sync_count)
-    || 0;
-  var totalBarriers = (stats.host_side_segment_count || 0) + scheduleSyncs;
-  var syncBarrierCard = (totalBarriers > 0)
-    ? '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(totalBarriers) + '</div><div class="hw-stat-card-label">Sync Barriers</div></div>'
-    : '';
-  var coresLabel = (stats.schedule_pass_count > 1) ? 'Cores / Pass' : 'Cores Used';
-
-  html +=
-    '<div class="hw-stats-cards">' +
-      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_cores) + '</div><div class="hw-stat-card-label">' + coresLabel + '</div></div>' +
-      '<div class="hw-stat-card"><div class="hw-stat-card-value">' + fmtInt(stats.total_softcores) + '</div><div class="hw-stat-card-label">Softcores</div></div>' +
-      segmentCard + syncBarrierCard +
-    '</div>';
-
-  // Two-column body: total (left) + per-core (right)
-  html += '<div class="hw-stats-body">';
-
-  // Left: total health bars
-  html +=
-    '<div>' +
-      '<div class="hw-stats-section-label">Total</div>' +
-      '<div class="hw-stats-bars">' +
-        healthBar('Param Utilization', stats.mapped_params_pct, barColor) +
-        healthBar('Wasted Axons', stats.total_wasted_axons_pct, wasteBarColor) +
-        healthBar('Wasted Neurons', stats.total_wasted_neurons_pct, wasteBarColor) +
-      '</div>' +
-    '</div>';
-
-  // Right: per-core min/avg/max health bars
-  html +=
-    '<div>' +
-      '<div class="hw-stats-section-label">Per-Core</div>' +
-      '<div class="hw-per-core-grid">' +
-        '<div></div>' +
-        '<div class="hw-per-core-header">Min</div>' +
-        '<div class="hw-per-core-header">Avg</div>' +
-        '<div class="hw-per-core-header">Max</div>' +
-        perCoreRow('Wasted Axons',
-          stats.per_core_wasted_axons_pct_min,
-          stats.per_core_wasted_axons_pct_avg,
-          stats.per_core_wasted_axons_pct_max,
-          wasteBarColor) +
-        perCoreRow('Wasted Neurons',
-          stats.per_core_wasted_neurons_pct_min,
-          stats.per_core_wasted_neurons_pct_avg,
-          stats.per_core_wasted_neurons_pct_max,
-          wasteBarColor) +
-        perCoreRow('Param Usage',
-          stats.per_core_mapped_params_pct_min,
-          stats.per_core_mapped_params_pct_avg,
-          stats.per_core_mapped_params_pct_max,
-          barColor) +
-      '</div>' +
-    '</div>';
-
-  html += '</div>'; // end hw-stats-body
-
-  var detailRowsHtml = '';
-
-  // ── Coalescing detail ──────────────────────────────────
-  if (stats.coalescing_group_count > 0) {
-    detailRowsHtml +=
-      '<div class="hw-detail-row">' +
-        '<span class="hw-detail-title">Coalescing</span>' +
-        '<span class="hw-detail-count">' + fmtInt(stats.coalescing_group_count) + ' groups</span>' +
-        '<span class="hw-detail-stat-label">Frags/group:</span>' +
-        detailChip('Min', stats.coalescing_frags_per_group_min) +
-        detailChip('Mdn', stats.coalescing_frags_per_group_median) +
-        detailChip('Max', stats.coalescing_frags_per_group_max) +
-      '</div>';
-  }
-
-  // ── Segment latency detail ───────────────────────────────
-  if (stats.neural_segment_count > 0) {
-    detailRowsHtml +=
-      '<div class="hw-detail-row">' +
-        '<span class="hw-detail-title">Segment Latency</span>' +
-        '<span class="hw-detail-count">' + fmtInt(stats.neural_segment_count) + ' segments</span>' +
-        '<span class="hw-detail-stat-label">Latency groups/segment:</span>' +
-        detailChip('Min', stats.segment_latency_min) +
-        detailChip('Mdn', stats.segment_latency_median) +
-        detailChip('Max', stats.segment_latency_max) +
-      '</div>';
-  }
-
-  // ── Scheduling detail ──────────────────────────────────
-  if (stats.schedule_pass_count > 1) {
-    var perSegDetail = '';
-    if (stats.per_segment_passes) {
-      var segEntries = Object.keys(stats.per_segment_passes).sort(function(a, b) { return a - b; });
-      perSegDetail = segEntries.map(function(sid) {
-        return 'seg ' + sid + ': ' + stats.per_segment_passes[sid] + 'p';
-      }).join(', ');
-    }
-    detailRowsHtml +=
-      '<div class="hw-detail-row">' +
-        '<span class="hw-detail-title">Scheduling</span>' +
-        '<span class="hw-detail-count">' + fmtInt(stats.schedule_pass_count) + ' total passes</span>' +
-        '<span class="hw-detail-stat-label">' + (perSegDetail || 'Cores reused between passes.') + '</span>' +
-      '</div>';
-  }
-
-  // ── Splitting detail ───────────────────────────────────
-  if (stats.split_softcore_count > 0) {
-    detailRowsHtml +=
-      '<div class="hw-detail-row">' +
-        '<span class="hw-detail-title">Splitting</span>' +
-        '<span class="hw-detail-count">' + fmtInt(stats.split_softcore_count) + ' softcores split</span>' +
-        '<span class="hw-detail-stat-label">Splits/SC:</span>' +
-        detailChip('Min', stats.splits_per_softcore_min) +
-        detailChip('Mdn', stats.splits_per_softcore_median) +
-        detailChip('Max', stats.splits_per_softcore_max) +
-      '</div>';
-  }
-
-  var layoutPreviewHtml = renderLayoutPreview(stats.layout_preview);
-  if (detailRowsHtml || layoutPreviewHtml) {
-    html += '<div class="hw-stats-bottom">';
-    html += '<div class="hw-stats-bottom-left">' + detailRowsHtml + '</div>';
-    if (layoutPreviewHtml) {
-      html += '<div class="hw-stats-bottom-right">' + layoutPreviewHtml + '</div>';
-    }
-    html += '</div>';
-  }
-
-  panel.className = 'hw-stats-panel';
-  panel.innerHTML = html;
+  panel.className = (stats.feasible === false)
+    ? 'hw-stats-panel hw-stats-state-error'
+    : 'hw-stats-panel';
+  panel.innerHTML = window.HwStatsPanel.buildHwStatsPanelHtml(stats, 'planned');
   _hwStatsHasContent = true;
 
   // Always mask the content swap to prevent the "bars growing from 0%" flash.

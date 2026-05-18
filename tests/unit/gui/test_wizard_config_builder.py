@@ -200,8 +200,26 @@ class TestWizardSchema:
     def test_get_wizard_nas_schema_has_optimizers(self):
         nas = get_wizard_nas_schema()
         assert "optimizer_options" in nas
-        assert any(o["id"] == "nsga2" for o in nas["optimizer_options"])
+        ids = {o["id"] for o in nas["optimizer_options"]}
+        assert {"nsga2", "agent_evolve", "compilagent"} <= ids
         assert "common_fields" in nas
+
+    def test_get_wizard_nas_schema_has_compilagent_fields(self):
+        nas = get_wizard_nas_schema()
+        assert "compilagent_fields" in nas
+        fields = nas["compilagent_fields"]
+        # Same shape contract as agent_evolve_fields so the wizard's
+        # generic field renderer works without a special case. There is
+        # intentionally no `primary_objective` field: every objective is
+        # equally weighted in compilagent's multi-objective leaderboard.
+        for required_key in (
+            "model", "harness", "max_candidates", "max_continuations",
+            "system_prompt_extra",
+        ):
+            assert required_key in fields, f"missing compilagent field {required_key!r}"
+        assert "primary_objective" not in fields
+        # harness options enumerate at least the canonical pair
+        assert "pydantic_ai" in fields["harness"]["options"]
 
     def test_get_wizard_nas_schema_accuracy_evaluator_matches_wizard_ui(self):
         nas = get_wizard_nas_schema()

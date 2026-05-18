@@ -233,15 +233,40 @@ def derive_arch_spec(
 # ---------------------------------------------------------------------------
 
 
-def _render_arch_yaml(spec: ArchSpec) -> str:
+def _thresholding_mode_to_soma_attr(thresholding_mode: str) -> str:
+    """Translate the pipeline's ``thresholding_mode`` to the soma plugin attr.
+
+    ``mimarsinan_soma`` reads ``thresholding_mode`` and treats any value
+    equal to ``"inclusive"`` or ``"<="`` as ``v >= threshold`` firing,
+    anything else (including ``"strict"`` / ``"<"``) as strict ``v > threshold``.
+    Use the human-readable form here so the generated YAML reads cleanly.
+    """
+    if thresholding_mode in ("<=", "inclusive"):
+        return "inclusive"
+    if thresholding_mode in ("<", "strict"):
+        return "strict"
+    raise ValueError(
+        f"unsupported thresholding_mode {thresholding_mode!r}; expected "
+        "one of ('<', '<=', 'strict', 'inclusive')"
+    )
+
+
+def _render_arch_yaml(spec: ArchSpec, *, thresholding_mode: str = "<") -> str:
     """Render a SANA-FE-compatible architecture YAML from the spec.
 
     The YAML embeds every hardware unit ``net_synth`` references by name
     (``SYNAPSE_NAME``, ``DENDRITE_NAME``, ``SOMA_LIF_NAME``,
     ``SOMA_INPUT_RANGE_NAME``, ``AXON_IN_NAME``, ``AXON_OUT_NAME``).
     Per-event numbers come from the spec's preset, never local literals.
+
+    ``thresholding_mode`` plumbs the pipeline-level firing comparator
+    config (default strict ``<``) into the soma plugin's
+    ``thresholding_mode`` hardware attribute, so SANA-FE's firing rule
+    follows the same knob as the HCM Python sim and the training
+    ``LIFActivation``.
     """
     p = spec.preset
+    soma_thresholding = _thresholding_mode_to_soma_attr(thresholding_mode)
     # Per-core ``inputs[0..N-1]`` pool — sized to this core's axon
     # capacity.  Each HardCore's input neurons live on the SANA-FE
     # core that consumes them (no global input host), so the pool only
@@ -294,7 +319,7 @@ def _render_arch_yaml(spec: ArchSpec) -> str:
               attributes:
                 plugin: {spec.soma_plugin_path}
                 model: mimarsinan_soma
-                thresholding_mode: strict
+                thresholding_mode: {soma_thresholding}
                 energy_access_neuron: {p["soma_access_energy_j"]}
                 latency_access_neuron: {p["soma_access_latency_s"]}
                 energy_update_neuron: {p["soma_update_energy_j"]}
@@ -357,6 +382,7 @@ def build_architecture(
     spec: ArchSpec,
     *,
     custom_arch_path: Optional[str] = None,
+    thresholding_mode: str = "<",
 ) -> Any:
     """Construct (or load) a SANA-FE Architecture matching ``spec``.
 
@@ -364,6 +390,9 @@ def build_architecture(
     directly on that file; the loaded architecture is validated against
     the spec's total core count.  Otherwise an in-memory YAML is rendered
     from the spec, written to a tempfile, and loaded.
+
+    ``thresholding_mode`` is forwarded to ``_render_arch_yaml`` so the
+    soma plugin's firing comparator follows the pipeline-level setting.
     """
     sanafe = _sanafe()
 
@@ -381,7 +410,7 @@ def build_architecture(
             )
         return arch
 
-    yaml_str = _render_arch_yaml(spec)
+    yaml_str = _render_arch_yaml(spec, thresholding_mode=thresholding_mode)
     with tempfile.NamedTemporaryFile(
         suffix=".yaml", mode="w", delete=False,
         prefix=f"mimarsinan_sanafe_arch_{spec.name}_",

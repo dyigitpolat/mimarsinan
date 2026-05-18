@@ -14,3 +14,8 @@ websockets
 pydantic-ai
 python-dotenv
 pytest>=8.0
+# Compilagent is a hard dependency for the third architecture-search
+# optimizer option (`arch_search.optimizer == "compilagent"`). Installed
+# editable from the sibling repo so local edits propagate without a
+# reinstall; release flow can swap to a pinned wheel.
+-e ../compilagent

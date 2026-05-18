@@ -13,6 +13,10 @@ const CALL_KIND_LABELS = {
   update_constraint: 'Update constraints',
   performance_insights: 'Performance insights',
   update_performance_insights: 'Update performance insights',
+  // Compilagent-specific call kinds (see sink.py / compilagent_optimizer.py)
+  compilagent_tool_call: 'Tool call',
+  compilagent_compile_phase: 'Compile phase',
+  compilagent_objectives_recorded: 'Objectives recorded',
   unknown: 'LLM call',
 };
 
@@ -28,6 +32,12 @@ let _startTime = null;
 let _timerInterval = null;
 /** Events from state.searchEvents already applied to the live DOM (WS + poll tail). */
 let _appliedSearchEventCount = 0;
+// Bulk-replay flag: when set, expensive per-event re-renders (Pareto
+// summary rebuild, per-generation candidate re-sort) are deferred until
+// the replay finishes so opening the tab is O(N) instead of O(N²).
+let _replayBusy = false;
+let _paretoDirty = false;
+const _genSortDirty = new Set();
 
 // ── Public API ───────────────────────────────────────────────────────────
 
@@ -114,7 +124,37 @@ export function isSearchLiveActive() {
 }
 
 export function replaySearchEvents(events) {
-  for (const ev of events) handleSearchEvent(ev);
+  // Bulk replay: defer the heavy generation_complete-driven re-renders
+  // (Pareto strip rebuild, candidate-grid re-sort) and run each at most
+  // once at the end. Without this, opening the tab on a multi-generation
+  // run synchronously rebuilds the Pareto strip and re-sorts every grid
+  // for every replayed generation_complete event.
+  _replayBusy = true;
+  _paretoDirty = false;
+  _genSortDirty.clear();
+  try {
+    for (const ev of events) handleSearchEvent(ev);
+  } finally {
+    _replayBusy = false;
+  }
+  if (_paretoDirty) {
+    _paretoDirty = false;
+    // The latest pareto_front is on the last generation_complete that
+    // carried it; re-apply lazily by walking back through events.
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if (ev && ev.type === 'generation_complete' && ev.pareto_front && ev.pareto_front.length > 0) {
+        const gc = _generations[ev.gen];
+        _updateGlobalPareto(ev.pareto_front, (gc && gc.objSpecs) || _lastObjSpecs);
+        break;
+      }
+    }
+  }
+  for (const gen of _genSortDirty) {
+    const gc = _generations[gen];
+    if (gc) _sortCandidatesByRank(gc);
+  }
+  _genSortDirty.clear();
   _appliedSearchEventCount = events.length;
 }
 
@@ -170,10 +210,18 @@ const _handlers = {
     _updateGenCounts(gc);
     _updateHeader();
 
-    _sortCandidatesByRank(gc);
+    if (_replayBusy) {
+      _genSortDirty.add(ev.gen);
+    } else {
+      _sortCandidatesByRank(gc);
+    }
 
     if (ev.pareto_front && ev.pareto_front.length > 0) {
-      _updateGlobalPareto(ev.pareto_front, gc.objSpecs || _lastObjSpecs);
+      if (_replayBusy) {
+        _paretoDirty = true;
+      } else {
+        _updateGlobalPareto(ev.pareto_front, gc.objSpecs || _lastObjSpecs);
+      }
     }
     if (ev.constraint_instruction) {
       gc.constraintsBody.innerHTML = `<div class="sl-prose sl-md">${renderMarkdown(ev.constraint_instruction)}</div>`;
@@ -199,6 +247,74 @@ const _handlers = {
     }
     if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
     if (_headerEl) _headerEl.classList.add('sl-search-done');
+  },
+
+  // ── Compilagent-specific events ─────────────────────────────────────
+  // These events ride on the same `search_event` envelope AgentEvolve
+  // emits, so the server-side plumbing (GUIReporter -> DataCollector ->
+  // /ws -> state.searchEvents) needs no change. The renderer reuses the
+  // existing trace-row helper so compilagent and AgentEvolve traces
+  // coexist in one diagnostics column without a parallel UI tree.
+
+  compilagent_tool_call(ev) {
+    const gc = _ensureGenCard(ev.gen || 1, null);
+    if (!gc.traces) gc.traces = [];
+    const synth = {
+      gen: ev.gen || 1,
+      ordinal: (gc.traces.length + 1),
+      call_kind: 'compilagent_tool_call',
+      output_schema_keys: [],
+      request: { sections: [], truncated: false, total_chars: 0 },
+      response: {
+        call_kind: 'compilagent_tool_call',
+        tool_name: ev.tool_name || 'unknown',
+        phase: ev.phase || 'started',
+        candidate_id: ev.candidate_id || null,
+      },
+    };
+    gc.traces.push(synth);
+    _appendTraceRow(gc, synth);
+  },
+
+  compilagent_compile_phase(ev) {
+    const gc = _ensureGenCard(ev.gen || 1, null);
+    if (!gc.traces) gc.traces = [];
+    const synth = {
+      gen: ev.gen || 1,
+      ordinal: (gc.traces.length + 1),
+      call_kind: 'compilagent_compile_phase',
+      output_schema_keys: [],
+      request: { sections: [], truncated: false, total_chars: 0 },
+      response: {
+        call_kind: 'compilagent_compile_phase',
+        stage: ev.stage || '',
+        name: ev.name || '',
+        duration_ms: ev.duration_ms,
+        candidate_id: ev.candidate_id || null,
+      },
+    };
+    gc.traces.push(synth);
+    _appendTraceRow(gc, synth);
+  },
+
+  compilagent_objectives_recorded(ev) {
+    const gc = _ensureGenCard(ev.gen || 1, null);
+    if (!gc.traces) gc.traces = [];
+    const synth = {
+      gen: ev.gen || 1,
+      ordinal: (gc.traces.length + 1),
+      call_kind: 'compilagent_objectives_recorded',
+      output_schema_keys: Object.keys(ev.objectives || {}),
+      request: { sections: [], truncated: false, total_chars: 0 },
+      response: {
+        call_kind: 'compilagent_objectives_recorded',
+        candidate_id: ev.candidate_id || null,
+        objectives: ev.objectives || {},
+        metadata: ev.metadata || {},
+      },
+    };
+    gc.traces.push(synth);
+    _appendTraceRow(gc, synth);
   },
 };
 
@@ -391,6 +507,30 @@ function _renderResponseStructured(resp, schemaKeys) {
   if (resp.text_preview_truncated) {
     const n = resp.text_preview_full_len != null ? String(resp.text_preview_full_len) : '?';
     html += `<div class="sl-trace-meta sl-trace-meta--warn">Showing truncated preview (${n} characters total).</div>`;
+  }
+  // Compilagent-flavored fields. These are rendered with the same kv
+  // helpers AgentEvolve uses; no parallel renderer.
+  if (resp.tool_name) {
+    html += `<div class="sl-trace-kv"><span class="sl-trace-k">Tool</span><span class="sl-trace-v">${esc(resp.tool_name)}${resp.phase ? ' (' + esc(resp.phase) + ')' : ''}</span></div>`;
+  }
+  if (resp.stage || resp.name) {
+    html += `<div class="sl-trace-kv"><span class="sl-trace-k">Stage</span><span class="sl-trace-v">${esc(resp.stage || '')} / ${esc(resp.name || '')}</span></div>`;
+  }
+  if (resp.duration_ms != null) {
+    html += `<div class="sl-trace-kv"><span class="sl-trace-k">Duration</span><span class="sl-trace-v">${Number(resp.duration_ms).toFixed(2)} ms</span></div>`;
+  }
+  if (resp.candidate_id) {
+    html += `<div class="sl-trace-kv"><span class="sl-trace-k">Candidate</span><span class="sl-trace-v">${esc(resp.candidate_id)}</span></div>`;
+  }
+  if (resp.objectives && typeof resp.objectives === 'object') {
+    html += '<div class="sl-trace-kv"><span class="sl-trace-k">Objectives</span><div class="sl-trace-v">';
+    for (const [k, v] of Object.entries(resp.objectives)) {
+      const meta = (resp.metadata || {})[k] || {};
+      const unit = meta.unit ? ' ' + meta.unit : '';
+      const goal = meta.goal ? ' [' + meta.goal + ']' : '';
+      html += `<div class="sl-trace-objline"><span class="sl-trace-objname">${esc(k)}</span><span class="sl-trace-objval">${esc(String(typeof v === 'number' ? v.toFixed(4) : v))}${esc(unit)}${esc(goal)}</span></div>`;
+    }
+    html += '</div></div>';
   }
   if (!html) {
     html = '<div class="sl-trace-empty">No structured fields</div>';

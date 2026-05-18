@@ -27,6 +27,7 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
         "optimizer_options": [
             {"id": "nsga2", "label": "NSGA-II"},
             {"id": "agent_evolve", "label": "Agentic Evolution (LLM-based)"},
+            {"id": "compilagent", "label": "Compilagent (LLM session)"},
         ],
         "common_fields": {
             "pop_size": {"type": "int", "default": 8, "min": 2, "max": 64, "doc": "Population size"},
@@ -45,6 +46,13 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
             "max_regen_rounds": {"type": "int", "default": 10, "min": 1, "max": 50, "doc": "Max regen rounds"},
             "max_failed_examples": {"type": "int", "default": 5, "min": 0, "max": 20, "doc": "Max failed examples"},
             "constraints_description": {"type": "textarea", "default": "", "doc": "Constraints for LLM"},
+        },
+        "compilagent_fields": {
+            "model": {"type": "str", "default": "openai:gpt-4o", "doc": "LLM model id (provider:model)"},
+            "harness": {"type": "str", "default": "pydantic_ai", "options": ["pydantic_ai", "claude_agent_sdk"], "doc": "Compilagent harness"},
+            "max_candidates": {"type": "int", "default": 8, "min": 1, "max": 64, "doc": "Max candidates per session"},
+            "max_continuations": {"type": "int", "default": 4, "min": 0, "max": 32, "doc": "Max continuation rounds"},
+            "system_prompt_extra": {"type": "textarea", "default": "", "doc": "Extra system-prompt text (appended)"},
         },
         "objective_options": [
             {"id": o.name, "label": _objective_label(o.name), "goal": o.goal,

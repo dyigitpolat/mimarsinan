@@ -601,10 +601,30 @@ class SpikingHybridCoreFlow(nn.Module):
                 if sp.kind == "off":
                     continue
                 if sp.kind == "on":
-                    output_counts[:, d0:d1] += 1.0
+                    # An always-on axon delivers exactly one spike per
+                    # input cycle (cycles ``[0, T)``); any later cycle is
+                    # part of the segment's latency-cascade drain and
+                    # has no spike to forward downstream.
+                    if cycle < T:
+                        output_counts[:, d0:d1] += 1.0
                     continue
                 if sp.kind == "input":
                     output_counts[:, d0:d1] += input_spikes[:, int(sp.src_start):int(sp.src_end)]
+                    continue
+                # Neuron source: ``buffers[src_core]`` is updated only
+                # inside the source's active window
+                # ``[lat, lat + T)``; outside that window the buffer
+                # is frozen at the last in-window firing.  Accumulating
+                # it unconditionally pollutes the segment's spike
+                # count with stale-buffer reads — catastrophic when an
+                # output source sits at a much shallower depth than
+                # ``cycles``, since each shallow source then over-
+                # contributes ``cycles - T`` extra firings.  Gate by
+                # the source's own window.
+                src_lat = cores[int(sp.src_core)].latency
+                if src_lat is None:
+                    continue
+                if cycle < int(src_lat) or cycle >= int(src_lat) + T:
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
 
@@ -836,15 +856,71 @@ class SpikingHybridCoreFlow(nn.Module):
         emit its actual ``(T, B, ...)`` spike train instead of a mean
         rate — preserving the cycle-accurate spike timing through the
         compute boundary.
+
+        After ``LIFAdaptationStep`` (and any subsequent
+        ``AdaptationManager.update_activation`` call), ``perceptron.activation``
+        is a ``TransformedActivation(base=LIFBlendActivation(LIFActivation, …),
+        decorators=[])``. We walk through both wrappers so the encoding
+        ComputeOp emits the real LIF spike train instead of falling back to a
+        uniform re-encoding of its rate.
+
+        Conv-style encoding ComputeOps (``Conv2DPerceptronMapper`` wrapped as
+        ``ComputeOp("module")``) wire ``module.perceptron`` to the inner
+        flat-FC ``Perceptron`` but feed the op a 4-D ``(B, C, H, W)``
+        gather, which ``Perceptron.forward_spiking`` can't consume. Skip
+        them here — the rate-side ``_exec_module`` path still produces the
+        correct rate output, and the next neural segment falls back to
+        uniform encoding (the pre-fix behaviour).
         """
         from mimarsinan.models.activations import LIFActivation
 
         if module is None:
             return None
-        candidate = getattr(module, "perceptron", module)
+        # Conv-mapper encoding ComputeOps own a ``.perceptron`` *and* the
+        # mapper itself drives forward(); the inner Perceptron's
+        # ``forward_spiking`` doesn't match the conv-shaped gather.
+        if hasattr(module, "perceptron") and module is not getattr(module, "perceptron"):
+            return None
+        candidate = module
+        if not hasattr(candidate, "forward_spiking"):
+            return None
         activation = getattr(candidate, "activation", None)
-        if isinstance(activation, LIFActivation) and hasattr(candidate, "forward_spiking"):
+        if SpikingHybridCoreFlow._unwrap_lif_activation(activation) is not None:
             return candidate
+        return None
+
+    @staticmethod
+    def _unwrap_lif_activation(activation):
+        """Walk a perceptron activation chain and return the inner ``LIFActivation``.
+
+        Recognised wrappers (LIF deployment installs all three):
+          * ``TransformedActivation(base, decorators)`` — the post-
+            ``update_activation`` chain. ``base`` is the underlying module.
+          * ``LIFBlendActivation(old_activation, lif_activation, rate)`` —
+            installed by ``LIFAdaptationTuner``; ``rate == 1.0`` after the
+            tuner's ``_after_run`` so ``lif_activation`` is what actually
+            runs. We pull it out regardless of rate (the spike train is
+            always taken from the LIF side; the pure ``LIFActivation``
+            forward path is the one the chip will execute).
+
+        Returns the innermost ``LIFActivation`` or ``None`` if none is found.
+        """
+        from mimarsinan.models.activations import LIFActivation
+        from mimarsinan.models.layers import TransformedActivation
+        from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFBlendActivation
+
+        for _ in range(8):  # depth cap — chain is at most 2 wrappers in practice
+            if activation is None:
+                return None
+            if isinstance(activation, LIFActivation):
+                return activation
+            if isinstance(activation, TransformedActivation):
+                activation = getattr(activation, "base_activation", None)
+                continue
+            if isinstance(activation, LIFBlendActivation):
+                activation = activation.lif_activation
+                continue
+            return None
         return None
 
     def _build_segment_input_spike_train(

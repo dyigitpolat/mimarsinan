@@ -100,6 +100,10 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
         self.adaptation_manager = adaptation_manager
         self.name = "LIF Adaptation"
         self._T = int(pipeline.config["simulation_steps"])
+        # Training must fire under the same comparator as the chip path.
+        # Default ``<`` matches nevresim's strict DefaultFirePolicy and the
+        # LIF deployment defaults set in DeploymentPipeline.
+        self._thresholding_mode = str(pipeline.config.get("thresholding_mode", "<"))
         self._final_metric = None
 
         # Snapshot the teacher BEFORE any swap — it's the pre-LIF model.
@@ -128,8 +132,14 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
         for perceptron in self.model.get_perceptrons():
             old_base = perceptron.base_activation
             # LIFActivation references the same ``activation_scale`` nn.Parameter,
-            # so scale updates remain in sync with Perceptron state.
-            lif = LIFActivation(T=self._T, activation_scale=perceptron.activation_scale)
+            # so scale updates remain in sync with Perceptron state.  The
+            # firing comparator follows the pipeline's ``thresholding_mode``
+            # so training and chip simulation use the same rule.
+            lif = LIFActivation(
+                T=self._T,
+                activation_scale=perceptron.activation_scale,
+                thresholding_mode=self._thresholding_mode,
+            )
             perceptron.base_activation = LIFBlendActivation(old_base, lif, rate=0.0)
             # Rebuild the TransformedActivation wrapper so the new base
             # module participates in forward passes.

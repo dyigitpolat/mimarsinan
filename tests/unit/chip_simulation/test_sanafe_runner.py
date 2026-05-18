@@ -195,8 +195,10 @@ def _patch_sanafe_stack(monkeypatch, *, fake_arch=None):
     monkeypatch.setattr(runner_mod, "_sanafe", _fake_sanafe_module)
     if fake_arch is None:
         fake_arch = _fake_arch(2)
-    monkeypatch.setattr(runner_mod, "build_architecture",
-                        lambda spec, custom_arch_path=None: fake_arch)
+    monkeypatch.setattr(
+        runner_mod, "build_architecture",
+        lambda spec, custom_arch_path=None, thresholding_mode="<": fake_arch,
+    )
 
     def default_builder(arch, hcm, **kw):
         net = _FakeNetwork()

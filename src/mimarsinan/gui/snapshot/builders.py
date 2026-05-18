@@ -768,6 +768,248 @@ def _make_per_core_connectivity_producer(get_all_spans, core_index: int):
     return produce
 
 
+def snapshot_mapping_performance_planned(
+    model: Any,
+    platform_constraints: dict | None,
+    *,
+    input_shape: tuple | list | None = None,
+    num_classes: int | None = None,
+) -> dict | None:
+    """Return wizard-shaped Mapping Performance stats for the built model.
+
+    Runs the same ``verify_soft_core_mapping`` + ``verify_hardware_config``
+    pipeline the wizard uses, so the GUI panel shown on the Model Building
+    step matches the wizard's view exactly (same dict shape, same helpers,
+    same numbers) — but driven by the real, freshly-built model and the
+    resolved platform constraints instead of wizard form values.
+
+    The freshly-built model may or may not already expose
+    ``get_mapper_repr``: native builders return a supermodel that does;
+    torch-category builders (``mlp_mixer_core``, sequential conv/linear,
+    vit, …) return a plain ``nn.Module`` that only gains
+    ``get_mapper_repr`` after ``TorchMappingStep`` runs. We don't want to
+    wait for that step before showing the panel, so for torch models we
+    do the same conversion the pipeline will do later. ``convert_torch_model``
+    is non-mutating (FX trace produces a new GraphModule, weights are read
+    via ``state_dict``, the result is a fresh ``ConvertedModelFlow``) — it
+    is exactly the path the wizard uses for its layout probe — so we can
+    call it directly on the cached model without protecting the pipeline
+    state.
+
+    Returns ``None`` when prerequisites are missing or any step throws,
+    so the GUI just hides the panel rather than surfacing a stack trace.
+    """
+    if model is None or not platform_constraints:
+        return None
+    cores = platform_constraints.get("cores") or []
+    if not cores:
+        return None
+    try:
+        from mimarsinan.mapping.mapping_verifier import (
+            verify_soft_core_mapping,
+            verify_hardware_config,
+        )
+    except Exception:
+        logger.debug("mapping_verifier not importable", exc_info=True)
+        return None
+
+    try:
+        if hasattr(model, "get_mapper_repr"):
+            model_repr = model.get_mapper_repr()
+        else:
+            # Torch-category model: convert to a supermodel using the
+            # same non-mutating path the wizard's layout probe uses.
+            if input_shape is None:
+                return None
+            from mimarsinan.torch_mapping.converter import convert_torch_model
+            supermodel = convert_torch_model(
+                model,
+                input_shape=tuple(input_shape),
+                num_classes=int(num_classes or 10),
+                device="cpu",
+            )
+            model_repr = supermodel.get_mapper_repr()
+    except Exception:
+        logger.debug("Failed to extract model_repr for planned mapping", exc_info=True)
+        return None
+    if hasattr(model_repr, "assign_perceptron_indices"):
+        try:
+            model_repr.assign_perceptron_indices()
+        except Exception:
+            logger.debug("assign_perceptron_indices failed", exc_info=True)
+
+    allow_coalescing = bool(platform_constraints.get("allow_coalescing", False))
+    allow_neuron_splitting = bool(platform_constraints.get("allow_neuron_splitting", False))
+    allow_scheduling = bool(platform_constraints.get("allow_scheduling", False))
+    hardware_bias = all(bool(ct.get("has_bias", True)) for ct in cores)
+
+    tile_max_ax = max(int(ct.get("max_axons", 0)) for ct in cores)
+    tile_max_neu = max(int(ct.get("max_neurons", 0)) for ct in cores)
+    if tile_max_ax <= 0 or tile_max_neu <= 0:
+        return None
+
+    try:
+        soft = verify_soft_core_mapping(
+            model_repr,
+            max_axons=tile_max_ax,
+            max_neurons=tile_max_neu,
+            allow_coalescing=allow_coalescing,
+            hardware_bias=hardware_bias,
+        )
+    except Exception:
+        logger.debug("verify_soft_core_mapping failed", exc_info=True)
+        return None
+    if not soft.feasible:
+        return {"feasible": False}
+
+    core_types_dicts = [
+        {
+            "max_axons": int(ct.get("max_axons", 0)),
+            "max_neurons": int(ct.get("max_neurons", 0)),
+            "count": int(ct.get("count", 0)),
+        }
+        for ct in cores
+    ]
+    try:
+        result = verify_hardware_config(
+            soft.softcores, core_types_dicts,
+            allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
+            allow_scheduling=allow_scheduling,
+        )
+    except Exception:
+        logger.debug("verify_hardware_config failed", exc_info=True)
+        return None
+
+    stats_out: dict = dict(result.get("stats") or {})
+    if hasattr(soft, "host_side_segment_count"):
+        stats_out.setdefault("host_side_segment_count", soft.host_side_segment_count)
+    if hasattr(soft, "layout_preview"):
+        stats_out.setdefault("layout_preview", soft.layout_preview)
+    si = result.get("schedule_info") or {}
+    if si.get("per_segment_passes"):
+        stats_out["per_segment_passes"] = si["per_segment_passes"]
+    stats_out["feasible"] = bool(result.get("feasible", False))
+    return stats_out
+
+
+def snapshot_mapping_performance_real(mapping: Any) -> dict | None:
+    """Derive wizard-shaped Mapping Performance stats from a real mapping.
+
+    Walks the HCM cores (already feasible by construction), computes per-core
+    used/wasted axons & neurons and chip-level totals. Output keys match the
+    ``LayoutVerificationStats.to_dict()`` shape the wizard panel consumes,
+    so the same ``hw-stats-panel.js`` renderer can drop it into the HCM
+    step's Hardware tab without any data adapter.
+    """
+    if mapping is None:
+        return None
+    stages = getattr(mapping, "stages", None)
+    if not stages:
+        return None
+
+    cores_seen: list[Any] = []
+    schedule_pass_count = 0
+    max_pass_by_segment: dict[int, int] = {}
+    schedule_segments_present = False
+    for stage in stages:
+        if getattr(stage, "kind", None) != "neural":
+            continue
+        hcm = getattr(stage, "hard_core_mapping", None)
+        if hcm is None:
+            continue
+        sched_idx = getattr(stage, "schedule_pass_index", None)
+        seg_idx = getattr(stage, "schedule_segment_index", None) or 0
+        if sched_idx is not None:
+            schedule_segments_present = True
+            max_pass_by_segment[seg_idx] = max(max_pass_by_segment.get(seg_idx, 0), sched_idx + 1)
+        for core in getattr(hcm, "cores", []) or []:
+            cores_seen.append(core)
+    if not cores_seen:
+        return None
+
+    if schedule_segments_present:
+        schedule_pass_count = sum(max_pass_by_segment.values())
+
+    per_core_ax_pct: list[float] = []
+    per_core_neu_pct: list[float] = []
+    per_core_param_pct: list[float] = []
+    total_used_area = 0
+    total_available_area = 0
+    total_used_axons = 0
+    total_available_axons = 0
+    total_used_neurons = 0
+    total_available_neurons = 0
+    total_softcores = 0
+
+    for core in cores_seen:
+        ax_total = int(getattr(core, "axons_per_core", 0))
+        neu_total = int(getattr(core, "neurons_per_core", 0))
+        ax_avail = int(getattr(core, "available_axons", 0))
+        neu_avail = int(getattr(core, "available_neurons", 0))
+        ax_used = max(0, ax_total - ax_avail)
+        neu_used = max(0, neu_total - neu_avail)
+        area_total = ax_total * neu_total
+        area_used = ax_used * neu_used
+
+        total_used_axons += ax_used
+        total_available_axons += ax_total
+        total_used_neurons += neu_used
+        total_available_neurons += neu_total
+        total_used_area += area_used
+        total_available_area += area_total
+
+        per_core_ax_pct.append(((ax_total - ax_used) / ax_total * 100.0) if ax_total > 0 else 0.0)
+        per_core_neu_pct.append(((neu_total - neu_used) / neu_total * 100.0) if neu_total > 0 else 0.0)
+        per_core_param_pct.append((area_used / area_total * 100.0) if area_total > 0 else 0.0)
+
+    placements_total = 0
+    for stage in stages:
+        if getattr(stage, "kind", None) != "neural":
+            continue
+        hcm = getattr(stage, "hard_core_mapping", None)
+        placements = getattr(hcm, "soft_core_placements_per_hard_core", None) if hcm else None
+        if placements:
+            placements_total += sum(len(pl) for pl in placements)
+    total_softcores = placements_total or len(cores_seen)
+
+    def _pct(part: float, total: float) -> float:
+        return (part / total * 100.0) if total > 0 else 0.0
+
+    def _mmm(values: list[float]) -> tuple[float, float, float]:
+        if not values:
+            return 0.0, 0.0, 0.0
+        return float(min(values)), float(sum(values) / len(values)), float(max(values))
+
+    ax_min, ax_avg, ax_max = _mmm(per_core_ax_pct)
+    neu_min, neu_avg, neu_max = _mmm(per_core_neu_pct)
+    param_min, param_avg, param_max = _mmm(per_core_param_pct)
+
+    return {
+        "feasible": True,
+        "total_cores": len(cores_seen),
+        "total_softcores": int(total_softcores),
+        "total_hw_cores": len(cores_seen),
+        "total_wasted_axons_pct": _pct(total_available_axons - total_used_axons, total_available_axons),
+        "total_wasted_neurons_pct": _pct(total_available_neurons - total_used_neurons, total_available_neurons),
+        "mapped_params_pct": _pct(total_used_area, total_available_area),
+        "per_core_wasted_axons_pct_min": ax_min,
+        "per_core_wasted_axons_pct_avg": ax_avg,
+        "per_core_wasted_axons_pct_max": ax_max,
+        "per_core_wasted_neurons_pct_min": neu_min,
+        "per_core_wasted_neurons_pct_avg": neu_avg,
+        "per_core_wasted_neurons_pct_max": neu_max,
+        "per_core_mapped_params_pct_min": param_min,
+        "per_core_mapped_params_pct_avg": param_avg,
+        "per_core_mapped_params_pct_max": param_max,
+        "neural_segment_count": len(getattr(mapping, "get_neural_segments", lambda: [])()),
+        "schedule_pass_count": int(schedule_pass_count),
+        "schedule_sync_count": max(0, schedule_pass_count - len(max_pass_by_segment)) if schedule_pass_count else 0,
+        "coalescing_group_count": 0,
+        "split_softcore_count": 0,
+    }
+
+
 def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescriptor]]:
     """Extract utilization, packing, stage flow, and per-core detail.
 
@@ -1202,6 +1444,37 @@ def build_step_snapshot(
                     snapshot_key_kinds["model"] = kind
             except Exception:
                 logger.debug("Failed to snapshot model from key %r", key, exc_info=True)
+            # Planned mapping panel: only show on the step that **creates**
+            # the model (Model Building — the unique step that *promises*
+            # ``model``). Every other model-touching step lists ``model``
+            # in ``updates`` (training, adaptation, quantization, …), and
+            # the mapping topology doesn't change there, so duplicating
+            # the panel on each of those tabs would just be noise.
+            promises_model = (
+                step is not None
+                and short in set(getattr(step, "promises", ()))
+            )
+            if promises_model:
+                try:
+                    pcfg = None
+                    for k2 in cache.keys():
+                        short2 = k2.split(".", 1)[-1] if "." in k2 else k2
+                        if short2 == "platform_constraints_resolved":
+                            pcfg = _safe_dict(cache.get(k2))
+                            break
+                    pipeline_cfg = getattr(pipeline, "config", {}) or {}
+                    planned = snapshot_mapping_performance_planned(
+                        cache.get(key),
+                        pcfg,
+                        input_shape=pipeline_cfg.get("input_shape"),
+                        num_classes=pipeline_cfg.get("num_classes"),
+                    )
+                    if planned is not None:
+                        snapshot["mapping_performance"] = planned
+                        snapshot["mapping_performance_mode"] = "planned"
+                        snapshot_key_kinds["mapping_performance"] = "new"
+                except Exception:
+                    logger.debug("Failed to compute planned mapping_performance", exc_info=True)
 
         elif short == "ir_graph":
             try:
@@ -1222,6 +1495,19 @@ def build_step_snapshot(
                     snapshot_key_kinds["hard_core_mapping"] = kind
             except Exception:
                 logger.debug("Failed to snapshot hard_core_mapping from key %r", key, exc_info=True)
+            # Real-mapping Performance panel: derive the same wizard-shaped
+            # stats dict from the actual per-core utilization so the HCM
+            # tab can render the same panel using real numbers (no replay
+            # against the verifier).
+            try:
+                real_stats = snapshot_mapping_performance_real(cache.get(key))
+                if real_stats is not None:
+                    snapshot["mapping_performance"] = real_stats
+                    snapshot["mapping_performance_mode"] = "real"
+                    if step is not None:
+                        snapshot_key_kinds["mapping_performance"] = kind
+            except Exception:
+                logger.debug("Failed to compute real mapping_performance", exc_info=True)
 
         elif short == "architecture_search_result":
             try:

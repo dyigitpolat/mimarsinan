@@ -114,21 +114,28 @@ class Perceptron(nn.Module):
     def forward_spiking(self, x):
         """Encoding-layer spiking forward — return ``(T, B, ...)`` spike train.
 
-        Mirrors :meth:`forward` up to the activation, then asks the
+        Mirrors :meth:`forward` up to the activation, then asks the inner
         ``LIFActivation`` to emit its actual cycle-by-cycle spike train
         rather than its mean-rate reduction. The downstream neural
         segment then consumes the LIF spike timing exactly, instead of
         having a uniform re-encoding overwrite the LIF firing phases.
 
-        Raises ``ValueError`` when ``self.activation`` is not a
-        ``LIFActivation``: there is no spike-train semantics to expose.
+        ``self.activation`` may be wrapped after LIF Adaptation:
+        ``TransformedActivation(LIFBlendActivation(LIFActivation, …))``.
+        We walk those wrappers to locate the live ``LIFActivation`` so
+        callers don't need to know about the wrapping order.
+
+        Raises ``ValueError`` when no ``LIFActivation`` is reachable from
+        ``self.activation``: there is no spike-train semantics to expose.
         """
         from mimarsinan.models.activations import LIFActivation
+        from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
 
-        if not isinstance(self.activation, LIFActivation):
+        lif = SpikingHybridCoreFlow._unwrap_lif_activation(self.activation)
+        if lif is None:
             raise ValueError(
-                "Perceptron.forward_spiking requires self.activation to be "
-                "LIFActivation; got " + type(self.activation).__name__
+                "Perceptron.forward_spiking requires self.activation to wrap "
+                "a LIFActivation; got " + type(self.activation).__name__
             )
         if not isinstance(self.input_activation, nn.Identity):
             x = self.input_activation(x)
@@ -137,5 +144,5 @@ class Perceptron(nn.Module):
             out = self.normalization(out)
         if not isinstance(self.scaler, nn.Identity):
             out = self.scaler(out)
-        # (T, B, ...) binary spike train
-        return self.activation.forward_spiking(out)
+        # (T, B, ...) binary spike train from the unwrapped LIF neuron.
+        return lif.forward_spiking(out)
