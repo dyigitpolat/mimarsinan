@@ -11,9 +11,7 @@ import math
 from typing import List, Literal, NamedTuple, Tuple
 
 
-# ---------------------------------------------------------------------------
 # Bias axon counting
-# ---------------------------------------------------------------------------
 
 def compute_core_input_count(
     n_sources: int,
@@ -31,9 +29,7 @@ def compute_core_input_count(
     return n_sources
 
 
-# ---------------------------------------------------------------------------
 # FC tiling mode
-# ---------------------------------------------------------------------------
 
 TilingMode = Literal["single", "coalescing", "psum", "output_tiled"]
 
@@ -62,9 +58,7 @@ def compute_fc_tiling_mode(
     return "single"
 
 
-# ---------------------------------------------------------------------------
 # Psum parameters
-# ---------------------------------------------------------------------------
 
 class PsumParams(NamedTuple):
     """Pre-computed structural parameters for a psum-decomposed FC layer."""

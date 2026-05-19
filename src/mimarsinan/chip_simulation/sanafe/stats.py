@@ -176,7 +176,6 @@ class SanafeStepReport:
     per_sample: List[SanafeRunRecord]
     aggregate: Dict[str, Any] = field(default_factory=dict)
 
-    # ------------------------------------------------------------------ ctor
 
     @classmethod
     def from_records(
@@ -209,7 +208,6 @@ class SanafeStepReport:
             aggregate=aggregate,
         )
 
-    # --------------------------------------------------------------- snapshot
 
     def to_snapshot_dict(self) -> Dict[str, Any]:
         """JSON-safe dict consumed by ``gui/snapshot/builders.py``."""

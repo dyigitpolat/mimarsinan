@@ -156,10 +156,18 @@ flag from the pipeline config to `platform_constraints_resolved` cores so that
 
 ### TTFS shift idempotency (soft core mapping)
 
-For `ttfs_quantized` + `activation_quantization`, shift is baked into perceptron
-bias once (`_ttfs_shift_baked_into_bias` on each `Perceptron`). Re-running the
-step (resume / edit-continue) must not re-apply shift — see comments in
-`soft_core_mapping_step.py`.
+Applies only to **`ttfs_quantized`** with **`activation_quantization`** (not
+continuous `ttfs`). Training uses `floor((V + shift)*tq)/tq`; IR simulation uses
+`floor(V*tq)/tq` unless shift is baked into effective bias via
+`_apply_ttfs_quantized_bias_shift()` in `SoftCoreMappingStep`.
+
+- **Encoding layers** (`is_encoding_layer`): skip — host `ComputeOp` path already
+  applies `QuantizeDecorator` shift in `TransformedActivation`.
+- **Idempotency:** `PerceptronTransformer.apply_effective_bias_transform` overwrites
+  bias each call; mark `_ttfs_shift_baked_into_bias` after the first bake so
+  resume/re-run does not double-shift.
+- **Continuous `ttfs`:** do not bake shift — unclamped analytical path would push
+  some outputs above 1.0; `ttfs_quantized` clamps via `k_fire.clamp(0, S-1)`.
 
 ### Deployment Accuracy Semantics
 

@@ -1,34 +1,4 @@
-"""``GuidedToolset`` — middleware that augments selected tool results.
-
-The compilagent session exposes a wide tool surface but, in practice,
-agents often run candidates and then forget to query ``pareto_front`` or
-``metric_summary`` — losing situational awareness on the multi-objective
-state.
-
-``GuidedToolset`` wraps the session's :class:`compilagent.Toolset` and
-appends a structured ``[GUIDANCE]`` block to the result of
-``run_candidate`` / ``run_candidates`` calls. The block carries:
-
-  * the current Pareto front summary (one row per non-dominated candidate),
-  * the per-metric leader (which candidate is best on each axis),
-  * "under-explored" axes (where best value tracks the baseline within
-    a configurable tolerance, or where every candidate scored
-    identically), and
-  * a short list of "suggested next directions" the agent can use to
-    diversify the next batch.
-
-In addition, the wrapper augments the first ``inspect_workload`` result
-with a ``[BASELINE FOOTPRINT]`` block built from the backend's per-
-candidate payload cache (the baseline compile fires on session bootstrap
-and the payload is keyed under ``"baseline"``). This tells the agent
-up-front how many softcores the default model emits, so the agent can
-predict packing feasibility before proposing huge configurations.
-
-The wrapper is intentionally a pass-through for every other tool name;
-canonical and backend-supplied tools work unchanged. Building on
-:class:`Toolset.with_extra` keeps the wrapper compatible with any
-harness (pydantic-ai, Claude Agent SDK, future ones).
-"""
+"""GuidedToolset — augments selected compilagent tool results with guidance blocks."""
 
 from __future__ import annotations
 
@@ -84,13 +54,7 @@ class GuidedToolset:
         )
         self._wrapped_cache: dict[str, ToolDecl] = {}
 
-    # ------------------------------------------------------------------ #
-    # Toolset interface — by_name / names / with_extra / read_only_subset
-    # ------------------------------------------------------------------ #
-
     def by_name(self, name: str) -> ToolDecl:
-        # Cache wrapped decls so repeated lookups return the same object
-        # (pydantic-ai introspects per-decl signatures once at bind time).
         if name in self._wrapped_cache:
             return self._wrapped_cache[name]
         decl = self._base.by_name(name)
@@ -105,9 +69,6 @@ class GuidedToolset:
 
     @property
     def tools(self) -> tuple[ToolDecl, ...]:
-        # Materialise the wrapped versions for the canonical tools so a
-        # harness that iterates `toolset.tools` (rather than calling
-        # `by_name`) still sees the guidance hooks.
         out: list[ToolDecl] = []
         for decl in self._base.tools:
             if decl.name in (_INSPECT_WORKLOAD, _RUN_CANDIDATE, _RUN_CANDIDATES):
@@ -139,22 +100,8 @@ class GuidedToolset:
         return clone
 
 
-# ---------------------------------------------------------------------- #
-# Wrapping primitives
-# ---------------------------------------------------------------------- #
-
-
 def _wrap_decl(decl: ToolDecl, state: _GuidanceState, kind: str) -> ToolDecl:
-    """Wrap one ToolDecl's handler so we can append a guidance suffix.
-
-    The pydantic-ai harness adapter (and any other harness that
-    introspects callable signatures) walks ``__wrapped__`` to recover
-    the underlying bound method's parameter list and produce a correct
-    JSON Schema. ``functools.wraps`` sets that attribute for us, so the
-    augmented handler stays signature-compatible with the original.
-    Without this, pydantic-ai sees ``**kwargs`` and the model never
-    learns which arguments the tool needs.
-    """
+    """Wrap one ToolDecl handler to append a guidance suffix."""
 
     original_handler = decl.handler
 
@@ -167,7 +114,6 @@ def _wrap_decl(decl: ToolDecl, state: _GuidanceState, kind: str) -> ToolDecl:
             return _augment_run_result(raw, state)
         return raw
 
-    # Replace the handler; the model field args are otherwise unchanged.
     return ToolDecl(
         name=decl.name,
         description=decl.description,
@@ -180,11 +126,6 @@ def _wrap_decl(decl: ToolDecl, state: _GuidanceState, kind: str) -> ToolDecl:
     )
 
 
-# ---------------------------------------------------------------------- #
-# Augmenters
-# ---------------------------------------------------------------------- #
-
-
 def _augment_inspect_workload(raw: str, state: _GuidanceState) -> str:
     if state.baseline_injected:
         return raw
@@ -193,8 +134,6 @@ def _augment_inspect_workload(raw: str, state: _GuidanceState) -> str:
         return raw
     suffix = _format_baseline_block(baseline, state.objectives)
     state.baseline_injected = True
-    # Mirror the same suffix on the live monitor so the operator sees
-    # exactly what the agent received.
     state.sink.emit_guidance(text=suffix, target_tool="inspect_workload")
     return f"{raw}\n\n[BASELINE FOOTPRINT]\n{suffix}"
 
@@ -202,17 +141,10 @@ def _augment_inspect_workload(raw: str, state: _GuidanceState) -> str:
 def _augment_run_result(raw: str, state: _GuidanceState) -> str:
     rows = _objective_rows(state.sink)
     if not rows:
-        # Nothing to summarise yet (e.g. the first candidate failed
-        # before producing objectives). Return raw unchanged.
         return raw
     suffix = _format_guidance_block(rows, state)
     state.sink.emit_guidance(text=suffix, target_tool="run_candidates")
     return f"{raw}\n\n[GUIDANCE]\n{suffix}"
-
-
-# ---------------------------------------------------------------------- #
-# Helpers
-# ---------------------------------------------------------------------- #
 
 
 def _baseline_footprint(backend: "MimarsinanLayoutBackend") -> Optional[dict[str, Any]]:
@@ -370,12 +302,7 @@ def _under_explored_axes(
     baseline_obj: dict[str, float],
     state: _GuidanceState,
 ) -> list[str]:
-    """Find objectives where the best candidate barely moves vs baseline.
-
-    A metric is "under-explored" when the best value is within 10% of
-    the baseline value (or when every candidate has the same value, so
-    the agent never bothered varying the levers that influence it).
-    """
+    """Find objectives where the best candidate barely moves vs baseline."""
 
     flagged: list[str] = []
     for metric, info in summary.items():

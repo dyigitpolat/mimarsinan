@@ -1,16 +1,4 @@
-"""Backend introspection tools surfaced by ``MimarsinanLayoutBackend``.
-
-These tools let the agent ask follow-up questions about a previously
-compiled candidate without re-running ``compile``: per-softcore breakdown,
-per-layer aggregates, the full ``LayoutVerificationStats`` snapshot, and
-the canonical objective catalogue. All four are read-only and pull from
-the per-candidate payload the backend caches in ``compile``.
-
-Each tool is wrapped in a ``ToolDecl`` with a typed Pydantic args model
-so the harness adapters can validate wire-shaped JSON before calling the
-handler. Handlers return JSON strings (compilagent's standard
-``returns_kind="json"``).
-"""
+"""Backend introspection tools for MimarsinanLayoutBackend."""
 
 from __future__ import annotations
 
@@ -24,7 +12,6 @@ if TYPE_CHECKING:
     from .backend import MimarsinanLayoutBackend
 
 
-# ---------------------------------------------------------------------- args
 
 
 class _CandidateOnlyArgs(BaseModel):
@@ -40,7 +27,6 @@ class _NoArgs(BaseModel):
     pass
 
 
-# ---------------------------------------------------------------------- impl
 
 
 def build_introspection_tools(
@@ -102,10 +88,6 @@ def build_introspection_tools(
 
     def list_objectives() -> str:
         """Return the active objective catalogue with goal directions."""
-
-        # Pull from the most recently compiled candidate so the agent
-        # always sees the live problem's catalogue. Falls back to an
-        # empty list when no candidate has been compiled yet.
         for cid in reversed(backend.known_candidate_ids()):
             payload = backend.get_candidate_payload(cid)
             catalog = payload.get("objective_catalog", [])

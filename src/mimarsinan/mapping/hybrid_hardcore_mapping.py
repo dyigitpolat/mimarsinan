@@ -25,16 +25,7 @@ class SegmentIOSlice:
 
 @dataclass
 class HybridStage:
-    """
-    A single stage in a hybrid runtime program.
-
-    - "neural": A HardCoreMapping that can be executed on the chip runtime.
-    - "compute": A ComputeOp that must be executed as a sync barrier.
-
-    Neural stages carry ``input_map`` / ``output_map`` metadata so the
-    runtime can assemble the segment's input from a global state buffer
-    and store the segment's output back into that buffer.
-    """
+    """A single stage in a hybrid runtime program (neural or compute)."""
 
     kind: Literal["neural", "compute"]
     name: str
@@ -49,29 +40,7 @@ class HybridStage:
 
 @dataclass
 class HybridHardCoreMapping:
-    """
-    A deployable *hybrid* program representation:
-
-    neural segment (HardCoreMapping) -> ComputeOp barrier -> neural segment -> ...
-
-    Each neural segment can be packed/codegen'ed as a standalone chip program.
-    ComputeOps represent host-side (or auxiliary) computation between chip runs.
-
-    ``output_sources`` mirrors the original IRGraph output_sources so the
-    runtime can assemble the final network output from the state buffer.
-
-    ``node_activation_scales`` maps original IR ``node_id`` to the *output*
-    ``activation_scale`` (the divisor that normalises the op's training-range
-    output back to TTFS [0, 1] for downstream NeuralCores).
-
-    ``node_input_activation_scales`` maps original IR ``node_id`` to the
-    *input* rescale factor (the multiplier that brings gathered inputs from
-    TTFS [0, 1] back to training range before running the op's module).
-    Distinct from ``node_activation_scales`` for encoding-layer ComputeOps
-    whose sources are the raw model input (already in training range, so
-    in_scale=1.0) but whose output must still be divided by the wrapped
-    Perceptron's activation_scale.
-    """
+    """Deployable hybrid program: neural segments interleaved with ComputeOp barriers."""
 
     stages: List[HybridStage]
     output_sources: np.ndarray = field(default_factory=lambda: np.array([], dtype=object))
@@ -105,24 +74,7 @@ def _remap_external_sources_to_segment_inputs(
     output_sources: np.ndarray,
     weight_banks: dict | None = None,
 ) -> tuple[IRGraph, list[SegmentIOSlice]]:
-    """
-    Build a neural-only IRGraph for a segment with support for
-    multiple external source nodes (skip connections).
-
-    External IRSource references (node_id >= 0, not in this segment) are
-    remapped to segment-local inputs (IRSource(node_id=-2, index=...)).
-    Multiple external nodes are packed into a composite input buffer::
-
-        [original_input 0..max_orig] [ext_A 0..sA-1] [ext_B 0..sB-1] ...
-
-    Returns
-    -------
-    segment_graph : IRGraph
-        Neural-only graph with remapped sources.
-    input_map : list[SegmentIOSlice]
-        Describes how to assemble the composite input buffer from the
-        global state buffer at runtime.
-    """
+    """Build a neural-only IRGraph with external sources remapped to segment inputs."""
     if weight_banks is None:
         weight_banks = {}
     node_ids = {n.id for n in nodes}
@@ -168,9 +120,6 @@ def _remap_external_sources_to_segment_inputs(
 
     new_nodes: list[NeuralCore] = []
     for n in nodes:
-        # Shallow copy with fresh input_sources — avoids deep-copying
-        # ``core_matrix`` (the hot cost) since it is immutable after
-        # quantization and safely shareable across reindexed copies.
         n2 = copy.copy(n)
         flat = [remap_src(src) for src in n.input_sources.flatten()]
         n2.input_sources = np.array(flat, dtype=object).reshape(n.input_sources.shape)
@@ -217,21 +166,10 @@ def _reindex_nodes(
     nodes: list[NeuralCore],
     reindex_maps: dict[int, dict[int, int]],
 ) -> list[NeuralCore]:
-    """Clone nodes with fresh input_sources and apply compaction reindex.
-
-    Uses a shallow copy plus an independent ``input_sources`` ndarray so we
-    can mutate sources without touching the originals.  Weight tensors
-    (``core_matrix``, ``hardware_bias``, heatmaps, masks) are shared by
-    reference — they are immutable after quantization/compaction and
-    deep-copying them dominated HCM build time at ViT scale
-    (numpy deep-copy was 2.7 s out of 4 s on a 708-core workload).
-    """
+    """Shallow-copy nodes; fresh input_sources; share immutable weight tensors."""
     result = []
     for n in nodes:
         n2 = copy.copy(n)
-        # Fresh object-array for input_sources so reindex mutations do not
-        # leak into the original.  Element objects (IRSource) are small and
-        # safe to share — we only overwrite entries via .flat[i] assignment.
         n2.input_sources = np.array(
             n.input_sources.flatten(),
             dtype=object,
@@ -245,12 +183,7 @@ def _apply_reindex_to_ir_sources(
     sources: np.ndarray,
     reindex_maps: dict[int, dict[int, int]],
 ) -> None:
-    """Apply compaction reindex maps to an array of IRSource objects in place.
-
-    For each IRSource referencing a compacted core, updates ``.index``
-    to the new (post-compaction) neuron index.  Sources referencing
-    pruned neurons are replaced with off-sources.
-    """
+    """Apply compaction reindex maps to IRSource objects in place."""
     for i, src in enumerate(sources.flatten()):
         if not isinstance(src, IRSource) or src.node_id < 0:
             continue
@@ -275,25 +208,7 @@ def _flush_neural_segment(
     allow_neuron_splitting: bool = False,
     skip_coalescing_check: bool = False,
 ) -> tuple[HybridStage, dict[int, dict[int, int]]]:
-    """Pack a neural segment using cores drawn from *shared_pool*.
-
-    ``consumed_by`` is the pre-scanned map of *node_id → set of consumer
-    node_ids* over the full IR graph.  It is used to determine which
-    segment-internal nodes need to appear in the segment's output buffer
-    (i.e. those consumed by any node *outside* this segment).
-
-    When ``skip_coalescing_check`` is True, the coalescing group integrity
-    check is skipped.  This is used by scheduled passes where coalescing
-    fragments may be distributed across passes with the state buffer
-    handling inter-pass data flow.
-
-    Returns:
-        (stage, reindex_maps) where reindex_maps is
-        ``{core_id: {old_neuron_idx: new_neuron_idx}}`` from compaction.
-        Callers must apply these maps to any external references that
-        point into this segment's cores (e.g. final output_sources,
-        ComputeOp input_sources).
-    """
+    """Pack a neural segment using cores drawn from shared_pool."""
     segment_node_ids = {n.id for n in current_neural}
 
     if not skip_coalescing_check:
@@ -325,8 +240,6 @@ def _flush_neural_segment(
     )
     soft = ir_graph_to_soft_core_mapping(seg_graph)
 
-    # Compact soft cores: remove all-zero rows/columns and reindex spans so
-    # hardware mapping shows only utilized structure (pruning reflected).
     reindex_maps = compact_soft_core_mapping(soft.cores, soft.output_sources)
 
     # Rebuild output_map from compacted output sizes
@@ -344,14 +257,7 @@ def _flush_neural_segment(
     try:
         hard.map(soft, allow_neuron_splitting=allow_neuron_splitting)
     except RuntimeError as e:
-        # Rich diagnostic — the layout mapper pre-validated this sub-segment
-        # via ``pack_layout`` but the real greedy packer on ``SoftCore``s
-        # disagreed.  Expose the exact softcore shapes + their threshold
-        # groups so we can triangulate the divergence (typically a mismatch
-        # between ``SoftCore.threshold_group_id`` and its ``LayoutSoftCoreSpec``
-        # counterpart, or pruning changing axon counts between layout time
-        # and hard-core mapping time).
-        group_ids: Dict[object, int] = {}
+        group_ids: dict[object, int] = {}
         rows = []
         for sc in soft.cores:
             tg = getattr(sc, "threshold_group_id", None)
@@ -391,16 +297,7 @@ def _validate_coalescing_budget(
     cores_config: Sequence[dict],
     allow_neuron_splitting: bool,
 ) -> None:
-    """Verify every wide NeuralCore's coalescing group fits in one core type's count.
-
-    Coalescing cores for a single NeuralCore cannot be distributed across
-    schedule passes because the hardware lacks membrane potential
-    initialization — partial sums from different passes would need to be
-    accumulated before activation, which is not yet supported.
-
-    Raises ``RuntimeError`` with a descriptive message when no core type
-    has a sufficient count.
-    """
+    """Verify every wide NeuralCore's coalescing group fits in one core type's count."""
     import math
 
     for core in cores:
@@ -452,23 +349,7 @@ def _flush_scheduled_segment(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
 ) -> tuple[list[HybridStage], dict[int, dict[int, int]]]:
-    """Flush a neural segment as a single scheduled pass.
-
-    One segment → one ``HybridStage``.  The layout mapper has already
-    inserted sync barriers (= segment boundaries) wherever the hardware
-    cannot hold the combined cores, so any segment reaching this call
-    must fit the physical core pool.  We call ``_flush_neural_segment``
-    exactly once against a fresh pool; if the packer cannot place every
-    core, we let the ``RuntimeError`` propagate — that is an infeasible
-    template the user must fix, not a case to silently split.
-
-    Latency-group pass splitting was previously performed here.  It
-    counted each IR NeuralCore as ≥ 1 hardware core and therefore
-    over-partitioned segments that the layout packer would fit in one
-    pass.  The simulator then treated every sub-pass as a sync barrier
-    (rate-level handoff between cores), breaking cycle-accurate LIF
-    semantics and causing SCM / HCM / nevresim accuracy drift.
-    """
+    """One segment → one HybridStage on a fresh hardware pool."""
     if allow_coalescing:
         _validate_coalescing_budget(
             current_neural, cores_config, allow_neuron_splitting,
@@ -491,25 +372,7 @@ def _flush_scheduled_segment(
 
 
 def _compute_node_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
-    """Extract per-node *output* scales from an IRGraph.
-
-    This is the scale downstream consumers assume — the divisor applied to
-    the op's training-range output before storing it in the state buffer,
-    so that values land in the TTFS [0, 1] convention used by NeuralCore
-    effective weights.
-
-    See also :func:`_compute_node_input_activation_scales` for the scale
-    applied when *rescaling* gathered inputs back to training range.
-
-    * NeuralCores: their own ``activation_scale``.
-    * ComputeOps wrapping a Perceptron / PerceptronMapper: the wrapped
-      Perceptron's ``activation_scale`` (its output is in
-      ``[0, activation_scale]`` after the decorator chain, and the
-      downstream NeuralCore's ``per_input_scales`` equals that same value).
-    * Generic ComputeOps: average of source scales (pass-through heuristic
-      that matches ``compute_per_source_scales``'s downstream per-input
-      assignment for scale-equivariant and bias-carrying ops).
-    """
+    """Per-node output activation_scale for state-buffer / TTFS normalization."""
     scales: dict[int, float] = {}
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
@@ -533,18 +396,7 @@ def _compute_node_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
 
 
 def _compute_node_input_activation_scales(ir_graph: IRGraph) -> dict[int, float]:
-    """Input-rescale factors for ComputeOps.
-
-    Applied by consumers as ``gathered = gathered * in_scale`` before running
-    the op's module.  Differs from the output scale for encoding-layer
-    ComputeOps whose sources are the raw model input (already in training
-    range — no rescale needed).
-
-    * Source-from-node ComputeOps: average of source (output) scales.
-    * All-raw-input ComputeOps (encoding path): ``1.0`` (no rescale).
-    * NeuralCores: their activation_scale (unused by the compute-op path,
-      populated for API symmetry).
-    """
+    """Input-rescale factors for ComputeOps (encoding path uses 1.0)."""
     out_scales = _compute_node_activation_scales(ir_graph)
     in_scales: dict[int, float] = {}
     for node in ir_graph.nodes:
@@ -567,16 +419,7 @@ def _compute_node_input_activation_scales(ir_graph: IRGraph) -> dict[int, float]
 
 
 def _perceptron_wrapped_activation_scale(module) -> float | None:
-    """Return the activation_scale of a Perceptron / PerceptronMapper wrapped
-    as a ``ComputeOp(module)``, or ``None`` if *module* doesn't carry one.
-
-    Encoding-layer perceptrons (first layer of a neural segment) are mapped
-    to ``ComputeOp(op_type="module")`` that holds either the Perceptron
-    directly (from ``PerceptronMapper._map_to_ir_as_encoding_compute_op``)
-    or the Conv2DPerceptronMapper (from ``Conv2DPerceptronMapper._map_to_ir``).
-    Both expose ``activation_scale`` via ``module.activation_scale`` or
-    ``module.perceptron.activation_scale`` respectively.
-    """
+    """activation_scale on a Perceptron / PerceptronMapper held by a ComputeOp, or None."""
     if module is None:
         return None
     s = getattr(module, "activation_scale", None)
@@ -600,26 +443,7 @@ def build_hybrid_hard_core_mapping(
     allow_scheduling: bool = False,
     allow_coalescing: bool = False,
 ) -> HybridHardCoreMapping:
-    """
-    Compile a unified IRGraph into a HybridHardCoreMapping.
-
-    Supports skip connections / residual paths through a state-buffer
-    approach: each neural stage carries ``input_map`` / ``output_map``
-    metadata so the runtime can maintain a ``Dict[int, Tensor]`` state
-    buffer keyed by original IR node_id.
-
-    When ``allow_scheduling`` is False (default), a **single** pool of
-    hardware cores is allocated upfront and shared across all neural
-    segments so the total core budget is respected.
-
-    When ``allow_scheduling`` is True, each neural segment (or pass within
-    a segment) gets a **fresh** hardware core pool — the same physical
-    cores are reprogrammed between passes.  This allows mapping models
-    that need more cores than available, trading latency for chip area.
-
-    ``allow_coalescing`` is threaded to the schedule partitioner so the
-    hardware cost model matches the wizard verifier.
-    """
+    """Compile a unified IRGraph into a HybridHardCoreMapping."""
 
     consumed_by: dict[int, set[int]] = defaultdict(set)
     for node in ir_graph.nodes:
@@ -632,8 +456,6 @@ def build_hybrid_hard_core_mapping(
 
     stages: list[HybridStage] = []
 
-    # Collect compaction reindex maps from all segments so we can fix up
-    # external references (final output_sources, ComputeOp input_sources).
     all_reindex_maps: dict[int, dict[int, int]] = {}
 
     if allow_scheduling:
@@ -659,12 +481,9 @@ def build_hybrid_hard_core_mapping(
     if not stages:
         raise ValueError("Cannot build HybridHardCoreMapping: IRGraph has no stages.")
 
-    # Apply compaction reindex to final output_sources.
     output_sources = ir_graph.output_sources.copy()
     _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
 
-    # Build per-node scales for TTFS ComputeOp input rescaling and output
-    # normalisation.  See dataclass docstring for semantics.
     node_activation_scales = _compute_node_activation_scales(ir_graph)
     node_input_activation_scales = _compute_node_input_activation_scales(ir_graph)
 
@@ -696,8 +515,6 @@ def _build_single_pool(
 
         if isinstance(node, ComputeOp):
             if current_neural:
-                # Apply accumulated reindex maps to nodes' input_sources so
-                # references to previously-compacted cores use correct indices.
                 if all_reindex_maps:
                     current_neural = _reindex_nodes(current_neural, all_reindex_maps)
                 stage, seg_reindex = _flush_neural_segment(
@@ -712,11 +529,6 @@ def _build_single_pool(
                 all_reindex_maps.update(seg_reindex)
                 current_neural = []
 
-            # Apply compaction reindex to ComputeOp input_sources so they
-            # reference the compacted neuron indices in the state buffer.
-            # Use a shallow copy + fresh input_sources ndarray — deep-copying
-            # a ComputeOp also copies its ``params["module"]`` (torch nn.Module
-            # with weight tensors), which dominated HCM build at ViT scale.
             op_copy = copy.copy(node)
             op_copy.input_sources = np.array(
                 node.input_sources.flatten(), dtype=object,
@@ -749,14 +561,7 @@ def _split_segment_by_capacity(
     allow_coalescing: bool,
     allow_neuron_splitting: bool,
 ) -> list[list[NeuralCore]]:
-    """Wrap :func:`split_softcores_by_capacity` for a list of IR NeuralCores.
-
-    Converts each NeuralCore to a ``LayoutSoftCoreSpec`` shape, delegates
-    to the shared layout-side splitter (so the wizard's capacity analysis
-    and the hard-core mapper's capacity analysis always agree), then maps
-    the resulting sub-segment groupings back onto the original NeuralCore
-    list order.
-    """
+    """Split IR NeuralCores by hardware capacity via split_softcores_by_capacity."""
     if not cores:
         return []
 
@@ -772,17 +577,6 @@ def _split_segment_by_capacity(
         for ct in cores_config
     ]
 
-    # Mirror ``LayoutIRMapping._finalize_softcores``: the threshold group a
-    # softcore belongs to is its owning Perceptron, so all NeuralCores tiled
-    # out of one Perceptron (conv positions, psum fragments, output tiling)
-    # share a group id and pack together under ``pack_layout``'s group
-    # constraint.  Using ``NeuralCore.threshold_group_id`` directly would
-    # miss this — that attribute is often ``None`` on IR cores, which
-    # previously made ``_to_spec`` fall back to unique-per-index groups and
-    # fragmented the capacity split into one pass per softcore.  Fall back
-    # to a unique negative id only when there is no perceptron_index, so
-    # standalone non-Perceptron cores (e.g. synthesised accumulators) are
-    # kept isolated as before.
     specs: list[LayoutSoftCoreSpec] = []
     spec_to_core: dict[int, NeuralCore] = {}
     for idx, core in enumerate(cores):
@@ -822,15 +616,7 @@ def _flush_scheduled_subsegments(
     all_reindex_maps: dict[int, dict[int, int]],
     stages: list[HybridStage],
 ) -> int:
-    """Flush one IR segment, splitting by capacity into one or more stages.
-
-    ``split_softcores_by_capacity`` and the real hard-core packer share
-    one bin-packing algorithm (``greedy_pack_softcores`` with canonical
-    ``is_mapping_possible`` / ``fuse_hardcores`` / ``split_softcore``),
-    so any partition the layout deems feasible is also feasible for the
-    real packer.  A packing failure here therefore signals genuine
-    infeasibility — we let the ``RuntimeError`` propagate unchanged.
-    """
+    """Flush one IR segment; split by capacity when scheduling."""
     sub_segments = _split_segment_by_capacity(
         cores,
         cores_config,
@@ -871,9 +657,7 @@ def _build_scheduled(
     allow_neuron_splitting: bool,
     allow_coalescing: bool = False,
 ) -> None:
-    """Scheduled compilation: fresh core pool per pass, over-sized segments
-    are split at capacity boundaries so each emitted neural stage fits in a
-    single pass."""
+    """Scheduled compilation: fresh core pool per pass."""
     segment_index = 0
 
     current_neural: list[NeuralCore] = []

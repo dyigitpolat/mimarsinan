@@ -1,36 +1,4 @@
-"""
-UnifiedCoreFlow: Simulation that supports both neural cores and compute ops.
-
-This module provides a spiking simulator for the unified IRGraph (NeuralCore + ComputeOp),
-including correct sync-barrier semantics for ComputeOps (rate -> op -> respike).
-
-Supports both LIF (cycle-accurate integrate-and-fire, Default/Novena firing)
-and Time-to-First-Spike (TTFS) modes.  "LIF" is the user-facing name for the
-rate-coded cycle-based simulation — each input value is encoded as a uniform
-rate spike train, neurons integrate input current per cycle and fire on
-subtractive reset (``memb[fired] -= threshold``), and outputs are
-spike-count rates over T cycles.
-
-TTFS mode implements the B1-model from:
-  Stanojevic et al., "High-performance deep spiking neural networks with
-  0.3 spikes per neuron", Nature Communications 15, 6793 (2024).
-  https://www.nature.com/articles/s41467-024-51110-5
-
-Two TTFS deployment modes (selected via ``spiking_mode``):
-
-  * **ttfs** (continuous) — analytical ``clamp(ReLU(W @ x + b) / θ, 0, 1)``
-    per NeuralCore; outputs clamped to ``[0, 1]`` to match hardware TTFS
-    (neurons fire at most once).  Inputs are not clamped because weight
-    matrices already incorporate ``per_input_scales`` normalization.
-  * **ttfs_quantized** (analytical quantised) — closed-form computation
-    that yields the exact same output as the cycle-based simulation
-    but in O(N_cores) instead of O(max_latency * S * N_cores):
-
-      V = W @ x
-      k_fire = ceil(S * (1 - V / θ))
-      k_fire = clamp(k_fire, 0, S-1)
-      activation = (S - k_fire) / S
-"""
+"""Spiking simulator for unified IRGraph (NeuralCore + ComputeOp); LIF and TTFS modes."""
 
 from __future__ import annotations
 
@@ -45,27 +13,12 @@ from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore, WeightBank
 from mimarsinan.mapping.ir_source_spans import IRSourceSpan, compress_ir_sources
 
 
-# Default precision for on-chip spiking compute.  Must stay at float64: the
-# C++ nevresim simulator uses ``signal_t = double`` on TTFS paths, and
-# ``SpikingHybridCoreFlow`` (used by Hard Core Mapping) also defaults to
-# float64.  Measured empirically: dropping SCM to float32 costs ~5 pp MNIST
-# accuracy vs NF while HCM (float64) matches NF bit-for-bit.  The
-# ``ceil(S * (1 - V/θ))`` boundary needs float64 precision to avoid
-# flip-errors on neurons whose V lands within one float32 ULP of θ — those
-# flips accumulate across 32 sim steps and dozens of layers into multi-pp
-# accuracy loss.  Callers that have measured their own sensitivity and
-# want the ~2× speed/memory win can pass ``compute_dtype=torch.float32``.
+# float64 default: match nevresim signal_t; optional float32 via compute_dtype.
 _COMPUTE_DTYPE = torch.float64
 
 
 def _ttfs_activation_from_type(activation_type: str | None):
-    """Resolve activation function for TTFS from IR activation_type string.
-
-    activation_type may be a compound string from TransformedActivation, e.g.
-    "LeakyReLU + ClampDecorator, QuantizeDecorator". We use only the base name
-    (before " + ") and map to torch.nn.functional: LeakyReLU -> leaky_relu,
-    ReLU -> relu, GELU -> gelu. Falls back to relu if unknown or lookup fails.
-    """
+    """Map IR activation_type (compound strings use the base name before ' + ') to torch.nn.functional."""
     if activation_type is None or (isinstance(activation_type, str) and activation_type.strip() in ("", "ReLU")):
         return F.relu
     base = activation_type.split(" + ")[0].strip()
@@ -86,20 +39,7 @@ def _ttfs_activation_from_type(activation_type: str | None):
 
 
 class SpikingUnifiedCoreFlow(nn.Module):
-    """
-    Spiking version of UnifiedCoreFlow.
-
-    This handles spike-based simulation with membrane potential dynamics.
-    Non-neural operations (ComputeOp) act as synchronization points where
-    spike counts are converted to rates, the operation is applied, and
-    rates are converted back to spikes.
-
-    **Shared-weight optimisation:** When the IR graph contains
-    ``WeightBank``s (e.g. from conv layers), a single ``nn.Parameter`` is
-    registered per bank instead of per core.  Bank-backed cores look up
-    their weight via ``_bank_params`` instead of ``neural_core_params``,
-    avoiding O(h_out * w_out) memory duplication.
-    """
+    """Flat IRGraph spiking sim: LIF/TTFS cores, ComputeOp sync barriers, shared WeightBank params."""
 
     _TTFS_SPIKING_MODES = {"ttfs", "ttfs_quantized"}
 
@@ -127,29 +67,17 @@ class SpikingUnifiedCoreFlow(nn.Module):
         self.spike_mode = spike_mode
         self.thresholding_mode = thresholding_mode
         self.spiking_mode = spiking_mode
-        # Compute dtype is per-instance so callers can pick float32 (default, fast)
-        # or float64 (bit-exact match to C++ nevresim for deployment verification).
         self._compute_dtype = compute_dtype
 
         assert firing_mode in ["Default", "Novena", "TTFS"]
         assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
         assert thresholding_mode in ["<", "<="]
 
-        # --- Weight bank parameters (shared across many cores) ----------
-        # One Parameter per bank: already memory-efficient (conv kernels).
         self._bank_params = nn.ParameterDict()
         for bank_id, bank in ir_graph.weight_banks.items():
-            # Stored as (neurons, axons) for matmul convenience
             w = torch.tensor(bank.core_matrix.T, dtype=torch.float32)
             self._bank_params[str(bank_id)] = nn.Parameter(w, requires_grad=False)
 
-        # --- Per-core owned weights (one nn.Parameter per core) ------------
-        # Matches ``SpikingHybridCoreFlow``'s weight construction
-        # (``torch.tensor(core.core_matrix.T, dtype=_COMPUTE_DTYPE)``) so
-        # soft-core and hard-core simulations use bit-for-bit identical
-        # weight tensors. A prior packed-int8-buffer refactor here amplified
-        # CUDA matmul reduction-order noise when weights were upcast per
-        # forward call; keeping weights as float32 Parameters avoids that.
         self.neural_core_ids: list[int] = []
         self._id_to_bank: Dict[int, tuple[str, tuple[int, int] | None]] = {}
         self._id_to_owned_param: Dict[int, int] = {}
@@ -165,19 +93,10 @@ class SpikingUnifiedCoreFlow(nn.Module):
                     node.weight_row_slice,
                 )
                 continue
-            # Stored as (neurons, axons) float32 for matmul convenience.
             weight = torch.tensor(node.core_matrix.T, dtype=torch.float32)
             self.neural_core_params.append(nn.Parameter(weight, requires_grad=False))
             self._id_to_owned_param[node.id] = len(self.neural_core_params) - 1
 
-        # --- Packed thresholds (1-D _COMPUTE_DTYPE over all NeuralCores) ---
-        # Stored in _COMPUTE_DTYPE (float64) to match
-        # ``SpikingHybridCoreFlow._run_neural_segment_ttfs`` which builds
-        # thresholds directly from ``float(core.threshold)`` at _COMPUTE_DTYPE.
-        # Threshold values are Python floats (e.g. 8.6561384...) that do not
-        # fit exactly in float32; a float32-storage-plus-upcast-per-forward
-        # path truncates the low bits and flips ``ceil(S*(1 - V/θ))`` on
-        # boundary neurons at small S (e.g. S=4), producing accuracy drift vs HCM.
         threshold_vals: list[float] = []
         self._threshold_idx_cache: Dict[int, int] = {}
         for node in self.nodes:
@@ -193,10 +112,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
             else torch.empty(0, dtype=_COMPUTE_DTYPE),
         )
 
-        # --- Packed hardware biases ---------------------------------------
-        # Stored in _COMPUTE_DTYPE to match HCM's ``torch.tensor(core.hardware_bias,
-        # dtype=_COMPUTE_DTYPE)``.  For int8-quantized biases this is lossless
-        # either way, but matching dtypes keeps the gather + add path bit-identical.
         hw_chunks: list[torch.Tensor] = []
         self._hw_bias_spans: Dict[int, tuple[int, int]] = {}
         hw_offset = 0
@@ -212,7 +127,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
             torch.cat(hw_chunks) if hw_chunks else torch.empty(0, dtype=_COMPUTE_DTYPE),
         )
 
-        # Precompute output dims for each neural core (avoids needing graph at forward time)
         self._id_to_out_dim: Dict[int, int] = {}
         for node in self.nodes:
             if isinstance(node, NeuralCore):
@@ -221,20 +135,14 @@ class SpikingUnifiedCoreFlow(nn.Module):
                     ir_graph.weight_banks[node.weight_bank_id].core_matrix.shape[1]
                 )
 
-        # Identify synchronization points (ComputeOps that break the spiking flow)
         self._sync_points = [i for i, n in enumerate(self.nodes) if isinstance(n, ComputeOp)]
 
-        # Precompute range-compressed source spans for faster gather.
         self._input_spans: Dict[int, list[IRSourceSpan]] = {}
         for node in self.nodes:
             flat = list(node.input_sources.flatten())
             self._input_spans[int(node.id)] = compress_ir_sources(flat)
         self._output_spans: list[IRSourceSpan] = compress_ir_sources(list(self.output_sources.flatten()))
 
-        # Release schedule: after executing self.nodes[i], these node_ids' cached
-        # outputs are no longer needed and can be dropped from the forward-pass
-        # activation/spike cache. Cuts per-forward GPU peak from O(all node
-        # outputs) to O(graph-frontier).
         self._release_at_step: Dict[int, list[int]] = {}
         consumed_by_output: set[int] = set()
         for sp in self._output_spans:
@@ -248,42 +156,11 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 last_reader[int(sp.src_node_id)] = reader_idx
         for src_id, idx in last_reader.items():
             if src_id in consumed_by_output:
-                # Output gather runs after every node; never release early.
                 continue
             self._release_at_step.setdefault(idx, []).append(src_id)
 
-        # Mapping contracts: after pruning, each core must satisfy axons/neurons vs sources.
         self._assert_mapping_contracts(ir_graph)
 
-        # TTFS activation-scale bookkeeping: each node's output in TTFS mode is
-        # normalised to [0, 1] by division with activation_scale inside the
-        # effective-weight formula.  ComputeOps, however, wrap the *original*
-        # PyTorch module (un-scaled weights + bias).  To keep the bias term
-        # correct we must re-scale their input back to training range before
-        # execution and normalise the output back afterwards.
-        # TTFS ComputeOp scaling.  Two distinct scales per ComputeOp:
-        #
-        #   ``_ttfs_node_input_scale[op.id]``  — factor to multiply the
-        #     gathered input by to bring it into training range before
-        #     running the op's module.  NeuralCore-source inputs arrive
-        #     normalised to [0, 1] via ``(S - k_fire)/S`` so they must be
-        #     rescaled by the source activation_scale.  Raw-input sources
-        #     (encoding-layer ops whose sources are the original model input)
-        #     are already in training range and MUST NOT be rescaled.
-        #
-        #   ``_ttfs_node_output_scale[op.id]`` — factor to divide the module
-        #     output by to bring it back into TTFS [0, 1] range for downstream
-        #     NeuralCores whose ``W_eff`` assumes ``per_input_scales == this
-        #     op's output scale``.  For Perceptron-wrapped ops the output
-        #     scale is the Perceptron's own activation_scale (set by clamp
-        #     adaptation); for generic ops it's the average of source scales
-        #     (``compute_per_source_scales`` uses the same average for the
-        #     downstream ``per_input_scales``).
-        #
-        # Before this fix both scales were equal (``_ttfs_node_output_scale``
-        # only), which produced wrong results for encoding-layer perceptrons
-        # wrapped as ``ComputeOp(module)``: their raw input was spuriously
-        # multiplied by activation_scale, distorting the module's forward.
         from mimarsinan.mapping.hybrid_hardcore_mapping import (
             _perceptron_wrapped_activation_scale,
         )
@@ -297,7 +174,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                     else node.activation_scale
                 )
                 self._ttfs_node_output_scale[node.id] = s
-                # Neural cores don't use the input-rescale path.
                 self._ttfs_node_input_scale[node.id] = s
             elif isinstance(node, ComputeOp):
                 module = (node.params or {}).get("module")
@@ -310,8 +186,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                         all_raw_inputs = False
                         src_scales.append(self._ttfs_node_output_scale.get(src_id, 1.0))
 
-                # Input rescale: no-op when all sources are raw input
-                # (encoding path); otherwise average of source scales.
                 if all_raw_inputs:
                     self._ttfs_node_input_scale[node.id] = 1.0
                 else:
@@ -319,19 +193,11 @@ class SpikingUnifiedCoreFlow(nn.Module):
                         sum(src_scales) / len(src_scales) if src_scales else 1.0
                     )
 
-                # Output normalise: Perceptron-wrapped ops use the wrapped
-                # activation_scale so state_buffer values sit in [0, 1],
-                # matching what a NeuralCore would emit.  Generic ops use
-                # the same average as the input rescale (preserves prior
-                # behaviour for add/mean/etc.).
                 if wrapped_scale is not None:
                     self._ttfs_node_output_scale[node.id] = wrapped_scale
                 else:
                     self._ttfs_node_output_scale[node.id] = self._ttfs_node_input_scale[node.id]
 
-    # ---------------------------------------------------------------------
-    # Spike generation (must match SpikingCoreFlow semantics)
-    # ---------------------------------------------------------------------
     def to_stochastic_spikes(self, tensor: torch.Tensor) -> torch.Tensor:
         return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
 
@@ -344,13 +210,8 @@ class SpikingUnifiedCoreFlow(nn.Module):
     def to_uniform_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
         T = self.simulation_length
 
-        # Compute N for all elements in the tensor at once
         N = torch.round(tensor * T).to(torch.long)
-
-        # Create a mask for edge cases
         mask = (N != 0) & (N != T) & (cycle < T)
-
-        # Avoid divide-by-zero by clamping N
         N_safe = torch.clamp(N, min=1)
         spacing = T / N_safe.float()
 
@@ -372,15 +233,8 @@ class SpikingUnifiedCoreFlow(nn.Module):
             return self.to_uniform_spikes(tensor, cycle)
         raise ValueError("Invalid spike mode: " + str(self.spike_mode))
 
-    # -----------------------------------------------------------------
-    # Weight resolution
-    # -----------------------------------------------------------------
     def _get_weight(self, node: NeuralCore) -> torch.Tensor:
-        """Return the (neurons, axons) float32 weight tensor for *node*.
-
-        Bank-backed cores slice from ``_bank_params``; owned-weight cores
-        index ``neural_core_params`` directly.
-        """
+        """(neurons, axons) float32 weights; bank-backed cores slice ``_bank_params``."""
         bank_info = self._id_to_bank.get(node.id)
         if bank_info is not None:
             bank_key, row_slice = bank_info
@@ -408,9 +262,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
         offset, length = span
         return self._hw_bias_packed[offset:offset + length]
 
-    # -----------------------------------------------------------------
-    # TTFS helpers
-    # -----------------------------------------------------------------
     def _ttfs_encode_input(self, activations: torch.Tensor) -> torch.Tensor:
         """Encode activations [0,1] → single-spike train (T, B, N)."""
         T = self.simulation_length
@@ -441,17 +292,13 @@ class SpikingUnifiedCoreFlow(nn.Module):
             if sp.kind == "off":
                 continue
             if sp.kind == "on":
-                # TTFS: always-on (bias) source fires only once at cycle 0.
-                # In rate-coded mode it fires every cycle (correct since inputs
-                # also produce spikes every cycle, so everything scales by T).
                 if self.spiking_mode in self._TTFS_SPIKING_MODES and cycle != 0:
-                    continue
+                    continue  # TTFS always-on fires once at cycle 0 only
                 out[:, d0:d1].fill_(1.0)
                 continue
             if sp.kind == "input":
                 out[:, d0:d1] = input_spike_train[cycle][:, int(sp.src_start):int(sp.src_end)]
                 continue
-            # node
             out[:, d0:d1] = spike_train_cache[int(sp.src_node_id)][cycle][:, int(sp.src_start):int(sp.src_end)]
 
     def _fill_rate_tensor_from_spans(
@@ -480,28 +327,12 @@ class SpikingUnifiedCoreFlow(nn.Module):
             out_rates[:, d0:d1] = spike_train_cache[int(sp.src_node_id)][:, :, int(sp.src_start):int(sp.src_end)].float().mean(dim=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Execute spiking simulation over a unified IRGraph (NeuralCore + ComputeOp).
-
-        Key invariant:
-        - NeuralCore produces a spike *train* (T, B, out) using LIF integration.
-        - ComputeOp is a *sync barrier*: it consumes upstream spike trains, converts
-          to rates, applies the op in rate space, then regenerates a new spike train
-          for downstream nodes using the same spike generation mode as inputs.
-
-        TTFS modes:
-        - **TTFS** (continuous): analytical ``relu(W @ x + b) / θ``.
-        - **TTFS_Quantized**: true cycle-based simulation (Phase 1 + Phase 2
-          time-stepping with fire-once semantics).
-        """
+        """LIF spike-train sim or analytical TTFS; ComputeOps are rate-space sync barriers."""
         try:
             if self.spiking_mode in self._TTFS_SPIKING_MODES:
                 return self._forward_ttfs(x)
             return self._forward_lif(x)
         finally:
-            # Return per-forward transient CUDA blocks to the driver so
-            # reserved memory does not climb across batches on long
-            # verification sims.  Mirrors the HCM forward's cleanup.
             if isinstance(x, torch.Tensor) and x.is_cuda:
                 torch.cuda.empty_cache()
 
@@ -515,13 +346,10 @@ class SpikingUnifiedCoreFlow(nn.Module):
 
         T = self.simulation_length
 
-        # Generate input spike train (T, B, in)
         input_spike_train = torch.zeros(T, batch_size, x.shape[1], device=device)
         for cycle in range(T):
             input_spike_train[cycle] = self.to_spikes(x, cycle)
 
-        # Compute spike trains for all nodes in topological order.
-        # spike_train_cache[node_id] = (T, B, out_dim)
         spike_train_cache: Dict[int, torch.Tensor] = {}
         self._last_core_spike_counts: Dict[int, float] = {}
 
@@ -554,7 +382,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                     )
 
                     contribution = torch.matmul(weight, inp.T).T
-                    # Hardware-bias: add bias every cycle (matches always-on axon semantics)
                     if hw_bias is not None:
                         contribution = contribution + hw_bias
                     memb += contribution
@@ -581,14 +408,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                     spans=spans,
                 )
 
-                # Symmetric with the TTFS path: Perceptron-wrapped ComputeOps
-                # (encoding-layer perceptrons) have an internal LIFActivation
-                # whose output range is ``[0, activation_scale]``, not
-                # ``[0, 1]``.  Re-scale the module output by its wrapped
-                # ``activation_scale`` so downstream NeuralCores see a
-                # rate tensor in ``[0, 1]`` as expected.  For generic ops
-                # ``_ttfs_node_output_scale`` defaults to the input scale,
-                # a no-op for already-normalised in_rates.
                 in_scale = self._ttfs_node_input_scale.get(node.id, 1.0)
                 out_scale = self._ttfs_node_output_scale.get(node.id, 1.0)
                 if in_scale != 1.0:
@@ -609,15 +428,12 @@ class SpikingUnifiedCoreFlow(nn.Module):
             else:
                 raise TypeError(f"Unknown node type: {type(node)}")
 
-            # Free spike trains whose last consumer was this step.
             for released_id in self._release_at_step.get(node_idx, ()):
                 spike_train_cache.pop(released_id, None)
 
-        # Gather output spike *counts* (B, out_dim) by summing spikes over time.
         output_sources = list(self.output_sources.flatten())
         output_signals = torch.zeros(batch_size, len(output_sources), device=device)
         for cycle in range(T):
-            # Range-based output gather (adds into output_signals)
             for sp in self._output_spans:
                 d0 = int(sp.dst_start)
                 d1 = int(sp.dst_end)
@@ -634,9 +450,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
         self.total_spikes = torch.sum(output_signals).item()
         return output_signals
 
-    # -----------------------------------------------------------------
-    # TTFS analytical helpers
-    # -----------------------------------------------------------------
     def _fill_activation_from_ir_spans(
         self,
         out: torch.Tensor,
@@ -645,12 +458,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         activation_cache: Dict[int, torch.Tensor],
         spans: list[IRSourceSpan],
     ) -> None:
-        """
-        Fill `out` (B, N) with *activations* (not spikes) from IR source spans.
-
-        Used by the analytical TTFS forward pass. The always-on source
-        produces activation 1.0 (bias).
-        """
+        """Fill activation tensor from IR spans (TTFS analytical path)."""
         out.zero_()
         for sp in spans:
             d0 = int(sp.dst_start)
@@ -663,13 +471,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
             if sp.kind == "input":
                 out[:, d0:d1] = x[:, int(sp.src_start):int(sp.src_end)]
                 continue
-            # Node output
             out[:, d0:d1] = activation_cache[int(sp.src_node_id)][:, int(sp.src_start):int(sp.src_end)]
 
     def _forward_ttfs(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        TTFS forward pass — dispatches to continuous or quantized.
-        """
         x = self.preprocessor(x)
         x = x.view(x.shape[0], -1)
 
@@ -677,25 +481,8 @@ class SpikingUnifiedCoreFlow(nn.Module):
             return self._forward_ttfs_quantized(x)
         return self._forward_ttfs_continuous(x)
 
-    # -----------------------------------------------------------------
-    # TTFS continuous (analytical)
-    # -----------------------------------------------------------------
     def _forward_ttfs_continuous(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Analytical TTFS continuous: ``clamp(relu(W @ x + b) / θ, 0, 1)`` per core.
-
-        Outputs are clamped to [0, 1] because TTFS neurons fire at most once —
-        V > θ fires immediately (rate 1), matching hardware behavior.
-
-        Inputs are NOT clamped: weight matrices already incorporate
-        ``per_input_scales`` (from ``compute_per_source_scales``) that normalize
-        ComputeOp outputs to the expected range.  Clamping inputs would corrupt
-        models with ComputeOp→NeuralCore paths (e.g. MLP-Mixer Identity layers).
-
-        Single-pass over nodes in topological order.  ComputeOps are
-        applied directly on activations (host-side ops preserve signed values;
-        final output is read unclamped for argmax).
-        """
+        """Analytical TTFS: clamp(relu(Wx+b)/θ, 0, 1) per core; outputs only clamped."""
         batch_size = x.shape[0]
         device = x.device
         compute_dtype = self._compute_dtype
@@ -719,20 +506,12 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 )
 
                 out = torch.matmul(weight, inp.T).T
-                # Hardware-bias: add dedicated bias register
                 if hw_bias is not None:
                     out = out + hw_bias.to(compute_dtype)
 
-                # Apply activation: resolve from activation_type (may be compound
-                # string e.g. "LeakyReLU + ClampDecorator, QuantizeDecorator").
                 act_fn = _ttfs_activation_from_type(node.activation_type)
                 out = act_fn(out)
-
                 out = out / threshold
-
-                # TTFS: a neuron fires at most once, so its output rate is in [0, 1].
-                # Hardware naturally clamps (V > θ fires immediately → rate 1).
-                # The analytical formula can exceed 1; clamp to match hardware.
                 out = out.clamp(0.0, 1.0)
 
                 activation_cache[node.id] = out
@@ -757,35 +536,12 @@ class SpikingUnifiedCoreFlow(nn.Module):
         self.total_spikes = 0.0
         return output_signals.to(torch.float32)
 
-    # -----------------------------------------------------------------
-    # TTFS quantized (analytical closed-form)
-    # -----------------------------------------------------------------
     def _forward_ttfs_quantized(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Analytical TTFS quantized forward pass.
-
-        Produces the **exact** same output as the cycle-based simulation
-        but in O(N_cores) — one matmul + element-wise ops per core —
-        instead of O(max_latency * S * N_cores).
-
-        For each NeuralCore::
-
-            V = W @ x                                 (initial charge)
-            k_fire = ceil(S * (1 - V / θ))            (analytical fire step)
-            k_fire = clamp(k_fire, 0, S-1)
-            activation = (S - k_fire) / S
-
-        ComputeOps are applied directly on activations (same as continuous).
-        """
+        """Closed-form ttfs_quantized: k_fire = ceil(S*(1-V/θ)); O(cores) not O(latency*S*cores)."""
         batch_size = x.shape[0]
         device = x.device
         S = self.simulation_length
         compute_dtype = self._compute_dtype
-
-        # For bit-exact match to the C++ ``double`` simulator pass
-        # ``compute_dtype=torch.float64`` at construction; the float32 default
-        # flips ``ceil(S*(1-V/θ))`` on a handful of boundary neurons per batch
-        # which is acceptable for SCM validation but not for deployment ship checks.
         x_compute = x.to(compute_dtype)
 
         activation_cache: Dict[int, torch.Tensor] = {}
@@ -805,7 +561,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 )
 
                 V = torch.matmul(weight, inp.T).T
-                # Hardware-bias: add dedicated bias register
                 if hw_bias is not None:
                     V = V + hw_bias.to(compute_dtype)
                 safe_thresh = threshold.clamp(min=1e-12)
@@ -828,9 +583,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 activation_cache.pop(released_id, None)
 
         output_sources = list(self.output_sources.flatten())
-        # Output gather mirrors HCM: use compute_dtype buffer + x_compute so
-        # raw-input skip-connections preserve float64 precision.  Final result
-        # is cast to float32 downstream for argmax.
         output_signals = torch.zeros(
             batch_size, len(output_sources), device=device, dtype=compute_dtype
         )
@@ -842,11 +594,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         return output_signals
 
     def _assert_mapping_contracts(self, ir_graph: IRGraph) -> None:
-        """
-        Verify dimension and index contracts after pruning (Contract 2).
-        Fail fast with a clear error if any core has mismatched axons/neurons vs sources.
-        Uses the same weight tensor the flow uses (so bank-backed cores are handled without get_output_count).
-        """
+        """Fail fast if pruned IR has mismatched axon/neuron counts vs weight matrix."""
         from mimarsinan.mapping.ir import IRSource
 
         for node in self.nodes:
@@ -856,7 +604,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 weight = self._get_weight(node)
             except Exception:
                 continue
-            # weight is (neurons, axons) for matmul
             n_neurons, n_axons = weight.shape[0], weight.shape[1]
             n_src = int(len(node.input_sources.flatten()))
             if n_src != n_axons:
@@ -874,7 +621,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                         "Check pruning/compaction left matrix columns and output count aligned."
                     )
             except ValueError:
-                # Bank-backed core without weight_row_slice: use weight shape as truth
                 pass
         if ir_graph.output_sources.size:
             flat = ir_graph.output_sources.flatten()
@@ -901,9 +647,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
                             f"node_id={src.node_id} index={src.index} out of range [0, {out_count})."
                         )
 
-    # -----------------------------------------------------------------
-    # TTFS ComputeOp helper (shared by continuous + quantized)
-    # -----------------------------------------------------------------
     def _execute_compute_op_ttfs(
         self,
         node: ComputeOp,
@@ -912,28 +655,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
         device: torch.device,
         activation_cache: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """Execute a ComputeOp in activation space (TTFS modes).
-
-        Mirrors ``SpikingHybridCoreFlow._forward_ttfs``'s ComputeOp branch
-        exactly: cast gathered inputs explicitly to float32 before running
-        the wrapped PyTorch module (so the torch path matches the C++
-        ``SimulationRunner._execute_compute_op_np`` that uses float32), then
-        cast the result back to ``self._compute_dtype`` for storage.  NeuralCore
-        outputs arrive normalised to [0, 1] via the effective-weight formula
-        (``W_eff = per_input_scales * W / activation_scale``); ComputeOps wrap
-        the *original* module whose bias was never divided by
-        ``activation_scale``, so we rescale gathered inputs back to training
-        range and normalise the output afterwards.
-        """
+        """TTFS ComputeOp: gather in float32, rescale in/out, store in compute_dtype."""
         spans = self._input_spans[int(node.id)]
         in_dim = int(len(node.input_sources.flatten()))
-        # Gather in float32 to match HCM's C++-equivalent path.  Previously
-        # we materialised ``{k: v.to(torch.float32) for k, v in cache.items()}``
-        # per compute-op, duplicating the entire activation cache (2× state
-        # memory) at every ComputeOp — OOM'd the GPU on cifar_vit-scale IRs
-        # with 2430 ops.  Slice-assignment into a float32 ``inp`` already
-        # downcasts the source tensors element-wise, so the dict copy is
-        # unnecessary.
         inp = torch.zeros(batch_size, in_dim, device=device, dtype=torch.float32)
         self._fill_activation_from_ir_spans(
             inp, x=x, activation_cache=activation_cache, spans=spans,
@@ -949,17 +673,10 @@ class SpikingUnifiedCoreFlow(nn.Module):
         if abs(out_scale - 1.0) > 1e-9:
             out = out / out_scale
 
-        # Store uniformly in compute_dtype so downstream NeuralCore reads
-        # from a homogeneous activation_cache (matches HCM's state_buffer).
         return out.to(self._compute_dtype)
 
     def get_core_spike_rates(self) -> list[float]:
-        """
-        Get the average firing rate for each neural core.
-        
-        Must be called after a forward pass. Returns a list of rates (one per neural core)
-        in the order they appear in the graph.
-        """
+        """Per-core mean spike rate after forward (graph order)."""
         if not hasattr(self, '_last_core_spike_counts'):
             raise RuntimeError("get_core_spike_rates called before forward pass")
         
@@ -974,11 +691,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         return [n for n in self.nodes if isinstance(n, NeuralCore)]
 
     def refresh_thresholds(self) -> None:
-        """
-        Sync thresholds from ir_graph.nodes to the packed threshold buffer.
-
-        Call this after modifying node.threshold directly.
-        """
+        """Sync node.threshold edits into the packed threshold buffer."""
         for node in self.nodes:
             if isinstance(node, NeuralCore):
                 t = node.threshold

@@ -1,8 +1,4 @@
-"""FastAPI server for the pipeline monitoring GUI.
-
-Runs in a daemon thread so the pipeline is not blocked.  Provides REST
-endpoints for polling and a WebSocket for real-time push.
-"""
+"""FastAPI server for the pipeline monitoring GUI."""
 
 from __future__ import annotations
 
@@ -67,17 +63,7 @@ def _get_layout_result_from_request(
     tiling_max_axons: int | None = None,
     tiling_max_neurons: int | None = None,
 ):
-    """Build a model repr and run layout mapping, returning the verification result.
-
-    Handles both native (simple_mlp) and torch (torch_sequential_linear, etc.) builders
-    by delegating to the appropriate builder class.
-
-    ``tiling_max_axons`` / ``tiling_max_neurons`` override the layout pass's
-    tiling bounds so the wizard can match the pipeline's ``max(core_types)``
-    resolution.  When omitted, ``body["max_axons"]``/``body["max_neurons"]``
-    are used (appropriate for the auto-suggester path which has no fixed
-    core_types yet).
-    """
+    """Build model repr and run layout mapping verification."""
     from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
     from mimarsinan.models.builders import BUILDERS_REGISTRY
     from mimarsinan.pipelining.model_registry import ModelRegistry
@@ -115,7 +101,6 @@ def _get_layout_result_from_request(
     category = ModelRegistry.get_category(model_type)
     if category == "torch":
         from mimarsinan.torch_mapping.converter import convert_torch_model
-        # Initialize lazy modules (e.g. LazyBatchNorm1d) before conversion
         raw_model.eval()
         with torch.no_grad():
             try:
@@ -130,7 +115,6 @@ def _get_layout_result_from_request(
         )
         model_repr = supermodel.get_mapper_repr()
     else:
-        # Native model — also initialize lazy modules
         raw_model.eval()
         with torch.no_grad():
             try:
@@ -139,14 +123,9 @@ def _get_layout_result_from_request(
                 pass
         model_repr = raw_model.get_mapper_repr()
 
-    # Populate perceptron_index on the mapper graph so threshold groups
-    # are assigned consistently with SoftCoreMappingStep.
     if hasattr(model_repr, "assign_perceptron_indices"):
         model_repr.assign_perceptron_indices()
 
-    # Use the same tiling bounds that the real pipeline uses (max across
-    # the user's core types), so LayoutIRMapping produces byte-identical
-    # softcore shapes to IRMapping.
     result = verify_soft_core_mapping(
         model_repr,
         max_axons=effective_max_axons,
@@ -165,13 +144,11 @@ def _get_softcores_from_request(body: dict):
 
 
 _RESOURCE_MEDIA_TYPE_BY_KIND = {
-    # Heatmap kinds → image/png
     "ir_core_heatmap": "image/png",
     "ir_core_pre_pruning": "image/png",
     "ir_bank_heatmap": "image/png",
     "hard_core_heatmap": "image/png",
     "pruning_layer_heatmap": "image/png",
-    # JSON resource kinds
     "connectivity": "application/json",
 }
 
@@ -234,8 +211,6 @@ def create_app(
             response.headers["Cache-Control"] = "no-store"
         return response
 
-    # -- REST endpoints --------------------------------------------------------
-
     @app.get("/api/pipeline")
     def pipeline_overview():
         return collector.get_pipeline_overview()
@@ -265,8 +240,6 @@ def create_app(
     @app.get("/api/steps/{step_name}/metrics")
     def step_metrics(step_name: str):
         return collector.get_step_metrics(step_name)
-
-    # -- Lazy resources (heatmaps / connectivity for the live run) ------------
 
     @app.get("/api/steps/{step_name}/resources/{kind}/{rid:path}")
     async def step_resource(step_name: str, kind: str, rid: str):
@@ -305,14 +278,6 @@ def create_app(
                         content=payload,
                         headers={"Cache-Control": "public, max-age=3600, immutable"},
                     )
-        # Disk fallback: the snapshot executor writes every materialised
-        # resource to ``<working_dir>/_GUI_STATE/resources/<step>/<kind>/<rid>``
-        # on step completion (``gui/__init__.py:_finalize``), so resources
-        # survive process restarts.  When the user resumes a run (the new
-        # process starts with an empty ResourceStore — earlier steps'
-        # descriptors are never re-registered), we still have the PNG on
-        # disk.  Same code path the historical/active mirror endpoints
-        # take, just plumbed in here too.
         working_dir = collector.get_working_directory()
         if working_dir:
             return await asyncio.to_thread(
@@ -332,8 +297,6 @@ def create_app(
     def api_console_logs(offset: int = 0):
         return collector.get_console_logs(offset=offset)
 
-    # -- Wizard / config APIs (used when run_config_fn is set, e.g. --ui mode) ----
-
     @app.get("/api/wizard/schema")
     def api_wizard_schema():
         from mimarsinan.gui.wizard.schema import get_wizard_nas_schema
@@ -344,9 +307,6 @@ def create_app(
         from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
         return BasicDataProviderFactory.list_registered()
 
-    # In-process cache so the wizard's per-keystroke metadata fetch never
-    # re-downloads datasets or re-reads ImageNet's devkit.  Key is the full
-    # tuple the client can vary; entries never expire (registry is fixed).
     _metadata_cache: dict[tuple, dict] = {}
     _metadata_cache_lock = threading.Lock()
 
@@ -442,8 +402,6 @@ def create_app(
                 content={"error": str(e)},
             )
 
-    # -- Runs (historical) -----------------------------------------------------
-
     @app.get("/api/runs")
     def api_list_runs(include_steps: bool = False):
         return list_runs(include_steps=include_steps)
@@ -520,8 +478,6 @@ def create_app(
         except Exception:
             return _SafeJSONResponse(content={"discovered": False})
 
-    # -- Templates --------------------------------------------------------------
-
     @app.get("/api/templates")
     def api_list_templates():
         return list_templates()
@@ -545,8 +501,6 @@ def create_app(
         if not ok:
             return JSONResponse(status_code=404, content={"error": "template not found"})
         return {"deleted": True}
-
-    # -- Active runs (process-based) -------------------------------------------
 
     @app.get("/api/active_runs")
     def api_active_runs():
@@ -617,7 +571,6 @@ def create_app(
 
         old_flow = preview["flow"]
 
-        # --- Phase 1: identify neural segments in the flow ---
         segments = []
         current_seg_neural = []
         current_seg_id = 0
@@ -634,7 +587,6 @@ def create_app(
         if current_seg_neural:
             segments.append((current_seg_id, current_seg_neural))
 
-        # --- Phase 2: build per-segment pass assignments from partitioner ---
         seg_pass_assignments = {}
         for seg_id, neural_items in segments:
             n_passes = per_segment_passes.get(seg_id, per_segment_passes.get(str(seg_id), 1))
@@ -644,13 +596,6 @@ def create_app(
                 seg_pass_assignments[seg_id] = [(0, neural_items)]
                 continue
 
-            # Preserve the latency-group box structure **within each pass**.
-            # For every pass the splitter returned, bucket its softcores by
-            # ``latency_tag`` and emit one neural item per bucket, carrying
-            # that bucket's softcore count and (stable) latency_group_index
-            # inherited from the original segment preview.  The miniview
-            # therefore renders the same per-latency-group boxes as before,
-            # just repeated per pass with sync-barrier markers in between.
             item_by_latency = {
                 int(it.get("latency_tag", 0)): it
                 for it in neural_items
@@ -673,9 +618,6 @@ def create_app(
                     template = dict(item_by_latency.get(lat, fallback_template))
                     template["latency_tag"] = lat
                     template["softcore_count"] = bucket[lat]
-                    # Re-anchor ``latency_group_index`` so adjacent passes
-                    # render their boxes in the same canonical order as the
-                    # original unscheduled preview.
                     if lat not in item_by_latency:
                         template.setdefault("latency_group_index", len(item_by_latency) + lat)
                     pass_items.append(template)
@@ -685,7 +627,6 @@ def create_app(
 
             seg_pass_assignments[seg_id] = passes
 
-        # --- Phase 3: rebuild flow with sync barriers ---
         new_flow = [{"kind": "input"}]
         seg_idx = 0
         saw_neural_in_segment = False
@@ -748,8 +689,6 @@ def create_app(
             )
             mr = dict(body.get("model_repr_json", {}))
             core_types = body.get("core_types", [])
-            # Tiling must match what the pipeline's SoftCoreMappingStep does:
-            # max across all user-defined core types.
             if core_types:
                 tile_max_ax = max(int(ct["max_axons"]) for ct in core_types)
                 tile_max_neu = max(int(ct["max_neurons"]) for ct in core_types)
@@ -760,7 +699,6 @@ def create_app(
             else:
                 tile_max_ax = int(mr.get("max_axons", 1024))
                 tile_max_neu = int(mr.get("max_neurons", 1024))
-            # Ensure native models are built with a reasonable minimum layer size.
             mr["max_axons"] = max(int(mr.get("max_axons", 1024)), 4096)
             mr["max_neurons"] = max(int(mr.get("max_neurons", 1024)), 4096)
             layout_result = _get_layout_result_from_request(
@@ -784,8 +722,6 @@ def create_app(
                 "layout_preview": layout_result.layout_preview,
             }
 
-            # When scheduling is active, expand the miniview flow to show
-            # per-segment pass boundaries as sync barriers.
             si = result.get("schedule_info")
             if si and si.get("per_segment_passes"):
                 stats_out["layout_preview"] = _expand_preview_for_scheduling(
@@ -906,10 +842,6 @@ def create_app(
         try:
             while True:
                 raw = await ws.receive_text()
-                # Clients send ``{"type":"resume","last_seq":N}`` right
-                # after (re)connect to get any lifecycle events that were
-                # broadcast while the socket was down.  Parse is best-effort
-                # — garbled messages are ignored so the listener stays up.
                 try:
                     msg = json.loads(raw)
                 except Exception:
@@ -925,13 +857,6 @@ def create_app(
         finally:
             collector.remove_ws_listener(ws)
 
-    # -- Real-time streaming for subprocess-spawned active runs ----------------
-    #
-    # Previously the frontend polled ``/api/active_runs/{rid}/pipeline`` and
-    # ``.../steps/{name}`` every 3 s, so every metric arrived in visibly
-    # batched flushes. ``ActiveRunHub`` tails the subprocess's
-    # ``live_metrics.jsonl`` and ``steps.json`` files and pushes per-line
-    # events over this WS so the charts update at ~20 Hz instead.
     if process_manager is not None:
         from mimarsinan.gui.active_run_stream import ActiveRunHub
 
@@ -945,7 +870,6 @@ def create_app(
             get_working_dir=process_manager.get_working_dir,
             build_overview=_active_overview,
         )
-        # Expose on the app so tests and shutdown hooks can inspect it.
         app.state.active_run_hub = active_hub
 
         @app.websocket("/ws/active_runs/{run_id}")
@@ -954,8 +878,6 @@ def create_app(
             loop = asyncio.get_event_loop()
 
             def _send(msg: dict) -> None:
-                # Tailer threads call this; schedule the actual write on
-                # the event loop so slow clients never stall the tailer.
                 try:
                     asyncio.run_coroutine_threadsafe(ws.send_json(msg), loop)
                 except Exception:
@@ -972,8 +894,6 @@ def create_app(
                 pass
             finally:
                 active_hub.unsubscribe(run_id, ws)
-
-    # -- Static files ----------------------------------------------------------
 
     @app.get("/wizard")
     def wizard_page():

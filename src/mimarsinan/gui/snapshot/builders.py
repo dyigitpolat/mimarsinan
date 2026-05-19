@@ -1,9 +1,4 @@
-"""Pure snapshot extractors for the GUI monitoring system.
-
-Each function accepts a pipeline artifact and returns a JSON-serializable
-dictionary suitable for the web frontend.  No side-effects, no model
-mutation.
-"""
+"""Pure snapshot extractors for the GUI monitoring system."""
 
 from __future__ import annotations
 
@@ -21,7 +16,6 @@ from mimarsinan.common.layer_key import layer_key_from_node_name
 from mimarsinan.gui.resources import ResourceDescriptor
 
 
-# --- Resource kinds (stable string constants used in URL paths) -----------
 # Bump cautiously: frontend URL builders hard-code these.
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
 RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
@@ -38,23 +32,7 @@ def _make_heatmap_producer(
     pruned_col_mask: list | None = None,
     copy: bool = True,
 ):
-    """Build a zero-arg closure that renders *matrix* to PNG bytes lazily.
-
-    By default the matrix is deep-copied into a plain NumPy array at
-    capture time so the closure is isolated from subsequent pipeline
-    mutation (next-step reassignment, in-place updates, tensor frees).
-    Mask lists are coerced to plain Python lists for the same reason.
-
-    Pass ``copy=False`` when the caller can guarantee that *matrix* is
-    pipeline-terminal — i.e. the upstream step is the last one to write
-    it and downstream steps only read. ``hard_core_mapping`` core
-    matrices, IR ``NeuralCore.core_matrix`` (post-pruning), and
-    ``pre_pruning_heatmap`` all qualify. Skipping the copy avoids
-    duplicating GBs of weights on the pipeline thread when the snapshot
-    is built — the deep-copy was the single largest cost on big models
-    and pushed ``on_step_end`` for HCM into the multi-second range,
-    blocking the next ``step_started`` broadcast.
-    """
+    """Build a zero-arg closure that renders *matrix* to PNG bytes lazily."""
     try:
         if copy:
             matrix_copy: Any = np.asarray(matrix).copy()
@@ -168,16 +146,7 @@ def _get_model_perceptrons(model: Any) -> list:
 
 
 def snapshot_pruning_layers(model: Any) -> tuple[dict, list[ResourceDescriptor]]:
-    """Extract per-layer weight-heatmap summaries + lazy heatmap descriptors.
-
-    The returned summary **never** embeds image bytes: each layer carries
-    ``has_heatmap: True`` and the caller is expected to resolve the image
-    through ``/api/steps/{step}/resources/pruning_layer_heatmap/layer/{idx}``
-    (served from the registered :class:`ResourceDescriptor`).
-
-    Only includes perceptrons that have both ``prune_row_mask`` and
-    ``prune_col_mask`` buffers with lengths matching ``layer.weight.shape``.
-    """
+    """Extract per-layer weight-heatmap summaries and lazy heatmap descriptors."""
     perceptrons = _get_model_perceptrons(model)
     layers_out: list[dict] = []
     descriptors: list[ResourceDescriptor] = []
@@ -226,29 +195,8 @@ def snapshot_pruning_layers(model: Any) -> tuple[dict, list[ResourceDescriptor]]
     return {"layers": layers_out}, descriptors
 
 
-# ---------------------------------------------------------------------------
-# IR Graph snapshot
-# ---------------------------------------------------------------------------
-
-
 def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
-    """Extract topology, core stats, thresholds, latencies from an IRGraph.
-
-    Returns ``(summary_dict, resource_descriptors)``. The summary never
-    embeds PNG bytes; per-node heatmaps and per-weight-bank heatmaps are
-    exposed as ``has_heatmap`` / ``has_pre_pruning`` flags with a
-    ``heatmap_resource`` / ``pre_pruning_resource`` descriptor hint the
-    frontend uses to construct
-    ``/api/steps/{step}/resources/{kind}/{rid}`` URLs.
-
-    Includes layer-group annotations and pre-computed group summaries for
-    the layered topology frontend view.  Special virtual nodes (input,
-    const1, output) and their edges are included.
-
-    Nodes receive a ``topo_order`` field (their index in the topologically
-    sorted ``ir_graph.nodes``) so that the frontend can interleave ComputeOps
-    at their correct position in the data flow.
-    """
+    """Extract IR topology, core stats, and lazy heatmap resource descriptors."""
     from mimarsinan.mapping.ir import NeuralCore, ComputeOp
 
     nodes_info: list[dict] = []
@@ -435,12 +383,7 @@ def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
 
 
 def _merge_consecutive_compute_groups(groups: list[dict]) -> list[dict]:
-    """Merge runs of 2+ consecutive compute-only groups into ``compute_group`` entries.
-
-    A single compute group between neural/virtual groups is left as-is.
-    Runs of two or more are combined into one entry with ``type: "compute_group"``.
-    The merged group carries ``sub_keys`` so callers can remap node-to-group edges.
-    """
+    """Merge runs of 2+ consecutive compute-only groups."""
     result: list[dict] = []
     run: list[dict] = []
 
@@ -488,11 +431,7 @@ def _merge_consecutive_compute_groups(groups: list[dict]) -> list[dict]:
 def _build_layer_groups(
     nodes: list[dict], edges: list[dict], node_group_map: dict
 ) -> tuple[list[dict], list[dict]]:
-    """Pre-compute group summaries and aggregated group-level edges.
-
-    Handles mixed int/str node IDs (regular nodes use ints, virtual nodes
-    like "input"/"const1"/"output" use strings).
-    """
+    """Pre-compute group summaries and aggregated group-level edges."""
     groups_by_key: dict[str, list[dict]] = defaultdict(list)
     for n in nodes:
         gk = node_group_map.get(n["id"], n["name"])
@@ -606,16 +545,8 @@ def _deduplicate_edges(edges: list[dict]) -> list[dict]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Hardware mapping snapshot
-# ---------------------------------------------------------------------------
-
 def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
-    """Extract detailed inter-core connectivity spans from axon_sources.
-
-    Returns a list of span dicts with exact axon/neuron ranges so the
-    frontend can highlight the specific side-segments of each core.
-    """
+    """Extract inter-core connectivity spans from axon_sources."""
     spans_out: list[dict] = []
     for ci, core in enumerate(hcm.cores):
         try:
@@ -666,12 +597,7 @@ def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
 
 
 def _group_consecutive_compute_stages(stages: list[dict]) -> list[dict]:
-    """Merge runs of 2+ consecutive compute stages into ``compute_group`` entries.
-
-    A lone compute stage between neural segments is left as-is (``kind: "compute"``).
-    Runs of two or more consecutive compute stages become a single entry with
-    ``kind: "compute_group"`` carrying an ``ops`` list of the individual op dicts.
-    """
+    """Merge runs of 2+ consecutive compute stages into compute_group entries."""
     result: list[dict] = []
     run: list[dict] = []
 
@@ -710,19 +636,7 @@ def _group_consecutive_compute_stages(stages: list[dict]) -> list[dict]:
 
 
 def _make_segment_spans_extractor(hcm: Any, segment_index: int):
-    """Return a memoised zero-arg closure that yields *all* spans of a segment.
-
-    Extracting spans is expensive (one ``compress_spike_sources`` per core
-    on first call) so we want to do it once per segment and reuse the
-    result across the per-core span producers below. The closure is
-    thread-safe so concurrent ``produce()`` calls from the FastAPI
-    threadpool don't double-extract.
-
-    Captures *hcm* by reference. The hard-core mapping is finalized in
-    the Hard Core Mapping step and must not be mutated by downstream
-    steps; if that invariant changes, this closure will need to snapshot
-    the relevant fields eagerly.
-    """
+    """Return a memoised zero-arg closure that yields all spans of a segment."""
     import threading
     state: dict[str, Any] = {"spans": None}
     lock = threading.Lock()
@@ -750,15 +664,7 @@ def _make_segment_spans_extractor(hcm: Any, segment_index: int):
 
 
 def _make_per_core_connectivity_producer(get_all_spans, core_index: int):
-    """Per-(segment, core) closure returning only spans touching *core_index*.
-
-    The Hardware tab only renders spans whose ``src_core`` or ``dst_core``
-    matches the user-selected core, so shipping the entire segment's
-    span list — often thousands of dicts and several MB of JSON — was
-    pure overhead. This producer filters to the single core's incoming
-    and outgoing spans, while sharing the underlying segment extraction
-    via *get_all_spans* so we never re-walk ``get_axon_source_spans``.
-    """
+    """Per-(segment, core) closure returning spans touching *core_index*."""
     def produce() -> list[dict]:
         spans = get_all_spans()
         return [
@@ -775,30 +681,7 @@ def snapshot_mapping_performance_planned(
     input_shape: tuple | list | None = None,
     num_classes: int | None = None,
 ) -> dict | None:
-    """Return wizard-shaped Mapping Performance stats for the built model.
-
-    Runs the same ``verify_soft_core_mapping`` + ``verify_hardware_config``
-    pipeline the wizard uses, so the GUI panel shown on the Model Building
-    step matches the wizard's view exactly (same dict shape, same helpers,
-    same numbers) — but driven by the real, freshly-built model and the
-    resolved platform constraints instead of wizard form values.
-
-    The freshly-built model may or may not already expose
-    ``get_mapper_repr``: native builders return a supermodel that does;
-    torch-category builders (``mlp_mixer_core``, sequential conv/linear,
-    vit, …) return a plain ``nn.Module`` that only gains
-    ``get_mapper_repr`` after ``TorchMappingStep`` runs. We don't want to
-    wait for that step before showing the panel, so for torch models we
-    do the same conversion the pipeline will do later. ``convert_torch_model``
-    is non-mutating (FX trace produces a new GraphModule, weights are read
-    via ``state_dict``, the result is a fresh ``ConvertedModelFlow``) — it
-    is exactly the path the wizard uses for its layout probe — so we can
-    call it directly on the cached model without protecting the pipeline
-    state.
-
-    Returns ``None`` when prerequisites are missing or any step throws,
-    so the GUI just hides the panel rather than surfacing a stack trace.
-    """
+    """Return wizard-shaped Mapping Performance stats for the built model."""
     if model is None or not platform_constraints:
         return None
     cores = platform_constraints.get("cores") or []
@@ -817,8 +700,7 @@ def snapshot_mapping_performance_planned(
         if hasattr(model, "get_mapper_repr"):
             model_repr = model.get_mapper_repr()
         else:
-            # Torch-category model: convert to a supermodel using the
-            # same non-mutating path the wizard's layout probe uses.
+            # Torch models: convert before TorchMappingStep for the planned panel.
             if input_shape is None:
                 return None
             from mimarsinan.torch_mapping.converter import convert_torch_model
@@ -894,14 +776,7 @@ def snapshot_mapping_performance_planned(
 
 
 def snapshot_mapping_performance_real(mapping: Any) -> dict | None:
-    """Derive wizard-shaped Mapping Performance stats from a real mapping.
-
-    Walks the HCM cores (already feasible by construction), computes per-core
-    used/wasted axons & neurons and chip-level totals. Output keys match the
-    ``LayoutVerificationStats.to_dict()`` shape the wizard panel consumes,
-    so the same ``hw-stats-panel.js`` renderer can drop it into the HCM
-    step's Hardware tab without any data adapter.
-    """
+    """Derive wizard-shaped Mapping Performance stats from a real mapping."""
     if mapping is None:
         return None
     stages = getattr(mapping, "stages", None)
@@ -1011,20 +886,7 @@ def snapshot_mapping_performance_real(mapping: Any) -> dict | None:
 
 
 def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescriptor]]:
-    """Extract utilization, packing, stage flow, and per-core detail.
-
-    Returns ``(summary_dict, resource_descriptors)``. The summary omits two
-    classes of heavy payload:
-
-    * Per-core PNG heatmaps (previously embedded as base64 data URIs).
-      Replaced with ``has_heatmap: True`` + ``heatmap_resource`` hints.
-    * Per-core ``connectivity`` span arrays. Each core carries its own
-      ``connectivity_resource`` (``rid="seg/{seg}/core/{core}"``) whose
-      producer returns only the spans that touch that core. Earlier
-      versions registered a single per-segment descriptor and shipped
-      the full span list on every click — multi-MB JSON for big models,
-      queueing behind matplotlib renders on the same threadpool.
-    """
+    """Extract utilization, packing, stage flow, and per-core detail."""
     stages_info: list[dict] = []
     all_core_utils: list[dict] = []
     neural_segment_idx = 0
@@ -1045,11 +907,6 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                 stage_info["schedule_segment_index"] = stage.schedule_segment_index
 
             cores_detail: list[dict] = []
-            # Single shared extractor for this segment's spans — every
-            # per-core connectivity producer (registered below) routes
-            # through this so we extract+compress spike sources at most
-            # once per segment regardless of how many cores the user
-            # clicks on.
             seg_spans_extractor = _make_segment_spans_extractor(hcm, seg_idx)
             for ci, core in enumerate(hcm.cores):
                 used_axons = core.axons_per_core - core.available_axons
@@ -1087,11 +944,6 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     ))
                 except Exception:
                     logger.debug("Failed to register heatmap for hard core %d", ci, exc_info=True)
-                # Per-core connectivity descriptor: only the spans that
-                # involve THIS core. Frontend only ever renders spans
-                # for the currently selected core, so paying per-segment
-                # JSON cost on every click was wasteful (multi-MB, queues
-                # behind matplotlib renders on the same threadpool).
                 conn_rid = f"seg/{seg_idx}/core/{ci}"
                 core_d["has_connectivity"] = True
                 core_d["connectivity_resource"] = {
@@ -1136,9 +988,6 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                 all_core_utils.append(core_d)
             stage_info["num_cores"] = len(hcm.cores)
             stage_info["cores"] = cores_detail
-            # Connectivity is now per-core (registered above); the
-            # stage-level flag is kept so the frontend can decide
-            # whether to render the overlay infrastructure at all.
             stage_info["has_connectivity"] = True
 
             try:
@@ -1183,13 +1032,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
 
 
 def _compute_global_core_layout(stages: list[dict]) -> list[dict]:
-    """Compute the global hardware core layout across all neural segments.
-
-    For each unique core dimension (axons, neurons), returns the maximum
-    count seen in any single segment.  This is the minimum hardware
-    requirement: the frontend renders every segment with this layout,
-    leaving unused slots as placeholders.
-    """
+    """Compute the global hardware core layout across all neural segments."""
     dim_max_count: dict[tuple[int, int], int] = defaultdict(int)
     for s in stages:
         if s["kind"] != "neural" or "cores" not in s:
@@ -1207,11 +1050,7 @@ def _compute_global_core_layout(stages: list[dict]) -> list[dict]:
 
 
 def _compute_core_reuse(stages: list[dict]) -> dict:
-    """Compute per-core-dimension reuse across neural segments.
-
-    Groups cores by (axons_per_core, neurons_per_core) to identify
-    hardware core configurations reused across segments.
-    """
+    """Compute per-core-dimension reuse across neural segments."""
     dim_to_segments: dict[str, list[int]] = defaultdict(list)
     for s in stages:
         if s["kind"] != "neural" or "cores" not in s:
@@ -1229,24 +1068,15 @@ def _compute_core_reuse(stages: list[dict]) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Architecture search result snapshot
-# ---------------------------------------------------------------------------
-
 def snapshot_search_result(result: Any) -> dict:
-    """Extract Pareto front, candidates, objectives from a SearchResult.
-
-    Handles both the original SearchResult dataclass and the dict-serialized
-    form produced by ``_search_result_to_jsonable()`` in ArchitectureSearchStep.
-    """
+    """Extract Pareto front, candidates, and objectives from a SearchResult."""
     if isinstance(result, dict):
         return _snapshot_search_result_dict(result)
     return _snapshot_search_result_obj(result)
 
 
 def _snapshot_search_result_dict(d: dict) -> dict:
-    """Handle the dict form: keys are objectives, best, pareto_front, all_candidates, history.
-    Each candidate has configuration, objectives, metadata."""
+    """Handle the dict-serialized SearchResult form."""
     best = None
     try:
         b = d["best"]
@@ -1337,9 +1167,7 @@ def _snapshot_search_result_obj(result: Any) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Adaptation manager snapshot
-# ---------------------------------------------------------------------------
+
 
 def snapshot_adaptation_manager(manager: Any) -> dict:
     """Extract current adaptation rates."""
@@ -1352,62 +1180,22 @@ def snapshot_adaptation_manager(manager: Any) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# SANA-FE Simulation Step
-# ---------------------------------------------------------------------------
-
-
 def snapshot_sanafe_simulation(
     report: Any,
 ) -> tuple[dict, list[ResourceDescriptor]]:
-    """Build the snapshot + resource descriptors for the SANA-FE GUI tab.
-
-    The snapshot dict (``SanafeStepReport.to_snapshot_dict``) now carries
-    everything the frontend needs to render the floorplan + per-core
-    charts + NoC overlay inline via Plotly: per-tile mesh coords, per-core
-    metrics, NoC links, and arch geometry.  No PNG strip heatmaps are
-    emitted any more — they rendered as ~1×N invisible bands and the
-    Plotly floorplan supersedes them in every way (proper 2D layout,
-    interactive hover, metric selector, NoC overlay).
-    """
+    """Build the snapshot and resource descriptors for the SANA-FE GUI tab."""
     snap = report.to_snapshot_dict() if report is not None else {
         "arch_preset": "", "sample_indices": [], "aggregate": {}, "per_sample": [],
     }
-    # The frontend renders everything from the JSON snapshot; lazy PNG
-    # resources are no longer needed for this tab.
     return snap, []
 
 
-# ---------------------------------------------------------------------------
-# Pipeline cache snapshot dispatcher
-# ---------------------------------------------------------------------------
-
-# Map cache virtual key (step contract) to snapshot key (GUI tab).
-# Multiple cache keys can map to the same snapshot key (e.g. fused_model -> model).
 def build_step_snapshot(
     pipeline: Any,
     step_name: str,
     step: Any = None,
 ) -> tuple[dict, dict[str, str], list[ResourceDescriptor]]:
-    """Build a rich snapshot from the pipeline cache after a step completes.
-
-    If *step* is provided (or resolved from pipeline.steps by step_name), only
-    snapshot entries for cache keys that the step promises or updates are
-    included, and a second dict gives the "kind" per snapshot key: "new" for
-    promises, "edited" for updates. Otherwise all known cache entries are
-    included and snapshot_key_kinds is empty.
-
-    Returns:
-        ``(snapshot_dict, snapshot_key_kinds, resource_descriptors)``.
-
-        * ``snapshot_dict`` is lightweight JSON-safe metadata only; PNG
-          heatmaps and connectivity arrays are **not** embedded.
-        * ``snapshot_key_kinds`` maps snapshot key to ``"new"`` / ``"edited"``.
-        * ``resource_descriptors`` is a flat list aggregated across all
-          sub-builders; the caller (``GUIHandle.on_step_end``) forwards it
-          to the :class:`ResourceStore` so heatmaps/connectivity can be
-          fetched on demand.
-    """
+    """Build a rich snapshot from the pipeline cache after a step completes."""
     snapshot: dict = {"step_name": step_name}
     snapshot_key_kinds: dict[str, str] = {}
     descriptors: list[ResourceDescriptor] = []
@@ -1444,12 +1232,6 @@ def build_step_snapshot(
                     snapshot_key_kinds["model"] = kind
             except Exception:
                 logger.debug("Failed to snapshot model from key %r", key, exc_info=True)
-            # Planned mapping panel: only show on the step that **creates**
-            # the model (Model Building — the unique step that *promises*
-            # ``model``). Every other model-touching step lists ``model``
-            # in ``updates`` (training, adaptation, quantization, …), and
-            # the mapping topology doesn't change there, so duplicating
-            # the panel on each of those tabs would just be noise.
             promises_model = (
                 step is not None
                 and short in set(getattr(step, "promises", ()))
@@ -1495,10 +1277,6 @@ def build_step_snapshot(
                     snapshot_key_kinds["hard_core_mapping"] = kind
             except Exception:
                 logger.debug("Failed to snapshot hard_core_mapping from key %r", key, exc_info=True)
-            # Real-mapping Performance panel: derive the same wizard-shaped
-            # stats dict from the actual per-core utilization so the HCM
-            # tab can render the same panel using real numbers (no replay
-            # against the verifier).
             try:
                 real_stats = snapshot_mapping_performance_real(cache.get(key))
                 if real_stats is not None:
@@ -1565,7 +1343,6 @@ def build_step_snapshot(
                 except Exception:
                     logger.debug("Failed to snapshot ir_graph for hardware tab from key %r", key, exc_info=True)
 
-    # Pruning Adaptation step: per-layer weight heatmaps with pruning masks (red lines)
     if step_name == "Pruning Adaptation" and "model" in snapshot:
         for key in cache.keys():
             short = key.split(".", 1)[-1] if "." in key else key

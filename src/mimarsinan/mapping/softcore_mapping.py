@@ -10,18 +10,8 @@ def is_always_on(idx): return idx == -3
 from mimarsinan.mapping.core_packing import greedy_pack_softcores
 
 def compact_soft_core_mapping(cores, output_sources):
-    """Remove pruned rows and columns from each soft core using pruning maps and reindex spans.
-
-    Uses pruned_row_mask and pruned_col_mask on each SoftCore (set from IR pruning);
-    does not use parameter values to detect zeros. Modifies each core's core_matrix
-    and axon_sources in place, and replaces output_sources so neuron indices match
-    the compacted layout.
-
-    Returns:
-        reindex_maps: dict[int, dict[int, int]] — core_id → {old_neuron_idx: new_neuron_idx}
-    """
-    import os
-    reindex_maps = {}  # core_id -> {old_neuron_idx: new_neuron_idx}
+    """Compact soft cores from IR pruning masks; return core_id → neuron reindex maps."""
+    reindex_maps = {}
     n_compacted = 0
     n_skipped = 0
 
@@ -39,8 +29,7 @@ def compact_soft_core_mapping(cores, output_sources):
         ):
             keep_rows = [r for r in range(n_axons) if not pruned_row_mask[r]]
             keep_cols = [c for c in range(n_neurons) if not pruned_col_mask[c]]
-            # Always preserve the always-on bias row (last axon, wired to is_always_on_ source).
-            # It must never be pruned even if its weight values happen to be zero.
+            # Never prune the always-on bias row (last axon).
             if (
                 core.axon_sources
                 and getattr(core.axon_sources[-1], "is_always_on_", False)
@@ -54,14 +43,7 @@ def compact_soft_core_mapping(cores, output_sources):
 
         if len(keep_rows) < n_axons or len(keep_cols) < n_neurons:
             n_compacted += 1
-            # Bank-backed cores invariant: bank-level pruning at IR time
-            # (src/mimarsinan/mapping/ir_pruning.py) must have already
-            # absorbed the pruning mask, so here ``keep_rows == range(n_axons)``
-            # and ``keep_cols == range(n_neurons)``.  If that invariant is
-            # violated the per-core compaction would mutate ``core_matrix``
-            # into a shape that no longer matches the shared bank slice,
-            # so drop the bank reference for this core and fall back to
-            # dense (sim will upload a small private tile instead).
+            # Bank-backed: IR pruning must already match bank shape; else drop bank ref.
             if getattr(core, "weight_bank_id", None) is not None:
                 core.weight_bank_id = None
                 core.bank_axon_slice = None
@@ -70,7 +52,6 @@ def compact_soft_core_mapping(cores, output_sources):
             if keep_rows and keep_cols:
                 core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
                 core.axon_sources = [core.axon_sources[r] for r in keep_rows]
-                # Compact hardware_bias alongside columns.
                 if getattr(core, "hardware_bias", None) is not None:
                     core.hardware_bias = core.hardware_bias[keep_cols]
             else:
@@ -86,7 +67,6 @@ def compact_soft_core_mapping(cores, output_sources):
 
         core._axon_source_spans = None
 
-    # Apply reindex to all axon_sources
     for core in cores:
         new_sources = []
         for s in core.axon_sources:
@@ -103,7 +83,6 @@ def compact_soft_core_mapping(cores, output_sources):
         core.axon_sources = new_sources
         core._axon_source_spans = None
 
-    # Rebuild output_sources: keep order, reindex or drop pruned neuron refs
     had_output_refs = any(
         not s.is_off_ for s in output_sources
     )
@@ -159,65 +138,29 @@ class SoftCore:
         self.parameter_scale = parameter_scale
         self.threshold = 1.0
 
-        # Packing constraint: two softcores may share a hardcore only when
-        # their ``threshold_group_id`` matches.  Derived from
-        # ``NeuralCore.perceptron_index`` so cores produced by the same
-        # perceptron (output-tiles, psum fragments, shared-bank positions)
-        # naturally share a hw core while cores from different perceptrons
-        # (with different quantization scales / thresholds) do not.
-        #
-        # ``None`` means "unique group" — falls back to ``-id - 1`` at pack
-        # time, which never collides with any non-negative perceptron index.
+        # Pack-time: share hardcore only when threshold_group_id matches; None → unique group.
         self.threshold_group_id = threshold_group_id
 
-        # Optional debug/IR metadata
         self.name = name
         self.psum_group_id = psum_group_id
         self.psum_role = psum_role
         self.coalescing_group_id = coalescing_group_id
         self.coalescing_role = coalescing_role
 
-        # Weight-bank provenance (optional; populated by
-        # ``neural_core_to_soft_core`` when the IR node was bank-backed).
-        # When ``weight_bank_id`` is not None, ``core_matrix`` equals the
-        # bank slice at construction time (kept for CPU consumers: packer
-        # blit, compaction, codegen).  The HCM GPU sim uses the bank
-        # reference instead to share tensors across softcores that point
-        # at the same bank.
-        #
-        # ``bank_neuron_slice`` = (start, end) into the bank's OUTPUT
-        # (column) axis — matches IR's ``NeuralCore.weight_row_slice``
-        # which also slices axis-1 of ``bank.core_matrix`` (shape
-        # ``(in_features, out_features)``).
-        #
-        # ``bank_axon_slice`` = (start, end) into the bank's INPUT (row)
-        # axis; ``None`` means "full axon range".  Populated by
-        # axon-coalescing and axon-split fragments so they can index the
-        # parent bank's row range.
-        #
-        # ``bank_includes_bias_row`` — True iff this softcore's final
-        # axon is the bank's always-on bias row (legacy non-
-        # ``hardware_bias`` path).  The sim uses it to decide whether to
-        # include the bank's last row in the matmul.
         self.weight_bank_id = weight_bank_id
         self.bank_axon_slice = bank_axon_slice
         self.bank_neuron_slice = bank_neuron_slice
         self.bank_includes_bias_row = bool(bank_includes_bias_row)
 
-        # Hardware-bias mode: when set, bias lives in a dedicated register
-        # (not as an always-on axon row).  Shape: (neurons,).
         self.hardware_bias = None
 
         self.latency = None
         self._axon_source_spans = None
 
-        # Neuron-splitting metadata: when a soft core is split across multiple
-        # hardware cores, each fragment records its offset within the original
-        # neuron range so that neuron_mapping references the correct indices.
         self.neuron_offset_in_original = 0
-        self.split_group_id = None          # unique id linking fragments
-        self.split_fragment_index = None    # 0, 1, 2, ... per fragment
-        self.split_original_neurons = None  # total neurons before splitting
+        self.split_group_id = None
+        self.split_fragment_index = None
+        self.split_original_neurons = None
 
     def get_input_count(self):
         return len(self.axon_sources)
@@ -226,12 +169,7 @@ class SoftCore:
         return self.core_matrix.shape[-1]
 
     def get_axon_source_spans(self):
-        """
-        Return a range-compressed representation of axon_sources suitable for fast simulation.
-
-        Note: This is a cached *view*; it must be invalidated if axon_sources are mutated.
-        SoftCore axon_sources are typically immutable after construction.
-        """
+        """Cached range-compressed axon_sources; invalidate if axon_sources mutate."""
         if self._axon_source_spans is None:
             from mimarsinan.mapping.spike_source_spans import compress_spike_sources
             self._axon_source_spans = compress_spike_sources(self.axon_sources)
@@ -243,12 +181,7 @@ class HardCore:
         self.neurons_per_core = neurons_per_core
         self.has_bias_capability = has_bias_capability
 
-        # Lazy allocation: the zero matrix is only materialised on first
-        # ``add_softcore`` using the softcore's dtype.  Previously this was
-        # a float64 dense zero matrix eagerly allocated *per hw core*, so a
-        # 2720-core pool of (768, 3072) cores ate 64 GB before any mapping
-        # started — enough to OOM a large ViT run and bloat the HCM pickle
-        # to 264 GB.  Lazy + correct-dtype avoids both.
+        # Lazy zero matrix on first add_softcore (avoids eager float64 per hw core).
         self.core_matrix = None
         self.axon_sources = []
 
@@ -262,8 +195,6 @@ class HardCore:
         self.threshold_group_id: int | None = None
         self.latency = None
 
-        # Hardware-bias: per-neuron bias stored in dedicated register.
-        # None means legacy (always-on axon row or no bias).
         self.hardware_bias = None
 
         self.unusable_space = 0
@@ -282,8 +213,6 @@ class HardCore:
         axon_offset = self.axons_per_core - self.available_axons
         neuron_offset = self.neurons_per_core - self.available_neurons
 
-        # Lazy zero-matrix allocation with the softcore's dtype.  For
-        # quantized runs (int8 weights) this is 8× smaller than float64.
         if self.core_matrix is None:
             sc_dtype = getattr(softcore.core_matrix, "dtype", None)
             dtype = sc_dtype if sc_dtype is not None else np.float64
@@ -296,13 +225,8 @@ class HardCore:
             neuron_offset : neuron_offset+softcore.get_output_count()] \
                 = softcore.core_matrix
 
-        # print(f"prev threshold: {self.threshold}")
-        # print(f"softcore threshold: {softcore.threshold}")
-        # self.threshold = (self.threshold * neuron_offset + softcore.threshold * softcore.get_output_count()) / (neuron_offset + softcore.get_output_count())
-        # print(f"new threshold: {self.threshold}")
-        
         self.axon_sources.extend(softcore.axon_sources)
-        self._axon_source_spans = None  # invalidate cached spans
+        self._axon_source_spans = None
 
         self.available_axons -= softcore.get_input_count()
         self.available_neurons -= softcore.get_output_count()
@@ -328,7 +252,6 @@ class HardCore:
         if self.latency is None:
             self.latency = softcore.latency
 
-        # Copy hardware_bias from SoftCore into the correct neuron slice.
         if getattr(softcore, "hardware_bias", None) is not None:
             if self.hardware_bias is None:
                 self.hardware_bias = np.zeros(self.neurons_per_core)
@@ -339,12 +262,7 @@ class HardCore:
             (axon_offset * softcore.get_output_count())
 
     def get_axon_source_spans(self):
-        """
-        Range-compressed view of axon_sources for fast simulation.
-
-        HardCore axon_sources are built incrementally during packing; this view is cached and
-        automatically invalidated on add_softcore().
-        """
+        """Cached range-compressed axon_sources; invalidated on add_softcore."""
         if self._axon_source_spans is None:
             from mimarsinan.mapping.spike_source_spans import compress_spike_sources
             self._axon_source_spans = compress_spike_sources(self.axon_sources)
@@ -357,14 +275,7 @@ class HardCoreMapping:
         self.cores = []
         self.output_sources = []
         self.neuron_mapping = {}
-        # hard→soft traceability: list indexed by hard core index; each element is a list of
-        # placement dicts: {"ir_node_id", "axon_offset", "neuron_offset", "axons", "neurons"}
         self.soft_core_placements_per_hard_core = []
-
-        # Raw bank matrices (bank_id → np.ndarray of shape
-        # (in_features, out_features)).  Populated by ``map`` from the
-        # input ``SoftCoreMapping.weight_banks`` so the GPU sim path can
-        # upload each bank exactly once per segment.
         self.weight_banks: dict[int, "object"] = {}
 
         self.unusable_space = 0
@@ -404,13 +315,6 @@ class HardCoreMapping:
             "coalescing_group_id": getattr(softcore, "coalescing_group_id", None),
             "coalescing_role": getattr(softcore, "coalescing_role", None),
         }
-        # Bank provenance — recorded when the softcore came from a
-        # shared WeightBank so the GPU sim can read the bank once and
-        # slice instead of materialising a per-placement dense tile.
-        # ``bank_axon_range`` defaults to (0, axons) when the softcore
-        # didn't set an explicit slice (full-row case).  Bias-row
-        # awareness is preserved so the sim can include/exclude the
-        # bank's final always-on row.
         bank_id = getattr(softcore, "weight_bank_id", None)
         if bank_id is not None:
             placement["weight_bank_id"] = int(bank_id)
@@ -441,10 +345,6 @@ class HardCoreMapping:
                 (target_core_idx, target_neuron_idx)
                 
     def map(self, softcore_mapping, *, allow_neuron_splitting: bool = False):
-        # Propagate bank matrices from the softcore mapping so the GPU
-        # sim can access the canonical bank array per bank_id without
-        # needing a reference back to the IRGraph.  Banks are immutable
-        # once IR pruning + quantization have run.
         banks = getattr(softcore_mapping, "weight_banks", None)
         if banks:
             self.weight_banks = dict(banks)
@@ -480,13 +380,6 @@ class HardCoreMapping:
 
         fuse_hardcores = _real_fuse
 
-        # --- Neuron splitting callback (runtime) ---
-        # Decision layer delegates to ``canonical_split_softcore`` so the
-        # split *point* (``available_neurons``) and the two-fragment
-        # protocol stay identical between the layout packer and the
-        # runtime packer.  Only fragment *construction* is type-specific
-        # here — real SoftCores must carry over sliced weight matrices,
-        # axon sources, hardware_bias, and bank provenance.
         from mimarsinan.mapping.core_packing import canonical_split_softcore
 
         _split_counter = [0]
@@ -605,9 +498,7 @@ class HardCoreMapping:
             hardcore._axon_source_spans = None
 
     def get_output_source_spans(self):
-        """
-        Range-compressed view of the final mapping outputs.
-        """
+        """Cached range-compressed output_sources."""
         if self._output_source_spans is None:
             from mimarsinan.mapping.spike_source_spans import compress_spike_sources
             self._output_source_spans = compress_spike_sources(self.output_sources.flatten().tolist())

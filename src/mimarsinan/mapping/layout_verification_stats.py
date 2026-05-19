@@ -364,9 +364,7 @@ def build_stats_from_packing_result(
     )
 
 
-# ---------------------------------------------------------------------------
 # Unified barrier computation
-# ---------------------------------------------------------------------------
 
 def compute_schedule_sync_count(per_segment_passes: Dict[int, int]) -> int:
     """Compute the number of sync barriers introduced by scheduled passes.

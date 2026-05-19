@@ -31,9 +31,7 @@ from mimarsinan.mapping.layout.layout_types import (
 )
 
 
-# ---------------------------------------------------------------------------
 # Budget helper — single source of truth for both wizard and runtime
-# ---------------------------------------------------------------------------
 
 def effective_core_budget(cores_config: Sequence[dict]) -> int:
     """Compute the effective hardware-core budget for schedule partitioning.
@@ -47,9 +45,7 @@ def effective_core_budget(cores_config: Sequence[dict]) -> int:
     return int(total * 0.8) if n_types > 1 else total
 
 
-# ---------------------------------------------------------------------------
 # Capacity-driven segment splitter (shared by layout verifier + hard-core mapper)
-# ---------------------------------------------------------------------------
 
 
 def split_softcores_by_capacity(
@@ -152,9 +148,7 @@ def split_softcores_by_capacity(
     return sub_segments
 
 
-# ---------------------------------------------------------------------------
 # NeuralCore partitioner — kept for API stability, always returns 1 pass
-# ---------------------------------------------------------------------------
 
 def partition_segment_into_passes(
     cores: list[NeuralCore],
@@ -179,9 +173,7 @@ def partition_segment_into_passes(
     return [list(cores)]
 
 
-# ---------------------------------------------------------------------------
 # Layout-level estimator — packs each layout segment whole
-# ---------------------------------------------------------------------------
 
 def estimate_passes_for_layout(
     softcores: Sequence[LayoutSoftCoreSpec],

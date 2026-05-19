@@ -1,44 +1,4 @@
-"""
-DeploymentPipeline — unified SNN deployment pipeline.
-
-Configuration
-=============
-
-Pipeline mode  (``pipeline_mode`` in JSON — selects a preset)
-  ``"vanilla"``  Pretraining + direct mapping.
-  ``"phased"``   Pretraining + activation quantization + weight quantization.
-
-Spiking mode  (``spiking_mode`` in ``deployment_parameters``)
-  ``"lif"``      LIF (cycle-accurate integrate-and-fire) deployment.  A
-                 dedicated LIF Adaptation step swaps each Perceptron's base
-                 activation to :class:`LIFActivation` and runs a
-                 knowledge-distillation recovery loop; Clamp / Shifting /
-                 Activation Quantization are skipped because LIFActivation
-                 subsumes them.
-  ``"ttfs"``     Time-to-first-spike SNN.  Analytical ReLU↔TTFS mapping.
-  ``"ttfs_quantized"``  Cycle-based quantised TTFS.
-
-Activation adaptation
-  Activation Analysis always runs. Activation Adaptation always runs next:
-  it replaces non-ReLU chip-targeted perceptrons (e.g. GELU, LeakyReLU) with
-  ReLU when needed and applies activation_scales in all cases. When
-  ``spiking_mode`` is ``"lif"``, LIF Adaptation runs after that and the
-  clamp/shift/quantize steps are skipped.  When ``spiking_mode`` is TTFS or
-  ``activation_quantization`` is True, Clamp Adaptation then runs instead:
-  it trains with a ClampDecorator so the model operates within the TTFS
-  saturation range (relu(V)/θ clamped to 1.0 in hardware).
-
-Quantization flags  (booleans in ``deployment_parameters``)
-  ``activation_quantization``
-      Enables additional activation quantization: Activation Shifting →
-      Activation Quantization (discrete levels for chip deployment).
-      Configured via ``target_tq``.
-  ``weight_quantization``
-      Enables weight quantization + verification.
-      Configured via ``weight_bits``.
-
-These flags can be set explicitly in the JSON to override presets.
-"""
+"""Unified SNN deployment pipeline with configurable quantization."""
 
 from __future__ import annotations
 
@@ -75,11 +35,6 @@ def _select_device() -> torch.device:
     return device
 
 
-# ── Step groups ─────────────────────────────────────────────────────────────
-
-# Activation Analysis always runs (produces activation_scales for IR).
-# Activation Adaptation always runs next (ReLU replacement when needed, scales always).
-# Clamp Adaptation runs only when act_q or TTFS, after Activation Adaptation.
 _ACTIVATION_ANALYSIS_STEP: tuple[str, type] = ("Activation Analysis", ActivationAnalysisStep)
 _CLAMP_ADAPTATION_STEP: tuple[str, type] = ("Clamp Adaptation", ClampAdaptationStep)
 _ACTIVATION_ADAPTATION_NO_QUANT_STEP: tuple[str, type] = (
@@ -87,8 +42,6 @@ _ACTIVATION_ADAPTATION_NO_QUANT_STEP: tuple[str, type] = (
     ActivationAdaptationStep,
 )
 
-# Full activation quantization: Shifting + Quantization are only needed
-# when discrete activation levels are required for chip deployment.
 _ACTIVATION_QUANTIZATION_STEPS: list[tuple[str, type]] = [
     ("Activation Shifting",       ActivationShiftStep),
     ("Activation Quantization",   ActivationQuantizationStep),
@@ -103,8 +56,6 @@ _WEIGHT_QUANTIZATION_STEPS: list[tuple[str, type]] = [
     ("Quantization Verification", QuantizationVerificationStep),
 ]
 
-# ── Semantic groups (step class → UI group id) ──────────────────────────────
-# Stable lowercase ids used by the GUI to color-code pipeline bars.
 _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
     ArchitectureSearchStep:             "configuration",
     ModelConfigurationStep:             "configuration",
@@ -132,18 +83,12 @@ _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
 
 
 def get_pipeline_semantic_group_by_step_name(config: dict) -> dict[str, str]:
-    """Return {step_name: semantic_group_id} for every step in the given config.
-
-    Derived from ``get_pipeline_step_specs``, so the mapping is always
-    consistent with actual pipeline composition.
-    """
+    """Return {step_name: semantic_group_id} for every step in the given config."""
     return {
         name: _SEMANTIC_GROUP_BY_STEP_CLASS.get(cls, "other")
         for name, cls in get_pipeline_step_specs(config)
     }
 
-
-# ── Pipeline-mode presets ───────────────────────────────────────────────────
 
 PIPELINE_MODE_PRESETS: dict[str, dict] = {
     "vanilla": {},
@@ -155,12 +100,7 @@ PIPELINE_MODE_PRESETS: dict[str, dict] = {
 
 
 def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
-    """Return ordered list of (step_name, step_class) for the given config.
-
-    Single source of truth for pipeline step order and presence. Uses only
-    config keys; no pipeline or data provider required. Used by
-    DeploymentPipeline._assemble_steps() and by the wizard API for preview.
-    """
+    """Return ordered (step_name, step_class) list for the given config."""
     search_mode = derive_search_mode(config)
     spiking = config.get("spiking_mode", "lif")
     act_q = config.get("activation_quantization", False)
@@ -174,56 +114,38 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
 
     specs: list[tuple[str, type]] = []
 
-    # ── Configuration ───────────────────────────────────────────────
     if search_mode != "fixed":
         specs.append(("Architecture Search", ArchitectureSearchStep))
     else:
         specs.append(("Model Configuration", ModelConfigurationStep))
 
-    # ── Model Building ──────────────────────────────────────────────
     specs.append(("Model Building", ModelBuildingStep))
 
-    # ── Pretraining / Weight Preloading ────────────────────────────
     if weight_source:
         specs.append(("Weight Preloading", WeightPreloadingStep))
     else:
         specs.append(("Pretraining", PretrainingStep))
 
-    # ── Torch Mapping (category "torch" models) ─────────────────────
     if ModelRegistry.get_category(model_type) == "torch":
         specs.append(("Torch Mapping", TorchMappingStep))
 
-    # ── Pruning ─────────────────────────────────────────────────────
     if pruning and pruning_fraction > 0:
         specs.extend(_PRUNING_STEPS)
 
-    # ── Activation Adaptation + Quantization ──────────────────────
-    # Activation Analysis always runs (activation_scales for IR).
-    # Activation Adaptation always runs next: ReLU replacement when any
-    # chip-targeted perceptron is non-ReLU, scales applied in all cases.
     specs.append(_ACTIVATION_ANALYSIS_STEP)
     specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
 
     if spiking == "lif":
-        # LIF mode: the base activation itself becomes a multi-step IF
-        # neuron, which already clamps to [0, activation_scale] and
-        # quantises to T + 1 levels.  Clamp / Shift / Activation Quantization
-        # would double-apply those semantics and mis-align the staircase
-        # boundaries, so they are skipped.  LIFAdaptationStep runs a KD
-        # recovery against the pre-LIF snapshot.
         specs.append(("LIF Adaptation", LIFAdaptationStep))
     else:
-        # TTFS and legacy flows keep the clamp / shift / quantization chain.
         if act_q or spiking in ("ttfs", "ttfs_quantized"):
             specs.append(_CLAMP_ADAPTATION_STEP)
         if act_q:
             specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
 
-    # ── Weight Quantization ─────────────────────────────────────────
     if wt_q:
         specs.extend(_WEIGHT_QUANTIZATION_STEPS)
 
-    # ── Normalization Fusion & IR Mapping ───────────────────────────
     specs.append(("Normalization Fusion", NormalizationFusionStep))
     specs.append(("Soft Core Mapping", SoftCoreMappingStep))
     if wt_q:
@@ -231,7 +153,6 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
             ("Core Quantization Verification", CoreQuantizationVerificationStep)
         )
 
-    # ── Hardware Deployment ─────────────────────────────────────────
     specs.append(("Hard Core Mapping", HardCoreMappingStep))
     specs.append(("Simulation", SimulationStep))
 
@@ -266,8 +187,6 @@ class DeploymentPipeline(Pipeline):
         "sanafe_log_message_trace": True,
         "sanafe_parity_check": True,
         "allow_scheduling": False,
-        # Recipe defaults match templates/cifar_vit_pretrained.json. Mirrored in
-        # config_schema/defaults.py: DEFAULT_TRAINING_RECIPE / DEFAULT_TUNING_RECIPE.
         "training_recipe": {
             "optimizer": "adamw",
             "weight_decay": 0.05,
@@ -297,7 +216,6 @@ class DeploymentPipeline(Pipeline):
         "weight_bits": 8,
     }
 
-    # ------------------------------------------------------------------ init
 
     def __init__(
         self,
@@ -321,7 +239,6 @@ class DeploymentPipeline(Pipeline):
         self._display_config()
         self._assemble_steps()
 
-    # -------------------------------------------------------- config helpers
 
     def _initialize_config(
         self,
@@ -343,19 +260,12 @@ class DeploymentPipeline(Pipeline):
         self.config["num_classes"] = data_provider.get_prediction_mode().num_classes
         self.config["device"] = _select_device()
 
-        # Spiking-mode defaults.
-        # The user only needs to set ``spiking_mode``; firing_mode,
-        # spike_generation_mode and thresholding_mode are derived automatically.
-        #   "lif"            → cycle-accurate integrate-and-fire (Python + C++)
-        #   "ttfs"           → analytical / continuous TTFS (Python + C++)
-        #   "ttfs_quantized" → cycle-based quantised TTFS  (Python + C++)
         spiking = self.config.get("spiking_mode", "lif")
         if spiking in ("ttfs", "ttfs_quantized"):
             self.config.setdefault("firing_mode", "TTFS")
             self.config.setdefault("spike_generation_mode", "TTFS")
             self.config.setdefault("thresholding_mode", "<=")
 
-            # Guard: TTFS spiking modes require TTFS firing / spike generation.
             if self.config["firing_mode"] != "TTFS":
                 raise ValueError(
                     f"spiking_mode='{spiking}' requires firing_mode='TTFS', "
@@ -367,41 +277,13 @@ class DeploymentPipeline(Pipeline):
                     f"got '{self.config['spike_generation_mode']}'"
                 )
         else:
-            # LIF (rate-coded integrate-and-fire) defaults.  ``Uniform``
-            # spike generation is deterministic and stable; subtractive-
-            # reset ``Default`` firing pairs with the inclusive ``<=``
-            # threshold comparator. Inclusive thresholding fires when
-            # ``memb >= threshold`` so neurons whose membrane lands
-            # exactly on the threshold (a common boundary case under
-            # bursty per-cycle inputs from upstream NeuralCores) still
-            # fire — closing roughly 2 pp of the NF→SCM gap on deep
-            # single-segment workloads compared to strict ``<``.
-            # nevresim's DefaultFirePolicy is still strict; the chip
-            # simulators read ``thresholding_mode`` to align comparator
-            # choice with training.
             self.config.setdefault("firing_mode", "Default")
             self.config.setdefault("spike_generation_mode", "Uniform")
             self.config.setdefault("thresholding_mode", "<=")
-            # Off by default — opt-in via wizard/config. When True, LIF
-            # Adaptation propagates (T, B, ...) spike trains through the
-            # mapper DAG during training, so each Perceptron's LIF
-            # integrates the actual cycle-by-cycle output of the upstream
-            # Perceptron (matching what the chip will deliver at
-            # deployment) instead of broadcasting a rate. Closes the
-            # NF→SCM gap on deep single-segment workloads at the cost of
-            # ~T× training compute.
             self.config.setdefault("cycle_accurate_lif_forward", False)
 
-        # Connect degradation_tolerance config to pipeline's step-level assertion.
-        # tolerance = 1 - degradation_tolerance: with degradation_tolerance=0.05,
-        # this gives tolerance=0.95 (allow up to 5% accuracy drop per step).
         self.tolerance = 1.0 - float(self.config.get("degradation_tolerance", 0.05))
 
-        # Cross-step accuracy budget. Default to 2x the per-step
-        # degradation_tolerance if not explicitly configured; that is a
-        # conservative default that at least catches 3+ adjacent full-
-        # tolerance drops. Set ``degradation_budget_total`` explicitly in
-        # the run config to widen/narrow it.
         default_budget = 2.0 * float(self.config.get("degradation_tolerance", 0.05))
         self.accuracy_budget.budget_total = float(
             self.config.get("degradation_budget_total", default_budget)
@@ -414,7 +296,7 @@ class DeploymentPipeline(Pipeline):
         self._validate_config()
 
     def _validate_config(self):
-        """Non-fatal sanity checks. Any finding is a stderr warning, not an abort."""
+        """Non-fatal sanity checks; warnings go to stderr."""
         model_name = self.config.get("model_name") or self.config.get("model_type", "")
         act_q = bool(self.config.get("activation_quantization", False))
         spiking = self.config.get("spiking_mode", "lif")
@@ -442,7 +324,6 @@ class DeploymentPipeline(Pipeline):
         for key, value in self.config.items():
             print(f"  {key}: {value}")
 
-    # --------------------------------------------------- step assembly logic
 
     def _assemble_steps(self):
         for name, cls in get_pipeline_step_specs(self.config):
@@ -454,15 +335,10 @@ class DeploymentPipeline(Pipeline):
         else:
             print(f"[DeploymentPipeline] Pruning not in pipeline: pruning={pruning}, pruning_fraction={pruning_fraction}")
 
-    # -------------------------------------------------------- preset helper
 
     @staticmethod
     def apply_preset(pipeline_mode: str, deployment_parameters: dict) -> None:
-        """Merge a ``pipeline_mode`` preset into *deployment_parameters*.
-
-        Preset values are applied with ``setdefault`` — explicit user
-        settings always win.
-        """
+        """Merge a pipeline_mode preset into deployment_parameters (setdefault)."""
         preset = PIPELINE_MODE_PRESETS.get(pipeline_mode, {})
         for key, value in preset.items():
             deployment_parameters.setdefault(key, value)

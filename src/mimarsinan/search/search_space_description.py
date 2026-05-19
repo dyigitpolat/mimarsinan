@@ -70,9 +70,7 @@ class SearchSpaceDescription:
     def searches_hw(self) -> bool:
         return self.search_mode in ("hardware", "joint")
 
-    # ------------------------------------------------------------------ #
     # Construction helpers
-    # ------------------------------------------------------------------ #
 
     @classmethod
     def from_arch_search(
@@ -109,9 +107,7 @@ class SearchSpaceDescription:
             weight_bits=int(weight_bits),
         )
 
-    # ------------------------------------------------------------------ #
     # Renderer 1: AgentEvolve LLM JSON-ish schema
-    # ------------------------------------------------------------------ #
 
     def to_agent_evolve_schema(self) -> Dict[str, Any]:
         """Configuration schema description for AgentEvolve LLM prompts."""
@@ -136,9 +132,7 @@ class SearchSpaceDescription:
             }
         return schema
 
-    # ------------------------------------------------------------------ #
     # Renderer 2: AgentEvolve example configuration
-    # ------------------------------------------------------------------ #
 
     def to_agent_evolve_example(self) -> Dict[str, Any]:
         """Example configuration matching ``to_agent_evolve_schema``."""
@@ -166,9 +160,7 @@ class SearchSpaceDescription:
             }
         return example
 
-    # ------------------------------------------------------------------ #
     # Renderer 3: AgentEvolve constraints free-text
-    # ------------------------------------------------------------------ #
 
     def to_agent_evolve_constraints(self) -> str:
         """Constraint description for AgentEvolve LLM prompts."""
@@ -194,9 +186,7 @@ class SearchSpaceDescription:
             )
         return "\n".join(parts)
 
-    # ------------------------------------------------------------------ #
     # Renderer 4: compilagent Lever tuple
-    # ------------------------------------------------------------------ #
 
     # Per-core dimension axis kinds; the order matches ``_decode_hw``.
     HW_DIM_KINDS: Tuple[Tuple[str, str], ...] = (

@@ -1,35 +1,4 @@
-"""Host-scheduled Lava Loihi simulation of a ``HybridHardCoreMapping``.
-
-Per neural segment, the runner schedules hard cores on the host so routing,
-buffer latching, and active windows match ``SpikingHybridCoreFlow`` exactly.
-Each individual hard core still runs its Dense + ``SubtractiveLIFReset``
-dynamics through Lava::
-
-    RingBuffer(input_spikes) -> Dense(weights) -> SubtractiveLIFReset -> RingBuffer(output)
-
-``SubtractiveLIFReset`` is a one-off subclass of ``lava.proc.lif.process.LIF``
-with a float model that (a) has no current or voltage decay (du = dv = 0
-with u treated as direct synaptic input via du=1 semantics), (b) applies
-subtractive reset on spike (``v -= vth``) to match nevresim's
-``firing_mode='Default'`` semantics exactly, and (c) gates integration to the
-same active window used by the HCM recorder.
-
-Host-side responsibilities (CPU, not Loihi):
-
-* Rate-encoding the original input into spike trains for the first neural
-  segment (matches ``SimulationRunner``'s uniform rate encoding).
-* Running :class:`HybridStage.compute` stages on the host (the ComputeOps
-  wrap arbitrary PyTorch modules — rearrange, concatenate, host-side
-  Perceptrons).  This follows the same gather / execute / scatter pattern
-  as ``SimulationRunner._execute_compute_op_np`` and is reused directly
-  from that class.
-* Sequencing stages in topological order and threading rates through a
-  shared ``state_buffer`` keyed by IR node id.
-
-The strict correctness surface is ``run_segments_from_reference()``, which
-compares Lava neural-segment spike counts against an HCM ``RunRecord``.
-``run()`` remains an optional exploratory classification-accuracy runner.
-"""
+"""Host-scheduled Lava Loihi simulation of a HybridHardCoreMapping."""
 
 from __future__ import annotations
 
@@ -64,37 +33,14 @@ from mimarsinan.mapping.chip_latency import ChipLatency
 from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
 
 
-# ---------------------------------------------------------------------------
-# SubtractiveLIFReset process. Lazy-imported so this module stays importable
-# even on hosts where Lava is missing (the production code paths surface a
-# clear ``ImportError`` only when the runner is actually constructed).
-# The class must live in its own module — Lava's process-model discovery
-# (``ProcGroupDiGraphs._find_proc_models``) re-imports the class by its
-# ``__module__``.
-# ---------------------------------------------------------------------------
+# SubtractiveLIFReset is lazy-imported so missing Lava does not break import.
 
 _SUBTRACTIVE_LIF_CLS = None
 _LAVA_DTYPE = np.float64
 
 
 def _make_set_start_method_idempotent() -> None:
-    """Monkey-patch ``multiprocessing.set_start_method`` to be a no-op when
-    a context is already set (instead of raising).
-
-    Lava's ``message_infrastructure/multiprocessing.py`` calls
-    ``mp.set_start_method('fork')`` unconditionally at import time. If the
-    parent process has already used multiprocessing (DataLoader workers,
-    nevresim's ``ProcessPoolExecutor``, anything that touches the mp
-    context) by the time Lava is imported, that call raises
-    ``RuntimeError('context has already been set')`` — even when the
-    pre-existing method is also ``'fork'``. Python's ``set_start_method``
-    is strictly one-shot.
-
-    We don't edit lava-nc (it's a pip-installed package). We patch our
-    own process's ``multiprocessing.set_start_method`` to swallow the
-    redundant call. Both stdlib and ``torch.multiprocessing`` typically
-    share the function object, but we patch each defensively.
-    """
+    """No-op ``set_start_method`` when a multiprocessing context is already set."""
     import multiprocessing as mp
     import torch.multiprocessing as torch_mp
 
@@ -107,8 +53,7 @@ def _make_set_start_method_idempotent() -> None:
             current = module.get_start_method(allow_none=True)
             if force or current is None:
                 real_set(method, force=force)
-            # else: already set (possibly to the same method); skip the
-            # redundant call that would otherwise raise.
+            pass  # context already set; skip redundant call
 
         _safe_set._mimarsinan_lava_safe = True
         module.set_start_method = _safe_set
@@ -118,14 +63,7 @@ def _make_set_start_method_idempotent() -> None:
 
 
 def _subtractive_lif_cls():
-    """Lazy-import + cache the project's SubtractiveLIFReset class.
-
-    Installs the idempotent ``set_start_method`` shim before importing
-    Lava so that lava-nc's unconditional ``mp.set_start_method('fork')``
-    at import becomes a no-op when our process has already initialised a
-    multiprocessing context (e.g. via the nevresim Simulation step's
-    ``ProcessPoolExecutor`` or PyTorch DataLoader workers).
-    """
+    """Lazy-import and cache SubtractiveLIFReset."""
     global _SUBTRACTIVE_LIF_CLS
     if _SUBTRACTIVE_LIF_CLS is None:
         _make_set_start_method_idempotent()
@@ -134,22 +72,9 @@ def _subtractive_lif_cls():
     return _SUBTRACTIVE_LIF_CLS
 
 
-# ---------------------------------------------------------------------------
-# Rate-encoded spike generators (match SpikingUnifiedCoreFlow's uniform mode).
-# ---------------------------------------------------------------------------
-
-# ``_uniform_rate_encode`` is the canonical uniform-rate encoder shared with
-# the SANA-FE runner.  Defined in ``_spike_encoding.py`` so both backends
-# point at a single implementation; re-exported here under the original
-# private name for backwards compatibility with existing imports.
 from mimarsinan.chip_simulation._spike_encoding import (
     uniform_rate_encode as _uniform_rate_encode,
 )
-
-
-# ---------------------------------------------------------------------------
-# Profiling trace.
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -210,9 +135,7 @@ class _SegmentTiming:
         return max(int(core.latency) if core.latency is not None else 0, 0)
 
     def active_start(self, core: HardCore) -> int:
-        # Lava process ``time_step`` is one-based relative to sink buffer
-        # indices.  ``logical_start`` is a zero-based sink index, so add one
-        # when programming reset/active phases inside the process model.
+        # Lava time_step is 1-based; logical_start is 0-based sink index.
         return (self.logical_start + self.core_latency(core) + 1) % self.sample_stride
 
     def sample_start(self) -> int:
@@ -227,21 +150,8 @@ class _SegmentTiming:
         )
 
 
-# ---------------------------------------------------------------------------
-# Runner.
-# ---------------------------------------------------------------------------
-
-
 class LavaLoihiRunner:
-    """Evaluate a ``HybridHardCoreMapping`` under a real Lava process graph.
-
-    The runner splits responsibility between the Loihi-compatible chip side
-    (Dense + SubtractiveLIFReset per core) and the host (ComputeOp stages,
-    routing, input encoding).  Its outputs should fall within the
-    ``degradation_tolerance`` of the nevresim path; substantial drift is a
-    bug in either the graph wiring or the state-buffer routing and should
-    fail the Loihi step.
-    """
+    """Evaluate a HybridHardCoreMapping under a Lava process graph."""
 
     def __init__(
         self,
@@ -256,10 +166,6 @@ class LavaLoihiRunner:
         self.mapping = mapping
         self.T = int(simulation_length)
         self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
-        # Thresholding mode plumbs through to the LIF process model so its
-        # firing comparator matches HCM/nevresim. ``pipeline``'s config is
-        # the source of truth when present; the harness-mode constructor
-        # (pipeline=None) uses the explicit ``thresholding_mode`` kwarg.
         if pipeline is not None:
             thresholding_mode = pipeline.config.get(
                 "thresholding_mode", thresholding_mode,
@@ -270,18 +176,13 @@ class LavaLoihiRunner:
             )
         self.thresholding_mode = str(thresholding_mode)
 
-        # ``pipeline=None`` is the harness-mode escape hatch used by the
-        # spike-parity test, where samples are supplied directly and we
-        # never call ``run()`` / data loaders / reporters.  We still need
-        # Lava import + the segment runner; everything else is skipped.
+        # pipeline=None: harness mode (spike-parity test; no data loaders).
         if pipeline is None:
             self.device = None
             self.max_samples = 0
             self._data_loader_factory = None
         else:
             self.device = pipeline.config["device"]
-            # Exploratory accuracy mode only. The production Loihi pipeline
-            # step uses one-sample spike parity via run_segments_from_reference.
             self.max_samples = int(
                 pipeline.config.get(
                     "max_loihi_samples",
@@ -298,19 +199,13 @@ class LavaLoihiRunner:
 
             self._data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
 
-        # Eagerly resolve SubtractiveLIFReset so any Lava import failure
-        # surfaces here, not deep inside ``run_segments_from_reference``.
-        _subtractive_lif_cls()
+        _subtractive_lif_cls()  # fail fast on missing Lava
 
         self._profile = _RunProfile()
         self._accuracy: float | None = None
 
-        # Set by ``run_segments_from_reference``; consumed by
-        # ``_run_neural_segment`` to populate per-core spike-count
-        # records into a ``RunRecord`` for diff against HCM.
         self._recorder: RunRecord | None = None
 
-    # --------------------------------------------------------------------- load
 
     def _load_test_samples(self) -> Tuple[np.ndarray, np.ndarray]:
         provider = self._data_loader_factory.create_data_provider()
@@ -335,7 +230,6 @@ class LavaLoihiRunner:
         shutdown_data_loader(loader)
         return np.concatenate(xs, axis=0), np.concatenate(ys, axis=0)
 
-    # ------------------------------------------------------------------ prepare
 
     def _preprocess(self, x_np: np.ndarray) -> np.ndarray:
         """Apply the shared preprocessor then flatten to (N, input_size)."""
@@ -344,7 +238,6 @@ class LavaLoihiRunner:
             x = self.preprocessor(x)
         return x.detach().cpu().numpy().reshape(x.shape[0], -1)
 
-    # ------------------------------------------------------------------ lava op
 
     def _run_core_lava(
         self,
@@ -354,37 +247,7 @@ class LavaLoihiRunner:
         hardware_bias: np.ndarray | None,
         input_spikes: np.ndarray,
     ) -> np.ndarray:
-        """Run ONE hard core's Dense + SubtractiveLIFReset on Lava.
-
-        Parameters
-        ----------
-        weights        : (n_out, n_in) float array.
-        threshold      : scalar vth.
-        hardware_bias  : optional (n_out,) bias vector.
-        input_spikes   : (n_in, N * T) packed spike train across samples.
-
-        Returns
-        -------
-        output_spikes  : (n_out, N * T) packed output spike train.
-
-        Timing model
-        ------------
-        Lava's RingBuffer source → Dense → SubtractiveLIF → RingBuffer sink
-        pipeline has a per-cycle send/recv delay, so the input bit at
-        ``data[k]`` is processed by the LIF at timestep ``t = k + 3``, and
-        its output spike is stored at sink index ``t`` (= ``k + 3``).
-
-        Layout::
-
-            [pad_head: 2 zero cycles] [warmup: T cycles] [N*T sample cycles] [tail: 3 zeros]
-
-        Reset boundaries are aligned with sample-window starts via
-        ``reset_offset = (pad_head + T + 3) % T``: this ensures the LIF's
-        state is wiped at exactly the cycle where it begins processing each
-        sample's first bit.  Total runtime is
-        ``pad_head + T + N*T + tail_pad`` so sink.buffer is large enough to
-        capture the very last sample's last spike.
-        """
+        """Run one hard core's Dense + SubtractiveLIFReset on Lava."""
         from lava.magma.core.run_conditions import RunSteps
         from lava.magma.core.run_configs import Loihi2SimCfg
         from lava.proc.dense.process import Dense
@@ -445,7 +308,6 @@ class LavaLoihiRunner:
         start = PAD_HEAD + T + PIPELINE_DELAY
         return np.asarray(raw[:, start : start + N * T], dtype=_LAVA_DTYPE)
 
-    # -------------------------------------------------------- segment execution
 
     def _run_neural_segment_scheduled(
         self,
@@ -511,11 +373,6 @@ class LavaLoihiRunner:
 
         import time as _time
         t0 = _time.time()
-        # Per-core progress prints so the operator can see where time is
-        # going; previously this segment was completely silent until all
-        # cores finished, making any stall indistinguishable from slow
-        # progress. Toggle off with ``MIMARSINAN_LOIHI_QUIET=1`` if the
-        # noise becomes a problem in production runs.
         verbose = os.environ.get("MIMARSINAN_LOIHI_QUIET") != "1"
         n_cores = len(topo_order)
         if verbose:
@@ -620,11 +477,7 @@ class LavaLoihiRunner:
             if sp.kind == "off":
                 continue
             if sp.kind == "on":
-                # Always-on delivers one spike per *input* cycle. HCM gates
-                # this to ``cycle < T``; mirror that here so summing over
-                # ``sample_stride`` reproduces exactly T spikes per neuron
-                # rather than ``T + segment_latency`` (filling the full
-                # stride would double-count the latency-cascade drain).
+                # Always-on: gate to cycle < T to match HCM spike counts.
                 seg_out_spikes[d0:d1, :, :T] = 1.0
                 continue
             if sp.kind == "input":
@@ -632,14 +485,7 @@ class LavaLoihiRunner:
                     int(sp.src_start) : int(sp.src_end), :, :
                 ]
                 continue
-            # Neuron source: ``core_output_spikes`` has zeros outside the
-            # source's active window ``[lat, lat + T)``; ``core_buffer_spikes``
-            # has those zeros replaced by a *held* stale-buffer broadcast
-            # of the source's last active cycle (needed by downstream
-            # consumers that read in the latency-cascade tail). For the
-            # segment-level spike count we want only the active-window
-            # firings — match HCM's ``cycle in [src_lat, src_lat+T)`` gate
-            # by reading the clean ``core_output_spikes``.
+            # Neuron sources: use core_output_spikes (active window only), not held buffers.
             seg_out_spikes[d0:d1, :, :] = core_output_spikes[int(sp.src_core)][
                 int(sp.src_start) : int(sp.src_end), :, :
             ]
@@ -709,29 +555,11 @@ class LavaLoihiRunner:
         *,
         recorder_seg: SegmentSpikeRecord | None = None,
     ) -> np.ndarray:
-        """Execute one neural segment with HCM-equivalent Lava core dynamics.
-
-        Host-side scheduling assembles each core's active-window input train
-        from the segment input and latched upstream core buffers.  Each core's
-        Dense + subtractive LIF dynamics still run through Lava, but routing
-        follows the exact cycle windows and buffer-latch semantics used by
-        ``SpikingHybridCoreFlow``.
-
-        Parameters
-        ----------
-        seg              : the segment's HardCoreMapping.
-        seg_input_rates  : (N, seg_in_size) input rates in [0, 1].
-
-        Returns
-        -------
-        seg_output_rates : (N, output_count) output rates in [0, 1],
-                           ordered per ``seg.output_sources``.
-        """
+        """Execute one neural segment with HCM-equivalent Lava core dynamics."""
         return self._run_neural_segment_scheduled(
             seg, seg_input_rates, recorder_seg=recorder_seg,
         )
 
-    # -------------------------------------------------------- top-level run
 
     def run(self) -> float:
         t_total = time.time()
@@ -801,19 +629,8 @@ class LavaLoihiRunner:
     def accuracy(self) -> float | None:
         return self._accuracy
 
-    # -------------------------------------------------------------- harness
     def run_segments_from_reference(self, ref: RunRecord) -> RunRecord:
-        """Run *only* neural stages on Loihi using inputs taken from a
-        reference ``RunRecord`` (typically produced by HCM
-        ``forward_with_recording``).
-
-        The returned record has the same ``segments`` keys as ``ref`` and
-        the **same** ``compute_outputs`` (we copy them through verbatim
-        instead of re-executing the host modules).  This is the
-        verification-harness contract: a Loihi bug in segment N must
-        never appear as cascading divergence in segments N+1..M, because
-        each Loihi neural segment is fed HCM-vetted input.
-        """
+        """Run neural stages on Loihi using inputs from a reference RunRecord."""
         assert ref.T == self.T, (
             f"Reference T={ref.T} does not match runner T={self.T}; "
             "check simulation_length consistency."
@@ -847,9 +664,6 @@ class LavaLoihiRunner:
                     schedule_segment_index=stage.schedule_segment_index,
                     schedule_pass_index=stage.schedule_pass_index,
                     seg_input_rates=seg_input_rates,
-                    # Encoded spike train is deterministic from rates;
-                    # recompute via the same encoder used by ``_run_neural_segment``
-                    # so a divergence here is a real encoder bug, not a copy.
                     seg_input_spike_count=_uniform_rate_encode(seg_input_rates, self.T)[0]
                         .sum(axis=1)
                         .astype(np.int64),

@@ -1,58 +1,4 @@
-"""
-Greedy hardware configuration suggester.
-
-Given a list of LayoutSoftCoreSpec (already accounting for pruning and threshold
-groups via LayoutIRMapping), this module produces a reasonable hardware core
-configuration that:
-  1. Can fit all softcores.
-  2. Uses two core types (H×W and W×H, or H×H and W×H when coalescing).
-  3. Chooses the smallest H, W such that more than half of used hardware cores
-     each house at least 4 software cores.
-
-Algorithm
----------
-``suggest_hardware_config`` always produces **two core types** (unless there are
-no softcores).  The shape depends on the active feature toggles:
-
-+----------------+------------------+-------------------------------------------+
-| Coalescing     | Neuron Splitting | Core types produced                       |
-+================+==================+===========================================+
-| off            | off              | H×W and W×H  (tall + wide)                |
-|                |                  | H = max_dim, W = min_dim                  |
-+----------------+------------------+-------------------------------------------+
-| off            | on               | H×W and W×H  (tall + wide)                |
-|                |                  | H = max_ax, W = median_neurons ≥ 20% max  |
-+----------------+------------------+-------------------------------------------+
-| on             | off              | H×H and W×H  (square + wide, W > H)       |
-|                |                  | H = max_dim, W = H + 1                    |
-+----------------+------------------+-------------------------------------------+
-| on             | on               | H×H and W×H  (square + wide, W = H + 1)  |
-|                |                  | H = max(median_ax, median_neu, 20% floors)|
-+----------------+------------------+-------------------------------------------+
-
-Dimensions are the **smallest** H and W that:
-  1. Cover all softcores (every softcore fits in at least one type).
-  2. After packing with a 50/50 pool split, more than half of used cores
-     have at least 4 softcores each (skipped when fewer than 2 cores are used).
-
-Search: start from minimal (H, W) for coverage; if the occupancy constraint
-fails, increase H and/or W and retry until it passes or an iteration limit
-is reached. Pool size per (H, W) is found by binary search plus safety margin.
-
-The layout pass uses the caller's ``max_axons``/``max_neurons`` (which the
-wizard / search path sets to the max across user-defined core types) so
-that softcore shapes are byte-identical to what ``IRMapping`` produces in
-the real pipeline.
-
-Typical usage:
-    from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
-    from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config
-
-    result = verify_soft_core_mapping(model_repr, max_axons=3072, max_neurons=3072)
-    suggestion = suggest_hardware_config(result.softcores,
-                                         allow_coalescing=False,
-                                         hardware_bias=True)
-"""
+"""Greedy two-type hardware core configuration suggester for layout softcores."""
 
 from __future__ import annotations
 
@@ -69,12 +15,7 @@ from mimarsinan.mapping.layout.layout_types import (
 
 @dataclass
 class HardwareSuggestion:
-    """Suggested hardware core configuration.
-
-    ``core_types`` is ready to be used as the ``cores`` field of
-    ``platform_constraints`` (each entry has ``max_axons``, ``max_neurons``,
-    ``count``, ``has_bias``).
-    """
+    """Suggested ``platform_constraints``-ready core_types list and metadata."""
 
     core_types: List[Dict[str, Any]]
     total_cores: int
@@ -82,10 +23,6 @@ class HardwareSuggestion:
     num_passes: int = 1
     estimated_latency_multiplier: float = 1.0
 
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 def _next_multiple(value: int, multiple: int) -> int:
     """Round *value* up to the nearest multiple of *multiple* (>= 1)."""
@@ -126,36 +63,11 @@ def _make_two_core_types(
     max_ax: int = 0,
     max_neu: int = 0,
 ) -> list[tuple[int, int]]:
-    """Return two (max_axons, max_neurons) hardware core type specs.
-
-    ``h`` and ``w`` are the primary dimension seeds from ``_min_hw_coverage``.
-    Their meaning and how the two types are formed depends on active features:
-
-    Neither:
-        h = max_dim, w = min_dim.
-        Complementary tall type (h, w) and wide type (w, h).
-
-    Splitting only:
-        h = max_ax (fixed — both types share full axon coverage).
-        w = median_neu.  Type A = (h, w), Type B = (h, 2w) capped at max_neu.
-        Two neuron depths: compact A for most cores, roomier B for outliers.
-
-    Coalescing only:
-        h = max_neu (fixed — both types share full neuron coverage).
-        w = median_ax.  Type A = (w, h), Type B = (max_ax, h).
-        Type A packs typical softcores compactly; Type B covers the widest
-        softcore without any axon coalescing.
-
-    Both:
-        h = median_neu, w = median_ax — both dimensions relaxed.
-        Type A = (w, h), Type B = (2w, 2h): a small and a medium-sized core
-        for efficient packing across the softcore size distribution.
-    """
+    """Return two (max_axons, max_neurons) type specs from seed dimensions and feature flags."""
     g_ax = max(axon_granularity, 1)
     g_neu = max(neuron_granularity, 1)
 
     if allow_neuron_splitting and allow_coalescing:
-        # h = median_neu, w = median_ax
         a1 = _next_multiple(w, g_ax)
         n1 = _next_multiple(h, g_neu)
         a2 = _next_multiple(w * 2, g_ax)
@@ -163,9 +75,7 @@ def _make_two_core_types(
         return [(a1, n1), (a2, n2)]
 
     if allow_neuron_splitting:
-        # h = max_ax; both types have the same full axon coverage.
         n1 = _next_multiple(w, g_neu)
-        # Type B: double the neuron depth, capped at max_neu so we don't over-allocate.
         n2_raw = w * 2 if max_neu == 0 else min(w * 2, max_neu)
         n2 = _next_multiple(n2_raw, g_neu)
         if n2 <= n1:
@@ -173,15 +83,12 @@ def _make_two_core_types(
         return [(h, n1), (h, n2)]
 
     if allow_coalescing:
-        # h = max_neu; both types have the same full neuron coverage.
         a1 = _next_multiple(w, g_ax)
-        # Type B: covers max_ax so the widest softcore fits without coalescing.
         a2 = _next_multiple(max(w * 2, max_ax) if max_ax > 0 else w * 2, g_ax)
         if a2 <= a1:
             a2 = _next_multiple(a1 + 1, g_ax)
         return [(a1, h), (a2, h)]
 
-    # Neither: complementary tall type (h, w) and wide type (w, h).
     return [(h, w), (w, h)]
 
 
@@ -221,28 +128,7 @@ def _min_hw_coverage(
     *,
     allow_neuron_splitting: bool = False,
 ) -> tuple[int, int]:
-    """Return (h, w) seed dimensions for ``_make_two_core_types``.
-
-    The user enables coalescing/splitting because they want smaller cores in
-    that dimension.  We honour this by halving the flexible dimension when the
-    corresponding feature is active (floor at 20 % of max prevents pathological
-    fragmentation).
-
-    Neither:
-        h = max_dim, w = min_dim — both dimensions must cover all softcores.
-
-    Splitting only:
-        h = max_ax (hard axon constraint), w = median_neu / 2 ≥ 20% of max_neu.
-        Neurons are split, so half the typical output count suffices per core.
-
-    Coalescing only:
-        h = max_neu (hard neuron constraint), w = median_ax / 2 ≥ 20% of max_ax.
-        Axons are coalesced, so half the typical input count suffices per core.
-
-    Both:
-        h = median_neu / 2 ≥ 20% of max_neu, w = median_ax / 2 ≥ 20% of max_ax.
-        Both dimensions halved; splitting and coalescing handle the rest.
-    """
+    """Return (h, w) seed dimensions for ``_make_two_core_types``."""
     max_ax, max_neu, min_dim, max_dim = _dimension_bounds(softcores)
     if not softcores:
         return 1, 1
@@ -289,17 +175,7 @@ def _count_per_type_usage(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
 ) -> tuple[int | None, int | None]:
-    """Pack with an abundant pool of both types, then report per-type usage.
-
-    Returns ``(t1_used, t2_used)`` where each value is the number of
-    hardware cores of that type that actually hosted at least one
-    softcore.  Used to prune an over-allocated type from the suggestion.
-
-    Returns ``(None, None)`` on infeasibility so the caller falls back to
-    the original suggestion.
-    """
-    # Give each type a generous count so packing is definitely feasible
-    # even under strict per-perceptron threshold grouping.
+    """Pack with a large pool; return per-type used core counts, or (None, None)."""
     pool1 = max(c1_hint, len(softcores))
     pool2 = max(c2_hint, len(softcores))
     hw_types = [
@@ -333,15 +209,7 @@ def _count_cores_needed_two_types(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
 ) -> int:
-    """Minimum total pool size (with 50/50 split) for packing to succeed, plus safety margin.
-
-    Uses exponential doubling to find a feasible size, then a small bounded
-    binary-search refinement (6 steps max) to tighten the estimate without
-    blowing out the pack count.  Full binary search was ~log2(n) extra
-    packs per call and dominated suggester runtime at cifar_vit scale; the
-    bounded variant keeps the worst-case overestimate at ~2× while cutting
-    pack calls from O(log n) to a constant.
-    """
+    """Minimum two-type pool size for feasible packing, plus safety margin."""
     n_sc = len(softcores)
     if not n_sc:
         return 0
@@ -377,10 +245,6 @@ def _count_cores_needed_two_types(
     return max(padded, upper + 1)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 def suggest_hardware_config(
     softcores: Sequence[LayoutSoftCoreSpec],
     *,
@@ -391,33 +255,7 @@ def suggest_hardware_config(
     safety_margin: float = 0.15,
     allow_neuron_splitting: bool = False,
 ) -> HardwareSuggestion:
-    """Produce a two-type hardware configuration for the given softcores.
-
-    Returns two core types (H×W and W×H, or H×H and W×H when coalescing),
-    with the smallest H, W such that more than half of used cores host at least
-    4 softcores. Applies safety_margin on top of the minimum feasible pool size.
-
-    Parameters
-    ----------
-    softcores:
-        Pre-computed ``LayoutSoftCoreSpec`` list (already accounts for pruning
-        and threshold groups via ``LayoutIRMapping.collect_layout_softcores``).
-    allow_coalescing:
-        If True, types are H×H (square) and W×H (wide, W > H); else H×W and W×H.
-    hardware_bias:
-        Whether cores use a dedicated hardware bias register.
-    axon_granularity, neuron_granularity:
-        Round dimensions up to these multiples.
-    safety_margin:
-        Fraction of extra cores to add on top of the minimum pack count.
-    allow_neuron_splitting:
-        If True, soft cores may be split across hardware cores along the neuron
-        (output) dimension.  The suggested neuron width is relaxed accordingly.
-
-    Returns
-    -------
-    HardwareSuggestion
-    """
+    """Suggest two core types and pool counts for the given layout softcores."""
     if not softcores:
         return HardwareSuggestion(
             core_types=[],
@@ -458,22 +296,9 @@ def suggest_hardware_config(
             allow_coalescing=allow_coalescing,
         )
 
-    # Determine which dimensions are flexible (may grow during iteration).
-    # When splitting is on, h = max_ax is a hard constraint (axons must fit).
-    # When coalescing is on, h = max_neu is a hard constraint (neurons must fit).
-    # "Neither" and "both" cases can grow both dimensions.
-    grow_h = not (allow_neuron_splitting ^ allow_coalescing)  # grow when both or neither
-    grow_w = True  # w is always the flexible (median-based) dimension
+    grow_h = not (allow_neuron_splitting ^ allow_coalescing)
+    grow_w = True
 
-    # When splitting/coalescing is enabled the whole point is smaller cores —
-    # skip the occupancy check (which forces growth until many softcores share
-    # a core) and accept any feasible packing.
-    #
-    # Also skip when the softcore set partitions into many threshold groups:
-    # per-perceptron threshold grouping guarantees that softcores from
-    # different perceptrons cannot share a hardcore, so ``≥4 softcores per
-    # used core'' is impossible whenever the largest group has <4 softcores.
-    # Forcing growth in that regime explodes core dimensions with no benefit.
     group_sizes: Dict[int, int] = {}
     for _sc in softcores_list:
         tg = int(_sc.threshold_group_id)
@@ -483,12 +308,6 @@ def suggest_hardware_config(
 
     skip_occupancy = allow_neuron_splitting or allow_coalescing
 
-    # Track the smallest-area feasible config seen so far.  The growth
-    # loop chases occupancy (>50% of used cores host ≥4 softcores) which
-    # can inflate dimensions drastically when softcores nearly saturate
-    # the hw (cifar_vit style per-perceptron grouping).  We keep the
-    # tightest feasible config as a fallback if the total allocated area
-    # grows past a reasonable multiple of the first feasible area.
     first_feasible_area: int | None = None
     first_feasible: tuple[tuple[int, int], int] | None = None  # ((h, w), total)
     _no_progress_iters = 0
@@ -524,12 +343,6 @@ def suggest_hardware_config(
             best_counts = (c1, c2)
             best_total = total
             break
-        # Growth-progress guard: track the number of *used* cores across
-        # iterations (= len(counts)).  When used-count doesn't drop for
-        # 3 consecutive growth iterations, each hw core still hosts only
-        # 1 softcore and further growth won't fix it (typical under
-        # strict per-perceptron threshold grouping with saturating
-        # softcores).  Fall back to first feasible config.
         used_count = len(counts) if counts else 0
         if _last_used_count is not None and used_count >= _last_used_count:
             _no_progress_iters += 1
@@ -563,18 +376,11 @@ def suggest_hardware_config(
     types_spec = _make_types(h, w)
     type1, type2 = types_spec[0], types_spec[1]
 
-    # Prune unused types: when all softcores fit into one type and the
-    # other type goes unused (or gets over-allocated), redistribute.
-    # Count actual per-type usage at the chosen dimensions.
     t1_used, t2_used = _count_per_type_usage(
         softcores_list, type1, type2, c1, c2,
         allow_neuron_splitting=allow_neuron_splitting,
         allow_coalescing=allow_coalescing,
     )
-    # Trigger rebalance only when the unused type's allocation is
-    # *substantial* (>= 8 cores).  Below that the waste is minor and
-    # rebalancing can subtly pessimise the occupancy distribution the
-    # growth loop deliberately searched for.
     _unused_alloc = 0
     if t1_used == 0:
         _unused_alloc = c1
@@ -587,12 +393,6 @@ def suggest_hardware_config(
         and (t1_used + t2_used) > 0
         and _unused_alloc >= 8
     ):
-        # One type went completely unused — reallocate its budget to the
-        # other.  Leave a single token instance of the unused type so the
-        # two-type contract holds for downstream stats/UI, and scale the
-        # used type to (actual_use + safety_margin).  This is the main
-        # quality fix for per-perceptron-grouped models (e.g. cifar_vit)
-        # where all softcores flow to one aspect ratio.
         def _scale(used: int) -> int:
             return max(used + 1, int(math.ceil(used * (1.0 + safety_margin))))
         c1 = _scale(t1_used) if t1_used > 0 else 1
@@ -644,21 +444,7 @@ def suggest_hardware_config_scheduled(
     safety_margin: float = 0.15,
     allow_neuron_splitting: bool = False,
 ) -> HardwareSuggestion:
-    """Suggest hardware config with scheduled mapping (core reuse across passes).
-
-    Explores the tradeoff between core count and number of schedule passes.
-    For each candidate pass count, suggests hardware for the largest pass
-    and evaluates::
-
-        cost = total_core_area × num_passes ^ latency_weight
-
-    ``latency_weight`` controls the balance:
-      - 1.0: area × latency product (balanced)
-      - < 1.0: favours fewer cores (area-conscious)
-      - > 1.0: favours fewer passes (latency-conscious)
-
-    Returns the configuration with the lowest cost.
-    """
+    """Suggest hardware config minimizing core area × pass count (scheduled mapping)."""
     from mimarsinan.mapping.schedule_partitioner import estimate_passes_for_layout
 
     if not softcores:
@@ -679,7 +465,6 @@ def suggest_hardware_config_scheduled(
         allow_neuron_splitting=allow_neuron_splitting,
     )
 
-    # Try the non-scheduled path first (1 pass = all softcores).
     single = suggest_hardware_config(softcores_list, **common_kwargs)
 
     def _core_area(suggestion: HardwareSuggestion) -> float:
@@ -692,8 +477,6 @@ def suggest_hardware_config_scheduled(
     best_cost = _core_area(single) * (1.0 ** latency_weight)
     best_passes = 1
 
-    # For multi-pass search, we need hw dimensions from the single-pass
-    # suggestion to estimate hardware core cost per softcore.
     if single.core_types:
         ref_ax = max(ct["max_axons"] for ct in single.core_types)
         ref_neu = max(ct["max_neurons"] for ct in single.core_types)
@@ -701,15 +484,10 @@ def suggest_hardware_config_scheduled(
         max_ax, max_neu, _, _ = _dimension_bounds(softcores_list)
         ref_ax, ref_neu = max_ax or 256, max_neu or 256
 
-    # Search: progressively reduce the per-pass core budget.
-    # For each budget, estimate how many passes result, then suggest hw
-    # for the largest pass.
     seen_pass_counts: set[int] = {1}
     budgets_to_try = set()
-    # Try halving the single-pass core count, and fractions down to 1/max_passes.
     for divisor in range(2, max_passes + 1):
         budgets_to_try.add(max(1, single.total_cores // divisor))
-    # Also try absolute small budgets for extreme scheduling.
     for b in [1, 2, 4, 8, 16, 32]:
         if b < single.total_cores:
             budgets_to_try.add(b)
@@ -738,7 +516,6 @@ def suggest_hardware_config_scheduled(
             best_cost = cost
             best_passes = est_passes
 
-    # Annotate the winner with scheduling info.
     rationale_parts = [best.rationale.rstrip(".")]
     if best_passes > 1:
         rationale_parts.append(f"{best_passes} schedule passes (cores reused)")

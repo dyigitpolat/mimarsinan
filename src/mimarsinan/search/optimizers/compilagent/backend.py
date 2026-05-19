@@ -1,31 +1,4 @@
-"""Compilagent ``Backend`` adapter wrapping a live ``JointArchHwProblem``.
-
-The session calls into this backend per candidate; every method delegates
-to existing mimarsinan code (``_collect_softcores``, ``compute_mapping_stats``,
-``_compute_hw_objectives``) so there is no parallel HW-evaluation path.
-
-Per-candidate flow:
-
-1. ``compile`` decodes the agent's ``Plan`` into a ``(model_config,
-   platform_constraints)`` configuration via :mod:`plan_codec`, calls
-   ``problem.validate_detailed`` (the same routine the AgentEvolve and
-   NSGA-II optimizers call), and serialises the per-softcore + per-layer
-   + ``LayoutVerificationStats`` payload to JSON artifacts in
-   ``artifact_dir``. Rich metadata is also stashed on
-   ``CompileResult.metadata`` so :mod:`tools` can answer ``inspect_*`` tool
-   calls without recomputing anything.
-2. ``time_workload`` calls ``problem.evaluate`` (which reuses the cached
-   validation entry) and reports the configured *primary* objective on
-   ``TimingResult.median_ms`` plus the full objective dict on
-   ``profile_metrics``.
-3. ``objectives_for_candidate`` republishes the same dict as
-   ``compilagent.Objective`` instances with the canonical ``min``/``max``
-   goal direction from ``mimarsinan.search.results.ObjectiveSpec``.
-
-Compile failures never raise — they round-trip as ``CompileResult(ok=False,
-diagnostics=..., metadata={"failure_phase": ...})`` so compilagent's budget
-bookkeeping stays consistent.
-"""
+"""Compilagent Backend adapter wrapping a live JointArchHwProblem."""
 
 from __future__ import annotations
 
@@ -71,27 +44,13 @@ from .workload import lookup_problem
 
 
 class MimarsinanLayoutBackend(BackendBase):
-    """Compilagent backend bridging mimarsinan's ``JointArchHwProblem``.
-
-    A single instance is constructed per ``OptimizationSession``; the
-    workload-id keyed registry in :mod:`workload` provides the live
-    problem to delegate into. We keep no per-candidate cache here — the
-    problem already memoises validation results, so re-running the same
-    plan is cheap.
-    """
+    """Compilagent backend bridging mimarsinan's JointArchHwProblem."""
 
     id: str = "mimarsinan_layout"
     artifact_stages: Tuple[str, ...] = ("config", "softcores", "layout_stats")
 
     def __init__(self) -> None:
-        # Per-session cache: candidate_id (== artifact_dir.name) -> payload
-        # dict written by ``compile``. Introspection tools read from here so
-        # they never duplicate per-candidate computation.
         self._candidate_payloads: Dict[str, Dict[str, Any]] = {}
-
-    # ------------------------------------------------------------------ #
-    # Device capability + workload family
-    # ------------------------------------------------------------------ #
 
     def device_capability(self) -> DeviceCapability:
         return DeviceCapability(
@@ -106,22 +65,13 @@ class MimarsinanLayoutBackend(BackendBase):
     def infer_workload_family(self, workload: WorkloadSpec) -> Optional[str]:
         return "snn-mapping"
 
-    # ------------------------------------------------------------------ #
-    # Analyse / search space
-    # ------------------------------------------------------------------ #
-
     def analyze(
         self,
         workload: WorkloadSpec,
         *,
         baseline_artifacts: Sequence[Path],
     ) -> Analysis:
-        """Inspect the baseline configuration and surface layout internals.
-
-        ``summary`` carries scalar headline numbers; ``extra`` has the
-        full per-softcore list, per-layer breakdown, ``LayoutVerificationStats``
-        for the baseline configuration, and the active objective catalog.
-        """
+        """Inspect the baseline configuration and surface layout internals."""
 
         problem = lookup_problem(workload.id)
         description = self._description_for(problem)
@@ -179,10 +129,6 @@ class MimarsinanLayoutBackend(BackendBase):
             workload_id=workload.id, backend_id=self.id, levers=tuple(levers),
         )
 
-    # ------------------------------------------------------------------ #
-    # Validation
-    # ------------------------------------------------------------------ #
-
     def validate_intervention(self, intervention: Intervention) -> ValidationResult:
         target = intervention.target
         if target.kind not in (ARCH_KIND, HW_CORE_KIND):
@@ -200,7 +146,6 @@ class MimarsinanLayoutBackend(BackendBase):
                     errors=("arch intervention requires a non-empty selector",),
                 )
             return ValidationResult(ok=True)
-        # hw.core
         parts = target.selector.split(".")
         if len(parts) != 2 or parts[1] not in HW_DIM_NAMES:
             return ValidationResult(
@@ -221,9 +166,6 @@ class MimarsinanLayoutBackend(BackendBase):
                     f"got {parts[0]!r}/{intervention.payload!r}",
                 ),
             )
-        # Range sanity check: surface obvious typos at validate time so
-        # the agent gets a clean retry message rather than a downstream
-        # packing failure.
         if value <= 0:
             return ValidationResult(
                 ok=False,
@@ -232,9 +174,6 @@ class MimarsinanLayoutBackend(BackendBase):
                     f"positive integer, got {value}",
                 ),
             )
-        # Soft caps that match `SearchSpaceDescription`'s open-range
-        # lever surface. The agent is allowed to pick any value in
-        # [1, 65536]; anything beyond is almost certainly a mistake.
         _HARD_MAX = 65536
         if value > _HARD_MAX:
             return ValidationResult(
@@ -244,9 +183,7 @@ class MimarsinanLayoutBackend(BackendBase):
                     f"<= {_HARD_MAX}, got {value}",
                 ),
             )
-        # max_axons / max_neurons are commonly required to be multiples
-        # of 8 by the layout packer. Accept off-step values but surface
-        # a warning via the diagnostics so the agent can correct.
+        # max_axons/max_neurons should be multiples of 8 for the layout packer.
         if parts[1] in ("max_axons", "max_neurons") and value % 8 != 0:
             return ValidationResult(
                 ok=False,
@@ -258,10 +195,6 @@ class MimarsinanLayoutBackend(BackendBase):
                 ),
             )
         return ValidationResult(ok=True)
-
-    # ------------------------------------------------------------------ #
-    # Compile / time / correctness
-    # ------------------------------------------------------------------ #
 
     def compile(
         self,
@@ -345,8 +278,6 @@ class MimarsinanLayoutBackend(BackendBase):
         layout_stats_path.write_text(json.dumps(payload["layout_stats"], indent=2, default=str))
 
         elapsed = (time.perf_counter() - compile_started) * 1000.0
-        # Cache the payload so introspection tools can answer
-        # `inspect_softcores(candidate_id)` etc. without recomputing.
         candidate_id = artifact_dir.name
         cached_payload = {
             "config": configuration,
@@ -366,17 +297,8 @@ class MimarsinanLayoutBackend(BackendBase):
             metadata=cached_payload,
         )
 
-    # ------------------------------------------------------------------ #
-    # Per-candidate payload accessors (used by introspection tools)
-    # ------------------------------------------------------------------ #
-
     def get_candidate_payload(self, candidate_id: str) -> Dict[str, Any]:
-        """Return the cached compile payload for ``candidate_id``.
-
-        Raises ``KeyError`` when the candidate has not been compiled yet —
-        the tools turn that into a ``ValueError`` so the agent gets a
-        retryable error.
-        """
+        """Return the cached compile payload for ``candidate_id``."""
 
         return self._candidate_payloads[candidate_id]
 
@@ -413,13 +335,6 @@ class MimarsinanLayoutBackend(BackendBase):
             )
 
         objectives = evaluator(configuration)
-        # This is a multi-objective search; no axis is privileged. The
-        # full objective tuple flows through ``Backend.objectives_for_candidate``
-        # (the compilagent multi-objective surface added in the same
-        # extension); ``median_ms`` is left ``None`` so compilagent's
-        # single-axis leaderboard becomes informationless and the agent
-        # is forced to query ``pareto_front`` / ``metric_summary`` /
-        # ``query_top_candidates`` instead.
         return TimingResult(
             timings_ms=(),
             median_ms=None,
@@ -435,11 +350,6 @@ class MimarsinanLayoutBackend(BackendBase):
         candidate: CompileResult,
         tolerance: ToleranceConfig,
     ) -> CorrectnessResult:
-        # Mimarsinan owns numerical validation through the downstream
-        # pipeline (PyTorch + nevresim simulators); the layout-mapping
-        # search step is hardware-shape-only by construction. Return a
-        # successful result with a clear diagnostic so consumers see why
-        # the field is unconditionally true.
         return CorrectnessResult(
             ok=True,
             diagnostics=(
@@ -447,10 +357,6 @@ class MimarsinanLayoutBackend(BackendBase):
                 "mimarsinan's downstream pipeline; not enforced here"
             ),
         )
-
-    # ------------------------------------------------------------------ #
-    # Multi-objective hook
-    # ------------------------------------------------------------------ #
 
     def objectives_for_candidate(
         self,
@@ -478,20 +384,10 @@ class MimarsinanLayoutBackend(BackendBase):
             )
         return result
 
-    # ------------------------------------------------------------------ #
-    # Introspection tools
-    # ------------------------------------------------------------------ #
-
     def list_introspection_tools(self) -> Sequence[Any]:
-        # Local import keeps a single point of contact with the
-        # tools.py module's compilagent imports.
         from .tools import build_introspection_tools
 
         return build_introspection_tools(self)
-
-    # ------------------------------------------------------------------ #
-    # Helpers
-    # ------------------------------------------------------------------ #
 
     def _description_for(self, problem: Any) -> SearchSpaceDescription:
         """Reconstruct the SearchSpaceDescription from the live problem."""
@@ -516,13 +412,7 @@ class MimarsinanLayoutBackend(BackendBase):
         problem: Any,
         configuration: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Pull per-softcore + per-layer + layout_stats data via the problem.
-
-        We try the cheap path first: ``problem._validation_cache`` may
-        already hold the HW objectives for this configuration after a
-        successful ``validate_detailed`` call. The softcores + layout
-        stats are collected directly from ``compute_mapping_stats``.
-        """
+        """Pull per-softcore, per-layer, and layout_stats data via the problem."""
 
         from mimarsinan.search.problems.joint_arch_hw_problem import _json_key
 
@@ -539,10 +429,6 @@ class MimarsinanLayoutBackend(BackendBase):
             for c in cores_cfg
         ]
 
-        # Re-collect softcores from the model. For the cheap path
-        # (HW-only search), the problem already cached softcores for the
-        # one model build; reuse that. Otherwise, build the model and
-        # collect.
         cache = getattr(problem, "_hw_only_cache", None)
         softcores: List[LayoutSoftCoreSpec]
         host_segments: int
@@ -556,13 +442,10 @@ class MimarsinanLayoutBackend(BackendBase):
             try:
                 model, total_params = problem._build_model(mc, pcfg)
             except Exception:
-                # Fall back to validation cache, which holds total_params
                 key = _json_key(configuration)
                 vc = getattr(problem, "_validation_cache", {}).get(key)
                 if vc is None:
                     raise
-                # No model available -> skip the per-softcore section by
-                # returning a shape-only stats payload from cached values.
                 hw_obj = vc.hw_objectives
                 return {
                     "softcore_count": 0,
@@ -607,14 +490,7 @@ class MimarsinanLayoutBackend(BackendBase):
                 )
             )
         except Exception:
-            # Compilagent's contract is that pass_callback never breaks
-            # the compile path; swallow defensively.
             pass
-
-
-# ---------------------------------------------------------------------------
-# Module-level helpers (pure)
-# ---------------------------------------------------------------------------
 
 
 def _platform_to_jsonable(pcfg: Mapping[str, Any]) -> Dict[str, Any]:
@@ -643,14 +519,7 @@ def _softcore_to_dict(sc: LayoutSoftCoreSpec, index: int) -> Dict[str, Any]:
 def _aggregate_per_layer(
     softcores: Sequence[LayoutSoftCoreSpec],
 ) -> List[Dict[str, Any]]:
-    """Roll per-softcore facts up to per-layer rows for the agent.
-
-    A "layer" is identified by the prefix of ``softcore.name`` before any
-    tile / psum suffix (the mappers populate names like
-    ``conv1_pos0_0_g0`` or ``fc2_tile_0_64``). When the name is missing
-    we fall back to ``threshold_group_id`` so accumulator cores still
-    contribute a row instead of being silently dropped.
-    """
+    """Roll per-softcore facts up to per-layer rows for the agent."""
 
     by_layer: Dict[str, Dict[str, Any]] = {}
     for sc in softcores:
@@ -698,8 +567,6 @@ def _aggregate_per_layer(
 
 def _layer_key(sc: LayoutSoftCoreSpec) -> str:
     name = sc.name or f"unnamed_tg{int(sc.threshold_group_id)}"
-    # Strip common per-softcore suffixes the mappers append so all the
-    # tiles / psum fragments of one layer collapse onto one row.
     for sep in ("_tile_", "_psum_pos_", "_psum_neg_", "_psum_accum_", "_pos", "_col"):
         if sep in name:
             return name.split(sep, 1)[0]

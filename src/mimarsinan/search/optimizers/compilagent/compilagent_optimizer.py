@@ -178,9 +178,7 @@ class CompilagentOptimizer(SearchOptimizer):
         if self.verbose:
             print(message, flush=True)
 
-    # ------------------------------------------------------------------ #
     # Public entry point
-    # ------------------------------------------------------------------ #
 
     def optimize(self, problem: Any, reporter: Any = None) -> SearchResult:
         """Run one compilagent session against ``problem`` and return ``SearchResult``."""
@@ -196,9 +194,7 @@ class CompilagentOptimizer(SearchOptimizer):
         finally:
             self._trace_reporter = None
 
-    # ------------------------------------------------------------------ #
     # Orchestration
-    # ------------------------------------------------------------------ #
 
     def _run(
         self,
@@ -298,9 +294,7 @@ class CompilagentOptimizer(SearchOptimizer):
             backend=backend,
         )
 
-    # ------------------------------------------------------------------ #
     # Result construction
-    # ------------------------------------------------------------------ #
 
     def _build_result(
         self,
@@ -473,9 +467,7 @@ class CompilagentOptimizer(SearchOptimizer):
             for spec in objectives
         }
 
-    # ------------------------------------------------------------------ #
     # Helpers
-    # ------------------------------------------------------------------ #
 
     def _build_system_instructions(self, objective_names: Sequence[str]) -> str:
         base = _default_system_instructions(objective_names)

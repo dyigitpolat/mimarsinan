@@ -1,24 +1,4 @@
-"""Synthesise a SANA-FE ``Architecture`` from a mimarsinan ``HybridHardCoreMapping``.
-
-Two-stage pipeline:
-
-1. :func:`derive_arch_spec` — pure-Python.  Walks all neural segments of
-   the hybrid mapping, computes ``axons_per_core`` / ``neurons_per_core`` /
-   total core count, and packs cores into tiles (default: one tile per
-   segment-set; configurable via ``cores_per_tile``).  Returns an
-   :class:`ArchSpec` carrying the geometry plus the chosen per-event
-   preset.
-
-2. :func:`build_architecture` — touches SANA-FE.  Either *synthesises* a
-   YAML matching the spec and calls ``sanafe.load_arch``, or — when
-   ``custom_arch_path`` is given — loads a user-supplied YAML directly.
-   SANA-FE's hardware-unit registration (synapse / dendrite / soma) is
-   YAML-only; the programmatic ``Architecture.create_core`` cannot reach
-   it, so YAML synthesis is the canonical path.
-
-The lazy ``_sanafe()`` accessor is the single import point; tests
-monkey-patch it to keep the suite runnable without SANA-FE installed.
-"""
+"""Synthesise a SANA-FE ``Architecture`` from a hybrid mapping."""
 
 from __future__ import annotations
 
@@ -34,21 +14,8 @@ from .presets import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Plugin discovery
-# ---------------------------------------------------------------------------
-
-
 def _plugin_path(name: str) -> Optional[str]:
-    """Return the absolute path to one of our compiled SANA-FE plugins.
-
-    Looks for ``build/mimarsinan_sanafe_plugins/libmimarsinan_<name>.so``
-    next to the mimarsinan project root.  Returns ``None`` if the plugin
-    hasn't been built — callers should error or skip with a clear message
-    pointing at ``scripts/bootstrap_sanafe.sh``.
-    """
-    # arch_synth.py lives at .../src/mimarsinan/chip_simulation/sanafe/.
-    # Four ``..`` hops bring us back to the project root.
+    """Absolute path to ``build/mimarsinan_sanafe_plugins/libmimarsinan_<name>.so``."""
     here = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.normpath(os.path.join(here, "..", "..", "..", ".."))
     candidate = os.path.join(
@@ -58,20 +25,11 @@ def _plugin_path(name: str) -> Optional[str]:
     return candidate if os.path.isfile(candidate) else None
 
 
-# ---------------------------------------------------------------------------
-# Lazy SANA-FE accessor — overridden in tests via monkeypatch
-# ---------------------------------------------------------------------------
-
-
 _SANAFE_MODULE: Any = None
 
 
 def _sanafe() -> Any:
-    """Lazy ``import sanafe``.
-
-    Raises a clear ``ImportError`` with installation instructions if the
-    package is missing.  Cached after the first successful import.
-    """
+    """Lazy ``import sanafe`` (cached; monkey-patched in tests)."""
     global _SANAFE_MODULE
     if _SANAFE_MODULE is None:
         try:
@@ -85,25 +43,9 @@ def _sanafe() -> Any:
     return _SANAFE_MODULE
 
 
-# ---------------------------------------------------------------------------
-# ArchSpec
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ArchSpec:
-    """Geometry + preset describing a SANA-FE architecture to instantiate.
-
-    Every SANA-FE core in the arch corresponds 1:1 to a ``HardCore`` in
-    mimarsinan's HybridHardCoreMapping (in declaration order).  Each
-    core declares its own ``inputs[0..axons_per_core-1]`` soma pool so
-    input neurons live on the same core as the axons that consume them.
-
-    The dendrite and LIF soma reference the mimarsinan-owned plugin
-    shared libraries (``libmimarsinan_dendrite.so``,
-    ``libmimarsinan_soma.so``) so the core has no Loihi-derived
-    per-core neuron count cap.
-    """
+    """Geometry and preset for one SANA-FE architecture instance."""
 
     name: str
     n_tiles: int
@@ -111,30 +53,15 @@ class ArchSpec:
     axons_per_core: int
     neurons_per_core: int
     preset: PerEventEnergy = field(repr=False)
-    # Absolute paths to the compiled mimarsinan plugins.  Resolved at
-    # spec-construction time so failures surface early.
     dendrite_plugin_path: str = field(default="")
     soma_plugin_path: str = field(default="")
-    # 2D NoC mesh layout — chip is ``mesh_width × mesh_height`` tiles.
-    # ``derive_arch_spec`` picks a roughly-square layout by default
-    # (``mesh_width = ceil(sqrt(n_tiles))``) so the GUI floorplan and the
-    # SANA-FE NoC routing both treat the chip as a 2D mesh.
     mesh_width: int = 1
     mesh_height: int = 1
-    # Final cores-per-tile (after auto-resolution of ``0``).  Stored so
-    # ``net_synth`` can pack cores into tiles using the same arithmetic
-    # the YAML synthesiser did — without this the runner and the arch
-    # disagree on which tile each core lives in.
     cores_per_tile_resolved: int = 1
 
     @property
     def total_cores(self) -> int:
         return sum(self.n_cores_per_tile)
-
-
-# ---------------------------------------------------------------------------
-# derive_arch_spec — pure Python
-# ---------------------------------------------------------------------------
 
 
 def derive_arch_spec(
@@ -175,8 +102,6 @@ def derive_arch_spec(
             "no neural cores in the mapping's segments; SANA-FE has nothing to simulate"
         )
 
-    # Plugin paths are resolved here so a missing build surfaces early
-    # with a clear pointer to ``scripts/bootstrap_sanafe.sh``.
     dendrite_so = _plugin_path("dendrite")
     soma_so = _plugin_path("soma")
     if dendrite_so is None or soma_so is None:
@@ -186,13 +111,6 @@ def derive_arch_spec(
             "to build libmimarsinan_dendrite.so and libmimarsinan_soma.so."
         )
 
-    # One SANA-FE core per HardCore — no extra input-host cores.
-    # ``cores_per_tile <= 0`` means "auto": pick ``ceil(sqrt(total_cores))``
-    # so the chip is a roughly-square 2D mesh, which makes the GUI
-    # floorplan + NoC visualisations actually 2D (a 1×N row of cores
-    # collapses both axes onto the same line and hides spatial structure).
-    # Users who want a single-tile chip can pass ``cores_per_tile=total_cores``
-    # explicitly.
     if cores_per_tile <= 0:
         cores_per_tile = max(1, math.isqrt(total_cores))
         if cores_per_tile * cores_per_tile < total_cores:
@@ -202,11 +120,6 @@ def derive_arch_spec(
     last = total_cores - cores_per_tile * (n_tiles - 1)
     n_cores_per_tile.append(last)
 
-    # 2D mesh layout for the SANA-FE NoC.  ``mesh_width = ceil(sqrt(n_tiles))``
-    # produces a roughly-square chip; remainder rows on the last row are fine
-    # — SANA-FE accepts under-filled mesh rows.  Captured into ArchSpec so
-    # the runner can stamp ``tile_index → (mesh_x, mesh_y)`` into
-    # ``SanafeArchGeometry`` for the GUI floorplan.
     mesh_width = max(1, math.isqrt(n_tiles))
     if mesh_width * mesh_width < n_tiles:
         mesh_width += 1
@@ -228,19 +141,8 @@ def derive_arch_spec(
     )
 
 
-# ---------------------------------------------------------------------------
-# YAML synthesis
-# ---------------------------------------------------------------------------
-
-
 def _thresholding_mode_to_soma_attr(thresholding_mode: str) -> str:
-    """Translate the pipeline's ``thresholding_mode`` to the soma plugin attr.
-
-    ``mimarsinan_soma`` reads ``thresholding_mode`` and treats any value
-    equal to ``"inclusive"`` or ``"<="`` as ``v >= threshold`` firing,
-    anything else (including ``"strict"`` / ``"<"``) as strict ``v > threshold``.
-    Use the human-readable form here so the generated YAML reads cleanly.
-    """
+    """Map pipeline ``thresholding_mode`` to soma plugin ``inclusive``/``strict``."""
     if thresholding_mode in ("<=", "inclusive"):
         return "inclusive"
     if thresholding_mode in ("<", "strict"):
@@ -252,44 +154,16 @@ def _thresholding_mode_to_soma_attr(thresholding_mode: str) -> str:
 
 
 def _render_arch_yaml(spec: ArchSpec, *, thresholding_mode: str = "<=") -> str:
-    """Render a SANA-FE-compatible architecture YAML from the spec.
-
-    The YAML embeds every hardware unit ``net_synth`` references by name
-    (``SYNAPSE_NAME``, ``DENDRITE_NAME``, ``SOMA_LIF_NAME``,
-    ``SOMA_INPUT_RANGE_NAME``, ``AXON_IN_NAME``, ``AXON_OUT_NAME``).
-    Per-event numbers come from the spec's preset, never local literals.
-
-    ``thresholding_mode`` plumbs the pipeline-level firing comparator
-    config (default inclusive ``<=``) into the soma plugin's
-    ``thresholding_mode`` hardware attribute, so SANA-FE's firing rule
-    follows the same knob as the HCM Python sim and the training
-    ``LIFActivation``.
-    """
+    """Render SANA-FE architecture YAML from ``ArchSpec``."""
     p = spec.preset
     soma_thresholding = _thresholding_mode_to_soma_attr(thresholding_mode)
-    # Per-core ``inputs[0..N-1]`` pool — sized to this core's axon
-    # capacity.  Each HardCore's input neurons live on the SANA-FE
-    # core that consumes them (no global input host), so the pool only
-    # needs to be ≥ ``axons_per_core``.
     n_input_somas = max(1, int(spec.axons_per_core))
 
     def _range_name(stem: str, count: int) -> str:
         return stem if count == 1 else f"{stem}[0..{count - 1}]"
 
     def _render_core_block(tile_idx: int, core_local_idx: int) -> str:
-        """Render one core block.  We emit one block per core (no
-        ``name[0..N-1]`` shorthand on cores) because SANA-FE 2.1.1's
-        shorthand expansion does not propagate the inner ``inputs[0..K]``
-        soma range correctly across multiple cores.
-
-        The dendrite and the LIF soma both load mimarsinan-owned plugin
-        shared libraries (``libmimarsinan_dendrite.so``,
-        ``libmimarsinan_soma.so``).  This replaces SANA-FE's built-in
-        ``accumulator`` and ``leaky_integrate_fire`` — both of which
-        bake in Loihi's 1024-neuron-per-core cap — with versions whose
-        per-neuron state grows dynamically.  See the plugin sources for
-        the full rationale.
-        """
+        """One core block (explicit per core — SANA-FE 2.1.1 range shorthand is broken)."""
         return f"""        - name: t{tile_idx}_c{core_local_idx}
           attributes:
             buffer_position: soma
@@ -373,27 +247,13 @@ def _render_arch_yaml(spec: ArchSpec, *, thresholding_mode: str = "<=") -> str:
     return yaml_str
 
 
-# ---------------------------------------------------------------------------
-# build_architecture — touches SANA-FE via _sanafe()
-# ---------------------------------------------------------------------------
-
-
 def build_architecture(
     spec: ArchSpec,
     *,
     custom_arch_path: Optional[str] = None,
     thresholding_mode: str = "<=",
 ) -> Any:
-    """Construct (or load) a SANA-FE Architecture matching ``spec``.
-
-    If ``custom_arch_path`` is provided, ``sanafe.load_arch`` is used
-    directly on that file; the loaded architecture is validated against
-    the spec's total core count.  Otherwise an in-memory YAML is rendered
-    from the spec, written to a tempfile, and loaded.
-
-    ``thresholding_mode`` is forwarded to ``_render_arch_yaml`` so the
-    soma plugin's firing comparator follows the pipeline-level setting.
-    """
+    """Load or synthesise a SANA-FE ``Architecture`` matching ``spec``."""
     sanafe = _sanafe()
 
     if custom_arch_path is not None:
@@ -417,9 +277,4 @@ def build_architecture(
     ) as f:
         f.write(yaml_str)
         path = f.name
-    try:
-        return sanafe.load_arch(path)
-    finally:
-        # Keep the file around for post-mortem if SANA-FE failed to parse.
-        # We don't unlink — let the OS reclaim /tmp.
-        pass
+    return sanafe.load_arch(path)

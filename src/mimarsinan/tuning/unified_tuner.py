@@ -1,12 +1,4 @@
-"""TunerBase and SmoothAdaptationTuner -- the single orchestration hierarchy.
-
-TunerBase provides shared infrastructure (pipeline, model, trainer, budget,
-target adjuster, LR finder). SmoothAdaptationTuner adds the greedy bisection
-loop for smooth rate-based adaptation.
-
-Concrete tuners override _update_and_evaluate(rate) and optionally
-_before_cycle() / _after_run() / _recovery_training_hooks(rate).
-"""
+"""TunerBase and SmoothAdaptationTuner — shared tuning orchestration."""
 
 from __future__ import annotations
 
@@ -31,27 +23,17 @@ from mimarsinan.tuning.tuning_budget import (
 
 
 CATASTROPHIC_DROP_FACTOR = 0.8
-"""Fast-fail threshold as a fraction of the adaptation target.
-
-If the instant accuracy after applying a transformation drops below
-``target * CATASTROPHIC_DROP_FACTOR``, the cycle is abandoned immediately
-without wasting compute on LR exploration and recovery training.
-A value of 0.8 means any >20% instant drop is treated as unrecoverable.
-"""
+"""Fast-fail threshold as a fraction of the adaptation target."""
 
 _RECOVERY_PATIENCE = 5
-"""Default patience (consecutive stale checks) for recovery training."""
+"""Default patience for recovery training."""
 
 _STUCK_STREAK_REQUIRED = 3
-"""Consecutive cycles missing the original target before it is relaxed."""
+"""Consecutive cycles missing the target before it is relaxed."""
 
 
 class TunerBase:
-    """Shared infrastructure for all tuners.
-
-    Provides pipeline access, model, trainer, budget, target adjuster,
-    LR finder, and validate().  Subclasses implement run().
-    """
+    """Shared infrastructure for all tuners."""
 
     _budget_multiplier = 1.0
 
@@ -77,14 +59,7 @@ class TunerBase:
         self.trainer.report_function = pipeline.reporter.report
 
     def _tuning_recipe(self):
-        """Recipe for tuning-phase trainers (explicit opt-in via ``tuning_recipe``).
-
-        Returns ``None`` when the user has not configured ``tuning_recipe``,
-        which preserves the legacy Adam/AdamW dynamics that existing SNN
-        adaptation code relies on. We do NOT fall back to ``training_recipe``
-        on purpose: fine-tuning recipes (LLRD + wd=0.05) are tuned for
-        transfer learning and can destabilize rate-based adaptation loops.
-        """
+        """Recipe for tuning-phase trainers (explicit opt-in via tuning_recipe)."""
         return build_recipe(self.pipeline.config, key="tuning_recipe")
 
     def _create_trainer(self):
@@ -97,10 +72,6 @@ class TunerBase:
             self.pipeline.loss,
             recipe=self._tuning_recipe(),
         )
-        # Tuning uses a smaller training batch than the training/fine-tuning
-        # phase: smaller per-step activation memory, more gradient updates per
-        # epoch of data. Validation/test loaders keep their original batch
-        # size so eval cost and noise are unchanged.
         tuning_bs = resolve_tuning_batch_size(self.pipeline, trainer.training_batch_size)
         if tuning_bs != trainer.training_batch_size:
             trainer.set_training_batch_size(tuning_bs)
@@ -112,10 +83,6 @@ class TunerBase:
             self.trainer.close()
 
     def _find_lr(self):
-        # All validations triggered by the LR range finder are *probes*:
-        # they evaluate transient states to choose an LR and are discarded
-        # before any commit. Tag them so the Accuracy panel can render
-        # them as a separate trace from committed tuning progress.
         with self.trainer.validation_context("probe"):
             return find_lr_range_for_trainer(
                 self.trainer,
@@ -126,11 +93,6 @@ class TunerBase:
                 ),
                 anchor_lr=self.pipeline_lr,
             )
-
-    # -- LR cache ---------------------------------------------------------------
-    # The optimal recovery LR barely changes between adjacent rates for a
-    # pretrained model, so probe once per tuner run and reuse across cycles.
-    # Invalidated on rollback / stuck-streak / safety-net re-probe.
 
     def _get_cached_lr(self):
         if getattr(self, "_cached_lr", None) is None:
@@ -148,13 +110,7 @@ class TunerBase:
 
     @property
     def final_metric(self):
-        """Cached final test-consistent metric set by ``_after_run``.
-
-        ``None`` before the tuner has finished; a float on the test-set
-        scale afterwards. Used by :meth:`PipelineStep.pipeline_metric`
-        to avoid a redundant ``trainer.test()`` pass after the tuner
-        already computed one internally.
-        """
+        """Cached final test-consistent metric set by ``_after_run``."""
         return getattr(self, "_final_metric", None)
 
     def run(self):
@@ -162,12 +118,7 @@ class TunerBase:
 
 
 class SmoothAdaptationTuner(TunerBase):
-    """The ONE orchestration loop for smooth rate-based adaptation.
-
-    Subclasses must implement ``_update_and_evaluate(rate) -> float``.
-    Optional hooks: ``_before_cycle()``, ``_after_run() -> float``,
-    ``_recovery_training_hooks(rate) -> list``.
-    """
+    """Orchestration loop for smooth rate-based adaptation."""
 
     def __init__(self, pipeline, model, target_accuracy, lr):
         super().__init__(pipeline, model, target_accuracy, lr)
@@ -205,11 +156,6 @@ class SmoothAdaptationTuner(TunerBase):
         """
         return []
 
-    # -- State snapshot protocol ------------------------------------------------
-    # NOTE: State snapshot does NOT include optimizer state. Optimizers MUST be
-    # recreated after state restore. If optimizer persistence is added in the
-    # future, rollback will silently produce wrong results.
-
     def _get_extra_state(self):
         """Override to return tuner-specific state to save alongside model params."""
         return None
@@ -227,26 +173,8 @@ class SmoothAdaptationTuner(TunerBase):
         if extra is not None:
             self._set_extra_state(extra)
 
-    # -- Absolute-floor helpers -------------------------------------------------
-
     def _absolute_post_acc_floor(self):
-        """Baseline-anchored absolute floor for the per-cycle rollback gate.
-
-        Returns the stricter of two floors:
-
-        * ``_validation_baseline * (1 - degradation_tolerance)`` — the same
-          relative tolerance the pipeline enforces, but anchored to the
-          pre-adaptation baseline instead of ``pre_cycle_acc``. This is
-          the primary guard against cumulative drift across many cycles.
-        * ``_pipeline_hard_floor`` — the cross-step budget floor (see
-          ``pipelining/accuracy_budget.py``). When set, it is at least as
-          strict as the baseline-anchored floor and encodes the combined
-          per-step + cross-step budget.
-
-        Returns ``None`` when neither floor is available (the tuner was
-        constructed without ``run()``, e.g. in unit tests). Callers fall
-        back to the relative gate in that case.
-        """
+        """Baseline-anchored absolute floor for the per-cycle rollback gate."""
         baseline = getattr(self, "_validation_baseline", None)
         pipeline_floor = getattr(self, "_pipeline_hard_floor", None)
         tolerance = getattr(self, "_pipeline_tolerance", None)
@@ -260,20 +188,8 @@ class SmoothAdaptationTuner(TunerBase):
             return None
         return max(floors)
 
-    # -- Core adaptation cycle --------------------------------------------------
-
     def _adaptation(self, rate):
-        """Recovery training at a given rate: T -> L -> R, with rollback.
-
-        Clones state before the transformation and measures ``pre_cycle_acc``
-        (accuracy immediately before this step's transformation is applied).
-        After recovery, if ``post_acc`` drops more than one noise-margin below
-        ``pre_cycle_acc``, restores the checkpoint. This enforces per-step
-        no-drop: any regression beyond measurement noise causes rollback and
-        the caller (``SmartSmoothAdaptation``) halves the step for the retry.
-        ``degradation_tolerance`` is a hard pipeline cutoff, not a per-step
-        budget — the tuner targets zero loss.
-        """
+        """Recovery training at a given rate with rollback on regression."""
         t_cycle_start = time.time()
         self.pipeline.reporter.report(self.name, rate)
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
@@ -282,13 +198,9 @@ class SmoothAdaptationTuner(TunerBase):
         pre_state = self._clone_state()
         pre_cycle_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
-        # Post-transformation instant evaluation is a step-size probe: the
-        # rate may be rejected and rolled back, so these measurements do
-        # not reflect committed tuning progress.
         with self.trainer.validation_context("probe"):
             instant_acc = self._update_and_evaluate(rate)
 
-        # Fast-fail: skip expensive LR exploration + training if model collapsed
         catastrophic_floor = self._get_target() * CATASTROPHIC_DROP_FACTOR
         if instant_acc is not None and float(instant_acc) < catastrophic_floor:
             self._restore_state(pre_state)
@@ -325,16 +237,7 @@ class SmoothAdaptationTuner(TunerBase):
         post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
         noise_margin = self._rollback_tolerance
-        # Per-step rollback gate: compare post_acc to the pre-step accuracy,
-        # not to the tuner's (possibly decayed) target. Any drop beyond
-        # measurement noise is a regression and must be rolled back.
         relative_threshold = pre_cycle_acc - noise_margin
-        # Absolute rollback gate: anchor the floor to the baseline captured
-        # once at run start, so per-cycle drops within ``noise_margin``
-        # cannot compound across cycles. The effective rollback threshold
-        # is the *stricter* of the two gates. When the baseline has not
-        # been seeded yet (e.g. in unit tests that invoke ``_adaptation``
-        # without calling ``run()``), this reduces to the relative gate.
         absolute_floor = self._absolute_post_acc_floor()
         if absolute_floor is not None:
             rollback_threshold = max(relative_threshold, absolute_floor)
@@ -352,32 +255,12 @@ class SmoothAdaptationTuner(TunerBase):
             })
             return self._committed_rate
 
-        # NOTE: A rate=1.0 "strict gate" requiring ``post_acc >= val_baseline
-        # - noise_margin`` used to live here. It was unreachable for
-        # transformations that inherently change the model's ceiling — e.g.
-        # aggressive activation quantization at target_tq=4 genuinely
-        # settles ~2–3 pp below the FP baseline. With the strict gate in
-        # place every rate=1.0 cycle rolled back, SmartSmoothAdaptation
-        # shaved toward 1.0 in ever-smaller slivers (0.998, 0.9998,
-        # 0.99998, ...), and the step never truly committed at full rate;
-        # ``_continue_to_full_rate`` then flipped quantization_rate to 1.0
-        # without any training at that exact state, leaving a ~3–4 pp
-        # unrecovered gap. The pipeline hard floor (test-set budget) and
-        # the relative rollback gate (per-cycle no-regression within noise)
-        # together already enforce both the hard cross-step constraint and
-        # per-cycle non-regression, so a separate baseline-anchored strict
-        # gate is redundant. Removed intentionally.
-
         self._committed_rate = rate
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
 
-        # Stuck detection: count cycles whose post_acc did NOT reach the
-        # current target (within noise). "Small committed-rate delta" is NOT
-        # used — it conflates endgame fine steps with genuine stuck-ness.
         reached_target = post_acc >= self._get_target() - noise_margin
         if reached_target:
             self._missed_target_streak = 0
-            # Restore a previously-relaxed target: we've proven we can meet it.
             pre_relax = getattr(self, "_pre_relaxation_target", None)
             if pre_relax is not None:
                 self.target_adjuster.target_metric = pre_relax
@@ -386,18 +269,8 @@ class SmoothAdaptationTuner(TunerBase):
             self._missed_target_streak += 1
 
         if self._missed_target_streak >= _STUCK_STREAK_REQUIRED:
-            # Single-step decay via AdaptationTargetAdjuster's existing logic
-            # (multiplicative ``decay``, clamped at pipeline floor). Save the
-            # pre-relaxation target so we can restore it when a later cycle
-            # actually reaches the original target.
             self._pre_relaxation_target = self._get_target()
             self.target_adjuster.update_target(post_acc)
-            # Clamp the decayed target to the baseline-anchored absolute
-            # floor in addition to the adjuster's own ratio-based floor.
-            # Without this, the tuner can relax its target below the
-            # cumulative drift guard that ``_adaptation`` enforces on
-            # ``post_acc``, producing a state where cycles commit while
-            # simultaneously reporting "missed target".
             abs_floor = self._absolute_post_acc_floor()
             if abs_floor is not None:
                 self.target_adjuster.target_metric = max(
@@ -415,39 +288,10 @@ class SmoothAdaptationTuner(TunerBase):
         })
         return rate
 
-    # -- Safety net -------------------------------------------------------------
-
     def _attempt_recovery_if_below_floor(self):
-        """Last-resort recovery when **validation** is below the pipeline floor.
-
-        Test-set isolation: this method NEVER calls ``trainer.test()``.
-        The pipeline's step-level assertion in ``Pipeline._run_step``
-        (via ``PipelineStep.pipeline_metric()``) is the single place
-        that reads the test set.
-
-        Behaviour:
-        - If ``_pipeline_hard_floor`` is ``None`` (floor not seeded yet),
-          return the latest ``validate()`` without attempting recovery.
-        - If ``validate()`` already meets the floor, return that value.
-        - Otherwise, try up to two short recovery training passes. Track
-          the best validation seen and restore that state at exit.
-        - If the best validation is still below the floor after both
-          attempts, emit a ``UserWarning`` (the pipeline's step-level
-          assertion is the definitive failure gate; this warning lets
-          callers see that the tuner gave up).
-
-        Returns the best validation metric observed — a float on the
-        validation scale (NOT the test scale). Downstream consumers of
-        ``_final_metric`` should not treat this as a test-scale number.
-        """
+        """Last-resort recovery when validation is below the pipeline floor."""
         hard_floor = getattr(self, "_pipeline_hard_floor", None)
 
-        # Use the budgeted multi-batch validation. ``trainer.validate()`` is
-        # a single minibatch and its variance (3σ ≈ 3.8% on MNIST's 570-sample
-        # batch) far exceeds ``_rollback_tolerance``, so gating recovery on
-        # it fires on noise alone. ``validate_n_batches(eval_n_batches)``
-        # is the same measurement used by every rollback / commit decision
-        # in ``_adaptation``.
         n_eval = self._budget.eval_n_batches
         best_val = float(self.trainer.validate_n_batches(n_eval))
         if hard_floor is None:
@@ -499,46 +343,15 @@ class SmoothAdaptationTuner(TunerBase):
             )
         return best_val
 
-    # Backwards-compatible alias. All internal callers should use the new
-    # ``_attempt_recovery_if_below_floor`` name; this alias keeps older
-    # callers (and subclasses that override it) working without a churn.
     def _ensure_pipeline_threshold(self):
         return self._attempt_recovery_if_below_floor()
 
-    # -- Post-step stabilization ------------------------------------------------
-
     def _stabilization_budget(self):
-        """Number of gradient steps for the final rate=1.0 stabilization pass.
-
-        Returns ``2 * self._budget.max_training_steps`` by default. Subclasses
-        can return ``None`` (or ``0``) to disable stabilization entirely —
-        useful for tuners that are cheap to rerun or whose transformation is
-        a no-op at rate=1.0.
-        """
+        """Number of gradient steps for the final rate=1.0 stabilization pass."""
         return 2 * int(self._budget.max_training_steps)
 
     def _stabilize_at_full_rate(self):
-        """Extra training at rate=1.0 after ``_after_run`` has committed.
-
-        Runs a single ``train_steps_until_target`` call with the cached LR
-        and ``2 * max_training_steps`` of budget while the rate=1.0 recovery
-        hooks are installed. The trainer's built-in best-state tracking
-        means this pass can only improve or preserve the model it was given
-        — it cannot introduce a regression beyond measurement noise.
-
-        Contract / preconditions:
-
-        * Only runs when ``_committed_rate`` is already at 1.0 (it is a
-          stabilization pass, not a rate transition).
-        * Never calls ``trainer.test()`` (single-measurement rule).
-        * Recovery hooks are installed/removed using ``try/finally`` so
-          pruning / decorator invariants are enforced throughout and
-          released even on exception.
-        * A pre-call validation and a post-call validation are compared;
-          if the post-stabilization validation drops more than
-          ``_rollback_tolerance`` below pre, the pre-stabilization state
-          is restored.
-        """
+        """Extra training at rate=1.0 after ``_after_run`` has committed."""
         if self._committed_rate < 1.0 - 1e-6:
             return
         budget = self._stabilization_budget()
@@ -546,38 +359,15 @@ class SmoothAdaptationTuner(TunerBase):
             return
         budget = int(budget)
 
-        # Stabilization LR: the cached LR is biased toward values selected
-        # for rate transitions (large deltas). At committed rate=1.0 the
-        # model is already near the quantized fixed point, so clamp to at
-        # most ``pipeline_lr`` — the full budget runs long enough that a
-        # coarser cached LR just overshoots the local minimum.
         lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
 
         n_eval = self._budget.eval_n_batches
         pre_state = self._clone_state()
         try:
-            # Multi-batch validation: single-batch ``trainer.validate()`` has
-            # 3σ ≈ 3.8% on MNIST (SE = 0.013 on 570 samples), which exceeds
-            # ``_rollback_tolerance`` and was triggering noise-driven
-            # rollbacks that threw away genuine improvements from the
-            # stabilization pass.
             pre_val = float(self.trainer.validate_n_batches(n_eval))
         except Exception:
             pre_val = None
 
-        # Stabilization wants the full budget: best-state tracking inside
-        # ``train_steps_until_target`` already guards against regression, so
-        # patience-based early-stop here only truncates slow-but-real
-        # consolidation. Aggressive quantization (e.g. target_tq=4 on MNIST)
-        # plateaus validation at a noise band ~0.01 wide, which exceeds
-        # ``min_improvement``; with the default patience of 5 the pass
-        # exits after ~100 effective steps and a ~3% gap is left on the
-        # table. Raising patience to budget/check_interval (i.e. "never
-        # patience-exit") turns stabilization into "use the whole budget
-        # and restore the peak", which is what the invariant actually
-        # promises. Use ``eval_n_batches`` (rollback-grade) for the per-
-        # interval check so best-state selection doesn't latch onto a
-        # single lucky 1-batch reading.
         progress_n = max(
             self._budget.progress_eval_batches,
             self._budget.eval_n_batches,
@@ -613,16 +403,8 @@ class SmoothAdaptationTuner(TunerBase):
                     {"pre": pre_val, "post": post_val},
                 )
 
-    # -- Gradual completion -----------------------------------------------------
-
     def _continue_to_full_rate(self):
-        """Continue gradual adaptation from committed rate toward 1.0.
-
-        When the main SmartSmoothAdaptation loop exits before reaching
-        rate=1.0, this drives the remaining distance using the same
-        _adaptation() mechanism with rollback so that the final commit
-        is not a catastrophic one-shot jump.  Capped to avoid runaway cost.
-        """
+        """Continue gradual adaptation from committed rate toward 1.0."""
         current = self._committed_rate
         if current >= 1.0 - 1e-6:
             return
@@ -646,8 +428,6 @@ class SmoothAdaptationTuner(TunerBase):
                 step = max(remaining / 4.0, step)
             attempts += 1
 
-    # -- Main loop --------------------------------------------------------------
-
     def run(self):
         self._committed_rate = 0.0
         self._natural_rate = 0.0
@@ -660,17 +440,6 @@ class SmoothAdaptationTuner(TunerBase):
             self.pipeline.config.get("degradation_tolerance", 0.05)
         )
 
-        # Pipeline hard gate: the floor the test metric must stay above.
-        # Routed through ``pipeline.accuracy_budget`` so the floor is
-        # ``max(previous_test * (1 - tolerance), reference - budget_total)``:
-        # per-step and cross-step budgets combined.
-        #
-        # Before the budget is seeded (no positive test metric observed
-        # yet -- e.g. Architecture Search / Model Building / Model
-        # Configuration), the floor is left as ``None`` and the tuner
-        # skips the pipeline-facing assertion; no test-set data leak
-        # because the floor is derived only from measurements the
-        # pipeline has already committed at previous-step exit.
         pipeline_prev = getattr(self.pipeline, "get_target_metric", lambda: None)()
         budget = getattr(self.pipeline, "accuracy_budget", None)
         if (
@@ -683,8 +452,6 @@ class SmoothAdaptationTuner(TunerBase):
                 per_step_tolerance=self._pipeline_tolerance,
             )
             if self._pipeline_hard_floor <= 0.0:
-                # Budget unseeded -> no cross-step floor; fall back to the
-                # per-step floor so we retain the previous behavior.
                 self._pipeline_hard_floor = float(pipeline_prev) * (
                     1.0 - self._pipeline_tolerance
                 )
@@ -694,15 +461,9 @@ class SmoothAdaptationTuner(TunerBase):
             self._pipeline_hard_floor = None
 
         se = self._budget.accuracy_se()
-        # Empirical noise calibration: measure actual validation variance
         val_a = self.trainer.validate_n_batches(self._budget.eval_n_batches)
         val_b = self.trainer.validate_n_batches(self._budget.eval_n_batches)
         empirical_noise = abs(val_a - val_b)
-        # Strict no-loss intent: tolerance is just measurement noise, not a
-        # per-step accuracy budget. Floor at 0.005 (always at least half a
-        # percentage point of slack) and cap at 0.05 so an unrealistically
-        # noisy validation set (e.g. tiny fixtures) cannot turn the rollback
-        # gate into a no-op that admits multi-percent regressions.
         self._rollback_tolerance = max(
             min(max(3 * se, 3 * empirical_noise), 0.05),
             0.005,
@@ -713,10 +474,6 @@ class SmoothAdaptationTuner(TunerBase):
         self.target_adjuster.original_metric = baseline_val
         self.target_adjuster.floor = baseline_val * (1.0 - self._pipeline_tolerance)
 
-        # Validation baseline for the internal rate=1.0 gate. The tuner
-        # NEVER calls ``trainer.test()``; the pipeline's centralised
-        # ``PipelineStep.pipeline_metric()`` runs the one-and-only test()
-        # pass per step at step exit.
         self._validation_baseline = baseline_val
 
         self.pipeline.reporter.report("BUDGET", {
@@ -730,9 +487,6 @@ class SmoothAdaptationTuner(TunerBase):
             "pipeline_hard_floor": self._pipeline_hard_floor,
         })
 
-        # ------------------------------------------------------------------
-        # One-shot: try full transformation in a single cycle.
-        # ------------------------------------------------------------------
         if not self._skip_one_shot:
             self._before_cycle()
             self._adaptation(1.0)
@@ -748,10 +502,6 @@ class SmoothAdaptationTuner(TunerBase):
                 self._log_cycle_summary()
                 return result
 
-        # ------------------------------------------------------------------
-        # Gradual fallback: one-shot failed, so use SmartSmoothAdaptation
-        # to incrementally drive rate from committed_rate toward 1.0.
-        # ------------------------------------------------------------------
         ms = min_step_for_smooth_adaptation(self.pipeline, self._budget)
         max_cycles = min(30, max(
             10,
@@ -807,5 +557,4 @@ class SmoothAdaptationTuner(TunerBase):
             print(" ".join(parts))
 
 
-# Backward-compatible aliases used by tuners/__init__.py and existing imports.
 UnifiedPerceptronTuner = SmoothAdaptationTuner

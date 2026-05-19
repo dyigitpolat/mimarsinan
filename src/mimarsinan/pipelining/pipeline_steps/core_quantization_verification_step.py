@@ -7,16 +7,7 @@ import numpy as np
 
 
 class CoreQuantizationVerificationStep(PipelineStep):
-    """
-    Verify that *mapped neural cores* are quantized.
-
-    This is intentionally placed:
-      Normalization Fusion -> Soft Core Mapping (IRGraph) -> THIS STEP -> Hard Core Mapping
-
-    Rationale:
-    - Verify mapped neural cores are quantized before hard-core mapping / nevresim.
-    - Fail fast if weight quantization did not propagate into the IR graph.
-    """
+    """Fail fast if weight_quantization=True but IR NeuralCores are not chip-quantized."""
 
     def __init__(self, pipeline):
         requires = ["ir_graph"]
@@ -49,8 +40,6 @@ class CoreQuantizationVerificationStep(PipelineStep):
 
         failures = []
         scale_tol = 1e-6
-        # Bank-backed cores share a matrix — verify each bank once rather
-        # than per-reference, and track the bank's dtype / range in a cache.
         bank_checked: set[int] = set()
         for core in cores:
             ps = core.parameter_scale
@@ -75,12 +64,6 @@ class CoreQuantizationVerificationStep(PipelineStep):
                 bank_checked.add(bank_id)
 
             mat = core.get_core_matrix(ir_graph)
-            # Fast path: post-quantization matrices are stored in int8/int16.
-            # For integer dtypes the round/allclose check is a no-op and
-            # the range check is a dtype-level constant — skip the expensive
-            # float64 materialisation that dominated runtime on ViT-scale
-            # IRs (cifar_vit: 2364 × 2.2 M-element cores, ~85 GB of
-            # transient float64 allocation in the old path).
             dtype = getattr(mat, "dtype", None)
             if dtype is not None and np.issubdtype(dtype, np.integer):
                 maxv = int(mat.max()) if mat.size else 0
