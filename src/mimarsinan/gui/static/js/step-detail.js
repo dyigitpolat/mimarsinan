@@ -13,9 +13,13 @@ import {
   initCompilagentLive,
   detachCompilagentLive,
   replayCompilagentEvents,
-  syncCompilagentEventsFromState,
-  isCompilagentEvent,
 } from './compilagent-live.js';
+import {
+  detectLiveMonitor,
+  setLiveMonitor,
+  setLiveSearchRemounter,
+  syncActiveLiveSearch,
+} from './live-search-sync.js';
 import { setResourceContext } from './resource-urls.js';
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -61,7 +65,12 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
         // nothing (server returned no body). But metrics may have
         // advanced via WS in the meantime — trigger a chart refresh.
         const cached = _detailCache[stepName];
-        if (cached) updateLiveCharts(stepName, state);
+        if (cached) {
+          updateLiveCharts(stepName, state);
+          if (state.activeTab === 'live_search' && state.selectedStep === stepName) {
+            syncActiveLiveSearch(stepName, state);
+          }
+        }
         return;
       }
       if (!res.ok) {
@@ -108,13 +117,8 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
 
   if (state.lastDetailJSON === sig && panel.querySelector('.step-detail-header')) {
     if (newCount > prevCount) updateLiveCharts(stepName, state);
-    if (newSearchLen > prevSearchLen && state.activeTab === 'live_search' && state.selectedStep === stepName) {
-      // Dispatch to whichever live monitor is currently active.
-      if (_liveMonitor === 'compilagent') {
-        syncCompilagentEventsFromState(stepName, state);
-      } else {
-        syncSearchEventsFromState(stepName, state);
-      }
+    if (newSearchLen > prevSearchLen) {
+      syncActiveLiveSearch(stepName, state);
     }
     return;
   }
@@ -419,31 +423,20 @@ function renderTabContent(stepName, tab, detail, metrics, container, state) {
 
 // ── Live search tab ──────────────────────────────────────────────────────
 
-// Tracks which optimizer's live monitor is currently mounted in the
-// container so the incremental sync path knows which `sync*FromState`
-// helper to call.
-let _liveMonitor = null;
-
-function _detectLiveMonitor(events) {
-  for (const ev of events) {
-    if (isCompilagentEvent(ev)) return 'compilagent';
-    if (ev && typeof ev === 'object' && typeof ev.type === 'string') {
-      // Any AgentEvolve-shaped type wins over no-events; compilagent
-      // emits zero AgentEvolve types, so seeing one means AgentEvolve.
-      const t = ev.type;
-      if (t === 'generation_start' || t === 'generation_complete' ||
-          t === 'candidate_result' || t === 'llm_trace' || t === 'search_complete') {
-        return 'agent_evolve';
-      }
-    }
-  }
-  return 'agent_evolve';  // default to AgentEvolve when no events yet
+export function remountLiveSearchTab(stepName, state) {
+  const container = document.getElementById('step-tab-content');
+  const detail = _detailCache[stepName];
+  if (!container || !detail) return;
+  renderLiveSearchTab(stepName, detail, container, state);
 }
+
+setLiveSearchRemounter(remountLiveSearchTab);
 
 function renderLiveSearchTab(stepName, detail, container, state) {
   const fromState = (state.searchEvents && state.searchEvents[stepName]) || [];
   const events = fromState.length > 0 ? fromState : (detail._searchEvents || []);
-  _liveMonitor = _detectLiveMonitor(events);
+  const monitor = detectLiveMonitor(events);
+  setLiveMonitor(monitor);
   // Build the empty scaffold synchronously so the user sees the
   // visualizer (header, strips, empty grids) immediately, then yield
   // to let the browser paint before replaying historical events. For
@@ -451,7 +444,7 @@ function renderLiveSearchTab(stepName, detail, container, state) {
   // even after the per-event re-render optimizations; without this
   // yield the user perceives the tab as "stuck on blank" for that
   // whole window because the synchronous replay starves the paint.
-  if (_liveMonitor === 'compilagent') {
+  if (monitor === 'compilagent') {
     initCompilagentLive(container);
     if (events.length > 0) {
       requestAnimationFrame(() => {
