@@ -91,8 +91,12 @@ def _prepare_step(monkeypatch, *, diffs=None):
             calls["segments_from_reference"] += 1
             return ref
 
+    def _fake_build_flow(pipeline, hybrid_mapping, *, preprocessor=None):
+        calls["hcm_built"] = calls.get("hcm_built", 0) + 1
+        return FakeHCM()
+
     monkeypatch.setattr(loihi_step, "DataLoaderFactory", _FakeDataLoaderFactory)
-    monkeypatch.setattr(loihi_step, "SpikingHybridCoreFlow", FakeHCM)
+    monkeypatch.setattr(loihi_step, "build_spiking_hybrid_flow", _fake_build_flow)
     monkeypatch.setattr(loihi_step, "LavaLoihiRunner", FakeRunner)
     monkeypatch.setattr(loihi_step, "compare_records", lambda _ref, _actual: diffs or [])
     monkeypatch.setattr(loihi_step, "format_first_diff", lambda _diffs: "formatted spike diff")

@@ -3,13 +3,13 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir_latency import IRLatency
 from mimarsinan.mapping.ir import NeuralCore
-from mimarsinan.models.layers import SavedTensorDecorator
-from mimarsinan.models.layers import TransformedActivation
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+from mimarsinan.pipelining.simulation_factory import (
+    build_hybrid_mapping_for_pipeline,
+    build_spiking_hybrid_flow,
+)
 from mimarsinan.common.diagnostics import phase_profiler
 
 import numpy as np
@@ -47,20 +47,16 @@ class SoftCoreMappingStep(PipelineStep):
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
         cores = platform_constraints.get("cores", [])
-        if not cores:
-            raise ValueError("platform_constraints_resolved must contain a non-empty 'cores' list")
-        resolved_max_axons = max(ct["max_axons"] for ct in cores)
-        resolved_max_neurons = max(ct["max_neurons"] for ct in cores)
-        resolved_allow_coalescing = bool(platform_constraints.get("allow_coalescing", False))
-        if cores:
-            resolved_hardware_bias = all(bool(ct.get("has_bias", True)) for ct in cores)
-        else:
-            resolved_hardware_bias = False
+        from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
 
-        # hardware_bias=False reserves one axon row for always-on bias.
-        effective_max_axons = resolved_max_axons
-        if not resolved_hardware_bias:
-            effective_max_axons = resolved_max_axons - 1
+        mapping_params = resolve_platform_mapping_params(
+            cores,
+            allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
+        )
+        resolved_hardware_bias = mapping_params.hardware_bias
+        effective_max_axons = mapping_params.effective_max_axons
+        resolved_max_neurons = mapping_params.effective_max_neurons
+        resolved_allow_coalescing = mapping_params.allow_coalescing
 
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):
@@ -100,10 +96,6 @@ class SoftCoreMappingStep(PipelineStep):
                 self.pipeline.loss)
         validator = self.trainer
 
-        from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-        with _phase("compute_per_source_scales"):
-            compute_per_source_scales(model.get_mapper_repr())
-
         act_q = bool(self.pipeline.config.get("activation_quantization", False))
 
         # ttfs_quantized requires activation_quantization for deployment parity.
@@ -116,8 +108,10 @@ class SoftCoreMappingStep(PipelineStep):
 
         self._apply_ttfs_quantized_bias_shift(model, act_q)
 
+        from mimarsinan.transformations.quantization_bounds import quantization_bounds
+
         bits = self.pipeline.config['weight_bits']
-        q_max = (2 ** (bits - 1)) - 1
+        _, q_max = quantization_bounds(bits)
 
         ir_mapping = IRMapping(
             q_max=q_max,
@@ -134,72 +128,11 @@ class SoftCoreMappingStep(PipelineStep):
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
 
-        # Chip quantize NeuralCores (or float path when weight_quantization=False).
         wt_q = bool(self.pipeline.config.get("weight_quantization", False))
-        from mimarsinan.mapping.ir import WeightBank
-        q_dtype = np.int8 if bits <= 8 else np.int16
-        with _phase("weight_quantization"):
-            if not wt_q:
-                for bank in ir_graph.weight_banks.values():
-                    bank.parameter_scale = torch.tensor(1.0)
-                for node in ir_graph.nodes:
-                    if isinstance(node, NeuralCore):
-                        node.threshold = 1.0
-                        node.parameter_scale = torch.tensor(1.0)
-            else:
-                q_min = -(2 ** (bits - 1))
-                eps = 1e-12
-                quantized_banks: set[int] = set()
-                bank_scale_used: dict[int, float] = {}
-                for bank_id, bank in ir_graph.weight_banks.items():
-                    ps = float(
-                        bank.parameter_scale.item()
-                        if hasattr(bank.parameter_scale, "item")
-                        else bank.parameter_scale
-                    )
-                    if abs(ps) > eps:
-                        scale = ps
-                    else:
-                        w_max = float(np.max(np.abs(bank.core_matrix)))
-                        w_max = max(w_max, eps)
-                        scale = q_max / w_max
-                    W_q = np.clip(np.round(bank.core_matrix * scale), q_min, q_max).astype(q_dtype)
-                    bank.core_matrix = W_q
-                    bank.parameter_scale = torch.tensor(1.0)
-                    quantized_banks.add(bank_id)
-                    bank_scale_used[bank_id] = scale
+        from mimarsinan.mapping.chip_quantize import quantize_ir_graph
 
-                for node in ir_graph.nodes:
-                    if isinstance(node, NeuralCore):
-                        if node.has_weight_bank():
-                            if node.weight_bank_id in quantized_banks:
-                                scale_used = bank_scale_used[node.weight_bank_id]
-                                node.threshold = scale_used
-                                node.parameter_scale = torch.tensor(1.0)
-                                if node.hardware_bias is not None:
-                                    node.hardware_bias = np.round(
-                                        node.hardware_bias * scale_used
-                                    ).astype(q_dtype)
-                        else:
-                            ps = float(
-                                node.parameter_scale.item()
-                                if hasattr(node.parameter_scale, "item")
-                                else node.parameter_scale
-                            )
-                            if abs(ps) > eps:
-                                scale = ps
-                            else:
-                                w_max = float(np.max(np.abs(node.core_matrix)))
-                                w_max = max(w_max, eps)
-                                scale = q_max / w_max
-                            W_q = np.clip(np.round(node.core_matrix * scale), q_min, q_max).astype(q_dtype)
-                            node.core_matrix = W_q
-                            node.threshold = scale
-                            node.parameter_scale = torch.tensor(1.0)
-                            if node.hardware_bias is not None:
-                                node.hardware_bias = np.round(
-                                    node.hardware_bias * scale
-                                ).astype(q_dtype)
+        with _phase("weight_quantization"):
+            quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q)
 
         # Calculate latencies for all neural cores in the IR graph
         with _phase("ir_latency"):
@@ -331,32 +264,12 @@ class SoftCoreMappingStep(PipelineStep):
             try:
                 cap_tag = "default" if attempt_cap is None else str(attempt_cap)
                 with _phase(f"sim_build_hybrid[cap={cap_tag}]"):
-                    hybrid_mapping = build_hybrid_hard_core_mapping(
-                        ir_graph=ir_graph,
-                        cores_config=platform_constraints["cores"],
-                        allow_neuron_splitting=bool(
-                            platform_constraints.get("allow_neuron_splitting", False)
-                        ),
-                        allow_scheduling=bool(
-                            platform_constraints.get("allow_scheduling", False)
-                        ),
-                        allow_coalescing=bool(
-                            platform_constraints.get("allow_coalescing", False)
-                        ),
+                    hybrid_mapping = build_hybrid_mapping_for_pipeline(
+                        ir_graph, platform_constraints
                     )
+                    self.add_entry("hybrid_mapping", hybrid_mapping, "pickle")
                 with _phase(f"sim_construct[cap={cap_tag}]"):
-                    flow = SpikingHybridCoreFlow(
-                        self.pipeline.config["input_shape"],
-                        hybrid_mapping,
-                        int(self.pipeline.config["simulation_steps"]),
-                        None,
-                        self.pipeline.config["firing_mode"],
-                        self.pipeline.config["spike_generation_mode"],
-                        self.pipeline.config["thresholding_mode"],
-                        spiking_mode=self.pipeline.config.get("spiking_mode", "lif"),
-                    )
-                with _phase("sim_to_device"):
-                    flow = flow.to(device)
+                    flow = build_spiking_hybrid_flow(self.pipeline, hybrid_mapping)
                 spiking_trainer = BasicTrainer(
                     flow,
                     device,
@@ -409,65 +322,11 @@ class SoftCoreMappingStep(PipelineStep):
                 break
 
     def _apply_ttfs_quantized_bias_shift(self, model, act_q: bool) -> None:
-        """Bake QuantizeDecorator shift into bias for ttfs_quantized + act_q (not continuous ttfs)."""
         if self.pipeline.config.get("spiking_mode", "lif") != "ttfs_quantized" or not act_q:
             return
-        from mimarsinan.tuning.shift_calculation import calculate_activation_shift
-        from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+        from mimarsinan.mapping.ttfs_bias import apply_ttfs_quantized_bias_shift
 
-        tq = self.pipeline.config["target_tq"]
-        for perceptron in model.get_perceptrons():
-            if getattr(perceptron, "is_encoding_layer", False):
-                continue
-            if getattr(perceptron, "_ttfs_shift_baked_into_bias", False):
-                continue  # apply_effective_bias_transform is not idempotent on re-run
-            shift = calculate_activation_shift(tq, perceptron.activation_scale)
-            bias_shift = shift / perceptron.activation_scale
-            PerceptronTransformer().apply_effective_bias_transform(
-                perceptron, lambda b, s=bias_shift: b + s)
-            perceptron._ttfs_shift_baked_into_bias = True
-
-    def _calculate_input_activation_scales(self, model, validator, rate):
-        for perceptron in model.get_perceptrons():
-            if not isinstance(perceptron.input_activation, TransformedActivation):
-                perceptron.input_activation = TransformedActivation(perceptron.input_activation, [])
-                
-            perceptron.input_activation.decorate(SavedTensorDecorator(sample_to_cpu=True))
-
-        validator.validate()
-
-        max_target_scale = 0.0
-        for perceptron in model.get_perceptrons():
-            saved_tensor_dec = perceptron.input_activation.pop_decorator()
-            if saved_tensor_dec.latest_input is None:
-                raise RuntimeError(
-                    "Failed to capture input activations for input scaling. "
-                    f"Perceptron '{getattr(perceptron, 'name', '<unnamed>')}' did not record any inputs. "
-                    "This typically happens when a Mapper's forward bypasses `perceptron.input_activation`."
-                )
-            x = saved_tensor_dec.latest_input
-            in_min = x.min()
-            in_max = x.max()
-
-            bins = 1000
-            activation_hist = torch.histc(x.flatten(), bins=bins, min=in_min.item(), max=in_max.item())
-            bin_edges = torch.linspace(in_min.item(), in_max.item(), steps=bins+1, device=activation_hist.device)
-
-            activation_hist *= bin_edges[1:]
-            activation_hist[activation_hist < 0] = 0
-            hist_sum = activation_hist.sum()
-            cumulative_hist = activation_hist.cumsum(0)
-            cumulative_hist /= hist_sum
-
-            clip_rate = 0.999
-
-            index = (cumulative_hist > clip_rate).flatten().nonzero()[0]
-            clipped_act_scale = bin_edges[index].item()
-
-            target_act_scale = (in_max * (1.0 - rate) + rate * clipped_act_scale) 
-
-            perceptron.set_input_activation_scale(target_act_scale)
-            max_target_scale = max(max_target_scale, target_act_scale)
+        apply_ttfs_quantized_bias_shift(model, self.pipeline.config["target_tq"])
 
     def bring_back_bias(self, fused_linear_layer):
         assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'

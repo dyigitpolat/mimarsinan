@@ -73,14 +73,28 @@ def _get_layout_result_from_request(
     input_shape = tuple(int(x) for x in body.get("input_shape", [1, 28, 28]))
     num_classes = int(body.get("num_classes", 10))
     model_config = body.get("model_config", {})
+    from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+
     allow_coalescing = bool(body.get("allow_coalescing", False))
-    hardware_bias = bool(body.get("hardware_bias", False))
-    effective_max_axons = int(
-        tiling_max_axons if tiling_max_axons is not None else body.get("max_axons", 1024)
-    )
-    effective_max_neurons = int(
-        tiling_max_neurons if tiling_max_neurons is not None else body.get("max_neurons", 1024)
-    )
+    core_types = body.get("core_types") or body.get("cores")
+    if core_types:
+        params = resolve_platform_mapping_params(
+            core_types, allow_coalescing=allow_coalescing
+        )
+        hardware_bias = params.hardware_bias
+        effective_max_axons = params.effective_max_axons
+        effective_max_neurons = params.effective_max_neurons
+        allow_coalescing = params.allow_coalescing
+    else:
+        hardware_bias = bool(body.get("hardware_bias", False))
+        max_axons = int(
+            tiling_max_axons if tiling_max_axons is not None else body.get("max_axons", 1024)
+        )
+        max_neurons = int(
+            tiling_max_neurons if tiling_max_neurons is not None else body.get("max_neurons", 1024)
+        )
+        effective_max_axons = max_axons if hardware_bias else max_axons - 1
+        effective_max_neurons = max_neurons
 
     builder_cls = BUILDERS_REGISTRY.get(model_type)
     if builder_cls is None:
@@ -689,13 +703,19 @@ def create_app(
             )
             mr = dict(body.get("model_repr_json", {}))
             core_types = body.get("core_types", [])
+            from mimarsinan.mapping.platform_constraints import (
+                resolve_platform_mapping_params,
+            )
+
             if core_types:
-                tile_max_ax = max(int(ct["max_axons"]) for ct in core_types)
-                tile_max_neu = max(int(ct["max_neurons"]) for ct in core_types)
-                mr["allow_coalescing"] = bool(body.get("allow_coalescing", False))
-                mr["hardware_bias"] = all(
-                    bool(ct.get("has_bias", True)) for ct in core_types
+                pmap = resolve_platform_mapping_params(
+                    core_types,
+                    allow_coalescing=bool(body.get("allow_coalescing", False)),
                 )
+                tile_max_ax = pmap.effective_max_axons
+                tile_max_neu = pmap.effective_max_neurons
+                mr["allow_coalescing"] = pmap.allow_coalescing
+                mr["hardware_bias"] = pmap.hardware_bias
             else:
                 tile_max_ax = int(mr.get("max_axons", 1024))
                 tile_max_neu = int(mr.get("max_neurons", 1024))
@@ -806,6 +826,7 @@ def create_app(
     @app.post("/api/pipeline_steps")
     def api_pipeline_steps(body: dict):
         """Return ordered pipeline step names and semantic groups for the given deployment config (wizard preview)."""
+        from mimarsinan.config_schema import build_flat_pipeline_config
         from mimarsinan.pipelining.pipelines.deployment_pipeline import (
             DeploymentPipeline,
             get_pipeline_step_specs,
@@ -815,12 +836,12 @@ def create_app(
             deployment_parameters = dict(body.get("deployment_parameters", {}))
             pipeline_mode = body.get("pipeline_mode", "vanilla")
             DeploymentPipeline.apply_preset(pipeline_mode, deployment_parameters)
-            config = dict(DeploymentPipeline.default_deployment_parameters)
-            config.update(deployment_parameters)
-            config.update(DeploymentPipeline.default_platform_constraints)
             platform = body.get("platform_constraints") or {}
-            if isinstance(platform, dict):
-                config.update(platform)
+            config = build_flat_pipeline_config(
+                deployment_parameters,
+                platform if isinstance(platform, dict) else None,
+                pipeline_mode=pipeline_mode,
+            )
             specs = get_pipeline_step_specs(config)
             groups = get_pipeline_semantic_group_by_step_name(config)
             return {

@@ -13,8 +13,8 @@ with HCM-vs-Lava spike-count parity for every neural segment.
 from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
 from mimarsinan.chip_simulation.spike_recorder import compare_records, format_first_diff
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
 from mimarsinan.pipelining.pipeline_step import PipelineStep
+from mimarsinan.pipelining.simulation_factory import build_spiking_hybrid_flow
 
 
 class LoihiSimulationStep(PipelineStep):
@@ -75,16 +75,7 @@ class LoihiSimulationStep(PipelineStep):
         sample = self._load_parity_sample()
         device = self.pipeline.config["device"]
 
-        hcm = SpikingHybridCoreFlow(
-            self.pipeline.config["input_shape"],
-            hard_core_mapping,
-            simulation_length,
-            None,
-            self.pipeline.config["firing_mode"],
-            self.pipeline.config["spike_generation_mode"],
-            self.pipeline.config["thresholding_mode"],
-            spiking_mode=spiking_mode,
-        ).to(device).eval()
+        hcm = build_spiking_hybrid_flow(self.pipeline, hard_core_mapping).eval()
 
         import torch
         with torch.no_grad():

@@ -354,12 +354,6 @@ def _persist_skipped_steps_to_steps_json(
 
 
 def _make_json_safe(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {str(k): _make_json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_make_json_safe(v) for v in obj]
-    if isinstance(obj, (int, float, str, bool, type(None))):
-        return obj
-    if hasattr(obj, "item"):
-        return obj.item()
-    return str(obj)
+    from mimarsinan.gui.json_util import to_json_safe
+
+    return to_json_safe(obj)

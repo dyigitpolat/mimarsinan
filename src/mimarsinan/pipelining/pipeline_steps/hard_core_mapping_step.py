@@ -1,12 +1,10 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
-from mimarsinan.mapping.hybrid_hardcore_mapping import (
-    build_hybrid_hard_core_mapping,
+from mimarsinan.pipelining.simulation_factory import (
+    build_hybrid_mapping_for_pipeline,
+    build_spiking_hybrid_flow,
+    run_hcm_spiking_test,
 )
-
-from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
 
 import torch
 import torch.nn as nn
@@ -67,13 +65,9 @@ class HardCoreMappingStep(PipelineStep):
         platform_constraints = self.get_entry("platform_constraints_resolved")
         _vram_probe("after_load_entries")
 
-        hybrid_mapping = build_hybrid_hard_core_mapping(
-            ir_graph=ir_graph,
-            cores_config=platform_constraints["cores"],
-            allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
-            allow_scheduling=bool(platform_constraints.get("allow_scheduling", False)),
-            allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
-        )
+        hybrid_mapping = self.pipeline.cache.get("hybrid_mapping")
+        if hybrid_mapping is None:
+            hybrid_mapping = build_hybrid_mapping_for_pipeline(ir_graph, platform_constraints)
 
         neural_segs = hybrid_mapping.get_neural_segments()
         compute_ops = hybrid_mapping.get_compute_ops()
@@ -102,35 +96,10 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("after_pickle_save")
 
         try:
-            device = self.pipeline.config["device"]
-            flow = SpikingHybridCoreFlow(
-                self.pipeline.config["input_shape"],
-                hybrid_mapping,
-                sim_len,
-                None,
-                self.pipeline.config["firing_mode"],
-                self.pipeline.config["spike_generation_mode"],
-                self.pipeline.config["thresholding_mode"],
-                spiking_mode=self.pipeline.config.get("spiking_mode", "lif"),
-            )
-            flow = flow.to(device)
+            flow = build_spiking_hybrid_flow(self.pipeline, hybrid_mapping)
             _vram_probe("after_flow_to_device")
-            sim_batches = self.pipeline.config.get("simulation_batch_count", None)
-            trainer = BasicTrainer(
-                flow,
-                device,
-                DataLoaderFactory(self.pipeline.data_provider_factory),
-                None,
-            )
-            max_samples = int(self.pipeline.config.get("max_simulation_samples", 0) or 0)
             _vram_probe("before_test")
-            if max_samples > 0:
-                acc = trainer.test_on_subsample(
-                    max_samples=max_samples,
-                    seed=int(self.pipeline.config.get("seed", 0)),
-                )
-            else:
-                acc = trainer.test(max_batches=sim_batches)
+            acc = run_hcm_spiking_test(self.pipeline, flow)
             _vram_probe("after_test")
             self._last_metric = float(acc)
             print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")

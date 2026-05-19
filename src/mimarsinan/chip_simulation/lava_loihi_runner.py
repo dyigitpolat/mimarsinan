@@ -333,11 +333,7 @@ class LavaLoihiRunner:
         core_output_spikes: Dict[int, np.ndarray] = {}
         core_buffer_spikes: Dict[int, np.ndarray] = {}
 
-        def _used_axons(core: HardCore) -> int:
-            return max(int(core.axons_per_core - core.available_axons), 1)
-
-        def _used_neurons(core: HardCore) -> int:
-            return max(int(core.neurons_per_core - core.available_neurons), 1)
+        from mimarsinan.mapping.core_geometry import used_axons, used_neurons
 
         deps = {
             idx: sorted(
@@ -385,8 +381,8 @@ class LavaLoihiRunner:
             t_core = _time.time()
             core = seg.cores[core_idx]
             latency = timing.core_latency(core)
-            used_ax = _used_axons(core)
-            used_neu = _used_neurons(core)
+            used_ax = used_axons(core, min_one=True)
+            used_neu = used_neurons(core, min_one=True)
             active_input = np.zeros((used_ax, N, T), dtype=_LAVA_DTYPE)
 
             for sp in core.get_axon_source_spans():
@@ -497,8 +493,8 @@ class LavaLoihiRunner:
             assert N == 1, "Spike recording requires a single sample (N == 1)"
             recorder_seg.seg_output_spike_count = seg_out_counts[0].astype(np.int64)
             for core_idx, core in enumerate(seg.cores):
-                used_ax = _used_axons(core)
-                used_neu = _used_neurons(core)
+                used_ax = used_axons(core, min_one=True)
+                used_neu = used_neurons(core, min_one=True)
                 latency = timing.core_latency(core)
                 active_slice = slice(latency, latency + T)
 

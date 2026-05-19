@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.chip_simulation import spike_modes
 from mimarsinan.chip_simulation.hybrid_execution import (
     assemble_segment_input_torch,
     decref_consumers,
@@ -22,6 +23,7 @@ from mimarsinan.chip_simulation.spike_recorder import (
     SegmentSpikeRecord,
 )
 from mimarsinan.mapping.chip_latency import ChipLatency
+from mimarsinan.mapping.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
@@ -30,6 +32,7 @@ from mimarsinan.mapping.hybrid_hardcore_mapping import (
 from mimarsinan.mapping.ir import ComputeOp, IRSource
 
 from mimarsinan.mapping.spike_source_spans import SpikeSourceSpan, compress_spike_sources
+from mimarsinan.models.lif_kernels import lif_fire_and_reset
 
 
 # float64 matches nevresim TTFS double precision and avoids threshold flip-flops
@@ -138,38 +141,13 @@ class SpikingHybridCoreFlow(nn.Module):
             bt.clear()
         prev.clear()
 
-    def to_stochastic_spikes(self, tensor: torch.Tensor) -> torch.Tensor:
-        return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
-
-    def to_front_loaded_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
-        return (torch.round(tensor * self.simulation_length) > cycle).float()
-
-    def to_deterministic_spikes(self, tensor: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:
-        return (tensor > threshold).float()
-
-    def to_uniform_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
-        T = self.simulation_length
-        N = torch.round(tensor * T).to(torch.long)
-
-        mask = (N != 0) & (N != T) & (cycle < T)
-        N_safe = torch.clamp(N, min=1)
-        spacing = T / N_safe.float()
-
-        result = mask & (torch.floor(cycle / spacing) < N_safe) & (torch.floor(cycle % spacing) == 0)
-        result = result.float()
-        result[N == T] = 1.0
-        return result
-
     def to_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
-        if self.spike_mode == "Stochastic":
-            return self.to_stochastic_spikes(tensor)
-        if self.spike_mode == "Deterministic":
-            return self.to_deterministic_spikes(tensor)
-        if self.spike_mode == "FrontLoaded":
-            return self.to_front_loaded_spikes(tensor, cycle)
-        if self.spike_mode == "Uniform":
-            return self.to_uniform_spikes(tensor, cycle)
-        raise ValueError("Invalid spike mode: " + str(self.spike_mode))
+        return spike_modes.to_spikes(
+            tensor,
+            cycle,
+            simulation_length=self.simulation_length,
+            spike_mode=self.spike_mode,
+        )
 
     @staticmethod
     def _assemble_segment_input(
@@ -278,8 +256,8 @@ class SpikingHybridCoreFlow(nn.Module):
         core_params: list[torch.Tensor] = []
         hw_biases = []
         for core_idx, core in enumerate(cores):
-            used_ax = max(int(core.axons_per_core - core.available_axons), 1)
-            used_neu = max(int(core.neurons_per_core - core.available_neurons), 1)
+            used_ax = used_axons(core, min_one=True)
+            used_neu = used_neurons(core, min_one=True)
 
             placement_dicts = (
                 placements_per_core[core_idx]
@@ -377,8 +355,6 @@ class SpikingHybridCoreFlow(nn.Module):
         thresholds = seg["thresholds"]
         hw_biases = seg["hw_biases"]
 
-        ops = {"<": torch.lt, "<=": torch.le}
-
         buffers = [
             torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
                         device=device, dtype=_COMPUTE_DTYPE)
@@ -438,13 +414,13 @@ class SpikingHybridCoreFlow(nn.Module):
                 if hw_biases[core_idx] is not None:
                     memb_i += hw_biases[core_idx]
 
-                fired = ops[self.thresholding_mode](thresholds[core_idx], memb_i)
-                buffers[core_idx] = fired.to(_COMPUTE_DTYPE)
-
-                if self.firing_mode == "Novena":
-                    memb_i[fired] = 0.0
-                elif self.firing_mode == "Default":
-                    memb_i[fired] -= thresholds[core_idx]
+                buffers[core_idx] = lif_fire_and_reset(
+                    memb_i,
+                    thresholds[core_idx],
+                    thresholding_mode=self.thresholding_mode,
+                    firing_mode=self.firing_mode,
+                    output_dtype=_COMPUTE_DTYPE,
+                )
 
                 if recording:
                     record_in_t[core_idx] += input_signals[core_idx][0].to(torch.int64)
@@ -543,13 +519,9 @@ class SpikingHybridCoreFlow(nn.Module):
                 V = V + hw_biases[ci]
 
             if quantized:
-                safe_thresh = thresholds[ci].clamp(min=1e-12)
-                k_fire_raw = torch.ceil(S * (1.0 - V / safe_thresh))
-                fires = k_fire_raw < S
-                k_fire = k_fire_raw.clamp(0, S - 1)
-                buffers[ci] = torch.where(
-                    fires, (S - k_fire) / S, torch.zeros_like(k_fire)
-                )
+                from mimarsinan.models.ttfs_kernels import ttfs_quantized_activation
+
+                buffers[ci] = ttfs_quantized_activation(V, thresholds[ci], S)
             else:
                 out = F.relu(V)
                 buffers[ci] = (out / thresholds[ci]).clamp(0.0, 1.0)

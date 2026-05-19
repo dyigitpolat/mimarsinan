@@ -134,8 +134,12 @@ def _prepare_step(monkeypatch, *,
             calls["runner_run_samples"].append(int(sample_index))
             return _fake_sanafe_record(sample_index=sample_index)
 
+    def _fake_build_flow(pipeline, hybrid_mapping, *, preprocessor=None):
+        calls["hcm_built"] += 1
+        return FakeHCM()
+
     monkeypatch.setattr(step_mod, "DataLoaderFactory", _FakeDataLoaderFactory)
-    monkeypatch.setattr(step_mod, "SpikingHybridCoreFlow", FakeHCM)
+    monkeypatch.setattr(step_mod, "build_spiking_hybrid_flow", _fake_build_flow)
     monkeypatch.setattr(step_mod, "SanafeRunner", FakeRunner)
     monkeypatch.setattr(step_mod, "compare_records", lambda _ref, _actual: diffs or [])
     monkeypatch.setattr(step_mod, "format_first_diff", lambda _d: "formatted sanafe diff")
