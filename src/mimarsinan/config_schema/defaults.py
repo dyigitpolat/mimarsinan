@@ -124,6 +124,16 @@ CONFIG_KEYS_SET: Set[str] = {
     "store_pre_pruning_heatmap",
     "max_simulation_samples",
     "seed",
+    "enable_loihi_simulation",
+    "enable_sanafe_simulation",
+    "loihi_parity_sample_index",
+    "sanafe_sample_count",
+    "sanafe_arch_preset",
+    "sanafe_custom_arch_path",
+    "sanafe_parity_check",
+    "sanafe_log_potential_trace",
+    "sanafe_log_message_trace",
+    "simulation_batch_count",
 }
 
 

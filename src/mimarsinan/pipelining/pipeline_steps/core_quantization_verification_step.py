@@ -11,11 +11,11 @@ class CoreQuantizationVerificationStep(PipelineStep):
     Verify that *mapped neural cores* are quantized.
 
     This is intentionally placed:
-      Normalization Fusion -> Soft Core Mapping (IRGraph) -> THIS STEP -> CoreFlow Tuning
+      Normalization Fusion -> Soft Core Mapping (IRGraph) -> THIS STEP -> Hard Core Mapping
 
     Rationale:
-    - CoreFlow tuning should not be responsible for verifying weight quantization.
-    - We want a clear failure if a model is not quantized before tuning/compilation.
+    - Verify mapped neural cores are quantized before hard-core mapping / nevresim.
+    - Fail fast if weight quantization did not propagate into the IR graph.
     """
 
     def __init__(self, pipeline):
