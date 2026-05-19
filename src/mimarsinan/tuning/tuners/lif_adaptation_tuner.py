@@ -24,8 +24,47 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.models.activations import ChipInputQuantizer, LIFActivation
+from mimarsinan.models.activations import (
+    ChipInputQuantizer,
+    LIFActivation,
+    run_cycle_accurate,
+)
 from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+
+
+class _CycleAccurateForward:
+    """Picklable callable that drives :func:`run_cycle_accurate` on a model.
+
+    Installed by :meth:`LIFAdaptationTuner._install_cycle_accurate_forward`
+    as the model's ``forward`` attribute when ``cycle_accurate_lif_forward``
+    is on. Lives at module scope so :func:`torch.save` (used by the
+    pipeline cache between steps) can pickle the model's ``__dict__``
+    including this wrapper — a local closure cannot be pickled and
+    would abort the pipeline.
+
+    The per-cycle re-entrant call goes through the model's *class-level*
+    ``forward`` (via ``type(model).forward(model, x)``) rather than a
+    captured bound method. This bypasses the patched instance attribute
+    (avoiding infinite recursion) without holding a separate bound-method
+    reference that complicates pickle's reference graph.
+    """
+
+    def __init__(self, model, T: int):
+        self.model = model
+        self.T = int(T)
+
+    def _call_unpatched_forward(self, x):
+        # ``type(self.model).forward(self.model, x)`` resolves to the
+        # class-defined ``forward`` (e.g. ``ConvertedModelFlow.forward``)
+        # — i.e. the original code path, regardless of what's bound to
+        # the instance's ``forward`` attribute.
+        return type(self.model).forward(self.model, x)
+
+    def __call__(self, x):
+        return run_cycle_accurate(
+            self.model, x, self.T,
+            forward_fn=self._call_unpatched_forward,
+        )
 
 
 class LIFBlendActivation(nn.Module):
@@ -54,6 +93,12 @@ class LIFBlendActivation(nn.Module):
         return "LIF" if self.rate >= 1.0 else "ReLU"
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Cycle-accurate mode is invisible here: ``self.lif_activation`` is
+        # a :class:`LIFActivation` whose ``forward`` already branches on
+        # its own ``_cycle_accurate_mode`` flag. Same signature ``(B, …)
+        # → (B, …)`` in either mode, so the blend math is identical —
+        # in rate-mode it interpolates rates, in cycle-accurate mode it
+        # interpolates per-cycle pre-activations.
         if self.rate <= 0.0:
             return self.old_activation(x)
         if self.rate >= 1.0:
@@ -101,9 +146,19 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
         self.name = "LIF Adaptation"
         self._T = int(pipeline.config["simulation_steps"])
         # Training must fire under the same comparator as the chip path.
-        # Default ``<`` matches nevresim's strict DefaultFirePolicy and the
-        # LIF deployment defaults set in DeploymentPipeline.
-        self._thresholding_mode = str(pipeline.config.get("thresholding_mode", "<"))
+        # Default ``<=`` matches the LIF deployment defaults set in
+        # DeploymentPipeline; the chip simulators read the same
+        # ``thresholding_mode`` config so training and chip-side
+        # comparators stay aligned.
+        self._thresholding_mode = str(pipeline.config.get("thresholding_mode", "<="))
+        # When the cycle-accurate knob is on, the model is forwarded with
+        # (T, B, ...) spike trains threaded through the Mapper DAG so each
+        # Perceptron's LIFActivation integrates the actual bursty per-cycle
+        # output of upstream perceptrons (not a broadcast rate). Closes the
+        # NF→SCM rate↔cycle gap by training the weights against the same
+        # dynamics the chip will execute at deployment.
+        self._cycle_accurate = bool(pipeline.config.get("cycle_accurate_lif_forward", False))
+        self._patched_forward = False
         self._final_metric = None
 
         # Snapshot the teacher BEFORE any swap — it's the pre-LIF model.
@@ -125,6 +180,38 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
         # Swap the trainer's loss to KD from the outset so recovery
         # gradients see soft teacher targets even at small rates.
         self.trainer.loss_function = _KDClassificationLoss(self._teacher)
+
+        # Optional cycle-accurate forward: route student forwards through
+        # the Mapper DAG cycle-accurate executor. Teacher stays in rate
+        # mode (it's the pre-LIF reference) so KD targets are unchanged.
+        if self._cycle_accurate:
+            self._install_cycle_accurate_forward()
+
+    def _install_cycle_accurate_forward(self) -> None:
+        """Route every training-time ``model(x)`` through the T-loop driver.
+
+        Works for any model topology — there is no model-side
+        implementation requirement. The driver
+        (:func:`run_cycle_accurate`) toggles each LIFActivation into
+        single-step mode, encodes the input as a spike train, calls the
+        model's *original* forward once per cycle, and means the
+        outputs. Everything else (Linear, Conv, BN, einops, ...) stays
+        on the same code path it uses in rate-mode forward.
+        """
+        # Track whether we patched ``forward`` so ``_after_run`` knows to
+        # restore the rate-mode class forward when CA is off.
+        self._patched_forward = True
+
+        # Use a module-level picklable callable rather than a local
+        # closure: the pipeline saves the model via ``torch.save``
+        # between steps, which pickles ``__dict__`` — including the
+        # patched ``forward`` attribute. ``_CycleAccurateForward`` is
+        # picklable because it and the underlying model both live at
+        # module scope (or are themselves picklable nn.Module instances).
+        self.model.forward = _CycleAccurateForward(
+            model=self.model,
+            T=self._T,
+        )
 
     # -------------------------------------------------------- blend install
 
@@ -195,6 +282,28 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
         # Hard-commit rate=1 so downstream code sees the pure LIFActivation
         # at deployment.
         self._set_rate(1.0)
+
+        # Forward-dispatch handoff:
+        #   * When ``cycle_accurate_lif_forward`` is on, *keep* the
+        #     :class:`_CycleAccurateForward` wrapper installed on
+        #     ``model.forward`` for the rest of the pipeline. Subsequent
+        #     steps (Weight Quantization, Normalization Fusion, the
+        #     SCM/HCM accuracy checks, downstream evaluation) then
+        #     evaluate the model under exactly the same dynamics the
+        #     chip simulators (HCM/SCM/SANA-FE/nevresim/Lava) execute —
+        #     this is the *whole point* of the knob: NF, SCM, HCM and
+        #     every chip simulator should report the same accuracy
+        #     because they all run cycle-accurate LIF with the same
+        #     per-cycle spike trains.
+        #   * When CA is off, drop the instance attribute so the class-
+        #     level ``forward`` becomes visible again — restoring
+        #     rate-mode evaluation for the rest of the pipeline.
+        if not self._cycle_accurate and getattr(self, "_patched_forward", False):
+            try:
+                del self.model.forward
+            except AttributeError:
+                pass
+            self._patched_forward = False
 
         # Mark the AdaptationManager so clamp/shift/quantize decorators
         # are never reintroduced on subsequent update_activation calls

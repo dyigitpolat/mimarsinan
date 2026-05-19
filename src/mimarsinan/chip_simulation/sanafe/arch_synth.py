@@ -251,7 +251,7 @@ def _thresholding_mode_to_soma_attr(thresholding_mode: str) -> str:
     )
 
 
-def _render_arch_yaml(spec: ArchSpec, *, thresholding_mode: str = "<") -> str:
+def _render_arch_yaml(spec: ArchSpec, *, thresholding_mode: str = "<=") -> str:
     """Render a SANA-FE-compatible architecture YAML from the spec.
 
     The YAML embeds every hardware unit ``net_synth`` references by name
@@ -260,7 +260,7 @@ def _render_arch_yaml(spec: ArchSpec, *, thresholding_mode: str = "<") -> str:
     Per-event numbers come from the spec's preset, never local literals.
 
     ``thresholding_mode`` plumbs the pipeline-level firing comparator
-    config (default strict ``<``) into the soma plugin's
+    config (default inclusive ``<=``) into the soma plugin's
     ``thresholding_mode`` hardware attribute, so SANA-FE's firing rule
     follows the same knob as the HCM Python sim and the training
     ``LIFActivation``.
@@ -382,7 +382,7 @@ def build_architecture(
     spec: ArchSpec,
     *,
     custom_arch_path: Optional[str] = None,
-    thresholding_mode: str = "<",
+    thresholding_mode: str = "<=",
 ) -> Any:
     """Construct (or load) a SANA-FE Architecture matching ``spec``.
 

@@ -745,8 +745,15 @@
                     <option value="<">&lt; (strict)</option>
                   </select>
                 </div>
+                <div class="field">
+                  <label class="field-label">Cycle-accurate LIF <span class="hint">close NF→SCM gap</span></label>
+                  <div class="toggle-row" id="cycleAccurateLifToggle" onclick="toggleClick(this)">
+                    <span class="toggle-label" style="font-size:0.78rem">Spike-train forward</span>
+                    <div class="toggle-switch"></div>
+                  </div>
+                </div>
               </div>
-              <div class="note">Auto-set by spiking mode. Override only for advanced experiments.</div>
+              <div class="note">Auto-set by spiking mode. Override only for advanced experiments. Cycle-accurate LIF threads (T,B,...) spike trains through the mapper DAG during LIF Adaptation training; ~T× slower but closes the rate↔cycle mismatch for deep single-segment workloads.</div>
             </div>
         </div>
       </div>

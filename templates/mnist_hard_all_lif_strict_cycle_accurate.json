@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "mnist_hard_all_lif",
+  "experiment_name": "mnist_hard_all_lif_strict_cycle_accurate",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -47,7 +47,8 @@
     "spiking_mode": "lif",
     "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
-    "thresholding_mode": "<=",
+    "thresholding_mode": "<",
+    "cycle_accurate_lif_forward": true,
     "activation_quantization": false,
     "weight_quantization": true,
     "pruning": true,
@@ -84,6 +85,6 @@
     "enable_loihi_simulation": true
   },
   "target_metric_override": null,
-  "start_step": "Soft Core Mapping",
+  "start_step": null,
   "stop_step": null
 }

@@ -137,7 +137,7 @@ class SanafeSimulationStep(PipelineStep):
         parity_check = bool(self.pipeline.config.get("sanafe_parity_check", True))
         arch_preset = self.pipeline.config.get("sanafe_arch_preset", "loihi")
         custom_arch_path = self.pipeline.config.get("sanafe_custom_arch_path") or None
-        thresholding_mode = self.pipeline.config.get("thresholding_mode", "<")
+        thresholding_mode = self.pipeline.config.get("thresholding_mode", "<=")
         log_potential = bool(self.pipeline.config.get("sanafe_log_potential_trace", False))
         log_messages = bool(self.pipeline.config.get("sanafe_log_message_trace", True))
         device = self.pipeline.config["device"]

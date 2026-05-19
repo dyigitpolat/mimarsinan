@@ -11,10 +11,11 @@ Semantics
 ---------
 ``du = 1``, ``dv = 0`` produce pure integrate-and-fire: current equals the
 synaptic input for that cycle (no persistence), voltage accumulates across
-cycles (no leak).  ``spiking_activation`` fires when ``v > vth`` to match
-HCM/nevresim's ``thresholding_mode='<'`` (strict threshold).  ``reset_voltage``
-subtracts ``vth`` (subtractive reset) so above-threshold charge carries
-into the next cycle — again matching nevresim ``firing_mode='Default'``.
+cycles (no leak).  ``spiking_activation`` selects between strict (``v > vth``)
+and inclusive (``v >= vth``) firing based on ``thresholding_mode`` to
+mirror HCM/nevresim's configured comparator.  ``reset_voltage`` subtracts
+``vth`` (subtractive reset) so above-threshold charge carries into the
+next cycle — again matching nevresim ``firing_mode='Default'``.
 
 A periodic state reset is applied every ``reset_interval`` timesteps so
 many input samples can be processed sequentially by a single Lava graph;
@@ -59,7 +60,7 @@ class SubtractiveLIFReset(LIFReset):
         active_start=None,
         active_length=None,
         sample_start=None,
-        thresholding_mode: str = "<",
+        thresholding_mode: str = "<=",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -93,7 +94,7 @@ class PySubtractiveLIFResetModelFloat(AbstractPyLifModelFloat):
         self.active_start = int(proc_params.get("active_start", self.reset_offset)) % self.reset_interval
         self.active_length = int(proc_params.get("active_length", self.reset_interval))
         self.sample_start = int(proc_params.get("sample_start", self.active_start)) % self.reset_interval
-        self._thresholding_mode = str(proc_params.get("thresholding_mode", "<"))
+        self._thresholding_mode = str(proc_params.get("thresholding_mode", "<="))
         self._last_spike = np.zeros_like(self.v, dtype=float)
 
     def spiking_activation(self):
