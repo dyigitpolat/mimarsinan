@@ -1,45 +1,19 @@
-"""Activation Adaptation: gradual non-ReLU → ReLU replacement.
-
-Always runs after Activation Analysis. Uses ActivationAdaptationTuner
-(SmartSmoothAdaptation) to progressively blend non-ReLU chip-targeted
-activations (e.g. GELU, LeakyReLU) toward ReLU. When all activations are
-already ReLU-compatible, this step is a no-op.
-
-Does not apply activation_scales or set clamp_rate -- those are the
-responsibility of downstream steps (Clamp Adaptation, etc.).
-"""
+"""Activation Adaptation: gradual non-ReLU → ReLU replacement."""
 
 from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.pipeline_steps.activation_utils import (
-    has_non_relu_activations,
-)
-from mimarsinan.tuning.tuners.activation_adaptation_tuner import (
-    ActivationAdaptationTuner,
-)
+from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
+from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.mapping.mappers.base import resolve_activation_type
+from mimarsinan.tuning.tuners.activation_adaptation_tuner import ActivationAdaptationTuner
 
 
-class ActivationAdaptationStep(PipelineStep):
-    """Gradual ReLU adaptation via SmartSmoothAdaptation.
-
-    If any chip-targeted perceptron has a non-ReLU base (GELU, LeakyReLU),
-    uses ActivationAdaptationTuner to gradually blend activations toward
-    ReLU. When all are already ReLU-compatible, this is a no-op.
-    """
-
+class ActivationAdaptationStep(TunerPipelineStep):
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         promises = []
         updates = ["model", "adaptation_manager"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
-
-        self.tuner = None
-
-    def validate(self):
-        if self.tuner is not None:
-            return self.tuner.validate()
-        return self.pipeline.get_target_metric()
 
     def process(self):
         model = self.get_entry("model")
@@ -64,7 +38,6 @@ class ActivationAdaptationStep(PipelineStep):
                 "no adaptation needed."
             )
 
-        # Diagnostic: verify activation types as the mapper/IR will see them.
         act_types = {}
         for p in model.get_perceptrons():
             t = resolve_activation_type(p)
@@ -74,5 +47,4 @@ class ActivationAdaptationStep(PipelineStep):
             summary = ", ".join(f"{k}: {v}" for k, v in sorted(act_types.items()))
             print(f"[ActivationAdaptationStep] Activation types (as seen by IR): {summary}")
 
-        self.update_entry("adaptation_manager", adaptation_manager, "pickle")
-        self.update_entry("model", model, "torch_model")
+        self._commit_tuner_entries(model, adaptation_manager)

@@ -7,30 +7,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Set, Tuple
 
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
-
-
-def get_neural_segments(ir_graph: IRGraph) -> List[List[NeuralCore]]:
-    """Split IR graph into neural segments (same boundaries as hybrid hard core mapping).
-
-    Segments are contiguous NeuralCore lists between ComputeOp nodes.
-    Returns list of segments, each segment a list of NeuralCore nodes.
-    """
-    segments: List[List[NeuralCore]] = []
-    current: List[NeuralCore] = []
-    for node in ir_graph.nodes:
-        if isinstance(node, NeuralCore):
-            current.append(node)
-            continue
-        if isinstance(node, ComputeOp):
-            if current:
-                segments.append(current)
-                current = []
-            continue
-        raise TypeError(f"Unknown IR node type in segment split: {type(node)}")
-    if current:
-        segments.append(current)
-    return segments
+from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
+from mimarsinan.mapping.ir_segmentation import get_neural_segments
 
 
 def compute_segment_io_exemption(

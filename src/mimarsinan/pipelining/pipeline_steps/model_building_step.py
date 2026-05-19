@@ -1,5 +1,5 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.adaptation_manager_factory import create_adaptation_manager_for_model
 
 import torch
 
@@ -22,11 +22,9 @@ class ModelBuildingStep(PipelineStep):
         builder = self.get_entry('model_builder')
         init_model = builder.build(self.get_entry("model_config"))
 
-        adaptation_manager = AdaptationManager()
-
-        if self._is_supermodel(init_model):
-            for perceptron in init_model.get_perceptrons():
-                adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        adaptation_manager = create_adaptation_manager_for_model(
+            self.pipeline.config, init_model
+        )
 
         # Warmup forward pass to initialize any Lazy modules (e.g. LazyBatchNorm1d),
         # so subsequent transformations / mapping that touch normalization parameters

@@ -13,7 +13,7 @@ The AdaptationManager then wraps each base_activation in TransformedActivation.
 """
 
 from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.adaptation_manager_factory import create_adaptation_manager_for_model
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
@@ -63,9 +63,9 @@ class TorchMappingStep(PipelineStep):
             Tq=self.pipeline.config["target_tq"],
         )
 
-        adaptation_manager = AdaptationManager()
-        for perceptron in flow.get_perceptrons():
-            adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        adaptation_manager = create_adaptation_manager_for_model(
+            self.pipeline.config, flow
+        )
 
         self._verify_equivalence(native_model, flow)
         native_model.cpu()

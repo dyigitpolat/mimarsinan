@@ -688,93 +688,24 @@ def snapshot_mapping_performance_planned(
     if not cores:
         return None
     try:
-        from mimarsinan.mapping.mapping_verifier import (
-            verify_soft_core_mapping,
-            verify_hardware_config,
+        from mimarsinan.mapping.wizard_layout_verify import (
+            model_repr_from_model,
+            verify_planned_mapping_performance,
         )
     except Exception:
-        logger.debug("mapping_verifier not importable", exc_info=True)
+        logger.debug("wizard_layout_verify not importable", exc_info=True)
         return None
 
+    model_repr = model_repr_from_model(
+        model, input_shape=input_shape, num_classes=num_classes or 10
+    )
+    if model_repr is None:
+        return None
     try:
-        if hasattr(model, "get_mapper_repr"):
-            model_repr = model.get_mapper_repr()
-        else:
-            # Torch models: convert before TorchMappingStep for the planned panel.
-            if input_shape is None:
-                return None
-            from mimarsinan.torch_mapping.converter import convert_torch_model
-            supermodel = convert_torch_model(
-                model,
-                input_shape=tuple(input_shape),
-                num_classes=int(num_classes or 10),
-                device="cpu",
-            )
-            model_repr = supermodel.get_mapper_repr()
+        return verify_planned_mapping_performance(model_repr, platform_constraints)
     except Exception:
-        logger.debug("Failed to extract model_repr for planned mapping", exc_info=True)
+        logger.debug("verify_planned_mapping_performance failed", exc_info=True)
         return None
-    if hasattr(model_repr, "assign_perceptron_indices"):
-        try:
-            model_repr.assign_perceptron_indices()
-        except Exception:
-            logger.debug("assign_perceptron_indices failed", exc_info=True)
-
-    from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
-
-    allow_coalescing = bool(platform_constraints.get("allow_coalescing", False))
-    allow_neuron_splitting = bool(platform_constraints.get("allow_neuron_splitting", False))
-    allow_scheduling = bool(platform_constraints.get("allow_scheduling", False))
-    pmap = resolve_platform_mapping_params(cores, allow_coalescing=allow_coalescing)
-    hardware_bias = pmap.hardware_bias
-    tile_max_ax = pmap.effective_max_axons
-    tile_max_neu = pmap.effective_max_neurons
-    if tile_max_ax <= 0 or tile_max_neu <= 0:
-        return None
-
-    try:
-        soft = verify_soft_core_mapping(
-            model_repr,
-            max_axons=tile_max_ax,
-            max_neurons=tile_max_neu,
-            allow_coalescing=allow_coalescing,
-            hardware_bias=hardware_bias,
-        )
-    except Exception:
-        logger.debug("verify_soft_core_mapping failed", exc_info=True)
-        return None
-    if not soft.feasible:
-        return {"feasible": False}
-
-    core_types_dicts = [
-        {
-            "max_axons": int(ct.get("max_axons", 0)),
-            "max_neurons": int(ct.get("max_neurons", 0)),
-            "count": int(ct.get("count", 0)),
-        }
-        for ct in cores
-    ]
-    try:
-        result = verify_hardware_config(
-            soft.softcores, core_types_dicts,
-            allow_neuron_splitting=allow_neuron_splitting,
-            allow_coalescing=allow_coalescing,
-            allow_scheduling=allow_scheduling,
-        )
-    except Exception:
-        logger.debug("verify_hardware_config failed", exc_info=True)
-        return None
-
-    stats_out: dict = dict(result.get("stats") or {})
-    if hasattr(soft, "host_side_segment_count"):
-        stats_out.setdefault("host_side_segment_count", soft.host_side_segment_count)
-    if hasattr(soft, "layout_preview"):
-        stats_out.setdefault("layout_preview", soft.layout_preview)
-    si = result.get("schedule_info") or {}
-    if si.get("per_segment_passes"):
-        stats_out["per_segment_passes"] = si["per_segment_passes"]
-    stats_out["feasible"] = bool(result.get("feasible", False))
-    return stats_out
 
 
 def snapshot_mapping_performance_real(mapping: Any) -> dict | None:

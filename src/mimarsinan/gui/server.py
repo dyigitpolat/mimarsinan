@@ -64,83 +64,21 @@ def _get_layout_result_from_request(
     tiling_max_neurons: int | None = None,
 ):
     """Build model repr and run layout mapping verification."""
-    from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
-    from mimarsinan.models.builders import BUILDERS_REGISTRY
-    from mimarsinan.pipelining.model_registry import ModelRegistry
-    import torch
-
-    model_type = body.get("model_type", "simple_mlp")
-    input_shape = tuple(int(x) for x in body.get("input_shape", [1, 28, 28]))
-    num_classes = int(body.get("num_classes", 10))
-    model_config = body.get("model_config", {})
-    from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
-
-    allow_coalescing = bool(body.get("allow_coalescing", False))
-    core_types = body.get("core_types") or body.get("cores")
-    if core_types:
-        params = resolve_platform_mapping_params(
-            core_types, allow_coalescing=allow_coalescing
-        )
-        hardware_bias = params.hardware_bias
-        effective_max_axons = params.effective_max_axons
-        effective_max_neurons = params.effective_max_neurons
-        allow_coalescing = params.allow_coalescing
-    else:
-        hardware_bias = bool(body.get("hardware_bias", False))
-        max_axons = int(
-            tiling_max_axons if tiling_max_axons is not None else body.get("max_axons", 1024)
-        )
-        max_neurons = int(
-            tiling_max_neurons if tiling_max_neurons is not None else body.get("max_neurons", 1024)
-        )
-        effective_max_axons = max_axons if hardware_bias else max_axons - 1
-        effective_max_neurons = max_neurons
-
-    builder_cls = BUILDERS_REGISTRY.get(model_type)
-    if builder_cls is None:
-        raise ValueError(f"Unknown model_type: {model_type!r}")
-
-    pipeline_config = {
-        "target_tq": int(body.get("target_tq", 32)),
-        "device": "cpu",
-    }
-    builder = builder_cls(
-        device=torch.device("cpu"),
-        input_shape=input_shape,
-        num_classes=num_classes,
-        pipeline_config=pipeline_config,
+    from mimarsinan.mapping.wizard_layout_verify import (
+        model_repr_from_wizard_body,
+        resolve_tiling_params_from_body,
+        verify_layout_for_model_repr,
     )
-    raw_model = builder.build(model_config)
 
-    category = ModelRegistry.get_category(model_type)
-    if category == "torch":
-        from mimarsinan.torch_mapping.converter import convert_torch_model
-        raw_model.eval()
-        with torch.no_grad():
-            try:
-                raw_model(torch.randn(1, *input_shape))
-            except Exception:
-                pass
-        supermodel = convert_torch_model(
-            raw_model,
-            input_shape=input_shape,
-            num_classes=num_classes,
-            device="cpu",
+    effective_max_axons, effective_max_neurons, hardware_bias, allow_coalescing = (
+        resolve_tiling_params_from_body(
+            body,
+            tiling_max_axons=tiling_max_axons,
+            tiling_max_neurons=tiling_max_neurons,
         )
-        model_repr = supermodel.get_mapper_repr()
-    else:
-        raw_model.eval()
-        with torch.no_grad():
-            try:
-                raw_model(torch.randn(2, *input_shape))
-            except Exception:
-                pass
-        model_repr = raw_model.get_mapper_repr()
-
-    if hasattr(model_repr, "assign_perceptron_indices"):
-        model_repr.assign_perceptron_indices()
-
-    result = verify_soft_core_mapping(
+    )
+    model_repr = model_repr_from_wizard_body(body)
+    result = verify_layout_for_model_repr(
         model_repr,
         max_axons=effective_max_axons,
         max_neurons=effective_max_neurons,

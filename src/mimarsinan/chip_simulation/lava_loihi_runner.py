@@ -571,43 +571,54 @@ class LavaLoihiRunner:
         out_scales = getattr(self.mapping, "node_activation_scales", {})
         in_scales = getattr(self.mapping, "node_input_activation_scales", out_scales)
 
-        for stage in self.mapping.stages:
+        from mimarsinan.chip_simulation.hybrid_stage_runner import run_hybrid_stages
+
+        def _on_neural(_stage_index, stage, state_buffer):
             t0 = time.time()
-            if stage.kind == "neural":
-                seg = stage.hard_core_mapping
-                assert seg is not None
-                seg_input = assemble_segment_input_numpy(
-                    stage.input_map, state_buffer, N
+            seg = stage.hard_core_mapping
+            assert seg is not None
+            seg_input = assemble_segment_input_numpy(stage.input_map, state_buffer, N)
+            seg_output = self._run_neural_segment(seg, seg_input)
+            store_segment_output_numpy(stage.output_map, state_buffer, seg_output)
+            self._profile.stages.append(
+                _StageTrace(
+                    name=stage.name,
+                    kind="neural",
+                    seconds=time.time() - t0,
+                    cores=len(seg.cores),
+                    samples=N,
                 )
-                seg_output = self._run_neural_segment(seg, seg_input)
-                store_segment_output_numpy(
-                    stage.output_map, state_buffer, seg_output
+            )
+
+        def _on_compute(_stage_index, stage, state_buffer):
+            t0 = time.time()
+            assert stage.compute_op is not None
+            op_id = stage.compute_op.id
+            ttfs_in_scale = in_scales.get(op_id, 1.0) if is_ttfs else 1.0
+            ttfs_out_scale = out_scales.get(op_id, 1.0) if is_ttfs else 1.0
+            result = execute_compute_op_numpy(
+                stage.compute_op,
+                x_flat,
+                state_buffer,
+                in_scale=ttfs_in_scale,
+                out_scale=ttfs_out_scale,
+            )
+            state_buffer[op_id] = result
+            self._profile.stages.append(
+                _StageTrace(
+                    name=stage.name,
+                    kind="compute",
+                    seconds=time.time() - t0,
+                    samples=N,
                 )
-                self._profile.stages.append(
-                    _StageTrace(
-                        name=stage.name, kind="neural",
-                        seconds=time.time() - t0, cores=len(seg.cores), samples=N,
-                    )
-                )
-            elif stage.kind == "compute":
-                assert stage.compute_op is not None
-                op_id = stage.compute_op.id
-                ttfs_in_scale = in_scales.get(op_id, 1.0) if is_ttfs else 1.0
-                ttfs_out_scale = out_scales.get(op_id, 1.0) if is_ttfs else 1.0
-                result = execute_compute_op_numpy(
-                    stage.compute_op, x_flat, state_buffer,
-                    in_scale=ttfs_in_scale,
-                    out_scale=ttfs_out_scale,
-                )
-                state_buffer[op_id] = result
-                self._profile.stages.append(
-                    _StageTrace(
-                        name=stage.name, kind="compute",
-                        seconds=time.time() - t0, samples=N,
-                    )
-                )
-            else:
-                raise ValueError(f"Unknown HybridStage kind: {stage.kind}")
+            )
+
+        run_hybrid_stages(
+            self.mapping,
+            state_buffer,
+            on_neural=_on_neural,
+            on_compute=_on_compute,
+        )
 
         final = gather_final_output_numpy(
             self.mapping.output_sources, state_buffer, x_flat, N

@@ -17,15 +17,16 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
     def _get_extra_state(self):
         return getattr(self.adaptation_manager, self.rate_attr)
 
-    def _set_extra_state(self, extra):
-        setattr(self.adaptation_manager, self.rate_attr, extra)
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
-
-    def _update_and_evaluate(self, rate):
+    def _apply_rate(self, rate) -> None:
         setattr(self.adaptation_manager, self.rate_attr, rate)
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+
+    def _set_extra_state(self, extra):
+        self._apply_rate(extra)
+
+    def _update_and_evaluate(self, rate):
+        self._apply_rate(rate)
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _after_run(self):

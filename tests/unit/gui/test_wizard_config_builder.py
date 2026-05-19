@@ -33,8 +33,16 @@ class TestBuildDeploymentConfigFromState:
 
     def test_phased_preset_applied(self):
         out = build_deployment_config_from_state({"pipeline_mode": "phased"})
-        assert out["deployment_parameters"].get("activation_quantization") is True
         assert out["deployment_parameters"].get("weight_quantization") is True
+        # Default spiking_mode is lif; wizard.js disables activation_quantization for LIF.
+        assert out["deployment_parameters"].get("activation_quantization") is False
+
+    def test_ttfs_quantized_enables_activation_quantization(self):
+        out = build_deployment_config_from_state({
+            "pipeline_mode": "phased",
+            "deployment_parameters": {"spiking_mode": "ttfs_quantized"},
+        })
+        assert out["deployment_parameters"].get("activation_quantization") is True
 
     def test_vanilla_preset_no_quantization_flags(self):
         out = build_deployment_config_from_state({"pipeline_mode": "vanilla"})
