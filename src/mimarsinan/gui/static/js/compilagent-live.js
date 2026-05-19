@@ -44,6 +44,7 @@ let _activeAgentPart = null;     // 'thinking' | 'text' | null
 let _replayBusy = false;
 let _agentStreamDirty = false;
 let _metricRanksDirty = false;
+let _paretoDirty = false;
 
 // ── Public API ───────────────────────────────────────────────────────────
 
@@ -121,6 +122,10 @@ export function initCompilagentLive(container) {
   _timerInterval = setInterval(_updateElapsed, 1000);
 }
 
+export function isCompilagentLiveActive() {
+  return _container !== null && _container.isConnected;
+}
+
 export function detachCompilagentLive() {
   _container = null;
   _headerEl = null;
@@ -159,6 +164,7 @@ export function replayCompilagentEvents(events) {
   _replayBusy = true;
   _agentStreamDirty = false;
   _metricRanksDirty = false;
+  _paretoDirty = false;
   try {
     for (const ev of events) _handle(ev);
   } finally {
@@ -172,6 +178,10 @@ export function replayCompilagentEvents(events) {
     _metricRanksDirty = false;
     _refreshMetricLeaders();
     _refreshPerMetricRanks();
+  }
+  if (_paretoDirty) {
+    _paretoDirty = false;
+    _refreshLivePareto();
   }
   _appliedSearchEventCount = events.length;
 }
@@ -292,19 +302,19 @@ const _handlers = {
     c.tile.classList.add('cl-cand-ok');
     _renderCandidateObjectives(c);
     _setStatus(c, 'evaluated');
-    _totals.succeeded = Object.values(_candidates).filter(x => !x.compile_ok === false && x.objectives && Object.keys(x.objectives).length > 0).length;
+    _totals.succeeded = Object.values(_candidates).filter(
+      x => x.compile_ok !== false && x.objectives && Object.keys(x.objectives).length > 0,
+    ).length;
     _updateHeader();
-    // Recompute per-metric ranks across the whole population every time
-    // a new candidate scores — this keeps the metric-leader panel and
-    // each tile's rank chips in sync. During bulk replay we just mark
-    // dirty and flush once at the end so a 100-candidate session is
-    // O(N) total instead of O(N²) (each event would otherwise re-sort
-    // every metric across every candidate).
+    // Recompute per-metric ranks and the live Pareto front across the
+    // population. During bulk replay we mark dirty and flush once.
     if (_replayBusy) {
       _metricRanksDirty = true;
+      _paretoDirty = true;
     } else {
       _refreshMetricLeaders();
       _refreshPerMetricRanks();
+      _refreshLivePareto();
     }
     _appendActivity({
       kind: 'objectives',
@@ -616,6 +626,85 @@ function _refreshPerMetricRanks() {
 }
 
 // ── Pareto strip ─────────────────────────────────────────────────────────
+
+function _commonMetricsForPareto(scored) {
+  const seen = new Set();
+  for (const c of scored) {
+    for (const k of Object.keys(c.objectives || {})) seen.add(k);
+  }
+  return [...seen];
+}
+
+function _goalForParetoMetric(scored, metric) {
+  for (const c of scored) {
+    const g = (c.metadata || {})[metric]?.goal;
+    if (g === 'min' || g === 'max') return g;
+  }
+  return 'min';
+}
+
+function _dominatesObjectives(aObjs, bObjs, metrics, goalByMetric) {
+  let betterInOne = false;
+  for (const m of metrics) {
+    const av = aObjs[m];
+    const bv = bObjs[m];
+    if (typeof av !== 'number' || typeof bv !== 'number') return false;
+    const goal = goalByMetric[m] || 'min';
+    if (goal === 'max') {
+      if (av < bv) return false;
+      if (av > bv) betterInOne = true;
+    } else {
+      if (av > bv) return false;
+      if (av < bv) betterInOne = true;
+    }
+  }
+  return betterInOne;
+}
+
+/** Non-dominated front from in-memory candidates (mirrors compilagent pareto_front). */
+function _computeParetoFrontFromCandidates() {
+  const rows = Object.values(_candidates).filter(
+    c => c.objectives && Object.keys(c.objectives).length > 0,
+  );
+  if (rows.length <= 1) {
+    return rows.map(c => ({ candidate_id: c.candidateId, objectives: { ...c.objectives } }));
+  }
+  const metrics = _commonMetricsForPareto(rows);
+  if (metrics.length === 0) {
+    return rows.map(c => ({ candidate_id: c.candidateId, objectives: { ...c.objectives } }));
+  }
+  const goalByMetric = Object.fromEntries(
+    metrics.map(m => [m, _goalForParetoMetric(rows, m)]),
+  );
+  const front = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (metrics.some(m => typeof rows[i].objectives[m] !== 'number')) continue;
+    let dominated = false;
+    for (let j = 0; j < rows.length; j++) {
+      if (i === j) continue;
+      if (metrics.some(m => typeof rows[j].objectives[m] !== 'number')) continue;
+      if (_dominatesObjectives(rows[j].objectives, rows[i].objectives, metrics, goalByMetric)) {
+        dominated = true;
+        break;
+      }
+    }
+    if (!dominated) {
+      front.push({ candidate_id: rows[i].candidateId, objectives: { ...rows[i].objectives } });
+    }
+  }
+  return front;
+}
+
+function _refreshLivePareto() {
+  const front = _computeParetoFrontFromCandidates();
+  _totals.pareto = front.length;
+  _updateHeader();
+  _renderParetoStrip(front);
+  const frontIds = new Set(front.map(p => p.candidate_id).filter(Boolean));
+  for (const cid of Object.keys(_candidates)) {
+    _candidates[cid].tile.classList.toggle('cl-cand-pareto', frontIds.has(cid));
+  }
+}
 
 function _renderParetoStrip(front) {
   if (!_paretoStripEl) return;

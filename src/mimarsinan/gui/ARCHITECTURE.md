@@ -200,55 +200,40 @@ architecture search metrics (names containing "search") are shown in separate pl
 per metric so each keeps its own scale. Search history is rendered as one card and
 plot per numeric metric (separate charts per objective).
 
-**Live Search tab** (`static/js/search-live.js`, `static/search-live.css`): a cyberpunk-
-themed real-time tracker for `AgentEvolveOptimizer` architecture search. The optimizer
-emits structured `search_event` JSON via `reporter("search_event", json.dumps(event))`.
-These events flow through `DataCollector` → WebSocket → `main.js` → `search-live.js`.
-`main.js` buffers parsed events in `state.searchEvents[stepName]`; `step-detail.js`
-adds a "Live Search" tab when search events are present; `renderLiveSearchTab` calls
-`initSearchLive` and `replaySearchEvents` using **`state.searchEvents[stepName]`** as
-the source of truth (falls back to `detail._searchEvents`). **`detachSearchLive`** runs
-when switching to any other tab so `handleSearchEvent` does not update a detached DOM;
-reopening Live Search replays from `state.searchEvents`. A **global Pareto strip**
-(`#sl-pareto-strip`) below the header updates on each `generation_complete` with the
-latest `pareto_front` (per-generation Pareto subpanels were removed). Each generation
-card uses a two-column layout (`sl-gen-layout`): **main** (~2fr) holds subpanels for
-reasoning (collapsible), candidates (grid with health bars), and **Constraints &
-insights** with two collapsible sections; when a generation completes, those sections
-receive content and **`sl-collapse-open`** so text is visible. Constraint and
-performance text is rendered via **`renderMarkdown`** (`util.js`) into `.sl-md` using **marked** (CommonMark + GFM) and **DOMPurify** sanitization; both load as **pinned jsDelivr ESM URLs** from `util.js` (no import map required).
-**Diagnostics** (~1fr, `sl-gen-diagnostics`) lists `llm_trace` events in call order;
-clicking a row shows structured request sections and response fields (no JSON string
-dumps); long text previews show a truncation hint when applicable. Header stats show
-gen counter, valid/failed counts, Pareto size, and elapsed time.
+**Live Search tab** — shared transport, two monitors:
 
-**CompilagentOptimizer event vocabulary**: when the user picks
-`arch_search.optimizer == "compilagent"`, the optimizer reuses the same
-`search_event` envelope plus three compilagent-specific event types,
-forwarded to the live monitor by `MultiObjectiveSink` (see
-`search/optimizers/compilagent/sink.py`):
+1. **Routing** (`static/js/live-search-sync.js`): every `search_event` append
+   (WebSocket in `main.js` or HTTP incremental refresh in `step-detail.js`)
+   calls **`syncActiveLiveSearch(stepName, state)`**, which gates on the Live
+   Search tab, detects optimizer type from `state.searchEvents`, remounts the
+   tab via **`remountLiveSearchTab`** when the mounted monitor disagrees with
+   detected type (e.g. tab opened before the first `compilagent_*` event), then
+   dispatches to **`syncCompilagentEventsFromState`** or
+   **`syncSearchEventsFromState`**. ETag **304** responses still call
+   `syncActiveLiveSearch` so WS-buffered events drain while the step snapshot
+   is unchanged.
 
-* `compilagent_tool_call` — fired on every `tool.call.started` /
-  `tool.call.completed` so the diagnostics column shows backend
-  introspection-tool invocations alongside AgentEvolve-style LLM traces.
-* `compilagent_compile_phase` — fired per compilagent `PassEvent`
-  (decode → validate → ...). Each fires through `_appendTraceRow` with
-  stage / name / duration_ms.
-* `compilagent_objectives_recorded` — full per-axis multi-objective dict
-  per candidate (mirrors compilagent's new `EventKind.OBJECTIVES_RECORDED`
-  channel). The optimizer also emits a synthetic `candidate_result`
-  event for each so existing AgentEvolve-style candidate cards render
-  unchanged.
+2. **AgentEvolve** (`static/js/search-live.js`, `static/search-live.css`):
+   cyberpunk-themed generation cards. Optimizer emits `search_event` JSON via
+   `reporter("search_event", json.dumps(event))` → `DataCollector` → WebSocket →
+   `main.js` buffers in `state.searchEvents[stepName]`. `renderLiveSearchTab`
+   calls `initSearchLive` / `replaySearchEvents`; **`detachSearchLive`** on tab
+   leave. Global Pareto strip (`#sl-pareto-strip-inner`) updates on each
+   `generation_complete`.
 
-`CALL_KIND_LABELS` and `_renderResponseStructured` in `search-live.js`
-were extended with the new keys (`tool_name`, `phase`, `stage`, `name`,
-`duration_ms`, `objectives`, `metadata`, `candidate_id`) so the existing
-trace-row helper renders them with no parallel UI tree. The wizard's
-`compilagent_fields` schema (`gui/wizard/schema.py`) carries the
-optimizer's knobs (`model`, `harness`, `max_candidates`,
-`max_continuations`, `primary_objective`, `system_prompt_extra`); the
-`#compilagentConfig` HTML block in `wizard.html` mirrors the AgentEvolve
-extras, toggled by `_setOptimizerExtras` in `wizard.js`.
+3. **Compilagent** (`static/js/compilagent-live.js`, `static/compilagent-live.css`):
+   dedicated monitor for `compilagent_*` events from `MultiObjectiveSink`
+   (`search/optimizers/compilagent/sink.py`). Layout: header stats, **live Pareto
+   strip** (recomputed client-side on each `compilagent_candidate_objectives` using
+   the same dominance rules as `compilagent.session.multi_objective.pareto_front`),
+   **metric leaders** strip, candidate grid, agent stream, activity feed.
+   Server `compilagent_pareto_update` at session end remains authoritative for
+   final front membership; incremental UI does not wait for it. **`detachCompilagentLive`**
+   on tab leave.
+
+`step-detail.js` adds the Live Search tab when `search_event` metrics exist and
+chooses the monitor with **`detectLiveMonitor`** (`compilagent_*` vs AgentEvolve
+generation types).
 
 **Post-run "Layout details"** (`search-tab.js`,
 `visualization/search_visualization.py`): the snapshot path round-trips
@@ -259,6 +244,13 @@ layer, `LayoutVerificationStats` summary) appears in the search-tab and
 the static report **only** when the run was driven by the compilagent
 optimizer; AgentEvolve / NSGA2 candidates lack the field and the panel
 stays hidden.
+
+**SANA-FE tab** (`static/js/sanafe-tab.js`): shown when the SANA-FE Simulation step
+has run. Renders `snapshot_sanafe_simulation` resources — summary cards (energy,
+latency, spike traffic), per-tile / per-core energy heatmaps, cascade and cycle
+energy charts. **NoC playback**: animates `SanafeNocLink` / hop-load traces from
+the snapshot (packet timeline scrubber; fixed in `f42ff58`). Deferred PNG/JSON
+resources use the same `ResourceDescriptor` pattern as other step tabs.
 
 ## Dependencies
 
