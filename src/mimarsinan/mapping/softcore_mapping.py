@@ -52,8 +52,11 @@ def compact_soft_core_mapping(cores, output_sources):
             if keep_rows and keep_cols:
                 core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
                 core.axon_sources = [core.axon_sources[r] for r in keep_rows]
-                if getattr(core, "hardware_bias", None) is not None:
-                    core.hardware_bias = core.hardware_bias[keep_cols]
+                from mimarsinan.mapping.pruning_apply import compact_hardware_bias_columns
+
+                core.hardware_bias = compact_hardware_bias_columns(
+                    core.hardware_bias, keep_cols
+                )
             else:
                 core.core_matrix = np.zeros((1, 1), dtype=np.float64)
                 core.axon_sources = [SpikeSource(-1, 0, False, True)]

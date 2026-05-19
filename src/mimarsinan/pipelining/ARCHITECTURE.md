@@ -9,9 +9,13 @@ management, data contract verification, and performance tolerance enforcement.
 |------|---------|---------|
 | `pipeline.py` | `Pipeline` | Orchestration engine: step registration, verification, execution (uses `step.pipeline_metric()` for target), hook management |
 | `pipeline_step.py` | `PipelineStep` | Abstract base class with data contracts (`requires`, `promises`, `updates`, `clears`); `process()`, `validate()`, `pipeline_metric()` (auto-discovers trainer for full-test-set evaluation), and optional `cleanup()` for resource release |
-| `tuner_pipeline_step.py` | `TunerPipelineStep` | Shared validate / commit pattern for tuner-backed steps (activation quant, clamp, shift, LIF, pruning, activation adaptation). |
-| `trainer_factory.py` | `make_basic_trainer` | Shared `BasicTrainer` + `DataLoaderFactory` construction for steps that need a trainer. |
-| `simulation_factory.py` | `build_hybrid_mapping_for_pipeline`, `build_spiking_hybrid_flow`, `run_hcm_spiking_test`, `record_hcm_reference`, `assert_spike_parity_or_raise` | Shared hybrid mapping, HCM flow construction, SCM/HCM metric test (optional OOM batch cap), and Loihi/SANA-FE parity reference recording. |
+| `trainer_pipeline_step.py` | `TrainerPipelineStep` | Base for steps that own a `BasicTrainer`; default `validate()` delegates to trainer. |
+| `tuner_pipeline_step.py` | `TunerPipelineStep` | Tuner-backed steps: `validate()`, `_commit_tuner_entries`, `run_tuner(TunerCls, …)`. |
+| `trainer_factory.py` | `make_basic_trainer` | Shared `BasicTrainer` construction (`report_function`, optional `recipe`). Used by pretrain, fusion, preload, torch map, activation analysis, SCM, quant verify. |
+| `pipeline_helpers.py` | `require_lif_spiking_mode`, `run_optional_viz`, `safe_warmup_forward` | Loihi/SANA-FE guards, non-fatal mapping viz, model warmup. |
+| `platform_constraints_resolver.py` | `build_platform_constraints_resolved` | Single builder for `platform_constraints_resolved` (model config + NAS fixed path). |
+| `model_config_emit.py` | `emit_model_config_entries` | Shared `model_builder` / `model_config` cache emission. |
+| `simulation_factory.py` | `build_hybrid_mapping_for_pipeline`, `build_spiking_hybrid_flow`, `run_hcm_spiking_test`, `run_hcm_mapping_metric`, `record_hcm_reference`, `assert_spike_parity_or_raise` | Hybrid mapping, SCM/HCM metric (optional OOM retry), cached `hybrid_mapping`, Loihi/SANA-FE parity. |
 | `model_registry.py` | `ModelRegistry`, `get_model_types`, `get_model_config_schema` | Registry populated by builders via `@ModelRegistry.register`; builders expose `get_config_schema()` for GUI form generation |
 
 ### Subdirectories

@@ -561,22 +561,10 @@ class LayoutIRMapping:
                 for n in range(block):
                     acc_input_list.append(partial_neg_sources[t_idx][n])
 
-            ps_val = (
-                parameter_scale.item()
-                if hasattr(parameter_scale, "item")
-                else float(parameter_scale)
-                if parameter_scale is not None
-                else 1.0
-            )
-            unit = 1.0 / float(ps_val) if ps_val else 1.0
-            acc_axons = 2 * pp.tile_count * block
-            acc_w = np.zeros((block, acc_axons), dtype=float)
-            pos_off = 0
-            neg_off = pp.tile_count * block
-            for t_idx in range(pp.tile_count):
-                for n in range(block):
-                    acc_w[n, pos_off + t_idx * block + n] = unit
-                    acc_w[n, neg_off + t_idx * block + n] = -unit
+            from mimarsinan.mapping.mapping_structure import build_psum_accumulator_weights
+
+            acc_w = build_psum_accumulator_weights(block, pp.tile_count, parameter_scale)
+            acc_axons = acc_w.shape[1]
 
             acc_out = self.add_neural_core(
                 input_sources=np.array(acc_input_list, dtype=object),

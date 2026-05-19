@@ -105,9 +105,7 @@ class SanafeRunner:
         segments: Dict[int, SanafeSegmentRecord] = {}
         compute_outputs: Dict[int, np.ndarray] = {}
 
-        out_scales = getattr(self.mapping, "node_activation_scales", {}) or {}
-        in_scales = getattr(self.mapping, "node_input_activation_scales", out_scales) or {}
-
+        from mimarsinan.chip_simulation.hybrid_execution import resolve_stage_compute_scales
         from mimarsinan.chip_simulation.hybrid_stage_runner import run_hybrid_stages
 
         def _on_neural(stage_index, stage, state_buffer):
@@ -120,8 +118,9 @@ class SanafeRunner:
 
         def _on_compute(_stage_index, stage, state_buffer):
             op = stage.compute_op
-            in_scale = in_scales.get(op.id, 1.0)
-            out_scale = out_scales.get(op.id, 1.0)
+            in_scale, out_scale = resolve_stage_compute_scales(
+                self.mapping, op.id, apply_ttfs=True
+            )
             result = execute_compute_op_numpy(
                 op, sample_input, state_buffer,
                 in_scale=in_scale, out_scale=out_scale,

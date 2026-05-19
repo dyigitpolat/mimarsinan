@@ -74,31 +74,7 @@ def compute_per_source_scales(model_repr):
                 out_scales[node] = src
 
 
-def _broadcast_scale_pair(s_a, s_b):
-    """Expand the shorter scale vector to match the longer one.
-
-    Uses repeat_interleave when lengths are divisible (same logic as
-    _assign_per_input_scales for spatial expansion). Falls back to
-    broadcasting the mean when no clean factor exists.
-    """
-    n_a, n_b = len(s_a), len(s_b)
-    if n_a == n_b:
-        return s_a, s_b
-    if n_a < n_b:
-        short, long_, n_s, n_l = s_a, s_b, n_a, n_b
-        flipped = True
-    else:
-        short, long_, n_s, n_l = s_b, s_a, n_b, n_a
-        flipped = False
-
-    if n_l % n_s == 0:
-        expanded = short.repeat_interleave(n_l // n_s)
-    else:
-        expanded = torch.full((n_l,), short.mean().item())
-
-    if flipped:
-        return expanded, long_
-    return long_, expanded
+from mimarsinan.mapping.scale_broadcast import broadcast_scale_pair as _broadcast_scale_pair
 
 
 def _first_source_scales(deps, out_scales):

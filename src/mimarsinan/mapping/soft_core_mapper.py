@@ -64,6 +64,13 @@ class SoftCoreMapping:
         parameter_scale=torch.tensor(1.0),
         input_activation_scale=torch.tensor(1.0),
     ):
+        import warnings
+
+        warnings.warn(
+            "SoftCoreMapping.map_fc is deprecated; prefer LayoutIRMapping/IRMapping.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         def _map_fc_block(
             input_sources_block,
             weights_block,
@@ -256,15 +263,11 @@ class SoftCoreMapping:
                     acc_in[row, :] = partial_neg[t_idx][n, :]
                     row += 1
 
-            ps = parameter_scale.item() if hasattr(parameter_scale, "item") else float(parameter_scale)
-            unit = 1.0 / float(ps)
-            acc_w = np.zeros((out_block, 2 * tile_count * out_block), dtype=float)
-            pos_off = 0
-            neg_off = tile_count * out_block
-            for t_idx in range(tile_count):
-                for n in range(out_block):
-                    acc_w[n, pos_off + t_idx * out_block + n] = unit
-                    acc_w[n, neg_off + t_idx * out_block + n] = -unit
+            from mimarsinan.mapping.mapping_structure import build_psum_accumulator_weights
+
+            acc_w = build_psum_accumulator_weights(
+                out_block, tile_count, parameter_scale
+            )
 
             acc_sources = _map_fc_block(
                 acc_in,

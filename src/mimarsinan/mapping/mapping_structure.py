@@ -109,3 +109,30 @@ def compute_psum_params(
         out_block_size=out_block_size,
         accum_bias_axons=accum_bias_axons,
     )
+
+
+def build_psum_accumulator_weights(
+    block: int,
+    tile_count: int,
+    parameter_scale,
+) -> "np.ndarray":
+    """Build signed accumulator weight matrix for psum tiles (layout + legacy mapper)."""
+    import numpy as np
+
+    ps_val = (
+        parameter_scale.item()
+        if hasattr(parameter_scale, "item")
+        else float(parameter_scale)
+        if parameter_scale is not None
+        else 1.0
+    )
+    unit = 1.0 / float(ps_val) if ps_val else 1.0
+    acc_axons = 2 * tile_count * block
+    acc_w = np.zeros((block, acc_axons), dtype=float)
+    pos_off = 0
+    neg_off = tile_count * block
+    for t_idx in range(tile_count):
+        for n in range(block):
+            acc_w[n, pos_off + t_idx * block + n] = unit
+            acc_w[n, neg_off + t_idx * block + n] = -unit
+    return acc_w

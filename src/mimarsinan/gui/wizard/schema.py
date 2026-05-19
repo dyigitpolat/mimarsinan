@@ -30,8 +30,8 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
             {"id": "compilagent", "label": "Compilagent (LLM session)"},
         ],
         "common_fields": {
-            "pop_size": {"type": "int", "default": 8, "min": 2, "max": 64, "doc": "Population size"},
-            "generations": {"type": "int", "default": 15, "min": 1, "max": 100, "doc": "Generations"},
+            "pop_size": {"type": "int", "default": 12, "min": 2, "max": 64, "doc": "Population size"},
+            "generations": {"type": "int", "default": 5, "min": 1, "max": 100, "doc": "Generations"},
             "seed": {"type": "int", "default": 42, "min": 0, "max": 999999, "doc": "Random seed"},
             "warmup_fraction": {"type": "float", "default": 0.1, "min": 0, "max": 1, "doc": "Warmup fraction"},
             "training_batch_size": {"type": "int", "default": 1024, "min": 1, "max": 8192, "doc": "Batch size"},

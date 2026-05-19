@@ -367,8 +367,11 @@ def prune_ir_graph(
             keep_cols = [c for c in range(node.core_matrix.shape[1]) if c not in zero_cols]
             if keep_cols:
                 node.core_matrix = node.core_matrix[:, keep_cols]
-                if node.hardware_bias is not None:
-                    node.hardware_bias = node.hardware_bias[keep_cols]
+                from mimarsinan.mapping.pruning_apply import compact_hardware_bias_columns
+
+                node.hardware_bias = compact_hardware_bias_columns(
+                    node.hardware_bias, keep_cols
+                )
             else:
                 node.core_matrix = node.core_matrix[:, :1] * 0.0
                 if node.hardware_bias is not None:

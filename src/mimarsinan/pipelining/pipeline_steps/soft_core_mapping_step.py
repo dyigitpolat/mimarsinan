@@ -4,13 +4,9 @@ from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir_latency import IRLatency
 from mimarsinan.mapping.ir import NeuralCore
 
-from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-from mimarsinan.pipelining.simulation_factory import (
-    build_hybrid_mapping_for_pipeline,
-    build_spiking_hybrid_flow,
-    run_hcm_spiking_test,
-)
+from mimarsinan.pipelining.pipeline_helpers import run_optional_viz
+from mimarsinan.pipelining.simulation_factory import run_hcm_mapping_metric
+from mimarsinan.pipelining.trainer_factory import make_basic_trainer
 from mimarsinan.common.diagnostics import phase_profiler
 
 import numpy as np
@@ -64,37 +60,34 @@ class SoftCoreMappingStep(PipelineStep):
                 perceptron.layer = self.bring_back_bias(perceptron.layer)
 
         if self.pipeline.config.get("generate_visualizations", False):
-          try:
-              from mimarsinan.visualization.softcore_flowchart import write_softcore_flowchart_dot
+            def _flowchart():
+                from mimarsinan.visualization.softcore_flowchart import write_softcore_flowchart_dot
 
-              try:
-                  flowchart_device = next(model.parameters()).device
-              except StopIteration:
-                  flowchart_device = self.pipeline.config["device"]
+                try:
+                    flowchart_device = next(model.parameters()).device
+                except StopIteration:
+                    flowchart_device = self.pipeline.config["device"]
+                out_dot = os.path.join(
+                    self.pipeline.working_directory, "softcore_flowchart.dot"
+                )
+                write_softcore_flowchart_dot(
+                    model.get_mapper_repr(),
+                    out_dot,
+                    input_shape=tuple(self.pipeline.config["input_shape"]),
+                    max_axons=int(effective_max_axons),
+                    max_neurons=int(resolved_max_neurons),
+                    device=flowchart_device,
+                )
+                print(f"[SoftCoreMappingStep] Wrote flowchart DOT: {out_dot}")
 
-              out_dot = os.path.join(self.pipeline.working_directory, "softcore_flowchart.dot")
-              write_softcore_flowchart_dot(
-                  model.get_mapper_repr(),
-                  out_dot,
-                  input_shape=tuple(self.pipeline.config["input_shape"]),
-                  max_axons=int(effective_max_axons),
-                  max_neurons=int(resolved_max_neurons),
-                  device=flowchart_device,
-              )
-              print(f"[SoftCoreMappingStep] Wrote flowchart DOT: {out_dot}")
-          except Exception as e:
-              print(f"[SoftCoreMappingStep] Flowchart generation failed (non-fatal): {e}")
+            run_optional_viz("SoftCoreMappingStep", _flowchart)
         
         _PHASE_TAG = "SoftCoreMappingStep"
         def _phase(name):
             return phase_profiler(_PHASE_TAG, name)
 
         with _phase("basic_trainer_ctor"):
-            self.trainer = BasicTrainer(
-                model,
-                self.pipeline.config['device'],
-                DataLoaderFactory(self.pipeline.data_provider_factory),
-                self.pipeline.loss)
+            self.trainer = make_basic_trainer(self.pipeline, model)
         validator = self.trainer
 
         act_q = bool(self.pipeline.config.get("activation_quantization", False))
@@ -250,8 +243,6 @@ class SoftCoreMappingStep(PipelineStep):
                 print(f"  - {op.name}: {op.op_type}")
 
         device = self.pipeline.config["device"]
-        sim_batches = self.pipeline.config.get("simulation_batch_count", None)
-
         try:
             model.to("cpu")
         except Exception:
@@ -259,44 +250,20 @@ class SoftCoreMappingStep(PipelineStep):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        attempt_cap = None
-        for attempt in range(2):
-            try:
-                cap_tag = "default" if attempt_cap is None else str(attempt_cap)
-                with _phase(f"sim_build_hybrid[cap={cap_tag}]"):
-                    hybrid_mapping = build_hybrid_mapping_for_pipeline(
-                        ir_graph, platform_constraints
-                    )
-                    self.add_entry("hybrid_mapping", hybrid_mapping, "pickle")
-                with _phase(f"sim_construct[cap={cap_tag}]"):
-                    flow = build_spiking_hybrid_flow(self.pipeline, hybrid_mapping)
-                with _phase(f"sim_test[cap={cap_tag}]"):
-                    acc = run_hcm_spiking_test(
-                        self.pipeline,
-                        flow,
-                        device=device,
-                        max_batch_cap=attempt_cap,
-                        retry_on_oom=False,
-                    )
+        try:
+            with _phase("sim_hcm_metric"):
+                acc = run_hcm_mapping_metric(
+                    self.pipeline,
+                    ir_graph,
+                    platform_constraints,
+                    device=device,
+                    outer_oom_retry=True,
+                )
+            if acc is not None:
                 self._soft_core_spiking_metric = float(acc)
                 print(f"[SoftCoreMappingStep] Soft-core Spiking Simulation Test: {acc}")
-                break
-            except RuntimeError as e:
-                oom_cls = getattr(torch.cuda, "OutOfMemoryError", ())
-                is_oom = isinstance(e, oom_cls) or "out of memory" in str(e).lower()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                if not is_oom or attempt >= 1:
-                    print(f"[SoftCoreMappingStep] Soft-core simulation failed (non-fatal): {e}")
-                    break
-                attempt_cap = int(self.pipeline.config.get("simulation_batch_size", 8))
-                print(
-                    f"[SoftCoreMappingStep] Soft-core sim OOM at default batch size; "
-                    f"retrying once with batch size capped at {attempt_cap}."
-                )
-            except Exception as e:
-                print(f"[SoftCoreMappingStep] Soft-core simulation failed (non-fatal): {e}")
-                break
+        except Exception as e:
+            print(f"[SoftCoreMappingStep] Soft-core simulation failed (non-fatal): {e}")
 
     def _apply_ttfs_quantized_bias_shift(self, model, act_q: bool) -> None:
         if self.pipeline.config.get("spiking_mode", "lif") != "ttfs_quantized" or not act_q:

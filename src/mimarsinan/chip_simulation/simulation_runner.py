@@ -339,8 +339,6 @@ class SimulationRunner:
         stages = hybrid.stages
         num_samples = len(self.test_data)
         is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
-        out_scales = getattr(hybrid, "node_activation_scales", {})
-        in_scales = getattr(hybrid, "node_input_activation_scales", out_scales)
 
         original_input = np.stack([d[0] for d in self.test_data])
         original_input = original_input.reshape(original_input.shape[0], -1)
@@ -348,50 +346,45 @@ class SimulationRunner:
 
         prepared_segments = self._prepare_all_segments(hybrid)
 
+        from mimarsinan.chip_simulation.hybrid_execution import resolve_stage_compute_scales
+        from mimarsinan.chip_simulation.hybrid_stage_runner import run_hybrid_stages
+
         seg_counter = 0
-        for stage in stages:
-            if stage.kind == "neural":
-                seg_mapping = stage.hard_core_mapping
-                assert seg_mapping is not None
 
-                seg_input = self._assemble_segment_input_np(
-                    stage.input_map, state_buffer, num_samples
-                )
-                input_size = seg_input.shape[1]
+        def on_neural(_idx, stage, buf):
+            nonlocal seg_counter
+            seg_mapping = stage.hard_core_mapping
+            assert seg_mapping is not None
+            seg_input = self._assemble_segment_input_np(
+                stage.input_map, buf, num_samples
+            )
+            input_size = seg_input.shape[1]
+            seg_data = [(seg_input[i], np.zeros(1)) for i in range(num_samples)]
+            print(
+                f"  Running neural segment '{stage.name}' (input_size={input_size})"
+            )
+            prepared = prepared_segments[seg_counter]
+            raw_output = self._run_neural_segment_precompiled(prepared, seg_data)
+            seg_counter += 1
+            rates = self._raw_to_rates(raw_output)
+            self._store_segment_output_np(stage.output_map, buf, rates)
 
-                seg_data = [
-                    (seg_input[i], np.zeros(1))
-                    for i in range(num_samples)
-                ]
+        def on_compute(_idx, stage, buf):
+            assert stage.compute_op is not None
+            print(f"  Executing compute op '{stage.name}' on host")
+            op_id = stage.compute_op.id
+            ttfs_in_scale, ttfs_out_scale = resolve_stage_compute_scales(
+                hybrid, op_id, apply_ttfs=is_ttfs
+            )
+            buf[op_id] = self._execute_compute_op_np(
+                stage.compute_op,
+                original_input,
+                buf,
+                ttfs_in_scale=ttfs_in_scale,
+                ttfs_out_scale=ttfs_out_scale,
+            )
 
-                print(f"  Running neural segment '{stage.name}' "
-                      f"(input_size={input_size})")
-
-                prepared = prepared_segments[seg_counter]
-                raw_output = self._run_neural_segment_precompiled(
-                    prepared, seg_data,
-                )
-                seg_counter += 1
-
-                rates = self._raw_to_rates(raw_output)
-                self._store_segment_output_np(stage.output_map, state_buffer, rates)
-
-            elif stage.kind == "compute":
-                assert stage.compute_op is not None
-                print(f"  Executing compute op '{stage.name}' on host")
-
-                op_id = stage.compute_op.id
-                ttfs_in_scale = in_scales.get(op_id, 1.0) if is_ttfs else 1.0
-                ttfs_out_scale = out_scales.get(op_id, 1.0) if is_ttfs else 1.0
-                result = self._execute_compute_op_np(
-                    stage.compute_op, original_input, state_buffer,
-                    ttfs_in_scale=ttfs_in_scale,
-                    ttfs_out_scale=ttfs_out_scale,
-                )
-                state_buffer[op_id] = result
-
-            else:
-                raise ValueError(f"Unknown hybrid stage kind: {stage.kind}")
+        run_hybrid_stages(hybrid, state_buffer, on_neural=on_neural, on_compute=on_compute)
 
         final_output = self._gather_final_output_np(
             hybrid.output_sources, state_buffer, original_input, num_samples

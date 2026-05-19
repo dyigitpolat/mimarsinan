@@ -1570,20 +1570,48 @@ Module dependency rules:
 - **Builders**: `{Model}Builder` (e.g., `TorchMLPMixerBuilder`, `SimpleMLPBuilder`)
 
 ### Shared modules (dedup refactors)
-Cross-cutting helpers live next to their domain rather than in pipeline steps:
+Cross-cutting helpers live next to their domain rather than in pipeline steps. Rounds 1–2 introduced platform constraints, simulation factory, and wizard verify; **round 3** wired trainers/tuners, config normalization, mapping math, and hybrid stage dispatch.
 
 | Module | Role |
 |--------|------|
-| `mapping/platform_constraints.py` | `resolve_platform_mapping_params`, `resolve_scalar_mapping_params` — single source for `max_axons`, `allow_coalescing`, `hardware_bias` |
-| `mapping/wizard_layout_verify.py` | Wizard / snapshot layout verification (shared by GUI and `snapshot/builders.py`) |
-| `pipelining/simulation_factory.py` | `run_hcm_spiking_test`, `record_hcm_reference`, `assert_spike_parity_or_raise` |
+| `mapping/platform_constraints.py` | `resolve_platform_mapping_params`, `resolve_scalar_mapping_params` |
+| `mapping/wizard_layout_verify.py` | Wizard / snapshot planned layout verification |
+| `mapping/scale_broadcast.py` | `broadcast_scale_to_dim`, `broadcast_scale_pair` (mapper graph + IR `ComputeOp`) |
+| `mapping/coalescing.py` | `coalescing_fragment_count` (layout packer + hybrid coalescing budget) |
+| `mapping/ir_segmentation.py` | `get_neural_segments`, `build_ir_consumed_by` |
+| `mapping/mapping_structure.py` | `build_psum_accumulator_weights` (layout + legacy `soft_core_mapper`) |
+| `mapping/pruning_apply.py` | `compact_hardware_bias_columns` (IR + softcore pruning) |
+| `mapping/layout_verification_stats.py` | `stats_dict_from_hybrid_mapping` (real snapshot mapping stats) |
+| `pipelining/trainer_factory.py` | `make_basic_trainer` (all trainer-using steps) |
+| `pipelining/trainer_pipeline_step.py` | `TrainerPipelineStep` base (`validate` + base `cleanup`) |
+| `pipelining/tuner_pipeline_step.py` | `TunerPipelineStep` + `run_tuner()` |
+| `pipelining/pipeline_helpers.py` | `require_lif_spiking_mode`, `run_optional_viz`, `safe_warmup_forward` |
+| `pipelining/platform_constraints_resolver.py` | `build_platform_constraints_resolved` |
+| `pipelining/model_config_emit.py` | `emit_model_config_entries` (fixed config + NAS fixed path) |
+| `pipelining/simulation_factory.py` | HCM metric, parity helpers, `run_hcm_mapping_metric` |
 | `data_handling/test_sample_loader.py` | Deterministic test-sample loading for chip parity steps |
-| `chip_simulation/hybrid_stage_runner.py` | Multi-stage hybrid replay (Loihi / SANA-FE runners) |
+| `chip_simulation/hybrid_stage_runner.py` | `run_hybrid_stages` (nevresim, Lava, SANA-FE) |
+| `chip_simulation/hybrid_execution.py` | Segment I/O, compute ops, `resolve_stage_compute_scales` |
 | `config_schema/deployment_derivation.py` | Python mirror of wizard `buildConfig()` deployment flags |
+| `gui/json_util.py` | `to_json_safe` (collector, search results, snapshots) |
 | `transformations/quantization_verify.py` | IR / perceptron quantization checks |
-| `tuning/adaptation_rate_tuner.py`, `tuning/tuner_pipeline_step.py` | Shared tuner step boilerplate |
+| `tuning/adaptation_manager_factory.py`, `tuning/adaptation_rate_tuner.py` | Adaptation manager + rate tuners |
 
 See per-package `ARCHITECTURE.md` files for detail.
+
+### Deferred dedup / follow-up (post round 3)
+
+| Item | Why deferred | Suggested next step |
+|------|----------------|-------------------|
+| `hybrid_core_flow` → `run_hybrid_stages` | Recording, refcount eviction, and spike-train encoding need `after_neural` / `after_compute` hooks | Extend `hybrid_stage_runner` with optional context; migrate TTFS and rate loops |
+| Full `soft_core_mapper.map_fc` removal | Still used by `ir_graph_to_soft_core_mapping`, legacy mappers, nevresim segment flush; lacks `hardware_bias` / `allow_coalescing` | Route IR materialization through layout specs; gate `map_fc` behind explicit legacy flag |
+| Scheduled hybrid split ↔ layout specs | `hybrid_hardcore_mapping` rebuilds `LayoutSoftCoreSpec` ad hoc when `allow_scheduling` | Carry validated layout specs from SCM through IR build |
+| Wizard JS ↔ Python full parity | `wizard.js` still authors config in browser; Python normalizes on `/api/run` only | Drive NAS numeric defaults from `GET /api/wizard/schema`; optional `validate_wizard_state` on run |
+| `IRLatency` / `ChipLatency` merge | Different invariants (`_align_shiftable_cores` only on chip path) | Document contract; share subgraph walks only where safe |
+| `NoiseTuner` pipeline step | No preset requires it yet | Add step + preset when product needs training noise |
+| `tests/integration/parity_harness.py` | Step-level fakes exist under `tests/fixtures/` | Shared HCM vs Loihi/SANA-FE integration harness |
+| Compilagent `_platform_to_jsonable` | Shallow copy still local | Route through `to_json_safe` |
+| Unified spiking flow classes | Architectural boundary | Do not merge `SpikingUnifiedCoreFlow` / `SpikingHybridCoreFlow` |
 
 ### Design Patterns
 - **Pipeline + Step**: Command pattern for sequential execution with dependency injection via cache

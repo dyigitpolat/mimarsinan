@@ -57,6 +57,7 @@ def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
             ))
         seg.hcm_diff = deltas
 from mimarsinan.data_handling.test_sample_loader import load_test_samples_by_index
+from mimarsinan.pipelining.pipeline_helpers import require_lif_spiking_mode
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.simulation_factory import (
     assert_spike_parity_or_raise,
@@ -87,11 +88,8 @@ class SanafeSimulationStep(PipelineStep):
         self.get_entry("model")
         hard_core_mapping = self.get_entry("hard_core_mapping")
         T = int(self.pipeline.config["simulation_steps"])
+        require_lif_spiking_mode(self.pipeline, "SanafeSimulationStep")
         spiking_mode = self.pipeline.config.get("spiking_mode", "lif")
-        if spiking_mode != "lif":
-            raise ValueError(
-                f"SanafeSimulationStep requires spiking_mode='lif'; got {spiking_mode!r}"
-            )
 
         parity_check = bool(self.pipeline.config.get("sanafe_parity_check", True))
         arch_preset = self.pipeline.config.get("sanafe_arch_preset", "loihi")

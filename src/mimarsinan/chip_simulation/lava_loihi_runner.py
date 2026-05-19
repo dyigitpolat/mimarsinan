@@ -567,10 +567,7 @@ class LavaLoihiRunner:
         x_flat = self._preprocess(x_np)
         state_buffer: Dict[int, np.ndarray] = {-2: x_flat}
 
-        is_ttfs = False  # runner is LIF-only
-        out_scales = getattr(self.mapping, "node_activation_scales", {})
-        in_scales = getattr(self.mapping, "node_input_activation_scales", out_scales)
-
+        from mimarsinan.chip_simulation.hybrid_execution import resolve_stage_compute_scales
         from mimarsinan.chip_simulation.hybrid_stage_runner import run_hybrid_stages
 
         def _on_neural(_stage_index, stage, state_buffer):
@@ -594,8 +591,9 @@ class LavaLoihiRunner:
             t0 = time.time()
             assert stage.compute_op is not None
             op_id = stage.compute_op.id
-            ttfs_in_scale = in_scales.get(op_id, 1.0) if is_ttfs else 1.0
-            ttfs_out_scale = out_scales.get(op_id, 1.0) if is_ttfs else 1.0
+            ttfs_in_scale, ttfs_out_scale = resolve_stage_compute_scales(
+                self.mapping, op_id, apply_ttfs=False
+            )
             result = execute_compute_op_numpy(
                 stage.compute_op,
                 x_flat,

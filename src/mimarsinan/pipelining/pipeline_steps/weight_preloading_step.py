@@ -6,33 +6,16 @@ Supports torchvision pretrained weights, local checkpoints, and URLs.
 Optionally fine-tunes for a configurable number of epochs after loading.
 """
 
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.pipelining.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.model_training.training_recipe import build_recipe
 from mimarsinan.model_training.weight_loading import resolve_weight_strategy
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
 import torch
 
 
-class WeightPreloadingStep(PipelineStep):
-    """Load pretrained weights into the model and optionally fine-tune.
-
-    This step replaces ``PretrainingStep`` when the pipeline is configured
-    with ``weight_source``.  It resolves a weight-loading strategy from the
-    config, loads weights with ``strict=False`` to handle classifier-head
-    mismatches, and optionally fine-tunes for ``finetune_epochs``.
-
-    Config keys consumed:
-        ``weight_source`` (str):
-            ``"torchvision"`` -- pretrained weights from the builder's factory.
-            A file path (.pt / .pth / .ckpt) -- local checkpoint.
-            A URL (http/https) -- download and load.
-
-        ``finetune_epochs`` (int, default 0):
-            Number of fine-tuning epochs after weight loading.
-            Set to 0 to skip fine-tuning entirely.
-    """
+class WeightPreloadingStep(TrainerPipelineStep):
+    """Load pretrained weights into the model and optionally fine-tune."""
 
     def __init__(self, pipeline):
         requires = ["model", "model_builder"]
@@ -40,17 +23,6 @@ class WeightPreloadingStep(PipelineStep):
         updates = ["model"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
-
-        self.trainer = None
-
-    def validate(self):
-        if self.trainer is not None:
-            return self.trainer.validate()
-        return self.pipeline.get_target_metric()
-
-    def cleanup(self):
-        if self.trainer is not None:
-            self.trainer.close()
 
     def process(self):
         model = self.get_entry("model")
@@ -82,26 +54,17 @@ class WeightPreloadingStep(PipelineStep):
 
         finetune_epochs = int(self.pipeline.config.get("finetune_epochs", 0))
         recipe = build_recipe(self.pipeline.config)
-
-        self.trainer = BasicTrainer(
-            model,
-            device,
-            DataLoaderFactory(self.pipeline.data_provider_factory),
-            self.pipeline.loss,
-            recipe=recipe,
+        self.trainer = make_basic_trainer(
+            self.pipeline, model, recipe=recipe
         )
-        self.trainer.report_function = self.pipeline.reporter.report
-
-        # Batch sizing is now enforced globally at the DataProvider level
-        # (see BasicDataProviderFactory(..., batch_size=...)), so the trainer
-        # loaders already reflect the configured batch size for all splits.
 
         if finetune_epochs > 0:
             lr = self.pipeline.config.get("finetune_lr", self.pipeline.config["lr"])
             recipe_tag = f" recipe={recipe.optimizer}" if recipe is not None else ""
-            print(f"[WeightPreloadingStep] Fine-tuning for {finetune_epochs} epochs (lr={lr}{recipe_tag})")
-            # When a recipe is active the trainer's scheduler owns warmup
-            # via SequentialLR; otherwise fall back to the legacy 5-epoch warmup.
+            print(
+                f"[WeightPreloadingStep] Fine-tuning for {finetune_epochs} epochs "
+                f"(lr={lr}{recipe_tag})"
+            )
             warmup_epochs = 0 if recipe is not None else 5
             self.trainer.train_n_epochs(lr, finetune_epochs, warmup_epochs=warmup_epochs)
         else:
@@ -109,5 +72,4 @@ class WeightPreloadingStep(PipelineStep):
 
         val_acc = self.validate()
         print(f"[WeightPreloadingStep] Validation accuracy: {val_acc:.4f}")
-
         self.update_entry("model", model, "torch_model")

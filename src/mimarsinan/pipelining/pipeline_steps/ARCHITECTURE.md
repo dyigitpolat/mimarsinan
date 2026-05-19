@@ -8,27 +8,28 @@ in the deployment pipeline.
 | File | Step Class | Pipeline Phase |
 |------|-----------|----------------|
 | `activation_utils.py` | `has_non_relu_activations`, `RELU_COMPATIBLE_TYPES` | Shared helper for activation steps |
-| `architecture_search_step.py` | `ArchitectureSearchStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`; sets `allow_coalescing` from pipeline config and normalizes via `mapping.coalescing.normalize_coalescing_config`) |
-| `model_configuration_step.py` | `ModelConfigurationStep` | Configuration (propagates `has_bias` from pipeline config to cores in `platform_constraints_resolved`; sets `allow_coalescing` the same way) |
-| `model_building_step.py` | `ModelBuildingStep` | Model construction |
-| `pretraining_step.py` | `PretrainingStep` | Training |
-| `activation_analysis_step.py` | `ActivationAnalysisStep` | Quantization prep (sampled multi-batch activation quantiles; writes `activation_scales` and `activation_scale_stats`) |
-| `activation_adaptation_step.py` | `ActivationAdaptationStep` | Activation adaptation (always runs: gradual ReLU replacement via ActivationAdaptationTuner) |
-| `clamp_adaptation_step.py` | `ClampAdaptationStep` | Quantization/TTFS clamping (runs when activation_quantization or TTFS mode; consumes `activation_scale_stats`; always uses ClampTuner with eval-safe multi-batch clamp probes and a cached final full-test metric) |
-| `activation_shift_step.py` | `ActivationShiftStep` | Quantization (delegates recovery to `ActivationShiftTuner`; rate-coded mode bakes shift into effective bias before step-budgeted recovery, while TTFS bias compensation remains deferred to `SoftCoreMappingStep`) |
-| `activation_quantization_step.py` | `ActivationQuantizationStep` | Quantization |
-| `weight_quantization_step.py` | `WeightQuantizationStep` | Quantization |
-| `quantization_verification_step.py` | `QuantizationVerificationStep` | Verification |
-| `normalization_fusion_step.py` | `NormalizationFusionStep` | Optimization (`transformations.normalization_fusion.fuse_into_perceptron`) |
-| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (`requires`: `fused_model`, `platform_constraints_resolved`). Uses `resolve_platform_mapping_params`, `chip_quantize`, `build_hybrid_mapping_for_pipeline` (cached as `hybrid_mapping`), `run_hcm_spiking_test` for SCM metric. TTFS bias via `mapping.ttfs_bias`. Optional pre-pruning heatmaps. |
+| `architecture_search_step.py` | `ArchitectureSearchStep` | Configuration; fixed path uses `emit_model_config_entries` + `build_platform_constraints_resolved`; search results JSON via `to_json_safe`. |
+| `model_configuration_step.py` | `ModelConfigurationStep` | Configuration via `emit_model_config_entries` + `build_platform_constraints_resolved`. |
+| `model_building_step.py` | `ModelBuildingStep` | Model construction (`safe_warmup_forward`, `adaptation_manager_factory`) |
+| `pretraining_step.py` | `PretrainingStep` | Training (`TrainerPipelineStep`, `make_basic_trainer`) |
+| `activation_analysis_step.py` | `ActivationAnalysisStep` | Quantization prep (`TrainerPipelineStep`, `make_basic_trainer`; writes `activation_scales` / `activation_scale_stats`) |
+| `activation_adaptation_step.py` | `ActivationAdaptationStep` | Activation adaptation (`TunerPipelineStep`) |
+| `clamp_adaptation_step.py` | `ClampAdaptationStep` | Quantization/TTFS clamping (`TunerPipelineStep.run_tuner(ClampTuner, …)`) |
+| `activation_shift_step.py` | `ActivationShiftStep` | Quantization (`TunerPipelineStep`; TTFS bias deferred to SCM) |
+| `activation_quantization_step.py` | `ActivationQuantizationStep` | Quantization (`TunerPipelineStep.run_tuner`) |
+| `weight_quantization_step.py` | `WeightQuantizationStep` | Quantization (`TunerPipelineStep.run_tuner(NormalizationAwarePerceptronQuantizationTuner)`) |
+| `quantization_verification_step.py` | `QuantizationVerificationStep` | Verification (`TrainerPipelineStep`; trainer created in `process`) |
+| `normalization_fusion_step.py` | `NormalizationFusionStep` | Optimization (`TrainerPipelineStep`; `fuse_into_perceptron`; `validate` uses `trainer.test()`) |
+| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping: `run_hcm_mapping_metric` (caches `hybrid_mapping`), `make_basic_trainer`, `run_optional_viz` for flowchart. |
 | `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification (`chip_quantize.verify_ir_graph_quantized`) |
-| `lif_adaptation_step.py` | `LIFAdaptationStep` | Activation adaptation (LIF mode only; swaps Perceptron `base_activation` to `LIFActivation` and runs KD recovery with the pre-LIF snapshot as teacher) |
-| `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping (reuses cached `hybrid_mapping` from SCM when present; else `build_hybrid_mapping_for_pipeline`; `run_hcm_spiking_test` for verification metric) |
+| `lif_adaptation_step.py` | `LIFAdaptationStep` | LIF adaptation (`TunerPipelineStep.run_tuner(LIFAdaptationTuner)`) |
+| `pruning_adaptation_step.py` | `PruningAdaptationStep` | Pruning (`TunerPipelineStep.run_tuner(PruningTuner)`) |
+| `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping: reuses cached `hybrid_mapping`; `run_hcm_mapping_metric`; optional hybrid viz via `run_optional_viz`. |
 | `simulation_step.py` | `SimulationStep` | Verification |
-| `loihi_simulation_step.py` | `LoihiSimulationStep` | Verification (optional; `load_test_sample_by_index` + `record_hcm_reference` + `LavaLoihiRunner.run_segments_from_reference` + `assert_spike_parity_or_raise`) |
-| `sanafe_simulation_step.py` | `SanafeSimulationStep` | Verification + detailed stats (optional; `load_test_samples_by_index`, optional `record_hcm_reference` per sample, `SanafeRunner`, parity via `assert_spike_parity_or_raise`; `promises=["sanafe_simulation_results"]`) |
-| `torch_mapping_step.py` | `TorchMappingStep` | Model conversion (torch_* types) |
-| `weight_preloading_step.py` | `WeightPreloadingStep` | Load pretrained weights (replaces Pretraining) |
+| `loihi_simulation_step.py` | `LoihiSimulationStep` | Verification (`require_lif_spiking_mode`; parity via `simulation_factory`) |
+| `sanafe_simulation_step.py` | `SanafeSimulationStep` | Verification + stats (`require_lif_spiking_mode`; `promises=["sanafe_simulation_results"]`) |
+| `torch_mapping_step.py` | `TorchMappingStep` | Model conversion (`TrainerPipelineStep`, `make_basic_trainer`) |
+| `weight_preloading_step.py` | `WeightPreloadingStep` | Pretrained weights (`TrainerPipelineStep`, optional `recipe`) |
 
 ## Dependencies
 

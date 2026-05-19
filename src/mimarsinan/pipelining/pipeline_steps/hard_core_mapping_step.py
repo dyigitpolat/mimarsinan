@@ -1,9 +1,9 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
+from mimarsinan.pipelining.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.simulation_factory import (
     build_hybrid_mapping_for_pipeline,
-    build_spiking_hybrid_flow,
-    run_hcm_spiking_test,
+    run_hcm_mapping_metric,
 )
 
 import torch
@@ -96,10 +96,14 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("after_pickle_save")
 
         try:
-            flow = build_spiking_hybrid_flow(self.pipeline, hybrid_mapping)
-            _vram_probe("after_flow_to_device")
             _vram_probe("before_test")
-            acc = run_hcm_spiking_test(self.pipeline, flow)
+            acc = run_hcm_mapping_metric(
+                self.pipeline,
+                ir_graph,
+                platform_constraints,
+                hybrid_mapping=hybrid_mapping,
+                cache_key="hybrid_mapping",
+            )
             _vram_probe("after_test")
             self._last_metric = float(acc)
             print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
@@ -110,7 +114,7 @@ class HardCoreMappingStep(PipelineStep):
             self._last_metric_is_failure = True
 
         if self.pipeline.config.get("generate_visualizations", False):
-          try:
+            def _viz():
               from mimarsinan.visualization.hardcore_visualization import HardCoreMappingVisualizer
               from mimarsinan.visualization.mapping_graphviz import (
                   try_render_dot,
@@ -158,5 +162,5 @@ class HardCoreMappingStep(PipelineStep):
                   print(f"[HardCoreMappingStep] Wrote hybrid combined overview: {combined_dot} (+ {', '.join(rendered_combined)})")
               else:
                   print(f"[HardCoreMappingStep] Wrote hybrid combined overview: {combined_dot} (render skipped: graphviz 'dot' not found)")
-          except Exception as e:
-              print(f"[HardCoreMappingStep] Hybrid mapping visualization failed (non-fatal): {e}")
+
+            run_optional_viz("HardCoreMappingStep", _viz)

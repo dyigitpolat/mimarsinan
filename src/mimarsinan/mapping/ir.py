@@ -11,13 +11,7 @@ import torch
 import torch.nn.functional as F
 
 
-def _broadcast_scale_to_dim(scale: torch.Tensor, target_dim: int) -> torch.Tensor:
-    """Expand a 1-D scale vector to *target_dim* using repeat or mean-fill."""
-    if scale.shape[0] == target_dim:
-        return scale
-    if target_dim % scale.shape[0] == 0:
-        return scale.repeat_interleave(target_dim // scale.shape[0])
-    return torch.full((target_dim,), scale.mean().item(), dtype=scale.dtype, device=scale.device)
+from mimarsinan.mapping.scale_broadcast import broadcast_scale_to_dim as _broadcast_scale_to_dim
 
 
 @dataclass

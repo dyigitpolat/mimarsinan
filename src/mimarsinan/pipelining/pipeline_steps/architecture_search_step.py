@@ -102,19 +102,23 @@ def _create_optimizer(
 
 
 def _search_result_to_jsonable(result) -> Dict[str, Any]:
+    from mimarsinan.gui.json_util import to_json_safe
+
     def cand_to_dict(c):
         return {
             "configuration": c.configuration,
             "objectives": c.objectives,
             "metadata": c.metadata,
         }
-    return {
+
+    payload = {
         "objectives": [{"name": o.name, "goal": o.goal} for o in result.objectives],
         "best": cand_to_dict(result.best),
         "pareto_front": [cand_to_dict(c) for c in result.pareto_front],
         "all_candidates": [cand_to_dict(c) for c in result.all_candidates],
         "history": result.history,
     }
+    return to_json_safe(payload)
 
 
 def _derive_arch_options(
@@ -173,23 +177,13 @@ def _make_assembler(schema: List[Dict[str, Any]], schema_map: Dict[str, Any]):
 
 
 def _build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
-    """Build platform_constraints from pipeline config (cores list only)."""
-    cores = list(pipeline_config.get("cores", []))
-    if not cores:
-        cores = [{"max_axons": 256, "max_neurons": 256, "count": 1000}]
+    from mimarsinan.pipelining.platform_constraints_resolver import (
+        build_platform_constraints_resolved,
+    )
 
-    out: Dict[str, Any] = {
-        "cores": cores,
-        "target_tq": pipeline_config.get("target_tq", 32),
-        "weight_bits": pipeline_config.get("weight_bits", 8),
-        "allow_scheduling": bool(pipeline_config.get("allow_scheduling", False)),
-    }
-    if CANONICAL_KEY in pipeline_config:
-        out[CANONICAL_KEY] = bool(pipeline_config[CANONICAL_KEY])
-    else:
-        out[CANONICAL_KEY] = False
-    normalize_coalescing_config(out)
-    return out
+    return build_platform_constraints_resolved(
+        pipeline_config, include_neuron_splitting=False
+    )
 
 
 class ArchitectureSearchStep(PipelineStep):
@@ -220,26 +214,10 @@ class ArchitectureSearchStep(PipelineStep):
             self._process_search(search_mode)
 
     def _process_fixed(self):
-        model_type = self.pipeline.config["model_type"]
-        builder_cls = ModelRegistry.get_builder_cls(model_type)
+        from mimarsinan.pipelining.model_config_emit import emit_model_config_entries
 
-        model_config = self.pipeline.config["model_config"]
-        builder = builder_cls(
-            self.pipeline.config["device"],
-            self.pipeline.config["input_shape"],
-            self.pipeline.config["num_classes"],
-            self.pipeline.config,
-        )
-
-        self.add_entry("model_builder", builder, "pickle")
-        self.add_entry("model_config", model_config)
-
+        emit_model_config_entries(self, self.pipeline.config)
         pcfg = _build_fixed_platform_constraints(self.pipeline.config)
-
-        global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
-        for c in pcfg.get("cores", []):
-            c.setdefault("has_bias", global_has_bias)
-
         self.add_entry("platform_constraints_resolved", pcfg)
         self.add_entry("architecture_search_result", {"search_mode": "fixed"})
 
