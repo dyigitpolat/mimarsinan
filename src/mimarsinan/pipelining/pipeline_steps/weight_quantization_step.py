@@ -1,54 +1,37 @@
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-
-from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import NormalizationAwarePerceptronQuantizationTuner
+from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
+from mimarsinan.mapping.per_source_scales import compute_per_source_scales
 from mimarsinan.models.layers import FrozenStatsNormalization
-from mimarsinan.models.layers import FrozenStatsMaxValueScaler
+from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import (
+    NormalizationAwarePerceptronQuantizationTuner,
+)
 
 import torch.nn as nn
 
-class WeightQuantizationStep(PipelineStep):
+
+class WeightQuantizationStep(TunerPipelineStep):
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         promises = []
-        updates = ["model"]
+        updates = ["model", "adaptation_manager"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
 
-        self.tuner = None
-    
-    def validate(self):
-        if self.tuner is not None:
-            return self.tuner.validate()
-        return self.pipeline.get_target_metric()
-
     def process(self):
         model = self.get_entry("model")
-
-        from mimarsinan.mapping.per_source_scales import compute_per_source_scales
+        adaptation_manager = self.get_entry("adaptation_manager")
         compute_per_source_scales(model.get_mapper_repr())
-
         for perceptron in model.get_perceptrons():
             if not isinstance(perceptron.normalization, nn.Identity):
                 for param in perceptron.normalization.parameters():
                     param.requires_grad = False
-
-                perceptron.normalization = \
-                    FrozenStatsNormalization(perceptron.normalization)
-                
-                #perceptron.base_scaler = FrozenStatsMaxValueScaler(perceptron.base_scaler)
-                
-        bits = self.pipeline.config['weight_bits']
-        target = self.pipeline.get_target_metric()
+                perceptron.normalization = FrozenStatsNormalization(
+                    perceptron.normalization
+                )
+        bits = self.pipeline.config["weight_bits"]
         print(f"Quantizing to {bits} bits")
-        self.tuner = NormalizationAwarePerceptronQuantizationTuner(
-            self.pipeline,
-            model = model,
-            quantization_bits = bits, 
-            target_accuracy = target,
-            lr = self.pipeline.config['lr'],
-            adaptation_manager = self.get_entry("adaptation_manager"))
-        self.tuner.run()
-    
-        self.update_entry("model", model, 'torch_model')
+        self.run_tuner(
+            NormalizationAwarePerceptronQuantizationTuner,
+            model,
+            adaptation_manager,
+            quantization_bits=bits,
+        )

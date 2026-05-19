@@ -114,6 +114,60 @@ def record_hcm_reference(
     return flow, ref
 
 
+def run_hcm_mapping_metric(
+    pipeline,
+    ir_graph: IRGraph,
+    platform_constraints: dict[str, Any],
+    *,
+    hybrid_mapping: Any | None = None,
+    cache_key: str = "hybrid_mapping",
+    device: str | None = None,
+    max_batch_cap: int | None = None,
+    retry_on_oom: bool = False,
+    outer_oom_retry: bool = False,
+) -> float | None:
+    """Build hybrid mapping, run HCM spiking test, optionally cache mapping.
+
+    Returns accuracy or None on non-fatal failure when ``outer_oom_retry`` handles OOM.
+    """
+    device = device or pipeline.config["device"]
+    attempt_cap = max_batch_cap
+    last_exc: Exception | None = None
+
+    for attempt in range(2 if outer_oom_retry else 1):
+        try:
+            if hybrid_mapping is None:
+                hybrid_mapping = build_hybrid_mapping_for_pipeline(
+                    ir_graph, platform_constraints
+                )
+                pipeline.cache.add(cache_key, hybrid_mapping, "pickle")
+            flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping)
+            return float(
+                run_hcm_spiking_test(
+                    pipeline,
+                    flow,
+                    device=device,
+                    max_batch_cap=attempt_cap,
+                    retry_on_oom=retry_on_oom,
+                )
+            )
+        except RuntimeError as exc:
+            last_exc = exc
+            oom_cls = getattr(torch.cuda, "OutOfMemoryError", ())
+            is_oom = isinstance(exc, oom_cls) or "out of memory" in str(exc).lower()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if not outer_oom_retry or not is_oom or attempt >= 1:
+                raise
+            attempt_cap = int(pipeline.config.get("simulation_batch_size", 8))
+        except Exception:
+            raise
+
+    if last_exc is not None:
+        raise last_exc
+    return None
+
+
 def assert_spike_parity_or_raise(ref, actual) -> None:
     """Raise ``AssertionError`` with ``format_first_diff`` when records diverge."""
     from mimarsinan.chip_simulation.spike_recorder import compare_records, format_first_diff

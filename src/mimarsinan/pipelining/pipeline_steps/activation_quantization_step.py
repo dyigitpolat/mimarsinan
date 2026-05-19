@@ -11,15 +11,11 @@ class ActivationQuantizationStep(TunerPipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
     def process(self):
-        model = self.get_entry('model')
-        adaptation_manager = self.get_entry('adaptation_manager')
-        self.tuner = ActivationQuantizationTuner(
-            self.pipeline,
-            model=model,
-            target_tq=self.pipeline.config['target_tq'],
-            target_accuracy=self.pipeline.get_target_metric(),
-            lr=self.pipeline.config['lr'],
-            adaptation_manager=adaptation_manager,
+        model = self.get_entry("model")
+        adaptation_manager = self.get_entry("adaptation_manager")
+        self.run_tuner(
+            ActivationQuantizationTuner,
+            model,
+            adaptation_manager,
+            target_tq=self.pipeline.config["target_tq"],
         )
-        self.tuner.run()
-        self._commit_tuner_entries(model, self.tuner.adaptation_manager)

@@ -1,3 +1,4 @@
+from mimarsinan.pipelining.pipeline_helpers import safe_warmup_forward
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.tuning.adaptation_manager_factory import create_adaptation_manager_for_model
 
@@ -29,14 +30,11 @@ class ModelBuildingStep(PipelineStep):
         # Warmup forward pass to initialize any Lazy modules (e.g. LazyBatchNorm1d),
         # so subsequent transformations / mapping that touch normalization parameters
         # won't crash if the pipeline is resumed from a later step.
-        try:
-            init_model.eval()
-            with torch.no_grad():
-                input_shape = tuple(self.pipeline.config["input_shape"])
-                dummy = torch.zeros((1, *input_shape))
-                _ = init_model(dummy)
-        except Exception as e:
-            print(f"[ModelBuildingStep] Warmup forward failed: {e}")
+        safe_warmup_forward(
+            init_model,
+            self.pipeline.config["input_shape"],
+            self.pipeline.config["device"],
+        )
 
         self.add_entry("adaptation_manager", adaptation_manager, 'pickle')
         self.add_entry("model", (init_model), "torch_model")

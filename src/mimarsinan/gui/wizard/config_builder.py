@@ -51,6 +51,7 @@ def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     dp.setdefault("model_config_mode", "user")
     dp.setdefault("hw_config_mode", "fixed")
     out["deployment_parameters"] = dp
+    out["pipeline_mode"] = dp.get("pipeline_mode", out["pipeline_mode"])
 
     # platform_constraints: pass through (user or {mode, user, auto}); optionally fill defaults for flat user
     pc = state.get("platform_constraints")

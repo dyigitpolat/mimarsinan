@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
@@ -10,7 +11,11 @@ def to_json_safe(obj: Any) -> Any:
         return {str(k): to_json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [to_json_safe(v) for v in obj]
-    if isinstance(obj, (int, float, str, bool, type(None))):
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, (int, str, bool, type(None))):
         return obj
     if hasattr(obj, "tolist"):
         return obj.tolist()

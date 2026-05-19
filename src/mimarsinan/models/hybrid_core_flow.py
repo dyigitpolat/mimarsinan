@@ -565,8 +565,7 @@ class SpikingHybridCoreFlow(nn.Module):
 
         x_compute = x.to(_COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
-        out_scales = getattr(self.hybrid_mapping, "node_activation_scales", {})
-        in_scales = getattr(self.hybrid_mapping, "node_input_activation_scales", out_scales)
+        from mimarsinan.chip_simulation.hybrid_execution import resolve_stage_compute_scales
 
         remaining = dict(self._build_consumer_counts())
 
@@ -587,12 +586,15 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
+                in_scale, out_scale = resolve_stage_compute_scales(
+                    self.hybrid_mapping, op.id, apply_ttfs=True
+                )
                 state_buffer[op.id] = execute_compute_op_torch(
                     op,
                     x,
                     state_buffer,
-                    in_scale=in_scales.get(op.id, 1.0),
-                    out_scale=out_scales.get(op.id, 1.0),
+                    in_scale=in_scale,
+                    out_scale=out_scale,
                     output_dtype=_COMPUTE_DTYPE,
                 )
                 self._decref_consumers(
@@ -712,8 +714,7 @@ class SpikingHybridCoreFlow(nn.Module):
         x_compute = x.to(_COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
         state_buffer_spikes: Dict[int, torch.Tensor] = {}
-        out_scales = getattr(self.hybrid_mapping, "node_activation_scales", {})
-        in_scales = getattr(self.hybrid_mapping, "node_input_activation_scales", out_scales)
+        from mimarsinan.chip_simulation.hybrid_execution import resolve_stage_compute_scales
 
         remaining = dict(self._build_consumer_counts())
 
@@ -765,12 +766,15 @@ class SpikingHybridCoreFlow(nn.Module):
             elif stage.kind == "compute":
                 op = stage.compute_op
                 assert op is not None
+                in_scale, out_scale = resolve_stage_compute_scales(
+                    self.hybrid_mapping, op.id, apply_ttfs=True
+                )
                 result = execute_compute_op_torch(
                     op,
                     x,
                     state_buffer,
-                    in_scale=in_scales.get(op.id, 1.0),
-                    out_scale=out_scales.get(op.id, 1.0),
+                    in_scale=in_scale,
+                    out_scale=out_scale,
                 )
                 state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
 

@@ -325,7 +325,9 @@ def _validate_coalescing_budget(
             neuron_ok = allow_neuron_splitting or ct_neurons >= n_neurons
             if not neuron_ok:
                 continue
-            n_coalesce = math.ceil(n_weight_axons / ct_axons)
+            from mimarsinan.mapping.coalescing import coalescing_fragment_count
+
+            n_coalesce = coalescing_fragment_count(n_weight_axons, ct_axons)
             if ct_count >= n_coalesce:
                 fits_any = True
                 break
@@ -385,14 +387,9 @@ def build_hybrid_hard_core_mapping(
 ) -> HybridHardCoreMapping:
     """Compile a unified IRGraph into a HybridHardCoreMapping."""
 
-    consumed_by: dict[int, set[int]] = defaultdict(set)
-    for node in ir_graph.nodes:
-        for src in node.input_sources.flatten():
-            if isinstance(src, IRSource) and src.node_id >= 0:
-                consumed_by[src.node_id].add(node.id)
-    for src in ir_graph.output_sources.flatten():
-        if isinstance(src, IRSource) and src.node_id >= 0:
-            consumed_by[src.node_id].add(_FINAL_OUTPUT_SENTINEL)
+    from mimarsinan.mapping.ir_segmentation import build_ir_consumed_by
+
+    consumed_by = build_ir_consumed_by(ir_graph)
 
     stages: list[HybridStage] = []
 

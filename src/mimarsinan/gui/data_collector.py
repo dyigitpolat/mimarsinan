@@ -625,22 +625,7 @@ def _build_snapshot_etag(rec: StepRecord) -> str:
 
 
 def _to_json_safe(value: Any) -> Any:
-    """Convert tensors / numpy values to plain Python types.
+    """Convert tensors / numpy values to JSON-safe types (delegates to json_util)."""
+    from mimarsinan.gui.json_util import to_json_safe
 
-    Also replaces NaN/Inf with ``None`` so the result is always
-    JSON-serialisable.
-    """
-    import math
-
-    if hasattr(value, "item"):
-        value = value.item()
-    elif hasattr(value, "tolist"):
-        value = value.tolist()
-
-    try:
-        f = float(value)
-        if math.isnan(f) or math.isinf(f):
-            return None
-        return f
-    except (TypeError, ValueError):
-        return str(value)
+    return to_json_safe(value)

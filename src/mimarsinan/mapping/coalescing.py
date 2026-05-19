@@ -7,6 +7,7 @@ pipeline config. Deprecated names are rejected with a clear error.
 
 from __future__ import annotations
 
+import math
 from typing import Any, List, Mapping, MutableMapping, Tuple
 
 CANONICAL_KEY = "allow_coalescing"
@@ -60,3 +61,12 @@ def normalize_coalescing_config(pcfg: MutableMapping[str, Any]) -> bool:
     resolved = bool(pcfg.get(CANONICAL_KEY, False))
     pcfg[CANONICAL_KEY] = resolved
     return resolved
+
+
+def coalescing_fragment_count(input_count: int, max_axons: int) -> int:
+    """Number of axon-coalescing fragments for *input_count* axons on one core type."""
+    if max_axons <= 0:
+        return 1
+    if input_count <= max_axons:
+        return 1
+    return int(math.ceil(input_count / max_axons))

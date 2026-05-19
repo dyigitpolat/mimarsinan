@@ -12,6 +12,7 @@ with HCM-vs-Lava spike-count parity for every neural segment.
 
 from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
 from mimarsinan.data_handling.test_sample_loader import load_test_sample_by_index
+from mimarsinan.pipelining.pipeline_helpers import require_lif_spiking_mode
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.simulation_factory import (
     assert_spike_parity_or_raise,
@@ -38,11 +39,7 @@ class LoihiSimulationStep(PipelineStep):
         self.get_entry("model")
         hard_core_mapping = self.get_entry("hard_core_mapping")
         simulation_length = int(self.pipeline.config["simulation_steps"])
-        spiking_mode = self.pipeline.config.get("spiking_mode", "lif")
-        if spiking_mode != "lif":
-            raise ValueError(
-                f"LoihiSimulationStep requires spiking_mode='lif'; got {spiking_mode!r}"
-            )
+        require_lif_spiking_mode(self.pipeline, "LoihiSimulationStep")
 
         sample_index = int(self.pipeline.config.get("loihi_parity_sample_index", 0))
         sample = load_test_sample_by_index(

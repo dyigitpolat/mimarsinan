@@ -1,8 +1,6 @@
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.pipelining.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.tuning.tuning_budget import tuning_budget_from_pipeline
-
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.models.layers import SavedTensorDecorator, TransformedActivation
 
 import torch
@@ -149,7 +147,7 @@ def _attach_saved_tensor_decorator(perceptron):
     return decorator, cleanup
 
 
-class ActivationAnalysisStep(PipelineStep):
+class ActivationAnalysisStep(TrainerPipelineStep):
     def __init__(self, pipeline):
         requires = ["model"]
         promises = ["activation_scales", "activation_scale_stats"]
@@ -157,25 +155,9 @@ class ActivationAnalysisStep(PipelineStep):
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
 
-        self.trainer = None
-
-    def validate(self):
-        if self.trainer is not None:
-            return self.trainer.validate()
-        return self.pipeline.get_target_metric()
-
-    def cleanup(self):
-        if self.trainer is not None:
-            self.trainer.close()
-
     def process(self):
         model = self.get_entry("model")
-
-        self.trainer = BasicTrainer(
-            model,
-            self.pipeline.config['device'],
-            DataLoaderFactory(self.pipeline.data_provider_factory),
-            self.pipeline.loss)
+        self.trainer = make_basic_trainer(self.pipeline, model)
 
         # Shrink the validation batch below the pipeline default for this
         # step only: decorators pin every perceptron's full output tensor

@@ -167,6 +167,20 @@ def execute_compute_op_numpy(
     return result.detach().numpy()
 
 
+def resolve_stage_compute_scales(
+    mapping,
+    op_id: int,
+    *,
+    apply_ttfs: bool = True,
+) -> tuple[float, float]:
+    """Return ``(input_scale, output_scale)`` for a hybrid compute stage."""
+    out_scales = getattr(mapping, "node_activation_scales", {})
+    in_scales = getattr(mapping, "node_input_activation_scales", out_scales)
+    if not apply_ttfs:
+        return 1.0, 1.0
+    return float(in_scales.get(op_id, 1.0)), float(out_scales.get(op_id, 1.0))
+
+
 def decref_consumers(
     state_buffer,
     remaining: Dict[int, int],

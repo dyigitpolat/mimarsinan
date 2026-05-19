@@ -12,15 +12,15 @@ module (ReLU → LeakyGradReLU, LeakyReLU → nn.LeakyReLU, GELU → nn.GELU).
 The AdaptationManager then wraps each base_activation in TransformedActivation.
 """
 
+from mimarsinan.pipelining.pipeline_helpers import safe_warmup_forward
 from mimarsinan.pipelining.pipeline_step import PipelineStep
+from mimarsinan.pipelining.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.tuning.adaptation_manager_factory import create_adaptation_manager_for_model
-from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-
 import torch
 
 
-class TorchMappingStep(PipelineStep):
+class TorchMappingStep(TrainerPipelineStep):
     """Convert a trained native PyTorch model into a ``ConvertedModelFlow``.
 
     This step:
@@ -38,17 +38,6 @@ class TorchMappingStep(PipelineStep):
         updates = ["model"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
-
-        self.trainer = None
-
-    def validate(self):
-        if self.trainer is not None:
-            return self.trainer.validate()
-        return self.pipeline.get_target_metric()
-
-    def cleanup(self):
-        if self.trainer is not None:
-            self.trainer.close()
 
     def process(self):
         from mimarsinan.torch_mapping.converter import convert_torch_model
@@ -71,14 +60,7 @@ class TorchMappingStep(PipelineStep):
         native_model.cpu()
         del native_model
 
-        self.trainer = BasicTrainer(
-            flow,
-            self.pipeline.config["device"],
-            DataLoaderFactory(self.pipeline.data_provider_factory),
-            self.pipeline.loss,
-        )
-        self.trainer.report_function = self.pipeline.reporter.report
-
+        self.trainer = make_basic_trainer(self.pipeline, flow)
         self.update_entry("model", flow, "torch_model")
         self.add_entry("adaptation_manager", adaptation_manager, "pickle")
 
@@ -92,18 +74,15 @@ class TorchMappingStep(PipelineStep):
             device = self.pipeline.config["device"]
             input_shape = tuple(self.pipeline.config["input_shape"])
             dummy = torch.randn(2, *input_shape, device=device)
-
             native_model.eval().to(device)
             flow.eval().to(device)
-
             with torch.no_grad():
                 native_out = native_model(dummy)
                 super_out = flow(dummy)
-
             if native_out.shape != super_out.shape:
                 print(
                     f"[TorchMappingStep] WARNING: output shape mismatch: "
                     f"native={native_out.shape} vs converted={super_out.shape}"
                 )
-        except Exception as e:
-            print(f"[TorchMappingStep] Equivalence check skipped: {e}")
+        except Exception as exc:
+            print(f"[TorchMappingStep] Equivalence check skipped: {exc}")

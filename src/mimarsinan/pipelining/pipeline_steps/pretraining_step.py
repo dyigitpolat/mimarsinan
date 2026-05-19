@@ -1,8 +1,8 @@
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.pipelining.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
 
-class PretrainingStep(PipelineStep):
+
+class PretrainingStep(TrainerPipelineStep):
     def __init__(self, pipeline):
         requires = ["model"]
         promises = []
@@ -10,28 +10,12 @@ class PretrainingStep(PipelineStep):
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
 
-        self.trainer = None
-
-    def validate(self):
-        return self.trainer.validate()
-
-    def cleanup(self):
-        if self.trainer is not None:
-            self.trainer.close()
-
     def process(self):
         model = self.get_entry("model")
-
-        self.trainer = BasicTrainer(
-            model,
-            self.pipeline.config['device'],
-            DataLoaderFactory(self.pipeline.data_provider_factory),
-            self.pipeline.loss)
-        self.trainer.report_function = self.pipeline.reporter.report
-
+        self.trainer = make_basic_trainer(self.pipeline, model)
         self.trainer.train_n_epochs(
-            self.pipeline.config['lr'],
-            self.pipeline.config['training_epochs'],
-            warmup_epochs=5)
-
-        self.update_entry("model", model, 'torch_model')
+            self.pipeline.config["lr"],
+            self.pipeline.config["training_epochs"],
+            warmup_epochs=5,
+        )
+        self.update_entry("model", model, "torch_model")

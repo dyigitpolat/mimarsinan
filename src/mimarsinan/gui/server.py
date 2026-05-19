@@ -332,6 +332,9 @@ def create_app(
 
     @app.post("/api/run")
     def api_run(body: dict):
+        from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
+
+        body = build_deployment_config_from_state(body or {})
         if process_manager is not None:
             try:
                 run_id = process_manager.spawn_run(body)

@@ -84,7 +84,9 @@ def _expand_for_axon_coalescing(
         if sc.input_count <= max_avail_axons:
             result.append(sc)
         else:
-            k = math.ceil(sc.input_count / max_avail_axons)
+            from mimarsinan.mapping.coalescing import coalescing_fragment_count
+
+            k = coalescing_fragment_count(sc.input_count, max_avail_axons)
             base = sc.input_count // k
             rem = sc.input_count - base * k
             for i in range(k):
