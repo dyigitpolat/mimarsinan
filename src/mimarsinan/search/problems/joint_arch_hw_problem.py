@@ -54,11 +54,11 @@ def _clip_int(v: float, lo: int, hi: int) -> int:
 
 
 def effective_max_dims(cores: Sequence[Dict[str, Any]]) -> Tuple[int, int]:
-    """Return (max_axons, max_neurons) as MAX across core types for IR tiling."""
-    return (
-        max(int(ct["max_axons"]) for ct in cores),
-        max(int(ct["max_neurons"]) for ct in cores),
-    )
+    """Return effective (max_axons, max_neurons) for IR tiling (legacy bias axon reserved)."""
+    from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+
+    params = resolve_platform_mapping_params(cores)
+    return params.effective_max_axons, params.effective_max_neurons
 
 
 # Type aliases for the injected callables
@@ -507,12 +507,18 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         pcfg: Dict,
     ) -> Tuple[List[LayoutSoftCoreSpec], int]:
         """Collect layout softcores and host-side segment count from model."""
-        max_ax, max_neu = effective_max_dims(pcfg["cores"])
-        layout_mapper = LayoutIRMapping(
-            max_axons=max_ax,
-            max_neurons=max_neu,
+        from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+
+        cores = pcfg["cores"]
+        pmap = resolve_platform_mapping_params(
+            cores,
             allow_coalescing=bool(pcfg.get("allow_coalescing", False)),
-            hardware_bias=bool(pcfg.get("has_bias", False)),
+        )
+        layout_mapper = LayoutIRMapping(
+            max_axons=pmap.effective_max_axons,
+            max_neurons=pmap.effective_max_neurons,
+            allow_coalescing=pmap.allow_coalescing,
+            hardware_bias=pmap.hardware_bias,
         )
         mapper_repr = model.get_mapper_repr()
         # Populate perceptron_index on the mapper graph so threshold groups

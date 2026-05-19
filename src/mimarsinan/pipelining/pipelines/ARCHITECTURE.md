@@ -14,7 +14,7 @@ end-to-end workflows.
 
 ## Pipeline step preview
 
-The wizard calls **POST `/api/pipeline_steps`** (see `gui/server.py`) with the current deployment config; the handler merges config, calls `get_pipeline_step_specs(config)`, and returns `{"steps": [name, ...], "semantic_groups": [group_id, ...]}` so the UI can show the pipeline that would run without executing it, with colour-coded semantic groups.
+The wizard calls **POST `/api/pipeline_steps`** (see `gui/server.py`) with the current deployment config; the handler merges config via `config_schema.deployment_derivation.derive_deployment_parameters` (when building flat config server-side), calls `get_pipeline_step_specs(config)`, and returns `{"steps": [name, ...], "semantic_groups": [group_id, ...]}` so the UI can show the pipeline that would run without executing it, with colour-coded semantic groups.
 
 ## Step ordering (`get_pipeline_step_specs`)
 

@@ -15,6 +15,7 @@ from mimarsinan.config_schema import (
     get_default_platform_constraints,
     apply_preset,
 )
+from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
 
 
 def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -46,6 +47,7 @@ def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     for k, v in dp_defaults.items():
         dp.setdefault(k, v)
     apply_preset(out["pipeline_mode"], dp)
+    derive_deployment_parameters(dp)
     dp.setdefault("model_config_mode", "user")
     dp.setdefault("hw_config_mode", "fixed")
     out["deployment_parameters"] = dp

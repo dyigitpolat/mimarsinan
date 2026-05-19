@@ -9,7 +9,7 @@ distributions, and architecture search results.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `mapping_graphviz.py` | `write_ir_graph_dot`, `write_ir_graph_summary_dot`, `write_hardcore_mapping_dot`, `write_hybrid_hardcore_mapping_dots`, etc. | Graphviz DOT generation for IR, SoftCore, HardCore, and Hybrid mappings |
-| `softcore_flowchart.py` | `write_softcore_flowchart_dot` | Flowchart-style DOT for mapper graph with hardware estimates |
+| `softcore_flowchart.py` | `write_softcore_flowchart_dot`, `estimate_fc_cores` | Flowchart-style DOT for mapper graph with hardware estimates; `estimate_fc_cores` uses `mapping_structure.compute_core_input_count` for legacy bias-axon accounting (aligned with layout IR path). |
 | `activation_function_visualization.py` | `ActivationFunctionVisualizer` | Plots activation functions over a range |
 | `histogram_visualization.py` | `HistogramVisualizer` | Activation distribution histograms |
 | `hardcore_visualization.py` | `HardCoreMappingVisualizer` | Heatmaps and utilization charts for hardware cores |

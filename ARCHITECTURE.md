@@ -1569,6 +1569,22 @@ Module dependency rules:
 - **Mappers**: `{Type}Mapper` (e.g., `PerceptronMapper`, `Conv2DPerceptronMapper`)
 - **Builders**: `{Model}Builder` (e.g., `TorchMLPMixerBuilder`, `SimpleMLPBuilder`)
 
+### Shared modules (dedup refactors)
+Cross-cutting helpers live next to their domain rather than in pipeline steps:
+
+| Module | Role |
+|--------|------|
+| `mapping/platform_constraints.py` | `resolve_platform_mapping_params`, `resolve_scalar_mapping_params` — single source for `max_axons`, `allow_coalescing`, `hardware_bias` |
+| `mapping/wizard_layout_verify.py` | Wizard / snapshot layout verification (shared by GUI and `snapshot/builders.py`) |
+| `pipelining/simulation_factory.py` | `run_hcm_spiking_test`, `record_hcm_reference`, `assert_spike_parity_or_raise` |
+| `data_handling/test_sample_loader.py` | Deterministic test-sample loading for chip parity steps |
+| `chip_simulation/hybrid_stage_runner.py` | Multi-stage hybrid replay (Loihi / SANA-FE runners) |
+| `config_schema/deployment_derivation.py` | Python mirror of wizard `buildConfig()` deployment flags |
+| `transformations/quantization_verify.py` | IR / perceptron quantization checks |
+| `tuning/adaptation_rate_tuner.py`, `tuning/tuner_pipeline_step.py` | Shared tuner step boilerplate |
+
+See per-package `ARCHITECTURE.md` files for detail.
+
 ### Design Patterns
 - **Pipeline + Step**: Command pattern for sequential execution with dependency injection via cache
 - **Decorator**: Extensively used for activation function composition (`TransformedActivation`, `RateAdjustedDecorator`)

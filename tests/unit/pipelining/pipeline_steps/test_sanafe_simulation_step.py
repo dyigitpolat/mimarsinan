@@ -134,15 +134,25 @@ def _prepare_step(monkeypatch, *,
             calls["runner_run_samples"].append(int(sample_index))
             return _fake_sanafe_record(sample_index=sample_index)
 
-    def _fake_build_flow(pipeline, hybrid_mapping, *, preprocessor=None):
-        calls["hcm_built"] += 1
-        return FakeHCM()
+    def _fake_load_samples(factory, indices, num_workers=4):
+        loader = _FakeDataLoaderFactory(factory, num_workers=num_workers)
+        provider = loader.create_data_provider()
+        dataset = provider._get_test_dataset()
+        return [dataset[int(i)][0].unsqueeze(0) for i in indices]
 
-    monkeypatch.setattr(step_mod, "DataLoaderFactory", _FakeDataLoaderFactory)
-    monkeypatch.setattr(step_mod, "build_spiking_hybrid_flow", _fake_build_flow)
+    def _fake_record_hcm(pipeline, mapping, sample, sample_index=0, device=None):
+        calls["hcm_built"] += 1
+        return FakeHCM(), _fake_hcm_record(sample_index=sample_index)
+
+    monkeypatch.setattr(step_mod, "load_test_samples_by_index", _fake_load_samples)
+    monkeypatch.setattr(step_mod, "record_hcm_reference", _fake_record_hcm)
     monkeypatch.setattr(step_mod, "SanafeRunner", FakeRunner)
-    monkeypatch.setattr(step_mod, "compare_records", lambda _ref, _actual: diffs or [])
-    monkeypatch.setattr(step_mod, "format_first_diff", lambda _d: "formatted sanafe diff")
+
+    def _parity_or_raise(ref, actual):
+        if diffs:
+            raise AssertionError("formatted sanafe diff")
+
+    monkeypatch.setattr(step_mod, "assert_spike_parity_or_raise", _parity_or_raise)
 
     pipeline = MockPipeline(
         data_provider_factory=MockDataProviderFactory(input_shape=(1, 8, 8), size=4),

@@ -10,6 +10,7 @@ tuning, and evaluation subsystems.
 | `data_provider.py` | `DataProvider`, `ClassificationMode`, `RegressionMode` | Abstract base for dataset providers; `get_validation_batch_size()` matches training batch size capped by validation set size (Phase 6) |
 | `data_provider_factory.py` | `DataProviderFactory`, `BasicDataProviderFactory` | Factory with class-level registry (`@register` decorator) |
 | `data_loader_factory.py` | `DataLoaderFactory`, `shutdown_data_loader` | Creates PyTorch `DataLoader`s for train/val/test splits; validation loaders use `shuffle=False`; helper to shut down multi-worker loaders |
+| `test_sample_loader.py` | `load_test_sample_by_index`, `load_test_samples_by_index` | Deterministic test-set sample fetch by global index (Loihi/SANA-FE parity steps). |
 | `data_providers/` | Concrete providers | MNIST, CIFAR-10, CIFAR-100, ECG, ImageNet; each may set `DISPLAY_LABEL` for GUI dropdowns |
 
 ## Dependencies

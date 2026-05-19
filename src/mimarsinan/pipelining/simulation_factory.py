@@ -46,24 +46,78 @@ def build_spiking_hybrid_flow(
     return flow.to(cfg["device"])
 
 
-def run_hcm_spiking_test(pipeline, flow: SpikingHybridCoreFlow) -> float:
+def run_hcm_spiking_test(
+    pipeline,
+    flow: SpikingHybridCoreFlow,
+    *,
+    device: str | None = None,
+    max_batch_cap: int | None = None,
+    retry_on_oom: bool = False,
+) -> float:
     """Run soft-core / HCM metric test with subsample or batch limit from config."""
-    trainer = BasicTrainer(
-        flow,
-        pipeline.config["device"],
-        DataLoaderFactory(pipeline.data_provider_factory),
-        None,
-    )
-    max_samples = int(pipeline.config.get("max_simulation_samples", 0) or 0)
+    device = device or pipeline.config["device"]
     sim_batches = pipeline.config.get("simulation_batch_count", None)
-    try:
-        if max_samples > 0:
-            return float(
-                trainer.test_on_subsample(
-                    max_samples=max_samples,
-                    seed=int(pipeline.config.get("seed", 0)),
+    max_samples = int(pipeline.config.get("max_simulation_samples", 0) or 0)
+    attempt_cap = max_batch_cap
+    last_error: Exception | None = None
+
+    for attempt in range(2 if retry_on_oom else 1):
+        trainer = BasicTrainer(
+            flow,
+            device,
+            DataLoaderFactory(pipeline.data_provider_factory),
+            None,
+        )
+        try:
+            if attempt_cap is not None:
+                trainer.set_test_batch_size(
+                    min(int(trainer.test_batch_size), int(attempt_cap))
                 )
-            )
-        return float(trainer.test(max_batches=sim_batches))
-    finally:
-        trainer.close()
+            if max_samples > 0:
+                return float(
+                    trainer.test_on_subsample(
+                        max_samples=max_samples,
+                        seed=int(pipeline.config.get("seed", 0)),
+                    )
+                )
+            return float(trainer.test(max_batches=sim_batches))
+        except RuntimeError as exc:
+            last_error = exc
+            oom_cls = getattr(torch.cuda, "OutOfMemoryError", ())
+            is_oom = isinstance(exc, oom_cls) or "out of memory" in str(exc).lower()
+            if not retry_on_oom or not is_oom or attempt >= 1:
+                raise
+            attempt_cap = int(pipeline.config.get("simulation_batch_size", 8))
+        finally:
+            trainer.close()
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("run_hcm_spiking_test failed without raising")
+
+
+def record_hcm_reference(
+    pipeline,
+    hybrid_mapping,
+    sample: torch.Tensor,
+    *,
+    sample_index: int = 0,
+    device: str | None = None,
+):
+    """Build HCM flow and return ``(flow, record)`` from ``forward_with_recording``."""
+    device = device or pipeline.config["device"]
+    flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping).to(device).eval()
+    with torch.no_grad():
+        _out, ref = flow.forward_with_recording(
+            sample.to(device), sample_index=sample_index
+        )
+    return flow, ref
+
+
+def assert_spike_parity_or_raise(ref, actual) -> None:
+    """Raise ``AssertionError`` with ``format_first_diff`` when records diverge."""
+    from mimarsinan.chip_simulation.spike_recorder import compare_records, format_first_diff
+
+    diffs = compare_records(ref, actual)
+    if diffs:
+        raise AssertionError(format_first_diff(diffs))

@@ -108,29 +108,36 @@ class SanafeRunner:
         out_scales = getattr(self.mapping, "node_activation_scales", {}) or {}
         in_scales = getattr(self.mapping, "node_input_activation_scales", out_scales) or {}
 
-        for stage_index, stage in enumerate(self.mapping.stages):
-            if stage.kind == "neural":
-                segments[stage_index] = self._run_neural_stage(
-                    sanafe=sanafe,
-                    stage=stage,
-                    stage_index=stage_index,
-                    state_buffer=state_buffer,
-                )
-            elif stage.kind == "compute":
-                op = stage.compute_op
-                in_scale = in_scales.get(op.id, 1.0)
-                out_scale = out_scales.get(op.id, 1.0)
-                result = execute_compute_op_numpy(
-                    op, sample_input, state_buffer,
-                    in_scale=in_scale, out_scale=out_scale,
-                    dtype=_COMPUTE_DTYPE,
-                )
-                if hasattr(result, "detach"):
-                    result = result.detach().cpu().numpy()
-                state_buffer[op.id] = np.asarray(result, dtype=_COMPUTE_DTYPE)
-                compute_outputs[op.id] = state_buffer[op.id]
-            else:
-                raise ValueError(f"Unknown hybrid stage kind: {stage.kind!r}")
+        from mimarsinan.chip_simulation.hybrid_stage_runner import run_hybrid_stages
+
+        def _on_neural(stage_index, stage, state_buffer):
+            segments[stage_index] = self._run_neural_stage(
+                sanafe=sanafe,
+                stage=stage,
+                stage_index=stage_index,
+                state_buffer=state_buffer,
+            )
+
+        def _on_compute(_stage_index, stage, state_buffer):
+            op = stage.compute_op
+            in_scale = in_scales.get(op.id, 1.0)
+            out_scale = out_scales.get(op.id, 1.0)
+            result = execute_compute_op_numpy(
+                op, sample_input, state_buffer,
+                in_scale=in_scale, out_scale=out_scale,
+                dtype=_COMPUTE_DTYPE,
+            )
+            if hasattr(result, "detach"):
+                result = result.detach().cpu().numpy()
+            state_buffer[op.id] = np.asarray(result, dtype=_COMPUTE_DTYPE)
+            compute_outputs[op.id] = state_buffer[op.id]
+
+        run_hybrid_stages(
+            self.mapping,
+            state_buffer,
+            on_neural=_on_neural,
+            on_compute=_on_compute,
+        )
 
         agg_e = SanafeEnergyBreakdown.zero()
         max_sim_time = 0.0

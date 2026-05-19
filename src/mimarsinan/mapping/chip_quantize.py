@@ -71,3 +71,36 @@ def _matrix_scale(matrix, parameter_scale, q_max: int, eps: float) -> float:
 def _scale_hardware_bias(node: NeuralCore, scale: float, q_dtype) -> None:
     if node.hardware_bias is not None:
         node.hardware_bias = np.round(node.hardware_bias * scale).astype(q_dtype)
+
+
+def verify_ir_graph_quantized(ir_graph: IRGraph, bits: int) -> None:
+    """Raise ``AssertionError`` if any NeuralCore / bank fails integer quant checks."""
+    from mimarsinan.transformations.quantization_verify import assert_integer_scaled_matrix
+
+    q_min, q_max = quantization_bounds(bits)
+    failures: list[str] = []
+    bank_checked: set[int] = set()
+    for core in ir_graph.get_neural_cores():
+        ps = core.parameter_scale
+        try:
+            scale = float(ps.item())
+        except Exception:
+            scale = float(ps)
+        bank_id = getattr(core, "weight_bank_id", None)
+        if bank_id is not None:
+            if bank_id in bank_checked:
+                continue
+            bank_checked.add(bank_id)
+        mat = core.get_core_matrix(ir_graph)
+        failures.extend(
+            assert_integer_scaled_matrix(
+                mat, scale, q_min, q_max, name=core.name
+            )
+        )
+    if failures:
+        msg = "IR graph quantization verification FAILED:\n" + "\n".join(
+            f"  - {e}" for e in failures[:50]
+        )
+        if len(failures) > 50:
+            msg += f"\n  ... (+{len(failures) - 50} more)"
+        raise AssertionError(msg)

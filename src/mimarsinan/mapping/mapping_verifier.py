@@ -119,6 +119,8 @@ def verify_soft_core_mapping(
                 firing_mode="Default",
                 max_axons=max_axons,
                 max_neurons=max_neurons,
+                allow_coalescing=allow_coalescing,
+                hardware_bias=hardware_bias,
             )
             ir_graph = irm.map(model_repr)
             n_nc = len(ir_graph.get_neural_cores())

@@ -19,14 +19,14 @@ in the deployment pipeline.
 | `activation_quantization_step.py` | `ActivationQuantizationStep` | Quantization |
 | `weight_quantization_step.py` | `WeightQuantizationStep` | Quantization |
 | `quantization_verification_step.py` | `QuantizationVerificationStep` | Verification |
-| `normalization_fusion_step.py` | `NormalizationFusionStep` | Optimization |
-| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (`requires`: `fused_model`, `platform_constraints_resolved`). Computes per-source input scales; TTFS shift compensation (idempotent via `_ttfs_shift_baked_into_bias`); builds `HybridHardCoreMapping` + **`SpikingHybridCoreFlow`** spiking metric (SCM). Scales `hardware_bias` with weight quant; `max_axons - 1` when legacy bias axon; optional pre-pruning heatmaps (`store_pre_pruning_heatmap`). |
-| `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification |
+| `normalization_fusion_step.py` | `NormalizationFusionStep` | Optimization (`transformations.normalization_fusion.fuse_into_perceptron`) |
+| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (`requires`: `fused_model`, `platform_constraints_resolved`). Uses `resolve_platform_mapping_params`, `chip_quantize`, `build_hybrid_mapping_for_pipeline` (cached as `hybrid_mapping`), `run_hcm_spiking_test` for SCM metric. TTFS bias via `mapping.ttfs_bias`. Optional pre-pruning heatmaps. |
+| `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification (`chip_quantize.verify_ir_graph_quantized`) |
 | `lif_adaptation_step.py` | `LIFAdaptationStep` | Activation adaptation (LIF mode only; swaps Perceptron `base_activation` to `LIFActivation` and runs KD recovery with the pre-LIF snapshot as teacher) |
-| `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping (passes `allow_scheduling` from `platform_constraints_resolved` to `build_hybrid_hard_core_mapping`; reports per-segment pass counts when scheduled) |
+| `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping (reuses cached `hybrid_mapping` from SCM when present; else `build_hybrid_mapping_for_pipeline`; `run_hcm_spiking_test` for verification metric) |
 | `simulation_step.py` | `SimulationStep` | Verification |
-| `loihi_simulation_step.py` | `LoihiSimulationStep` | Verification (optional; when `enable_loihi_simulation` is set, runs one deterministic sample through HCM recording and Lava neural-segment replay, failing on any spike-record diff instead of reporting independent Loihi accuracy) |
-| `sanafe_simulation_step.py` | `SanafeSimulationStep` | Verification + detailed stats (optional; when `enable_sanafe_simulation` is set, runs `sanafe_sample_count` deterministic samples through `SanafeRunner`; when `sanafe_parity_check` is on, also builds an HCM reference per sample and fails on any spike-count divergence via `compare_records`; `requires=["model","hard_core_mapping"]`, `promises=["sanafe_simulation_results"]`. Persists a `SanafeStepReport` the GUI's SANA-FE tab renders.) |
+| `loihi_simulation_step.py` | `LoihiSimulationStep` | Verification (optional; `load_test_sample_by_index` + `record_hcm_reference` + `LavaLoihiRunner.run_segments_from_reference` + `assert_spike_parity_or_raise`) |
+| `sanafe_simulation_step.py` | `SanafeSimulationStep` | Verification + detailed stats (optional; `load_test_samples_by_index`, optional `record_hcm_reference` per sample, `SanafeRunner`, parity via `assert_spike_parity_or_raise`; `promises=["sanafe_simulation_results"]`) |
 | `torch_mapping_step.py` | `TorchMappingStep` | Model conversion (torch_* types) |
 | `weight_preloading_step.py` | `WeightPreloadingStep` | Load pretrained weights (replaces Pretraining) |
 

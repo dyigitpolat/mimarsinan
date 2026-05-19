@@ -11,10 +11,12 @@ with HCM-vs-Lava spike-count parity for every neural segment.
 """
 
 from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
-from mimarsinan.chip_simulation.spike_recorder import compare_records, format_first_diff
-from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
+from mimarsinan.data_handling.test_sample_loader import load_test_sample_by_index
 from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.simulation_factory import build_spiking_hybrid_flow
+from mimarsinan.pipelining.simulation_factory import (
+    assert_spike_parity_or_raise,
+    record_hcm_reference,
+)
 
 
 class LoihiSimulationStep(PipelineStep):
@@ -32,37 +34,7 @@ class LoihiSimulationStep(PipelineStep):
             return self.metric
         return self.pipeline.get_target_metric()
 
-    def _load_parity_sample(self):
-        sample_index = int(self.pipeline.config.get("loihi_parity_sample_index", 0))
-        if sample_index < 0:
-            raise ValueError("loihi_parity_sample_index must be >= 0")
-
-        factory = DataLoaderFactory(
-            self.pipeline.data_provider_factory,
-            num_workers=int(self.pipeline.config.get("num_workers", 4)),
-        )
-        provider = factory.create_data_provider()
-        loader = factory.create_test_loader(provider.get_test_batch_size(), provider)
-        seen = 0
-        try:
-            for xs, _ys in loader:
-                batch_size = int(xs.shape[0])
-                if seen + batch_size <= sample_index:
-                    seen += batch_size
-                    continue
-                local_idx = sample_index - seen
-                return xs[local_idx:local_idx + 1]
-        finally:
-            shutdown_data_loader(loader)
-
-        raise IndexError(
-            f"loihi_parity_sample_index={sample_index} is outside the test set"
-        )
-
     def process(self):
-        # Access ``model`` explicitly to satisfy the step contract and to make
-        # the dependency clear: Loihi parity is a post-HCM check of the mapped
-        # model, not an independent accuracy evaluation.
         self.get_entry("model")
         hard_core_mapping = self.get_entry("hard_core_mapping")
         simulation_length = int(self.pipeline.config["simulation_steps"])
@@ -72,18 +44,21 @@ class LoihiSimulationStep(PipelineStep):
                 f"LoihiSimulationStep requires spiking_mode='lif'; got {spiking_mode!r}"
             )
 
-        sample = self._load_parity_sample()
+        sample_index = int(self.pipeline.config.get("loihi_parity_sample_index", 0))
+        sample = load_test_sample_by_index(
+            self.pipeline.data_provider_factory,
+            sample_index,
+            num_workers=int(self.pipeline.config.get("num_workers", 4)),
+        )
         device = self.pipeline.config["device"]
 
-        hcm = build_spiking_hybrid_flow(self.pipeline, hard_core_mapping).eval()
-
-        import torch
-        with torch.no_grad():
-            _, ref = hcm.forward_with_recording(
-                sample.to(device), sample_index=int(
-                    self.pipeline.config.get("loihi_parity_sample_index", 0)
-                ),
-            )
+        _flow, ref = record_hcm_reference(
+            self.pipeline,
+            hard_core_mapping,
+            sample,
+            sample_index=sample_index,
+            device=device,
+        )
 
         runner = LavaLoihiRunner(
             pipeline=None,
@@ -92,9 +67,7 @@ class LoihiSimulationStep(PipelineStep):
             thresholding_mode=self.pipeline.config.get("thresholding_mode", "<="),
         )
         actual = runner.run_segments_from_reference(ref)
-        diffs = compare_records(ref, actual)
-        if diffs:
-            raise AssertionError(format_first_diff(diffs))
+        assert_spike_parity_or_raise(ref, actual)
 
         checked_segments = len(ref.segments)
         checked_cores = sum(len(seg.cores) for seg in ref.segments.values())

@@ -21,7 +21,6 @@ import torch
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
 from mimarsinan.chip_simulation.sanafe.records import SanafeCoreDiff, SanafeRunRecord
 from mimarsinan.chip_simulation.sanafe.stats import SanafeStepReport
-from mimarsinan.chip_simulation.spike_recorder import compare_records, format_first_diff
 
 
 def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
@@ -57,12 +56,12 @@ def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
                 output_delta_sum=out_sum_sf - out_sum_ref,
             ))
         seg.hcm_diff = deltas
-from mimarsinan.data_handling.data_loader_factory import (
-    DataLoaderFactory,
-    shutdown_data_loader,
-)
+from mimarsinan.data_handling.test_sample_loader import load_test_samples_by_index
 from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.simulation_factory import build_spiking_hybrid_flow
+from mimarsinan.pipelining.simulation_factory import (
+    assert_spike_parity_or_raise,
+    record_hcm_reference,
+)
 
 
 class SanafeSimulationStep(PipelineStep):
@@ -80,44 +79,6 @@ class SanafeSimulationStep(PipelineStep):
         if self.metric is not None:
             return self.metric
         return self.pipeline.get_target_metric()
-
-
-    def _load_samples(self) -> list[torch.Tensor]:
-        """Load ``sanafe_sample_count`` deterministic test samples by index 0..N-1."""
-        n = int(self.pipeline.config.get("sanafe_sample_count", 1))
-        if n <= 0:
-            raise ValueError("sanafe_sample_count must be >= 1")
-
-        factory = DataLoaderFactory(
-            self.pipeline.data_provider_factory,
-            num_workers=int(self.pipeline.config.get("num_workers", 4)),
-        )
-        provider = factory.create_data_provider()
-        loader = factory.create_test_loader(provider.get_test_batch_size(), provider)
-
-        out: list[torch.Tensor] = []
-        wanted = set(range(n))
-        seen = 0
-        try:
-            for xs, _ys in loader:
-                batch_size = int(xs.shape[0])
-                for local in range(batch_size):
-                    if seen in wanted:
-                        out.append(xs[local:local + 1])
-                        wanted.discard(seen)
-                    seen += 1
-                    if not wanted:
-                        break
-                if not wanted:
-                    break
-        finally:
-            shutdown_data_loader(loader)
-
-        if wanted:
-            raise IndexError(
-                f"sanafe_sample_count={n} exceeds the test set size"
-            )
-        return out
 
 
     def process(self):
@@ -140,18 +101,27 @@ class SanafeSimulationStep(PipelineStep):
         log_messages = bool(self.pipeline.config.get("sanafe_log_message_trace", True))
         device = self.pipeline.config["device"]
 
-        samples = self._load_samples()
+        n = int(self.pipeline.config.get("sanafe_sample_count", 1))
+        if n <= 0:
+            raise ValueError("sanafe_sample_count must be >= 1")
+        samples = load_test_samples_by_index(
+            self.pipeline.data_provider_factory,
+            range(n),
+            num_workers=int(self.pipeline.config.get("num_workers", 4)),
+        )
         per_sample: list[SanafeRunRecord] = []
 
         for sample_idx, sample in enumerate(samples):
             # Build HCM reference for the parity gate (skipped when disabled).
             ref = None
             if parity_check:
-                hcm = build_spiking_hybrid_flow(self.pipeline, hard_core_mapping).eval()
-                with torch.no_grad():
-                    _, ref = hcm.forward_with_recording(
-                        sample.to(device), sample_index=sample_idx,
-                    )
+                _flow, ref = record_hcm_reference(
+                    self.pipeline,
+                    hard_core_mapping,
+                    sample,
+                    sample_index=sample_idx,
+                    device=device,
+                )
 
             # Run SANA-FE on the same sample.
             runner = SanafeRunner(
@@ -176,9 +146,7 @@ class SanafeSimulationStep(PipelineStep):
                 _attach_per_core_deltas(ref, sanafe_rec)
 
             if parity_check and ref is not None:
-                diffs = compare_records(ref, sanafe_rec.to_hcm_subset())
-                if diffs:
-                    raise AssertionError(format_first_diff(diffs))
+                assert_spike_parity_or_raise(ref, sanafe_rec.to_hcm_subset())
 
         # Persist the report for the GUI snapshot builder.
         report = SanafeStepReport.from_records(arch_preset, per_sample)

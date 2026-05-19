@@ -9,8 +9,9 @@ management, data contract verification, and performance tolerance enforcement.
 |------|---------|---------|
 | `pipeline.py` | `Pipeline` | Orchestration engine: step registration, verification, execution (uses `step.pipeline_metric()` for target), hook management |
 | `pipeline_step.py` | `PipelineStep` | Abstract base class with data contracts (`requires`, `promises`, `updates`, `clears`); `process()`, `validate()`, `pipeline_metric()` (auto-discovers trainer for full-test-set evaluation), and optional `cleanup()` for resource release |
-| `tuner_pipeline_step.py` | `TunerPipelineStep` | Shared validate / commit pattern for tuner-backed steps. |
-| `simulation_factory.py` | `build_hybrid_mapping_for_pipeline`, `build_spiking_hybrid_flow`, `run_hcm_spiking_test` | Shared hybrid mapping + HCM flow construction for SCM, HCM, Loihi, and SANA-FE steps. |
+| `tuner_pipeline_step.py` | `TunerPipelineStep` | Shared validate / commit pattern for tuner-backed steps (activation quant, clamp, shift, LIF, pruning, activation adaptation). |
+| `trainer_factory.py` | `make_basic_trainer` | Shared `BasicTrainer` + `DataLoaderFactory` construction for steps that need a trainer. |
+| `simulation_factory.py` | `build_hybrid_mapping_for_pipeline`, `build_spiking_hybrid_flow`, `run_hcm_spiking_test`, `record_hcm_reference`, `assert_spike_parity_or_raise` | Shared hybrid mapping, HCM flow construction, SCM/HCM metric test (optional OOM batch cap), and Loihi/SANA-FE parity reference recording. |
 | `model_registry.py` | `ModelRegistry`, `get_model_types`, `get_model_config_schema` | Registry populated by builders via `@ModelRegistry.register`; builders expose `get_config_schema()` for GUI form generation |
 
 ### Subdirectories

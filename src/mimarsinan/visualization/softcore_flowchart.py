@@ -44,8 +44,12 @@ def _estimate_map_fc(
     including axon tiling (partial sums + accumulator) when needed.
     """
 
-    bias_ax = 1 if has_bias else 0
-    required_axons = int(in_features) + bias_ax
+    from mimarsinan.mapping.mapping_structure import compute_core_input_count
+
+    required_axons = compute_core_input_count(
+        int(in_features), has_bias=has_bias, hardware_bias=False
+    )
+    bias_ax = required_axons - int(in_features)
 
     if required_axons <= max_axons:
         groups = _ceil_div(out_features, max_neurons)

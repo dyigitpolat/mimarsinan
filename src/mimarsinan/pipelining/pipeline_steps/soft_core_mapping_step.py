@@ -9,6 +9,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.pipelining.simulation_factory import (
     build_hybrid_mapping_for_pipeline,
     build_spiking_hybrid_flow,
+    run_hcm_spiking_test,
 )
 from mimarsinan.common.diagnostics import phase_profiler
 
@@ -258,7 +259,6 @@ class SoftCoreMappingStep(PipelineStep):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        spiking_trainer = None
         attempt_cap = None
         for attempt in range(2):
             try:
@@ -270,38 +270,20 @@ class SoftCoreMappingStep(PipelineStep):
                     self.add_entry("hybrid_mapping", hybrid_mapping, "pickle")
                 with _phase(f"sim_construct[cap={cap_tag}]"):
                     flow = build_spiking_hybrid_flow(self.pipeline, hybrid_mapping)
-                spiking_trainer = BasicTrainer(
-                    flow,
-                    device,
-                    DataLoaderFactory(self.pipeline.data_provider_factory),
-                    None,
-                )
-                if attempt_cap is not None:
-                    current_bs = spiking_trainer.test_batch_size
-                    spiking_trainer.set_test_batch_size(min(current_bs, attempt_cap))
-                max_samples = int(self.pipeline.config.get("max_simulation_samples", 0) or 0)
-                if max_samples > 0:
-                    with _phase(f"sim_test[max_samples={max_samples}]"):
-                        acc = spiking_trainer.test_on_subsample(
-                            max_samples=max_samples,
-                            seed=int(self.pipeline.config.get("seed", 0)),
-                        )
-                else:
-                    with _phase(f"sim_test[batches={sim_batches}]"):
-                        acc = spiking_trainer.test(max_batches=sim_batches)
-                spiking_trainer.close()
+                with _phase(f"sim_test[cap={cap_tag}]"):
+                    acc = run_hcm_spiking_test(
+                        self.pipeline,
+                        flow,
+                        device=device,
+                        max_batch_cap=attempt_cap,
+                        retry_on_oom=False,
+                    )
                 self._soft_core_spiking_metric = float(acc)
                 print(f"[SoftCoreMappingStep] Soft-core Spiking Simulation Test: {acc}")
                 break
             except RuntimeError as e:
                 oom_cls = getattr(torch.cuda, "OutOfMemoryError", ())
                 is_oom = isinstance(e, oom_cls) or "out of memory" in str(e).lower()
-                if spiking_trainer is not None:
-                    try:
-                        spiking_trainer.close()
-                    except Exception:
-                        pass
-                    spiking_trainer = None
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 if not is_oom or attempt >= 1:
@@ -313,11 +295,6 @@ class SoftCoreMappingStep(PipelineStep):
                     f"retrying once with batch size capped at {attempt_cap}."
                 )
             except Exception as e:
-                if spiking_trainer is not None:
-                    try:
-                        spiking_trainer.close()
-                    except Exception:
-                        pass
                 print(f"[SoftCoreMappingStep] Soft-core simulation failed (non-fatal): {e}")
                 break
 

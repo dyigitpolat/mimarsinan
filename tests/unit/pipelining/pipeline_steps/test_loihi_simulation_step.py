@@ -91,15 +91,27 @@ def _prepare_step(monkeypatch, *, diffs=None):
             calls["segments_from_reference"] += 1
             return ref
 
-    def _fake_build_flow(pipeline, hybrid_mapping, *, preprocessor=None):
-        calls["hcm_built"] = calls.get("hcm_built", 0) + 1
-        return FakeHCM()
+    def _fake_load_sample(factory, sample_index, num_workers=4):
+        loader = _FakeDataLoaderFactory(factory, num_workers=num_workers)
+        provider = loader.create_data_provider()
+        dataset = provider._get_test_dataset()
+        return dataset[int(sample_index)][0].unsqueeze(0)
 
-    monkeypatch.setattr(loihi_step, "DataLoaderFactory", _FakeDataLoaderFactory)
-    monkeypatch.setattr(loihi_step, "build_spiking_hybrid_flow", _fake_build_flow)
+    def _fake_record_hcm(pipeline, mapping, sample, sample_index=0, device=None):
+        calls["hcm_built"] = calls.get("hcm_built", 0) + 1
+        calls["hcm_samples"].append(sample.detach().cpu().clone())
+        return FakeHCM(), _fake_record(sample_index=sample_index)
+
+    monkeypatch.setattr(loihi_step, "load_test_sample_by_index", _fake_load_sample)
+    monkeypatch.setattr(loihi_step, "record_hcm_reference", _fake_record_hcm)
     monkeypatch.setattr(loihi_step, "LavaLoihiRunner", FakeRunner)
-    monkeypatch.setattr(loihi_step, "compare_records", lambda _ref, _actual: diffs or [])
-    monkeypatch.setattr(loihi_step, "format_first_diff", lambda _diffs: "formatted spike diff")
+    monkeypatch.setattr(
+        loihi_step,
+        "assert_spike_parity_or_raise",
+        lambda ref, actual: (_ for _ in ()).throw(AssertionError("formatted spike diff"))
+        if diffs
+        else None,
+    )
 
     pipeline = MockPipeline(
         data_provider_factory=MockDataProviderFactory(input_shape=(1, 8, 8), size=3),

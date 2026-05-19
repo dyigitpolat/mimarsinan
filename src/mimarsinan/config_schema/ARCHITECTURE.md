@@ -9,6 +9,8 @@ merged flat config for pipeline runtime).
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Defaults and preset merge. **`spiking_mode` default `"lif"`**. Tuner keys: `tuner_target_floor_ratio`, `tuner_calibrate_smooth_tolerance`, etc. Platform: `allow_coalescing`, `allow_scheduling`, `max_schedule_passes`, `scheduling_latency_weight`. |
+| `deployment_derivation.py` | `derive_deployment_parameters` | Mirrors `gui/static/js/wizard.js` `buildConfig()` rules: float weights → vanilla; LIF disables `activation_quantization`; `ttfs_quantized` enables it. Called from `wizard/config_builder.py` and `runtime.build_flat_pipeline_config`. |
+| `runtime.py` | `build_flat_pipeline_config` | Merges defaults + deployment/platform dicts for API preview and wizard (no device I/O). Applies preset then `derive_deployment_parameters`. |
 | `validation.py` | `validate_deployment_config`, `validate_merged_config` | JSON / merged config validation; rejects deprecated coalescing keys via `mapping.coalescing`. |
 | `__init__.py` | Re-exports | Public API |
 
@@ -38,7 +40,9 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 ## Dependents
 
 - `pipelining.pipelines.deployment_pipeline`
-- `gui/wizard/schema.py` (wizard forms; may duplicate labels but should match defaults)
+- `gui/wizard/schema.py` (wizard forms; labels should match defaults)
+- `gui/wizard/config_builder.py` (`derive_deployment_parameters` after preset)
+- `gui/server.py` (`build_flat_pipeline_config` for `/api/pipeline_steps`)
 
 ## Exported API (`__init__.py`)
 

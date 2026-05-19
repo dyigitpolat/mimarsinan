@@ -11,12 +11,19 @@ def run_hybrid_stages(
     *,
     on_neural,
     on_compute,
-    finalize,
+    finalize=None,
+    on_unknown=None,
 ) -> Any:
-    """Iterate ``mapping.stages``; neural/compute callbacks mutate ``state_buffer``."""
-    for stage in mapping.stages:
+    """Iterate ``mapping.stages``; callbacks receive ``(stage_index, stage, state_buffer)``."""
+    for stage_index, stage in enumerate(mapping.stages):
         if stage.kind == "neural":
-            on_neural(stage, state_buffer)
+            on_neural(stage_index, stage, state_buffer)
         elif stage.kind == "compute":
-            on_compute(stage, state_buffer)
-    return finalize(state_buffer)
+            on_compute(stage_index, stage, state_buffer)
+        elif on_unknown is not None:
+            on_unknown(stage_index, stage, state_buffer)
+        else:
+            raise ValueError(f"Unknown hybrid stage kind: {stage.kind!r}")
+    if finalize is not None:
+        return finalize(state_buffer)
+    return state_buffer
