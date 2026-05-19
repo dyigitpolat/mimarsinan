@@ -87,9 +87,7 @@ class MultiObjectiveSink:
     def attach_live_reporter(self, reporter: Optional[Any]) -> None:
         self._live_reporter = reporter
 
-    # ------------------------------------------------------------------ #
     # External handles for the optimizer
-    # ------------------------------------------------------------------ #
 
     def attach_configuration(
         self, candidate_id: str, configuration: Mapping[str, Any],
@@ -185,9 +183,7 @@ class MultiObjectiveSink:
     def failed_records(self) -> Sequence[CandidateRecord]:
         return tuple(r for r in self._records.values() if r.rejected)
 
-    # ------------------------------------------------------------------ #
     # ObservationSink protocol — forward + tap
-    # ------------------------------------------------------------------ #
 
     def emit(self, event: ObservationEvent) -> None:
         self._base.emit(event)
@@ -224,9 +220,7 @@ class MultiObjectiveSink:
             )
         )
 
-    # ------------------------------------------------------------------ #
     # Internal
-    # ------------------------------------------------------------------ #
 
     def _record_for(self, candidate_id: str) -> CandidateRecord:
         rec = self._records.get(candidate_id)

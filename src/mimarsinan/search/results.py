@@ -13,9 +13,7 @@ class ObjectiveSpec:
     goal: Goal
 
 
-# ---------------------------------------------------------------------------
 # Canonical objective catalogue
-# ---------------------------------------------------------------------------
 
 ALL_OBJECTIVES: Tuple[ObjectiveSpec, ...] = (
     ObjectiveSpec("estimated_accuracy", "max"),
@@ -111,9 +109,7 @@ class SearchResult(Generic[ConfigT]):
     history: List[Dict[str, Any]] = field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
 # Minimax-rank selection
-# ---------------------------------------------------------------------------
 
 def _rank_candidates(
     candidates: Sequence[Candidate[ConfigT]],

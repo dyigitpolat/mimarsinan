@@ -16,12 +16,7 @@ class AdaptationManager(nn.Module):
 
         self.noise_rate = 0.0
 
-        # Set True by LIFAdaptationStep once per-Perceptron base_activation has
-        # been swapped to LIFActivation.  When active, clamp/quant/shift
-        # decorators are subsumed by the LIF forward (output is already in
-        # [0, activation_scale] and quantised to T+1 levels) and must be
-        # skipped — applying them on top of LIF would double-quantize or
-        # reintroduce shifts the LIF neuron has already implicitly handled.
+        # When True, LIF forward already applies clamp/quant/shift — skip duplicate decorators.
         self.lif_active = False
 
     def update_activation(self, pipeline_config, perceptron):
@@ -32,25 +27,17 @@ class AdaptationManager(nn.Module):
         if self.activation_adaptation_rate > 0:
             decorators.append(
                 self.get_rate_adjusted_activation_replacement_decorator(perceptron))
-        # Each rate-adjusted decorator short-circuits internally at rate==0 but
-        # still costs a Python call per forward. update_activation is invoked
-        # whenever a rate changes, so we can safely omit inactive decorators.
         if not lif_subsumes_decorators and self.clamp_rate != 0.0:
             decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
         if not lif_subsumes_decorators and self.quantization_rate != 0.0:
             decorators.append(
                 self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
         if not lif_subsumes_decorators and not use_ttfs and self.shift_rate != 0.0:
-            # At shift_rate==0 the amount is a zero tensor; ShiftDecorator would
-            # still execute torch.sub(x, 0) every forward. Omit entirely.
             decorators.append(self.get_shift_decorator(pipeline_config, perceptron))
 
         perceptron.set_activation(
             TransformedActivation(perceptron.base_activation, decorators))
 
-        # When noise_rate==0, use nn.Identity so Perceptron.forward's isinstance
-        # check skips the regularization call entirely (NoisyDropout would
-        # otherwise short-circuit internally but still cost one Python call).
         if self.noise_rate > 0:
             target_noise_amount = (1.0 / (pipeline_config['target_tq'] * 2.5))
             perceptron.set_regularization(
@@ -59,16 +46,6 @@ class AdaptationManager(nn.Module):
         else:
             perceptron.set_regularization(nn.Identity())
 
-        # perceptron.set_scaler(
-        #     TransformedActivation(
-        #         nn.Identity(),
-        #         [RateAdjustedDecorator(
-        #             self.scale_rate, 
-        #             ScaleDecorator(1.0 / perceptron.scale_factor), 
-        #             MixAdjustmentStrategy())]
-        #     )
-        # )
-        
     def get_rate_adjusted_activation_replacement_decorator(self, perceptron):
         """Gradually blend the base activation toward LeakyGradReLU (chip ReLU)."""
         from mimarsinan.models.activations import LeakyGradReLU
@@ -83,25 +60,17 @@ class AdaptationManager(nn.Module):
             ClampDecorator(torch.tensor(0.0), perceptron.activation_scale), 
             MixAdjustmentStrategy())
 
-    # def get_rate_adjusted_scale_decorator(self, perceptron):
-    #     return RateAdjustedDecorator(
-    #         self.scale_rate, 
-    #         ScaleDecorator(1.0 / perceptron.activation_scale), 
-    #         RandomMaskAdjustmentStrategy())
-    
     def get_shift_decorator(self, pipeline_config, perceptron):
         shift_amount = calculate_activation_shift(pipeline_config["target_tq"], perceptron.activation_scale) * self.shift_rate
         return ShiftDecorator(shift_amount)
     
     def get_rate_adjusted_quantization_decorator(self, pipeline_config, perceptron):
-        # For TTFS: shift the other way — use shift_back = -shift so ReLU sees (x + shift) → staircase(ReLU(x + shift)).
-        # For LIF/rate: shift_back = -shift * shift_rate to undo the outer shift.
         use_ttfs = pipeline_config.get("spiking_mode", "lif") in ("ttfs", "ttfs_quantized")
         shift = calculate_activation_shift(
             pipeline_config["target_tq"], perceptron.activation_scale
         )
         if use_ttfs:
-            shift_back_amount = -shift  # ReLU gets (x - (-shift)) = (x + shift)
+            shift_back_amount = -shift
         else:
             shift_back_amount = -shift * self.shift_rate
 

@@ -1,16 +1,4 @@
-"""Mimarsinan Pipeline Monitoring GUI.
-
-Usage::
-
-    from mimarsinan.gui import start_gui
-
-    gui = start_gui(pipeline, port=8501)
-    pipeline.register_pre_step_hook(gui.on_step_start)
-    pipeline.register_post_step_hook(gui.on_step_end)
-
-The ``GUIHandle`` returned by :func:`start_gui` provides hook callbacks
-and exposes the underlying :class:`DataCollector` and :class:`GUIReporter`.
-"""
+"""Pipeline monitoring GUI hooks and FastAPI server."""
 
 from __future__ import annotations
 
@@ -37,11 +25,7 @@ from mimarsinan.gui.snapshot_executor import SnapshotExecutor
 
 
 class _TeeStream(io.RawIOBase):
-    """Wraps a writable stream and forwards each write to a callback.
-
-    Lines are buffered so the callback always receives complete newline-terminated
-    strings (without the trailing newline), matching what a terminal reader would see.
-    """
+    """Tee stream: forward complete lines to a callback."""
 
     def __init__(self, original: Any, callback: Any) -> None:
         self._original = original
@@ -49,7 +33,6 @@ class _TeeStream(io.RawIOBase):
         self._buf = ""
         self._lock = threading.Lock()
 
-    # io.RawIOBase interface
     def writable(self) -> bool:
         return True
 
@@ -89,7 +72,6 @@ class _TeeStream(io.RawIOBase):
                     pass
                 self._buf = ""
 
-    # Proxy attribute access so third-party code that checks .encoding, .name, etc. works.
     def __getattr__(self, name: str) -> Any:
         return getattr(self._original, name)
 
@@ -110,7 +92,6 @@ class GUIHandle:
         self.reporter = GUIReporter(collector)
         self._persist_metrics = persist_metrics
         self._capture_stdio = capture_stdio
-        # Owned unless the caller injected one (tests typically inject).
         self._owns_snapshot_executor = snapshot_executor is None
         self._snapshot_executor = snapshot_executor or SnapshotExecutor()
 
@@ -164,23 +145,12 @@ class GUIHandle:
             append_live_metric(working_dir, step_name, metric_name, value, seq, timestamp)
 
     def on_step_end(self, step_name: str, step: Any) -> None:
-        # Read the target metric synchronously while the pipeline is still
-        # in its post-step state — after we return, the next step may run
-        # on the pipeline thread and mutate ``pipeline.get_target_metric``.
         try:
             raw = self.pipeline.get_target_metric()
             target_metric = float(raw) if raw is not None else None
         except Exception:
             target_metric = None
 
-        # Build the snapshot synchronously on the pipeline thread so the
-        # traversal reads a consistent view of pipeline state. Snapshot
-        # builders defer the *expensive* parts (matplotlib PNG encoding,
-        # connectivity span extraction) into zero-arg ``ResourceDescriptor``
-        # closures that capture deep copies of the relevant arrays, so
-        # invoking those closures later (on the SnapshotExecutor worker or
-        # inside an HTTP handler) is safe even after the pipeline mutates
-        # the original tensors.
         try:
             snapshot, snapshot_key_kinds, resource_descriptors = build_step_snapshot(
                 self.pipeline, step_name, step=step
@@ -191,15 +161,7 @@ class GUIHandle:
 
         working_dir = getattr(self.pipeline, "working_directory", None)
 
-        # Broadcast step_completed synchronously so the UI never sees the
-        # previous step "still running" while the next step's
-        # ``step_started`` has already fired.  The pipeline-thread ordering
-        # of broadcasts must be ``started:A → completed:A → started:B``;
-        # previously the completion was queued to a background executor
-        # so ``started:B`` could be broadcast before ``completed:A``,
-        # giving the monitor two concurrently "running" steps.  Disk
-        # persistence (PNG/JSON resource materialisation) remains
-        # deferred because it's heavy and order-insensitive.
+        # Broadcast step_completed on pipeline thread before next step_started.
         self.collector.step_completed(
             step_name,
             target_metric=target_metric,
@@ -208,15 +170,7 @@ class GUIHandle:
             resources=resource_descriptors,
         )
 
-        # Mark the step ``completed`` on disk SYNCHRONOUSLY before the
-        # pipeline thread runs the next step's ``on_step_start`` (which
-        # writes ``status="running"`` for that step). Without this, the
-        # active-run watcher reads ``steps.json`` during the gap, sees
-        # both steps as ``running``, and ``get_run_detail`` returns the
-        # earlier one as ``current_step`` — the pipeline bar then shows
-        # the *finished* step as the active one until the snapshot
-        # executor catches up. Field-wise upsert keeps the heavy
-        # ``snapshot`` / ``metrics`` written later by ``_finalize``.
+        # Sync status=completed to disk before next on_step_start (avoids dual-running in steps.json).
         end_time_now = time.time()
         if working_dir:
             try:
@@ -249,13 +203,6 @@ class GUIHandle:
                         detail.get("snapshot_key_kinds"),
                         status="completed",
                     )
-            # Pre-warm the in-process ResourceStore *and* (when we have a
-            # working dir) write the rendered payload to disk so live HTTP
-            # requests hit a hot cache and subprocess-monitor reads find
-            # the on-disk file. Going through ``store.prewarm`` instead of
-            # calling ``desc.producer()`` directly means the producer runs
-            # exactly once even if a fast user click races the prewarm —
-            # ``_Entry.materialise`` is itself idempotent + thread-safe.
             store = self.collector.get_resource_store()
             for desc in resource_descriptors:
                 payload = None
@@ -290,10 +237,6 @@ class GUIHandle:
                         encoded, media_type=desc.media_type,
                     )
 
-        # Offload collector bookkeeping and disk persistence so the
-        # pipeline thread returns immediately to run the next step. The
-        # executor is single-worker, so step_completed broadcasts remain
-        # in submission order (see SnapshotExecutor docstring).
         self._snapshot_executor.submit(_finalize)
 
     def shutdown(self) -> None:
@@ -302,11 +245,7 @@ class GUIHandle:
             self._snapshot_executor.shutdown()
 
     def wait_snapshots_idle(self, timeout: float | None = None) -> bool:
-        """Block until all queued snapshot jobs are flushed.
-
-        Primarily used by tests and shutdown paths that need ``steps.json``
-        fully written before inspecting disk.
-        """
+        """Block until queued snapshot jobs are flushed."""
         return self._snapshot_executor.wait_idle(timeout=timeout)
 
 
@@ -317,18 +256,10 @@ def start_gui(
     host: str = "0.0.0.0",
     start_step: str | None = None,
 ) -> GUIHandle:
-    """Spin up the GUI server and return a handle for hook registration.
-
-    If start_step is set, steps before it are backfilled from the pipeline cache
-    so they can be browsed (metrics, Model, IR Graph, Hardware tabs) even though
-    they did not run in this session.
-    """
+    """Start GUI server and return hook handle."""
     from mimarsinan.gui.server import start_server
 
     collector = DataCollector()
-    # Attach a resource store so snapshot builders' lazy descriptors are
-    # routed to a step-scoped cache that the HTTP resource endpoints
-    # (heatmaps, connectivity) can fetch from.
     collector.set_resource_store(ResourceStore())
 
     step_names = [name for name, _ in pipeline.steps]
@@ -339,10 +270,6 @@ def start_gui(
     if start_step is not None:
         _backfill_skipped_steps(pipeline, collector, step_names, start_step)
 
-    # Thread the pipeline's working_directory into the collector so the
-    # live /api/steps/.../resources endpoint can fall back to disk when
-    # the in-memory ResourceStore is empty (resumed runs reload only
-    # snapshot metadata; the per-step PNGs sit untouched on disk).
     collector.set_working_directory(getattr(pipeline, "working_directory", None))
 
     start_server(collector, host=host, port=port)
@@ -397,8 +324,6 @@ def _backfill_skipped_steps(
                 resources=resource_descriptors,
             )
 
-    # Persist skipped steps to disk so the monitor / active-run APIs can browse them.
-    # (In-memory backfill alone does not write steps.json; on_step_end only runs for executed steps.)
     if working_dir:
         _persist_skipped_steps_to_steps_json(working_dir, collector, step_names, start_idx)
 

@@ -104,14 +104,7 @@ def _dot_html_label_mixed(
 
 
 def _stack_sample_lines(names: list[str], ids: list[int]) -> str:
-    """
-    Produce a vertical stack like:
-      [first] ...
-      ...
-      [middle] ...
-      ...
-      [last] ...
-    """
+    """Produce a vertical stack of [id] name lines for large node groups."""
     n = len(ids)
     if n == 0:
         return "-"
@@ -147,12 +140,7 @@ def write_ir_graph_summary_dot(
     title: str | None = None,
     max_edges: int = 64,
 ) -> None:
-    """
-    Summarized IRGraph visualization:
-    - groups many NeuralCore nodes into a single "layer stack" node by name pattern
-    - shows only [first] ... [middle] ... [last] for large stacks
-    - aggregates edges at the group level to keep the graph readable
-    """
+    """Summarized IRGraph visualization with grouped nodes and capped edges."""
     os.makedirs(os.path.dirname(out_dot) or ".", exist_ok=True)
 
     # Build ordered groups
@@ -368,15 +356,7 @@ def write_ir_graph_summary_dot(
 
 
 def _embed_svg_images(svg_path: str) -> None:
-    """
-    Post-process a rendered SVG to embed referenced raster images (PNG/JPG/…)
-    as base64 data URIs.  This makes the SVG fully self-contained so it renders
-    correctly in browsers, Cursor's preview pane, and any other SVG viewer
-    without needing access to the local filesystem.
-
-    Non-image ``xlink:href`` / ``href`` values (e.g. links to other SVGs) are
-    left unchanged — only ``<image …>`` elements have their sources inlined.
-    """
+    """Embed referenced raster images in an SVG as base64 data URIs."""
     import re as _re
     import base64
     import mimetypes
@@ -429,13 +409,7 @@ def _embed_svg_images(svg_path: str) -> None:
 
 
 def try_render_dot(dot_path: str, *, formats: Iterable[str] = ("svg",)) -> list[str]:
-    """
-    Best-effort rendering of a .dot file to images using the system `dot` binary.
-    Returns the written output paths (may be empty).
-    SVG outputs are post-processed to embed any referenced raster images as
-    base64 data URIs, making the SVG fully self-contained for browsers and
-    SVG viewers (including Cursor's preview pane).
-    """
+    """Best-effort rendering of a .dot file using the system dot binary."""
     dot_bin = shutil.which("dot")
     if dot_bin is None:
         return []
@@ -461,9 +435,7 @@ def try_render_dot(dot_path: str, *, formats: Iterable[str] = ("svg",)) -> list[
     return out_paths
 
 
-# ---------------------------------------------------------------------------
 # IRGraph visualization (NeuralCore + ComputeOp)
-# ---------------------------------------------------------------------------
 
 
 def write_ir_graph_dot(
@@ -593,9 +565,7 @@ def write_ir_graph_dot(
         f.write("\n".join(lines))
 
 
-# ---------------------------------------------------------------------------
 # SoftCoreMapping visualization (actual mapped cores)
-# ---------------------------------------------------------------------------
 
 
 def write_softcore_mapping_dot(
@@ -606,12 +576,7 @@ def write_softcore_mapping_dot(
     cluster_by_psum_group: bool = True,
     max_edges_per_node: int = 64,
 ) -> None:
-    """
-    Visualize a mapped SoftCoreMapping (legacy mapping representation).
-    Expects:
-      - soft_core_mapping.cores: list[SoftCore]
-      - soft_core_mapping.output_sources: list[SpikeSource]
-    """
+    """Visualize a mapped SoftCoreMapping."""
     os.makedirs(os.path.dirname(out_dot) or ".", exist_ok=True)
 
     cores = list(getattr(soft_core_mapping, "cores", []))
@@ -768,9 +733,7 @@ def write_softcore_mapping_dot(
         f.write("\n".join(lines))
 
 
-# ---------------------------------------------------------------------------
 # HardCoreMapping visualization (physical cores)
-# ---------------------------------------------------------------------------
 
 
 def write_hardcore_mapping_dot(
@@ -914,9 +877,7 @@ def write_hardcore_mapping_dot(
         f.write("\n".join(lines))
 
 
-# ---------------------------------------------------------------------------
 # HybridHardCoreMapping visualization (multi-stage)
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -931,11 +892,7 @@ def write_hybrid_hardcore_mapping_dots(
     *,
     basename: str = "hybrid_mapping",
 ) -> HybridVizArtifacts:
-    """
-    Writes:
-      - <basename>.dot: stage-level program view
-      - <basename>_segment{i}.dot: detailed HardCoreMapping view for each neural stage
-    """
+    """Write stage-level and per-segment hybrid mapping DOT files."""
     os.makedirs(out_dir, exist_ok=True)
 
     program_dot = os.path.join(out_dir, f"{basename}.dot")
@@ -1011,16 +968,7 @@ def write_hybrid_hardcore_mapping_combined_dot(
     segment_heatmap_pngs: Sequence[str] | None = None,
     title: str | None = None,
 ) -> None:
-    """
-    A single "combined" hybrid visualization that includes:
-    - stage connectivity (program flow)
-    - ComputeOp metadata
-    - per-neural-segment heatmaps (and optionally a connectivity thumbnail per segment)
-
-    This is meant to be a readable overview, not a replacement for:
-    - the detailed segment hardcore mapping graphs
-    - the detailed heatmap-only views
-    """
+    """Combined hybrid visualization with stage flow and segment thumbnails."""
 
     os.makedirs(os.path.dirname(out_dot) or ".", exist_ok=True)
 

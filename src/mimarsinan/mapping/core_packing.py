@@ -512,7 +512,6 @@ def greedy_pack_softcores(
 
         core_tg = _soft_tg(core)
 
-        # --- Try used cores (only those with a compatible threshold group). ---
         target_idx = None
         best_remaining = float("inf")
         candidate_buckets = [used_by_tg.get(core_tg, ())]
@@ -526,7 +525,6 @@ def greedy_pack_softcores(
                         best_remaining = rem
                         target_idx = idx
 
-        # --- Try neuron splitting into a used core ---
         if (
             target_idx is None
             and split_softcore is not None
@@ -545,7 +543,6 @@ def greedy_pack_softcores(
                 continue
 
         if target_idx is None:
-            # --- No used core fits: allocate an unused core. ---
             if not unused_hardcores:
                 raise RuntimeError("No more hard cores available")
 
@@ -593,7 +590,6 @@ def greedy_pack_softcores(
                                     del unused_by_type[hc_type]
                                 break
 
-                # --- Try neuron splitting into an unused core (last resort) ---
                 if (
                     fused_hc is None
                     and split_softcore is not None

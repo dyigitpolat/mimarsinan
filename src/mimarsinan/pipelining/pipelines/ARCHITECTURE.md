@@ -16,6 +16,21 @@ end-to-end workflows.
 
 The wizard calls **POST `/api/pipeline_steps`** (see `gui/server.py`) with the current deployment config; the handler merges config, calls `get_pipeline_step_specs(config)`, and returns `{"steps": [name, ...], "semantic_groups": [group_id, ...]}` so the UI can show the pipeline that would run without executing it, with colour-coded semantic groups.
 
+## Step ordering (`get_pipeline_step_specs`)
+
+Single source of truth in `deployment_pipeline.py`. High-level branches:
+
+| Condition | Effect |
+|-----------|--------|
+| `search_mode != "fixed"` | `ArchitectureSearchStep` instead of `ModelConfigurationStep` |
+| `spiking_mode == "lif"` | `LIFAdaptationStep` after activation analysis |
+| `spiking_mode != "lif"` and (`activation_quantization` or TTFS) | `ClampAdaptationStep`; optional activation-quant chain when `activation_quantization` |
+| `weight_quantization` | weight-quant steps before mapping; `CoreQuantizationVerificationStep` after soft-core mapping |
+| `enable_loihi_simulation` | `LoihiSimulationStep` after `SimulationStep` (LIF only at runtime) |
+| `enable_sanafe_simulation` | `SanafeSimulationStep` after simulation (optional HCM parity gate) |
+
+Always: model build → (pretrain or preload) → optional torch map → optional pruning → activation analysis/adaptation → normalization fusion → soft core mapping → hard core mapping → nevresim simulation.
+
 ## Dependencies
 
 - **Internal**: `pipelining.pipeline`, `pipelining.pipeline_steps` (all step classes), `data_handling.data_provider_factory`.

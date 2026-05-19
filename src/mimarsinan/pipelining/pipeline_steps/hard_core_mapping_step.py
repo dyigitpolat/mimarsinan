@@ -15,13 +15,7 @@ import os
 
 
 def _vram_probe(tag: str) -> None:
-    """Opt-in VRAM + RSS probe.
-
-    Enabled when ``MIMARSINAN_VRAM_PROBE=1`` so we can drop
-    instrumentation into the HCM step without paying sync costs in
-    production runs.  Prints one line with RSS / CUDA allocated /
-    CUDA reserved (MiB) and the current peak.
-    """
+    """Opt-in VRAM/RSS probe when ``MIMARSINAN_VRAM_PROBE=1``."""
     if os.environ.get("MIMARSINAN_VRAM_PROBE") != "1":
         return
     try:
@@ -48,8 +42,6 @@ def _vram_probe(tag: str) -> None:
 class HardCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
-        # Unified-only: always compile the tuned IRGraph into a HybridHardCoreMapping.
-        # For neural-only graphs this will simply be a single neural segment.
         requires = ["model", "ir_graph", "platform_constraints_resolved"]
         promises = ["hard_core_mapping"]
         updates = []
@@ -57,25 +49,12 @@ class HardCoreMappingStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
-        """Return the hard-core simulation accuracy.
-
-        When the simulation failed (OOM, CUDA error, etc.) we deliberately
-        surface 0.0 rather than falling back to the pipeline's target
-        metric.  Falling back to the target silently masked mapping
-        failures: the step reported the pre-mapping reference accuracy as
-        if the sim had succeeded.  Returning 0.0 lets the pipeline's
-        cross-step accuracy budget see the real drop and react.
-        """
+        """Return hard-core sim accuracy; 0.0 on sim failure (not target fallback)."""
         if getattr(self, "_last_metric_is_failure", False):
             return 0.0
         m = getattr(self, "_last_metric", None)
         if m is not None:
             return m
-        # No sim ran AND no explicit failure flag — conservative behavior
-        # is to treat the step as untested and defer to the target.  This
-        # branch is reached only when the try/except block was skipped
-        # entirely (e.g. a future refactor that bypasses the sim), which
-        # we don't currently do.
         return self.pipeline.get_target_metric()
 
     def process(self):
@@ -96,7 +75,6 @@ class HardCoreMappingStep(PipelineStep):
             allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
         )
 
-        # Report structure — distinguish scheduled passes from segments.
         neural_segs = hybrid_mapping.get_neural_segments()
         compute_ops = hybrid_mapping.get_compute_ops()
         scheduled_stages = [s for s in hybrid_mapping.stages if s.schedule_pass_index is not None]
@@ -123,7 +101,6 @@ class HardCoreMappingStep(PipelineStep):
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")
         _vram_probe("after_pickle_save")
 
-        # Run a spiking simulation test to verify the hard-core mapping
         try:
             device = self.pipeline.config["device"]
             flow = SpikingHybridCoreFlow(
@@ -138,10 +115,6 @@ class HardCoreMappingStep(PipelineStep):
             )
             flow = flow.to(device)
             _vram_probe("after_flow_to_device")
-            # ``simulation_batch_count`` caps the per-core test pass to
-            # keep the verification sim inside the run budget on large
-            # models; the SoftCoreMapping pass already uses the same
-            # override. ``None`` preserves the legacy full-test-set pass.
             sim_batches = self.pipeline.config.get("simulation_batch_count", None)
             trainer = BasicTrainer(
                 flow,
@@ -149,9 +122,6 @@ class HardCoreMappingStep(PipelineStep):
                 DataLoaderFactory(self.pipeline.data_provider_factory),
                 None,
             )
-            # Honour ``max_simulation_samples`` with the same seeded
-            # subsampling as ``SimulationRunner`` and the SCM
-            # verification — keeps the three metrics comparable.
             max_samples = int(self.pipeline.config.get("max_simulation_samples", 0) or 0)
             _vram_probe("before_test")
             if max_samples > 0:
@@ -165,19 +135,11 @@ class HardCoreMappingStep(PipelineStep):
             self._last_metric = float(acc)
             print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
         except Exception as e:
-            # The sim is the only check that this step produced a working
-            # hardcore program.  If it fails, ``validate()`` must surface
-            # the failure — previously we left ``_last_metric = None`` and
-            # ``validate`` silently fell back to the pre-mapping target
-            # accuracy, so a crashed sim looked like a clean pass.  Mark
-            # the step explicitly as failed so ``validate`` returns 0.0
-            # and the accuracy-budget gate fires.
             print(f"[HardCoreMappingStep] Hard-core simulation test FAILED: {e}")
             traceback.print_exc()
             self._last_metric = None
             self._last_metric_is_failure = True
 
-        # Visualize the hybrid program (stage-level) + each neural segment's HardCoreMapping.
         if self.pipeline.config.get("generate_visualizations", False):
           try:
               from mimarsinan.visualization.hardcore_visualization import HardCoreMappingVisualizer
@@ -193,7 +155,6 @@ class HardCoreMappingStep(PipelineStep):
                   basename="hybrid_hardcore_mapping",
               )
 
-              # Also emit per-segment weight heatmaps for quick inspection.
               heatmaps = []
               for i, seg in enumerate(hybrid_mapping.get_neural_segments()):
                   heat_path = self.pipeline.working_directory + f"/hybrid_segment{i}_hardcore_heatmap.png"
@@ -215,7 +176,6 @@ class HardCoreMappingStep(PipelineStep):
                       print(f"[HardCoreMappingStep] Wrote hybrid segment {i} visualization: {seg_dot} (render skipped: graphviz 'dot' not found)")
                   segment_pngs.append(os.path.splitext(seg_dot)[0] + ".png")
 
-              # Combined overview (program connectivity + ComputeOps + thumbnails: connectivity + heatmaps).
               combined_dot = self.pipeline.working_directory + "/hybrid_hardcore_mapping_combined.dot"
               write_hybrid_hardcore_mapping_combined_dot(
                   hybrid_mapping,

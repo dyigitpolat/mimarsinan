@@ -98,13 +98,6 @@ class SimulationRunner:
         wt_q = pipeline.config.get("weight_quantization", True)
         self.weight_type = int if wt_q else float
 
-        # Threshold is decoupled from weight_type — nevresim's
-        # ``ChipConfiguration`` now carries its own ``ThresholdType``.  In TTFS
-        # modes the per-core threshold is ``scale = q_max / max(|W|)``, a
-        # non-integer Python float; force ``double`` (Python ``float``) so the
-        # C++ loader keeps full float64 precision.  LIF (rate-coded) paths stay
-        # with integer threshold (== weight_type) for hardware-accurate integer
-        # membrane arithmetic and no serialisation precision loss.
         is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
         self.threshold_type = float if is_ttfs else self.weight_type
 
@@ -131,10 +124,6 @@ class SimulationRunner:
         finally:
             shutdown_data_loader(test_loader)
 
-        # Use the shared subsample helper so SCM, HCM, and nevresim
-        # always evaluate on the same indices when seed + max_samples
-        # match. ``BasicTrainer.test_on_subsample`` calls the same
-        # helper.
         max_samples = int(pipeline.config.get("max_simulation_samples", 0) or 0)
         total_samples = len(self.test_data)
         if max_samples and 0 < max_samples < total_samples:
@@ -150,10 +139,6 @@ class SimulationRunner:
 
         self.mapping = mapping
         self.simulation_length = simulation_length
-
-    # ------------------------------------------------------------------
-    # Evaluation helpers
-    # ------------------------------------------------------------------
 
     def _evaluate_chip_output(self, predictions):
         confusion_matrix = np.zeros(
@@ -171,10 +156,6 @@ class SimulationRunner:
             total += 1
 
         return float(correct) / total
-
-    # ------------------------------------------------------------------
-    # Single-segment nevresim (original path)
-    # ------------------------------------------------------------------
 
     def _run_flat_mapping(self, hard_core_mapping: HardCoreMapping) -> float:
         """Run a flat (single-segment) HardCoreMapping through nevresim."""
@@ -206,10 +187,6 @@ class SimulationRunner:
         accuracy = self._evaluate_chip_output(predictions)
         return accuracy
 
-    # ------------------------------------------------------------------
-    # Multi-segment nevresim (state-buffer driven)
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _compute_segment_input_size(hard_core_mapping: HardCoreMapping) -> int:
         """Determine the input buffer size for a neural segment."""
@@ -225,7 +202,6 @@ class SimulationRunner:
         """Infer flat output size for a ComputeOp. Uses output_shape when set, else dummy execute."""
         if op.output_shape is not None:
             return int(np.prod(op.output_shape))
-        # Dummy execute to infer shape
         batch_size = 1
         dummy_input = torch.zeros(batch_size, max(state_sizes.get(-2, 1), 1), dtype=torch.float32)
         dummy_buffers = {
@@ -248,8 +224,6 @@ class SimulationRunner:
         original_input = np.stack([d[0] for d in self.test_data])
         original_input = original_input.reshape(original_input.shape[0], -1)
 
-        # ---- Fast sequential pass: compute input_size / latency per segment ----
-        # Only arithmetic on IO-slice metadata — no chip creation or file I/O.
         state_sizes: Dict[int, int] = {-2: original_input.shape[1]}
         segment_specs: List[Tuple[int, str, HardCoreMapping, int, int]] = []
 
@@ -276,7 +250,6 @@ class SimulationRunner:
                 out_size = self._get_compute_op_output_size(stage.compute_op, state_sizes)
                 state_sizes[stage.compute_op.id] = out_size
 
-        # ---- Parallel pass: emit chip artifacts + compile for every segment ----
         num_segs = len(segment_specs)
         print(f"  Emitting parameters and compiling {num_segs} segment(s) in parallel...")
 
@@ -373,7 +346,6 @@ class SimulationRunner:
         original_input = original_input.reshape(original_input.shape[0], -1)
         state_buffer: Dict[int, np.ndarray] = {-2: original_input}
 
-        # Emit + compile all neural segments in parallel upfront
         prepared_segments = self._prepare_all_segments(hybrid)
 
         seg_counter = 0
@@ -429,10 +401,6 @@ class SimulationRunner:
         print("Evaluating simulator output...")
         return self._evaluate_chip_output(predictions)
 
-    # ------------------------------------------------------------------
-    # State-buffer helpers (numpy) — thin wrappers around hybrid_execution
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _assemble_segment_input_np(
         input_map: list[SegmentIOSlice],
@@ -476,10 +444,6 @@ class SimulationRunner:
             output_sources, state_buffer, original_input, num_samples,
         )
 
-    # ------------------------------------------------------------------
-    # Public entry point
-    # ------------------------------------------------------------------
-
     def run(self) -> float:
         if isinstance(self.mapping, HybridHardCoreMapping):
             segments = self.mapping.get_neural_segments()
@@ -492,5 +456,4 @@ class SimulationRunner:
                   f"{len(compute_ops)} compute ops")
             return self._run_hybrid(self.mapping)
 
-        # Legacy: plain HardCoreMapping (backward compatibility)
         return self._run_flat_mapping(self.mapping)

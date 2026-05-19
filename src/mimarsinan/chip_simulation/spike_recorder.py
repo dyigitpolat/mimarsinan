@@ -86,9 +86,7 @@ class RunRecord:
     compute_outputs: Dict[int, np.ndarray] = field(default_factory=dict)
 
 
-# ---------------------------------------------------------------------------
 # Diffing
-# ---------------------------------------------------------------------------
 
 
 @dataclass

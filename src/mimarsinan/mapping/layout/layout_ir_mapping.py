@@ -70,18 +70,14 @@ class LayoutIRMapping:
         self._layout_weight_banks: Dict[int, Tuple[int, int]] = {}
         self._sc_idx_to_bank_id: Dict[int, int] = {}
 
-    # ------------------------------------------------------------------
     # Node id allocation
-    # ------------------------------------------------------------------
 
     def _alloc_node_id(self) -> int:
         node_id = self._next_node_id
         self._next_node_id += 1
         return node_id
 
-    # ------------------------------------------------------------------
     # Dependency / shape helpers
-    # ------------------------------------------------------------------
 
     def _extract_input_node_ids(self, input_sources: Optional[np.ndarray]) -> Set[int]:
         ids: Set[int] = set()
@@ -127,9 +123,7 @@ class LayoutIRMapping:
             dtype=object,
         )
 
-    # ------------------------------------------------------------------
     # Public mapping protocol (called by Mapper.map_to_ir)
-    # ------------------------------------------------------------------
 
     def map(self, model_representation) -> np.ndarray:
         """Run ``map_to_ir`` over the mapper graph and finalise metadata.
@@ -297,9 +291,7 @@ class LayoutIRMapping:
         self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
         return result
 
-    # ------------------------------------------------------------------
     # Shared FC tiling dispatch
-    # ------------------------------------------------------------------
 
     def map_fc(
         self,
@@ -606,9 +598,7 @@ class LayoutIRMapping:
 
         return np.concatenate(all_output_sources)
 
-    # ------------------------------------------------------------------
     # Finalisation: latencies, segments, threshold groups
-    # ------------------------------------------------------------------
 
     def _compute_latencies(self) -> Dict[int, int]:
         memo: Dict[int, int] = {}

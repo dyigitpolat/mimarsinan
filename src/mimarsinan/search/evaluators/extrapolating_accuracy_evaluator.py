@@ -26,9 +26,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shut
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 
-# ---------------------------------------------------------------------------
 # Parametric learning-curve models
-# ---------------------------------------------------------------------------
 # Each model maps (t, *params) -> predicted accuracy.
 # `t` is in *epochs* (so 0.2 means 20 % of the first epoch).
 
@@ -145,9 +143,7 @@ def _fit_and_extrapolate(
     return best_pred, best_name
 
 
-# ---------------------------------------------------------------------------
 # Public evaluator
-# ---------------------------------------------------------------------------
 
 @dataclass
 class ExtrapolatingAccuracyEvaluator:
@@ -200,7 +196,6 @@ class ExtrapolatingAccuracyEvaluator:
         torch.manual_seed(int(self.seed))
         np.random.seed(int(self.seed))
 
-        # ---- data setup ------------------------------------------------
         data_loader_factory = DataLoaderFactory(
             self.data_provider_factory, num_workers=int(self.num_workers)
         )
@@ -237,7 +232,6 @@ class ExtrapolatingAccuracyEvaluator:
             use_amp = self.device.type == "cuda"
             scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
-            # ---- training with checkpoints ---------------------------------
             steps_per_epoch = max(1, len(train_loader))
             total_steps = steps_per_epoch * int(self.num_train_epochs)
             warmup_steps = max(1, int(total_steps * float(self.warmup_fraction)))
@@ -285,7 +279,6 @@ class ExtrapolatingAccuracyEvaluator:
                         curve_t.append(t)
                         curve_y.append(acc)
 
-            # ---- curve fitting & extrapolation -----------------------------
             t_obs = np.array(curve_t, dtype=np.float64)
             y_obs = np.array(curve_y, dtype=np.float64)
             t_target = float(self.target_epochs)
@@ -301,7 +294,6 @@ class ExtrapolatingAccuracyEvaluator:
             shutdown_data_loader(train_loader)
             shutdown_data_loader(val_loader)
 
-    # ---- helpers -------------------------------------------------------
 
     @torch.no_grad()
     def _validate(self, model: torch.nn.Module, val_loader) -> float:

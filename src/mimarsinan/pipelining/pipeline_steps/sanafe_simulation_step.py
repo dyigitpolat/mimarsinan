@@ -81,7 +81,6 @@ class SanafeSimulationStep(PipelineStep):
             return self.metric
         return self.pipeline.get_target_metric()
 
-    # ------------------------------------------------------------------ data
 
     def _load_samples(self) -> list[torch.Tensor]:
         """Load ``sanafe_sample_count`` deterministic test samples by index 0..N-1."""
@@ -120,7 +119,6 @@ class SanafeSimulationStep(PipelineStep):
             )
         return out
 
-    # --------------------------------------------------------------- process
 
     def process(self):
         # Read the contract surface and config knobs first so a misconfigured

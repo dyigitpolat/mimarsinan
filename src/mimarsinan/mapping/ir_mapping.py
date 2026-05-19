@@ -59,9 +59,7 @@ class IRMapping(LayoutIRMapping):
         self.nodes: List[IRNode] = []
         self._weight_banks: Dict[int, WeightBank] = {}
 
-    # ------------------------------------------------------------------
     # Public mapping entry point
-    # ------------------------------------------------------------------
 
     def map(self, model_representation) -> IRGraph:
         output_sources = super().map(model_representation)
@@ -71,9 +69,7 @@ class IRMapping(LayoutIRMapping):
             weight_banks=dict(self._weight_banks),
         )
 
-    # ------------------------------------------------------------------
     # Source conversion (SpikeSource / IRSource compatibility)
-    # ------------------------------------------------------------------
 
     def _convert_sources(self, sources: np.ndarray) -> np.ndarray:
         """Convert a SpikeSource or IRSource array to an IRSource array.
@@ -106,9 +102,7 @@ class IRMapping(LayoutIRMapping):
             return tensor_or_array
         return tensor_or_array.detach().cpu().numpy()
 
-    # ------------------------------------------------------------------
     # Emission hooks — construct real IR nodes in addition to shape tracking
-    # ------------------------------------------------------------------
 
     def add_compute_op(
         self,

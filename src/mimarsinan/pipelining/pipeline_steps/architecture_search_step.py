@@ -1,3 +1,5 @@
+"""Architecture / platform search or fixed-configuration passthrough."""
+
 from __future__ import annotations
 
 import os
@@ -21,11 +23,6 @@ from mimarsinan.visualization.search_visualization import (
 
 
 OptimizerType = Literal["nsga2", "agent_evolve", "compilagent"]
-
-
-# ====================================================================== #
-# Optimizer factory
-# ====================================================================== #
 
 
 def _create_optimizer(
@@ -104,11 +101,6 @@ def _create_optimizer(
     )
 
 
-# ====================================================================== #
-# Helpers
-# ====================================================================== #
-
-
 def _search_result_to_jsonable(result) -> Dict[str, Any]:
     def cand_to_dict(c):
         return {
@@ -130,7 +122,7 @@ def _derive_arch_options(
     arch_cfg: Dict[str, Any],
     input_shape: tuple,
 ) -> Tuple[List[Tuple[str, List[Any]]], Dict[str, Any]]:
-    """Derive (arch_options, schema_map) from builder's schema + get_nas_search_options()."""
+    """Derive (arch_options, schema_map) from builder schema and NAS options."""
     schema = getattr(builder_cls, "get_config_schema", lambda: [])()
     schema_map = {f["key"]: f for f in schema}
 
@@ -181,10 +173,7 @@ def _make_assembler(schema: List[Dict[str, Any]], schema_map: Dict[str, Any]):
 
 
 def _build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
-    """Build a platform_constraints dict from user-provided pipeline config.
-
-    No global max_axons/max_neurons — only ``cores`` list.
-    """
+    """Build platform_constraints from pipeline config (cores list only)."""
     cores = list(pipeline_config.get("cores", []))
     if not cores:
         cores = [{"max_axons": 256, "max_neurons": 256, "count": 1000}]
@@ -203,20 +192,8 @@ def _build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
     return out
 
 
-# ====================================================================== #
-# The pipeline step
-# ====================================================================== #
-
 class ArchitectureSearchStep(PipelineStep):
-    """
-    Produces model configuration + resolved platform constraints.
-
-    Modes (derived from ``search_mode``):
-    - fixed:    passthrough (uses pipeline config directly)
-    - model:    searches NN architecture, HW config fixed from user
-    - hardware: searches HW config, NN architecture fixed from user
-    - joint:    searches both NN architecture and HW config
-    """
+    """Resolve model_config and platform_constraints (search or fixed passthrough)."""
 
     def __init__(self, pipeline):
         requires = []
@@ -242,10 +219,6 @@ class ArchitectureSearchStep(PipelineStep):
         else:
             self._process_search(search_mode)
 
-    # ------------------------------------------------------------------ #
-    # Fixed mode — passthrough
-    # ------------------------------------------------------------------ #
-
     def _process_fixed(self):
         model_type = self.pipeline.config["model_type"]
         builder_cls = ModelRegistry.get_builder_cls(model_type)
@@ -263,7 +236,6 @@ class ArchitectureSearchStep(PipelineStep):
 
         pcfg = _build_fixed_platform_constraints(self.pipeline.config)
 
-        # Propagate has_bias to every core type
         global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
         for c in pcfg.get("cores", []):
             c.setdefault("has_bias", global_has_bias)
@@ -271,17 +243,12 @@ class ArchitectureSearchStep(PipelineStep):
         self.add_entry("platform_constraints_resolved", pcfg)
         self.add_entry("architecture_search_result", {"search_mode": "fixed"})
 
-    # ------------------------------------------------------------------ #
-    # Search mode — run optimisation
-    # ------------------------------------------------------------------ #
-
     def _process_search(self, search_mode: str):
         model_type = self.pipeline.config["model_type"]
         builder_cls = ModelRegistry.get_builder_cls(model_type)
         arch_cfg = self.pipeline.config.get("arch_search", {})
         input_shape = tuple(self.pipeline.config["input_shape"])
 
-        # ---- Derive architecture search space (if searching model) ----
         arch_options: List[Tuple[str, List[Any]]] = []
         assembler = None
 
@@ -301,7 +268,6 @@ class ArchitectureSearchStep(PipelineStep):
         if assembler is None:
             assembler = lambda raw: dict(raw)
 
-        # ---- Fixed values for non-searched dimensions ----
         fixed_model_config = None
         fixed_platform_constraints = None
 
@@ -311,7 +277,6 @@ class ArchitectureSearchStep(PipelineStep):
         if search_mode == "model":
             fixed_platform_constraints = _build_fixed_platform_constraints(self.pipeline.config)
 
-        # ---- Validate and constraint functions ----
         validate_config_fn = getattr(builder_cls, "validate_config", None)
 
         def validate_fn(model_config, platform_constraints, inp_shape):
@@ -325,7 +290,6 @@ class ArchitectureSearchStep(PipelineStep):
                     return 1.0
             return 0.0
 
-        # ---- Common NAS parameters ----
         pop_size = int(arch_cfg.get("pop_size", 12))
         generations = int(arch_cfg.get("generations", 5))
         seed = int(arch_cfg.get("seed", 0))
@@ -348,12 +312,10 @@ class ArchitectureSearchStep(PipelineStep):
 
         optimizer_type: OptimizerType = arch_cfg.get("optimizer", "nsga2")
 
-        # ---- Resolve active objectives ----
         user_objectives = arch_cfg.get("objectives")
         active_objectives = resolve_active_objectives(search_mode, user_objectives)
         active_objective_names = [o.name for o in active_objectives]
 
-        # ---- Build the problem ----
         problem = JointArchHwProblem(
             data_provider_factory=self.pipeline.data_provider_factory,
             device=self.pipeline.config["device"],
@@ -446,16 +408,13 @@ class ArchitectureSearchStep(PipelineStep):
         model_config = best_cfg["model_config"]
         platform_constraints = best_cfg["platform_constraints"]
 
-        # Apply global has_bias (not searchable)
         global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
         for c in platform_constraints.get("cores", []):
             c["has_bias"] = global_has_bias
 
-        # For model-only search, merge fixed platform constraints
         if search_mode == "model" and fixed_platform_constraints:
             platform_constraints = {**fixed_platform_constraints, **platform_constraints}
 
-        # Build the builder with resolved constraints
         merged_config = {**self.pipeline.config, **platform_constraints}
         builder = builder_cls(
             self.pipeline.config["device"],
@@ -464,7 +423,6 @@ class ArchitectureSearchStep(PipelineStep):
             merged_config,
         )
 
-        # Write discovered parameters
         discovered = {
             "search_mode_used": search_mode,
             "discovered_model_config": model_config if search_mode in ("model", "joint") else None,

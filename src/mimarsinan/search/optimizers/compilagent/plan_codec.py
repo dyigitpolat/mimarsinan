@@ -1,33 +1,4 @@
-"""Bidirectional codec between compilagent ``Plan``s and mimarsinan configs.
-
-A mimarsinan candidate configuration has two top-level keys::
-
-    {
-        "model_config":          {<arch key>: <value>, ...},
-        "platform_constraints":  {"cores": [{"max_axons", "max_neurons", "count"}, ...],
-                                  "target_tq": int, "weight_bits": int, ...},
-    }
-
-A compilagent ``Plan`` is an ordered tuple of ``Intervention``s; each
-intervention names a ``Target(kind, selector)`` and carries an opaque
-``payload``. We use exactly two ``target.kind`` values:
-
-* ``"arch"`` — selector is the model-config key, payload is the chosen
-  arch-option value.
-* ``"hw.core"`` — selector is ``"<core_index>.<dim>"`` where ``dim`` is
-  one of ``max_axons``, ``max_neurons``, ``count``; payload is the chosen
-  integer.
-
-Encoding is the inverse: every non-default value in the configuration is
-emitted as one ordered intervention. The codec is lossless on every
-configuration the search step can reach (``encode_plan(decode_plan(p))``
-yields the same ordered intervention set up to ordering).
-
-The defaults the decoder layers under each plan come from the
-``SearchSpaceDescription`` and ``JointArchHwProblem`` the optimizer holds,
-so a plan that omits a variable inherits its default value rather than
-crashing — this matches compilagent's "baseline = empty plan" expectation.
-"""
+"""Bidirectional codec between compilagent Plans and mimarsinan configs."""
 
 from __future__ import annotations
 
@@ -37,12 +8,11 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 
 
-# Stable target-kind strings used in `Intervention.target.kind`.
+# Stable target-kind strings used in Intervention.target.kind.
 ARCH_KIND = "arch"
 HW_CORE_KIND = "hw.core"
 
-# Allowed dim names for ``hw.core`` interventions; matches the order
-# ``_decode_hw`` in ``JointArchHwProblem`` consumes.
+# Allowed dim names for hw.core interventions.
 HW_DIM_NAMES = ("max_axons", "max_neurons", "count")
 
 
@@ -52,16 +22,7 @@ class PlanCodecError(ValueError):
 
 @dataclass(frozen=True)
 class CodecDefaults:
-    """Defaults the decoder layers under each plan.
-
-    ``model_config`` maps every searchable arch key to its default value;
-    ``platform_constraints`` carries the canonical core list (one entry
-    per core type with ``max_axons``/``max_neurons``/``count``) plus the
-    fixed ``target_tq`` / ``weight_bits``.
-
-    The decoder treats the defaults as a deep snapshot — incoming
-    interventions overlay on top, never mutate it.
-    """
+    """Defaults the decoder layers under each plan."""
 
     model_config: Mapping[str, Any]
     platform_constraints: Mapping[str, Any]
@@ -74,14 +35,7 @@ class CodecDefaults:
         fixed_model_config: Mapping[str, Any] | None = None,
         fixed_platform_constraints: Mapping[str, Any] | None = None,
     ) -> "CodecDefaults":
-        """Derive defaults from ``description`` plus any non-searched values.
-
-        For arch keys not currently searched we fall back to the
-        ``fixed_model_config`` provided by the search step (mirrors
-        ``JointArchHwProblem.fixed_model_config``). The HW defaults come
-        from the description's ``to_agent_evolve_example()`` rendering so
-        they always satisfy the bounds.
-        """
+        """Derive defaults from description plus any non-searched values."""
 
         model_defaults: Dict[str, Any] = dict(fixed_model_config or {})
         if description.searches_model:
@@ -105,7 +59,6 @@ class CodecDefaults:
                 "weight_bits": int(description.weight_bits),
             }
             if fixed_platform_constraints:
-                # Carry over non-searched flags (allow_scheduling, has_bias, ...).
                 for k, v in fixed_platform_constraints.items():
                     if k not in {"cores", "target_tq", "weight_bits"}:
                         platform_defaults.setdefault(k, v)
@@ -116,20 +69,8 @@ class CodecDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# Decoding
-# ---------------------------------------------------------------------------
-
-
 def decode_plan(plan: Any, defaults: CodecDefaults) -> Dict[str, Any]:
-    """Translate a compilagent ``Plan`` into a mimarsinan configuration dict.
-
-    ``plan.interventions`` is iterated in order; later interventions on
-    the same target win (the same semantics ``Backend.apply_intervention``
-    uses by default). Unknown ``target.kind`` values raise
-    ``PlanCodecError`` so ``Backend.validate_intervention`` can surface a
-    clear retry message to the agent.
-    """
+    """Translate a compilagent Plan into a mimarsinan configuration dict."""
 
     model_config: Dict[str, Any] = dict(defaults.model_config)
     platform_constraints: Dict[str, Any] = _deep_copy_platform(defaults.platform_constraints)
@@ -194,10 +135,6 @@ def _apply_hw_core(
         )
     cores: List[Dict[str, Any]] = list(platform_constraints.get("cores", []))
     while len(cores) <= idx:
-        # Synthesise a placeholder core so partial plans (the agent has
-        # only set one of the dims so far) do not crash. The default
-        # values come from the existing core 0 if present, otherwise
-        # 64-axon / 64-neuron / 50-count.
         template = cores[0] if cores else {"max_axons": 64, "max_neurons": 64, "count": 50}
         cores.append(dict(template))
     try:
@@ -210,28 +147,13 @@ def _apply_hw_core(
     platform_constraints["cores"] = cores
 
 
-# ---------------------------------------------------------------------------
-# Encoding
-# ---------------------------------------------------------------------------
-
-
 def encode_plan(
     configuration: Mapping[str, Any],
     defaults: CodecDefaults,
     *,
     description: SearchSpaceDescription | None = None,
 ) -> Tuple[Tuple[str, str, Any], ...]:
-    """Translate a mimarsinan configuration into an ordered intervention sequence.
-
-    Returns a tuple of ``(target_kind, target_selector, payload)`` triples
-    that the optimizer wraps into ``compilagent.Intervention`` objects
-    (this avoids a hard import of compilagent at codec module-load time).
-
-    Only values that *differ from defaults* are emitted, mirroring the
-    "minimal diff" semantics of an LLM-proposed plan. When ``description``
-    is provided we restrict encoding to its searchable variables; without
-    it every diff is emitted.
-    """
+    """Translate a mimarsinan configuration into an ordered intervention sequence."""
 
     triples: List[Tuple[str, str, Any]] = []
     model_cfg: Mapping[str, Any] = configuration.get("model_config", {}) or {}

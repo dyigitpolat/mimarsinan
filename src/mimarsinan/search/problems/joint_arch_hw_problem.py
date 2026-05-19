@@ -61,18 +61,14 @@ def effective_max_dims(cores: Sequence[Dict[str, Any]]) -> Tuple[int, int]:
     )
 
 
-# ---------------------------------------------------------------------------
 # Type aliases for the injected callables
-# ---------------------------------------------------------------------------
 BuilderFactory = Callable[..., Any]
 ModelConfigAssembler = Callable[[Dict[str, Any]], Dict[str, Any]]
 ValidateFn = Callable[[Dict[str, Any], Dict[str, Any], Tuple[int, ...]], bool]
 ConstraintFn = Callable[[Dict[str, Any], Dict[str, Any], Tuple[int, ...]], float]
 
 
-# ---------------------------------------------------------------------------
 # Cache for HW-only search (model built once)
-# ---------------------------------------------------------------------------
 @dataclass
 class _HwOnlyCache:
     softcores: List[LayoutSoftCoreSpec]
@@ -80,9 +76,7 @@ class _HwOnlyCache:
     host_side_segment_count: int
 
 
-# ---------------------------------------------------------------------------
 # Validation cache entry (model + HW metrics from a successful validate)
-# ---------------------------------------------------------------------------
 @dataclass
 class _ValidationEntry:
     model: Any  # raw PyTorch model (for accuracy evaluation)
@@ -92,9 +86,7 @@ class _ValidationEntry:
 _VALIDATION_CACHE_MAX_SIZE = 16
 
 
-# ---------------------------------------------------------------------------
 # The problem
-# ---------------------------------------------------------------------------
 @dataclass
 class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     """
@@ -113,30 +105,24 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     target_tq: int
     lr: float
 
-    # --- Search mode ---
     search_mode: str = "joint"  # "model", "hardware", "joint"
 
-    # --- Pluggable, model-specific pieces ---
     builder_factory: BuilderFactory = None  # type: ignore[assignment]
     arch_options: Sequence[Tuple[str, Sequence[Any]]] = ()
     model_config_assembler: ModelConfigAssembler = None  # type: ignore[assignment]
     validate_fn: Optional[ValidateFn] = None
     constraint_fn: Optional[ConstraintFn] = None
 
-    # --- Fixed values for non-searched dimensions ---
     fixed_model_config: Optional[Dict[str, Any]] = None
     fixed_platform_constraints: Optional[Dict[str, Any]] = None
 
-    # --- Active objectives (resolved ObjectiveSpec names) ---
     active_objective_names: Sequence[str] = ()
 
-    # --- Hardware search space ---
     num_core_types: int = 1
     core_axons_bounds: Tuple[int, int] = (64, 2048)
     core_neurons_bounds: Tuple[int, int] = (64, 2048)
     core_count_bounds: Tuple[int, int] = (50, 500)
 
-    # --- Evaluation knobs ---
     accuracy_seed: int = 0
     warmup_fraction: float = 0.10
     training_batch_size: Optional[int] = None
@@ -146,15 +132,12 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
     extrapolation_target_epochs: int = 10
     pruning_fraction: float = 0.0
 
-    # --- Internal ---
     _cache: Dict[str, Dict[str, float]] = field(default_factory=dict, init=False)
     _hw_only_cache: Optional[_HwOnlyCache] = field(default=None, init=False)
     _validation_cache: Dict[str, _ValidationEntry] = field(default_factory=dict, init=False)
     _validation_errors: Dict[str, ValidationResult] = field(default_factory=dict, init=False)
 
-    # ------------------------------------------------------------------ #
     # Helpers
-    # ------------------------------------------------------------------ #
 
     @property
     def _searches_model(self) -> bool:
@@ -173,9 +156,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         # 3 variables per core type: (max_axons, max_neurons, count)
         return (3 * int(self.num_core_types)) if self._searches_hw else 0
 
-    # ------------------------------------------------------------------ #
     # EncodedProblem interface
-    # ------------------------------------------------------------------ #
 
     @property
     def objectives(self) -> Sequence[ObjectiveSpec]:
@@ -215,9 +196,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
                 ])
         return np.array(xu, dtype=float)
 
-    # ------------------------------------------------------------------ #
     # Decode
-    # ------------------------------------------------------------------ #
 
     def _decode_arch(self, x: np.ndarray, offset: int) -> Dict[str, Any]:
         """Decode architecture indices from x starting at *offset*."""
@@ -292,9 +271,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             "platform_constraints": platform_constraints,
         }
 
-    # ------------------------------------------------------------------ #
     # Validation / constraint
-    # ------------------------------------------------------------------ #
 
     def validate(self, configuration: Dict[str, Any]) -> bool:
         return self.validate_detailed(configuration).is_valid
@@ -476,9 +453,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         except Exception:
             return 1e6
 
-    # ------------------------------------------------------------------ #
     # Model building & layout helpers
-    # ------------------------------------------------------------------ #
 
     def _build_raw_model(self, model_config: Dict, pcfg: Dict):
         """Build and warm up a raw model. Returns (model, total_params) or raises."""
@@ -570,9 +545,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         )
         return self._hw_only_cache
 
-    # ------------------------------------------------------------------ #
     # Objective computation helpers
-    # ------------------------------------------------------------------ #
 
     @staticmethod
     def _make_core_types(pcfg: Dict) -> List[LayoutHardCoreType]:
@@ -647,9 +620,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
             "fragmentation_pct": stats.fragmentation_pct,
         }, None
 
-    # ------------------------------------------------------------------ #
     # Evaluation
-    # ------------------------------------------------------------------ #
 
     def evaluate(self, configuration: Dict[str, Any]) -> Dict[str, float]:
         key = _json_key(configuration)
@@ -750,7 +721,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         needs_accuracy = ACCURACY_OBJECTIVE_NAME in active_names
         hw_names = active_names - {ACCURACY_OBJECTIVE_NAME}
 
-        # --- HW-only search: use cached softcores ---
         if self.search_mode == "hardware":
             cache = self._ensure_hw_only_cache()
             hw_obj, _err = self._compute_hw_objectives(
@@ -760,7 +730,6 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
                 return self._penalty_objectives()
             return {k: v for k, v in hw_obj.items() if k in active_names}
 
-        # --- Model or joint search: build model fresh ---
         raw_model, total_params = self._build_raw_model(mc, pcfg)
 
         obj: Dict[str, float] = {}

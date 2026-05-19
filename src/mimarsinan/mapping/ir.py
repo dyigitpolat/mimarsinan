@@ -1,18 +1,4 @@
-"""
-Unified Intermediate Representation (IR) for mimarsinan.
-
-This IR supports both:
-1. NeuralCore: Crossbar-based neural computation (matrix multiply + threshold)
-2. ComputeOp: Non-neural operations (pooling, element-wise ops, etc.)
-
-The IR enables simulation and hardware mapping of networks that mix
-perceptron-based layers with non-neural operations.
-
-Weight banks allow convolution-style layers to share a single weight matrix
-across many NeuralCores (one per spatial position) without duplicating the
-matrix in memory.  See ``WeightBank``, ``NeuralCore.weight_bank_id``, and
-``IRGraph.weight_banks``.
-"""
+"""Unified IR: NeuralCore crossbars, ComputeOps, and shared WeightBanks."""
 
 from __future__ import annotations
 
@@ -34,52 +20,21 @@ def _broadcast_scale_to_dim(scale: torch.Tensor, target_dim: int) -> torch.Tenso
     return torch.full((target_dim,), scale.mean().item(), dtype=scale.dtype, device=scale.device)
 
 
-# ---------------------------------------------------------------------------
-# WeightBank: Shared weight storage for conv-style layers
-# ---------------------------------------------------------------------------
 @dataclass
 class WeightBank:
-    """
-    A single stored weight matrix (and optional bias) shared by multiple
-    NeuralCores.
-
-    Convolution layers map to many cores that differ only in their input
-    wiring (receptive field position) but share the same kernel weights.
-    Storing one ``WeightBank`` per conv layer and letting each core
-    *reference* it (via ``NeuralCore.weight_bank_id``) avoids duplicating
-    the kernel ``h_out * w_out`` times in the IR and in simulation.
-
-    The ``core_matrix`` stored here has the same layout as
-    ``NeuralCore.core_matrix``: shape ``(axons, neurons)`` — weights only,
-    no bias row.  When ``hardware_bias`` is set, each NeuralCore that
-    references this bank receives a copy (or slice) of that array as its
-    own ``hardware_bias`` at construction time.
-    """
+    """Shared weight matrix (and optional bias) referenced by multiple NeuralCores."""
     id: int
     core_matrix: np.ndarray  # (axons, neurons) — weights only, no bias row
     activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
-    # Pruning provenance: index into model.get_perceptrons() when this bank backs a single perceptron
     perceptron_index: int | None = None
-    # Hardware-bias mode: bias vector shared across all cores that reference this bank.
-    # When set, add_shared_neural_core copies (a slice of) this into NeuralCore.hardware_bias
-    # instead of appending an always-on axon row.
     hardware_bias: np.ndarray | None = None
 
 
-# ---------------------------------------------------------------------------
-# Source: Where an input to a node comes from
-# ---------------------------------------------------------------------------
 @dataclass
 class IRSource:
-    """
-    Describes where an input element comes from:
-    - node_id >= 0: output from another node
-    - node_id == -1: always off (zero)
-    - node_id == -2: from the original input tensor
-    - node_id == -3: always on (constant 1)
-    """
+    """Input source: node output, off (-1), network input (-2), or always-on (-3)."""
     node_id: int
     index: int  # Which output index from that node
 
@@ -93,9 +48,6 @@ class IRSource:
         return self.node_id == -3
 
 
-# ---------------------------------------------------------------------------
-# Base IR Node
-# ---------------------------------------------------------------------------
 @dataclass
 class IRNode(ABC):
     """Base class for all IR nodes."""
@@ -109,16 +61,7 @@ class IRNode(ABC):
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """
-        Execute this node during simulation.
-
-        Args:
-            input_tensor: The original input to the network (flattened).
-            buffers: Dict mapping node_id -> output tensor from that node.
-
-        Returns:
-            Output tensor for this node.
-        """
+        """Execute this node during simulation."""
         pass
 
     def gather_inputs(
@@ -126,11 +69,7 @@ class IRNode(ABC):
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """
-        Gather inputs from sources into a tensor suitable for this node.
-
-        Default: 1D gather for simple sources. Override for special cases.
-        """
+        """Gather inputs from sources into a 1D tensor (override for special cases)."""
         batch_size = input_tensor.shape[0]
         sources = self.input_sources.flatten()
         result = torch.zeros(batch_size, len(sources), device=input_tensor.device)
@@ -148,28 +87,9 @@ class IRNode(ABC):
         return result
 
 
-# ---------------------------------------------------------------------------
-# NeuralCore: Crossbar-based computation
-# ---------------------------------------------------------------------------
 @dataclass
 class NeuralCore(IRNode):
-    """
-    A crossbar-based neural core.
-
-    Computes: activation(matmul(core_matrix, inputs))
-
-    This is the hardware-mappable primitive for spiking neural network chips.
-
-    **Weight ownership modes (mutually exclusive):**
-
-    1. *Owned weights* (default / FC layers): ``core_matrix`` is a concrete
-       ``np.ndarray`` and ``weight_bank_id`` is ``None``.
-    2. *Shared weights* (conv layers): ``weight_bank_id`` references a
-       ``WeightBank`` stored on the owning ``IRGraph``.  ``core_matrix``
-       is ``None``; use ``get_core_matrix(graph)`` to resolve the actual
-       matrix.  Optional ``weight_row_slice`` restricts to a subset of
-       the bank's rows (output-channel tiling).
-    """
+    """Crossbar neural core: owned core_matrix or shared WeightBank reference."""
     core_matrix: np.ndarray | None = None  # (axons, neurons); None when using a bank
     threshold: float = 1.0
     activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
@@ -177,16 +97,13 @@ class NeuralCore(IRNode):
     input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     latency: int | None = None
 
-    # Shared-weight support
     weight_bank_id: int | None = None
-    weight_row_slice: tuple[int, int] | None = None  # (start, end) neuron slice into the bank
+    weight_row_slice: tuple[int, int] | None = None
 
-    # Pruning provenance: index into model.get_perceptrons(); slice of perceptron output dim for tiled FC
     perceptron_index: int | None = None
-    perceptron_output_slice: tuple[int, int] | None = None  # (start, end) for owned tiled cores
-    perceptron_input_slice: tuple[int, int] | None = None  # (start, end) for axon dimension (e.g. psum tiles)
+    perceptron_output_slice: tuple[int, int] | None = None
+    perceptron_input_slice: tuple[int, int] | None = None
 
-    # Metadata for debugging/visualization
     psum_group_id: int | None = None
     psum_role: str | None = None  # "partial_pos", "partial_neg", "accum"
     coalescing_group_id: int | None = None
@@ -194,31 +111,19 @@ class NeuralCore(IRNode):
     normalization_type: str | None = None
     activation_type: str | None = None
 
-    # Hardware-bias mode: bias stored in a dedicated register, not as an always-on axon row.
-    # When set, core_matrix has shape (in_features, out_features) — no extra bias row.
-    # When None, bias is encoded as the last axon row wired to IRSource(-3, 0) (legacy mode).
     hardware_bias: np.ndarray | None = None
 
-    # Pre-pruning snapshot for GUI (set by ir_pruning before compacting, opt-in via store_heatmap)
-    pre_pruning_heatmap: "np.ndarray | None" = None  # full matrix (axons, neurons) float32 ndarray for soft-core viz; None by default
-    pre_pruning_row_mask: list | None = None  # pre-compaction row mask for GUI red markings (same length as pre_pruning_heatmap rows)
-    pre_pruning_col_mask: list | None = None  # pre-compaction col mask for GUI red markings (same length as pre_pruning_heatmap cols)
-    pruned_row_mask: list | None = None  # bool per row (True = pruned); post-compaction length for soft-core conversion
-    pruned_col_mask: list | None = None  # bool per column (True = pruned); post-compaction length for soft-core conversion
+    pre_pruning_heatmap: "np.ndarray | None" = None
+    pre_pruning_row_mask: list | None = None
+    pre_pruning_col_mask: list | None = None
+    pruned_row_mask: list | None = None
+    pruned_col_mask: list | None = None
 
-    # ------------------------------------------------------------------
-    # Weight resolution
-    # ------------------------------------------------------------------
     def has_weight_bank(self) -> bool:
         return self.weight_bank_id is not None
 
     def get_core_matrix(self, graph: "IRGraph | None" = None) -> np.ndarray:
-        """Return the effective core matrix, resolving weight-bank references.
-
-        For owned-weight cores this simply returns ``self.core_matrix``.
-        For shared-weight cores ``graph`` must be provided so the bank can
-        be looked up.
-        """
+        """Return effective core matrix (resolve weight bank via graph when needed)."""
         if self.core_matrix is not None:
             return self.core_matrix
 
@@ -241,7 +146,6 @@ class NeuralCore(IRNode):
             mat = mat[:, start:end]
         return mat
 
-    # ------------------------------------------------------------------
 
     def get_input_count(self) -> int:
         return int(len(self.input_sources.flatten()))
@@ -249,10 +153,8 @@ class NeuralCore(IRNode):
     def get_output_count(self) -> int:
         if self.core_matrix is not None:
             return self.core_matrix.shape[1]
-        # Bank-backed: output count from the slice or the full bank
         if self.weight_row_slice is not None:
             return self.weight_row_slice[1] - self.weight_row_slice[0]
-        # Fallback — should not normally be reached without a graph
         raise ValueError(
             f"Cannot determine output count for bank-backed core {self.name} "
             f"without a concrete core_matrix or weight_row_slice."
@@ -292,21 +194,12 @@ class NeuralCore(IRNode):
         return out
 
 
-# ---------------------------------------------------------------------------
-# ComputeOp: Non-neural operations
-# ---------------------------------------------------------------------------
 @dataclass
 class ComputeOp(IRNode):
-    """
-    A non-neural compute operation (pooling, element-wise, reshape, etc.).
-
-    These operations are executed on the chip's auxiliary compute units,
-    not on crossbar cores.
-    """
+    """Non-neural compute op (pooling, norm, attention, etc.)."""
     op_type: str  # "max_pool2d", "avg_pool2d", "adaptive_avg_pool2d", "flatten", etc.
     params: Dict[str, Any] = field(default_factory=dict)
 
-    # Shape info for reshaping inputs if needed
     input_shape: Tuple[int, ...] | None = None
     output_shape: Tuple[int, ...] | None = None
 
@@ -320,11 +213,7 @@ class ComputeOp(IRNode):
         return self._dispatch(x)
 
     def execute_on_gathered(self, flat_input: torch.Tensor) -> torch.Tensor:
-        """Execute on a pre-gathered flat input tensor ``(B, N)``.
-
-        Each ``_exec_*`` method is responsible for its own reshaping via
-        ``self.input_shape`` when spatial dimensions are needed.
-        """
+        """Execute on pre-gathered flat input ``(B, N)``."""
         return self._dispatch(flat_input)
 
     def _dispatch(self, x: torch.Tensor) -> torch.Tensor:
@@ -368,10 +257,7 @@ class ComputeOp(IRNode):
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """Gather inputs into a flat ``(B, N)`` tensor.
-
-        Each ``_exec_*`` method reshapes internally when spatial dims are needed.
-        """
+        """Gather inputs into flat ``(B, N)``."""
         return self.gather_inputs(input_tensor, buffers)  # (B, N)
 
     def _exec_max_pool2d(self, x: torch.Tensor) -> torch.Tensor:
@@ -399,7 +285,6 @@ class ComputeOp(IRNode):
     def _exec_flatten(self, x: torch.Tensor) -> torch.Tensor:
         return x.view(x.shape[0], -1)
 
-    # ---- ViT / Transformer ComputeOps ---------------------------------
 
     def _exec_layer_norm(self, x: torch.Tensor) -> torch.Tensor:
         """LayerNorm across the last dimension(s)."""
@@ -418,12 +303,7 @@ class ComputeOp(IRNode):
         return y.view(y.shape[0], -1)
 
     def _exec_multi_head_attention(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Scaled dot-product multi-head self-attention.
-
-        Expects input laid out as [Q; K; V] concatenated along the flat dim,
-        i.e. x shape is (B, 3*S*D).  ``input_shape`` should be ``(3, S, D)``.
-        """
+        """Scaled dot-product multi-head self-attention; input is [Q;K;V] flat."""
         S = self.params["seq_len"]
         D = self.params["d_model"]
         H = self.params["num_heads"]
@@ -452,12 +332,7 @@ class ComputeOp(IRNode):
         return (x + const).view(x.shape[0], -1)
 
     def _exec_concat_constant(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Prepend / append a constant vector along dim-0 of the token sequence.
-
-        ``input_shape`` = ``(S, D)``, constant shape = ``(1, D)``.
-        Result shape: ``(S+1, D)`` → flattened to ``(B, (S+1)*D)``.
-        """
+        """Prepend or append a constant token along the sequence dimension."""
         S, D = self.input_shape
         B = x.shape[0]
         x_seq = x.view(B, S, D)
@@ -567,19 +442,9 @@ class ComputeOp(IRNode):
         return out.reshape(out.shape[0], -1)
 
 
-# ---------------------------------------------------------------------------
-# IRGraph: The complete IR representation
-# ---------------------------------------------------------------------------
 @dataclass
 class IRGraph:
-    """
-    Unified IR graph containing both neural cores and compute operations.
-
-    The graph is topologically sorted for execution order.
-
-    ``weight_banks`` stores shared weight matrices referenced by
-    bank-backed ``NeuralCore`` nodes (see ``WeightBank``).
-    """
+    """IR graph of NeuralCores and ComputeOps with shared WeightBanks."""
     nodes: List[IRNode]
     output_sources: np.ndarray  # Array of IRSource for final outputs
     weight_banks: Dict[int, WeightBank] = field(default_factory=dict)
@@ -615,11 +480,7 @@ class IRGraph:
         return core.get_core_matrix(self)
 
     def validate(self) -> List[str]:
-        """
-        Validate the IR graph for consistency.
-
-        Returns a list of error messages (empty if valid).
-        """
+        """Return validation errors (empty if valid)."""
         errors = []
         node_ids = {n.id for n in self.nodes}
 
@@ -638,7 +499,6 @@ class IRGraph:
             if src.node_id >= 0 and src.node_id not in node_ids:
                 errors.append(f"Output references non-existent node {src.node_id}")
 
-        # Validate weight bank references
         for node in self.nodes:
             if isinstance(node, NeuralCore) and node.weight_bank_id is not None:
                 if node.weight_bank_id not in self.weight_banks:
@@ -650,17 +510,8 @@ class IRGraph:
         return errors
 
 
-# ---------------------------------------------------------------------------
-# Conversion utilities: SoftCore/SpikeSource <-> IRNode/IRSource
-# ---------------------------------------------------------------------------
 def spike_source_to_ir_source(spike_source, core_id_offset: int = 0) -> IRSource:
-    """
-    Convert a SpikeSource (from mapping_utils) to an IRSource.
-
-    Args:
-        spike_source: SpikeSource object from the old mapping system.
-        core_id_offset: Offset to add to core IDs (for combining multiple mappings).
-    """
+    """Convert SpikeSource to IRSource."""
     if spike_source.is_off_:
         return IRSource(node_id=-1, index=0)
     elif spike_source.is_input_:
@@ -672,14 +523,7 @@ def spike_source_to_ir_source(spike_source, core_id_offset: int = 0) -> IRSource
 
 
 def soft_core_to_neural_core(soft_core, core_id_offset: int = 0) -> NeuralCore:
-    """
-    Convert a SoftCore (from softcore_mapping) to a NeuralCore.
-
-    Args:
-        soft_core: SoftCore object from the old mapping system.
-        core_id_offset: Offset to add to source core IDs.
-    """
-    # Convert axon sources to IRSource objects
+    """Convert SoftCore to NeuralCore."""
     ir_sources = np.array([
         spike_source_to_ir_source(s, core_id_offset)
         for s in soft_core.axon_sources
@@ -703,11 +547,7 @@ def soft_core_to_neural_core(soft_core, core_id_offset: int = 0) -> NeuralCore:
 
 
 def soft_core_mapping_to_ir_graph(soft_core_mapping) -> IRGraph:
-    """
-    Convert a SoftCoreMapping to an IRGraph.
-
-    This is a bridge for migrating existing code to the new IR.
-    """
+    """Convert SoftCoreMapping to IRGraph."""
     nodes = []
     for soft_core in soft_core_mapping.cores:
         nodes.append(soft_core_to_neural_core(soft_core))
@@ -734,15 +574,7 @@ def ir_source_to_spike_source(ir_source: IRSource):
 
 
 def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = None):
-    """Convert a NeuralCore to a SoftCore.
-
-    For bank-backed cores ``graph`` must be provided so the weight matrix
-    can be materialized from the referenced ``WeightBank``.
-
-    When the node has pruning masks (pruned_row_mask, pruned_col_mask) and the
-    matrix shape matches their lengths, they are attached to the SoftCore so
-    compaction uses the pruning maps instead of parameter values.
-    """
+    """Convert NeuralCore to SoftCore (graph required for bank-backed cores)."""
     from mimarsinan.mapping.softcore_mapping import SoftCore
 
     axon_sources = [
@@ -753,7 +585,6 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
 
     pruned_row_mask = getattr(neural_core, "pruned_row_mask", None)
     pruned_col_mask = getattr(neural_core, "pruned_col_mask", None)
-    # Only attach masks when they match current matrix (full pre-compaction layout)
     if pruned_row_mask is not None and pruned_col_mask is not None:
         if len(pruned_row_mask) != core_matrix.shape[0] or len(pruned_col_mask) != core_matrix.shape[1]:
             raise ValueError(
@@ -764,28 +595,16 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
 
     pi = getattr(neural_core, "perceptron_index", None)
 
-    # Bank provenance.  When the IR node is bank-backed we preserve the
-    # bank_id + slice so the HCM GPU sim can share a single resident
-    # tensor per bank (instead of uploading one copy per position).
-    # ``core_matrix`` is still materialised above for CPU consumers
-    # (packer blit, compaction, codegen) — the two paths stay
-    # consistent at construction time.
     bank_axon_slice = None
     bank_neuron_slice = None
     bank_includes_bias_row = False
     if neural_core.has_weight_bank() and graph is not None:
         bank = graph.get_weight_bank(neural_core.weight_bank_id)
         bank_in, bank_out = bank.core_matrix.shape
-        # ``weight_row_slice`` in the IR slices the bank's COLUMN (output)
-        # axis despite its name — matches ``(start, end)`` into
-        # ``bank.core_matrix[:, start:end]``.
         wrs = neural_core.weight_row_slice
         bank_neuron_slice = (
             (int(wrs[0]), int(wrs[1])) if wrs is not None else (0, bank_out)
         )
-        # The last axon source is always-on when this core is bias-
-        # augmented in the legacy non-``hardware_bias`` path (the bank
-        # matrix then has an extra final row holding the bias).
         last_is_always_on = (
             len(axon_sources) > 0
             and getattr(axon_sources[-1], "is_always_on_", False)
@@ -819,7 +638,6 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
     if pruned_row_mask is not None and pruned_col_mask is not None:
         soft.pruned_row_mask = pruned_row_mask
         soft.pruned_col_mask = pruned_col_mask
-    # Pass hardware_bias through (no always-on row needed).
     if neural_core.hardware_bias is not None:
         n_neurons = core_matrix.shape[1]
         if len(neural_core.hardware_bias) != n_neurons:
@@ -833,16 +651,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
 
 
 def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):
-    """
-    Convert an IRGraph to a SoftCoreMapping.
-    
-    NOTE: This only works for neural-only graphs (no ComputeOp nodes).
-    Raises ValueError if the graph contains ComputeOps.
-
-    Bank-backed NeuralCores are materialized (the shared weight matrix is
-    copied into each SoftCore) so downstream packing and codegen see one
-    concrete matrix per core.
-    """
+    """Convert neural-only IRGraph to SoftCoreMapping."""
     from mimarsinan.mapping.soft_core_mapper import SoftCoreMapping
     
     compute_ops = ir_graph.get_compute_ops()
@@ -854,8 +663,6 @@ def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):
     
     soft_core_mapping = SoftCoreMapping()
 
-    # Expose raw bank matrices so the downstream HardCoreMapping / HCM
-    # simulator can share one GPU tensor per bank across all placements.
     soft_core_mapping.weight_banks = {
         bid: bank.core_matrix
         for bid, bank in (ir_graph.weight_banks or {}).items()

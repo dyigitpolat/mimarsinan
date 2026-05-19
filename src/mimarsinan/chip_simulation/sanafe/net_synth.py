@@ -112,7 +112,6 @@ def build_network_for_segment(
         used_neurons = _used_neurons(core)
         used_axons = _used_axons(core)
 
-        # ----- LIF neurons (one group per HardCore) -----
         if used_neurons > 0:
             group = net.create_neuron_group(
                 f"core{core_idx}", used_neurons, model_attributes={},
@@ -149,7 +148,6 @@ def build_network_for_segment(
                 neuron.map_to_core(sanafe_core)
             core_to_group[core_idx] = group
 
-        # ----- Per-axon input / always-on neurons (on the same core) -----
         # We only materialise neurons for axons that are actually wired to
         # an input or always-on source.  Cross-core axons are wired in
         # step 2 below directly from the upstream LIF neuron.
@@ -247,9 +245,7 @@ def build_network_for_segment(
     return net, core_to_group, core_input_neurons, core_always_on_neurons
 
 
-# ---------------------------------------------------------------------------
 # Per-sample spike-train injection used by the runner
-# ---------------------------------------------------------------------------
 
 
 def set_input_spike_trains(

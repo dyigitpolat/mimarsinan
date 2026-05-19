@@ -44,7 +44,6 @@ class ModelConfigurationStep(PipelineStep):
         self.add_entry("model_builder", builder, 'pickle')
         self.add_entry("model_config", model_config)
 
-        # --- Emit resolved platform constraints ---
         cores_config = self.pipeline.config.get("cores")
         if cores_config is None:
             cores_config = [{"max_axons": 256, "max_neurons": 256, "count": 1000}]

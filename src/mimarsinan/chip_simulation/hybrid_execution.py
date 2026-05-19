@@ -1,26 +1,4 @@
-"""Shared execution primitives for spiking simulation paths.
-
-Single source of truth for ComputeOp dispatch and segment-boundary state
-plumbing across SCM (``SpikingHybridCoreFlow``), nevresim (``SimulationRunner``),
-and Loihi (``LavaLoihiRunner``). All three of those simulators must produce
-identical numbers on the same input — divergence between them is by definition
-a bug — so the shared helpers ensure they execute the same arithmetic.
-
-Two parallel APIs:
-
-  * ``execute_compute_op_torch`` / ``assemble_segment_input_torch`` /
-    ``store_segment_output_torch`` / ``gather_final_output_torch`` —
-    used by the PyTorch flows (``SpikingHybridCoreFlow``,
-    ``SpikingUnifiedCoreFlow``).
-  * ``execute_compute_op_numpy`` / ``assemble_segment_input_numpy`` /
-    ``store_segment_output_numpy`` / ``gather_final_output_numpy`` —
-    used by ``SimulationRunner`` (nevresim) and ``LavaLoihiRunner``.
-
-The numpy variants previously lived as ``@staticmethod``s on
-``SimulationRunner``; pulling them up here lets the Loihi runner and the
-torch flows share their semantics with nevresim without an import cycle
-or a copy.
-"""
+"""Shared compute-op dispatch and segment state plumbing for simulators."""
 
 from __future__ import annotations
 
@@ -30,11 +8,6 @@ import numpy as np
 import torch
 
 from mimarsinan.mapping.ir import ComputeOp, IRSource
-
-
-# ---------------------------------------------------------------------------
-# Torch path
-# ---------------------------------------------------------------------------
 
 
 def assemble_segment_input_torch(
@@ -97,20 +70,7 @@ def execute_compute_op_torch(
     out_scale: float | None = None,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    """Execute a host-side ComputeOp in float32 (matches C++ nevresim).
-
-    ``in_scale`` rescales the gathered input back into training range
-    before running the wrapped module (NeuralCore outputs arrive in
-    [0, 1] but module weights/biases were never divided by activation
-    scale). ``out_scale`` divides the result so downstream NeuralCores
-    see [0, 1] again. ``out_scale=None`` mirrors the legacy behaviour of
-    ``SimulationRunner._execute_compute_op_np`` and falls back to
-    ``in_scale``.
-
-    Returns ``out`` in ``output_dtype`` (defaults to the gathered
-    float32 result; HCM forward casts to ``_COMPUTE_DTYPE`` before
-    storing in its state buffer).
-    """
+    """Execute a host-side ComputeOp; optional in/out activation scales."""
     if out_scale is None:
         out_scale = in_scale
 
@@ -128,11 +88,6 @@ def execute_compute_op_torch(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Numpy path (used by nevresim SimulationRunner and LavaLoihiRunner)
-# ---------------------------------------------------------------------------
-
-
 def assemble_segment_input_numpy(
     input_map,
     state_buffer: Dict[int, np.ndarray],
@@ -140,14 +95,7 @@ def assemble_segment_input_numpy(
     *,
     dtype: np.dtype = np.float32,
 ) -> np.ndarray:
-    """Numpy analogue of :func:`assemble_segment_input_torch`.
-
-    ``dtype`` defaults to ``float32`` to match the historical SimulationRunner
-    path; callers that need bit-equivalent parity with HCM's float64 compute
-    path (e.g. the SANA-FE runner) should pass ``dtype=np.float64`` so the
-    precision of upstream compute-op outputs is preserved through the
-    assembly cast.
-    """
+    """Numpy segment-input assembly; pass ``dtype=np.float64`` for HCM parity."""
     total_size = max((s.offset + s.size for s in input_map), default=0)
     inp = np.zeros((num_samples, total_size), dtype=dtype)
     for s in input_map:
@@ -198,17 +146,7 @@ def execute_compute_op_numpy(
     out_scale: float | None = None,
     dtype: np.dtype = np.float32,
 ) -> np.ndarray:
-    """Execute a host-side ComputeOp via the torch wrapper, returning numpy.
-
-    Drives the same ``execute_compute_op_torch`` machinery so SCM/HCM/Sim
-    follow one code path. Inputs are converted from numpy → torch and
-    back; the actual op invocation lives in ``execute_compute_op_torch``.
-
-    ``dtype`` defaults to ``float32`` for back-compat with SimulationRunner.
-    Pass ``dtype=np.float64`` to match HCM's ``forward_with_recording``
-    compute precision (``_COMPUTE_DTYPE = torch.float64``) — without this,
-    rate-encoded spike counts can diverge by ±1 at quantization boundaries.
-    """
+    """Execute ComputeOp via torch wrapper; ``dtype=np.float64`` for HCM parity."""
     if out_scale is None:
         out_scale = in_scale
 
@@ -229,23 +167,12 @@ def execute_compute_op_numpy(
     return result.detach().numpy()
 
 
-# ---------------------------------------------------------------------------
-# Decref pruning helper (state-buffer life-time management)
-# ---------------------------------------------------------------------------
-
-
 def decref_consumers(
     state_buffer,
     remaining: Dict[int, int],
     src_ids: Iterable[int],
 ) -> None:
-    """Decrement ``remaining[nid]`` for each source; drop ``state_buffer``
-    entries whose refcount hits 0. Source ids < 0 (raw input, always-on,
-    off) are ignored.
-
-    Shared between SpikingHybridCoreFlow and any future caller that wants
-    the same in-forward memory hygiene.
-    """
+    """Drop state-buffer entries whose consumer refcount reaches zero."""
     for nid in src_ids:
         if nid < 0:
             continue
