@@ -8,20 +8,38 @@ merged flat config for pipeline runtime).
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Default values and preset merge logic. Includes `tuning_budget_scale`, `lr_range_min` / `lr_range_max`, `tuner_calibrate_smooth_tolerance` (default True), `tuner_smooth_tolerance_residual_threshold` (default 0.02), `tuner_target_floor_ratio` (default 0.90). `allow_scheduling` (default False) lives in deployment parameters. Platform defaults include `allow_coalescing`. Platform constraints include `max_schedule_passes` (default 8), `scheduling_latency_weight` (default 1.0) for scheduled mapping. |
-| `validation.py` | `validate_deployment_config`, `validate_merged_config` | Validate JSON shape and merged flat config; `validate_deployment_config` rejects deprecated coalescing keys in `platform_constraints` via `mapping.coalescing.coalescing_config_errors`. |
-| `__init__.py` | Re-exports above | Public API |
+| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Defaults and preset merge. **`spiking_mode` default `"lif"`**. Tuner keys: `tuner_target_floor_ratio`, `tuner_calibrate_smooth_tolerance`, etc. Platform: `allow_coalescing`, `allow_scheduling`, `max_schedule_passes`, `scheduling_latency_weight`. |
+| `validation.py` | `validate_deployment_config`, `validate_merged_config` | JSON / merged config validation; rejects deprecated coalescing keys via `mapping.coalescing`. |
+| `__init__.py` | Re-exports | Public API |
+
+## Deployment parameters (selected)
+
+Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_deployment_parameters`):
+
+| Key | Role |
+|-----|------|
+| `spiking_mode` | `"lif"` (default), `"rate"`, `"ttfs"`, `"ttfs_quantized"` |
+| `cycle_accurate_lif_forward` | LIF training uses `run_cycle_accurate` when true |
+| `thresholding_mode` | `"<"` strict vs `"<="` inclusive LIF firing |
+| `enable_loihi_simulation` | Append Loihi Simulation step (LIF) |
+| `enable_sanafe_simulation` | Append SANA-FE Simulation step |
+| `loihi_parity_sample_index` | Deterministic test index for Loihi parity |
+| `sanafe_sample_count`, `sanafe_arch_preset`, `sanafe_custom_arch_path`, `sanafe_parity_check`, `sanafe_log_*` | SANA-FE step behaviour |
+| `activation_quantization`, `weight_quantization`, `pruning`, `pruning_fraction` | Step gating |
+| `max_simulation_samples`, `seed`, `simulation_steps` | Simulation subsampling and cycles |
+| `training_recipe`, `tuning_recipe` | AdamW + cosine defaults (ViT-aligned) |
+
+`CONFIG_KEYS_SET` in `defaults.py` lists keys consumed by steps/tuners/simulation (including `enable_loihi_simulation`, `sanafe_*`, `cycle_accurate_lif_forward`). Extend it when adding new pipeline config.
 
 ## Dependencies
 
-- **Internal**: `mapping.coalescing` (coalescing flag validation only).
-- **External**: `typing`.
+- **Internal**: `mapping.coalescing` (validation only).
 
 ## Dependents
 
-- `pipelining.pipelines.deployment_pipeline` uses `get_default_deployment_parameters`, `get_default_platform_constraints`, `apply_preset`.
-- Wizard (application layer) will use schema, defaults, and validation.
+- `pipelining.pipelines.deployment_pipeline`
+- `gui/wizard/schema.py` (wizard forms; may duplicate labels but should match defaults)
 
-## Exported API (__init__.py)
+## Exported API (`__init__.py`)
 
 `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_deployment_parameters`, `get_default_platform_constraints`, `get_pipeline_mode_presets`, `get_config_keys_set`, `apply_preset`, `validate_deployment_config`, `validate_merged_config`.

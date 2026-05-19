@@ -24,7 +24,7 @@ purpose, components, dependencies, and exported API.
 | `tuning/` | Progressive adaptation and tuning framework |
 | `search/` | Multi-objective architecture search |
 | `pipelining/` | Pipeline engine, steps, and cache |
-| `chip_simulation/` | Nevresim C++ simulator interface |
+| `chip_simulation/` | Nevresim, optional Lava Loihi parity (`spike_recorder`), SANA-FE (`sanafe/`) |
 | `code_generation/` | C++ code generation for nevresim |
 | `visualization/` | Graphviz, matplotlib, Plotly visualizations |
 | `gui/` | Browser-based pipeline monitoring dashboard |

@@ -7,39 +7,31 @@ and architecture-specific implementations.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `activations.py` | `LeakyGradReLUFunction`, `LeakyGradReLU`, `StaircaseFunction`, `DifferentiableClamp`, `LIFActivation` | Custom autograd activations. `LIFActivation` wraps SpikingJelly's multi-step `IFNode` (ATan surrogate, subtractive reset) and is used as the Perceptron `base_activation` in LIF deployment mode so training forward matches cycle-accurate SCM/nevresim integrate-and-fire output. |
-| `decorators.py` | `NoisyDropout`, `SavedTensorDecorator`, `StatsDecorator`, `ShiftDecorator`, `ScaleDecorator`, `ClampDecorator`, `QuantizeDecorator`, `ActivationReplacementDecorator`, `RateAdjustedDecorator`, `NestedAdjustmentStrategy`, `MixAdjustmentStrategy`, `RandomMaskAdjustmentStrategy`, `NestedDecoration`, `DecoratedActivation` | Composable decorators and adjustment strategies |
-| `layers.py` | Re-exports from `activations` and `decorators`; `TransformedActivation`, `FrozenStatsNormalization`, `MaxValueScaler`, `FrozenStatsMaxValueScaler` | Thin re-exporter plus standalone layers |
-| `supermodel.py` | `Supermodel` | Top-level model wrapper. Forward applies preprocessor then perceptron flow only (input activation is applied once inside preprocessor, e.g. InputCQ). |
-| `unified_core_flow.py` | `_ttfs_activation_from_type`, `SpikingUnifiedCoreFlow` | Helper `_ttfs_activation_from_type` resolves IR `activation_type` (including compound strings like "LeakyReLU + ClampDecorator, QuantizeDecorator") to `F.relu`/`F.leaky_relu`/`F.gelu`. Spiking simulator supports `NeuralCore.hardware_bias` in all forward paths (LIF / TTFS continuous / TTFS quantized). TTFS ComputeOp execution rescales inputs from [0,1] back to training range via `_ttfs_node_output_scale` so module bias terms remain correct. |
-| `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | PyTorch-based spiking simulator for `HybridHardCoreMapping`. Supports `HardCore.hardware_bias` in both rate-coded (bias added every cycle) and TTFS (bias added before activation/threshold) paths. TTFS ComputeOp execution rescales inputs from [0,1] back to training range via `node_activation_scales` (stored on `HybridHardCoreMapping`) so module bias terms remain correct. |
-| `torch_mlp_mixer.py` | `TorchMLPMixer` | Native PyTorch MLP-Mixer (plain `nn.Module`) for torch_mapping conversion |
-| `torch_mlp_mixer_core.py` | `TorchMLPMixerCore`, `_TokenMixerCore`, `_ChannelMixerCore` | MLP-Mixer variant with activation after every FC so all mixer layers package as chip perceptrons |
-| `mlp_mixer_ref.py` | `MLPMixer` | Reference MLP-Mixer (not used in pipeline) |
+| `activations.py` | `LeakyGradReLU`, `LIFActivation`, `uniform_encode_to_spike_train`, `run_cycle_accurate`, `StrictATanSurrogate`, … | Custom autograd activations. **`LIFActivation`**: SpikingJelly IFNode (subtractive reset); rate mode = multi-step mean; **`set_cycle_accurate(True)`** = single-step per call; **`forward_spiking`** returns real `(T,B,…)` trains for downstream encoding. **`thresholding_mode`**: `"<"` strict vs `"<="` inclusive. |
+| `decorators.py` | `NoisyDropout`, `SavedTensorDecorator`, `ShiftDecorator`, `RateAdjustedDecorator`, … | Composable decorators. **Short-circuits**: omit `ShiftDecorator` when `shift_rate==0`; `RateAdjustedDecorator` / `NoisyDropout` no-op at rate 0. |
+| `layers.py` | Re-exports; `TransformedActivation`, … | Thin re-exporter + standalone layers |
+| `supermodel.py` | `Supermodel` | Top-level wrapper (preprocessor + perceptron flow) |
+| `unified_core_flow.py` | `SpikingUnifiedCoreFlow` | Spiking simulator for a flat `IRGraph` (tests / tooling). Default **`compute_dtype=torch.float64`**; optional `float32`. **Weight banks**: one `nn.Parameter` per `WeightBank`. Per-forward activation/spike caches with explicit release to limit GPU memory. **Not** used for the pipeline soft-core step metric (see `hybrid_core_flow`). |
+| `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | **Primary** deployable simulator: `HybridHardCoreMapping`, per-core latencies, segment boundaries. Same float64 default; shared weight-bank Parameters; **`forward_with_recording()`** for Loihi/SANA-FE parity; `decref` on state-buffer consumers. Used by Soft Core Mapping (SCM metric), Hard Core Mapping verification, Loihi step, SANA-FE parity reference. |
+| `torch_mlp_mixer.py`, `torch_mlp_mixer_core.py`, `mlp_mixer_ref.py` | … | MLP-Mixer variants |
 
 ### Subdirectories
 
 | Directory | Purpose |
 |-----------|---------|
-| `perceptron_mixer/` | Core building blocks: `Perceptron`, `PerceptronFlow`, `SimpleMLP` (single mapper-repr example) |
-| `preprocessing/` | Input preprocessing modules (`InputCQ`) |
-| `builders/` | Model builder classes for pipeline/search integration |
+| `perceptron_mixer/` | `Perceptron`, `PerceptronFlow`, `SimpleMLP` |
+| `preprocessing/` | `InputCQ` |
+| `builders/` | Model builders for pipeline/search |
 
 ## Dependencies
 
-- **Internal**: `mapping` (for `Mapper` classes, IR types, chip latency), `code_generation` (via mapping).
-- **External**: `torch`, `numpy`, `einops`.
+- **Internal**: `mapping`, `code_generation` (via mapping), `chip_simulation.hybrid_execution`, `chip_simulation.spike_recorder`.
+- **External**: `torch`, `numpy`, `einops`; lazy `spikingjelly` for LIF.
 
 ## Dependents
 
-- `mapping` imports `Perceptron` for weight extraction during IR mapping
-- `tuning` imports layer decorators for activation management
-- `model_training` imports `SavedTensorDecorator`, `Perceptron`
-- `pipelining` imports models, layers, and spiking simulators
-- `gui` imports IR types transitively via snapshot extraction
+- `mapping`, `tuning`, `model_training`, `pipelining`, `gui` (via snapshots).
 
-## Exported API (\_\_init\_\_.py)
+## Exported API (`__init__.py`)
 
-Layer types from `layers.py` and `Supermodel`. Spiking simulators are imported
-directly from their files (`models.unified_core_flow`, `models.hybrid_core_flow`)
-to avoid heavy import-time costs.
+Layer types from `layers.py` and `Supermodel`. Spiking simulators imported from `unified_core_flow` / `hybrid_core_flow` directly (heavy import cost).

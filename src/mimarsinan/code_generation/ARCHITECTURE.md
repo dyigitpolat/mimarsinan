@@ -7,24 +7,24 @@ mapping artifacts.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `cpp_chip_model.py` | `SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core`, `ChipModel` | Data model representing the chip; generates C++ struct initializers |
-| `generate_main.py` | `generate_main_function`, `get_config` | Template instantiation for `main.cpp` with simulation parameters |
-| `main_cpp_template.py` | `main_cpp_template` | C++ template string for standard spiking execution |
-| `main_cpp_template_real_valued_exec.py` | `main_cpp_template_real_valued_exec` | C++ template for real-valued (non-spiking) execution |
-| `main_cpp_template_debug_spikes.py` | `main_cpp_template_debug_spikes` | C++ template with spike debug output |
+| `cpp_chip_model.py` | `SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core`, `ChipModel` | Chip data model → C++ struct initializers. Template params: **`weight_type`** (`int`/`float`) and **`threshold_type`** (independent; TTFS uses `double` thresholds with `int` weights when quantised). |
+| `generate_main.py` | `generate_main_function`, `get_config` | Instantiates `main.cpp` with simulation length, spike/firing modes, **`weight_type`**, **`threshold_type`**. |
+| `main_cpp_template.py` | `main_cpp_template` | Standard spiking execution |
+| `main_cpp_template_real_valued_exec.py` | … | Real-valued (non-spiking) execution |
+| `main_cpp_template_debug_spikes.py` | … | Spike debug output |
+
+`NevresimDriver` passes both types into codegen so nevresim C++ matches Python simulator numeric semantics (decoupled since nevresim threshold-type refactor).
 
 ## Dependencies
 
-- **Internal**: `common.file_utils` (for `prepare_containing_directory`).
+- **Internal**: `common.file_utils`.
 - **External**: `numpy`.
 
 ## Dependents
 
-- `mapping` imports `SpikeSource` extensively (IR, softcore mapping, mapping utilities)
-- `chip_simulation` uses `generate_main_function` for simulator compilation
-- `visualization` uses `SpikeSource` for graphviz rendering
+- `mapping` (`SpikeSource`), `chip_simulation` (`generate_main_function`), `visualization`.
 
-## Exported API (\_\_init\_\_.py)
+## Exported API (`__init__.py`)
 
 `SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core`, `ChipModel`,
 `generate_main_function`, `generate_main_function_for_real_valued_exec`, `get_config`.

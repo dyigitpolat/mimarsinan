@@ -21,6 +21,7 @@
    - [Pruning Adaptation](#54-pruning-adaptation)
    - [Activation Analysis](#55-activation-analysis)
    - [Clamp Adaptation](#56-clamp-adaptation)
+   - [LIF Adaptation](#56b-lif-adaptation)
    - [Input Activation Analysis](#57-input-activation-analysis)
    - [Activation Shifting](#58-activation-shifting)
    - [Activation Quantization](#59-activation-quantization)
@@ -29,15 +30,17 @@
    - [Normalization Fusion](#512-normalization-fusion)
    - [Soft Core Mapping](#513-soft-core-mapping)
    - [Core Quantization Verification](#514-core-quantization-verification)
-   - [CoreFlow Tuning](#515-coreflow-tuning)
-   - [Hard Core Mapping](#516-hard-core-mapping)
-   - [Simulation](#517-simulation)
+   - [Hard Core Mapping](#515-hard-core-mapping)
+   - [Simulation](#516-simulation)
+   - [Loihi Simulation](#517-loihi-simulation)
+   - [SANA-FE Simulation](#518-sana-fe-simulation)
 6. [Model Subsystem](#6-model-subsystem)
    - [Perceptron](#61-perceptron)
    - [PerceptronFlow and PerceptronMixer](#62-perceptronflow-and-perceptronmixer)
    - [Supermodel](#63-supermodel)
    - [Activation Decorators](#64-activation-decorators)
    - [Model Builders](#65-model-builders)
+   - [LIF Activations and Cycle-Accurate Training](#66-lif-activations-and-cycle-accurate-training)
 7. [Mapper Graph — ModelRepresentation](#7-mapper-graph--modelrepresentation)
    - [Mapper Hierarchy](#71-mapper-hierarchy)
    - [Dual Purpose: Forward Pass and Hardware Mapping](#72-dual-purpose-forward-pass-and-hardware-mapping)
@@ -55,12 +58,12 @@
     - [AdaptationManager](#102-adaptationmanager)
     - [SmartSmoothAdaptation](#103-smartsmoothadaptation)
     - [Tuner Hierarchy](#104-tuner-hierarchy)
-    - [CoreFlowTuner](#105-coreflowtuner)
 11. [Spiking Simulation](#11-spiking-simulation)
     - [SpikingUnifiedCoreFlow](#111-spikingunifiedcoreflow)
     - [SpikingHybridCoreFlow](#111b-spikinghybridcoreflow)
     - [Nevresim (C++ Simulator)](#112-nevresim-c-simulator)
     - [SimulationRunner](#113-simulationrunner)
+    - [Loihi / Lava Parity (optional)](#113a-loihi--lava-parity-optional)
     - [SANA-FE Detailed-Stats Step (optional)](#114-sana-fe-detailed-stats-step-optional)
 12. [Architecture Search](#12-architecture-search)
     - [Search Framework](#121-search-framework)
@@ -318,7 +321,7 @@ A single `DeploymentPipeline` class (`pipelines/deployment_pipeline.py`) assembl
 | Axis | Values | Description |
 |------|--------|-------------|
 | **Pipeline mode** (`pipeline_mode`) | `"vanilla"`, `"phased"` | How much transformation to apply |
-| **Spiking mode** (`spiking_mode` in `deployment_parameters`) | `"rate"`, `"ttfs"`, `"ttfs_quantized"` | SNN activation strategy |
+| **Spiking mode** (`spiking_mode` in `deployment_parameters`) | `"lif"` (default), `"rate"`, `"ttfs"`, `"ttfs_quantized"` | SNN activation strategy |
 
 **Pipeline mode** selects a preset that enables step groups:
 
@@ -327,7 +330,8 @@ A single `DeploymentPipeline` class (`pipelines/deployment_pipeline.py`) assembl
 
 **Spiking mode** controls which SNN simulation strategy is used:
 
-- **`"rate"`** — Rate-coded SNN.  CoreFlow tuning step is included to adjust spiking thresholds.
+- **`"lif"`** (default) — Integrate-and-fire deployment.  After Activation Adaptation, **LIF Adaptation** swaps chip-targeted perceptron bases to `LIFActivation` (SpikingJelly multi-step IF, subtractive reset).  Clamp / Shift / Activation Quantization are **skipped** because LIF already clamps to `[0, activation_scale]` and quantises to `T+1` levels.  Optional **`cycle_accurate_lif_forward`** (default `False`) drives training through `run_cycle_accurate` so membrane trajectories match per-cycle chip injection (see §6.6).
+- **`"rate"`** — Rate-coded SNN (legacy path).  Uses the clamp / shift / activation-quantization chain when enabled; thresholds come from IR mapping (`parameter_scale` / per-core `threshold`), not a separate post-mapping tuning step.
 - **`"ttfs"`** — Time-to-first-spike SNN (continuous / analytical).  Analytical ReLU↔TTFS mapping; no threshold tuning needed.
 - **`"ttfs_quantized"`** — Time-to-first-spike SNN (time-step quantised).  Analytical closed-form computation with fire-once semantics and `S` discrete time steps per layer. Spike times are computed exactly and quantized to the nearest discrete step.
 
@@ -345,6 +349,15 @@ An additional pruning flag controls dimension reduction:
 | Flag | What it enables |
 |------|-----------------|
 | `pruning` + `pruning_fraction` | Pruning Adaptation. Runs **before** activation analysis so later activation-statistics and quantization steps see the already-pruned model. Gradually zeros the least-significant rows/columns. Configured via `pruning_fraction` (0–1). |
+
+**Optional verification steps** (appended after Simulation when enabled in `deployment_parameters`):
+
+| Flag | Step |
+|------|------|
+| `enable_loihi_simulation` | Loihi Simulation — HCM vs Lava spike-record parity (LIF mode only; §5.17) |
+| `enable_sanafe_simulation` | SANA-FE Simulation — detailed stats + optional HCM spike parity (§5.18, §11.4) |
+
+Related keys: `loihi_parity_sample_index`, `sanafe_sample_count`, `sanafe_arch_preset`, `sanafe_parity_check`, `sanafe_custom_arch_path`, `thresholding_mode` (`"<"` strict vs `"<="` inclusive firing).
 
 Preset defaults are applied with `setdefault`, so explicit values in `deployment_parameters` always win.
 
@@ -365,8 +378,7 @@ Model Configuration → Model Building → Pretraining
 → Activation Shifting → Activation Quantization
 → Weight Quantization → Quantization Verification
 → Normalization Fusion → Soft Core Mapping
-→ Core Quantization Verification → CoreFlow Tuning
-→ Hard Core Mapping → Simulation
+→ Core Quantization Verification → Hard Core Mapping → Simulation
 ```
 
 **Example: phased + TTFS + pruning + weight quantization:**
@@ -379,6 +391,15 @@ Model Configuration → Model Building → Pretraining
 → Weight Quantization → Quantization Verification
 → Normalization Fusion → Soft Core Mapping
 → Core Quantization Verification → Hard Core Mapping → Simulation
+```
+
+**Example: default LIF deployment (vanilla + `spiking_mode: "lif"`):**
+
+```
+Model Configuration → Model Building → Pretraining
+→ Activation Analysis → Activation Adaptation → LIF Adaptation
+→ Normalization Fusion → Soft Core Mapping → Hard Core Mapping → Simulation
+→ [Loihi Simulation] → [SANA-FE Simulation]
 ```
 
 **Why pruning runs first.** Pruning Adaptation registers persistent
@@ -402,7 +423,7 @@ Either mode works with `configuration_mode: "nas"` (replaces Model Configuration
 **File**: `pipeline_steps/architecture_search_step.py`
 
 - **Requires**: (none)
-- **Promises**: `model_config`, `model_builder`, `platform_constraints_resolved`, `architecture_search_result`, `scaled_simulation_length`
+- **Promises**: `model_config`, `model_builder`, `platform_constraints_resolved`, `architecture_search_result`
 
 Operates in two modes based on `configuration_mode`:
 
@@ -467,6 +488,20 @@ Decorates each perceptron's activation with a `SavedTensorDecorator`, runs valid
 
 Runs immediately after Activation Analysis (and its companion Activation Adaptation step that always replaces non-ReLU bases with ReLU). When any chip-targeted perceptron has a non-ReLU base (GELU, LeakyReLU), `ActivationAdaptationTuner` first blends activations toward ReLU via `SmartSmoothAdaptation`. Then, when `activation_quantization` is True or spiking is TTFS, `ClampTuner` gradually introduces clamping guided by the previously computed activation scales. The `SmartSmoothAdaptation` framework ensures the clamping is applied incrementally to minimize accuracy loss.
 
+**Not run when `spiking_mode` is `"lif"`** — LIF Adaptation replaces this chain (§5.6b).
+
+### 5.6b LIF Adaptation
+
+**File**: `pipeline_steps/lif_adaptation_step.py`
+
+- **Requires**: `model`, `adaptation_manager`
+- **Updates**: `model`, `adaptation_manager`
+- **Included when**: `spiking_mode == "lif"` (after Activation Adaptation; Clamp / Shift / Activation Quantization are omitted)
+
+Uses `LIFAdaptationTuner` to swap each chip-targeted perceptron's `base_activation` to `LIFActivation` via a gradual **`LIFBlendActivation`** (linear mix of pre-LIF ReLU-like activation and LIF, rate 0→1). Recovery uses knowledge distillation: frozen teacher = pre-LIF snapshot, student = blended model (α·CE + (1−α)·T²·KL, T=3, α=0.3).
+
+When **`cycle_accurate_lif_forward`** is true, the tuner installs picklable **`_CycleAccurateForward`** on `model.forward`, which calls `run_cycle_accurate`: uniform-encode the input to `T` cycles, toggle each `LIFActivation` into single-step mode, run the mapper DAG once per cycle, mean-reduce logits. This matches chip per-cycle injection and closes NF→SCM gaps on deep LIF networks. The wrapper is kept after the step when cycle-accurate mode is on so cached models remain consistent.
+
 ### 5.7 Activation Shifting
 
 **File**: `pipeline_steps/activation_shift_step.py`
@@ -522,10 +557,10 @@ Scaling factors (`activation_scale`, `parameter_scale`) are **not modified**, en
 
 **File**: `pipeline_steps/soft_core_mapping_step.py`
 
-- **Requires**: `model`, `platform_constraints_resolved`
+- **Requires**: `fused_model`, `platform_constraints_resolved`
 - **Promises**: `ir_graph`
 
-This critical step converts the PyTorch model into an `IRGraph`:
+This critical step converts the fused PyTorch model into an `IRGraph`:
 
 1. Extracts the `ModelRepresentation` (mapper graph) from the model
 2. Reads `max_axons`, `max_neurons`, `allow_coalescing`, and `hardware_bias` from the `platform_constraints_resolved` cache entry (produced by Architecture Search). When heterogeneous `cores` are present, `max_axons` and `max_neurons` are resolved as the **maximum** across all core types — this allows softcores as large as the biggest core type, relying on the greedy packer's scarcity-aware metric (§9.2) to place them correctly. `hardware_bias` is `True` only when all core types declare `has_bias: true`; it controls whether bias consumes an axon slot (legacy always-on row) or a dedicated hardware register
@@ -533,7 +568,7 @@ This critical step converts the PyTorch model into an `IRGraph`:
 4. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
 5. Optionally quantizes weights and biases when `weight_quantization` is enabled: rounds `core_matrix` entries to integers by multiplying by `scale` and setting `threshold = scale`.  **Critically, `hardware_bias` is also multiplied by the same `scale`** so that the TTFS simulation formula `act(W_q @ x + b_hw) / threshold` correctly reconstructs `act(W_eff @ x + b_eff)`.  Without this, the bias contribution would be attenuated by ~`q_max / max_weight` (typically ~127× for 8-bit) relative to the weight contribution.  This applies to both owned-weight NeuralCores and bank-backed NeuralCores (Conv2D).
 6. Optionally generates Graphviz visualizations when `generate_visualizations` is enabled in the config (disabled by default)
-7. Runs a soft-core spiking simulation for early verification
+7. Runs an early **soft-core spiking simulation** as the step metric: builds `HybridHardCoreMapping` from the IR graph and evaluates via `SpikingHybridCoreFlow` (same simulator family as HCM, so SCM / HCM / nevresim are comparable on the same mapping). Uses `simulation_steps`, `thresholding_mode`, and optional `max_simulation_samples` / `seed` for subsampling.
 
 ### 5.14 Core Quantization Verification
 
@@ -543,28 +578,11 @@ This critical step converts the PyTorch model into an `IRGraph`:
 
 Conditionally included in the pipeline only when `weight_quantization` is enabled. Verifies that all `NeuralCore` weight matrices in the IR graph are properly quantized: `core_matrix * parameter_scale` must produce integers within the allowed range for the specified `weight_bits`.
 
-### 5.15 CoreFlow Tuning
-
-**File**: `pipeline_steps/core_flow_tuning_step.py`
-
-- **Requires**: `model`, `ir_graph`
-- **Updates**: `ir_graph`
-- **Promises**: `scaled_simulation_length`
-
-Included only for rate-coded spiking mode; TTFS modes use analytical or cycle-based thresholds and do not require tuning.
-
-Uses `CoreFlowTuner` to adjust thresholds of `NeuralCore`s in the IR graph. The tuner:
-
-1. Computes "stable" (rate-based) spike rates for each core
-2. Runs event-based spiking simulation and compares spike rates
-3. Iteratively adjusts thresholds to match stable and event-based behaviors
-4. Determines the optimal `scaled_simulation_length` for the chip
-
-### 5.16 Hard Core Mapping
+### 5.15 Hard Core Mapping
 
 **File**: `pipeline_steps/hard_core_mapping_step.py`
 
-- **Requires**: `model`, `ir_graph`, `scaled_simulation_length`, `platform_constraints_resolved`
+- **Requires**: `model`, `ir_graph`, `platform_constraints_resolved`
 - **Promises**: `hard_core_mapping`
 
 Converts the `IRGraph` into a `HybridHardCoreMapping`:
@@ -577,17 +595,36 @@ Converts the `IRGraph` into a `HybridHardCoreMapping`:
 6. Runs hard-core spiking simulation for verification
 7. Optionally generates Graphviz visualizations when `generate_visualizations` is enabled in the config (disabled by default)
 
-### 5.17 Simulation
+### 5.16 Simulation
 
 **File**: `pipeline_steps/simulation_step.py`
 
-- **Requires**: `model`, `hard_core_mapping`, `scaled_simulation_length`
+- **Requires**: `hard_core_mapping`
 
 Runs a full chip simulation using the `NevresimDriver` (C++ simulator). For single-segment mappings (`HardCoreMapping`), a single nevresim invocation is used. For multi-segment `HybridHardCoreMapping`s, the `SimulationRunner` orchestrates per-segment nevresim calls with host-side `ComputeOp` execution between them (see §11.3).
 
 Key configuration parameters:
 - **`max_simulation_samples`** (in `deployment_parameters`): When set to a positive value less than the test set size, the runner randomly subsamples that many test examples (using the pipeline seed for reproducibility), reducing simulation wall time for large datasets.
-- **`weight_quantization`**: Controls the C++ weight type — `int` when quantization is enabled, `float` when disabled. This ensures non-quantized models (e.g., ViT) retain floating-point precision through the C++ simulation.
+- **`weight_quantization`**: Controls the C++ `weight_type` — `int` when quantization is enabled, `float` when disabled. TTFS modes additionally use `threshold_type=float` even when weights are integer (see §11.2).
+
+### 5.17 Loihi Simulation
+
+**File**: `pipeline_steps/loihi_simulation_step.py`
+
+- **Requires**: `model`, `hard_core_mapping`
+- **Optional**: `enable_loihi_simulation` (LIF mode only in the wizard)
+
+**Not an accuracy step.** Selects one deterministic test sample (`loihi_parity_sample_index`, default `0`), records an HCM reference via `SpikingHybridCoreFlow.forward_with_recording()` → `spike_recorder.RunRecord`, replays each neural segment through `LavaLoihiRunner.run_segments_from_reference()` (`SubtractiveLIFReset` in Lava), and fails on any localized diff in segment inputs, per-core inputs/outputs, or segment outputs (`compare_records`).
+
+### 5.18 SANA-FE Simulation
+
+**File**: `pipeline_steps/sanafe_simulation_step.py`
+
+- **Requires**: `model`, `hard_core_mapping`
+- **Promises**: `sanafe_simulation_results`
+- **Optional**: `enable_sanafe_simulation`
+
+Runs `sanafe_sample_count` deterministic samples through `SanafeRunner`, aggregates `SanafeStepReport` for the GUI. When `sanafe_parity_check` is on (default), each sample is also checked against HCM spike counts via `SanafeRunRecord.to_hcm_subset()`. See §11.4 and [chip_simulation/sanafe/ARCHITECTURE.md](src/mimarsinan/chip_simulation/sanafe/ARCHITECTURE.md).
 
 ---
 
@@ -706,6 +743,20 @@ Key custom functions:
 - **`DifferentiableClamp`**: Clamp in forward, floored exponential in backward (gradient = 1.0 inside range, smoothly decaying exponential outside with 0.01 floor — provides smooth boundary regularisation while preventing gradient death)
 - **`StaircaseFunction`**: Quantization (floor) in forward, straight-through gradient in backward
 
+**Short-circuits** (avoid no-op decorator work): `ShiftDecorator` is omitted from the activation chain when `shift_rate == 0`; `RateAdjustedDecorator` and `NoisyDropout` bypass blending/noise when their rate is 0.
+
+### 6.6 LIF Activations and Cycle-Accurate Training
+
+**File**: `models/activations.py`
+
+- **`LIFActivation`** — SpikingJelly `IFNode` (subtractive reset, `v_threshold=1.0`). Rate mode: internal `T`-step multi-step forward, returns `mean(spikes) * activation_scale`. **`thresholding_mode`**: `"<"` uses `StrictATanSurrogate` (strict `v > θ`); `"<="` uses stock ATan.
+- **`set_cycle_accurate(True)`** — Single-step mode: each `forward(x)` integrates one cycle; membrane persists across calls until reset.
+- **`forward_spiking(x)`** — Returns the actual `(T, B, …)` spike train for host encoding (avoids re-encoding rates, which shifts firing cycles).
+- **`uniform_encode_to_spike_train`** — Chip-aligned uniform rate encoder (shared with `_spike_encoding` and SANA-FE).
+- **`run_cycle_accurate(model, x, T)`** — Full-model cycle-accurate eval: encode input, T single-step forwards through the mapper DAG, mean logits.
+
+`SpikingHybridCoreFlow` / `SpikingUnifiedCoreFlow` use **`float64`** compute dtype by default so TTFS threshold comparisons and integer sums match nevresim C++ (`double` / exact int paths).
+
 ### 6.5 Model Builders
 
 **Directory**: `models/builders/`
@@ -813,7 +864,7 @@ Computation: output = ReLU(core_matrix @ input)
 
 Key fields:
 - `core_matrix: np.ndarray | None` — shape `(axons, neurons)`, the weight matrix.  `None` when using a shared weight bank.
-- `threshold: float` — Spiking threshold (tuned by CoreFlowTuner)
+- `threshold: float` — Per-core spiking threshold (set during IR mapping / weight quantization scaling)
 - `activation_scale`, `parameter_scale`, `input_activation_scale` — Scaling factors
 - `psum_group_id`, `psum_role` — For partial-sum (psum) decomposition: `role` is `"partial_pos"`, `"partial_neg"`, or `"accum"`. Produced when a wide layer is split using the 2N+1-core psum strategy.
 - `coalescing_group_id`, `coalescing_role` — For core-coalescing decomposition: `role` is `"partial"` or `"accum"`. Produced when `allow_coalescing=True` is set on the `IRMapping`; uses N+1 cores instead of 2N+1.
@@ -946,6 +997,18 @@ Built by `build_hybrid_hard_core_mapping(ir_graph, cores_config)`:
 4. External source references (from earlier stages or the original input) are resolved via the state buffer
 5. Each stage's `input_slices` and `output_slices` are computed to wire the state buffer correctly
 
+### 9.4 ChipLatency
+
+**File**: `mapping/chip_latency.py`
+
+Assigns per-`HardCore` `.latency` before HCM, nevresim, Lava, and SANA-FE simulation. Three phases:
+
+1. **Backward walk** from `output_sources`: per-neuron delays; axons with `is_off_` are skipped (pruned columns can leave residual matrix weights without live connectivity).
+2. **`_enforce_core_latency_invariant`**: each core's latency ≥ max(source core latencies) + 1 so consumers never read a source buffer before that core's active window starts.
+3. **`_align_shiftable_cores`**: cores whose only live inputs are off / always-on / segment-input (common after IR pruning) are time-shifted so their firing window aligns with the deepest consumer — fixes stale-buffer integration and HCM↔SANA-FE segment-output drift.
+
+Incorrect latencies wedge NF→SCM accuracy on deep LIF graphs; parity templates under `templates/mnist_*_strict_*` exercise strict thresholding + `cycle_accurate_lif_forward`.
+
 ---
 
 ## 10. Training and Tuning
@@ -1065,26 +1128,13 @@ All tuners extend `BasicTuner`, which uses `SmartSmoothAdaptation`:
 | `PruningTuner` | Gradually zeros least-significant weight rows/columns |
 | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights (normalization-aware) |
 | `NoiseTuner` | Introduces training noise |
-| `CoreFlowTuner` | Tunes spiking thresholds (operates on IRGraph, not model) |
+| `LIFAdaptationTuner` | Gradual ReLU→LIF blend + KD recovery (see §5.6b) |
 
 `PruningTuner` extends `PerceptronTuner` and applies pruning masks (from `transformations/pruning.py`) that scale the bottom `pruning_fraction` of rows and columns by `(1 − rate)`. It uses `SmartSmoothAdaptation`'s `before_cycle` callback to recompute activation-based row/column importance at the start of each cycle, so the pruning candidate set is updated every cycle rather than fixed once. The zeroed structure is later compacted from the IR graph by `ir_pruning.prune_ir_graph()` (see §8.4).
 
 Each tuner defines:
 - `_update_and_evaluate(rate)` — Apply transformation at given rate and evaluate
 - Learning rate exploration and training to recover accuracy
-
-### 10.5 CoreFlowTuner
-
-**File**: `tuning/tuners/core_flow_tuner.py`
-
-A specialized tuner that adjusts `NeuralCore` thresholds in the IR graph to optimize spiking simulation accuracy. Unlike other tuners, this operates on the `IRGraph` rather than the PyTorch model:
-
-1. Computes "stable" spike rates (using continuous-valued simulation)
-2. Runs event-based spiking simulation
-3. Compares per-core spike rates between stable and spiking modes
-4. Calculates perturbations and applies them to thresholds
-5. Iterates to find optimal thresholds
-6. Determines `scaled_simulation_length` for deployment
 
 ---
 
@@ -1094,7 +1144,7 @@ A specialized tuner that adjusts `NeuralCore` thresholds in the IR graph to opti
 
 **File**: `models/unified_core_flow.py`
 
-A PyTorch-based spiking simulator for `IRGraph`:
+Legacy / auxiliary PyTorch spiking simulator for a flat `IRGraph` (single graph, no hybrid segments). Still used in tests and tooling; **pipeline soft-core verification uses `SpikingHybridCoreFlow` instead** (§5.13).
 
 - Implements membrane potential dynamics with configurable firing modes (`"Default"`, `"Novena"`, `"TTFS"`)
 - Supports multiple spike generation modes (`"Stochastic"`, `"Deterministic"`, `"FrontLoaded"`, `"Uniform"`, `"TTFS"`)
@@ -1117,6 +1167,9 @@ A PyTorch-based spiking simulator for `HybridHardCoreMapping`, using the state-b
   - **Compute stages**: Gathers inputs from the state buffer, executes the `ComputeOp`, writes the result back
 - Supports both rate-coded and TTFS (continuous + analytical quantized) forward paths
 - The analytical TTFS quantized path mirrors `SpikingUnifiedCoreFlow`'s closed-form computation
+- **`forward_with_recording()`** → `(logits, RunRecord)` for Loihi / SANA-FE parity steps
+- **Weight banks**: shared `nn.Parameter` per `WeightBank`; multiple hard cores reference the same bank to avoid duplicating conv kernels in GPU memory
+- **Primary simulators** for SCM (soft-core step metric), HCM (hard-core step + parity references), Loihi, and SANA-FE parity
 
 ### 11.2 Nevresim (C++ Simulator)
 
@@ -1124,8 +1177,8 @@ A PyTorch-based spiking simulator for `HybridHardCoreMapping`, using the state-b
 
 For final verification, the framework generates C++ code and runs it through the `nevresim` simulator:
 
-1. **Code Generation** (`cpp_chip_model.py`): Converts `HardCoreMapping` to `ChipModel` → generates C++ structs (`SpikeSource`, `Neuron`, `Core`, `ChipModel`). When a segment contains heterogeneous `HardCore` sizes, individual core matrices and axon sources are **padded** to the segment's maximum dimensions (`HardCoreMapping.axons_per_core`, `neurons_per_core`) so that nevresim receives uniform core geometry. The `ChipModel` is parameterized by `weight_type` (`int` or `float`): when `weight_quantization` is disabled, weights are written as floating-point values and the C++ template instantiates with `float` weight arithmetic.
-2. **Template Instantiation** (`generate_main.py`): Generates `main.cpp` from a template with simulation parameters
+1. **Code Generation** (`cpp_chip_model.py`): Converts `HardCoreMapping` to `ChipModel` → generates C++ structs (`SpikeSource`, `Neuron`, `Core`, `ChipModel`). When a segment contains heterogeneous `HardCore` sizes, individual core matrices and axon sources are **padded** to the segment's maximum dimensions (`HardCoreMapping.axons_per_core`, `neurons_per_core`) so that nevresim receives uniform core geometry. The `ChipModel` is parameterized by **`weight_type`** (`int` or `float`) and, separately, **`threshold_type`** (TTFS uses `double` thresholds even when weights are `int`).
+2. **Template Instantiation** (`generate_main.py`): Generates `main.cpp` from a template with simulation parameters (`weight_type`, `threshold_type`, spiking mode)
 3. **Compilation** (`compile_nevresim.py`): Compiles with C++20 (`-std=c++20 -O3`). Prefers Clang ≥ 17; falls back to `g++-11` when no suitable Clang is found.
 4. **Execution** (`execute_nevresim.py`): Runs the binary in parallel processes, collects output
 
@@ -1155,6 +1208,18 @@ Orchestrates the end-to-end simulation. Supports two modes:
    - **Neural stages**: Assembles segment input from the state buffer via `input_slices`, instantiates a per-segment `NevresimDriver` with the correct `weight_type`, runs `predict_spiking_raw`, writes outputs back via `output_slices`
    - **Compute stages**: Gathers inputs from the state buffer, executes the `ComputeOp` on the host using PyTorch, writes the result back
 6. Extracts final outputs via `output_slices` and evaluates classification accuracy
+
+`SimulationRunner` passes **`threshold_type`** to `NevresimDriver` independently of `weight_type` (TTFS: `float` thresholds, `int` weights when quantised).
+
+### 11.3a Loihi / Lava Parity (optional)
+
+**Files**: `chip_simulation/lava_loihi_runner.py`, `chip_simulation/subtractive_lif.py`, `chip_simulation/spike_recorder.py`
+
+- **`spike_recorder`**: `RunRecord`, `SegmentSpikeRecord`, `CoreSpikeCounts`, `compare_records` — structured spike-count diffs for parity gates.
+- **`LavaLoihiRunner.run_segments_from_reference`**: Replays HCM segment inputs through Lava `SubtractiveLIFReset` (no decay, subtractive reset, active-window gating) one segment at a time; production validation path.
+- **`run()`**: Exploratory accuracy runner (capped samples); not used for pipeline pass/fail.
+
+Requires the `lava` submodule and LIF deployment mode.
 
 ### 11.4 SANA-FE Detailed-Stats Step (optional)
 
@@ -1261,6 +1326,8 @@ dependency declared in `requirements.txt`.
 
 See `src/mimarsinan/search/optimizers/compilagent/ARCHITECTURE.md` for
 the per-module breakdown.
+
+Parity-oriented deployment templates (e.g. `templates/mnist_hard_all_lif_strict_cycle_accurate.json`, `mnist_arch_search_compilagent_strict_cycle_accurate.json`) combine `thresholding_mode: "<"` with `cycle_accurate_lif_forward: true` to isolate training-vs-simulator gaps during architecture search.
 
 ### 12.4 JointArchHwProblem
 
@@ -1453,11 +1520,6 @@ ChipModel
                     └────────────┬────────────┘
                                  │
                     ┌────────────▼────────────┐
-                    │  CoreFlow Tuning         │
-                    │  Adjust spike thresholds │
-                    └────────────┬────────────┘
-                                 │
-                    ┌────────────▼────────────┐
                     │  Hard Core Mapping       │
                     │  IRGraph → HybridMapping │
                     │  (packed physical cores) │
@@ -1503,7 +1565,7 @@ Module dependency rules:
 
 ### Naming Conventions
 - **Pipeline steps**: `{Action}Step` (e.g., `PretrainingStep`, `WeightQuantizationStep`)
-- **Tuners**: `{Type}Tuner` (e.g., `ClampTuner`, `CoreFlowTuner`)
+- **Tuners**: `{Type}Tuner` (e.g., `ClampTuner`, `LIFAdaptationTuner`)
 - **Mappers**: `{Type}Mapper` (e.g., `PerceptronMapper`, `Conv2DPerceptronMapper`)
 - **Builders**: `{Model}Builder` (e.g., `TorchMLPMixerBuilder`, `SimpleMLPBuilder`)
 
@@ -1598,6 +1660,10 @@ source venv/bin/activate  # or your environment
 # Run with a config file
 python src/main.py configs/your_config.json
 ```
+
+### Architecture documentation
+
+When changing public APIs or pipeline behaviour, update the relevant `ARCHITECTURE.md` (root and per-directory under `src/mimarsinan/`). See `docs/ARCHITECTURE_DOC_COMMIT_AUDIT.md` for a recent commit→module map of changes that landed without doc updates.
 
 ### Key Environment Requirements
 - Python 3.10+

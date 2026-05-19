@@ -16,7 +16,7 @@ management, data contract verification, and performance tolerance enforcement.
 | Directory | Purpose |
 |-----------|---------|
 | `cache/` | Pipeline cache with pluggable serialization strategies |
-| `pipelines/` | Concrete pipeline assemblies (e.g., `DeploymentPipeline`) |
+| `pipelines/` | `DeploymentPipeline` — **`get_pipeline_step_specs(config)`** is the single source of truth for step order (LIF vs TTFS activation chains, optional Loihi/SANA-FE after Simulation). See `pipelines/deployment_pipeline.py`. |
 | `pipeline_steps/` | Individual step implementations |
 
 ## Dependencies

@@ -10,55 +10,60 @@ potential traces.  This sub-package is the bridge between a
 The integration is **opt-in**: every `import sanafe` is gated by the
 lazy `arch_synth._sanafe()` accessor, so the mimarsinan package itself
 imports cleanly without a SANA-FE install.  Run
-`scripts/bootstrap_sanafe.sh` to enable it.
+`scripts/bootstrap_sanafe.sh` to clone/build SANA-FE and compile mimarsinan
+plugins into `build/mimarsinan_sanafe_plugins/` (`libmimarsinan_soma.so`,
+`libmimarsinan_dendrite.so`).
 
 ## Key Components
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `records.py` | `SanafeRunRecord`, `SanafeSegmentRecord`, `SanafeCoreRecord`, `SanafeTileRecord`, `SanafeEnergyBreakdown` | Rich per-sample record dataclasses.  `SanafeRunRecord.to_hcm_subset()` is the single lossless projection to `spike_recorder.RunRecord` so `compare_records()` is reused verbatim for the parity gate. |
-| `stats.py` | `SanafeStepReport` | Step-level aggregate of one or more `SanafeRunRecord`s.  `to_snapshot_dict()` produces the JSON-safe payload consumed by `gui/snapshot/builders.py::snapshot_sanafe_simulation`. |
-| `presets.py` | `LOIHI_PRESET`, `TRUENORTH_PRESET`, `PRESETS` | Per-event energy / latency constants injected into the synthesized SANA-FE architecture. |
-| `arch_synth.py` | `ArchSpec`, `derive_arch_spec`, `build_architecture`, `_sanafe` | Two-stage architecture synthesis: pure-Python geometry derivation from an HCM, then SANA-FE-touching `Architecture` construction (or `sanafe.load_arch(custom_yaml)` when a custom path is supplied). |
-| `net_synth.py` | `build_network_for_segment` | Per-segment SANA-FE network construction.  One neuron group per HardCore, one `input` group, optional `always_on` group; walks `core.axon_sources` and synthesizes weighted synapses (zero entries elided; duplicate sources collapse into a single summed-weight synapse — matches the Lava convention). |
-| `neuron_model.py` | `soma_attributes`, `needs_plugin`, `resolve_plugin_path`, `THRESHOLDING_MODE_TO_SANAFE` | Mapping from `SubtractiveLIFReset` semantics to SANA-FE's `loihi_lif_soma` model_attributes.  `needs_plugin()` selects Strategy A (built-in soma + attributes) vs Strategy B (custom C++ plugin); the runner is plugin-agnostic. |
-| `runner.py` | `SanafeRunner` | The only module that calls `sanafe.SpikingChip`.  Walks hybrid stages, runs neural stages on SANA-FE and compute stages on host (via `hybrid_execution.execute_compute_op_numpy`), aggregates into `SanafeRunRecord`. |
+| `records.py` | `SanafeRunRecord`, `SanafeSegmentRecord`, `SanafeCoreRecord`, `SanafeTileRecord`, `SanafeEnergyBreakdown`, `SanafeNocLink`, `SanafeNocLinkLoad`, `SanafeCascadePoint`, … | Rich per-sample record dataclasses.  `SanafeRunRecord.to_hcm_subset()` projects spike-count fields to `spike_recorder.RunRecord` so `compare_records()` is reused for the parity gate. |
+| `stats.py` | `SanafeStepReport` | Step-level aggregate over `sanafe_sample_count` runs.  `to_snapshot_dict()` feeds `gui/snapshot/builders.py::snapshot_sanafe_simulation`. |
+| `presets.py` | `LOIHI_PRESET`, `TRUENORTH_PRESET`, `PRESETS` | Per-event energy / latency constants for synthesized architectures (`sanafe_arch_preset` in deployment config). |
+| `arch_synth.py` | `ArchSpec`, `derive_arch_spec`, `build_architecture`, `_sanafe`, `_plugin_path` | Geometry from HCM → SANA-FE `Architecture`; optional custom YAML via `sanafe_custom_arch_path`.  **`_plugin_path(name)`** resolves `build/mimarsinan_sanafe_plugins/libmimarsinan_<name>.so` (required for production YAML). |
+| `net_synth.py` | `build_network_for_segment`, `set_input_spike_trains`, `set_always_on_spike_trains` | Per-segment `Network`: one neuron group per `HardCore`, `input` / `always_on` groups; synapses from `axon_sources` (zeros elided, duplicate sources summed — Lava convention). |
+| `neuron_model.py` | `lif_model_attributes`, `input_neuron_attributes` | Builds `model_attributes` for **`mimarsinan_soma`** / input somas: subtractive LIF semantics, optional `active_start` / `active_length` per core (aligned with HCM active windows). |
+| `runner.py` | `SanafeRunner` | Only module calling `sanafe.SpikingChip`.  Neural stages on SANA-FE; compute stages via `hybrid_execution` (float64).  Simulation length `T + max_latency`; per-core active windows from `ChipLatency`. |
+| `plugins/CMakeLists.txt` | — | Builds `libmimarsinan_soma.so`, `libmimarsinan_dendrite.so`. |
+| `plugins/mimarsinan_soma.cpp` | — | Custom soma: subtractive LIF, strict/inclusive thresholding, active-window gating (replaces SANA-FE built-in `leaky_integrate_fire` Loihi caps). |
+| `plugins/mimarsinan_dendrite.cpp` | — | Custom dendrite plugin. |
 
-## Neuron-model parity strategy
+## Neuron-model / architecture synthesis
 
-SANA-FE's stock `loihi_lif_soma` is configured with `leak_decay=0`,
-`input_decay=0`, `reset_mode="subtract"`, and a strict / inclusive
-`threshold_mode`.  Active-window gating (the original
-`SubtractiveLIFReset` contract from
-`mimarsinan/chip_simulation/subtractive_lif.py`) is emulated host-side
-by gating which timesteps receive input spikes; with `leak_decay=0` the
-voltage is preserved through zero-input cycles, so soma- and input-side
-gating are equivalent.
+Production YAML from `build_architecture()` wires **plugin somas and dendrites**
+(`model: mimarsinan_soma`, `model: mimarsinan_dendrite`), not SANA-FE's stock
+`leaky_integrate_fire`.  `lif_model_attributes()` supplies the attribute dict
+(`leak_decay`, `reset_mode`, `force_update`, per-core `active_start` /
+`active_length`, etc.) consumed by the plugin.
 
-If the slow single-core parity test in
-`tests/unit/chip_simulation/test_sanafe_runner_single_core.py` (yet to
-land — see plan) reveals a knob the built-in soma cannot match,
-`plugins/mimarsinan_subtractive_lif.cpp` is built by
-`scripts/bootstrap_sanafe.sh MIMARSINAN_SANAFE_PLUGIN=1` and the runner
-picks it up via `neuron_model.resolve_plugin_path`.
+`bootstrap_sanafe.sh` must build the plugins; `derive_arch_spec` / `build_architecture`
+fail fast with a clear message if the `.so` files are missing.
+
+## Parity gate (HCM ↔ SANA-FE)
+
+When `sanafe_parity_check` is true (default), `SanafeSimulationStep` for each sample:
+
+1. Runs `SpikingHybridCoreFlow.forward_with_recording()` (HCM) → `RunRecord`.
+2. Runs `SanafeRunner` → `SanafeRunRecord`.
+3. Compares `sanafe_record.to_hcm_subset()` vs HCM via `compare_records()`; any mismatch fails the pipeline.
+
+`ChipLatency` post-passes on the mapping must be correct before either simulator runs.
 
 ## Dependencies
 
-- **Internal**: `chip_simulation` (`spike_recorder`, `hybrid_execution`,
-  `_spike_encoding`); `mapping` (`HybridHardCoreMapping`,
-  `HardCoreMapping`, `HardCore` shape); `code_generation`
-  (`SpikeSource` axon source kind).
-- **External**: `numpy`, `torch`; lazily, `sanafe` (GPL-3.0; only when
-  the step is enabled at runtime).
+- **Internal**: `chip_simulation.spike_recorder`, `chip_simulation.hybrid_execution`,
+  `chip_simulation._spike_encoding`, `mapping.chip_latency`, `mapping` (HCM types),
+  `code_generation.SpikeSource`.
+- **External**: `numpy`, `torch`; lazily `sanafe` (GPL-3.0).
 
 ## Dependents
 
-- `pipelining.pipeline_steps.sanafe_simulation_step` instantiates
-  `SanafeRunner` and persists `SanafeStepReport` to the cache.
-- `gui.snapshot.builders.snapshot_sanafe_simulation` consumes
-  `SanafeStepReport.to_snapshot_dict()` for the GUI tab.
+- `pipelining.pipeline_steps.sanafe_simulation_step` — loops `sanafe_sample_count` samples.
+- `gui.snapshot.builders.snapshot_sanafe_simulation` — summary + deferred heatmap/NoC resources.
+- `gui/static/js/sanafe-tab.js` — monitor tab: energy cards, heatmaps, **NoC link playback**.
 
-## Exported API (__init__.py)
+## Exported API (`__init__.py`)
 
 `SanafeRunRecord`, `SanafeSegmentRecord`, `SanafeCoreRecord`,
 `SanafeTileRecord`, `SanafeEnergyBreakdown`.

@@ -20,7 +20,7 @@ in the deployment pipeline.
 | `weight_quantization_step.py` | `WeightQuantizationStep` | Quantization |
 | `quantization_verification_step.py` | `QuantizationVerificationStep` | Verification |
 | `normalization_fusion_step.py` | `NormalizationFusionStep` | Optimization |
-| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (computes per-source input scales via `compute_per_source_scales`; adds TTFS shift compensation; runs soft-core spiking simulation as the step metric using `simulation_steps` cycles; scales and rounds `hardware_bias` by the quantization factor during weight quantization; reduces effective `max_axons` by 1 when `hardware_bias=False` to account for the always-on bias axon; by default retains pre-compaction weight heatmaps on each `NeuralCore` for the monitor GUI's pre-vs-post pruning views — controlled by `store_pre_pruning_heatmap` (default `true`), independent from `generate_visualizations` which governs graphviz DOT output) |
+| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping (`requires`: `fused_model`, `platform_constraints_resolved`). Computes per-source input scales; TTFS shift compensation (idempotent via `_ttfs_shift_baked_into_bias`); builds `HybridHardCoreMapping` + **`SpikingHybridCoreFlow`** spiking metric (SCM). Scales `hardware_bias` with weight quant; `max_axons - 1` when legacy bias axon; optional pre-pruning heatmaps (`store_pre_pruning_heatmap`). |
 | `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification |
 | `lif_adaptation_step.py` | `LIFAdaptationStep` | Activation adaptation (LIF mode only; swaps Perceptron `base_activation` to `LIFActivation` and runs KD recovery with the pre-LIF snapshot as teacher) |
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping (passes `allow_scheduling` from `platform_constraints_resolved` to `build_hybrid_hard_core_mapping`; reports per-segment pass counts when scheduled) |
@@ -154,6 +154,13 @@ layout estimation correctly account for this reserved slot.
 flag from the pipeline config to `platform_constraints_resolved` cores so that
 `SoftCoreMappingStep` can resolve the hardware-bias mode correctly.
 
+### TTFS shift idempotency (soft core mapping)
+
+For `ttfs_quantized` + `activation_quantization`, shift is baked into perceptron
+bias once (`_ttfs_shift_baked_into_bias` on each `Perceptron`). Re-running the
+step (resume / edit-continue) must not re-apply shift — see comments in
+`soft_core_mapping_step.py`.
+
 ### Deployment Accuracy Semantics
 
 `SoftCoreMappingStep` runs the soft-core spiking simulation as the step metric
@@ -169,6 +176,22 @@ test sample (`loihi_parity_sample_index`, default `0`), builds an HCM
 `LavaLoihiRunner.run_segments_from_reference()`, and fails the pipeline with a
 localized spike-record diff if segment inputs, per-core inputs/outputs, or
 segment outputs diverge.
+
+### LIF Adaptation and cycle-accurate training
+
+`LIFAdaptationStep` runs only when `spiking_mode == "lif"`.  `LIFAdaptationTuner`
+ramps `LIFBlendActivation` from ReLU-like teacher to `LIFActivation`.  When
+`cycle_accurate_lif_forward` is true, installs `_CycleAccurateForward` on
+`model.forward` (picklable for pipeline cache) calling `run_cycle_accurate` with
+`simulation_steps` as `T`.  The wrapper is retained after the step when
+cycle-accurate mode stays enabled.
+
+### SANA-FE simulation
+
+`SanafeSimulationStep` loops `sanafe_sample_count` samples.  `SanafeRunner` uses float64 segment input assembly, `ChipLatency`-aligned per-core
+active windows, and simulation length `T + max_latency`.  HCM reference uses
+`forward_with_recording()`.  With `sanafe_parity_check`, compares
+`SanafeRunRecord.to_hcm_subset()` to HCM `RunRecord` via `compare_records`.
 
 ## Exported API (\_\_init\_\_.py)
 
