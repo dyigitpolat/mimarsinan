@@ -14,6 +14,13 @@ import numpy as np
 import torch
 
 
+from mimarsinan.config_schema.defaults import (
+    DEFAULT_DEPLOYMENT_PARAMETERS,
+    DEFAULT_PLATFORM_CONSTRAINTS,
+    apply_preset as _apply_preset,
+    get_default_deployment_parameters,
+    get_default_platform_constraints,
+)
 from mimarsinan.pipelining.search_mode import derive_search_mode  # noqa: F401 — re-export
 
 
@@ -90,15 +97,6 @@ def get_pipeline_semantic_group_by_step_name(config: dict) -> dict[str, str]:
     }
 
 
-PIPELINE_MODE_PRESETS: dict[str, dict] = {
-    "vanilla": {},
-    "phased": {
-        "activation_quantization": True,
-        "weight_quantization": True,
-    },
-}
-
-
 def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     """Return ordered (step_name, step_class) list for the given config."""
     search_mode = derive_search_mode(config)
@@ -168,54 +166,8 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
 class DeploymentPipeline(Pipeline):
     """Unified deployment pipeline with configurable quantization."""
 
-    default_deployment_parameters: dict = {
-        "lr": 0.001,
-        "lr_range_min": 1e-5,
-        "lr_range_max": 1e-1,
-        "training_epochs": 10,
-        "tuning_budget_scale": 1.0,
-        "degradation_tolerance": 0.05,
-        "model_config_mode": "user",
-        "hw_config_mode": "fixed",
-        "spiking_mode": "lif",
-        "enable_loihi_simulation": False,
-        "enable_sanafe_simulation": False,
-        "sanafe_sample_count": 1,
-        "sanafe_arch_preset": "loihi",
-        "sanafe_custom_arch_path": None,
-        "sanafe_log_potential_trace": False,
-        "sanafe_log_message_trace": True,
-        "sanafe_parity_check": True,
-        "allow_scheduling": False,
-        "training_recipe": {
-            "optimizer": "adamw",
-            "weight_decay": 0.05,
-            "betas": [0.9, 0.999],
-            "scheduler": "cosine",
-            "warmup_ratio": 0.1,
-            "grad_clip_norm": 1.0,
-            "layer_wise_lr_decay": 0.75,
-            "label_smoothing": 0.1,
-        },
-        "tuning_recipe": {
-            "optimizer": "adamw",
-            "weight_decay": 0.01,
-            "betas": [0.9, 0.999],
-            "scheduler": "cosine",
-            "warmup_ratio": 0.0,
-            "grad_clip_norm": 1.0,
-            "layer_wise_lr_decay": 1.0,
-            "label_smoothing": 0.0,
-        },
-    }
-
-    default_platform_constraints: dict = {
-        "cores": [{"max_axons": 256, "max_neurons": 256, "count": 1000}],
-        "target_tq": 32,
-        "simulation_steps": 32,
-        "weight_bits": 8,
-    }
-
+    default_deployment_parameters = DEFAULT_DEPLOYMENT_PARAMETERS
+    default_platform_constraints = DEFAULT_PLATFORM_CONSTRAINTS
 
     def __init__(
         self,
@@ -247,10 +199,10 @@ class DeploymentPipeline(Pipeline):
         *,
         data_provider=None,
     ):
-        self.config.update(self.default_deployment_parameters)
+        self.config.update(get_default_deployment_parameters())
         self.config.update(deployment_parameters)
 
-        self.config.update(self.default_platform_constraints)
+        self.config.update(get_default_platform_constraints())
         self.config.update(platform_constraints)
 
         if data_provider is None:
@@ -339,6 +291,4 @@ class DeploymentPipeline(Pipeline):
     @staticmethod
     def apply_preset(pipeline_mode: str, deployment_parameters: dict) -> None:
         """Merge a pipeline_mode preset into deployment_parameters (setdefault)."""
-        preset = PIPELINE_MODE_PRESETS.get(pipeline_mode, {})
-        for key, value in preset.items():
-            deployment_parameters.setdefault(key, value)
+        _apply_preset(pipeline_mode, deployment_parameters)

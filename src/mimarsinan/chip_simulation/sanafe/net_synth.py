@@ -44,20 +44,8 @@ from .presets import (
 )
 
 
-def _used_axons(core: Any) -> int:
-    """Number of live axons (matches HCM's accounting).
-
-    Real ``HardCore.axon_sources`` is padded to ``axons_per_core`` with
-    trailing ``is_off_`` markers — the live count is
-    ``axons_per_core - available_axons``.  HCM's spike-recorder uses the
-    same convention, so this is what we must report on the SANA-FE side
-    to keep ``compare_records`` shape-equal.
-    """
-    return int(core.axons_per_core) - int(getattr(core, "available_axons", 0))
-
-
-def _used_neurons(core: Any) -> int:
-    return int(core.neurons_per_core) - int(getattr(core, "available_neurons", 0))
+from mimarsinan.mapping.core_geometry import used_axons as _used_axons
+from mimarsinan.mapping.core_geometry import used_neurons as _used_neurons
 
 
 def _pack_tile_index(core_global_idx: int, cores_per_tile: int) -> Tuple[int, int]:

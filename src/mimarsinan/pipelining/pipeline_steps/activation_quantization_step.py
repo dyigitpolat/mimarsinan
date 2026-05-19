@@ -1,30 +1,25 @@
-from mimarsinan.pipelining.pipeline_step import PipelineStep
+from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
+from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner
 
-from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner 
 
-class ActivationQuantizationStep(PipelineStep):
+class ActivationQuantizationStep(TunerPipelineStep):
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         promises = []
         updates = ["model", "adaptation_manager"]
         clears = []
         super().__init__(requires, promises, updates, clears, pipeline)
-        self.tuner = None
-
-    def validate(self):
-        if self.tuner is not None:
-            return self.tuner.validate()
-        return self.pipeline.get_target_metric()
 
     def process(self):
+        model = self.get_entry('model')
+        adaptation_manager = self.get_entry('adaptation_manager')
         self.tuner = ActivationQuantizationTuner(
             self.pipeline,
-            model = self.get_entry('model'),
-            target_tq = self.pipeline.config['target_tq'],
-            target_accuracy = self.pipeline.get_target_metric(),
-            lr = self.pipeline.config['lr'], 
-            adaptation_manager = self.get_entry('adaptation_manager'))
+            model=model,
+            target_tq=self.pipeline.config['target_tq'],
+            target_accuracy=self.pipeline.get_target_metric(),
+            lr=self.pipeline.config['lr'],
+            adaptation_manager=adaptation_manager,
+        )
         self.tuner.run()
-
-        self.update_entry("adaptation_manager", self.tuner.adaptation_manager, "pickle")
-        self.update_entry("model", self.tuner.model, 'torch_model')
+        self._commit_tuner_entries(model, self.tuner.adaptation_manager)

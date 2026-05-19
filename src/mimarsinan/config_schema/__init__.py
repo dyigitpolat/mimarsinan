@@ -24,6 +24,7 @@ from mimarsinan.config_schema.defaults import (
     get_config_keys_set,
     apply_preset,
 )
+from mimarsinan.config_schema.runtime import build_flat_pipeline_config
 from mimarsinan.config_schema.validation import (
     validate_deployment_config,
     validate_merged_config,
@@ -45,4 +46,5 @@ __all__ = [
     "apply_preset",
     "validate_deployment_config",
     "validate_merged_config",
+    "build_flat_pipeline_config",
 ]

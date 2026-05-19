@@ -34,17 +34,9 @@ def _safe_scalar(obj: Any, attr: str) -> float | None:
 
 def _safe_dict(obj: Any) -> Any:
     """Recursively convert an object to JSON-safe types."""
-    if isinstance(obj, dict):
-        return {str(k): _safe_dict(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_safe_dict(v) for v in obj]
-    if isinstance(obj, (int, float, str, bool, type(None))):
-        return obj
-    if hasattr(obj, "item"):
-        return obj.item()
-    if hasattr(obj, "tolist"):
-        return obj.tolist()
-    return str(obj)
+    from mimarsinan.gui.json_util import to_json_safe
+
+    return to_json_safe(obj)
 
 
 # Map cache virtual key (step contract) to snapshot key (GUI tab).

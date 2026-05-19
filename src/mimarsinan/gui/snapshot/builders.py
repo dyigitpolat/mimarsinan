@@ -720,13 +720,15 @@ def snapshot_mapping_performance_planned(
         except Exception:
             logger.debug("assign_perceptron_indices failed", exc_info=True)
 
+    from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+
     allow_coalescing = bool(platform_constraints.get("allow_coalescing", False))
     allow_neuron_splitting = bool(platform_constraints.get("allow_neuron_splitting", False))
     allow_scheduling = bool(platform_constraints.get("allow_scheduling", False))
-    hardware_bias = all(bool(ct.get("has_bias", True)) for ct in cores)
-
-    tile_max_ax = max(int(ct.get("max_axons", 0)) for ct in cores)
-    tile_max_neu = max(int(ct.get("max_neurons", 0)) for ct in cores)
+    pmap = resolve_platform_mapping_params(cores, allow_coalescing=allow_coalescing)
+    hardware_bias = pmap.hardware_bias
+    tile_max_ax = pmap.effective_max_axons
+    tile_max_neu = pmap.effective_max_neurons
     if tile_max_ax <= 0 or tile_max_neu <= 0:
         return None
 

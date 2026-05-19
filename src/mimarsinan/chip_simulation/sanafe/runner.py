@@ -14,6 +14,8 @@ from mimarsinan.chip_simulation.hybrid_execution import (
 )
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.chip_latency import ChipLatency
+from mimarsinan.mapping.core_geometry import used_axons as _used_axons
+from mimarsinan.mapping.core_geometry import used_neurons as _used_neurons
 from mimarsinan.mapping.spike_source_spans import compress_spike_sources
 
 from .arch_synth import _sanafe, build_architecture, derive_arch_spec
@@ -640,15 +642,6 @@ def _group_name_to_size(net: Any) -> Dict[str, int]:
     if isinstance(groups, dict):
         return {name: len(g) for name, g in groups.items()}
     return {_group_name(g): len(g) for g in groups}
-
-
-def _used_axons(core: Any) -> int:
-    """Live axon count (``axons_per_core - available_axons``, not padded len)."""
-    return int(core.axons_per_core) - int(getattr(core, "available_axons", 0))
-
-
-def _used_neurons(core: Any) -> int:
-    return int(core.neurons_per_core) - int(getattr(core, "available_neurons", 0))
 
 
 def _per_core_energy_sanafe(

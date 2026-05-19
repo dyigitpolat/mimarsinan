@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.chip_simulation import spike_modes
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore, WeightBank
 from mimarsinan.mapping.ir_source_spans import IRSourceSpan, compress_ir_sources
 
@@ -161,77 +162,21 @@ class SpikingUnifiedCoreFlow(nn.Module):
 
         self._assert_mapping_contracts(ir_graph)
 
-        from mimarsinan.mapping.hybrid_hardcore_mapping import (
-            _perceptron_wrapped_activation_scale,
+        from mimarsinan.mapping.activation_scales import (
+            compute_node_input_scales,
+            compute_node_output_scales,
         )
-        self._ttfs_node_output_scale: Dict[int, float] = {}
-        self._ttfs_node_input_scale: Dict[int, float] = {}
-        for node in self.nodes:
-            if isinstance(node, NeuralCore):
-                s = float(
-                    node.activation_scale.item()
-                    if hasattr(node.activation_scale, "item")
-                    else node.activation_scale
-                )
-                self._ttfs_node_output_scale[node.id] = s
-                self._ttfs_node_input_scale[node.id] = s
-            elif isinstance(node, ComputeOp):
-                module = (node.params or {}).get("module")
-                wrapped_scale = _perceptron_wrapped_activation_scale(module)
-                src_scales: list[float] = []
-                all_raw_inputs = True
-                for src in node.input_sources.flatten():
-                    src_id = int(src.node_id) if hasattr(src, "node_id") else int(src)
-                    if src_id >= 0:
-                        all_raw_inputs = False
-                        src_scales.append(self._ttfs_node_output_scale.get(src_id, 1.0))
 
-                if all_raw_inputs:
-                    self._ttfs_node_input_scale[node.id] = 1.0
-                else:
-                    self._ttfs_node_input_scale[node.id] = (
-                        sum(src_scales) / len(src_scales) if src_scales else 1.0
-                    )
-
-                if wrapped_scale is not None:
-                    self._ttfs_node_output_scale[node.id] = wrapped_scale
-                else:
-                    self._ttfs_node_output_scale[node.id] = self._ttfs_node_input_scale[node.id]
-
-    def to_stochastic_spikes(self, tensor: torch.Tensor) -> torch.Tensor:
-        return (torch.rand(tensor.shape, device=tensor.device) < tensor).float()
-
-    def to_front_loaded_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
-        return (torch.round(tensor * self.simulation_length) > cycle).float()
-
-    def to_deterministic_spikes(self, tensor: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:
-        return (tensor > threshold).float()
-
-    def to_uniform_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
-        T = self.simulation_length
-
-        N = torch.round(tensor * T).to(torch.long)
-        mask = (N != 0) & (N != T) & (cycle < T)
-        N_safe = torch.clamp(N, min=1)
-        spacing = T / N_safe.float()
-
-        result = mask & (torch.floor(cycle / spacing) < N_safe) & (torch.floor(cycle % spacing) == 0)
-
-        result = result.float()
-        result[N == T] = 1.0
-
-        return result
+        self._ttfs_node_output_scale = compute_node_output_scales(ir_graph)
+        self._ttfs_node_input_scale = compute_node_input_scales(ir_graph)
 
     def to_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
-        if self.spike_mode == "Stochastic":
-            return self.to_stochastic_spikes(tensor)
-        if self.spike_mode == "Deterministic":
-            return self.to_deterministic_spikes(tensor)
-        if self.spike_mode == "FrontLoaded":
-            return self.to_front_loaded_spikes(tensor, cycle)
-        if self.spike_mode == "Uniform":
-            return self.to_uniform_spikes(tensor, cycle)
-        raise ValueError("Invalid spike mode: " + str(self.spike_mode))
+        return spike_modes.to_spikes(
+            tensor,
+            cycle,
+            simulation_length=self.simulation_length,
+            spike_mode=self.spike_mode,
+        )
 
     def _get_weight(self, node: NeuralCore) -> torch.Tensor:
         """(neurons, axons) float32 weights; bank-backed cores slice ``_bank_params``."""
@@ -353,7 +298,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         spike_train_cache: Dict[int, torch.Tensor] = {}
         self._last_core_spike_counts: Dict[int, float] = {}
 
-        ops = {"<": torch.lt, "<=": torch.le}
+        from mimarsinan.models.lif_kernels import lif_fire_and_reset
 
         for node_idx, node in enumerate(self.nodes):
             if isinstance(node, NeuralCore):
@@ -385,14 +330,14 @@ class SpikingUnifiedCoreFlow(nn.Module):
                     if hw_bias is not None:
                         contribution = contribution + hw_bias
                     memb += contribution
-                    fired = ops[self.thresholding_mode](threshold, memb)
-                    out_train[cycle] = fired.float()
-                    total_spikes += fired.float().sum().item()
-
-                    if self.firing_mode == "Novena":
-                        memb[fired] = 0.0
-                    elif self.firing_mode == "Default":
-                        memb[fired] -= threshold
+                    spikes = lif_fire_and_reset(
+                        memb,
+                        threshold,
+                        thresholding_mode=self.thresholding_mode,
+                        firing_mode=self.firing_mode,
+                    )
+                    out_train[cycle] = spikes
+                    total_spikes += spikes.sum().item()
 
                 spike_train_cache[node.id] = out_train
                 self._last_core_spike_counts[node.id] = total_spikes / (batch_size * out_dim * T + 1e-9)
@@ -563,13 +508,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 V = torch.matmul(weight, inp.T).T
                 if hw_bias is not None:
                     V = V + hw_bias.to(compute_dtype)
-                safe_thresh = threshold.clamp(min=1e-12)
-                k_fire_raw = torch.ceil(S * (1.0 - V / safe_thresh))
-                fires = k_fire_raw < S
-                k_fire = k_fire_raw.clamp(0, S - 1)
-                activation_cache[node.id] = torch.where(
-                    fires, (S - k_fire) / S, torch.zeros_like(k_fire)
-                )
+                from mimarsinan.models.ttfs_kernels import ttfs_quantized_activation
+
+                activation_cache[node.id] = ttfs_quantized_activation(V, threshold, S)
                 self._last_core_spike_counts[node.id] = 0.0
 
             elif isinstance(node, ComputeOp):
