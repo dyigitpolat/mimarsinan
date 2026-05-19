@@ -101,7 +101,7 @@ class SpikingHybridCoreFlow(nn.Module):
         preprocessor: nn.Module | None = None,
         firing_mode: str = "Default",
         spike_mode: str = "Uniform",
-        thresholding_mode: str = "<",
+        thresholding_mode: str = "<=",
         spiking_mode: str = "lif",
     ):
         super().__init__()

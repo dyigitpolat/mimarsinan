@@ -98,7 +98,7 @@ class LoihiSimulationStep(PipelineStep):
             pipeline=None,
             mapping=hard_core_mapping,
             simulation_length=simulation_length,
-            thresholding_mode=self.pipeline.config.get("thresholding_mode", "<"),
+            thresholding_mode=self.pipeline.config.get("thresholding_mode", "<="),
         )
         actual = runner.run_segments_from_reference(ref)
         diffs = compare_records(ref, actual)

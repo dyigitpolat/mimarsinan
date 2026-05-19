@@ -9,8 +9,24 @@ class ChipLatency:
     def __get_non_zero_axon_sources(self, core, neuron_idx):
         non_zero_axon_sources = []
         for axon_idx, w in enumerate(core.core_matrix[:, neuron_idx]):
-            if abs(w) > 0:
-                non_zero_axon_sources.append(core.axon_sources[axon_idx])
+            if abs(w) == 0:
+                continue
+            src = core.axon_sources[axon_idx]
+            # ``off`` axons deliver no signal regardless of any residual
+            # weight value: IR pruning can zero an axon's source (mark it
+            # ``is_off_``) without zeroing the corresponding column in
+            # ``core_matrix``. Including such axons here previously made
+            # ``get_delay_for`` see ``src.core_ == -1`` as a *direct input*
+            # (delay 0) and pulled the dependent core's latency down to
+            # whatever depth the bias path implied. Concrete failure mode:
+            # a deep core whose every consumer-facing neuron has its only
+            # non-zero weights on off-axons ended up at ``latency=1`` while
+            # its downstream consumers (correctly at lat=1) read its
+            # buffer cycles before the source had fired — wedging NF→SCM
+            # by O(3 pp) on compilagent 8-deep architectures.
+            if getattr(src, "is_off_", False):
+                continue
+            non_zero_axon_sources.append(src)
 
         return non_zero_axon_sources
 
@@ -59,6 +75,21 @@ class ChipLatency:
         for core_idx in latencies:
             if core_idx >= 0:
                 self.mapping.cores[core_idx].latency = latencies[core_idx]
+
+        # Post-pass: enforce the per-core latency invariant. The chip
+        # schedules each core as a whole during ``[core.latency, core.latency+T)``;
+        # a consumer core can only safely fire once *every* upstream core
+        # it depends on has fired, regardless of which specific source
+        # neurons the consumer's weights happen to reference. The
+        # per-neuron walk above can under-estimate latency when a
+        # consumer's non-zero weights land on source-core neurons that
+        # themselves have shallow per-neuron delays (e.g. bias-only,
+        # all-off-axon non-zero weights left over from IR pruning).
+        # Without this enforcement, consumers get scheduled to fire
+        # before their source-core's active window starts and integrate
+        # zeros — producing dead edges that wedge NF→SCM accuracy
+        # proportionally to the volume of such edges.
+        result = max(result, self._enforce_core_latency_invariant())
 
         # Post-pass: align cores whose *only* live inputs are off / always-on
         # / segment-input with the depth their consumers expect.
@@ -187,5 +218,61 @@ class ChipLatency:
                 if current < required:
                     cores[core_idx].latency = required
                     new_max = max(new_max, required + 1)
+                    changed = True
+        return new_max
+
+    # ------------------------------------------------------------------
+    # Per-core latency invariant enforcement
+    # ------------------------------------------------------------------
+
+    def _enforce_core_latency_invariant(self):
+        """Ensure each core's latency >= max(source_core_lat) + 1.
+
+        Sweeps until fixed point — propagation is monotone (latencies
+        only rise), so termination is bounded by ``len(cores)``. Only
+        considers ``kind == "core"`` axon source spans; off / always-on
+        / input axons don't introduce a chip-side scheduling
+        dependency on another core's active window.
+        """
+        cores = self.mapping.cores
+        if not cores:
+            return 0
+        changed = True
+        passes = 0
+        max_passes = len(cores) + 1
+        new_max = max(int(c.latency or 0) for c in cores)
+        while changed and passes < max_passes:
+            changed = False
+            passes += 1
+            for core_idx, core in enumerate(cores):
+                current_lat = int(core.latency or 0)
+                max_src_lat = -1
+                # Walk ``axon_sources`` directly (rather than the
+                # span-compressed view from ``get_axon_source_spans``) so
+                # this pass works with the SimpleNamespace stubs the unit
+                # tests use as well as the real ``HardCore``. Off, always-on
+                # and segment-input axons don't introduce a chip-side
+                # scheduling dependency on another core's active window.
+                for axon in core.axon_sources:
+                    if getattr(axon, "is_off_", False):
+                        continue
+                    if getattr(axon, "is_always_on_", False):
+                        continue
+                    if getattr(axon, "is_input_", False):
+                        continue
+                    src_core_idx = int(axon.core_)
+                    if src_core_idx < 0:
+                        continue
+                    src_lat = int(cores[src_core_idx].latency or 0)
+                    if src_lat > max_src_lat:
+                        max_src_lat = src_lat
+                if max_src_lat < 0:
+                    # No live cross-core source — leave whatever the
+                    # backward walk or shiftable alignment assigned.
+                    continue
+                required = max_src_lat + 1
+                if current_lat < required:
+                    core.latency = required
+                    new_max = max(new_max, required)
                     changed = True
         return new_max

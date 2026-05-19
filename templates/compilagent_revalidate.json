@@ -1,0 +1,31 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "mnist_arch_search_compilagent_revalidate",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "target_tq": 4, "simulation_steps": 4,
+    "max_axons": 1024, "max_neurons": 1024, "weight_bits": 5,
+    "has_bias": true, "allow_coalescing": false, "allow_neuron_splitting": true,
+    "search_space": {"num_core_types":1,"core_axons_bounds":[128,1024],"core_neurons_bounds":[128,1024],"core_count_bounds":[50,300]}
+  },
+  "deployment_parameters": {
+    "lr": 0.003, "training_epochs": 10, "tuning_budget_scale": 1.0, "degradation_tolerance": 0.15,
+    "model_config_mode": "search", "hw_config_mode": "search", "model_type": "mlp_mixer_core",
+    "spiking_mode": "lif", "firing_mode": "Default", "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<",
+    "cycle_accurate_lif_forward": true,
+    "activation_quantization": false, "weight_quantization": true,
+    "pruning": true, "pruning_fraction": 0.2, "batch_size": 128,
+    "training_recipe": {"optimizer":"adamw","scheduler":"cosine","weight_decay":0.0001,"warmup_ratio":0.05,"grad_clip_norm":1,"layer_wise_lr_decay":1,"label_smoothing":0,"betas":[0.9,0.999]},
+    "tuning_recipe": {"optimizer":"adamw","scheduler":"cosine","weight_decay":0.0001,"warmup_ratio":0,"grad_clip_norm":1,"layer_wise_lr_decay":1,"label_smoothing":0,"betas":[0.9,0.999]},
+    "max_simulation_samples": 500, "allow_scheduling": true,
+    "enable_loihi_simulation": true,
+    "enable_sanafe_simulation": true,
+    "sanafe_parity_check": true
+  },
+  "target_metric_override": null,
+  "start_step": "Soft Core Mapping",
+  "stop_step": null
+}

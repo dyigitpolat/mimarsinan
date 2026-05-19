@@ -83,6 +83,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "firing_mode",
     "spike_generation_mode",
     "thresholding_mode",
+    "cycle_accurate_lif_forward",
     "model_config_mode",
     "hw_config_mode",
     "activation_quantization",

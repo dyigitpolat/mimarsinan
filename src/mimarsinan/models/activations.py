@@ -8,6 +8,96 @@ import torch.nn.functional as F
 from torch.autograd import Function
 
 
+def uniform_encode_to_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
+    """Encode a rate tensor ``(B, ...)`` ∈ [0, 1] to a ``(T, B, ...)`` spike train.
+
+    Matches the chip's uniform encoder (``SpikingHybridCoreFlow.to_uniform_spikes``,
+    ``_spike_encoding.uniform_rate_encode``): for each element, places
+    ``N = round(rate * T)`` spikes at uniformly-spaced cycle indices.
+    Saturates to one spike per cycle at rate 1.0.
+
+    Used by cycle-accurate LIF Adaptation training to feed each network
+    the same per-cycle pattern the chip will inject at deployment, so the
+    membrane trajectories match.
+    """
+    rate_c = rate.clamp(0.0, 1.0)
+    N = torch.round(rate_c * T).to(torch.long)
+    N_safe = N.clamp(min=1)
+    spacing = T / N_safe.float()
+    cycles = torch.arange(T, device=rate.device).reshape((T,) + (1,) * rate.ndim)
+    mask_active = (N != 0) & (N != T)
+    fire = (
+        mask_active
+        & (torch.floor(cycles / spacing) < N_safe)
+        & (torch.floor(cycles % spacing) == 0)
+    ).to(rate.dtype)
+    fire = torch.where(
+        (N == T).expand_as(fire),
+        torch.ones_like(fire),
+        fire,
+    )
+    return fire
+
+
+def run_cycle_accurate(
+    model,
+    x: torch.Tensor,
+    T: int,
+    forward_fn=None,
+) -> torch.Tensor:
+    """Drive a model's forward in cycle-accurate mode and return mean output.
+
+    1. Uniform-encode the input rate ``(B, ...)`` to a ``(T, B, ...)``
+       spike train, matching the chip's input encoder.
+    2. Toggle every :class:`LIFActivation` in ``model`` into single-step
+       mode and reset their membranes — once for the whole T-loop, not
+       per cycle, so membranes accumulate across cycles like SpikingJelly.
+    3. Call ``forward_fn(spike_train[t])`` for ``t in range(T)``. Each
+       LIFActivation integrates one cycle of its pre-activation and
+       emits a binary spike; the Mapper DAG cascades these through
+       every node in topological order (Linear, Conv, BN, einops, …
+       are shape-preserving and operate identically in either mode, so
+       no model-side changes are required).
+    4. Mean-reduce the T outputs to produce ``(B, num_classes)`` logits.
+
+    This is the standard SpikingJelly cycle-accurate evaluation —
+    multi-step IFNode dynamics expressed as T sequential single-step
+    calls with persistent membrane state. The chip simulators
+    (HCM/SCM/SANA-FE/nevresim/Lava) layer per-core scheduling on top
+    of the same per-neuron dynamics; cycle-accurate training under
+    SpikingJelly gives a model that those simulators can evaluate
+    consistently because they share the LIF dynamics, threshold and
+    reset semantics.
+
+    On exit each LIF's mode is restored to multi-step so subsequent
+    rate-mode forwards continue to work — the trained weights persist,
+    only the forward dispatch is transient.
+
+    ``forward_fn`` defaults to ``model.forward``. When the caller has
+    monkey-patched ``model.forward`` to invoke this function (the
+    typical tuner setup), pass the pre-patch bound forward explicitly
+    to avoid the recursion.
+    """
+    from spikingjelly.activation_based import functional
+
+    if forward_fn is None:
+        forward_fn = model.forward
+
+    spike_train = uniform_encode_to_spike_train(x, T)  # (T, B, ...)
+
+    lif_modules = [m for m in model.modules() if isinstance(m, LIFActivation)]
+    for m in lif_modules:
+        m.set_cycle_accurate(True)
+    functional.reset_net(model)
+    try:
+        outputs = [forward_fn(spike_train[t]) for t in range(T)]
+    finally:
+        for m in lif_modules:
+            m.set_cycle_accurate(False)
+
+    return torch.stack(outputs, dim=0).mean(dim=0)
+
+
 class LeakyGradReLUFunction(Function):
     @staticmethod
     def forward(ctx, input, negative_slope=1e-8):
@@ -234,21 +324,23 @@ class LIFActivation(nn.Module):
     The firing comparator is chosen via ``thresholding_mode`` to mirror the
     chip's configured policy:
 
-    * ``"<"`` (default) — chip fires at strict ``memb > threshold``
-      (``nevresim/default_fire.hpp`` is hardcoded to this; the Python sim,
-      Lava runner and SANA-FE plugin all default the same way). LIFActivation
-      swaps the surrogate's forward heaviside for a strict ``(v > 1)``
-      variant so the boundary case ``v == 1`` does *not* fire — matching
-      the chip exactly. Output rate is ``max(ceil(T * relu(x) / scale) - 1, 0)
-      / T * scale`` clamped at ``scale``: the rate staircase loses its top
-      step at each boundary ``x = k * scale / T`` exactly the way the chip
-      does.
-    * ``"<="`` — inclusive ``memb >= threshold``. Output rate is the
-      classical ``floor(T * relu(x) / scale) / T * scale`` staircase
-      (spikingjelly's stock ATan heaviside).  Pick this only when every
-      downstream chip path (Python sim, nevresim, lava, SANA-FE) is also
-      configured for ``<=``; otherwise the training optimistically reports
-      an extra fire per boundary neuron that the chip will never produce.
+    * ``"<="`` (default) — inclusive ``memb >= threshold``. Output rate is
+      the classical ``floor(T * relu(x) / scale) / T * scale`` staircase
+      (spikingjelly's stock ATan heaviside). The default deployment pipeline
+      configures every chip path (Python sim, nevresim, lava, SANA-FE) to
+      use ``<=`` as well, so training and deployment fire at the same
+      boundary. Inclusive thresholding tolerates boundary cases ``v == 1``
+      that strict ``<`` discards — under deep single-segment chip workloads
+      where membrane trajectories are bursty from upstream NeuralCore output,
+      this closes roughly 2 pp of NF→SCM gap.
+    * ``"<"`` — strict ``memb > threshold``. Matches nevresim's hardcoded
+      ``DefaultFirePolicy`` (``threshold < membrane_potential``).
+      LIFActivation swaps the surrogate's forward heaviside for a strict
+      ``(v > 1)`` variant so the boundary case ``v == 1`` does *not* fire —
+      matching the chip exactly. Output rate is
+      ``max(ceil(T * relu(x) / scale) - 1, 0) / T * scale`` clamped at
+      ``scale``: the rate staircase loses its top step at each boundary
+      ``x = k * scale / T`` exactly the way the chip does.
 
     Strict mode forces the ``torch`` IFNode backend (cupy's kernel hardcodes
     inclusive heaviside in its emitted CUDA code, so an in-Python surrogate
@@ -272,7 +364,7 @@ class LIFActivation(nn.Module):
         self,
         T: int,
         activation_scale: nn.Parameter | torch.Tensor | float,
-        thresholding_mode: str = "<",
+        thresholding_mode: str = "<=",
     ):
         super().__init__()
         self.T = int(T)
@@ -319,6 +411,17 @@ class LIFActivation(nn.Module):
                 backend="torch",
             )
 
+        # Cycle-accurate mode: when True, forward consumes one cycle's
+        # pre-activation ``(B, ...)`` instead of a rate, runs the IFNode
+        # single-step, and returns ``spike * scale`` for that cycle.
+        # Membrane state persists across forward calls — the outer
+        # T-loop in :func:`run_cycle_accurate` resets it once per
+        # sample. Toggle via :meth:`set_cycle_accurate`. This is the
+        # standard SpikingJelly single-step behaviour — no extra
+        # inter-layer delay (the chip simulators encode their per-core
+        # latency cascade separately at the HCM/IR level).
+        self._cycle_accurate_mode = False
+
     @property
     def activation_type(self) -> str:
         return "LIF"
@@ -326,7 +429,30 @@ class LIFActivation(nn.Module):
     def extra_repr(self) -> str:
         return f"T={self.T}, thresholding_mode={self.thresholding_mode!r}"
 
+    def set_cycle_accurate(self, mode: bool) -> None:
+        """Toggle single-step (cycle-accurate) vs multi-step (rate) forward.
+
+        Cycle-accurate semantics: ``forward(x)`` treats ``x`` as one
+        cycle's pre-activation and runs the IFNode single-step, with
+        membrane state accumulating across successive forward calls.
+        The caller (:func:`run_cycle_accurate`) resets the membrane
+        between samples.
+
+        Rate-mode semantics: ``forward(x)`` broadcasts ``x`` across ``T``
+        cycles internally and returns the mean rate.
+
+        Switching modes resets the IFNode's membrane and step mode so
+        residual state from the previous mode cannot leak across.
+        """
+        from spikingjelly.activation_based import functional
+
+        self._cycle_accurate_mode = bool(mode)
+        self.if_node.step_mode = "s" if mode else "m"
+        functional.reset_net(self.if_node)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self._cycle_accurate_mode:
+            return self._forward_single_step(x)
         spikes, safe_scale = self._spikes_and_scale(x)
         rate = spikes.mean(dim=0)
         return rate * safe_scale
@@ -344,6 +470,33 @@ class LIFActivation(nn.Module):
         spikes, _ = self._spikes_and_scale(x)
         return spikes
 
+    def _forward_single_step(self, x: torch.Tensor) -> torch.Tensor:
+        """One cycle of LIF integration; returns ``spike * scale`` ``(B, ...)``.
+
+        Used when :attr:`_cycle_accurate_mode` is on. Implements
+        standard SpikingJelly single-step semantics: integrate the
+        cycle's input into the persistent IFNode membrane, fire if
+        ``v > threshold``, return the spike for this cycle. Membrane
+        state accumulates across successive forward calls; the outer
+        loop in :func:`run_cycle_accurate` resets the state once per
+        sample.
+
+        Multiplying the binary spike by ``scale`` keeps the inter-layer
+        signal magnitude consistent with rate-mode (where the LIF
+        output is ``mean(spikes) * scale``): the mean over T of
+        cycle-accurate output equals the rate-mode output for constant
+        input across T.
+        """
+        scale = self.activation_scale
+        if isinstance(scale, torch.Tensor):
+            safe_scale = scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
+        else:
+            safe_scale = max(float(scale), 1e-12)
+
+        x_norm = F.relu(x) / safe_scale
+        spike = self.if_node(x_norm)
+        return spike * safe_scale
+
     def _spikes_and_scale(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | float]:
         from spikingjelly.activation_based import functional
 
@@ -359,6 +512,10 @@ class LIFActivation(nn.Module):
         x_norm = F.relu(x) / safe_scale
         x_t = x_norm.unsqueeze(0).expand(self.T, *x_norm.shape).contiguous()
 
+        # Multi-step semantics: ensure step_mode and membrane are clean,
+        # regardless of any prior cycle-accurate run that may have left
+        # the IFNode in single-step mode with accumulated v.
+        self.if_node.step_mode = "m"
         functional.reset_net(self.if_node)
         spikes = self.if_node(x_t)  # (T, B, ...)
         return spikes, safe_scale

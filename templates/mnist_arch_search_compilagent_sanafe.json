@@ -44,7 +44,7 @@
     "spiking_mode": "lif",
     "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
-    "thresholding_mode": "<",
+    "thresholding_mode": "<=",
     "activation_quantization": false,
     "weight_quantization": true,
     "pruning": true,

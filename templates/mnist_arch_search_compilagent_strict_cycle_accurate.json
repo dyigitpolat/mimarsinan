@@ -1,8 +1,8 @@
 {
-  "_comment": "Compilagent-driven joint NAS+HW co-search on MNIST/MLP-Mixer with LIF spiking, configured to run the full pipeline (arch search through Loihi sim). Training, tuning, pruning and simulation parameters mirror `mnist_hard_all_lif.json` so downstream steps (LIF Adaptation, Soft/Hard Core Mapping, Spiking Sim, Loihi Sim) have everything they need; the only compilagent-specific block is `deployment_parameters.arch_search`.",
+  "_comment": "Verification variant of mnist_arch_search_compilagent: strict thresholding (`<`) + cycle_accurate_lif_forward=true. Used to isolate the cycle-accurate effect from the inclusive-threshold effect when measuring NF\u2192SCM gap closure.",
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "mnist_arch_search_compilagent",
+  "experiment_name": "mnist_arch_search_compilagent_strict_cycle_accurate",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -16,9 +16,18 @@
     "allow_neuron_splitting": true,
     "search_space": {
       "num_core_types": 1,
-      "core_axons_bounds": [128, 1024],
-      "core_neurons_bounds": [128, 1024],
-      "core_count_bounds": [50, 300]
+      "core_axons_bounds": [
+        128,
+        1024
+      ],
+      "core_neurons_bounds": [
+        128,
+        1024
+      ],
+      "core_count_bounds": [
+        50,
+        300
+      ]
     }
   },
   "deployment_parameters": {
@@ -30,19 +39,28 @@
     "hw_config_mode": "search",
     "model_type": "mlp_mixer_core",
     "arch_search": {
-      "_comment": "Compilagent session-based optimizer using pydantic-ai harness + mistral-large-latest. No primary objective — every axis is equally weighted; the agent uses pareto_front / metric_summary / query_top_candidates to navigate the multi-objective space. `objectives` is intentionally omitted so this run uses `default_objectives_for_mode('joint')` (the same 5 objectives NSGA2 and AgentEvolve get by default). Add an explicit list here to opt into a different mix — the optimizer never filters on its own.",
       "optimizer": "compilagent",
       "model": "mistral:mistral-large-latest",
       "harness": "pydantic_ai",
       "max_candidates": 4,
       "max_continuations": 2,
-      "system_prompt_extra": "Aim to propose at least 3 deliberately diverse candidates per batch — explore the extremes of (cores, accuracy, fragmentation) rather than clustering in one region.",
+      "system_prompt_extra": "Aim to propose at least 3 deliberately diverse candidates per batch \u2014 explore the extremes of (cores, accuracy, fragmentation) rather than clustering in one region.",
       "pop_size": 4,
       "generations": 1,
       "seed": 42,
-      "patch_c_1_options": [16, 32, 64],
-      "fc_w_1_options": [32, 64],
-      "fc_w_2_options": [32, 64],
+      "patch_c_1_options": [
+        16,
+        32,
+        64
+      ],
+      "fc_w_1_options": [
+        32,
+        64
+      ],
+      "fc_w_2_options": [
+        32,
+        64
+      ],
       "warmup_fraction": 0.1,
       "training_batch_size": 256,
       "accuracy_evaluator": "fast",
@@ -53,7 +71,8 @@
     "spiking_mode": "lif",
     "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
-    "thresholding_mode": "<=",
+    "thresholding_mode": "<",
+    "cycle_accurate_lif_forward": true,
     "activation_quantization": false,
     "weight_quantization": true,
     "pruning": true,
@@ -67,7 +86,10 @@
       "grad_clip_norm": 1,
       "layer_wise_lr_decay": 1,
       "label_smoothing": 0,
-      "betas": [0.9, 0.999]
+      "betas": [
+        0.9,
+        0.999
+      ]
     },
     "tuning_recipe": {
       "optimizer": "adamw",
@@ -77,11 +99,16 @@
       "grad_clip_norm": 1,
       "layer_wise_lr_decay": 1,
       "label_smoothing": 0,
-      "betas": [0.9, 0.999]
+      "betas": [
+        0.9,
+        0.999
+      ]
     },
     "max_simulation_samples": 500,
     "allow_scheduling": true,
-    "enable_loihi_simulation": true
+    "enable_loihi_simulation": true,
+    "enable_sanafe_simulation": true,
+    "sanafe_parity_check": true
   },
   "target_metric_override": null,
   "start_step": "Architecture Search",

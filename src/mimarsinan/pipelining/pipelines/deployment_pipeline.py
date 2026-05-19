@@ -369,19 +369,28 @@ class DeploymentPipeline(Pipeline):
         else:
             # LIF (rate-coded integrate-and-fire) defaults.  ``Uniform``
             # spike generation is deterministic and stable; subtractive-
-            # reset ``Default`` firing pairs with the strict ``<``
-            # threshold comparator that nevresim's DefaultFirePolicy
-            # (``threshold < membrane_potential``) hardcodes.
-            #
-            # Note: SpikingJelly's ``IFNode`` itself fires at the inclusive
-            # ``v >= v_threshold`` boundary; the alignment to the chip's
-            # strict comparator lives in ``LIFActivation`` (it offsets its
-            # internal ``v_threshold`` when ``thresholding_mode='<'``).
-            # The same config key therefore drives training and every chip
-            # path, so changing it here flips both together.
+            # reset ``Default`` firing pairs with the inclusive ``<=``
+            # threshold comparator. Inclusive thresholding fires when
+            # ``memb >= threshold`` so neurons whose membrane lands
+            # exactly on the threshold (a common boundary case under
+            # bursty per-cycle inputs from upstream NeuralCores) still
+            # fire — closing roughly 2 pp of the NF→SCM gap on deep
+            # single-segment workloads compared to strict ``<``.
+            # nevresim's DefaultFirePolicy is still strict; the chip
+            # simulators read ``thresholding_mode`` to align comparator
+            # choice with training.
             self.config.setdefault("firing_mode", "Default")
             self.config.setdefault("spike_generation_mode", "Uniform")
-            self.config.setdefault("thresholding_mode", "<")
+            self.config.setdefault("thresholding_mode", "<=")
+            # Off by default — opt-in via wizard/config. When True, LIF
+            # Adaptation propagates (T, B, ...) spike trains through the
+            # mapper DAG during training, so each Perceptron's LIF
+            # integrates the actual cycle-by-cycle output of the upstream
+            # Perceptron (matching what the chip will deliver at
+            # deployment) instead of broadcasting a rate. Closes the
+            # NF→SCM gap on deep single-segment workloads at the cost of
+            # ~T× training compute.
+            self.config.setdefault("cycle_accurate_lif_forward", False)
 
         # Connect degradation_tolerance config to pipeline's step-level assertion.
         # tolerance = 1 - degradation_tolerance: with degradation_tolerance=0.05,

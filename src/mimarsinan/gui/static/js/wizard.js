@@ -807,6 +807,7 @@ function buildConfig() {
     firing_mode: v('firingMode'),
     spike_generation_mode: v('spikeGenMode'),
     thresholding_mode: v('thresholdMode'),
+    cycle_accurate_lif_forward: document.getElementById('cycleAccurateLifToggle')?.classList.contains('on') || false,
   };
 
   // Quantization flags
@@ -1157,6 +1158,7 @@ function loadStateFromConfig(config) {
   setVal('firingMode', dp.firing_mode);
   setVal('spikeGenMode', dp.spike_generation_mode);
   setVal('thresholdMode', dp.thresholding_mode);
+  setToggleFromConfig('cycleAccurateLifToggle', !!dp.cycle_accurate_lif_forward);
   setToggleFromConfig('actQuantToggle', dp.activation_quantization);
   setToggleFromConfig('wtQuantToggle', dp.weight_quantization);
   setToggleFromConfig('pruningToggle', dp.pruning);

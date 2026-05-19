@@ -70,7 +70,7 @@ class SanafeRunner:
         *,
         arch_preset: str = "loihi",
         custom_arch_path: Optional[str] = None,
-        thresholding_mode: str = "<",
+        thresholding_mode: str = "<=",
         spiking_mode: str = "lif",
         log_potential_trace: bool = False,
         log_message_trace: bool = True,
@@ -373,6 +373,10 @@ class SanafeRunner:
                 core=core, seg_input_encoded=encoded,
                 group_spike_counts=group_spike_counts,
                 core_to_group=core_to_group,
+                seg_raster=seg_raster,
+                group_row_offsets=group_row_offsets,
+                consumer_latency=int(core.latency) if core.latency is not None else 0,
+                hcm=hcm,
             )
             # Slice this core's LIF rows out of the segment raster.
             core_raster: Optional[np.ndarray] = None
@@ -506,36 +510,128 @@ class SanafeRunner:
         seg_input_encoded: np.ndarray,            # (1, seg_in_size, T)
         group_spike_counts: Dict[str, np.ndarray],
         core_to_group: Dict[int, Any],
+        seg_raster: Optional[np.ndarray] = None,  # (sum_neurons, T_eff) per-cycle firing
+        group_row_offsets: Optional[Dict[str, int]] = None,
+        consumer_latency: int = 0,
+        hcm: Any = None,
     ) -> Tuple[np.ndarray, int]:
-        """Walk this core's ``axon_sources``; build (input_spike_count, n_always_on)."""
+        """Walk this core's ``axon_sources``; build (input_spike_count, n_always_on).
+
+        For cross-core axons, the count must match HCM's
+        ``record_in_t`` accumulator (``hybrid_core_flow.
+        _run_neural_segment_rate``): HCM sums ``input_signals`` only
+        during the *consumer's* active window ``[cons_lat, cons_lat+T)``,
+        where ``input_signals`` reads ``buffers[src_core]`` — and HCM's
+        ``buffers`` follows the chip's axon-held semantics:
+
+          * cycles before the source's active window: ``0`` (buffer
+            never written)
+          * cycles inside ``[src_lat, src_lat+T)``: the source's actual
+            firing for that cycle (the buffer was just written)
+          * cycles past ``src_lat+T-1``: the source's *last* active
+            firing, held until next reset
+
+        The previous implementation used the source's total firing
+        count via ``group_spike_counts``, ignoring time entirely. This
+        diverged from HCM whenever the consumer's read window
+        ``[cons_lat-1, cons_lat+T-1)`` didn't fully cover the source's
+        active window — most visibly when a shallow consumer reads a
+        deep source (consumer_lat < src_lat), where HCM gives 0 and
+        the buggy SANA-FE recording attributed the source's full
+        in-window firing count instead.
+        """
         used_ax = _used_axons(core)
         if used_ax <= 0:
             return np.zeros(0, dtype=np.int64), 0
         counts = np.zeros(used_ax, dtype=np.int64)
         n_always_on = 0
+        T = self.T
+        # SANA-FE's ``seg_raster`` time axis is shifted +1 from HCM cycles
+        # (``T_eff = T + max_latency + 1`` accounts for the input→synapse
+        # pipeline delay). A neuron at HCM ``latency=L`` therefore fires
+        # during SANA-FE sim_times ``[L+1, L+T+1)``. Consumer integration at
+        # HCM cycle ``cons_lat+k`` corresponds to SANA-FE sim_time
+        # ``cons_lat+k+1`` reading the source's state at sim_time
+        # ``cons_lat+k``. The consumer's read window in SANA-FE time is
+        # therefore ``[cons_lat, cons_lat+T)`` — T reads.
+        read_start = max(consumer_latency, 0)
+        read_end = consumer_latency + T
+        n_read = read_end - read_start
         for a in range(used_ax):
             src = core.axon_sources[a]
             if getattr(src, "is_off_", False):
                 continue
             if getattr(src, "is_always_on_", False):
-                counts[a] = self.T
+                counts[a] = T
                 n_always_on += 1
                 continue
             if getattr(src, "is_input_", False):
+                # Input neurons emit at SANA-FE sim_times ``[0, T)``;
+                # the consumer's read window in SANA-FE time covers
+                # ``[cons_lat, cons_lat+T)``. Count input spikes in the
+                # intersection. For shallow consumers (cons_lat == 0)
+                # this reduces to the full input row over ``[0, T)``,
+                # matching the pre-refactor behaviour.
                 k = int(src.neuron_)
-                counts[a] = int(seg_input_encoded[0, k, :].sum())
+                lo = min(consumer_latency, T)
+                hi = min(consumer_latency + T, T)
+                if hi > lo:
+                    counts[a] = int(seg_input_encoded[0, k, lo:hi].sum())
                 continue
-            # Cross-core: pull the source core's per-neuron spike count
-            # from the spike trace.
+            # Cross-core: count firings the consumer's axon actually
+            # observes across the consumer's read window
+            # ``[cons_lat-1, cons_lat+T-1)``, mirroring HCM's per-cycle
+            # ``buffers[src]`` accounting (with axon-held semantics past
+            # the source's active window).
             src_core = int(src.core_)
             src_neuron = int(src.neuron_)
+            if seg_raster is None or group_row_offsets is None or hcm is None:
+                # Fallback: pre-fix behaviour for harness tests that
+                # don't supply the trace. Real pipeline runs always
+                # pass these.
+                src_group = core_to_group.get(src_core)
+                if src_group is None:
+                    continue
+                gsc = group_spike_counts.get(_group_name(src_group))
+                if gsc is None or src_neuron >= len(gsc):
+                    continue
+                counts[a] = int(gsc[src_neuron])
+                continue
             src_group = core_to_group.get(src_core)
             if src_group is None:
                 continue
-            gsc = group_spike_counts.get(_group_name(src_group))
-            if gsc is None or src_neuron >= len(gsc):
+            row_off = group_row_offsets.get(_group_name(src_group))
+            if row_off is None:
                 continue
-            counts[a] = int(gsc[src_neuron])
+            row_idx = row_off + src_neuron
+            if row_idx >= seg_raster.shape[0]:
+                continue
+            src_core_obj = hcm.cores[src_core] if hasattr(hcm, "cores") else None
+            src_lat = (
+                int(src_core_obj.latency)
+                if src_core_obj is not None and src_core_obj.latency is not None
+                else 0
+            )
+            # Source at HCM ``latency=L`` fires during SANA-FE sim_times
+            # ``[L+1, L+T+1)`` (the +1 offset that ``T_eff`` accounts for).
+            # HCM's buffer holds the source's last active firing past that
+            # window; replicate that here by reading the last-active
+            # sim_time ``L+T`` for any consumer cycle ``>= L+T+1``.
+            src_active_start = src_lat + 1
+            src_active_end = src_lat + T + 1
+            src_last_active_idx = src_lat + T
+            total = 0
+            for k in range(n_read):
+                t = read_start + k
+                if t < src_active_start:
+                    continue
+                if t < src_active_end:
+                    src_t = t
+                else:
+                    src_t = src_last_active_idx
+                if 0 <= src_t < seg_raster.shape[1]:
+                    total += int(seg_raster[row_idx, src_t])
+            counts[a] = total
         return counts, n_always_on
 
     # --------------------------------------------------------- segment output

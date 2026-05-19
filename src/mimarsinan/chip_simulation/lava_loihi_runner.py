@@ -250,7 +250,7 @@ class LavaLoihiRunner:
         simulation_length: int,
         preprocessor: nn.Module | None = None,
         *,
-        thresholding_mode: str = "<",
+        thresholding_mode: str = "<=",
     ):
         self.pipeline = pipeline
         self.mapping = mapping
@@ -620,14 +620,27 @@ class LavaLoihiRunner:
             if sp.kind == "off":
                 continue
             if sp.kind == "on":
-                seg_out_spikes[d0:d1, :, :] = 1.0
+                # Always-on delivers one spike per *input* cycle. HCM gates
+                # this to ``cycle < T``; mirror that here so summing over
+                # ``sample_stride`` reproduces exactly T spikes per neuron
+                # rather than ``T + segment_latency`` (filling the full
+                # stride would double-count the latency-cascade drain).
+                seg_out_spikes[d0:d1, :, :T] = 1.0
                 continue
             if sp.kind == "input":
                 seg_out_spikes[d0:d1, :, :] = seg_input_logical[
                     int(sp.src_start) : int(sp.src_end), :, :
                 ]
                 continue
-            seg_out_spikes[d0:d1, :, :] = core_buffer_spikes[int(sp.src_core)][
+            # Neuron source: ``core_output_spikes`` has zeros outside the
+            # source's active window ``[lat, lat + T)``; ``core_buffer_spikes``
+            # has those zeros replaced by a *held* stale-buffer broadcast
+            # of the source's last active cycle (needed by downstream
+            # consumers that read in the latency-cascade tail). For the
+            # segment-level spike count we want only the active-window
+            # firings — match HCM's ``cycle in [src_lat, src_lat+T)`` gate
+            # by reading the clean ``core_output_spikes``.
+            seg_out_spikes[d0:d1, :, :] = core_output_spikes[int(sp.src_core)][
                 int(sp.src_start) : int(sp.src_end), :, :
             ]
 

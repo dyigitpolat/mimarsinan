@@ -26,7 +26,10 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.activations import LIFActivation
+from mimarsinan.models.activations import (
+    LIFActivation,
+    uniform_encode_to_spike_train,
+)
 
 
 def _expected_lif_staircase(
@@ -189,3 +192,102 @@ def test_activation_scale_tracks_perceptron_updates() -> None:
     # And the initial y_before differs from the post-update forward at x=0.5 only
     # if the staircase bin changed. Validate that the underlying reference is live:
     assert act.activation_scale is scale
+
+
+@pytest.mark.parametrize("thresholding_mode", ["<", "<="])
+def test_set_cycle_accurate_branches_to_single_step(thresholding_mode: str) -> None:
+    """``set_cycle_accurate(True)`` makes ``forward(x)`` integrate one cycle
+    at a time. Sequential calls accumulate membrane until the IFNode
+    fires, after which the membrane drops by the threshold.
+    """
+    T, B, D = 4, 3, 5
+    act = LIFActivation(T=T, activation_scale=torch.tensor(1.0),
+                        thresholding_mode=thresholding_mode)
+    act.set_cycle_accurate(True)
+
+    rate = torch.rand(B, D)
+    out = act(rate)
+    assert out.shape == (B, D)
+    # In single-step mode each forward returns ``spike * scale``; with
+    # scale=1.0 that's a binary 0/1.
+    assert torch.all((out == 0) | (out == 1))
+
+
+@pytest.mark.parametrize("thresholding_mode", ["<", "<="])
+def test_cycle_accurate_loop_matches_rate_for_constant_input(
+    thresholding_mode: str,
+) -> None:
+    """T sequential single-step calls on the same input produce a mean
+    output equal to the rate-mode forward.
+
+    Pins that cycle-accurate mode is a strict generalisation of
+    rate-mode in the degenerate "same input every cycle" case — i.e.
+    the membrane dynamics collapse to the rate-mode staircase when
+    there's nothing bursty to integrate.
+    """
+    T, B, D = 4, 4, 6
+    act = LIFActivation(T=T, activation_scale=torch.tensor(2.0),
+                        thresholding_mode=thresholding_mode)
+
+    rate = torch.linspace(0.0, 2.5, B * D).reshape(B, D)
+    rate_out = act(rate)
+
+    act.set_cycle_accurate(True)
+    outputs = [act(rate) for _ in range(T)]
+    cycle_accurate_mean = torch.stack(outputs).mean(dim=0)
+
+    torch.testing.assert_close(cycle_accurate_mean, rate_out, atol=1e-5, rtol=0.0)
+
+
+def test_cycle_accurate_toggle_restores_rate_mode() -> None:
+    """``set_cycle_accurate(False)`` after a cycle-accurate run returns
+    the activation to rate-mode forward — same staircase output as a
+    pristine LIFActivation. Cycle-accurate membrane state must not leak."""
+    from spikingjelly.activation_based import functional
+
+    act = LIFActivation(T=4, activation_scale=torch.tensor(1.0))
+    rate = torch.tensor([[0.75]])
+    expected = act(rate).clone()  # rate-mode reference
+
+    # Run a cycle-accurate session.
+    act.set_cycle_accurate(True)
+    functional.reset_net(act)
+    for _ in range(4):
+        _ = act(rate)
+    # Toggle back.
+    act.set_cycle_accurate(False)
+
+    # Rate-mode forward returns the same staircase value.
+    after = act(rate)
+    torch.testing.assert_close(after, expected, atol=1e-5, rtol=0.0)
+
+
+def test_uniform_encode_to_spike_train_known_pattern() -> None:
+    """Encoder reproduces the canonical ``[1,0,1,0]`` pattern at rate 0.5.
+
+    Pins the chip's uniform encoder semantics: ``N = round(rate * T)``
+    spikes placed at uniformly-spaced cycle indices, saturation at
+    rate 1.0. Used by ``ConvertedModelFlow.forward_cycle_accurate`` so
+    training sees the same input encoding the chip applies at deployment.
+    """
+    T = 4
+    rates = torch.tensor([0.0, 0.25, 0.5, 0.75, 1.0]).reshape(1, 5)
+    spikes = uniform_encode_to_spike_train(rates, T)
+    assert spikes.shape == (T, 1, 5)
+
+    # Expected per cycle for each column (column i is rate i):
+    # rate 0.0 → [0, 0, 0, 0]
+    # rate 0.25 (N=1, spacing=4) → cycle 0 fires (floor(0/4)=0<1 & 0%4==0)
+    # rate 0.5 (N=2, spacing=2) → cycles 0, 2 fire
+    # rate 0.75 (N=3, spacing=4/3≈1.33) → cycle 0 fires, cycle 1 (floor(1/1.33)=0<3 & floor(1%1.33)=floor(1)=1≠0 → no)
+    #   Recomputed: cycle 0: floor(0/1.33)=0<3, floor(0%1.33)=0 → fire. cycle 1: floor(1/1.33)=0<3, floor(1%1.33)=1 → no.
+    #   cycle 2: floor(2/1.33)=1<3, floor(2%1.33)=floor(0.66)=0 → fire. cycle 3: floor(3/1.33)=2<3, floor(3%1.33)=floor(0.34)=0 → fire.
+    # rate 1.0 → [1, 1, 1, 1] (saturation)
+    expected_t0 = torch.tensor([[0, 1, 1, 1, 1]], dtype=spikes.dtype)
+    expected_t1 = torch.tensor([[0, 0, 0, 0, 1]], dtype=spikes.dtype)
+    expected_t2 = torch.tensor([[0, 0, 1, 1, 1]], dtype=spikes.dtype)
+    expected_t3 = torch.tensor([[0, 0, 0, 1, 1]], dtype=spikes.dtype)
+    torch.testing.assert_close(spikes[0], expected_t0)
+    torch.testing.assert_close(spikes[1], expected_t1)
+    torch.testing.assert_close(spikes[2], expected_t2)
+    torch.testing.assert_close(spikes[3], expected_t3)

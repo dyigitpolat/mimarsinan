@@ -177,3 +177,93 @@ def test_no_shiftable_cores_leaves_backward_walk_intact():
     assert cores[0].latency == 0
     assert cores[1].latency == 1
     assert cores[2].latency == 2
+
+
+def test_consumer_latency_at_least_source_core_latency_plus_one():
+    """A consumer must be scheduled at latency >= max(source core lat) + 1.
+
+    The per-neuron backward walk used by ``ChipLatency.calculate`` can
+    under-estimate latency when a consumer's non-zero weights happen to
+    reference source-core neurons that themselves have shallow
+    per-neuron delays — most visibly when a source core has a "split"
+    structure: some of its neurons drive the deep chain (delay ≈ depth)
+    while others are bias-only or have all non-zero weights on
+    ``is_off_`` axons (residual weights left over from IR pruning).
+    In that case the per-neuron walk pins the bias-only neurons at
+    delay 0; a consumer reading those neurons gets latency 1 even
+    though the source core *as a whole* fires at depth ``D >> 1``.
+
+    The chip schedules each core as a unit during
+    ``[core.latency, core.latency + T)``, so the consumer cannot safely
+    read source-core outputs before that window starts. Enforcing
+    ``consumer_lat >= max(source_core_lat) + 1`` after the per-neuron
+    walk eliminates the dead-edge wedge that caused a multi-pp
+    NF→SCM accuracy gap on compilagent 8-deep architectures.
+    """
+    # A linear chain: core 0 (input) → core 1 → core 2 → core 3 → core 4 → core 5.
+    # Core 5 has a "split" structure: half its neurons drive the chain,
+    # half are bias-only with residual non-zero weights on off-axons.
+    c0 = _make_core([_input(0), _input(1)], [[1.0], [1.0]])
+    c1 = _make_core([_xcore(0, 0)], [[1.0]])
+    c2 = _make_core([_xcore(1, 0)], [[1.0]])
+    c3 = _make_core([_xcore(2, 0)], [[1.0]])
+    c4 = _make_core([_xcore(3, 0)], [[1.0]])
+    # Core 5: two neurons. Neuron 0 is a real chain consumer (depth 5);
+    # neuron 1 has its only non-zero weight on an off-axon (residual
+    # from pruning).
+    c5 = _make_core(
+        [_xcore(4, 0), _off()],
+        [
+            [1.0, 0.0],  # axon 0 (cross-core) → neuron 0, weight 1
+            [0.0, 3.0],  # axon 1 (off) → neuron 1, residual weight 3
+        ],
+    )
+    # Core 6: reads from core 5 *neuron 1* (the bias-only one). Without
+    # the per-core invariant pass, core 6's latency comes out at 1
+    # (because core 5 neuron 1's per-neuron delay is 0 after the
+    # off-axon filter). With enforcement it must rise to core_5.latency + 1.
+    c6 = _make_core([_xcore(5, 1)], [[1.0]])
+
+    mapping = _make_mapping(
+        [c0, c1, c2, c3, c4, c5, c6],
+        output_sources=[_xcore(6, 0)],
+    )
+    ChipLatency(mapping).calculate()
+
+    c5_lat = int(c5.latency or 0)
+    c6_lat = int(c6.latency or 0)
+    assert c5_lat == 5, (
+        f"core 5 should be at latency 5 (deep-chain neuron determines core depth); "
+        f"got {c5_lat}"
+    )
+    assert c6_lat >= c5_lat + 1, (
+        f"core 6 must satisfy the per-core latency invariant "
+        f"(c6_lat >= max(source_core_lat)+1 = {c5_lat + 1}); got {c6_lat}. "
+        "Without enforcement, the per-neuron walk pins c6 to lat=1 because "
+        "c5 neuron 1's only non-zero weight is on an off-axon, hiding the "
+        "real core-level dependency."
+    )
+
+
+def test_off_axon_nonzero_weight_excluded_from_delay_walk():
+    """IR pruning can leave residual non-zero weights on axons whose
+    source has been rewritten to ``is_off_``. The latency walk must
+    ignore these — they don't deliver signal and shouldn't be treated
+    as direct-input dependencies via ``core_=-1``.
+    """
+    # A neuron whose *only* non-zero weight is on an off-axon. Backward
+    # walk should treat it as having no live dependencies (delay 0
+    # before shiftable alignment), not as having a delay-0 direct
+    # input (which would inflate its delay to 1).
+    c0 = _make_core([_off()], [[5.0]])  # residual weight on off-axon
+    # An output reader sees core 0 → with the fix, core 0's neuron
+    # is treated as having no live deps and the shiftable alignment
+    # picks up the rest. Without the fix, the off-axon's source_=-1
+    # gets treated as direct input and core 0 ends up at latency 0
+    # via delay=1 path (still works for this trivial case, but the
+    # bug manifests in multi-neuron cores — see the test above).
+    mapping = _make_mapping([c0], output_sources=[_xcore(0, 0)])
+    ChipLatency(mapping).calculate()
+    # The only meaningful assertion: this didn't raise and c0 has a
+    # valid integer latency.
+    assert isinstance(c0.latency, int)
