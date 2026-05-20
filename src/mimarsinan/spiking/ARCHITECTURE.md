@@ -11,6 +11,7 @@ runners (SANA-FE, Lava, Nevresim).
 | `spike_trains.py` | `lif_spike_train`, `uniform_spike_train`, `rates_to_spike_train` | Low-level spike-train constructors. |
 | `lif_utils.py` | `unwrap_lif_activation`, `apply_cycle_accurate_trains_to_model`, `boundary_lif_activation` | Walk-and-unwrap helpers; ephemeral LIF factory. |
 | `segment_encoding.py` | `SegmentEncodingConfig`, `BoundaryKind`, `BoundaryLifCache`, `classify_encoding_boundary`, `emit_compute_spike_train`, `build_segment_input_spike_train` | Boundary spike-train classification + cycle-accurate emission. **Single source of truth** for how compute-op outputs become per-cycle spike trains for downstream neural segments. |
+| `chip_aligned_forward.py` | `ChipAlignedForward`, `install_chip_aligned_forward`, `uninstall_chip_aligned_forward` | Wrap ``model.forward`` to route through a built ``SpikingHybridCoreFlow`` (no blend bypass — installed only at ``rate==1.0``). Used by the post-LIF chip-aligned finetune to backprop through the chip simulator with SpikingJelly's surrogate gradient. |
 
 ## Boundary contract
 
