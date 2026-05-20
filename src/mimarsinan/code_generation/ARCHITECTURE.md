@@ -8,8 +8,8 @@ mapping artifacts.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `cpp_chip_model.py` | `SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core`, `ChipModel` | Chip data model → C++ struct initializers. Template params: **`weight_type`** (`int`/`float`) and **`threshold_type`** (independent; TTFS uses `double` thresholds with `int` weights when quantised). |
-| `generate_main.py` | `generate_main_function`, `get_config` | Instantiates `main.cpp` with simulation length, spike/firing modes, **`weight_type`**, **`threshold_type`**. |
-| `main_cpp_template.py` | `main_cpp_template` | Standard spiking execution |
+| `generate_main.py` | `generate_main_function`, `get_config` | Instantiates `main.cpp` with simulation length, spike/firing modes, **`weight_type`**, **`threshold_type`**. Dispatches the input loader function name (`load_input_n` vs `load_spike_train_input_n`) and the spike generator type (`{Stochastic,Deterministic,FrontLoaded,Uniform}SpikeGenerator` vs `SpikeTrainSpikeGenerator<InputSize, T>`) based on `spike_gen_mode`. |
+| `main_cpp_template.py` | `main_cpp_template` | Standard spiking execution. Template substitution `{10}` selects the input loader function name. |
 | `main_cpp_template_real_valued_exec.py` | … | Real-valued (non-spiking) execution |
 | `main_cpp_template_debug_spikes.py` | … | Spike debug output |
 

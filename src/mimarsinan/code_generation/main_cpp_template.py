@@ -10,6 +10,7 @@ main_cpp_template = \
 #include "simulator/spike_generation/front_loaded_spike_generator.hpp"
 #include "simulator/spike_generation/uniform_spike_generator.hpp"
 #include "simulator/spike_generation/ttfs_spike_generator.hpp"
+#include "simulator/spike_generation/spike_train_spike_generator.hpp"
 #include "simulator/execution/spiking_execution.hpp"
 #include "simulator/execution/ttfs_execution.hpp"
 #include "simulator/execution/ttfs_continuous_execution.hpp"
@@ -36,7 +37,7 @@ void test_main(int start, int end)
 
     for(int idx = start; idx < end; ++idx)
     {{
-        auto [input, target] = load_input_n("{0}/inputs/", idx);
+        auto [input, target] = {10}("{0}/inputs/", idx);
         auto buffer = chip.execute<exec>(input);
         for(auto i : buffer)
         {{
