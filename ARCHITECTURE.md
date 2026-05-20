@@ -22,8 +22,8 @@
    - [Activation Analysis](#55-activation-analysis)
    - [Clamp Adaptation](#56-clamp-adaptation)
    - [LIF Adaptation](#56b-lif-adaptation)
-   - [Input Activation Analysis](#57-input-activation-analysis)
-   - [Activation Shifting](#58-activation-shifting)
+   - [Noise Adaptation](#56c-noise-adaptation)
+   - [Activation Shifting](#57-activation-shifting)
    - [Activation Quantization](#59-activation-quantization)
    - [Weight Quantization](#510-weight-quantization)
    - [Quantization Verification](#511-quantization-verification)
@@ -129,7 +129,8 @@ mimarsinan/
 │       │   ├── ir.py               # Unified IR (IRGraph, NeuralCore, ComputeOp)
 │       │   ├── ir_mapping.py       # ModelRepresentation → IRGraph
 │       │   ├── ir_pruning.py       # Post-pruning IR compaction (remove zeroed rows/cols)
-│       │   ├── mapping_utils.py    # Mapper classes + SoftCoreMapping
+│       │   ├── mapping_utils.py    # Mapper graph classes
+│       │   ├── soft_core_mapper.py # SoftCoreMapping, map_fc (legacy)
 │       │   ├── softcore_mapping.py # SoftCore, HardCore, HardCoreMapping
 │       │   ├── core_packing.py     # Generic best-fit greedy bin-packing
 │       │   ├── hybrid_hardcore_mapping.py  # Hybrid neural+compute mapping
@@ -179,7 +180,7 @@ mimarsinan/
 │       │   ├── reporter.py         # GUIReporter (Reporter protocol impl)
 │       │   ├── composite_reporter.py # Dispatches to multiple reporters
 │       │   ├── server.py           # FastAPI + WebSocket server (daemon thread)
-│       │   ├── snapshot.py         # Pure snapshot extractors (model, IR, HW, search)
+│       │   ├── snapshot/             # Lazy snapshot builders + resource store
 │       │   └── static/             # Frontend SPA (ES modules + Plotly.js)
 │       │       ├── index.html
 │       │       ├── style.css
@@ -196,10 +197,10 @@ mimarsinan/
 
 ### CLI
 
-The primary entry point is `src/main.py`:
+Primary entry point: `run.py` at the package root (also `src/main.py`):
 
 ```bash
-python src/main.py <deployment_config.json>
+python run.py <deployment_config.json>
 ```
 
 The JSON configuration specifies:
@@ -341,7 +342,7 @@ Two quantization flags (booleans in `deployment_parameters`) provide fine-graine
 
 | Flag | What it enables |
 |------|-----------------|
-| `activation_quantization` | Activation Analysis → Activation Adaptation → Clamp Adaptation → Input Activation Analysis → Activation Shifting → Activation Quantization.  Configured via `target_tq`. |
+| `activation_quantization` | Activation Analysis → Activation Adaptation → Clamp Adaptation → Activation Shifting → Activation Quantization.  Configured via `target_tq`. |
 | `weight_quantization` | Weight Quantization → Quantization Verification.  Configured via `weight_bits`. |
 
 An additional pruning flag controls dimension reduction:
@@ -374,7 +375,7 @@ Model Configuration → Model Building → Pretraining
 
 ```
 Model Configuration → Model Building → Pretraining
-→ Activation Analysis → Activation Adaptation → Clamp Adaptation → Input Activation Analysis
+→ Activation Analysis → Activation Adaptation → Clamp Adaptation
 → Activation Shifting → Activation Quantization
 → Weight Quantization → Quantization Verification
 → Normalization Fusion → Soft Core Mapping
@@ -386,7 +387,7 @@ Model Configuration → Model Building → Pretraining
 ```
 Model Configuration → Model Building → Pretraining
 → Pruning Adaptation
-→ Activation Analysis → Activation Adaptation → Clamp Adaptation → Input Activation Analysis
+→ Activation Analysis → Activation Adaptation → Clamp Adaptation
 → Activation Shifting → Activation Quantization
 → Weight Quantization → Quantization Verification
 → Normalization Fusion → Soft Core Mapping
@@ -398,6 +399,7 @@ Model Configuration → Model Building → Pretraining
 ```
 Model Configuration → Model Building → Pretraining
 → Activation Analysis → Activation Adaptation → LIF Adaptation
+→ [Noise Adaptation]  (optional, `enable_training_noise`)
 → Normalization Fusion → Soft Core Mapping → Hard Core Mapping → Simulation
 → [Loihi Simulation] → [SANA-FE Simulation]
 ```
@@ -500,7 +502,17 @@ Runs immediately after Activation Analysis (and its companion Activation Adaptat
 
 Uses `LIFAdaptationTuner` to swap each chip-targeted perceptron's `base_activation` to `LIFActivation` via a gradual **`LIFBlendActivation`** (linear mix of pre-LIF ReLU-like activation and LIF, rate 0→1). Recovery uses knowledge distillation: frozen teacher = pre-LIF snapshot, student = blended model (α·CE + (1−α)·T²·KL, T=3, α=0.3).
 
-When **`cycle_accurate_lif_forward`** is true, the tuner installs picklable **`_CycleAccurateForward`** on `model.forward`, which calls `run_cycle_accurate`: uniform-encode the input to `T` cycles, toggle each `LIFActivation` into single-step mode, run the mapper DAG once per cycle, mean-reduce logits. This matches chip per-cycle injection and closes NF→SCM gaps on deep LIF networks. The wrapper is kept after the step when cycle-accurate mode is on so cached models remain consistent.
+When **`cycle_accurate_lif_forward`** is true, the tuner installs picklable **`_CycleAccurateForward`** on `model.forward`, which calls `run_cycle_accurate`: uniform-encode the input to `T` cycles, toggle each `LIFActivation` into single-step mode, run the mapper DAG once per cycle, mean-reduce logits. This matches chip per-cycle injection. The wrapper is kept after the step when cycle-accurate mode is on so cached models remain consistent.
+
+### 5.6c Noise Adaptation
+
+**File**: `pipeline_steps/noise_adaptation_step.py`
+
+- **Requires**: `model`, `adaptation_manager`
+- **Updates**: `model`, `adaptation_manager`
+- **Included when**: `enable_training_noise` is true in deployment parameters (typically after LIF Adaptation on LIF paths)
+
+Uses `NoiseTuner` to inject training-time noise aligned with deployment statistics. Omitted when the flag is false.
 
 ### 5.7 Activation Shifting
 
@@ -589,7 +601,7 @@ Converts the `IRGraph` into a `HybridHardCoreMapping`:
 
 1. Segments the IR graph at `ComputeOp` boundaries
 2. Allocates a **single shared pool** of hardware cores from the `cores_config` (see §9.3)
-3. Converts each neural segment to a `SoftCoreMapping` → `HardCoreMapping`, drawing cores from the shared pool
+3. Flushes each neural segment to soft cores via `neural_segment_to_soft_core_mapping` (default) or legacy `ir_graph_to_soft_core_mapping` when `use_legacy_softcore_flush` is set, then packs into `HardCoreMapping` from the shared pool
 4. Packs `SoftCore`s into physical `HardCore`s using **best-fit** greedy bin-packing (smallest feasible core first)
 5. Produces the final deployable hybrid program
 6. Runs hard-core spiking simulation for verification
@@ -1162,9 +1174,9 @@ Legacy / auxiliary PyTorch spiking simulator for a flat `IRGraph` (single graph,
 A PyTorch-based spiking simulator for `HybridHardCoreMapping`, using the state-buffer approach:
 
 - Maintains a global `state_buffer: Dict[int, Tensor]` keyed by IR node IDs
-- Iterates through `HybridStage`s in order:
-  - **Neural stages**: Assembles the local input from state-buffer entries via `input_slices`, runs through `NeuralCore`s, writes outputs back via `output_slices`
-  - **Compute stages**: Gathers inputs from the state buffer, executes the `ComputeOp`, writes the result back
+- Dispatches stages via `chip_simulation.hybrid_stage_runner.run_hybrid_stages` with `HybridStageContext` (shared with nevresim, Lava, and SANA-FE):
+  - **Neural stages**: Assembles local input from `input_slices`, runs segment neural cores, writes outputs via `output_slices`; optional `after_neural` hooks for refcount and recording
+  - **Compute stages**: Gathers inputs, executes `ComputeOp`, writes results back
 - Supports both rate-coded and TTFS (continuous + analytical quantized) forward paths
 - The analytical TTFS quantized path mirrors `SpikingUnifiedCoreFlow`'s closed-form computation
 - **`forward_with_recording()`** → `(logits, RunRecord)` for Loihi / SANA-FE parity steps
@@ -1204,8 +1216,8 @@ Orchestrates the end-to-end simulation. Supports two modes:
 2. Optionally subsamples test data to `max_simulation_samples` (seeded) for faster execution
 3. Determines `weight_type` (`int` when `weight_quantization` is enabled, `float` otherwise) and passes it to each `NevresimDriver` — this ensures non-quantized models retain floating-point weight precision through C++ simulation
 4. Maintains a NumPy state buffer (`Dict[int, np.ndarray]`) mirroring the PyTorch state-buffer approach
-5. Iterates through hybrid stages in order:
-   - **Neural stages**: Assembles segment input from the state buffer via `input_slices`, instantiates a per-segment `NevresimDriver` with the correct `weight_type`, runs `predict_spiking_raw`, writes outputs back via `output_slices`
+5. Iterates hybrid stages via `run_hybrid_stages` (same stage-loop contract as HCM and optional parity backends):
+   - **Neural stages**: Assembles segment input from the state buffer via `input_slices`, runs `predict_spiking_raw` per segment, writes outputs via `output_slices`
    - **Compute stages**: Gathers inputs from the state buffer, executes the `ComputeOp` on the host using PyTorch, writes the result back
 6. Extracts final outputs via `output_slices` and evaluates classification accuracy
 
@@ -1314,8 +1326,8 @@ existing `JointArchHwProblem`. The integration:
 - Emits the same `search_event` JSON shape AgentEvolve emits, plus
   three new compilagent-specific event types
   (`compilagent_tool_call`, `compilagent_compile_phase`,
-  `compilagent_objectives_recorded`) that the live GUI's `search-live.js`
-  renders alongside the AgentEvolve traces.
+  `compilagent_objectives_recorded`) that the live GUI renders via
+  `compilagent-live.js` and `live-search-sync.js` alongside AgentEvolve traces.
 
 The wizard exposes the optimizer's knobs (`model`, `harness`,
 `max_candidates`, `max_continuations`, `primary_objective`,
@@ -1418,7 +1430,7 @@ A real-time browser-based dashboard that launches automatically with every pipel
 | `GUIReporter` | `reporter.py` | Implements the `Reporter` protocol; forwards `report()` calls to `DataCollector` |
 | `CompositeReporter` | `composite_reporter.py` | Dispatches `report()`/`console_log()` to multiple reporters (e.g. default + GUI) |
 | `server.py` | `server.py` | FastAPI application with REST endpoints (`/api/pipeline`, `/api/steps/{name}`) and a WebSocket (`/ws`) for real-time push. Runs in a daemon thread via Uvicorn |
-| `snapshot.py` | `snapshot.py` | Pure functions that extract JSON-serializable snapshots from pipeline artifacts: model weights/stats, IR graph topology with latency-tier grouping, hardware mapping with per-core heatmaps and connectivity, search results, adaptation rates |
+| `snapshot/` | `snapshot/` package | Lazy builders (`build_*_snapshot`) and `SnapshotResourceStore` for model, IR, hardware, search, and adaptation payloads |
 
 **Frontend** (`static/`): A single-page application built with ES modules and Plotly.js. Modularized into focused files:
 
@@ -1438,7 +1450,7 @@ A real-time browser-based dashboard that launches automatically with every pipel
 - **Non-invasive integration**: The GUI attaches to the existing `Reporter` protocol and pipeline hooks; no core pipeline code is modified beyond adding hook registration support
 - **Thread-safe**: `DataCollector` uses a lock; the FastAPI server runs in its own daemon thread and event loop
 - **NaN/Inf safety**: All JSON responses use a custom `_SafeJSONResponse` that recursively replaces non-finite floats with `null`, preventing `ValueError: Out of range float values are not JSON compliant` crashes when training metrics contain NaN or Inf
-- **Snapshot extraction**: `snapshot.py` contains pure functions that accept pipeline artifacts and return JSON-safe dicts. Failures are logged at debug level and never crash the pipeline
+- **Snapshot extraction**: `gui/snapshot/` builders accept pipeline artifacts and return JSON-safe dicts via `json_util.to_json_safe`. Failures are logged at debug level and never crash the pipeline
 - **Zoom/pan persistence**: All Plotly charts use `uirevision: 'persist'` on layout and axes to preserve user interactions across data updates
 - **Stable DOM**: The detail panel only rebuilds when structural data changes (step name, status, snapshot keys), not on every metric or duration update
 
@@ -1569,50 +1581,23 @@ Module dependency rules:
 - **Mappers**: `{Type}Mapper` (e.g., `PerceptronMapper`, `Conv2DPerceptronMapper`)
 - **Builders**: `{Model}Builder` (e.g., `TorchMLPMixerBuilder`, `SimpleMLPBuilder`)
 
-### Shared modules (dedup refactors)
-Cross-cutting helpers live next to their domain rather than in pipeline steps. Rounds 1–2 introduced platform constraints, simulation factory, and wizard verify; **round 3** wired trainers/tuners, config normalization, mapping math, and hybrid stage dispatch.
+### Shared modules
+Cross-cutting helpers live next to their domain rather than in pipeline steps. See per-package `ARCHITECTURE.md` files and `docs/ARCHITECTURE_STYLE.md` for module tables.
+
+**Known limitations:** `SoftCoreMapping.map_fc` remains for legacy mapper graphs and `use_legacy_softcore_flush`; `SpikingUnifiedCoreFlow` and `SpikingHybridCoreFlow` stay separate by design; `IRLatency` and `ChipLatency` are not merged (see `mapping/LATENCY.md`).
+
+Notable entry points:
 
 | Module | Role |
 |--------|------|
 | `mapping/platform_constraints.py` | `resolve_platform_mapping_params`, `resolve_scalar_mapping_params` |
-| `mapping/wizard_layout_verify.py` | Wizard / snapshot planned layout verification |
-| `mapping/scale_broadcast.py` | `broadcast_scale_to_dim`, `broadcast_scale_pair` (mapper graph + IR `ComputeOp`) |
-| `mapping/coalescing.py` | `coalescing_fragment_count` (layout packer + hybrid coalescing budget) |
-| `mapping/ir_segmentation.py` | `get_neural_segments`, `build_ir_consumed_by` |
-| `mapping/mapping_structure.py` | `build_psum_accumulator_weights` (layout + legacy `soft_core_mapper`) |
-| `mapping/pruning_apply.py` | `compact_hardware_bias_columns` (IR + softcore pruning) |
-| `mapping/layout_verification_stats.py` | `stats_dict_from_hybrid_mapping` (real snapshot mapping stats) |
-| `pipelining/trainer_factory.py` | `make_basic_trainer` (all trainer-using steps) |
-| `pipelining/trainer_pipeline_step.py` | `TrainerPipelineStep` base (`validate` + base `cleanup`) |
-| `pipelining/tuner_pipeline_step.py` | `TunerPipelineStep` + `run_tuner()` |
-| `pipelining/pipeline_helpers.py` | `require_lif_spiking_mode`, `run_optional_viz`, `safe_warmup_forward` |
-| `pipelining/platform_constraints_resolver.py` | `build_platform_constraints_resolved` |
-| `pipelining/model_config_emit.py` | `emit_model_config_entries` (fixed config + NAS fixed path) |
+| `mapping/neural_segment_packing.py` | Default soft-core flush (`neural_segment_to_soft_core_mapping`); legacy via `use_legacy_softcore_flush` |
+| `mapping/LATENCY.md`, `mapping/FIRING.md` | Latency engine boundaries and firing-mode contracts |
+| `chip_simulation/hybrid_stage_runner.py` | `run_hybrid_stages` — HCM, nevresim, Lava, SANA-FE |
+| `chip_simulation/firing_strategy.py` | `firing_mode` / reset semantics across training and backends |
 | `pipelining/simulation_factory.py` | HCM metric, parity helpers, `run_hcm_mapping_metric` |
-| `data_handling/test_sample_loader.py` | Deterministic test-sample loading for chip parity steps |
-| `chip_simulation/hybrid_stage_runner.py` | `run_hybrid_stages` (nevresim, Lava, SANA-FE) |
-| `chip_simulation/hybrid_execution.py` | Segment I/O, compute ops, `resolve_stage_compute_scales` |
-| `config_schema/deployment_derivation.py` | Python mirror of wizard `buildConfig()` deployment flags |
-| `gui/json_util.py` | `to_json_safe` (collector, search results, snapshots) |
-| `transformations/quantization_verify.py` | IR / perceptron quantization checks |
-| `tuning/adaptation_manager_factory.py`, `tuning/adaptation_rate_tuner.py` | Adaptation manager + rate tuners |
-
-See per-package `ARCHITECTURE.md` files for detail.
-
-### Deferred dedup / follow-up (post round 4)
-
-| Item | Status | Notes |
-|------|--------|-------|
-| `hybrid_core_flow` → `run_hybrid_stages` | Done (R4-4) | `HybridStageContext`, `after_neural` / `after_compute`; HCM uses shared runner |
-| Scheduled hybrid ↔ layout specs | Done (R4-2) | `IRGraph.layout_softcores`, `NeuralCore.layout_softcore_index`; split uses specs |
-| Segment flush without `map_fc` | Done (R4-6/7) | Default `neural_segment_to_soft_core_mapping`; `use_legacy_softcore_flush` for old path |
-| Wizard / config SSOT | Partial (R4-3) | NAS defaults from `/api/wizard/schema`; `POST /api/run?validate=1`; Python normalizes on run |
-| Latency engines | Documented (R4-1) | See `mapping/LATENCY.md` — do not merge `IRLatency` / `ChipLatency` |
-| Firing strategy parity | Done (R4-9) | `chip_simulation/firing_strategy.py`; Novena in GUI; Lava/SANA-FE/training wired |
-| `NoiseTuner` step | Done (R4-8) | Gated by `enable_training_noise` in deployment config |
-| Parity harness | Done (R4-5) | `tests/integration/parity_harness.py` + smoke test |
-| Full `map_fc` deletion | Remaining | `SoftCoreMapping.map_fc` kept for legacy mappers/tests; production flush avoids it |
-| Unified spiking flow classes | Non-goal | Do not merge `SpikingUnifiedCoreFlow` / `SpikingHybridCoreFlow` |
+| `config_schema/deployment_derivation.py` | Python mirror of wizard deployment flags |
+| `gui/json_util.py` | `to_json_safe` for API and snapshots |
 
 ### Design Patterns
 - **Pipeline + Step**: Command pattern for sequential execution with dependency injection via cache
@@ -1699,16 +1684,16 @@ PyTorch `nn.Module` and let the `torch_mapping` module convert it automatically:
 ### Running the Pipeline
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate  # or your environment
+# From the mimarsinan package root (with venv active)
+python run.py path/to/config.json
 
-# Run with a config file
-python src/main.py configs/your_config.json
+# Alternative entry (same pipeline)
+python src/main.py path/to/config.json
 ```
 
 ### Architecture documentation
 
-When changing public APIs or pipeline behaviour, update the relevant `ARCHITECTURE.md` (root and per-directory under `src/mimarsinan/`). See `docs/ARCHITECTURE_DOC_COMMIT_AUDIT.md` for a recent commit→module map of changes that landed without doc updates.
+When changing public APIs or pipeline behaviour, update the relevant `ARCHITECTURE.md` (root and per-directory under `src/mimarsinan/`). Follow `docs/ARCHITECTURE_STYLE.md` (present tense, no sprint metadata). Run the consistency grep in that file before merging doc-only changes.
 
 ### Key Environment Requirements
 - Python 3.10+

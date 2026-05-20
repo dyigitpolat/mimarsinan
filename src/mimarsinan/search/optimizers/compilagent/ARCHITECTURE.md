@@ -25,7 +25,7 @@ implementations.
 | `lever_factory.py` | `levers_from_description` | Render `SearchSpaceDescription` to `tuple[Lever, ...]` for `Backend.derive_search_space(...)`. Re-uses the renderer on the description object. |
 | `tools.py` | `build_introspection_tools` | `inspect_softcores`, `inspect_layer_breakdown`, `inspect_layout_stats`, `list_objectives` — read-only `ToolDecl`s pulling from the backend's per-candidate cache. |
 | `sink.py` | `MultiObjectiveSink` | `ObservationSink` decorator that captures `OBJECTIVES_RECORDED` + `CANDIDATE_PROPOSED` events into an in-memory list the optimizer drains at the end of the run. |
-| `compilagent_optimizer.py` | `CompilagentOptimizer(SearchOptimizer)` | Orchestrates `OptimizationSession` + harness + sink. Translates the resulting candidate stream to a mimarsinan `SearchResult` using `agent_evolve_support` Pareto/minimax helpers (no reimplementation). Emits the same `search_event` JSON shape `AgentEvolveOptimizer` emits so the live GUI works unchanged. |
+| `compilagent_optimizer.py` | `CompilagentOptimizer(SearchOptimizer)` | Orchestrates `OptimizationSession` + harness + sink. Translates the resulting candidate stream to a mimarsinan `SearchResult` using `agent_evolve_support` Pareto/minimax helpers (no reimplementation). Emits `search_event` JSON plus compilagent-specific events; GUI uses `compilagent-live.js` / `live-search-sync.js`. |
 
 ## Information flow per candidate
 
