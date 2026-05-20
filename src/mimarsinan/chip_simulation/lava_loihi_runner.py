@@ -175,6 +175,19 @@ class LavaLoihiRunner:
                 f"thresholding_mode must be '<' or '<='; got {thresholding_mode!r}"
             )
         self.thresholding_mode = str(thresholding_mode)
+        firing_mode = "Default"
+        if pipeline is not None:
+            firing_mode = str(pipeline.config.get("firing_mode", "Default"))
+        from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
+
+        self._firing_strategy = FiringStrategyFactory.from_config(
+            {
+                "firing_mode": firing_mode,
+                "thresholding_mode": self.thresholding_mode,
+                "spiking_mode": "lif",
+            }
+        )
+        self._firing_strategy.require_backend("lava")
 
         # pipeline=None: harness mode (spike-parity test; no data loaders).
         if pipeline is None:
@@ -289,6 +302,7 @@ class LavaLoihiRunner:
             reset_interval=T,
             reset_offset=reset_offset,
             thresholding_mode=self.thresholding_mode,
+            zero_reset=(self._firing_strategy.mode.value == "Novena"),
         )
         sink = Sink(shape=(n_out,), buffer=total_steps)
 

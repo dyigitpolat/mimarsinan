@@ -61,6 +61,7 @@ class SubtractiveLIFReset(LIFReset):
         active_length=None,
         sample_start=None,
         thresholding_mode: str = "<=",
+        zero_reset: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -78,6 +79,7 @@ class SubtractiveLIFReset(LIFReset):
         self.proc_params["active_length"] = int(active_length)
         self.proc_params["sample_start"] = int(sample_start)
         self.proc_params["thresholding_mode"] = str(thresholding_mode)
+        self.proc_params["zero_reset"] = bool(zero_reset)
 
 
 @implements(proc=SubtractiveLIFReset, protocol=LoihiProtocol)
@@ -95,6 +97,7 @@ class PySubtractiveLIFResetModelFloat(AbstractPyLifModelFloat):
         self.active_length = int(proc_params.get("active_length", self.reset_interval))
         self.sample_start = int(proc_params.get("sample_start", self.active_start)) % self.reset_interval
         self._thresholding_mode = str(proc_params.get("thresholding_mode", "<="))
+        self._zero_reset = bool(proc_params.get("zero_reset", False))
         self._last_spike = np.zeros_like(self.v, dtype=float)
 
     def spiking_activation(self):
@@ -103,8 +106,10 @@ class PySubtractiveLIFResetModelFloat(AbstractPyLifModelFloat):
         return self.v > self.vth
 
     def reset_voltage(self, spike_vector: np.ndarray):
-        # Subtractive reset — preserve residual charge above threshold.
-        self.v[spike_vector] -= self.vth
+        if self._zero_reset:
+            self.v[spike_vector] = 0.0
+        else:
+            self.v[spike_vector] -= self.vth
 
     def run_spk(self):
         a_in = self.a_in.recv()

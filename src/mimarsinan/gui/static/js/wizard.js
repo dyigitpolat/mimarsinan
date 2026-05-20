@@ -1918,10 +1918,39 @@ function _escHtml(s) {
 // ── Objective checkboxes ────────────────────────────────────
 var _objectiveOptions = [];
 
+var _wizardSchemaDefaults = null;
+
+function applySchemaDefaults(data) {
+  var common = (data && data.nas && data.nas.common_fields) || {};
+  var fieldMap = {
+    popSize: 'pop_size',
+    generations: 'generations',
+    searchSeed: 'seed',
+    warmupFraction: 'warmup_fraction',
+    extrapTrainEpochs: 'extrapolation_num_train_epochs',
+    extrapCheckpoints: 'extrapolation_num_checkpoints',
+    extrapTargetEpochs: 'extrapolation_target_epochs',
+  };
+  Object.keys(fieldMap).forEach(function (elId) {
+    var spec = common[fieldMap[elId]];
+    if (!spec || spec.default == null) return;
+    var el = document.getElementById(elId);
+    if (el) el.value = String(spec.default);
+  });
+  var defs = data && data.defaults;
+  if (defs && defs.platform_constraints) {
+    _wizardSchemaDefaults = defs.platform_constraints;
+  }
+}
+
 function loadObjectiveOptions() {
   return fetch('/api/wizard/schema').then(function(r) { return r.json(); }).then(function(data) {
     var nas = data.nas || {};
     _objectiveOptions = nas.objective_options || [];
+    var params = new URLSearchParams(location.search);
+    if (!params.get('run_id') && !params.get('template_id')) {
+      applySchemaDefaults(data);
+    }
     updateObjectiveCheckboxes();
   }).catch(function() {
     _objectiveOptions = [];

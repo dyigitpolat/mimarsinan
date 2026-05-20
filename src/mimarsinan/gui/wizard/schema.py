@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from mimarsinan.models.builders.wizard_schema import get_all_model_type_schemas
+from mimarsinan.config_schema.defaults import get_default_platform_constraints
 from mimarsinan.pipelining.model_registry import ModelRegistry
 from mimarsinan.pipelining.pipelines.deployment_pipeline import get_pipeline_step_specs
 from mimarsinan.search.results import ALL_OBJECTIVES, ACCURACY_OBJECTIVE_NAME
@@ -19,6 +20,20 @@ from mimarsinan.search.results import ALL_OBJECTIVES, ACCURACY_OBJECTIVE_NAME
 def get_wizard_model_types() -> List[Dict[str, Any]]:
     """Return model type id, label, description, and config_schema from each builder class."""
     return get_all_model_type_schemas()
+
+
+def get_wizard_defaults() -> Dict[str, Any]:
+    """Platform + NAS defaults for the wizard (SSOT with config_schema.defaults)."""
+    nas = get_wizard_nas_schema()
+    return {
+        "platform_constraints": dict(get_default_platform_constraints()),
+        "nas_common_fields": nas.get("common_fields", {}),
+        "firing_modes_by_spiking": {
+            "lif": ["Default", "Novena"],
+            "ttfs": ["TTFS"],
+            "ttfs_quantized": ["TTFS"],
+        },
+    }
 
 
 def get_wizard_nas_schema() -> Dict[str, Any]:

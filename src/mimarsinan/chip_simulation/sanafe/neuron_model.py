@@ -34,6 +34,7 @@ def lif_model_attributes(
     hardware_bias: Optional[float] = None,
     active_start: Optional[int] = None,
     active_length: Optional[int] = None,
+    firing_mode: str = "Default",
 ) -> dict:
     """Build the ``model_attributes`` dict for a regular LIF neuron.
 
@@ -51,10 +52,11 @@ def lif_model_attributes(
     preserving the pre-window default for tests built before the gate
     existed.
     """
+    reset_mode = "hard" if firing_mode == "Novena" else "soft"
     attrs: dict = {
         "threshold": float(threshold),
         "leak_decay": 1.0,
-        "reset_mode": "soft",
+        "reset_mode": reset_mode,
         "reset": 0.0,
         # SANA-FE's leaky_integrate_fire enforces "must update every
         # timestep" — without this flag, a cycle without input throws

@@ -75,6 +75,7 @@ _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
     ActivationAdaptationStep:           "activation",
     ClampAdaptationStep:                "activation",
     LIFAdaptationStep:                  "activation",
+    NoiseAdaptationStep:                "activation",
     ActivationShiftStep:                "activation_quantization",
     ActivationQuantizationStep:         "activation_quantization",
     WeightQuantizationStep:             "weight_quantization",
@@ -135,6 +136,8 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
 
     if spiking == "lif":
         specs.append(("LIF Adaptation", LIFAdaptationStep))
+        if bool(config.get("enable_training_noise", False)):
+            specs.append(("Noise Adaptation", NoiseAdaptationStep))
     else:
         if act_q or spiking in ("ttfs", "ttfs_quantized"):
             specs.append(_CLAMP_ADAPTATION_STEP)

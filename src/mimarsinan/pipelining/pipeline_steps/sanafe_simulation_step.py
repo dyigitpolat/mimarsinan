@@ -129,6 +129,7 @@ class SanafeSimulationStep(PipelineStep):
                 custom_arch_path=custom_arch_path,
                 thresholding_mode=thresholding_mode,
                 spiking_mode=spiking_mode,
+                firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
                 log_potential_trace=log_potential,
                 log_message_trace=log_messages,
             )
