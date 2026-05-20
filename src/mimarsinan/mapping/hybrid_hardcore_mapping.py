@@ -543,6 +543,7 @@ def _split_segment_by_capacity(
     )
 
     specs: list[LayoutSoftCoreSpec] = []
+    coalescing_group_ids: list[int | None] = []
     spec_to_core: dict[int, NeuralCore] = {}
     for idx, core in enumerate(cores):
         if use_layout:
@@ -578,6 +579,7 @@ def _split_segment_by_capacity(
                 name=core.name,
             )
         specs.append(spec)
+        coalescing_group_ids.append(getattr(core, "coalescing_group_id", None))
         spec_to_core[id(spec)] = core
 
     sub_specs = split_softcores_by_capacity(
@@ -585,6 +587,7 @@ def _split_segment_by_capacity(
         hw_types,
         allow_coalescing=allow_coalescing,
         allow_splitting=allow_neuron_splitting,
+        coalescing_group_ids=coalescing_group_ids if allow_coalescing else None,
     )
     return [[spec_to_core[id(s)] for s in sub] for sub in sub_specs]
 
