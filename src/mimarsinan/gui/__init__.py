@@ -170,9 +170,31 @@ class GUIHandle:
             resources=resource_descriptors,
         )
 
-        # Sync status=completed to disk before next on_step_start (avoids dual-running in steps.json).
         end_time_now = time.time()
         if working_dir:
+            # Persist snapshot synchronously so the last pipeline step(s) are
+            # not lost when the snapshot executor queue does not drain before
+            # process exit (resource PNG generation can take tens of seconds).
+            detail = self.collector.get_step_detail(step_name)
+            if detail:
+                try:
+                    save_step_to_persisted(
+                        working_dir,
+                        step_name,
+                        detail.get("start_time"),
+                        end_time_now,
+                        target_metric,
+                        detail.get("metrics", []),
+                        detail.get("snapshot"),
+                        detail.get("snapshot_key_kinds"),
+                        status="completed",
+                    )
+                except Exception:
+                    import logging as _logging
+                    _logging.getLogger("mimarsinan.gui").debug(
+                        "Synchronous snapshot write failed for %s", step_name,
+                        exc_info=True,
+                    )
             try:
                 save_step_status(
                     working_dir,
@@ -188,21 +210,7 @@ class GUIHandle:
                     exc_info=True,
                 )
 
-        def _finalize() -> None:
-            if working_dir:
-                detail = self.collector.get_step_detail(step_name)
-                if detail:
-                    save_step_to_persisted(
-                        working_dir,
-                        step_name,
-                        detail.get("start_time"),
-                        detail.get("end_time"),
-                        detail.get("target_metric"),
-                        detail.get("metrics", []),
-                        detail.get("snapshot"),
-                        detail.get("snapshot_key_kinds"),
-                        status="completed",
-                    )
+        def _persist_resources() -> None:
             store = self.collector.get_resource_store()
             for desc in resource_descriptors:
                 payload = None
@@ -237,7 +245,7 @@ class GUIHandle:
                         encoded, media_type=desc.media_type,
                     )
 
-        self._snapshot_executor.submit(_finalize)
+        self._snapshot_executor.submit(_persist_resources)
 
     def shutdown(self) -> None:
         """Drain and join the snapshot executor (flush pending persistence)."""
