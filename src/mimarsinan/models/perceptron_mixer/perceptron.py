@@ -128,10 +128,9 @@ class Perceptron(nn.Module):
         Raises ``ValueError`` when no ``LIFActivation`` is reachable from
         ``self.activation``: there is no spike-train semantics to expose.
         """
-        from mimarsinan.models.activations import LIFActivation
-        from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+        from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 
-        lif = SpikingHybridCoreFlow._unwrap_lif_activation(self.activation)
+        lif = unwrap_lif_activation(self.activation)
         if lif is None:
             raise ValueError(
                 "Perceptron.forward_spiking requires self.activation to wrap "

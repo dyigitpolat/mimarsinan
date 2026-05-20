@@ -763,9 +763,12 @@ Key custom functions:
 
 - **`LIFActivation`** — SpikingJelly `IFNode` (subtractive reset, `v_threshold=1.0`). Rate mode: internal `T`-step multi-step forward, returns `mean(spikes) * activation_scale`. **`thresholding_mode`**: `"<"` uses `StrictATanSurrogate` (strict `v > θ`); `"<="` uses stock ATan.
 - **`set_cycle_accurate(True)`** — Single-step mode: each `forward(x)` integrates one cycle; membrane persists across calls until reset.
-- **`forward_spiking(x)`** — Returns the actual `(T, B, …)` spike train for host encoding (avoids re-encoding rates, which shifts firing cycles).
-- **`uniform_encode_to_spike_train`** — Chip-aligned uniform rate encoder (shared with `_spike_encoding` and SANA-FE).
+- **`forward_spiking(x)`** — Returns the actual `(T, B, …)` spike train for host encoding. When **`use_cycle_accurate_trains`** is set (via `cycle_accurate_lif_forward` / `LIFAdaptationTuner`), uses **`lif_spike_train`** (T single-step IF integrations); otherwise multi-step IF on replicated input.
+- **`mimarsinan/spiking/spike_trains.py`** — Shared spike-train API: **`lif_spike_train`**, **`uniform_spike_train`** (raw pipeline input only), **`rates_to_spike_train`** (legacy fallback when cycle-accurate handoff is off).
+- **`uniform_encode_to_spike_train`** — Thin wrapper over **`uniform_spike_train`** (chip-aligned uniform encoder; shared with `_spike_encoding` and SANA-FE).
 - **`run_cycle_accurate(model, x, T)`** — Full-model cycle-accurate eval: encode input, T single-step forwards through the mapper DAG, mean logits.
+
+**Hybrid SCM encoding contract:** Encoding perceptrons map to host **`ComputeOp`** stages. After each encoding op, **`SpikingHybridCoreFlow`** calls **`forward_spiking`** and stores `(T, B, D)` in **`state_buffer_spikes`**. The following neural segment splices those trains into segment input. With **`cycle_accurate_lif_forward`**, missing encoding trains raise instead of silently re-encoding rates with **`rates_to_spike_train`**; the only allowed bypass is raw pipeline input (`node_id == -2`) via **`uniform_spike_train`**.
 
 `SpikingHybridCoreFlow` / `SpikingUnifiedCoreFlow` use **`float64`** compute dtype by default so TTFS threshold comparisons and integer sums match nevresim C++ (`double` / exact int paths).
 

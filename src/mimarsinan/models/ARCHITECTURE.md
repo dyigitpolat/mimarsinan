@@ -7,7 +7,8 @@ and architecture-specific implementations.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `activations.py` | `LeakyGradReLU`, `LIFActivation`, `uniform_encode_to_spike_train`, `run_cycle_accurate`, `StrictATanSurrogate`, … | Custom autograd activations. **`LIFActivation`**: SpikingJelly IFNode (subtractive reset); rate mode = multi-step mean; **`set_cycle_accurate(True)`** = single-step per call; **`forward_spiking`** returns real `(T,B,…)` trains for downstream encoding. **`thresholding_mode`**: `"<"` strict vs `"<="` inclusive. |
+| `activations.py` | `LeakyGradReLU`, `LIFActivation`, `uniform_encode_to_spike_train`, `run_cycle_accurate`, `StrictATanSurrogate`, … | Custom autograd activations. **`LIFActivation`**: SpikingJelly IFNode (subtractive reset); rate mode = multi-step mean; **`set_cycle_accurate(True)`** = single-step per call; **`forward_spiking`** + **`use_cycle_accurate_trains`** delegate to **`mimarsinan.spiking.spike_trains.lif_spike_train`**. **`thresholding_mode`**: `"<"` strict vs `"<="` inclusive. |
+| `../spiking/spike_trains.py` | `lif_spike_train`, `uniform_spike_train`, `rates_to_spike_train` | Shared spike-train construction for PyTorch cycle-accurate path and hybrid SCM. |
 | `decorators.py` | `NoisyDropout`, `SavedTensorDecorator`, `ShiftDecorator`, `RateAdjustedDecorator`, … | Composable decorators. **Short-circuits**: omit `ShiftDecorator` when `shift_rate==0`; `RateAdjustedDecorator` / `NoisyDropout` no-op at rate 0. |
 | `layers.py` | Re-exports; `TransformedActivation`, … | Thin re-exporter + standalone layers |
 | `supermodel.py` | `Supermodel` | Top-level wrapper (preprocessor + perceptron flow) |
