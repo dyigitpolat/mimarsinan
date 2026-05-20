@@ -48,12 +48,35 @@ def effective_core_budget(cores_config: Sequence[dict]) -> int:
 # Capacity-driven segment splitter (shared by layout verifier + hard-core mapper)
 
 
+def _coalescing_bundles(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    coalescing_group_ids: Sequence[int | None],
+) -> List[List[LayoutSoftCoreSpec]]:
+    """Group layout specs so each coalescing_group_id stays in one atomic bundle."""
+    bundles: List[List[LayoutSoftCoreSpec]] = []
+    i = 0
+    n = len(softcores)
+    while i < n:
+        gid = coalescing_group_ids[i]
+        if gid is None:
+            bundles.append([softcores[i]])
+            i += 1
+            continue
+        bundle: List[LayoutSoftCoreSpec] = []
+        while i < n and coalescing_group_ids[i] == gid:
+            bundle.append(softcores[i])
+            i += 1
+        bundles.append(bundle)
+    return bundles
+
+
 def split_softcores_by_capacity(
     softcores: Sequence[LayoutSoftCoreSpec],
     core_types: Sequence[LayoutHardCoreType],
     *,
     allow_coalescing: bool = False,
     allow_splitting: bool = False,
+    coalescing_group_ids: Sequence[int | None] | None = None,
 ) -> List[List[LayoutSoftCoreSpec]]:
     """Split a single-segment softcore list into capacity-feasible sub-segments.
 
@@ -108,39 +131,51 @@ def split_softcores_by_capacity(
         mid = len(group) // 2
         return _halve_until_packs(group[:mid]) + _halve_until_packs(group[mid:])
 
-    lat_groups: dict[int, List[LayoutSoftCoreSpec]] = defaultdict(list)
-    for sc in softcores:
-        lat = int(sc.latency_tag) if sc.latency_tag is not None else 0
-        lat_groups[lat].append(sc)
+    use_coalescing_bundles = bool(
+        allow_coalescing
+        and coalescing_group_ids is not None
+        and len(coalescing_group_ids) == len(softcores)
+    )
+    if use_coalescing_bundles:
+        atomic = _coalescing_bundles(softcores, coalescing_group_ids)
+    else:
+        atomic = [[sc] for sc in softcores]
+
+    def _bundle_latency(bundle: List[LayoutSoftCoreSpec]) -> int:
+        return max(int(sc.latency_tag) if sc.latency_tag is not None else 0 for sc in bundle)
+
+    lat_groups: dict[int, List[List[LayoutSoftCoreSpec]]] = defaultdict(list)
+    for bundle in atomic:
+        lat_groups[_bundle_latency(bundle)].append(bundle)
 
     sub_segments: List[List[LayoutSoftCoreSpec]] = []
     running: List[LayoutSoftCoreSpec] = []
     for lat in sorted(lat_groups.keys()):
-        group = lat_groups[lat]
-        candidate = running + group
-        if _packs(candidate):
-            running = candidate
-            continue
+        for bundle in lat_groups[lat]:
+            flat = [sc for sc in bundle]
+            candidate = running + flat
+            if _packs(candidate):
+                running = candidate
+                continue
 
-        # Combined run + new group doesn't fit: close the running run
-        # (it did fit standalone), and then start a new run.
-        if running:
-            sub_segments.append(running)
-            running = []
+            if running:
+                sub_segments.append(running)
+                running = []
 
-        # Can the group stand alone?
-        if _packs(group):
-            running = list(group)
-            continue
+            if _packs(flat):
+                running = list(flat)
+                continue
 
-        # Group alone also fails → halve within the group to recover
-        # (within-latency-group cores are independent by definition).
-        halved = _halve_until_packs(list(group))
-        for piece in halved[:-1]:
-            sub_segments.append(piece)
-        # The last halved piece becomes the new running run so further
-        # latency groups can potentially accumulate with it.
-        running = list(halved[-1])
+            if use_coalescing_bundles and len(flat) > 1:
+                # Cannot split a coalescing group across schedule passes.
+                sub_segments.append(flat)
+                running = []
+                continue
+
+            halved = _halve_until_packs(list(flat))
+            for piece in halved[:-1]:
+                sub_segments.append(piece)
+            running = list(halved[-1])
 
     if running:
         sub_segments.append(running)

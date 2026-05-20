@@ -812,8 +812,9 @@ class SpikingHybridCoreFlow(nn.Module):
         def _on_compute_rate(ctx: HybridStageContext) -> None:
             op = ctx.stage.compute_op
             assert op is not None
+            # Rate/LIF path: state buffer holds spike rates in [0, 1]; do not apply TTFS scales.
             in_scale, out_scale = resolve_stage_compute_scales(
-                self.hybrid_mapping, op.id, apply_ttfs=True
+                self.hybrid_mapping, op.id, apply_ttfs=False
             )
             result = execute_compute_op_torch(
                 op,
