@@ -23,6 +23,7 @@ in the deployment pipeline.
 | `soft_core_mapping_step.py` | `SoftCoreMappingStep` | Mapping: `run_hcm_mapping_metric` (caches `hybrid_mapping`), `make_basic_trainer`, `run_optional_viz` for flowchart. |
 | `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | Verification (`chip_quantize.verify_ir_graph_quantized`) |
 | `lif_adaptation_step.py` | `LIFAdaptationStep` | LIF adaptation (`TunerPipelineStep.run_tuner(LIFAdaptationTuner)`) |
+| `noise_adaptation_step.py` | `NoiseAdaptationStep` | Optional training noise (`TunerPipelineStep`; gated by `enable_training_noise`) |
 | `pruning_adaptation_step.py` | `PruningAdaptationStep` | Pruning (`TunerPipelineStep.run_tuner(PruningTuner)`) |
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | Mapping: reuses cached `hybrid_mapping`; `run_hcm_mapping_metric`; optional hybrid viz via `run_optional_viz`. |
 | `simulation_step.py` | `SimulationStep` | Verification |
@@ -79,18 +80,11 @@ When `activation_quantization` is True or spiking is TTFS, **Clamp
 Adaptation** runs next.  `ClampAdaptationStep` **always uses `ClampTuner`**
 regardless of the current activation types.
 
-The previously-present "fast path" (no training when all activations were
-already ReLU-compatible) has been removed.  After `ActivationAdaptationStep`
-commits all bases to `LeakyGradReLU`, `has_non_relu_activations()` returns
-False — but the model still needs recovery training to work within the clamped
-range.  Applying hard clamping (clamp_rate=1.0) without training caused a
-~28% accuracy drop in TTFS+LeakyReLU deployments (0.95→0.68 on MNIST).
-`ClampTuner` uses `SmartSmoothAdaptation` to ramp clamp_rate from 0→1 with
-recovery training at each step, restoring accuracy. Its instant probe is now
-eval-only: it scores candidate clamp rates with
-`validate_n_batches(validation_steps)` instead of `train_one_step(0)` plus
-single-batch `validate()`, so BatchNorm/dropout state is untouched and the
-step-search metric matches the shared tuner loop's recovery metric semantics.
+After `ActivationAdaptationStep` commits bases to `LeakyGradReLU`,
+`ClampTuner` ramps `clamp_rate` from 0→1 with recovery training at each step.
+Its instant probe is eval-only: candidate rates are scored with
+`validate_n_batches(validation_steps)` so BatchNorm/dropout state stays intact
+and the step-search metric matches the shared tuner loop.
 `ClampAdaptationStep` passes through `activation_scale_stats` so `ClampTuner`
 can reject scale/order mismatches before mutating model state, and the step
 caches a final `trainer.test()` result so repeated `validate()` calls do not
