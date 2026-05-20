@@ -32,11 +32,34 @@ from mimarsinan.mapping.hybrid_hardcore_mapping import (
 from mimarsinan.mapping.ir import ComputeOp, IRSource
 
 from mimarsinan.mapping.spike_source_spans import SpikeSourceSpan, compress_spike_sources
-from mimarsinan.models.lif_kernels import lif_fire_and_reset
+from mimarsinan.models.lif_kernels import (
+    lif_fire_and_reset,
+    lif_fire_and_reset_differentiable,
+)
 
 
 # float64 matches nevresim TTFS double precision and avoids threshold flip-flops
 _COMPUTE_DTYPE = torch.float64
+
+
+def _pad_slice(
+    val: torch.Tensor,
+    d0: int,
+    d1: int,
+    out_dim: int,
+    batch_size: int,
+    device,
+    dtype,
+) -> torch.Tensor:
+    """Return a ``(B, out_dim)`` tensor with ``val`` placed at columns ``[d0, d1)``
+    and zeros elsewhere. Used by ``_run_neural_segment_rate`` in chip-aligned
+    training so per-cycle output contributions can be summed functionally
+    (no autograd-blocking in-place index assignment)."""
+    left = d0
+    right = out_dim - d1
+    if left == 0 and right == 0:
+        return val
+    return torch.nn.functional.pad(val, (left, right))
 
 
 class SpikingHybridCoreFlow(nn.Module):
@@ -95,6 +118,12 @@ class SpikingHybridCoreFlow(nn.Module):
             compute_dtype=_COMPUTE_DTYPE,
         )
         self._lif_cache = BoundaryLifCache()
+
+        # When True AND self.training, the cycle loop uses
+        # ``lif_fire_and_reset_differentiable`` and functional accumulation so
+        # ``ChipAlignedForward`` / ``LifChipAlignedFinetuneTuner`` can backprop
+        # through SCM with SpikingJelly's surrogate gradient.
+        self._chip_aligned_training: bool = False
 
         # Single-segment LRU: one segment's weights on GPU at a time (ViT-scale OOM otherwise).
         self._segment_tensor_cache: Dict[int, dict] = {}
@@ -430,6 +459,15 @@ class SpikingHybridCoreFlow(nn.Module):
 
         input_spike_train = input_spike_train.to(_COMPUTE_DTYPE)
 
+        # Chip-aligned training path: avoid in-place ops on tensors that carry
+        # gradients (buffers from the diff kernel, output_counts accumulating
+        # from them). The eval path keeps its hot ``+=`` form for speed.
+        differentiable = bool(self._chip_aligned_training and self.training)
+        cycle_outputs_train: list[torch.Tensor] | None = (
+            [] if differentiable else None
+        )
+        out_dim_train = len(output_sources)
+
         for cycle in range(cycles):
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
 
@@ -448,23 +486,40 @@ class SpikingHybridCoreFlow(nn.Module):
                 if not (cycle >= core.latency and cycle < T + core.latency):
                     continue
 
-                memb_i = memb[core_idx]
-                memb_i += torch.matmul(core_params[core_idx], input_signals[core_idx].T).T
-                if hw_biases[core_idx] is not None:
-                    memb_i += hw_biases[core_idx]
+                if differentiable:
+                    update = torch.matmul(core_params[core_idx], input_signals[core_idx].T).T
+                    memb_i = memb[core_idx] + update
+                    if hw_biases[core_idx] is not None:
+                        memb_i = memb_i + hw_biases[core_idx]
+                    fired, memb_new = lif_fire_and_reset_differentiable(
+                        memb_i,
+                        thresholds[core_idx],
+                        thresholding_mode=self.thresholding_mode,
+                        firing_mode=self.firing_mode,
+                        output_dtype=_COMPUTE_DTYPE,
+                    )
+                    memb[core_idx] = memb_new
+                    buffers[core_idx] = fired
+                else:
+                    memb_i = memb[core_idx]
+                    memb_i += torch.matmul(core_params[core_idx], input_signals[core_idx].T).T
+                    if hw_biases[core_idx] is not None:
+                        memb_i += hw_biases[core_idx]
 
-                buffers[core_idx] = lif_fire_and_reset(
-                    memb_i,
-                    thresholds[core_idx],
-                    thresholding_mode=self.thresholding_mode,
-                    firing_mode=self.firing_mode,
-                    output_dtype=_COMPUTE_DTYPE,
-                )
+                    buffers[core_idx] = lif_fire_and_reset(
+                        memb_i,
+                        thresholds[core_idx],
+                        thresholding_mode=self.thresholding_mode,
+                        firing_mode=self.firing_mode,
+                        output_dtype=_COMPUTE_DTYPE,
+                    )
 
                 if recording:
                     record_in_t[core_idx] += input_signals[core_idx][0].to(torch.int64)
-                    record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64)
+                    record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64).detach()
 
+            if differentiable:
+                cycle_out_parts: list[torch.Tensor] = []
             for sp in output_spans:
                 d0 = int(sp.dst_start)
                 d1 = int(sp.dst_end)
@@ -473,16 +528,25 @@ class SpikingHybridCoreFlow(nn.Module):
                 if sp.kind == "on":
                     # Always-on axon: one spike per input cycle only (cycles [0, T)).
                     if cycle < T:
-                        output_counts[:, d0:d1] += 1.0
-                        if output_spike_train is not None:
-                            output_spike_train[cycle, :, d0:d1] += 1.0
+                        if differentiable:
+                            ones = torch.ones(
+                                batch_size, d1 - d0, device=device, dtype=_COMPUTE_DTYPE,
+                            )
+                            cycle_out_parts.append(_pad_slice(ones, d0, d1, out_dim_train, batch_size, device, _COMPUTE_DTYPE))
+                        else:
+                            output_counts[:, d0:d1] += 1.0
+                            if output_spike_train is not None:
+                                output_spike_train[cycle, :, d0:d1] += 1.0
                     continue
                 if sp.kind == "input":
                     if cycle < T:
                         sl = input_spikes[:, int(sp.src_start):int(sp.src_end)]
-                        output_counts[:, d0:d1] += sl
-                        if output_spike_train is not None:
-                            output_spike_train[cycle, :, d0:d1] += sl
+                        if differentiable:
+                            cycle_out_parts.append(_pad_slice(sl, d0, d1, out_dim_train, batch_size, device, _COMPUTE_DTYPE))
+                        else:
+                            output_counts[:, d0:d1] += sl
+                            if output_spike_train is not None:
+                                output_spike_train[cycle, :, d0:d1] += sl
                     continue
                 src_lat = cores[int(sp.src_core)].latency
                 if src_lat is None:
@@ -491,11 +555,25 @@ class SpikingHybridCoreFlow(nn.Module):
                 if cycle < int(src_lat) or cycle >= int(src_lat) + T:
                     continue
                 out_sl = buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
-                output_counts[:, d0:d1] += out_sl
-                if output_spike_train is not None:
-                    in_t = cycle - int(src_lat)
-                    if 0 <= in_t < T:
-                        output_spike_train[in_t, :, d0:d1] += out_sl
+                if differentiable:
+                    cycle_out_parts.append(_pad_slice(out_sl, d0, d1, out_dim_train, batch_size, device, _COMPUTE_DTYPE))
+                else:
+                    output_counts[:, d0:d1] += out_sl
+                    if output_spike_train is not None:
+                        in_t = cycle - int(src_lat)
+                        if 0 <= in_t < T:
+                            output_spike_train[in_t, :, d0:d1] += out_sl
+
+            if differentiable:
+                cycle_total = (
+                    torch.stack(cycle_out_parts, dim=0).sum(dim=0)
+                    if cycle_out_parts
+                    else torch.zeros(batch_size, out_dim_train, device=device, dtype=_COMPUTE_DTYPE)
+                )
+                cycle_outputs_train.append(cycle_total)
+
+        if differentiable:
+            output_counts = torch.stack(cycle_outputs_train, dim=0).sum(dim=0)
 
         if recording:
             for core_idx, core in enumerate(cores):
