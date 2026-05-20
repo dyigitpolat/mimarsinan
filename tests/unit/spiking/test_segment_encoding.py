@@ -111,7 +111,12 @@ def test_classify_legacy_rate_when_cycle_accurate_disabled() -> None:
 
 
 def test_emit_compute_spike_train_matches_nf_for_encoding_perceptron() -> None:
-    """Boundary emission must replay NF's per-cycle pattern, not feed constant ``linear(x)``."""
+    """Boundary emission must replay NF's per-cycle pattern, not feed constant ``linear(x)``.
+
+    Output must be **binary** spikes (chip-input convention) — i.e. NF's per-cycle
+    output divided by ``activation_scale`` so the chip's calibrated weights see
+    the same ``{0, 1}`` spike train ``Perceptron.forward_spiking`` would emit.
+    """
     torch.manual_seed(0)
     T = 4
     hybrid, p1 = _tiny_lif_model(T=T)
@@ -121,18 +126,18 @@ def test_emit_compute_spike_train_matches_nf_for_encoding_perceptron() -> None:
 
     x = torch.rand(2, 8).to(cfg.compute_dtype)
 
-    # NF reference: run the wrapped Perceptron cycle-accurately on uniform-encoded raw x.
-    nf_train = run_cycle_accurate(p1, x.to(torch.float32), T)
-    # run_cycle_accurate returns the *mean*; reconstruct the per-cycle spike pattern by
-    # invoking the same internal loop (single-step LIF, uniform-encoded inputs).
     from spikingjelly.activation_based import functional
     from mimarsinan.spiking.spike_trains import uniform_spike_train
     spike_train_in = uniform_spike_train(x.to(torch.float32), T)
     lif = p1.activation
     lif.set_cycle_accurate(True)
     functional.reset_net(lif)
-    nf_per_cycle = torch.stack([p1(spike_train_in[t]) for t in range(T)], dim=0)
+    nf_per_cycle_scaled = torch.stack([p1(spike_train_in[t]) for t in range(T)], dim=0)
     lif.set_cycle_accurate(False)
+
+    # Divide by activation_scale to get the chip's binary-input convention.
+    safe_scale = lif.activation_scale.clamp(min=1e-12)
+    nf_per_cycle_binary = nf_per_cycle_scaled / safe_scale
 
     emitted = emit_compute_spike_train(
         op=op,
@@ -143,12 +148,15 @@ def test_emit_compute_spike_train_matches_nf_for_encoding_perceptron() -> None:
         lif_cache=cache,
     )
     assert emitted is not None
-    assert emitted.shape == nf_per_cycle.shape
+    assert emitted.shape == nf_per_cycle_binary.shape
     torch.testing.assert_close(
         emitted.to(torch.float32),
-        nf_per_cycle.to(torch.float32),
+        nf_per_cycle_binary.to(torch.float32),
         atol=1e-6, rtol=0.0,
     )
+    # Output must be in {0, 1}.
+    unique = set(emitted.unique().tolist())
+    assert unique.issubset({0.0, 1.0}), f"expected binary spikes; got {unique}"
 
 
 def test_emit_compute_spike_train_returns_none_in_legacy_rate_mode() -> None:
@@ -229,6 +237,45 @@ def test_build_segment_input_raw_input_uniform_encoded() -> None:
     # Uniform encoding of 0.5 over T=4 fires twice per neuron.
     assert out.shape == (cfg.simulation_length, 1, in_size)
     assert int(out.sum().item()) == 2 * in_size
+
+
+def test_conv2d_perceptron_mapper_returns_none_pending_chip_aligned_training() -> None:
+    """Conv2DPerceptronMapper boundaries must NOT emit a per-cycle LIF spike train
+    until chip weights are retrained for that boundary's timing.
+
+    Background: substituting a per-cycle single-step LIF spike train at this
+    boundary changes the per-cycle membrane evolution at the consumer core's
+    matmul. The chip's pruning + weight quantization were calibrated against
+    the **uniform-encoded rate** path (the HEAD fallback), so feeding a
+    different per-cycle pattern hurts SCM/HCM accuracy by 3–4 pp on
+    mnist_hard_all_lif. The fix is a follow-up
+    ``LifChipAlignedFinetuneTuner`` that retrains weights against the chip
+    flow; until that lands, the resolver returns ``None`` so the consumer
+    keeps uniform-encoding the rate.
+    """
+    from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
+    from mimarsinan.mapping.mappers.structural import InputMapper
+    from mimarsinan.spiking.segment_encoding import _resolve_lif_perceptron
+
+    src = InputMapper((1, 28, 28))
+    conv_mapper = Conv2DPerceptronMapper(
+        src,
+        in_channels=1,
+        out_channels=4,
+        kernel_size=4,
+        stride=4,
+        bias=True,
+        use_batchnorm=False,
+        base_activation_name="ReLU",
+    )
+    assert _resolve_lif_perceptron(conv_mapper) is None
+
+    # Even with LIF installed on the inner perceptron — still None
+    # (until chip-aligned finetune retrains the consumer's weights).
+    lif = LIFActivation(T=4, activation_scale=torch.tensor(1.0))
+    lif.use_cycle_accurate_trains = True
+    conv_mapper.perceptron.activation = lif
+    assert _resolve_lif_perceptron(conv_mapper) is None
 
 
 def test_build_segment_input_partial_cache_raises() -> None:

@@ -82,19 +82,35 @@ class BoundaryLifCache:
         return lif
 
 
-def _resolve_lif_perceptron(module) -> nn.Module | None:
-    """Return inner ``Perceptron`` with ``LIFActivation`` for encoding spike trains."""
+def _resolve_lif_perceptron(module):
+    """Return ``(callable, lif)`` for a *plain* ``Perceptron`` encoding boundary, or ``None``.
+
+    ``PerceptronMapper._map_to_ir_as_encoding_compute_op`` stores
+    ``params["module"] = self.perceptron`` — the ``Perceptron`` itself, whose
+    ``forward()`` returns ``activation(linear(x))``. NF training and the chip's
+    calibrated weights agree on a per-cycle binary spike train extracted from
+    this path (verified by ``test_nf_scm_per_sample_output_parity_cycle_accurate``).
+
+    ``Conv2DPerceptronMapper._map_to_ir`` stores ``params["module"] = self`` (the
+    *mapper*). Its rate-mode output is what the chip's pruning + quantization
+    were calibrated against; substituting a per-cycle single-step LIF spike
+    train here changes the per-cycle membrane evolution at the consumer's
+    matmul and hurts SCM/HCM accuracy. Until ``LifChipAlignedFinetuneTuner``
+    can retrain weights against the new boundary, treat
+    ``Conv2DPerceptronMapper`` as a structural passthrough and let the
+    consumer uniform-encode the rate (HEAD behaviour).
+    """
     if module is None:
         return None
-    if hasattr(module, "perceptron") and module is not getattr(module, "perceptron"):
+    if hasattr(module, "perceptron") and getattr(module, "perceptron") is not module:
+        # Wrapper mapper (e.g. Conv2DPerceptronMapper). See docstring.
         return None
-    candidate = module
-    if not hasattr(candidate, "forward_spiking"):
+    if not hasattr(module, "activation"):
         return None
-    activation = getattr(candidate, "activation", None)
-    if unwrap_lif_activation(activation) is not None:
-        return candidate
-    return None
+    lif = unwrap_lif_activation(getattr(module, "activation", None))
+    if lif is None:
+        return None
+    return module, lif
 
 
 def _is_structural_compute_module(module) -> bool:
@@ -133,6 +149,8 @@ def classify_encoding_boundary(
             return BoundaryKind.ENCODING_LIF_PERCEPTRON
         if _is_structural_compute_module(module):
             return BoundaryKind.ENCODING_SPLIT_HOST
+        # ``classifier_col0`` and friends: Perceptron with non-LIF activation
+        # (e.g. final readout). Still rate-encoded for downstream consumers.
         return BoundaryKind.STRUCTURAL_PASSTHROUGH
 
     if op.op_type in _STRUCTURAL_PASSTHROUGH_OP_TYPES:
@@ -208,19 +226,40 @@ def _gather_op_input_train(
 
 
 def _run_perceptron_single_step_T(
-    perceptron,
+    callable_module,
+    lif,
     input_train: torch.Tensor,
     op: ComputeOp,
     config: SegmentEncodingConfig,
 ) -> torch.Tensor:
-    """``T`` single-step forwards through a Perceptron; returns ``(T, B, D)`` spikes."""
-    from spikingjelly.activation_based import functional
+    """``T`` single-step forwards through ``callable_module``; returns ``(T, B, D)``
+    **binary** spikes (in {0, 1}) keyed to the chip's binary-input convention.
 
-    lif = unwrap_lif_activation(perceptron.activation)
-    assert lif is not None, "_run_perceptron_single_step_T requires reachable LIFActivation"
+    ``callable_module`` is either a ``Perceptron`` (PerceptronMapper case) or a
+    ``Conv2DPerceptronMapper`` whose ``_forward_impl`` runs conv + bn + the
+    perceptron's activation. ``lif`` is the reachable ``LIFActivation``
+    (unwrapped from the TransformedActivation / LIFBlendActivation chain).
+
+    The wrapped ``forward()`` returns ``spike * activation_scale`` per cycle in
+    single-step mode. The chip's neural segments multiply binary inputs by
+    scale-calibrated weights, so we divide the per-cycle output by the LIF's
+    ``activation_scale`` to recover the binary spike. This matches the
+    pre-Phase-A semantics of ``Perceptron.forward_spiking`` (which returns the
+    raw ``IFNode`` output without the ``* scale`` wrap).
+    """
+    from spikingjelly.activation_based import functional
 
     T = input_train.shape[0]
     B = input_train.shape[1]
+
+    scale_attr = getattr(lif, "activation_scale", None)
+    if isinstance(scale_attr, torch.Tensor):
+        safe_scale = scale_attr.to(dtype=torch.float32).clamp(min=1e-12)
+    else:
+        safe_scale = torch.tensor(
+            max(float(scale_attr) if scale_attr is not None else 1.0, 1e-12),
+            dtype=torch.float32,
+        )
 
     was_ca = lif._cycle_accurate_mode
     lif.set_cycle_accurate(True)
@@ -232,13 +271,14 @@ def _run_perceptron_single_step_T(
             if op.input_shape is not None:
                 inp = inp.reshape(B, *op.input_shape)
             inp_f = inp.to(torch.float32)
-            out_t = perceptron(inp_f)
-            outputs.append(out_t)
+            out_t = callable_module(inp_f)
+            binary_t = out_t / safe_scale
+            outputs.append(binary_t.reshape(B, -1))
         stacked = torch.stack(outputs, dim=0)
     finally:
         lif.set_cycle_accurate(was_ca)
 
-    return stacked.reshape(T, B, -1).to(config.compute_dtype)
+    return stacked.to(config.compute_dtype)
 
 
 def _run_structural_module_single_step_T(
@@ -304,9 +344,12 @@ def emit_compute_spike_train(
 
     module = (op.params or {}).get("module") if op.params else None
     if kind == BoundaryKind.ENCODING_LIF_PERCEPTRON:
-        perceptron = _resolve_lif_perceptron(module)
-        assert perceptron is not None
-        return _run_perceptron_single_step_T(perceptron, input_train, op, config)
+        resolved = _resolve_lif_perceptron(module)
+        assert resolved is not None
+        callable_module, lif = resolved
+        return _run_perceptron_single_step_T(
+            callable_module, lif, input_train, op, config,
+        )
 
     if kind == BoundaryKind.ENCODING_SPLIT_HOST:
         assert module is not None
