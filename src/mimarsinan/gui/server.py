@@ -24,6 +24,13 @@ logger = logging.getLogger("mimarsinan.gui")
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
+def _sanitize(obj: Any) -> Any:
+    """Recursively make values JSON-safe (delegates to ``json_util.to_json_safe``)."""
+    from mimarsinan.gui.json_util import to_json_safe
+
+    return to_json_safe(obj)
+
+
 class _SafeJSONEncoder(json.JSONEncoder):
     """JSON encoder that converts NaN / Inf to ``null``."""
 
@@ -32,17 +39,6 @@ class _SafeJSONEncoder(json.JSONEncoder):
 
     def encode(self, o: Any) -> str:
         return super().encode(_sanitize(o))
-
-
-def _sanitize(obj: Any) -> Any:
-    """Recursively replace non-finite floats with ``None``."""
-    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
-        return None
-    if isinstance(obj, dict):
-        return {k: _sanitize(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_sanitize(v) for v in obj]
-    return obj
 
 
 class _SafeJSONResponse(JSONResponse):
@@ -251,8 +247,11 @@ def create_app(
 
     @app.get("/api/wizard/schema")
     def api_wizard_schema():
-        from mimarsinan.gui.wizard.schema import get_wizard_nas_schema
-        return {"nas": get_wizard_nas_schema()}
+        from mimarsinan.gui.wizard.schema import get_wizard_defaults, get_wizard_nas_schema
+        return {
+            "nas": get_wizard_nas_schema(),
+            "defaults": get_wizard_defaults(),
+        }
 
     @app.get("/api/data_providers")
     def api_data_providers():
@@ -331,10 +330,20 @@ def create_app(
         return get_model_config_schema(model_type)
 
     @app.post("/api/run")
-    def api_run(body: dict):
+    def api_run(body: dict, request: Request):
         from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
+        from mimarsinan.gui.wizard.validation import validate_wizard_state
 
-        body = build_deployment_config_from_state(body or {})
+        raw = body or {}
+        if request.query_params.get("validate") == "1":
+            errs = validate_wizard_state(raw)
+            if errs:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "validation failed", "field_errors": errs},
+                )
+
+        body = build_deployment_config_from_state(raw)
         if process_manager is not None:
             try:
                 run_id = process_manager.spawn_run(body)

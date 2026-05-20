@@ -62,6 +62,7 @@ def build_network_for_segment(
     core_offset: int,
     cores_per_tile: int = 0,
     simulation_length: Optional[int] = None,
+    firing_mode: str = "Default",
 ) -> Tuple[
     Any,
     Dict[int, Any],
@@ -131,6 +132,7 @@ def build_network_for_segment(
                         hardware_bias=bias,
                         active_start=active_start,
                         active_length=active_length,
+                        firing_mode=firing_mode,
                     ),
                 )
                 neuron.map_to_core(sanafe_core)

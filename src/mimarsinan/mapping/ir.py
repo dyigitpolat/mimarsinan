@@ -107,6 +107,9 @@ class NeuralCore(IRNode):
 
     hardware_bias: np.ndarray | None = None
 
+    # Index into ``IRGraph.layout_softcores`` when produced by ``IRMapping``.
+    layout_softcore_index: int | None = None
+
     pre_pruning_heatmap: "np.ndarray | None" = None
     pre_pruning_row_mask: list | None = None
     pre_pruning_col_mask: list | None = None
@@ -442,12 +445,16 @@ class IRGraph:
     nodes: List[IRNode]
     output_sources: np.ndarray  # Array of IRSource for final outputs
     weight_banks: Dict[int, WeightBank] = field(default_factory=dict)
+    layout_softcores: List[Any] = field(default_factory=list)
 
     def __getattr__(self, name: str):
-        # Backward compat: old pickles lack weight_banks
+        # Backward compat: old pickles lack weight_banks / layout_softcores
         if name == "weight_banks":
             self.weight_banks = {}
             return self.weight_banks
+        if name == "layout_softcores":
+            self.layout_softcores = []
+            return self.layout_softcores
         raise AttributeError(f"'{type(self).__name__}' object has no attribute {name!r}")
 
     def get_neural_cores(self) -> List[NeuralCore]:

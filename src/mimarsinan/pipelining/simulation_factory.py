@@ -16,13 +16,19 @@ from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
 def build_hybrid_mapping_for_pipeline(
     ir_graph: IRGraph,
     platform_constraints: dict[str, Any],
+    *,
+    pipeline_config: dict[str, Any] | None = None,
 ) -> Any:
+    legacy = False
+    if pipeline_config is not None:
+        legacy = bool(pipeline_config.get("use_legacy_softcore_flush", False))
     return build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,
         cores_config=platform_constraints["cores"],
         allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
         allow_scheduling=bool(platform_constraints.get("allow_scheduling", False)),
         allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
+        use_legacy_softcore_flush=legacy,
     )
 
 
@@ -138,7 +144,9 @@ def run_hcm_mapping_metric(
         try:
             if hybrid_mapping is None:
                 hybrid_mapping = build_hybrid_mapping_for_pipeline(
-                    ir_graph, platform_constraints
+                    ir_graph,
+                    platform_constraints,
+                    pipeline_config=pipeline.config,
                 )
                 pipeline.cache.add(cache_key, hybrid_mapping, "pickle")
             flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping)

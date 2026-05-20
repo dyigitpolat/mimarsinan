@@ -14,6 +14,7 @@ from .normalization_fusion_step import NormalizationFusionStep
 from .soft_core_mapping_step import SoftCoreMappingStep
 from .core_quantization_verification_step import CoreQuantizationVerificationStep
 from .lif_adaptation_step import LIFAdaptationStep
+from .noise_adaptation_step import NoiseAdaptationStep
 from .hard_core_mapping_step import HardCoreMappingStep
 from .simulation_step import SimulationStep
 from .loihi_simulation_step import LoihiSimulationStep

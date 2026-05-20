@@ -57,6 +57,7 @@ class SanafeRunner:
         custom_arch_path: Optional[str] = None,
         thresholding_mode: str = "<=",
         spiking_mode: str = "lif",
+        firing_mode: str = "Default",
         log_potential_trace: bool = False,
         log_message_trace: bool = True,
         cores_per_tile: int = 0,
@@ -77,6 +78,16 @@ class SanafeRunner:
         self.arch_preset = arch_preset
         self.custom_arch_path = custom_arch_path
         self.thresholding_mode = thresholding_mode
+        self.firing_mode = str(firing_mode)
+        from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
+
+        FiringStrategyFactory.from_config(
+            {
+                "firing_mode": self.firing_mode,
+                "thresholding_mode": thresholding_mode,
+                "spiking_mode": spiking_mode,
+            }
+        ).require_backend("sanafe")
         self.log_potential_trace = log_potential_trace
         self.log_message_trace = log_message_trace
         self.cores_per_tile = cores_per_tile
@@ -217,6 +228,7 @@ class SanafeRunner:
             tile_offset=0, core_offset=0,
             cores_per_tile=self.cores_per_tile,
             simulation_length=self.T,
+            firing_mode=self.firing_mode,
         )
 
         encoded = uniform_rate_encode(seg_input_rates, self.T)

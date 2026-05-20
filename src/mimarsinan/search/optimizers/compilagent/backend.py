@@ -92,7 +92,7 @@ class MimarsinanLayoutBackend(BackendBase):
         extra: Dict[str, Any] = {
             "defaults": {
                 "model_config": dict(defaults.model_config),
-                "platform_constraints": _platform_to_jsonable(
+                "platform_constraints": _platform_to_json_safe(
                     defaults.platform_constraints
                 ),
             },
@@ -102,7 +102,7 @@ class MimarsinanLayoutBackend(BackendBase):
                 problem,
                 {
                     "model_config": dict(defaults.model_config),
-                    "platform_constraints": _platform_to_jsonable(
+                    "platform_constraints": _platform_to_json_safe(
                         defaults.platform_constraints
                     ),
                 },
@@ -493,14 +493,10 @@ class MimarsinanLayoutBackend(BackendBase):
             pass
 
 
-def _platform_to_jsonable(pcfg: Mapping[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    for k, v in pcfg.items():
-        if k == "cores":
-            out[k] = [dict(c) for c in v]
-        else:
-            out[k] = v
-    return out
+def _platform_to_json_safe(pcfg: Mapping[str, Any]) -> Dict[str, Any]:
+    from mimarsinan.gui.json_util import to_json_safe
+
+    return to_json_safe(dict(pcfg))
 
 
 def _softcore_to_dict(sc: LayoutSoftCoreSpec, index: int) -> Dict[str, Any]:

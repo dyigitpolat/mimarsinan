@@ -6,6 +6,12 @@ from typing import Any
 
 import torch
 
+from mimarsinan.mapping.coalescing import coalescing_fragment_count
+from mimarsinan.mapping.mapping_structure import (
+    compute_core_input_count,
+    compute_fc_tiling_mode,
+    compute_psum_params,
+)
 from mimarsinan.mapping.mapping_utils import (
     AddMapper,
     Conv1DPerceptronMapper,
@@ -30,6 +36,31 @@ def _ceil_div(a: int, b: int) -> int:
     return int((int(a) + int(b) - 1) // int(b))
 
 
+def estimate_fc_cores(
+    *,
+    in_features: int,
+    out_features: int,
+    instances: int = 1,
+    has_bias: bool,
+    max_axons: int,
+    max_neurons: int,
+    hardware_bias: bool = False,
+    allow_coalescing: bool = True,
+) -> int:
+    """Return estimated hardware core count for one FC layer (matches layout tiling modes)."""
+    est = _estimate_map_fc(
+        in_features=in_features,
+        out_features=out_features,
+        instances=instances,
+        has_bias=has_bias,
+        max_axons=max_axons,
+        max_neurons=max_neurons,
+        hardware_bias=hardware_bias,
+        allow_coalescing=allow_coalescing,
+    )
+    return est.cores_total if est.mappable else 0
+
+
 def _estimate_map_fc(
     *,
     in_features: int,
@@ -38,66 +69,87 @@ def _estimate_map_fc(
     has_bias: bool,
     max_axons: int,
     max_neurons: int,
+    hardware_bias: bool = False,
+    allow_coalescing: bool = True,
 ) -> HWEstimate:
     """
-    Estimate the number of hardware cores produced by SoftCoreMapping.map_fc (without actually mapping),
-    including axon tiling (partial sums + accumulator) when needed.
+    Estimate hardware cores for an FC layer using ``mapping_structure`` helpers
+    (same tiling mode / psum / coalescing semantics as ``LayoutIRMapping``).
     """
-
-    from mimarsinan.mapping.mapping_structure import compute_core_input_count
-
     required_axons = compute_core_input_count(
-        int(in_features), has_bias=has_bias, hardware_bias=False
+        int(in_features), has_bias=has_bias, hardware_bias=hardware_bias
     )
     bias_ax = required_axons - int(in_features)
 
-    if required_axons <= max_axons:
+    mode = compute_fc_tiling_mode(
+        int(in_features),
+        int(out_features),
+        int(max_axons),
+        int(max_neurons),
+        has_bias,
+        hardware_bias,
+        allow_coalescing,
+    )
+
+    if mode == "single":
         groups = _ceil_div(out_features, max_neurons)
-        # Each group creates `instances` cores.
         cores_total = int(instances) * int(groups)
         details = (
-            f"no axon-tiling\n"
+            f"mode=single\n"
             f"required_axons={required_axons} (features={in_features}, bias={bias_ax}) <= max_axons={max_axons}\n"
             f"output_groups=ceil({out_features}/{max_neurons})={groups}\n"
-            f"core_matrix≈{required_axons}x<= {max_neurons} (axons x neurons), cores_per_group={instances}"
+            f"cores_total={cores_total}"
         )
         return HWEstimate(True, None, cores_total, details)
 
-    # Replicate SoftCoreMapping.map_fc tiling logic
-    tile_size = max_axons  # bias excluded from partials
-    tile_count = _ceil_div(in_features, tile_size)
-
-    max_out_by_accum_axons = (max_axons - bias_ax) // (2 * tile_count)
-    if max_out_by_accum_axons <= 0:
-        return HWEstimate(
-            False,
-            "accumulator cannot fit",
-            0,
-            f"UNMAPPABLE: accumulator needs 2*tile_count*out_block + bias_axons <= max_axons "
-            f"(tile_count={tile_count}, max_axons={max_axons}, bias_axons={bias_ax})",
+    if mode == "coalescing":
+        k = coalescing_fragment_count(required_axons, int(max_axons))
+        out_groups = _ceil_div(out_features, max_neurons)
+        cores_total = int(instances) * k * out_groups
+        details = (
+            f"mode=coalescing\n"
+            f"required_axons={required_axons} > max_axons={max_axons}\n"
+            f"fragments={k}\n"
+            f"output_groups=ceil({out_features}/{max_neurons})={out_groups}\n"
+            f"cores_total={cores_total}"
         )
+        return HWEstimate(True, None, cores_total, details)
 
-    out_block = min(max_neurons, int(max_out_by_accum_axons))
-    if out_block <= 0:
-        return HWEstimate(False, "out_block <= 0", 0, f"UNMAPPABLE: out_block={out_block}")
+    if mode == "output_tiled":
+        out_groups = _ceil_div(out_features, max_neurons)
+        cores_total = int(instances) * out_groups
+        details = (
+            f"mode=output_tiled\n"
+            f"output_groups=ceil({out_features}/{max_neurons})={out_groups}\n"
+            f"cores_total={cores_total}"
+        )
+        return HWEstimate(True, None, cores_total, details)
 
-    out_blocks = _ceil_div(out_features, out_block)
-    cores_per_instance_per_block = 2 * tile_count + 1  # pos tiles + neg tiles + accum
+    # psum
+    try:
+        pp = compute_psum_params(
+            int(in_features),
+            int(out_features),
+            int(max_axons),
+            int(max_neurons),
+            has_bias,
+            hardware_bias,
+        )
+    except ValueError as exc:
+        return HWEstimate(False, str(exc), 0, f"UNMAPPABLE: {exc}")
+
+    out_blocks = _ceil_div(out_features, pp.out_block_size)
+    cores_per_instance_per_block = 2 * pp.tile_count + 1
     cores_total = int(instances) * int(out_blocks) * int(cores_per_instance_per_block)
 
     details = (
-        f"axon-tiling enabled\n"
+        f"mode=psum\n"
         f"required_axons={required_axons} (features={in_features}, bias={bias_ax}) > max_axons={max_axons}\n"
-        f"tile_count=ceil({in_features}/{tile_size})={tile_count}\n"
-        f"accum_axons=2*tile_count*out_block + bias_axons <= max_axons\n"
-        f"max_out_by_accum_axons=floor(({max_axons}-{bias_ax})/(2*{tile_count}))={max_out_by_accum_axons}\n"
-        f"out_block=min(max_neurons={max_neurons}, max_out_by_accum_axons)={out_block}\n"
-        f"out_blocks=ceil({out_features}/{out_block})={out_blocks}\n"
+        f"tile_count={pp.tile_count}\n"
+        f"out_block_size={pp.out_block_size}\n"
+        f"out_blocks={out_blocks}\n"
         f"cores_per_instance_per_block=2*tile_count+1={cores_per_instance_per_block}\n"
-        f"total_cores=instances({instances})*out_blocks({out_blocks})*cores_per_instance_per_block({cores_per_instance_per_block})={cores_total}\n"
-        f"core_shapes:\n"
-        f"  partial: <={tile_size}x{out_block} (no bias)\n"
-        f"  accum: {2*tile_count*out_block + bias_ax}x{out_block}"
+        f"cores_total={cores_total}"
     )
     return HWEstimate(True, None, cores_total, details)
 
@@ -124,6 +176,8 @@ def generate_softcore_flowchart_dot(
     max_axons: int,
     max_neurons: int,
     device: torch.device | None = None,
+    hardware_bias: bool = False,
+    allow_coalescing: bool = True,
 ) -> str:
     """
     Generate a Graphviz DOT flowchart for the mapper graph, annotated with estimated SoftCoreMapping cost.
@@ -173,6 +227,13 @@ def generate_softcore_flowchart_dot(
         hw_text = "HW: n/a"
         sw_text = "SW: n/a"
 
+        _est_kw = dict(
+            max_axons=int(max_axons),
+            max_neurons=int(max_neurons),
+            hardware_bias=hardware_bias,
+            allow_coalescing=allow_coalescing,
+        )
+
         # Estimate hardware usage for known mappable ops
         if isinstance(node, PerceptronMapper):
             p = node.perceptron
@@ -185,8 +246,7 @@ def generate_softcore_flowchart_dot(
                 out_features=out_f,
                 instances=inst,
                 has_bias=(p.layer.bias is not None),
-                max_axons=int(max_axons),
-                max_neurons=int(max_neurons),
+                **_est_kw,
             )
         elif isinstance(node, Conv2DPerceptronMapper):
             k_h, k_w = node.kernel_size
@@ -203,8 +263,7 @@ def generate_softcore_flowchart_dot(
                 out_features=out_f,
                 instances=inst,
                 has_bias=bool(node.bias),
-                max_axons=int(max_axons),
-                max_neurons=int(max_neurons),
+                **_est_kw,
             )
         elif isinstance(node, Conv1DPerceptronMapper):
             in_f = int(node.in_channels * node.kernel_size)
@@ -220,8 +279,7 @@ def generate_softcore_flowchart_dot(
                 out_features=out_f,
                 instances=inst,
                 has_bias=bool(node.bias),
-                max_axons=int(max_axons),
-                max_neurons=int(max_neurons),
+                **_est_kw,
             )
         elif isinstance(node, AddMapper):
             # Add is mapped as a linear op (concat + identity weights). Estimate roughly.
@@ -234,52 +292,27 @@ def generate_softcore_flowchart_dot(
                     out_features=feat,
                     instances=1,
                     has_bias=False,
-                    max_axons=int(max_axons),
-                    max_neurons=int(max_neurons),
+                    **_est_kw,
                 )
+        elif isinstance(node, StackMapper):
+            sw_text = "SW stack (host-side)"
 
         if hw is not None:
-            hw_text = f"HW cores={hw.cores_total}\\n{hw.details}"
-            if not hw.mappable and hw.reason is not None:
-                hw_text = f"HW UNMAPPABLE\\n{hw.reason}"
-        else:
-            # Heuristic: explicit non-neural ops are implemented as *OpMapper in this repo.
-            if type(node).__name__.endswith("OpMapper"):
-                hw_text = "HW UNSUPPORTED (non-spiking op)"
+            if hw.mappable:
+                hw_text = f"HW cores≈{hw.cores_total}\n{hw.details}"
+            else:
+                hw_text = f"HW UNMAPPABLE: {hw.reason}\n{hw.details}"
 
-        label_parts = [
-            _dot_escape(_node_display_name(node)),
-            _dot_escape(f"type={type(node).__name__}"),
-        ]
+        label = f"{_node_display_name(node)}\\n{sw_text}\\n{hw_text}"
         if out_shape is not None:
-            label_parts.append(_dot_escape(f"out_shape={out_shape}"))
-        label_parts.append(_dot_escape(sw_text))
-        label_parts.append(_dot_escape(hw_text))
-        label = "{ " + " | ".join(label_parts) + " }"
+            label += f"\\nout_shape={out_shape}"
 
-        # Color unsupported/non-mappable nodes
-        attrs = []
-        if hw is not None and not hw.mappable:
-            attrs.append("color=red")
-        if type(node).__name__.endswith("OpMapper"):
-            attrs.append("color=orange")
-        # StackMapper isn't directly mappable (it just structures tensors)
-        if isinstance(node, StackMapper):
-            attrs.append("color=gray")
-
-        attr_str = ""
-        if attrs:
-            attr_str = " [" + ",".join(attrs) + "]"
-
-        lines.append(f"  {nid} [label=\"{label}\"]{attr_str};")
+        lines.append(f'  {nid} [label="{_dot_escape(label)}"];')
 
     # Edges
     for node in exec_order:
-        nid = node_id[node]
         for dep in deps.get(node, []):
-            if dep is None:
-                continue
-            lines.append(f"  {node_id[dep]} -> {nid};")
+            lines.append(f"  {node_id[dep]} -> {node_id[node]};")
 
     lines.append("}")
     return "\n".join(lines)
@@ -287,12 +320,14 @@ def generate_softcore_flowchart_dot(
 
 def write_softcore_flowchart_dot(
     mapper_repr: ModelRepresentation,
-    out_path: str,
+    path: str,
     *,
     input_shape: tuple[int, ...],
     max_axons: int,
     max_neurons: int,
     device: torch.device | None = None,
+    hardware_bias: bool = False,
+    allow_coalescing: bool = True,
 ) -> None:
     dot = generate_softcore_flowchart_dot(
         mapper_repr,
@@ -300,8 +335,8 @@ def write_softcore_flowchart_dot(
         max_axons=max_axons,
         max_neurons=max_neurons,
         device=device,
+        hardware_bias=hardware_bias,
+        allow_coalescing=allow_coalescing,
     )
-    with open(out_path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(dot)
-
-

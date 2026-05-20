@@ -63,10 +63,16 @@ class IRMapping(LayoutIRMapping):
 
     def map(self, model_representation) -> IRGraph:
         output_sources = super().map(model_representation)
+        for node in self.nodes:
+            if isinstance(node, NeuralCore):
+                sc_idx = self._node_id_to_softcore_idx.get(node.id)
+                if sc_idx is not None:
+                    node.layout_softcore_index = sc_idx
         return IRGraph(
             nodes=self.nodes.copy(),
             output_sources=output_sources,
             weight_banks=dict(self._weight_banks),
+            layout_softcores=list(self.layout_softcores),
         )
 
     # Source conversion (SpikeSource / IRSource compatibility)

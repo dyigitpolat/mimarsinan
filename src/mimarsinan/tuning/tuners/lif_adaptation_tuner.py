@@ -129,6 +129,7 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
                 T=self._T,
                 activation_scale=perceptron.activation_scale,
                 thresholding_mode=self._thresholding_mode,
+                firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
             )
             perceptron.base_activation = LIFBlendActivation(old_base, lif, rate=0.0)
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)

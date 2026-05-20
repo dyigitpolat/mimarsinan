@@ -67,7 +67,11 @@ class HardCoreMappingStep(PipelineStep):
 
         hybrid_mapping = self.pipeline.cache.get("hybrid_mapping")
         if hybrid_mapping is None:
-            hybrid_mapping = build_hybrid_mapping_for_pipeline(ir_graph, platform_constraints)
+            hybrid_mapping = build_hybrid_mapping_for_pipeline(
+                ir_graph,
+                platform_constraints,
+                pipeline_config=self.pipeline.config,
+            )
 
         neural_segs = hybrid_mapping.get_neural_segments()
         compute_ops = hybrid_mapping.get_compute_ops()

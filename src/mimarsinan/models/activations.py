@@ -210,6 +210,7 @@ class LIFActivation(nn.Module):
         T: int,
         activation_scale: nn.Parameter | torch.Tensor | float,
         thresholding_mode: str = "<=",
+        firing_mode: str = "Default",
     ):
         super().__init__()
         self.T = int(T)
@@ -225,8 +226,14 @@ class LIFActivation(nn.Module):
                 f"{self._VALID_THRESHOLDING_MODES!r}; got {thresholding_mode!r}"
             )
         self.thresholding_mode = thresholding_mode
+        self.firing_mode = firing_mode
 
         from spikingjelly.activation_based import neuron, surrogate
+        from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
+
+        v_reset = FiringStrategyFactory.from_config(
+            {"firing_mode": firing_mode, "thresholding_mode": thresholding_mode, "spiking_mode": "lif"}
+        ).training_lif_v_reset()
 
         if thresholding_mode == "<":
             surrogate_fn = StrictATanSurrogate()
@@ -238,7 +245,7 @@ class LIFActivation(nn.Module):
         try:
             self.if_node = neuron.IFNode(
                 v_threshold=1.0,
-                v_reset=None,  # subtractive (soft) reset — matches nevresim Default
+                v_reset=v_reset,
                 surrogate_function=surrogate_fn,
                 step_mode="m",
                 backend=preferred_backend,
@@ -246,7 +253,7 @@ class LIFActivation(nn.Module):
         except (ImportError, RuntimeError, AttributeError):
             self.if_node = neuron.IFNode(
                 v_threshold=1.0,
-                v_reset=None,
+                v_reset=v_reset,
                 surrogate_function=surrogate_fn,
                 step_mode="m",
                 backend="torch",

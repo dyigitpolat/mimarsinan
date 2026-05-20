@@ -1599,19 +1599,20 @@ Cross-cutting helpers live next to their domain rather than in pipeline steps. R
 
 See per-package `ARCHITECTURE.md` files for detail.
 
-### Deferred dedup / follow-up (post round 3)
+### Deferred dedup / follow-up (post round 4)
 
-| Item | Why deferred | Suggested next step |
-|------|----------------|-------------------|
-| `hybrid_core_flow` → `run_hybrid_stages` | Recording, refcount eviction, and spike-train encoding need `after_neural` / `after_compute` hooks | Extend `hybrid_stage_runner` with optional context; migrate TTFS and rate loops |
-| Full `soft_core_mapper.map_fc` removal | Still used by `ir_graph_to_soft_core_mapping`, legacy mappers, nevresim segment flush; lacks `hardware_bias` / `allow_coalescing` | Route IR materialization through layout specs; gate `map_fc` behind explicit legacy flag |
-| Scheduled hybrid split ↔ layout specs | `hybrid_hardcore_mapping` rebuilds `LayoutSoftCoreSpec` ad hoc when `allow_scheduling` | Carry validated layout specs from SCM through IR build |
-| Wizard JS ↔ Python full parity | `wizard.js` still authors config in browser; Python normalizes on `/api/run` only | Drive NAS numeric defaults from `GET /api/wizard/schema`; optional `validate_wizard_state` on run |
-| `IRLatency` / `ChipLatency` merge | Different invariants (`_align_shiftable_cores` only on chip path) | Document contract; share subgraph walks only where safe |
-| `NoiseTuner` pipeline step | No preset requires it yet | Add step + preset when product needs training noise |
-| `tests/integration/parity_harness.py` | Step-level fakes exist under `tests/fixtures/` | Shared HCM vs Loihi/SANA-FE integration harness |
-| Compilagent `_platform_to_jsonable` | Shallow copy still local | Route through `to_json_safe` |
-| Unified spiking flow classes | Architectural boundary | Do not merge `SpikingUnifiedCoreFlow` / `SpikingHybridCoreFlow` |
+| Item | Status | Notes |
+|------|--------|-------|
+| `hybrid_core_flow` → `run_hybrid_stages` | Done (R4-4) | `HybridStageContext`, `after_neural` / `after_compute`; HCM uses shared runner |
+| Scheduled hybrid ↔ layout specs | Done (R4-2) | `IRGraph.layout_softcores`, `NeuralCore.layout_softcore_index`; split uses specs |
+| Segment flush without `map_fc` | Done (R4-6/7) | Default `neural_segment_to_soft_core_mapping`; `use_legacy_softcore_flush` for old path |
+| Wizard / config SSOT | Partial (R4-3) | NAS defaults from `/api/wizard/schema`; `POST /api/run?validate=1`; Python normalizes on run |
+| Latency engines | Documented (R4-1) | See `mapping/LATENCY.md` — do not merge `IRLatency` / `ChipLatency` |
+| Firing strategy parity | Done (R4-9) | `chip_simulation/firing_strategy.py`; Novena in GUI; Lava/SANA-FE/training wired |
+| `NoiseTuner` step | Done (R4-8) | Gated by `enable_training_noise` in deployment config |
+| Parity harness | Done (R4-5) | `tests/integration/parity_harness.py` + smoke test |
+| Full `map_fc` deletion | Remaining | `SoftCoreMapping.map_fc` kept for legacy mappers/tests; production flush avoids it |
+| Unified spiking flow classes | Non-goal | Do not merge `SpikingUnifiedCoreFlow` / `SpikingHybridCoreFlow` |
 
 ### Design Patterns
 - **Pipeline + Step**: Command pattern for sequential execution with dependency injection via cache
