@@ -28,16 +28,20 @@ class SoftCoreMappingStep(PipelineStep):
         self._soft_core_spiking_metric = None
 
     def validate(self):
-        if self._soft_core_spiking_metric is not None:
-            return self._soft_core_spiking_metric
-        if self.trainer is not None:
-            return self.trainer.validate()
-        return self.pipeline.get_target_metric()
+        if self._soft_core_spiking_metric is None:
+            raise RuntimeError(
+                "Soft-core spiking simulation did not produce a metric; "
+                "the step must run run_hcm_mapping_metric successfully."
+            )
+        return self._soft_core_spiking_metric
 
     def pipeline_metric(self):
-        if self._soft_core_spiking_metric is not None:
-            return self._soft_core_spiking_metric
-        return super().pipeline_metric()
+        if self._soft_core_spiking_metric is None:
+            raise RuntimeError(
+                "Soft-core spiking simulation did not produce a metric; "
+                "the step must run run_hcm_mapping_metric successfully."
+            )
+        return self._soft_core_spiking_metric
 
     def process(self):
         model = self.get_entry("fused_model")
@@ -250,20 +254,17 @@ class SoftCoreMappingStep(PipelineStep):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        try:
-            with _phase("sim_hcm_metric"):
-                acc = run_hcm_mapping_metric(
-                    self.pipeline,
-                    ir_graph,
-                    platform_constraints,
-                    device=device,
-                    outer_oom_retry=True,
-                )
-            if acc is not None:
-                self._soft_core_spiking_metric = float(acc)
-                print(f"[SoftCoreMappingStep] Soft-core Spiking Simulation Test: {acc}")
-        except Exception as e:
-            print(f"[SoftCoreMappingStep] Soft-core simulation failed (non-fatal): {e}")
+        with _phase("sim_hcm_metric"):
+            acc = run_hcm_mapping_metric(
+                self.pipeline,
+                ir_graph,
+                platform_constraints,
+                model=model,
+                device=device,
+                outer_oom_retry=True,
+            )
+        self._soft_core_spiking_metric = float(acc)
+        print(f"[SoftCoreMappingStep] Soft-core Spiking Simulation Test: {acc}")
 
     def _apply_ttfs_quantized_bias_shift(self, model, act_q: bool) -> None:
         if self.pipeline.config.get("spiking_mode", "lif") != "ttfs_quantized" or not act_q:

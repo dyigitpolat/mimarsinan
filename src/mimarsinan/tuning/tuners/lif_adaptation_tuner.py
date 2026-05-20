@@ -132,6 +132,8 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
                 firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
             )
             perceptron.base_activation = LIFBlendActivation(old_base, lif, rate=0.0)
+            if self._cycle_accurate:
+                lif.use_cycle_accurate_trains = True
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
             if getattr(perceptron, "is_encoding_layer", False):
@@ -178,6 +180,10 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
         self.adaptation_manager.lif_active = True
         for p in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, p)
+        if self._cycle_accurate:
+            from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
+
+            apply_cycle_accurate_trains_to_model(self.model, True)
 
         self._final_metric = self._ensure_pipeline_threshold()
         self._committed_rate = 1.0

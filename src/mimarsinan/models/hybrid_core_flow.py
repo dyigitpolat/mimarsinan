@@ -59,6 +59,7 @@ class SpikingHybridCoreFlow(nn.Module):
         spike_mode: str = "Uniform",
         thresholding_mode: str = "<=",
         spiking_mode: str = "lif",
+        cycle_accurate_lif_forward: bool = False,
     ):
         super().__init__()
 
@@ -71,6 +72,10 @@ class SpikingHybridCoreFlow(nn.Module):
         self.spike_mode = spike_mode
         self.thresholding_mode = thresholding_mode
         self.spiking_mode = spiking_mode
+        self.cycle_accurate_lif_forward = bool(cycle_accurate_lif_forward)
+        self._use_cycle_accurate_trains = (
+            spiking_mode == "lif" and self.cycle_accurate_lif_forward
+        )
 
         assert firing_mode in ["Default", "Novena", "TTFS"]
         assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
@@ -649,29 +654,10 @@ class SpikingHybridCoreFlow(nn.Module):
         if not hasattr(candidate, "forward_spiking"):
             return None
         activation = getattr(candidate, "activation", None)
-        if SpikingHybridCoreFlow._unwrap_lif_activation(activation) is not None:
+        from mimarsinan.spiking.lif_utils import unwrap_lif_activation
+
+        if unwrap_lif_activation(activation) is not None:
             return candidate
-        return None
-
-    @staticmethod
-    def _unwrap_lif_activation(activation):
-        """Walk activation wrappers and return inner ``LIFActivation``, or None."""
-        from mimarsinan.models.activations import LIFActivation
-        from mimarsinan.models.layers import TransformedActivation
-        from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFBlendActivation
-
-        for _ in range(8):  # depth cap — chain is at most 2 wrappers in practice
-            if activation is None:
-                return None
-            if isinstance(activation, LIFActivation):
-                return activation
-            if isinstance(activation, TransformedActivation):
-                activation = getattr(activation, "base_activation", None)
-                continue
-            if isinstance(activation, LIFBlendActivation):
-                activation = activation.lif_activation
-                continue
-            return None
         return None
 
     def _build_segment_input_spike_train(
@@ -685,32 +671,72 @@ class SpikingHybridCoreFlow(nn.Module):
         device: torch.device,
     ) -> torch.Tensor:
         """Build ``(T, B, in_size)`` spike train; prefer cached LIF trains over uniform encoding."""
+        from mimarsinan.spiking.spike_trains import rates_to_spike_train, uniform_spike_train
+
         in_size = seg_input_rates_clamped.shape[1]
         spike_train = torch.zeros(
             T, batch_size, in_size, device=device, dtype=_COMPUTE_DTYPE,
         )
         filled_ranges: list[tuple[int, int]] = []
+        missing_slices: list[int] = []
         for s in stage.input_map:
             train = state_buffer_spikes.get(s.node_id)
             if train is None:
+                missing_slices.append(int(s.node_id))
                 continue
             spike_train[:, :, s.offset : s.offset + s.size] = (
                 train[:, :, : s.size].to(_COMPUTE_DTYPE)
             )
             filled_ranges.append((s.offset, s.offset + s.size))
 
-        if not filled_ranges:
-            for cycle in range(T):
-                spike_train[cycle] = self.to_spikes(
-                    seg_input_rates_clamped, cycle,
+        if self._use_cycle_accurate_trains:
+            if filled_ranges and not missing_slices:
+                return spike_train
+            only_raw_input = (
+                len(stage.input_map) == 1
+                and int(stage.input_map[0].node_id) == -2
+            )
+            if not filled_ranges and only_raw_input:
+                return uniform_spike_train(
+                    seg_input_rates_clamped, T,
                 ).to(_COMPUTE_DTYPE)
+            # Host conv / structural ComputeOps (e.g. patch_embed) feed rates, not
+            # LIF spike trains. Uniform-encode the assembled rates, then overlay
+            # any encoding-Perceptron LIF trains we do have.
+            if missing_slices:
+                import logging
+
+                logging.getLogger("mimarsinan.spiking.spike_trains").warning(
+                    "Cycle-accurate LIF: no encoding spike train for node_id(s) %s "
+                    "on stage %r; uniform-encoding rate slices (typical for conv "
+                    "patch_embed boundaries).",
+                    missing_slices,
+                    stage.name,
+                )
+            encoded = uniform_spike_train(
+                seg_input_rates_clamped, T,
+            ).to(_COMPUTE_DTYPE)
+            for lo, hi in filled_ranges:
+                encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
+            return encoded
+
+        if not filled_ranges:
+            return rates_to_spike_train(
+                seg_input_rates_clamped,
+                T,
+                spike_mode=self.spike_mode,
+                log_fallback=True,
+            ).to(_COMPUTE_DTYPE)
+
+        if not missing_slices:
             return spike_train
 
-        encoded = torch.zeros_like(spike_train)
-        for cycle in range(T):
-            encoded[cycle] = self.to_spikes(
-                seg_input_rates_clamped, cycle,
-            ).to(_COMPUTE_DTYPE)
+        encoded = rates_to_spike_train(
+            seg_input_rates_clamped,
+            T,
+            spike_mode=self.spike_mode,
+            log_fallback=False,
+        ).to(_COMPUTE_DTYPE)
         for lo, hi in filled_ranges:
             encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
         return encoded

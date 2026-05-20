@@ -37,8 +37,11 @@ def build_spiking_hybrid_flow(
     hybrid_mapping,
     *,
     preprocessor=None,
+    model=None,
 ) -> SpikingHybridCoreFlow:
     cfg = pipeline.config
+    if preprocessor is None and model is not None:
+        preprocessor = getattr(model, "preprocessor", None)
     flow = SpikingHybridCoreFlow(
         cfg["input_shape"],
         hybrid_mapping,
@@ -48,8 +51,47 @@ def build_spiking_hybrid_flow(
         cfg["spike_generation_mode"],
         cfg["thresholding_mode"],
         spiking_mode=cfg.get("spiking_mode", "lif"),
+        cycle_accurate_lif_forward=bool(cfg.get("cycle_accurate_lif_forward", False)),
     )
+    if cfg.get("cycle_accurate_lif_forward") and model is not None:
+        from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
+
+        apply_cycle_accurate_trains_to_model(model, True)
     return flow.to(cfg["device"])
+
+
+def run_trainer_metric(
+    pipeline,
+    model,
+    *,
+    device: str | None = None,
+    max_batch_cap: int | None = None,
+) -> float:
+    """Run the same subsample/full test policy as HCM spiking simulation."""
+    device = device or pipeline.config["device"]
+    trainer = BasicTrainer(
+        model,
+        device,
+        DataLoaderFactory(pipeline.data_provider_factory),
+        None,
+    )
+    try:
+        if max_batch_cap is not None:
+            trainer.set_test_batch_size(
+                min(int(trainer.test_batch_size), int(max_batch_cap))
+            )
+        max_samples = int(pipeline.config.get("max_simulation_samples", 0) or 0)
+        if max_samples > 0:
+            return float(
+                trainer.test_on_subsample(
+                    max_samples=max_samples,
+                    seed=int(pipeline.config.get("seed", 0)),
+                )
+            )
+        sim_batches = pipeline.config.get("simulation_batch_count", None)
+        return float(trainer.test(max_batches=sim_batches))
+    finally:
+        trainer.close()
 
 
 def run_hcm_spiking_test(
@@ -62,31 +104,17 @@ def run_hcm_spiking_test(
 ) -> float:
     """Run soft-core / HCM metric test with subsample or batch limit from config."""
     device = device or pipeline.config["device"]
-    sim_batches = pipeline.config.get("simulation_batch_count", None)
-    max_samples = int(pipeline.config.get("max_simulation_samples", 0) or 0)
     attempt_cap = max_batch_cap
     last_error: Exception | None = None
 
     for attempt in range(2 if retry_on_oom else 1):
-        trainer = BasicTrainer(
-            flow,
-            device,
-            DataLoaderFactory(pipeline.data_provider_factory),
-            None,
-        )
         try:
-            if attempt_cap is not None:
-                trainer.set_test_batch_size(
-                    min(int(trainer.test_batch_size), int(attempt_cap))
-                )
-            if max_samples > 0:
-                return float(
-                    trainer.test_on_subsample(
-                        max_samples=max_samples,
-                        seed=int(pipeline.config.get("seed", 0)),
-                    )
-                )
-            return float(trainer.test(max_batches=sim_batches))
+            return run_trainer_metric(
+                pipeline,
+                flow,
+                device=device,
+                max_batch_cap=attempt_cap,
+            )
         except RuntimeError as exc:
             last_error = exc
             oom_cls = getattr(torch.cuda, "OutOfMemoryError", ())
@@ -94,8 +122,6 @@ def run_hcm_spiking_test(
             if not retry_on_oom or not is_oom or attempt >= 1:
                 raise
             attempt_cap = int(pipeline.config.get("simulation_batch_size", 8))
-        finally:
-            trainer.close()
 
     if last_error is not None:
         raise last_error
@@ -126,15 +152,16 @@ def run_hcm_mapping_metric(
     platform_constraints: dict[str, Any],
     *,
     hybrid_mapping: Any | None = None,
+    model=None,
     cache_key: str = "hybrid_mapping",
     device: str | None = None,
     max_batch_cap: int | None = None,
     retry_on_oom: bool = False,
     outer_oom_retry: bool = False,
-) -> float | None:
+) -> float:
     """Build hybrid mapping, run HCM spiking test, optionally cache mapping.
 
-    Returns accuracy or None on non-fatal failure when ``outer_oom_retry`` handles OOM.
+    Returns test accuracy. Raises on simulation failure (including after OOM retry).
     """
     device = device or pipeline.config["device"]
     attempt_cap = max_batch_cap
@@ -149,7 +176,9 @@ def run_hcm_mapping_metric(
                     pipeline_config=pipeline.config,
                 )
                 pipeline.cache.add(cache_key, hybrid_mapping, "pickle")
-            flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping)
+            flow = build_spiking_hybrid_flow(
+                pipeline, hybrid_mapping, model=model,
+            )
             return float(
                 run_hcm_spiking_test(
                     pipeline,
@@ -173,7 +202,7 @@ def run_hcm_mapping_metric(
 
     if last_exc is not None:
         raise last_exc
-    return None
+    raise RuntimeError("run_hcm_mapping_metric failed without raising")
 
 
 def assert_spike_parity_or_raise(ref, actual) -> None:

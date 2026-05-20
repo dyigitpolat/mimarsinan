@@ -10,23 +10,9 @@ from torch.autograd import Function
 
 def uniform_encode_to_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
     """Encode rates in [0, 1] to a uniform-spaced spike train of length T."""
-    rate_c = rate.clamp(0.0, 1.0)
-    N = torch.round(rate_c * T).to(torch.long)
-    N_safe = N.clamp(min=1)
-    spacing = T / N_safe.float()
-    cycles = torch.arange(T, device=rate.device).reshape((T,) + (1,) * rate.ndim)
-    mask_active = (N != 0) & (N != T)
-    fire = (
-        mask_active
-        & (torch.floor(cycles / spacing) < N_safe)
-        & (torch.floor(cycles % spacing) == 0)
-    ).to(rate.dtype)
-    fire = torch.where(
-        (N == T).expand_as(fire),
-        torch.ones_like(fire),
-        fire,
-    )
-    return fire
+    from mimarsinan.spiking.spike_trains import uniform_spike_train
+
+    return uniform_spike_train(rate, T)
 
 
 def run_cycle_accurate(
@@ -41,7 +27,9 @@ def run_cycle_accurate(
     if forward_fn is None:
         forward_fn = model.forward
 
-    spike_train = uniform_encode_to_spike_train(x, T)  # (T, B, ...)
+    from mimarsinan.spiking.spike_trains import uniform_spike_train
+
+    spike_train = uniform_spike_train(x, T)  # (T, B, ...)
 
     lif_modules = [m for m in model.modules() if isinstance(m, LIFActivation)]
     for m in lif_modules:
@@ -260,6 +248,7 @@ class LIFActivation(nn.Module):
             )
 
         self._cycle_accurate_mode = False
+        self.use_cycle_accurate_trains = False
 
     @property
     def activation_type(self) -> str:
@@ -285,6 +274,10 @@ class LIFActivation(nn.Module):
 
     def forward_spiking(self, x: torch.Tensor) -> torch.Tensor:
         """Return the actual (T, B, ...) LIF spike train."""
+        if self.use_cycle_accurate_trains:
+            from mimarsinan.spiking.spike_trains import lif_spike_train
+
+            return lif_spike_train(x, self, self.T)
         spikes, _ = self._spikes_and_scale(x)
         return spikes
 

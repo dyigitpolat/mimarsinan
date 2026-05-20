@@ -8,7 +8,6 @@ from mimarsinan.pipelining.simulation_factory import (
 
 import torch
 import torch.nn as nn
-import traceback
 import os
 
 
@@ -47,17 +46,17 @@ class HardCoreMappingStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
 
     def validate(self):
-        """Return hard-core sim accuracy; 0.0 on sim failure (not target fallback)."""
-        if getattr(self, "_last_metric_is_failure", False):
-            return 0.0
+        """Return hard-core spiking simulation accuracy from the step metric run."""
         m = getattr(self, "_last_metric", None)
-        if m is not None:
-            return m
-        return self.pipeline.get_target_metric()
+        if m is None:
+            raise RuntimeError(
+                "Hard-core spiking simulation did not produce a metric; "
+                "the step must run run_hcm_mapping_metric successfully."
+            )
+        return m
 
     def process(self):
         self._last_metric = None
-        self._last_metric_is_failure = False
         _vram_probe("process_entry")
         model = self.get_entry("model")
         ir_graph = self.get_entry('ir_graph')
@@ -99,23 +98,18 @@ class HardCoreMappingStep(PipelineStep):
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")
         _vram_probe("after_pickle_save")
 
-        try:
-            _vram_probe("before_test")
-            acc = run_hcm_mapping_metric(
-                self.pipeline,
-                ir_graph,
-                platform_constraints,
-                hybrid_mapping=hybrid_mapping,
-                cache_key="hybrid_mapping",
-            )
-            _vram_probe("after_test")
-            self._last_metric = float(acc)
-            print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
-        except Exception as e:
-            print(f"[HardCoreMappingStep] Hard-core simulation test FAILED: {e}")
-            traceback.print_exc()
-            self._last_metric = None
-            self._last_metric_is_failure = True
+        _vram_probe("before_test")
+        acc = run_hcm_mapping_metric(
+            self.pipeline,
+            ir_graph,
+            platform_constraints,
+            hybrid_mapping=hybrid_mapping,
+            model=model,
+            cache_key="hybrid_mapping",
+        )
+        _vram_probe("after_test")
+        self._last_metric = float(acc)
+        print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
 
         if self.pipeline.config.get("generate_visualizations", False):
             def _viz():

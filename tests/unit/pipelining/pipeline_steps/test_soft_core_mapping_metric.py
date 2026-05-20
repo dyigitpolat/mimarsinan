@@ -53,15 +53,13 @@ def test_ttfs_shifted_soft_core_mapping_metric_prefers_spiking_result():
     assert step.pipeline_metric() == pytest.approx(0.8125)
 
 
-def test_soft_core_metric_falls_back_when_sim_did_not_run():
-    """If the spiking sim didn't set a metric (e.g. it crashed non-fatally),
-    fall through to the FP trainer so the pipeline still gets a number."""
+def test_soft_core_validate_raises_when_spiking_sim_did_not_run():
     step = SoftCoreMappingStep(MockPipeline())
     step.trainer = _Trainer(validate_value=0.75, test_value=0.875)
     step._soft_core_spiking_metric = None
 
-    assert step.validate() == pytest.approx(0.75)
-    assert step.pipeline_metric() == pytest.approx(0.875)
+    with pytest.raises(RuntimeError, match="Soft-core spiking simulation"):
+        step.validate()
 
 
 def test_soft_core_mapping_does_not_require_scaled_simulation_length():
