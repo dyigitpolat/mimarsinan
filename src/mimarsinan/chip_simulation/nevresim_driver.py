@@ -83,7 +83,9 @@ class NevresimDriver:
             main_cpp_template, get_config(
                 self.spike_generation_mode, self.firing_mode,
                 wt_cpp, self.spiking_mode, threshold_type=tt_cpp),
-            verbose=verbose)
+            verbose=verbose,
+            chip_input_size=int(self.chip.input_size),
+        )
 
     def emit_main_and_compile(
         self, max_input_count, simulation_length, latency, output_path=None

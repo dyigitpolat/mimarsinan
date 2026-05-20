@@ -81,6 +81,21 @@ class SpikingHybridCoreFlow(nn.Module):
         assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
         assert thresholding_mode in ["<", "<="]
 
+        from mimarsinan.spiking.segment_encoding import (
+            BoundaryLifCache,
+            SegmentEncodingConfig,
+        )
+        self._segment_encoding = SegmentEncodingConfig(
+            simulation_length=self.simulation_length,
+            spiking_mode=self.spiking_mode,
+            cycle_accurate=self.cycle_accurate_lif_forward,
+            spike_mode=self.spike_mode,
+            thresholding_mode=self.thresholding_mode,
+            firing_mode=self.firing_mode,
+            compute_dtype=_COMPUTE_DTYPE,
+        )
+        self._lif_cache = BoundaryLifCache()
+
         # Single-segment LRU: one segment's weights on GPU at a time (ViT-scale OOM otherwise).
         self._segment_tensor_cache: Dict[int, dict] = {}
         self._segment_tensor_cache_key: int | None = None
@@ -172,6 +187,18 @@ class SpikingHybridCoreFlow(nn.Module):
         output_tensor: torch.Tensor,
     ) -> None:
         store_segment_output_torch(output_map, state_buffer, output_tensor)
+
+    @staticmethod
+    def _store_segment_output_spikes(
+        output_map: list[SegmentIOSlice],
+        state_buffer_spikes: Dict[int, torch.Tensor],
+        output_spike_train: torch.Tensor,
+    ) -> None:
+        """Store ``(T, B, D)`` segment output spike trains keyed by IR node_id."""
+        for s in output_map:
+            state_buffer_spikes[int(s.node_id)] = (
+                output_spike_train[:, :, s.offset : s.offset + s.size].contiguous()
+            )
 
     def _gather_final_output(
         self,
@@ -333,8 +360,10 @@ class SpikingHybridCoreFlow(nn.Module):
         *,
         input_spike_train: torch.Tensor,
         recorder_seg: SegmentSpikeRecord | None = None,
-    ) -> torch.Tensor:
-        """Rate-coded segment: cycle loop over cores; returns spike counts ``(B, out_dim)``."""
+        return_output_spike_train: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Rate-coded segment: cycle loop over cores; returns spike counts ``(B, out_dim)``,
+        plus optional ``(T, B, out_dim)`` per-cycle output spike train."""
         mapping = stage.hard_core_mapping
         assert mapping is not None
 
@@ -372,6 +401,11 @@ class SpikingHybridCoreFlow(nn.Module):
         ]
 
         output_counts = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
+        output_spike_train: torch.Tensor | None = None
+        if return_output_spike_train:
+            output_spike_train = torch.zeros(
+                T, batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE,
+            )
 
         zeros_in = torch.zeros(batch_size, input_size, device=device, dtype=_COMPUTE_DTYPE)
         input_signals = [
@@ -440,9 +474,15 @@ class SpikingHybridCoreFlow(nn.Module):
                     # Always-on axon: one spike per input cycle only (cycles [0, T)).
                     if cycle < T:
                         output_counts[:, d0:d1] += 1.0
+                        if output_spike_train is not None:
+                            output_spike_train[cycle, :, d0:d1] += 1.0
                     continue
                 if sp.kind == "input":
-                    output_counts[:, d0:d1] += input_spikes[:, int(sp.src_start):int(sp.src_end)]
+                    if cycle < T:
+                        sl = input_spikes[:, int(sp.src_start):int(sp.src_end)]
+                        output_counts[:, d0:d1] += sl
+                        if output_spike_train is not None:
+                            output_spike_train[cycle, :, d0:d1] += sl
                     continue
                 src_lat = cores[int(sp.src_core)].latency
                 if src_lat is None:
@@ -450,7 +490,12 @@ class SpikingHybridCoreFlow(nn.Module):
                 # Neuron output: accumulate only inside source core's active window [lat, lat+T).
                 if cycle < int(src_lat) or cycle >= int(src_lat) + T:
                     continue
-                output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+                out_sl = buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+                output_counts[:, d0:d1] += out_sl
+                if output_spike_train is not None:
+                    in_t = cycle - int(src_lat)
+                    if 0 <= in_t < T:
+                        output_spike_train[in_t, :, d0:d1] += out_sl
 
         if recording:
             for core_idx, core in enumerate(cores):
@@ -471,6 +516,9 @@ class SpikingHybridCoreFlow(nn.Module):
                     )
                 )
 
+        if return_output_spike_train:
+            assert output_spike_train is not None
+            return output_counts, output_spike_train
         return output_counts
 
     def _run_neural_segment_ttfs(
@@ -641,25 +689,6 @@ class SpikingHybridCoreFlow(nn.Module):
         final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
         return final.to(torch.float32) * float(T)
 
-    @staticmethod
-    def _resolve_lif_perceptron(module):
-        """Return inner ``Perceptron`` with ``LIFActivation`` for encoding spike trains, else None."""
-        from mimarsinan.models.activations import LIFActivation
-
-        if module is None:
-            return None
-        if hasattr(module, "perceptron") and module is not getattr(module, "perceptron"):
-            return None
-        candidate = module
-        if not hasattr(candidate, "forward_spiking"):
-            return None
-        activation = getattr(candidate, "activation", None)
-        from mimarsinan.spiking.lif_utils import unwrap_lif_activation
-
-        if unwrap_lif_activation(activation) is not None:
-            return candidate
-        return None
-
     def _build_segment_input_spike_train(
         self,
         stage,
@@ -671,92 +700,19 @@ class SpikingHybridCoreFlow(nn.Module):
         device: torch.device,
     ) -> torch.Tensor:
         """Build ``(T, B, in_size)`` spike train; prefer cached LIF trains over uniform encoding."""
-        from mimarsinan.spiking.spike_trains import rates_to_spike_train, uniform_spike_train
+        from mimarsinan.spiking.segment_encoding import build_segment_input_spike_train
 
-        in_size = seg_input_rates_clamped.shape[1]
-        spike_train = torch.zeros(
-            T, batch_size, in_size, device=device, dtype=_COMPUTE_DTYPE,
-        )
-        filled_ranges: list[tuple[int, int]] = []
-        missing_slices: list[int] = []
-        for s in stage.input_map:
-            train = state_buffer_spikes.get(s.node_id)
-            if train is None:
-                missing_slices.append(int(s.node_id))
-                continue
-            spike_train[:, :, s.offset : s.offset + s.size] = (
-                train[:, :, : s.size].to(_COMPUTE_DTYPE)
-            )
-            filled_ranges.append((s.offset, s.offset + s.size))
-
-        if self._use_cycle_accurate_trains:
-            if filled_ranges and not missing_slices:
-                return spike_train
-            only_raw_input = (
-                len(stage.input_map) == 1
-                and int(stage.input_map[0].node_id) == -2
-            )
-            if not filled_ranges and only_raw_input:
-                return uniform_spike_train(
-                    seg_input_rates_clamped, T,
-                ).to(_COMPUTE_DTYPE)
-            # Host conv / structural ComputeOps (e.g. patch_embed) feed rates, not
-            # LIF spike trains. Uniform-encode the assembled rates, then overlay
-            # any encoding-Perceptron LIF trains we do have.
-            if missing_slices:
-                import logging
-
-                logging.getLogger("mimarsinan.spiking.spike_trains").warning(
-                    "Cycle-accurate LIF: no encoding spike train for node_id(s) %s "
-                    "on stage %r; uniform-encoding rate slices (typical for conv "
-                    "patch_embed boundaries).",
-                    missing_slices,
-                    stage.name,
-                )
-            encoded = uniform_spike_train(
-                seg_input_rates_clamped, T,
-            ).to(_COMPUTE_DTYPE)
-            for lo, hi in filled_ranges:
-                encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
-            return encoded
-
-        if not filled_ranges:
-            return rates_to_spike_train(
-                seg_input_rates_clamped,
-                T,
-                spike_mode=self.spike_mode,
-                log_fallback=True,
-            ).to(_COMPUTE_DTYPE)
-
-        if not missing_slices:
-            return spike_train
-
-        encoded = rates_to_spike_train(
+        return build_segment_input_spike_train(
+            stage,
             seg_input_rates_clamped,
-            T,
-            spike_mode=self.spike_mode,
-            log_fallback=False,
-        ).to(_COMPUTE_DTYPE)
-        for lo, hi in filled_ranges:
-            encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
-        return encoded
-
-    def _try_emit_encoding_spike_train(self, op, x: torch.Tensor) -> torch.Tensor | None:
-        """Run encoding Perceptron ``forward_spiking`` when wrapped with LIF; else None."""
-        if self.spiking_mode != "lif":
-            return None
-        module = (op.params or {}).get("module") if hasattr(op, "params") else None
-        perceptron = self._resolve_lif_perceptron(module)
-        if perceptron is None:
-            return None
-        gathered = op.gather_inputs(x, {})
-        if op.input_shape is not None:
-            gathered = gathered.view(gathered.shape[0], *op.input_shape)
-        spikes = perceptron.forward_spiking(gathered)
-        T_ax = spikes.shape[0]
-        B = spikes.shape[1]
-        spikes = spikes.reshape(T_ax, B, -1)
-        return spikes
+            state_buffer_spikes,
+            config=self._segment_encoding,
+            hybrid_mapping=self.hybrid_mapping,
+            lif_cache=self._lif_cache,
+            T=T,
+            batch_size=batch_size,
+            device=device,
+        )
 
     def _forward_rate(self, x: torch.Tensor) -> torch.Tensor:
         """Rate-coded forward; encoding LIF ComputeOps pass spike trains to the next neural segment."""
@@ -814,13 +770,26 @@ class SpikingHybridCoreFlow(nn.Module):
                     seg_output_spike_count=np.zeros(0, dtype=np.int64),
                 )
 
-            counts = self._run_neural_segment_rate(
-                stage, input_spike_train=spike_train, recorder_seg=recorder_seg,
-            )
+            want_out_trains = self._use_cycle_accurate_trains
+            if want_out_trains:
+                counts, out_spike_train = self._run_neural_segment_rate(
+                    stage,
+                    input_spike_train=spike_train,
+                    recorder_seg=recorder_seg,
+                    return_output_spike_train=True,
+                )
+            else:
+                counts = self._run_neural_segment_rate(
+                    stage, input_spike_train=spike_train, recorder_seg=recorder_seg,
+                )
             seg_output_rates = counts / float(T)
             self._store_segment_output(
                 stage.output_map, ctx.state_buffer, seg_output_rates,
             )
+            if want_out_trains:
+                self._store_segment_output_spikes(
+                    stage.output_map, ctx.state_buffer_spikes, out_spike_train,
+                )
 
             if recorder_seg is not None and ctx.recorder is not None:
                 recorder_seg.seg_output_spike_count = (
@@ -851,7 +820,16 @@ class SpikingHybridCoreFlow(nn.Module):
             )
             ctx.state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
 
-            spike_train = self._try_emit_encoding_spike_train(op, x)
+            from mimarsinan.spiking.segment_encoding import emit_compute_spike_train
+
+            spike_train = emit_compute_spike_train(
+                op=op,
+                state_buffer=ctx.state_buffer,
+                state_buffer_spikes=ctx.state_buffer_spikes,
+                config=self._segment_encoding,
+                hybrid_mapping=self.hybrid_mapping,
+                lif_cache=self._lif_cache,
+            )
             if spike_train is not None:
                 ctx.state_buffer_spikes[op.id] = spike_train
 

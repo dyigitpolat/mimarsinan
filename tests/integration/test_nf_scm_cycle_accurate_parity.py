@@ -65,6 +65,10 @@ def _build_cycle_accurate_lif_model():
             super().__init__()
             self.preprocessor = torch.nn.Identity()
             self._repr = repr_
+            # Register perceptrons as submodules so ``model.modules()`` reaches
+            # their LIFActivations (needed by ``run_cycle_accurate``).
+            self.p1 = p1
+            self.p2 = p2
 
         def forward(self, x):
             return self._repr(x)
@@ -115,6 +119,42 @@ def test_nf_scm_subsample_parity_cycle_accurate() -> None:
     )
     scm_acc = run_trainer_metric(pipeline, flow)
 
-    assert abs(nf_acc - scm_acc) <= 0.05, (
+    assert abs(nf_acc - scm_acc) <= 1e-3, (
         f"NF subsample {nf_acc:.4f} vs SCM {scm_acc:.4f} (gap {abs(nf_acc - scm_acc):.4f})"
     )
+
+
+def test_nf_scm_per_sample_output_parity_cycle_accurate() -> None:
+    """Stronger: per-sample, per-output equality after Phase A boundary fix."""
+    torch.manual_seed(0)
+    cfg = _lif_mlp_pipeline_config()
+    model, repr_ = _build_cycle_accurate_lif_model()
+    T = int(cfg["simulation_steps"])
+
+    ir = IRMapping(
+        q_max=127.0,
+        firing_mode="Default",
+        max_axons=32,
+        max_neurons=32,
+    ).map(repr_)
+    hybrid = build_hybrid_hard_core_mapping(
+        ir_graph=ir,
+        cores_config=[{"max_axons": 32, "max_neurons": 32, "count": 4}],
+    )
+    flow = SpikingHybridCoreFlow(
+        cfg["input_shape"],
+        hybrid,
+        simulation_length=T,
+        preprocessor=model.preprocessor,
+        firing_mode=cfg["firing_mode"],
+        spike_mode=cfg["spike_generation_mode"],
+        thresholding_mode=cfg["thresholding_mode"],
+        spiking_mode="lif",
+        cycle_accurate_lif_forward=True,
+    )
+
+    x = torch.rand(8, 8)
+    with torch.no_grad():
+        nf_out = run_cycle_accurate(model, x, T)
+        scm_out = flow(x) / float(T)
+    torch.testing.assert_close(nf_out, scm_out.to(torch.float32), atol=1e-6, rtol=0.0)

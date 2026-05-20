@@ -116,6 +116,11 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
 
     def _install_cycle_accurate_forward(self) -> None:
         """Patch model.forward to run_cycle_accurate for training."""
+        assert "forward" not in self.model.__dict__, (
+            "LIFAdaptationTuner: model.forward is already patched; double-install "
+            "would shadow the prior wrapper. Call _after_run on the previous tuner "
+            "first."
+        )
         self._patched_forward = True
         self.model.forward = _CycleAccurateForward(
             model=self.model,
@@ -167,15 +172,18 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _after_run(self):
-        self._continue_to_full_rate()
-        self._set_rate(1.0)
-
-        if not self._cycle_accurate and getattr(self, "_patched_forward", False):
-            try:
-                del self.model.forward
-            except AttributeError:
-                pass
-            self._patched_forward = False
+        try:
+            self._continue_to_full_rate()
+            self._set_rate(1.0)
+        finally:
+            # Always unpatch model.forward, regardless of cycle-accurate flag.
+            # Subsequent pipeline stages and tuners assume the pristine class forward.
+            if getattr(self, "_patched_forward", False):
+                try:
+                    del self.model.forward
+                except AttributeError:
+                    pass
+                self._patched_forward = False
 
         self.adaptation_manager.lif_active = True
         for p in self.model.get_perceptrons():
