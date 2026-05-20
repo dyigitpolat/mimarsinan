@@ -81,4 +81,9 @@ def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
         pc = dict(pc)
     out["platform_constraints"] = pc
 
+    # Edit & continue: preserve internal keys (not written to saved JSON templates).
+    continue_from = state.get("_continue_from_run_id")
+    if continue_from:
+        out["_continue_from_run_id"] = continue_from
+
     return out

@@ -100,6 +100,15 @@ class TestBuildDeploymentConfigFromState:
         out = build_deployment_config_from_state({})
         assert "max_simulation_samples" not in out["deployment_parameters"]
 
+    def test_continue_from_run_id_preserved_for_edit_and_continue(self):
+        source = "mnist_hard_all_lif_phased_deployment_run_20260520_094327"
+        out = build_deployment_config_from_state({
+            "experiment_name": "mnist_hard_all_lif",
+            "start_step": "Simulation",
+            "_continue_from_run_id": source,
+        })
+        assert out["_continue_from_run_id"] == source
+
 
 class TestValidateWizardState:
     def test_valid_state_passes(self):

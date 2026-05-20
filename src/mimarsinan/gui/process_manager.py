@@ -368,6 +368,15 @@ class ProcessManager:
         if step_status == "pending" and sd.get("end_time") is not None:
             step_status = "completed"
 
+        snapshot = sd.get("snapshot")
+        snapshot_key_kinds = sd.get("snapshot_key_kinds")
+        if snapshot is None:
+            from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
+
+            rebuilt = rebuild_step_snapshot_from_disk(managed.working_dir, step_name)
+            if rebuilt is not None:
+                snapshot, snapshot_key_kinds = rebuilt
+
         return {
             "name": step_name,
             "status": step_status,
@@ -377,8 +386,8 @@ class ProcessManager:
                 if sd.get("start_time") and sd.get("end_time") else None,
             "target_metric": sd.get("target_metric"),
             "metrics": metrics,
-            "snapshot": sd.get("snapshot"),
-            "snapshot_key_kinds": sd.get("snapshot_key_kinds"),
+            "snapshot": snapshot,
+            "snapshot_key_kinds": snapshot_key_kinds,
         }
 
     def get_working_dir(self, run_id: str) -> str | None:

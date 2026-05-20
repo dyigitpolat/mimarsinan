@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mimarsinan.gui.persistence import load_persisted_steps, load_live_metrics, load_console_logs
+from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -143,6 +144,12 @@ def get_run_step_detail(run_id: str, step_name: str) -> dict[str, Any] | None:
     sd = steps_data.get(step_name)
     if sd is None:
         return None
+    snapshot = sd.get("snapshot")
+    snapshot_key_kinds = sd.get("snapshot_key_kinds")
+    if snapshot is None:
+        rebuilt = rebuild_step_snapshot_from_disk(str(run_dir), step_name)
+        if rebuilt is not None:
+            snapshot, snapshot_key_kinds = rebuilt
     return {
         "name": step_name,
         "status": "completed" if sd.get("end_time") else "pending",
@@ -152,6 +159,6 @@ def get_run_step_detail(run_id: str, step_name: str) -> dict[str, Any] | None:
             if sd.get("start_time") and sd.get("end_time") else None,
         "target_metric": sd.get("target_metric"),
         "metrics": sd.get("metrics", []),
-        "snapshot": sd.get("snapshot"),
-        "snapshot_key_kinds": sd.get("snapshot_key_kinds"),
+        "snapshot": snapshot,
+        "snapshot_key_kinds": snapshot_key_kinds,
     }
