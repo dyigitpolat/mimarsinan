@@ -35,24 +35,3 @@ def apply_cycle_accurate_trains_to_model(model, enabled: bool) -> None:
             module.use_cycle_accurate_trains = flag
         elif isinstance(module, LIFBlendActivation):
             module.lif_activation.use_cycle_accurate_trains = flag
-
-
-def boundary_lif_activation(
-    *,
-    T: int,
-    activation_scale,
-    thresholding_mode: str = "<=",
-    firing_mode: str = "Default",
-) -> LIFActivation:
-    """Fresh frozen ``LIFActivation`` for ephemeral boundary spike-train emission."""
-    lif = LIFActivation(
-        T=int(T),
-        activation_scale=activation_scale,
-        thresholding_mode=thresholding_mode,
-        firing_mode=firing_mode,
-    )
-    lif.use_cycle_accurate_trains = True
-    lif.eval()
-    for p in lif.parameters():
-        p.requires_grad_(False)
-    return lif

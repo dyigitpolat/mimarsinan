@@ -17,24 +17,17 @@ from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
 
 
 class _CycleAccurateForward:
-    """Picklable forward wrapper that runs run_cycle_accurate via the class forward."""
+    """Picklable ``model.forward`` override that drives ``run_cycle_accurate``
+    on top of the model's class-level forward, used during the LIF blend ramp."""
 
-    def __init__(self, model, T: int, chip_aligned: bool = False):
-        # ``chip_aligned`` kept for compatibility with the prior session's
-        # experiment; current default behaviour is the standard
-        # ``run_cycle_accurate`` (it doesn't compose with the blend ramp).
+    def __init__(self, model, T: int):
         self.model = model
         self.T = int(T)
-        self.chip_aligned = bool(chip_aligned)
 
     def _call_unpatched_forward(self, x):
         return type(self.model).forward(self.model, x)
 
     def __call__(self, x):
-        if self.chip_aligned:
-            from mimarsinan.spiking.chip_aligned_nf import chip_aligned_nf_forward
-
-            return chip_aligned_nf_forward(self.model, x, self.T)
         return run_cycle_accurate(
             self.model, x, self.T,
             forward_fn=self._call_unpatched_forward,
@@ -42,14 +35,9 @@ class _CycleAccurateForward:
 
 
 class _ChipAlignedNFForward:
-    """Picklable ``model.forward`` override: chip-aligned NF for post-LIF-Adapt.
-
-    Installed at the end of ``LIFAdaptationTuner._after_run`` (rate==1.0) and
-    intentionally **left in place** through the rest of the pipeline. WQ,
-    NormFusion, and SCM-side accuracy probes all then validate / calibrate
-    against the same forward the chip simulators run — closing the NF→chip
-    gap by making them literally compute the same thing.
-    """
+    """Picklable ``model.forward`` override installed post-blend (rate==1.0).
+    Routes NF through ``chip_aligned_nf_forward`` so downstream calibrators
+    (WQ, NormFusion, SCM probes) see the same forward the chip simulators run."""
 
     def __init__(self, model, T: int):
         self.model = model
@@ -143,20 +131,14 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
             self._install_cycle_accurate_forward()
 
     def _install_cycle_accurate_forward(self) -> None:
-        """Patch model.forward to (chip-aligned) run_cycle_accurate for training."""
+        """Patch model.forward to run_cycle_accurate for the duration of the blend ramp."""
         assert "forward" not in self.model.__dict__, (
             "LIFAdaptationTuner: model.forward is already patched; double-install "
             "would shadow the prior wrapper. Call _after_run on the previous tuner "
             "first."
         )
         self._patched_forward = True
-        self.model.forward = _CycleAccurateForward(
-            model=self.model,
-            T=self._T,
-            chip_aligned=bool(
-                self.pipeline.config.get("chip_aligned_lif_adaptation", False)
-            ),
-        )
+        self.model.forward = _CycleAccurateForward(model=self.model, T=self._T)
 
     def _install_blend(self) -> None:
         for perceptron in self.model.get_perceptrons():
@@ -207,8 +189,6 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
             self._continue_to_full_rate()
             self._set_rate(1.0)
         finally:
-            # Always unpatch model.forward, regardless of cycle-accurate flag.
-            # Subsequent pipeline stages and tuners assume the pristine class forward.
             if getattr(self, "_patched_forward", False):
                 try:
                     del self.model.forward
@@ -223,12 +203,6 @@ class LIFAdaptationTuner(SmoothAdaptationTuner):
             from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
 
             apply_cycle_accurate_trains_to_model(self.model, True)
-
-            # Install chip-aligned NF as the model's permanent forward.
-            # Every downstream step (WQ, NormFusion, SCM accuracy probes) now
-            # validates against the same forward the chip simulators
-            # (Nevresim, SANA-FE, Loihi) run — closing the NF→chip gap by
-            # construction rather than by patching individual boundaries.
             assert "forward" not in self.model.__dict__, (
                 "LIFAdaptationTuner._after_run: model.forward is already patched; "
                 "did the blend-ramp wrapper leak?"

@@ -65,7 +65,6 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "sanafe_parity_check": True,
     "training_recipe": dict(DEFAULT_TRAINING_RECIPE),
     "tuning_recipe": dict(DEFAULT_TUNING_RECIPE),
-    "chip_aligned_lif_adaptation": False,
 }
 
 DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
@@ -95,7 +94,6 @@ CONFIG_KEYS_SET: Set[str] = {
     "spike_generation_mode",
     "thresholding_mode",
     "cycle_accurate_lif_forward",
-    "chip_aligned_lif_adaptation",
     "model_config_mode",
     "hw_config_mode",
     "activation_quantization",

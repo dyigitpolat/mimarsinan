@@ -9,38 +9,43 @@ runners (SANA-FE, Lava, Nevresim).
 | File | Exports | Role |
 |---|---|---|
 | `spike_trains.py` | `lif_spike_train`, `uniform_spike_train`, `rates_to_spike_train` | Low-level spike-train constructors. |
-| `lif_utils.py` | `unwrap_lif_activation`, `apply_cycle_accurate_trains_to_model`, `boundary_lif_activation` | Walk-and-unwrap helpers; ephemeral LIF factory. |
-| `segment_encoding.py` | `SegmentEncodingConfig`, `BoundaryKind`, `BoundaryLifCache`, `classify_encoding_boundary`, `emit_compute_spike_train`, `build_segment_input_spike_train` | Boundary spike-train classification + cycle-accurate emission. **Single source of truth** for how compute-op outputs become per-cycle spike trains for downstream neural segments. |
-| `chip_aligned_forward.py` | `ChipAlignedForward`, `install_chip_aligned_forward`, `uninstall_chip_aligned_forward` | Wrap ``model.forward`` to route through a built ``SpikingHybridCoreFlow`` (no blend bypass — installed only at ``rate==1.0``). Used by the post-LIF chip-aligned finetune to backprop through the chip simulator with SpikingJelly's surrogate gradient. |
+| `lif_utils.py` | `unwrap_lif_activation`, `apply_cycle_accurate_trains_to_model` | Walk-and-unwrap activation helpers. |
+| `segment_encoding.py` | `SegmentEncodingConfig`, `emit_compute_spike_train`, `build_segment_input_spike_train` | Cycle-accurate boundary emission and segment-input assembly used by `SpikingHybridCoreFlow._forward_rate`. |
+| `chip_aligned_nf.py` | `chip_aligned_nf_forward` | NF forward that mirrors the chip's encoding semantics — encoding-layer perceptrons run once in rate mode, their outputs are uniform-encoded per cycle, and the rest of the graph runs single-step LIF for `T` cycles. |
 
 ## Boundary contract
 
-Every IR ComputeOp that feeds a neural segment has a **boundary kind** that
-determines whether/how its output emits a `(T, B, D)` spike train:
-
-| `BoundaryKind` | Condition | Emission |
-|---|---|---|
-| `ENCODING_LIF_PERCEPTRON` | `op_type == "module"` and wraps a `Perceptron` whose `activation` resolves to `LIFActivation` | Run perceptron `T` times in single-step mode on the gathered input train (uniform-encoded if upstream is raw). Matches NF semantics exactly. |
-| `ENCODING_SPLIT_HOST` | `op_type == "module"` and wraps a bare `Conv*` / `Linear` / `Sequential(Conv*, …)` | Run module `T` times on per-cycle input, wrap output through an ephemeral `LIFActivation` from `BoundaryLifCache` (scale from `hybrid_mapping.node_activation_scales[op.id]`). |
-| `STRUCTURAL_PASSTHROUGH` | mean/flatten/add/etc. | None — rate alone suffices; consumer uniform-encodes if needed. |
-| `LEGACY_RATE` | `config.use_cycle_accurate_trains == False` | None — caller falls back to legacy `rates_to_spike_train`. |
-| `RAW_INPUT` | The very first stage reading `node_id == -2` directly | Uniform-encode raw input (handled inside `build_segment_input_spike_train`). |
+`emit_compute_spike_train(op, …)` returns a `(T, B, D)` binary spike train
+when the op is a **plain LIF-Perceptron** boundary in cycle-accurate mode;
+otherwise `None`. "Plain LIF-Perceptron" means
+`op.params["module"]` exposes an `activation` that unwraps to `LIFActivation`
+and is *not* a wrapper (e.g. `Conv2DPerceptronMapper`, where
+`module.perceptron is not module`). Wrappers, non-LIF perceptrons, and
+structural ops (mean/flatten/add/etc.) stay rate-only — the chip's
+calibrated weights expect uniform encoding at those boundaries.
 
 ## `build_segment_input_spike_train` invariants
 
 - A cached spike train in `state_buffer_spikes[node_id]` is consumed verbatim — never re-encoded.
 - A missing non-raw input slice in cycle-accurate mode while *other* slices ARE cached is a hard error (`ValueError`): silently uniform-encoding a missing slice hides upstream emission bugs.
-- The "raw input only" stage uses uniform encoding of the gathered rate.
+- "Raw input only" stages uniform-encode the gathered rate.
 - In legacy rate mode, missing slices fall back to `rates_to_spike_train` with the configured `spike_mode`.
+
+## `chip_aligned_nf_forward`
+
+Installed by `LIFAdaptationTuner._after_run` as `model.forward` once the
+blend ramp completes (`rate == 1.0`). All downstream pipeline steps (WQ,
+NormFusion, SCM accuracy probes) then validate against the same forward
+that Nevresim / SANA-FE / Lava run, closing the NF→chip gap by
+construction. Falls back to `run_cycle_accurate` when the model has no
+mapper graph or no encoding-layer perceptron.
 
 ## Dependencies
 
-- **Internal**: `mimarsinan.mapping.ir` (`ComputeOp`, `IRSource`), `mimarsinan.mapping.hybrid_hardcore_mapping` (`HybridStage`, `HybridHardCoreMapping`), `mimarsinan.models.activations` (`LIFActivation`), `mimarsinan.chip_simulation.spike_modes` (low-level encoders).
-- **External**: `torch`, `spikingjelly.activation_based` (IFNode, surrogates), `numpy` (deployment-side numpy wrappers — added in Phase C).
+- **Internal**: `mimarsinan.mapping.ir` (`ComputeOp`, `IRSource`), `mimarsinan.mapping.hybrid_hardcore_mapping` (`HybridStage`, `HybridHardCoreMapping`), `mimarsinan.models.activations` (`LIFActivation`, `run_cycle_accurate`).
+- **External**: `torch`, `spikingjelly.activation_based` (IFNode + surrogates).
 
 ## Dependents
 
-- `mimarsinan.models.hybrid_core_flow.SpikingHybridCoreFlow` — torch path.
-- `mimarsinan.chip_simulation.simulation_runner` — numpy path (Nevresim, Phase C).
-- `mimarsinan.chip_simulation.sanafe.runner` and `mimarsinan.chip_simulation.lava_loihi_runner` — numpy path (Phase C).
-- `mimarsinan.tuning.tuners.lif_adaptation_tuner` — indirectly (via the hybrid flow used in `LifChipAlignedFinetuneTuner`, Phase D.2).
+- `mimarsinan.models.hybrid_core_flow.SpikingHybridCoreFlow` — calls `emit_compute_spike_train` / `build_segment_input_spike_train` in `_forward_rate`.
+- `mimarsinan.tuning.tuners.lif_adaptation_tuner` — installs `chip_aligned_nf_forward` as `model.forward` post-blend.

@@ -1,20 +1,11 @@
-"""Boundary spike-train encoding shared by SCM/HCM/SANA-FE/Lava/Nevresim.
-
-Centralises *how* a host-side ComputeOp output becomes a per-cycle ``(T, B, D)``
-spike train for the next neural segment. The semantics match a NF-style cycle
-loop: the wrapped Perceptron / structural module runs T times in single-step
-mode on uniform-encoded raw inputs (or on an upstream spike train pulled from
-``state_buffer_spikes``).
-"""
+"""Boundary spike-train encoding shared by SCM/HCM/SANA-FE/Lava/Nevresim."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from typing import Dict
 
 import torch
-import torch.nn as nn
 
 from mimarsinan.mapping.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
@@ -23,14 +14,6 @@ from mimarsinan.mapping.hybrid_hardcore_mapping import (
 from mimarsinan.mapping.ir import ComputeOp, IRSource
 from mimarsinan.models.activations import LIFActivation
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
-
-
-class BoundaryKind(Enum):
-    RAW_INPUT = "raw_input"
-    ENCODING_LIF_PERCEPTRON = "encoding_lif_perceptron"
-    ENCODING_SPLIT_HOST = "encoding_split_host"
-    STRUCTURAL_PASSTHROUGH = "structural_passthrough"
-    LEGACY_RATE = "legacy_rate"
 
 
 @dataclass
@@ -48,62 +31,14 @@ class SegmentEncodingConfig:
         return self.spiking_mode == "lif" and self.cycle_accurate
 
 
-@dataclass
-class BoundaryLifCache:
-    """Ephemeral ``LIFActivation`` instances for structural-op spike emission."""
-
-    _cache: Dict[tuple, LIFActivation] = field(default_factory=dict)
-
-    def get(
-        self,
-        *,
-        T: int,
-        activation_scale,
-        thresholding_mode: str,
-        firing_mode: str,
-    ) -> LIFActivation:
-        scale_key = float(
-            activation_scale.item() if hasattr(activation_scale, "item")
-            else activation_scale
-        )
-        key = (int(T), scale_key, str(thresholding_mode), str(firing_mode))
-        lif = self._cache.get(key)
-        if lif is not None:
-            return lif
-        from mimarsinan.spiking.lif_utils import boundary_lif_activation
-
-        lif = boundary_lif_activation(
-            T=int(T),
-            activation_scale=activation_scale,
-            thresholding_mode=thresholding_mode,
-            firing_mode=firing_mode,
-        )
-        self._cache[key] = lif
-        return lif
-
-
-def _resolve_lif_perceptron(module):
-    """Return ``(callable, lif)`` for a *plain* ``Perceptron`` encoding boundary, or ``None``.
-
-    ``PerceptronMapper._map_to_ir_as_encoding_compute_op`` stores
-    ``params["module"] = self.perceptron`` — the ``Perceptron`` itself, whose
-    ``forward()`` returns ``activation(linear(x))``. NF training and the chip's
-    calibrated weights agree on a per-cycle binary spike train extracted from
-    this path (verified by ``test_nf_scm_per_sample_output_parity_cycle_accurate``).
-
-    ``Conv2DPerceptronMapper._map_to_ir`` stores ``params["module"] = self`` (the
-    *mapper*). Its rate-mode output is what the chip's pruning + quantization
-    were calibrated against; substituting a per-cycle single-step LIF spike
-    train here changes the per-cycle membrane evolution at the consumer's
-    matmul and hurts SCM/HCM accuracy. Until ``LifChipAlignedFinetuneTuner``
-    can retrain weights against the new boundary, treat
-    ``Conv2DPerceptronMapper`` as a structural passthrough and let the
-    consumer uniform-encode the rate (HEAD behaviour).
-    """
+def _resolve_lif_perceptron(module) -> tuple[object, LIFActivation] | None:
+    """Return ``(perceptron, lif)`` for a *plain* LIF-Perceptron encoding boundary,
+    or ``None`` for wrappers (Conv2DPerceptronMapper) and non-LIF perceptrons."""
     if module is None:
         return None
+    # Wrapper mappers (e.g. Conv2DPerceptronMapper) expose a child ``perceptron``
+    # whose forward differs from the wrapper's; their boundary stays rate-mode.
     if hasattr(module, "perceptron") and getattr(module, "perceptron") is not module:
-        # Wrapper mapper (e.g. Conv2DPerceptronMapper). See docstring.
         return None
     if not hasattr(module, "activation"):
         return None
@@ -111,51 +46,6 @@ def _resolve_lif_perceptron(module):
     if lif is None:
         return None
     return module, lif
-
-
-def _is_structural_compute_module(module) -> bool:
-    """Bare ``Conv``/``Linear``/``Sequential`` whose first child is one of those."""
-    if module is None:
-        return False
-    if isinstance(module, (nn.Linear, nn.Conv1d, nn.Conv2d)):
-        return True
-    if isinstance(module, nn.Sequential) and len(module) > 0:
-        return isinstance(module[0], (nn.Linear, nn.Conv1d, nn.Conv2d))
-    return False
-
-
-_STRUCTURAL_PASSTHROUGH_OP_TYPES = frozenset({
-    "mean", "flatten", "identity", "dropout", "select",
-    "add", "add_constant", "concat_constant", "layer_norm", "gelu",
-    "max_pool2d", "avg_pool2d", "adaptive_avg_pool2d",
-    "multi_head_attention", "linear",
-})
-
-
-def classify_encoding_boundary(
-    op: ComputeOp,
-    hybrid_mapping: HybridHardCoreMapping,
-    config: SegmentEncodingConfig,
-) -> BoundaryKind:
-    """Classify how this ComputeOp's output should produce spike trains for downstream segments."""
-    if not config.use_cycle_accurate_trains:
-        return BoundaryKind.LEGACY_RATE
-    if not isinstance(op, ComputeOp):
-        return BoundaryKind.STRUCTURAL_PASSTHROUGH
-
-    if op.op_type == "module":
-        module = (op.params or {}).get("module")
-        if _resolve_lif_perceptron(module) is not None:
-            return BoundaryKind.ENCODING_LIF_PERCEPTRON
-        if _is_structural_compute_module(module):
-            return BoundaryKind.ENCODING_SPLIT_HOST
-        # ``classifier_col0`` and friends: Perceptron with non-LIF activation
-        # (e.g. final readout). Still rate-encoded for downstream consumers.
-        return BoundaryKind.STRUCTURAL_PASSTHROUGH
-
-    if op.op_type in _STRUCTURAL_PASSTHROUGH_OP_TYPES:
-        return BoundaryKind.STRUCTURAL_PASSTHROUGH
-    return BoundaryKind.STRUCTURAL_PASSTHROUGH
 
 
 def _gather_op_input_train(
@@ -208,8 +98,7 @@ def _gather_op_input_train(
             if raw_input is None:
                 return None
             rate_slice = raw_input[:, src.index].clamp(0.0, 1.0)
-            spikes = uniform_spike_train(rate_slice, T).to(config.compute_dtype)
-            out[:, :, idx] = spikes
+            out[:, :, idx] = uniform_spike_train(rate_slice, T).to(config.compute_dtype)
             continue
         cached = state_buffer_spikes.get(int(src.node_id))
         if cached is not None:
@@ -219,34 +108,19 @@ def _gather_op_input_train(
         if rate is None:
             return None
         rate_slice = rate[:, src.index].clamp(0.0, 1.0).to(config.compute_dtype)
-        spikes = uniform_spike_train(rate_slice, T).to(config.compute_dtype)
-        out[:, :, idx] = spikes
+        out[:, :, idx] = uniform_spike_train(rate_slice, T).to(config.compute_dtype)
 
     return out
 
 
 def _run_perceptron_single_step_T(
-    callable_module,
-    lif,
+    perceptron,
+    lif: LIFActivation,
     input_train: torch.Tensor,
     op: ComputeOp,
     config: SegmentEncodingConfig,
 ) -> torch.Tensor:
-    """``T`` single-step forwards through ``callable_module``; returns ``(T, B, D)``
-    **binary** spikes (in {0, 1}) keyed to the chip's binary-input convention.
-
-    ``callable_module`` is either a ``Perceptron`` (PerceptronMapper case) or a
-    ``Conv2DPerceptronMapper`` whose ``_forward_impl`` runs conv + bn + the
-    perceptron's activation. ``lif`` is the reachable ``LIFActivation``
-    (unwrapped from the TransformedActivation / LIFBlendActivation chain).
-
-    The wrapped ``forward()`` returns ``spike * activation_scale`` per cycle in
-    single-step mode. The chip's neural segments multiply binary inputs by
-    scale-calibrated weights, so we divide the per-cycle output by the LIF's
-    ``activation_scale`` to recover the binary spike. This matches the
-    pre-Phase-A semantics of ``Perceptron.forward_spiking`` (which returns the
-    raw ``IFNode`` output without the ``* scale`` wrap).
-    """
+    """``T`` single-step forwards of the Perceptron; return ``(T, B, D)`` binary spikes."""
     from spikingjelly.activation_based import functional
 
     T = input_train.shape[0]
@@ -270,55 +144,13 @@ def _run_perceptron_single_step_T(
             inp = input_train[t]
             if op.input_shape is not None:
                 inp = inp.reshape(B, *op.input_shape)
-            inp_f = inp.to(torch.float32)
-            out_t = callable_module(inp_f)
-            binary_t = out_t / safe_scale
-            outputs.append(binary_t.reshape(B, -1))
+            out_t = perceptron(inp.to(torch.float32))
+            outputs.append((out_t / safe_scale).reshape(B, -1))
         stacked = torch.stack(outputs, dim=0)
     finally:
         lif.set_cycle_accurate(was_ca)
 
     return stacked.to(config.compute_dtype)
-
-
-def _run_structural_module_single_step_T(
-    module: nn.Module,
-    input_train: torch.Tensor,
-    op: ComputeOp,
-    config: SegmentEncodingConfig,
-    lif_cache: BoundaryLifCache,
-    hybrid_mapping: HybridHardCoreMapping,
-) -> torch.Tensor:
-    """``T`` cycles of structural ``module`` wrapped in an ephemeral LIF; ``(T, B, D)``."""
-    from spikingjelly.activation_based import functional
-
-    T = input_train.shape[0]
-    B = input_train.shape[1]
-    scale = float(hybrid_mapping.node_activation_scales.get(int(op.id), 1.0))
-    lif = lif_cache.get(
-        T=T,
-        activation_scale=torch.tensor(scale),
-        thresholding_mode=config.thresholding_mode,
-        firing_mode=config.firing_mode,
-    )
-    lif.set_cycle_accurate(True)
-    functional.reset_net(lif.if_node)
-    outputs = []
-    try:
-        for t in range(T):
-            inp = input_train[t]
-            if op.input_shape is not None:
-                inp = inp.reshape(B, *op.input_shape)
-            inp_f = inp.to(torch.float32)
-            with torch.no_grad():
-                pre = module(inp_f)
-            out_t = lif(pre.reshape(B, -1))
-            outputs.append(out_t)
-        stacked = torch.stack(outputs, dim=0)
-    finally:
-        lif.set_cycle_accurate(False)
-
-    return stacked.reshape(T, B, -1).to(config.compute_dtype)
 
 
 def emit_compute_spike_train(
@@ -328,35 +160,26 @@ def emit_compute_spike_train(
     state_buffer_spikes: Dict[int, torch.Tensor],
     config: SegmentEncodingConfig,
     hybrid_mapping: HybridHardCoreMapping,
-    lif_cache: BoundaryLifCache,
 ) -> torch.Tensor | None:
-    """Return ``(T, B, D)`` spike train for this ComputeOp boundary, or ``None`` if N/A."""
-    kind = classify_encoding_boundary(op, hybrid_mapping, config)
-    if kind in (BoundaryKind.LEGACY_RATE, BoundaryKind.STRUCTURAL_PASSTHROUGH):
+    """Return ``(T, B, D)`` spike train for ``op``, or ``None`` for non-LIF-Perceptron boundaries."""
+    if not config.use_cycle_accurate_trains:
+        return None
+    if not isinstance(op, ComputeOp) or op.op_type != "module":
         return None
 
-    T = config.simulation_length
+    module = (op.params or {}).get("module") if op.params else None
+    resolved = _resolve_lif_perceptron(module)
+    if resolved is None:
+        return None
+    perceptron, lif = resolved
+
     input_train = _gather_op_input_train(
-        op, state_buffer, state_buffer_spikes, T, config,
+        op, state_buffer, state_buffer_spikes, config.simulation_length, config,
     )
     if input_train is None:
         return None
 
-    module = (op.params or {}).get("module") if op.params else None
-    if kind == BoundaryKind.ENCODING_LIF_PERCEPTRON:
-        resolved = _resolve_lif_perceptron(module)
-        assert resolved is not None
-        callable_module, lif = resolved
-        return _run_perceptron_single_step_T(
-            callable_module, lif, input_train, op, config,
-        )
-
-    if kind == BoundaryKind.ENCODING_SPLIT_HOST:
-        assert module is not None
-        return _run_structural_module_single_step_T(
-            module, input_train, op, config, lif_cache, hybrid_mapping,
-        )
-    return None
+    return _run_perceptron_single_step_T(perceptron, lif, input_train, op, config)
 
 
 def build_segment_input_spike_train(
@@ -366,15 +189,12 @@ def build_segment_input_spike_train(
     *,
     config: SegmentEncodingConfig,
     hybrid_mapping: HybridHardCoreMapping,
-    lif_cache: BoundaryLifCache,
     T: int,
     batch_size: int,
     device: torch.device,
 ) -> torch.Tensor:
-    """``(T, B, in_size)`` neural-segment input. Cached trains take precedence; otherwise
-    raw-input slices get uniform encoding and any missing non-raw slice is a hard error
-    (under cycle-accurate). In legacy rate mode, falls back to ``rates_to_spike_train``.
-    """
+    """``(T, B, in_size)`` segment input. Cached trains take precedence; the rest
+    falls back to uniform encoding of the segment input rates."""
     from mimarsinan.spiking.spike_trains import rates_to_spike_train, uniform_spike_train
 
     in_size = seg_input_rates_clamped.shape[1]
@@ -383,11 +203,11 @@ def build_segment_input_spike_train(
     )
 
     filled_ranges: list[tuple[int, int]] = []
-    missing_slices: list[tuple[int, int, int, int]] = []  # (node_id, offset, size, slice_index)
-    for slice_idx, s in enumerate(stage.input_map):
+    missing_slices: list[tuple[int, int, int]] = []  # (node_id, offset, size)
+    for s in stage.input_map:
         train = state_buffer_spikes.get(int(s.node_id))
         if train is None:
-            missing_slices.append((int(s.node_id), int(s.offset), int(s.size), slice_idx))
+            missing_slices.append((int(s.node_id), int(s.offset), int(s.size)))
             continue
         spike_train[:, :, s.offset : s.offset + s.size] = (
             train[:, :, : s.size].to(config.compute_dtype)
@@ -414,7 +234,7 @@ def build_segment_input_spike_train(
             encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
         return encoded
 
-    # Cycle-accurate path.
+    # Cycle-accurate path: uniform-encode whatever isn't cached; cached overlays.
     only_raw_input = (
         len(stage.input_map) == 1
         and int(stage.input_map[0].node_id) == -2
@@ -435,7 +255,6 @@ def build_segment_input_spike_train(
                 f"{[m[0] for m in non_raw_missing]}. Every non-raw input slice must have a "
                 f"cached train (cycle-accurate parity)."
             )
-        # No cached trains at all and inputs are non-raw — legacy uniform fallback with warning.
         import logging
         logging.getLogger("mimarsinan.spiking.segment_encoding").warning(
             "build_segment_input_spike_train: cycle-accurate stage %r has no spike trains "
@@ -445,7 +264,6 @@ def build_segment_input_spike_train(
         return uniform_spike_train(seg_input_rates_clamped, T).to(config.compute_dtype)
 
     if raw_missing:
-        # Uniform-encode the raw slices, overlay cached trains.
         encoded = uniform_spike_train(seg_input_rates_clamped, T).to(config.compute_dtype)
         for lo, hi in filled_ranges:
             encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
