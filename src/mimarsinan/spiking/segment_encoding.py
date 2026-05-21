@@ -256,9 +256,8 @@ def build_segment_input_spike_train(
                 f"cached train (cycle-accurate parity)."
             )
         import logging
-        logging.getLogger("mimarsinan.spiking.segment_encoding").warning(
-            "build_segment_input_spike_train: cycle-accurate stage %r has no spike trains "
-            "for non-raw inputs %s; falling back to uniform rate encoding.",
+        logging.getLogger("mimarsinan.spiking.segment_encoding").debug(
+            "stage %r: rate-only boundary at non-raw inputs %s — uniform-encoding.",
             stage.name, [m[0] for m in non_raw_missing],
         )
         return uniform_spike_train(seg_input_rates_clamped, T).to(config.compute_dtype)
