@@ -80,6 +80,7 @@ def test_tuner_install_assert_blocks_double_patch() -> None:
             self.model = model
             self._T = int(T)
             self._patched_forward = False
+            self.pipeline = type("P", (), {"config": {}})()
 
         def _install_cycle_accurate_forward(self):
             from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
@@ -108,7 +109,10 @@ def test_tuner_after_run_unpatches_even_when_cycle_accurate() -> None:
     class _StubTuner:
         def __init__(self):
             self.model = model
-            self._cycle_accurate = True
+            # Keep cycle_accurate=False so the post-blend chip-aligned NF
+            # install does not fire (this test only checks the unpatch path).
+            self._cycle_accurate = False
+            self._T = 4
             self._patched_forward = True
             self._continue_called = False
             self._set_rate_called = False
