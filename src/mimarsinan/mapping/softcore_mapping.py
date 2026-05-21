@@ -58,34 +58,32 @@ def compact_soft_core_mapping(cores, output_sources):
                     core.hardware_bias, keep_cols
                 )
             elif keep_cols:
-                # All axons dead but some neurons survive (e.g. bias-only core
-                # whose neurons spike from ``hardware_bias`` alone). Keep a
-                # single placeholder off-source axon and slice the surviving
-                # columns -- collapsing to (1, 1) here would silently delete
-                # live neurons whose consumers still reference them.
+                # BIAS_ONLY core: every axon is dead but some neurons spike
+                # from ``hardware_bias`` alone. Collapse to a single
+                # OFF-source axon while preserving the live bias-driven
+                # columns; collapsing to (1, 1) would silently delete live
+                # neurons whose consumers still reference them.
                 core.core_matrix = np.zeros((1, len(keep_cols)), dtype=np.float64)
                 core.axon_sources = [SpikeSource(-1, 0, False, True)]
                 core.hardware_bias = compact_hardware_bias_columns(
                     core.hardware_bias, keep_cols
                 )
-            elif keep_rows:
-                # All neurons dead but some axons survive: degenerate, just
-                # keep a single zero-weight placeholder column. No consumer
-                # can read from a fully-pruned column, so the column index
-                # is irrelevant.
-                core.core_matrix = np.zeros((len(keep_rows), 1), dtype=np.float64)
-                core.axon_sources = [core.axon_sources[r] for r in keep_rows]
-                if getattr(core, "hardware_bias", None) is not None:
-                    core.hardware_bias = np.zeros(1)
             else:
-                core.core_matrix = np.zeros((1, 1), dtype=np.float64)
-                core.axon_sources = [SpikeSource(-1, 0, False, True)]
-                if getattr(core, "hardware_bias", None) is not None:
-                    core.hardware_bias = np.zeros(1)
-            if keep_cols:
-                remap = {old_idx: new_idx for new_idx, old_idx in enumerate(keep_cols)}
-            else:
-                remap = {}
+                # No surviving columns -> the core has no live neuron and
+                # would have been deleted by ``compute_liveness +
+                # IRGraph.remove_nodes`` in ``prune_ir_graph``. Reaching
+                # this point means an upstream stage produced a dead-math
+                # core that was not classified DEAD; fail loudly so the
+                # regression is visible.
+                raise AssertionError(
+                    f"compact_soft_core_mapping: SoftCore id={core.id} has "
+                    f"no surviving neurons (keep_cols={keep_cols}). "
+                    "Liveness analysis should have removed it via "
+                    "IRGraph.remove_nodes before soft-core mapping. "
+                    "This indicates a regression in prune_ir_graph or a "
+                    "stale pickle that bypassed the liveness pass."
+                )
+            remap = {old_idx: new_idx for new_idx, old_idx in enumerate(keep_cols)}
             reindex_maps[core.id] = remap
         else:
             n_skipped += 1

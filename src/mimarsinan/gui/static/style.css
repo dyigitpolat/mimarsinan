@@ -982,6 +982,48 @@ body {
   background: var(--bg-card); padding: 1px 6px; border-radius: 3px;
 }
 
+/* Liveness-aware tinting for IR group cards.
+   Mirrors the failed-step / warning palettes so the graph view stays
+   consistent with the rest of the monitor UI. */
+.ir-tier-group-card-dead {
+  background: #3a1b1b;
+  border-color: #5a2d2d;
+  opacity: 0.78;
+}
+.ir-tier-group-card-dead:hover { border-color: #7a3a3a; }
+.ir-tier-group-card-dead .ir-tier-group-card-title {
+  color: var(--error, #ff6b6b);
+}
+
+.ir-tier-group-card-bias-only {
+  background: #2a2415;
+  border-color: #5a4f2d;
+}
+.ir-tier-group-card-bias-only:hover { border-color: #7a6a3a; }
+.ir-tier-group-card-bias-only .ir-tier-group-card-title {
+  color: var(--warning, #f0c060);
+}
+
+/* Inline status badges shown beside the core count. */
+.ir-tier-group-card-badge {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 9px;
+}
+.ir-tier-group-card-badge-dead {
+  background: #5a2d2d !important;
+  color: #ffd0d0;
+}
+.ir-tier-group-card-badge-bias-only {
+  background: #5a4f2d !important;
+  color: #ffe0a0;
+}
+.ir-tier-group-card-badge-mixed {
+  background: #2d4a5a !important;
+  color: #c0e0ff;
+}
+
 /* ═══════════ Glassy card variant ═══════════ */
 .card-glass {
   background: rgba(33, 36, 47, 0.6);

@@ -192,6 +192,7 @@ class SoftCoreMappingStep(PipelineStep):
                     initial_pruned_per_node=initial_node if initial_node else None,
                     initial_pruned_per_bank=initial_bank if initial_bank else None,
                     store_heatmap=store_heatmap,
+                    simulation_steps=int(self.pipeline.config["simulation_steps"]),
                 )
             print(f"[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
 
