@@ -37,7 +37,7 @@ void test_main(int start, int end)
 
     for(int idx = start; idx < end; ++idx)
     {{
-        auto [input, target] = {10}("{0}/inputs/", idx);
+        auto [input, target] = load_input_n("{0}/inputs/", idx);
         auto buffer = chip.execute<exec>(input);
         for(auto i : buffer)
         {{

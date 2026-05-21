@@ -13,7 +13,6 @@ def _build_chip_and_exec_decl(
     simulation_length: int,
     latency: int,
     output_count: int,
-    input_count: int = 0,
 ) -> str:
     """
     Return the C++ lines that declare ``chip`` and ``exec`` inside
@@ -47,10 +46,7 @@ def _build_chip_and_exec_decl(
         )
     else:
         # Rate-coded modes (Default, Novena).
-        if spike_gen_mode == "SpikeTrain":
-            gen_type = f"SpikeTrainSpikeGenerator<{input_count}, {simulation_length}>"
-        else:
-            gen_type = f"{spike_gen_mode}SpikeGenerator"
+        gen_type = f"{spike_gen_mode}SpikeGenerator"
         return (
             f"static constinit auto chip = \n"
             f"        generate_chip<SpikingCompute<{firing_mode}FirePolicy>, {weight_type}, {threshold_type}>();\n"
@@ -92,7 +88,6 @@ def generate_main_function(
     cpp_code_template=main_cpp_template,
     simulation_config=get_config(),
     verbose=True,
-    chip_input_size: int = 0,
 ):
     if verbose:
         print("Generating main function code...")
@@ -106,13 +101,6 @@ def generate_main_function(
         simulation_length=simulation_length,
         latency=latency,
         output_count=output_count,
-        input_count=chip_input_size,
-    )
-
-    load_fn = (
-        "load_spike_train_input_n"
-        if simulation_config["spike_gen_mode"] == "SpikeTrain"
-        else "load_input_n"
     )
 
     main_cpp_code = cpp_code_template.format(
@@ -126,7 +114,6 @@ def generate_main_function(
         latency,                # {7}
         chip_exec_decl,         # {8}  ← chip + exec declarations
         simulation_config["threshold_type"],   # {9}  ← threshold_t typedef
-        load_fn,                # {10} ← input loader function name
     )
 
     main_cpp_filename = "{}/main/main.cpp".format(generated_files_path)

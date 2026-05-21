@@ -1,21 +1,4 @@
-"""Chip-aligned NF forward: encoding layers run rate-mode + uniform-encoded per-cycle.
-
-What this mirrors at training time: SCM / Nevresim / SANA-FE all run host-side
-encoding-layer perceptrons (``is_encoding_layer=True``) *once* in rate mode
-(``LIFActivation.forward``, multi-step IFNode mean), post the rate to the
-state buffer, and then the on-chip neural segment's input generator
-(``UniformSpikeGenerator`` / ``uniform_rate_encode``) re-encodes that rate
-per cycle to feed the downstream cores.
-
-Standard ``run_cycle_accurate`` instead drives the whole model T times with
-``uniform_spike_train(raw_x, T)`` — every layer (including encoding) runs in
-single-step LIF on per-cycle uniform slices of the raw input, which produces
-a different per-cycle spike distribution than the chip.
-
-This module's :func:`chip_aligned_nf_forward` matches the chip semantics
-during training so the LIF Adaptation tuner trains against the same spike
-sequence that deployment will run.
-"""
+"""Chip-aligned NF forward — see ``src/mimarsinan/spiking/ARCHITECTURE.md``."""
 
 from __future__ import annotations
 
@@ -46,16 +29,10 @@ def chip_aligned_nf_forward(
 ) -> torch.Tensor:
     """Drive ``model`` like the deployment chip does at structural boundaries.
 
-    Walks the mapper graph: every perceptron with ``is_encoding_layer=True``
-    runs *once* in rate mode (its LIF outputs the multi-step mean rate). The
-    encoding outputs are uniform-encoded to ``(T, B, …)`` binary trains
-    (scaled by the encoding LIF's ``activation_scale``) and substituted into
-    the cycle-accurate pass for the rest of the graph. Non-encoding LIFs run
-    in single-step mode for each of the ``T`` cycles. Final output = mean of
-    the T per-cycle outputs.
-
-    Falls back to :func:`run_cycle_accurate` when the model exposes no
-    mapper graph or has no encoding-layer perceptrons.
+    Encoding-layer perceptrons run once in rate mode; their outputs are
+    uniform-encoded to ``(T, B, …)`` binary trains and substituted into the
+    cycle-accurate pass for the rest of the graph. Falls back to
+    :func:`run_cycle_accurate` when no encoding-layer perceptron is present.
     """
     from spikingjelly.activation_based import functional
 
@@ -85,19 +62,15 @@ def chip_aligned_nf_forward(
         encoding_perceptron_ids.add(id(exec_order[i].perceptron))
 
     all_lifs: list[LIFActivation] = []
-    encoding_lifs: list[LIFActivation] = []
     non_encoding_lifs: list[LIFActivation] = []
     for p in mapper_repr.get_perceptrons():
         lif = _resolve_lif_for_perceptron(p)
         if lif is None:
             continue
         all_lifs.append(lif)
-        if id(p) in encoding_perceptron_ids:
-            encoding_lifs.append(lif)
-        else:
+        if id(p) not in encoding_perceptron_ids:
             non_encoding_lifs.append(lif)
 
-    # Encoding pass — every LIF in rate mode (multi-step IFNode mean).
     _set_cycle_accurate(all_lifs, False)
     functional.reset_net(model)
 
@@ -117,25 +90,18 @@ def chip_aligned_nf_forward(
     for node in pre_nodes:
         values[node] = _run_node(node, values, x)
 
-    # Build per-encoding-output uniform-encoded ``(T, B, …)`` spike trains
-    # at the LIF's activation_scale (matches chip's per-axon spike scale).
     encoding_spike_trains: dict = {}
     for i in encoding_indices:
         node = exec_order[i]
-        perceptron = node.perceptron
-        lif = _resolve_lif_for_perceptron(perceptron)
+        lif = _resolve_lif_for_perceptron(node.perceptron)
         scale = lif.activation_scale
         if isinstance(scale, torch.Tensor):
             safe_scale = scale.to(device=x.device, dtype=values[node].dtype).clamp(min=1e-12)
         else:
             safe_scale = max(float(scale), 1e-12)
-        rate = values[node]
-        rate_norm = (rate / safe_scale).clamp(0.0, 1.0) if isinstance(safe_scale, torch.Tensor) \
-            else (rate / safe_scale).clamp(0.0, 1.0)
-        spike_train = uniform_spike_train(rate_norm, T)
-        encoding_spike_trains[node] = (spike_train, safe_scale)
+        rate_norm = (values[node] / safe_scale).clamp(0.0, 1.0)
+        encoding_spike_trains[node] = (uniform_spike_train(rate_norm, T), safe_scale)
 
-    # Cycle-accurate pass — non-encoding LIFs in single-step.
     _set_cycle_accurate(non_encoding_lifs, True)
     functional.reset_net(model)
     try:

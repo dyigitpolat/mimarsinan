@@ -502,7 +502,7 @@ Runs immediately after Activation Analysis (and its companion Activation Adaptat
 
 Uses `LIFAdaptationTuner` to swap each chip-targeted perceptron's `base_activation` to `LIFActivation` via a gradual **`LIFBlendActivation`** (linear mix of pre-LIF ReLU-like activation and LIF, rate 0→1). Recovery uses knowledge distillation: frozen teacher = pre-LIF snapshot, student = blended model (α·CE + (1−α)·T²·KL, T=3, α=0.3).
 
-When **`cycle_accurate_lif_forward`** is true, the tuner installs picklable **`_CycleAccurateForward`** on `model.forward`, which calls `run_cycle_accurate`: uniform-encode the input to `T` cycles, toggle each `LIFActivation` into single-step mode, run the mapper DAG once per cycle, mean-reduce logits. This matches chip per-cycle injection. The wrapper is kept after the step when cycle-accurate mode is on so cached models remain consistent.
+When **`cycle_accurate_lif_forward`** is true, the tuner installs picklable **`_CycleAccurateForward`** on `model.forward` for the blend ramp (calls `run_cycle_accurate`: uniform-encode the input to `T` cycles, toggle each `LIFActivation` into single-step mode, run the mapper DAG once per cycle, mean-reduce logits). Once the blend reaches `rate==1.0`, `_after_run` unpatches the ramp wrapper and installs **`_ChipAlignedNFForward`** (delegating to `mimarsinan.spiking.chip_aligned_nf.chip_aligned_nf_forward`) as the permanent `model.forward` — encoding-layer perceptrons run once in rate mode and their outputs are uniform-encoded per cycle for the rest of the graph, mirroring the chip simulators' encoding semantics. All downstream pipeline steps (WQ, NormFusion, SCM probes) then validate against the same forward that Nevresim / SANA-FE / Lava run.
 
 ### 5.6c Noise Adaptation
 
