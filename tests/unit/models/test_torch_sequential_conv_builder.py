@@ -8,7 +8,7 @@ from mimarsinan.models.builders.torch_sequential_conv_builder import (
 )
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.mapping.ir_pruning import get_neural_segments
+from mimarsinan.mapping.ir_segmentation import get_neural_segments
 
 
 class TestTorchSequentialConvBuilder:

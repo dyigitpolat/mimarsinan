@@ -49,20 +49,43 @@ def compact_soft_core_mapping(cores, output_sources):
                 core.bank_axon_slice = None
                 core.bank_neuron_slice = None
                 core.bank_includes_bias_row = False
+            from mimarsinan.mapping.pruning_apply import compact_hardware_bias_columns
+
             if keep_rows and keep_cols:
                 core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
                 core.axon_sources = [core.axon_sources[r] for r in keep_rows]
-                from mimarsinan.mapping.pruning_apply import compact_hardware_bias_columns
-
                 core.hardware_bias = compact_hardware_bias_columns(
                     core.hardware_bias, keep_cols
                 )
+            elif keep_cols:
+                # All axons dead but some neurons survive (e.g. bias-only core
+                # whose neurons spike from ``hardware_bias`` alone). Keep a
+                # single placeholder off-source axon and slice the surviving
+                # columns -- collapsing to (1, 1) here would silently delete
+                # live neurons whose consumers still reference them.
+                core.core_matrix = np.zeros((1, len(keep_cols)), dtype=np.float64)
+                core.axon_sources = [SpikeSource(-1, 0, False, True)]
+                core.hardware_bias = compact_hardware_bias_columns(
+                    core.hardware_bias, keep_cols
+                )
+            elif keep_rows:
+                # All neurons dead but some axons survive: degenerate, just
+                # keep a single zero-weight placeholder column. No consumer
+                # can read from a fully-pruned column, so the column index
+                # is irrelevant.
+                core.core_matrix = np.zeros((len(keep_rows), 1), dtype=np.float64)
+                core.axon_sources = [core.axon_sources[r] for r in keep_rows]
+                if getattr(core, "hardware_bias", None) is not None:
+                    core.hardware_bias = np.zeros(1)
             else:
                 core.core_matrix = np.zeros((1, 1), dtype=np.float64)
                 core.axon_sources = [SpikeSource(-1, 0, False, True)]
                 if getattr(core, "hardware_bias", None) is not None:
                     core.hardware_bias = np.zeros(1)
-            remap = {old_idx: new_idx for new_idx, old_idx in enumerate(keep_cols)}
+            if keep_cols:
+                remap = {old_idx: new_idx for new_idx, old_idx in enumerate(keep_cols)}
+            else:
+                remap = {}
             reindex_maps[core.id] = remap
         else:
             n_skipped += 1

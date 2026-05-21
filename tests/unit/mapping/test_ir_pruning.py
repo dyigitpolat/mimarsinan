@@ -17,8 +17,10 @@ from mimarsinan.mapping.ir import (
 from mimarsinan.mapping.ir_pruning import (
     get_initial_pruning_masks_from_model,
     prune_ir_graph,
+)
+from mimarsinan.mapping.ir_pruning_analysis import (
+    compute_graph_io_exemption,
     get_neural_segments,
-    compute_segment_io_exemption,
 )
 from mimarsinan.mapping.softcore_mapping import compact_soft_core_mapping
 
@@ -86,8 +88,8 @@ class TestPruneIRGraph:
         assert off_count == 0, "Segment output exemption keeps all output refs; none remapped to off"
 
     def test_rewires_downstream_sources(self):
-        """When a column is removed, downstream core input sources referencing
-        higher indices should be reindexed."""
+        """Cross-core propagation: when an upstream column is pruned, the
+        consumer axon row is pruned and surviving sources are reindexed."""
         # Core 0: 3 neurons, middle one (idx 1) is zeroed
         w0 = np.array([
             [1.0, 0.0, 3.0],
@@ -110,25 +112,20 @@ class TestPruneIRGraph:
         graph = IRGraph(nodes=[core0, core1], output_sources=out_src)
 
         pruned = prune_ir_graph(graph)
-        
-        # Core 1 should have its input source for (0, 1) set to off,
-        # and (0, 2) reindexed to (0, 1)
+
+        # Core 1: row reading pruned (0, 1) is dropped; surviving source (0, 2)
+        # is reindexed to (0, 1).
         pruned_core1 = pruned.nodes[1]
+        assert pruned_core1.core_matrix.shape[0] == 3, (
+            "Core 1 row reading the pruned neuron must be dropped under cross-core propagation"
+        )
         flat_src = pruned_core1.input_sources.flatten()
-
-        # The source that was (0, 1) should be off
-        old_mid = flat_src[1]
-        assert old_mid.is_off(), f"Source for pruned neuron should be off, got node_id={old_mid.node_id}"
-        
-        # The source that was (0, 2) should now reference index 1
-        old_last = flat_src[2]
-        assert old_last.node_id == 0 and old_last.index == 1, \
-            f"Source for neuron 2 should be reindexed to 1, got ({old_last.node_id}, {old_last.index})"
-
-        # Core 1 row count: the off-source row still has non-zero weights,
-        # so it is NOT removed. All 4 rows remain.
-        assert pruned_core1.core_matrix.shape[0] == 4, \
-            f"Core 1 should have 4 rows (off-source row still has non-zero weights)"
+        assert flat_src[0].node_id == 0 and flat_src[0].index == 0
+        assert flat_src[1].node_id == 0 and flat_src[1].index == 1, (
+            f"Old (0, 2) source must reindex to (0, 1) after compaction; got "
+            f"({flat_src[1].node_id}, {flat_src[1].index})"
+        )
+        assert flat_src[2].is_always_on()
 
     def test_graph_validates_after_pruning(self):
         """The pruned graph should pass validation."""
@@ -258,7 +255,8 @@ class TestPruneIRGraph:
         np.testing.assert_allclose(pruned_core.core_matrix, w)
 
     def test_output_layer_respects_model_mask_pruned_column_removed_and_rewired(self):
-        """When model mask prunes a non-output column, it is removed and downstream is rewired; output columns stay exempt."""
+        """Cross-core propagation: pruning a non-output column drops the consumer
+        axon, surviving sources reindex, output columns stay exempt."""
         # Two cores: core0 feeds core1 (output). Mask prunes core0 column 1 only; core1 output cols stay exempt.
         w0 = np.array([[1.0, 0.5, 3.0], [2.0, 0.5, 4.0], [0.1, 0.1, 0.1]], dtype=np.float64)
         src0 = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
@@ -277,9 +275,13 @@ class TestPruneIRGraph:
         pruned_core0 = pruned.nodes[0]
         assert pruned_core0.core_matrix.shape == (3, 2), "Column 1 removed -> 2 columns"
         np.testing.assert_allclose(pruned_core0.core_matrix[:, 0], w0[:, 0])
-        flat1 = pruned.nodes[1].input_sources.flatten()
-        assert flat1[1].is_off(), "Source that was (0,1) should be off"
-        assert flat1[2].node_id == 0 and flat1[2].index == 1, "Source that was (0,2) should rewire to (0,1)"
+        # Cross-core: core1 axon reading (0, 1) is dropped; surviving (0, 2) reindexes to (0, 1).
+        pruned_core1 = pruned.nodes[1]
+        assert pruned_core1.core_matrix.shape[0] == 3, "Axon reading pruned (0, 1) is dropped"
+        flat1 = pruned_core1.input_sources.flatten()
+        assert flat1[0].node_id == 0 and flat1[0].index == 0
+        assert flat1[1].node_id == 0 and flat1[1].index == 1, "Old (0, 2) reindexes to (0, 1)"
+        assert flat1[2].is_always_on()
 
     def test_bank_backed_node_gets_sliced_masks_and_pre_pruning_heatmap(self):
         """Bank-backed node with weight_row_slice gets per-node masks and pre_pruning_heatmap matching effective matrix."""
@@ -698,7 +700,44 @@ class TestHardwareBiasPruning:
     """hardware_bias must be pruned alongside core_matrix columns in Phase 3."""
 
     def test_hardware_bias_pruned_with_columns(self):
-        """When zeroed columns are removed, hardware_bias is sliced to match."""
+        """When zeroed columns are removed, hardware_bias is sliced to match.
+
+        A column whose weights are all zero AND whose ``hardware_bias`` is also
+        zero has no live source and is pruned. Columns whose bias is non-zero
+        are never killed by within-matrix propagation: the bias produces spikes
+        on its own and pruning would silently drop that contribution.
+        """
+        w = np.array([
+            [1.0, 0.0, 3.0],
+            [4.0, 0.0, 6.0],
+        ], dtype=np.float32)
+        # Col 1 has zero bias, so the all-zero col 1 is truly dead and pruned.
+        bias = np.array([10.0, 0.0, 30.0], dtype=np.float32)
+        src = _make_source_array([(-2, 0), (-2, 1)])
+        core0 = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
+        core0.hardware_bias = bias
+
+        # Core 1 downstream so column 1 of core0 is NOT exempt
+        w1 = np.array([[1.0], [1.0], [1.0]], dtype=np.float32)
+        src1 = _make_source_array([(0, 0), (0, 1), (0, 2)])
+        core1 = NeuralCore(id=1, name="core1", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
+        out_src = _make_source_array([(1, 0)])
+        graph = IRGraph(nodes=[core0, core1], output_sources=out_src)
+
+        pruned = prune_ir_graph(graph)
+        pruned_core = pruned.nodes[0]
+        # Column 1 is all-zero with zero bias and not output -> removed
+        assert pruned_core.core_matrix.shape[1] == 2
+        assert pruned_core.hardware_bias.shape[0] == 2
+        np.testing.assert_allclose(pruned_core.hardware_bias, [10.0, 30.0])
+
+    def test_hardware_bias_keeps_zero_weight_col_alive(self):
+        """A col with zero weights but non-zero ``hardware_bias`` is preserved.
+
+        The bias is an out-of-matrix live source that produces spikes
+        regardless of axon connectivity; within-matrix col-death must respect
+        it, otherwise the simulation silently loses the bias contribution.
+        """
         w = np.array([
             [1.0, 0.0, 3.0],
             [4.0, 0.0, 6.0],
@@ -708,7 +747,6 @@ class TestHardwareBiasPruning:
         core0 = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
         core0.hardware_bias = bias
 
-        # Core 1 downstream so column 1 of core0 is NOT segment-output exempt
         w1 = np.array([[1.0], [1.0], [1.0]], dtype=np.float32)
         src1 = _make_source_array([(0, 0), (0, 1), (0, 2)])
         core1 = NeuralCore(id=1, name="core1", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
@@ -717,23 +755,23 @@ class TestHardwareBiasPruning:
 
         pruned = prune_ir_graph(graph)
         pruned_core = pruned.nodes[0]
-        # Column 1 is all-zero and not segment-output → removed
-        assert pruned_core.core_matrix.shape[1] == 2
-        assert pruned_core.hardware_bias.shape[0] == 2
-        np.testing.assert_allclose(pruned_core.hardware_bias, [10.0, 30.0])
+        assert pruned_core.core_matrix.shape[1] == 3
+        assert pruned_core.hardware_bias.shape[0] == 3
+        np.testing.assert_allclose(pruned_core.hardware_bias, [10.0, 20.0, 30.0])
 
     def test_hardware_bias_all_columns_pruned(self):
-        """When all columns are pruned, hardware_bias is truncated to 1 element (zeroed)."""
+        """When weights AND bias are all zero, all columns prune and bias collapses."""
         w = np.array([
             [0.0, 0.0],
             [0.0, 0.0],
         ], dtype=np.float32)
-        bias = np.array([10.0, 20.0], dtype=np.float32)
+        # Zero bias => no implicit live source => cols are truly dead.
+        bias = np.array([0.0, 0.0], dtype=np.float32)
         src = _make_source_array([(-2, 0), (-2, 1)])
         core0 = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
         core0.hardware_bias = bias
 
-        # Downstream core so columns are not segment-output exempt
+        # Downstream core so columns are not exempt as outputs
         w1 = np.array([[1.0], [1.0]], dtype=np.float32)
         src1 = _make_source_array([(0, 0), (0, 1)])
         core1 = NeuralCore(id=1, name="core1", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
@@ -802,8 +840,8 @@ class TestHardwareBiasPruning:
             neural_core_to_soft_core(core, graph)
 
 
-class TestSegmentIOExemption:
-    """Segment-aware input/output buffer exemption: segment input rows and output cols are never pruned."""
+class TestGraphIOExemption:
+    """Graph-level model-input axons and model-output neurons are never pruned."""
 
     def test_get_neural_segments_single_segment(self):
         """Single segment: all neural cores in one list when no ComputeOp."""
@@ -816,19 +854,19 @@ class TestSegmentIOExemption:
         assert len(segments[0]) == 2
         assert segments[0][0].id == 0 and segments[0][1].id == 1
 
-    def test_compute_segment_io_exemption_single_node_all_io_exempt(self):
-        """Single node segment: all rows are input-buffer, all cols are output-buffer."""
+    def test_compute_graph_io_exemption_single_node_all_io_exempt(self):
+        """Single node: model-input rows and output-source cols are exempt."""
         src = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
         core = NeuralCore(id=0, name="c0", input_sources=src, core_matrix=np.ones((3, 2)), threshold=1.0, latency=0)
         graph = IRGraph(nodes=[core], output_sources=_make_source_array([(0, 0), (0, 1)]))
-        in_buf, out_buf = compute_segment_io_exemption(graph)
+        in_buf, out_buf = compute_graph_io_exemption(graph)
         assert 0 in in_buf
         assert in_buf[0] == {0, 1}, "Rows 0,1 are segment input (from -2); row 2 is bias (-3) not exempt"
         assert 0 in out_buf
         assert out_buf[0] == {0, 1}, "All 2 columns feed output_sources"
 
-    def test_segment_io_exemption_prevents_pruning_single_core(self):
-        """With aggressive masks (all rows and cols pruned), segment I/O exemption keeps input rows and output cols."""
+    def test_graph_io_exemption_prevents_pruning_single_core(self):
+        """With aggressive masks (all rows and cols pruned), model I/O exemption keeps input rows and output cols."""
         w = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float64)
         src = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
         core = NeuralCore(id=0, name="c0", input_sources=src, core_matrix=w.copy(), threshold=1.0, latency=0)
@@ -841,8 +879,8 @@ class TestSegmentIOExemption:
         assert pruned_core.core_matrix.shape == (2, 2)
         np.testing.assert_allclose(pruned_core.core_matrix, w[:2, :])
 
-    def test_segment_io_exemption_two_layer_first_input_rows_exempt(self):
-        """Two nodes in one segment: first node input rows exempt, last node output cols exempt."""
+    def test_graph_io_exemption_two_layer_first_input_rows_exempt(self):
+        """Two nodes: first node input rows exempt, last node output cols exempt."""
         w0 = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float64)
         src0 = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
         core0 = NeuralCore(id=0, name="c0", input_sources=src0, core_matrix=w0.copy(), threshold=1.0, latency=0)
@@ -850,23 +888,26 @@ class TestSegmentIOExemption:
         src1 = _make_source_array([(0, 0), (0, 1), (-3, 0)])
         core1 = NeuralCore(id=1, name="c1", input_sources=src1, core_matrix=w1.copy(), threshold=1.0, latency=1)
         graph = IRGraph(nodes=[core0, core1], output_sources=_make_source_array([(1, 0), (1, 1)]))
-        in_buf, out_buf = compute_segment_io_exemption(graph)
-        assert in_buf[0] == {0, 1}, "Rows 0,1 from -2; row 2 is bias (-3) not segment input"
-        assert out_buf[0] == set(), "Node 0 feeds node 1 (in segment), not output_sources; no output-buffer cols"
-        assert in_buf[1] == set(), "Node 1 rows are from node 0 (in segment) or bias (-3), not segment input"
+        in_buf, out_buf = compute_graph_io_exemption(graph)
+        assert in_buf[0] == {0, 1}, "Rows 0,1 from -2 (model input); row 2 is bias (-3) not exempt"
+        assert out_buf[0] == set(), "Node 0 feeds node 1 (NeuralCore consumer), not output_sources"
+        assert in_buf[1] == set(), "Node 1 rows are from node 0 or bias (-3), not model input"
         assert out_buf[1] == {0, 1}, "Node 1 feeds output_sources"
         row_mask0 = [True, True, True]
         col_mask0 = [True, True]
-        # Do not pass init for output node 1 so segment exemption keeps its output cols; only test node 0.
+        # Do not pass init for output node 1 so model output exemption keeps its cols; only test node 0.
         pruned = prune_ir_graph(
             graph,
             initial_pruned_per_node={0: (row_mask0, col_mask0)},
         )
-        # Node 0: input rows 0,1 exempt so 3 rows kept; output_buf empty so cols can be pruned -> (3, 1) or similar
-        # Node 1 (output node): no init, so zero-threshold + exemption; output_buf {0,1} so both cols kept -> (3, 2)
-        assert pruned.nodes[1].core_matrix.shape == (3, 2)
+        # Node 1 (output node): output cols are exempt; cross-core propagation
+        # prunes the axons reading the now-dead Node 0 neurons. Bias row stays.
+        # Surviving rows: only the bias axon. Surviving cols: both (output exempt).
+        assert pruned.nodes[1].core_matrix.shape == (1, 2), (
+            "Cross-core propagation: only the bias axon survives after Node 0 is fully pruned"
+        )
 
-    def test_segment_io_exemption_non_last_segment_output_cols_empty(self):
+    def test_graph_io_exemption_non_last_segment_output_cols_empty(self):
         """NC -> ComputeOp -> NC: first core feeds next segment but is not in output_sources.
         output_buffer_cols for the first core must be empty so compaction can prune columns."""
         # Segment 1: core0 (id=0). Segment 2: core1 (id=2). ComputeOp (id=1) in between.
@@ -892,8 +933,8 @@ class TestSegmentIOExemption:
         assert len(segments[0]) == 1 and segments[0][0].id == 0
         assert len(segments[1]) == 1 and segments[1][0].id == 2
 
-        in_buf, out_buf = compute_segment_io_exemption(graph)
-        assert out_buf[0] == set(), "Node 0 is not in output_sources; no last-segment output-buffer cols"
+        in_buf, out_buf = compute_graph_io_exemption(graph)
+        assert out_buf[0] == set(), "Node 0 is not in output_sources; not exempt"
         assert out_buf[2] == {0, 1}, "Node 2 feeds output_sources; both cols exempt"
 
         # Prune column 1 of core0 via initial mask; exemption does not protect it -> compaction removes it
@@ -904,8 +945,8 @@ class TestSegmentIOExemption:
         pruned_core0 = pruned.nodes[0]
         assert pruned_core0.core_matrix.shape[1] == 1, "Column 1 was pruned and not exempt; core0 compacted to 1 col"
 
-    def test_segment_io_exemption_non_graph_input_rows_can_compact(self):
-        """NC -> ComputeOp -> NC: second core's rows are from ComputeOp (not graph input).
+    def test_graph_io_exemption_non_model_input_rows_can_compact(self):
+        """NC -> ComputeOp -> NC: second core's rows are from ComputeOp (not model input).
         input_buffer_rows for the second core must be empty so axon/row pruning compacts."""
         # Segment 1: core0 (id=0). Segment 2: core1 (id=2). core1's rows from ComputeOp (1) and bias (-3).
         w0 = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float64)
@@ -925,9 +966,9 @@ class TestSegmentIOExemption:
             nodes=[core0, compute_op, core1],
             output_sources=_make_source_array([(2, 0), (2, 1)]),
         )
-        in_buf, out_buf = compute_segment_io_exemption(graph)
-        assert in_buf[0] == {0, 1}, "Node 0 has graph input rows (-2)"
-        assert in_buf[2] == set(), "Node 2 has no graph input rows; all rows from ComputeOp or bias"
+        in_buf, out_buf = compute_graph_io_exemption(graph)
+        assert in_buf[0] == {0, 1}, "Node 0 has model input rows (-2)"
+        assert in_buf[2] == set(), "Node 2 has no model input rows; all rows from ComputeOp or bias"
 
         # Prune row 0 of core1 via initial mask; exemption does not protect it -> row compaction
         pruned = prune_ir_graph(
@@ -938,3 +979,230 @@ class TestSegmentIOExemption:
         assert pruned_core1.core_matrix.shape[0] == 2, "Row 0 was pruned and not exempt; core1 compacted to 2 rows"
         assert pruned_core1.core_matrix.shape[1] == 2
         assert len(pruned_core1.input_sources.flatten()) == 2
+
+
+class TestCrossCorePruningIntegration:
+    """End-to-end `prune_ir_graph` checks for recursive bidirectional propagation."""
+
+    def test_pruning_a_neuron_compacts_consumer_axon_row(self):
+        """A.col 0 pruned -> B's axon reading (A,0) compacted out."""
+        # A: 3 axons, 2 neurons
+        w_a = np.array([[1.0, 2.0], [3.0, 4.0], [0.5, 0.5]], dtype=np.float64)
+        # B: 3 axons (2 from A + bias), 2 neurons
+        w_b = np.array([[5.0, 6.0], [7.0, 8.0], [0.1, 0.1]], dtype=np.float64)
+        a = NeuralCore(
+            id=0, name="A",
+            input_sources=_make_source_array([(-2, 0), (-2, 1), (-3, 0)]),
+            core_matrix=w_a, threshold=1.0, latency=0,
+        )
+        b = NeuralCore(
+            id=1, name="B",
+            input_sources=_make_source_array([(0, 0), (0, 1), (-3, 0)]),
+            core_matrix=w_b, threshold=1.0, latency=1,
+        )
+        graph = IRGraph(
+            nodes=[a, b], output_sources=_make_source_array([(1, 0), (1, 1)]),
+        )
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={0: ([False, False, False], [True, False])},
+        )
+        b_pruned = pruned.nodes[1]
+        # B compacted: axon 0 dropped (it read pruned A.0); 2 axons remain (former (0,1) and bias).
+        assert b_pruned.core_matrix.shape[0] == 2, (
+            f"B should have 2 axons after dropping the one fed by pruned A.0; got {b_pruned.core_matrix.shape}"
+        )
+        flat = b_pruned.input_sources.flatten()
+        # First surviving axon was (0, 1); after A compaction it is now (0, 0).
+        assert flat[0].node_id == 0 and flat[0].index == 0
+        assert flat[1].is_always_on()
+
+    def test_three_core_cascade_compacts(self):
+        """A->B->C: pruning A.col 0 cascades through B (within-matrix) to compact C."""
+        w_a = np.array([[1.0, 2.0], [3.0, 4.0], [0.0, 1.0]], dtype=np.float64)
+        # B's row 0 only contributes to col 0; row 1 to col 1.
+        w_b = np.array([[10.0, 0.0], [0.0, 11.0], [0.0, 1.0]], dtype=np.float64)
+        # C's row 0 only feeds col 0.
+        w_c = np.array([[5.0, 0.0], [0.0, 6.0], [0.0, 1.0]], dtype=np.float64)
+        a = NeuralCore(
+            id=0, name="A",
+            input_sources=_make_source_array([(-2, 0), (-2, 1), (-3, 0)]),
+            core_matrix=w_a, threshold=1.0, latency=0,
+        )
+        b = NeuralCore(
+            id=1, name="B",
+            input_sources=_make_source_array([(0, 0), (0, 1), (-3, 0)]),
+            core_matrix=w_b, threshold=1.0, latency=1,
+        )
+        c = NeuralCore(
+            id=2, name="C",
+            input_sources=_make_source_array([(1, 0), (1, 1), (-3, 0)]),
+            core_matrix=w_c, threshold=1.0, latency=2,
+        )
+        graph = IRGraph(
+            nodes=[a, b, c],
+            output_sources=_make_source_array([(2, 0), (2, 1)]),
+        )
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={0: ([False, False, False], [True, False])},
+        )
+        # A: col 0 pruned -> 1 surviving neuron
+        assert pruned.nodes[0].core_matrix.shape[1] == 1
+        # B: row 0 pruned (read pruned A.0) and col 0 pruned (within-matrix from row death)
+        assert pruned.nodes[1].core_matrix.shape == (2, 1)
+        # C: row 0 pruned (read pruned B.0)
+        assert pruned.nodes[2].core_matrix.shape[0] == 2
+
+    def test_compute_op_blocks_cross_core_compaction(self):
+        """A -> ComputeOp -> B: pruning A.col 0 must NOT cascade into B."""
+        w_a = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+        op = ComputeOp(
+            id=1, name="op",
+            input_sources=_make_source_array([(0, 0), (0, 1)]),
+            op_type="identity",
+        )
+        w_b = np.array([[5.0, 6.0], [7.0, 8.0], [0.1, 0.1]], dtype=np.float64)
+        a = NeuralCore(
+            id=0, name="A",
+            input_sources=_make_source_array([(-2, 0), (-2, 1)]),
+            core_matrix=w_a, threshold=1.0, latency=0,
+        )
+        b = NeuralCore(
+            id=2, name="B",
+            input_sources=_make_source_array([(1, 0), (1, 1), (-3, 0)]),
+            core_matrix=w_b, threshold=1.0, latency=1,
+        )
+        graph = IRGraph(
+            nodes=[a, op, b],
+            output_sources=_make_source_array([(2, 0), (2, 1)]),
+        )
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={0: ([False, False], [True, False])},
+        )
+        # A col 0 pruned (from -2 model input axons - cols are not exempt because A is not last)
+        assert pruned.nodes[0].core_matrix.shape[1] == 1
+        # B not compacted because ComputeOp barrier breaks propagation.
+        assert pruned.nodes[2].core_matrix.shape == (3, 2)
+        flat = pruned.nodes[2].input_sources.flatten()
+        assert flat[0].node_id == 1 and flat[0].index == 0  # from ComputeOp, untouched
+        assert flat[1].node_id == 1 and flat[1].index == 1
+        assert flat[2].is_always_on()
+
+    def test_unconsumed_neuron_pruned_in_first_core(self):
+        """A.col j with no consumer (no other core reads it) is pruned."""
+        # A produces 3 neurons; B reads only A.0 and A.1, leaving A.2 dead.
+        w_a = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float64)
+        w_b = np.array([[1.0], [1.0], [1.0]], dtype=np.float64)
+        a = NeuralCore(
+            id=0, name="A",
+            input_sources=_make_source_array([(-2, 0), (-3, 0)]),
+            core_matrix=w_a, threshold=1.0, latency=0,
+        )
+        b = NeuralCore(
+            id=1, name="B",
+            input_sources=_make_source_array([(0, 0), (0, 1), (-3, 0)]),
+            core_matrix=w_b, threshold=1.0, latency=1,
+        )
+        graph = IRGraph(
+            nodes=[a, b], output_sources=_make_source_array([(1, 0)]),
+        )
+        pruned = prune_ir_graph(graph)
+        # A.col 2 has no consumer -> compacted out.
+        assert pruned.nodes[0].core_matrix.shape[1] == 2
+
+    def test_value_based_pruning_unioned_with_model_mask(self):
+        """All-zero rows/cols not in the model mask are still pruned.
+
+        The model mask is the *minimum* set of rows/cols the caller declares
+        dead. Any additional rows/cols whose weights are already at zero are
+        dead by themselves and must be unioned into the pruned set.
+        """
+        # B is the model-input-facing core (its rows are ``-2`` axons, exempt).
+        # A reads from B; its row indices are *not* model-input axons, so
+        # value-based pruning is allowed to remove all-zero rows.
+        w_b = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+        b = NeuralCore(
+            id=0, name="B",
+            input_sources=_make_source_array([(-2, 0)]),
+            core_matrix=w_b, threshold=1.0, latency=0,
+        )
+        w_a = np.array(
+            [
+                [1.0, 0.0, 3.0],  # col 1 is all zero
+                [0.0, 0.0, 0.0],  # row 1 is all zero
+                [0.5, 0.0, 0.6],
+            ],
+            dtype=np.float32,
+        )
+        a = NeuralCore(
+            id=1, name="A",
+            input_sources=_make_source_array([(0, 0), (0, 1), (0, 2)]),
+            core_matrix=w_a, threshold=1.0, latency=1,
+        )
+        # Downstream consumer keeps A's neurons referenced (so col 1 not orphan).
+        w_c = np.array([[1.0], [1.0], [1.0]], dtype=np.float32)
+        c = NeuralCore(
+            id=2, name="C",
+            input_sources=_make_source_array([(1, 0), (1, 1), (1, 2)]),
+            core_matrix=w_c, threshold=1.0, latency=2,
+        )
+        graph = IRGraph(
+            nodes=[b, a, c], output_sources=_make_source_array([(2, 0)]),
+        )
+        # Provide an explicit (empty) model mask for A so legacy
+        # "skip value-based on seeded nodes" behavior would have kept the
+        # all-zero row/col. The fix unions value-based with the seed.
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={
+                0: ([False], [False, False, False]),
+                1: ([False, False, False], [False, False, False]),
+                2: ([False, False, False], [False]),
+            },
+        )
+        a_pruned = next(n for n in pruned.nodes if n.id == 1)
+        # Row 1 is all zero -> dropped. Col 1 is all zero -> dropped.
+        assert a_pruned.core_matrix.shape == (2, 2)
+
+    def test_fully_pruned_core_marks_placeholder_as_pruned(self):
+        """When every row and column of a core dies, the (1,1) placeholder
+        that ``_compact_node`` leaves behind must be marked as pruned in the
+        post-compaction masks so the heatmap and downstream consumers know
+        the core is dead-math.
+        """
+        # A's col 0 is the only one with non-zero weight. We prune it via
+        # model mask -> the resulting B core ends up entirely dead-math:
+        # its only producer source goes to off, all rows die, all cols die.
+        w_a = np.array([[1.0]], dtype=np.float64)
+        w_b = np.array([[2.0], [3.0]], dtype=np.float64)
+        a = NeuralCore(
+            id=0, name="A",
+            input_sources=_make_source_array([(-2, 0)]),
+            core_matrix=w_a, threshold=1.0, latency=0,
+        )
+        b = NeuralCore(
+            id=1, name="B",
+            input_sources=_make_source_array([(0, 0), (-3, 0)]),
+            core_matrix=w_b, threshold=1.0, latency=1,
+        )
+        # Critical: another core C is the model output, otherwise B itself
+        # would be exempt as the output source.
+        w_c = np.array([[7.0]], dtype=np.float64)
+        c = NeuralCore(
+            id=2, name="C",
+            input_sources=_make_source_array([(-2, 0)]),
+            core_matrix=w_c, threshold=1.0, latency=0,
+        )
+        graph = IRGraph(
+            nodes=[a, b, c], output_sources=_make_source_array([(2, 0)]),
+        )
+        pruned = prune_ir_graph(
+            graph,
+            initial_pruned_per_node={0: ([False], [True])},
+        )
+        b_pruned = pruned.nodes[1]
+        assert b_pruned.core_matrix.shape == (1, 1)
+        assert b_pruned.pruned_row_mask == [True]
+        assert b_pruned.pruned_col_mask == [True]
