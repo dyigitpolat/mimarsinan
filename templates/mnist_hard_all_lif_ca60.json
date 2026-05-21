@@ -49,6 +49,7 @@
     "spike_generation_mode": "Uniform",
     "thresholding_mode": "<",
     "cycle_accurate_lif_forward": true,
+    "chip_aligned_lif_adaptation": false,
     "activation_quantization": false,
     "weight_quantization": true,
     "pruning": true,
