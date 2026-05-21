@@ -759,19 +759,23 @@ class TestHardwareBiasPruning:
         assert pruned_core.hardware_bias.shape[0] == 3
         np.testing.assert_allclose(pruned_core.hardware_bias, [10.0, 20.0, 30.0])
 
-    def test_hardware_bias_all_columns_pruned(self):
-        """When weights AND bias are all zero, all columns prune and bias collapses."""
+    def test_hardware_bias_all_columns_pruned_removes_core(self):
+        """When weights AND bias are all zero, the core is DEAD and gets
+        deleted from the graph (no (1,1) placeholder is left behind).
+
+        The downstream core that read from it survives as an output-
+        protected BIAS_ONLY core (its only input is now OFF, but it is
+        referenced by ``output_sources``).
+        """
         w = np.array([
             [0.0, 0.0],
             [0.0, 0.0],
         ], dtype=np.float32)
-        # Zero bias => no implicit live source => cols are truly dead.
         bias = np.array([0.0, 0.0], dtype=np.float32)
         src = _make_source_array([(-2, 0), (-2, 1)])
         core0 = NeuralCore(id=0, name="core0", input_sources=src, core_matrix=w, threshold=1.0, latency=0)
         core0.hardware_bias = bias
 
-        # Downstream core so columns are not exempt as outputs
         w1 = np.array([[1.0], [1.0]], dtype=np.float32)
         src1 = _make_source_array([(0, 0), (0, 1)])
         core1 = NeuralCore(id=1, name="core1", input_sources=src1, core_matrix=w1, threshold=1.0, latency=1)
@@ -779,10 +783,18 @@ class TestHardwareBiasPruning:
         graph = IRGraph(nodes=[core0, core1], output_sources=out_src)
 
         pruned = prune_ir_graph(graph)
-        pruned_core = pruned.nodes[0]
-        assert pruned_core.core_matrix.shape[1] == 1
-        assert pruned_core.hardware_bias.shape[0] == 1
-        assert pruned_core.hardware_bias[0] == 0.0
+
+        ids = [n.id for n in pruned.nodes]
+        assert 0 not in ids, "DEAD core0 must be removed from the graph"
+        assert 1 in ids, "Output-protected core1 must survive"
+
+        survivor = next(n for n in pruned.nodes if n.id == 1)
+        # core1 is output-protected; its sole live column is preserved. All
+        # axons collapse to a single OFF-source placeholder row (BIAS_ONLY
+        # shape (1, 1)) so the matrix stays indexable.
+        assert survivor.core_matrix.shape == (1, 1)
+        flat = survivor.input_sources.flatten()
+        assert flat[0].is_off()
 
     def test_no_hardware_bias_unchanged(self):
         """When hardware_bias is None, pruning columns does not crash."""
@@ -900,10 +912,15 @@ class TestGraphIOExemption:
             graph,
             initial_pruned_per_node={0: (row_mask0, col_mask0)},
         )
+        # Node 0 is fully dead (all rows + all cols pruned via the model
+        # mask) -> liveness deletes it from the graph. Look up Node 1 by id.
+        ids = [n.id for n in pruned.nodes]
+        assert 0 not in ids, "Node 0 should be removed (DEAD via initial mask)"
+        node1 = next(n for n in pruned.nodes if n.id == 1)
         # Node 1 (output node): output cols are exempt; cross-core propagation
         # prunes the axons reading the now-dead Node 0 neurons. Bias row stays.
         # Surviving rows: only the bias axon. Surviving cols: both (output exempt).
-        assert pruned.nodes[1].core_matrix.shape == (1, 2), (
+        assert node1.core_matrix.shape == (1, 2), (
             "Cross-core propagation: only the bias axon survives after Node 0 is fully pruned"
         )
 
@@ -1166,11 +1183,10 @@ class TestCrossCorePruningIntegration:
         # Row 1 is all zero -> dropped. Col 1 is all zero -> dropped.
         assert a_pruned.core_matrix.shape == (2, 2)
 
-    def test_fully_pruned_core_marks_placeholder_as_pruned(self):
-        """When every row and column of a core dies, the (1,1) placeholder
-        that ``_compact_node`` leaves behind must be marked as pruned in the
-        post-compaction masks so the heatmap and downstream consumers know
-        the core is dead-math.
+    def test_fully_pruned_core_is_removed_from_graph(self):
+        """When every row and column of an intermediate core dies, the
+        liveness pass deletes the node entirely (no ``(1, 1)`` placeholder
+        is kept). Surviving nodes must continue to validate.
         """
         # A's col 0 is the only one with non-zero weight. We prune it via
         # model mask -> the resulting B core ends up entirely dead-math:
@@ -1202,7 +1218,12 @@ class TestCrossCorePruningIntegration:
             graph,
             initial_pruned_per_node={0: ([False], [True])},
         )
-        b_pruned = pruned.nodes[1]
-        assert b_pruned.core_matrix.shape == (1, 1)
-        assert b_pruned.pruned_row_mask == [True]
-        assert b_pruned.pruned_col_mask == [True]
+        ids = [n.id for n in pruned.nodes]
+        # A is DEAD (col pruned by model mask -> single neuron lost ->
+        # nothing emits anymore). B is DEAD too (its sole live producer
+        # neuron is gone, so every axon dies). Both must be removed.
+        assert 0 not in ids and 1 not in ids
+        assert 2 in ids
+        assert pruned.validate() == [], (
+            "graph must remain consistent after dead-core deletion"
+        )

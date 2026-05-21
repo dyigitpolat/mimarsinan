@@ -26,6 +26,10 @@ from typing import Dict, List, Sequence, Set, Tuple
 import numpy as np
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.ir_liveness import (
+    NodeLiveness,
+    compute_liveness,
+)
 from mimarsinan.mapping.ir_pruning_analysis import compute_graph_io_exemption
 from mimarsinan.mapping.pruning_apply import compact_hardware_bias_columns
 from mimarsinan.mapping.pruning_graph_propagation import (
@@ -203,6 +207,7 @@ def prune_ir_graph(
     initial_pruned_per_node: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
     initial_pruned_per_bank: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
     store_heatmap: bool = False,
+    simulation_steps: int = 32,
 ) -> IRGraph:
     """Prune and compact ``ir_graph`` in place; return the same instance.
 
@@ -210,6 +215,19 @@ def prune_ir_graph(
     ComputeOp nodes act as barriers (their inputs and outputs always count as
     live). Model-level input data axons (``IRSource.node_id == -2``) and model
     output logits (entries in ``ir_graph.output_sources``) are never pruned.
+
+    After propagation, every NeuralCore is classified by
+    :func:`mimarsinan.mapping.ir_liveness.compute_liveness` as
+    ``LIVE`` / ``BIAS_ONLY`` / ``DEAD``. ``DEAD`` nodes are deleted via
+    :meth:`IRGraph.remove_nodes` so they no longer consume hardware slots,
+    simulation cycles, or UI surface area. Surviving nodes are physically
+    compacted in place.
+
+    Args:
+        simulation_steps: LIF integration window. Used only by the
+            bias-emission half of :func:`compute_liveness` to decide
+            whether a bias-only core can fire within ``simulation_steps``
+            cycles.
     """
     if not ir_graph.nodes:
         return ir_graph
@@ -234,8 +252,27 @@ def prune_ir_graph(
         _log_value_based_summary(result)
 
     _attach_pre_compaction_metadata(graph, result, store_heatmap=store_heatmap)
+
+    liveness = compute_liveness(
+        graph,
+        simulation_steps=simulation_steps,
+        pruning_result=result,
+        zero_threshold=zero_threshold,
+    )
+    dead_node_ids = sorted(
+        nid for nid, status in liveness.per_node.items()
+        if status == NodeLiveness.DEAD
+    )
+    _force_dead_nodes_fully_pruned(graph, dead_node_ids, result)
     _rewire_sources(graph, result.pruned_cols_per_node)
     _validate_outputs_remain(graph)
+
+    if dead_node_ids:
+        graph.remove_nodes(dead_node_ids)
+        print(
+            f"[Pruning] prune_ir_graph: removed {len(dead_node_ids)} DEAD "
+            f"NeuralCore(s) after liveness analysis"
+        )
 
     for node in graph.nodes:
         if isinstance(node, NeuralCore) and node.core_matrix is not None:
@@ -249,6 +286,38 @@ def prune_ir_graph(
     _attach_bank_metadata(graph, result, store_heatmap=store_heatmap)
 
     return graph
+
+
+def _force_dead_nodes_fully_pruned(
+    graph: IRGraph,
+    dead_node_ids: Sequence[int],
+    result: GlobalPruningResult,
+) -> None:
+    """Mark every neuron / axon of a DEAD node as pruned.
+
+    This guarantees that
+    :func:`_rewire_sources` turns every consumer reference to the dead
+    node into ``IRSource(-1, 0)`` BEFORE :meth:`IRGraph.remove_nodes`
+    deletes the node itself. Without this the consumer's ``input_sources``
+    would still point at a dangling id between the rewire and the
+    delete passes.
+    """
+    if not dead_node_ids:
+        return
+    dead_set = set(dead_node_ids)
+    for node in graph.nodes:
+        if not isinstance(node, NeuralCore) or node.id not in dead_set:
+            continue
+        if node.core_matrix is not None:
+            n_axons, n_neurons = node.core_matrix.shape
+        else:
+            try:
+                mat = node.get_core_matrix(graph)
+                n_axons, n_neurons = mat.shape
+            except Exception:
+                continue
+        result.pruned_rows_per_node[node.id] = set(range(n_axons))
+        result.pruned_cols_per_node[node.id] = set(range(n_neurons))
 
 
 # ---------------------------------------------------------------------------
@@ -436,21 +505,27 @@ def _compact_node(
 ) -> None:
     """Drop pruned columns (and matching bias entries) then pruned rows.
 
-    Maintains the contract that a NeuralCore always has at least one row and
-    one column: when *every* row or column is pruned we keep a single zeroed
-    placeholder so downstream code can still index into the matrix.
+    Liveness analysis upstream guarantees that no surviving NeuralCore is
+    fully dead: at least one column survives (some neuron is reachable),
+    and at least one row either survives or the surviving columns are
+    bias-only (in which case ``compact_soft_core_mapping`` later collapses
+    the rowless matrix to a single OFF-source axon). So neither
+    ``keep_cols`` nor ``keep_row_idx`` will ever be empty here -- we
+    assert to fail loudly if that invariant is ever violated by an
+    upstream regression.
     """
     if pruned_cols:
         keep_cols = [c for c in range(node.core_matrix.shape[1]) if c not in pruned_cols]
-        if keep_cols:
-            node.core_matrix = node.core_matrix[:, keep_cols]
-            node.hardware_bias = compact_hardware_bias_columns(
-                node.hardware_bias, keep_cols
-            )
-        else:
-            node.core_matrix = node.core_matrix[:, :1] * 0.0
-            if node.hardware_bias is not None:
-                node.hardware_bias = node.hardware_bias[:1] * 0.0
+        assert keep_cols, (
+            f"_compact_node: NeuralCore id={node.id} ({node.name}) has every "
+            "column pruned; the liveness pass should have removed it. This "
+            "indicates a missing call to compute_liveness + remove_nodes "
+            "in the surrounding pipeline."
+        )
+        node.core_matrix = node.core_matrix[:, keep_cols]
+        node.hardware_bias = compact_hardware_bias_columns(
+            node.hardware_bias, keep_cols
+        )
 
     if pruned_rows:
         n_axons = node.core_matrix.shape[0]
@@ -464,23 +539,33 @@ def _compact_node(
             node.core_matrix = node.core_matrix[keep_row_idx, :]
             node.input_sources = flat_src[keep_row_idx]
         else:
-            node.core_matrix = node.core_matrix[:1, :] * 0.0
-            node.input_sources = flat_src[:1]
+            # Every axon is dead but at least one column survives (its
+            # ``hardware_bias`` keeps it alive). This is the legitimate
+            # BIAS_ONLY shape: collapse the row dim to a single
+            # OFF-source axon while preserving the live bias-driven columns.
+            node.core_matrix = np.zeros(
+                (1, node.core_matrix.shape[1]),
+                dtype=node.core_matrix.dtype,
+            )
+            node.input_sources = np.array(
+                [IRSource(node_id=-1, index=0)], dtype=object,
+            )
 
 
 def _reset_post_compaction_masks(graph: IRGraph) -> None:
-    """Move pre-compaction masks aside and zero-fill new same-shape masks.
+    """Move pre-compaction masks aside and re-derive same-shape post masks.
 
-    Bank-backed cores keep the un-compacted masks (the soft-core mapping stage
-    physically compacts banks later, and the masks must survive until then).
+    Bank-backed cores keep the un-compacted masks (the soft-core mapping
+    stage physically compacts banks later, and the masks must survive
+    until then).
 
-    Fully-pruned cores (every row and/or column dead) are compacted down to a
-    ``(1, 1)`` zero placeholder by :func:`_compact_node`. The placeholder row
-    and column do not represent live computation: they exist only so downstream
-    code can still index into the matrix. Mark them as pruned in the
-    post-compaction mask so the heatmap renderer overlays the prune lines and
-    dead-math accounting (``ChipLatency``, soft-core mapper, GUI) treats them
-    consistently with their pre-compaction status.
+    After dead-node deletion every surviving owned-matrix core is either
+    LIVE (some live row, some live column) or BIAS_ONLY (no live row, the
+    single OFF-source placeholder row standing in for the dead axons,
+    plus live bias-driven columns). For LIVE cores the post-mask is all
+    False; for BIAS_ONLY cores the single row is marked pruned so the
+    heatmap renderer overlays the prune line and dead-math accounting
+    treats it consistently.
     """
     for node in graph.nodes:
         if not isinstance(node, NeuralCore) or node.core_matrix is None:
@@ -496,13 +581,8 @@ def _reset_post_compaction_masks(graph: IRGraph) -> None:
             and len(node.pre_pruning_row_mask) > 0
             and all(node.pre_pruning_row_mask)
         )
-        all_cols_were_pruned = bool(
-            node.pre_pruning_col_mask is not None
-            and len(node.pre_pruning_col_mask) > 0
-            and all(node.pre_pruning_col_mask)
-        )
         node.pruned_row_mask = [all_rows_were_pruned] * n_axons_new
-        node.pruned_col_mask = [all_cols_were_pruned] * n_neurons_new
+        node.pruned_col_mask = [False] * n_neurons_new
 
 
 def _attach_bank_metadata(

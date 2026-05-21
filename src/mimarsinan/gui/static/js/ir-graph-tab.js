@@ -144,12 +144,27 @@ function buildTiers(groups) {
 
 // ── Color palette (PlotNeuralNet / NN-SVG inspired) ──────────────────────
 const BLOCK_COLORS = {
-  neural:  { front: '#4a7cf5', top: '#6b9cff', side: '#3560c8', stroke: '#2a4a9e' },
-  compute: { front: '#9c5bdb', top: '#b87ae8', side: '#7a3cb8', stroke: '#5a2d8a' },
-  virtual: { front: '#4caf50', top: '#6ec972', side: '#358a38', stroke: '#1e6e22' },
+  neural:    { front: '#4a7cf5', top: '#6b9cff', side: '#3560c8', stroke: '#2a4a9e' },
+  compute:   { front: '#9c5bdb', top: '#b87ae8', side: '#7a3cb8', stroke: '#5a2d8a' },
+  virtual:   { front: '#4caf50', top: '#6ec972', side: '#358a38', stroke: '#1e6e22' },
+  // Liveness palettes mirror the failed-step / warning palette in style.css
+  // so the dataflow graph and the group-cards stay visually consistent.
+  dead:      { front: '#5a2d2d', top: '#7a4040', side: '#3a1b1b', stroke: '#2a1010' },
+  bias_only: { front: '#5a4f2d', top: '#7a6f40', side: '#3a3015', stroke: '#2a2010' },
 };
 
 function blockColors(type) { return BLOCK_COLORS[type] || BLOCK_COLORS.neural; }
+
+function tierLivenessPalette(tier) {
+  // Aggregate liveness across the tier's groups: dead beats bias_only beats
+  // mixed. Pure-virtual / pure-compute tiers fall through to their default.
+  if (!tier || !tier.groups || tier.groups.length === 0) return null;
+  const neuralGroups = tier.groups.filter(g => (g.num_cores || 0) > 0);
+  if (neuralGroups.length === 0) return null;
+  if (neuralGroups.every(g => g.all_dead)) return BLOCK_COLORS.dead;
+  if (neuralGroups.every(g => g.all_dead_or_bias_only)) return BLOCK_COLORS.bias_only;
+  return null;
+}
 
 // ── 3D block SVG helper (NN-SVG LeNet stacked-rectangle style) ───────────
 function svgBlock3D(x, y, w, h, dx, dy, c, opacity) {
@@ -309,7 +324,11 @@ function renderTierDAG(irGraph) {
     svg += '<g class="layer-blocks">';
     for (const tc of tierCols) {
       const tier = tc.tier;
-      const c = blockColors(tier.isCompute ? 'compute' : (tier.isVirtual ? 'virtual' : 'neural'));
+      const livenessPalette = tier.isCompute || tier.isVirtual
+        ? null
+        : tierLivenessPalette(tier);
+      const c = livenessPalette
+        || blockColors(tier.isCompute ? 'compute' : (tier.isVirtual ? 'virtual' : 'neural'));
       const isSel = st.selectedTier === tier.idx;
       const canExpand = !tier.isVirtual;
 
@@ -489,12 +508,27 @@ function buildTierDetail(tier, allGroups, groupEdges, nodeById, irGraph, g2t, ti
       const opTypes = (g.op_types || []).join(', ');
 
       const isSel = window._irGraphState.detailGroup === g.key;
-      html += `<div class="ir-tier-group-card${isSel ? ' ir-tier-group-card-selected' : ''}" onclick="window._irGroupClick('${safeKey}')">`;
+      // Liveness tint: dark-red for fully-dead groups, amber for groups
+      // whose only live cores are bias-only. Live groups get no extra class.
+      const livenessCls = g.all_dead
+        ? ' ir-tier-group-card-dead'
+        : g.all_dead_or_bias_only
+          ? ' ir-tier-group-card-bias-only'
+          : '';
+      html += `<div class="ir-tier-group-card${isSel ? ' ir-tier-group-card-selected' : ''}${livenessCls}" onclick="window._irGroupClick('${safeKey}')">`;
       html += `<div class="ir-tier-group-card-title">${esc(g.key)}</div>`;
       html += '<div class="ir-tier-group-card-meta">';
       if (g.type === 'neural') {
         html += `<span>${coreCount} core${coreCount !== 1 ? 's' : ''}</span>`;
         if (dims.length > 0) html += `<span>${dims.join(' × ')}</span>`;
+        if (g.all_dead) {
+          html += `<span class="ir-tier-group-card-badge ir-tier-group-card-badge-dead">disabled</span>`;
+        } else if (g.all_dead_or_bias_only) {
+          html += `<span class="ir-tier-group-card-badge ir-tier-group-card-badge-bias-only">bias only</span>`;
+        } else if ((g.bias_only_count || 0) > 0 || (g.dead_count || 0) > 0) {
+          const partial = `${g.live_core_count || 0}L/${g.bias_only_count || 0}B/${g.dead_count || 0}D`;
+          html += `<span class="ir-tier-group-card-badge ir-tier-group-card-badge-mixed">${partial}</span>`;
+        }
       }
       if (g.type === 'compute' || g.type === 'compute_group' || opCount > 0) {
         html += `<span>${opCount} op${opCount !== 1 ? 's' : ''}</span>`;
@@ -595,16 +629,20 @@ function buildGroupDetail(g, nodeById, irGraph) {
     const postUri = imgSrcAttr(postResource);
     if (!postUri) continue;
     const preResource = c.pre_pruning_resource || null;
+    const biasResource = c.bias_resource || null;
     const entry = {
       title: bankId != null ? `Weight bank ${bankId}` : `Core ${c.id}`,
       coreIds: [c.id],
       coreNames: [c.name],
       postImageUri: postUri,
       preImageUri: imgSrcAttr(preResource) || null,
+      biasImageUri: imgSrcAttr(biasResource) || null,
       postAxons: c.axons ?? 0,
       postNeurons: c.neurons ?? 0,
       preAxons: c.pre_pruning_axons ?? null,
       preNeurons: c.pre_pruning_neurons ?? null,
+      liveness: c.liveness || 'live',
+      biasStats: c.hardware_bias_stats || null,
     };
     heatmapGroups.set(key, entry);
   }
@@ -663,6 +701,13 @@ function buildGroupDetail(g, nodeById, irGraph) {
     }
     const postDimLabel = ` (${entry.postAxons}×${entry.postNeurons})`;
     html += `<div class="ir-heatmap-wrap"><div class="section-label" style="font-size:10px;margin-bottom:4px">Post-pruning${postDimLabel}</div><img src="${entry.postImageUri}" alt="Post-pruning" loading="lazy" decoding="async" class="ir-softcore-heatmap-img" style="width:${postSize.w}px;height:${postSize.h}px;display:block;object-fit:fill;border:1px solid #2e3140;border-radius:4px"></div>`;
+    if (entry.biasImageUri && entry.liveness === 'bias_only') {
+      const biasW = Math.max(MIN_HEATMAP_VIEW_WIDTH, postSize.w);
+      const biasLabel = entry.biasStats
+        ? `hardware_bias (this core fires from bias only; max=${entry.biasStats.abs_max?.toFixed?.(3) ?? '?'})`
+        : 'hardware_bias (this core fires from bias only)';
+      html += `<div class="ir-heatmap-wrap" style="flex-basis:100%"><div class="section-label" style="font-size:10px;margin-bottom:4px;color:var(--warning,#f0c060)">${esc(biasLabel)}</div><img src="${entry.biasImageUri}" alt="Hardware bias" loading="lazy" decoding="async" class="ir-softcore-heatmap-img" style="width:${biasW}px;height:24px;display:block;object-fit:fill;border:1px solid #5a4f2d;border-radius:4px"></div>`;
+    }
     html += '</div></div></div>';
   }
 

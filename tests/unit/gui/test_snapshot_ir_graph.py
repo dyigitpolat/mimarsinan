@@ -1,4 +1,4 @@
-"""Tests for ``snapshot_ir_graph``'s resource-sharing contract.
+"""Tests for ``snapshot_ir_graph``'s resource-sharing and liveness contract.
 
 The Hard Core Mapping step embeds an IR-graph summary so its inspector can
 show soft-core detail. Re-rendering ~1000+ heatmaps a second time is both
@@ -9,6 +9,12 @@ exhausted before the duplicated renders flushed.
 The fix: ``snapshot_ir_graph(source_step_name=...)`` returns an empty
 descriptor list and tags every resource ref with ``"step": source_step_name``,
 so the frontend points at the SCM step's already-persisted resources.
+
+After the dead-core-elimination refactor, ``snapshot_ir_graph`` also emits
+per-NeuralCore ``liveness`` ("live" / "bias_only" / "dead_legacy") plus
+per-group aggregates (``all_dead``, ``all_dead_or_bias_only``,
+``live_core_count``, ``bias_only_count``, ``dead_count``) so the monitor UI
+can tint dead/bias-only groups.
 """
 
 from __future__ import annotations
@@ -16,7 +22,11 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.gui.snapshot.builders import (
+    LIVENESS_BIAS_ONLY,
+    LIVENESS_DEAD_LEGACY,
+    LIVENESS_LIVE,
     RESOURCE_KIND_IR_BANK_HEATMAP,
+    RESOURCE_KIND_IR_CORE_BIAS,
     RESOURCE_KIND_IR_CORE_HEATMAP,
     RESOURCE_KIND_IR_CORE_PRE_PRUNING,
     snapshot_ir_graph,
@@ -119,3 +129,159 @@ class TestSnapshotIRGraphSourceStep:
 
         # Critical: do not duplicate the SCM-step renders.
         assert descriptors == []
+
+
+def _live_neural_core(*, nid: int, name: str = "live") -> NeuralCore:
+    src = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
+    return NeuralCore(
+        id=nid, name=name, input_sources=src,
+        core_matrix=np.array(
+            [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]], dtype=np.float64
+        ),
+        threshold=1.0, latency=0,
+    )
+
+
+def _bias_only_neural_core(*, nid: int, name: str = "bias_only") -> NeuralCore:
+    """Build a post-compaction BIAS_ONLY core: (1, N) zero matrix with a
+    single OFF-source axon and a non-zero ``hardware_bias``."""
+    core = NeuralCore(
+        id=nid, name=name,
+        input_sources=_make_source_array([(-1, 0)]),
+        core_matrix=np.zeros((1, 2), dtype=np.float64),
+        hardware_bias=np.array([2.0, 1.5], dtype=np.float64),
+        threshold=1.0, latency=0,
+    )
+    # Pre-pruning masks reflecting the BIAS_ONLY history: every original
+    # axon was pruned, all columns alive.
+    core.pre_pruning_row_mask = [True, True, True]
+    core.pre_pruning_col_mask = [False, False]
+    core.pruned_row_mask = [True]
+    core.pruned_col_mask = [False, False]
+    return core
+
+
+def _dead_legacy_neural_core(*, nid: int, name: str = "legacy") -> NeuralCore:
+    """Build the old (1,1) DEAD placeholder pattern that older pickles
+    still contain. Detection must surface ``dead_legacy``."""
+    core = NeuralCore(
+        id=nid, name=name,
+        input_sources=_make_source_array([(-1, 0)]),
+        core_matrix=np.zeros((1, 1), dtype=np.float64),
+        threshold=1.0, latency=0,
+    )
+    core.pre_pruning_row_mask = [True, True]
+    core.pre_pruning_col_mask = [True, True]
+    core.pruned_row_mask = [True]
+    core.pruned_col_mask = [True]
+    return core
+
+
+class TestSnapshotIRGraphLivenessFields:
+    def test_neural_core_emits_liveness_field(self):
+        live = _live_neural_core(nid=1)
+        graph = IRGraph(
+            nodes=[live],
+            output_sources=_make_source_array([(1, 0), (1, 1)]),
+        )
+        snap, _ = snapshot_ir_graph(graph)
+        info = snap["nodes"][0]
+        assert info["id"] == 1
+        assert info["liveness"] == LIVENESS_LIVE
+
+    def test_bias_only_core_emits_bias_resource(self):
+        bias_only = _bias_only_neural_core(nid=2)
+        # Add a tiny live consumer so the graph has a sane output target.
+        live = NeuralCore(
+            id=3, name="consumer",
+            input_sources=_make_source_array([(2, 0), (2, 1)]),
+            core_matrix=np.array([[1.0], [1.0]], dtype=np.float64),
+            threshold=1.0, latency=1,
+        )
+        graph = IRGraph(
+            nodes=[bias_only, live],
+            output_sources=_make_source_array([(3, 0)]),
+        )
+        snap, descriptors = snapshot_ir_graph(graph)
+
+        bias_info = next(n for n in snap["nodes"] if n["id"] == 2)
+        assert bias_info["liveness"] == LIVENESS_BIAS_ONLY
+        assert bias_info.get("has_bias_resource") is True
+        assert (
+            bias_info["bias_resource"]["kind"] == RESOURCE_KIND_IR_CORE_BIAS
+        )
+        assert bias_info["bias_resource"]["rid"] == "core/2"
+        assert any(
+            d.kind == RESOURCE_KIND_IR_CORE_BIAS and d.rid == "core/2"
+            for d in descriptors
+        )
+        # Live consumer has no bias resource.
+        live_info = next(n for n in snap["nodes"] if n["id"] == 3)
+        assert live_info["liveness"] == LIVENESS_LIVE
+        assert live_info.get("has_bias_resource") is not True
+
+    def test_legacy_placeholder_pickle_still_classified_as_dead_legacy(self):
+        legacy = _dead_legacy_neural_core(nid=4)
+        live = NeuralCore(
+            id=5, name="live",
+            input_sources=_make_source_array([(-2, 0)]),
+            core_matrix=np.array([[1.0]], dtype=np.float64),
+            threshold=1.0, latency=0,
+        )
+        graph = IRGraph(
+            nodes=[legacy, live],
+            output_sources=_make_source_array([(5, 0)]),
+        )
+        snap, _ = snapshot_ir_graph(graph)
+        info = next(n for n in snap["nodes"] if n["id"] == 4)
+        assert info["liveness"] == LIVENESS_DEAD_LEGACY
+
+    def test_group_all_dead_flag_set_when_every_core_dead_legacy(self):
+        # Two legacy cores in the same FC-tile-style layer group.
+        legacy_a = _dead_legacy_neural_core(nid=10, name="layer_X_tile_0_0")
+        legacy_b = _dead_legacy_neural_core(nid=11, name="layer_X_tile_0_1")
+        # Live core elsewhere so the graph stays well-formed.
+        live = NeuralCore(
+            id=12, name="layer_Y_tile_0_0",
+            input_sources=_make_source_array([(-2, 0)]),
+            core_matrix=np.array([[1.0]], dtype=np.float64),
+            threshold=1.0, latency=0,
+        )
+        graph = IRGraph(
+            nodes=[legacy_a, legacy_b, live],
+            output_sources=_make_source_array([(12, 0)]),
+        )
+        snap, _ = snapshot_ir_graph(graph)
+        groups = {g["key"]: g for g in snap["groups"]}
+        x_group = next(g for k, g in groups.items() if "layer_X" in k)
+        assert x_group["all_dead"] is True
+        assert x_group["all_dead_or_bias_only"] is True
+        assert x_group["dead_count"] == 2
+        assert x_group["live_core_count"] == 0
+
+        y_group = next(g for k, g in groups.items() if "layer_Y" in k)
+        assert y_group["all_dead"] is False
+        assert y_group["all_dead_or_bias_only"] is False
+        assert y_group["live_core_count"] == 1
+
+    def test_group_all_dead_or_bias_only_flag_set_for_mixed(self):
+        bias_a = _bias_only_neural_core(nid=20, name="layer_M_tile_0_0")
+        legacy_b = _dead_legacy_neural_core(nid=21, name="layer_M_tile_0_1")
+        live = NeuralCore(
+            id=22, name="layer_N_tile_0_0",
+            input_sources=_make_source_array([(-2, 0)]),
+            core_matrix=np.array([[1.0]], dtype=np.float64),
+            threshold=1.0, latency=0,
+        )
+        graph = IRGraph(
+            nodes=[bias_a, legacy_b, live],
+            output_sources=_make_source_array([(22, 0)]),
+        )
+        snap, _ = snapshot_ir_graph(graph)
+        groups = {g["key"]: g for g in snap["groups"]}
+        m_group = next(g for k, g in groups.items() if "layer_M" in k)
+        assert m_group["all_dead"] is False
+        assert m_group["all_dead_or_bias_only"] is True
+        assert m_group["dead_count"] == 1
+        assert m_group["bias_only_count"] == 1
+        assert m_group["live_core_count"] == 0

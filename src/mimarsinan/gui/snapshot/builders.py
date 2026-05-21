@@ -19,10 +19,80 @@ from mimarsinan.gui.resources import ResourceDescriptor
 # Bump cautiously: frontend URL builders hard-code these.
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
 RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
+RESOURCE_KIND_IR_CORE_BIAS = "ir_core_bias"
 RESOURCE_KIND_IR_BANK_HEATMAP = "ir_bank_heatmap"
 RESOURCE_KIND_HARD_CORE_HEATMAP = "hard_core_heatmap"
 RESOURCE_KIND_CONNECTIVITY = "connectivity"
 RESOURCE_KIND_PRUNING_LAYER_HEATMAP = "pruning_layer_heatmap"
+
+
+# Per-NeuralCore liveness tags surfaced in the GUI (must match
+# ``mimarsinan.mapping.ir_liveness.NodeLiveness`` for current runs).
+LIVENESS_LIVE = "live"
+LIVENESS_BIAS_ONLY = "bias_only"
+LIVENESS_DEAD_LEGACY = "dead_legacy"  # only for old pickles still containing (1,1) placeholders
+
+
+def _detect_neural_core_liveness(node: Any, mat: Any) -> str:
+    """Classify a NeuralCore's liveness for the GUI snapshot.
+
+    Returns one of:
+
+    - :data:`LIVENESS_DEAD_LEGACY` for old pickles that still contain
+      ``(1, 1)`` zero placeholders -- detected by an all-True
+      ``pre_pruning_*_mask`` (or a fully-pruned post-compaction mask
+      when no pre-pruning data was stored).
+    - :data:`LIVENESS_BIAS_ONLY` for cores whose every original axon was
+      pruned but live columns remain (the post-compaction shape is
+      ``(1, N)`` with a single OFF-source axon).
+    - :data:`LIVENESS_LIVE` otherwise.
+
+    The function is best-effort: when masks are missing or inconsistent
+    we fall back to ``LIVE`` rather than fail the snapshot build.
+    """
+    from mimarsinan.mapping.ir import IRSource
+
+    pre_row = getattr(node, "pre_pruning_row_mask", None)
+    pre_col = getattr(node, "pre_pruning_col_mask", None)
+    pre_row_all_true = bool(pre_row) and all(pre_row)
+    pre_col_all_true = bool(pre_col) and all(pre_col)
+
+    if pre_row_all_true and pre_col_all_true:
+        return LIVENESS_DEAD_LEGACY
+
+    if pre_row_all_true and pre_col is not None and not pre_col_all_true:
+        return LIVENESS_BIAS_ONLY
+
+    try:
+        shape = tuple(int(d) for d in mat.shape)
+    except Exception:
+        shape = None
+
+    flat_src = None
+    try:
+        flat_src = node.input_sources.flatten()
+    except Exception:
+        pass
+
+    rmask = getattr(node, "pruned_row_mask", None)
+    cmask = getattr(node, "pruned_col_mask", None)
+    rmask_all_true = bool(rmask) and all(rmask)
+    cmask_all_true = bool(cmask) and all(cmask)
+
+    if shape == (1, 1) and rmask_all_true and cmask_all_true:
+        return LIVENESS_DEAD_LEGACY
+
+    if (
+        shape is not None
+        and shape[0] == 1
+        and flat_src is not None
+        and len(flat_src) == 1
+        and isinstance(flat_src[0], IRSource)
+        and flat_src[0].is_off()
+    ):
+        return LIVENESS_BIAS_ONLY
+
+    return LIVENESS_LIVE
 
 
 def _make_heatmap_producer(
@@ -50,6 +120,27 @@ def _make_heatmap_producer(
             pruned_row_mask=rr,
             pruned_col_mask=cc,
         )
+
+    return produce
+
+
+def _make_bias_strip_producer(bias: Any):
+    """Render a ``hardware_bias`` vector as a 1-row colormap PNG.
+
+    Used for BIAS_ONLY cores so the UI can show that the core fires from
+    bias drive even though its weight matrix is empty.
+    """
+    try:
+        bias_copy: Any = np.asarray(bias, dtype=np.float64).copy()
+    except Exception:
+        bias_copy = bias
+
+    def produce() -> bytes:
+        from mimarsinan.gui.heatmap_renderer import render_heatmap_png_bytes
+        arr = np.asarray(bias_copy)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        return render_heatmap_png_bytes(arr)
 
     return produce
 
@@ -302,6 +393,25 @@ def snapshot_ir_graph(
             info["coalescing_role"] = node.coalescing_role
             if node.weight_bank_id is not None:
                 info["weight_bank_id"] = int(node.weight_bank_id)
+
+            liveness = _detect_neural_core_liveness(node, mat)
+            info["liveness"] = liveness
+
+            bias_arr = getattr(node, "hardware_bias", None)
+            if bias_arr is not None:
+                try:
+                    bias_np = np.asarray(bias_arr, dtype=np.float64)
+                    if bias_np.size:
+                        info["hardware_bias_stats"] = {
+                            "size": int(bias_np.size),
+                            "min": float(np.min(bias_np)),
+                            "max": float(np.max(bias_np)),
+                            "abs_max": float(np.max(np.abs(bias_np))),
+                            "nonzero": int(np.count_nonzero(bias_np)),
+                        }
+                except Exception:
+                    pass
+
             # Register a heatmap resource for every NeuralCore (owned and bank-backed).
             core_rid = f"core/{int(node.id)}"
             info["has_heatmap"] = True
@@ -313,6 +423,24 @@ def snapshot_ir_graph(
                     producer=_make_heatmap_producer(mat, copy=False),
                     media_type="image/png",
                 ))
+
+            # BIAS_ONLY cores fire from ``hardware_bias`` alone; advertise a
+            # tiny bias-strip resource so the heatmap card can show the
+            # actual driver alongside the empty weight matrix.
+            if (
+                liveness == LIVENESS_BIAS_ONLY
+                and bias_arr is not None
+                and np.asarray(bias_arr).size
+            ):
+                info["has_bias_resource"] = True
+                info["bias_resource"] = _ref(RESOURCE_KIND_IR_CORE_BIAS, core_rid)
+                if register_descriptors:
+                    descriptors.append(ResourceDescriptor(
+                        kind=RESOURCE_KIND_IR_CORE_BIAS,
+                        rid=core_rid,
+                        producer=_make_bias_strip_producer(bias_arr),
+                        media_type="image/png",
+                    ))
 
             pre = getattr(node, "pre_pruning_heatmap", None)
             # Use pre-compaction masks for red markings when present
@@ -441,6 +569,11 @@ def _merge_consecutive_compute_groups(groups: list[dict]) -> list[dict]:
                 "neuron_range": None,
                 "op_types": list(dict.fromkeys(all_op_types)),
                 "sub_keys": sub_keys,
+                "live_core_count": 0,
+                "bias_only_count": 0,
+                "dead_count": 0,
+                "all_dead": False,
+                "all_dead_or_bias_only": False,
             })
         run.clear()
 
@@ -509,6 +642,11 @@ def _build_layer_groups(
                 "axon_range": None,
                 "neuron_range": None,
                 "op_types": [],
+                "live_core_count": 0,
+                "bias_only_count": 0,
+                "dead_count": 0,
+                "all_dead": False,
+                "all_dead_or_bias_only": False,
             })
             continue
 
@@ -518,6 +656,18 @@ def _build_layer_groups(
         lats = [c["latency"] for c in cores if c.get("latency") is not None]
         axons = [c["axons"] for c in cores if "axons" in c]
         neurons = [c["neurons"] for c in cores if "neurons" in c]
+
+        live_count = sum(
+            1 for c in cores if c.get("liveness", LIVENESS_LIVE) == LIVENESS_LIVE
+        )
+        bias_only_count = sum(
+            1 for c in cores if c.get("liveness") == LIVENESS_BIAS_ONLY
+        )
+        dead_count = sum(
+            1 for c in cores if c.get("liveness") == LIVENESS_DEAD_LEGACY
+        )
+        all_dead = bool(cores) and dead_count == len(cores)
+        all_dead_or_bias_only = bool(cores) and (live_count == 0)
 
         groups.append({
             "key": gk,
@@ -531,6 +681,11 @@ def _build_layer_groups(
             "axon_range": [min(axons), max(axons)] if axons else None,
             "neuron_range": [min(neurons), max(neurons)] if neurons else None,
             "op_types": list({o.get("op_type", "?") for o in ops}) if ops else [],
+            "live_core_count": live_count,
+            "bias_only_count": bias_only_count,
+            "dead_count": dead_count,
+            "all_dead": all_dead,
+            "all_dead_or_bias_only": all_dead_or_bias_only,
         })
 
     groups = _merge_consecutive_compute_groups(groups)
