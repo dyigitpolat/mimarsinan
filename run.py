@@ -134,7 +134,27 @@ def _run_headless(config_path: str) -> None:
             # Drain the snapshot executor so all pending step_completed
             # broadcasts and steps.json persistence flush before the
             # hard _exit below (which skips atexit handlers).
-            gui.wait_snapshots_idle(timeout=30.0)
+            #
+            # Budget rationale: a single soft-core IR heatmap render is
+            # ~30 ms of matplotlib + PNG encoding; a typical model has
+            # ~600 cores × 2 heatmaps (post + pre-pruning) plus per-bank
+            # heatmaps and per-hard-core heatmaps. Even with the IR-graph
+            # de-duplication on the Hardware tab (see
+            # ``snapshot_ir_graph(source_step_name=...)``) this can still
+            # take well over a minute on the largest pipelines. A short
+            # timeout here silently truncates the on-disk resource folder
+            # and shows missing-image icons in the monitor UI for
+            # historical runs, so we err on the side of waiting.
+            drained = gui.wait_snapshots_idle(timeout=600.0)
+            if not drained:
+                import sys as _sys
+                _sys.stderr.write(
+                    "[run] WARNING: snapshot executor did not drain within "
+                    "600 s; some monitor-UI resources may be missing. "
+                    "Consider profiling resource persistence (see "
+                    "GUIHandle._persist_resources).\n"
+                )
+                _sys.stderr.flush()
             gui.shutdown()
         except Exception:
             pass

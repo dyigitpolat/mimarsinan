@@ -27,4 +27,9 @@ from mimarsinan.mapping.ir_latency import IRLatency
 from mimarsinan.mapping.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.ir_pruning import prune_ir_graph
 from mimarsinan.mapping.pruning_propagation import compute_propagated_pruned_rows_cols
+from mimarsinan.mapping.pruning_graph_propagation import (
+    GlobalPruningResult,
+    compute_global_pruned_sets,
+)
+from mimarsinan.mapping.ir_pruning_analysis import compute_graph_io_exemption
 

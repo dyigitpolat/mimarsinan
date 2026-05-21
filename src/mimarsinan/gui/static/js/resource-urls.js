@@ -25,7 +25,13 @@ export function getResourceContext() {
 export function resourceUrl(resourceRef, context = _currentContext) {
   if (!resourceRef || !resourceRef.kind || !resourceRef.rid) return null;
   if (!context || !context.stepName) return null;
-  const step = encodeURIComponent(context.stepName);
+  // ``resourceRef.step`` lets a tab embed resources owned by a different
+  // step (e.g. the Hardware tab reusing IR heatmaps from Soft Core
+  // Mapping) without re-registering producers. When present we resolve
+  // the URL against that source step instead of the current tab's step;
+  // see ``snapshot_ir_graph(source_step_name=...)`` on the backend.
+  const stepName = resourceRef.step || context.stepName;
+  const step = encodeURIComponent(stepName);
   const kind = encodeURIComponent(resourceRef.kind);
   const rid = String(resourceRef.rid).split('/').map(encodeURIComponent).join('/');
   if (context.historicalRunId && context.isActiveRun) {

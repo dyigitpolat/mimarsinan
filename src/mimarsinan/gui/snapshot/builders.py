@@ -195,13 +195,46 @@ def snapshot_pruning_layers(model: Any) -> tuple[dict, list[ResourceDescriptor]]
     return {"layers": layers_out}, descriptors
 
 
-def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
-    """Extract IR topology, core stats, and lazy heatmap resource descriptors."""
+def snapshot_ir_graph(
+    ir_graph: Any,
+    *,
+    source_step_name: str | None = None,
+) -> tuple[dict, list[ResourceDescriptor]]:
+    """Extract IR topology, core stats, and lazy heatmap resource descriptors.
+
+    Parameters
+    ----------
+    ir_graph
+        The IR graph to summarize.
+    source_step_name
+        Optional name of the step whose resource folder owns the IR-level
+        PNG resources (heatmaps, pre-pruning, weight banks). When provided:
+
+        * Every advertised resource ref carries a ``"step": source_step_name``
+          field so the frontend can resolve URLs against that step instead
+          of the currently-rendering tab's step.
+        * The returned descriptor list is empty: the source step has already
+          registered (or will register) its own producers, and re-issuing
+          them duplicates expensive matplotlib renders. This duplication
+          historically caused the snapshot executor's ``wait_idle`` budget
+          to expire before all PNGs flushed, leaving missing-image icons
+          in the Hardware tab.
+
+        When ``None`` (the default), descriptors are registered as usual
+        and refs are emitted without a step name.
+    """
     from mimarsinan.mapping.ir import NeuralCore, ComputeOp
 
     nodes_info: list[dict] = []
     edges: list[dict] = []
     descriptors: list[ResourceDescriptor] = []
+    register_descriptors = source_step_name is None
+
+    def _ref(kind: str, rid: str) -> dict:
+        ref: dict = {"kind": kind, "rid": rid}
+        if source_step_name is not None:
+            ref["step"] = source_step_name
+        return ref
 
     neural_cores = []
     compute_ops = []
@@ -215,17 +248,15 @@ def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
                 rid = f"bank/{int(bank_id)}"
                 weight_banks[int(bank_id)] = {
                     "has_heatmap": True,
-                    "heatmap_resource": {
-                        "kind": RESOURCE_KIND_IR_BANK_HEATMAP,
-                        "rid": rid,
-                    },
+                    "heatmap_resource": _ref(RESOURCE_KIND_IR_BANK_HEATMAP, rid),
                 }
-                descriptors.append(ResourceDescriptor(
-                    kind=RESOURCE_KIND_IR_BANK_HEATMAP,
-                    rid=rid,
-                    producer=_make_heatmap_producer(bank.core_matrix, copy=False),
-                    media_type="image/png",
-                ))
+                if register_descriptors:
+                    descriptors.append(ResourceDescriptor(
+                        kind=RESOURCE_KIND_IR_BANK_HEATMAP,
+                        rid=rid,
+                        producer=_make_heatmap_producer(bank.core_matrix, copy=False),
+                        media_type="image/png",
+                    ))
             except Exception:
                 logger.debug("Failed to register heatmap for weight bank %s", bank_id, exc_info=True)
     except Exception:
@@ -274,16 +305,14 @@ def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
             # Register a heatmap resource for every NeuralCore (owned and bank-backed).
             core_rid = f"core/{int(node.id)}"
             info["has_heatmap"] = True
-            info["heatmap_resource"] = {
-                "kind": RESOURCE_KIND_IR_CORE_HEATMAP,
-                "rid": core_rid,
-            }
-            descriptors.append(ResourceDescriptor(
-                kind=RESOURCE_KIND_IR_CORE_HEATMAP,
-                rid=core_rid,
-                producer=_make_heatmap_producer(mat, copy=False),
-                media_type="image/png",
-            ))
+            info["heatmap_resource"] = _ref(RESOURCE_KIND_IR_CORE_HEATMAP, core_rid)
+            if register_descriptors:
+                descriptors.append(ResourceDescriptor(
+                    kind=RESOURCE_KIND_IR_CORE_HEATMAP,
+                    rid=core_rid,
+                    producer=_make_heatmap_producer(mat, copy=False),
+                    media_type="image/png",
+                ))
 
             pre = getattr(node, "pre_pruning_heatmap", None)
             # Use pre-compaction masks for red markings when present
@@ -295,23 +324,23 @@ def snapshot_ir_graph(ir_graph: Any) -> tuple[dict, list[ResourceDescriptor]]:
                     pre_arr = np.array(pre, dtype=np.float64)
                     if pre_arr.shape[0] == len(row_mask) and pre_arr.shape[1] == len(col_mask):
                         info["has_pre_pruning"] = True
-                        info["pre_pruning_resource"] = {
-                            "kind": RESOURCE_KIND_IR_CORE_PRE_PRUNING,
-                            "rid": core_rid,
-                        }
+                        info["pre_pruning_resource"] = _ref(
+                            RESOURCE_KIND_IR_CORE_PRE_PRUNING, core_rid,
+                        )
                         info["pre_pruning_axons"] = int(pre_arr.shape[0])
                         info["pre_pruning_neurons"] = int(pre_arr.shape[1])
-                        descriptors.append(ResourceDescriptor(
-                            kind=RESOURCE_KIND_IR_CORE_PRE_PRUNING,
-                            rid=core_rid,
-                            producer=_make_heatmap_producer(
-                                pre_arr,
-                                pruned_row_mask=list(row_mask),
-                                pruned_col_mask=list(col_mask),
-                                copy=False,
-                            ),
-                            media_type="image/png",
-                        ))
+                        if register_descriptors:
+                            descriptors.append(ResourceDescriptor(
+                                kind=RESOURCE_KIND_IR_CORE_PRE_PRUNING,
+                                rid=core_rid,
+                                producer=_make_heatmap_producer(
+                                    pre_arr,
+                                    pruned_row_mask=list(row_mask),
+                                    pruned_col_mask=list(col_mask),
+                                    copy=False,
+                                ),
+                                media_type="image/png",
+                            ))
                 except Exception:
                     logger.debug("Failed to register pre-pruning heatmap for core %s", node.id, exc_info=True)
             neural_cores.append(info)
@@ -1020,6 +1049,27 @@ def snapshot_sanafe_simulation(
     return snap, []
 
 
+def _find_ir_graph_promiser(pipeline: Any) -> str | None:
+    """Return the name of the pipeline step whose ``promises`` includes
+    ``ir_graph``, i.e. the step that owns the IR-level resource folder.
+
+    Returns ``None`` when no such step exists (e.g. ad-hoc pipelines used
+    in tests). Callers must treat ``None`` as "register descriptors locally"
+    rather than silently dropping them.
+    """
+    try:
+        steps = getattr(pipeline, "steps", ())
+    except Exception:
+        return None
+    for name, s in steps:
+        try:
+            if "ir_graph" in set(getattr(s, "promises", ())):
+                return str(name)
+        except Exception:
+            continue
+    return None
+
+
 def build_step_snapshot(
     pipeline: Any,
     step_name: str,
@@ -1160,14 +1210,31 @@ def build_step_snapshot(
             except Exception:
                 logger.debug("Failed to snapshot sanafe_simulation from key %r", key, exc_info=True)
 
-    # Hardware tab needs ir_graph to show soft-core detail pane when clicking heatmap regions
+    # Hardware tab needs ir_graph to show soft-core detail pane when clicking
+    # heatmap regions, but the IR-level PNGs (heatmap, pre-pruning, weight
+    # banks) have already been rendered by the step that *promised* ir_graph
+    # (typically Soft Core Mapping). Re-rendering them here both wastes ~30+
+    # seconds of matplotlib work and previously caused
+    # ``GUIHandle.wait_snapshots_idle``'s 30 s budget to expire mid-flush,
+    # leaving missing-image icons for cores past the cut-off in the Hardware
+    # and IR Graph tabs (only ~300/576 PNGs landed on disk for HCM).
+    #
+    # Instead we embed the summary and tag every resource ref with
+    # ``step = <ir_graph promiser>`` so the frontend resolves URLs against
+    # that step's already-persisted resource folder.
     if "hard_core_mapping" in snapshot and "ir_graph" not in snapshot:
+        ir_source_step = _find_ir_graph_promiser(pipeline)
         for key in cache.keys():
             short = key.split(".", 1)[-1] if "." in key else key
             if short == "ir_graph":
                 try:
-                    ir_summary, ir_descs = snapshot_ir_graph(cache.get(key))
+                    ir_summary, ir_descs = snapshot_ir_graph(
+                        cache.get(key), source_step_name=ir_source_step,
+                    )
                     snapshot["ir_graph"] = ir_summary
+                    # ir_descs is empty when source_step_name is set; extending
+                    # is a no-op in that case but keeps the contract uniform if
+                    # the lookup ever fails to find an owning step.
                     descriptors.extend(ir_descs)
                     break
                 except Exception:
