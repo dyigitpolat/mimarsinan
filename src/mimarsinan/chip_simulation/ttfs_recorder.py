@@ -15,6 +15,23 @@ class CoreTtfsActivations:
     output_activation: np.ndarray
 
 
+def normalize_core_output_activation(
+    activation: np.ndarray,
+    *,
+    n_out_used: int | None = None,
+    sample_index: int = 0,
+) -> np.ndarray:
+    """Return a 1-D per-neuron activation vector for parity records (sample 0)."""
+    arr = np.asarray(activation, dtype=np.float64)
+    if arr.ndim >= 2:
+        vec = arr[int(sample_index)]
+    else:
+        vec = arr.ravel()
+    n = int(n_out_used) if n_out_used is not None else int(vec.size)
+    n = min(n, int(vec.size))
+    return np.asarray(vec[:n], dtype=np.float64).reshape(-1)
+
+
 @dataclass
 class SegmentTtfsRecord:
     stage_index: int
@@ -44,6 +61,15 @@ class TtfsDiff:
     actual_value: float
 
 
+# Contract-vs-contract: same numpy/float64 analytical runner on both sides.
+TTFS_CONTRACT_ATOL = 1e-12
+TTFS_CONTRACT_RTOL = 1e-9
+
+# Hardware/plugin readout: float32 compute-op gather and plugin trace ULP drift.
+TTFS_HARDWARE_ATOL = 1e-6
+TTFS_HARDWARE_RTOL = 1e-5
+
+
 def compare_ttfs_records(
     ref: TtfsRunRecord,
     actual: TtfsRunRecord,
@@ -61,11 +87,16 @@ def compare_ttfs_records(
             ref_core = ref_by.get(act_core.core_index)
             if ref_core is None:
                 continue
-            n = min(ref_core.n_out_used, act_core.n_out_used,
-                    ref_core.output_activation.size, act_core.output_activation.size)
+            ref_vec = normalize_core_output_activation(
+                ref_core.output_activation, n_out_used=ref_core.n_out_used,
+            )
+            act_vec = normalize_core_output_activation(
+                act_core.output_activation, n_out_used=act_core.n_out_used,
+            )
+            n = min(ref_core.n_out_used, act_core.n_out_used, ref_vec.size, act_vec.size)
             for ni in range(n):
-                rv = float(ref_core.output_activation[ni])
-                av = float(act_core.output_activation[ni])
+                rv = float(ref_vec[ni])
+                av = float(act_vec[ni])
                 if not np.isclose(rv, av, rtol=rtol, atol=atol):
                     diffs.append(TtfsDiff(
                         stage_index=stage_index,
@@ -76,6 +107,26 @@ def compare_ttfs_records(
                         actual_value=av,
                     ))
     return diffs
+
+
+def compare_ttfs_contract_records(
+    ref: TtfsRunRecord,
+    actual: TtfsRunRecord,
+) -> List[TtfsDiff]:
+    """Parity for analytical contract paths (tight tolerance)."""
+    return compare_ttfs_records(
+        ref, actual, atol=TTFS_CONTRACT_ATOL, rtol=TTFS_CONTRACT_RTOL,
+    )
+
+
+def compare_ttfs_hardware_records(
+    ref: TtfsRunRecord,
+    actual: TtfsRunRecord,
+) -> List[TtfsDiff]:
+    """Parity for plugin/hardware activations vs analytical reference."""
+    return compare_ttfs_records(
+        ref, actual, atol=TTFS_HARDWARE_ATOL, rtol=TTFS_HARDWARE_RTOL,
+    )
 
 
 def format_first_ttfs_diff(

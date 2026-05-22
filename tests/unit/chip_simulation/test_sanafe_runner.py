@@ -153,7 +153,13 @@ def _fake_hard_core(*, axons=2, neurons=2, threshold=1.0,
 
 
 def _fake_hcm(*cores):
-    return SimpleNamespace(cores=list(cores))
+    out = []
+    if cores:
+        out.append(SpikeSource(0, 0, is_input=False, is_off=False))
+    return SimpleNamespace(
+        cores=list(cores),
+        output_sources=np.array(out, dtype=object),
+    )
 
 
 def _fake_stage(kind, *, name="stage", hcm=None, compute_op=None,
@@ -441,6 +447,49 @@ def test_run_executes_compute_stage_via_hybrid_execution(monkeypatch):
     assert 42 in rec.compute_outputs
     np.testing.assert_array_equal(rec.compute_outputs[42],
                                   np.asarray([[3.0]], dtype=np.float64))
+
+
+def test_run_ttfs_compute_stage_records_op_id_after_neural(monkeypatch):
+    """Regression: TTFS compute path must bind op.id for compute_outputs."""
+    core = _fake_hard_core(axons=1, neurons=1)
+    s1 = _fake_stage(
+        "neural", name="s1", hcm=_fake_hcm(core),
+        input_map=[_seg_io_slice(-2, 0, 1)],
+        output_map=[_seg_io_slice(0, 0, 1)],
+    )
+    op = SimpleNamespace(id=77)
+    s2 = _fake_stage("compute", name="op", compute_op=op, input_map=[], output_map=[])
+    mapping = _fake_mapping(
+        s1, s2, output_sources=np.array([], dtype=object),
+    )
+    _patch_sanafe_stack(monkeypatch)
+    _seed_chip_result(spike_trace=[["core0.0"]] * 8)
+
+    contract_called = {}
+
+    def fake_contract(mapping, stage, state_buffer, sample_input):
+        contract_called["stage"] = stage
+        out = np.asarray([[0.25]], dtype=np.float64)
+        return SimpleNamespace(op_id=77, output=out)
+
+    monkeypatch.setattr(
+        "mimarsinan.chip_simulation.ttfs_executor.run_ttfs_contract_compute_stage",
+        fake_contract,
+    )
+    monkeypatch.setattr(runner_mod, "is_ttfs_spiking_mode", lambda _mode: True)
+
+    runner = SanafeRunner(
+        mapping=mapping,
+        simulation_length=8,
+        spiking_mode="ttfs",
+        firing_mode="TTFS",
+    )
+    rec = runner.run(np.asarray([[1.0]], dtype=np.float32), sample_index=0)
+    assert contract_called["stage"] is s2
+    assert 77 in rec.compute_outputs
+    np.testing.assert_array_equal(
+        rec.compute_outputs[77], np.asarray([[0.25]], dtype=np.float64),
+    )
 
 
 def test_run_walks_stages_in_order(monkeypatch):

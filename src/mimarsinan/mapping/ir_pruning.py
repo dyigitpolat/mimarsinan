@@ -208,6 +208,7 @@ def prune_ir_graph(
     initial_pruned_per_bank: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] | None = None,
     store_heatmap: bool = False,
     simulation_steps: int = 32,
+    spiking_mode: str = "lif",
 ) -> IRGraph:
     """Prune and compact ``ir_graph`` in place; return the same instance.
 
@@ -224,10 +225,9 @@ def prune_ir_graph(
     compacted in place.
 
     Args:
-        simulation_steps: LIF integration window. Used only by the
-            bias-emission half of :func:`compute_liveness` to decide
-            whether a bias-only core can fire within ``simulation_steps``
-            cycles.
+        simulation_steps: Integration window for bias-only liveness.
+        spiking_mode: ``lif``, ``ttfs``, or ``ttfs_quantized``; forwarded to
+            :func:`compute_liveness`.
     """
     if not ir_graph.nodes:
         return ir_graph
@@ -256,6 +256,7 @@ def prune_ir_graph(
     liveness = compute_liveness(
         graph,
         simulation_steps=simulation_steps,
+        spiking_mode=spiking_mode,
         pruning_result=result,
         zero_threshold=zero_threshold,
     )

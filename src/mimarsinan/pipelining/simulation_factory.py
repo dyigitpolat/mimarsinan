@@ -61,6 +61,20 @@ def build_spiking_hybrid_flow(
     return flow.to(cfg["device"])
 
 
+def build_spiking_flow_for_metric(
+    pipeline,
+    hybrid_mapping,
+    ir_graph: IRGraph,
+    *,
+    preprocessor=None,
+    model=None,
+) -> SpikingHybridCoreFlow:
+    """Build the hybrid mapping metric executor (all spiking modes including TTFS)."""
+    return build_spiking_hybrid_flow(
+        pipeline, hybrid_mapping, preprocessor=preprocessor, model=model,
+    )
+
+
 def run_trainer_metric(
     pipeline,
     model,
@@ -153,20 +167,7 @@ def record_ttfs_hcm_reference(
     sample_index: int = 0,
 ):
     """Build HCM TTFS reference ``TtfsRunRecord`` for one sample (B=1)."""
-    from mimarsinan.chip_simulation.hybrid_execution import (
-        assemble_segment_input_torch,
-        execute_compute_op_torch,
-        store_segment_output_torch,
-    )
-    from mimarsinan.chip_simulation.hybrid_execution import resolve_stage_compute_scales
-    from mimarsinan.chip_simulation.hybrid_stage_runner import HybridStageContext, run_hybrid_stages
-    from mimarsinan.chip_simulation.ttfs_executor import TtfsAnalyticalExecutor
-    from mimarsinan.chip_simulation.ttfs_recorder import (
-        CoreTtfsActivations,
-        SegmentTtfsRecord,
-        TtfsRunRecord,
-    )
-    from mimarsinan.mapping.core_geometry import used_neurons
+    from mimarsinan.chip_simulation.ttfs_executor import run_ttfs_hybrid_contract
 
     if sample.shape[0] != 1:
         raise ValueError("record_ttfs_hcm_reference requires batch_size == 1")
@@ -175,89 +176,19 @@ def record_ttfs_hcm_reference(
     spiking_mode = cfg.get("spiking_mode", "lif")
     device = cfg["device"]
     T = int(cfg["simulation_steps"])
-    executor = TtfsAnalyticalExecutor()
 
     flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping).to(device).eval()
     x_np = preprocess_hybrid_sample(
         pipeline, hybrid_mapping, sample, device=device,
     )
-    x = torch.tensor(x_np, dtype=torch.float64, device=device)
-
-    state_buffer = {-2: x}
-    remaining: dict[int, int] = {}
-    record = TtfsRunRecord(
-        sample_index=int(sample_index),
+    contract = run_ttfs_hybrid_contract(
+        hybrid_mapping,
+        x_np,
         simulation_length=T,
         spiking_mode=spiking_mode,
+        sample_index=sample_index,
     )
-
-    def _ctx_factory(stage_index, stage, buf):
-        return HybridStageContext(
-            stage_index=stage_index,
-            stage=stage,
-            state_buffer=buf,
-            remaining=remaining,
-        )
-
-    def _on_neural(ctx: HybridStageContext):
-        stage = ctx.stage
-        hcm = stage.hard_core_mapping
-        assert hcm is not None
-        seg_in = assemble_segment_input_torch(
-            stage.input_map, ctx.state_buffer,
-            batch_size=1, device=device, dtype=torch.float64,
-        ).cpu().numpy().astype(np.float64)
-        result = executor.run_segment(
-            hcm, seg_in, simulation_length=T, spiking_mode=spiking_mode,
-        )
-        cores_rec = []
-        for ci, core in enumerate(hcm.cores):
-            n_out = used_neurons(core, min_one=True)
-            if n_out <= 0:
-                continue
-            act = result.per_core_activations[ci] if result.per_core_activations else None
-            if act is None or act.size == 0:
-                continue
-            cores_rec.append(CoreTtfsActivations(
-                core_index=ci,
-                n_out_used=n_out,
-                output_activation=act[:n_out].astype(np.float64, copy=False),
-            ))
-        record.segments[ctx.stage_index] = SegmentTtfsRecord(
-            stage_index=ctx.stage_index,
-            stage_name=stage.name,
-            schedule_segment_index=getattr(stage, "schedule_segment_index", None),
-            schedule_pass_index=getattr(stage, "schedule_pass_index", None),
-            seg_output=result.inter_stage[0],
-            cores=cores_rec,
-        )
-        store_segment_output_torch(
-            stage.output_map, ctx.state_buffer,
-            torch.tensor(result.inter_stage, dtype=torch.float64, device=device),
-        )
-
-    def _on_compute(ctx: HybridStageContext):
-        op = ctx.stage.compute_op
-        assert op is not None
-        in_scale, out_scale = resolve_stage_compute_scales(
-            hybrid_mapping, op.id, apply_ttfs=True,
-        )
-        result = execute_compute_op_torch(
-            op, x, ctx.state_buffer,
-            in_scale=in_scale, out_scale=out_scale,
-            output_dtype=torch.float64,
-        )
-        ctx.state_buffer[op.id] = result
-        record.compute_outputs[op.id] = result.detach().cpu().numpy()
-
-    run_hybrid_stages(
-        hybrid_mapping,
-        state_buffer,
-        on_neural=_on_neural,
-        on_compute=_on_compute,
-        context_factory=_ctx_factory,
-    )
-    return flow, record
+    return flow, contract.record
 
 
 def record_hcm_reference(
@@ -308,8 +239,8 @@ def run_hcm_mapping_metric(
                     pipeline_config=pipeline.config,
                 )
                 pipeline.cache.add(cache_key, hybrid_mapping, "pickle")
-            flow = build_spiking_hybrid_flow(
-                pipeline, hybrid_mapping, model=model,
+            flow = build_spiking_flow_for_metric(
+                pipeline, hybrid_mapping, ir_graph, model=model,
             )
             return float(
                 run_hcm_spiking_test(

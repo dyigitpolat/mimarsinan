@@ -168,11 +168,12 @@ class SanafeSimulationStep(PipelineStep):
 
             if parity_check and is_ttfs and ttfs_ref is not None:
                 from mimarsinan.chip_simulation.ttfs_recorder import (
-                    compare_ttfs_records,
+                    compare_ttfs_contract_records,
+                    compare_ttfs_hardware_records,
                     format_first_ttfs_diff,
                 )
 
-                contract_diffs = compare_ttfs_records(
+                contract_diffs = compare_ttfs_contract_records(
                     ttfs_ref,
                     sanafe_rec.to_ttfs_contract_subset(spiking_mode=spiking_mode),
                 )
@@ -180,7 +181,7 @@ class SanafeSimulationStep(PipelineStep):
                     raise AssertionError(
                         format_first_ttfs_diff(contract_diffs, layer="contract"),
                     )
-                hw_diffs = compare_ttfs_records(
+                hw_diffs = compare_ttfs_hardware_records(
                     ttfs_ref,
                     sanafe_rec.to_ttfs_hardware_subset(spiking_mode=spiking_mode),
                 )

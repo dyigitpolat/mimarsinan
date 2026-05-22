@@ -44,6 +44,45 @@ def test_numpy_continuous_matches_torch_kernel_path():
     np.testing.assert_allclose(out_np[0], expected[0], rtol=1e-9)
 
 
+def test_cross_core_uses_upstream_activations_in_latency_order():
+    """Regression: downstream cores must see prior-core TTFS activations, not zeros."""
+    from mimarsinan.mapping.softcore_mapping import HardCore
+
+    core0 = HardCore(axons_per_core=2, neurons_per_core=2)
+    core0.core_matrix = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    core0.axon_sources = [
+        SpikeSource(-2, 0, is_input=True, is_off=False),
+        SpikeSource(-2, 1, is_input=True, is_off=False),
+    ]
+    core0.threshold = 1.0
+    core0.latency = 0
+    core0.available_axons = 0
+    core0.available_neurons = 0
+
+    core1 = HardCore(axons_per_core=2, neurons_per_core=1)
+    core1.core_matrix = np.array([[1.0, 1.0]], dtype=np.float64)
+    core1.axon_sources = [
+        SpikeSource(0, 0, is_input=False, is_off=False),
+        SpikeSource(0, 1, is_input=False, is_off=False),
+    ]
+    core1.threshold = 1.0
+    core1.latency = 1
+    core1.available_axons = 0
+    core1.available_neurons = 0
+
+    mapping = HardCoreMapping(chip_cores=[])
+    mapping.cores = [core0, core1]
+    mapping.output_sources = np.array([SpikeSource(1, 0)])
+
+    seg = segment_ttfs_arrays_from_mapping(mapping)
+    inp = np.array([[0.5, 0.25]], dtype=np.float64)
+    out_np, bufs = run_ttfs_continuous_segment(seg, inp)
+    # core0 fires both neurons; core1 sums their activations (not zeros).
+    assert bufs[0][0, 0] > 0.4
+    assert bufs[0][0, 1] > 0.2
+    assert out_np[0, 0] > 0.4
+
+
 def test_cross_core_fill_when_axons_exceed_source_neurons():
     """Regression: axon dst span can be wider than source neuron buffer."""
     from mimarsinan.mapping.softcore_mapping import HardCore

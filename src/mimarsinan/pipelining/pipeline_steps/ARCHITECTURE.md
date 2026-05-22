@@ -154,7 +154,7 @@ flag from the pipeline config to `platform_constraints_resolved` cores so that
 Applies only to **`ttfs_quantized`** with **`activation_quantization`** (not
 continuous `ttfs`). Training uses `floor((V + shift)*tq)/tq`; IR simulation uses
 `floor(V*tq)/tq` unless shift is baked into effective bias via
-`_apply_ttfs_quantized_bias_shift()` in `SoftCoreMappingStep`.
+`_apply_ttfs_quantization_bias_compensation()` in `SoftCoreMappingStep`.
 
 - **Encoding layers** (`is_encoding_layer`): skip — host `ComputeOp` path already
   applies `QuantizeDecorator` shift in `TransformedActivation`.
@@ -169,9 +169,10 @@ continuous `ttfs`). Training uses `floor((V + shift)*tq)/tq`; IR simulation uses
 `SoftCoreMappingStep` runs the soft-core spiking simulation as the step metric
 using `simulation_steps` cycles per sample plus per-core latency cycles for
 warmup, and the same `max_simulation_samples` / `seed` policy used by downstream
-simulation steps. SCM, HCM, and nevresim must produce identical numbers on the
-same test subsample — they are functionally equivalent simulations of the same
-mapped graph, and any divergence is a bug.
+simulation steps. Continuous `ttfs` metrics use `SpikingUnifiedCoreFlow` via
+`build_spiking_flow_for_metric` (flat IR TTFS matches training); segmented
+`SpikingHybridCoreFlow` for the same mode can diverge on pruned graphs until
+segment I/O parity is restored. `ttfs_quantized` and `lif` still use hybrid HCM.
 
 `LoihiSimulationStep` is not an accuracy step.  It selects one deterministic
 test sample (`loihi_parity_sample_index`, default `0`), builds an HCM

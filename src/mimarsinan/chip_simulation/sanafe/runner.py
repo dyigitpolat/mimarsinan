@@ -142,19 +142,31 @@ class SanafeRunner:
             )
 
         def _on_compute(_stage_index, stage, state_buffer):
+            from mimarsinan.chip_simulation.ttfs_executor import (
+                run_ttfs_contract_compute_stage,
+            )
+
             op = stage.compute_op
-            in_scale, out_scale = resolve_stage_compute_scales(
-                self.mapping, op.id, apply_ttfs=True
-            )
-            result = execute_compute_op_numpy(
-                op, sample_input, state_buffer,
-                in_scale=in_scale, out_scale=out_scale,
-                dtype=_COMPUTE_DTYPE,
-            )
-            if hasattr(result, "detach"):
-                result = result.detach().cpu().numpy()
-            state_buffer[op.id] = np.asarray(result, dtype=_COMPUTE_DTYPE)
-            compute_outputs[op.id] = state_buffer[op.id]
+            assert op is not None
+            if is_ttfs_spiking_mode(self.spiking_mode):
+                result = run_ttfs_contract_compute_stage(
+                    self.mapping, stage, state_buffer, sample_input,
+                )
+                compute_outputs[result.op_id] = result.output
+            else:
+                in_scale, out_scale = resolve_stage_compute_scales(
+                    self.mapping, op.id, apply_ttfs=True,
+                )
+                result = execute_compute_op_numpy(
+                    op, sample_input, state_buffer,
+                    in_scale=in_scale, out_scale=out_scale,
+                    dtype=_COMPUTE_DTYPE,
+                )
+                if hasattr(result, "detach"):
+                    result = result.detach().cpu().numpy()
+                out = np.asarray(result, dtype=_COMPUTE_DTYPE)
+                state_buffer[op.id] = out
+                compute_outputs[op.id] = out
 
         run_hybrid_stages(
             self.mapping,
@@ -252,14 +264,6 @@ class SanafeRunner:
         )
 
         is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
-        if is_ttfs:
-            from mimarsinan.chip_simulation.ttfs_encoding import ttfs_latched_spike_train
-
-            encoded = ttfs_latched_spike_train(
-                seg_input_rates.astype(np.float64), self.T,
-            ).astype(np.float32)
-        else:
-            encoded = uniform_rate_encode(seg_input_rates, self.T)
 
         max_latency = max(
             (int(c.latency) if getattr(c, "latency", None) is not None else 0)
@@ -267,41 +271,29 @@ class SanafeRunner:
         ) if hcm.cores else 0
         # +1: SANA-FE applies input spikes one cycle after emission.
         T_eff = self.T + max_latency + 1
-        encoded_padded = encoded
-        if T_eff > encoded.shape[2]:
-            pad = np.zeros(
-                (encoded.shape[0], encoded.shape[1], T_eff - encoded.shape[2]),
-                dtype=encoded.dtype,
-            )
-            encoded_padded = np.concatenate([encoded, pad], axis=2)
 
         contract_ttfs_cores: List[Any] = []
         contract_ttfs_seg_output: Optional[np.ndarray] = None
         logical_ttfs_result: Optional[NeuralSegmentResult] = None
 
         if is_ttfs:
-            from mimarsinan.chip_simulation.ttfs_executor import TtfsAnalyticalExecutor
-            from mimarsinan.chip_simulation.ttfs_recorder import CoreTtfsActivations
-            from mimarsinan.mapping.core_geometry import used_neurons as _used_neurons_ttfs
+            from mimarsinan.chip_simulation.ttfs_executor import (
+                run_ttfs_contract_neural_stage,
+            )
 
-            _ttfs_exec = TtfsAnalyticalExecutor()
-            logical_ttfs_result = _ttfs_exec.run_segment(
-                hcm, seg_input_rates,
+            contract_stage = run_ttfs_contract_neural_stage(
+                self.mapping,
+                stage,
+                stage_index,
+                state_buffer,
                 simulation_length=self.T,
                 spiking_mode=self.spiking_mode,
             )
-            membrane_V = _ttfs_exec.membrane_voltages(hcm, seg_input_rates)
-            for ci, core in enumerate(hcm.cores):
-                n_out = _used_neurons_ttfs(core, min_one=True)
-                if n_out <= 0:
-                    continue
-                act = logical_ttfs_result.per_core_activations[ci]
-                contract_ttfs_cores.append(CoreTtfsActivations(
-                    core_index=ci,
-                    n_out_used=n_out,
-                    output_activation=act[:n_out].astype(np.float64, copy=False),
-                ))
-            contract_ttfs_seg_output = logical_ttfs_result.inter_stage
+            logical_ttfs_result = contract_stage.neural_result
+            contract_ttfs_cores = list(contract_stage.segment_record.cores)
+            contract_ttfs_seg_output = contract_stage.segment_record.seg_output
+            membrane_V = contract_stage.membrane_voltages
+            seg_input_rates = contract_stage.seg_input
             apply_ttfs_preset_membranes(
                 core_to_group, hcm, membrane_V,
                 spiking_mode=self.spiking_mode,
@@ -311,7 +303,27 @@ class SanafeRunner:
             set_ttfs_input_spike_trains(
                 core_input_neurons, hcm, seg_input_rates, self.T,
             )
+            from mimarsinan.chip_simulation.ttfs_encoding import ttfs_latched_spike_train
+
+            encoded = ttfs_latched_spike_train(
+                seg_input_rates.astype(np.float64), self.T,
+            ).astype(np.float32)
+            encoded_padded = encoded
+            if T_eff > encoded.shape[2]:
+                pad = np.zeros(
+                    (encoded.shape[0], encoded.shape[1], T_eff - encoded.shape[2]),
+                    dtype=encoded.dtype,
+                )
+                encoded_padded = np.concatenate([encoded, pad], axis=2)
         else:
+            encoded = uniform_rate_encode(seg_input_rates, self.T)
+            encoded_padded = encoded
+            if T_eff > encoded.shape[2]:
+                pad = np.zeros(
+                    (encoded.shape[0], encoded.shape[1], T_eff - encoded.shape[2]),
+                    dtype=encoded.dtype,
+                )
+                encoded_padded = np.concatenate([encoded, pad], axis=2)
             set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
         set_always_on_spike_trains(
             core_always_on_neurons, T_eff, spiking_mode=self.spiking_mode,
@@ -525,17 +537,7 @@ class SanafeRunner:
             contract_ttfs_seg_output=contract_ttfs_seg_output,
         )
 
-        if is_ttfs_spiking_mode(self.spiking_mode) and logical_ttfs_result is not None:
-            buf_result = NeuralSegmentResult(
-                inter_stage=logical_ttfs_result.inter_stage.astype(
-                    _COMPUTE_DTYPE, copy=False,
-                ),
-                per_core_activations=logical_ttfs_result.per_core_activations,
-            )
-            store_neural_segment_output(
-                self.spiking_mode, stage.output_map, state_buffer, buf_result,
-            )
-        else:
+        if not is_ttfs_spiking_mode(self.spiking_mode):
             seg_output_rates = lif_inter_stage_from_spike_counts(
                 seg_out_count, self.T, dtype=_COMPUTE_DTYPE,
             )
