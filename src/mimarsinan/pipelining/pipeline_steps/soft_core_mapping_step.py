@@ -104,7 +104,7 @@ class SoftCoreMappingStep(PipelineStep):
                 "deployment accuracy may drop compared to training."
             )
 
-        self._apply_ttfs_quantized_bias_shift(model, act_q)
+        self._apply_ttfs_quantization_bias_compensation(model, act_q)
 
         from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
@@ -193,6 +193,9 @@ class SoftCoreMappingStep(PipelineStep):
                     initial_pruned_per_bank=initial_bank if initial_bank else None,
                     store_heatmap=store_heatmap,
                     simulation_steps=int(self.pipeline.config["simulation_steps"]),
+                    spiking_mode=str(
+                        self.pipeline.config.get("spiking_mode", "lif"),
+                    ),
                 )
             print(f"[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
 
@@ -267,12 +270,23 @@ class SoftCoreMappingStep(PipelineStep):
         self._soft_core_spiking_metric = float(acc)
         print(f"[SoftCoreMappingStep] Soft-core Spiking Simulation Test: {acc}")
 
-    def _apply_ttfs_quantized_bias_shift(self, model, act_q: bool) -> None:
-        if self.pipeline.config.get("spiking_mode", "lif") != "ttfs_quantized" or not act_q:
+    def _apply_ttfs_quantization_bias_compensation(self, model, act_q: bool) -> None:
+        spiking = str(self.pipeline.config.get("spiking_mode", "lif"))
+        if spiking == "ttfs" and act_q:
+            print(
+                "[SoftCoreMappingStep] WARNING: spiking_mode='ttfs' with "
+                "activation_quantization=True is unsupported for SCM parity; "
+                "use ttfs_quantized or disable activation_quantization.",
+            )
+        if spiking != "ttfs_quantized" or not act_q:
             return
-        from mimarsinan.mapping.ttfs_bias import apply_ttfs_quantized_bias_shift
+        from mimarsinan.mapping.ttfs_bias import (
+            apply_ttfs_quantization_bias_compensation,
+        )
 
-        apply_ttfs_quantized_bias_shift(model, self.pipeline.config["target_tq"])
+        apply_ttfs_quantization_bias_compensation(
+            model, self.pipeline.config["target_tq"],
+        )
 
     def bring_back_bias(self, fused_linear_layer):
         assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'

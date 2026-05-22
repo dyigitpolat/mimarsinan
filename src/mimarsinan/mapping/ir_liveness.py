@@ -70,6 +70,7 @@ def compute_liveness(
     graph: IRGraph,
     *,
     simulation_steps: int,
+    spiking_mode: str = "lif",
     thresholding_mode: str = "<",
     bias_only_emission_check: str = "conservative",
     pruning_result: GlobalPruningResult | None = None,
@@ -80,9 +81,10 @@ def compute_liveness(
     Args:
         graph: The IR graph to analyze (mutated by neither this function
             nor the underlying propagation pass).
-        simulation_steps: Number of LIF integration cycles per inference.
-            Used by the conservative bias-emission check
-            ``max(|bias|) * simulation_steps >= threshold``.
+        simulation_steps: Integration window for LIF-style bias checks;
+            quantized TTFS uses this as ``S``.
+        spiking_mode: ``lif``, ``rate``, ``ttfs``, or ``ttfs_quantized``; selects
+            bias-only activation predicate (see :mod:`liveness_semantics`).
         thresholding_mode: Reserved for future use ("<" / "<=" semantics);
             currently has no effect on the conservative check.
         bias_only_emission_check: ``"conservative"`` (default) uses the
@@ -164,7 +166,8 @@ def compute_liveness(
             reasons[nid] = "live"
             continue
 
-        bias_can_fire = _bias_can_fire(
+        bias_can_fire = _bias_can_activate_for_mode(
+            spiking_mode=spiking_mode,
             node=node,
             n_neurons=n_neurons,
             simulation_steps=simulation_steps,
@@ -188,13 +191,13 @@ def compute_liveness(
             per_node[nid] = NodeLiveness.DEAD
             if all_axons_dead:
                 reasons[nid] = (
-                    "all axons dead and hardware_bias cannot fire any "
-                    "neuron within simulation_steps"
+                    f"all axons dead and hardware_bias cannot activate "
+                    f"({spiking_mode!r}, T={simulation_steps})"
                 )
             else:
                 reasons[nid] = (
-                    "no live axon weight and hardware_bias cannot fire "
-                    "any neuron within simulation_steps"
+                    f"no live axon weight and hardware_bias cannot activate "
+                    f"({spiking_mode!r}, T={simulation_steps})"
                 )
             continue
 
@@ -202,7 +205,7 @@ def compute_liveness(
         n_alive_cols = n_neurons - len(pruned_cols)
         reasons[nid] = (
             f"all axon weights dead; {n_alive_cols} of {n_neurons} "
-            "neurons firing from hardware_bias only"
+            f"neurons active from hardware_bias only ({spiking_mode!r})"
         )
 
     # Sanity: ComputeOps are not in the result. Reserved for symmetry.
@@ -252,34 +255,30 @@ def _has_live_axon_with_weight(
     return False
 
 
-def _bias_can_fire(
+def _bias_can_activate_for_mode(
     *,
+    spiking_mode: str,
     node: NeuralCore,
     n_neurons: int,
     simulation_steps: int,
     zero_threshold: float,
     mode: str,
 ) -> bool:
-    """Conservative bias-emission check.
+    """Mode-aware bias-only activation check via :mod:`liveness_semantics`."""
+    from mimarsinan.mapping.liveness_semantics import bias_can_activate
 
-    Returns True iff ``max(|bias|) * simulation_steps >= threshold``. This
-    is a sound under-approximation: the actual LIF integration with leak
-    and reset can only reduce the membrane potential reached. Bias values
-    below ``zero_threshold`` are ignored.
-    """
     bias = getattr(node, "hardware_bias", None)
     if bias is None:
         return False
     arr = np.asarray(bias)
     if arr.size == 0 or arr.size != n_neurons:
         return False
-    abs_bias = np.abs(arr)
-    if not np.any(abs_bias >= zero_threshold):
-        return False
-    if mode == "exact":
-        # Reserved: exact LIF integration to be added behind a flag. For
-        # now treat "exact" as the conservative bound; the surrounding
-        # plumbing already lets us tighten this without API churn.
-        pass
     threshold = float(getattr(node, "threshold", 1.0))
-    return float(abs_bias.max()) * float(simulation_steps) >= threshold
+    return bias_can_activate(
+        spiking_mode=spiking_mode,
+        bias=bias,
+        threshold=threshold,
+        simulation_steps=simulation_steps,
+        zero_threshold=zero_threshold,
+        bias_only_emission_check=mode,
+    )

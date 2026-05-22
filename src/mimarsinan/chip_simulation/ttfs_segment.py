@@ -172,10 +172,15 @@ def gather_segment_ttfs_output_from_cores(
     for ci, act in enumerate(per_core_activations):
         if act is None or ci >= len(buffers):
             continue
-        a = np.asarray(act, dtype=np.float64).reshape(-1)
-        n = min(a.size, buffers[ci].shape[1])
-        if n > 0:
-            buffers[ci][0, :n] = a[:n]
+        a = np.asarray(act, dtype=np.float64)
+        if a.ndim == 1:
+            n = min(a.size, buffers[ci].shape[1])
+            if n > 0:
+                buffers[ci][0, :n] = a[:n]
+        else:
+            n = min(a.shape[1], buffers[ci].shape[1])
+            if n > 0:
+                buffers[ci][:, :n] = a[:, :n]
     return _gather_segment_output(
         input_activations=np.asarray(seg_input, dtype=np.float64),
         buffers=buffers,
@@ -218,13 +223,19 @@ def _gather_segment_output(
     return output
 
 
-def ttfs_core_membrane_voltages(
+def _run_ttfs_segment_ordered(
     seg: SegmentTtfsArrays,
     input_activations: np.ndarray,
-) -> List[np.ndarray]:
-    """Per-core membrane charge ``V = W @ a + b`` before TTFS activation (HCM parity)."""
+    *,
+    simulation_length: int = 1,
+    spiking_mode: str,
+) -> tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
+    """Execute TTFS cores in latency order; propagate activations between cores."""
     batch = input_activations.shape[0]
     n_cores = len(seg.core_params)
+    quantized = spiking_mode == "ttfs_quantized"
+    s = max(int(simulation_length), 1)
+
     buffers = [
         np.zeros((batch, seg.n_neurons_per_core[i]), dtype=np.float64)
         for i in range(n_cores)
@@ -248,7 +259,36 @@ def ttfs_core_membrane_voltages(
         v = input_signals[ci] @ seg.core_params[ci].T
         if seg.hw_biases[ci] is not None:
             v = v + seg.hw_biases[ci]
-        membrane[ci] = v.astype(np.float64, copy=False)
+        v = v.astype(np.float64, copy=False)
+        membrane[ci] = v
+        if quantized:
+            buffers[ci] = ttfs_quantized_activation_np(v, seg.thresholds[ci], s)
+        else:
+            safe_th = np.maximum(seg.thresholds[ci], 1e-12)
+            buffers[ci] = np.clip(np.maximum(v, 0.0) / safe_th, 0.0, 1.0)
+    out = _gather_segment_output(
+        input_activations=input_activations,
+        buffers=buffers,
+        output_spans=seg.output_spans,
+        n_output=seg.n_output,
+    )
+    return out, list(buffers), membrane
+
+
+def ttfs_core_membrane_voltages(
+    seg: SegmentTtfsArrays,
+    input_activations: np.ndarray,
+    *,
+    simulation_length: int = 1,
+    spiking_mode: str = "ttfs",
+) -> List[np.ndarray]:
+    """Per-core membrane charge ``V = W @ a + b`` before TTFS activation (HCM parity)."""
+    _, _, membrane = _run_ttfs_segment_ordered(
+        seg,
+        input_activations,
+        simulation_length=simulation_length,
+        spiking_mode=spiking_mode,
+    )
     return membrane
 
 
@@ -257,23 +297,10 @@ def run_ttfs_continuous_segment(
     input_activations: np.ndarray,
 ) -> tuple[np.ndarray, List[np.ndarray]]:
     """Analytical TTFS: ``relu(W @ x + b) / θ`` per core in latency order."""
-    membrane = ttfs_core_membrane_voltages(seg, input_activations)
-    batch = input_activations.shape[0]
-    n_cores = len(seg.core_params)
-    buffers = [
-        np.zeros((batch, seg.n_neurons_per_core[i]), dtype=np.float64)
-        for i in range(n_cores)
-    ]
-    for ci in range(n_cores):
-        safe_th = np.maximum(seg.thresholds[ci], 1e-12)
-        buffers[ci] = np.clip(np.maximum(membrane[ci], 0.0) / safe_th, 0.0, 1.0)
-    out = _gather_segment_output(
-        input_activations=input_activations,
-        buffers=buffers,
-        output_spans=seg.output_spans,
-        n_output=seg.n_output,
+    out, buffers, _ = _run_ttfs_segment_ordered(
+        seg, input_activations, spiking_mode="ttfs",
     )
-    return out, list(buffers)
+    return out, buffers
 
 
 def run_ttfs_quantized_segment(
@@ -282,20 +309,10 @@ def run_ttfs_quantized_segment(
     simulation_length: int,
 ) -> tuple[np.ndarray, List[np.ndarray]]:
     """Closed-form ``ttfs_quantized`` per core (matches HCM / ``ttfs_kernels``)."""
-    s = int(simulation_length)
-    membrane = ttfs_core_membrane_voltages(seg, input_activations)
-    batch = input_activations.shape[0]
-    n_cores = len(seg.core_params)
-    buffers = [
-        np.zeros((batch, seg.n_neurons_per_core[i]), dtype=np.float64)
-        for i in range(n_cores)
-    ]
-    for ci in range(n_cores):
-        buffers[ci] = ttfs_quantized_activation_np(membrane[ci], seg.thresholds[ci], s)
-    out = _gather_segment_output(
-        input_activations=input_activations,
-        buffers=buffers,
-        output_spans=seg.output_spans,
-        n_output=seg.n_output,
+    out, buffers, _ = _run_ttfs_segment_ordered(
+        seg,
+        input_activations,
+        simulation_length=simulation_length,
+        spiking_mode="ttfs_quantized",
     )
-    return out, list(buffers)
+    return out, buffers

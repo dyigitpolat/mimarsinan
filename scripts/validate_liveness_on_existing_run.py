@@ -70,7 +70,24 @@ def _shape_histogram(graph: IRGraph) -> Counter:
     return counts
 
 
-def main(run_dir: str) -> int:
+def _load_spiking_mode(run_dir: str) -> str:
+    import json
+
+    for name in ("config.json", "pipeline_config.json"):
+        path = os.path.join(run_dir, name)
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        dp = cfg.get("deployment_parameters", cfg)
+        if isinstance(dp, dict) and "spiking_mode" in dp:
+            return str(dp["spiking_mode"])
+        if "spiking_mode" in cfg:
+            return str(cfg["spiking_mode"])
+    return "lif"
+
+
+def main(run_dir: str, *, spiking_mode: str | None = None) -> int:
     pickle_path = os.path.join(run_dir, "Soft Core Mapping.ir_graph.pickle")
     if not os.path.exists(pickle_path):
         print(f"FAIL: {pickle_path!s} does not exist", file=sys.stderr)
@@ -88,7 +105,26 @@ def main(run_dir: str) -> int:
     print(f"  (1, 1) placeholders observed (legacy): {n_placeholders}")
     print(f"  Shape histogram: {dict(shapes)}")
 
-    liveness = compute_liveness(ir_graph, simulation_steps=32)
+    mode = spiking_mode or _load_spiking_mode(run_dir)
+    sim_steps = 32
+    for name in ("config.json", "pipeline_config.json"):
+        path = os.path.join(run_dir, name)
+        if not os.path.isfile(path):
+            continue
+        import json
+
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        dp = cfg.get("deployment_parameters", cfg)
+        if isinstance(dp, dict) and "simulation_steps" in dp:
+            sim_steps = int(dp["simulation_steps"])
+            break
+    print(f"  spiking_mode={mode!r} simulation_steps={sim_steps}")
+    liveness = compute_liveness(
+        ir_graph,
+        simulation_steps=sim_steps,
+        spiking_mode=mode,
+    )
     by_status: Counter = Counter()
     for nid, status in liveness.per_node.items():
         by_status[status.value] += 1
@@ -143,10 +179,14 @@ def main(run_dir: str) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(
-            "usage: python scripts/validate_liveness_on_existing_run.py RUN_DIR",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-    sys.exit(main(sys.argv[1]))
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("run_dir")
+    parser.add_argument(
+        "--spiking-mode",
+        default=None,
+        help="Override spiking_mode (default: read from run config)",
+    )
+    args = parser.parse_args()
+    sys.exit(main(args.run_dir, spiking_mode=args.spiking_mode))

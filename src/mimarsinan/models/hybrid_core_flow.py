@@ -547,14 +547,27 @@ class SpikingHybridCoreFlow(nn.Module):
             )
 
         def _on_neural_ttfs(ctx: HybridStageContext) -> None:
-            stage = ctx.stage
-            seg_input = self._assemble_segment_input(
-                stage.input_map, ctx.state_buffer, batch_size, device
+            from mimarsinan.chip_simulation.ttfs_executor import (
+                run_ttfs_contract_neural_stage,
             )
-            seg_output = self._run_neural_segment_ttfs(
-                stage, input_activations=seg_input, quantized=quantized
+
+            state_np = {
+                k: v.detach().cpu().numpy().astype(np.float64)
+                for k, v in ctx.state_buffer.items()
+            }
+            mode = "ttfs_quantized" if quantized else "ttfs"
+            run_ttfs_contract_neural_stage(
+                self.hybrid_mapping,
+                ctx.stage,
+                ctx.stage_index,
+                state_np,
+                simulation_length=self.simulation_length,
+                spiking_mode=mode,
             )
-            self._store_segment_output(stage.output_map, ctx.state_buffer, seg_output)
+            for s in ctx.stage.output_map:
+                ctx.state_buffer[s.node_id] = torch.tensor(
+                    state_np[s.node_id], dtype=_COMPUTE_DTYPE, device=device,
+                )
 
         def _after_neural_ttfs(ctx: HybridStageContext) -> None:
             self._decref_consumers(
@@ -564,18 +577,22 @@ class SpikingHybridCoreFlow(nn.Module):
             )
 
         def _on_compute_ttfs(ctx: HybridStageContext) -> None:
+            from mimarsinan.chip_simulation.ttfs_executor import (
+                run_ttfs_contract_compute_stage,
+            )
+
             op = ctx.stage.compute_op
             assert op is not None
-            in_scale, out_scale = resolve_stage_compute_scales(
-                self.hybrid_mapping, op.id, apply_ttfs=True
+            state_np = {
+                k: v.detach().cpu().numpy().astype(np.float64)
+                for k, v in ctx.state_buffer.items()
+            }
+            sample = x_compute.detach().cpu().numpy()
+            result = run_ttfs_contract_compute_stage(
+                self.hybrid_mapping, ctx.stage, state_np, sample,
             )
-            ctx.state_buffer[op.id] = execute_compute_op_torch(
-                op,
-                x,
-                ctx.state_buffer,
-                in_scale=in_scale,
-                out_scale=out_scale,
-                output_dtype=_COMPUTE_DTYPE,
+            ctx.state_buffer[op.id] = torch.tensor(
+                result.output, dtype=_COMPUTE_DTYPE, device=device,
             )
 
         def _after_compute_ttfs(ctx: HybridStageContext) -> None:
@@ -599,6 +616,7 @@ class SpikingHybridCoreFlow(nn.Module):
         )
 
         final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
+        # Hybrid TTFS returns count-scaled logits (× simulation_steps) for HCM legacy.
         return final.to(torch.float32) * float(T)
 
     def _build_segment_input_spike_train(

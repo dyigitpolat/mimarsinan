@@ -186,10 +186,16 @@ def test_store_neural_segment_output_matches_executor(pipeline_config):
             n = used_neurons(core, min_one=True)
             if n <= 0:
                 continue
+            from mimarsinan.chip_simulation.ttfs_recorder import (
+                normalize_core_output_activation,
+            )
+
             cores.append(CoreTtfsActivations(
                 core_index=ci,
                 n_out_used=n,
-                output_activation=result.per_core_activations[ci][:n],
+                output_activation=normalize_core_output_activation(
+                    result.per_core_activations[ci], n_out_used=n,
+                ),
             ))
         act_record.segments[si] = SegmentTtfsRecord(
             stage_index=si, stage_name=stage.name,
@@ -197,4 +203,6 @@ def test_store_neural_segment_output_matches_executor(pipeline_config):
             seg_output=result.inter_stage[0], cores=cores,
         )
 
-    assert not compare_ttfs_records(ref, act_record)
+    from mimarsinan.chip_simulation.ttfs_recorder import compare_ttfs_contract_records
+
+    assert not compare_ttfs_contract_records(ref, act_record)
