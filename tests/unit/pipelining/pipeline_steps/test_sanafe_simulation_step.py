@@ -196,11 +196,41 @@ def test_step_validate_returns_target_metric_when_no_local_metric(monkeypatch):
     assert step.validate() == 0.875
 
 
-def test_step_rejects_non_lif_spiking_mode(monkeypatch):
-    step, pipeline, _ = _prepare_step(monkeypatch)
-    pipeline.config["spiking_mode"] = "ttfs"
-    with pytest.raises(ValueError, match="lif"):
-        step.run()
+def test_step_ttfs_uses_ttfs_reference_path(monkeypatch):
+    import mimarsinan.pipelining.pipeline_steps.sanafe_simulation_step as step_mod
+
+    step, pipeline, calls = _prepare_step(monkeypatch)
+    ttfs_calls = []
+
+    def _fake_ttfs_ref(pipeline, mapping, sample, sample_index=0):
+        ttfs_calls.append(sample_index)
+        from mimarsinan.chip_simulation.ttfs_recorder import TtfsRunRecord
+
+        return None, TtfsRunRecord(
+            sample_index=sample_index, simulation_length=4, spiking_mode="ttfs",
+        )
+
+    def _fake_ttfs_subset(self, spiking_mode="ttfs"):
+        from mimarsinan.chip_simulation.ttfs_recorder import TtfsRunRecord
+
+        return TtfsRunRecord(
+            sample_index=self.sample_index,
+            simulation_length=self.T,
+            spiking_mode=spiking_mode,
+        )
+
+    monkeypatch.setattr(step_mod, "record_ttfs_hcm_reference", _fake_ttfs_ref)
+    monkeypatch.setattr(
+        SanafeRunRecord, "to_ttfs_contract_subset", _fake_ttfs_subset, raising=False,
+    )
+    monkeypatch.setattr(
+        SanafeRunRecord, "to_ttfs_hardware_subset", _fake_ttfs_subset, raising=False,
+    )
+    pipeline.config["spiking_mode"] = "ttfs_quantized"
+    pipeline.config["firing_mode"] = "TTFS"
+    pipeline.config["spike_generation_mode"] = "TTFS"
+    step.run()
+    assert ttfs_calls == [0]
 
 
 # ---------------------------------------------------------------------------

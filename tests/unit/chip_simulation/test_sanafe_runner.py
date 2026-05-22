@@ -30,7 +30,9 @@ from mimarsinan.chip_simulation.sanafe.records import (
 )
 from mimarsinan.chip_simulation.sanafe.runner import (
     SanafeRunner,
+    _read_ttfs_core_activations,
     _spike_trace_to_group_counts,
+    _ttfs_potential_trace_group_names,
 )
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
@@ -195,12 +197,32 @@ def _patch_sanafe_stack(monkeypatch, *, fake_arch=None):
     monkeypatch.setattr(runner_mod, "_sanafe", _fake_sanafe_module)
     if fake_arch is None:
         fake_arch = _fake_arch(2)
+
+    def _fake_derive_arch_spec(mapping, *, preset_name, cores_per_tile=0):
+        from mimarsinan.chip_simulation.sanafe.arch_synth import ArchSpec
+        from mimarsinan.chip_simulation.sanafe.presets import PRESETS
+
+        return ArchSpec(
+            name=f"fake_{preset_name}",
+            n_tiles=1,
+            n_cores_per_tile=[len(mapping.get_neural_segments()[0].cores)],
+            axons_per_core=4,
+            neurons_per_core=4,
+            preset=PRESETS[preset_name],
+            dendrite_plugin_path="/fake/dendrite.so",
+            soma_plugin_path="/fake/soma.so",
+            ttfs_continuous_plugin_path="/fake/ttfs_cont.so",
+            ttfs_quantized_plugin_path="/fake/ttfs_q.so",
+        )
+
+    monkeypatch.setattr(runner_mod, "derive_arch_spec", _fake_derive_arch_spec)
     monkeypatch.setattr(
         runner_mod, "build_architecture",
-        lambda spec, custom_arch_path=None, thresholding_mode="<": fake_arch,
+        lambda spec, custom_arch_path=None, thresholding_mode="<=",
+               simulation_length=1: fake_arch,
     )
 
-    def default_builder(arch, hcm, **kw):
+    def default_builder(arch, hcm, **kw):  # accepts spiking_mode, simulation_length, ...
         net = _FakeNetwork()
         core_to_group = {
             i: net.create_neuron_group(f"core{i}", hcm.cores[i].neurons_per_core)
@@ -229,7 +251,9 @@ def _patch_sanafe_stack(monkeypatch, *, fake_arch=None):
     monkeypatch.setattr(runner_mod, "set_input_spike_trains",
                         lambda core_input_neurons, hcm, encoded: None)
     monkeypatch.setattr(runner_mod, "set_always_on_spike_trains",
-                        lambda core_always_on_neurons, T: None)
+                        lambda core_always_on_neurons, T, **kw: None)
+    monkeypatch.setattr(runner_mod, "set_ttfs_input_spike_trains",
+                        lambda *args, **kw: None)
     return fake_arch
 
 
@@ -264,9 +288,10 @@ def test_spike_trace_decoder_tallies_group_index_strings():
         ["core0.0", "core1.0", "core0.0"],
         ["in.2"],
     ]
-    counts = _spike_trace_to_group_counts(
+    counts, skipped = _spike_trace_to_group_counts(
         trace, group_sizes={"core0": 3, "core1": 2, "in": 4},
     )
+    assert skipped == 0
     assert counts["core0"].tolist() == [3, 1, 0]
     assert counts["core1"].tolist() == [1, 0]
     assert counts["in"].tolist() == [0, 0, 1, 0]
@@ -274,8 +299,9 @@ def test_spike_trace_decoder_tallies_group_index_strings():
 
 def test_spike_trace_decoder_ignores_unknown_groups_and_indices():
     trace = [["ghost.0", "core0.9", "core0.0", "junk"]]
-    counts = _spike_trace_to_group_counts(trace, group_sizes={"core0": 3})
+    counts, skipped = _spike_trace_to_group_counts(trace, group_sizes={"core0": 3})
     assert counts["core0"].tolist() == [1, 0, 0]
+    assert skipped == 3
 
 
 # ---------------------------------------------------------------------------
@@ -294,10 +320,15 @@ def test_runner_init_stores_config_and_does_not_import_sanafe(monkeypatch):
     assert sentinel == []
 
 
-def test_runner_rejects_non_lif_spiking_mode():
+def test_runner_accepts_ttfs_quantized_spiking_mode(monkeypatch):
     mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
-    with pytest.raises(ValueError, match="lif"):
-        SanafeRunner(mapping=mapping, simulation_length=8, spiking_mode="ttfs")
+    monkeypatch.setattr(runner_mod, "_sanafe",
+                        lambda: (_ for _ in ()).throw(AssertionError("no import")))
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8,
+        spiking_mode="ttfs_quantized", firing_mode="TTFS",
+    )
+    assert runner.spiking_mode == "ttfs_quantized"
 
 
 def test_runner_rejects_unknown_arch_preset():
@@ -487,6 +518,26 @@ def test_run_derives_per_core_input_spike_count_from_input_axons(monkeypatch):
     rec = runner.run(np.asarray([[0.5, 1.0]], dtype=np.float32), sample_index=0)
     core_rec = rec.segments[0].per_core[0]
     assert core_rec.input_spike_count.tolist() == [4, 8]
+
+
+def test_ttfs_potential_trace_group_order_is_lexicographic():
+    chip = SimpleNamespace(mapped_neuron_groups={
+        "core10": [object()],
+        "core2": [object(), object()],
+        "core0": [object()],
+        "core0_in": [object(), object()],
+    })
+    assert _ttfs_potential_trace_group_names(chip) == ["core0", "core10", "core2"]
+
+
+def test_read_ttfs_core_activations_slices_potential_trace():
+    chip = SimpleNamespace(mapped_neuron_groups={
+        "core0": [object(), object()],
+        "core1": [object()],
+    })
+    results = {"potential_trace": [[0.1, 0.2, 0.3]]}
+    out = _read_ttfs_core_activations(chip, 1, 1, results)
+    np.testing.assert_allclose(out, [0.3])
 
 
 def test_run_per_core_input_count_always_on_axon_counts_T(monkeypatch):

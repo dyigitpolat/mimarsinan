@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -12,6 +13,12 @@ from mimarsinan.chip_simulation.hybrid_execution import (
     execute_compute_op_numpy,
     store_segment_output_numpy,
 )
+from mimarsinan.chip_simulation.hybrid_semantics import (
+    NeuralSegmentResult,
+    is_ttfs_spiking_mode,
+    lif_inter_stage_from_spike_counts,
+    store_neural_segment_output,
+)
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.chip_latency import ChipLatency
 from mimarsinan.mapping.core_geometry import used_axons as _used_axons
@@ -20,7 +27,11 @@ from mimarsinan.mapping.spike_source_spans import compress_spike_sources
 
 from .arch_synth import _sanafe, build_architecture, derive_arch_spec
 from .net_synth import (
-    build_network_for_segment, set_always_on_spike_trains, set_input_spike_trains,
+    apply_ttfs_preset_membranes,
+    build_network_for_segment,
+    set_always_on_spike_trains,
+    set_input_spike_trains,
+    set_ttfs_input_spike_trains,
 )
 from .presets import PRESETS
 from .records import (
@@ -62,10 +73,7 @@ class SanafeRunner:
         log_message_trace: bool = True,
         cores_per_tile: int = 0,
     ):
-        if spiking_mode != "lif":
-            raise ValueError(
-                f"SanafeRunner requires spiking_mode='lif'; got {spiking_mode!r}"
-            )
+        self.spiking_mode = str(spiking_mode)
         if arch_preset not in PRESETS:
             raise ValueError(
                 f"unknown SANA-FE arch preset {arch_preset!r}; "
@@ -81,11 +89,16 @@ class SanafeRunner:
         self.firing_mode = str(firing_mode)
         from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
 
+        from mimarsinan.chip_simulation.spiking_semantics import require_spiking_mode_supported
+
+        require_spiking_mode_supported(
+            self.spiking_mode, backend="sanafe", context="SanafeRunner",
+        )
         FiringStrategyFactory.from_config(
             {
                 "firing_mode": self.firing_mode,
                 "thresholding_mode": thresholding_mode,
-                "spiking_mode": spiking_mode,
+                "spiking_mode": self.spiking_mode,
             }
         ).require_backend("sanafe")
         self.log_potential_trace = log_potential_trace
@@ -93,6 +106,7 @@ class SanafeRunner:
         self.cores_per_tile = cores_per_tile
 
         self._arch: Optional[Any] = None
+        self._arch_built_for_T: Optional[int] = None
         self._arch_name: str = "<unbuilt>"
         self._arch_geometry: Optional[SanafeArchGeometry] = None
         self._last_chip: Optional[Any] = None  # test hook
@@ -176,8 +190,11 @@ class SanafeRunner:
 
     def _ensure_arch(self) -> None:
         """Lazily build the shared SANA-FE architecture."""
+        need_T = self.spiking_mode == "ttfs_quantized"
         if self._arch is not None:
-            return
+            if not need_T or self._arch_built_for_T == self.T:
+                return
+            self._arch = None
         spec = derive_arch_spec(
             self.mapping,
             preset_name=self.arch_preset,
@@ -188,7 +205,9 @@ class SanafeRunner:
             spec,
             custom_arch_path=self.custom_arch_path,
             thresholding_mode=self.thresholding_mode,
+            simulation_length=self.T,
         )
+        self._arch_built_for_T = self.T if need_T else None
         self.cores_per_tile = int(spec.cores_per_tile_resolved)
         # Column-major tile coords: x = tile_id // mesh_height, y = tile_id % mesh_height.
         n_tiles = int(spec.n_tiles)
@@ -229,9 +248,18 @@ class SanafeRunner:
             cores_per_tile=self.cores_per_tile,
             simulation_length=self.T,
             firing_mode=self.firing_mode,
+            spiking_mode=self.spiking_mode,
         )
 
-        encoded = uniform_rate_encode(seg_input_rates, self.T)
+        is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
+        if is_ttfs:
+            from mimarsinan.chip_simulation.ttfs_encoding import ttfs_latched_spike_train
+
+            encoded = ttfs_latched_spike_train(
+                seg_input_rates.astype(np.float64), self.T,
+            ).astype(np.float32)
+        else:
+            encoded = uniform_rate_encode(seg_input_rates, self.T)
 
         max_latency = max(
             (int(c.latency) if getattr(c, "latency", None) is not None else 0)
@@ -247,23 +275,73 @@ class SanafeRunner:
             )
             encoded_padded = np.concatenate([encoded, pad], axis=2)
 
-        set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
-        set_always_on_spike_trains(core_always_on_neurons, T_eff)
+        contract_ttfs_cores: List[Any] = []
+        contract_ttfs_seg_output: Optional[np.ndarray] = None
+        logical_ttfs_result: Optional[NeuralSegmentResult] = None
+
+        if is_ttfs:
+            from mimarsinan.chip_simulation.ttfs_executor import TtfsAnalyticalExecutor
+            from mimarsinan.chip_simulation.ttfs_recorder import CoreTtfsActivations
+            from mimarsinan.mapping.core_geometry import used_neurons as _used_neurons_ttfs
+
+            _ttfs_exec = TtfsAnalyticalExecutor()
+            logical_ttfs_result = _ttfs_exec.run_segment(
+                hcm, seg_input_rates,
+                simulation_length=self.T,
+                spiking_mode=self.spiking_mode,
+            )
+            membrane_V = _ttfs_exec.membrane_voltages(hcm, seg_input_rates)
+            for ci, core in enumerate(hcm.cores):
+                n_out = _used_neurons_ttfs(core, min_one=True)
+                if n_out <= 0:
+                    continue
+                act = logical_ttfs_result.per_core_activations[ci]
+                contract_ttfs_cores.append(CoreTtfsActivations(
+                    core_index=ci,
+                    n_out_used=n_out,
+                    output_activation=act[:n_out].astype(np.float64, copy=False),
+                ))
+            contract_ttfs_seg_output = logical_ttfs_result.inter_stage
+            apply_ttfs_preset_membranes(
+                core_to_group, hcm, membrane_V,
+                spiking_mode=self.spiking_mode,
+                simulation_length=self.T,
+                firing_mode=self.firing_mode,
+            )
+            set_ttfs_input_spike_trains(
+                core_input_neurons, hcm, seg_input_rates, self.T,
+            )
+        else:
+            set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
+        set_always_on_spike_trains(
+            core_always_on_neurons, T_eff, spiking_mode=self.spiking_mode,
+        )
 
         chip = sanafe.SpikingChip(self._arch)
         chip.load(net)
+        need_potential_trace = is_ttfs or self.log_potential_trace
         results = chip.sim(
             T_eff,
             spike_trace=True,
-            potential_trace=self.log_potential_trace,
+            potential_trace=need_potential_trace,
             message_trace=self.log_message_trace,
         )
         self._last_chip = chip
 
-        group_spike_counts = _spike_trace_to_group_counts(
+        group_spike_counts, spike_parse_skipped = _spike_trace_to_group_counts(
             results.get("spike_trace", []),
             group_sizes=_group_name_to_size(net),
         )
+        lif_spike_count, _input_spike_total = _lif_and_input_spike_totals(
+            group_spike_counts,
+        )
+        input_spikes_by_core = _input_spikes_per_core(group_spike_counts)
+        msg_summary = _summarize_message_trace(results.get("message_trace"))
+        connectivity_edges = _compute_connectivity_edges(hcm)
+        cross_tile_conn = _count_cross_tile_connectivity_edges(
+            connectivity_edges, cores_per_tile=self.cores_per_tile,
+        )
+        chip_spike_count = int(results.get("spikes", 0))
         seg_raster = _pack_spike_trace_matrix(
             results.get("spike_trace", []), net.groups,
         )
@@ -302,6 +380,12 @@ class SanafeRunner:
                 off = group_row_offsets.get(group_name)
                 if off is not None and used_neu > 0:
                     core_raster = seg_raster[off:off + used_neu]
+            output_activation = None
+            if is_ttfs and group is not None:
+                output_activation = _read_ttfs_core_activations(
+                    chip, core_idx, used_neu, results,
+                )
+
             per_core_records.append(SanafeCoreRecord(
                 core_index=core_idx,
                 n_neurons=used_neu,
@@ -310,8 +394,12 @@ class SanafeRunner:
                 has_hardware_bias=core.hardware_bias is not None,
                 n_always_on_axons=n_always_on,
                 spikes_fired=int(output_count.sum()),
+                input_neuron_spikes_fired=int(
+                    input_spikes_by_core.get(core_idx, 0),
+                ),
                 input_spike_count=input_count,
                 output_spike_count=output_count,
+                output_activation=output_activation,
                 energy=_per_core_energy_sanafe(
                     preset=self._preset,
                     n_neurons=used_neu,
@@ -328,6 +416,27 @@ class SanafeRunner:
         per_tile_records = self._aggregate_per_tile(
             per_core_records, results,
             message_trace=results.get("message_trace"),
+        )
+
+        ttfs_diag = (
+            _compute_ttfs_activity_diagnostics(
+                contract_ttfs_cores, per_core_records,
+            )
+            if is_ttfs else {
+                "ttfs_contract_active_cores": 0,
+                "ttfs_hardware_active_cores": 0,
+                "ttfs_event_active_cores": 0,
+                "ttfs_activation_event_mismatch_count": 0,
+            }
+        )
+        spike_warning = _build_spike_capture_warning(
+            chip_spike_count=chip_spike_count,
+            lif_spike_count=lif_spike_count,
+            input_path_packets=msg_summary["input_path_packets"],
+            spike_trace_parse_skipped=spike_parse_skipped,
+            ttfs_hardware_active=ttfs_diag["ttfs_hardware_active_cores"],
+            ttfs_event_active=ttfs_diag["ttfs_event_active_cores"],
+            ttfs_mismatch_count=ttfs_diag["ttfs_activation_event_mismatch_count"],
         )
 
         last_active_fires = self._collect_last_active_fires(
@@ -390,16 +499,52 @@ class SanafeRunner:
                 results.get("message_trace"),
                 net=net, hcm=hcm,
             ),
-            connectivity=_compute_connectivity_edges(hcm),
+            connectivity=connectivity_edges,
             noc_traffic_per_cycle=_compute_noc_traffic_per_cycle(
                 results.get("message_trace"),
             ),
+            tile_packets_per_cycle=_compute_tile_packets_per_cycle(
+                results.get("message_trace"),
+            ),
+            inter_tile_packets=msg_summary["inter_tile_packets"],
+            intra_tile_packets=msg_summary["intra_tile_packets"],
+            input_path_packets=msg_summary["input_path_packets"],
+            cross_tile_connectivity_edges=cross_tile_conn,
+            chip_spike_count=chip_spike_count,
+            lif_spike_count=lif_spike_count,
+            spike_trace_parse_skipped=spike_parse_skipped,
+            spike_capture_warning=spike_warning,
+            mapped_cross_tile_axons=cross_tile_conn,
+            ttfs_contract_active_cores=ttfs_diag["ttfs_contract_active_cores"],
+            ttfs_hardware_active_cores=ttfs_diag["ttfs_hardware_active_cores"],
+            ttfs_event_active_cores=ttfs_diag["ttfs_event_active_cores"],
+            ttfs_activation_event_mismatch_count=ttfs_diag[
+                "ttfs_activation_event_mismatch_count"
+            ],
+            contract_ttfs_cores=contract_ttfs_cores,
+            contract_ttfs_seg_output=contract_ttfs_seg_output,
         )
 
-        seg_output_rates = (
-            seg_out_count.astype(_COMPUTE_DTYPE) / np.asarray(self.T, dtype=_COMPUTE_DTYPE)
-        ).reshape(1, -1)
-        store_segment_output_numpy(stage.output_map, state_buffer, seg_output_rates)
+        if is_ttfs_spiking_mode(self.spiking_mode) and logical_ttfs_result is not None:
+            buf_result = NeuralSegmentResult(
+                inter_stage=logical_ttfs_result.inter_stage.astype(
+                    _COMPUTE_DTYPE, copy=False,
+                ),
+                per_core_activations=logical_ttfs_result.per_core_activations,
+            )
+            store_neural_segment_output(
+                self.spiking_mode, stage.output_map, state_buffer, buf_result,
+            )
+        else:
+            seg_output_rates = lif_inter_stage_from_spike_counts(
+                seg_out_count, self.T, dtype=_COMPUTE_DTYPE,
+            )
+            store_neural_segment_output(
+                self.spiking_mode,
+                stage.output_map,
+                state_buffer,
+                NeuralSegmentResult(inter_stage=seg_output_rates),
+            )
         return seg_record
 
 
@@ -647,6 +792,49 @@ class SanafeRunner:
         return out
 
 
+_CORE_GROUP_RE = re.compile(r"^core(\d+)$")
+_LIF_SPIKE_GROUP_RE = re.compile(r"^core(\d+)$")
+_INPUT_SPIKE_GROUP_RE = re.compile(r"^core(\d+)_(in|on)$")
+
+
+def _ttfs_potential_trace_group_names(chip: Any) -> List[str]:
+    """``coreN`` group names in lex order (matches SANA-FE ``std::map`` iteration)."""
+    groups = getattr(chip, "mapped_neuron_groups", None) or {}
+    return [
+        str(gn) for gn in sorted(groups.keys())
+        if _CORE_GROUP_RE.match(str(gn))
+    ]
+
+
+def _read_ttfs_core_activations(
+    chip: Any,
+    core_idx: int,
+    n_neurons: int,
+    results: Dict[str, Any],
+) -> np.ndarray:
+    """Read per-neuron TTFS activations from ``potential_trace`` (plugin somas)."""
+    out = np.zeros(n_neurons, dtype=np.float64)
+    target = f"core{core_idx}"
+    trace = results.get("potential_trace")
+    if trace is None or len(trace) == 0:
+        return out
+    row = trace[-1]
+    if row is None or len(row) == 0:
+        return out
+    groups = getattr(chip, "mapped_neuron_groups", None) or {}
+    pos = 0
+    for gn in _ttfs_potential_trace_group_names(chip):
+        group = groups.get(gn)
+        n_logged = len(group) if group is not None else 0
+        if gn == target:
+            n_copy = min(n_neurons, n_logged, len(row) - pos)
+            if n_copy > 0:
+                out[:n_copy] = np.asarray(row[pos : pos + n_copy], dtype=np.float64)
+            return out
+        pos += n_logged
+    return out
+
+
 def _group_name(group: Any) -> str:
     """Return a NeuronGroup name (``get_name()`` or ``.name``)."""
     if hasattr(group, "get_name"):
@@ -735,30 +923,93 @@ def _energy_share(total: SanafeEnergyBreakdown, *, n_cores: int) -> SanafeEnergy
     )
 
 
+def _spike_event_group_and_index(event: Any) -> Optional[Tuple[str, int]]:
+    """Parse a spike-trace entry (``NeuronAddress`` or ``group.idx`` string)."""
+    gn = getattr(event, "group_name", None)
+    if gn is not None:
+        no = getattr(event, "neuron_offset", None)
+        if no is None:
+            return (str(gn), 0)
+        try:
+            return (str(gn), int(no))
+        except (TypeError, ValueError):
+            return (str(gn), 0)
+    s = str(event)
+    if "." not in s:
+        return None
+    group_name, idx_str = s.rsplit(".", 1)
+    try:
+        return (group_name, int(idx_str))
+    except ValueError:
+        return None
+
+
+def _hardcore_index_from_spike_group(group_name: str) -> Optional[int]:
+    """Map ``coreN``, ``coreN_in``, or ``coreN_on`` to HCM core index."""
+    m = _INPUT_SPIKE_GROUP_RE.match(group_name)
+    if m:
+        return int(m.group(1))
+    m = _LIF_SPIKE_GROUP_RE.match(group_name)
+    if m:
+        return int(m.group(1))
+    return None
+
+
 def _spike_trace_to_group_counts(
     spike_trace: list,
     *,
     group_sizes: Dict[str, int],
-) -> Dict[str, np.ndarray]:
-    """Tally ``"<group>.<neuron>"`` spike-trace strings into per-group counts."""
+) -> Tuple[Dict[str, np.ndarray], int]:
+    """Tally spike-trace events into per-group counts; return (counts, parse_skipped)."""
     counts: Dict[str, np.ndarray] = {
         name: np.zeros(size, dtype=np.int64) for name, size in group_sizes.items()
     }
+    parse_skipped = 0
     for events in spike_trace:
         for event in events:
-            s = str(event)
-            if "." not in s:
+            parsed = _spike_event_group_and_index(event)
+            if parsed is None:
+                parse_skipped += 1
                 continue
-            group_name, idx_str = s.rsplit(".", 1)
-            try:
-                idx = int(idx_str)
-            except ValueError:
-                continue
+            group_name, idx = parsed
             arr = counts.get(group_name)
-            if arr is None or idx >= arr.size:
+            if arr is None or idx < 0 or idx >= arr.size:
+                parse_skipped += 1
                 continue
             arr[idx] += 1
-    return counts
+    return counts, parse_skipped
+
+
+def _lif_and_input_spike_totals(
+    group_spike_counts: Dict[str, np.ndarray],
+) -> Tuple[int, int]:
+    """Sum LIF (``coreN``) vs input-path (``coreN_in`` / ``coreN_on``) spike counts."""
+    lif_total = 0
+    input_total = 0
+    for group_name, arr in group_spike_counts.items():
+        n = int(arr.sum())
+        if n <= 0:
+            continue
+        if _INPUT_SPIKE_GROUP_RE.match(group_name):
+            input_total += n
+        elif _LIF_SPIKE_GROUP_RE.match(group_name):
+            lif_total += n
+    return lif_total, input_total
+
+
+def _input_spikes_per_core(
+    group_spike_counts: Dict[str, np.ndarray],
+) -> Dict[int, int]:
+    """Per-HCM-core spike count on input / always-on neuron groups."""
+    out: Dict[int, int] = {}
+    for group_name, arr in group_spike_counts.items():
+        if not _INPUT_SPIKE_GROUP_RE.match(group_name):
+            continue
+        hci = _hardcore_index_from_spike_group(group_name)
+        if hci is None:
+            continue
+        out[hci] = out.get(hci, 0) + int(arr.sum())
+    return out
 
 
 def _pack_spike_trace_matrix(
@@ -780,20 +1031,157 @@ def _pack_spike_trace_matrix(
     mat = np.zeros((cursor, T), dtype=np.uint8)
     for t, events in enumerate(spike_trace):
         for event in events:
-            s = str(event)
-            if "." not in s:
+            parsed = _spike_event_group_and_index(event)
+            if parsed is None:
                 continue
-            group_name, idx_str = s.rsplit(".", 1)
+            group_name, idx = parsed
             if group_name not in offsets:
-                continue
-            try:
-                idx = int(idx_str)
-            except ValueError:
                 continue
             row = offsets[group_name] + idx
             if 0 <= row < cursor:
                 mat[row, t] = 1
     return mat
+
+
+def _summarize_message_trace(message_trace: Any) -> Dict[str, int]:
+    """Classify non-placeholder message-trace events."""
+    inter = intra = input_path = 0
+    if not message_trace:
+        return {
+            "inter_tile_packets": 0,
+            "intra_tile_packets": 0,
+            "input_path_packets": 0,
+        }
+    for events in message_trace:
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("placeholder"):
+                continue
+            src_t = int(ev.get("src_tile_id", -1))
+            dst_t = int(ev.get("dest_tile_id", -1))
+            gn = str(ev.get("src_neuron_group_id", ""))
+            if gn.endswith("_in") or gn.endswith("_on"):
+                input_path += 1
+            if src_t >= 0 and dst_t >= 0 and src_t != dst_t:
+                inter += 1
+            elif src_t >= 0 and dst_t >= 0:
+                intra += 1
+    return {
+        "inter_tile_packets": inter,
+        "intra_tile_packets": intra,
+        "input_path_packets": input_path,
+    }
+
+
+def _compute_tile_packets_per_cycle(
+    message_trace: Any,
+) -> List[Dict[int, int]]:
+    """Per-cycle packet count per destination ``tile_id``."""
+    if not message_trace:
+        return []
+    out: List[Dict[int, int]] = []
+    for events in message_trace:
+        bins: Dict[int, int] = {}
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("placeholder"):
+                continue
+            dt = int(ev.get("dest_tile_id", -1))
+            if dt < 0:
+                continue
+            bins[dt] = bins.get(dt, 0) + 1
+        out.append(bins)
+    return out
+
+
+def _count_cross_tile_connectivity_edges(
+    connectivity: List[SanafeConnectivityEdge],
+    *,
+    cores_per_tile: int,
+) -> int:
+    cpt = max(int(cores_per_tile), 1)
+    return sum(
+        1 for e in connectivity
+        if e.src_core // cpt != e.dst_core // cpt
+    )
+
+
+def _build_spike_capture_warning(
+    *,
+    chip_spike_count: int,
+    lif_spike_count: int,
+    input_path_packets: int,
+    spike_trace_parse_skipped: int,
+    ttfs_hardware_active: int = 0,
+    ttfs_event_active: int = 0,
+    ttfs_mismatch_count: int = 0,
+) -> Optional[str]:
+    if ttfs_mismatch_count > 0:
+        return (
+            f"TTFS activations present on {ttfs_hardware_active:,} core(s) "
+            f"(contract/hardware) but only {ttfs_event_active:,} core(s) emitted "
+            f"hardware spike/message events ({ttfs_mismatch_count:,} mismatch). "
+            "Inter-tile NoC routes require soma fired events; re-run after the "
+            "TTFS event-emission fix."
+        )
+    if chip_spike_count <= 0:
+        return None
+    if lif_spike_count == 0 and input_path_packets > 0:
+        return (
+            "Chip reported "
+            f"{chip_spike_count:,} spikes but LIF core groups logged none; "
+            f"activity is on input-path neurons ({input_path_packets:,} NoC packets "
+            "from coreN_in/coreN_on)."
+        )
+    if spike_trace_parse_skipped > 0 and lif_spike_count == 0:
+        return (
+            f"Spike trace had {spike_trace_parse_skipped:,} unparsed events; "
+            "per-core spike counts may be incomplete."
+        )
+    if lif_spike_count == 0 and chip_spike_count > 0:
+        return (
+            f"Chip aggregate spikes={chip_spike_count:,} but no LIF group spikes "
+            "were attributed in the trace."
+        )
+    return None
+
+
+def _compute_ttfs_activity_diagnostics(
+    contract_ttfs_cores: List[Any],
+    per_core_records: List[SanafeCoreRecord],
+) -> Dict[str, int]:
+    """Compare TTFS contract activations, hardware readout, and spike events."""
+    contract_by: Dict[int, np.ndarray] = {}
+    for entry in contract_ttfs_cores:
+        act = np.asarray(getattr(entry, "output_activation", []), dtype=np.float64)
+        contract_by[int(entry.core_index)] = act
+
+    per_by = {int(c.core_index): c for c in per_core_records}
+    indices = set(contract_by.keys()) | set(per_by.keys())
+
+    contract_active = hardware_active = event_active = mismatch = 0
+    for ci in indices:
+        c_act = contract_by.get(ci)
+        rec = per_by.get(ci)
+        c_has = c_act is not None and c_act.size > 0 and bool(np.any(c_act > 0))
+        h_has = False
+        if rec is not None and rec.output_activation is not None:
+            h_act = np.asarray(rec.output_activation, dtype=np.float64)
+            h_has = h_act.size > 0 and bool(np.any(h_act > 0))
+        e_has = rec is not None and int(rec.spikes_fired) > 0
+        if c_has:
+            contract_active += 1
+        if h_has:
+            hardware_active += 1
+        if e_has:
+            event_active += 1
+        if (c_has or h_has) and not e_has:
+            mismatch += 1
+
+    return {
+        "ttfs_contract_active_cores": contract_active,
+        "ttfs_hardware_active_cores": hardware_active,
+        "ttfs_event_active_cores": event_active,
+        "ttfs_activation_event_mismatch_count": mismatch,
+    }
 
 
 def _pack_potential_trace(potential_trace: Any) -> Optional[np.ndarray]:
@@ -991,6 +1379,8 @@ def _build_neuron_to_core_map(
     group_to_core: Dict[str, int] = {}
     for core_idx, core in enumerate(hcm.cores):
         group_to_core[f"core{core_idx}"] = core_idx
+        group_to_core[f"core{core_idx}_in"] = core_idx
+        group_to_core[f"core{core_idx}_on"] = core_idx
     row_to_core: List[int] = []
     groups = net.groups
     iterable = (groups.items() if isinstance(groups, dict)
@@ -1016,10 +1406,10 @@ def _compute_cascade_timeline(
     for cycle, evs in enumerate(spike_trace):
         bucket: Dict[int, int] = {}
         for ev in evs:
-            s = str(ev)
-            if "." not in s:
+            parsed = _spike_event_group_and_index(ev)
+            if parsed is None:
                 continue
-            gname, _ = s.rsplit(".", 1)
+            gname, _ = parsed
             core_idx = group_to_core.get(gname, -1)
             if core_idx < 0 or core_idx >= len(core_latency):
                 continue
@@ -1048,10 +1438,10 @@ def _compute_critical_cores(
     if spike_trace:
         for cycle, evs in enumerate(spike_trace[:T_eff]):
             for ev in evs:
-                s = str(ev)
-                if "." not in s:
+                parsed = _spike_event_group_and_index(ev)
+                if parsed is None:
                     continue
-                gname, _ = s.rsplit(".", 1)
+                gname, _ = parsed
                 core_idx = group_to_core.get(gname, -1)
                 if 0 <= core_idx < n_cores:
                     fires[core_idx, cycle] += 1

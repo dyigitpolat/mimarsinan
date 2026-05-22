@@ -27,6 +27,16 @@ from __future__ import annotations
 
 from typing import Optional
 
+from .presets import SOMA_LIF_NAME, SOMA_TTFS_CONTINUOUS_NAME, SOMA_TTFS_QUANTIZED_NAME
+
+
+def soma_hw_name_for_spiking_mode(spiking_mode: str) -> str:
+    if spiking_mode == "ttfs":
+        return SOMA_TTFS_CONTINUOUS_NAME
+    if spiking_mode == "ttfs_quantized":
+        return SOMA_TTFS_QUANTIZED_NAME
+    return SOMA_LIF_NAME
+
 
 def lif_model_attributes(
     *,
@@ -71,6 +81,60 @@ def lif_model_attributes(
     if active_length is not None:
         attrs["active_length"] = int(active_length)
     return attrs
+
+
+def _ttfs_base_model_attributes(
+    *,
+    threshold: float,
+    hardware_bias: Optional[float] = None,
+    active_start: Optional[int] = None,
+    active_length: Optional[int] = None,
+    preset_membrane: Optional[float] = None,
+) -> dict:
+    attrs: dict = {"threshold": float(threshold)}
+    if hardware_bias is not None:
+        attrs["bias"] = float(hardware_bias)
+    if active_start is not None:
+        attrs["active_start"] = int(active_start)
+    if active_length is not None:
+        attrs["active_length"] = int(active_length)
+    if preset_membrane is not None:
+        attrs["preset_membrane"] = float(preset_membrane)
+    return attrs
+
+
+def ttfs_continuous_model_attributes(
+    *,
+    threshold: float,
+    hardware_bias: Optional[float] = None,
+    active_start: Optional[int] = None,
+    active_length: Optional[int] = None,
+    preset_membrane: Optional[float] = None,
+) -> dict:
+    return _ttfs_base_model_attributes(
+        threshold=threshold,
+        hardware_bias=hardware_bias,
+        active_start=active_start,
+        active_length=active_length,
+        preset_membrane=preset_membrane,
+    )
+
+
+def ttfs_quantized_model_attributes(
+    *,
+    threshold: float,
+    hardware_bias: Optional[float] = None,
+    active_start: Optional[int] = None,
+    active_length: Optional[int] = None,
+    preset_membrane: Optional[float] = None,
+) -> dict:
+    return _ttfs_base_model_attributes(
+        threshold=threshold,
+        hardware_bias=hardware_bias,
+        active_start=active_start,
+        active_length=active_length,
+        preset_membrane=preset_membrane,
+    )
 
 
 def input_neuron_attributes(spike_times: Optional[list[int]] = None) -> dict:

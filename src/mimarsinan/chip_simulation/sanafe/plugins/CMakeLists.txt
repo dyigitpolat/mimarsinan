@@ -42,7 +42,8 @@ endif()
 
 add_compile_options(-Wall -Wextra -fPIC)
 
-foreach(plugin_target IN ITEMS mimarsinan_dendrite mimarsinan_soma)
+foreach(plugin_target IN ITEMS mimarsinan_dendrite mimarsinan_soma
+        mimarsinan_ttfs_continuous_soma mimarsinan_ttfs_quantized_soma)
     add_library(${plugin_target} SHARED "${plugin_target}.cpp")
     target_include_directories(${plugin_target} PRIVATE "${SANAFE_SRC}")
     target_link_libraries(${plugin_target} PRIVATE ${CMAKE_DL_LIBS})

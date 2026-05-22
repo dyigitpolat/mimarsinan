@@ -492,72 +492,20 @@ class SpikingHybridCoreFlow(nn.Module):
         input_activations: torch.Tensor,
         quantized: bool = False,
     ) -> torch.Tensor:
-        """TTFS segment: analytical per-core matmul; continuous or quantized closed-form."""
+        """TTFS segment via shared ``TtfsAnalyticalExecutor``."""
+        from mimarsinan.chip_simulation.ttfs_executor import TtfsAnalyticalExecutor
+
         mapping = stage.hard_core_mapping
         assert mapping is not None
-
-        S = self.simulation_length
-        batch_size = input_activations.shape[0]
         device = input_activations.device
-
-        seg = self._get_segment_tensors(stage, device)
-        cores = seg["cores"]
-        output_sources = seg["output_sources"]
-        axon_spans = seg["axon_spans"]
-        output_spans = seg["output_spans"]
-        core_params = seg["core_params"]
-        thresholds = seg["thresholds"]
-        hw_biases = seg["hw_biases"]
-
-        input_activations = input_activations.to(_COMPUTE_DTYPE)
-
-        buffers = [
-            torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
-                        device=device, dtype=_COMPUTE_DTYPE)
-            for c in cores
-        ]
-        input_signals = [
-            torch.zeros(batch_size, max(int(c.axons_per_core - c.available_axons), 1),
-                        device=device, dtype=_COMPUTE_DTYPE)
-            for c in cores
-        ]
-
-        topo_order = sorted(range(len(cores)), key=lambda i: cores[i].latency or 0)
-        for ci in topo_order:
-            self._fill_signal_tensor_from_spans(
-                input_signals[ci],
-                input_spikes=input_activations,
-                buffers=buffers,
-                spans=axon_spans[ci],
-                cycle=0,
-            )
-            V = torch.matmul(core_params[ci], input_signals[ci].T).T
-            if hw_biases[ci] is not None:
-                V = V + hw_biases[ci]
-
-            if quantized:
-                from mimarsinan.models.ttfs_kernels import ttfs_quantized_activation
-
-                buffers[ci] = ttfs_quantized_activation(V, thresholds[ci], S)
-            else:
-                out = F.relu(V)
-                buffers[ci] = (out / thresholds[ci]).clamp(0.0, 1.0)
-
-        output = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
-        for sp in output_spans:
-            d0 = int(sp.dst_start)
-            d1 = int(sp.dst_end)
-            if sp.kind == "off":
-                continue
-            if sp.kind == "on":
-                output[:, d0:d1] = 1.0
-                continue
-            if sp.kind == "input":
-                output[:, d0:d1] = input_activations[:, int(sp.src_start):int(sp.src_end)]
-                continue
-            output[:, d0:d1] = buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
-
-        return output
+        inp = input_activations.detach().cpu().numpy().astype(np.float64)
+        mode = "ttfs_quantized" if quantized else "ttfs"
+        result = TtfsAnalyticalExecutor().run_segment(
+            mapping, inp,
+            simulation_length=self.simulation_length,
+            spiking_mode=mode,
+        )
+        return torch.tensor(result.inter_stage, dtype=_COMPUTE_DTYPE, device=device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         try:

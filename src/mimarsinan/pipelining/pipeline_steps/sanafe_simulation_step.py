@@ -57,11 +57,16 @@ def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
             ))
         seg.hcm_diff = deltas
 from mimarsinan.data_handling.test_sample_loader import load_test_samples_by_index
-from mimarsinan.pipelining.pipeline_helpers import require_lif_spiking_mode
+from mimarsinan.pipelining.pipeline_helpers import (
+    require_lif_spiking_mode,
+    require_spiking_mode_supported,
+)
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.simulation_factory import (
     assert_spike_parity_or_raise,
+    preprocess_hybrid_sample,
     record_hcm_reference,
+    record_ttfs_hcm_reference,
 )
 
 
@@ -88,8 +93,11 @@ class SanafeSimulationStep(PipelineStep):
         self.get_entry("model")
         hard_core_mapping = self.get_entry("hard_core_mapping")
         T = int(self.pipeline.config["simulation_steps"])
-        require_lif_spiking_mode(self.pipeline, "SanafeSimulationStep")
         spiking_mode = self.pipeline.config.get("spiking_mode", "lif")
+        require_spiking_mode_supported(
+            self.pipeline, "SanafeSimulationStep", backend="sanafe",
+        )
+        is_ttfs = spiking_mode in ("ttfs", "ttfs_quantized")
 
         parity_check = bool(self.pipeline.config.get("sanafe_parity_check", True))
         arch_preset = self.pipeline.config.get("sanafe_arch_preset", "loihi")
@@ -112,14 +120,23 @@ class SanafeSimulationStep(PipelineStep):
         for sample_idx, sample in enumerate(samples):
             # Build HCM reference for the parity gate (skipped when disabled).
             ref = None
+            ttfs_ref = None
             if parity_check:
-                _flow, ref = record_hcm_reference(
-                    self.pipeline,
-                    hard_core_mapping,
-                    sample,
-                    sample_index=sample_idx,
-                    device=device,
-                )
+                if is_ttfs:
+                    _flow, ttfs_ref = record_ttfs_hcm_reference(
+                        self.pipeline,
+                        hard_core_mapping,
+                        sample,
+                        sample_index=sample_idx,
+                    )
+                else:
+                    _flow, ref = record_hcm_reference(
+                        self.pipeline,
+                        hard_core_mapping,
+                        sample,
+                        sample_index=sample_idx,
+                        device=device,
+                    )
 
             # Run SANA-FE on the same sample.
             runner = SanafeRunner(
@@ -133,7 +150,12 @@ class SanafeSimulationStep(PipelineStep):
                 log_potential_trace=log_potential,
                 log_message_trace=log_messages,
             )
-            sample_np = sample.detach().cpu().numpy().reshape(1, -1)
+            if is_ttfs:
+                sample_np = preprocess_hybrid_sample(
+                    self.pipeline, hard_core_mapping, sample, device=device,
+                )
+            else:
+                sample_np = sample.detach().cpu().numpy().reshape(1, -1)
             sanafe_rec = runner.run(sample_np, sample_index=sample_idx)
             per_sample.append(sanafe_rec)
 
@@ -144,7 +166,29 @@ class SanafeSimulationStep(PipelineStep):
             if ref is not None:
                 _attach_per_core_deltas(ref, sanafe_rec)
 
-            if parity_check and ref is not None:
+            if parity_check and is_ttfs and ttfs_ref is not None:
+                from mimarsinan.chip_simulation.ttfs_recorder import (
+                    compare_ttfs_records,
+                    format_first_ttfs_diff,
+                )
+
+                contract_diffs = compare_ttfs_records(
+                    ttfs_ref,
+                    sanafe_rec.to_ttfs_contract_subset(spiking_mode=spiking_mode),
+                )
+                if contract_diffs:
+                    raise AssertionError(
+                        format_first_ttfs_diff(contract_diffs, layer="contract"),
+                    )
+                hw_diffs = compare_ttfs_records(
+                    ttfs_ref,
+                    sanafe_rec.to_ttfs_hardware_subset(spiking_mode=spiking_mode),
+                )
+                if hw_diffs:
+                    raise AssertionError(
+                        format_first_ttfs_diff(hw_diffs, layer="hardware"),
+                    )
+            elif parity_check and ref is not None:
                 assert_spike_parity_or_raise(ref, sanafe_rec.to_hcm_subset())
 
         # Persist the report for the GUI snapshot builder.

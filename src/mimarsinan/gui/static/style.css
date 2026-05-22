@@ -1075,6 +1075,28 @@ body {
 .log-stdout { color: var(--text-primary); }
 .log-stderr { color: var(--error); }
 
+.sf-diag-warn {
+  margin: 0 0 12px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #ffd180;
+  background: rgba(255, 152, 0, 0.12);
+  border: 1px solid rgba(255, 152, 0, 0.35);
+}
+
+.sf-diag-info {
+  margin: 0 0 12px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #90caf9;
+  background: rgba(33, 150, 243, 0.1);
+  border: 1px solid rgba(33, 150, 243, 0.3);
+}
+
 /* ── SANA-FE chip floorplan (dark-cyberpunk) ────────────────────────── */
 /* CSS-grid mesh of cells (one core per cell) + decorative tile-border
    outlines + absolutely-positioned SVG overlay for NoC curves and

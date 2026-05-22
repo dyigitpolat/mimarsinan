@@ -546,6 +546,15 @@ function applySpikingDeps() {
   document.getElementById('spikeGenMode').disabled = isTTFS;
   document.getElementById('thresholdMode').disabled = isTTFS;
 
+  const loihiEl = document.getElementById('loihiSimulationToggle');
+  if (loihiEl) {
+    if (isTTFS) {
+      setToggle('loihiSimulationToggle', false, true);
+    } else {
+      loihiEl.classList.remove('disabled');
+    }
+  }
+
   const simCyclesEl = document.getElementById('simCycles');
   if (simCyclesEl) simCyclesEl.disabled = (mode === 'ttfs');
   const targetTqEl = document.getElementById('targetTq');

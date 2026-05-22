@@ -91,6 +91,8 @@ PRESETS: Dict[str, PerEventEnergy] = {
 # net_synth references these strings to bind neurons / connections to the
 # right hardware unit, so they are public surface — don't rename casually.
 SOMA_LIF_NAME = "lif"
+SOMA_TTFS_CONTINUOUS_NAME = "ttfs_continuous"
+SOMA_TTFS_QUANTIZED_NAME = "ttfs_quantized"
 SOMA_INPUT_RANGE_NAME = "inputs"   # rendered as "inputs[0..MAX]" in YAML
 SYNAPSE_NAME = "dense_syn"
 DENDRITE_NAME = "dend"
