@@ -39,6 +39,7 @@ function fmtInt(n) { return Number(n).toLocaleString(); }
 const CELL_METRICS = [
   { key: 'energy_j',         label: 'Energy (J, log10)',     log: true,  cmap: 'YlOrRd' },
   { key: 'spikes_fired',     label: 'Spikes Fired',          log: false, cmap: 'Viridis' },
+  { key: 'input_neuron_spikes_fired', label: 'Input Neuron Spikes', log: false, cmap: 'Viridis' },
   { key: 'core_latency',     label: 'Latency Layer',         log: false, cmap: 'Portland' },
   { key: 'n_neurons',        label: 'Live Neurons',          log: false, cmap: 'Plasma' },
   { key: 'n_axons_used',     label: 'Live Axons',            log: false, cmap: 'Plasma' },
@@ -53,6 +54,7 @@ const OVERLAY_OPTIONS = [
   { key: 'none',           label: 'No Overlay'             },
   { key: 'noc_routes',     label: 'NoC Routes (tile→tile)' },
   { key: 'noc_congestion', label: 'NoC Congestion (mesh edges)' },
+  { key: 'tile_packets',   label: 'Tile Packet Load' },
   { key: 'connectivity',   label: 'Live Connectivity (core→core)' },
   { key: 'critical_cores', label: 'Critical Cores'         },
 ];
@@ -208,6 +210,7 @@ function _coreTooltipHtml(core, hcmDiffByCore) {
     `<strong>core ${core.core_index}</strong>` +
     `<div class="sf-tooltip-row"><span class="sf-tooltip-label">energy</span><span>${fmtMj(core.energy_j ?? 0)} mJ</span></div>` +
     `<div class="sf-tooltip-row"><span class="sf-tooltip-label">spikes fired</span><span>${fmtInt(core.spikes_fired ?? 0)}</span></div>` +
+    `<div class="sf-tooltip-row"><span class="sf-tooltip-label">input spikes</span><span>${fmtInt(core.input_neuron_spikes_fired ?? 0)}</span></div>` +
     `<div class="sf-tooltip-row"><span class="sf-tooltip-label">latency layer</span><span>${core.core_latency ?? 0}</span></div>` +
     `<div class="sf-tooltip-row"><span class="sf-tooltip-label">live neurons</span><span>${fmtInt(core.n_neurons ?? 0)}</span></div>` +
     `<div class="sf-tooltip-row"><span class="sf-tooltip-label">live axons</span><span>${fmtInt(core.n_axons_used ?? 0)}</span></div>` +
@@ -721,6 +724,92 @@ function _renderOverlayCriticalCores(seg, corePositions, cellPx) {
   return { svg: rects.join('\n'), state: { kind: 'critical_cores', freq } };
 }
 
+function _renderOverlayTilePackets(seg, tileCenters, perTile) {
+  const tiles = Array.isArray(perTile) ? perTile : [];
+  if (tiles.length === 0) return { svg: '', state: null };
+  const maxPkts = Math.max(...tiles.map(t => t.packets_sent || 0), 1);
+  const rects = [];
+  tiles.forEach(tile => {
+    const c = tileCenters.get(tile.tile_index);
+    if (!c) return;
+    const n = tile.packets_sent || 0;
+    const t = n > 0 ? n / maxPkts : 0;
+    const fill = n > 0
+      ? `rgba(255,75,200,${(0.15 + 0.55 * t).toFixed(3)})`
+      : 'rgba(0,0,0,0)';
+    const half = 10;
+    rects.push(
+      `<rect x="${(c.x - half).toFixed(2)}" y="${(c.y - half).toFixed(2)}" ` +
+      `width="${(2 * half).toFixed(2)}" height="${(2 * half).toFixed(2)}" ` +
+      `fill="${fill}" stroke="rgba(255,75,200,0.9)" stroke-width="${n > 0 ? 1.6 : 0.6}" ` +
+      `data-tile-pkts="${tile.tile_index}"/>`,
+    );
+  });
+  return { svg: rects.join('\n'), state: { kind: 'tile_packets', maxPkts } };
+}
+
+function _segmentDiagnosticsHtml(seg) {
+  const parts = [];
+  const lifSum = (seg.per_core || []).reduce((s, c) => s + (c.spikes_fired || 0), 0);
+  const chipSp = seg.chip_spike_count ?? seg.spikes ?? 0;
+  const hwAct = seg.ttfs_hardware_active_cores ?? 0;
+  const evtAct = seg.ttfs_event_active_cores ?? 0;
+  const contractAct = seg.ttfs_contract_active_cores ?? 0;
+  const ttfsMismatch = seg.ttfs_activation_event_mismatch_count ?? 0;
+  if (seg.spike_capture_warning) {
+    parts.push(`<div class="sf-diag-warn">${esc(seg.spike_capture_warning)}</div>`);
+  }
+  if (ttfsMismatch > 0 || (hwAct > 0 && evtAct === 0)) {
+    parts.push(
+      '<div class="sf-diag-warn">TTFS activations are present ' +
+      `(contract: ${fmtInt(contractAct)}, hardware: ${fmtInt(hwAct)}, events: ${fmtInt(evtAct)}) ` +
+      'but hardware spike/message events were not fully emitted. Inter-tile NoC routes depend on ' +
+      'soma <code>fired</code> events; re-run SANA-FE after the TTFS event fix.</div>',
+    );
+  } else if (lifSum === 0 && chipSp > 0 && hwAct === 0) {
+    parts.push(
+      '<div class="sf-diag-warn">Per-core LIF spikes are all zero while the chip reports ' +
+      `${fmtInt(chipSp)} aggregate spikes. Try colouring by <strong>Input Neuron Spikes</strong> ` +
+      'or Energy; input-path NoC packets may dominate this segment.</div>',
+    );
+  }
+  const inter = seg.inter_tile_packets ?? 0;
+  const intra = seg.intra_tile_packets ?? 0;
+  const inp = seg.input_path_packets ?? 0;
+  const xconn = seg.cross_tile_connectivity_edges ?? 0;
+  const mappedAx = seg.mapped_cross_tile_axons ?? 0;
+  if (xconn > 0 || mappedAx > 0) {
+    parts.push(
+      `<div class="sf-diag-info">Static cross-tile routes: ${fmtInt(xconn)} HCM edges; ` +
+      `mapped LIF axons: ${fmtInt(mappedAx)}. Observed inter-tile packets: ${fmtInt(inter)}.</div>`,
+    );
+  }
+  if ((seg.packets_sent || 0) > 0 && inter === 0 && xconn > 0 && hwAct > 0) {
+    parts.push(
+      `<div class="sf-diag-warn">NoC recorded ${fmtInt(seg.packets_sent)} packets ` +
+      `(${fmtInt(inp)} input-path, ${fmtInt(intra)} intra-tile, ${fmtInt(inter)} inter-tile) ` +
+      'despite TTFS hardware activations and cross-tile connectivity. ' +
+      'Check TTFS soma event emission and re-simulate.</div>',
+    );
+  } else if ((seg.packets_sent || 0) > 0 && inter === 0 && xconn > 0 && hwAct === 0) {
+    parts.push(
+      `<div class="sf-diag-warn">NoC recorded ${fmtInt(seg.packets_sent)} packets ` +
+      `(${fmtInt(inp)} input-path, ${fmtInt(intra)} intra-tile, ${fmtInt(inter)} inter-tile) ` +
+      `but the mapping has ${fmtInt(xconn)} cross-tile connectivity edges. ` +
+      'Inter-tile routes appear only when message_trace lists cross-tile deliveries.</div>',
+    );
+  }
+  return parts.length ? parts.join('') : '';
+}
+
+function _sumTilePacketsPerCycle(seg) {
+  const cycles = Array.isArray(seg.tile_packets_per_cycle) ? seg.tile_packets_per_cycle : [];
+  return cycles.reduce((sum, cycle) => {
+    if (!cycle || typeof cycle !== 'object') return sum;
+    return sum + Object.values(cycle).reduce((s, n) => s + Number(n), 0);
+  }, 0);
+}
+
 /* ---------------------------------------------------------------- */
 /* Floorplan renderer                                                 */
 /* ---------------------------------------------------------------- */
@@ -864,6 +953,9 @@ function _renderFloorplan(host, seg, metric, opts) {
     overlaySvgInner = r.svg; overlayState = r.state;
   } else if (overlay === 'connectivity') {
     const r = _renderOverlayConnectivity(seg, corePositions, cellPx);
+    overlaySvgInner = r.svg; overlayState = r.state;
+  } else if (overlay === 'tile_packets') {
+    const r = _renderOverlayTilePackets(seg, tileCenters, perTile);
     overlaySvgInner = r.svg; overlayState = r.state;
   } else if (overlay === 'critical_cores') {
     const r = _renderOverlayCriticalCores(seg, corePositions, cellPx);
@@ -1252,16 +1344,22 @@ function renderEfficiencyScatter(elId, seg) {
  * every cycle (e.g. single-tile arch dumps). */
 function renderNocAnimation(elId, seg) {
   const traffic = Array.isArray(seg.noc_traffic_per_cycle) ? seg.noc_traffic_per_cycle : [];
-  const totalPackets = traffic.reduce((s, c) => s + c.length, 0);
+  const interQuints = traffic.reduce((s, c) => s + c.length, 0);
+  const tileCycles = Array.isArray(seg.tile_packets_per_cycle) ? seg.tile_packets_per_cycle : [];
+  const tilePktTotal = _sumTilePacketsPerCycle(seg);
+  const useTileMode = interQuints === 0 && tilePktTotal > 0;
   const el = document.getElementById(elId);
   if (!el || !window.Plotly) return;
-  if (traffic.length === 0 || totalPackets === 0) {
+  if (!seg.has_message_trace && (seg.packets_sent || 0) === 0) {
     el.innerHTML =
       '<div class="empty-state" style="padding:30px;font-size:13px">No NoC traffic recorded for this segment.<br>' +
-      '<span style="font-size:11px;color:var(--text-muted)">Either ' +
-      '<code>log_message_trace=False</code> or the architecture is single-tile ' +
-      '(no inter-tile messages cross the NoC). Re-run with <code>cores_per_tile</code> ' +
-      'auto-defaulted to get a 2D mesh.</span></div>';
+      '<span style="font-size:11px;color:var(--text-muted)">Enable ' +
+      '<code>sanafe_log_message_trace</code> in deployment parameters.</span></div>';
+    return;
+  }
+  if (interQuints === 0 && tilePktTotal === 0 && (seg.packets_sent || 0) === 0) {
+    el.innerHTML =
+      '<div class="empty-state" style="padding:30px;font-size:13px">No NoC packets in this segment.</div>';
     return;
   }
   const perTile = Array.isArray(seg.per_tile) ? seg.per_tile : [];
@@ -1339,6 +1437,17 @@ function renderNocAnimation(elId, seg) {
    * underlay's z reference was unchanged, so Plotly's diff was
    * skipping the whole frame.  Direct Plotly.restyle on trace 1
    * sidesteps that machinery entirely. */
+  const tileIndexByMesh = new Map();
+  perTile.forEach(t => {
+    const mx = t.mesh_x >= 0 ? t.mesh_x : 0;
+    const my = t.mesh_y >= 0 ? t.mesh_y : 0;
+    tileIndexByMesh.set(`${mx},${my}`, t.tile_index);
+  });
+  const maxTileCyclePkts = Math.max(
+    1,
+    ...tileCycles.map(cycle => Object.values(cycle || {}).reduce((s, n) => s + Number(n), 0)),
+  );
+
   function buildPolyline(cycleIdx) {
     const cycle = traffic[cycleIdx] || [];
     const xs = [], ys = [], hover = [];
@@ -1352,9 +1461,38 @@ function renderNocAnimation(elId, seg) {
     });
     return { xs, ys, hover };
   }
-  const polylines = traffic.map((_, i) => buildPolyline(i));
-  const initialIdx = Math.max(0, traffic.findIndex(c => c.length > 0));
-  const frameCount = polylines.length;
+
+  function buildTilePacketShapes(cycleIdx) {
+    const cycle = tileCycles[cycleIdx] || {};
+    const shapes = [...tileShapes];
+    Object.entries(cycle).forEach(([tileIdx, n]) => {
+      const tile = perTile.find(t => String(t.tile_index) === String(tileIdx));
+      if (!tile) return;
+      const mx = tile.mesh_x >= 0 ? tile.mesh_x : 0;
+      const my = tile.mesh_y >= 0 ? tile.mesh_y : 0;
+      const tx = mx - tx_min;
+      const ty = my - ty_min;
+      const t = Number(n) / maxTileCyclePkts;
+      shapes.push({
+        type: 'rect',
+        x0: tx * tileW - 0.5,
+        x1: (tx + 1) * tileW - 0.5,
+        y0: ty * tileH - 0.5,
+        y1: (ty + 1) * tileH - 0.5,
+        line: { color: 'rgba(255,75,200,0.9)', width: 1.4 },
+        fillcolor: `rgba(255,75,200,${(0.2 + 0.5 * t).toFixed(3)})`,
+        layer: 'above',
+      });
+    });
+    return shapes;
+  }
+
+  const polylines = useTileMode ? [] : traffic.map((_, i) => buildPolyline(i));
+  const tileShapeFrames = useTileMode ? tileCycles.map((_, i) => buildTilePacketShapes(i)) : [];
+  const frameCount = useTileMode ? Math.max(tileShapeFrames.length, 1) : polylines.length;
+  const initialIdx = useTileMode
+    ? Math.max(0, tileCycles.findIndex(c => Object.keys(c || {}).length > 0))
+    : Math.max(0, traffic.findIndex(c => c.length > 0));
 
   function polylineTrace(p) {
     return {
@@ -1368,12 +1506,17 @@ function renderNocAnimation(elId, seg) {
     };
   }
 
+  const emptyPoly = { xs: [], ys: [], hover: [] };
+
   /* Reverse the Y axis so z[0] / mesh_y=0 lands at the TOP of the
    * plot — matches the static floorplan's CSS-grid layout where row 0
    * is also at the top.  Plotly's default Y axis goes up, which put
    * the chip upside-down. */
   try { Plotly.purge(el); } catch (_) { /* ignore */ }
-  Plotly.newPlot(el, [underlay, polylineTrace(polylines[initialIdx])], {
+  const traces = useTileMode
+    ? [underlay]
+    : [underlay, polylineTrace(polylines[initialIdx] || emptyPoly)];
+  Plotly.newPlot(el, traces, {
     height: Math.max(240, cellRows * 14 + 30),
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(8,12,20,0.6)',
@@ -1383,7 +1526,7 @@ function renderNocAnimation(elId, seg) {
              showgrid: false, zeroline: false, showticklabels: false,
              scaleanchor: 'x', scaleratio: 1, fixedrange: true },
     margin: { l: 10, r: 10, t: 10, b: 10 },
-    shapes: tileShapes,
+    shapes: useTileMode ? (tileShapeFrames[initialIdx] || tileShapes) : tileShapes,
   });
 
   /* Custom HTML controls — single play/pause toggle + slider +
@@ -1411,12 +1554,16 @@ function renderNocAnimation(elId, seg) {
        * changes across cycles.  Plotly.restyle wants every attribute
        * value wrapped in an array of length = traces selector, so
        * single-trace updates use a one-element wrapper. */
-      const p = polylines[idx];
-      Plotly.restyle(el, {
-        x: [p.xs],
-        y: [p.ys],
-        text: [p.hover],
-      }, [1]);
+      if (useTileMode) {
+        Plotly.relayout(el, { shapes: tileShapeFrames[idx] || tileShapes });
+      } else {
+        const p = polylines[idx] || emptyPoly;
+        Plotly.restyle(el, {
+          x: [p.xs],
+          y: [p.ys],
+          text: [p.hover],
+        }, [1]);
+      }
     }
     function stopPlaying() {
       if (intervalId !== null) { clearInterval(intervalId); intervalId = null; }
@@ -1545,6 +1692,12 @@ function segmentHtml(sampleIdx, seg) {
           <div class="big-metric"><div class="value" style="font-size:18px;color:#00bcd4">${fmtInt(seg.neurons_fired)}</div><div class="label">Neurons Fired</div></div>
           <div class="big-metric"><div class="value" style="font-size:18px;color:#7aa6d8">${seg.per_tile.length}</div><div class="label">Tiles</div></div>
         </div>
+        <div class="grid-3" style="gap:12px;margin-bottom:12px">
+          <div class="big-metric"><div class="value" style="font-size:14px;color:#ff9800">${fmtInt(seg.inter_tile_packets ?? 0)}</div><div class="label">Inter-tile Pkts</div></div>
+          <div class="big-metric"><div class="value" style="font-size:14px;color:#4caf50">${fmtInt(seg.intra_tile_packets ?? 0)}</div><div class="label">Intra-tile Pkts</div></div>
+          <div class="big-metric"><div class="value" style="font-size:14px;color:#e91e63">${fmtInt(seg.input_path_packets ?? 0)}</div><div class="label">Input-path Pkts</div></div>
+        </div>
+        ${_segmentDiagnosticsHtml(seg)}
 
         <div class="sf-section-title">
           Chip Floorplan

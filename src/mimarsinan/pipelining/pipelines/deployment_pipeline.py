@@ -163,6 +163,12 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     if sanafe_sim:
         specs.append(("SANA-FE Simulation", SanafeSimulationStep))
 
+    if loihi_sim and spiking in ("ttfs", "ttfs_quantized"):
+        raise ValueError(
+            f"enable_loihi_simulation is not supported for spiking_mode={spiking!r}; "
+            "Loihi/Lava only implements LIF dynamics."
+        )
+
     return specs
 
 

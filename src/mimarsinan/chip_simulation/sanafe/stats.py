@@ -130,6 +130,9 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
                 "has_hardware_bias": bool(c.has_hardware_bias),
                 "n_always_on_axons": int(c.n_always_on_axons),
                 "spikes_fired": int(c.spikes_fired),
+                "input_neuron_spikes_fired": int(
+                    getattr(c, "input_neuron_spikes_fired", 0),
+                ),
                 "energy_j": float(c.energy.total_j),
                 "energy_breakdown_j": _eb_to_dict(c.energy),
                 # 2D spike raster (n_neurons × T_eff) of 0/1 ints —
@@ -145,6 +148,33 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
         "has_neuron_spike_trace": seg.per_neuron_spike_trace is not None,
         "has_neuron_potential_trace": seg.per_neuron_potential_trace is not None,
         "has_message_trace": seg.message_trace is not None,
+        "inter_tile_packets": int(getattr(seg, "inter_tile_packets", 0)),
+        "intra_tile_packets": int(getattr(seg, "intra_tile_packets", 0)),
+        "input_path_packets": int(getattr(seg, "input_path_packets", 0)),
+        "cross_tile_connectivity_edges": int(
+            getattr(seg, "cross_tile_connectivity_edges", 0),
+        ),
+        "chip_spike_count": int(getattr(seg, "chip_spike_count", seg.spikes)),
+        "lif_spike_count": int(getattr(seg, "lif_spike_count", 0)),
+        "spike_trace_parse_skipped": int(
+            getattr(seg, "spike_trace_parse_skipped", 0),
+        ),
+        "spike_capture_warning": getattr(seg, "spike_capture_warning", None),
+        "mapped_cross_tile_axons": int(getattr(seg, "mapped_cross_tile_axons", 0)),
+        "ttfs_contract_active_cores": int(
+            getattr(seg, "ttfs_contract_active_cores", 0),
+        ),
+        "ttfs_hardware_active_cores": int(
+            getattr(seg, "ttfs_hardware_active_cores", 0),
+        ),
+        "ttfs_event_active_cores": int(getattr(seg, "ttfs_event_active_cores", 0)),
+        "ttfs_activation_event_mismatch_count": int(
+            getattr(seg, "ttfs_activation_event_mismatch_count", 0),
+        ),
+        "tile_packets_per_cycle": [
+            {str(k): int(v) for k, v in cycle.items()}
+            for cycle in getattr(seg, "tile_packets_per_cycle", ())
+        ],
     }
 
 

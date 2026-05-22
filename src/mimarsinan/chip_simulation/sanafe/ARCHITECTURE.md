@@ -27,6 +27,8 @@ plugins into `build/mimarsinan_sanafe_plugins/` (`libmimarsinan_soma.so`,
 | `runner.py` | `SanafeRunner` | Only module calling `sanafe.SpikingChip`.  Neural stages on SANA-FE; compute stages via `hybrid_execution`.  **`_COMPUTE_DTYPE = float64`** for segment input assembly (must match HCM; float32 can flip ±1 spike at rate-encoding boundaries).  Simulation length **`T + max_latency + 1`** (+1 cycle: SANA-FE applies input spikes one cycle after emission).  Per-core **`active_start` / `active_length`** from `ChipLatency` (via `lif_model_attributes`). |
 | `plugins/CMakeLists.txt` | — | Builds `libmimarsinan_soma.so`, `libmimarsinan_dendrite.so`. |
 | `plugins/mimarsinan_soma.cpp` | — | Custom soma: subtractive LIF, strict/inclusive thresholding, active-window gating (replaces SANA-FE built-in `leaky_integrate_fire` Loihi caps). |
+| `plugins/mimarsinan_ttfs_continuous_soma.cpp` | — | Analytical TTFS: `relu(I+b)/θ` in one active step. |
+| `plugins/mimarsinan_ttfs_quantized_soma.cpp` | — | Cycle-accurate TTFS quantized (nevresim `NeuronCompute` semantics). |
 | `plugins/mimarsinan_dendrite.cpp` | — | Custom dendrite plugin. |
 
 ## Neuron-model / architecture synthesis
@@ -44,17 +46,26 @@ fail fast with a clear message if the `.so` files are missing.
 
 When `sanafe_parity_check` is true (default), `SanafeSimulationStep` for each sample:
 
-1. Runs `SpikingHybridCoreFlow.forward_with_recording()` (HCM) → `RunRecord`.
-2. Runs `SanafeRunner` → `SanafeRunRecord`.
-3. Compares `sanafe_record.to_hcm_subset()` vs HCM via `compare_records()`; any mismatch fails the pipeline.
+1. **TTFS:** `record_ttfs_hcm_reference()` (canonical `TtfsAnalyticalExecutor` + shared preprocessor via `preprocess_hybrid_sample`). **LIF:** `forward_with_recording()` → `RunRecord`.
+2. `SanafeRunner` with the same preprocessed sample; TTFS stages call `store_neural_segment_output` (activations, not spike/T).
+3. **LIF:** `to_hcm_subset()` vs HCM via `compare_records()`.
+4. **TTFS (two layers, both must pass):**
+   - **Contract:** `to_ttfs_contract_subset()` — `TtfsAnalyticalExecutor` on each segment's `seg_input_rates` (aligned with Nevresim/HCM); inter-stage buffer uses this result.
+   - **Hardware:** `to_ttfs_hardware_subset()` — plugin soma activations via existing `potential_trace` (no SANA-FE core / `pymodule` changes).
+
+**Do not patch** [`sana_fe/src/pymodule.cpp`](../../../sana_fe/src/pymodule.cpp). TTFS surface area is mimarsinan plugins + Python only.
 
 `ChipLatency` post-passes on the mapping must be correct before either simulator runs.
+
+### Inter-stage TTFS contract
+
+Between hybrid stages, the state buffer carries **TTFS activations** from `TtfsAnalyticalExecutor` (same as Nevresim raw TTFS and HCM `seg_out`), not `output_spike_count / T`. Multi-stage parity fails if only per-core hardware trace matches but buffer propagation used LIF rates.
 
 ## SANA-FE trace wire formats
 
 - **Tile mesh coords** — column-major: `x = tile_id // mesh_height`, `y = tile_id % mesh_height` (matches SANA-FE `Architecture::calculate_tile_coordinates`).
-- **`spike_trace`** — per cycle, list of `"<group_name>.<neuron_index>"` strings.
-- **`message_trace`** — per cycle, list of dicts with `src_tile_id`, `dest_tile_id`, tile-local `src_core_id` / `dest_core_id`, `src_x`/`src_y`/`dest_x`/`dest_y`, `hops`, `spikes`; entries with `placeholder: true` are ignored.
+- **`spike_trace`** — per cycle, list of `NeuronAddress` objects or `"<group_name>.<neuron_index>"` strings. LIF groups are `coreN`; input-path groups are `coreN_in` / `coreN_on` (with `log_spikes=True` in `net_synth`).
+- **`message_trace`** — per cycle, list of dicts with `src_tile_id`, `dest_tile_id`, tile-local `src_core_id` / `dest_core_id`, `src_x`/`src_y`/`dest_x`/`dest_y`, `hops`, `spikes`, `src_neuron_group_id`; entries with `placeholder: true` are ignored. GUI taxonomy: `inter_tile_packets`, `intra_tile_packets`, `input_path_packets`; playback fallback uses `tile_packets_per_cycle` when inter-tile mesh crossings are empty.
 - **Global core id** — `tile_id * cores_per_tile + core_id_within_tile` when mapping trace events back to HCM cores.
 - **Per-core energy** — mirrors SANA-FE `sim_calculate_core_energy`: synapse × incoming spikes, dendrite × `n_neurons × T_eff`, soma access/update/spike-out counts; hop energy rolls up at the destination tile.
 

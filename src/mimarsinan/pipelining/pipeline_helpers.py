@@ -16,6 +16,22 @@ def require_lif_spiking_mode(pipeline, step_name: str) -> None:
         )
 
 
+def require_spiking_mode_supported(
+    pipeline,
+    step_name: str,
+    *,
+    backend: str,
+) -> None:
+    from mimarsinan.chip_simulation.spiking_semantics import require_spiking_mode_supported
+
+    spiking_mode = pipeline.config.get("spiking_mode", "lif")
+    require_spiking_mode_supported(
+        spiking_mode,
+        backend=backend,
+        context=step_name,
+    )
+
+
 def run_optional_viz(step_name: str, fn: Callable[[], Any]) -> None:
     try:
         fn()

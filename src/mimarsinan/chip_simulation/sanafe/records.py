@@ -107,6 +107,9 @@ class SanafeCoreRecord:
     # mini-view in the GUI; None when log_potential_trace=False or the
     # group wasn't logged.
     spike_raster: Optional[np.ndarray] = None
+    output_activation: Optional[np.ndarray] = None
+    # Spikes on ``core{N}_in`` / ``core{N}_on`` groups (input-path neurons).
+    input_neuron_spikes_fired: int = 0
 
 
 @dataclass
@@ -311,10 +314,31 @@ class SanafeSegmentRecord:
     connectivity: List["SanafeConnectivityEdge"] = field(default_factory=list)
     # Optional HCM↔SF parity-gate deltas, attached by the pipeline step.
     hcm_diff: List["SanafeCoreDiff"] = field(default_factory=list)
+    # TTFS contract layer: TtfsAnalyticalExecutor on segment inputs (no SANA-FE core).
+    contract_ttfs_cores: List[Any] = field(default_factory=list)
+    contract_ttfs_seg_output: Optional[np.ndarray] = None
     # Per-cycle compact NoC traffic for the animated playback view.
     # Each cycle is a list of ``[src_x, src_y, dst_x, dst_y, count]``;
     # empty when ``log_message_trace=False``.
     noc_traffic_per_cycle: List[List[List[int]]] = field(default_factory=list)
+    # Per-cycle packet count per destination tile_index (intra+inter); GUI playback fallback.
+    tile_packets_per_cycle: List[Dict[int, int]] = field(default_factory=list)
+    # Message-trace taxonomy (non-placeholder events only).
+    inter_tile_packets: int = 0
+    intra_tile_packets: int = 0
+    input_path_packets: int = 0
+    cross_tile_connectivity_edges: int = 0
+    # Spike-trace diagnostics (chip aggregate vs attributed LIF / input groups).
+    chip_spike_count: int = 0
+    lif_spike_count: int = 0
+    spike_trace_parse_skipped: int = 0
+    spike_capture_warning: Optional[str] = None
+    # Expected vs observed NoC / TTFS activity (segment-level diagnostics).
+    mapped_cross_tile_axons: int = 0
+    ttfs_contract_active_cores: int = 0
+    ttfs_hardware_active_cores: int = 0
+    ttfs_event_active_cores: int = 0
+    ttfs_activation_event_mismatch_count: int = 0
 
 
 @dataclass
@@ -374,3 +398,75 @@ class SanafeRunRecord:
         for k, v in self.compute_outputs.items():
             out.compute_outputs[k] = v
         return out
+
+    def _ttfs_record_from_segments(
+        self,
+        *,
+        spiking_mode: str,
+        core_source: str,
+    ) -> "TtfsRunRecord":
+        """Build ``TtfsRunRecord`` from per-segment TTFS core lists.
+
+        ``core_source`` is ``"hardware"`` (``output_activation`` / trace) or
+        ``"contract"`` (``contract_ttfs_*`` from ``TtfsAnalyticalExecutor``).
+        """
+        from mimarsinan.chip_simulation.ttfs_recorder import (
+            SegmentTtfsRecord,
+            TtfsRunRecord,
+        )
+
+        out = TtfsRunRecord(
+            sample_index=self.sample_index,
+            simulation_length=self.T,
+            spiking_mode=spiking_mode,
+        )
+        for stage_index, seg in self.segments.items():
+            if core_source == "contract":
+                cores = list(seg.contract_ttfs_cores)
+                seg_out = seg.contract_ttfs_seg_output
+                if seg_out is None:
+                    seg_out = np.zeros(0, dtype=np.float64)
+            else:
+                from mimarsinan.chip_simulation.ttfs_recorder import (
+                    CoreTtfsActivations,
+                )
+
+                cores = []
+                for c in seg.per_core:
+                    if c.output_activation is None:
+                        continue
+                    cores.append(CoreTtfsActivations(
+                        core_index=c.core_index,
+                        n_out_used=c.n_neurons,
+                        output_activation=np.asarray(
+                            c.output_activation, dtype=np.float64,
+                        ),
+                    ))
+                seg_out = np.zeros(0, dtype=np.float64)
+            out.segments[stage_index] = SegmentTtfsRecord(
+                stage_index=seg.stage_index,
+                stage_name=seg.stage_name,
+                schedule_segment_index=seg.schedule_segment_index,
+                schedule_pass_index=seg.schedule_pass_index,
+                seg_output=np.asarray(seg_out, dtype=np.float64),
+                cores=cores,
+            )
+        for k, v in self.compute_outputs.items():
+            out.compute_outputs[k] = v
+        return out
+
+    def to_ttfs_hardware_subset(self, *, spiking_mode: str = "ttfs") -> "TtfsRunRecord":
+        """TTFS activations from plugin somas via ``potential_trace`` readout."""
+        return self._ttfs_record_from_segments(
+            spiking_mode=spiking_mode, core_source="hardware",
+        )
+
+    def to_ttfs_contract_subset(self, *, spiking_mode: str = "ttfs") -> "TtfsRunRecord":
+        """TTFS activations from ``TtfsAnalyticalExecutor`` on segment inputs."""
+        return self._ttfs_record_from_segments(
+            spiking_mode=spiking_mode, core_source="contract",
+        )
+
+    def to_ttfs_subset(self, *, spiking_mode: str = "ttfs") -> "TtfsRunRecord":
+        """Alias for hardware TTFS parity (plugin ``potential_trace``)."""
+        return self.to_ttfs_hardware_subset(spiking_mode=spiking_mode)

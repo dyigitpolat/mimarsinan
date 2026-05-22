@@ -38,10 +38,14 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from .arch_synth import _sanafe
-from .neuron_model import input_neuron_attributes, lif_model_attributes
-from .presets import (
-    SOMA_INPUT_RANGE_NAME, SOMA_LIF_NAME, SYNAPSE_NAME,
+from .neuron_model import (
+    input_neuron_attributes,
+    lif_model_attributes,
+    soma_hw_name_for_spiking_mode,
+    ttfs_continuous_model_attributes,
+    ttfs_quantized_model_attributes,
 )
+from .presets import SOMA_INPUT_RANGE_NAME, SYNAPSE_NAME
 
 
 from mimarsinan.mapping.core_geometry import used_axons as _used_axons
@@ -63,6 +67,7 @@ def build_network_for_segment(
     cores_per_tile: int = 0,
     simulation_length: Optional[int] = None,
     firing_mode: str = "Default",
+    spiking_mode: str = "lif",
 ) -> Tuple[
     Any,
     Dict[int, Any],
@@ -84,8 +89,11 @@ def build_network_for_segment(
     """
     sanafe = _sanafe()
     net = sanafe.Network()
+    soma_hw = soma_hw_name_for_spiking_mode(spiking_mode)
+    is_ttfs = spiking_mode in ("ttfs", "ttfs_quantized")
+    is_quantized = spiking_mode == "ttfs_quantized"
 
-    # 1. One LIF group per HardCore, mapped to its corresponding SANA-FE core.
+    # 1. One neuron group per HardCore, mapped to its corresponding SANA-FE core.
     core_to_group: Dict[int, Any] = {}
     core_input_neurons: Dict[Tuple[int, int], Any] = {}
     core_always_on_neurons: Dict[int, Any] = {}
@@ -116,24 +124,47 @@ def build_network_for_segment(
             # that offset depth-0 cores miss their first integration step.
             active_start = ((core_latency + 1)
                             if simulation_length is not None else None)
-            active_length = (int(simulation_length)
-                             if simulation_length is not None else None)
+            if is_ttfs and simulation_length is not None:
+                if is_quantized:
+                    active_length = int(simulation_length)
+                else:
+                    active_length = 1
+            else:
+                active_length = (int(simulation_length)
+                                 if simulation_length is not None else None)
             for n_idx in range(used_neurons):
                 neuron = group[n_idx]
                 bias = None
                 if core.hardware_bias is not None:
                     bias = float(np.asarray(core.hardware_bias)[n_idx])
-                neuron.set_attributes(
-                    soma_hw_name=SOMA_LIF_NAME,
-                    default_synapse_hw_name=SYNAPSE_NAME,
-                    log_spikes=True,
-                    model_attributes=lif_model_attributes(
+                if spiking_mode == "ttfs_quantized":
+                    model_attrs = ttfs_quantized_model_attributes(
+                        threshold=float(core.threshold),
+                        hardware_bias=bias,
+                        active_start=active_start,
+                        active_length=active_length,
+                    )
+                elif spiking_mode == "ttfs":
+                    model_attrs = ttfs_continuous_model_attributes(
+                        threshold=float(core.threshold),
+                        hardware_bias=bias,
+                        active_start=active_start,
+                        active_length=active_length,
+                    )
+                else:
+                    model_attrs = lif_model_attributes(
                         threshold=float(core.threshold),
                         hardware_bias=bias,
                         active_start=active_start,
                         active_length=active_length,
                         firing_mode=firing_mode,
-                    ),
+                    )
+                neuron.set_attributes(
+                    soma_hw_name=soma_hw,
+                    default_synapse_hw_name=SYNAPSE_NAME,
+                    log_spikes=True,
+                    log_potential=is_ttfs,
+                    model_attributes=model_attrs,
                 )
                 neuron.map_to_core(sanafe_core)
             core_to_group[core_idx] = group
@@ -162,6 +193,7 @@ def build_network_for_segment(
                 n.set_attributes(
                     soma_hw_name=f"{SOMA_INPUT_RANGE_NAME}[{a}]",
                     default_synapse_hw_name=SYNAPSE_NAME,
+                    log_spikes=True,
                     model_attributes=input_neuron_attributes(),
                 )
                 n.map_to_core(sanafe_core)
@@ -179,6 +211,7 @@ def build_network_for_segment(
             ao_group[0].set_attributes(
                 soma_hw_name=f"{SOMA_INPUT_RANGE_NAME}[{ao_slot}]",
                 default_synapse_hw_name=SYNAPSE_NAME,
+                log_spikes=True,
                 model_attributes=input_neuron_attributes(),
             )
             ao_group[0].map_to_core(sanafe_core)
@@ -269,10 +302,92 @@ def set_input_spike_trains(
 def set_always_on_spike_trains(
     core_always_on_neurons: Dict[int, Any],
     T: int,
+    *,
+    spiking_mode: str = "lif",
 ) -> None:
-    """Always-on neurons fire every cycle: positional bit array of all 1s."""
-    train = [1] * T
+    """Inject always-on input spikes (rate: every cycle; TTFS: cycle 0 only)."""
+    from mimarsinan.chip_simulation.ttfs_encoding import ttfs_always_on_spike_times_1based
+
+    if spiking_mode in ("ttfs", "ttfs_quantized"):
+        train = ttfs_always_on_spike_times_1based(T)
+    else:
+        train = [1] * T
     for neuron in core_always_on_neurons.values():
         neuron.set_attributes(
             model_attributes=input_neuron_attributes(train),
+        )
+
+
+def apply_ttfs_preset_membranes(
+    core_to_group: Dict[int, Any],
+    hcm: Any,
+    membrane_voltages: list,
+    *,
+    spiking_mode: str,
+    simulation_length: Optional[int] = None,
+    firing_mode: str = "Default",
+) -> None:
+    """Stamp analytical ``V = W @ a + b`` on TTFS somas so SANA-FE matches HCM."""
+    for core_idx, group in core_to_group.items():
+        core = hcm.cores[core_idx]
+        used_neurons = _used_neurons(core)
+        if used_neurons <= 0:
+            continue
+        V = membrane_voltages[core_idx]
+        core_latency = (int(core.latency)
+                        if getattr(core, "latency", None) is not None
+                        else 0)
+        active_start = ((core_latency + 1)
+                        if simulation_length is not None else None)
+        is_quantized = spiking_mode == "ttfs_quantized"
+        if is_quantized and simulation_length is not None:
+            active_length = int(simulation_length)
+        elif simulation_length is not None:
+            active_length = 1
+        else:
+            active_length = None
+        for n_idx in range(used_neurons):
+            bias = None
+            if core.hardware_bias is not None:
+                bias = float(np.asarray(core.hardware_bias)[n_idx])
+            preset = float(V[0, n_idx])
+            if is_quantized:
+                attrs = ttfs_quantized_model_attributes(
+                    threshold=float(core.threshold),
+                    hardware_bias=bias,
+                    active_start=active_start,
+                    active_length=active_length,
+                    preset_membrane=preset,
+                )
+            else:
+                attrs = ttfs_continuous_model_attributes(
+                    threshold=float(core.threshold),
+                    hardware_bias=bias,
+                    active_start=active_start,
+                    active_length=active_length,
+                    preset_membrane=preset,
+                )
+            group[n_idx].set_attributes(model_attributes=attrs)
+
+
+def set_ttfs_input_spike_trains(
+    core_input_neurons: Dict[Tuple[int, int], Any],
+    hcm: Any,
+    seg_input_rates: np.ndarray,
+    simulation_length: int,
+) -> None:
+    """Inject latched TTFS spike times from segment input rates ``(1, D)``."""
+    from mimarsinan.chip_simulation.ttfs_encoding import ttfs_input_spike_times_1based
+
+    s = int(simulation_length)
+    for (core_idx, axon_idx), neuron in core_input_neurons.items():
+        src = hcm.cores[core_idx].axon_sources[axon_idx]
+        k = int(src.neuron_)
+        if k >= seg_input_rates.shape[1]:
+            times: list[int] = []
+        else:
+            rate = float(seg_input_rates[0, k])
+            times = ttfs_input_spike_times_1based(rate, s)
+        neuron.set_attributes(
+            model_attributes=input_neuron_attributes(times),
         )

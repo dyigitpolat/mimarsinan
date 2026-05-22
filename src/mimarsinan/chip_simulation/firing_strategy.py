@@ -56,7 +56,7 @@ class FiringStrategy:
         if b in ("lava", "loihi"):
             return BackendFiringCapabilities(True, True, False)
         if b in ("sanafe",):
-            return BackendFiringCapabilities(True, True, False)
+            return BackendFiringCapabilities(True, True, True)
         return BackendFiringCapabilities(True, False, False)
 
     def require_backend(self, backend: str) -> None:

@@ -10,7 +10,8 @@ from typing import Any, List, Optional
 
 from .presets import (
     AXON_IN_NAME, AXON_OUT_NAME, DENDRITE_NAME,
-    PerEventEnergy, PRESETS, SOMA_INPUT_RANGE_NAME, SOMA_LIF_NAME, SYNAPSE_NAME,
+    PerEventEnergy, PRESETS, SOMA_INPUT_RANGE_NAME, SOMA_LIF_NAME,
+    SOMA_TTFS_CONTINUOUS_NAME, SOMA_TTFS_QUANTIZED_NAME, SYNAPSE_NAME,
 )
 
 
@@ -55,6 +56,8 @@ class ArchSpec:
     preset: PerEventEnergy = field(repr=False)
     dendrite_plugin_path: str = field(default="")
     soma_plugin_path: str = field(default="")
+    ttfs_continuous_plugin_path: str = field(default="")
+    ttfs_quantized_plugin_path: str = field(default="")
     mesh_width: int = 1
     mesh_height: int = 1
     cores_per_tile_resolved: int = 1
@@ -104,11 +107,22 @@ def derive_arch_spec(
 
     dendrite_so = _plugin_path("dendrite")
     soma_so = _plugin_path("soma")
-    if dendrite_so is None or soma_so is None:
+    ttfs_cont_so = _plugin_path("ttfs_continuous_soma")
+    ttfs_q_so = _plugin_path("ttfs_quantized_soma")
+    missing = [
+        name for name, path in (
+            ("dendrite", dendrite_so),
+            ("soma", soma_so),
+            ("ttfs_continuous_soma", ttfs_cont_so),
+            ("ttfs_quantized_soma", ttfs_q_so),
+        )
+        if path is None
+    ]
+    if missing:
         raise FileNotFoundError(
-            "mimarsinan SANA-FE plugins are not built.  Run "
-            "``scripts/bootstrap_sanafe.sh`` (with the project venv active) "
-            "to build libmimarsinan_dendrite.so and libmimarsinan_soma.so."
+            "mimarsinan SANA-FE plugins are not built (missing: "
+            f"{', '.join(missing)}).  Run ``scripts/bootstrap_sanafe.sh`` "
+            "to build all libmimarsinan_*.so artifacts."
         )
 
     if cores_per_tile <= 0:
@@ -135,6 +149,8 @@ def derive_arch_spec(
         preset=preset,
         dendrite_plugin_path=dendrite_so,
         soma_plugin_path=soma_so,
+        ttfs_continuous_plugin_path=ttfs_cont_so,
+        ttfs_quantized_plugin_path=ttfs_q_so,
         mesh_width=mesh_width,
         mesh_height=mesh_height,
         cores_per_tile_resolved=cores_per_tile,
@@ -153,7 +169,12 @@ def _thresholding_mode_to_soma_attr(thresholding_mode: str) -> str:
     )
 
 
-def _render_arch_yaml(spec: ArchSpec, *, thresholding_mode: str = "<=") -> str:
+def _render_arch_yaml(
+    spec: ArchSpec,
+    *,
+    thresholding_mode: str = "<=",
+    simulation_length: int = 1,
+) -> str:
     """Render SANA-FE architecture YAML from ``ArchSpec``."""
     p = spec.preset
     soma_thresholding = _thresholding_mode_to_soma_attr(thresholding_mode)
@@ -194,6 +215,27 @@ def _render_arch_yaml(spec: ArchSpec, *, thresholding_mode: str = "<=") -> str:
                 plugin: {spec.soma_plugin_path}
                 model: mimarsinan_soma
                 thresholding_mode: {soma_thresholding}
+                energy_access_neuron: {p["soma_access_energy_j"]}
+                latency_access_neuron: {p["soma_access_latency_s"]}
+                energy_update_neuron: {p["soma_update_energy_j"]}
+                latency_update_neuron: {p["soma_update_latency_s"]}
+                energy_spike_out: {p["soma_spike_out_energy_j"]}
+                latency_spike_out: {p["soma_spike_out_latency_s"]}
+            - name: {SOMA_TTFS_CONTINUOUS_NAME}
+              attributes:
+                plugin: {spec.ttfs_continuous_plugin_path}
+                model: mimarsinan_ttfs_continuous_soma
+                energy_access_neuron: {p["soma_access_energy_j"]}
+                latency_access_neuron: {p["soma_access_latency_s"]}
+                energy_update_neuron: {p["soma_update_energy_j"]}
+                latency_update_neuron: {p["soma_update_latency_s"]}
+                energy_spike_out: {p["soma_spike_out_energy_j"]}
+                latency_spike_out: {p["soma_spike_out_latency_s"]}
+            - name: {SOMA_TTFS_QUANTIZED_NAME}
+              attributes:
+                plugin: {spec.ttfs_quantized_plugin_path}
+                model: mimarsinan_ttfs_quantized_soma
+                simulation_length: {simulation_length}
                 energy_access_neuron: {p["soma_access_energy_j"]}
                 latency_access_neuron: {p["soma_access_latency_s"]}
                 energy_update_neuron: {p["soma_update_energy_j"]}
@@ -252,6 +294,7 @@ def build_architecture(
     *,
     custom_arch_path: Optional[str] = None,
     thresholding_mode: str = "<=",
+    simulation_length: int = 1,
 ) -> Any:
     """Load or synthesise a SANA-FE ``Architecture`` matching ``spec``."""
     sanafe = _sanafe()
@@ -270,7 +313,11 @@ def build_architecture(
             )
         return arch
 
-    yaml_str = _render_arch_yaml(spec, thresholding_mode=thresholding_mode)
+    yaml_str = _render_arch_yaml(
+        spec,
+        thresholding_mode=thresholding_mode,
+        simulation_length=simulation_length,
+    )
     with tempfile.NamedTemporaryFile(
         suffix=".yaml", mode="w", delete=False,
         prefix=f"mimarsinan_sanafe_arch_{spec.name}_",
