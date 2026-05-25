@@ -59,28 +59,23 @@ def _get_layout_result_from_request(
     tiling_max_axons: int | None = None,
     tiling_max_neurons: int | None = None,
 ):
-    """Build model repr and run layout mapping verification."""
-    from mimarsinan.mapping.wizard_layout_verify import (
-        model_repr_from_wizard_body,
-        resolve_tiling_params_from_body,
-        verify_layout_for_model_repr,
-    )
+    """Build model repr and run layout mapping verification.
 
-    effective_max_axons, effective_max_neurons, hardware_bias, allow_coalescing = (
-        resolve_tiling_params_from_body(
-            body,
-            tiling_max_axons=tiling_max_axons,
-            tiling_max_neurons=tiling_max_neurons,
-        )
+    Routes through :data:`DEFAULT_LAYOUT_MAPPING_SERVICE` so repeated wizard
+    edits with identical bodies hit a cached softcore list instead of
+    rebuilding the mapper graph from scratch each time.
+    """
+    from mimarsinan.mapping.layout_mapping_service import (
+        DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
-    model_repr = model_repr_from_wizard_body(body)
-    result = verify_layout_for_model_repr(
-        model_repr,
-        max_axons=effective_max_axons,
-        max_neurons=effective_max_neurons,
-        allow_coalescing=allow_coalescing,
-        hardware_bias=hardware_bias,
+    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+
+    request = LayoutMappingRequest.from_wizard_body(
+        body,
+        tiling_max_axons=tiling_max_axons,
+        tiling_max_neurons=tiling_max_neurons,
     )
+    result = DEFAULT_LAYOUT_MAPPING_SERVICE.get_verification(request)
     if not result.feasible:
         raise ValueError(f"Soft-core mapping verification failed: {result.error}")
     return result

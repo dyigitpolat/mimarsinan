@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.mapping.layout.layout_source_view import concat_source_views
 from mimarsinan.mapping.mappers.base import Mapper
 
 
@@ -250,7 +251,7 @@ class MultiHeadAttentionComputeMapper(Mapper):
         assert q_sources.shape == k_sources.shape == v_sources.shape
         S, D = q_sources.shape
 
-        all_sources = np.concatenate([
+        all_sources = concat_source_views([
             q_sources.flatten(), k_sources.flatten(), v_sources.flatten()
         ])
         return ir_mapping.add_compute_op(

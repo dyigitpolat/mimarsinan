@@ -63,6 +63,12 @@ class IRMapping(LayoutIRMapping):
 
     def map(self, model_representation) -> IRGraph:
         output_sources = super().map(model_representation)
+        # Materialise the final output sources -- IRGraph and downstream
+        # consumers (hybrid_hardcore_mapping, simulators) treat
+        # ``output_sources`` as a real numpy object array with ``.flat``,
+        # mutation, etc.  The shape-only ``LayoutSourceView`` lives only
+        # inside the mapper chain.
+        output_sources = np.asarray(output_sources, dtype=object)
         for node in self.nodes:
             if isinstance(node, NeuralCore):
                 sc_idx = self._node_id_to_softcore_idx.get(node.id)
@@ -112,7 +118,7 @@ class IRMapping(LayoutIRMapping):
 
     def add_compute_op(
         self,
-        input_sources: np.ndarray,
+        input_sources,
         op_type: str,
         params: Dict[str, Any],
         input_shape: Tuple[int, ...] | None = None,
@@ -128,7 +134,11 @@ class IRMapping(LayoutIRMapping):
             output_shape=output_shape,
             name=name,
         )
-        node_id = int(result.flatten()[0].node_id)
+        # Materialise once per emission so the IRMapping path keeps producing
+        # real IRSource arrays end-to-end; downstream mappers and the IR
+        # graph never see a ``LayoutSourceView``.
+        result = np.asarray(result, dtype=object)
+        node_id = int(result.flat[0].node_id)
         self.nodes.append(ComputeOp(
             id=node_id,
             name=name or f"compute_{op_type}_{node_id}",
@@ -205,7 +215,7 @@ class IRMapping(LayoutIRMapping):
         coalescing_group_id: int | None = None,
         coalescing_role: str | None = None,
     ) -> np.ndarray:
-        ir_input_sources = self._convert_sources(np.asarray(input_sources, dtype=object))
+        ir_input_sources = self._convert_sources(input_sources)
 
         result = super().add_neural_core(
             input_sources=ir_input_sources,
@@ -225,7 +235,8 @@ class IRMapping(LayoutIRMapping):
             coalescing_group_id=coalescing_group_id,
             coalescing_role=coalescing_role,
         )
-        node_id = int(result.flatten()[0].node_id)
+        result = np.asarray(result, dtype=object)
+        node_id = int(result.flat[0].node_id)
 
         # Psum partials receive the un-clamped tile slice from the base class
         # (avoids clamp cost in shape-only path); materialise pos/neg here.
@@ -297,7 +308,7 @@ class IRMapping(LayoutIRMapping):
         coalescing_group_id: int | None = None,
         coalescing_role: str | None = None,
     ) -> np.ndarray:
-        ir_input_sources = self._convert_sources(np.asarray(input_sources, dtype=object))
+        ir_input_sources = self._convert_sources(input_sources)
 
         result = super().add_shared_neural_core(
             input_sources=ir_input_sources,
@@ -313,7 +324,8 @@ class IRMapping(LayoutIRMapping):
             coalescing_group_id=coalescing_group_id,
             coalescing_role=coalescing_role,
         )
-        node_id = int(result.flatten()[0].node_id)
+        result = np.asarray(result, dtype=object)
+        node_id = int(result.flat[0].node_id)
         bank = self._weight_banks[weight_bank_id]
 
         ir_input_list = list(ir_input_sources.flatten())

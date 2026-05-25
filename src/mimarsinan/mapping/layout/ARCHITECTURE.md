@@ -33,7 +33,37 @@ without requiring trained weights.
 |------|---------|---------|
 | `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutCoreSnapshot`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results. |
 | `layout_ir_mapping.py` | `LayoutIRMapping` | Shape-only mapping backend shared by the wizard, architecture search, and the real `IRMapping` (as its base class).  Owns every structural decision. |
+| `layout_source_view.py` | `LayoutSourceView`, `concat_source_views`, `stack_source_views`, `node_ids_of`, `total_size` | Lightweight composable shape descriptor that duck-types as a numpy object array of `IRSource` for the mapper graph; defers per-cell `IRSource` allocation until forced via `np.asarray`.  See "LayoutSourceView contract" below. |
 | `layout_packer.py` | `pack_layout` | Wraps `greedy_pack_softcores` around layout types. |
+
+## LayoutSourceView contract
+
+`LayoutIRMapping`'s emission hooks return `LayoutSourceView` rather than a
+materialised numpy array of `IRSource`.  The view exposes the duck-type
+surface the mapper graph uses (`.shape`, `.ndim`, `.size`, `.dtype`,
+`.flatten()`, `.reshape()`, `.transpose()`, `__getitem__`, `__len__`,
+`__iter__`, `__array__`) without ever allocating per-cell `IRSource`
+instances; ops the view does not natively cover (numpy `transpose` of an
+unusual shape, einops, pad, moveaxis) trigger materialisation via
+`__array__`.  Concat / stack mapper sites use `concat_source_views` /
+`stack_source_views` so view-only chains stay free of materialisation.
+
+Invariants:
+
+- `node_ids_of(view)` returns the set of producer node ids feeding the
+  view -- no per-cell scan.  `total_size(view)` likewise reads the size
+  metadata directly.
+- The full `IRMapping` subclass materialises each emission boundary via
+  `_convert_sources` and re-wraps its own return value with
+  `np.asarray(..., dtype=object)`, so downstream consumers in the
+  IRMapping path see only real numpy arrays of `IRSource` -- the view
+  never leaks into the IR graph or any simulator.
+- Materialisation of a from-producer view yields
+  `IRSource(producer_node_id, original_flat_index)` for every cell,
+  preserving the connectivity semantics the IR graph expects.
+
+The shape-only wizard / NAS path stays view-only end to end -- the
+single source of truth, lightweight as intended.
 
 ## Dependencies
 
