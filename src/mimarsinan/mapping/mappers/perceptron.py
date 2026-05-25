@@ -88,7 +88,8 @@ class PerceptronMapper(Mapper):
         in_features = int(layer_weights.shape[1])
         out_features = int(layer_weights.shape[0])
 
-        src_arr = np.array(layer_sources, dtype=object)
+        from mimarsinan.mapping.layout.layout_source_view import stack_source_views
+        src_arr = layer_sources
         if src_arr.ndim == 2 and src_arr.shape[1] > 1:
             # Multi-column: one ComputeOp per column. ``src_arr[:, i]`` has
             # shape ``(in_features,)``.
@@ -96,7 +97,9 @@ class PerceptronMapper(Mapper):
             outputs = []
             base_name = getattr(self.perceptron, "name", None)
             for i in range(num_instances):
-                col_sources = np.array(src_arr[:, i], dtype=object).flatten()
+                col_sources = src_arr[:, i]
+                if hasattr(col_sources, "flatten"):
+                    col_sources = col_sources.flatten()
                 col_out = ir_mapping.add_compute_op(
                     input_sources=col_sources,
                     op_type="module",
@@ -105,8 +108,8 @@ class PerceptronMapper(Mapper):
                     output_shape=(out_features,),
                     name=(f"{base_name}_col{i}" if base_name else None),
                 )
-                outputs.append(np.array(col_out, dtype=object).flatten())
-            result = np.stack(outputs, axis=1)  # (out_features, num_instances)
+                outputs.append(col_out.flatten() if hasattr(col_out, "flatten") else col_out)
+            result = stack_source_views(outputs, axis=1)  # (out_features, num_instances)
             return result.transpose()  # (num_instances, out_features)
 
         flat_in = src_arr.flatten()
@@ -150,8 +153,9 @@ class ModuleComputeMapper(Mapper):
         return self.module(x)
 
     def _map_to_ir(self, ir_mapping):
+        from mimarsinan.mapping.layout.layout_source_view import stack_source_views
         input_sources = self.source_mapper.map_to_ir(ir_mapping)
-        src_arr = np.array(input_sources, dtype=object)
+        src_arr = input_sources
 
         # Handle 2D source arrays: each column is an independent instance
         # (e.g., token positions in mixer architectures). Create one
@@ -171,7 +175,9 @@ class ModuleComputeMapper(Mapper):
             col_count = int(src_arr.shape[1])
             outputs = []
             for i in range(col_count):
-                col_sources = np.array(src_arr[:, i], dtype=object).flatten()
+                col_sources = src_arr[:, i]
+                if hasattr(col_sources, "flatten"):
+                    col_sources = col_sources.flatten()
                 col_out = ir_mapping.add_compute_op(
                     input_sources=col_sources,
                     op_type="module",
@@ -180,8 +186,8 @@ class ModuleComputeMapper(Mapper):
                     output_shape=self.output_shape,
                     name=(f"{self.name}_col{i}" if self.name else None),
                 )
-                outputs.append(np.array(col_out, dtype=object).flatten())
-            result = np.stack(outputs, axis=1)
+                outputs.append(col_out.flatten() if hasattr(col_out, "flatten") else col_out)
+            result = stack_source_views(outputs, axis=1)
             return result.transpose()
 
         return ir_mapping.add_compute_op(

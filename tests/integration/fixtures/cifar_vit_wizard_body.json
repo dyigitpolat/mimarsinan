@@ -1,0 +1,15 @@
+{
+  "model_type": "torch_vit",
+  "input_shape": [3, 224, 224],
+  "num_classes": 10,
+  "model_config": {
+    "base_activation": "ReLU"
+  },
+  "max_axons": 4096,
+  "max_neurons": 4096,
+  "allow_coalescing": false,
+  "hardware_bias": true,
+  "allow_neuron_splitting": false,
+  "allow_scheduling": false,
+  "target_tq": 32
+}

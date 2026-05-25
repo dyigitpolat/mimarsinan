@@ -7,6 +7,13 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
+from mimarsinan.mapping.layout.layout_source_view import (
+    LayoutSourceView,
+    concat_source_views,
+    node_ids_of,
+    stack_source_views,
+    total_size,
+)
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.mapping_structure import (
     compute_core_input_count,
@@ -79,13 +86,13 @@ class LayoutIRMapping:
 
     # Dependency / shape helpers
 
-    def _extract_input_node_ids(self, input_sources: Optional[np.ndarray]) -> Set[int]:
-        ids: Set[int] = set()
-        if input_sources is not None:
-            for src in np.array(input_sources, dtype=object).flatten():
-                if isinstance(src, IRSource) and src.node_id >= 0:
-                    ids.add(src.node_id)
-        return ids
+    def _extract_input_node_ids(self, input_sources) -> Set[int]:
+        """Set of producer node ids feeding ``input_sources``.
+
+        Fast path: a ``LayoutSourceView`` carries the producer set as metadata
+        and we avoid scanning per-cell.
+        """
+        return node_ids_of(input_sources)
 
     def _emit_softcore_record(
         self,
@@ -94,11 +101,11 @@ class LayoutIRMapping:
         input_count: int,
         output_count: int,
         name: Optional[str],
-        input_sources: Optional[np.ndarray],
+        input_sources,
         perceptron_index: Optional[int],
-    ) -> np.ndarray:
-        """Record a softcore shape under ``node_id`` and return output
-        ``IRSource``s (1-D)."""
+    ) -> LayoutSourceView:
+        """Record a softcore shape under ``node_id`` and return a 1-D
+        ``LayoutSourceView`` over its outputs."""
         self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
         self._node_is_neural[node_id] = True
 
@@ -118,9 +125,9 @@ class LayoutIRMapping:
                 name=name,
             )
         )
-        return np.array(
-            [IRSource(node_id=node_id, index=i) for i in range(int(output_count))],
-            dtype=object,
+        return LayoutSourceView.from_producer(
+            producer_node_id=node_id,
+            shape=(int(output_count),),
         )
 
     # Public mapping protocol (called by Mapper.map_to_ir)
@@ -143,33 +150,33 @@ class LayoutIRMapping:
 
     def add_compute_op(
         self,
-        input_sources: np.ndarray,
+        input_sources,
         op_type: str,
         params=None,
         input_shape=None,
         output_shape=None,
         name: Optional[str] = None,
-    ) -> np.ndarray:
-        """Record a compute-op's dependency structure and return placeholder
-        output sources.  Shape-only: no ComputeOp node is built."""
+    ) -> LayoutSourceView:
+        """Record a compute-op's dependency structure and return a
+        ``LayoutSourceView`` over its outputs.  Shape-only: no ComputeOp
+        node is built."""
         if output_shape is not None:
             output_size = 1
             for d in output_shape:
                 output_size *= d
+            view_shape: Tuple[int, ...] = tuple(int(d) for d in output_shape)
         else:
-            output_size = int(np.array(input_sources, dtype=object).flatten().shape[0])
+            output_size = total_size(input_sources)
+            view_shape = (output_size,)
 
         node_id = self._alloc_node_id()
         self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
         self._node_is_neural[node_id] = False
 
-        output = np.array(
-            [IRSource(node_id=node_id, index=i) for i in range(output_size)],
-            dtype=object,
+        return LayoutSourceView.from_producer(
+            producer_node_id=node_id,
+            shape=view_shape,
         )
-        if output_shape is not None:
-            output = output.reshape(output_shape)
-        return output
 
     def register_weight_bank(
         self,
@@ -202,7 +209,7 @@ class LayoutIRMapping:
     def add_neural_core(
         self,
         *,
-        input_sources: np.ndarray,
+        input_sources,
         weights: Any,
         biases: Any = None,
         activation_scale: Any = None,
@@ -218,14 +225,13 @@ class LayoutIRMapping:
         psum_role: Optional[str] = None,
         coalescing_group_id: Optional[int] = None,
         coalescing_role: Optional[str] = None,
-    ) -> np.ndarray:
+    ) -> LayoutSourceView:
         """Emit a single neural softcore (owned weights).
 
         Base implementation records shape only.  ``IRMapping`` overrides to
         additionally construct a concrete ``NeuralCore`` node.
         """
-        src_arr = np.array(input_sources, dtype=object).flatten()
-        in_features = int(src_arr.shape[0])
+        in_features = total_size(input_sources)
         out_features = int(getattr(weights, "shape", [0])[0])
         has_bias = biases is not None
         in_count = compute_core_input_count(
@@ -238,14 +244,14 @@ class LayoutIRMapping:
             input_count=in_count,
             output_count=out_features,
             name=name,
-            input_sources=src_arr,
+            input_sources=input_sources,
             perceptron_index=perceptron_index,
         )
 
     def add_shared_neural_core(
         self,
         *,
-        input_sources: Any,
+        input_sources,
         weight_bank_id: int,
         has_bias: bool = True,
         weight_row_slice: Optional[Tuple[int, int]] = None,
@@ -257,7 +263,7 @@ class LayoutIRMapping:
         psum_role: Optional[str] = None,
         coalescing_group_id: Optional[int] = None,
         coalescing_role: Optional[str] = None,
-    ) -> np.ndarray:
+    ) -> LayoutSourceView:
         """Emit a bank-backed neural softcore (one conv position).
 
         Base implementation records shape only.  ``IRMapping`` overrides to
@@ -268,9 +274,8 @@ class LayoutIRMapping:
             raise ValueError(f"Unknown weight_bank_id={weight_bank_id}")
         _in_features_with_bias, bank_out_features = bank_shape
 
-        src_arr = np.array(input_sources, dtype=object).flatten()
         in_count = compute_core_input_count(
-            int(src_arr.shape[0]), has_bias, self.hardware_bias
+            total_size(input_sources), has_bias, self.hardware_bias
         )
 
         if weight_row_slice is not None:
@@ -285,7 +290,7 @@ class LayoutIRMapping:
             input_count=in_count,
             output_count=out_features,
             name=name,
-            input_sources=src_arr,
+            input_sources=input_sources,
             perceptron_index=perceptron_index,
         )
         self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
@@ -316,7 +321,7 @@ class LayoutIRMapping:
         out_features = int(getattr(fc_weights, "shape", [0, 0])[0])
         in_features = int(getattr(fc_weights, "shape", [0, 0])[1])
 
-        src_arr = np.array(input_tensor_sources, dtype=object)
+        src_arr = input_tensor_sources
 
         # Batched FC: (in_features, core_count) -> dispatch column-by-column.
         if src_arr.ndim == 2:
@@ -330,7 +335,9 @@ class LayoutIRMapping:
             core_count = int(src_arr.shape[1])
             outs = []
             for i in range(core_count):
-                col_sources = np.array(src_arr[:, i], dtype=object).flatten()
+                col_sources = src_arr[:, i]
+                if hasattr(col_sources, "flatten"):
+                    col_sources = col_sources.flatten()
                 outs.append(
                     self.map_fc(
                         col_sources,
@@ -350,7 +357,7 @@ class LayoutIRMapping:
                         coalescing_role=coalescing_role,
                     ).flatten()
                 )
-            out = np.stack(outs, axis=1)
+            out = stack_source_views(outs, axis=1)
             return out.reshape(tuple(output_shape))
 
         has_bias = fc_biases is not None
@@ -424,7 +431,7 @@ class LayoutIRMapping:
     def _map_fc_output_tiled(
         self,
         *,
-        src_arr: np.ndarray,
+        src_arr,
         fc_weights: Any,
         fc_biases: Any,
         activation_scale: Any,
@@ -438,7 +445,7 @@ class LayoutIRMapping:
         psum_role: Optional[str],
         coalescing_group_id: Optional[int],
         coalescing_role: Optional[str],
-    ) -> np.ndarray:
+    ):
         out_features = int(getattr(fc_weights, "shape", [0, 0])[0])
         chunk_size = int(self.max_neurons)
 
@@ -450,7 +457,7 @@ class LayoutIRMapping:
             tile_biases = fc_biases[start:end] if fc_biases is not None else None
 
             tile_sources = self.add_neural_core(
-                input_sources=src_arr.flatten(),
+                input_sources=src_arr.flatten() if hasattr(src_arr, "flatten") else src_arr,
                 weights=tile_weights,
                 biases=tile_biases,
                 activation_scale=activation_scale,
@@ -468,7 +475,7 @@ class LayoutIRMapping:
             )
             output_sources_list.append(tile_sources)
             start = end
-        return np.concatenate(output_sources_list)
+        return concat_source_views(output_sources_list)
 
     def _map_fc_with_psum(
         self,

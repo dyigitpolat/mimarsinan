@@ -105,11 +105,14 @@ class _MultiInputModuleComputeMapper(Mapper):
         return out
 
     def _map_to_ir(self, ir_mapping):
+        from mimarsinan.mapping.layout.layout_source_view import concat_source_views
         source_arrays = [
-            np.array(mapper.map_to_ir(ir_mapping), dtype=object)
+            mapper.map_to_ir(ir_mapping)
             for mapper in self.get_source_mappers()
         ]
-        flat_sources = np.concatenate([arr.flatten() for arr in source_arrays])
+        flat_sources = concat_source_views(
+            [arr.flatten() if hasattr(arr, "flatten") else arr for arr in source_arrays]
+        )
         input_shapes = self.input_shapes or [tuple(arr.shape) for arr in source_arrays]
         return ir_mapping.add_compute_op(
             input_sources=flat_sources,

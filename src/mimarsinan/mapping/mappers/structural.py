@@ -164,8 +164,9 @@ class AddMapper(Mapper):
         a_sources = self.source_mapper_a.map_to_ir(ir_mapping)
         b_sources = self.source_mapper_b.map_to_ir(ir_mapping)
         assert a_sources.shape == b_sources.shape
+        from mimarsinan.mapping.layout.layout_source_view import concat_source_views
         n = a_sources.flatten().shape[0]
-        all_sources = np.concatenate([a_sources.flatten(), b_sources.flatten()])
+        all_sources = concat_source_views([a_sources.flatten(), b_sources.flatten()])
         params = {"half_size": n}
         scale_a = getattr(self, "_ir_add_scale_a", None)
         scale_b = getattr(self, "_ir_add_scale_b", None)
