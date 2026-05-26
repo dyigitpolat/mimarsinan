@@ -29,7 +29,6 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 | `sanafe_sample_count`, `sanafe_arch_preset`, `sanafe_custom_arch_path`, `sanafe_parity_check`, `sanafe_log_*` | SANA-FE step behaviour |
 | `activation_quantization`, `weight_quantization`, `pruning`, `pruning_fraction` | Step gating |
 | `enable_training_noise` | Optional `NoiseAdaptationStep` after LIF adaptation |
-| `use_legacy_softcore_flush` | Legacy `ir_graph_to_soft_core_mapping` vs default `neural_segment_packing` |
 | `max_simulation_samples`, `seed`, `simulation_steps` | Simulation subsampling and cycles |
 | `training_recipe`, `tuning_recipe` | AdamW + cosine defaults (ViT-aligned) |
 

@@ -20,9 +20,6 @@ class ModelRepresentation:
         self._exec_order = None
         self._deps = None
 
-    def map(self, mapping):
-        return self.output_layer_mapper.map(mapping)
-
     def map_to_ir(self, ir_mapping):
         """
         Map this model representation to a unified IR (IRGraph).

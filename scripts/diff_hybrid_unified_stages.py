@@ -79,7 +79,7 @@ def main() -> None:
                   "weight_bits": pc_res["weight_bits"], "input_shape": (1, 28, 28),
                   "firing_mode": dp["firing_mode"], "spike_generation_mode": dp["spike_generation_mode"],
                   "thresholding_mode": dp["thresholding_mode"], "spiking_mode": "ttfs",
-                  "use_legacy_softcore_flush": False}
+                  }
 
     hcm = build_spiking_hybrid_flow(P(), hm).to(device).eval()
     h_state: dict[int, torch.Tensor] = {-2: x.to(_COMPUTE_DTYPE)}

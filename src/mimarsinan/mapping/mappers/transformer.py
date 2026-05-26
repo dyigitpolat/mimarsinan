@@ -28,9 +28,6 @@ class LayerNormMapper(Mapper):
     def layer_norm(self):
         return self._ln_container[0]
 
-    def _map(self, mapping):
-        raise NotImplementedError("LayerNormMapper: not supported in SoftCoreMapping.")
-
     def _map_to_ir(self, ir_mapping):
         input_sources = self.source_mapper.map_to_ir(ir_mapping)
         shape = input_sources.shape
@@ -65,9 +62,6 @@ class GELUMapper(Mapper):
         super().__init__(source_mapper)
         self.name = str(name)
 
-    def _map(self, mapping):
-        raise NotImplementedError("GELUMapper: not supported in SoftCoreMapping.")
-
     def _map_to_ir(self, ir_mapping):
         input_sources = self.source_mapper.map_to_ir(ir_mapping)
         shape = input_sources.shape
@@ -101,9 +95,6 @@ class ConstantPrependMapper(Mapper):
     @property
     def constant_param(self):
         return self._constant_container[0]
-
-    def _map(self, mapping):
-        raise NotImplementedError("ConstantPrependMapper: not supported in SoftCoreMapping.")
 
     def _map_to_ir(self, ir_mapping):
         input_sources = self.source_mapper.map_to_ir(ir_mapping)
@@ -141,9 +132,6 @@ class ConstantAddMapper(Mapper):
     def constant_param(self):
         return self._constant_container[0]
 
-    def _map(self, mapping):
-        raise NotImplementedError("ConstantAddMapper: not supported in SoftCoreMapping.")
-
     def _map_to_ir(self, ir_mapping):
         input_sources = self.source_mapper.map_to_ir(ir_mapping)
         shape = input_sources.shape
@@ -171,9 +159,6 @@ class DropoutMapper(Mapper):
         self.dropout = nn.Dropout(p)
         self.name = str(name)
 
-    def _map(self, mapping):
-        return self.source_mapper.map(mapping)
-
     def _map_to_ir(self, ir_mapping):
         return self.source_mapper.map_to_ir(ir_mapping)
 
@@ -193,9 +178,6 @@ class SelectMapper(Mapper):
         super().__init__(source_mapper)
         self.index = int(index)
         self.name = str(name)
-
-    def _map(self, mapping):
-        return self.source_mapper.map(mapping)[self.index]
 
     def _map_to_ir(self, ir_mapping):
         input_sources = self.source_mapper.map_to_ir(ir_mapping)
@@ -239,9 +221,6 @@ class MultiHeadAttentionComputeMapper(Mapper):
 
     def get_source_mappers(self):
         return [m for m in self._source_mappers_list if m is not None]
-
-    def _map(self, mapping):
-        raise NotImplementedError("MultiHeadAttentionComputeMapper: not supported in SoftCoreMapping.")
 
     def _map_to_ir(self, ir_mapping):
         q_sources = self._source_mappers_list[0].map_to_ir(ir_mapping)

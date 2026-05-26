@@ -1,4 +1,4 @@
-"""Pack a neural IR segment into softcores without ``SoftCoreMapping.map_fc``."""
+"""Pack a neural IR segment into softcores for hard-core bin-packing."""
 
 from __future__ import annotations
 

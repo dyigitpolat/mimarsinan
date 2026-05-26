@@ -12,7 +12,7 @@ from mimarsinan.mapping.activation_scales import (
     compute_node_input_scales as _compute_node_input_activation_scales,
     compute_node_output_scales as _compute_node_activation_scales,
 )
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore, ir_graph_to_soft_core_mapping
+from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
 from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping, compact_soft_core_mapping
 
 
@@ -211,7 +211,6 @@ def _flush_neural_segment(
     name: str,
     allow_neuron_splitting: bool = False,
     skip_coalescing_check: bool = False,
-    use_legacy_softcore_flush: bool = False,
 ) -> tuple[HybridStage, dict[int, dict[int, int]]]:
     """Pack a neural segment using cores drawn from shared_pool."""
     segment_node_ids = {n.id for n in current_neural}
@@ -243,14 +242,11 @@ def _flush_neural_segment(
         output_sources=output_sources,
         weight_banks=weight_banks,
     )
-    if use_legacy_softcore_flush:
-        soft = ir_graph_to_soft_core_mapping(seg_graph)
-    else:
-        from mimarsinan.mapping.neural_segment_packing import (
-            neural_segment_to_soft_core_mapping,
-        )
+    from mimarsinan.mapping.neural_segment_packing import (
+        neural_segment_to_soft_core_mapping,
+    )
 
-        soft = neural_segment_to_soft_core_mapping(seg_graph, weight_banks)
+    soft = neural_segment_to_soft_core_mapping(seg_graph, weight_banks)
 
     reindex_maps = compact_soft_core_mapping(soft.cores, soft.output_sources)
 
@@ -362,7 +358,6 @@ def _flush_scheduled_segment(
     segment_label: str,
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
-    use_legacy_softcore_flush: bool = False,
 ) -> tuple[list[HybridStage], dict[int, dict[int, int]]]:
     """One segment → one HybridStage on a fresh hardware pool."""
     if allow_coalescing:
@@ -379,7 +374,6 @@ def _flush_scheduled_segment(
         name=segment_label,
         allow_neuron_splitting=allow_neuron_splitting,
         skip_coalescing_check=True,
-        use_legacy_softcore_flush=use_legacy_softcore_flush,
     )
     stage.schedule_segment_index = segment_index
     stage.schedule_pass_index = 0
@@ -394,7 +388,6 @@ def build_hybrid_hard_core_mapping(
     allow_neuron_splitting: bool = False,
     allow_scheduling: bool = False,
     allow_coalescing: bool = False,
-    use_legacy_softcore_flush: bool = False,
 ) -> HybridHardCoreMapping:
     """Compile a unified IRGraph into a HybridHardCoreMapping."""
 
@@ -415,7 +408,6 @@ def build_hybrid_hard_core_mapping(
             all_reindex_maps=all_reindex_maps,
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
-            use_legacy_softcore_flush=use_legacy_softcore_flush,
         )
     else:
         _build_single_pool(
@@ -425,7 +417,6 @@ def build_hybrid_hard_core_mapping(
             stages=stages,
             all_reindex_maps=all_reindex_maps,
             allow_neuron_splitting=allow_neuron_splitting,
-            use_legacy_softcore_flush=use_legacy_softcore_flush,
         )
 
     if not stages:
@@ -453,7 +444,6 @@ def _build_single_pool(
     stages: list[HybridStage],
     all_reindex_maps: dict[int, dict[int, int]],
     allow_neuron_splitting: bool,
-    use_legacy_softcore_flush: bool = False,
 ) -> None:
     """Original single-shared-pool compilation path."""
     shared_pool: list[HardCore] = _make_available_hardware_cores(cores_config)
@@ -475,7 +465,6 @@ def _build_single_pool(
                     weight_banks=ir_graph.weight_banks,
                     name=f"neural_segment_until:{node.name}",
                     allow_neuron_splitting=allow_neuron_splitting,
-                    use_legacy_softcore_flush=use_legacy_softcore_flush,
                 )
                 stages.append(stage)
                 all_reindex_maps.update(seg_reindex)
@@ -501,7 +490,6 @@ def _build_single_pool(
             weight_banks=ir_graph.weight_banks,
             name="neural_segment_final",
             allow_neuron_splitting=allow_neuron_splitting,
-            use_legacy_softcore_flush=use_legacy_softcore_flush,
         )
         stages.append(stage)
         all_reindex_maps.update(seg_reindex)
@@ -606,7 +594,6 @@ def _flush_scheduled_subsegments(
     stages: list[HybridStage],
     ir_graph: IRGraph | None = None,
     hardware_bias: bool = False,
-    use_legacy_softcore_flush: bool = False,
 ) -> int:
     """Flush one IR segment; split by capacity when scheduling."""
     sub_segments = _split_segment_by_capacity(
@@ -634,7 +621,6 @@ def _flush_scheduled_subsegments(
             segment_label=label,
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
-            use_legacy_softcore_flush=use_legacy_softcore_flush,
         )
         stages.extend(seg_stages)
         all_reindex_maps.update(seg_reindex)
@@ -651,7 +637,6 @@ def _build_scheduled(
     all_reindex_maps: dict[int, dict[int, int]],
     allow_neuron_splitting: bool,
     allow_coalescing: bool = False,
-    use_legacy_softcore_flush: bool = False,
 ) -> None:
     """Scheduled compilation: fresh core pool per pass."""
     segment_index = 0
@@ -676,7 +661,6 @@ def _build_scheduled(
                     all_reindex_maps=all_reindex_maps,
                     stages=stages,
                     ir_graph=ir_graph,
-                    use_legacy_softcore_flush=use_legacy_softcore_flush,
                 )
                 current_neural = []
 
@@ -703,5 +687,4 @@ def _build_scheduled(
             all_reindex_maps=all_reindex_maps,
             stages=stages,
             ir_graph=ir_graph,
-            use_legacy_softcore_flush=use_legacy_softcore_flush,
         )

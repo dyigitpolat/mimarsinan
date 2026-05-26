@@ -44,7 +44,7 @@ def _read_threshold_group(obj, *, fallback_id: int | None = None) -> int:
     back to ``-(fallback_id + 1)`` (or ``-(id + 1)`` when the object has
     an ``id`` attribute).  Both are unique-per-object, consistent with
     how ``LayoutIRMapping._finalize_softcores`` and
-    ``SoftCoreMapping.map``'s ``_soft_tg`` have historically disambiguated
+    how ``LayoutIRMapping._finalize_softcores`` have historically disambiguated
     ungrouped softcores.
     """
     tg = getattr(obj, "threshold_group_id", None)
@@ -119,7 +119,7 @@ def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike
     """Single-source-of-truth feasibility predicate for bin-packing.
 
     Both the layout-level ``pack_layout`` and the runtime-level
-    ``SoftCoreMapping.map`` call this via the shared
+    hard-core mapper call this via the shared
     ``greedy_pack_softcores`` algorithm, so the wizard's feasibility
     estimate and the pipeline's real packing decision follow identical
     rules:

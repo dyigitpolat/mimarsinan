@@ -31,8 +31,6 @@ class Mapper(nn.Module):
     def __init__(self, source_mapper=None):
         super(Mapper, self).__init__()
         self._source_mapper_container = [source_mapper]
-        self.sources = None
-        self._cached_mapping = None
         self._ir_sources = None
         self._cached_ir_mapping = None
 
@@ -51,20 +49,8 @@ class Mapper(nn.Module):
         return self._source_mapper_container[0]
 
     def clear_cache(self):
-        self.sources = None
-        self._cached_mapping = None
         self._ir_sources = None
         self._cached_ir_mapping = None
-
-    def map(self, mapping):
-        if self.sources is not None and self._cached_mapping is mapping:
-            return self.sources
-        self.sources = self._map(mapping)
-        self._cached_mapping = mapping
-        return self.sources
-
-    def _map(self, mapping):
-        raise NotImplementedError
 
     def map_to_ir(self, ir_mapping):
         if self._ir_sources is not None and self._cached_ir_mapping is ir_mapping:

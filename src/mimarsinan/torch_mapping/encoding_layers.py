@@ -9,8 +9,6 @@ from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ModuleComput
 from mimarsinan.mapping.mappers.conv import (
     Conv2DPerceptronMapper,
     Conv1DPerceptronMapper,
-    Conv2DMapper,
-    Conv1DMapper,
 )
 from mimarsinan.mapping.mappers.pooling import (
     MaxPool2DMapper,
@@ -21,9 +19,6 @@ from mimarsinan.mapping.mappers.structural import InputMapper
 
 
 _PERCEPTRON_MAPPER_TYPES = (PerceptronMapper, Conv2DPerceptronMapper, Conv1DPerceptronMapper)
-
-# Bare conv mappers (chip-style conv without Perceptron wrapper) — upstream neural, not raw input.
-_BARE_CONV_MAPPER_TYPES = (Conv2DMapper, Conv1DMapper)
 
 # Pooling maps to ComputeOp in IR — next conv/FC perceptron starts a new segment.
 _BOUNDARY_MAPPER_TYPES = (
@@ -76,8 +71,6 @@ def _is_encoding_segment_start(node) -> bool:
     src = node.source_mapper
     while src is not None:
         if isinstance(src, _PERCEPTRON_MAPPER_TYPES):
-            return False
-        if isinstance(src, _BARE_CONV_MAPPER_TYPES):
             return False
         if isinstance(src, InputMapper):
             return True

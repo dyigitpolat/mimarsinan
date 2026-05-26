@@ -7,9 +7,10 @@ from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.mapping.mappers.structural import (
     AddMapper,
     ConcatMapper,
-    DelayMapper,
     EinopsRearrangeMapper,
     InputMapper,
+    MeanMapper,
+    PermuteMapper,
     ReshapeMapper,
     StackMapper,
     SubscriptMapper,
@@ -26,9 +27,7 @@ from mimarsinan.mapping.mappers.pooling import (
     MaxPool2DMapper,
 )
 from mimarsinan.mapping.mappers.conv import (
-    Conv1DMapper,
     Conv1DPerceptronMapper,
-    Conv2DMapper,
     Conv2DPerceptronMapper,
 )
 from mimarsinan.mapping.mappers.transformer import (
@@ -45,12 +44,13 @@ __all__ = [
     "Mapper",
     "InputMapper",
     "ReshapeMapper",
-    "DelayMapper",
     "EinopsRearrangeMapper",
     "StackMapper",
     "AddMapper",
     "ConcatMapper",
     "SubscriptMapper",
+    "PermuteMapper",
+    "MeanMapper",
     "PerceptronMapper",
     "ModuleMapper",
     "MergeLeadingDimsMapper",
@@ -61,8 +61,6 @@ __all__ = [
     "AdaptiveAvgPool2DMapper",
     "Conv2DPerceptronMapper",
     "Conv1DPerceptronMapper",
-    "Conv1DMapper",
-    "Conv2DMapper",
     "LayerNormMapper",
     "GELUMapper",
     "ConstantPrependMapper",

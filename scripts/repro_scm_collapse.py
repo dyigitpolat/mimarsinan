@@ -59,17 +59,15 @@ def main() -> None:
 
     ir_graph = pickle.loads((run_dir / "Soft Core Mapping.ir_graph.pickle").read_bytes())
 
-    for legacy in (False, True):
-        p = PipelineStub()
-        p.config["use_legacy_softcore_flush"] = legacy
-        hm = build_hybrid_mapping_for_pipeline(
-            ir_graph, pc_res, pipeline_config=p.config
-        )
-        flow = build_spiking_flow_for_metric(p, hm, ir_graph)
-        acc = run_hcm_spiking_test(
-            p, flow, device=p.config["device"], max_batch_cap=32
-        )
-        print(f"rebuild legacy_flush={legacy} metric acc={acc:.4f} stages={len(hm.stages)}")
+    p = PipelineStub()
+    hm = build_hybrid_mapping_for_pipeline(
+        ir_graph, pc_res, pipeline_config=p.config
+    )
+    flow = build_spiking_flow_for_metric(p, hm, ir_graph)
+    acc = run_hcm_spiking_test(
+        p, flow, device=p.config["device"], max_batch_cap=32
+    )
+    print(f"rebuild metric acc={acc:.4f} stages={len(hm.stages)}")
 
     obj = torch.load(
         run_dir / "Normalization Fusion.fused_model.pt",
