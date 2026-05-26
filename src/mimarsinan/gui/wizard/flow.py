@@ -26,6 +26,7 @@ WIZARD_STEP_IDS: List[str] = [
     "nas_options",          # search parameters (shown when any search is active)
     "platform_constraints", # HW config (shown when hw_config_mode != "search")
     "spiking_quantization",
+    "simulation",
     "training",
     "run_control",
     "review",

@@ -100,6 +100,25 @@ class TestBuildDeploymentConfigFromState:
         out = build_deployment_config_from_state({})
         assert "max_simulation_samples" not in out["deployment_parameters"]
 
+    def test_enable_nevresim_simulation_default_true(self):
+        out = build_deployment_config_from_state({})
+        assert out["deployment_parameters"]["enable_nevresim_simulation"] is True
+
+    def test_enable_nevresim_simulation_false_preserved(self):
+        out = build_deployment_config_from_state({
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "x",
+            "generated_files_path": "./out",
+            "deployment_parameters": {
+                "model_config_mode": "user",
+                "model_type": "mlp_mixer",
+                "model_config": {},
+                "enable_nevresim_simulation": False,
+            },
+        })
+        assert out["deployment_parameters"]["enable_nevresim_simulation"] is False
+        assert validate_wizard_state(out) == []
+
     def test_continue_from_run_id_preserved_for_edit_and_continue(self):
         source = "mnist_hard_all_lif_phased_deployment_run_20260520_094327"
         out = build_deployment_config_from_state({
@@ -137,6 +156,7 @@ class TestWizardFlow:
         assert len(WIZARD_STEP_IDS) >= 5
         assert WIZARD_STEP_IDS[0] == "experiment_basics"
         assert "review" in WIZARD_STEP_IDS
+        assert "simulation" in WIZARD_STEP_IDS
 
     def test_get_step_index(self):
         assert get_step_index("experiment_basics") == 0

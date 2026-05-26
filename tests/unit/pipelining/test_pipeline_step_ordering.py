@@ -194,3 +194,44 @@ class TestStepOrderingInvariants:
         assert "Clamp Adaptation" in names
         assert names.index("Activation Adaptation") < names.index("Clamp Adaptation")
         assert names.index("Torch Mapping") < names.index("Activation Analysis")
+
+
+class TestSimulationStepToggles:
+    """Optional simulation backends controlled by enable_* flags."""
+
+    _BASE = {
+        "configuration_mode": "user",
+        "spiking_mode": "lif",
+        "activation_quantization": False,
+        "weight_quantization": False,
+        "model_type": "mlp_mixer",
+    }
+
+    def test_simulation_present_by_default(self):
+        names = _step_names(self._BASE)
+        assert "Simulation" in names
+
+    def test_nevresim_disabled_omits_simulation_step(self):
+        config = {**self._BASE, "enable_nevresim_simulation": False}
+        names = _step_names(config)
+        assert "Simulation" not in names
+
+    def test_nevresim_off_loihi_still_present_when_enabled(self):
+        config = {
+            **self._BASE,
+            "enable_nevresim_simulation": False,
+            "enable_loihi_simulation": True,
+        }
+        names = _step_names(config)
+        assert "Simulation" not in names
+        assert "Loihi Simulation" in names
+
+    def test_nevresim_off_sanafe_still_present_when_enabled(self):
+        config = {
+            **self._BASE,
+            "enable_nevresim_simulation": False,
+            "enable_sanafe_simulation": True,
+        }
+        names = _step_names(config)
+        assert "Simulation" not in names
+        assert "SANA-FE Simulation" in names

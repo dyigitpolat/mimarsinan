@@ -21,9 +21,10 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 | Key | Role |
 |-----|------|
 | `spiking_mode` | `"lif"` (default), `"rate"`, `"ttfs"`, `"ttfs_quantized"` |
-| `cycle_accurate_lif_forward` | LIF training uses `run_cycle_accurate` when true |
+| `cycle_accurate_lif_forward` | LIF training uses `run_cycle_accurate` when true (default **true** for new configs) |
 | `thresholding_mode` | `"<"` strict vs `"<="` inclusive LIF firing |
-| `enable_loihi_simulation` | Append Loihi Simulation step (LIF) |
+| `enable_nevresim_simulation` | Append Nevresim Simulation step (default **true**) |
+| `enable_loihi_simulation` | Append Loihi Simulation step (LIF only) |
 | `enable_sanafe_simulation` | Append SANA-FE Simulation step |
 | `loihi_parity_sample_index` | Deterministic test index for Loihi parity |
 | `sanafe_sample_count`, `sanafe_arch_preset`, `sanafe_custom_arch_path`, `sanafe_parity_check`, `sanafe_log_*` | SANA-FE step behaviour |
@@ -32,7 +33,7 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 | `max_simulation_samples`, `seed`, `simulation_steps` | Simulation subsampling and cycles |
 | `training_recipe`, `tuning_recipe` | AdamW + cosine defaults (ViT-aligned) |
 
-`CONFIG_KEYS_SET` in `defaults.py` lists keys consumed by steps/tuners/simulation (including `enable_loihi_simulation`, `sanafe_*`, `cycle_accurate_lif_forward`). Extend it when adding new pipeline config.
+`CONFIG_KEYS_SET` in `defaults.py` lists keys consumed by steps/tuners/simulation (including `enable_nevresim_simulation`, `enable_loihi_simulation`, `sanafe_*`, `cycle_accurate_lif_forward`). Extend it when adding new pipeline config.
 
 ## Dependencies
 

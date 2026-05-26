@@ -195,6 +195,8 @@ function init() {
     setToggle('recipeApplyToTuningToggle', true);
     applyRecipeReuseDeps();
     applySpikingDeps();
+    applyTrainingDeps();
+    applySimulationDeps();
     applyHwDeps();
     onPruningFractionChange();
     // Avoid running hide animation on #searchSection before hydrate — it can race with
@@ -269,7 +271,7 @@ function setSegVal(containerId, val) {
 
 // ── Toggle helpers ─────────────────────────────────────────
 function toggleClick(el) {
-  if (el.classList.contains('forced')) return;
+  if (el.classList.contains('forced') || el.classList.contains('disabled')) return;
   el.classList.toggle('on');
   handleToggleChange(el.id);
   update();
@@ -296,7 +298,11 @@ function handleSegmentChange(controlId, val) {
     document.getElementById('trainFromScratch').className = 'cond ' + (val === 'train' ? 'visible' : 'hidden');
     document.getElementById('pretrainedConfig').className = 'cond ' + (val !== 'train' ? 'visible' : 'hidden');
   }
-  if (controlId === 'spikingMode') { applySpikingDeps(); }
+  if (controlId === 'spikingMode') {
+    applySpikingDeps();
+    applyTrainingDeps();
+    applySimulationDeps();
+  }
   if (controlId === 'hwMode') {
     document.getElementById('hwFixed').className = 'cond ' + (val === 'fixed' ? 'visible' : 'hidden');
     document.getElementById('hwAuto').className = 'cond ' + (val === 'search' ? 'visible' : 'hidden');
@@ -368,6 +374,9 @@ function handleToggleChange(id) {
   }
   if (id === 'recipeApplyToTuningToggle') {
     applyRecipeReuseDeps();
+  }
+  if (id === 'nevresimSimulationToggle' || id === 'loihiSimulationToggle' || id === 'sanafeSimulationToggle') {
+    applySimulationDeps();
   }
 }
 
@@ -546,20 +555,43 @@ function applySpikingDeps() {
   document.getElementById('spikeGenMode').disabled = isTTFS;
   document.getElementById('thresholdMode').disabled = isTTFS;
 
-  const loihiEl = document.getElementById('loihiSimulationToggle');
-  if (loihiEl) {
-    if (isTTFS) {
-      setToggle('loihiSimulationToggle', false, true);
-    } else {
-      loihiEl.classList.remove('disabled');
-    }
-  }
-
   const simCyclesEl = document.getElementById('simCycles');
   if (simCyclesEl) simCyclesEl.disabled = (mode === 'ttfs');
   const targetTqEl = document.getElementById('targetTq');
   if (targetTqEl) targetTqEl.disabled = !isToggleOn('actQuantToggle');
   validateTq();
+}
+
+function applyTrainingDeps() {
+  const isLif = getSegVal('spikingMode') === 'lif';
+  const block = document.getElementById('lifTrainingBlock');
+  if (block) block.classList.toggle('hide', !isLif);
+  const toggleEl = document.getElementById('cycleAccurateLifToggle');
+  if (!isLif) {
+    setToggle('cycleAccurateLifToggle', false, true);
+  } else if (toggleEl) {
+    toggleEl.classList.remove('forced');
+  }
+}
+
+function applySimulationDeps() {
+  const isLif = getSegVal('spikingMode') === 'lif';
+  const loihiToggle = document.getElementById('loihiSimulationToggle');
+  const loihiCard = document.getElementById('loihiSimCard');
+  if (loihiToggle) {
+    if (!isLif) {
+      setToggle('loihiSimulationToggle', false, true);
+      loihiToggle.classList.add('disabled');
+    } else {
+      loihiToggle.classList.remove('disabled');
+      if (!loihiToggle.classList.contains('on')) loihiToggle.classList.remove('forced');
+    }
+  }
+  if (loihiCard) loihiCard.classList.toggle('dimmed', !isLif);
+
+  const sanafeOn = isToggleOn('sanafeSimulationToggle');
+  const sanafeDrawer = document.getElementById('sanafeSettingsDrawer');
+  if (sanafeDrawer) sanafeDrawer.classList.toggle('open', sanafeOn);
 }
 
 // ── Hardware weight_bits → force weight quantization ───────
@@ -816,8 +848,10 @@ function buildConfig() {
     firing_mode: v('firingMode'),
     spike_generation_mode: v('spikeGenMode'),
     thresholding_mode: v('thresholdMode'),
-    cycle_accurate_lif_forward: document.getElementById('cycleAccurateLifToggle')?.classList.contains('on') || false,
   };
+  if (spikingMode === 'lif') {
+    dp.cycle_accurate_lif_forward = isToggleOn('cycleAccurateLifToggle');
+  }
 
   // Quantization flags
   dp.activation_quantization = actQuant;
@@ -950,6 +984,7 @@ function buildConfig() {
   if (maxSim > 0) dp.max_simulation_samples = maxSim;
 
   dp.allow_scheduling = isToggleOn('scheduledMappingToggle');
+  dp.enable_nevresim_simulation = isToggleOn('nevresimSimulationToggle');
   dp.enable_loihi_simulation = isToggleOn('loihiSimulationToggle');
   dp.enable_sanafe_simulation = isToggleOn('sanafeSimulationToggle');
   if (dp.enable_sanafe_simulation) {
@@ -1185,6 +1220,7 @@ function loadStateFromConfig(config) {
     }
     setToggleFromConfig('scheduledMappingToggle', allowSched);
   })();
+  setToggleFromConfig('nevresimSimulationToggle', dp.enable_nevresim_simulation !== false);
   setToggleFromConfig('loihiSimulationToggle', !!dp.enable_loihi_simulation);
   setToggleFromConfig('sanafeSimulationToggle', !!dp.enable_sanafe_simulation);
   setToggleFromConfig('sanafeParityCheckToggle', dp.sanafe_parity_check !== false);
@@ -1201,6 +1237,8 @@ function loadStateFromConfig(config) {
     }
   })();
   applySpikingDeps();
+  applyTrainingDeps();
+  applySimulationDeps();
   applyHwDeps();
   onPruningFractionChange();
 
@@ -1284,6 +1322,8 @@ function _maybeRefreshMetadata() {
 
 function update() {
   _maybeRefreshMetadata();
+  applyTrainingDeps();
+  applySimulationDeps();
   syncWtQuantToggle();
   document.getElementById('jsonOutput').innerHTML = renderJson(buildConfig());
   schedulePipelineStepsUpdate();

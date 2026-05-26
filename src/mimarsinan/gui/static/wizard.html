@@ -469,6 +469,18 @@
                   oninput="update()">
               </div>
             </div>
+
+            <div id="lifTrainingBlock" class="sub-section" style="margin-top:14px">
+              <div class="sub-section-title">LIF Training Alignment</div>
+              <div class="field">
+                <label class="field-label">Cycle-accurate LIF <span class="hint">close NF→SCM gap</span></label>
+                <div class="toggle-row on" id="cycleAccurateLifToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Spike-train forward</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+              <div class="note">Threads (T,B,…) spike trains through the mapper DAG during LIF Adaptation training; ~T× slower but closes the rate↔cycle mismatch for deep single-segment workloads.</div>
+            </div>
           </div>
         </div>
 
@@ -588,7 +600,7 @@
             <div class="section-icon rose">⚡</div>
             <div class="section-title-group">
               <div class="section-title">Deployment Mode</div>
-              <div class="section-subtitle">Spiking encoding, cycles, quantization, and pruning</div>
+              <div class="section-subtitle">Spiking encoding, cycles, quantization, pruning, and mapping</div>
             </div>
             <span class="section-chevron">▾</span>
           </div>
@@ -604,10 +616,10 @@
 
             <div class="dep-bar" id="spikingDeps"></div>
 
-            <!-- Row 1: Cycles, Target Tq — Row 2: Max simulation samples, Scheduled mapping -->
+            <!-- Row 1: Cycles, Target Tq — Row 2: Scheduled mapping -->
             <div class="field-grid" style="margin-bottom:10px">
               <div class="field">
-                <label class="field-label">Cycles <span class="hint">simulation time steps</span></label>
+                <label class="field-label">Cycles <span class="hint">discrete-time deployment depth</span></label>
                 <input type="number" id="simCycles" value="32" min="1" oninput="onCyclesChange(); update()">
               </div>
               <div class="field">
@@ -617,64 +629,9 @@
             </div>
             <div class="field-grid" style="margin-bottom:14px">
               <div class="field">
-                <label class="field-label">Max simulation samples <span class="hint">leave empty for full test set</span></label>
-                <input type="number" id="maxSimulationSamples" value="" min="0" placeholder="all" oninput="update()">
-              </div>
-              <div class="field">
                 <label class="field-label">Scheduled Mapping <span class="hint">reuse cores over time</span></label>
                 <div class="toggle-row" id="scheduledMappingToggle" onclick="toggleClick(this)">
                   <span class="toggle-label" style="font-size:0.78rem">Scheduling</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">Loihi Simulation <span class="hint">run Lava-based Loihi pass after nevresim (LIF only)</span></label>
-                <div class="toggle-row" id="loihiSimulationToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Loihi</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">SANA-FE Simulation <span class="hint">detailed energy/latency/NoC stats + spike parity (LIF only)</span></label>
-                <div class="toggle-row" id="sanafeSimulationToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">SANA-FE</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">SANA-FE Arch Preset</label>
-                <select id="sanafeArchPreset" onchange="update()">
-                  <option value="loihi">Loihi</option>
-                  <option value="truenorth">TrueNorth</option>
-                  <option value="custom">Custom (YAML)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="field-label">SANA-FE Samples <span class="hint">deterministic test indices 0..N-1</span></label>
-                <input type="number" id="sanafeSampleCount" value="1" min="1" oninput="update()">
-              </div>
-              <div class="field">
-                <label class="field-label">SANA-FE Custom Arch YAML <span class="hint">absolute path; only when preset = custom</span></label>
-                <input type="text" id="sanafeCustomArchPath" value="" placeholder="(leave blank for preset)" oninput="update()">
-              </div>
-              <div class="field">
-                <label class="field-label">SANA-FE Parity Check <span class="hint">fail pipeline on HCM↔SANA-FE spike mismatch</span></label>
-                <div class="toggle-row on" id="sanafeParityCheckToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Parity</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">SANA-FE Potential Trace <span class="hint">log per-neuron Vm (heavy)</span></label>
-                <div class="toggle-row" id="sanafeLogPotentialTraceToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Vm trace</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">SANA-FE Message Trace <span class="hint">log NoC packet hops</span></label>
-                <div class="toggle-row on" id="sanafeLogMessageTraceToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">NoC trace</span>
                   <div class="toggle-switch"></div>
                 </div>
               </div>
@@ -746,18 +703,109 @@
                     <option value="<">&lt; (strict)</option>
                   </select>
                 </div>
-                <div class="field">
-                  <label class="field-label">Cycle-accurate LIF <span class="hint">close NF→SCM gap</span></label>
-                  <div class="toggle-row" id="cycleAccurateLifToggle" onclick="toggleClick(this)">
-                    <span class="toggle-label" style="font-size:0.78rem">Spike-train forward</span>
-                    <div class="toggle-switch"></div>
+              </div>
+              <div class="note">Auto-set by spiking mode. Override only for advanced experiments.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Simulation ───────────────────────────────────── -->
+        <div class="section" data-section="simulation">
+          <div class="section-header" onclick="toggleSection(this)">
+            <div class="section-icon cyan">◎</div>
+            <div class="section-title-group">
+              <div class="section-title">Simulation</div>
+              <div class="section-subtitle">Chip verification backends and test-set subsampling</div>
+            </div>
+            <span class="section-chevron">▾</span>
+          </div>
+          <div class="section-body">
+            <div class="field" style="margin-bottom:14px">
+              <label class="field-label">Max simulation samples <span class="hint">leave empty for full test set</span></label>
+              <input type="number" id="maxSimulationSamples" value="" min="0" placeholder="all" oninput="update()">
+            </div>
+
+            <div class="sim-backend-card" id="nevresimSimCard">
+              <div class="sim-backend-header">
+                <div class="sim-backend-title-group">
+                  <div class="sim-backend-name">Nevresim</div>
+                  <div class="sim-backend-hint">Primary chip-accuracy verification via NevresimDriver</div>
+                </div>
+                <div class="toggle-row on" id="nevresimSimulationToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Enable</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sim-backend-card" id="loihiSimCard">
+              <div class="sim-backend-header">
+                <div class="sim-backend-title-group">
+                  <div class="sim-backend-name">Loihi <span class="sim-backend-badge">LIF only</span></div>
+                  <div class="sim-backend-hint">Lava-based Loihi parity pass after hard-core mapping</div>
+                </div>
+                <div class="toggle-row" id="loihiSimulationToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Enable</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sim-backend-card" id="sanafeSimCard">
+              <div class="sim-backend-header">
+                <div class="sim-backend-title-group">
+                  <div class="sim-backend-name">SANA-FE</div>
+                  <div class="sim-backend-hint">Detailed energy, latency, NoC stats + optional HCM parity</div>
+                </div>
+                <div class="toggle-row" id="sanafeSimulationToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Enable</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+              <div id="sanafeSettingsDrawer" class="sim-backend-drawer">
+                <div class="field-grid">
+                  <div class="field">
+                    <label class="field-label">Arch Preset</label>
+                    <select id="sanafeArchPreset" onchange="update()">
+                      <option value="loihi">Loihi</option>
+                      <option value="truenorth">TrueNorth</option>
+                      <option value="custom">Custom (YAML)</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Samples <span class="hint">deterministic test indices 0..N-1</span></label>
+                    <input type="number" id="sanafeSampleCount" value="1" min="1" oninput="update()">
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Custom Arch YAML <span class="hint">absolute path; preset = custom</span></label>
+                    <input type="text" id="sanafeCustomArchPath" value="" placeholder="(leave blank for preset)" oninput="update()">
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Parity Check <span class="hint">fail on HCM↔SANA-FE spike mismatch</span></label>
+                    <div class="toggle-row on" id="sanafeParityCheckToggle" onclick="toggleClick(this)">
+                      <span class="toggle-label" style="font-size:0.78rem">Parity</span>
+                      <div class="toggle-switch"></div>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Potential Trace <span class="hint">log per-neuron Vm (heavy)</span></label>
+                    <div class="toggle-row" id="sanafeLogPotentialTraceToggle" onclick="toggleClick(this)">
+                      <span class="toggle-label" style="font-size:0.78rem">Vm trace</span>
+                      <div class="toggle-switch"></div>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Message Trace <span class="hint">log NoC packet hops</span></label>
+                    <div class="toggle-row on" id="sanafeLogMessageTraceToggle" onclick="toggleClick(this)">
+                      <span class="toggle-label" style="font-size:0.78rem">NoC trace</span>
+                      <div class="toggle-switch"></div>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div class="note">Auto-set by spiking mode. Override only for advanced experiments. Cycle-accurate LIF threads (T,B,...) spike trains through the mapper DAG during LIF Adaptation training; ~T× slower but closes the rate↔cycle mismatch for deep single-segment workloads.</div>
             </div>
+          </div>
         </div>
-      </div>
 
       </div><!-- /.wizard-column-right -->
 

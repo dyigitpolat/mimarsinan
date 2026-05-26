@@ -110,6 +110,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     model_type = config.get("model_type", "")
     loihi_sim = bool(config.get("enable_loihi_simulation", False))
     sanafe_sim = bool(config.get("enable_sanafe_simulation", False))
+    nevresim_sim = config.get("enable_nevresim_simulation", True)
 
     specs: list[tuple[str, type]] = []
 
@@ -155,7 +156,8 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
         )
 
     specs.append(("Hard Core Mapping", HardCoreMappingStep))
-    specs.append(("Simulation", SimulationStep))
+    if nevresim_sim:
+        specs.append(("Simulation", SimulationStep))
 
     if loihi_sim:
         specs.append(("Loihi Simulation", LoihiSimulationStep))
@@ -241,7 +243,7 @@ class DeploymentPipeline(Pipeline):
             self.config.setdefault("firing_mode", "Default")
             self.config.setdefault("spike_generation_mode", "Uniform")
             self.config.setdefault("thresholding_mode", "<=")
-            self.config.setdefault("cycle_accurate_lif_forward", False)
+            self.config.setdefault("cycle_accurate_lif_forward", True)
 
         self.tolerance = 1.0 - float(self.config.get("degradation_tolerance", 0.05))
 
