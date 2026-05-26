@@ -93,12 +93,13 @@ class TestNeuralCoreExecution:
 class TestComputeOpStress:
     def test_add_mismatched_halves(self):
         """Add module fed mismatched halves should raise at the torch op."""
-        from mimarsinan.mapping.compute_modules import Add
+        import operator
+        from mimarsinan.mapping.compute_modules import ComputeAdapter
         sources = np.array([IRSource(-2, i) for i in range(5)], dtype=object)
         op = ComputeOp(
             id=0, name="add", input_sources=sources,
-            op_type="Add",
-            params={"module": Add(), "input_shapes": [(2,), (3,)]},
+            op_type="operator.add",
+            params={"module": ComputeAdapter(operator.add), "input_shapes": [(2,), (3,)]},
         )
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0]])
         with pytest.raises(RuntimeError):

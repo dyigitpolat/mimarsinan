@@ -58,12 +58,11 @@ def compute_per_source_scales(model_repr):
             if parts:
                 out_scales[node] = torch.cat(parts)
 
-        elif (
-            isinstance(node, ComputeOpMapper)
-            and len(node.get_source_mappers()) >= 2
-        ):
+        elif isinstance(node, ComputeOpMapper):
             parts = [out_scales[d] for d in deps if d in out_scales]
-            out_scales[node] = _apply_multi_input_scale_policy(node, parts)
+            scale = _apply_compute_op_scale_policy(node, parts)
+            if scale is not None:
+                out_scales[node] = scale
 
         else:
             src = _first_source_scales(deps, out_scales)
@@ -71,28 +70,37 @@ def compute_per_source_scales(model_repr):
                 out_scales[node] = src
 
 
-def _apply_multi_input_scale_policy(
+def _apply_compute_op_scale_policy(
     node: ComputeOpMapper, source_scales: list[torch.Tensor]
-) -> torch.Tensor:
-    """Handle source-scale propagation for a multi-input ``ComputeOpMapper``.
+) -> torch.Tensor | None:
+    """Decide whether ``node`` needs ``ScaleNormalizingWrapper`` stamping.
 
-    When source scales diverge, write ``per_source_scales`` and
-    ``output_scale`` on the mapper; ``ComputeOpMapper._maybe_wrap_for_scales``
-    stamps the :class:`ScaleNormalizingWrapper` around the underlying
-    module at IR-emission time.  When sources agree, the wrapper is
-    skipped and the bare module is emitted.
+    A wrapper is required when **any** input source carries a non-uniform
+    per-channel scale vector *or* when multiple sources disagree.  This
+    covers two cases under one rule:
+
+    * **Multi-input divergent scales** — e.g. ``Add(a, b)`` with
+      ``s_a ≠ s_b``.  The wrapper rescales each input by its source scale
+      so the wrapped module operates in absolute units.
+
+    * **Unary input with per-channel heterogeneity** — e.g. a ``LayerNorm``
+      downstream of a ``ConcatMapper`` that joins streams of different
+      activation scales.  The wrapper rescales per-channel before the
+      module computes its mean / variance / etc.
+
+    When every source has a uniform scalar scale that matches across inputs,
+    no wrapper is needed and the source scale is propagated unchanged.
     """
-    if len(source_scales) < 2:
-        return source_scales[0] if source_scales else torch.ones(1)
+    if not source_scales:
+        return None
 
-    # Broadcast every pair to a common length (matches the historical
-    # AddMapper pair-broadcast on length-mismatched scales).
+    # Broadcast every source-scale pair to a common length so heterogeneity
+    # checks below see comparable vectors.
     normalized = list(source_scales)
     for i in range(1, len(normalized)):
         s_first, s_i = _broadcast_scale_pair(normalized[0], normalized[i])
         normalized[0] = s_first
         normalized[i] = s_i
-
     target_len = normalized[0].shape[0]
     for i in range(1, len(normalized)):
         if normalized[i].shape[0] != target_len:
@@ -101,14 +109,34 @@ def _apply_multi_input_scale_policy(
                 dtype=normalized[i].dtype,
             )
 
-    coherent = all(torch.allclose(normalized[0], s) for s in normalized[1:])
-    if coherent:
+    needs_wrap = (
+        any(_is_per_channel_heterogeneous(s) for s in normalized)
+        or (len(normalized) > 1 and not _all_sources_uniform(normalized))
+    )
+
+    if not needs_wrap:
         return normalized[0]
 
     output_scale = node.combine_source_scales(normalized)
     node.per_source_scales = list(normalized)
     node.output_scale = output_scale
     return output_scale
+
+
+def _is_per_channel_heterogeneous(scale: torch.Tensor) -> bool:
+    """True if ``scale`` is a vector with non-uniform entries."""
+    if scale.numel() <= 1:
+        return False
+    return not torch.allclose(scale, scale[0].expand_as(scale))
+
+
+def _all_sources_uniform(scales: list[torch.Tensor]) -> bool:
+    """True if every source scale equals the first one (same shape + values)."""
+    first = scales[0]
+    return all(
+        s.shape == first.shape and torch.allclose(s, first)
+        for s in scales[1:]
+    )
 
 
 def _first_source_scales(deps, out_scales):

@@ -121,12 +121,13 @@ class TestComputeOp:
         assert torch.allclose(x.view(3, -1), out)
 
     def test_add_via_module(self):
-        from mimarsinan.mapping.compute_modules import Add
+        import operator
+        from mimarsinan.mapping.compute_modules import ComputeAdapter
         sources = np.array([IRSource(-2, i) for i in range(4)], dtype=object)
         op = ComputeOp(
             id=0, name="add", input_sources=sources,
-            op_type="Add",
-            params={"module": Add(), "input_shapes": [(2,), (2,)]},
+            op_type="operator.add",
+            params={"module": ComputeAdapter(operator.add), "input_shapes": [(2,), (2,)]},
         )
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
         out = op.execute_on_gathered(x)

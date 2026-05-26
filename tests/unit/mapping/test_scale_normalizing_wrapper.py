@@ -12,13 +12,20 @@ from __future__ import annotations
 import pytest
 import torch
 
-from mimarsinan.mapping.compute_modules import Add, Mean, ScaleNormalizingWrapper
+import operator
+
+from mimarsinan.mapping.compute_modules import ComputeAdapter, ScaleNormalizingWrapper
+
+
+def _add():
+    """Test-local helper: binary add as a ``ComputeAdapter``."""
+    return ComputeAdapter(operator.add)
 
 
 class TestAddParityWithLegacyScaling:
     def test_uniform_scales_equals_plain_add(self):
         wrapper = ScaleNormalizingWrapper(
-            Add(),
+            _add(),
             [torch.tensor([1.0]), torch.tensor([1.0])],
             torch.tensor([1.0]),
         )
@@ -33,7 +40,7 @@ class TestAddParityWithLegacyScaling:
         s_b = torch.tensor([6.0, 8.0])
         s_out = (s_a + s_b) / 2.0   # legacy heuristic
 
-        wrapper = ScaleNormalizingWrapper(Add(), [s_a, s_b], s_out)
+        wrapper = ScaleNormalizingWrapper(_add(), [s_a, s_b], s_out)
 
         a = torch.tensor([[0.5, 0.25]])
         b = torch.tensor([[0.3, 0.1]])
@@ -46,7 +53,7 @@ class TestAddParityWithLegacyScaling:
     def test_broadcast_to_last_dim(self):
         """Scalar scales broadcast over channels via ``broadcast_scale_to_dim``."""
         wrapper = ScaleNormalizingWrapper(
-            Add(),
+            _add(),
             [torch.tensor([2.0]), torch.tensor([4.0])],
             torch.tensor([3.0]),
         )
@@ -61,7 +68,7 @@ class TestPicklable:
     def test_wrapper_roundtrips_through_pickle(self):
         import pickle
         wrapper = ScaleNormalizingWrapper(
-            Add(),
+            _add(),
             [torch.tensor([2.0, 2.0]), torch.tensor([4.0, 4.0])],
             torch.tensor([3.0, 3.0]),
         )

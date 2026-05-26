@@ -1,21 +1,29 @@
-"""Small ``nn.Module`` wrappers for host-side ComputeOps.
+"""Host-side ComputeOp payloads.
 
-Each former specialized ``Mapper`` class (``MeanMapper``, ``SelectMapper``,
-``ConstantAddMapper``, ``ConstantPrependMapper``, ``AddMapper``, ...) is
-replaced by a torch ``nn.Module`` here.  The mapping side constructs
-``ComputeOpMapper(source, <module>)``; the IR side stores the module in
-``ComputeOp.params["module"]`` and the shared ``_exec_module`` executor
-runs it host-side during simulation.
+The framework synthesises an ``nn.Module`` payload for every non-neural
+``ComputeOp`` so the shared ``_exec_module`` executor can run it host-side
+during simulation.  There are exactly two payload kinds:
 
-``ScaleNormalizingWrapper`` is the generic carrier for the per-source rate→
-scale rescaling pass.  ``compute_per_source_scales`` stamps it around any
-multi-input ``ComputeOpMapper.module`` whose source rates carry diverging
-activation scales.
+* :class:`ComputeAdapter` — generic adapter for any picklable callable
+  (functions / methods / get_attr-bound ops) with optional bound tensor
+  constants and extra args/kwargs.  Bound constants are stored
+  batch-stripped; the adapter prepends batch dim 0 and expands them to
+  match the input's batch size at forward time.  Replaces every former
+  per-op wrapper.
+
+* :class:`ScaleNormalizingWrapper` — dynamic per-source rate→absolute→rate
+  rescaling stamped onto multi-input ``ComputeOpMapper``s whose source
+  scales diverge.  Different category; lives here to keep all host-side
+  payload classes in one file.
+
+A small picklable utility ``_cat_along`` is exposed for ops whose call
+structure does not fit the generic ``fn(*inputs, *bound)`` signature
+(``torch.cat`` takes a list-of-tensors first arg).
 """
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 import torch
 import torch.nn as nn
@@ -23,81 +31,99 @@ import torch.nn as nn
 from mimarsinan.mapping.scale_broadcast import broadcast_scale_to_dim
 
 
-class Select(nn.Module):
-    """``x[:, index, ...]`` along the first non-batch axis.
+def _cat_along(x: torch.Tensor, prefix: torch.Tensor, *, dim: int) -> torch.Tensor:
+    """``torch.cat([prefix, x], dim=dim)`` as a flat-positional callable.
 
-    Lifted from the former ``SelectMapper`` / ``ComputeOp._exec_select``
-    pair.  Used for CLS-token extraction in ViTs.
+    Used for constant-prepend patterns (CLS token in ViT and similar).
+    Module-level + picklable so it can be stored in
+    ``ComputeAdapter.fn`` and survive IR pickling.
+    """
+    return torch.cat([prefix, x], dim=dim)
+
+
+class ComputeAdapter(nn.Module):
+    """Generic host-side ComputeOp payload for any picklable callable.
+
+    Tensor constants are stored as non-trainable ``nn.Parameter``\\ s
+    with the batch dim stripped.  At forward time, the adapter prepends
+    batch dim 0 and expands every bound tensor to match the input's
+    batch size, then calls
+    ``fn(*inputs, *bound_expanded, *extra_args, **kwargs)``.
+
+    This invariant means IR-time shape inference (``probe_module_io_shapes``)
+    does not need to reason about batch dim — it always probes at
+    batch=1 — and the wrapper still works for any runtime batch size,
+    including future batched soft-core execution.
+
+    The adapter subsumes the former specialized wrappers ``Add``,
+    ``Mean``, ``Select``, ``ConstantAdd``, ``ConstantPrepend`` and the
+    converter-local ``_FunctionWrapper`` — there is one host-side
+    payload class for every non-neural op.
+
+    Display: ``op_type`` labelling in the IR uses ``display_name``,
+    which reports the wrapped callable's qualified name so GUI / DOT
+    visualisations stay readable.
     """
 
-    def __init__(self, index: int) -> None:
+    def __init__(
+        self,
+        fn,
+        *,
+        bound_tensors: Sequence[torch.Tensor] = (),
+        extra_args: Sequence[Any] = (),
+        kwargs: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__()
-        self.index = int(index)
+        self.fn = fn
+        self.extra_args = tuple(extra_args)
+        self.kwargs = dict(kwargs) if kwargs else {}
+        self._bound_count = len(bound_tensors)
+        for i, tensor in enumerate(bound_tensors):
+            self.register_parameter(
+                f"bound_{i}",
+                nn.Parameter(tensor.detach().clone(), requires_grad=False),
+            )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x[:, self.index]
+    @property
+    def display_name(self) -> str:
+        """Readable callable name for IR ``op_type`` / GUI labels."""
+        fn = self.fn
+        module = getattr(fn, "__module__", "")
+        name = getattr(fn, "__qualname__", None) or getattr(fn, "__name__", None)
+        if name is None:
+            return type(fn).__name__
+        return f"{module}.{name}" if module and module != "builtins" else name
 
+    def _bound_tensors(self) -> list[torch.Tensor]:
+        return [getattr(self, f"bound_{i}") for i in range(self._bound_count)]
 
-class Mean(nn.Module):
-    """``x.mean(dim=dim)`` — reduces one batch-relative axis."""
-
-    def __init__(self, dim: int) -> None:
-        super().__init__()
-        self.dim = int(dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.mean(dim=self.dim)
-
-
-class ConstantAdd(nn.Module):
-    """``x + constant`` with a frozen learnable constant (e.g. positional embedding)."""
-
-    def __init__(self, constant: torch.Tensor) -> None:
-        super().__init__()
-        # Stored as a non-trainable Parameter so it survives pickling and
-        # rides .to(device) with the host-side module.
-        self.constant = nn.Parameter(
-            constant.detach().clone(), requires_grad=False
+    def forward(self, *inputs: torch.Tensor) -> torch.Tensor:
+        if inputs:
+            batch_size = inputs[0].shape[0]
+        else:
+            batch_size = 1
+        expanded_bound: list[torch.Tensor] = []
+        for tensor in self._bound_tensors():
+            expanded_bound.append(
+                tensor.unsqueeze(0).expand(batch_size, *tensor.shape)
+            )
+        return self.fn(
+            *inputs, *expanded_bound, *self.extra_args, **self.kwargs,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.constant
+    @classmethod
+    def from_fx_node(cls, node, fn) -> "ComputeAdapter":
+        """Build a ``ComputeAdapter`` from a ``call_function`` FX node.
 
-
-class ConstantPrepend(nn.Module):
-    """Prepend a constant token along the sequence axis (CLS token in ViT).
-
-    Forward shape: ``(B, S, D)`` → ``(B, S+1, D)``.  The stored constant
-    has shape ``(1, 1, D)`` and is expanded over the batch.
-    """
-
-    def __init__(self, constant: torch.Tensor, dim: int = 1) -> None:
-        super().__init__()
-        const = constant.detach().clone()
-        # Normalise to (1, 1, D) for broadcast over batch and sequence.
-        if const.dim() == 1:
-            const = const.view(1, 1, -1)
-        elif const.dim() == 2:
-            const = const.unsqueeze(0)
-        self.constant = nn.Parameter(const, requires_grad=False)
-        self.dim = int(dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B = x.shape[0]
-        const = self.constant.expand(B, -1, -1)
-        return torch.cat([const, x], dim=self.dim)
-
-
-class Add(nn.Module):
-    """Plain two-input element-wise add (``a + b``).
-
-    Per-source scale handling lives in :class:`ScaleNormalizingWrapper`
-    — this module stays pure so the same ``Add()`` instance can sit
-    inside or outside a wrapper unchanged.
-    """
-
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return a + b
+        ``args[0]`` is the input tensor (handled by the mapper source);
+        remaining non-Node positional args are captured as ``extra_args``,
+        and all non-Node kwargs are captured.  Replaces the former
+        ``_FunctionWrapper.from_fx_node``.
+        """
+        import torch.fx as fx
+        extra_args = tuple(a for a in node.args[1:] if not isinstance(a, fx.Node))
+        kwargs = {k: v for k, v in node.kwargs.items() if not isinstance(v, fx.Node)}
+        return cls(fn, extra_args=extra_args, kwargs=kwargs)
 
 
 class ScaleNormalizingWrapper(nn.Module):

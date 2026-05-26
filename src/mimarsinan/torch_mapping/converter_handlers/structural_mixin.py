@@ -1,4 +1,9 @@
-"""Structural conversion: add, flatten, getitem, cat, and absorption helpers."""
+"""Structural shortcuts: cat / flatten + BatchNorm/activation absorption helpers.
+
+Compute ops (``+``, ``getitem``, ``mean``, generic functions, ...) flow
+through :meth:`MapperGraphConverter._emit_generic_compute_op` instead of
+op-specific handlers — see ``mapper_graph_converter.py``.
+"""
 
 from __future__ import annotations
 
@@ -8,12 +13,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
-from mimarsinan.mapping.compute_modules import (
-    Add,
-    ConstantAdd,
-    ConstantPrepend,
-    Select,
-)
+from mimarsinan.mapping.compute_modules import ComputeAdapter, _cat_along
 from mimarsinan.mapping.mapping_utils import (
     ComputeOpMapper,
     ConcatMapper,
@@ -25,36 +25,6 @@ if TYPE_CHECKING:
 
 
 class StructuralConvertMixin:
-    def _convert_add(self, node: fx.Node) -> None:
-        if len(node.args) < 2:
-            source = self._get_source_mapper(node)
-            self._node_to_mapper[node] = source
-            return
-
-        a_node = node.args[0]
-        b_node = node.args[1]
-
-        a_mapper = self._get_mapper(a_node) if isinstance(a_node, fx.Node) else None
-        b_mapper = self._get_mapper(b_node) if isinstance(b_node, fx.Node) else None
-        a_const = self._get_constant_tensor(a_node) if isinstance(a_node, fx.Node) else None
-        b_const = self._get_constant_tensor(b_node) if isinstance(b_node, fx.Node) else None
-
-        if a_mapper is not None and b_mapper is not None:
-            mapper = ComputeOpMapper([a_mapper, b_mapper], Add(), name=node.name)
-            self._node_to_mapper[node] = mapper
-        elif a_mapper is not None and isinstance(b_const, (nn.Parameter, torch.Tensor)):
-            self._node_to_mapper[node] = ComputeOpMapper(
-                a_mapper, ConstantAdd(b_const), name=node.name,
-            )
-        elif b_mapper is not None and isinstance(a_const, (nn.Parameter, torch.Tensor)):
-            self._node_to_mapper[node] = ComputeOpMapper(
-                b_mapper, ConstantAdd(a_const), name=node.name,
-            )
-        elif a_mapper is not None:
-            self._node_to_mapper[node] = a_mapper
-        elif b_mapper is not None:
-            self._node_to_mapper[node] = b_mapper
-
     def _convert_flatten_func(self, node: fx.Node) -> None:
         source = self._get_source_mapper(node)
         out_shape = self._get_output_shape(node)
@@ -75,23 +45,6 @@ class StructuralConvertMixin:
             mapper = source
         self._node_to_mapper[node] = mapper
 
-    def _convert_getitem(self, node: fx.Node) -> None:
-        source = self._get_source_mapper(node)
-        index = node.args[1] if len(node.args) > 1 else None
-        if (
-            source is not None
-            and isinstance(index, tuple)
-            and len(index) == 2
-            and isinstance(index[0], slice)
-            and index[0] == slice(None, None, None)
-            and isinstance(index[1], int)
-        ):
-            self._node_to_mapper[node] = ComputeOpMapper(
-                source, Select(index=index[1]), name=node.name,
-            )
-        else:
-            self._node_to_mapper[node] = source
-
     def _convert_cat(self, node: fx.Node) -> None:
         tensors_arg = node.args[0] if node.args else []
         dim = node.args[1] if len(node.args) > 1 else node.kwargs.get("dim", 1)
@@ -104,8 +57,22 @@ class StructuralConvertMixin:
             first_const = self._get_expanded_constant_tensor(first) if isinstance(first, fx.Node) else None
             second_mapper = self._get_mapper(second) if isinstance(second, fx.Node) else None
             if isinstance(first_const, (nn.Parameter, torch.Tensor)) and second_mapper is not None:
+                # Normalise to a single batch-stripped token tensor of shape
+                # ``(1, D)`` so ``ComputeAdapter`` auto-expands to (B, 1, D)
+                # at forward time and ``_cat_along`` produces ``(B, S+1, D)``.
+                prefix = first_const.detach().clone()
+                if prefix.dim() == 1:
+                    prefix = prefix.view(1, -1)
+                elif prefix.dim() == 3 and prefix.shape[0] == 1:
+                    prefix = prefix.squeeze(0)
                 self._node_to_mapper[node] = ComputeOpMapper(
-                    second_mapper, ConstantPrepend(first_const), name=node.name,
+                    second_mapper,
+                    ComputeAdapter(
+                        _cat_along,
+                        bound_tensors=[prefix],
+                        kwargs={"dim": int(dim)},
+                    ),
+                    name=node.name,
                 )
                 return
         source_mappers = []
