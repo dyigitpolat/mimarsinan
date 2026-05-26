@@ -647,7 +647,8 @@ body::before {
 
 input[type="text"],
 input[type="number"],
-select {
+select,
+textarea {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.82rem;
   background: var(--bg-input);
@@ -660,14 +661,22 @@ select {
   width: 100%;
 }
 
+textarea {
+  resize: vertical;
+  min-height: 4.5em;
+  line-height: 1.45;
+}
+
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--accent-blue);
   box-shadow: 0 0 0 3px var(--glow-blue);
 }
 
 input:disabled,
-select:disabled {
+select:disabled,
+textarea:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
@@ -943,6 +952,88 @@ option {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   margin-bottom: 12px;
+}
+
+/* ─── Simulation backend cards ───────────────────────────── */
+.sim-backend-card {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: rgba(0, 0, 0, 0.15);
+  transition: opacity 0.2s, border-color 0.2s;
+}
+
+.sim-backend-card.dimmed {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.sim-backend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sim-backend-title-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.sim-backend-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.sim-backend-badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  margin-left: 6px;
+}
+
+.sim-backend-hint {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.sim-backend-header .toggle-row {
+  flex-shrink: 0;
+  min-width: 100px;
+}
+
+.sim-backend-drawer {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-height 0.35s ease, opacity 0.25s ease, margin 0.25s ease;
+  margin-top: 0;
+}
+
+.sim-backend-drawer.open {
+  max-height: 900px;
+  opacity: 1;
+  pointer-events: auto;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+
+.toggle-row.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+#lifTrainingBlock.hide {
+  display: none;
 }
 
 /* ─── JSON Panel (optional) ───────────────────────────────── */

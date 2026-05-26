@@ -26,7 +26,8 @@ Single source of truth in `deployment_pipeline.py`. High-level branches:
 | `spiking_mode == "lif"` | `LIFAdaptationStep` after activation analysis |
 | `spiking_mode != "lif"` and (`activation_quantization` or TTFS) | `ClampAdaptationStep`; optional activation-quant chain when `activation_quantization` |
 | `weight_quantization` | weight-quant steps before mapping; `CoreQuantizationVerificationStep` after soft-core mapping |
-| `enable_loihi_simulation` | `LoihiSimulationStep` after `SimulationStep` (LIF only at runtime) |
+| `enable_nevresim_simulation` | `SimulationStep` (Nevresim) after hard-core mapping when true (default true) |
+| `enable_loihi_simulation` | `LoihiSimulationStep` after simulation when enabled (LIF only at runtime) |
 | `enable_sanafe_simulation` | `SanafeSimulationStep` after simulation (optional HCM parity gate) |
 
 Always: model build → (pretrain or preload) → optional torch map → optional pruning → activation analysis/adaptation → normalization fusion → soft core mapping → hard core mapping → nevresim simulation.

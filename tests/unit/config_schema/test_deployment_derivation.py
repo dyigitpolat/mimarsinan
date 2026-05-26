@@ -1,3 +1,4 @@
+from mimarsinan.config_schema.defaults import get_default_deployment_parameters
 from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
 from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
 
@@ -40,3 +41,18 @@ def test_config_builder_lif_derives_quant_flags():
     })
     dp = cfg["deployment_parameters"]
     assert dp["activation_quantization"] is False
+
+
+def test_default_cycle_accurate_lif_forward_is_true():
+    dp = get_default_deployment_parameters()
+    assert dp["cycle_accurate_lif_forward"] is True
+
+
+def test_default_enable_nevresim_simulation_is_true():
+    dp = get_default_deployment_parameters()
+    assert dp["enable_nevresim_simulation"] is True
+
+
+def test_config_builder_cycle_accurate_default_for_lif():
+    cfg = build_deployment_config_from_state({})
+    assert cfg["deployment_parameters"]["cycle_accurate_lif_forward"] is True
