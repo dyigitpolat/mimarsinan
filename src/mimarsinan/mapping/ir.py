@@ -191,7 +191,7 @@ class NeuralCore(IRNode):
 @dataclass
 class ComputeOp(IRNode):
     """Non-neural compute op (pooling, norm, attention, etc.)."""
-    op_type: str  # "max_pool2d", "avg_pool2d", "adaptive_avg_pool2d", "flatten", etc.
+    op_type: str  # Free-form display label; ``params["module"]`` is authoritative.
     params: Dict[str, Any] = field(default_factory=dict)
 
     input_shape: Tuple[int, ...] | None = None
@@ -202,41 +202,21 @@ class ComputeOp(IRNode):
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """Execute the non-neural operation (gather + reshape + dispatch)."""
         x = self._gather_structured_input(input_tensor, buffers)
-        return self._dispatch(x)
+        return self._exec_module(x)
 
     def execute_on_gathered(self, flat_input: torch.Tensor) -> torch.Tensor:
-        """Execute on pre-gathered flat input ``(B, N)``."""
-        return self._dispatch(flat_input)
-
-    def _dispatch(self, x: torch.Tensor) -> torch.Tensor:
-        """Execute the wrapped host-side ``nn.Module``.
-
-        All non-neural ComputeOps share one dispatch path: ``params["module"]``
-        is the ``nn.Module`` to run, gathered ``(B, N)`` input is reshaped
-        through ``input_shape`` / ``input_shapes`` first.  ``op_type`` is a
-        free-form display label (typically ``type(module).__name__``) — it
-        has no role in dispatch.
-        """
-        return self._exec_module(x)
+        return self._exec_module(flat_input)
 
     def _gather_structured_input(
         self,
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """Gather inputs into flat ``(B, N)``."""
-        return self.gather_inputs(input_tensor, buffers)  # (B, N)
+        return self.gather_inputs(input_tensor, buffers)
 
     def _exec_module(self, x: torch.Tensor) -> torch.Tensor:
-        """Execute a generic PyTorch module stored in params.
-
-        Reshapes flat (B, N) input to the module's expected shape,
-        runs the module, and flattens the output back.  Ensures the
-        module lives on the same device as the input (handles
-        deserialized-from-pickle modules that land on CPU).
-        """
+        """Reshape flat ``(B, N)`` per ``input_shape(s)``, run module, flatten back."""
         module = self.params["module"]
         if hasattr(module, "to"):
             module.to(x.device)

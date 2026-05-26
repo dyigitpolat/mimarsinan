@@ -21,13 +21,7 @@ def _is_perceptron_holder(node) -> bool:
 
 
 def _wraps_unbounded_raw_linear_or_conv(mapper) -> bool:
-    """True if a ``ComputeOpMapper`` wraps a bare ``nn.Linear``/``Conv`` (or
-    ``nn.Sequential`` starting with one) — i.e. its output is raw, signed,
-    unbounded values that need a trailing activation before spike encoding.
-
-    Bounded-output modules (pool, layernorm, function wrappers) return False —
-    the walk continues past them as before.
-    """
+    """True if a ``ComputeOpMapper`` wraps a bare Linear/Conv (signed, unbounded output)."""
     module = getattr(mapper, "module", None)
     if module is None:
         return False
@@ -39,21 +33,13 @@ def _wraps_unbounded_raw_linear_or_conv(mapper) -> bool:
 
 
 def _is_encoding_segment_start(node) -> bool:
-    """True if this perceptron starts a segment — its input is not a clean
-    spike stream and so its forward must run host-side as a ComputeOp.
+    """True iff the upstream chain starts at raw input or unbounded host output.
 
-    Walks ``source_mapper`` upward: structural mappers (Einops, reshape, etc.)
-    are transparent. Stops at:
-
-    * Another perceptron mapper → not an encoding start (upstream is on-chip
-      spike output).
-    * ``InputMapper`` → encoding (first neural op from raw input).
-    * ``ComputeOpMapper`` wrapping a bare Linear/Conv → encoding.
-      That upstream ComputeOp produces unbounded raw values, so this
-      Perceptron cannot consume them on-chip (spike encoding undefined);
-      it must run host-side where the activation closes the segment.
-    * ``ComputeOpMapper`` wrapping a bounded op (pool, layernorm, GELU,
-      generic function wrapper) → transparent; keep walking.
+    A perceptron whose source produces signed / unbounded values (raw Linear /
+    Conv ComputeOp, or the raw network input) cannot be fed spikes directly —
+    its forward must run host-side as a ComputeOp.  Structural mappers and
+    bounded-output ComputeOps (LayerNorm, pool, GELU, ...) are transparent;
+    upstream perceptrons stop the walk (on-chip spike output is fine).
     """
     src = node.source_mapper
     while src is not None:

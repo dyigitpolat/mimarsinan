@@ -1,25 +1,4 @@
-"""Host-side ComputeOp payloads.
-
-The framework synthesises an ``nn.Module`` payload for every non-neural
-``ComputeOp`` so the shared ``_exec_module`` executor can run it host-side
-during simulation.  There are exactly two payload kinds:
-
-* :class:`ComputeAdapter` — generic adapter for any picklable callable
-  (functions / methods / get_attr-bound ops) with optional bound tensor
-  constants and extra args/kwargs.  Bound constants are stored
-  batch-stripped; the adapter prepends batch dim 0 and expands them to
-  match the input's batch size at forward time.  Replaces every former
-  per-op wrapper.
-
-* :class:`ScaleNormalizingWrapper` — dynamic per-source rate→absolute→rate
-  rescaling stamped onto multi-input ``ComputeOpMapper``s whose source
-  scales diverge.  Different category; lives here to keep all host-side
-  payload classes in one file.
-
-A small picklable utility ``_cat_along`` is exposed for ops whose call
-structure does not fit the generic ``fn(*inputs, *bound)`` signature
-(``torch.cat`` takes a list-of-tensors first arg).
-"""
+"""Host-side ComputeOp payload classes."""
 
 from __future__ import annotations
 
@@ -32,37 +11,14 @@ from mimarsinan.mapping.scale_broadcast import broadcast_scale_to_dim
 
 
 def _cat_along(x: torch.Tensor, prefix: torch.Tensor, *, dim: int) -> torch.Tensor:
-    """``torch.cat([prefix, x], dim=dim)`` as a flat-positional callable.
-
-    Used for constant-prepend patterns (CLS token in ViT and similar).
-    Module-level + picklable so it can be stored in
-    ``ComputeAdapter.fn`` and survive IR pickling.
-    """
     return torch.cat([prefix, x], dim=dim)
 
 
 class ComputeAdapter(nn.Module):
-    """Generic host-side ComputeOp payload for any picklable callable.
+    """Generic host-side ComputeOp payload wrapping a picklable callable.
 
-    Tensor constants are stored as non-trainable ``nn.Parameter``\\ s
-    with the batch dim stripped.  At forward time, the adapter prepends
-    batch dim 0 and expands every bound tensor to match the input's
-    batch size, then calls
-    ``fn(*inputs, *bound_expanded, *extra_args, **kwargs)``.
-
-    This invariant means IR-time shape inference (``probe_module_io_shapes``)
-    does not need to reason about batch dim — it always probes at
-    batch=1 — and the wrapper still works for any runtime batch size,
-    including future batched soft-core execution.
-
-    The adapter subsumes the former specialized wrappers ``Add``,
-    ``Mean``, ``Select``, ``ConstantAdd``, ``ConstantPrepend`` and the
-    converter-local ``_FunctionWrapper`` — there is one host-side
-    payload class for every non-neural op.
-
-    Display: ``op_type`` labelling in the IR uses ``display_name``,
-    which reports the wrapped callable's qualified name so GUI / DOT
-    visualisations stay readable.
+    Bound tensors are stored batch-stripped; ``forward`` expands them to the
+    input batch size, so IR-time shape inference always probes at batch=1.
     """
 
     def __init__(
@@ -86,7 +42,6 @@ class ComputeAdapter(nn.Module):
 
     @property
     def display_name(self) -> str:
-        """Readable callable name for IR ``op_type`` / GUI labels."""
         fn = self.fn
         module = getattr(fn, "__module__", "")
         name = getattr(fn, "__qualname__", None) or getattr(fn, "__name__", None)
@@ -98,28 +53,16 @@ class ComputeAdapter(nn.Module):
         return [getattr(self, f"bound_{i}") for i in range(self._bound_count)]
 
     def forward(self, *inputs: torch.Tensor) -> torch.Tensor:
-        if inputs:
-            batch_size = inputs[0].shape[0]
-        else:
-            batch_size = 1
-        expanded_bound: list[torch.Tensor] = []
-        for tensor in self._bound_tensors():
-            expanded_bound.append(
-                tensor.unsqueeze(0).expand(batch_size, *tensor.shape)
-            )
+        batch_size = inputs[0].shape[0] if inputs else 1
+        expanded_bound = [
+            t.unsqueeze(0).expand(batch_size, *t.shape) for t in self._bound_tensors()
+        ]
         return self.fn(
             *inputs, *expanded_bound, *self.extra_args, **self.kwargs,
         )
 
     @classmethod
     def from_fx_node(cls, node, fn) -> "ComputeAdapter":
-        """Build a ``ComputeAdapter`` from a ``call_function`` FX node.
-
-        ``args[0]`` is the input tensor (handled by the mapper source);
-        remaining non-Node positional args are captured as ``extra_args``,
-        and all non-Node kwargs are captured.  Replaces the former
-        ``_FunctionWrapper.from_fx_node``.
-        """
         import torch.fx as fx
         extra_args = tuple(a for a in node.args[1:] if not isinstance(a, fx.Node))
         kwargs = {k: v for k, v in node.kwargs.items() if not isinstance(v, fx.Node)}
@@ -127,16 +70,10 @@ class ComputeAdapter(nn.Module):
 
 
 class ScaleNormalizingWrapper(nn.Module):
-    """Per-source rate→absolute and absolute→rate rescaling around a host module.
+    """Per-source rate→absolute→rate rescaling around a wrapped module.
 
-    Each input source slice ``r_i`` is a rate stream representing real values
-    ``v_i = r_i · s_i``; downstream perceptrons read this rate stream against
-    a single combined ``s_out``.  This wrapper computes
-    ``f(r_1 · s_1, …, r_N · s_N) / s_out`` so the underlying module ``f``
-    operates in absolute units and the output is rebased to ``s_out``.
-
-    Buffers are registered (not stored as Python lists) so the wrapper
-    pickles cleanly and follows ``.to(device)``.
+    Computes ``f(r_1·s_1, ..., r_N·s_N) / s_out`` so ``f`` operates in absolute
+    units while inputs/outputs travel as rates.
     """
 
     def __init__(

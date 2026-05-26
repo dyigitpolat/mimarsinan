@@ -1,4 +1,4 @@
-"""Linear/FC conversion: _convert_linear, _activation_to_name."""
+"""Linear/FC conversion with BN/activation absorption."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 class LinearConvertMixin:
     @staticmethod
     def _activation_to_name(act_mod) -> str | None:
-        """Map a PyTorch activation module to a Perceptron activation name string."""
         if act_mod is None:
             return None
         if isinstance(act_mod, nn.ReLU):
@@ -46,8 +45,6 @@ class LinearConvertMixin:
         source = Ensure2DMapper(source)
 
         if act_name is None:
-            # No activation detected → generic compute op (not a perceptron).
-            # Build a sequential module wrapping Linear + optional BN.
             linear = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
@@ -60,7 +57,6 @@ class LinearConvertMixin:
                 name=node.name,
             )
         else:
-            # Activation detected → perceptron (will be deployed on chip)
             normalization = copy.deepcopy(bn_mod) if bn_mod is not None else nn.Identity()
             perceptron = Perceptron(
                 output_channels=mod.out_features,

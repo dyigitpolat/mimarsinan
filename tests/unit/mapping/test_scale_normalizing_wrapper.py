@@ -1,11 +1,4 @@
-"""Tests for :class:`ScaleNormalizingWrapper` parity with the legacy Add scaling.
-
-The historical ``_exec_add`` formula was
-``(s_a/s_out) * a + (s_b/s_out) * b`` where ``s_out = (s_a + s_b) / 2``.
-:class:`ScaleNormalizingWrapper` generalises that to any multi-input
-module via ``f(r_i * s_i) / s_out``; for ``f = Add`` it reduces to the
-same arithmetic.
-"""
+"""Tests for :class:`ScaleNormalizingWrapper`."""
 
 from __future__ import annotations
 
@@ -18,7 +11,6 @@ from mimarsinan.mapping.compute_modules import ComputeAdapter, ScaleNormalizingW
 
 
 def _add():
-    """Test-local helper: binary add as a ``ComputeAdapter``."""
     return ComputeAdapter(operator.add)
 
 
@@ -38,7 +30,7 @@ class TestAddParityWithLegacyScaling:
         """Equivalent to legacy ``(s_a/s_out)*a + (s_b/s_out)*b``."""
         s_a = torch.tensor([2.0, 4.0])
         s_b = torch.tensor([6.0, 8.0])
-        s_out = (s_a + s_b) / 2.0   # legacy heuristic
+        s_out = (s_a + s_b) / 2.0
 
         wrapper = ScaleNormalizingWrapper(_add(), [s_a, s_b], s_out)
 
@@ -46,7 +38,6 @@ class TestAddParityWithLegacyScaling:
         b = torch.tensor([[0.3, 0.1]])
         out = wrapper(a, b)
 
-        # f(s_a * a, s_b * b) / s_out = (s_a*a + s_b*b) / s_out
         expected = (s_a * a + s_b * b) / s_out
         assert torch.allclose(out, expected, atol=1e-6)
 
@@ -95,5 +86,4 @@ class TestThreeInputModule:
         b = torch.tensor([[1.0]])
         c = torch.tensor([[1.0]])
         out = wrapper(a, b, c)
-        # (1*1 + 1*2 + 1*3) / 2 = 3.0
         assert torch.allclose(out, torch.tensor([[3.0]]))

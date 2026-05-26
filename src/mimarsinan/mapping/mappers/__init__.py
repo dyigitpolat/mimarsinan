@@ -1,11 +1,4 @@
-"""Mapper hierarchy: base, structural, perceptron, leading-dim, conv mappers.
-
-Non-neural ops collapse onto a single :class:`ComputeOpMapper` carrying any
-``nn.Module`` (see :mod:`mimarsinan.mapping.compute_modules` for the small
-``Add`` / ``Mean`` / ``Select`` / ``ConstantAdd`` / ``ConstantPrepend`` /
-``ScaleNormalizingWrapper`` wrappers used for ops that are not already
-canonical torch modules).
-"""
+"""Mapper hierarchy: base, structural, perceptron, leading-dim, conv mappers."""
 
 from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.mapping.mappers.structural import (

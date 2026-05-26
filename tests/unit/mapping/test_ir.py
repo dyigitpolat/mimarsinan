@@ -107,9 +107,6 @@ class TestNeuralCore:
 
 
 class TestComputeOp:
-    """ComputeOp always dispatches through ``_exec_module`` — ``op_type`` is a
-    free-form display label, the executable lives in ``params['module']``."""
-
     def test_identity(self):
         sources = np.array([IRSource(-2, i) for i in range(4)], dtype=object)
         op = ComputeOp(

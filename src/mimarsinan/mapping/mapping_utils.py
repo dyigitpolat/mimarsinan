@@ -12,7 +12,6 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
-# Import IR types (late binding to avoid circular imports)
 def _get_ir_types():
     from mimarsinan.mapping.ir import IRSource
     return IRSource
@@ -21,7 +20,6 @@ def _create_ir_input_source(idx):
     IRSource = _get_ir_types()
     return IRSource(node_id=-2, index=idx)
 
-# Re-export from cycle-break modules (ir imports soft_core_mapper lazily; no cycle).
 from mimarsinan.mapping.soft_core_mapper import SoftCoreMapping
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.chip_export import (

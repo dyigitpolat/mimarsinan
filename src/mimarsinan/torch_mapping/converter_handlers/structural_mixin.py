@@ -1,9 +1,4 @@
-"""Structural shortcuts: cat / flatten + BatchNorm/activation absorption helpers.
-
-Compute ops (``+``, ``getitem``, ``mean``, generic functions, ...) flow
-through :meth:`MapperGraphConverter._emit_generic_compute_op` instead of
-op-specific handlers — see ``mapper_graph_converter.py``.
-"""
+"""Structural shortcuts (cat / flatten) and BN / activation absorption helpers."""
 
 from __future__ import annotations
 
@@ -36,7 +31,6 @@ class StructuralConvertMixin:
         self._node_to_mapper[node] = mapper
 
     def _convert_flatten_module(self, node: fx.Node, source) -> None:
-        """Convert nn.Flatten (call_module) to ReshapeMapper."""
         out_shape = self._get_output_shape(node)
         if out_shape is not None and len(out_shape) == 2:
             flat_shape = (out_shape[-1],)
@@ -57,9 +51,8 @@ class StructuralConvertMixin:
             first_const = self._get_expanded_constant_tensor(first) if isinstance(first, fx.Node) else None
             second_mapper = self._get_mapper(second) if isinstance(second, fx.Node) else None
             if isinstance(first_const, (nn.Parameter, torch.Tensor)) and second_mapper is not None:
-                # Normalise to a single batch-stripped token tensor of shape
-                # ``(1, D)`` so ``ComputeAdapter`` auto-expands to (B, 1, D)
-                # at forward time and ``_cat_along`` produces ``(B, S+1, D)``.
+                # Normalise to batch-stripped ``(1, D)`` so ComputeAdapter auto-expands
+                # to ``(B, 1, D)`` before ``_cat_along`` produces ``(B, S+1, D)``.
                 prefix = first_const.detach().clone()
                 if prefix.dim() == 1:
                     prefix = prefix.view(1, -1)
@@ -91,7 +84,6 @@ class StructuralConvertMixin:
         self._node_to_mapper[node] = mapper
 
     def _propagate_absorbed(self, node: fx.Node) -> None:
-        """For an absorbed node, point it at its source's mapper."""
         if len(node.args) >= 1 and isinstance(node.args[0], fx.Node):
             self._node_to_mapper[node] = self._get_mapper(node.args[0])
 
@@ -104,15 +96,14 @@ class StructuralConvertMixin:
     ):
         """Find the first absorbed follower of ``node`` matching ``target_types``.
 
-        Skips through absorbed Identity modules (always) and BatchNorm
-        modules (when ``skip_bn=True``) to reach the target.
+        Walks through absorbed Identity (and BatchNorm when ``skip_bn=True``)
+        to reach the target.
         """
         for user in node.users:
             if user.name in self._absorbed and user.op == "call_module":
                 mod = self._modules.get(user.target)
                 if mod is not None and isinstance(mod, target_types):
                     return mod
-                # Skip through Identity (always) and BN (when skip_bn)
                 if isinstance(mod, nn.Identity):
                     return self._find_absorbed_follower(user, target_types, report, skip_bn)
                 if skip_bn and isinstance(mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
