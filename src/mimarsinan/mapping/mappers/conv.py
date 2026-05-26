@@ -14,7 +14,6 @@ from mimarsinan.transformations.perceptron_transformer import PerceptronTransfor
 
 
 def _chunk_sizes(total: int, chunk: int):
-    """Split ``total`` into chunks of size at most ``chunk``."""
     assert chunk > 0
     sizes = []
     remaining = int(total)

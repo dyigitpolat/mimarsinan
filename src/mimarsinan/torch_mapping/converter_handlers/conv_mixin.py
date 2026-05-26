@@ -1,4 +1,4 @@
-"""Conv conversion: _convert_conv2d, _convert_conv1d, _copy_bn_params."""
+"""Conv1D / Conv2D conversion with BN/activation absorption."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 class ConvConvertMixin:
     @staticmethod
     def _conv_activation_to_name(act_mod) -> str | None:
-        """Map a PyTorch activation module to a Perceptron activation name string."""
         if act_mod is None:
             return None
         if isinstance(act_mod, nn.ReLU):
@@ -43,14 +42,12 @@ class ConvConvertMixin:
         act_name = self._conv_activation_to_name(act_mod)
 
         if act_name is None:
-            # No activation detected → generic compute op
             conv_copy = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
                 module = nn.Sequential(conv_copy, bn_copy)
             else:
                 module = conv_copy
-            # Infer output shape from FX metadata (strip batch dim)
             out_shape_with_batch = self._get_output_shape(node)
             output_shape = tuple(out_shape_with_batch[1:]) if out_shape_with_batch else None
             input_shape_with_batch = self._get_input_shape(node)
@@ -60,7 +57,6 @@ class ConvConvertMixin:
                 output_shape=output_shape, name=node.name,
             )
         else:
-            # Activation detected → perceptron (will be deployed on chip)
             conv_mapper = Conv2DPerceptronMapper(
                 source,
                 in_channels=mod.in_channels,
@@ -103,7 +99,6 @@ class ConvConvertMixin:
         act_name = self._conv_activation_to_name(act_mod)
 
         if act_name is None:
-            # No activation → generic compute op
             conv_copy = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
@@ -140,7 +135,6 @@ class ConvConvertMixin:
 
     @staticmethod
     def _copy_bn_params(dst_bn: nn.Module, src_bn: nn.Module) -> None:
-        """Copy BatchNorm parameters from source to destination."""
         if isinstance(dst_bn, nn.Identity):
             return
 

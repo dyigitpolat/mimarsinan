@@ -1,9 +1,4 @@
-"""Structural mappers: Input, Reshape, EinopsRearrange, Stack, Concat, Subscript, Permute.
-
-Multi-input element-wise add and mean-reduction are now expressed as
-``ComputeOpMapper(sources, Add())`` / ``ComputeOpMapper(source, Mean(dim))``
-— see :mod:`mimarsinan.mapping.compute_modules`.
-"""
+"""Structural mappers: Input, Reshape, EinopsRearrange, Stack, Concat, Subscript, Permute."""
 
 from __future__ import annotations
 
@@ -126,22 +121,16 @@ class SubscriptMapper(Mapper):
 
 
 class PermuteMapper(Mapper):
-    """Mapper for ``tensor.permute(*dims)`` or ``tensor.transpose(d0, d1)``.
+    """``tensor.permute(*dims)`` / ``tensor.transpose(d0, d1)``.
 
-    * ``_forward_impl`` applies the true permutation — required for correct
-      software validation (ReshapeMapper.view would silently scramble values).
-    * ``_map_to_ir`` uses ``np.transpose`` with the batch-stripped
-      permutation so that IRSource arrays are reordered correctly
-      for hardware layout.
-
-    ``dims`` is the full permutation tuple including the batch axis 0,
-    e.g. ``(0, 2, 1)`` for a 3-D batch-first tensor.
+    ``dims`` includes batch axis 0 (e.g. ``(0, 2, 1)`` for 3-D batch-first).
+    Forward applies the true permutation; IR mapping uses batch-stripped
+    ``np.transpose`` so IRSource arrays reorder correctly for hardware layout.
     """
 
     def __init__(self, source_mapper, dims):
         super(PermuteMapper, self).__init__(source_mapper)
         self.dims = tuple(dims)
-        # numpy permutation: drop batch dim 0, shift remaining axes by -1.
         self._np_dims = tuple(d - 1 for d in self.dims if d != 0)
 
     def _map_to_ir(self, ir_mapping):

@@ -1,12 +1,4 @@
-"""Tests for ``Mean``-via-``ComputeOpMapper`` IR mapping correctness.
-
-Regression guard for the bug where the original ``MeanMapper._map_to_ir``
-used [0] (selecting only the first group) instead of creating a ComputeOp
-that averages all groups.  After the ComputeOpMapper unification the
-``Mean(nn.Module)`` is wrapped by ``ComputeOpMapper`` and the executor
-reshapes the gathered ``(B, N)`` flat input back to the structured
-``input_shape`` before reducing.
-"""
+"""Regression: ``ComputeOpMapper(Mean)`` must average over all groups, not select [0]."""
 
 import numpy as np
 import pytest
@@ -21,16 +13,12 @@ from mimarsinan.mapping.ir import ComputeOp, IRSource
 
 
 def _Mean(dim):
-    """Test-local helper: ``torch.mean(x, dim=dim)`` packaged for ``ComputeAdapter``."""
     return ComputeAdapter(torch.mean, kwargs={"dim": dim})
 
 
 class TestMeanMapperIRMapping:
-    """Verify the Mean ComputeOpMapper emits a single reducing ComputeOp."""
-
     def test_creates_compute_op(self):
-        """_map_to_ir must return sources from a ComputeOp, not raw subscript."""
-        inp = InputMapper((4, 8))  # 4 groups, 8 features each
+        inp = InputMapper((4, 8))
         mean = ComputeOpMapper(inp, _Mean(dim=1))
 
         ir_mapping = IRMapping(
@@ -38,11 +26,8 @@ class TestMeanMapperIRMapping:
         )
         result = mean.map_to_ir(ir_mapping)
 
-        # Result should be 1D array of 8 IRSource objects
-        assert result.shape == (8,), f"Expected shape (8,), got {result.shape}"
+        assert result.shape == (8,)
 
-        # Each source should point to a ComputeOp node
-        # (node_id should be a valid non-input node)
         for src in result.flatten():
             assert isinstance(src, IRSource)
             assert src.node_id >= 0, (
@@ -51,8 +36,7 @@ class TestMeanMapperIRMapping:
             )
 
     def test_compute_op_has_all_groups_as_inputs(self):
-        """The mean ComputeOp must wire ALL groups, not just group 0."""
-        inp = InputMapper((4, 8))  # 4 groups, 8 features
+        inp = InputMapper((4, 8))
         mean = ComputeOpMapper(inp, _Mean(dim=1))
 
         ir_mapping = IRMapping(
@@ -60,15 +44,12 @@ class TestMeanMapperIRMapping:
         )
         result = mean.map_to_ir(ir_mapping)
 
-        # Output shape: 8 features after mean over 4 groups.
         assert result.shape == (8,)
 
-        # All output sources should come from the same ComputeOp node.
         node_ids = set(src.node_id for src in result.flatten())
-        assert len(node_ids) == 1, f"Expected 1 ComputeOp node, got {len(node_ids)} distinct nodes"
+        assert len(node_ids) == 1
 
     def test_compute_op_executes_mean_correctly(self):
-        """The Mean ComputeOp must actually compute the mean, not select [0]."""
         op = ComputeOp(
             id=0,
             name="test_mean",
@@ -79,20 +60,14 @@ class TestMeanMapperIRMapping:
             output_shape=(4,),
         )
 
-        # 3 groups of 4 features → mean over groups
-        # Group 0: [1, 2, 3, 4], Group 1: [5, 6, 7, 8], Group 2: [9, 10, 11, 12]
         flat_input = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]], dtype=torch.float32)
         result = op.execute_on_gathered(flat_input)
 
-        expected = torch.tensor([[5.0, 6.0, 7.0, 8.0]])  # mean of each feature across groups
-        assert torch.allclose(result, expected, atol=1e-6), (
-            f"Mean ComputeOp result {result} != expected {expected}"
-        )
+        expected = torch.tensor([[5.0, 6.0, 7.0, 8.0]])
+        assert torch.allclose(result, expected, atol=1e-6)
 
 
 class TestMeanMapperForward:
-    """Verify the ComputeOpMapper(Mean) _forward_impl computes the true mean."""
-
     def test_forward_computes_mean(self):
         inp = InputMapper((4, 8))
         mean = ComputeOpMapper(inp, _Mean(dim=1))
