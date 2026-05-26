@@ -13,11 +13,16 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.compute_modules import Mean
+from mimarsinan.mapping.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
 from mimarsinan.mapping.mappers.structural import InputMapper
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir import ComputeOp, IRSource
+
+
+def _Mean(dim):
+    """Test-local helper: ``torch.mean(x, dim=dim)`` packaged for ``ComputeAdapter``."""
+    return ComputeAdapter(torch.mean, kwargs={"dim": dim})
 
 
 class TestMeanMapperIRMapping:
@@ -26,7 +31,7 @@ class TestMeanMapperIRMapping:
     def test_creates_compute_op(self):
         """_map_to_ir must return sources from a ComputeOp, not raw subscript."""
         inp = InputMapper((4, 8))  # 4 groups, 8 features each
-        mean = ComputeOpMapper(inp, Mean(dim=1))
+        mean = ComputeOpMapper(inp, _Mean(dim=1))
 
         ir_mapping = IRMapping(
             q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024,
@@ -48,7 +53,7 @@ class TestMeanMapperIRMapping:
     def test_compute_op_has_all_groups_as_inputs(self):
         """The mean ComputeOp must wire ALL groups, not just group 0."""
         inp = InputMapper((4, 8))  # 4 groups, 8 features
-        mean = ComputeOpMapper(inp, Mean(dim=1))
+        mean = ComputeOpMapper(inp, _Mean(dim=1))
 
         ir_mapping = IRMapping(
             q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024,
@@ -69,7 +74,7 @@ class TestMeanMapperIRMapping:
             name="test_mean",
             input_sources=np.array([IRSource(node_id=-2, index=i) for i in range(12)]),
             op_type="module",
-            params={"module": Mean(dim=1), "input_shape": (3, 4)},
+            params={"module": _Mean(dim=1), "input_shape": (3, 4)},
             input_shape=(3, 4),
             output_shape=(4,),
         )
@@ -90,7 +95,7 @@ class TestMeanMapperForward:
 
     def test_forward_computes_mean(self):
         inp = InputMapper((4, 8))
-        mean = ComputeOpMapper(inp, Mean(dim=1))
+        mean = ComputeOpMapper(inp, _Mean(dim=1))
 
         x = torch.randn(2, 4, 8)
         result = mean.forward(x)

@@ -1,6 +1,8 @@
-"""Unit tests for the unified ``ComputeOpMapper`` and its compute-module wrappers."""
+"""Unit tests for the unified ``ComputeOpMapper`` and its ``ComputeAdapter`` payload."""
 
 from __future__ import annotations
+
+import operator
 
 import numpy as np
 import pytest
@@ -8,11 +10,9 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.compute_modules import (
-    Add,
-    ConstantAdd,
-    Mean,
+    ComputeAdapter,
     ScaleNormalizingWrapper,
-    Select,
+    _cat_along,
 )
 from mimarsinan.mapping.ir import ComputeOp
 from mimarsinan.mapping.ir_mapping import IRMapping
@@ -68,23 +68,32 @@ class TestUnary2DPerInstance:
 class TestUnary2DWholeTensor:
     def test_mean_emits_single_compute_op(self):
         inp = InputMapper((4, 8))  # 4 groups, 8 features
-        mapper = ComputeOpMapper(inp, Mean(dim=1))
+        mapper = ComputeOpMapper(
+            inp, ComputeAdapter(torch.mean, kwargs={"dim": 1}),
+        )
         ir = IRMapping(q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024)
         result = mapper.map_to_ir(ir)
         compute_ops = [n for n in ir.nodes if isinstance(n, ComputeOp)]
         assert len(compute_ops) == 1
-        assert compute_ops[0].op_type == "Mean"
+        # Display label reports the wrapped callable, not "ComputeAdapter".
+        assert "mean" in compute_ops[0].op_type.lower()
         assert compute_ops[0].input_shape == (4, 8)
         assert result.shape == (8,)
 
     def test_select_token(self):
         inp = InputMapper((5, 7))
-        mapper = ComputeOpMapper(inp, Select(index=0))
+        mapper = ComputeOpMapper(
+            inp,
+            ComputeAdapter(
+                operator.getitem,
+                extra_args=((slice(None), 0),),
+            ),
+        )
         ir = IRMapping(q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024)
         result = mapper.map_to_ir(ir)
         compute_ops = [n for n in ir.nodes if isinstance(n, ComputeOp)]
         assert len(compute_ops) == 1
-        assert compute_ops[0].op_type == "Select"
+        assert "getitem" in compute_ops[0].op_type
         assert result.shape == (7,)
 
 
@@ -92,14 +101,38 @@ class TestMultiInput:
     def test_two_input_add(self):
         a = InputMapper((4,))   # → (1, 4)
         b = InputMapper((4,))
-        mapper = ComputeOpMapper([a, b], Add())
+        mapper = ComputeOpMapper([a, b], ComputeAdapter(operator.add))
         ir = IRMapping(q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024)
         result = mapper.map_to_ir(ir)
         compute_ops = [n for n in ir.nodes if isinstance(n, ComputeOp)]
         assert len(compute_ops) == 1
-        assert compute_ops[0].op_type == "Add"
+        assert "add" in compute_ops[0].op_type
         # Sources are (1, 4); Add preserves shape → (1, 4).
         assert compute_ops[0].output_shape == (1, 4)
+
+
+class TestBoundTensorPattern:
+    """ComputeAdapter with bound tensors handles batch broadcasting on its own."""
+
+    def test_constant_add_broadcasts(self):
+        const = torch.tensor([10.0, 20.0, 30.0])  # batch-stripped
+        adapter = ComputeAdapter(operator.add, bound_tensors=[const])
+
+        x = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])  # (B=2, 3)
+        out = adapter(x)
+        expected = x + const  # torch auto-broadcasts; result must match
+        assert torch.allclose(out, expected)
+
+    def test_constant_prepend_via_cat_along(self):
+        cls_token = torch.zeros(1, 4)  # one token, 4 features
+        adapter = ComputeAdapter(
+            _cat_along, bound_tensors=[cls_token], kwargs={"dim": 1},
+        )
+        x = torch.randn(3, 5, 4)  # (B=3, S=5, D=4)
+        out = adapter(x)
+        assert out.shape == (3, 6, 4)
+        assert torch.allclose(out[:, 0], torch.zeros(3, 4))  # prepended zeros
+        assert torch.allclose(out[:, 1:], x)
 
 
 class TestScaleAwareEmission:
@@ -108,17 +141,17 @@ class TestScaleAwareEmission:
     def test_unwrapped_when_scales_unset(self):
         a = InputMapper((3,))
         b = InputMapper((3,))
-        mapper = ComputeOpMapper([a, b], Add())
+        mapper = ComputeOpMapper([a, b], ComputeAdapter(operator.add))
         ir = IRMapping(q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024)
         mapper.map_to_ir(ir)
         op = [n for n in ir.nodes if isinstance(n, ComputeOp)][0]
-        # No wrapper — params["module"] is the bare Add.
-        assert isinstance(op.params["module"], Add)
+        # No wrapper — params["module"] is the bare ComputeAdapter.
+        assert isinstance(op.params["module"], ComputeAdapter)
 
     def test_wrapped_when_scales_set(self):
         a = InputMapper((3,))
         b = InputMapper((3,))
-        mapper = ComputeOpMapper([a, b], Add())
+        mapper = ComputeOpMapper([a, b], ComputeAdapter(operator.add))
         mapper.per_source_scales = [torch.tensor([2.0, 2.0, 2.0]), torch.tensor([4.0, 4.0, 4.0])]
         mapper.output_scale = torch.tensor([3.0, 3.0, 3.0])
         ir = IRMapping(q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024)

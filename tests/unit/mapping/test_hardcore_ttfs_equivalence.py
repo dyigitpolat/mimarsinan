@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from mimarsinan.mapping.compute_modules import Mean
+from mimarsinan.mapping.compute_modules import ComputeAdapter as _CA
 from mimarsinan.mapping.mappers.structural import (
     InputMapper, PermuteMapper, EinopsRearrangeMapper,
 )
@@ -171,7 +171,7 @@ class TestHardCoreTTFSMiniMixer:
         perm3 = PermuteMapper(fc_tok, (0, 2, 1))
 
         # Mean pool over patches
-        mean = ComputeOpMapper(perm3, Mean(dim=1))
+        mean = ComputeOpMapper(perm3, _CA(torch.mean, kwargs={"dim": 1}))
 
         # Classifier (ReLU — adapted from Identity via Clamp Adaptation)
         p_cls = Perceptron(3, patch_dim, normalization=nn.Identity(),
@@ -215,7 +215,7 @@ class TestHardCoreTTFSMiniMixer:
         )
         flat = EinopsRearrangeMapper(conv, "... c h w -> ... c (h w)")
         perm1 = PermuteMapper(flat, (0, 2, 1))
-        mean = ComputeOpMapper(perm1, Mean(dim=1))
+        mean = ComputeOpMapper(perm1, _CA(torch.mean, kwargs={"dim": 1}))
         p_cls = Perceptron(3, patch_dim, normalization=nn.Identity(),
                            base_activation_name="ReLU")
         classifier = PerceptronMapper(mean, p_cls)

@@ -12,7 +12,9 @@ from mimarsinan.mapping.mapping_structure import (
     compute_fc_tiling_mode,
     compute_psum_params,
 )
-from mimarsinan.mapping.compute_modules import Add
+import operator
+
+from mimarsinan.mapping.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import (
     ComputeOpMapper,
     Conv1DPerceptronMapper,
@@ -282,7 +284,12 @@ def generate_softcore_flowchart_dot(
                 has_bias=bool(node.bias),
                 **_est_kw,
             )
-        elif isinstance(node, ComputeOpMapper) and isinstance(getattr(node, "module", None), Add):
+        elif (
+            isinstance(node, ComputeOpMapper)
+            and isinstance(getattr(node, "module", None), ComputeAdapter)
+            and getattr(node.module, "fn", None) is operator.add
+            and getattr(node.module, "_bound_count", 0) == 0
+        ):
             # Add is mapped as a linear op (concat + identity weights). Estimate roughly.
             # For visualization purposes, treat it as 1 instance, axons=2*features, neurons=features.
             if out_shape is not None and len(out_shape) == 1:

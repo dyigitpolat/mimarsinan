@@ -18,7 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.fx as fx
 
-from mimarsinan.mapping.compute_modules import Mean
+from mimarsinan.mapping.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import (
     ComputeOpMapper,
     InputMapper,
@@ -38,33 +38,6 @@ from mimarsinan.torch_mapping.converter_handlers import (
     ConvConvertMixin,
     StructuralConvertMixin,
 )
-
-
-class _FunctionWrapper(nn.Module):
-    """Wrap an ``F.*`` function call as an ``nn.Module`` for ModuleComputeMapper.
-
-    Captures the function and its non-tensor arguments (kwargs and positional
-    args beyond the first tensor) from an FX node so the wrapped function can
-    be called as ``module(x)`` during forward and spiking simulation.
-    """
-
-    def __init__(self, fn, extra_args=(), kwargs=None):
-        super().__init__()
-        self.fn = fn
-        self.extra_args = extra_args
-        self.kwargs = kwargs or {}
-
-    def forward(self, x):
-        return self.fn(x, *self.extra_args, **self.kwargs)
-
-    @classmethod
-    def from_fx_node(cls, node: fx.Node, fn) -> "_FunctionWrapper":
-        # args[0] is the input tensor (handled by the mapper source);
-        # remaining args are parameters (kernel_size, stride, etc.)
-        extra_args = tuple(a for a in node.args[1:] if not isinstance(a, fx.Node))
-        # Filter out training= for dropout etc. — keep all kwargs
-        kwargs = {k: v for k, v in node.kwargs.items() if not isinstance(v, fx.Node)}
-        return cls(fn, extra_args, kwargs)
 
 
 class MapperGraphConverter(
@@ -196,29 +169,23 @@ class MapperGraphConverter(
 
     def _handle_call_function(self, node: fx.Node) -> None:
         fn = node.target
-
-        # Structural ops: multi-input or shape-only — need dedicated handling
-        if fn is operator.add or fn is torch.add:
-            self._convert_add(node)
+        # Two structural shortcuts have signatures or shape semantics that
+        # don't fit the generic flat-positional ``fn(*sources, *bound, *extra)``
+        # call shape, so they get dedicated handlers:
+        #   - ``torch.cat`` takes a list-of-tensors as its first arg.
+        #   - ``torch.flatten`` is foldable into a ``ReshapeMapper`` at mapping
+        #     time (no runtime ComputeOp needed).
+        # Every other call_function (operator.add, operator.getitem, torch.add,
+        # any user F.* call, ...) goes through the generic compute path below.
+        if fn is torch.cat:
+            self._convert_cat(node)
         elif fn is torch.flatten:
             self._convert_flatten_func(node)
-        elif fn is operator.getitem:
-            self._convert_getitem(node)
-        elif fn is torch.cat:
-            self._convert_cat(node)
+        elif fn is operator.getitem and not self._getitem_looks_like_real_slice(node):
+            # FX-internal tuple unpacking (e.g. ``mhsa_out[0]``); pass through.
+            self._node_to_mapper[node] = self._get_source_mapper(node)
         else:
-            # Generic: wrap function call as ComputeOpMapper
-            source = self._get_source_mapper(node)
-            wrapper = _FunctionWrapper.from_fx_node(node, fn)
-            in_shape = self._get_input_shape(node)
-            input_shape = tuple(in_shape[1:]) if in_shape and len(in_shape) >= 2 else None
-            out_shape = self._get_output_shape(node)
-            output_shape = tuple(out_shape[1:]) if out_shape and len(out_shape) >= 2 else None
-            mapper = ComputeOpMapper(
-                source, wrapper, input_shapes=input_shape,
-                output_shape=output_shape, name=node.name,
-            )
-            self._node_to_mapper[node] = mapper
+            self._emit_generic_compute_op(node, fn)
 
     def _handle_call_method(self, node: fx.Node) -> None:
         method = node.target
@@ -287,14 +254,9 @@ class MapperGraphConverter(
                     self._node_to_mapper[node] = source
 
         elif method in ("mean",):
-            # Extract the dim argument from args or kwargs; default to 1.
-            if len(node.args) > 1:
-                dim = node.args[1]
-            else:
-                dim = node.kwargs.get("dim", 1)
-            if not isinstance(dim, int):
-                dim = 1
-            self._node_to_mapper[node] = ComputeOpMapper(source, Mean(dim=dim), name=node.name)
+            # ``tensor.mean(...)`` ≡ ``torch.mean(tensor, ...)``.  The generic
+            # path handles args/kwargs (positional or named dim, dtype, ...).
+            self._emit_generic_compute_op(node, torch.mean)
 
         elif method in ("size", "dim"):
             self._node_to_mapper[node] = source
@@ -303,7 +265,8 @@ class MapperGraphConverter(
             self._node_to_mapper[node] = source
 
         elif method in ("add", "__add__"):
-            self._convert_add(node)
+            # ``tensor.add(other)`` ≡ ``operator.add(tensor, other)``.
+            self._emit_generic_compute_op(node, operator.add)
 
         else:
             self._node_to_mapper[node] = source
@@ -368,6 +331,105 @@ class MapperGraphConverter(
         if len(node.args) >= 1 and isinstance(node.args[0], fx.Node):
             return self._get_mapper(node.args[0])
         return None
+
+    @staticmethod
+    def _getitem_looks_like_real_slice(node: fx.Node) -> bool:
+        """True if ``operator.getitem`` selects from a tensor (vs. tuple unpack).
+
+        Patterns that emit a real ComputeOp:
+        * ``x[:, idx]`` → index is ``(slice, int)``
+        * ``x[..., idx]`` → index is ``(Ellipsis, int)``
+        * ``x[slice, slice, ...]`` → any tuple containing slices
+        * ``x[some_tensor_index]`` → integer / tensor index on a tensor
+
+        Tuple unpacking (``mhsa_out[0]`` where source is a multi-return op)
+        has a plain ``int`` index and should pass through.
+        """
+        if len(node.args) < 2:
+            return False
+        index = node.args[1]
+        if isinstance(index, tuple):
+            return any(
+                isinstance(part, slice) or part is Ellipsis for part in index
+            )
+        return False
+
+    def _partition_fx_args(
+        self, node: fx.Node,
+    ) -> Tuple[list, list, tuple, dict]:
+        """Walk ``node.args`` / ``node.kwargs`` and classify into one bucket each.
+
+        Returns ``(sources, bound_tensors, extra_args, kwargs)`` for direct
+        construction of a :class:`ComputeAdapter`:
+
+        * ``fx.Node`` arg that resolves to a mapper → ``sources``
+        * ``fx.Node`` arg that resolves to a ``get_attr`` ``Tensor`` /
+          ``Parameter`` → ``bound_tensors`` (carried on the adapter)
+        * Any other positional arg (int, slice, tuple of non-Nodes, ...) →
+          ``extra_args``
+        * Any kwarg whose value is not an ``fx.Node`` → ``kwargs``
+
+        Single-source single-input ops (``operator.add(x, y)``,
+        ``operator.getitem(x, idx)``, ``torch.mean(x, dim=1)``, ...) come
+        through cleanly; lists-of-Nodes (e.g. ``torch.cat``'s ``tensors``
+        arg) require a dedicated handler that knows the call signature.
+        """
+        sources: list = []
+        bound: list = []
+        extra: list = []
+        for arg in node.args:
+            if isinstance(arg, fx.Node):
+                const = self._get_constant_tensor(arg)
+                if const is not None:
+                    bound.append(const)
+                    continue
+                mapper = self._get_mapper(arg)
+                if mapper is not None:
+                    sources.append(mapper)
+                    continue
+                # Unresolved Node — fall through to extra (best-effort)
+                continue
+            extra.append(arg)
+        kwargs = {
+            k: v for k, v in node.kwargs.items() if not isinstance(v, fx.Node)
+        }
+        return sources, bound, tuple(extra), kwargs
+
+    def _emit_generic_compute_op(self, node: fx.Node, fn) -> None:
+        """Emit a ``ComputeOpMapper`` for any callable with N tensor inputs.
+
+        Args/kwargs are classified by :meth:`_partition_fx_args`; the result
+        is bound into a :class:`ComputeAdapter` whose forward calls
+        ``fn(*sources, *bound_expanded, *extra_args, **kwargs)``.  Replaces
+        the former per-op handlers for ``+``, ``getitem``, ``mean``, etc.
+        """
+        sources, bound, extra, kwargs = self._partition_fx_args(node)
+        if not sources:
+            # No upstream tensor inputs — degenerate (e.g. a pure constant op
+            # we can't bind to a source).  Mark unresolved.
+            self._node_to_mapper[node] = None
+            return
+        adapter = ComputeAdapter(
+            fn,
+            bound_tensors=bound,
+            extra_args=extra,
+            kwargs=kwargs,
+        )
+        in_shape = self._get_input_shape(node)
+        input_shape = (
+            tuple(in_shape[1:]) if in_shape and len(in_shape) >= 2 else None
+        )
+        out_shape = self._get_output_shape(node)
+        output_shape = (
+            tuple(out_shape[1:]) if out_shape and len(out_shape) >= 2 else None
+        )
+        self._node_to_mapper[node] = ComputeOpMapper(
+            sources,
+            adapter,
+            input_shapes=input_shape,
+            output_shape=output_shape,
+            name=node.name,
+        )
 
 
     def _get_input_shape(self, node: fx.Node) -> Optional[Tuple[int, ...]]:

@@ -252,7 +252,7 @@ class ComputeOpMapper(Mapper):
                     col_sources = col_sources.flatten()
                 col_out = ir_mapping.add_compute_op(
                     input_sources=col_sources,
-                    op_type=type(module).__name__,
+                    op_type=self._module_label(module),
                     params=self._build_params(module, input_shape=input_shape),
                     input_shape=input_shape,
                     output_shape=output_shape,
@@ -283,7 +283,7 @@ class ComputeOpMapper(Mapper):
         input_shape, output_shape = self._resolve_shapes_for_input(input_shape_in)
         return ir_mapping.add_compute_op(
             input_sources=flat_sources,
-            op_type=type(module).__name__,
+            op_type=self._module_label(module),
             params=self._build_params(module, input_shape=input_shape),
             input_shape=input_shape,
             output_shape=output_shape,
@@ -302,7 +302,7 @@ class ComputeOpMapper(Mapper):
         output_shape = self.output_shape or self._probe_multi(module, input_shapes)
         return ir_mapping.add_compute_op(
             input_sources=concat_source_views(flat_sources),
-            op_type=type(module).__name__,
+            op_type=self._module_label(module),
             params=self._build_params(
                 module, input_shapes=[tuple(s) for s in input_shapes],
             ),
@@ -380,6 +380,20 @@ class ComputeOpMapper(Mapper):
         if isinstance(first, (tuple, list)):
             return tuple(tuple(int(d) for d in s) for s in input_shapes)
         return (tuple(int(d) for d in input_shapes),)
+
+    @staticmethod
+    def _module_label(module: nn.Module) -> str:
+        """Display label for an emitted ComputeOp.
+
+        ``ComputeAdapter`` (and any module exposing ``display_name``)
+        provides a readable callable name (e.g. ``"operator.add"``,
+        ``"torch.mean"``).  Plain ``nn.Module`` instances fall back to
+        their class name (``"LayerNorm"``, ``"MaxPool2d"``, etc.).
+        """
+        display = getattr(module, "display_name", None)
+        if isinstance(display, str):
+            return display
+        return type(module).__name__
 
     @staticmethod
     def _is_per_instance_module(module: nn.Module) -> bool:

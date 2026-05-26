@@ -1,4 +1,6 @@
-from mimarsinan.mapping.compute_modules import Add
+import operator
+
+from mimarsinan.mapping.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import (
     ComputeOpMapper,
     EinopsRearrangeMapper,
@@ -118,7 +120,7 @@ class SkipPerceptronMixer(PerceptronFlow):
             out = PerceptronMapper(out, layer)
             if skip is None:
                 skip = out
-        out = ComputeOpMapper([out, skip], Add())
+        out = ComputeOpMapper([out, skip], ComputeAdapter(operator.add))
 
         # Second Mixer
         out = EinopsRearrangeMapper(
@@ -139,7 +141,7 @@ class SkipPerceptronMixer(PerceptronFlow):
             out = PerceptronMapper(out, layer)
             if skip is None:
                 skip = out
-        out = ComputeOpMapper([out, skip], Add())
+        out = ComputeOpMapper([out, skip], ComputeAdapter(operator.add))
         
         # Output Layer
         out = PerceptronMapper(out, self.output_layer)
