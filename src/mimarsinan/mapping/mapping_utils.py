@@ -22,7 +22,7 @@ def _create_ir_input_source(idx):
     return IRSource(node_id=-2, index=idx)
 
 # Re-export from cycle-break modules (ir imports soft_core_mapper lazily; no cycle).
-from mimarsinan.mapping.soft_core_mapper import SoftCoreMapping, map_mm
+from mimarsinan.mapping.soft_core_mapper import SoftCoreMapping
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.chip_export import (
     generate_core_weights,
@@ -34,7 +34,6 @@ from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.mapping.mappers.structural import (
     AddMapper,
     ConcatMapper,
-    DelayMapper,
     EinopsRearrangeMapper,
     InputMapper,
     MeanMapper,
@@ -55,9 +54,7 @@ from mimarsinan.mapping.mappers.pooling import (
     MaxPool2DMapper,
 )
 from mimarsinan.mapping.mappers.conv import (
-    Conv1DMapper,
     Conv1DPerceptronMapper,
-    Conv2DMapper,
     Conv2DPerceptronMapper,
 )
 from mimarsinan.mapping.mappers.transformer import (

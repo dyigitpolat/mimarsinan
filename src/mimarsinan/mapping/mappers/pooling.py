@@ -21,9 +21,8 @@ class MaxPool2DMapper(Mapper):
     """
     MaxPool2d operation.
 
-    - Forward: nn.MaxPool2d
-    - Old mapping (SoftCoreMapping): raises NotImplementedError
-    - IR mapping (IRMapping): produces ComputeOp node
+    Forward: nn.MaxPool2d
+    IR mapping: produces ComputeOp node
     """
 
     def __init__(
@@ -63,12 +62,6 @@ class MaxPool2DMapper(Mapper):
             kernel_size=self.kernel_size,
             stride=self.stride,
             padding=self.padding,
-        )
-
-    def _map(self, mapping):
-        raise NotImplementedError(
-            f"{self.name}: pooling is not supported in SoftCoreMapping. "
-            f"Use IRMapping for unified IR that supports ComputeOps."
         )
 
     def _map_to_ir(self, ir_mapping):
@@ -111,9 +104,8 @@ class AvgPool2DMapper(Mapper):
     """
     AvgPool2d operation.
 
-    - Forward: nn.AvgPool2d
-    - Old mapping: raises NotImplementedError
-    - IR mapping: produces ComputeOp node
+    Forward: nn.AvgPool2d
+    IR mapping: produces ComputeOp node
     """
 
     def __init__(
@@ -155,12 +147,6 @@ class AvgPool2DMapper(Mapper):
             padding=self.padding,
         )
 
-    def _map(self, mapping):
-        raise NotImplementedError(
-            f"{self.name}: pooling is not supported in SoftCoreMapping. "
-            f"Use IRMapping for unified IR that supports ComputeOps."
-        )
-
     def _map_to_ir(self, ir_mapping):
         input_sources = self.source_mapper.map_to_ir(ir_mapping)
 
@@ -198,9 +184,8 @@ class AdaptiveAvgPool2DMapper(Mapper):
     """
     AdaptiveAvgPool2d operation.
 
-    - Forward: nn.AdaptiveAvgPool2d
-    - Old mapping: raises NotImplementedError
-    - IR mapping: produces ComputeOp node
+    Forward: nn.AdaptiveAvgPool2d
+    IR mapping: produces ComputeOp node
     """
 
     def __init__(
@@ -220,12 +205,6 @@ class AdaptiveAvgPool2DMapper(Mapper):
 
         self.input_channels = input_channels
         self.pool = nn.AdaptiveAvgPool2d(self.output_size)
-
-    def _map(self, mapping):
-        raise NotImplementedError(
-            f"{self.name}: adaptive pooling is not supported in SoftCoreMapping. "
-            f"Use IRMapping for unified IR that supports ComputeOps."
-        )
 
     def _map_to_ir(self, ir_mapping):
         input_sources = self.source_mapper.map_to_ir(ir_mapping)

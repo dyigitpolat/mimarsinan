@@ -15,7 +15,7 @@ management, data contract verification, and performance tolerance enforcement.
 | `pipeline_helpers.py` | `require_lif_spiking_mode`, `run_optional_viz`, `safe_warmup_forward` | Loihi/SANA-FE guards, non-fatal mapping viz, model warmup. |
 | `platform_constraints_resolver.py` | `build_platform_constraints_resolved` | Single builder for `platform_constraints_resolved` (model config + NAS fixed path). |
 | `model_config_emit.py` | `emit_model_config_entries` | Shared `model_builder` / `model_config` cache emission. |
-| `simulation_factory.py` | `build_hybrid_mapping_for_pipeline`, … | Hybrid mapping, SCM/HCM metric, cached `hybrid_mapping`, Loihi/SANA-FE parity. Segment flush respects `use_legacy_softcore_flush` in deployment config (default: `neural_segment_packing`). |
+| `simulation_factory.py` | `build_hybrid_mapping_for_pipeline`, … | Hybrid mapping, SCM/HCM metric, cached `hybrid_mapping`, Loihi/SANA-FE parity. Segment flush uses `neural_segment_packing`. |
 | `model_registry.py` | `ModelRegistry`, `get_model_types`, `get_model_config_schema` | Registry populated by builders via `@ModelRegistry.register`; builders expose `get_config_schema()` for GUI form generation |
 
 ### Subdirectories

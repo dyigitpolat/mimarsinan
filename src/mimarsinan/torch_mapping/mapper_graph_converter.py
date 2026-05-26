@@ -128,13 +128,6 @@ class _MultiInputModuleComputeMapper(Mapper):
             name=self.name,
         )
 
-    def _map(self, mapping):
-        raise NotImplementedError(
-            f"{self.name}: multi-input ModuleComputeMapper does not support legacy SoftCoreMapping. "
-            "Use IRMapping."
-        )
-
-
 class MapperGraphConverter(
     LinearConvertMixin,
     ConvConvertMixin,
@@ -343,7 +336,7 @@ class MapperGraphConverter(
                 dims[d0], dims[d1] = dims[d1], dims[d0]
                 dims = tuple(dims)
             # PermuteMapper handles both _forward_impl (true permute) and
-            # _map/_map_to_ir (np.transpose for source-array reordering).
+            # _map_to_ir (np.transpose for source-array reordering).
             if dims and dims[0] == 0:
                 self._node_to_mapper[node] = PermuteMapper(source, dims)
             else:

@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.mapping.soft_core_mapper import map_mm
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 
 
@@ -15,28 +14,6 @@ class PerceptronMapper(Mapper):
     def __init__(self, source_mapper, perceptron):
         super(PerceptronMapper, self).__init__(source_mapper)
         self.perceptron = perceptron
-
-    def _map(self, mapping):
-        layer_weights = PerceptronTransformer().get_effective_weight(self.perceptron)
-        layer_biases = PerceptronTransformer().get_effective_bias(self.perceptron)
-
-        layer_weights.detach().cpu().numpy()
-        layer_biases.detach().cpu().numpy()
-
-        layer_sources = self.source_mapper.map(mapping)
-        layer_sources = layer_sources.transpose()
-        layer_sources = map_mm(
-            mapping,
-            layer_sources,
-            layer_weights,
-            layer_biases,
-            self.perceptron.activation_scale,
-            self.perceptron.parameter_scale,
-            self.perceptron.input_activation_scale,
-        )
-        layer_sources = layer_sources.transpose()
-
-        return layer_sources
 
     def _map_to_ir(self, ir_mapping):
         layer_weights = PerceptronTransformer().get_effective_weight(self.perceptron)
@@ -199,12 +176,6 @@ class ModuleComputeMapper(Mapper):
             name=self.name,
         )
 
-    def _map(self, mapping):
-        raise NotImplementedError(
-            f"{self.name}: ModuleComputeMapper does not support legacy SoftCoreMapping. "
-            "Use IRMapping."
-        )
-
     # owned_perceptron_groups() → inherited [] from Mapper base
 
 
@@ -217,9 +188,6 @@ class ModuleMapper(Mapper):
     def __init__(self, source_mapper, module: nn.Module):
         super(ModuleMapper, self).__init__(source_mapper)
         self.module = module
-
-    def _map(self, mapping):
-        return self.source_mapper.map(mapping)
 
     def _map_to_ir(self, ir_mapping):
         return self.source_mapper.map_to_ir(ir_mapping)

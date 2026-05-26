@@ -49,7 +49,6 @@ def main() -> None:
             "firing_mode": dp["firing_mode"],
             "spike_generation_mode": dp["spike_generation_mode"],
             "thresholding_mode": dp["thresholding_mode"],
-            "use_legacy_softcore_flush": False,
             "max_simulation_samples": 200,
         }
         data_provider_factory = pf

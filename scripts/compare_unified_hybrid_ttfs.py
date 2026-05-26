@@ -66,7 +66,6 @@ def main() -> None:
             "spike_generation_mode": dp["spike_generation_mode"],
             "thresholding_mode": dp["thresholding_mode"],
             "spiking_mode": "ttfs",
-            "use_legacy_softcore_flush": False,
         }
 
     hybrid = build_spiking_hybrid_flow(P(), hm).to(device).eval()

@@ -1,4 +1,4 @@
-"""Structural mappers: Input, Reshape, Delay, EinopsRearrange, Stack, Add, Concat, Subscript."""
+"""Structural mappers: Input, Reshape, EinopsRearrange, Stack, Add, Concat, Subscript."""
 
 from __future__ import annotations
 
@@ -7,9 +7,7 @@ import torch
 
 import einops
 
-from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import IRSource
-from mimarsinan.mapping.soft_core_mapper import map_mm
 
 from mimarsinan.mapping.mappers.base import Mapper
 
@@ -26,15 +24,6 @@ class InputMapper(Mapper):
         if isinstance(input_shape, int):
             input_shape = (1, input_shape)
         self.input_shape = input_shape
-
-    def _map(self, mapping):
-        input_length = 1
-        for dim in self.input_shape:
-            input_length *= dim
-        input_sources = []
-        for input_idx in range(input_length):
-            input_sources.append(SpikeSource(-2, input_idx, True, False))
-        return np.array(input_sources).reshape(self.input_shape)
 
     def _map_to_ir(self, ir_mapping):
         input_length = 1
@@ -54,34 +43,11 @@ class ReshapeMapper(Mapper):
         super(ReshapeMapper, self).__init__(source_mapper)
         self.output_shape = output_shape
 
-    def _map(self, mapping):
-        return self.source_mapper.map(mapping).reshape(self.output_shape)
-
     def _map_to_ir(self, ir_mapping):
         return self.source_mapper.map_to_ir(ir_mapping).reshape(self.output_shape)
 
     def _forward_impl(self, x):
         return x.view(x.shape[0], *self.output_shape)
-
-
-class DelayMapper(Mapper):
-    def __init__(self, source_mapper, delay):
-        super(DelayMapper, self).__init__(source_mapper)
-        self.delay = delay
-
-    def _map(self, mapping):
-        layer_sources = self.source_mapper.map(mapping)
-        for _ in range(self.delay):
-            layer_sources = map_mm(
-                mapping,
-                layer_sources,
-                np.eye(layer_sources.shape[-2]),
-                parameter_scale=torch.tensor(mapping.q_max),
-            )
-        return layer_sources
-
-    def _forward_impl(self, x):
-        return x
 
 
 class EinopsRearrangeMapper(Mapper):
@@ -90,12 +56,6 @@ class EinopsRearrangeMapper(Mapper):
         self.einops_str = einops_str
         self.einops_args = einops_args
         self.einops_kwargs = einops_kwargs
-
-    def _map(self, mapping):
-        layer_sources = self.source_mapper.map(mapping)
-        return einops.rearrange(
-            layer_sources, self.einops_str, *self.einops_args, **self.einops_kwargs
-        )
 
     def _map_to_ir(self, ir_mapping):
         layer_sources = self.source_mapper.map_to_ir(ir_mapping)
@@ -120,10 +80,6 @@ class StackMapper(Mapper):
 
     def get_source_mappers(self):
         return [m for m in self.source_mappers if m is not None]
-
-    def _map(self, mapping):
-        layer_sources_list = [mapper.map(mapping) for mapper in self.source_mappers]
-        return np.stack(layer_sources_list).squeeze()
 
     def _map_to_ir(self, ir_mapping):
         layer_sources_list = [mapper.map_to_ir(ir_mapping) for mapper in self.source_mappers]
@@ -150,15 +106,6 @@ class AddMapper(Mapper):
 
     def get_source_mappers(self):
         return [m for m in [self.source_mapper_a, self.source_mapper_b] if m is not None]
-
-    def _map(self, mapping):
-        layer_sources_a = self.source_mapper_a.map(mapping)
-        layer_sources_b = self.source_mapper_b.map(mapping)
-        assert layer_sources_a.shape == layer_sources_b.shape
-        x_rows = layer_sources_a.shape[-2]
-        layer_sources = np.concatenate([layer_sources_a, layer_sources_b], axis=0)
-        weights = np.concatenate([np.eye(x_rows), np.eye(x_rows)], axis=0).transpose()
-        return map_mm(mapping, layer_sources, weights, parameter_scale=torch.tensor(mapping.q_max))
 
     def _map_to_ir(self, ir_mapping):
         a_sources = self.source_mapper_a.map_to_ir(ir_mapping)
@@ -198,10 +145,6 @@ class ConcatMapper(Mapper):
     def get_source_mappers(self):
         return [m for m in self._source_mappers_list if m is not None]
 
-    def _map(self, mapping):
-        layer_sources_list = [mapper.map(mapping) for mapper in self.get_source_mappers()]
-        return np.concatenate(layer_sources_list, axis=0)
-
     def _map_to_ir(self, ir_mapping):
         layer_sources_list = [mapper.map_to_ir(ir_mapping) for mapper in self.get_source_mappers()]
         return np.concatenate(layer_sources_list, axis=0)
@@ -215,9 +158,6 @@ class SubscriptMapper(Mapper):
         super(SubscriptMapper, self).__init__(source_mapper)
         self.index = index
 
-    def _map(self, mapping):
-        return self.source_mapper.map(mapping)[self.index]
-
     def _map_to_ir(self, ir_mapping):
         return self.source_mapper.map_to_ir(ir_mapping)[self.index]
 
@@ -230,8 +170,8 @@ class PermuteMapper(Mapper):
 
     * ``_forward_impl`` applies the true permutation — required for correct
       software validation (ReshapeMapper.view would silently scramble values).
-    * ``_map`` / ``_map_to_ir`` use ``np.transpose`` with the batch-stripped
-      permutation so that SpikeSource / IRSource arrays are reordered correctly
+    * ``_map_to_ir`` uses ``np.transpose`` with the batch-stripped
+      permutation so that IRSource arrays are reordered correctly
       for hardware layout.
 
     ``dims`` is the full permutation tuple including the batch axis 0,
@@ -243,10 +183,6 @@ class PermuteMapper(Mapper):
         self.dims = tuple(dims)
         # numpy permutation: drop batch dim 0, shift remaining axes by -1.
         self._np_dims = tuple(d - 1 for d in self.dims if d != 0)
-
-    def _map(self, mapping):
-        arr = self.source_mapper.map(mapping)
-        return np.transpose(arr, self._np_dims)
 
     def _map_to_ir(self, ir_mapping):
         arr = self.source_mapper.map_to_ir(ir_mapping)
@@ -260,18 +196,13 @@ class MeanMapper(Mapper):
     """Mapper for ``tensor.mean(dim=dim)``.
 
     * ``_forward_impl`` computes the true mean — used for software validation.
-    * ``_map`` uses subscript [0] for legacy shape-tracking (SoftCoreMapping).
     * ``_map_to_ir`` creates a ComputeOp with op_type="mean" so the IR graph
-      (and spiking simulation) properly averages all groups, not just index 0.
+      (and spiking simulation) properly averages all groups.
     """
 
     def __init__(self, source_mapper, dim: int):
         super(MeanMapper, self).__init__(source_mapper)
         self.dim = dim
-
-    def _map(self, mapping):
-        # Legacy SoftCoreMapping: shape-tracking only; [0] gives correct output shape.
-        return self.source_mapper.map(mapping)[0]
 
     def _map_to_ir(self, ir_mapping):
         src = self.source_mapper.map_to_ir(ir_mapping)

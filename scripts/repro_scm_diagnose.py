@@ -73,7 +73,6 @@ def main() -> None:
             "weight_bits": pc_res["weight_bits"],
             "input_shape": (1, 28, 28),
             "seed": 0,
-            "use_legacy_softcore_flush": False,
             "firing_mode": dp["firing_mode"],
             "spike_generation_mode": dp["spike_generation_mode"],
             "thresholding_mode": dp["thresholding_mode"],

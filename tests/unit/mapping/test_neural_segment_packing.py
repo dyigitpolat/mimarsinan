@@ -1,4 +1,4 @@
-"""Parity: legacy vs direct neural segment softcore build."""
+"""Parity: neural segment softcore build produces valid hybrid mapping."""
 
 import torch.nn as nn
 
@@ -22,23 +22,16 @@ def _tiny_ir():
     ).map(repr_)
 
 
-def test_legacy_and_direct_hybrid_stage_counts_match():
+def test_hybrid_stage_counts_for_neural_segment():
     ir = _tiny_ir()
     cores = [{"max_axons": 128, "max_neurons": 128, "count": 16}]
-    legacy = build_hybrid_hard_core_mapping(
+    hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir,
         cores_config=cores,
-        use_legacy_softcore_flush=True,
     )
-    direct = build_hybrid_hard_core_mapping(
-        ir_graph=ir,
-        cores_config=cores,
-        use_legacy_softcore_flush=False,
-    )
-    assert len(legacy.stages) == len(direct.stages)
-    for ls, ds in zip(legacy.stages, direct.stages):
-        assert ls.kind == ds.kind
-        if ls.kind == "neural":
-            assert ls.hard_core_mapping is not None
-            assert ds.hard_core_mapping is not None
-            assert len(ls.hard_core_mapping.cores) == len(ds.hard_core_mapping.cores)
+    assert len(hybrid.stages) >= 1
+    neural_stages = [s for s in hybrid.stages if s.kind == "neural"]
+    assert len(neural_stages) >= 1
+    for stage in neural_stages:
+        assert stage.hard_core_mapping is not None
+        assert len(stage.hard_core_mapping.cores) >= 1

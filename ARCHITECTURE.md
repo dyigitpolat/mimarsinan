@@ -601,7 +601,7 @@ Converts the `IRGraph` into a `HybridHardCoreMapping`:
 
 1. Segments the IR graph at `ComputeOp` boundaries
 2. Allocates a **single shared pool** of hardware cores from the `cores_config` (see §9.3)
-3. Flushes each neural segment to soft cores via `neural_segment_to_soft_core_mapping` (default) or legacy `ir_graph_to_soft_core_mapping` when `use_legacy_softcore_flush` is set, then packs into `HardCoreMapping` from the shared pool
+3. Flushes each neural segment to soft cores via `neural_segment_to_soft_core_mapping`, then packs into `HardCoreMapping` from the shared pool
 4. Packs `SoftCore`s into physical `HardCore`s using **best-fit** greedy bin-packing (smallest feasible core first)
 5. Produces the final deployable hybrid program
 6. Runs hard-core spiking simulation for verification
@@ -793,8 +793,7 @@ Each builder's `build(configuration)` method takes a model config dict and retur
 
 The mapper graph is a DAG of `Mapper` objects that mirrors the model's computation graph. Each mapper knows how to:
 1. Execute the PyTorch forward pass (`forward()`)
-2. Map itself to SoftCores via `map(mapping)` (legacy)
-3. Map itself to the unified IR via `map_to_ir(ir_mapping)` (new)
+2. Map itself to the unified IR via `map_to_ir(ir_mapping)`
 
 ```
 Mapper (abstract base)
@@ -1587,14 +1586,14 @@ Module dependency rules:
 ### Shared modules
 Cross-cutting helpers live next to their domain rather than in pipeline steps. See per-package `ARCHITECTURE.md` files and `docs/ARCHITECTURE_STYLE.md` for module tables.
 
-**Known limitations:** `SoftCoreMapping.map_fc` remains for legacy mapper graphs and `use_legacy_softcore_flush`; `SpikingUnifiedCoreFlow` and `SpikingHybridCoreFlow` stay separate by design; `IRLatency` and `ChipLatency` are not merged (see `mapping/LATENCY.md`).
+**Known limitations:** `SpikingUnifiedCoreFlow` and `SpikingHybridCoreFlow` stay separate by design; `IRLatency` and `ChipLatency` are not merged (see `mapping/LATENCY.md`).
 
 Notable entry points:
 
 | Module | Role |
 |--------|------|
 | `mapping/platform_constraints.py` | `resolve_platform_mapping_params`, `resolve_scalar_mapping_params` |
-| `mapping/neural_segment_packing.py` | Default soft-core flush (`neural_segment_to_soft_core_mapping`); legacy via `use_legacy_softcore_flush` |
+| `mapping/neural_segment_packing.py` | Soft-core flush (`neural_segment_to_soft_core_mapping`) |
 | `mapping/LATENCY.md`, `mapping/FIRING.md` | Latency engine boundaries and firing-mode contracts |
 | `chip_simulation/hybrid_stage_runner.py` | `run_hybrid_stages` — HCM, nevresim, Lava, SANA-FE |
 | `chip_simulation/firing_strategy.py` | `firing_mode` / reset semantics across training and backends |
@@ -1674,8 +1673,7 @@ PyTorch `nn.Module` and let the `torch_mapping` module convert it automatically:
 1. Subclass `Mapper` in `mapping/mapping_utils.py`
 2. Implement `_forward_impl(x)` for the PyTorch forward pass
 3. Implement `_map_to_ir(ir_mapping)` to create `NeuralCore`s and/or `ComputeOp`s
-4. Optionally implement `_map(mapping)` for the legacy SoftCoreMapping path
-5. Use the mapper in your model's mapper graph
+4. Use the mapper in your model's mapper graph
 
 ### Adding a New ComputeOp Type
 
