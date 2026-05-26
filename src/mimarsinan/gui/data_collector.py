@@ -345,6 +345,7 @@ class DataCollector:
     def get_pipeline_overview(self) -> dict:
         with self._lock:
             config = self._pipeline_config or {}
+            working_dir = self._working_directory
         try:
             from mimarsinan.pipelining.pipelines.deployment_pipeline import (
                 get_pipeline_semantic_group_by_step_name,
@@ -352,6 +353,13 @@ class DataCollector:
             groups = get_pipeline_semantic_group_by_step_name(config)
         except Exception:
             groups = {}
+        config_view = None
+        if config:
+            try:
+                from mimarsinan.config_schema.display_view import build_pipeline_config_view
+                config_view = build_pipeline_config_view(config, working_dir=working_dir)
+            except Exception:
+                logger.debug("Failed to build config_view for pipeline overview", exc_info=True)
         with self._lock:
             steps = []
             for name in self._step_names:
@@ -365,11 +373,14 @@ class DataCollector:
                     "target_metric": rec.target_metric,
                     "semantic_group": groups.get(rec.name),
                 })
-            return {
+            overview = {
                 "steps": steps,
                 "current_step": self._current_step,
                 "config": self._pipeline_config,
             }
+            if config_view is not None:
+                overview["config_view"] = config_view
+            return overview
 
     def get_step_detail(
         self,

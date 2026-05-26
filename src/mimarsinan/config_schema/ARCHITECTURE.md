@@ -12,6 +12,7 @@ merged flat config for pipeline runtime).
 | `deployment_derivation.py` | `derive_deployment_parameters` | Mirrors `gui/static/js/wizard.js` `buildConfig()` rules: float weights → vanilla; LIF disables `activation_quantization`; `ttfs_quantized` enables it. Called from `wizard/config_builder.py` and `runtime.build_flat_pipeline_config`. |
 | `runtime.py` | `build_flat_pipeline_config` | Merges defaults + deployment/platform dicts for API preview and wizard (no device I/O). Applies preset then `derive_deployment_parameters`. |
 | `validation.py` | `validate_deployment_config`, `validate_merged_config` | JSON / merged config validation; rejects deprecated coalescing keys via `mapping.coalescing`. |
+| `display_view.py` | `build_config_display_view`, `build_pipeline_config_view`, `load_saved_config_from_run_dir`, `CONFIG_DISPLAY_GROUPS`, `FIELD_DISPLAY_META` | Presentation-only metadata and structured monitor payloads: merges defaults, annotates field provenance (`explicit` / `default` / `derived` / `preset` / `runtime`), expands nested blocks (cores, recipes, model_config, arch_search). Values come from existing defaults/merge helpers — not duplicated. |
 | `__init__.py` | Re-exports | Public API |
 
 ## Deployment parameters (selected)
@@ -45,7 +46,8 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 - `gui/wizard/schema.py` (wizard forms; labels should match defaults)
 - `gui/wizard/config_builder.py` (`derive_deployment_parameters` after preset)
 - `gui/server.py` (`build_flat_pipeline_config` for `/api/pipeline_steps`; `build_deployment_config_from_state` for `/api/run`)
+- `gui/data_collector.py`, `gui/runs.py`, `gui/process_manager.py` (`build_config_display_view` / `build_pipeline_config_view` for monitor `config_view` in pipeline overview)
 
 ## Exported API (`__init__.py`)
 
-`DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_deployment_parameters`, `get_default_platform_constraints`, `get_pipeline_mode_presets`, `get_config_keys_set`, `apply_preset`, `validate_deployment_config`, `validate_merged_config`.
+`DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_deployment_parameters`, `get_default_platform_constraints`, `get_pipeline_mode_presets`, `get_config_keys_set`, `apply_preset`, `validate_deployment_config`, `validate_merged_config`, `build_flat_pipeline_config`, `build_config_display_view`, `build_pipeline_config_view`.

@@ -124,7 +124,18 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
         "steps": steps,
         "current_step": None,
         "config": config,
+        "config_view": _build_run_config_view(config),
     }
+
+
+def _build_run_config_view(config: dict) -> dict | None:
+    if not config:
+        return None
+    try:
+        from mimarsinan.config_schema.display_view import build_config_display_view
+        return build_config_display_view(config, saved_config=config)
+    except Exception:
+        return None
 
 
 def get_run_console_logs(run_id: str, offset: int = 0) -> list[dict[str, Any]]:
