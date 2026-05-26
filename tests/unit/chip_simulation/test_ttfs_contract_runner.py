@@ -135,11 +135,13 @@ def test_compute_stage_returns_op_id_result():
     from mimarsinan.mapping.hybrid_hardcore_mapping import HybridStage, SegmentIOSlice
     from mimarsinan.mapping.ir import ComputeOp, IRSource
 
+    import torch.nn as nn
     op = ComputeOp(
         id=7,
         name="identity",
-        op_type="identity",
+        op_type="Identity",
         input_sources=np.array([IRSource(0, 0)], dtype=object),
+        params={"module": nn.Identity()},
         output_shape=(1,),
     )
     mapping = _make_two_stage_mapping()

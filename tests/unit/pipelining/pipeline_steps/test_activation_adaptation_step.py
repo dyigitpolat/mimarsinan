@@ -308,4 +308,4 @@ class TestActivationAdaptationCommit:
 
     # test_run_does_not_commit_identity_perceptrons removed:
     # Identity perceptrons no longer exist — layers without activation go through
-    # ModuleComputeMapper and never enter the adaptation pipeline.
+    # ComputeOpMapper and never enter the adaptation pipeline.

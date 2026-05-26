@@ -9,9 +9,19 @@ import torch.nn.functional as F
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.mapping.mappers.pooling import _chunk_sizes
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+
+
+def _chunk_sizes(total: int, chunk: int):
+    """Split ``total`` into chunks of size at most ``chunk``."""
+    assert chunk > 0
+    sizes = []
+    remaining = int(total)
+    while remaining > 0:
+        sizes.append(min(chunk, remaining))
+        remaining -= sizes[-1]
+    return sizes
 
 
 class Conv2DPerceptronMapper(Mapper):

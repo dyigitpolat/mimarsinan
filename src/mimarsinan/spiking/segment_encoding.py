@@ -164,10 +164,12 @@ def emit_compute_spike_train(
     """Return ``(T, B, D)`` spike train for ``op``, or ``None`` for non-LIF-Perceptron boundaries."""
     if not config.use_cycle_accurate_trains:
         return None
-    if not isinstance(op, ComputeOp) or op.op_type != "module":
+    if not isinstance(op, ComputeOp):
         return None
 
     module = (op.params or {}).get("module") if op.params else None
+    if module is None:
+        return None
     resolved = _resolve_lif_perceptron(module)
     if resolved is None:
         return None

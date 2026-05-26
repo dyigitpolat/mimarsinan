@@ -1,43 +1,35 @@
-"""Mapper hierarchy: base, structural, perceptron, and leading-dim mappers.
+"""Mapper hierarchy: base, structural, perceptron, leading-dim, conv mappers.
 
-Re-exports from submodules so that `from mimarsinan.mapping.mappers import Mapper, InputMapper, ...` works.
+Non-neural ops collapse onto a single :class:`ComputeOpMapper` carrying any
+``nn.Module`` (see :mod:`mimarsinan.mapping.compute_modules` for the small
+``Add`` / ``Mean`` / ``Select`` / ``ConstantAdd`` / ``ConstantPrepend`` /
+``ScaleNormalizingWrapper`` wrappers used for ops that are not already
+canonical torch modules).
 """
 
 from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.mapping.mappers.structural import (
-    AddMapper,
     ConcatMapper,
     EinopsRearrangeMapper,
     InputMapper,
-    MeanMapper,
     PermuteMapper,
     ReshapeMapper,
     StackMapper,
     SubscriptMapper,
 )
-from mimarsinan.mapping.mappers.perceptron import ModuleMapper, PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron import (
+    ComputeOpMapper,
+    ModuleMapper,
+    PerceptronMapper,
+)
 from mimarsinan.mapping.mappers.leading_dim import (
     Ensure2DMapper,
     MergeLeadingDimsMapper,
     SplitLeadingDimMapper,
 )
-from mimarsinan.mapping.mappers.pooling import (
-    AdaptiveAvgPool2DMapper,
-    AvgPool2DMapper,
-    MaxPool2DMapper,
-)
 from mimarsinan.mapping.mappers.conv import (
     Conv1DPerceptronMapper,
     Conv2DPerceptronMapper,
-)
-from mimarsinan.mapping.mappers.transformer import (
-    ConstantAddMapper,
-    ConstantPrependMapper,
-    DropoutMapper,
-    GELUMapper,
-    LayerNormMapper,
-    MultiHeadAttentionComputeMapper,
-    SelectMapper,
 )
 
 __all__ = [
@@ -46,26 +38,15 @@ __all__ = [
     "ReshapeMapper",
     "EinopsRearrangeMapper",
     "StackMapper",
-    "AddMapper",
     "ConcatMapper",
     "SubscriptMapper",
     "PermuteMapper",
-    "MeanMapper",
     "PerceptronMapper",
+    "ComputeOpMapper",
     "ModuleMapper",
     "MergeLeadingDimsMapper",
     "SplitLeadingDimMapper",
     "Ensure2DMapper",
-    "MaxPool2DMapper",
-    "AvgPool2DMapper",
-    "AdaptiveAvgPool2DMapper",
     "Conv2DPerceptronMapper",
     "Conv1DPerceptronMapper",
-    "LayerNormMapper",
-    "GELUMapper",
-    "ConstantPrependMapper",
-    "ConstantAddMapper",
-    "DropoutMapper",
-    "SelectMapper",
-    "MultiHeadAttentionComputeMapper",
 ]

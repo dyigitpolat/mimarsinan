@@ -281,7 +281,7 @@ class TestPureReLUModel:
 
 
 # TestMixedReLUIdentityModel and TestPerLayerDivergencePinpointing removed:
-# Identity layers are no longer perceptrons — they go through ModuleComputeMapper
+# Identity layers are no longer perceptrons — they go through ComputeOpMapper
 # and never enter the adaptation/shift pipeline. The Identity-shift bug they
 # tested is architecturally impossible in the new design.
 

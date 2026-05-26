@@ -1,7 +1,7 @@
 """Test that Conv2DPerceptronMapper creates NeuralCores with correct activation_type.
 
 Conv2DPerceptronMapper always creates NeuralCores (it always has a real activation).
-Conv2d without activation goes through ModuleComputeMapper → generic ComputeOp.
+Conv2d without activation goes through ComputeOpMapper → generic ComputeOp.
 """
 
 import numpy as np
@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
-from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper
+from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
 from mimarsinan.mapping.mappers.structural import InputMapper
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp
 from mimarsinan.mapping.ir_mapping import IRMapping
@@ -67,13 +67,13 @@ class TestConvIRActivationType:
 
 
 class TestConvComputeOpViaModuleMapper:
-    """Conv2d without activation → ModuleComputeMapper → generic ComputeOp."""
+    """Conv2d without activation → ComputeOpMapper → generic ComputeOp."""
 
     def test_bare_conv_creates_compute_op(self):
-        """Conv2d wrapped in ModuleComputeMapper creates a module ComputeOp."""
+        """Conv2d wrapped in ComputeOpMapper creates a module ComputeOp."""
         inp = InputMapper((1, 4, 4))
         conv = nn.Conv2d(1, 2, kernel_size=2, stride=2, padding=0)
-        mapper = ModuleComputeMapper(inp, conv, input_shape=(1, 4, 4), name="test_conv")
+        mapper = ComputeOpMapper(inp, conv, input_shape=(1, 4, 4), name="test_conv")
 
         ir_mapping = IRMapping(q_max=1, firing_mode="TTFS", max_axons=256, max_neurons=256)
         mapper.map_to_ir(ir_mapping)

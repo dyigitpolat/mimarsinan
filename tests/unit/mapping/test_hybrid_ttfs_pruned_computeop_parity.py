@@ -39,8 +39,9 @@ def _build_pruned_two_segment_graph():
     bridge = ComputeOp(
         id=2,
         name="bridge",
-        op_type="identity",
+        op_type="Identity",
         input_sources=_src([(0, 0), (0, 1)]),
+        params={"module": nn.Identity()},
         output_shape=(1, 2),
     )
     b = NeuralCore(

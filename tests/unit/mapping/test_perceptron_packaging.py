@@ -1,7 +1,7 @@
 """Perceptron packaging: the converter decides at conversion time.
 
 MM+ + BN? + ACT → Perceptron + PerceptronMapper → NeuralCore.
-No activation → ModuleComputeMapper → ComputeOp.
+No activation → ComputeOpMapper → ComputeOp.
 
 The decision is encoded by the mapper TYPE — no runtime activation checks.
 """
@@ -14,7 +14,7 @@ import numpy as np
 from mimarsinan.mapping.mappers.structural import (
     InputMapper, EinopsRearrangeMapper,
 )
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ModuleComputeMapper
+from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ComputeOpMapper
 from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.leading_dim import Ensure2DMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
@@ -32,22 +32,22 @@ def _map_to_ir(mapper_repr, input_shape):
     return ir_mapping.map(mapper_repr)
 
 
-class TestModuleComputeMapperCreatesComputeOp:
-    """ModuleComputeMapper → ComputeOp (host-side)."""
+class TestComputeOpMapperCreatesComputeOp:
+    """ComputeOpMapper → ComputeOp (host-side)."""
 
     def test_linear_creates_compute_op(self):
         inp = InputMapper((1, 4, 4))
         flat = EinopsRearrangeMapper(inp, "... c h w -> ... (c h w)")
         linear = nn.Linear(16, 4)
-        mapper = ModuleComputeMapper(Ensure2DMapper(flat), linear, name="test_linear")
+        mapper = ComputeOpMapper(Ensure2DMapper(flat), linear, name="test_linear")
         repr_ = ModelRepresentation(mapper)
 
         ir_graph = _map_to_ir(repr_, (1, 4, 4))
         compute_ops = [n for n in ir_graph.nodes if isinstance(n, ComputeOp)]
         neural_cores = [n for n in ir_graph.nodes if isinstance(n, NeuralCore)]
 
-        assert len(compute_ops) >= 1, "ModuleComputeMapper should create ComputeOps"
-        assert len(neural_cores) == 0, "ModuleComputeMapper should NOT create NeuralCores"
+        assert len(compute_ops) >= 1, "ComputeOpMapper should create ComputeOps"
+        assert len(neural_cores) == 0, "ComputeOpMapper should NOT create NeuralCores"
 
 
 class TestPerceptronMapperCreatesNeuralCore:
@@ -87,14 +87,14 @@ class TestPerceptronMapperEligibilityContract:
         assert len(groups) == 1 and p in groups[0]
 
 
-class TestModuleComputeMapperEligibilityContract:
-    """ModuleComputeMapper.owned_perceptron_groups() returns []."""
+class TestComputeOpMapperEligibilityContract:
+    """ComputeOpMapper.owned_perceptron_groups() returns []."""
 
     def test_returns_empty(self):
         inp = InputMapper((1, 4, 4))
         flat = EinopsRearrangeMapper(inp, "... c h w -> ... (c h w)")
         linear = nn.Linear(16, 4)
-        mapper = ModuleComputeMapper(Ensure2DMapper(flat), linear, name="test")
+        mapper = ComputeOpMapper(Ensure2DMapper(flat), linear, name="test")
         assert mapper.owned_perceptron_groups() == []
 
 
@@ -116,14 +116,14 @@ class TestConv2DPerceptronMapperEligibilityContract:
 
 class TestGetPerceptronsExcludesComputeMappers:
     """ModelRepresentation.get_perceptrons() returns only PerceptronMapper perceptrons.
-    ModuleComputeMapper is invisible to the pipeline.
+    ComputeOpMapper is invisible to the pipeline.
     """
 
     def test_compute_mapper_not_in_get_perceptrons(self):
         inp = InputMapper((1, 4, 4))
         flat = EinopsRearrangeMapper(inp, "... c h w -> ... (c h w)")
         linear = nn.Linear(16, 8)
-        m1 = ModuleComputeMapper(Ensure2DMapper(flat), linear, name="compute")
+        m1 = ComputeOpMapper(Ensure2DMapper(flat), linear, name="compute")
         p_relu = Perceptron(4, 8, normalization=nn.Identity(), base_activation_name="ReLU")
         m2 = PerceptronMapper(m1, p_relu)
         repr_ = ModelRepresentation(m2)

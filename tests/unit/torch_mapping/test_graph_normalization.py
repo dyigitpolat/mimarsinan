@@ -476,9 +476,9 @@ class TestBNFoldFusionPerceptronProperties:
 
     def test_no_act_fusion_produces_no_perceptron_mappers(self):
         """Linear -> BN -> Linear -> Linear: all three fuse into one.
-        No activation detected → no PerceptronMappers, only ModuleComputeMappers.
+        No activation detected → no PerceptronMappers, only ComputeOpMappers.
         """
-        from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper
+        from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
         _, supermodel = _warmup_and_convert(LinearBNLinearNoActClassifier)
         mapper_repr = supermodel.get_mapper_repr()
         mapper_repr._ensure_exec_graph()
@@ -487,14 +487,14 @@ class TestBNFoldFusionPerceptronProperties:
             n for n in mapper_repr._exec_order if isinstance(n, PerceptronMapper)
         ]
         compute_mappers = [
-            n for n in mapper_repr._exec_order if isinstance(n, ModuleComputeMapper)
+            n for n in mapper_repr._exec_order if isinstance(n, ComputeOpMapper)
         ]
         assert len(perceptron_mappers) == 0, (
             f"Expected 0 PerceptronMappers (no activation in chain), "
             f"got {len(perceptron_mappers)}"
         )
         assert len(compute_mappers) >= 1, (
-            f"Expected at least 1 ModuleComputeMapper, got {len(compute_mappers)}"
+            f"Expected at least 1 ComputeOpMapper, got {len(compute_mappers)}"
         )
 
     def test_normalization_fusion_step_skips_fused_perceptrons(self):

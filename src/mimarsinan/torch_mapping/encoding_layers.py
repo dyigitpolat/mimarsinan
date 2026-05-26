@@ -5,27 +5,15 @@ from __future__ import annotations
 import torch.nn as nn
 
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ModuleComputeMapper
+from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ComputeOpMapper
 from mimarsinan.mapping.mappers.conv import (
     Conv2DPerceptronMapper,
     Conv1DPerceptronMapper,
-)
-from mimarsinan.mapping.mappers.pooling import (
-    MaxPool2DMapper,
-    AvgPool2DMapper,
-    AdaptiveAvgPool2DMapper,
 )
 from mimarsinan.mapping.mappers.structural import InputMapper
 
 
 _PERCEPTRON_MAPPER_TYPES = (PerceptronMapper, Conv2DPerceptronMapper, Conv1DPerceptronMapper)
-
-# Pooling maps to ComputeOp in IR — next conv/FC perceptron starts a new segment.
-_BOUNDARY_MAPPER_TYPES = (
-    MaxPool2DMapper,
-    AvgPool2DMapper,
-    AdaptiveAvgPool2DMapper,
-)
 
 
 def _is_perceptron_holder(node) -> bool:
@@ -33,7 +21,7 @@ def _is_perceptron_holder(node) -> bool:
 
 
 def _wraps_unbounded_raw_linear_or_conv(mapper) -> bool:
-    """True if a ``ModuleComputeMapper`` wraps a bare ``nn.Linear``/``Conv`` (or
+    """True if a ``ComputeOpMapper`` wraps a bare ``nn.Linear``/``Conv`` (or
     ``nn.Sequential`` starting with one) — i.e. its output is raw, signed,
     unbounded values that need a trailing activation before spike encoding.
 
@@ -60,12 +48,11 @@ def _is_encoding_segment_start(node) -> bool:
     * Another perceptron mapper → not an encoding start (upstream is on-chip
       spike output).
     * ``InputMapper`` → encoding (first neural op from raw input).
-    * Pooling boundary → encoding (after host-side ComputeOp).
-    * ``ModuleComputeMapper`` wrapping a bare Linear/Conv → encoding.
+    * ``ComputeOpMapper`` wrapping a bare Linear/Conv → encoding.
       That upstream ComputeOp produces unbounded raw values, so this
       Perceptron cannot consume them on-chip (spike encoding undefined);
       it must run host-side where the activation closes the segment.
-    * ``ModuleComputeMapper`` wrapping a bounded op (pool, layernorm,
+    * ``ComputeOpMapper`` wrapping a bounded op (pool, layernorm, GELU,
       generic function wrapper) → transparent; keep walking.
     """
     src = node.source_mapper
@@ -74,9 +61,7 @@ def _is_encoding_segment_start(node) -> bool:
             return False
         if isinstance(src, InputMapper):
             return True
-        if isinstance(src, _BOUNDARY_MAPPER_TYPES):
-            return True
-        if isinstance(src, ModuleComputeMapper) and _wraps_unbounded_raw_linear_or_conv(src):
+        if isinstance(src, ComputeOpMapper) and _wraps_unbounded_raw_linear_or_conv(src):
             return True
         src = src.source_mapper
     return False

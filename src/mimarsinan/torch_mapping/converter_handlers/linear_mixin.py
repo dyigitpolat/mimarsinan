@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
-from mimarsinan.mapping.mapping_utils import Ensure2DMapper, PerceptronMapper, ModuleComputeMapper
+from mimarsinan.mapping.mapping_utils import ComputeOpMapper, Ensure2DMapper, PerceptronMapper
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 
 if TYPE_CHECKING:
@@ -54,7 +54,7 @@ class LinearConvertMixin:
                 module = nn.Sequential(linear, bn_copy)
             else:
                 module = linear
-            mapper = ModuleComputeMapper(
+            mapper = ComputeOpMapper(
                 source, module,
                 output_shape=(mod.out_features,),
                 name=node.name,

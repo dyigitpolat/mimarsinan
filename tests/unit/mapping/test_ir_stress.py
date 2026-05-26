@@ -92,40 +92,46 @@ class TestNeuralCoreExecution:
 
 class TestComputeOpStress:
     def test_add_mismatched_halves(self):
-        """What happens if input size is odd (half_size doesn't divide evenly)?"""
+        """Add module fed mismatched halves should raise at the torch op."""
+        from mimarsinan.mapping.compute_modules import Add
         sources = np.array([IRSource(-2, i) for i in range(5)], dtype=object)
-        op = ComputeOp(id=0, name="add", input_sources=sources,
-                       op_type="add", params={"half_size": 2})
+        op = ComputeOp(
+            id=0, name="add", input_sources=sources,
+            op_type="Add",
+            params={"module": Add(), "input_shapes": [(2,), (3,)]},
+        )
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0]])
-        # a = x[:, :2] = [1, 2], b = x[:, 2:] = [3, 4, 5]
-        # a + b will fail due to shape mismatch
         with pytest.raises(RuntimeError):
             op.execute_on_gathered(x)
 
     def test_max_pool2d_all_negative(self):
         """MaxPool with all-negative values should keep the least negative."""
         sources = np.array([IRSource(-2, i) for i in range(4)], dtype=object)
-        op = ComputeOp(id=0, name="pool", input_sources=sources,
-                       op_type="max_pool2d",
-                       input_shape=(1, 2, 2),
-                       params={"kernel_size": 2, "stride": 2, "padding": 0})
+        op = ComputeOp(
+            id=0, name="pool", input_sources=sources,
+            op_type="MaxPool2d",
+            input_shape=(1, 2, 2),
+            params={
+                "module": torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
+                "input_shape": (1, 2, 2),
+            },
+        )
         x = torch.tensor([[-4.0, -3.0, -2.0, -1.0]])
         out = op.execute_on_gathered(x)
         assert out.item() == pytest.approx(-1.0)
 
     def test_layer_norm_known_values(self):
-        """LayerNorm with known weights should produce hand-computable output."""
+        """LayerNorm with known weights produces hand-computable output."""
         dim = 4
+        ln = torch.nn.LayerNorm(dim)
+        torch.nn.init.ones_(ln.weight)
+        torch.nn.init.zeros_(ln.bias)
         sources = np.array([IRSource(-2, i) for i in range(dim)], dtype=object)
-        weight = [1.0] * dim
-        bias = [0.0] * dim
         op = ComputeOp(
             id=0, name="ln", input_sources=sources,
-            op_type="layer_norm",
-            params={
-                "weight": weight, "bias": bias,
-                "normalized_shape": [dim], "eps": 1e-5,
-            })
+            op_type="LayerNorm",
+            params={"module": ln, "input_shape": (dim,)},
+        )
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
         out = op.execute_on_gathered(x)
         expected = torch.nn.functional.layer_norm(x, [dim])
@@ -134,15 +140,19 @@ class TestComputeOpStress:
     def test_gelu_known_values(self):
         """GELU(0) = 0, GELU(large_positive) ≈ large_positive."""
         sources = np.array([IRSource(-2, 0), IRSource(-2, 1)], dtype=object)
-        op = ComputeOp(id=0, name="gelu", input_sources=sources, op_type="gelu")
+        op = ComputeOp(
+            id=0, name="gelu", input_sources=sources,
+            op_type="GELU",
+            params={"module": torch.nn.GELU()},
+        )
         x = torch.tensor([[0.0, 10.0]])
         out = op.execute_on_gathered(x)
         assert out[0, 0].item() == pytest.approx(0.0, abs=1e-5)
         assert out[0, 1].item() == pytest.approx(10.0, abs=0.01)
 
     @pytest.mark.xfail(
-        reason="BUG: ComputeOp identity op crashes on empty batch. "
-               "x.view(x.shape[0], -1) cannot reshape 0-element tensor "
+        reason="BUG: ComputeOp Identity-module crashes on empty batch. "
+               "out.reshape(out.shape[0], -1) cannot reshape 0-element tensor "
                "because the -1 dimension is ambiguous with 0 elements.",
         strict=True,
         raises=RuntimeError,
@@ -150,7 +160,11 @@ class TestComputeOpStress:
     def test_empty_input_tensor(self):
         """Empty batch dimension should propagate without crashing."""
         sources = np.array([IRSource(-2, 0)], dtype=object)
-        op = ComputeOp(id=0, name="id", input_sources=sources, op_type="identity")
+        op = ComputeOp(
+            id=0, name="id", input_sources=sources,
+            op_type="Identity",
+            params={"module": torch.nn.Identity()},
+        )
         x = torch.empty(0, 1)
         out = op.execute_on_gathered(x)
         assert out.shape[0] == 0

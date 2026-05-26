@@ -147,9 +147,9 @@ class TestE2ENumericalAssurance:
         """Every PerceptronMapper must have a non-Identity activation.
 
         Activation-less layers (e.g. final classifier) should be
-        ModuleComputeMapper, not PerceptronMapper with a fake Identity.
+        ComputeOpMapper, not PerceptronMapper with a fake Identity.
         """
-        from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ModuleComputeMapper
+        from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ComputeOpMapper
 
         torch.manual_seed(42)
         model = model_cls()
@@ -167,7 +167,7 @@ class TestE2ENumericalAssurance:
         for pm in perceptron_mappers:
             assert pm.perceptron.base_activation_name != "Identity", (
                 f"{model_cls.__name__}: PerceptronMapper '{pm.perceptron.name}' has "
-                f"Identity activation — it should be a ModuleComputeMapper instead."
+                f"Identity activation — it should be a ComputeOpMapper instead."
             )
 
 
@@ -200,8 +200,8 @@ class TestTorchMLPMixerE2E:
         assert diff < 1e-3, f"TorchMLPMixer max diff {diff:.6f}"
 
     def test_conv_patch_embedding_is_compute_op(self):
-        """Conv2d patch embedding (no activation) should be ModuleComputeMapper, not a perceptron."""
-        from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper
+        """Conv2d patch embedding (no activation) should be ComputeOpMapper, not a perceptron."""
+        from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
         from mimarsinan.models.torch_mlp_mixer import TorchMLPMixer
 
         model = TorchMLPMixer(
@@ -215,13 +215,13 @@ class TestTorchMLPMixerE2E:
         repr_ = supermodel.get_mapper_repr()
         repr_._ensure_exec_graph()
 
-        # Conv2d with no activation → ModuleComputeMapper, not Conv2DPerceptronMapper
+        # Conv2d with no activation → ComputeOpMapper, not Conv2DPerceptronMapper
         conv_mappers = [n for n in repr_._exec_order if isinstance(n, Conv2DPerceptronMapper)]
         assert not conv_mappers, (
-            "Patch embedding Conv2d should be ModuleComputeMapper, "
+            "Patch embedding Conv2d should be ComputeOpMapper, "
             f"but found {len(conv_mappers)} Conv2DPerceptronMapper(s)"
         )
 
-        # Should exist as a ModuleComputeMapper instead
-        compute_mappers = [n for n in repr_._exec_order if isinstance(n, ModuleComputeMapper)]
-        assert compute_mappers, "No ModuleComputeMapper found for patch embedding"
+        # Should exist as a ComputeOpMapper instead
+        compute_mappers = [n for n in repr_._exec_order if isinstance(n, ComputeOpMapper)]
+        assert compute_mappers, "No ComputeOpMapper found for patch embedding"

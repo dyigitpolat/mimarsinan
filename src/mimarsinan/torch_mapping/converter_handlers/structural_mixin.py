@@ -8,13 +8,16 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
+from mimarsinan.mapping.compute_modules import (
+    Add,
+    ConstantAdd,
+    ConstantPrepend,
+    Select,
+)
 from mimarsinan.mapping.mapping_utils import (
-    AddMapper,
+    ComputeOpMapper,
     ConcatMapper,
-    ConstantAddMapper,
-    ConstantPrependMapper,
     ReshapeMapper,
-    SelectMapper,
 )
 
 if TYPE_CHECKING:
@@ -37,12 +40,16 @@ class StructuralConvertMixin:
         b_const = self._get_constant_tensor(b_node) if isinstance(b_node, fx.Node) else None
 
         if a_mapper is not None and b_mapper is not None:
-            mapper = AddMapper(a_mapper, b_mapper)
+            mapper = ComputeOpMapper([a_mapper, b_mapper], Add(), name=node.name)
             self._node_to_mapper[node] = mapper
         elif a_mapper is not None and isinstance(b_const, (nn.Parameter, torch.Tensor)):
-            self._node_to_mapper[node] = ConstantAddMapper(a_mapper, b_const, name=node.name)
+            self._node_to_mapper[node] = ComputeOpMapper(
+                a_mapper, ConstantAdd(b_const), name=node.name,
+            )
         elif b_mapper is not None and isinstance(a_const, (nn.Parameter, torch.Tensor)):
-            self._node_to_mapper[node] = ConstantAddMapper(b_mapper, a_const, name=node.name)
+            self._node_to_mapper[node] = ComputeOpMapper(
+                b_mapper, ConstantAdd(a_const), name=node.name,
+            )
         elif a_mapper is not None:
             self._node_to_mapper[node] = a_mapper
         elif b_mapper is not None:
@@ -79,7 +86,9 @@ class StructuralConvertMixin:
             and index[0] == slice(None, None, None)
             and isinstance(index[1], int)
         ):
-            self._node_to_mapper[node] = SelectMapper(source, index=index[1], name=node.name)
+            self._node_to_mapper[node] = ComputeOpMapper(
+                source, Select(index=index[1]), name=node.name,
+            )
         else:
             self._node_to_mapper[node] = source
 
@@ -95,8 +104,8 @@ class StructuralConvertMixin:
             first_const = self._get_expanded_constant_tensor(first) if isinstance(first, fx.Node) else None
             second_mapper = self._get_mapper(second) if isinstance(second, fx.Node) else None
             if isinstance(first_const, (nn.Parameter, torch.Tensor)) and second_mapper is not None:
-                self._node_to_mapper[node] = ConstantPrependMapper(
-                    second_mapper, first_const, name=node.name
+                self._node_to_mapper[node] = ComputeOpMapper(
+                    second_mapper, ConstantPrepend(first_const), name=node.name,
                 )
                 return
         source_mappers = []

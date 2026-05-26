@@ -4,15 +4,22 @@ Traverses the mapper graph and sets ``per_input_scales`` on each
 perceptron so that the effective-weight formula uses the correct
 activation_scale for each input channel -- even after a concat of
 branches with different activation_scales.
+
+For multi-input host-side ``ComputeOpMapper``s with diverging source
+scales, this pass stamps ``per_source_scales`` / ``output_scale`` slots
+on the mapper.  At IR emission time the mapper wraps its underlying
+module in :class:`ScaleNormalizingWrapper` so the rate→absolute→rate
+math runs uniformly for *any* multi-input op (not just Add).
 """
 
 import torch
 
 from mimarsinan.mapping.mapping_utils import (
-    InputMapper,
+    ComputeOpMapper,
     ConcatMapper,
-    AddMapper,
+    InputMapper,
 )
+from mimarsinan.mapping.scale_broadcast import broadcast_scale_pair as _broadcast_scale_pair
 
 
 def compute_per_source_scales(model_repr):
@@ -51,22 +58,12 @@ def compute_per_source_scales(model_repr):
             if parts:
                 out_scales[node] = torch.cat(parts)
 
-        elif isinstance(node, AddMapper):
+        elif (
+            isinstance(node, ComputeOpMapper)
+            and len(node.get_source_mappers()) >= 2
+        ):
             parts = [out_scales[d] for d in deps if d in out_scales]
-            if len(parts) >= 2:
-                s_a, s_b = parts[0], parts[1]
-                if s_a.shape != s_b.shape:
-                    s_a, s_b = _broadcast_scale_pair(s_a, s_b)
-                s_combined = (s_a + s_b) / 2.0
-                out_scales[node] = s_combined
-                # Store per-element rescale factors so _exec_add can produce
-                # (A_full + B_full) / s_combined instead of A_full/s_A + B_full/s_B.
-                eps = 1e-12
-                safe = s_combined.clamp(min=eps)
-                node._ir_add_scale_a = (s_a / safe).tolist()
-                node._ir_add_scale_b = (s_b / safe).tolist()
-            elif parts:
-                out_scales[node] = parts[0]
+            out_scales[node] = _apply_multi_input_scale_policy(node, parts)
 
         else:
             src = _first_source_scales(deps, out_scales)
@@ -74,7 +71,44 @@ def compute_per_source_scales(model_repr):
                 out_scales[node] = src
 
 
-from mimarsinan.mapping.scale_broadcast import broadcast_scale_pair as _broadcast_scale_pair
+def _apply_multi_input_scale_policy(
+    node: ComputeOpMapper, source_scales: list[torch.Tensor]
+) -> torch.Tensor:
+    """Handle source-scale propagation for a multi-input ``ComputeOpMapper``.
+
+    When source scales diverge, write ``per_source_scales`` and
+    ``output_scale`` on the mapper; ``ComputeOpMapper._maybe_wrap_for_scales``
+    stamps the :class:`ScaleNormalizingWrapper` around the underlying
+    module at IR-emission time.  When sources agree, the wrapper is
+    skipped and the bare module is emitted.
+    """
+    if len(source_scales) < 2:
+        return source_scales[0] if source_scales else torch.ones(1)
+
+    # Broadcast every pair to a common length (matches the historical
+    # AddMapper pair-broadcast on length-mismatched scales).
+    normalized = list(source_scales)
+    for i in range(1, len(normalized)):
+        s_first, s_i = _broadcast_scale_pair(normalized[0], normalized[i])
+        normalized[0] = s_first
+        normalized[i] = s_i
+
+    target_len = normalized[0].shape[0]
+    for i in range(1, len(normalized)):
+        if normalized[i].shape[0] != target_len:
+            normalized[i] = torch.full(
+                (target_len,), normalized[i].mean().item(),
+                dtype=normalized[i].dtype,
+            )
+
+    coherent = all(torch.allclose(normalized[0], s) for s in normalized[1:])
+    if coherent:
+        return normalized[0]
+
+    output_scale = node.combine_source_scales(normalized)
+    node.per_source_scales = list(normalized)
+    node.output_scale = output_scale
+    return output_scale
 
 
 def _first_source_scales(deps, out_scales):

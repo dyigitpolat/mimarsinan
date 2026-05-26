@@ -1,4 +1,9 @@
-"""Structural mappers: Input, Reshape, EinopsRearrange, Stack, Add, Concat, Subscript."""
+"""Structural mappers: Input, Reshape, EinopsRearrange, Stack, Concat, Subscript, Permute.
+
+Multi-input element-wise add and mean-reduction are now expressed as
+``ComputeOpMapper(sources, Add())`` / ``ComputeOpMapper(source, Mean(dim))``
+— see :mod:`mimarsinan.mapping.compute_modules`.
+"""
 
 from __future__ import annotations
 
@@ -90,51 +95,6 @@ class StackMapper(Mapper):
         return torch.stack(outputs, dim=1).squeeze(1)
 
 
-class AddMapper(Mapper):
-    def __init__(self, source_mapper_a, source_mapper_b):
-        super(AddMapper, self).__init__()
-        self._source_mapper_a_container = [source_mapper_a]
-        self._source_mapper_b_container = [source_mapper_b]
-
-    @property
-    def source_mapper_a(self):
-        return self._source_mapper_a_container[0]
-
-    @property
-    def source_mapper_b(self):
-        return self._source_mapper_b_container[0]
-
-    def get_source_mappers(self):
-        return [m for m in [self.source_mapper_a, self.source_mapper_b] if m is not None]
-
-    def _map_to_ir(self, ir_mapping):
-        a_sources = self.source_mapper_a.map_to_ir(ir_mapping)
-        b_sources = self.source_mapper_b.map_to_ir(ir_mapping)
-        assert a_sources.shape == b_sources.shape
-        from mimarsinan.mapping.layout.layout_source_view import concat_source_views
-        n = a_sources.flatten().shape[0]
-        all_sources = concat_source_views([a_sources.flatten(), b_sources.flatten()])
-        params = {"half_size": n}
-        scale_a = getattr(self, "_ir_add_scale_a", None)
-        scale_b = getattr(self, "_ir_add_scale_b", None)
-        if scale_a is not None:
-            params["scale_a"] = scale_a
-        if scale_b is not None:
-            params["scale_b"] = scale_b
-        return ir_mapping.add_compute_op(
-            input_sources=all_sources,
-            op_type="add",
-            params=params,
-            input_shape=(2, *a_sources.shape),
-            output_shape=a_sources.shape,
-            name="element_add",
-        )
-
-    def _forward_impl(self, x):
-        a, b = x
-        return a + b
-
-
 class ConcatMapper(Mapper):
     def __init__(self, source_mappers, dim: int = 1, name: str = "Concat"):
         super().__init__()
@@ -192,44 +152,3 @@ class PermuteMapper(Mapper):
         return x.permute(*self.dims)
 
 
-class MeanMapper(Mapper):
-    """Mapper for ``tensor.mean(dim=dim)``.
-
-    * ``_forward_impl`` computes the true mean — used for software validation.
-    * ``_map_to_ir`` creates a ComputeOp with op_type="mean" so the IR graph
-      (and spiking simulation) properly averages all groups.
-    """
-
-    def __init__(self, source_mapper, dim: int):
-        super(MeanMapper, self).__init__(source_mapper)
-        self.dim = dim
-
-    def _map_to_ir(self, ir_mapping):
-        src = self.source_mapper.map_to_ir(ir_mapping)
-        # src shape is e.g. (num_patches, features) for mean(dim=1).
-        # dim is the batch-relative dim (1 in the original tensor), which maps
-        # to axis 0 in the batch-stripped source array.
-        reduce_axis = self.dim - 1 if self.dim > 0 else 0
-        num_groups = src.shape[reduce_axis]
-        # Output shape: remove the reduced axis.
-        out_shape = tuple(d for i, d in enumerate(src.shape) if i != reduce_axis)
-        group_size = int(np.prod(out_shape)) if out_shape else 1
-
-        # Flatten sources in the order expected by _exec_mean:
-        # group 0 features, group 1 features, ..., group N features.
-        # Transpose so the reduce axis comes first, then flatten.
-        if reduce_axis != 0:
-            src = np.moveaxis(src, reduce_axis, 0)
-        flat_sources = src.flatten()
-
-        return ir_mapping.add_compute_op(
-            input_sources=flat_sources,
-            op_type="mean",
-            params={"num_groups": num_groups, "group_size": group_size},
-            input_shape=(num_groups, group_size),
-            output_shape=out_shape if out_shape else (1,),
-            name="mean_reduce",
-        )
-
-    def _forward_impl(self, x):
-        return x.mean(dim=self.dim)
