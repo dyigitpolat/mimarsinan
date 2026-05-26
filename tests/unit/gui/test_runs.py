@@ -155,6 +155,8 @@ class TestGetRunPipeline:
         assert step["end_time"] == 15.0
         assert step["duration"] == 5.0
         assert step["target_metric"] == 0.95
+        assert "config_view" in result
+        assert result["config_view"]["summary"]["experiment_name"] == "Pipeline Test"
 
 
 class TestInvalidRunId:

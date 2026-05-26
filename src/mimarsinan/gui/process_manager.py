@@ -330,7 +330,7 @@ class ProcessManager:
         if not alive and run_status == "running":
             run_status = "failed"
 
-        return {
+        result = {
             "steps": steps,
             "current_step": current_step,
             "config": config,
@@ -338,6 +338,13 @@ class ProcessManager:
             "status": run_status,
             "error": run_error,
         }
+        if config:
+            try:
+                from mimarsinan.config_schema.display_view import build_config_display_view
+                result["config_view"] = build_config_display_view(config, saved_config=config)
+            except Exception:
+                pass
+        return result
 
     def get_run_step_detail(self, run_id: str, step_name: str) -> dict | None:
         """Read step detail + live metrics for a specific step of an active run."""

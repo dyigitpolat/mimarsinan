@@ -1,7 +1,8 @@
 /* Mimarsinan Pipeline Monitor — Entry point.
  * State management, WebSocket, refresh loop, pipeline bar. */
 import { esc, fmtDuration, elapsedFromStepStart } from './util.js';
-import { renderPipelineBar, renderOverviewCards, renderConfig } from './overview.js';
+import { renderPipelineBar, renderOverviewCards } from './overview.js';
+import { renderConfigTab } from './config-tab.js';
 import { refreshStepDetail, updateLiveCharts } from './step-detail.js';
 import { syncActiveLiveSearch } from './live-search-sync.js';
 import { appendConsoleLogs, clearConsoleLogs } from './console-tab.js';
@@ -124,7 +125,7 @@ function applyPipelineOverviewFromWS(overview) {
   };
   renderPipelineBar(state.pipeline, state.selectedStep);
   renderOverviewCards(state.pipeline);
-  if (state.activeMainTab === 'config') renderConfig(state.pipeline.config);
+  if (state.activeMainTab === 'config') renderConfigTab(state.pipeline);
 
   if (state.autoFollow && state.pipeline.current_step) {
     const cur = state.pipeline.current_step;
@@ -172,7 +173,7 @@ async function refreshPipeline() {
     state.pipeline = await fetchJSON(apiUrl('/pipeline'));
     renderPipelineBar(state.pipeline, state.selectedStep);
     renderOverviewCards(state.pipeline);
-    if (state.activeMainTab === 'config') renderConfig(state.pipeline?.config);
+    if (state.activeMainTab === 'config') renderConfigTab(state.pipeline);
 
     if (state.autoFollow && state.pipeline.current_step) {
       const cur = state.pipeline.current_step;
@@ -397,7 +398,7 @@ function setupMainTabs() {
     overviewPane.classList.toggle('active', tab === 'overview');
     configPane.classList.toggle('active', tab === 'config');
     if (consolePane) consolePane.classList.toggle('active', tab === 'console');
-    if (tab === 'config') renderConfig(state.pipeline?.config);
+    if (tab === 'config') renderConfigTab(state.pipeline);
     if (tab === 'console') refreshConsoleLogs();
   });
 }

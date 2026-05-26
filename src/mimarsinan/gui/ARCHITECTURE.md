@@ -109,7 +109,7 @@ Active-run cards use **incremental DOM updates**: on each poll only changed fiel
 
 Single-page application using ES modules and Plotly.js. See `static/js/` for
 modular visualization components (overview, model, IR graph, hardware, search,
-scales, pruning, live-search tabs). **`resource-urls.js`** holds the step+run
+scales, pruning, live-search tabs). **Configuration tab** (`js/config-tab.js`, `config-tab.css`): server-driven structured config display; pipeline overview responses include `config_view` from `config_schema.display_view.build_config_display_view` (defaults merged, field provenance, typed sections, pipeline step preview). Falls back to legacy flat table when `config_view` is absent. **`resource-urls.js`** holds the step+run
 context and resolves `{kind, rid}` hints to fully-qualified resource URLs for
 live / historical / active-subprocess runs; tab modules stay stateless and
 import `imgSrcAttr` / `resourceUrl` from it. **Pruning tab**: shown for the Pruning Adaptation step; lists layers with per-layer weight heatmaps (red lines for pruned rows/columns, same convention as IR Graph and Hardware) and a layer browser (list + detail panel). **Hardware tab**: shows soft-core and fused hardware-core boundaries
