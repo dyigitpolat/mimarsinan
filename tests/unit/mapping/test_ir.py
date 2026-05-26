@@ -107,25 +107,27 @@ class TestNeuralCore:
 
 
 class TestComputeOp:
-    def test_flatten(self):
-        sources = np.array([IRSource(-2, i) for i in range(6)], dtype=object)
-        op = ComputeOp(id=0, name="flat", input_sources=sources,
-                       op_type="flatten", input_shape=(2, 3))
-        x = torch.randn(2, 6)
-        out = op.execute_on_gathered(x)
-        assert out.shape == (2, 6)
+    """ComputeOp always dispatches through ``_exec_module`` — ``op_type`` is a
+    free-form display label, the executable lives in ``params['module']``."""
 
     def test_identity(self):
         sources = np.array([IRSource(-2, i) for i in range(4)], dtype=object)
-        op = ComputeOp(id=0, name="id", input_sources=sources, op_type="identity")
+        op = ComputeOp(
+            id=0, name="id", input_sources=sources, op_type="Identity",
+            params={"module": torch.nn.Identity()},
+        )
         x = torch.randn(3, 4)
         out = op.execute_on_gathered(x)
         assert torch.allclose(x.view(3, -1), out)
 
-    def test_add(self):
+    def test_add_via_module(self):
+        from mimarsinan.mapping.compute_modules import Add
         sources = np.array([IRSource(-2, i) for i in range(4)], dtype=object)
-        op = ComputeOp(id=0, name="add", input_sources=sources,
-                       op_type="add", params={"half_size": 2})
+        op = ComputeOp(
+            id=0, name="add", input_sources=sources,
+            op_type="Add",
+            params={"module": Add(), "input_shapes": [(2,), (2,)]},
+        )
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
         out = op.execute_on_gathered(x)
         expected = torch.tensor([[4.0, 6.0]])
@@ -133,7 +135,10 @@ class TestComputeOp:
 
     def test_gelu(self):
         sources = np.array([IRSource(-2, i) for i in range(3)], dtype=object)
-        op = ComputeOp(id=0, name="gelu", input_sources=sources, op_type="gelu")
+        op = ComputeOp(
+            id=0, name="gelu", input_sources=sources, op_type="GELU",
+            params={"module": torch.nn.GELU()},
+        )
         x = torch.tensor([[0.0, 1.0, -1.0]])
         out = op.execute_on_gathered(x)
         expected = torch.nn.functional.gelu(x)
@@ -141,19 +146,18 @@ class TestComputeOp:
 
     def test_max_pool2d(self):
         sources = np.array([IRSource(-2, i) for i in range(16)], dtype=object)
-        op = ComputeOp(id=0, name="pool", input_sources=sources,
-                       op_type="max_pool2d",
-                       input_shape=(1, 4, 4),
-                       params={"kernel_size": 2, "stride": 2, "padding": 0})
+        op = ComputeOp(
+            id=0, name="pool", input_sources=sources,
+            op_type="MaxPool2d",
+            input_shape=(1, 4, 4),
+            params={
+                "module": torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
+                "input_shape": (1, 4, 4),
+            },
+        )
         x = torch.arange(16, dtype=torch.float32).unsqueeze(0)
         out = op.execute_on_gathered(x)
         assert out.shape == (1, 4)
-
-    def test_unsupported_op_raises(self):
-        sources = np.array([IRSource(-2, 0)], dtype=object)
-        op = ComputeOp(id=0, name="bad", input_sources=sources, op_type="unknown_op")
-        with pytest.raises(NotImplementedError, match="unknown_op"):
-            op.execute_on_gathered(torch.tensor([[1.0]]))
 
 
 class TestIRGraph:

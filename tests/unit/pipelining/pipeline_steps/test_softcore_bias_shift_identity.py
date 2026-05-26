@@ -5,7 +5,7 @@ Tests:
   2. Single ReLU perceptron: training (staircase) must equal ttfs_quantized IR.
 
 Identity-specific tests removed: Identity layers are no longer perceptrons —
-they go through ModuleComputeMapper and never enter the adaptation/shift pipeline.
+they go through ComputeOpMapper and never enter the adaptation/shift pipeline.
 """
 
 import pytest

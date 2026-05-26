@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
-from mimarsinan.mapping.mapping_utils import Conv2DPerceptronMapper, ModuleComputeMapper
+from mimarsinan.mapping.mapping_utils import ComputeOpMapper, Conv2DPerceptronMapper
 
 if TYPE_CHECKING:
     from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
@@ -55,7 +55,7 @@ class ConvConvertMixin:
             output_shape = tuple(out_shape_with_batch[1:]) if out_shape_with_batch else None
             input_shape_with_batch = self._get_input_shape(node)
             input_shape = tuple(input_shape_with_batch[1:]) if input_shape_with_batch else None
-            mapper = ModuleComputeMapper(
+            mapper = ComputeOpMapper(
                 source, module, input_shape=input_shape,
                 output_shape=output_shape, name=node.name,
             )
@@ -110,7 +110,7 @@ class ConvConvertMixin:
                 module = nn.Sequential(conv_copy, bn_copy)
             else:
                 module = conv_copy
-            mapper = ModuleComputeMapper(source, module, name=node.name)
+            mapper = ComputeOpMapper(source, module, name=node.name)
         else:
             conv_mapper = Conv1DPerceptronMapper(
                 source,

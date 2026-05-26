@@ -121,12 +121,12 @@ def _get_conv_perceptron_activation_name(model_cls):
 
 
 def _has_conv_compute_mapper(model_cls):
-    """Check that a no-activation conv produces a ModuleComputeMapper (not PerceptronMapper)."""
-    from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper
+    """Check that a no-activation conv produces a ComputeOpMapper (not PerceptronMapper)."""
+    from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
     supermodel = _convert(model_cls)
     repr_ = supermodel.get_mapper_repr()
     repr_._ensure_exec_graph()
-    compute_mappers = [n for n in repr_._exec_order if isinstance(n, ModuleComputeMapper)]
+    compute_mappers = [n for n in repr_._exec_order if isinstance(n, ComputeOpMapper)]
     conv_perceptron_mappers = [n for n in repr_._exec_order if isinstance(n, Conv2DPerceptronMapper)]
     return len(compute_mappers) >= 1 and len(conv_perceptron_mappers) == 0
 
@@ -136,9 +136,9 @@ def _has_conv_compute_mapper(model_cls):
 
 class TestConv2dActivationAbsorption:
     def test_no_activation_gives_compute_mapper(self):
-        """Conv2d -> BN (no activation) must produce ModuleComputeMapper, not PerceptronMapper."""
+        """Conv2d -> BN (no activation) must produce ComputeOpMapper, not PerceptronMapper."""
         assert _has_conv_compute_mapper(ConvBNOnly), (
-            "Conv without activation should produce a ModuleComputeMapper, "
+            "Conv without activation should produce a ComputeOpMapper, "
             "not a Conv2DPerceptronMapper."
         )
 

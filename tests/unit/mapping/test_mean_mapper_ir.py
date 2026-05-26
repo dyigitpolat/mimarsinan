@@ -1,8 +1,11 @@
-"""Tests for MeanMapper IR mapping correctness.
+"""Tests for ``Mean``-via-``ComputeOpMapper`` IR mapping correctness.
 
-Regression guard for the bug where MeanMapper._map_to_ir used [0] (selecting
-only the first group) instead of creating a ComputeOp that averages all groups.
-This caused the spiking simulation to see only 1/N of the spatial info.
+Regression guard for the bug where the original ``MeanMapper._map_to_ir``
+used [0] (selecting only the first group) instead of creating a ComputeOp
+that averages all groups.  After the ComputeOpMapper unification the
+``Mean(nn.Module)`` is wrapped by ``ComputeOpMapper`` and the executor
+reshapes the gathered ``(B, N)`` flat input back to the structured
+``input_shape`` before reducing.
 """
 
 import numpy as np
@@ -10,18 +13,20 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.structural import MeanMapper, InputMapper
+from mimarsinan.mapping.compute_modules import Mean
+from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
+from mimarsinan.mapping.mappers.structural import InputMapper
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir import ComputeOp, IRSource
 
 
 class TestMeanMapperIRMapping:
-    """Verify MeanMapper._map_to_ir creates a ComputeOp (not just [0])."""
+    """Verify the Mean ComputeOpMapper emits a single reducing ComputeOp."""
 
     def test_creates_compute_op(self):
         """_map_to_ir must return sources from a ComputeOp, not raw subscript."""
         inp = InputMapper((4, 8))  # 4 groups, 8 features each
-        mean = MeanMapper(inp, dim=1)  # mean over dim=1 (groups)
+        mean = ComputeOpMapper(inp, Mean(dim=1))
 
         ir_mapping = IRMapping(
             q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024,
@@ -37,40 +42,34 @@ class TestMeanMapperIRMapping:
             assert isinstance(src, IRSource)
             assert src.node_id >= 0, (
                 f"IRSource(node_id={src.node_id}) looks like an input source, "
-                "not a ComputeOp output. MeanMapper may still be using [0]."
+                "not a ComputeOp output."
             )
 
     def test_compute_op_has_all_groups_as_inputs(self):
         """The mean ComputeOp must wire ALL groups, not just group 0."""
         inp = InputMapper((4, 8))  # 4 groups, 8 features
-        mean = MeanMapper(inp, dim=1)
+        mean = ComputeOpMapper(inp, Mean(dim=1))
 
         ir_mapping = IRMapping(
             q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024,
         )
         result = mean.map_to_ir(ir_mapping)
 
-        # The IR mapping internally created a ComputeOp. Check that the
-        # output sources reference the correct number of unique input sources.
-        # With 4 groups × 8 features = 32 total input sources, the ComputeOp
-        # should have all 32 wired.
-
-        # Verify output shape: 8 features after mean over 4 groups
+        # Output shape: 8 features after mean over 4 groups.
         assert result.shape == (8,)
 
-        # All output sources should come from the same ComputeOp node
+        # All output sources should come from the same ComputeOp node.
         node_ids = set(src.node_id for src in result.flatten())
         assert len(node_ids) == 1, f"Expected 1 ComputeOp node, got {len(node_ids)} distinct nodes"
 
     def test_compute_op_executes_mean_correctly(self):
-        """The mean ComputeOp must actually compute the mean, not select [0]."""
-        # Directly test the ComputeOp execution
+        """The Mean ComputeOp must actually compute the mean, not select [0]."""
         op = ComputeOp(
             id=0,
             name="test_mean",
             input_sources=np.array([IRSource(node_id=-2, index=i) for i in range(12)]),
-            op_type="mean",
-            params={"num_groups": 3, "group_size": 4},
+            op_type="module",
+            params={"module": Mean(dim=1), "input_shape": (3, 4)},
             input_shape=(3, 4),
             output_shape=(4,),
         )
@@ -87,11 +86,11 @@ class TestMeanMapperIRMapping:
 
 
 class TestMeanMapperForward:
-    """Verify MeanMapper._forward_impl still computes the true mean."""
+    """Verify the ComputeOpMapper(Mean) _forward_impl computes the true mean."""
 
     def test_forward_computes_mean(self):
         inp = InputMapper((4, 8))
-        mean = MeanMapper(inp, dim=1)
+        mean = ComputeOpMapper(inp, Mean(dim=1))
 
         x = torch.randn(2, 4, 8)
         result = mean.forward(x)

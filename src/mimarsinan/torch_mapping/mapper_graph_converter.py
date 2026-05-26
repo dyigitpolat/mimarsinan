@@ -18,17 +18,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.fx as fx
 
+from mimarsinan.mapping.compute_modules import Mean
 from mimarsinan.mapping.mapping_utils import (
-    ConstantAddMapper,
-    ConstantPrependMapper,
+    ComputeOpMapper,
     InputMapper,
-    LayerNormMapper,
-    MeanMapper,
     ModelRepresentation,
-    ModuleComputeMapper,
     PermuteMapper,
     ReshapeMapper,
-    SelectMapper,
     SubscriptMapper,
 )
 from mimarsinan.mapping.mappers.base import Mapper
@@ -70,63 +66,6 @@ class _FunctionWrapper(nn.Module):
         kwargs = {k: v for k, v in node.kwargs.items() if not isinstance(v, fx.Node)}
         return cls(fn, extra_args, kwargs)
 
-
-class _MultiInputModuleComputeMapper(Mapper):
-    """Host-side ComputeOp for modules that consume multiple tensor inputs."""
-
-    def __init__(
-        self,
-        source_mappers,
-        module: nn.Module,
-        *,
-        input_shapes=None,
-        output_shape=None,
-        name=None,
-        module_kwargs=None,
-        output_index=None,
-    ):
-        super().__init__()
-        self._source_mappers_list = list(source_mappers)
-        self.module = module
-        self.input_shapes = input_shapes
-        self.output_shape = output_shape
-        self.name = name
-        self.module_kwargs = module_kwargs or {}
-        self.output_index = output_index
-
-    def get_source_mappers(self):
-        return [m for m in self._source_mappers_list if m is not None]
-
-    def _forward_impl(self, x):
-        inputs = tuple(x) if isinstance(x, tuple) else (x,)
-        out = self.module(*inputs, **self.module_kwargs)
-        if self.output_index is not None:
-            out = out[self.output_index]
-        return out
-
-    def _map_to_ir(self, ir_mapping):
-        from mimarsinan.mapping.layout.layout_source_view import concat_source_views
-        source_arrays = [
-            mapper.map_to_ir(ir_mapping)
-            for mapper in self.get_source_mappers()
-        ]
-        flat_sources = concat_source_views(
-            [arr.flatten() if hasattr(arr, "flatten") else arr for arr in source_arrays]
-        )
-        input_shapes = self.input_shapes or [tuple(arr.shape) for arr in source_arrays]
-        return ir_mapping.add_compute_op(
-            input_sources=flat_sources,
-            op_type="module",
-            params={
-                "module": self.module,
-                "input_shapes": [tuple(shape) for shape in input_shapes],
-                "module_kwargs": self.module_kwargs,
-                "output_index": self.output_index,
-            },
-            input_shape=None,
-            output_shape=self.output_shape,
-            name=self.name,
-        )
 
 class MapperGraphConverter(
     LinearConvertMixin,
@@ -232,8 +171,8 @@ class MapperGraphConverter(
         elif isinstance(mod, nn.Conv1d):
             self._convert_conv1d(node, mod, source, report)
         elif isinstance(mod, nn.LayerNorm):
-            self._node_to_mapper[node] = LayerNormMapper(
-                source, copy.deepcopy(mod), name=node.name
+            self._node_to_mapper[node] = ComputeOpMapper(
+                source, copy.deepcopy(mod), name=node.name,
             )
         elif isinstance(mod, nn.MultiheadAttention):
             self._convert_multihead_attention(node, mod)
@@ -249,8 +188,8 @@ class MapperGraphConverter(
             input_shape = tuple(in_shape[1:]) if in_shape and len(in_shape) >= 2 else None
             out_shape = self._get_output_shape(node)
             output_shape = tuple(out_shape[1:]) if out_shape and len(out_shape) >= 2 else None
-            mapper = ModuleComputeMapper(
-                source, mod, input_shape=input_shape,
+            mapper = ComputeOpMapper(
+                source, mod, input_shapes=input_shape,
                 output_shape=output_shape, name=node.name,
             )
             self._node_to_mapper[node] = mapper
@@ -268,15 +207,15 @@ class MapperGraphConverter(
         elif fn is torch.cat:
             self._convert_cat(node)
         else:
-            # Generic: wrap function call as ModuleComputeMapper
+            # Generic: wrap function call as ComputeOpMapper
             source = self._get_source_mapper(node)
             wrapper = _FunctionWrapper.from_fx_node(node, fn)
             in_shape = self._get_input_shape(node)
             input_shape = tuple(in_shape[1:]) if in_shape and len(in_shape) >= 2 else None
             out_shape = self._get_output_shape(node)
             output_shape = tuple(out_shape[1:]) if out_shape and len(out_shape) >= 2 else None
-            mapper = ModuleComputeMapper(
-                source, wrapper, input_shape=input_shape,
+            mapper = ComputeOpMapper(
+                source, wrapper, input_shapes=input_shape,
                 output_shape=output_shape, name=node.name,
             )
             self._node_to_mapper[node] = mapper
@@ -355,7 +294,7 @@ class MapperGraphConverter(
                 dim = node.kwargs.get("dim", 1)
             if not isinstance(dim, int):
                 dim = 1
-            self._node_to_mapper[node] = MeanMapper(source, dim=dim)
+            self._node_to_mapper[node] = ComputeOpMapper(source, Mean(dim=dim), name=node.name)
 
         elif method in ("size", "dim"):
             self._node_to_mapper[node] = source
@@ -414,7 +353,7 @@ class MapperGraphConverter(
         output_shape = (
             tuple(query_shape[1:]) if query_shape is not None and len(query_shape) >= 2 else None
         )
-        self._node_to_mapper[node] = _MultiInputModuleComputeMapper(
+        self._node_to_mapper[node] = ComputeOpMapper(
             source_mappers,
             copy.deepcopy(mod),
             input_shapes=input_shapes,

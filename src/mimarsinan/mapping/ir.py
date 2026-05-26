@@ -11,9 +11,6 @@ import torch
 import torch.nn.functional as F
 
 
-from mimarsinan.mapping.scale_broadcast import broadcast_scale_to_dim as _broadcast_scale_to_dim
-
-
 @dataclass
 class WeightBank:
     """Shared weight matrix (and optional bias) referenced by multiple NeuralCores."""
@@ -214,40 +211,15 @@ class ComputeOp(IRNode):
         return self._dispatch(flat_input)
 
     def _dispatch(self, x: torch.Tensor) -> torch.Tensor:
-        if self.op_type == "max_pool2d":
-            return self._exec_max_pool2d(x)
-        elif self.op_type == "avg_pool2d":
-            return self._exec_avg_pool2d(x)
-        elif self.op_type == "adaptive_avg_pool2d":
-            return self._exec_adaptive_avg_pool2d(x)
-        elif self.op_type == "flatten":
-            return self._exec_flatten(x)
-        elif self.op_type == "identity":
-            return x.view(x.shape[0], -1)
-        elif self.op_type == "layer_norm":
-            return self._exec_layer_norm(x)
-        elif self.op_type == "gelu":
-            return self._exec_gelu(x)
-        elif self.op_type == "multi_head_attention":
-            return self._exec_multi_head_attention(x)
-        elif self.op_type == "add_constant":
-            return self._exec_add_constant(x)
-        elif self.op_type == "concat_constant":
-            return self._exec_concat_constant(x)
-        elif self.op_type == "select":
-            return self._exec_select(x)
-        elif self.op_type == "add":
-            return self._exec_add(x)
-        elif self.op_type == "mean":
-            return self._exec_mean(x)
-        elif self.op_type == "dropout":
-            return self._exec_dropout(x)
-        elif self.op_type == "linear":
-            return self._exec_linear(x)
-        elif self.op_type == "module":
-            return self._exec_module(x)
-        else:
-            raise NotImplementedError(f"ComputeOp: unsupported op_type '{self.op_type}'")
+        """Execute the wrapped host-side ``nn.Module``.
+
+        All non-neural ComputeOps share one dispatch path: ``params["module"]``
+        is the ``nn.Module`` to run, gathered ``(B, N)`` input is reshaped
+        through ``input_shape`` / ``input_shapes`` first.  ``op_type`` is a
+        free-form display label (typically ``type(module).__name__``) — it
+        has no role in dispatch.
+        """
+        return self._exec_module(x)
 
     def _gather_structured_input(
         self,
@@ -256,151 +228,6 @@ class ComputeOp(IRNode):
     ) -> torch.Tensor:
         """Gather inputs into flat ``(B, N)``."""
         return self.gather_inputs(input_tensor, buffers)  # (B, N)
-
-    def _exec_max_pool2d(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.view(x.shape[0], *self.input_shape)
-        kernel_size = self.params.get("kernel_size", 2)
-        stride = self.params.get("stride", kernel_size)
-        padding = self.params.get("padding", 0)
-        y = F.max_pool2d(x, kernel_size=kernel_size, stride=stride, padding=padding)
-        return y.view(y.shape[0], -1)
-
-    def _exec_avg_pool2d(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.view(x.shape[0], *self.input_shape)
-        kernel_size = self.params.get("kernel_size", 2)
-        stride = self.params.get("stride", kernel_size)
-        padding = self.params.get("padding", 0)
-        y = F.avg_pool2d(x, kernel_size=kernel_size, stride=stride, padding=padding)
-        return y.view(y.shape[0], -1)
-
-    def _exec_adaptive_avg_pool2d(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.view(x.shape[0], *self.input_shape)
-        output_size = self.params.get("output_size", (1, 1))
-        y = F.adaptive_avg_pool2d(x, output_size)
-        return y.view(y.shape[0], -1)
-
-    def _exec_flatten(self, x: torch.Tensor) -> torch.Tensor:
-        return x.view(x.shape[0], -1)
-
-
-    def _exec_layer_norm(self, x: torch.Tensor) -> torch.Tensor:
-        """LayerNorm across the last dimension(s)."""
-        if self.input_shape is not None and len(self.input_shape) >= 2:
-            x = x.view(x.shape[0], *self.input_shape)
-        weight = torch.tensor(self.params["weight"], dtype=x.dtype, device=x.device)
-        bias = torch.tensor(self.params["bias"], dtype=x.dtype, device=x.device)
-        eps = self.params.get("eps", 1e-5)
-        normalized_shape = self.params["normalized_shape"]
-        y = F.layer_norm(x, normalized_shape, weight=weight, bias=bias, eps=eps)
-        return y.view(y.shape[0], -1)
-
-    def _exec_gelu(self, x: torch.Tensor) -> torch.Tensor:
-        """Element-wise GELU."""
-        y = F.gelu(x)
-        return y.view(y.shape[0], -1)
-
-    def _exec_multi_head_attention(self, x: torch.Tensor) -> torch.Tensor:
-        """Scaled dot-product multi-head self-attention; input is [Q;K;V] flat."""
-        S = self.params["seq_len"]
-        D = self.params["d_model"]
-        H = self.params["num_heads"]
-        d_k = D // H
-
-        B = x.shape[0]
-        x = x.view(B, 3, S, D)
-        Q, K, V = x[:, 0], x[:, 1], x[:, 2]  # each (B, S, D)
-
-        Q = Q.view(B, S, H, d_k).transpose(1, 2)  # (B, H, S, d_k)
-        K = K.view(B, S, H, d_k).transpose(1, 2)
-        V = V.view(B, S, H, d_k).transpose(1, 2)
-
-        attn = torch.matmul(Q, K.transpose(-2, -1)) / (d_k ** 0.5)
-        attn = F.softmax(attn, dim=-1)
-        out = torch.matmul(attn, V)  # (B, H, S, d_k)
-
-        out = out.transpose(1, 2).contiguous().view(B, S * D)
-        return out
-
-    def _exec_add_constant(self, x: torch.Tensor) -> torch.Tensor:
-        """Element-wise addition with a stored constant."""
-        const = torch.tensor(
-            self.params["constant"], dtype=x.dtype, device=x.device
-        )
-        return (x + const).view(x.shape[0], -1)
-
-    def _exec_concat_constant(self, x: torch.Tensor) -> torch.Tensor:
-        """Prepend or append a constant token along the sequence dimension."""
-        S, D = self.input_shape
-        B = x.shape[0]
-        x_seq = x.view(B, S, D)
-        const = torch.tensor(
-            self.params["constant"], dtype=x.dtype, device=x.device
-        ).view(1, 1, D).expand(B, -1, -1)
-        dim = self.params.get("dim", 0)
-        if dim == 0:
-            y = torch.cat([const, x_seq], dim=1)
-        else:
-            y = torch.cat([x_seq, const], dim=1)
-        return y.view(B, -1)
-
-    def _exec_select(self, x: torch.Tensor) -> torch.Tensor:
-        """Select a single index along the first non-batch dimension."""
-        index = self.params.get("index", 0)
-        if self.input_shape is not None and len(self.input_shape) >= 2:
-            B = x.shape[0]
-            x = x.view(B, *self.input_shape)
-            y = x[:, index]  # (B, D)
-            return y.view(B, -1)
-        return x
-
-    def _exec_add(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Element-wise addition of two source tensors.
-
-        Input is the concatenation of A and B, so x has shape (B, 2*N).
-        When scale_a / scale_b are present (set by compute_per_source_scales
-        when the two branches have different activation scales), the output is
-        scale_a * a + scale_b * b = (A_full + B_full) / s_combined.
-        """
-        half = self.params["half_size"]
-        a = x[:, :half]
-        b = x[:, half:]
-        scale_a = self.params.get("scale_a", None)
-        scale_b = self.params.get("scale_b", None)
-        if scale_a is not None and scale_b is not None:
-            sa = _broadcast_scale_to_dim(
-                torch.tensor(scale_a, dtype=x.dtype, device=x.device), half
-            )
-            sb = _broadcast_scale_to_dim(
-                torch.tensor(scale_b, dtype=x.dtype, device=x.device), half
-            )
-            return sa.unsqueeze(0) * a + sb.unsqueeze(0) * b
-        return a + b
-
-    def _exec_mean(self, x: torch.Tensor) -> torch.Tensor:
-        """Mean-reduce along a dimension.
-
-        Input has shape (B, num_groups * group_size).  We reshape to
-        (B, num_groups, group_size) and take the mean along dim=1,
-        producing (B, group_size).
-        """
-        group_size = self.params["group_size"]
-        num_groups = self.params["num_groups"]
-        x = x[:, :num_groups * group_size].view(x.shape[0], num_groups, group_size)
-        return x.mean(dim=1)
-
-    def _exec_dropout(self, x: torch.Tensor) -> torch.Tensor:
-        """Identity at inference (dropout is training-only)."""
-        return x.view(x.shape[0], -1)
-
-    def _exec_linear(self, x: torch.Tensor) -> torch.Tensor:
-        """Host-side linear (matmul + bias). No activation — preserves negatives."""
-        weight = torch.tensor(self.params["weight"], dtype=x.dtype, device=x.device)
-        out = torch.matmul(x, weight.T)
-        if "bias" in self.params and self.params["bias"] is not None:
-            bias = torch.tensor(self.params["bias"], dtype=x.dtype, device=x.device)
-            out = out + bias
-        return out.reshape(out.shape[0], -1)
 
     def _exec_module(self, x: torch.Tensor) -> torch.Tensor:
         """Execute a generic PyTorch module stored in params.

@@ -32,37 +32,25 @@ from mimarsinan.mapping.chip_export import (
 )
 from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.mapping.mappers.structural import (
-    AddMapper,
     ConcatMapper,
     EinopsRearrangeMapper,
     InputMapper,
-    MeanMapper,
     PermuteMapper,
     ReshapeMapper,
     StackMapper,
     SubscriptMapper,
 )
-from mimarsinan.mapping.mappers.perceptron import ModuleComputeMapper, ModuleMapper, PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron import (
+    ComputeOpMapper,
+    ModuleMapper,
+    PerceptronMapper,
+)
 from mimarsinan.mapping.mappers.leading_dim import (
     Ensure2DMapper,
     MergeLeadingDimsMapper,
     SplitLeadingDimMapper,
 )
-from mimarsinan.mapping.mappers.pooling import (
-    AdaptiveAvgPool2DMapper,
-    AvgPool2DMapper,
-    MaxPool2DMapper,
-)
 from mimarsinan.mapping.mappers.conv import (
     Conv1DPerceptronMapper,
     Conv2DPerceptronMapper,
-)
-from mimarsinan.mapping.mappers.transformer import (
-    ConstantAddMapper,
-    ConstantPrependMapper,
-    DropoutMapper,
-    GELUMapper,
-    LayerNormMapper,
-    MultiHeadAttentionComputeMapper,
-    SelectMapper,
 )
