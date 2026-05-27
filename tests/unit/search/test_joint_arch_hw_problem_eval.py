@@ -13,7 +13,7 @@ import mimarsinan.data_handling.data_providers.mnist_data_provider  # noqa: F401
 from mimarsinan.models.builders.torch_mlp_mixer_core_builder import (
     TorchMLPMixerCoreBuilder,
 )
-from mimarsinan.search.problems.joint_arch_hw_problem import JointArchHwProblem
+from mimarsinan.search.problems.joint import JointArchHwProblem
 from mimarsinan.search.results import resolve_active_objectives
 
 

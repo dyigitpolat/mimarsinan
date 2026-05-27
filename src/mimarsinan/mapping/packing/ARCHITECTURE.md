@@ -6,17 +6,16 @@ Maps IR neural segments to `SoftCore` / `HardCore` layouts and hybrid programs.
 
 | File | Symbols | Role |
 |------|---------|------|
+| `spike_source.py` | `is_off`, `is_input`, `is_always_on`, `source_is_*` | Shared spike-source sentinel predicates for compaction and remap |
 | `canonical.py` | `canonical_*`, `pick_best_softcore` | Shared feasibility, split, fuse protocols for layout + runtime packers |
-| `greedy_split.py` | `_try_split_into_*` | Neuron-split helpers |
-| `greedy_pack.py` | `greedy_pack_softcores` | Greedy bin-packing main loop |
-| `greedy.py` | Re-exports | Compatibility aggregate |
+| `greedy/` | `greedy_pack_softcores`, split helpers | Greedy bin-packing main loop and neuron-split helpers |
 | `core_packing.py` | Re-exports | Public packing API |
-| `softcore_mapping.py` | `SoftCore`, `HardCore`, `HardCoreMapping` | Runtime soft→hard mapping |
+| `softcore/` | `SoftCore`, `HardCore`, `HardCoreMapping`, `compact_soft_core_mapping` | Runtime soft→hard mapping split across `soft_core`, `hard_core`, `hard_core_mapping`, `compaction` |
 | `hybrid_types.py` | `HybridHardCoreMapping`, `HybridStage` | Hybrid program datatypes |
 | `hybrid_segment.py` | `_flush_neural_segment`, … | Segment flush and IO remap |
 | `hybrid_build.py` | `build_hybrid_hard_core_mapping` | IRGraph → hybrid program compiler |
 | `neural_segment_packing.py` | `neural_segment_to_soft_core_mapping` | Neural-only segment → SCM |
-| `soft_core_mapper.py` | Mapper helpers | Soft-core emission from mapper graph |
+| `softcore/soft_core_mapper.py` | Mapper helpers | Soft-core emission from mapper graph |
 
 ## Dependencies
 

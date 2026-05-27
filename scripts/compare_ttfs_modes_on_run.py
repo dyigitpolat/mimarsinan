@@ -17,9 +17,9 @@ import mimarsinan.data_handling.data_providers.mnist_data_provider  # noqa: F401
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
-from mimarsinan.pipelining.simulation_factory import build_spiking_hybrid_flow
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.pipelining.core.simulation_factory import build_spiking_hybrid_flow
 
 
 def main() -> None:

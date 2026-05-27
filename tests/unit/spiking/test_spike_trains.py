@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from mimarsinan.models.activations import LIFActivation, uniform_encode_to_spike_train
+from mimarsinan.models.nn.activations import LIFActivation, uniform_encode_to_spike_train
 from mimarsinan.spiking.spike_trains import (
     lif_spike_train,
     rates_to_spike_train,

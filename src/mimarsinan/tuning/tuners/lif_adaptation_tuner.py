@@ -8,12 +8,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.models.activations import (
+from mimarsinan.models.nn.activations import (
     ChipInputQuantizer,
     LIFActivation,
     run_cycle_accurate,
 )
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
 class _CycleAccurateForward:

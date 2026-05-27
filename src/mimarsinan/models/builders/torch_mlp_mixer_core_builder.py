@@ -1,7 +1,7 @@
 """Builder for MLP-Mixer Core; registered as mlp_mixer_core with category torch."""
 
 from mimarsinan.models.torch_mlp_mixer_core import TorchMLPMixerCore
-from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
 def _divisors(n: int) -> list[int]:

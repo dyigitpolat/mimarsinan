@@ -119,7 +119,7 @@ class TestComputeOp:
 
     def test_add_via_module(self):
         import operator
-        from mimarsinan.mapping.compute_modules import ComputeAdapter
+        from mimarsinan.mapping.support.compute_modules import ComputeAdapter
         sources = np.array([IRSource(-2, i) for i in range(4)], dtype=object)
         op = ComputeOp(
             id=0, name="add", input_sources=sources,

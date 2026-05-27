@@ -9,11 +9,11 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
-from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
+from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.structural import InputMapper
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 
 
 class TestConvIRActivationType:
@@ -56,7 +56,7 @@ class TestConvIRActivationType:
     ])
     def test_spiking_uses_correct_activation(self, act_type, expected_fn):
         """SpikingUnifiedCoreFlow resolves activations correctly."""
-        from mimarsinan.models.unified_core_flow import _ttfs_activation_from_type
+        from mimarsinan.models.spiking.unified.flow import _ttfs_activation_from_type
         import torch.nn.functional as F
 
         act_fn = _ttfs_activation_from_type(act_type)

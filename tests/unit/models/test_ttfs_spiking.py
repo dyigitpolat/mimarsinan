@@ -11,8 +11,8 @@ import numpy as np
 
 from mimarsinan.mapping.ir import NeuralCore, IRGraph, IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
-"""Unit tests for mimarsinan.gui.persistence."""
+"""Unit tests for mimarsinan.gui.runtime.persistence."""
 
 import pytest
 
-from mimarsinan.gui.persistence import (
+from mimarsinan.gui.runtime.persistence import (
     save_run_info,
     load_run_info,
     update_run_status,
@@ -14,7 +14,7 @@ from mimarsinan.gui.persistence import (
     save_resource_to_disk,
     load_resource_from_disk,
 )
-from mimarsinan.gui.persistence import _sanitize_path_segment, _resource_disk_path
+from mimarsinan.gui.runtime.persistence import resource_disk_path, sanitize_path_segment
 
 
 class TestSaveLoadRunInfo:
@@ -209,45 +209,45 @@ class TestResourceDiskPath:
     executor mid-run."""
 
     def test_sanitize_allows_spaces_in_step_name(self):
-        assert _sanitize_path_segment("Hard Core Mapping") == "Hard Core Mapping"
-        assert _sanitize_path_segment("Soft Core Mapping") == "Soft Core Mapping"
+        assert sanitize_path_segment("Hard Core Mapping") == "Hard Core Mapping"
+        assert sanitize_path_segment("Soft Core Mapping") == "Soft Core Mapping"
 
     def test_sanitize_allows_parentheses_and_punctuation(self):
         # Real-world step names occasionally contain these characters.
-        assert _sanitize_path_segment("Model Building (1)") == "Model Building (1)"
-        assert _sanitize_path_segment("IR+Graph,step") == "IR+Graph,step"
+        assert sanitize_path_segment("Model Building (1)") == "Model Building (1)"
+        assert sanitize_path_segment("IR+Graph,step") == "IR+Graph,step"
 
     def test_sanitize_rejects_path_traversal(self):
         with pytest.raises(ValueError):
-            _sanitize_path_segment("..")
+            sanitize_path_segment("..")
         with pytest.raises(ValueError):
-            _sanitize_path_segment(".")
+            sanitize_path_segment(".")
         with pytest.raises(ValueError):
-            _sanitize_path_segment("")
+            sanitize_path_segment("")
         with pytest.raises(ValueError):
-            _sanitize_path_segment("a/b")
+            sanitize_path_segment("a/b")
         with pytest.raises(ValueError):
-            _sanitize_path_segment("a\\b")
+            sanitize_path_segment("a\\b")
         with pytest.raises(ValueError):
-            _sanitize_path_segment("a\x00b")
+            sanitize_path_segment("a\x00b")
 
     def test_sanitize_replaces_unsafe_chars_with_underscore(self):
         # Non-path-separator but otherwise unsafe characters are normalised
         # rather than rejected, so unknown future step names do not crash
         # the snapshot executor.
-        assert _sanitize_path_segment("weird:name") == "weird_name"
-        assert _sanitize_path_segment("tab\there") == "tab_here"
+        assert sanitize_path_segment("weird:name") == "weird_name"
+        assert sanitize_path_segment("tab\there") == "tab_here"
 
     def test_sanitize_is_idempotent(self):
         """Crucial: disk writes (sanitized) and URL-path reads (sanitized
         again by the server) must agree, so the mapping must be stable."""
         for raw in ["Hard Core Mapping", "Model Building", "weird:name", "tab\there"]:
-            once = _sanitize_path_segment(raw)
-            twice = _sanitize_path_segment(once)
+            once = sanitize_path_segment(raw)
+            twice = sanitize_path_segment(once)
             assert once == twice, raw
 
     def test_resource_disk_path_with_spaces(self, tmp_path):
-        path = _resource_disk_path(
+        path = resource_disk_path(
             str(tmp_path),
             step_name="Hard Core Mapping",
             kind="connectivity",

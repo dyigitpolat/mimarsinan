@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, ir_graph_to_soft_core_mapping
-from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping
+from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
 
 
 def _make_two_core_ir():

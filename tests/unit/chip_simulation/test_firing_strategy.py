@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from mimarsinan.chip_simulation.firing_strategy import FiringMode, FiringStrategyFactory
-from mimarsinan.models.lif_kernels import lif_fire_and_reset
+from mimarsinan.models.nn.lif_kernels import lif_fire_and_reset
 
 
 def test_novena_zero_resets_membrane():

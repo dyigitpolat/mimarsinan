@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 import torch
 
-from mimarsinan.tuning.tuning_budget import TuningBudget
+from mimarsinan.tuning.orchestration.tuning_budget import TuningBudget
 
 
 def clone_state_for_trainer(trainer) -> Any:

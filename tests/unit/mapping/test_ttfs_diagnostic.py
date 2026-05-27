@@ -12,10 +12,10 @@ import numpy as np
 
 from mimarsinan.models.torch_mlp_mixer import TorchMLPMixer
 from mimarsinan.torch_mapping.mapper_graph_converter import MapperGraphConverter
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp, IRGraph
-from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow, _ttfs_activation_from_type
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow, _ttfs_activation_from_type
 
 
 def _build_small_mixer():
@@ -43,7 +43,7 @@ def _convert_to_supermodel(model, input_shape, num_classes=4):
 
 def _fuse_bn(supermodel):
     """Fuse BatchNorm into weights (mirrors NormalizationFusionStep)."""
-    from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+    from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
     pt = PerceptronTransformer()
 
     for perceptron in supermodel.get_perceptrons():
@@ -311,7 +311,7 @@ class TestTTFSDiagnostic:
 
     def test_weight_transfer_fidelity(self):
         """Verify IR core weights match get_effective_weight for each perceptron."""
-        from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+        from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
         torch.manual_seed(42)
         model, input_shape = _build_small_mixer()
@@ -366,7 +366,7 @@ class TestTTFSDiagnostic:
 
     def test_activation_type_after_adaptation(self):
         """Conv NeuralCores must resolve activation_type through TransformedActivation."""
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+        from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
         from mimarsinan.mapping.mappers.base import resolve_activation_type
 
         torch.manual_seed(42)
@@ -418,7 +418,7 @@ class TestTTFSDiagnostic:
 
     def test_ttfs_equivalence_after_adaptation(self):
         """TTFS continuous must still match float model after adaptation + BN fusion."""
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+        from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
         torch.manual_seed(42)
         model, input_shape = _build_small_mixer()

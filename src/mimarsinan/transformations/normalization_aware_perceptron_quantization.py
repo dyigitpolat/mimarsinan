@@ -1,6 +1,6 @@
 from mimarsinan.transformations.transformation_utils import *
 
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 import torch.nn as nn
 import torch

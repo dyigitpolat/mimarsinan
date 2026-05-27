@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Dict
 
-from mimarsinan.models.lif_kernels import lif_fire_and_reset
+from mimarsinan.models.nn.lif_kernels import lif_fire_and_reset
 
 
 class FiringMode(str, Enum):

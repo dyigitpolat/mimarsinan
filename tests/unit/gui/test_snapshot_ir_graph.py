@@ -32,7 +32,7 @@ from mimarsinan.gui.snapshot.builders import (
     snapshot_ir_graph,
 )
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
-from mimarsinan.mapping.pruning.ir_pruning import prune_ir_graph
+from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 
 
 def _make_source_array(specs):

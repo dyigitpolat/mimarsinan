@@ -10,7 +10,7 @@ import torch
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.tuners.activation_adaptation_tuner import (
     ActivationAdaptationTuner,
 )

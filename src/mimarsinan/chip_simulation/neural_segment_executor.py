@@ -6,12 +6,12 @@ from typing import Any, Dict
 
 import numpy as np
 
-from mimarsinan.chip_simulation.hybrid_execution import assemble_segment_input_numpy
-from mimarsinan.chip_simulation.hybrid_semantics import (
+from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import assemble_segment_input_numpy
+from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult,
     is_ttfs_spiking_mode,
 )
-from mimarsinan.chip_simulation.ttfs_executor import TtfsAnalyticalExecutor
+from mimarsinan.chip_simulation.ttfs.ttfs_executor import TtfsAnalyticalExecutor
 
 
 def execute_neural_segment_analytical(

@@ -181,7 +181,7 @@ def main() -> None:
     print(f"Sim config: T={sim_len}, firing={firing}, spike={spike}, thresh={thresh}, mode={spiking}, input={input_shape}")
     print(f"HybridHardCoreMapping: {len(hcm.stages)} stages")
 
-    from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+    from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
     flow = SpikingHybridCoreFlow(
         input_shape=input_shape,
         hybrid_mapping=hcm,

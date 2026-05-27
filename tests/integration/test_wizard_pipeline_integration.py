@@ -68,7 +68,7 @@ def test_wizard_built_config_validates_and_pipeline_accepts(tmp_path):
         platform_constraints = platform_constraints_raw
 
     deployment_parameters = dict(cfg["deployment_parameters"])
-    from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+    from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
     DeploymentPipeline.apply_preset(cfg["pipeline_mode"], deployment_parameters)
 
     # Use mock data provider (tiny in-memory) so test does not need real dataset

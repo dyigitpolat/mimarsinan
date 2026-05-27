@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mimarsinan.gui.data_collector import DataCollector
+    from mimarsinan.gui.runtime.collector import DataCollector
 
 
 class GUIReporter:

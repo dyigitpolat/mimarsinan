@@ -1,6 +1,6 @@
 """Hybrid stage runner callback order."""
 
-from mimarsinan.chip_simulation.hybrid_stage_runner import HybridStageContext, run_hybrid_stages
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import HybridStageContext, run_hybrid_stages
 
 
 class _Stage:

@@ -1,6 +1,6 @@
 import torch
 
-from mimarsinan.models.ttfs_activation import ttfs_activation_from_type
+from mimarsinan.models.spiking.ttfs_activation import ttfs_activation_from_type
 
 
 def test_ttfs_activation_relu_default():

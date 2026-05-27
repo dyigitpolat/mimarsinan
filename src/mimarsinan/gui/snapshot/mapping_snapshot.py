@@ -10,10 +10,15 @@ import numpy as np
 
 logger = logging.getLogger("mimarsinan.gui")
 
-from mimarsinan.gui.snapshot.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
+from mimarsinan.gui.snapshot.util.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
 from mimarsinan.common.layer_key import layer_key_from_node_name
 from mimarsinan.gui.resources import ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
+from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
+    _group_consecutive_compute_stages,
+    _make_per_core_connectivity_producer,
+    _make_segment_spans_extractor,
+)
 
 # Bump cautiously: frontend URL builders hard-code these.
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
@@ -67,7 +72,7 @@ def snapshot_mapping_performance_planned(
 
 def snapshot_mapping_performance_real(mapping: Any) -> dict | None:
     """Derive wizard-shaped Mapping Performance stats from a real mapping."""
-    from mimarsinan.mapping.verification.layout_verification_stats import stats_dict_from_hybrid_mapping
+    from mimarsinan.mapping.verification.layout_verification_hybrid import stats_dict_from_hybrid_mapping
 
     return stats_dict_from_hybrid_mapping(mapping)
 

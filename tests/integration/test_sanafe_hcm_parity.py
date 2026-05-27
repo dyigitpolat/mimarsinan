@@ -142,7 +142,7 @@ def _build_hybrid_mapping(ir_graph, platform):
 
 
 def _build_hcm(hybrid_mapping, sim_length: int):
-    from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+    from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
     return SpikingHybridCoreFlow(
         input_shape=(1, 28, 28),
         hybrid_mapping=hybrid_mapping,
@@ -165,7 +165,7 @@ def test_sanafe_hcm_spike_parity_single_sample():
     per-segment, per-core input and output spike counts.
     """
     from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
-    from mimarsinan.chip_simulation.spike_recorder import (
+    from mimarsinan.chip_simulation.recording.spike_recorder import (
         compare_records, format_first_diff,
     )
 

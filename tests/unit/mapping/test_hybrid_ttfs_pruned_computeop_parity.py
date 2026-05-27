@@ -9,10 +9,10 @@ import torch.nn as nn
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.pruning.ir_pruning import prune_ir_graph
+from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.latency.ir import IRLatency
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 
 SIM_LENGTH = 8
 CORES_CONFIG = [{"count": 64, "max_axons": 32, "max_neurons": 32}]

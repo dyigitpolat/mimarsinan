@@ -3,11 +3,11 @@
 import torch.nn as nn
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.mappers.structural import InputMapper
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 import torch
 

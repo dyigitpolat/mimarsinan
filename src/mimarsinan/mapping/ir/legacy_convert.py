@@ -73,7 +73,7 @@ def ir_source_to_spike_source(ir_source: IRSource):
 
 def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = None):
     """Convert NeuralCore to SoftCore (graph required for bank-backed cores)."""
-    from mimarsinan.mapping.packing.softcore_mapping import SoftCore
+    from mimarsinan.mapping.packing.softcore import SoftCore
 
     axon_sources = [
         ir_source_to_spike_source(src) for src in neural_core.input_sources.flatten()
@@ -150,7 +150,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
 
 def ir_graph_to_soft_core_mapping(ir_graph: IRGraph):
     """Convert neural-only IRGraph to SoftCoreMapping."""
-    from mimarsinan.mapping.packing.soft_core_mapper import SoftCoreMapping
+    from mimarsinan.mapping.packing.softcore.soft_core_mapper import SoftCoreMapping
     
     compute_ops = ir_graph.get_compute_ops()
     if compute_ops:

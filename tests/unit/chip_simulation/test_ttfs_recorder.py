@@ -1,6 +1,6 @@
 import numpy as np
 
-from mimarsinan.chip_simulation.ttfs_recorder import (
+from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
     CoreTtfsActivations,
     SegmentTtfsRecord,
     TtfsRunRecord,

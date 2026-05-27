@@ -57,12 +57,12 @@ def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
             ))
         seg.hcm_diff = deltas
 from mimarsinan.data_handling.test_sample_loader import load_test_samples_by_index
-from mimarsinan.pipelining.pipeline_helpers import (
+from mimarsinan.pipelining.core.engine.pipeline_helpers import (
     require_lif_spiking_mode,
     require_spiking_mode_supported,
 )
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.simulation_factory import (
+from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.simulation_factory import (
     assert_spike_parity_or_raise,
     preprocess_hybrid_sample,
     record_hcm_reference,
@@ -167,7 +167,7 @@ class SanafeSimulationStep(PipelineStep):
                 _attach_per_core_deltas(ref, sanafe_rec)
 
             if parity_check and is_ttfs and ttfs_ref is not None:
-                from mimarsinan.chip_simulation.ttfs_recorder import (
+                from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
                     compare_ttfs_contract_records,
                     compare_ttfs_hardware_records,
                     format_first_ttfs_diff,

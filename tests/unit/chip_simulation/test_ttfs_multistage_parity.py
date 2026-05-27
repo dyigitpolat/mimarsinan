@@ -5,21 +5,21 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mimarsinan.chip_simulation.hybrid_execution import (
+from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_numpy,
     store_segment_output_numpy,
 )
-from mimarsinan.chip_simulation.hybrid_semantics import (
+from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult,
     lif_inter_stage_from_spike_counts,
     store_neural_segment_output,
 )
-from mimarsinan.chip_simulation.hybrid_stage_runner import run_hybrid_stages
-from mimarsinan.chip_simulation.ttfs_executor import TtfsAnalyticalExecutor
-from mimarsinan.chip_simulation.ttfs_recorder import compare_ttfs_records
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+from mimarsinan.chip_simulation.ttfs.ttfs_executor import TtfsAnalyticalExecutor
+from mimarsinan.chip_simulation.ttfs.ttfs_recorder import compare_ttfs_records
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping
-from mimarsinan.pipelining.simulation_factory import record_ttfs_hcm_reference
+from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
+from mimarsinan.pipelining.core.simulation_factory import record_ttfs_hcm_reference
 
 
 def _make_two_stage_mapping():
@@ -163,7 +163,7 @@ def test_store_neural_segment_output_matches_executor(pipeline_config):
         _Pipe(), mapping, torch.tensor([[0.5]], dtype=torch.float64),
     )
     act_record = __import__(
-        "mimarsinan.chip_simulation.ttfs_recorder", fromlist=["TtfsRunRecord"],
+        "mimarsinan.chip_simulation.ttfs.ttfs_recorder", fromlist=["TtfsRunRecord"],
     ).TtfsRunRecord(
         sample_index=0, simulation_length=T, spiking_mode="ttfs",
     )
@@ -175,18 +175,18 @@ def test_store_neural_segment_output_matches_executor(pipeline_config):
             stage.hard_core_mapping, seg_in,
             simulation_length=T, spiking_mode="ttfs",
         )
-        from mimarsinan.chip_simulation.ttfs_recorder import (
+        from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
             CoreTtfsActivations,
             SegmentTtfsRecord,
         )
-        from mimarsinan.mapping.core_geometry import used_neurons
+        from mimarsinan.mapping.support.core_geometry import used_neurons
 
         cores = []
         for ci, core in enumerate(stage.hard_core_mapping.cores):
             n = used_neurons(core, min_one=True)
             if n <= 0:
                 continue
-            from mimarsinan.chip_simulation.ttfs_recorder import (
+            from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
                 normalize_core_output_activation,
             )
 
@@ -203,6 +203,6 @@ def test_store_neural_segment_output_matches_executor(pipeline_config):
             seg_output=result.inter_stage[0], cores=cores,
         )
 
-    from mimarsinan.chip_simulation.ttfs_recorder import compare_ttfs_contract_records
+    from mimarsinan.chip_simulation.ttfs.ttfs_recorder import compare_ttfs_contract_records
 
     assert not compare_ttfs_contract_records(ref, act_record)

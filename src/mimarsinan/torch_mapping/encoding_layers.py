@@ -5,11 +5,10 @@ from __future__ import annotations
 import torch.nn as nn
 
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ComputeOpMapper
-from mimarsinan.mapping.mappers.conv import (
-    Conv2DPerceptronMapper,
-    Conv1DPerceptronMapper,
-)
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
+from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.structural import InputMapper
 
 

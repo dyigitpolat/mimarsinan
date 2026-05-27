@@ -136,7 +136,7 @@ def main() -> None:
     init()
 
     from mimarsinan.common.reporter import DefaultReporter
-    from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+    from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
     from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
     import mimarsinan.data_handling.data_providers  # noqa: F401
 

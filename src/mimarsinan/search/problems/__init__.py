@@ -1,4 +1,4 @@
 """Concrete search problem implementations."""
 
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
-from mimarsinan.search.problems.joint_arch_hw_problem import JointArchHwProblem
+from mimarsinan.search.problems.joint import JointArchHwProblem

@@ -6,13 +6,13 @@ from typing import Any
 
 import torch
 
-from mimarsinan.mapping.verification.mapping_verifier import (
+from mimarsinan.mapping.verification.verifier import (
     MappingVerificationResult,
     verify_hardware_config,
     verify_soft_core_mapping,
 )
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
-from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
 def model_repr_from_wizard_body(body: dict) -> Any:

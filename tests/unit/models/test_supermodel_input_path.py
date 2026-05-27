@@ -3,8 +3,8 @@
 import torch
 
 from conftest import TinyPerceptronFlow, default_config
-from mimarsinan.models.layers import LeakyGradReLU
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.models.nn.layers import LeakyGradReLU
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
 
 def _make_flow(input_shape=(1, 28, 28), num_classes=10):

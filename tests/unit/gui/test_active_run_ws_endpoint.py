@@ -15,9 +15,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from mimarsinan.gui.data_collector import DataCollector
-from mimarsinan.gui.persistence import (
-    _GUI_STATE_DIR,
+from mimarsinan.gui.runtime.collector import DataCollector
+from mimarsinan.gui.runtime.persistence import (
+    GUI_STATE_DIR,
     append_live_metric,
 )
 from mimarsinan.gui.server import create_app
@@ -49,7 +49,7 @@ def _make_client(run_id: str, working_dir: str) -> TestClient:
 def test_ws_streams_appended_metric_lines(tmp_path: Path) -> None:
     run_id = "run-A"
     working_dir = str(tmp_path)
-    (tmp_path / _GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+    (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
     client = _make_client(run_id, working_dir)
 
     with client.websocket_connect(f"/ws/active_runs/{run_id}") as ws:
@@ -72,7 +72,7 @@ def test_ws_streams_appended_metric_lines(tmp_path: Path) -> None:
 
 def test_ws_rejects_unknown_run(tmp_path: Path) -> None:
     client = _make_client("known-run", str(tmp_path))
-    (tmp_path / _GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+    (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
 
     with pytest.raises(Exception):
         # The server closes the socket with a policy-violation code;

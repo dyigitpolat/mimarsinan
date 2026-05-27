@@ -28,8 +28,8 @@ from mimarsinan.chip_simulation.sanafe.records import (
     SanafeRunRecord,
     SanafeSegmentRecord,
 )
-from mimarsinan.chip_simulation.sanafe.runner import (
-    SanafeRunner,
+from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
+from mimarsinan.chip_simulation.sanafe.analysis import (
     _read_ttfs_core_activations,
     _spike_trace_to_group_counts,
     _ttfs_potential_trace_group_names,
@@ -473,7 +473,7 @@ def test_run_ttfs_compute_stage_records_op_id_after_neural(monkeypatch):
         return SimpleNamespace(op_id=77, output=out)
 
     monkeypatch.setattr(
-        "mimarsinan.chip_simulation.ttfs_executor.run_ttfs_contract_compute_stage",
+        "mimarsinan.chip_simulation.ttfs.ttfs_executor.run_ttfs_contract_compute_stage",
         fake_contract,
     )
     monkeypatch.setattr(runner_mod, "is_ttfs_spiking_mode", lambda _mode: True)

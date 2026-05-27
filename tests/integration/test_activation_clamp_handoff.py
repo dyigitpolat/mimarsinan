@@ -48,9 +48,9 @@ from conftest import (
     TinyDataProvider,
 )
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation
-from mimarsinan.models.layers import TransformedActivation
+from mimarsinan.models.nn.layers import TransformedActivation
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.model_training.training_utilities import BasicClassificationLoss
@@ -148,7 +148,7 @@ def _make_leakyrelu_model():
             out = PerceptronMapper(out, self.p2)
             self._mapper_repr = ModelRepresentation(out)
 
-    from mimarsinan.tuning.adaptation_manager import AdaptationManager as AM
+    from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager as AM
     model = _NoBNFlow((1, 8, 8), 4)
     for p in model.get_perceptrons():
         p.is_encoding_layer = True

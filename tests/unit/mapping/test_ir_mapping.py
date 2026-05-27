@@ -5,7 +5,7 @@ import torch
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore, IRGraph
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 
 
 class TestIRMappingBasic:

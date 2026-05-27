@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.chip_simulation.sanafe.records import SanafeConnectivityEdge
-from mimarsinan.chip_simulation.sanafe.runner import (
+from mimarsinan.chip_simulation.sanafe.analysis import (
     _compute_tile_packets_per_cycle,
     _count_cross_tile_connectivity_edges,
     _summarize_message_trace,

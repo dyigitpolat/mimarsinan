@@ -52,12 +52,12 @@ def _run_headless(config_path: str) -> None:
     parsed = _parse_deployment_config(deployment_config)
     working_dir = parsed["working_directory"]
 
-    from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+    from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
     from mimarsinan.common.reporter import DefaultReporter
-    from mimarsinan.gui.data_collector import DataCollector
-    from mimarsinan.gui import GUIHandle, _make_json_safe, _backfill_skipped_steps
-    from mimarsinan.gui.composite_reporter import CompositeReporter
-    from mimarsinan.gui.persistence import save_run_info, update_run_status
+    from mimarsinan.gui import GUIHandle, backfill_skipped_steps, to_json_safe
+    from mimarsinan.gui.runtime.collector import DataCollector
+    from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
+    from mimarsinan.gui.runtime.persistence import save_run_info, update_run_status
 
     def _sigterm_handler(_signum, _frame):
         try:
@@ -98,7 +98,7 @@ def _run_headless(config_path: str) -> None:
     pipeline.register_post_step_hook(gui.on_step_end)
 
     step_names = [name for name, _ in pipeline.steps]
-    safe_config = _make_json_safe(pipeline.config)
+    safe_config = to_json_safe(pipeline.config)
     collector.set_pipeline_info(step_names, safe_config)
 
     save_run_info(working_dir, os.getpid(), step_names, {
@@ -107,7 +107,7 @@ def _run_headless(config_path: str) -> None:
     })
 
     if resolved_start_step is not None:
-        _backfill_skipped_steps(pipeline, collector, step_names, resolved_start_step)
+        backfill_skipped_steps(pipeline, collector, step_names, resolved_start_step)
 
     if parsed["target_metric_override"] is not None:
         pipeline.set_target_metric(parsed["target_metric_override"])
@@ -168,7 +168,7 @@ def _run_headless(config_path: str) -> None:
 if __name__ == "__main__":
     init()
     if len(sys.argv) >= 2 and sys.argv[1] == "--ui":
-        from mimarsinan.gui.data_collector import DataCollector
+        from mimarsinan.gui.runtime.collector import DataCollector
         from mimarsinan.gui.server import start_server
 
         collector = DataCollector()

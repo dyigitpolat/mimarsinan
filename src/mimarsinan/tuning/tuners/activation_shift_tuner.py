@@ -6,9 +6,9 @@ step-budgeted training. Not a smooth adaptation -- extends TunerBase directly.
 
 import torch
 
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
-from mimarsinan.tuning.unified_tuner import TunerBase
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import TunerBase
 
 
 class ActivationShiftTuner(TunerBase):

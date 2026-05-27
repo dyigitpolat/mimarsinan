@@ -4,9 +4,9 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.layers import (
+from mimarsinan.models.nn.layers import (
     TransformedActivation, LeakyGradReLU, RateAdjustedDecorator,
 )
 from conftest import default_config

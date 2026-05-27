@@ -1,8 +1,8 @@
 import torch
 
-from mimarsinan.pipelining.trainer_factory import make_basic_trainer
-from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 
 class QuantizationVerificationStep(TrainerPipelineStep):

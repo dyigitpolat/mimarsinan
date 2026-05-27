@@ -2,188 +2,26 @@
 
 from __future__ import annotations
 
-import os
-from typing import Any, Dict, List, Literal, Sequence, Tuple
+from typing import Any, Dict, List
 
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.model_registry import ModelRegistry
-from mimarsinan.pipelining.search_mode import derive_search_mode
-from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
+from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
-from mimarsinan.search.problems.joint_arch_hw_problem import JointArchHwProblem
+from mimarsinan.search.problems.joint import JointArchHwProblem
 from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
     resolve_active_objectives,
 )
-from mimarsinan.search.search_space_description import SearchSpaceDescription
-from mimarsinan.visualization.search_viz import (
-    create_interactive_search_report,
-    write_final_population_json,
+from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
+    OptimizerType,
+    build_fixed_platform_constraints,
+    create_optimizer,
+    derive_arch_options,
+    make_assembler,
+    search_result_to_jsonable,
+    write_search_visualizations,
 )
-
-
-OptimizerType = Literal["nsga2", "agent_evolve", "compilagent"]
-
-
-def _create_optimizer(
-    optimizer_type: OptimizerType,
-    arch_cfg: Dict[str, Any],
-    search_mode: str,
-    arch_options: List[Tuple[str, List[Any]]],
-    seed: int,
-    pop_size: int,
-    generations: int,
-    target_tq: int = 16,
-    active_objective_names: Sequence[str] = (),
-):
-    description = SearchSpaceDescription.from_arch_search(
-        search_mode=search_mode,
-        arch_options=arch_options,
-        arch_cfg=arch_cfg,
-        target_tq=target_tq,
-    )
-
-    if optimizer_type == "agent_evolve":
-        try:
-            from mimarsinan.search.optimizers.agent_evolve_optimizer import AgentEvolveOptimizer
-
-            agent_model = arch_cfg.get("agent_model", "openai:gpt-4o")
-            candidates_per_batch = arch_cfg.get("candidates_per_batch", 5)
-            max_regen_rounds = arch_cfg.get("max_regen_rounds", 10)
-            max_failed_examples = arch_cfg.get("max_failed_examples", 5)
-            llm_retries = arch_cfg.get("llm_retries", 3)
-
-            config_schema = description.to_agent_evolve_schema()
-            example_config = description.to_agent_evolve_example()
-            constraints_desc = (
-                arch_cfg.get("constraints_description")
-                or description.to_agent_evolve_constraints()
-            )
-
-            return AgentEvolveOptimizer(
-                pop_size=pop_size,
-                generations=generations,
-                candidates_per_batch=candidates_per_batch,
-                max_regen_rounds=max_regen_rounds,
-                max_failed_examples=max_failed_examples,
-                model=agent_model,
-                llm_retries=llm_retries,
-                config_schema=config_schema,
-                example_config=example_config,
-                constraints_description=constraints_desc,
-                verbose=True,
-            )
-        except ImportError as e:
-            print(f"[ArchitectureSearchStep] Agentic Evolution optimizer not available: {e}")
-            print("[ArchitectureSearchStep] Falling back to NSGA2")
-
-    if optimizer_type == "compilagent":
-        from mimarsinan.search.optimizers.compilagent import CompilagentOptimizer
-
-        return CompilagentOptimizer(
-            pop_size=int(pop_size),
-            description=description,
-            model=str(arch_cfg.get("model", "openai:gpt-4o")),
-            harness_id=str(arch_cfg.get("harness", "pydantic_ai")),
-            max_candidates=int(arch_cfg.get("max_candidates", max(pop_size, 8))),
-            max_continuations=int(arch_cfg.get("max_continuations", 4)),
-            system_prompt_extra=str(arch_cfg.get("system_prompt_extra", "")),
-            active_objective_names=tuple(active_objective_names),
-            verbose=True,
-        )
-
-    return NSGA2Optimizer(
-        pop_size=pop_size,
-        generations=generations,
-        seed=seed,
-        eliminate_duplicates=True,
-        verbose=True,
-    )
-
-
-def _search_result_to_jsonable(result) -> Dict[str, Any]:
-    from mimarsinan.gui.json_util import to_json_safe
-
-    def cand_to_dict(c):
-        return {
-            "configuration": c.configuration,
-            "objectives": c.objectives,
-            "metadata": c.metadata,
-        }
-
-    payload = {
-        "objectives": [{"name": o.name, "goal": o.goal} for o in result.objectives],
-        "best": cand_to_dict(result.best),
-        "pareto_front": [cand_to_dict(c) for c in result.pareto_front],
-        "all_candidates": [cand_to_dict(c) for c in result.all_candidates],
-        "history": result.history,
-    }
-    return to_json_safe(payload)
-
-
-def _derive_arch_options(
-    builder_cls: type,
-    arch_cfg: Dict[str, Any],
-    input_shape: tuple,
-) -> Tuple[List[Tuple[str, List[Any]]], Dict[str, Any]]:
-    """Derive (arch_options, schema_map) from builder schema and NAS options."""
-    schema = getattr(builder_cls, "get_config_schema", lambda: [])()
-    schema_map = {f["key"]: f for f in schema}
-
-    nas_opts_fn = getattr(builder_cls, "get_nas_search_options", None)
-    builder_options: Dict[str, List[Any]] = (
-        nas_opts_fn(input_shape=input_shape) if nas_opts_fn else {}
-    )
-
-    arch_options: List[Tuple[str, List[Any]]] = []
-    for field_desc in schema:
-        key = field_desc["key"]
-        field_type = field_desc.get("type")
-        if field_type == "select" and "options" in field_desc:
-            values = arch_cfg.get(f"{key}_options", field_desc["options"])
-            if len(values) > 1:
-                arch_options.append((key, list(values)))
-        elif key in builder_options:
-            values = arch_cfg.get(f"{key}_options", builder_options[key])
-            if len(values) > 1:
-                arch_options.append((key, list(values)))
-
-    schema_keys = {f["key"] for f in schema}
-    for key, default_values in builder_options.items():
-        if key not in schema_keys:
-            values = arch_cfg.get(f"{key}_options", default_values)
-            if len(values) > 1:
-                arch_options.append((key, list(values)))
-
-    return arch_options, schema_map
-
-
-def _make_assembler(schema: List[Dict[str, Any]], schema_map: Dict[str, Any]):
-    """Return a model_config assembler with type coercion and defaults."""
-    def assembler(raw: Dict[str, Any]) -> Dict[str, Any]:
-        result: Dict[str, Any] = {}
-        for field_desc in schema:
-            if "default" in field_desc:
-                result[field_desc["key"]] = field_desc["default"]
-        for k, v in raw.items():
-            field_info = schema_map.get(k, {})
-            if field_info.get("type") == "number":
-                default = field_info.get("default", 0)
-                result[k] = float(v) if isinstance(default, float) else int(v)
-            else:
-                result[k] = v
-        return result
-    return assembler
-
-
-def _build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
-    from mimarsinan.pipelining.platform_constraints_resolver import (
-        build_platform_constraints_resolved,
-    )
-
-    return build_platform_constraints_resolved(
-        pipeline_config, include_neuron_splitting=False
-    )
 
 
 class ArchitectureSearchStep(PipelineStep):
@@ -214,10 +52,10 @@ class ArchitectureSearchStep(PipelineStep):
             self._process_search(search_mode)
 
     def _process_fixed(self):
-        from mimarsinan.pipelining.model_config_emit import emit_model_config_entries
+        from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 
         emit_model_config_entries(self, self.pipeline.config)
-        pcfg = _build_fixed_platform_constraints(self.pipeline.config)
+        pcfg = build_fixed_platform_constraints(self.pipeline.config)
         self.add_entry("platform_constraints_resolved", pcfg)
         self.add_entry("architecture_search_result", {"search_mode": "fixed"})
 
@@ -227,11 +65,11 @@ class ArchitectureSearchStep(PipelineStep):
         arch_cfg = self.pipeline.config.get("arch_search", {})
         input_shape = tuple(self.pipeline.config["input_shape"])
 
-        arch_options: List[Tuple[str, List[Any]]] = []
+        arch_options: List = []
         assembler = None
 
         if search_mode in ("model", "joint"):
-            arch_options, schema_map = _derive_arch_options(builder_cls, arch_cfg, input_shape)
+            arch_options, schema_map = derive_arch_options(builder_cls, arch_cfg, input_shape)
             if not arch_options:
                 schema = getattr(builder_cls, "get_config_schema", lambda: [])()
                 raise NotImplementedError(
@@ -241,7 +79,7 @@ class ArchitectureSearchStep(PipelineStep):
                     f"Current schema keys: {[f['key'] for f in schema]}"
                 )
             schema = getattr(builder_cls, "get_config_schema", lambda: [])()
-            assembler = _make_assembler(schema, schema_map)
+            assembler = make_assembler(schema, schema_map)
 
         if assembler is None:
             assembler = lambda raw: dict(raw)
@@ -253,7 +91,7 @@ class ArchitectureSearchStep(PipelineStep):
             fixed_model_config = dict(self.pipeline.config.get("model_config", {}))
 
         if search_mode == "model":
-            fixed_platform_constraints = _build_fixed_platform_constraints(self.pipeline.config)
+            fixed_platform_constraints = build_fixed_platform_constraints(self.pipeline.config)
 
         validate_config_fn = getattr(builder_cls, "validate_config", None)
 
@@ -324,7 +162,7 @@ class ArchitectureSearchStep(PipelineStep):
             pruning_fraction=float(self.pipeline.config.get("pruning_fraction", 0.0)),
         )
 
-        optimizer = _create_optimizer(
+        optimizer = create_optimizer(
             optimizer_type=optimizer_type,
             arch_cfg=arch_cfg,
             search_mode=search_mode,
@@ -343,7 +181,7 @@ class ArchitectureSearchStep(PipelineStep):
         _reporter = getattr(self.pipeline, "reporter", None)
         _report_fn = getattr(_reporter, "report", None) if _reporter else None
         result = optimizer.optimize(problem, reporter=_report_fn)
-        result_json = _search_result_to_jsonable(result)
+        result_json = search_result_to_jsonable(result)
 
         acc = None
         if result.best and result.best.objectives:
@@ -351,21 +189,7 @@ class ArchitectureSearchStep(PipelineStep):
         if acc is not None:
             self._last_metric = float(acc)
 
-        try:
-            out_dir = self.pipeline.working_directory
-            write_final_population_json(result_json, os.path.join(out_dir, "final_population.json"))
-            report_html = os.path.join(out_dir, "search_report.html")
-            create_interactive_search_report(result_json, report_html)
-
-            for legacy in ["search_report.pdf", "search_report.png"]:
-                legacy_path = os.path.join(out_dir, legacy)
-                if os.path.exists(legacy_path):
-                    try:
-                        os.remove(legacy_path)
-                    except Exception:
-                        pass
-        except Exception as e:
-            print(f"[ArchitectureSearchStep] Visualization failed (non-fatal): {e}")
+        write_search_visualizations(result_json, self.pipeline.working_directory)
 
         best_cfg = result.best.configuration
         if not best_cfg:

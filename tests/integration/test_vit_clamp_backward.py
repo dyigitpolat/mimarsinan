@@ -19,8 +19,8 @@ pytestmark = pytest.mark.slow
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
 def test_vit_cifar10_clamp_backward_no_cuda_assert():
-    from mimarsinan.models.builders.torch_vit_builder import TorchViTBuilder
-    from mimarsinan.models.layers import ClampDecorator
+    from mimarsinan.models.builders.torch.torch_vit_builder import TorchViTBuilder
+    from mimarsinan.models.nn.layers import ClampDecorator
 
     builder = TorchViTBuilder(
         device="cuda",

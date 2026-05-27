@@ -14,13 +14,14 @@ import numpy as np
 from mimarsinan.mapping.mappers.structural import (
     InputMapper, EinopsRearrangeMapper,
 )
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ComputeOpMapper
-from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.leading_dim import Ensure2DMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp
-from mimarsinan.mapping.per_source_scales import compute_per_source_scales
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 
 

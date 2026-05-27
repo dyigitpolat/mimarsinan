@@ -94,7 +94,7 @@ class TestComputeOpStress:
     def test_add_mismatched_halves(self):
         """Add module fed mismatched halves should raise at the torch op."""
         import operator
-        from mimarsinan.mapping.compute_modules import ComputeAdapter
+        from mimarsinan.mapping.support.compute_modules import ComputeAdapter
         sources = np.array([IRSource(-2, i) for i in range(5)], dtype=object)
         op = ComputeOp(
             id=0, name="add", input_sources=sources,

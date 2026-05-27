@@ -15,7 +15,7 @@ import torch.nn as nn
 from unittest.mock import patch, MagicMock
 
 from conftest import default_config, MockPipeline, make_tiny_supermodel
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
 
 class TestPruningTunerUsesLRSearch:
@@ -25,21 +25,21 @@ class TestPruningTunerUsesLRSearch:
     def test_no_adaptation_override(self):
         """PruningTuner should not define its own _adaptation method — it
         should rely on the base class."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
         assert PruningTuner._adaptation is SmoothAdaptationTuner._adaptation
 
     def test_recovery_hooks_protocol_exists(self):
         """PruningTuner must override _recovery_training_hooks."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
         assert PruningTuner._recovery_training_hooks is not SmoothAdaptationTuner._recovery_training_hooks
 
     def test_base_class_recovery_hooks_returns_empty(self):
         """The default _recovery_training_hooks returns an empty list."""
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
         obj = object.__new__(SmoothAdaptationTuner)
         assert obj._recovery_training_hooks(0.5) == []
 
@@ -49,7 +49,7 @@ class TestPruningTunerUpdateAndEvaluate:
 
     def test_no_train_one_step_call(self):
         """_update_and_evaluate should not call trainer.train_one_step."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
         ce = nn.CrossEntropyLoss()
@@ -81,7 +81,7 @@ class TestRecoveryHooksProtocol:
     """_recovery_training_hooks returns live PyTorch forward-pre-hooks."""
 
     def test_pruning_hooks_are_returned_and_removable(self):
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
         ce = nn.CrossEntropyLoss()
@@ -120,7 +120,7 @@ class TestEnsurePipelineThreshold:
     """
 
     def test_passes_when_above_threshold(self):
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
         mock = MockPipeline()
         ce = nn.CrossEntropyLoss()
@@ -157,7 +157,7 @@ class TestEnsurePipelineThreshold:
         tuner.trainer.test.assert_not_called()
 
     def test_retries_when_below_threshold(self):
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
         mock = MockPipeline()
         ce = nn.CrossEntropyLoss()
@@ -284,22 +284,22 @@ class TestPruningTunerAfterRun:
     """PruningTuner._after_run uses LR search and returns test accuracy."""
 
     def test_after_run_defined(self):
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
         assert PruningTuner._after_run is not SmoothAdaptationTuner._after_run
 
     def test_after_run_calls_ensure_pipeline_threshold(self):
         """_after_run must call _ensure_pipeline_threshold as a safety net."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
         import inspect
         source = inspect.getsource(PruningTuner._after_run)
         assert "_ensure_pipeline_threshold" in source
 
     def test_pruning_tuner_has_no_find_lr_override(self):
         """PruningTuner should use the base-class _find_lr (no override)."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
-        from mimarsinan.tuning.unified_tuner import TunerBase
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import TunerBase
 
         assert PruningTuner._find_lr is TunerBase._find_lr
 
@@ -311,7 +311,7 @@ class TestOneShotStrictGate:
     """
 
     def _make_tuner(self):
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
         tuner = SmoothAdaptationTuner.__new__(SmoothAdaptationTuner)
         tuner.name = "Tuning Rate"
@@ -388,7 +388,7 @@ class TestBaselineCalibration:
     """run() sets tuner target from validate_n_batches at rate 0.0."""
 
     def test_target_set_from_validation(self):
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
         mock = MockPipeline()
         ce = nn.CrossEntropyLoss()

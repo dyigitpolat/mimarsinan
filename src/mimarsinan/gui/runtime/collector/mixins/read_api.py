@@ -1,0 +1,115 @@
+"""Read-side API for DataCollector (REST / overview)."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from mimarsinan.gui.runtime.collector.types import StepRecord, build_snapshot_etag
+
+logger = logging.getLogger("mimarsinan.gui")
+
+
+class ReadApiMixin:
+    """Mixin: pipeline overview and step detail queries."""
+
+    _lock: Any
+    _step_names: list[str]
+    _steps: dict[str, StepRecord]
+    _metrics: list
+    _pipeline_config: dict | None
+    _current_step: str | None
+    _working_directory: str | None
+
+    def get_pipeline_overview(self) -> dict:
+        with self._lock:
+            config = self._pipeline_config or {}
+            working_dir = self._working_directory
+        try:
+            from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
+                get_pipeline_semantic_group_by_step_name,
+            )
+            groups = get_pipeline_semantic_group_by_step_name(config)
+        except Exception:
+            groups = {}
+        config_view = None
+        if config:
+            try:
+                from mimarsinan.config_schema.display_view import build_pipeline_config_view
+                config_view = build_pipeline_config_view(config, working_dir=working_dir)
+            except Exception:
+                logger.debug("Failed to build config_view for pipeline overview", exc_info=True)
+        with self._lock:
+            steps = []
+            for name in self._step_names:
+                rec = self._steps.get(name, StepRecord(name=name))
+                steps.append({
+                    "name": rec.name,
+                    "status": rec.status.value,
+                    "start_time": rec.start_time,
+                    "end_time": rec.end_time,
+                    "duration": (rec.end_time - rec.start_time) if rec.start_time and rec.end_time else None,
+                    "target_metric": rec.target_metric,
+                    "semantic_group": groups.get(rec.name),
+                })
+            overview = {
+                "steps": steps,
+                "current_step": self._current_step,
+                "config": self._pipeline_config,
+            }
+            if config_view is not None:
+                overview["config_view"] = config_view
+            return overview
+
+    def get_step_detail(
+        self,
+        step_name: str,
+        *,
+        since_seq: int = 0,
+    ) -> dict | None:
+        with self._lock:
+            rec = self._steps.get(step_name)
+            if rec is None:
+                return None
+            step_metrics = [m for m in self._metrics if m.step_name == step_name]
+            latest_metric_seq = max((m.seq for m in step_metrics), default=0)
+            metrics = [
+                {
+                    "seq": m.seq,
+                    "name": m.metric_name,
+                    "value": m.value,
+                    "timestamp": m.timestamp,
+                    "global_step": m.global_step,
+                }
+                for m in step_metrics
+                if m.seq > since_seq
+            ]
+            return {
+                "name": rec.name,
+                "status": rec.status.value,
+                "start_time": rec.start_time,
+                "end_time": rec.end_time,
+                "duration": (rec.end_time - rec.start_time) if rec.start_time and rec.end_time else None,
+                "target_metric": rec.target_metric,
+                "metrics": metrics,
+                "latest_metric_seq": latest_metric_seq,
+                "snapshot": rec.snapshot,
+                "snapshot_key_kinds": rec.snapshot_key_kinds,
+                "snapshot_etag": build_snapshot_etag(rec),
+                "error": rec.error,
+            }
+
+    def get_step_snapshot_etag(self, step_name: str) -> str | None:
+        with self._lock:
+            rec = self._steps.get(step_name)
+            if rec is None:
+                return None
+            return build_snapshot_etag(rec)
+
+    def _broadcast_pipeline_overview(self) -> None:
+        try:
+            overview = self.get_pipeline_overview()
+        except Exception:
+            logger.debug("Failed to build pipeline overview for broadcast", exc_info=True)
+            return
+        self._broadcast({"type": "pipeline_overview", **overview})

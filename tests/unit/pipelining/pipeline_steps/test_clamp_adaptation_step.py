@@ -26,7 +26,7 @@ from conftest import (
     make_tiny_supermodel,
 )
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.pipelining.pipeline_steps.adaptation.clamp_adaptation_step import ClampAdaptationStep
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 
@@ -102,7 +102,7 @@ class TestClampAdaptationAlwaysUsesTuner:
     def test_tuner_created_for_non_relu_model(self, mock_pipeline):
         """When the model has non-ReLU activations, ClampTuner must also be used."""
         from mimarsinan.models.perceptron_mixer.perceptron import make_activation
-        from mimarsinan.models.layers import TransformedActivation
+        from mimarsinan.models.nn.layers import TransformedActivation
 
         model = make_tiny_supermodel()
         am = AdaptationManager()

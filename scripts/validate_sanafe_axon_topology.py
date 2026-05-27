@@ -36,7 +36,7 @@ def main() -> int:
     args = parser.parse_args()
     run_dir = args.run_dir.resolve()
 
-    from mimarsinan.chip_simulation.sanafe.runner import (
+    from mimarsinan.chip_simulation.sanafe.analysis import (
         _compute_connectivity_edges,
         _count_cross_tile_connectivity_edges,
     )

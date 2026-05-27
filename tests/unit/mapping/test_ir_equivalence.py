@@ -23,11 +23,11 @@ from mimarsinan.mapping.mapping_utils import (
     EinopsRearrangeMapper,
     ModelRepresentation,
 )
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import ir_graph_to_soft_core_mapping
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
-from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-from mimarsinan.models.layers import TransformedActivation, SavedTensorDecorator
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.models.nn.layers import TransformedActivation, SavedTensorDecorator
 
 
 class _RawMLPModel(nn.Module):

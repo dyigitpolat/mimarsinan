@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
     NormalizationAwarePerceptronQuantization,
 )

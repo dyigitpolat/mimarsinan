@@ -28,7 +28,7 @@ from mimarsinan.chip_simulation.sanafe.records import (
 from mimarsinan.chip_simulation.sanafe.stats import SanafeStepReport
 from mimarsinan.gui.resources import ResourceDescriptor
 from mimarsinan.gui.snapshot.builders import snapshot_sanafe_simulation
-from mimarsinan.gui.snapshot.helpers import _CACHE_KEY_TO_SNAPSHOT_KEY
+from mimarsinan.gui.snapshot.util.helpers import _CACHE_KEY_TO_SNAPSHOT_KEY
 
 
 # ---------------------------------------------------------------------------

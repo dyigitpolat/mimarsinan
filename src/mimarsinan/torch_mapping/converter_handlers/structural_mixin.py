@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter, _cat_along
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter, _cat_along
 from mimarsinan.mapping.mapping_utils import (
     ComputeOpMapper,
     ConcatMapper,

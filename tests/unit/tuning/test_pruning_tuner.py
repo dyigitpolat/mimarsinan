@@ -13,9 +13,9 @@ def _noop_validation_context(self, kind):
     """Test stand-in for ``BasicTrainer.validation_context``."""
     yield
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.layers import LeakyGradReLU
+from mimarsinan.models.nn.layers import LeakyGradReLU
 from conftest import default_config, MockPipeline, make_tiny_supermodel
 
 
@@ -47,7 +47,7 @@ class TestAdaptationManagerPruningRate:
 class TestPruningTuner:
     def test_constructs(self):
         """PruningTuner should be constructable with mock pipeline."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
         model = make_tiny_supermodel()
@@ -66,7 +66,7 @@ class TestPruningTuner:
 
     def test_apply_pruning_at_rate_one_zeros_weights(self):
         """At rate=1.0, pruned weights should be zeroed."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
         from mimarsinan.transformations.pruning import apply_pruning_masks
 
         mock = MockPipeline()
@@ -107,7 +107,7 @@ class TestPruningTuner:
 
     def test_apply_pruning_at_rate_zero_preserves_weights(self):
         """At rate=0.0, weights should be unchanged."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
         from mimarsinan.transformations.pruning import apply_pruning_masks
 
         mock = MockPipeline()
@@ -145,7 +145,7 @@ class TestPruningTuner:
     def test_first_layer_columns_and_last_layer_rows_exempt_at_rate_one(self):
         """At rate=1.0, first layer column mask and last layer row mask must be all True
         (input-buffer and output-buffer dimensions are never pruned)."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
         model = make_tiny_supermodel()
@@ -173,7 +173,7 @@ class TestPruningTuner:
 
     def test_refresh_pruning_importance_called_per_cycle(self):
         """When run(max_cycles=N) is used, activation stats (importance) should be collected at least N times."""
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
         from mimarsinan.transformations.pruning import _collect_activation_stats
 
         mock = MockPipeline()
@@ -222,7 +222,7 @@ class TestPruningTuner:
             collect_calls.append(1)
             return _collect_activation_stats(*args, **kwargs)
 
-        with patch("mimarsinan.tuning.tuners.pruning_tuner._collect_activation_stats", side_effect=counting_collect):
+        with patch("mimarsinan.tuning.tuners.pruning.pruning_tuner._collect_activation_stats", side_effect=counting_collect):
             tuner.run(max_cycles=3)
         assert len(collect_calls) >= 3, "Activation stats should be collected at least once per cycle (3 cycles)"
 
@@ -235,7 +235,7 @@ class TestPruningTuner:
         catastrophic fast-fails in Pruning Adaptation. With the monotonic
         fix, once an index is pruned it stays pruned at all higher rates.
         """
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
         model = make_tiny_supermodel()
@@ -283,7 +283,7 @@ class TestPruningTuner:
         functions backed by buffers survive instead.
         """
         import io
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
         model = make_tiny_supermodel()
@@ -342,7 +342,7 @@ class TestPruningTuner:
         ``trainer.test()``) to eliminate test-set data leakage. This
         regression test follows that change.
         """
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
         model = make_tiny_supermodel()
@@ -421,7 +421,7 @@ class TestPruningTuner:
         PruningTuner's ``_get_extra_state`` / ``_set_extra_state`` must
         snapshot and restore ``_persistent_pruned_rows`` / ``_persistent_pruned_cols``.
         """
-        from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
         model = make_tiny_supermodel()

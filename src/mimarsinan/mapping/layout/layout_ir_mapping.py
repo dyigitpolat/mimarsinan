@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
-from mimarsinan.mapping.layout.layout_source_view import (
-    LayoutSourceView,
+from mimarsinan.mapping.layout.layout_source_view import LayoutSourceView
+from mimarsinan.mapping.layout.layout_source_view_ops import (
     concat_source_views,
     node_ids_of,
     stack_source_views,

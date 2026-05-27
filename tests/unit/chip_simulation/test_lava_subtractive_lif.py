@@ -45,7 +45,7 @@ def _run_single_core_lava(
     Uses the same 2-cycle latency pad + 1-window warmup layout as
     ``LavaLoihiRunner._run_core_lava``.
     """
-    from mimarsinan.chip_simulation.lava_loihi_runner import (
+    from mimarsinan.chip_simulation.lava_loihi import (
         _subtractive_lif_cls,
     )
     from lava.magma.core.run_conditions import RunSteps
@@ -113,7 +113,7 @@ def _run_single_core_lava(
 )
 def test_single_core_matches_reference_staircase(rates):
     """One neuron, one input, constant per-sample rate → matches reference."""
-    from mimarsinan.chip_simulation.lava_loihi_runner import _uniform_rate_encode
+    from mimarsinan.chip_simulation.lava_loihi import _uniform_rate_encode
 
     T = 4
     vth = 1.0
@@ -139,7 +139,7 @@ def test_single_core_matches_reference_staircase(rates):
 @pytest.mark.slow
 def test_multi_input_multi_output_matches_reference():
     """3 inputs → 2 outputs, mixed weights."""
-    from mimarsinan.chip_simulation.lava_loihi_runner import _uniform_rate_encode
+    from mimarsinan.chip_simulation.lava_loihi import _uniform_rate_encode
 
     T = 8
     vth = 2.0

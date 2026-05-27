@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 
 
 def _inp(idx):

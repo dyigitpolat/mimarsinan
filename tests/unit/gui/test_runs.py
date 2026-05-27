@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from mimarsinan.gui.persistence import save_step_to_persisted
+from mimarsinan.gui.runtime.persistence import save_step_to_persisted
 from mimarsinan.gui.runs import (
     get_runs_root,
     list_runs,

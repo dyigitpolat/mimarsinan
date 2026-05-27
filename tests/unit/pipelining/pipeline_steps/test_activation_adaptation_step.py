@@ -25,7 +25,7 @@ from mimarsinan.pipelining.pipeline_steps.adaptation.activation_adaptation_step 
     ActivationAdaptationStep,
 )
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation
-from mimarsinan.models.layers import TransformedActivation
+from mimarsinan.models.nn.layers import TransformedActivation
 
 
 def _model_with_gelu():
@@ -108,7 +108,7 @@ class TestActivationAdaptationStepRates:
     """ActivationAdaptationStep must not set clamp_rate (stays 0)."""
 
     def test_clamp_rate_unchanged_after_step(self, mock_pipeline):
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+        from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
         model = make_tiny_supermodel()
         am = AdaptationManager()
@@ -136,7 +136,7 @@ class TestActivationAdaptationStepRates:
 
     def test_scales_not_applied(self, mock_pipeline):
         """ActivationAdaptationStep must NOT apply activation_scales."""
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+        from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
         model = make_tiny_supermodel()
         am = AdaptationManager()
@@ -176,10 +176,10 @@ class TestActivationAdaptationCommit:
         Both forward paths must produce the same output for the same input.
         """
         import torch
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+        from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
         from mimarsinan.models.perceptron_mixer.perceptron import make_activation, Perceptron
-        from mimarsinan.models.layers import TransformedActivation
-        from mimarsinan.models.activations import LeakyGradReLU
+        from mimarsinan.models.nn.layers import TransformedActivation
+        from mimarsinan.models.nn.activations import LeakyGradReLU
 
         # Build a perceptron with GELU base.
         p = Perceptron(16, 32)
@@ -221,7 +221,7 @@ class TestActivationAdaptationCommit:
         making the reported metric unreliable.  With caching, the pipeline gets
         the same value that was measured immediately after the commit.
         """
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+        from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
         model = make_tiny_supermodel()
         am = AdaptationManager()
@@ -272,7 +272,7 @@ class TestActivationAdaptationCommit:
         trainer.test() to raise, so any accidental test-set access during
         _after_run / _ensure_pipeline_threshold is caught immediately.
         """
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+        from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
         model = _model_with_gelu()
         am = AdaptationManager()

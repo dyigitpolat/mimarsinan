@@ -7,7 +7,7 @@ from mimarsinan.models.builders.torch_sequential_conv_builder import (
     TorchSequentialConvBuilder,
 )
 from mimarsinan.torch_mapping.converter import convert_torch_model
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.pruning.ir_segmentation import get_neural_segments
 
 

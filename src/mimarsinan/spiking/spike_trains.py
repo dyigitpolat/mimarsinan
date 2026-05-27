@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 
 from mimarsinan.chip_simulation import spike_modes
-from mimarsinan.models.activations import LIFActivation
+from mimarsinan.models.nn.activations import LIFActivation
 
 logger = logging.getLogger("mimarsinan.spiking.spike_trains")
 

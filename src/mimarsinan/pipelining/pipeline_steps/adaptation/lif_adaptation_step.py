@@ -1,6 +1,6 @@
 """LIF Adaptation pipeline step."""
 
-from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
+from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 
 

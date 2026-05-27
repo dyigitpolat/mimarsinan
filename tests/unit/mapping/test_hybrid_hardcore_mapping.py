@@ -9,7 +9,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
     HybridHardCoreMapping,
 )
-from mimarsinan.mapping.packing.softcore_mapping import compact_soft_core_mapping
+from mimarsinan.mapping.packing.softcore import compact_soft_core_mapping
 
 
 def _make_two_core_ir():
@@ -237,7 +237,7 @@ class TestCompactSoftCoreMapping:
         pruned_col_mask = [False, False, True, False]
         mat = np.ones((4, 4), dtype=np.float64)
         from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-        from mimarsinan.mapping.packing.softcore_mapping import SoftCore
+        from mimarsinan.mapping.packing.softcore import SoftCore
 
         sources = [
             SpikeSource(-2, 0), SpikeSource(-2, 1), SpikeSource(-2, 2), SpikeSource(-2, 3),
@@ -258,7 +258,7 @@ class TestCompactSoftCoreMapping:
     def test_no_compaction_when_masks_absent(self):
         mat = np.ones((2, 2), dtype=np.float64) * 0.5
         from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-        from mimarsinan.mapping.packing.softcore_mapping import SoftCore
+        from mimarsinan.mapping.packing.softcore import SoftCore
 
         sources = [SpikeSource(-2, 0), SpikeSource(-2, 1)]
         core = SoftCore(core_matrix=mat.copy(), axon_sources=sources, id=0)

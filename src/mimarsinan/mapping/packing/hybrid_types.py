@@ -8,12 +8,12 @@ from typing import List, Literal, Sequence
 
 import numpy as np
 
-from mimarsinan.mapping.activation_scales import (
+from mimarsinan.mapping.support.activation_scales import (
     compute_node_input_scales as _compute_node_input_activation_scales,
     compute_node_output_scales as _compute_node_activation_scales,
 )
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
-from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping, compact_soft_core_mapping
+from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping, compact_soft_core_mapping
 
 
 _FINAL_OUTPUT_SENTINEL = -999

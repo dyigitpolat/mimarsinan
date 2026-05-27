@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.layers import LeakyGradReLU, TransformedActivation
+from mimarsinan.models.nn.layers import LeakyGradReLU, TransformedActivation
 
 
 class TestPerceptronForward:

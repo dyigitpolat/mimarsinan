@@ -25,8 +25,8 @@ import torch.nn as nn
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 
 
 WORK_DIR = Path("generated/mnist_hard_all_scm_profile")
@@ -165,7 +165,7 @@ def test_mnist_scm_hcm_first_divergence():
     hcm._store_segment_output = store_capture
 
     # Also snapshot ComputeOp outputs.
-    from mimarsinan.models.hybrid_core_flow import _COMPUTE_DTYPE
+    from mimarsinan.models.spiking.hybrid.flow import _COMPUTE_DTYPE
     orig_forward = hcm._forward_ttfs
 
     def hcm_forward_capture(x_flat):

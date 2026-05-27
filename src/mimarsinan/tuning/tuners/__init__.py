@@ -1,7 +1,7 @@
 """Specialized tuner implementations for progressive model transformations."""
 
-from mimarsinan.tuning.unified_tuner import TunerBase
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import TunerBase
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 from mimarsinan.tuning.tuners.activation_adaptation_tuner import (
     ActivationAdaptationTuner,
@@ -18,4 +18,4 @@ from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 from mimarsinan.tuning.tuners.perceptron_transform_tuner import (
     PerceptronTransformTuner,
 )
-from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+from mimarsinan.tuning.tuners.pruning import PruningTuner

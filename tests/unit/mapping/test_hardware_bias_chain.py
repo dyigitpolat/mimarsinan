@@ -12,8 +12,8 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.mapping.packing.softcore_mapping import (
+from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.packing.softcore import (
     HardCore,
     HardCoreMapping,
     SoftCore,

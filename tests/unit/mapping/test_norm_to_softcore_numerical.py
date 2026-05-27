@@ -25,16 +25,16 @@ import torch.nn as nn
 import numpy as np
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.mapping.mappers.structural import InputMapper, EinopsRearrangeMapper
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp
-from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 
 
 # ---------------------------------------------------------------------------

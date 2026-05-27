@@ -32,7 +32,7 @@ import torch
 
 def _have_lava() -> bool:
     try:
-        from mimarsinan.chip_simulation.lava_loihi_runner import _subtractive_lif_cls
+        from mimarsinan.chip_simulation.lava_loihi import _subtractive_lif_cls
         _subtractive_lif_cls()
         return True
     except Exception:
@@ -52,7 +52,7 @@ def test_seg_output_gather_always_on_matches_hcm_T_count():
     # 8 segment outputs, ``sample_stride = T + latency = 4 + 5 = 9``.
     # Without the fix, an always-on span filled all 9 cycles with 1 →
     # sum=9 per neuron; the fix restricts to cycles [0, T) → sum=T=4.
-    from mimarsinan.mapping.spike_source_spans import SpikeSourceSpan
+    from mimarsinan.mapping.support.spike_source_spans import SpikeSourceSpan
 
     T = 4
     sample_stride = 9

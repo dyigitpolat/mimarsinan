@@ -1,0 +1,72 @@
+"""SANA-FE trace, energy, and connectivity analysis helpers."""
+from mimarsinan.chip_simulation.sanafe.analysis.connectivity import (
+    _build_neuron_to_core_map,
+    _compute_cascade_timeline,
+    _compute_connectivity_edges,
+    _compute_critical_cores,
+)
+from mimarsinan.chip_simulation.sanafe.analysis.diagnostics import (
+    _build_spike_capture_warning,
+    _compute_ttfs_activity_diagnostics,
+    _count_cross_tile_connectivity_edges,
+    _pack_potential_trace,
+    _summarize_message_trace,
+)
+from mimarsinan.chip_simulation.sanafe.analysis.energy import (
+    _compute_cycle_energy_breakdown,
+    _energy_share,
+    _per_core_energy_sanafe,
+    _per_core_packet_counts,
+)
+from mimarsinan.chip_simulation.sanafe.analysis.noc import (
+    _aggregate_noc_link_load,
+    _aggregate_noc_links,
+    _compute_noc_traffic_per_cycle,
+    _compute_tile_packets_per_cycle,
+    _flatten_message_trace,
+)
+from mimarsinan.chip_simulation.sanafe.analysis.trace import (
+    _group_name,
+    _group_name_to_size,
+    _group_row_offsets,
+    _hardcore_index_from_spike_group,
+    _input_spikes_per_core,
+    _lif_and_input_spike_totals,
+    _pack_spike_trace_matrix,
+    _read_ttfs_core_activations,
+    _spike_event_group_and_index,
+    _spike_trace_to_group_counts,
+    _ttfs_potential_trace_group_names,
+)
+
+__all__ = [
+    "_aggregate_noc_link_load",
+    "_aggregate_noc_links",
+    "_build_neuron_to_core_map",
+    "_build_spike_capture_warning",
+    "_compute_cascade_timeline",
+    "_compute_connectivity_edges",
+    "_compute_critical_cores",
+    "_compute_cycle_energy_breakdown",
+    "_compute_noc_traffic_per_cycle",
+    "_compute_tile_packets_per_cycle",
+    "_compute_ttfs_activity_diagnostics",
+    "_count_cross_tile_connectivity_edges",
+    "_energy_share",
+    "_flatten_message_trace",
+    "_group_name",
+    "_group_name_to_size",
+    "_group_row_offsets",
+    "_hardcore_index_from_spike_group",
+    "_input_spikes_per_core",
+    "_lif_and_input_spike_totals",
+    "_pack_potential_trace",
+    "_pack_spike_trace_matrix",
+    "_per_core_energy_sanafe",
+    "_per_core_packet_counts",
+    "_read_ttfs_core_activations",
+    "_spike_event_group_and_index",
+    "_spike_trace_to_group_counts",
+    "_summarize_message_trace",
+    "_ttfs_potential_trace_group_names",
+]

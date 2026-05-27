@@ -9,18 +9,22 @@ model types, and config schema. **`POST /api/run`** runs `build_deployment_confi
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `__init__.py` | `GUIHandle`, `start_gui`, `_TeeStream` | Facade: creates collector, reporter; installs `_TeeStream` on `sys.stdout`/`sys.stderr` to capture console output into DataCollector; optional `start_step` backfills skipped steps from cache for browsing. `GUIHandle` owns a `SnapshotExecutor` that offloads post-step bookkeeping (snapshot persistence, resource materialisation) off the pipeline thread; `on_step_end` calls `target_metric` and `build_step_snapshot` synchronously then hands the rest (`step_completed`, `save_step_to_persisted`, `save_resource_to_disk`) to that executor. `GUIHandle.wait_snapshots_idle` / `shutdown` drain it before process exit. |
-| `data_collector.py` | `DataCollector`, `MetricEvent`, `ConsoleLogEntry`, `StepRecord` | Thread-safe in-memory store; broadcasts metric, step lifecycle, console log, and `pipeline_overview` events via WebSocket. Maintains a `snapshot_version` per step; `get_step_detail(name, since_seq=N)` returns a weak HTTP ETag (`W/"{step}-{status}-{version}"`), metrics filtered to `seq > N`, and a `latest_metric_seq` cursor so frontends can poll incrementally. |
+| `__init__.py` | `GUIHandle`, `start_gui`, `backfill_skipped_steps` | Re-exports from `exports.py`. |
+| `handle.py` | `GUIHandle` | Pipeline hooks; `TeeStream` on stdio; `SnapshotExecutor` for post-step I/O. |
+| `start.py` | `start_gui`, `backfill_skipped_steps` | Starts server and optional step backfill from disk cache. |
+| `tee_stream.py` | `TeeStream` | Forwards stdout/stderr lines to the collector. |
+| `exports.py` | Public re-exports | `GUIHandle`, `start_gui`, `DataCollector`, `to_json_safe`. |
+| `runtime/collector/` | `DataCollector`, step/metric/console types | Thread-safe store; WebSocket broadcast; ETag + `since_seq` on step detail. |
 | `resources.py` | `ResourceDescriptor`, `ResourceStore` | Step-scoped, thread-safe cache for *lazy* resources (heatmap PNGs, connectivity JSON). `ResourceDescriptor` bundles `(kind, rid, producer, media_type)`; the producer is a zero-arg callable invoked on first fetch and memoised per-step. `clear_step` evicts and bumps a per-step version counter (called on `step_started` to invalidate stale URLs). |
 | `snapshot_executor.py` | `SnapshotExecutor` | Single-worker FIFO queue used by `GUIHandle` to decouple heavy post-step I/O (steps.json rewrite, on-disk resource persistence) from the pipeline thread. Exceptions in jobs are logged but never crash the worker. |
-| `active_run_stream.py` | `ActiveRunHub` | Ref-counted per-run file tailers that push `live_metrics.jsonl` lines and `steps.json` mtime changes over `/ws/active_runs/{run_id}` (~20 Hz). Stops tailer threads when the last subscriber disconnects. |
+| `runtime/active_run_hub.py` | `ActiveRunHub` | Ref-counted per-run tailers (`active_run_tailers.py`) for `/ws/active_runs/{run_id}`. |
 | `reporter.py` | `GUIReporter` | Implements `Reporter` protocol; forwards metrics to `DataCollector` |
 | `composite_reporter.py` | `CompositeReporter` | Dispatches to multiple reporters (e.g. default + GUI) |
-| `server.py` | `start_server`, `create_app`, `_gui_entry_url`, `_schedule_open_browser` | FastAPI + Uvicorn server in a daemon thread; optional `run_config_fn` for POST `/api/run`. On startup prints a single welcome URL and opens it via `webbrowser.open` (after a short delay); set `MIMARSINAN_GUI_NO_BROWSER=1` to skip opening a browser. |
+| `server/` | `start_server`, `create_app`, `gui_entry_url`, `schedule_open_browser` | FastAPI + Uvicorn server in a daemon thread; split into `app.py`, `routes_*.py`, `json_safe.py`. Optional `run_config_fn` for POST `/api/run`. On startup prints a single welcome URL and opens it via `webbrowser.open` (after a short delay); set `MIMARSINAN_GUI_NO_BROWSER=1` to skip opening a browser. |
 | `snapshot/` | `build_step_snapshot`, `snapshot_mapping_performance_*`, … | `helpers.py` uses `json_util.to_json_safe`; real mapping stats via `mapping.layout_verification_stats.stats_dict_from_hybrid_mapping`; planned stats via `wizard_layout_verify`. `builders.py`: builders return `(summary_dict, list[ResourceDescriptor])`; heavy artefacts are not embedded in the summary. Each emits `has_<thing>: true` plus a `<thing>_resource: {kind, rid}` hint, and the descriptor list carries a zero-arg producer closure that materialises the bytes / JSON on demand. Producers deep-copy mutable NumPy matrices at creation time so deferred materialisation is immune to later pipeline mutations. `build_step_snapshot` aggregates descriptors across sub-builders and returns `(snapshot, snapshot_key_kinds, resource_descriptors)`. **Pruning**: `snapshot_pruning_layers(model)` extracts per-layer weight heatmaps with pruning masks (red lines) for the Pruning Adaptation step; `build_step_snapshot` adds `pruning_layers` when step is Pruning Adaptation. Hardware snapshot: per-placement `utilization_frac`, `constituent_count` per core, and when a core is fused, `fused_axon_boundaries` and `fused_component_count` for GUI boundaries and badges. |
-| `persistence.py` | `load_persisted_steps`, `save_step_to_persisted`, … | Step state in `_GUI_STATE/steps.json`; LRU cache on `load_persisted_steps`. Per-file lock on read-modify-write. Resources under `_GUI_STATE/resources/{step}/{kind}/{rid}.{ext}`; metrics in `live_metrics.jsonl`; console in `console.jsonl`. |
-| `process_manager.py` | `ProcessManager`, `ManagedRun`, `_start_console_reader` | Spawns headless pipeline processes with `stdout=PIPE, stderr=PIPE`; background reader threads drain both pipes and write tagged lines to `_GUI_STATE/console.jsonl`; tracks runs via filesystem polling, provides status/metrics/step detail APIs, kill with SIGTERM→SIGKILL escalation. `get_run_detail` exposes `status` and `error` fields from `run_info.json` so the UI can display error banners on failure. |
-| `run_cache_seed.py` | `copy_pipeline_cache_from_previous_run`, `copy_steps_json_from_previous_run` | Edit & continue: copies pipeline cache files and optionally `_GUI_STATE/steps.json` from the prior run so `run_from` has cache entries and backfill can restore full step snapshots for the monitor |
+| `runtime/persistence/` | `store`, `load`, `paths`, `resource_paths` | `steps.json` with LRU load cache; resources, `live_metrics.jsonl`, `console.jsonl`. |
+| `runtime/process_*.py` | `ProcessManager`, `ManagedRun` | `process_spawn` (subprocess + console reader); `process_monitor` (poll, detail, kill). |
+| `runtime/run_cache_seed.py` | cache copy helpers | Edit & continue seeding from a prior run directory. |
 | `runs.py` | `list_runs`, `get_run_config`, `get_run_pipeline`, `get_run_step_detail`, `get_run_console_logs` | Discover and load historical pipeline runs from the generated files directory; `get_run_console_logs` reads `console.jsonl` for the console tab |
 | `templates.py` | `list_templates`, `get_template`, `save_template`, `delete_template`, `name_and_deployment_from_post_body` | CRUD for deployment configuration templates saved as JSON files. Files are a **flat deployment dict** (same shape as `get_run_config`). `save_template` sets `experiment_name` on the stored copy to the given template display name (so lists and wizard load show the template label, not the originating run name). POST `/api/templates` accepts `{name, config}` or a flat deployment body. |
 | `wizard/config_builder.py` | `build_deployment_config_from_state` | Canonical wizard config builder: defaults, `apply_preset`, `derive_deployment_parameters`; syncs top-level `pipeline_mode` from `deployment_parameters` after derive. |
@@ -77,7 +81,7 @@ Steps in `_GUI_STATE/steps.json` follow a strict status lifecycle:
 3. **Failure** → writes `status: "failed"` (or inferred: `running` + dead process → `failed`)
 4. **Fallback rule**: if `status` key is missing but `end_time` is present, status is inferred as `"completed"` (backwards compatibility with older persisted data)
 
-This contract is enforced in `__init__.py` (`GUIHandle.on_step_end`) and consumed by `process_manager.py` (`get_run_detail`, `get_run_step_detail`, `list_active`) and `runs.py` (`get_run_pipeline`, `get_run_step_detail`).
+This contract is enforced in `handle.py` (`GUIHandle.on_step_end`) and consumed by `runtime/process_monitor.py` and `runs.py`.
 
 ### Process-Based Concurrent Runs
 
@@ -167,7 +171,7 @@ Welcome run id (`window.__editContinueSourceRunId`). `ProcessManager.spawn_run`
 strips it from the saved `_RUN_CONFIG/config.json` and calls
 `copy_pipeline_cache_from_previous_run` and `copy_steps_json_from_previous_run`
 so the new working directory has the prior run’s pipeline cache **and** a seed
-`steps.json` before `run.py --headless` starts. After `_backfill_skipped_steps`
+`steps.json` before `run.py --headless` starts. After `backfill_skipped_steps`
 runs, `_persist_skipped_steps_to_steps_json` replaces `steps.json` with only
 the skipped (completed-from-cache) steps so the monitor/APIs match execution —
 `on_step_end` only persists steps that actually run in-process, so this extra
@@ -270,9 +274,9 @@ resources use the same `ResourceDescriptor` pattern as other step tabs.
 - `run.py --ui` starts the GUI server with `ProcessManager` and wizard at `/wizard`; POST `/api/run` spawns headless pipeline processes.
 - `run.py --headless <config>` runs a pipeline with file-based monitoring (no GUI server); writes to `_GUI_STATE/`.
 
-## Exported API (\_\_init\_\_.py)
+## Exported API (`__init__.py` / `exports.py`)
 
-`GUIHandle`, `start_gui`.
+`GUIHandle`, `start_gui`, `backfill_skipped_steps`.
 
 ## Active Run API Endpoints (when `ProcessManager` available)
 

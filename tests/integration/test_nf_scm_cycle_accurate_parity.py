@@ -6,14 +6,14 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.mappers.structural import InputMapper
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.models.activations import LIFActivation, run_cycle_accurate
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+from mimarsinan.models.nn.activations import LIFActivation, run_cycle_accurate
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.pipelining.simulation_factory import run_trainer_metric
+from mimarsinan.pipelining.core.simulation_factory import run_trainer_metric
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from conftest import MockDataProviderFactory, default_config
 

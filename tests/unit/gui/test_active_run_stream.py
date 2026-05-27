@@ -1,4 +1,4 @@
-"""Unit tests for mimarsinan.gui.active_run_stream.
+"""Unit tests for mimarsinan.gui.runtime.active_run_hub.
 
 Covers the file-tailer + WS-broadcast loop that replaces the 3 s poll
 for subprocess-spawned active runs. The tailer-to-subscriber path must:
@@ -22,9 +22,9 @@ from pathlib import Path
 
 import pytest
 
-from mimarsinan.gui.active_run_stream import ActiveRunHub
-from mimarsinan.gui.persistence import (
-    _GUI_STATE_DIR,
+from mimarsinan.gui.runtime.active_run_hub import ActiveRunHub
+from mimarsinan.gui.runtime.persistence import (
+    GUI_STATE_DIR,
     append_live_metric,
     save_step_to_persisted,
 )
@@ -77,7 +77,7 @@ def hub_factory():
 class TestMetricsStreaming:
     def test_new_metric_lines_are_broadcast_to_subscriber(self, tmp_path, hub_factory):
         working_dir = str(tmp_path)
-        (tmp_path / _GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
         hub = hub_factory("run-A", working_dir)
 
         ws = _FakeWS()
@@ -100,7 +100,7 @@ class TestMetricsStreaming:
 
     def test_multiple_subscribers_share_a_single_tailer(self, tmp_path, hub_factory):
         working_dir = str(tmp_path)
-        (tmp_path / _GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
         hub = hub_factory("run-A", working_dir)
 
         ws1 = _FakeWS()
@@ -116,7 +116,7 @@ class TestMetricsStreaming:
 
     def test_unsubscribe_last_subscriber_stops_the_tailer(self, tmp_path, hub_factory):
         working_dir = str(tmp_path)
-        (tmp_path / _GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
         hub = hub_factory("run-A", working_dir)
 
         ws = _FakeWS()
@@ -138,7 +138,7 @@ class TestMetricsStreaming:
         the stale byte offset skips the new header of the replaced log.
         """
         working_dir = str(tmp_path)
-        state_dir = tmp_path / _GUI_STATE_DIR
+        state_dir = tmp_path / GUI_STATE_DIR
         state_dir.mkdir(parents=True, exist_ok=True)
         path = state_dir / "live_metrics.jsonl"
 
@@ -168,14 +168,14 @@ class TestMetricsStreaming:
 
 
 def _poll_interval() -> float:
-    from mimarsinan.gui.active_run_stream import _POLL_INTERVAL_S
-    return _POLL_INTERVAL_S
+    from mimarsinan.gui.runtime.active_run_tailers import POLL_INTERVAL_S
+    return POLL_INTERVAL_S
 
 
 class TestStepsOverviewStreaming:
     def test_steps_json_change_triggers_overview_event(self, tmp_path, hub_factory):
         working_dir = str(tmp_path)
-        (tmp_path / _GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
 
         built_overviews: list[int] = []
 

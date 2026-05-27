@@ -15,7 +15,7 @@ def neural_segment_to_soft_core_mapping(
 ):
     """Convert a neural-only segment ``IRGraph`` to ``SoftCoreMapping`` via ``neural_core_to_soft_core``."""
     from mimarsinan.mapping.ir import neural_core_to_soft_core
-    from mimarsinan.mapping.packing.soft_core_mapper import SoftCoreMapping
+    from mimarsinan.mapping.packing.softcore.soft_core_mapper import SoftCoreMapping
 
     compute_ops = seg_graph.get_compute_ops()
     if compute_ops:

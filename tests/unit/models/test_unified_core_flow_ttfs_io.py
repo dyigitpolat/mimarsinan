@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 
 from conftest import make_tiny_ir_graph
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 
 
 def test_ttfs_flatten_order_matches_ir_input_sources():

@@ -53,7 +53,7 @@ def _have_artifacts() -> bool:
 
 def _have_lava() -> bool:
     try:
-        from mimarsinan.chip_simulation.lava_loihi_runner import _subtractive_lif_cls
+        from mimarsinan.chip_simulation.lava_loihi import _subtractive_lif_cls
         _subtractive_lif_cls()
         return True
     except Exception:
@@ -110,7 +110,7 @@ def _build_hybrid_mapping(ir_graph, platform):
 
 
 def _build_hcm(hybrid_mapping, sim_length: int):
-    from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+    from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
     return SpikingHybridCoreFlow(
         input_shape=(1, 28, 28),
         hybrid_mapping=hybrid_mapping,
@@ -131,7 +131,7 @@ def _make_hard_core(
     hardware_bias: np.ndarray | None = None,
 ):
     """Construct a minimal occupied ``HardCore`` for synthetic timing tests."""
-    from mimarsinan.mapping.packing.softcore_mapping import HardCore
+    from mimarsinan.mapping.packing.softcore import HardCore
 
     axons, neurons = matrix.shape
     core = HardCore(axons, neurons)
@@ -162,7 +162,7 @@ def _make_two_core_hybrid(
         SegmentIOSlice,
     )
     from mimarsinan.mapping.ir import IRSource
-    from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
+    from mimarsinan.mapping.packing.softcore import HardCoreMapping
 
     source_core = _make_hard_core(
         np.asarray([[1.0]], dtype=np.float32),
@@ -196,8 +196,8 @@ def _make_two_core_hybrid(
 @pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
 def test_loihi_delayed_core_input_window_matches_hcm():
     """Delayed cores must count segment-input axons over their active window."""
-    from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
-    from mimarsinan.chip_simulation.spike_recorder import compare_records
+    from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
+    from mimarsinan.chip_simulation.recording.spike_recorder import compare_records
     from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
     T = 4
@@ -227,8 +227,8 @@ def test_loihi_delayed_core_input_window_matches_hcm():
 @pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
 def test_loihi_delayed_hardware_bias_matches_hcm_active_window():
     """Hardware bias must not integrate before a delayed core's active window."""
-    from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
-    from mimarsinan.chip_simulation.spike_recorder import compare_records
+    from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
+    from mimarsinan.chip_simulation.recording.spike_recorder import compare_records
     from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
     T = 4
@@ -256,8 +256,8 @@ def test_loihi_delayed_hardware_bias_matches_hcm_active_window():
 @pytest.mark.skipif(not _have_lava(), reason="Lava not importable on this host")
 def test_loihi_duplicate_source_axons_accumulate_weights():
     """Multiple axons reading the same source must sum, not overwrite."""
-    from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
-    from mimarsinan.chip_simulation.spike_recorder import compare_records
+    from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
+    from mimarsinan.chip_simulation.recording.spike_recorder import compare_records
     from mimarsinan.code_generation.cpp_chip_model import SpikeSource
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         HybridHardCoreMapping,
@@ -265,7 +265,7 @@ def test_loihi_duplicate_source_axons_accumulate_weights():
         SegmentIOSlice,
     )
     from mimarsinan.mapping.ir import IRSource
-    from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
+    from mimarsinan.mapping.packing.softcore import HardCoreMapping
 
     T = 4
     segment = HardCoreMapping([])
@@ -361,8 +361,8 @@ def test_loihi_hcm_spike_parity_single_sample():
     """For one MNIST sample, HCM and Loihi must produce identical
     per-segment, per-core input and output spike counts.
     """
-    from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
-    from mimarsinan.chip_simulation.spike_recorder import (
+    from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
+    from mimarsinan.chip_simulation.recording.spike_recorder import (
         compare_records,
         format_first_diff,
     )

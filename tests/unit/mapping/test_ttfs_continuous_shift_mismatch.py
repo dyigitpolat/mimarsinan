@@ -35,16 +35,16 @@ import torch.nn as nn
 import numpy as np
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.mapping.mappers.structural import InputMapper
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore
-from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +275,7 @@ class TestStaircaseVsContinuousDeployment:
         torch.manual_seed(42)
         x = torch.rand(1000) * act_scale
 
-        from mimarsinan.models.activations import StaircaseFunction
+        from mimarsinan.models.nn.activations import StaircaseFunction
         staircase_out = StaircaseFunction.apply(torch.relu(x), torch.tensor(tq / act_scale))
         relu_out = torch.relu(x)
 
@@ -290,7 +290,7 @@ class TestStaircaseVsContinuousDeployment:
         Staircase is floor-based: floor(x * tq) / tq.
         Verify this is the case with a known input.
         """
-        from mimarsinan.models.activations import StaircaseFunction
+        from mimarsinan.models.nn.activations import StaircaseFunction
         tq = 4
         act_scale = 1.0
         x = torch.tensor([0.0, 0.1, 0.25, 0.5, 0.74, 0.75, 1.0])
@@ -316,7 +316,7 @@ class TestStaircaseVsContinuousDeployment:
 
         This confirms ttfs_quantized IS equivalent to training for in-range values.
         """
-        from mimarsinan.models.activations import StaircaseFunction
+        from mimarsinan.models.nn.activations import StaircaseFunction
         act_scale = 1.0
         S = tq
 

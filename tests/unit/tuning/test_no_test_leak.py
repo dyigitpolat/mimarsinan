@@ -19,8 +19,8 @@ import torch
 import torch.nn as nn
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
 class TestCallNotAllowedError(AssertionError):

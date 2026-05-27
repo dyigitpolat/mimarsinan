@@ -1,6 +1,6 @@
 import numpy as np
 
-from mimarsinan.chip_simulation.ttfs_encoding import (
+from mimarsinan.chip_simulation.ttfs.ttfs_encoding import (
     ttfs_always_on_spike_times_1based,
     ttfs_input_spike_times_1based,
     ttfs_latched_spike_train,

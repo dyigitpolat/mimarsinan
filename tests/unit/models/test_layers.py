@@ -4,7 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.layers import (
+from mimarsinan.models.nn.layers import (
     LeakyGradReLU,
     StaircaseFunction,
     DifferentiableClamp,

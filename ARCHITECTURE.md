@@ -1577,6 +1577,18 @@ Module dependency rules:
 
 ## 18. Conventions and Patterns
 
+### Module size budget (CI)
+
+Every `.py` file under `src/mimarsinan/` must stay at or below **300 lines of code**, and every package directory must have at most **10 direct sibling `.py` files** (excluding `__init__.py`). Enforcement is global — there are no path allowlists.
+
+```bash
+python scripts/check_module_budget.py --strict
+python scripts/import_path_inventory.py --check-legacy-path
+pytest tests/unit/architecture/ -q
+```
+
+`tests/unit/architecture/test_module_budget.py` runs the budget script with `--strict` in CI. `tests/unit/architecture/test_package_flatness.py` asserts the per-directory sibling cap. Regenerate [`docs/source_tree_annotated.txt`](docs/source_tree_annotated.txt) after structural changes via `python scripts/annotate_source_tree.py > docs/source_tree_annotated.txt`.
+
 ### Naming Conventions
 - **Pipeline steps**: `{Action}Step` (e.g., `PretrainingStep`, `WeightQuantizationStep`)
 - **Tuners**: `{Type}Tuner` (e.g., `ClampTuner`, `LIFAdaptationTuner`)

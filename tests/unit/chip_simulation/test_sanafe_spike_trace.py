@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mimarsinan.chip_simulation.sanafe.runner import (
+from mimarsinan.chip_simulation.sanafe.analysis import (
     _build_spike_capture_warning,
     _hardcore_index_from_spike_group,
     _lif_and_input_spike_totals,

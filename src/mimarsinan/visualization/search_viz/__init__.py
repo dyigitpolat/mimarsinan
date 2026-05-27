@@ -5,7 +5,7 @@ from mimarsinan.visualization.search_viz.history import (
     plot_history_metrics_separate,
 )
 from mimarsinan.visualization.search_viz.population import write_final_population_json
-from mimarsinan.visualization.search_viz.report_html import create_interactive_search_report
+from mimarsinan.visualization.search_viz.html import create_interactive_search_report
 from mimarsinan.visualization.search_viz.report_png import write_search_report_png
 from mimarsinan.visualization.search_viz.scatter import plot_default_pareto_scatters, plot_scatter
 

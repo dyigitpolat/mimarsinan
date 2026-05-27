@@ -23,12 +23,12 @@ from compilagent import (
 )
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
-from mimarsinan.search.optimizers.compilagent.backend import (
-    MimarsinanLayoutBackend,
-    _aggregate_per_layer,
-    _layer_key,
-    _softcore_to_dict,
-    _unit_for,
+from mimarsinan.search.optimizers.compilagent.backend import MimarsinanLayoutBackend
+from mimarsinan.search.optimizers.compilagent.backend.backend_eval import unit_for as _unit_for
+from mimarsinan.search.optimizers.compilagent.backend.backend_layout import (
+    aggregate_per_layer as _aggregate_per_layer,
+    layer_key as _layer_key,
+    softcore_to_dict as _softcore_to_dict,
 )
 from mimarsinan.search.optimizers.compilagent.workload import (
     register_problem,

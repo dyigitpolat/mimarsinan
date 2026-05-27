@@ -28,8 +28,8 @@ from mimarsinan.chip_simulation.test_subsample import (
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
 )
-from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import (
     SoftCoreMappingStep,
 )

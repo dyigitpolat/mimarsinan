@@ -23,8 +23,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from mimarsinan.gui.data_collector import DataCollector
-from mimarsinan.gui.persistence import save_resource_to_disk
+from mimarsinan.gui.runtime.collector import DataCollector
+from mimarsinan.gui.runtime.persistence import save_resource_to_disk
 from mimarsinan.gui.resources import ResourceDescriptor, ResourceStore
 from mimarsinan.gui.server import create_app
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mimarsinan.chip_simulation._spike_encoding import uniform_rate_encode
+from mimarsinan.chip_simulation.recording._spike_encoding import uniform_rate_encode
 
 
 def test_uniform_rate_encode_returns_shape_N_D_T():
@@ -55,9 +55,9 @@ def test_uniform_rate_encode_byte_identical_to_lava_runner_inline_copy():
     This guards the helper-lift: ``LavaLoihiRunner`` must keep calling the
     canonical implementation, not a stale local one.
     """
-    from mimarsinan.chip_simulation import lava_loihi_runner
+    from mimarsinan.chip_simulation.lava_loihi import _uniform_rate_encode
 
     rates = np.linspace(0.0, 1.0, 12, dtype=np.float32).reshape(2, 6)
     ours = uniform_rate_encode(rates, T=16)
-    theirs = lava_loihi_runner._uniform_rate_encode(rates, T=16)
+    theirs = _uniform_rate_encode(rates, T=16)
     np.testing.assert_array_equal(ours, theirs)

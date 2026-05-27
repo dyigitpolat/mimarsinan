@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from mimarsinan.gui.run_cache_seed import (
+from mimarsinan.gui.runtime.run_cache_seed import (
     copy_pipeline_cache_from_previous_run,
     copy_steps_json_from_previous_run,
 )

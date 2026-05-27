@@ -4,10 +4,10 @@ import torch.nn as nn
 
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.mappers.structural import InputMapper
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.visualization.softcore_flowchart import estimate_fc_cores
+from mimarsinan.visualization.softcore_flowchart_estimate import estimate_fc_cores
 
 
 class TestFlowchartEstimator:

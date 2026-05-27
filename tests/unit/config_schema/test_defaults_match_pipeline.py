@@ -8,7 +8,7 @@ from mimarsinan.config_schema import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
-from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
 
 
 class TestDefaultsMatchPipeline:

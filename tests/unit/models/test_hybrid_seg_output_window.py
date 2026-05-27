@@ -26,7 +26,7 @@ import numpy as np
 import torch
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 
 def _xcore(core_idx, neuron):

@@ -16,14 +16,15 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter, ScaleNormalizingWrapper
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter, ScaleNormalizingWrapper
 from mimarsinan.mapping.ir import ComputeOp
-from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper, PerceptronMapper
+from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.mappers.structural import ConcatMapper, EinopsRearrangeMapper, InputMapper
 from mimarsinan.mapping.mappers.leading_dim import Ensure2DMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.per_source_scales import (
+from mimarsinan.mapping.support.per_source_scales import (
     _all_sources_uniform,
     _apply_compute_op_scale_policy,
     _is_per_channel_heterogeneous,

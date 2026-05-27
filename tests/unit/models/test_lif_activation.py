@@ -26,7 +26,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.activations import (
+from mimarsinan.models.nn.activations import (
     LIFActivation,
     uniform_encode_to_spike_train,
 )

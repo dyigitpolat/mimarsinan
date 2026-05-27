@@ -7,7 +7,7 @@ TTFS, Clamp Adaptation runs after Activation Adaptation.
 
 import pytest
 
-from mimarsinan.pipelining.pipelines.deployment_pipeline import get_pipeline_step_specs
+from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 from mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step import ActivationAnalysisStep
 from mimarsinan.pipelining.pipeline_steps.adaptation.activation_adaptation_step import ActivationAdaptationStep
 from mimarsinan.pipelining.pipeline_steps.adaptation.clamp_adaptation_step import ClampAdaptationStep

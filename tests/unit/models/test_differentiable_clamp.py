@@ -10,7 +10,7 @@ results on CPU and CUDA.
 import pytest
 import torch
 
-from mimarsinan.models.layers import DifferentiableClamp
+from mimarsinan.models.nn.layers import DifferentiableClamp
 
 
 _CLAMP_LEAK = 0.01

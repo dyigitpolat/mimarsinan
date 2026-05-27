@@ -13,7 +13,7 @@ import torch
 import torch.fx as fx
 import torch.nn as nn
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter, _cat_along
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter, _cat_along
 
 
 class TestDisplayName:

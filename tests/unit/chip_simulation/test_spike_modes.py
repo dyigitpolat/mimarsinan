@@ -2,7 +2,7 @@
 
 import torch
 
-from mimarsinan.chip_simulation.spike_modes import (
+from mimarsinan.chip_simulation.recording.spike_modes import (
     to_deterministic_spikes,
     to_spikes,
     to_uniform_spikes,

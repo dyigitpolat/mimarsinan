@@ -13,7 +13,7 @@ import torch
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
-from mimarsinan.tuning.unified_tuner import (
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import (
     SmoothAdaptationTuner,
     _STUCK_STREAK_REQUIRED,
 )
