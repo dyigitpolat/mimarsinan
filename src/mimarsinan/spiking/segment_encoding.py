@@ -7,7 +7,7 @@ from typing import Dict
 
 import torch
 
-from mimarsinan.mapping.hybrid_hardcore_mapping import (
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
 )

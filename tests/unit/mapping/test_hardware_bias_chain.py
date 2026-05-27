@@ -13,7 +13,7 @@ import torch.nn as nn
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.mapping.softcore_mapping import (
+from mimarsinan.mapping.packing.softcore_mapping import (
     HardCore,
     HardCoreMapping,
     SoftCore,

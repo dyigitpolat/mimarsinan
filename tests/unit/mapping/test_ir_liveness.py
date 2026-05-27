@@ -30,7 +30,7 @@ from mimarsinan.mapping.ir import (
     IRSource,
     NeuralCore,
 )
-from mimarsinan.mapping.ir_liveness import (
+from mimarsinan.mapping.pruning.ir_liveness import (
     NodeLiveness,
     LivenessResult,
     compute_liveness,

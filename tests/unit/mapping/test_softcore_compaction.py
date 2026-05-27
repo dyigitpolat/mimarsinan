@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.softcore_mapping import (
+from mimarsinan.mapping.packing.softcore_mapping import (
     SoftCore,
     compact_soft_core_mapping,
 )

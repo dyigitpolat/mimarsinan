@@ -24,7 +24,7 @@ def run_mini_hybrid_parity(
     """Exercise a tiny IR hybrid mapping through HCM; optional backends skipped if unavailable."""
     import torch
 
-    from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
     from mimarsinan.mapping.ir_mapping import IRMapping
     from mimarsinan.mapping.mappers.structural import InputMapper
     from mimarsinan.mapping.mappers.perceptron import PerceptronMapper

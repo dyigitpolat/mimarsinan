@@ -8,7 +8,7 @@ from mimarsinan.mapping.layout.layout_source_view import (
     concat_source_views,
     stack_source_views,
 )
-from mimarsinan.mapping.mapping_structure import compute_fc_tiling_mode, compute_psum_params
+from mimarsinan.mapping.platform.mapping_structure import compute_fc_tiling_mode, compute_psum_params
 
 
 class _LayoutIRMappingFC:
@@ -283,7 +283,7 @@ class _LayoutIRMappingFC:
                 for n in range(block):
                     acc_input_list.append(partial_neg_sources[t_idx][n])
 
-            from mimarsinan.mapping.mapping_structure import build_psum_accumulator_weights
+            from mimarsinan.mapping.platform.mapping_structure import build_psum_accumulator_weights
 
             acc_w = build_psum_accumulator_weights(block, pp.tile_count, parameter_scale)
             acc_axons = acc_w.shape[1]

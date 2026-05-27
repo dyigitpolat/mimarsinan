@@ -43,7 +43,7 @@ optimizer drains sink -> CandidateResult list -> compute_pareto_front + select_b
 
 ## Dependencies
 
-- **Internal**: `mimarsinan.search.problem`, `mimarsinan.search.problems.joint_arch_hw_problem`, `mimarsinan.search.results`, `mimarsinan.search.search_space_description`, `mimarsinan.search.optimizers.agent_evolve_support`, `mimarsinan.mapping.layout`, `mimarsinan.mapping.layout_verification_stats`.
+- **Internal**: `mimarsinan.search.problem`, `mimarsinan.search.problems.joint_arch_hw_problem`, `mimarsinan.search.results`, `mimarsinan.search.search_space_description`, `mimarsinan.search.optimizers.agent_evolve_support`, `mimarsinan.mapping.layout`, `mimarsinan.mapping.verification.layout_verification_stats`.
 - **External**: `compilagent>=0.2.0` (hard dependency; declared in `requirements.txt`). The optimizer additionally pulls in any `compilagent.harnesses.*` integration the user selects (default: `pydantic_ai`).
 
 ## Dependents

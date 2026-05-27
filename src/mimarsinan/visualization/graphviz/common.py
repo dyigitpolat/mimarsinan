@@ -15,9 +15,9 @@ from typing import Any, Iterable, Sequence
 import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.hybrid_hardcore_mapping import HybridHardCoreMapping
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
-from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
 from mimarsinan.common.layer_key import layer_key_from_node_name
 from mimarsinan.common.safe_numeric import safe_float
 

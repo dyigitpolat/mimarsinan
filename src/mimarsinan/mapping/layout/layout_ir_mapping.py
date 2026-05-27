@@ -17,7 +17,7 @@ from mimarsinan.mapping.layout.layout_source_view import (
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.layout.layout_ir_mapping_fc import _LayoutIRMappingFC
 from mimarsinan.mapping.layout.layout_ir_mapping_finalize import _LayoutIRMappingFinalize
-from mimarsinan.mapping.mapping_structure import compute_core_input_count
+from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
 
 
 @dataclass

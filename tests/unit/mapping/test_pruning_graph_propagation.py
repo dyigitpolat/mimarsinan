@@ -25,7 +25,7 @@ from mimarsinan.mapping.ir import (
     NeuralCore,
     WeightBank,
 )
-from mimarsinan.mapping.pruning_graph_propagation import (
+from mimarsinan.mapping.pruning.pruning_graph_propagation import (
     compute_global_pruned_sets,
 )
 

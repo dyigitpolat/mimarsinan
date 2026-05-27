@@ -2,7 +2,7 @@
 
 import pytest
 
-from mimarsinan.mapping.core_packing import (
+from mimarsinan.mapping.packing.core_packing import (
     greedy_pack_softcores,
     pick_best_softcore,
     _placement_waste,

@@ -26,7 +26,7 @@ def _wizard_body() -> dict:
 
 def test_request_is_frozen() -> None:
     from dataclasses import FrozenInstanceError
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     r = LayoutMappingRequest.from_wizard_body(_wizard_body())
     with pytest.raises(FrozenInstanceError):
@@ -34,7 +34,7 @@ def test_request_is_frozen() -> None:
 
 
 def test_request_hashable_and_equal_for_same_body() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     a = LayoutMappingRequest.from_wizard_body(_wizard_body())
     b = LayoutMappingRequest.from_wizard_body(_wizard_body())
@@ -43,7 +43,7 @@ def test_request_hashable_and_equal_for_same_body() -> None:
 
 
 def test_request_distinguishes_each_field() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     base = _wizard_body()
     a = LayoutMappingRequest.from_wizard_body(base)
@@ -64,7 +64,7 @@ def test_request_distinguishes_each_field() -> None:
 
 
 def test_request_model_config_change_changes_hash() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     base = _wizard_body()
     a = LayoutMappingRequest.from_wizard_body(base)
@@ -75,7 +75,7 @@ def test_request_model_config_change_changes_hash() -> None:
 
 
 def test_request_input_shape_change_changes_hash() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     base = _wizard_body()
     a = LayoutMappingRequest.from_wizard_body(base)
@@ -86,7 +86,7 @@ def test_request_input_shape_change_changes_hash() -> None:
 
 
 def test_model_identity_key_invariant_under_tiling_changes() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     base = _wizard_body()
     a = LayoutMappingRequest.from_wizard_body(base)
@@ -104,14 +104,14 @@ def test_model_identity_key_invariant_under_tiling_changes() -> None:
 
 
 def _build_service(maxsize: int = 16):
-    from mimarsinan.mapping.layout_mapping_service import LayoutMappingService
+    from mimarsinan.mapping.verification.layout_mapping_service import LayoutMappingService
     return LayoutMappingService(
         model_repr_maxsize=maxsize, verification_maxsize=maxsize,
     )
 
 
 def test_service_caches_model_repr_across_calls() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     svc = _build_service()
     req = LayoutMappingRequest.from_wizard_body(_wizard_body())
@@ -121,7 +121,7 @@ def test_service_caches_model_repr_across_calls() -> None:
 
 
 def test_service_verification_cache_returns_same_softcores() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     svc = _build_service()
     req = LayoutMappingRequest.from_wizard_body(_wizard_body())
@@ -132,7 +132,7 @@ def test_service_verification_cache_returns_same_softcores() -> None:
 
 
 def test_service_separate_model_repr_and_verification_caches() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     svc = _build_service()
     body_a = _wizard_body()
@@ -153,7 +153,7 @@ def test_service_separate_model_repr_and_verification_caches() -> None:
 
 
 def test_service_lru_eviction_at_maxsize() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     svc = _build_service(maxsize=2)
 
@@ -178,7 +178,7 @@ def test_service_lru_eviction_at_maxsize() -> None:
 
 
 def test_service_invalidate_clears_both_caches() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     svc = _build_service()
     req = LayoutMappingRequest.from_wizard_body(_wizard_body())
@@ -189,7 +189,7 @@ def test_service_invalidate_clears_both_caches() -> None:
 
 
 def test_service_thread_safe_concurrent_first_calls() -> None:
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     svc = _build_service()
     req = LayoutMappingRequest.from_wizard_body(_wizard_body())

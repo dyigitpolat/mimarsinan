@@ -21,7 +21,7 @@ from mimarsinan.chip_simulation.ttfs_recorder import (
     compare_ttfs_records,
 )
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
+from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping
 from mimarsinan.pipelining.simulation_factory import record_ttfs_hcm_reference
 
 
@@ -50,7 +50,7 @@ def _make_two_stage_mapping():
     hcm1.cores = [core0, core2]
     hcm1.output_sources = np.array([SpikeSource(1, 0)])
 
-    from mimarsinan.mapping.hybrid_hardcore_mapping import (
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         HybridHardCoreMapping,
         HybridStage,
         SegmentIOSlice,
@@ -132,7 +132,7 @@ def test_contract_tolerance_stricter_than_hardware():
 
 
 def test_compute_stage_returns_op_id_result():
-    from mimarsinan.mapping.hybrid_hardcore_mapping import HybridStage, SegmentIOSlice
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage, SegmentIOSlice
     from mimarsinan.mapping.ir import ComputeOp, IRSource
 
     import torch.nn as nn

@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.ir_liveness import NodeLiveness, compute_liveness
-from mimarsinan.mapping.ir_pruning import prune_ir_graph
-from mimarsinan.mapping.liveness_semantics import (
+from mimarsinan.mapping.pruning.ir_liveness import NodeLiveness, compute_liveness
+from mimarsinan.mapping.pruning.ir_pruning import prune_ir_graph
+from mimarsinan.mapping.pruning.liveness_semantics import (
     bias_can_activate,
     lif_bias_can_fire,
     ttfs_continuous_bias_can_activate,

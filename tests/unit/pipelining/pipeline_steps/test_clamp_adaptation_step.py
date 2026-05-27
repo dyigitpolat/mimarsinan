@@ -27,7 +27,7 @@ from conftest import (
 )
 
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
-from mimarsinan.pipelining.pipeline_steps.clamp_adaptation_step import ClampAdaptationStep
+from mimarsinan.pipelining.pipeline_steps.adaptation.clamp_adaptation_step import ClampAdaptationStep
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 
 
@@ -256,7 +256,7 @@ class TestClampAdaptationInstantProbe:
 @pytest.mark.slow
 class TestClampAdaptationConcatRegression:
     def test_concat_heavy_torch_flow_clamp_step_runs_with_scale_metadata(self, tmp_path):
-        from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import (
+        from mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step import (
             ActivationAnalysisStep,
         )
         from mimarsinan.torch_mapping.converter import convert_torch_model

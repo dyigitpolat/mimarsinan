@@ -6,7 +6,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.hybrid_hardcore_mapping import (
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridStage,
     SegmentIOSlice,
     build_hybrid_hard_core_mapping,

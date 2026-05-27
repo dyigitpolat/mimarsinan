@@ -1,6 +1,6 @@
 """Tests for mapping.platform_constraints."""
 
-from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 
 
 def test_legacy_bias_reserves_axon():

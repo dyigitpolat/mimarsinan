@@ -1,7 +1,7 @@
 """Bidirectional, recursive cross-core pruning fixpoint over the unified IR.
 
 This module provides the *global* propagation step. Within-matrix propagation
-stays in :mod:`mimarsinan.mapping.pruning_propagation`; here we wire those
+stays in :mod:`mimarsinan.mapping.pruning.pruning_propagation`; here we wire those
 per-matrix closures together via the IR's source / consumer relationships:
 
 - A NeuralCore axon ``i`` is dead when its source neuron ``(producer, j)`` is
@@ -42,7 +42,7 @@ from mimarsinan.mapping.ir import (
     NeuralCore,
     WeightBank,
 )
-from mimarsinan.mapping.pruning_propagation import (
+from mimarsinan.mapping.pruning.pruning_propagation import (
     compute_propagated_pruned_rows_cols,
 )
 

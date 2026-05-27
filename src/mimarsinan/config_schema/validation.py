@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from mimarsinan.mapping.coalescing import coalescing_config_errors
+from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 
 
 def validate_deployment_config(config: Dict[str, Any]) -> List[str]:

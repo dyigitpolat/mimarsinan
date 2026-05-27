@@ -23,7 +23,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
 from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
 from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow

@@ -42,7 +42,7 @@ mapper graph or no encoding-layer perceptron.
 
 ## Dependencies
 
-- **Internal**: `mimarsinan.mapping.ir` (`ComputeOp`, `IRSource`), `mimarsinan.mapping.hybrid_hardcore_mapping` (`HybridStage`, `HybridHardCoreMapping`), `mimarsinan.models.activations` (`LIFActivation`, `run_cycle_accurate`).
+- **Internal**: `mimarsinan.mapping.ir` (`ComputeOp`, `IRSource`), `mimarsinan.mapping.packing.hybrid_hardcore_mapping` (`HybridStage`, `HybridHardCoreMapping`), `mimarsinan.models.activations` (`LIFActivation`, `run_cycle_accurate`).
 - **External**: `torch`, `spikingjelly.activation_based` (IFNode + surrogates).
 
 ## Dependents

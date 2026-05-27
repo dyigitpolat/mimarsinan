@@ -175,7 +175,7 @@ class TestCoalescingFlagAlignment:
 
     def test_allow_coalescing_false_blocks_wide_packing(self):
         """With coalescing off, the wide layout scenario should fail HW packing."""
-        from mimarsinan.mapping.coalescing import normalize_coalescing_config
+        from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
 
         problem = _make_problem(
             objective_names=[

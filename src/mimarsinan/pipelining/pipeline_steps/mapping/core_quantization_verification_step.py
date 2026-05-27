@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.mapping.chip_quantize import verify_ir_graph_quantized
+from mimarsinan.mapping.export.chip_quantize import verify_ir_graph_quantized
 
 
 class CoreQuantizationVerificationStep(PipelineStep):

@@ -54,9 +54,9 @@ from mimarsinan.models.layers import TransformedActivation
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.model_training.training_utilities import BasicClassificationLoss
-from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import ActivationAnalysisStep
-from mimarsinan.pipelining.pipeline_steps.activation_adaptation_step import ActivationAdaptationStep
-from mimarsinan.pipelining.pipeline_steps.clamp_adaptation_step import ClampAdaptationStep
+from mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step import ActivationAnalysisStep
+from mimarsinan.pipelining.pipeline_steps.adaptation.activation_adaptation_step import ActivationAdaptationStep
+from mimarsinan.pipelining.pipeline_steps.adaptation.clamp_adaptation_step import ClampAdaptationStep
 from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
 
 pytestmark = pytest.mark.slow

@@ -10,14 +10,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.mapping.chip_latency import ChipLatency
-from mimarsinan.mapping.hybrid_hardcore_mapping import (
+from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
     SegmentIOSlice,
 )
 from mimarsinan.mapping.ir import ComputeOp, IRSource
-from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
 from mimarsinan.chip_simulation.hybrid_execution import (
     assemble_segment_input_numpy,
     execute_compute_op_numpy,

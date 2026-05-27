@@ -38,8 +38,8 @@ def _dump_top(stats: pstats.Stats, path: Path, n: int = 30) -> None:
 def _verify_request(body: dict) -> dict:
     """Run the same logic as server.api_hw_config_verify._run, minus FastAPI."""
     from mimarsinan.gui.server import _get_layout_result_from_request
-    from mimarsinan.mapping.mapping_verifier import verify_hardware_config
-    from mimarsinan.mapping.platform_constraints import (
+    from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
+    from mimarsinan.mapping.platform.platform_constraints import (
         resolve_platform_mapping_params,
     )
 

@@ -9,27 +9,27 @@ from mimarsinan.mapping.ir import (
     WeightBank,
 )
 from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.mapping.mapping_structure import (
+from mimarsinan.mapping.platform.mapping_structure import (
     compute_core_input_count,
     compute_fc_tiling_mode,
     compute_psum_params,
 )
-from mimarsinan.mapping.softcore_mapping import SoftCore, HardCore, HardCoreMapping
-from mimarsinan.mapping.core_packing import greedy_pack_softcores
-from mimarsinan.mapping.hybrid_hardcore_mapping import (
+from mimarsinan.mapping.packing.softcore_mapping import SoftCore, HardCore, HardCoreMapping
+from mimarsinan.mapping.packing.core_packing import greedy_pack_softcores
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     SegmentIOSlice,
     HybridStage,
     HybridHardCoreMapping,
     build_hybrid_hard_core_mapping,
 )
-from mimarsinan.mapping.chip_latency import ChipLatency
-from mimarsinan.mapping.ir_latency import IRLatency
+from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-from mimarsinan.mapping.ir_pruning import prune_ir_graph
-from mimarsinan.mapping.pruning_propagation import compute_propagated_pruned_rows_cols
-from mimarsinan.mapping.pruning_graph_propagation import (
+from mimarsinan.mapping.pruning.ir_pruning import prune_ir_graph
+from mimarsinan.mapping.pruning.pruning_propagation import compute_propagated_pruned_rows_cols
+from mimarsinan.mapping.pruning.pruning_graph_propagation import (
     GlobalPruningResult,
     compute_global_pruned_sets,
 )
-from mimarsinan.mapping.ir_pruning_analysis import compute_graph_io_exemption
+from mimarsinan.mapping.pruning.ir_pruning_analysis import compute_graph_io_exemption
 

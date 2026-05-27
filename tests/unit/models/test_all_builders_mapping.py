@@ -16,8 +16,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
-from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config
+from mimarsinan.mapping.verification.mapping_verifier import verify_soft_core_mapping
+from mimarsinan.mapping.verification.hw_config_suggester import suggest_hardware_config
 from mimarsinan.pipelining.model_registry import ModelRegistry
 
 
@@ -127,7 +127,7 @@ class TestSimpleMLPBuilder:
         assert result.num_neural_cores >= 2  # at least input→hidden, hidden→output
 
     def test_suggestion_feasible_for_model(self):
-        from mimarsinan.mapping.mapping_verifier import verify_hardware_config
+        from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
         result, suggestion = _check_builder(
             "simple_mlp",
             input_shape=(1, 28, 28),
@@ -166,7 +166,7 @@ class TestTorchSequentialLinearBuilderMapping:
         assert result.num_neural_cores >= 1
 
     def test_suggestion_sufficient(self):
-        from mimarsinan.mapping.mapping_verifier import verify_hardware_config
+        from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
         result, suggestion = _check_builder(
             "torch_sequential_linear",
             input_shape=(1, 28, 28),
@@ -215,7 +215,7 @@ class TestTorchSequentialConvBuilderMapping:
         assert n_nc + n_co >= 3  # encoding + pool + FC may all be ComputeOps
 
     def test_suggestion_sufficient(self):
-        from mimarsinan.mapping.mapping_verifier import verify_hardware_config
+        from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
         result, suggestion = _check_builder(
             "torch_sequential_conv",
             input_shape=(1, 16, 16),
@@ -266,7 +266,7 @@ class TestMlpMixerBuilderMapping:
         assert result.num_neural_cores == 0
 
     def test_suggestion_sufficient(self):
-        from mimarsinan.mapping.mapping_verifier import verify_hardware_config
+        from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
         result, suggestion = _check_builder(
             "mlp_mixer",
             input_shape=(1, 28, 28),
@@ -556,7 +556,7 @@ class TestGELUActivationIRMapping:
 ])
 def test_lightweight_builders_mapping(model_type, input_shape, num_classes, config, max_ax, max_neu):
     """Parametric test ensuring lightweight builders produce feasible mappings."""
-    from mimarsinan.mapping.mapping_verifier import verify_hardware_config
+    from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
 
     result, suggestion = _check_builder(
         model_type, input_shape, num_classes, config, max_ax, max_neu

@@ -97,7 +97,7 @@ def _load_artifacts() -> tuple[object, dict, int]:
 
 
 def _build_hybrid_mapping(ir_graph, platform):
-    from mimarsinan.mapping.hybrid_hardcore_mapping import (
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping,
     )
     return build_hybrid_hard_core_mapping(
@@ -131,7 +131,7 @@ def _make_hard_core(
     hardware_bias: np.ndarray | None = None,
 ):
     """Construct a minimal occupied ``HardCore`` for synthetic timing tests."""
-    from mimarsinan.mapping.softcore_mapping import HardCore
+    from mimarsinan.mapping.packing.softcore_mapping import HardCore
 
     axons, neurons = matrix.shape
     core = HardCore(axons, neurons)
@@ -156,13 +156,13 @@ def _make_two_core_hybrid(
     delayed_core_hardware_bias: np.ndarray | None = None,
 ):
     from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-    from mimarsinan.mapping.hybrid_hardcore_mapping import (
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         HybridHardCoreMapping,
         HybridStage,
         SegmentIOSlice,
     )
     from mimarsinan.mapping.ir import IRSource
-    from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+    from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
 
     source_core = _make_hard_core(
         np.asarray([[1.0]], dtype=np.float32),
@@ -259,13 +259,13 @@ def test_loihi_duplicate_source_axons_accumulate_weights():
     from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
     from mimarsinan.chip_simulation.spike_recorder import compare_records
     from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-    from mimarsinan.mapping.hybrid_hardcore_mapping import (
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         HybridHardCoreMapping,
         HybridStage,
         SegmentIOSlice,
     )
     from mimarsinan.mapping.ir import IRSource
-    from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+    from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
 
     T = 4
     segment = HardCoreMapping([])

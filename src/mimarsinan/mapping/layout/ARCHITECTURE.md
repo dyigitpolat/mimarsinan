@@ -32,7 +32,9 @@ without requiring trained weights.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutCoreSnapshot`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results. |
-| `layout_ir_mapping.py` | `LayoutIRMapping` | Shape-only mapping backend shared by the wizard, architecture search, and the real `IRMapping` (as its base class).  Owns every structural decision. |
+| `layout_ir_mapping.py` | `LayoutIRMapping` | Shape-only mapping backend (core state, `map`, neural emission hooks) |
+| `layout_ir_mapping_fc.py` | `_LayoutIRMappingFC` | FC tiling dispatch (`map_fc`, psum, output-tiled) |
+| `layout_ir_mapping_finalize.py` | `_LayoutIRMappingFinalize` | Latency tags, segment ids, threshold groups, layout preview |
 | `layout_source_view.py` | `LayoutSourceView`, `concat_source_views`, `stack_source_views`, `node_ids_of`, `total_size` | Lightweight composable shape descriptor that duck-types as a numpy object array of `IRSource` for the mapper graph; defers per-cell `IRSource` allocation until forced via `np.asarray`.  See "LayoutSourceView contract" below. |
 | `layout_packer.py` | `pack_layout` | Wraps `greedy_pack_softcores` around layout types. |
 

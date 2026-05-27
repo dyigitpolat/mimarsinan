@@ -27,7 +27,7 @@ import numpy as np
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec, LayoutHardCoreType
 from mimarsinan.mapping.layout.layout_packer import pack_layout
-from mimarsinan.mapping.layout_verification_stats import (
+from mimarsinan.mapping.verification.layout_verification_stats import (
     build_stats_from_packing_result,
     compute_schedule_sync_count,
 )

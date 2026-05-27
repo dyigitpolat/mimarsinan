@@ -1,6 +1,6 @@
 """Graphviz, matplotlib, and Plotly visualizations for pipeline artifacts."""
 
-from mimarsinan.visualization.mapping_graphviz import (
+from mimarsinan.visualization.graphviz import (
     write_ir_graph_dot,
     write_ir_graph_summary_dot,
     write_softcore_mapping_dot,
@@ -22,7 +22,7 @@ from mimarsinan.visualization.histogram_visualization import (
 from mimarsinan.visualization.hardcore_visualization import (
     HardCoreMappingVisualizer,
 )
-from mimarsinan.visualization.search_visualization import (
+from mimarsinan.visualization.search_viz import (
     write_search_report_png,
     create_interactive_search_report,
     write_final_population_json,

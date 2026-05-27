@@ -1,10 +1,8 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
+from mimarsinan.pipelining.hybrid_mapping_consumer import load_hybrid_mapping_for_step
 from mimarsinan.pipelining.pipeline_helpers import run_optional_viz
-from mimarsinan.pipelining.simulation_factory import (
-    build_hybrid_mapping_for_pipeline,
-    run_hcm_mapping_metric,
-)
+from mimarsinan.pipelining.simulation_factory import run_hcm_mapping_metric
 
 import torch
 import torch.nn as nn
@@ -64,13 +62,7 @@ class HardCoreMappingStep(PipelineStep):
         platform_constraints = self.get_entry("platform_constraints_resolved")
         _vram_probe("after_load_entries")
 
-        hybrid_mapping = self.pipeline.cache.get("hybrid_mapping")
-        if hybrid_mapping is None:
-            hybrid_mapping = build_hybrid_mapping_for_pipeline(
-                ir_graph,
-                platform_constraints,
-                pipeline_config=self.pipeline.config,
-            )
+        hybrid_mapping = load_hybrid_mapping_for_step(self.pipeline)
 
         neural_segs = hybrid_mapping.get_neural_segments()
         compute_ops = hybrid_mapping.get_compute_ops()
@@ -114,7 +106,7 @@ class HardCoreMappingStep(PipelineStep):
         if self.pipeline.config.get("generate_visualizations", False):
             def _viz():
               from mimarsinan.visualization.hardcore_visualization import HardCoreMappingVisualizer
-              from mimarsinan.visualization.mapping_graphviz import (
+              from mimarsinan.visualization.graphviz import (
                   try_render_dot,
                   write_hybrid_hardcore_mapping_dots,
                   write_hybrid_hardcore_mapping_combined_dot,

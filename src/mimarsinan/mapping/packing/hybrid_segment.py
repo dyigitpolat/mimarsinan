@@ -6,7 +6,7 @@ from typing import Sequence
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping, compact_soft_core_mapping
+from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping, compact_soft_core_mapping
 from mimarsinan.mapping.packing.hybrid_types import HybridStage, SegmentIOSlice
 
 
@@ -194,7 +194,7 @@ def _flush_neural_segment(
         output_sources=output_sources,
         weight_banks=weight_banks,
     )
-    from mimarsinan.mapping.neural_segment_packing import (
+    from mimarsinan.mapping.packing.neural_segment_packing import (
         neural_segment_to_soft_core_mapping,
     )
 
@@ -281,7 +281,7 @@ def _validate_coalescing_budget(
             neuron_ok = allow_neuron_splitting or ct_neurons >= n_neurons
             if not neuron_ok:
                 continue
-            from mimarsinan.mapping.coalescing import coalescing_fragment_count
+            from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 
             n_coalesce = coalescing_fragment_count(n_weight_axons, ct_axons)
             if ct_count >= n_coalesce:

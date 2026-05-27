@@ -22,9 +22,9 @@ from mimarsinan.chip_simulation.spike_recorder import (
     RunRecord,
     SegmentSpikeRecord,
 )
-from mimarsinan.mapping.chip_latency import ChipLatency
+from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.core_geometry import used_axons, used_neurons
-from mimarsinan.mapping.hybrid_hardcore_mapping import (
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
     SegmentIOSlice,

@@ -9,14 +9,14 @@ from mimarsinan.pipelining.pipeline_step import PipelineStep
 from mimarsinan.pipelining.model_registry import ModelRegistry
 from mimarsinan.pipelining.search_mode import derive_search_mode
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
-from mimarsinan.mapping.coalescing import CANONICAL_KEY, normalize_coalescing_config
+from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.search.problems.joint_arch_hw_problem import JointArchHwProblem
 from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
     resolve_active_objectives,
 )
 from mimarsinan.search.search_space_description import SearchSpaceDescription
-from mimarsinan.visualization.search_visualization import (
+from mimarsinan.visualization.search_viz import (
     create_interactive_search_report,
     write_final_population_json,
 )

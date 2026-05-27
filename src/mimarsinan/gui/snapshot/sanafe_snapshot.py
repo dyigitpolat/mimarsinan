@@ -25,7 +25,7 @@ RESOURCE_KIND_PRUNING_LAYER_HEATMAP = "pruning_layer_heatmap"
 
 
 # Per-NeuralCore liveness tags surfaced in the GUI (must match
-# ``mimarsinan.mapping.ir_liveness.NodeLiveness`` for current runs).
+# ``mimarsinan.mapping.pruning.ir_liveness.NodeLiveness`` for current runs).
 LIVENESS_LIVE = "live"
 LIVENESS_BIAS_ONLY = "bias_only"
 LIVENESS_DEAD_LEGACY = "dead_legacy"  # only for old pickles still containing (1,1) placeholders

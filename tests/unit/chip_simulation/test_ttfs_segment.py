@@ -8,11 +8,11 @@ from mimarsinan.chip_simulation.ttfs_segment import (
     ttfs_core_membrane_voltages,
 )
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
 
 
 def _single_core_mapping():
-    from mimarsinan.mapping.softcore_mapping import HardCore
+    from mimarsinan.mapping.packing.softcore_mapping import HardCore
 
     core = HardCore(axons_per_core=2, neurons_per_core=2)
     core.core_matrix = np.array([[2.0, -1.0], [0.5, 1.0]], dtype=np.float64)
@@ -46,7 +46,7 @@ def test_numpy_continuous_matches_torch_kernel_path():
 
 def test_cross_core_uses_upstream_activations_in_latency_order():
     """Regression: downstream cores must see prior-core TTFS activations, not zeros."""
-    from mimarsinan.mapping.softcore_mapping import HardCore
+    from mimarsinan.mapping.packing.softcore_mapping import HardCore
 
     core0 = HardCore(axons_per_core=2, neurons_per_core=2)
     core0.core_matrix = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
@@ -85,7 +85,7 @@ def test_cross_core_uses_upstream_activations_in_latency_order():
 
 def test_cross_core_fill_when_axons_exceed_source_neurons():
     """Regression: axon dst span can be wider than source neuron buffer."""
-    from mimarsinan.mapping.softcore_mapping import HardCore
+    from mimarsinan.mapping.packing.softcore_mapping import HardCore
 
     core0 = HardCore(axons_per_core=2, neurons_per_core=3)
     core0.core_matrix = np.eye(2, 3, dtype=np.float64)[:, :2]
@@ -116,7 +116,7 @@ def test_cross_core_fill_when_axons_exceed_source_neurons():
 
 def test_quantized_matmul_uses_axon_dim_not_neuron_dim():
     """Regression: input_signals width must match core_params columns (axons)."""
-    from mimarsinan.mapping.softcore_mapping import HardCore
+    from mimarsinan.mapping.packing.softcore_mapping import HardCore
 
     core = HardCore(axons_per_core=5, neurons_per_core=3)
     core.core_matrix = np.random.randn(5, 3).astype(np.float64)

@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
-from mimarsinan.pipelining.pipeline_steps.normalization_fusion_step import NormalizationFusionStep
+from mimarsinan.pipelining.pipeline_steps.quantization.normalization_fusion_step import NormalizationFusionStep
 
 
 class TestNormFusionMathematicalEquivalence:

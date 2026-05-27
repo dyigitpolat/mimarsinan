@@ -2,7 +2,7 @@
 
 import pytest
 
-from mimarsinan.mapping.coalescing import (
+from mimarsinan.mapping.platform.coalescing import (
     CANONICAL_KEY,
     CoalescingConfigError,
     coalescing_config_errors,
