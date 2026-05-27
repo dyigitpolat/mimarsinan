@@ -1,27 +1,8 @@
-from mimarsinan.pipelining.pipeline_step import PipelineStep
+"""Compatibility shim — aliases implementation module for monkeypatch-safe imports."""
 
-from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
+import importlib as _importlib
+import sys as _sys
 
-
-class SimulationStep(PipelineStep):
-    def __init__(self, pipeline):
-        requires = ["hard_core_mapping"]
-        promises = []
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
-
-        self.accuracy = None
-
-    def validate(self):
-        return self.accuracy
-
-    def process(self):
-        runner = SimulationRunner(
-            self.pipeline,
-            self.get_entry('hard_core_mapping'),
-            int(self.pipeline.config["simulation_steps"]),
-        )
-        
-        self.accuracy = runner.run()
-        print("Simulation accuracy: ", self.accuracy)
+_TARGET = "mimarsinan.pipelining.pipeline_steps.verification.simulation_step"
+_impl = _importlib.import_module(_TARGET)
+_sys.modules[__name__] = _impl

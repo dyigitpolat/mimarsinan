@@ -1,20 +1,8 @@
-"""LIF Adaptation pipeline step."""
+"""Compatibility shim — aliases implementation module for monkeypatch-safe imports."""
 
-from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
-from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
+import importlib as _importlib
+import sys as _sys
 
-
-class LIFAdaptationStep(TunerPipelineStep):
-    def __init__(self, pipeline):
-        requires = ["model", "adaptation_manager"]
-        promises = []
-        updates = ["model", "adaptation_manager"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
-
-    def process(self):
-        self.run_tuner(
-            LIFAdaptationTuner,
-            self.get_entry("model"),
-            self.get_entry("adaptation_manager"),
-        )
+_TARGET = "mimarsinan.pipelining.pipeline_steps.adaptation.lif_adaptation_step"
+_impl = _importlib.import_module(_TARGET)
+_sys.modules[__name__] = _impl

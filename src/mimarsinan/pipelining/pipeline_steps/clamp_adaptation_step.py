@@ -1,22 +1,8 @@
-from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
-from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
+"""Compatibility shim — aliases implementation module for monkeypatch-safe imports."""
 
+import importlib as _importlib
+import sys as _sys
 
-class ClampAdaptationStep(TunerPipelineStep):
-    """Introduces activation clamping (ClampDecorator) with recovery training."""
-
-    def __init__(self, pipeline):
-        requires = ["model", "adaptation_manager", "activation_scales", "activation_scale_stats"]
-        promises = []
-        updates = ["model", "adaptation_manager"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
-
-    def process(self):
-        self.run_tuner(
-            ClampTuner,
-            self.get_entry("model"),
-            self.get_entry("adaptation_manager"),
-            activation_scales=self.get_entry("activation_scales"),
-            activation_scale_stats=self.get_entry("activation_scale_stats"),
-        )
+_TARGET = "mimarsinan.pipelining.pipeline_steps.adaptation.clamp_adaptation_step"
+_impl = _importlib.import_module(_TARGET)
+_sys.modules[__name__] = _impl

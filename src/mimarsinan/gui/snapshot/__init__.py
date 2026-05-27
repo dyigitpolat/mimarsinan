@@ -8,13 +8,15 @@ server can serve them lazily through dedicated HTTP endpoints.
 """
 
 from mimarsinan.gui.resources import ResourceDescriptor
-from mimarsinan.gui.snapshot.builders import (
+from mimarsinan.gui.snapshot.constants import (
     RESOURCE_KIND_CONNECTIVITY,
     RESOURCE_KIND_HARD_CORE_HEATMAP,
     RESOURCE_KIND_IR_BANK_HEATMAP,
     RESOURCE_KIND_IR_CORE_HEATMAP,
     RESOURCE_KIND_IR_CORE_PRE_PRUNING,
     RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
+)
+from mimarsinan.gui.snapshot.builders import (
     build_step_snapshot,
     snapshot_adaptation_manager,
     snapshot_hard_core_mapping,

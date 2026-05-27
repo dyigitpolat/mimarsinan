@@ -1,15 +1,6 @@
-"""Shared pruning compaction helpers for IR and SoftCore paths."""
+"""Compatibility shim — see mimarsinan.mapping.pruning.pruning_apply."""
 
-from __future__ import annotations
+import importlib as _importlib
 
-import numpy as np
-
-
-def compact_hardware_bias_columns(
-    hardware_bias: np.ndarray | None,
-    keep_cols: np.ndarray,
-) -> np.ndarray | None:
-    """Slice ``hardware_bias`` along neuron columns when pruning compacts a core."""
-    if hardware_bias is None:
-        return None
-    return hardware_bias[keep_cols]
+_mod = _importlib.import_module("mimarsinan.mapping.pruning.pruning_apply")
+globals().update({k: getattr(_mod, k) for k in dir(_mod) if not k.startswith("__")})
