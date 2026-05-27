@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.mapping.ir import IRGraph
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow

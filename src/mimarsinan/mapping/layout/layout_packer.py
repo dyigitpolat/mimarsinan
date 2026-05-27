@@ -5,7 +5,7 @@ import math
 import re
 from typing import Dict, List, Sequence, Tuple
 
-from mimarsinan.mapping.core_packing import (
+from mimarsinan.mapping.packing.core_packing import (
     canonical_split_softcore,
     greedy_pack_softcores,
 )
@@ -84,7 +84,7 @@ def _expand_for_axon_coalescing(
         if sc.input_count <= max_avail_axons:
             result.append(sc)
         else:
-            from mimarsinan.mapping.coalescing import coalescing_fragment_count
+            from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 
             k = coalescing_fragment_count(sc.input_count, max_avail_axons)
             base = sc.input_count // k
@@ -165,7 +165,7 @@ def pack_layout(
             core, available_neurons, make_fragments=_make_layout_fragments,
         )
 
-    from mimarsinan.mapping.core_packing import (
+    from mimarsinan.mapping.packing.core_packing import (
         canonical_fuse_hardcores,
         canonical_is_mapping_possible,
     )

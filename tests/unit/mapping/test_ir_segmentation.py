@@ -1,7 +1,7 @@
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore
-from mimarsinan.mapping.ir_segmentation import get_neural_segments
+from mimarsinan.mapping.pruning.ir_segmentation import get_neural_segments
 
 _EMPTY_SRC = np.array([], dtype=object)
 

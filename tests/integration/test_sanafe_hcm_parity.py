@@ -129,7 +129,7 @@ def _load_artifacts() -> tuple[object, dict, int]:
 
 
 def _build_hybrid_mapping(ir_graph, platform):
-    from mimarsinan.mapping.hybrid_hardcore_mapping import (
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping,
     )
     return build_hybrid_hard_core_mapping(

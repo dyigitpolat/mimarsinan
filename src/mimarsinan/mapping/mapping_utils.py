@@ -1,6 +1,6 @@
 from mimarsinan.code_generation.cpp_chip_model import *
 from mimarsinan.models.layers import *
-from mimarsinan.mapping.softcore_mapping import *
+from mimarsinan.mapping.packing.softcore_mapping import *
 from mimarsinan.transformations.weight_quantization import *
 
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
@@ -20,9 +20,9 @@ def _create_ir_input_source(idx):
     IRSource = _get_ir_types()
     return IRSource(node_id=-2, index=idx)
 
-from mimarsinan.mapping.soft_core_mapper import SoftCoreMapping
+from mimarsinan.mapping.packing.soft_core_mapper import SoftCoreMapping
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.chip_export import (
+from mimarsinan.mapping.export.chip_export import (
     generate_core_weights,
     generate_core_connection_info,
     to_numpy,

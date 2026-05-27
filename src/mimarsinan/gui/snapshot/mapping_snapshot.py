@@ -26,7 +26,7 @@ RESOURCE_KIND_PRUNING_LAYER_HEATMAP = "pruning_layer_heatmap"
 
 
 # Per-NeuralCore liveness tags surfaced in the GUI (must match
-# ``mimarsinan.mapping.ir_liveness.NodeLiveness`` for current runs).
+# ``mimarsinan.mapping.pruning.ir_liveness.NodeLiveness`` for current runs).
 LIVENESS_LIVE = "live"
 LIVENESS_BIAS_ONLY = "bias_only"
 LIVENESS_DEAD_LEGACY = "dead_legacy"  # only for old pickles still containing (1,1) placeholders
@@ -45,7 +45,7 @@ def snapshot_mapping_performance_planned(
     if not cores:
         return None
     try:
-        from mimarsinan.mapping.wizard_layout_verify import (
+        from mimarsinan.mapping.verification.wizard_layout_verify import (
             model_repr_from_model,
             verify_planned_mapping_performance,
         )
@@ -67,7 +67,7 @@ def snapshot_mapping_performance_planned(
 
 def snapshot_mapping_performance_real(mapping: Any) -> dict | None:
     """Derive wizard-shaped Mapping Performance stats from a real mapping."""
-    from mimarsinan.mapping.layout_verification_stats import stats_dict_from_hybrid_mapping
+    from mimarsinan.mapping.verification.layout_verification_stats import stats_dict_from_hybrid_mapping
 
     return stats_dict_from_hybrid_mapping(mapping)
 

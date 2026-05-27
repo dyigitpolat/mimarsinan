@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
+from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping
 from mimarsinan.mapping.mapping_utils import hard_cores_to_chip
 
 

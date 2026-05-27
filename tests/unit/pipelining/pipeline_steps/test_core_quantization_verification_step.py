@@ -17,8 +17,8 @@ from conftest import (
     platform_constraints,
 )
 
-from mimarsinan.pipelining.pipeline_steps.soft_core_mapping_step import SoftCoreMappingStep
-from mimarsinan.pipelining.pipeline_steps.core_quantization_verification_step import (
+from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import SoftCoreMappingStep
+from mimarsinan.pipelining.pipeline_steps.mapping.core_quantization_verification_step import (
     CoreQuantizationVerificationStep,
 )
 

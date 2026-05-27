@@ -27,7 +27,7 @@ from mimarsinan.chip_simulation.sanafe.records import (
     SanafeEnergyBreakdown,
     SanafeRunRecord,
 )
-from mimarsinan.pipelining.pipeline_steps.sanafe_simulation_step import (
+from mimarsinan.pipelining.pipeline_steps.verification.sanafe_simulation_step import (
     SanafeSimulationStep,
 )
 
@@ -102,7 +102,7 @@ def _fake_sanafe_record(sample_index=0, energy_total=2.0,
 def _prepare_step(monkeypatch, *,
                   diffs=None, sample_count=1, parity_check=True,
                   arch_preset="loihi"):
-    import mimarsinan.pipelining.pipeline_steps.sanafe_simulation_step as step_mod
+    import mimarsinan.pipelining.pipeline_steps.verification.sanafe_simulation_step as step_mod
 
     calls = {
         "hcm_built": 0,
@@ -197,7 +197,7 @@ def test_step_validate_returns_target_metric_when_no_local_metric(monkeypatch):
 
 
 def test_step_ttfs_uses_ttfs_reference_path(monkeypatch):
-    import mimarsinan.pipelining.pipeline_steps.sanafe_simulation_step as step_mod
+    import mimarsinan.pipelining.pipeline_steps.verification.sanafe_simulation_step as step_mod
 
     step, pipeline, calls = _prepare_step(monkeypatch)
     ttfs_calls = []

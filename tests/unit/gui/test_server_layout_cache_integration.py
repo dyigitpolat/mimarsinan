@@ -21,7 +21,7 @@ def _wizard_body() -> dict:
 
 def test_two_identical_requests_share_underlying_softcores() -> None:
     from mimarsinan.gui.server import _get_layout_result_from_request
-    from mimarsinan.mapping.layout_mapping_service import (
+    from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
 
@@ -36,7 +36,7 @@ def test_verify_and_softcores_helpers_share_cache() -> None:
         _get_layout_result_from_request,
         _get_softcores_from_request,
     )
-    from mimarsinan.mapping.layout_mapping_service import (
+    from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
 
@@ -50,10 +50,10 @@ def test_different_tiling_reuses_model_repr() -> None:
     """Two requests differing only on tiling parameters must share the
     model_repr cache slot -- only the verification slot differs."""
     from mimarsinan.gui.server import _get_layout_result_from_request
-    from mimarsinan.mapping.layout_mapping_service import (
+    from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     DEFAULT_LAYOUT_MAPPING_SERVICE.invalidate()
     body_a = _wizard_body()

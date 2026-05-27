@@ -13,7 +13,7 @@ A NeuralCore is one of:
   ``BIAS_ONLY``: a bias emitter with nothing to drive is dead.
 
 The reachability half of the analysis reuses
-:func:`mimarsinan.mapping.pruning_graph_propagation.compute_global_pruned_sets`,
+:func:`mimarsinan.mapping.pruning.pruning_graph_propagation.compute_global_pruned_sets`,
 which already encodes the "ComputeOps are barriers" rule via persistent
 consumers. A neuron is *reachable* iff the global propagation does **not**
 prune its column.
@@ -39,7 +39,7 @@ from mimarsinan.mapping.ir import (
     IRSource,
     NeuralCore,
 )
-from mimarsinan.mapping.pruning_graph_propagation import (
+from mimarsinan.mapping.pruning.pruning_graph_propagation import (
     GlobalPruningResult,
     compute_global_pruned_sets,
 )
@@ -265,7 +265,7 @@ def _bias_can_activate_for_mode(
     mode: str,
 ) -> bool:
     """Mode-aware bias-only activation check via :mod:`liveness_semantics`."""
-    from mimarsinan.mapping.liveness_semantics import bias_can_activate
+    from mimarsinan.mapping.pruning.liveness_semantics import bias_can_activate
 
     bias = getattr(node, "hardware_bias", None)
     if bias is None:

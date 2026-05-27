@@ -202,10 +202,10 @@ def _build_subset_hybrid(work_dir: _Path, n_cores: int):
     """Top ``n_cores`` of MNIST stage 1, with cross-core refs > n_cores turned off."""
     import copy
     from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-    from mimarsinan.mapping.hybrid_hardcore_mapping import (
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping, HybridHardCoreMapping,
     )
-    from mimarsinan.mapping.softcore_mapping import HardCoreMapping
+    from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
 
     with open(work_dir / "Soft Core Mapping.ir_graph.pickle", "rb") as f:
         ir_graph = _pickle.load(f)

@@ -5,7 +5,7 @@ import torch
 
 from conftest import MockPipeline, default_config
 
-from mimarsinan.pipelining.pipeline_steps.model_building_step import ModelBuildingStep
+from mimarsinan.pipelining.pipeline_steps.config.model_building_step import ModelBuildingStep
 from mimarsinan.models.builders.simple_mlp_builder import SimpleMLPBuilder
 
 

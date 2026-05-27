@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 
-from mimarsinan.mapping.pruning_propagation import compute_propagated_pruned_rows_cols
+from mimarsinan.mapping.pruning.pruning_propagation import compute_propagated_pruned_rows_cols
 
 
 class TestComputePropagatedPrunedRowsCols:

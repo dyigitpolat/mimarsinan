@@ -7,7 +7,7 @@ def is_off(idx): return idx == -1
 def is_input(idx): return idx == -2
 def is_always_on(idx): return idx == -3
 
-from mimarsinan.mapping.core_packing import greedy_pack_softcores
+from mimarsinan.mapping.packing.core_packing import greedy_pack_softcores
 
 def compact_soft_core_mapping(cores, output_sources):
     """Compact soft cores from IR pruning masks; return core_id → neuron reindex maps."""
@@ -49,7 +49,7 @@ def compact_soft_core_mapping(cores, output_sources):
                 core.bank_axon_slice = None
                 core.bank_neuron_slice = None
                 core.bank_includes_bias_row = False
-            from mimarsinan.mapping.pruning_apply import compact_hardware_bias_columns
+            from mimarsinan.mapping.pruning.pruning_apply import compact_hardware_bias_columns
 
             if keep_rows and keep_cols:
                 core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
@@ -373,7 +373,7 @@ class HardCoreMapping:
         if banks:
             self.weight_banks = dict(banks)
 
-        from mimarsinan.mapping.core_packing import canonical_is_mapping_possible
+        from mimarsinan.mapping.packing.core_packing import canonical_is_mapping_possible
         is_mapping_possible = canonical_is_mapping_possible
 
         unmapped_cores = [core for core in softcore_mapping.cores]
@@ -381,7 +381,7 @@ class HardCoreMapping:
         def place(core_idx: int, hardcore, softcore):
             self.merge_softcore_into(core_idx, hardcore, softcore)
 
-        from mimarsinan.mapping.core_packing import canonical_fuse_hardcores
+        from mimarsinan.mapping.packing.core_packing import canonical_fuse_hardcores
 
         def _real_fuse(hcs):
             def _mk(*, axons, neurons, template, components):
@@ -404,7 +404,7 @@ class HardCoreMapping:
 
         fuse_hardcores = _real_fuse
 
-        from mimarsinan.mapping.core_packing import canonical_split_softcore
+        from mimarsinan.mapping.packing.core_packing import canonical_split_softcore
 
         _split_counter = [0]
 
@@ -489,7 +489,7 @@ class HardCoreMapping:
                 core, available_neurons, make_fragments=_make_real_fragments,
             )
 
-        from mimarsinan.mapping.core_packing import greedy_pack_softcores
+        from mimarsinan.mapping.packing.core_packing import greedy_pack_softcores
         greedy_pack_softcores(
             softcores=unmapped_cores,
             used_hardcores=self.cores,

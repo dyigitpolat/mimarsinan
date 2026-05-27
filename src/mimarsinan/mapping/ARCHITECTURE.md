@@ -1,22 +1,29 @@
-# mapping/ -- Model-to-Hardware Mapping
+# mapping/ — Model-to-Hardware Mapping
 
-Converts PyTorch models to an intermediate representation (IR) and then packs
-the IR into physical hardware cores.
+Converts PyTorch models to an intermediate representation (IR) and packs the IR into physical hardware cores.
 
 ## Subpackages
 
-| Directory | Role |
-|-----------|------|
-| `ir/` | `IRGraph`, `NeuralCore`, `ComputeOp`, legacy SoftCore conversions |
-| `pruning/` | IR pruning, liveness, graph propagation, segmentation |
-| `packing/` | Soft/hard cores, bin packing, hybrid mapping |
-| `verification/` | Layout verifier, HW suggester, wizard layout service |
-| `latency/` | `IRLatency`, `ChipLatency`, `upstream.py` |
-| `platform/` | Platform constraints, coalescing, mapping structure |
-| `export/` | Chip export and IR quantization |
-| `layout/` | Shape-only layout SSoT |
-| `mappers/` | Mapper hierarchy |
+| Directory | Doc | Role |
+|-----------|-----|------|
+| `ir/` | [ir/ARCHITECTURE.md](ir/ARCHITECTURE.md) | `IRGraph`, `NeuralCore`, `ComputeOp` |
+| `pruning/` | [pruning/ARCHITECTURE.md](pruning/ARCHITECTURE.md) | IR pruning, liveness, segmentation |
+| `packing/` | [packing/ARCHITECTURE.md](packing/ARCHITECTURE.md) | Soft/hard cores, bin packing, hybrid mapping |
+| `verification/` | [verification/ARCHITECTURE.md](verification/ARCHITECTURE.md) | Layout verifier, HW suggester |
+| `latency/` | [latency/ARCHITECTURE.md](latency/ARCHITECTURE.md) | `IRLatency`, `ChipLatency`, upstream closure |
+| `platform/` | [platform/ARCHITECTURE.md](platform/ARCHITECTURE.md) | Platform constraints, tiling structure |
+| `export/` | [export/ARCHITECTURE.md](export/ARCHITECTURE.md) | Chip export and IR quantization verify |
+| `layout/` | [layout/ARCHITECTURE.md](layout/ARCHITECTURE.md) | Shape-only layout SSoT |
+| `mappers/` | [mappers/ARCHITECTURE.md](mappers/ARCHITECTURE.md) | Mapper hierarchy |
 
-Compatibility shims at the package root (e.g. `mapping/ir.py` removed; use `from mimarsinan.mapping.ir import IRGraph` via the `ir/` package) re-export moved modules during migration.
+## Root modules (orchestration)
 
-See the module tables in the previous revision of this file for per-file contracts; paths are now `mapping/<subpackage>/<module>.py` with root-level shims where noted in `scripts/import_path_inventory.py`.
+| File | Role |
+|------|------|
+| `ir_mapping.py` | `IRMapping` — materializes weights into `IRGraph` |
+| `mapping_utils.py` | Mapper registration and graph utilities |
+| `model_representation.py` | Dual-purpose mapper graph |
+
+Import from subpackages directly (e.g. `from mimarsinan.mapping.ir import IRGraph`). [`__init__.py`](__init__.py) re-exports the public mapping API.
+
+Run `python scripts/import_path_inventory.py --check-legacy-path` to audit banned legacy paths.

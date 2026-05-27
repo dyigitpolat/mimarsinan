@@ -12,8 +12,8 @@ import threading
 from collections import OrderedDict
 from typing import Any, Callable
 
-from mimarsinan.mapping.layout_request import LayoutMappingRequest
-from mimarsinan.mapping.mapping_verifier import (
+from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
+from mimarsinan.mapping.verification.mapping_verifier import (
     MappingVerificationResult,
     verify_soft_core_mapping,
 )
@@ -108,7 +108,7 @@ class LayoutMappingService:
     # Internal builders
 
     def _build_model_repr(self, request: LayoutMappingRequest) -> Any:
-        from mimarsinan.mapping.wizard_layout_verify import (
+        from mimarsinan.mapping.verification.wizard_layout_verify import (
             model_repr_from_wizard_body,
         )
         return model_repr_from_wizard_body(request.to_body())

@@ -20,7 +20,7 @@ from mimarsinan.chip_simulation.hybrid_semantics import (
     store_neural_segment_output,
 )
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.chip_latency import ChipLatency
+from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.core_geometry import used_axons as _used_axons
 from mimarsinan.mapping.core_geometry import used_neurons as _used_neurons
 from mimarsinan.mapping.spike_source_spans import compress_spike_sources

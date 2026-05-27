@@ -2,7 +2,7 @@
 
 ``LayoutMappingRequest`` collapses a wizard request body (or equivalent
 internal call site) into a frozen, hash-stable dataclass.  Used as the key
-for :class:`mimarsinan.mapping.layout_mapping_service.LayoutMappingService`.
+for :class:`mimarsinan.mapping.verification.layout_mapping_service.LayoutMappingService`.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ class LayoutMappingRequest:
         tiling_max_axons: int | None = None,
         tiling_max_neurons: int | None = None,
     ) -> "LayoutMappingRequest":
-        from mimarsinan.mapping.wizard_layout_verify import (
+        from mimarsinan.mapping.verification.wizard_layout_verify import (
             resolve_tiling_params_from_body,
         )
 

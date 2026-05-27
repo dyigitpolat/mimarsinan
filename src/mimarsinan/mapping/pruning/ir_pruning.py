@@ -2,10 +2,10 @@
 and rewire downstream sources.
 
 The heavy lifting -- bidirectional, recursive cross-core propagation -- lives
-in :mod:`mimarsinan.mapping.pruning_graph_propagation`. This module is the
+in :mod:`mimarsinan.mapping.pruning.pruning_graph_propagation`. This module is the
 pipeline-facing wrapper: it
 1. collects model-level I/O exemptions
-   (:func:`mimarsinan.mapping.ir_pruning_analysis.compute_graph_io_exemption`),
+   (:func:`mimarsinan.mapping.pruning.ir_pruning_analysis.compute_graph_io_exemption`),
 2. converts model-level seed masks into the solver's set form,
 3. delegates to :func:`compute_global_pruned_sets` to find every dead row,
    column, and bank entry,
@@ -26,13 +26,13 @@ from typing import Dict, List, Sequence, Set, Tuple
 import numpy as np
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
-from mimarsinan.mapping.ir_liveness import (
+from mimarsinan.mapping.pruning.ir_liveness import (
     NodeLiveness,
     compute_liveness,
 )
-from mimarsinan.mapping.ir_pruning_analysis import compute_graph_io_exemption
-from mimarsinan.mapping.pruning_apply import compact_hardware_bias_columns
-from mimarsinan.mapping.pruning_graph_propagation import (
+from mimarsinan.mapping.pruning.ir_pruning_analysis import compute_graph_io_exemption
+from mimarsinan.mapping.pruning.pruning_apply import compact_hardware_bias_columns
+from mimarsinan.mapping.pruning.pruning_graph_propagation import (
     GlobalPruningResult,
     compute_global_pruned_sets,
 )
@@ -218,7 +218,7 @@ def prune_ir_graph(
     output logits (entries in ``ir_graph.output_sources``) are never pruned.
 
     After propagation, every NeuralCore is classified by
-    :func:`mimarsinan.mapping.ir_liveness.compute_liveness` as
+    :func:`mimarsinan.mapping.pruning.ir_liveness.compute_liveness` as
     ``LIVE`` / ``BIAS_ONLY`` / ``DEAD``. ``DEAD`` nodes are deleted via
     :meth:`IRGraph.remove_nodes` so they no longer consume hardware slots,
     simulation cycles, or UI surface area. Surviving nodes are physically

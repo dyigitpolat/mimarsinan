@@ -14,15 +14,15 @@ from mimarsinan.mapping.ir import (
     ir_graph_to_soft_core_mapping,
     neural_core_to_soft_core,
 )
-from mimarsinan.mapping.ir_pruning import (
+from mimarsinan.mapping.pruning.ir_pruning import (
     get_initial_pruning_masks_from_model,
     prune_ir_graph,
 )
-from mimarsinan.mapping.ir_pruning_analysis import (
+from mimarsinan.mapping.pruning.ir_pruning_analysis import (
     compute_graph_io_exemption,
     get_neural_segments,
 )
-from mimarsinan.mapping.softcore_mapping import compact_soft_core_mapping
+from mimarsinan.mapping.packing.softcore_mapping import compact_soft_core_mapping
 
 
 def _make_source_array(specs):

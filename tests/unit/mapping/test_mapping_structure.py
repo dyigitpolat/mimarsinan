@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 import pytest
 
-from mimarsinan.mapping.mapping_structure import (
+from mimarsinan.mapping.platform.mapping_structure import (
     compute_core_input_count,
     compute_fc_tiling_mode,
     compute_psum_params,

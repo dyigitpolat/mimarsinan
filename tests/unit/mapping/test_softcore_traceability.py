@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, ir_graph_to_soft_core_mapping
-from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
+from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping
 
 
 def _make_two_core_ir():
@@ -74,7 +74,7 @@ class TestSnapshotMappedPlacements:
     """snapshot_hard_core_mapping includes mapped_placements per core."""
 
     def test_snapshot_includes_mapped_placements(self):
-        from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+        from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
         ir = _make_two_core_ir()
@@ -95,7 +95,7 @@ class TestSnapshotMappedPlacements:
                 assert "neurons" in pl
 
     def test_snapshot_placements_match_mapping(self):
-        from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+        from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
         ir = _make_two_core_ir()
@@ -123,7 +123,7 @@ class TestSnapshotMappedPlacements:
 
     def test_snapshot_raises_when_traceability_missing(self):
         """Snapshot hard-fails with clear error when soft_core_placements_per_hard_core is missing."""
-        from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+        from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
         ir = _make_two_core_ir()
@@ -137,7 +137,7 @@ class TestSnapshotMappedPlacements:
 
     def test_snapshot_includes_utilization_frac_and_constituent_count(self):
         """Snapshot adds utilization_frac to each placement and constituent_count to each core."""
-        from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+        from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
         ir = _make_two_core_ir()
@@ -157,7 +157,7 @@ class TestSnapshotMappedPlacements:
     def test_snapshot_fused_core_has_fused_axon_boundaries(self):
         """When a core has fused_component_axons, snapshot includes fused_axon_boundaries and fused_component_count."""
         from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-        from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+        from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
         w = np.ones((101, 32), dtype=np.float32) * 0.1

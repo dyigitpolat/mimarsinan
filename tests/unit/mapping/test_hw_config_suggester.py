@@ -17,12 +17,12 @@ import math
 from typing import List
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
-from mimarsinan.mapping.hw_config_suggester import (
+from mimarsinan.mapping.verification.hw_config_suggester import (
     suggest_hardware_config,
     suggest_hardware_config_for_model,
     HardwareSuggestion,
 )
-from mimarsinan.mapping.mapping_verifier import verify_hardware_config
+from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
 
 
 # ── Helper factories ────────────────────────────────────────────────────────
@@ -445,7 +445,7 @@ class TestSuggestHardwareConfigForModel:
         import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
         from conftest import make_tiny_supermodel
-        from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
+        from mimarsinan.mapping.verification.mapping_verifier import verify_soft_core_mapping
 
         model = make_tiny_supermodel(input_shape=(1, 8, 8), num_classes=4)
         model_repr = model.get_mapper_repr()

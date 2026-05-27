@@ -32,8 +32,8 @@ from mimarsinan.mapping.ir import (
     IRGraph, IRSource, NeuralCore, WeightBank,
     ir_graph_to_soft_core_mapping,
 )
-from mimarsinan.mapping.softcore_mapping import HardCoreMapping, HardCore
-from mimarsinan.mapping.hybrid_hardcore_mapping import (
+from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping, HardCore
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping, HybridStage, SegmentIOSlice,
 )
 from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow

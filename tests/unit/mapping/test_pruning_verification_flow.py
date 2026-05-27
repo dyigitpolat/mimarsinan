@@ -23,7 +23,7 @@ from mimarsinan.mapping.mapping_utils import (
 )
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir import IRGraph, ir_graph_to_soft_core_mapping, NeuralCore
-from mimarsinan.mapping.ir_pruning import (
+from mimarsinan.mapping.pruning.ir_pruning import (
     get_initial_pruning_masks_from_model,
     prune_ir_graph,
 )
@@ -31,8 +31,8 @@ from mimarsinan.transformations.pruning import (
     compute_pruning_masks,
     compute_all_pruning_masks,
 )
-from mimarsinan.mapping.softcore_mapping import compact_soft_core_mapping
-from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.packing.softcore_mapping import compact_soft_core_mapping
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
 
 import torch.nn as nn

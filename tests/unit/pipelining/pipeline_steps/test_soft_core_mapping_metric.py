@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import MockPipeline
-from mimarsinan.pipelining.pipeline_steps.soft_core_mapping_step import (
+from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import (
     SoftCoreMappingStep,
 )
 

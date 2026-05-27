@@ -25,12 +25,12 @@ from mimarsinan.chip_simulation.spike_recorder import (
     SegmentSpikeRecord,
 )
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
-from mimarsinan.mapping.hybrid_hardcore_mapping import (
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
 )
-from mimarsinan.mapping.chip_latency import ChipLatency
-from mimarsinan.mapping.softcore_mapping import HardCore, HardCoreMapping
+from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping
 
 
 # SubtractiveLIFReset is lazy-imported so missing Lava does not break import.

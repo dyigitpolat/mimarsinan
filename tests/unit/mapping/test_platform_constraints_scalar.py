@@ -1,4 +1,4 @@
-from mimarsinan.mapping.platform_constraints import resolve_scalar_mapping_params
+from mimarsinan.mapping.platform.platform_constraints import resolve_scalar_mapping_params
 
 
 def test_scalar_legacy_bias_reserves_axon():

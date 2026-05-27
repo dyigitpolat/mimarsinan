@@ -14,7 +14,7 @@ contract is:
 import numpy as np
 import pytest
 
-from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 
 

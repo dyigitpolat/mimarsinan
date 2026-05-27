@@ -5,7 +5,7 @@ per-node row/column indices that must never be pruned because they carry
 **model-level** inputs or outputs (model input data axons and model output
 logits). The helper for splitting the graph into neural segments
 (``get_neural_segments``) is re-exported from
-:mod:`mimarsinan.mapping.ir_segmentation` for convenience.
+:mod:`mimarsinan.mapping.pruning.ir_segmentation` for convenience.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Dict, Set, Tuple
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.ir_segmentation import get_neural_segments
+from mimarsinan.mapping.pruning.ir_segmentation import get_neural_segments
 
 __all__ = ["compute_graph_io_exemption", "get_neural_segments"]
 

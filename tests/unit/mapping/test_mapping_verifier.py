@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from mimarsinan.mapping.mapping_verifier import (
+from mimarsinan.mapping.verification.mapping_verifier import (
     MappingVerificationResult,
     verify_soft_core_mapping,
     verify_hardware_config,

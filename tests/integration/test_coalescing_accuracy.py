@@ -12,7 +12,7 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.mapping.mapping_utils import InputMapper, PerceptronMapper, ModelRepresentation, EinopsRearrangeMapper
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ir_graph_to_soft_core_mapping, IRSource
-from mimarsinan.mapping.hybrid_hardcore_mapping import HardCore, HardCoreMapping
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HardCore, HardCoreMapping
 from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
 from mimarsinan.mapping.per_source_scales import compute_per_source_scales
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
@@ -139,7 +139,7 @@ def test_coalescing_accuracy_with_rearrange():
             sim_soft = flow(x)
         
         # Hard Core Simulation
-        from mimarsinan.mapping.chip_latency import ChipLatency
+        from mimarsinan.mapping.latency.chip import ChipLatency
         soft_map = ir_graph_to_soft_core_mapping(ir_graph)
         # Compute latencies so psum partials and accumulators get different
         # latency values and won't be co-packed into the same HardCore.

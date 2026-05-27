@@ -1,7 +1,7 @@
 from mimarsinan.pipelining.pipeline_step import PipelineStep
 
 from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.mapping.ir_latency import IRLatency
+from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.ir import NeuralCore
 
 from mimarsinan.pipelining.pipeline_helpers import run_optional_viz
@@ -48,7 +48,7 @@ class SoftCoreMappingStep(PipelineStep):
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
         cores = platform_constraints.get("cores", [])
-        from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+        from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 
         mapping_params = resolve_platform_mapping_params(
             cores,
@@ -127,7 +127,7 @@ class SoftCoreMappingStep(PipelineStep):
             ir_graph = ir_mapping.map(mapper_repr)
 
         wt_q = bool(self.pipeline.config.get("weight_quantization", False))
-        from mimarsinan.mapping.chip_quantize import quantize_ir_graph
+        from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 
         with _phase("weight_quantization"):
             quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q)
@@ -139,7 +139,7 @@ class SoftCoreMappingStep(PipelineStep):
 
         # Compact zeroed rows/columns when pruning was applied.
         if self.pipeline.config.get("pruning", False):
-            from mimarsinan.mapping.ir_pruning import prune_ir_graph, get_initial_pruning_masks_from_model
+            from mimarsinan.mapping.pruning.ir_pruning import prune_ir_graph, get_initial_pruning_masks_from_model
             try:
                 perceptrons_pre = model.get_perceptrons()
                 if perceptrons_pre:
@@ -204,7 +204,7 @@ class SoftCoreMappingStep(PipelineStep):
 
         if self.pipeline.config.get("generate_visualizations", False):
           try:
-              from mimarsinan.visualization.mapping_graphviz import (
+              from mimarsinan.visualization.graphviz import (
                   try_render_dot,
                   write_ir_graph_dot,
                   write_ir_graph_summary_dot,

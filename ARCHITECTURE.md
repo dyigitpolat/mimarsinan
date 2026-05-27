@@ -1588,7 +1588,7 @@ Cross-cutting helpers live next to their domain rather than in pipeline steps. S
 
 **Facade vs shared kernels:** `SpikingUnifiedCoreFlow`, `SpikingHybridCoreFlow`, `IRLatency`, and `ChipLatency` remain separate public entry points (different inputs and pipeline phases). Duplicated logic lives in shared modules (`models/spiking_config.py`, `models/signal_spans.py`, `models/lif_core_step.py`, `chip_simulation/ttfs_kernels.py`, `mapping/latency/upstream.py`). See `mapping/LATENCY.md`.
 
-**Modularization shims:** When code moves into a subpackage, keep a thin module at the old path that re-exports the public API (e.g. `mapping/ir.py` → `mapping/ir/`). Run `python scripts/import_path_inventory.py` from the package root to audit import usage before removing shims.
+**Subpackage imports:** Moved code lives under subpackages (e.g. `mapping/packing/`, `mapping/pruning/`). Import canonical paths directly; [`mapping/__init__.py`](mimarsinan/src/mimarsinan/mapping/__init__.py) may re-export the public API. Run `python scripts/import_path_inventory.py --check-legacy-path` to catch banned legacy paths.
 
 Notable entry points:
 

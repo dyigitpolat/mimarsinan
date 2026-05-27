@@ -6,12 +6,12 @@ from typing import Any
 
 import torch
 
-from mimarsinan.mapping.mapping_verifier import (
+from mimarsinan.mapping.verification.mapping_verifier import (
     MappingVerificationResult,
     verify_hardware_config,
     verify_soft_core_mapping,
 )
-from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.pipelining.model_registry import ModelRegistry
 
 
@@ -110,7 +110,7 @@ def resolve_tiling_params_from_body(
     tiling_max_neurons: int | None = None,
 ):
     """Return ``(effective_max_axons, effective_max_neurons, hardware_bias, allow_coalescing)``."""
-    from mimarsinan.mapping.platform_constraints import resolve_scalar_mapping_params
+    from mimarsinan.mapping.platform.platform_constraints import resolve_scalar_mapping_params
 
     allow_coalescing = bool(body.get("allow_coalescing", False))
     core_types = body.get("core_types") or body.get("cores")

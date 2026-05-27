@@ -1,30 +1,29 @@
-# visualization/ -- Pipeline Artifact Visualizations
+# visualization/ — Pipeline Artifact Visualizations
 
-Static visualization utilities for inspecting pipeline artifacts at various
-stages: IR graphs, hardware mappings, activation functions, weight
-distributions, and architecture search results.
+Static visualization utilities for IR graphs, hardware mappings, activations, and search results.
 
-## Key Components
+## Subpackages
 
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `mapping_graphviz.py` | `write_ir_graph_dot`, `write_ir_graph_summary_dot`, `write_hardcore_mapping_dot`, `write_hybrid_hardcore_mapping_dots`, etc. | Graphviz DOT generation for IR, SoftCore, HardCore, and Hybrid mappings |
-| `softcore_flowchart.py` | `write_softcore_flowchart_dot`, `estimate_fc_cores` | Flowchart-style DOT for mapper graph with hardware estimates; `estimate_fc_cores` uses `mapping_structure.compute_core_input_count` for legacy bias-axon accounting (aligned with layout IR path). |
-| `activation_function_visualization.py` | `ActivationFunctionVisualizer` | Plots activation functions over a range |
-| `histogram_visualization.py` | `HistogramVisualizer` | Activation distribution histograms |
-| `hardcore_visualization.py` | `HardCoreMappingVisualizer` | Heatmaps and utilization charts for hardware cores |
-| `search_visualization.py` | `write_search_report_png`, `create_interactive_search_report`, etc. | Architecture search result plots (Pareto fronts, history) |
-| `data_point_visualization.py` | `DataPointVisualizer` | Raw data point visualization |
+| Directory | Doc | Role |
+|-----------|-----|------|
+| `graphviz/` | [graphviz/ARCHITECTURE.md](graphviz/ARCHITECTURE.md) | DOT writers for IR / SCM / HCM / hybrid |
+| `search_viz/` | [search_viz/ARCHITECTURE.md](search_viz/ARCHITECTURE.md) | Architecture search PNG/HTML reports |
+
+## Other modules
+
+| File | Role |
+|------|------|
+| `softcore_flowchart.py` | Mapper flowchart DOT + `estimate_fc_cores` |
+| `activation_function_visualization.py` | Activation plots |
+| `histogram_visualization.py` | Activation histograms |
+| `hardcore_visualization.py` | Core heatmaps |
+| `data_point_visualization.py` | Raw data plots |
 
 ## Dependencies
 
-- **Internal**: `mapping.ir`, `mapping.softcore_mapping`, `mapping.hybrid_hardcore_mapping`, `mapping.mapping_utils`, `code_generation.cpp_chip_model`.
-- **External**: `matplotlib`, `plotly`, `graphviz` (system binary), `numpy`.
+- **Internal**: `mapping.*`, `code_generation.cpp_chip_model`
+- **External**: `matplotlib`, `plotly`, system `graphviz`
 
 ## Dependents
 
-- `pipelining.pipeline_steps` (soft core mapping, hard core mapping, architecture search steps).
-
-## Exported API (\_\_init\_\_.py)
-
-All primary visualization functions and classes are re-exported.
+- `pipelining.pipeline_steps`, GUI snapshots

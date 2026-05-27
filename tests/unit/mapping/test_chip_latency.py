@@ -23,7 +23,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.chip_latency import ChipLatency
+from mimarsinan.mapping.latency.chip import ChipLatency
 
 
 def _off() -> SpikeSource:

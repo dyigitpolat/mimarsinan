@@ -25,9 +25,9 @@ from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.ir_mapping import IRMapping
 from mimarsinan.mapping.ir import NeuralCore
-from mimarsinan.mapping.ir_latency import IRLatency
+from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-from mimarsinan.mapping.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
 from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow

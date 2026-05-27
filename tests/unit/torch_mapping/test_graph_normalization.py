@@ -324,7 +324,7 @@ class TestNoFusionCases:
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
 from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
-from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import scale_from_activations
+from mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step import scale_from_activations
 from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 from mimarsinan.models.layers import TransformedActivation, SavedTensorDecorator

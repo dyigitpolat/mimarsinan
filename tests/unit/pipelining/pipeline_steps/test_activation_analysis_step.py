@@ -10,7 +10,7 @@ from conftest import (
     make_tiny_supermodel,
 )
 
-from mimarsinan.pipelining.pipeline_steps.activation_analysis_step import (
+from mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step import (
     ActivationAnalysisStep,
     scale_from_activations,
 )

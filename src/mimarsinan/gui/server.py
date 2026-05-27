@@ -65,10 +65,10 @@ def _get_layout_result_from_request(
     edits with identical bodies hit a cached softcore list instead of
     rebuilding the mapper graph from scratch each time.
     """
-    from mimarsinan.mapping.layout_mapping_service import (
+    from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
-    from mimarsinan.mapping.layout_request import LayoutMappingRequest
+    from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
     request = LayoutMappingRequest.from_wizard_body(
         body,
@@ -642,13 +642,13 @@ def create_app(
         request including the ones feeding the monitor UI.
         """
         def _run():
-            from mimarsinan.mapping.mapping_verifier import (
+            from mimarsinan.mapping.verification.mapping_verifier import (
                 verify_soft_core_mapping,
                 verify_hardware_config,
             )
             mr = dict(body.get("model_repr_json", {}))
             core_types = body.get("core_types", [])
-            from mimarsinan.mapping.platform_constraints import (
+            from mimarsinan.mapping.platform.platform_constraints import (
                 resolve_platform_mapping_params,
             )
 
@@ -729,7 +729,7 @@ def create_app(
         for WS broadcasts and other REST calls under rapid wizard edits.
         """
         def _run():
-            from mimarsinan.mapping.hw_config_suggester import suggest_hardware_config, suggest_hardware_config_scheduled
+            from mimarsinan.mapping.verification.hw_config_suggester import suggest_hardware_config, suggest_hardware_config_scheduled
             layout_body = dict(body)
             layout_body["max_axons"] = max(int(body.get("max_axons", 1024)), 4096)
             layout_body["max_neurons"] = max(int(body.get("max_neurons", 1024)), 4096)

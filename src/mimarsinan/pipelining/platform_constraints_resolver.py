@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
-from mimarsinan.mapping.coalescing import CANONICAL_KEY, normalize_coalescing_config
+from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 
 
 def build_platform_constraints_resolved(

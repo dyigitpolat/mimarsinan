@@ -539,7 +539,7 @@ def suggest_hardware_config_for_model(
     allow_neuron_splitting: bool = False,
 ) -> HardwareSuggestion:
     """Convenience wrapper: run layout mapping then suggest hardware config."""
-    from mimarsinan.mapping.mapping_verifier import verify_soft_core_mapping
+    from mimarsinan.mapping.verification.mapping_verifier import verify_soft_core_mapping
 
     result = verify_soft_core_mapping(
         model_repr,

@@ -26,14 +26,14 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from mimarsinan.mapping.coalescing import (
+from mimarsinan.mapping.platform.coalescing import (
     CANONICAL_KEY,
     CoalescingConfigError,
     normalize_coalescing_config,
 )
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.layout_verification_stats import compute_mapping_stats
+from mimarsinan.mapping.verification.layout_verification_stats import compute_mapping_stats
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
 from mimarsinan.search.problem import ValidationResult
@@ -55,7 +55,7 @@ def _clip_int(v: float, lo: int, hi: int) -> int:
 
 def effective_max_dims(cores: Sequence[Dict[str, Any]]) -> Tuple[int, int]:
     """Return effective (max_axons, max_neurons) for IR tiling (legacy bias axon reserved)."""
-    from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+    from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 
     params = resolve_platform_mapping_params(cores)
     return params.effective_max_axons, params.effective_max_neurons
@@ -507,7 +507,7 @@ class JointArchHwProblem(EncodedProblem[Dict[str, Any]]):
         pcfg: Dict,
     ) -> Tuple[List[LayoutSoftCoreSpec], int]:
         """Collect layout softcores and host-side segment count from model."""
-        from mimarsinan.mapping.platform_constraints import resolve_platform_mapping_params
+        from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 
         cores = pcfg["cores"]
         pmap = resolve_platform_mapping_params(

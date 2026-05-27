@@ -11,7 +11,7 @@ from mimarsinan.mapping.activation_scales import (
     compute_node_output_scales as _compute_node_activation_scales,
 )
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.softcore_mapping import HardCore
+from mimarsinan.mapping.packing.softcore_mapping import HardCore
 from mimarsinan.mapping.packing.hybrid_segment import (
     _apply_reindex_to_ir_sources,
     _flush_neural_segment,
@@ -32,7 +32,7 @@ def build_hybrid_hard_core_mapping(
 ) -> HybridHardCoreMapping:
     """Compile a unified IRGraph into a HybridHardCoreMapping."""
 
-    from mimarsinan.mapping.ir_segmentation import build_ir_consumed_by
+    from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
 
     consumed_by = build_ir_consumed_by(ir_graph)
 
@@ -154,7 +154,7 @@ def _split_segment_by_capacity(
         return []
 
     from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-    from mimarsinan.mapping.mapping_structure import compute_core_input_count
+    from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
     from mimarsinan.mapping.schedule_partitioner import split_softcores_by_capacity
 
     hw_types = [

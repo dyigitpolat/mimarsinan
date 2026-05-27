@@ -3,7 +3,7 @@ import pytest
 from conftest import make_tiny_supermodel
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
-from mimarsinan.pipelining.pipeline_steps.activation_shift_step import ActivationShiftStep
+from mimarsinan.pipelining.pipeline_steps.adaptation.activation_shift_step import ActivationShiftStep
 from mimarsinan.tuning.adaptation_manager import AdaptationManager
 
 

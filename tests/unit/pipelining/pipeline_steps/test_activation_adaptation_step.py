@@ -21,7 +21,7 @@ from mimarsinan.pipelining.pipeline_steps.activation_utils import (
     RELU_COMPATIBLE_TYPES,
     has_non_relu_activations,
 )
-from mimarsinan.pipelining.pipeline_steps.activation_adaptation_step import (
+from mimarsinan.pipelining.pipeline_steps.adaptation.activation_adaptation_step import (
     ActivationAdaptationStep,
 )
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation

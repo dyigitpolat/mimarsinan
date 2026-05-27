@@ -27,7 +27,7 @@ from compilagent import (
 )
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
-from mimarsinan.mapping.layout_verification_stats import compute_mapping_stats
+from mimarsinan.mapping.verification.layout_verification_stats import compute_mapping_stats
 from mimarsinan.search.results import ObjectiveSpec, resolve_active_objectives
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 

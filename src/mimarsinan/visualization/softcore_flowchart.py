@@ -6,8 +6,8 @@ from typing import Any
 
 import torch
 
-from mimarsinan.mapping.coalescing import coalescing_fragment_count
-from mimarsinan.mapping.mapping_structure import (
+from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
+from mimarsinan.mapping.platform.mapping_structure import (
     compute_core_input_count,
     compute_fc_tiling_mode,
     compute_psum_params,

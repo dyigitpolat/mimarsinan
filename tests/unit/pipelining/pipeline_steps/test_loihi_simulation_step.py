@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from conftest import MockPipeline, MockDataProviderFactory, make_tiny_supermodel
-from mimarsinan.pipelining.pipeline_steps.loihi_simulation_step import (
+from mimarsinan.pipelining.pipeline_steps.verification.loihi_simulation_step import (
     LoihiSimulationStep,
 )
 
@@ -47,7 +47,7 @@ def _fake_record(sample_index=0):
 
 
 def _prepare_step(monkeypatch, *, diffs=None):
-    import mimarsinan.pipelining.pipeline_steps.loihi_simulation_step as loihi_step
+    import mimarsinan.pipelining.pipeline_steps.verification.loihi_simulation_step as loihi_step
 
     calls = {
         "hcm_samples": [],
