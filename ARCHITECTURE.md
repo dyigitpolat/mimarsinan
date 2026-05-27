@@ -1586,7 +1586,9 @@ Module dependency rules:
 ### Shared modules
 Cross-cutting helpers live next to their domain rather than in pipeline steps. See per-package `ARCHITECTURE.md` files and `docs/ARCHITECTURE_STYLE.md` for module tables.
 
-**Known limitations:** `SpikingUnifiedCoreFlow` and `SpikingHybridCoreFlow` stay separate by design; `IRLatency` and `ChipLatency` are not merged (see `mapping/LATENCY.md`).
+**Facade vs shared kernels:** `SpikingUnifiedCoreFlow`, `SpikingHybridCoreFlow`, `IRLatency`, and `ChipLatency` remain separate public entry points (different inputs and pipeline phases). Duplicated logic lives in shared modules (`models/spiking_config.py`, `models/signal_spans.py`, `models/lif_core_step.py`, `chip_simulation/ttfs_kernels.py`, `mapping/latency/upstream.py`). See `mapping/LATENCY.md`.
+
+**Modularization shims:** When code moves into a subpackage, keep a thin module at the old path that re-exports the public API (e.g. `mapping/ir.py` → `mapping/ir/`). Run `python scripts/import_path_inventory.py` from the package root to audit import usage before removing shims.
 
 Notable entry points:
 

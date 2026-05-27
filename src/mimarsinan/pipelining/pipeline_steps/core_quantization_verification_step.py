@@ -1,43 +1,8 @@
-from __future__ import annotations
+"""Compatibility shim — aliases implementation module for monkeypatch-safe imports."""
 
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.mapping.chip_quantize import verify_ir_graph_quantized
+import importlib as _importlib
+import sys as _sys
 
-
-class CoreQuantizationVerificationStep(PipelineStep):
-    """Fail fast if weight_quantization=True but IR NeuralCores are not chip-quantized."""
-
-    def __init__(self, pipeline):
-        requires = ["ir_graph"]
-        promises = []
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
-
-    def validate(self):
-        return self.pipeline.get_target_metric()
-
-    def process(self):
-        ir_graph = self.get_entry("ir_graph")
-        if not self.pipeline.config.get("weight_quantization", False):
-            cores = ir_graph.get_neural_cores()
-            if cores:
-                print(
-                    "[CoreQuantizationVerificationStep] Skipping verification (weight_quantization=False); "
-                    f"IR has {len(cores)} NeuralCores with float weights."
-                )
-            return
-
-        bits = int(self.pipeline.config["weight_bits"])
-        cores = ir_graph.get_neural_cores()
-        if not cores:
-            print("[CoreQuantizationVerificationStep] No NeuralCores found in IRGraph (nothing to verify).")
-            return
-
-        verify_ir_graph_quantized(ir_graph, bits)
-        print(
-            f"[CoreQuantizationVerificationStep] OK: verified {len(cores)} "
-            f"NeuralCores at {bits}-bit quantization."
-        )
-
-
+_TARGET = "mimarsinan.pipelining.pipeline_steps.mapping.core_quantization_verification_step"
+_impl = _importlib.import_module(_TARGET)
+_sys.modules[__name__] = _impl

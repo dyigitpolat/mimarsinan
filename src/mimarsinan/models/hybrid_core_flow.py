@@ -32,11 +32,17 @@ from mimarsinan.mapping.hybrid_hardcore_mapping import (
 from mimarsinan.mapping.ir import ComputeOp, IRSource
 
 from mimarsinan.mapping.spike_source_spans import SpikeSourceSpan, compress_spike_sources
-from mimarsinan.models.lif_kernels import lif_fire_and_reset
+from mimarsinan.models.lif_core_step import lif_core_contribute_and_fire
+from mimarsinan.models.signal_spans import fill_signal_from_spans
+from mimarsinan.models.spiking_config import (
+    COMPUTE_DTYPE,
+    TTFS_FIRING_MODES,
+    TTFS_SPIKING_MODES,
+    validate_spiking_init,
+)
 
-
-# float64 matches nevresim TTFS double precision and avoids threshold flip-flops
-_COMPUTE_DTYPE = torch.float64
+# Backward compatibility for integration tests.
+_COMPUTE_DTYPE = COMPUTE_DTYPE
 
 
 class SpikingHybridCoreFlow(nn.Module):
@@ -46,8 +52,8 @@ class SpikingHybridCoreFlow(nn.Module):
     Supports rate-coded (LIF) and TTFS (continuous or quantized analytical) modes.
     """
 
-    _TTFS_FIRING_MODES = {"TTFS"}
-    _TTFS_SPIKING_MODES = {"ttfs", "ttfs_quantized"}
+    _TTFS_FIRING_MODES = TTFS_FIRING_MODES
+    _TTFS_SPIKING_MODES = TTFS_SPIKING_MODES
 
     def __init__(
         self,
@@ -77,9 +83,11 @@ class SpikingHybridCoreFlow(nn.Module):
             spiking_mode == "lif" and self.cycle_accurate_lif_forward
         )
 
-        assert firing_mode in ["Default", "Novena", "TTFS"]
-        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
-        assert thresholding_mode in ["<", "<="]
+        validate_spiking_init(
+            firing_mode=firing_mode,
+            spike_mode=spike_mode,
+            thresholding_mode=thresholding_mode,
+        )
 
         from mimarsinan.spiking.segment_encoding import SegmentEncodingConfig
         self._segment_encoding = SegmentEncodingConfig(
@@ -89,7 +97,7 @@ class SpikingHybridCoreFlow(nn.Module):
             spike_mode=self.spike_mode,
             thresholding_mode=self.thresholding_mode,
             firing_mode=self.firing_mode,
-            compute_dtype=_COMPUTE_DTYPE,
+            compute_dtype=COMPUTE_DTYPE,
         )
 
         # Single-segment LRU: one segment's weights on GPU at a time (ViT-scale OOM otherwise).
@@ -173,7 +181,7 @@ class SpikingHybridCoreFlow(nn.Module):
         device: torch.device,
     ) -> torch.Tensor:
         return assemble_segment_input_torch(
-            input_map, state_buffer, batch_size, device, _COMPUTE_DTYPE,
+            input_map, state_buffer, batch_size, device, COMPUTE_DTYPE,
         )
 
     @staticmethod
@@ -197,7 +205,7 @@ class SpikingHybridCoreFlow(nn.Module):
             original_input,
             batch_size,
             device,
-            _COMPUTE_DTYPE,
+            COMPUTE_DTYPE,
         )
 
     def _fill_signal_tensor_from_spans(
@@ -209,19 +217,19 @@ class SpikingHybridCoreFlow(nn.Module):
         spans: list[SpikeSourceSpan],
         cycle: int = -1,
     ) -> None:
-        out.zero_()
-        for sp in spans:
-            d0 = int(sp.dst_start)
-            d1 = int(sp.dst_end)
-            if sp.kind == "off":
-                continue
-            if sp.kind == "on":
-                out[:, d0:d1].fill_(1.0)
-                continue
-            if sp.kind == "input":
-                out[:, d0:d1] = input_spikes[:, int(sp.src_start):int(sp.src_end)]
-                continue
-            out[:, d0:d1] = buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+        fill_signal_from_spans(
+            out,
+            spans,
+            read_input=lambda sp: out.__setitem__(
+                (slice(None), slice(int(sp.dst_start), int(sp.dst_end))),
+                input_spikes[:, int(sp.src_start) : int(sp.src_end)],
+            ),
+            read_upstream=lambda sp: out.__setitem__(
+                (slice(None), slice(int(sp.dst_start), int(sp.dst_end))),
+                buffers[int(sp.src_core)][:, int(sp.src_start) : int(sp.src_end)],
+            ),
+            cycle=cycle,
+        )
 
     def _get_segment_tensors(self, stage: HybridStage, device: torch.device) -> dict:
         """Return cached segment tensors (axon/output spans, weights, thresholds); upload on miss."""
@@ -265,7 +273,7 @@ class SpikingHybridCoreFlow(nn.Module):
                     f"mapping.weight_banks does not contain it — "
                     f"ir_graph_to_soft_core_mapping must propagate the bank."
                 )
-            t = torch.tensor(bank_mat.T, dtype=_COMPUTE_DTYPE, device=device)
+            t = torch.tensor(bank_mat.T, dtype=COMPUTE_DTYPE, device=device)
             bank_tensors[int(bid)] = t
             return t
 
@@ -303,7 +311,7 @@ class SpikingHybridCoreFlow(nn.Module):
             if core_weight is None:
                 tile = core.core_matrix[:used_ax, :used_neu]
                 core_weight = torch.tensor(
-                    tile.T, dtype=_COMPUTE_DTYPE, device=device,
+                    tile.T, dtype=COMPUTE_DTYPE, device=device,
                 )
 
             core_params.append(core_weight)
@@ -314,12 +322,12 @@ class SpikingHybridCoreFlow(nn.Module):
             else:
                 hw_biases.append(
                     torch.tensor(
-                        bias[:used_neu], dtype=_COMPUTE_DTYPE, device=device,
+                        bias[:used_neu], dtype=COMPUTE_DTYPE, device=device,
                     )
                 )
 
         thresholds = [
-            torch.tensor(float(core.threshold), dtype=_COMPUTE_DTYPE, device=device)
+            torch.tensor(float(core.threshold), dtype=COMPUTE_DTYPE, device=device)
             for core in cores
         ]
 
@@ -373,21 +381,21 @@ class SpikingHybridCoreFlow(nn.Module):
 
         buffers = [
             torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
-                        device=device, dtype=_COMPUTE_DTYPE)
+                        device=device, dtype=COMPUTE_DTYPE)
             for c in cores
         ]
         memb = [
             torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
-                        device=device, dtype=_COMPUTE_DTYPE)
+                        device=device, dtype=COMPUTE_DTYPE)
             for c in cores
         ]
 
-        output_counts = torch.zeros(batch_size, len(output_sources), device=device, dtype=_COMPUTE_DTYPE)
+        output_counts = torch.zeros(batch_size, len(output_sources), device=device, dtype=COMPUTE_DTYPE)
 
-        zeros_in = torch.zeros(batch_size, input_size, device=device, dtype=_COMPUTE_DTYPE)
+        zeros_in = torch.zeros(batch_size, input_size, device=device, dtype=COMPUTE_DTYPE)
         input_signals = [
             torch.zeros(batch_size, max(int(c.axons_per_core - c.available_axons), 1),
-                        device=device, dtype=_COMPUTE_DTYPE)
+                        device=device, dtype=COMPUTE_DTYPE)
             for c in cores
         ]
 
@@ -405,7 +413,7 @@ class SpikingHybridCoreFlow(nn.Module):
                 for c in cores
             ]
 
-        input_spike_train = input_spike_train.to(_COMPUTE_DTYPE)
+        input_spike_train = input_spike_train.to(COMPUTE_DTYPE)
 
         for cycle in range(cycles):
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
@@ -426,16 +434,15 @@ class SpikingHybridCoreFlow(nn.Module):
                     continue
 
                 memb_i = memb[core_idx]
-                memb_i += torch.matmul(core_params[core_idx], input_signals[core_idx].T).T
-                if hw_biases[core_idx] is not None:
-                    memb_i += hw_biases[core_idx]
-
-                buffers[core_idx] = lif_fire_and_reset(
+                buffers[core_idx] = lif_core_contribute_and_fire(
                     memb_i,
+                    core_params[core_idx],
+                    input_signals[core_idx],
                     thresholds[core_idx],
+                    hw_bias=hw_biases[core_idx],
                     thresholding_mode=self.thresholding_mode,
                     firing_mode=self.firing_mode,
-                    output_dtype=_COMPUTE_DTYPE,
+                    output_dtype=COMPUTE_DTYPE,
                 )
 
                 if recording:
@@ -505,7 +512,7 @@ class SpikingHybridCoreFlow(nn.Module):
             simulation_length=self.simulation_length,
             spiking_mode=mode,
         )
-        return torch.tensor(result.inter_stage, dtype=_COMPUTE_DTYPE, device=device)
+        return torch.tensor(result.inter_stage, dtype=COMPUTE_DTYPE, device=device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         try:
@@ -528,7 +535,7 @@ class SpikingHybridCoreFlow(nn.Module):
         device = x.device
         quantized = self.spiking_mode == "ttfs_quantized"
 
-        x_compute = x.to(_COMPUTE_DTYPE)
+        x_compute = x.to(COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
         from mimarsinan.chip_simulation.hybrid_execution import resolve_stage_compute_scales
 
@@ -566,7 +573,7 @@ class SpikingHybridCoreFlow(nn.Module):
             )
             for s in ctx.stage.output_map:
                 ctx.state_buffer[s.node_id] = torch.tensor(
-                    state_np[s.node_id], dtype=_COMPUTE_DTYPE, device=device,
+                    state_np[s.node_id], dtype=COMPUTE_DTYPE, device=device,
                 )
 
         def _after_neural_ttfs(ctx: HybridStageContext) -> None:
@@ -592,7 +599,7 @@ class SpikingHybridCoreFlow(nn.Module):
                 self.hybrid_mapping, ctx.stage, state_np, sample,
             )
             ctx.state_buffer[op.id] = torch.tensor(
-                result.output, dtype=_COMPUTE_DTYPE, device=device,
+                result.output, dtype=COMPUTE_DTYPE, device=device,
             )
 
         def _after_compute_ttfs(ctx: HybridStageContext) -> None:
@@ -649,7 +656,7 @@ class SpikingHybridCoreFlow(nn.Module):
         device = x.device
         T = self.simulation_length
 
-        x_compute = x.to(_COMPUTE_DTYPE)
+        x_compute = x.to(COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
         state_buffer_spikes: Dict[int, torch.Tensor] = {}
         from mimarsinan.chip_simulation.hybrid_execution import resolve_stage_compute_scales
@@ -734,7 +741,7 @@ class SpikingHybridCoreFlow(nn.Module):
                 in_scale=in_scale,
                 out_scale=out_scale,
             )
-            ctx.state_buffer[op.id] = result.to(_COMPUTE_DTYPE)
+            ctx.state_buffer[op.id] = result.to(COMPUTE_DTYPE)
 
             from mimarsinan.spiking.segment_encoding import emit_compute_spike_train
 

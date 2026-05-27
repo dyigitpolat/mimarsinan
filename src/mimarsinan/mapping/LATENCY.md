@@ -37,9 +37,9 @@ Adding scheduling or layout feature?
    └─ Touch ChipLatency only (after pack, before sim).
 ```
 
-## Shared helpers (optional)
+## Shared helpers
 
-If both engines need the same upstream-neural ID walk, add a tiny helper in `ir_segmentation.py` (e.g. `iter_upstream_neural_ids`). **Do not** expose a single `calculate_latency()` API across IR and chip domains.
+`mapping/latency/upstream.py` provides `iter_upstream_neural_ids` for graph walks shared by `IRLatency` (topology tier). `ChipLatency` keeps axon-level walks and post-passes chip-only. **Do not** expose a single `calculate_latency()` API across IR and chip domains.
 
 ## Pitfalls (ChipLatency)
 

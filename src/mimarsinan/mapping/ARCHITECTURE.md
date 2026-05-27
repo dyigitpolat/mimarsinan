@@ -3,178 +3,20 @@
 Converts PyTorch models to an intermediate representation (IR) and then packs
 the IR into physical hardware cores.
 
-## Key Components
+## Subpackages
 
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `ir.py` | `IRSource`, `IRNode`, `NeuralCore`, `ComputeOp`, `IRGraph`, `WeightBank` | Unified IR: directed graph of neural cores and compute operations. `IRGraph.layout_softcores` and `NeuralCore.layout_softcore_index` record scheduled layout placement for hybrid split. `WeightBank` stores shared weights for conv-style layers; `NeuralCore` can either own its `core_matrix` or reference a bank via `weight_bank_id`. Pruning provenance: `NeuralCore.perceptron_index`, `perceptron_output_slice`, `perceptron_input_slice`; `WeightBank.perceptron_index` — used by `get_initial_pruning_masks_from_model` to apply model pruning masks to tiled FC and bank-backed cores. `IRGraph.remove_nodes(node_ids)` is the canonical whole-node deletion API: it rewires every dangling reference to `IRSource(-1, 0)`, drops orphan `WeightBank`s, and refuses to remove a node if doing so would (a) empty `output_sources`, (b) split a non-trivial `psum_group_id`, or (c) split a non-trivial `coalescing_group_id`. Used by `prune_ir_graph` to eliminate `DEAD` cores after liveness analysis — replaces the historical `(1, 1)` zero-placeholder idiom. |
-| `coalescing.py` | `CANONICAL_KEY`, `coalescing_config_errors`, `resolve_allow_coalescing`, `normalize_coalescing_config`, `coalescing_fragment_count`, `CoalescingConfigError` | Single flag `allow_coalescing`; `coalescing_fragment_count` shared by layout packer and hybrid coalescing budget validation. |
-| `scale_broadcast.py` | `broadcast_scale_to_dim`, `broadcast_scale_pair` | Shared scale-vector expansion for `per_source_scales` and IR `ComputeOp` execution. |
-| `ir_mapping.py` | `IRMapping` | Converts `ModelRepresentation` (mapper graph) to `IRGraph`; handles output/axon tiling. Provides `register_weight_bank()` and `add_shared_neural_core()` for conv-style shared-weight mapping. Tiling is always enabled for wide layers; `allow_coalescing` selects between psum decomposition (2N+1 cores) and wide-core coalescing (N+1 cores). **Bias modes**: `hardware_bias=True` stores bias in `NeuralCore.hardware_bias` (dedicated register, no always-on axon row); `hardware_bias=False` uses legacy always-on row mode. **Note**: IR thresholds are always unit (1.0) as `MapperRepr` provides weights already normalized by activation and input scales; `parameter_scale` is preserved as metadata for hardware scaling. Structural decisions (bias counting, wide-layer detection, psum params) delegated to `mapping_structure`. |
-| `mapping_structure.py` | `compute_core_input_count`, `compute_fc_tiling_mode`, `compute_psum_params`, `build_psum_accumulator_weights`, `PsumParams` | Shared structural helpers for layout and legacy mapper; psum accumulator weight matrix built once for both paths. |
-| `mapping_utils.py` | `Mapper`, `PerceptronMapper`, `ComputeOpMapper`, `Conv2DPerceptronMapper`, ... (re-exports from `soft_core_mapper`, `model_representation`, `chip_export`) | Mapper hierarchy: dual-purpose DAG for forward pass and IR mapping. Re-exports `ModelRepresentation` (from `model_representation`), `SoftCoreMapping` (from `soft_core_mapper`), `hard_cores_to_chip`/`generate_core_weights`/`to_numpy` (from `chip_export`). `ModelRepresentation.assign_perceptron_indices()` sets `perceptron_index` on each mapper that owns perceptrons. |
-| `shape_probe.py` | `probe_module_io_shapes`, `ProbedShapes` | Single source of truth for non-neural ComputeOp shape inference: runs one zeros-tensor forward pass through a wrapped ``nn.Module`` (unary or multi-input), returns batch-stripped input/output shapes. Used by `ComputeOpMapper` at IR-emission time and (indirectly via `op.execute`) by `simulation_runner._get_compute_op_output_size` as a fallback. Eval+no_grad with training-state restore. |
-| `compute_modules.py` | `ComputeAdapter`, `_cat_along`, `ScaleNormalizingWrapper` | Two host-side ComputeOp payload classes plus one picklable utility. `ComputeAdapter(fn, bound_tensors, extra_args, kwargs)` is the single generic adapter for any function/method/get_attr-bound op — bound tensor constants are stored batch-stripped and auto-expanded to match input batch size at forward time, so IR-time shape inference never reasons about batch dim.  Replaces every former per-op wrapper (`Add`, `Mean`, `Select`, `ConstantAdd`, `ConstantPrepend`) and the converter-local `_FunctionWrapper`.  `_cat_along` is a tiny module-level helper for the cat-with-prepend pattern (`torch.cat([prefix, x], dim=dim)`) whose list-of-tensors signature doesn't fit `ComputeAdapter`'s default flat-positional call.  `ScaleNormalizingWrapper` is the generic per-source rate→absolute→rate rescaling carrier stamped by `compute_per_source_scales` onto any multi-input `ComputeOpMapper` whose source scales diverge — replaces the previous Add-specific `_ir_add_scale_a/_b` injection. |
-| `neural_segment_packing.py` | `neural_segment_to_soft_core_mapping` | Hard-core flush: packs each neural segment's cores into soft cores for bin-packing. |
-| `soft_core_mapper.py` | `SoftCoreMapping` | Container for packed soft cores (`cores`, `output_sources`, `weight_banks`) used after IR→softcore conversion. |
-| `model_representation.py` | `ModelRepresentation` | DAG wrapper: exec order, perceptron groups, `assign_perceptron_indices`, `map_to_ir`. Re-exported by `mapping_utils`. |
-| `chip_export.py` | `hard_cores_to_chip`, `generate_core_weights`, `generate_core_connection_info`, `to_numpy` | Converts `HardCoreMapping` → `ChipModel` for nevresim. Single consumer: `chip_simulation.nevresim_driver`. |
-| `softcore_mapping.py` | `SoftCore`, `HardCore`, `HardCoreMapping`, `compact_soft_core_mapping` | Logical-to-physical core representations and packing. **Bias chain**: `SoftCore.hardware_bias` and `HardCore.hardware_bias` carry dedicated per-neuron bias arrays through the packing pipeline; `HardCore.add_softcore()` copies bias into the correct neuron slice; `compact_soft_core_mapping` compacts `hardware_bias` alongside pruned columns. When `hardware_bias` is set, no always-on axon row exists. Legacy mode: `HardCore.has_bias_capability` (from `cores_config["has_bias"]`); codegen folds the last matrix row into per-neuron bias. Two-way traceability: `neuron_mapping` (soft→hard); `soft_core_placements_per_hard_core` (hard→soft) for overlay/UI. **Fused cores**: when the packer fuses multiple physical HardCores via `fuse_hardcores`, the returned fused HardCore has optional `fused_component_axons` (list of axon counts per component) set in `HardCoreMapping.map()` for GUI boundary and badge display. |
-| `core_packing.py` | `greedy_pack_softcores`, `pre_allocate_coalescing_groups` | Best-fit greedy bin-packing; `pre_allocate_coalescing_groups` reserves dedicated `HardCore`s for coalescing partial softcores before the main pass |
-| `hybrid_hardcore_mapping.py` | `HybridHardCoreMapping`, `HybridStage`, `SegmentIOSlice`, `build_hybrid_hard_core_mapping`, `_validate_coalescing_budget` | Multi-segment deployable program. Uses `build_ir_consumed_by` from `ir_segmentation`. Coalescing budget uses `coalescing_fragment_count`. Segment boundaries from ComputeOp barriers (see `get_neural_segments`). `node_activation_scales` / `node_input_activation_scales` consumed via `chip_simulation.hybrid_execution.resolve_stage_compute_scales`. |
-| `schedule_partitioner.py` | `partition_segment_into_passes`, `estimate_passes_for_layout`, `estimate_passes_for_layout_validated`, `effective_core_budget` | One schedule pass per neural segment; segment boundaries come from the layout mapper. `partition_segment_into_passes` is the identity on the segment's cores (ABI). `estimate_passes_for_layout` reports one pass per `segment_id`; `estimate_passes_for_layout_validated` runs `pack_layout` per segment. `effective_core_budget` applies the 0.8× heterogeneous discount for wizard and hard-core mapper. |
-| `chip_latency.py` | `ChipLatency` | Assigns per-core `.latency` for simulation scheduling: backward walk from outputs, then `_enforce_core_latency_invariant` and `_align_shiftable_cores`. See **ChipLatency pitfalls** below and `LATENCY.md` (do not merge with `IRLatency`). Raises if `output_sources` empty. |
-| `ir_latency.py` | `IRLatency` | Computes per-node latency tiers in the IR graph (layout / wizard); see `LATENCY.md` |
-| `ir_pruning_analysis.py` | `compute_graph_io_exemption`, `get_neural_segments` | Pure graph queries used by IR pruning. `compute_graph_io_exemption` returns the per-node row/column indices for model-level input data axons (`IRSource.node_id == -2`) and model-level output logits (entries in `IRGraph.output_sources`); these indices must never be pruned. `get_neural_segments` is implemented in `ir_segmentation.py` and re-exported here. |
-| `ir_pruning.py` | `prune_ir_graph`, `get_initial_pruning_masks_from_model` | Pipeline-facing wrapper: collects model-level I/O exemptions (`compute_graph_io_exemption`), converts model-supplied seed masks into solver sets, delegates the bidirectional, recursive cross-core pruning fixpoint to `compute_global_pruned_sets`, classifies each NeuralCore via `compute_liveness`, **deletes every `DEAD` node from the graph via `IRGraph.remove_nodes`**, then attaches GUI metadata, rewires `input_sources` / `output_sources`, and physically compacts each owned `NeuralCore.core_matrix` and `hardware_bias`. Bank-backed cores keep the un-compacted bank matrix; per-node `pruned_row_mask` / `pruned_col_mask` (sliced by `weight_row_slice`) are stashed on the node so the soft-core mapping stage can compact the bank later. Tiled FC and bank-backed cores receive model masks only when `perceptron_index` is set on the IR node / bank. Forwards `simulation_steps` and `spiking_mode` to `compute_liveness`. |
-| `liveness_semantics.py` | `bias_can_activate`, mode helpers | Single source of truth for bias-only activation under `lif`, `ttfs` (continuous `relu(V)/θ`), and `ttfs_quantized` (closed-form fire step). |
-| `ir_liveness.py` | `NodeLiveness`, `LivenessResult`, `compute_liveness` | Three-valued post-pruning liveness classifier for every NeuralCore: `LIVE` (some live axon weight + reachable from outputs), `BIAS_ONLY` (every axon dead but `hardware_bias` can activate at least one neuron under the configured `spiking_mode`, and that neuron is reachable), or `DEAD` (cannot contribute, or no downstream consumer). `DEAD` wins over `BIAS_ONLY`. Output-referenced cores are never `DEAD`: an unfireable output core is preserved as `BIAS_ONLY` so `_validate_outputs_remain` keeps holding. Reuses `compute_global_pruned_sets` for reachability so ComputeOp barriers and persistent-consumer semantics stay consistent with the rest of the pruning stack. |
-| `pruning_graph_propagation.py` | `compute_global_pruned_sets`, `GlobalPruningResult` | Bidirectional, recursive cross-core pruning fixpoint over the whole IR. Pruning a neuron in core A propagates to consumer axons in any neural core B; pruning all consumers makes a producer neuron dead unless it is exempt. ComputeOps act as barriers (their inputs and outputs always count as live). Banks are aggregated as a shared matrix with bank rows pruned only when *every* using node has the corresponding axon dead. Within-matrix closure is delegated per iteration to `pruning_propagation`. |
-| `pruning_propagation.py` | `compute_propagated_pruned_rows_cols` | Within-matrix propagative pruning fixpoint (a row that only feeds pruned cols is pruned; a col that only receives from pruned rows is pruned). Exempt indices (`exempt_rows` / `exempt_cols`) are never added at init or in the fixpoint. Used both directly by `ir_pruning` (legacy) and as the per-iteration core of `pruning_graph_propagation`. |
-| `per_source_scales.py` | `compute_per_source_scales` | Traverses mapper graph for `per_input_scales`; uses `scale_broadcast.broadcast_scale_pair`. For **any** `ComputeOpMapper` whose input scales are heterogeneous — either multiple sources with divergent scales (e.g. `Add(a, b)` with `s_a ≠ s_b`) or a unary input with non-uniform per-channel scales (e.g. `LayerNorm` downstream of a `ConcatMapper` joining differently-scaled streams) — stamps `per_source_scales` / `output_scale` slots so its emission wraps the module in `ScaleNormalizingWrapper`. One rule covers both cases. |
-| `platform_constraints.py` | `resolve_platform_mapping_params`, `resolve_scalar_mapping_params`, `PlatformMappingParams` | Single source for `hardware_bias`, `effective_max_axons` (`max_axons - 1` when legacy bias axon), and coalescing flag; used by SCM, NAS (`JointArchHwProblem`), wizard API, and snapshot builders. |
-| `wizard_layout_verify.py` | `model_repr_from_wizard_body`, `model_repr_from_model`, `resolve_tiling_params_from_body`, `verify_layout_for_model_repr`, `verify_planned_mapping_performance` | Shared model-repr build + `verify_soft_core_mapping` / `verify_hardware_config` for `gui/server.py` and snapshot planned-mapping panel. Wizard / NAS callers should prefer `LayoutMappingService` (below), which caches over these helpers. |
-| `layout_request.py` | `LayoutMappingRequest` | Frozen hashable request signature for the wizard / NAS layout call. `model_identity_key()` is invariant under tiling parameters (max_axons, max_neurons, allow_coalescing, hardware_bias); `verification_key()` covers all fields. |
-| `layout_mapping_service.py` | `LayoutMappingService`, `DEFAULT_LAYOUT_MAPPING_SERVICE` | Two-tier bounded-LRU cache for the wizard layout pipeline (`get_model_repr` keyed on `model_identity_key`, `get_verification` keyed on `verification_key`). Thread-safe (FastAPI offloads via `asyncio.to_thread`). `gui/server.py` routes `/api/hw_config_verify` and `/api/hw_config_auto` through the default singleton. Repeated identical requests return cached `MappingVerificationResult` instances in microseconds. **Invariant**: returned softcore lists are shared across cache hits; do not mutate in place (`pack_layout` already deepcopies its input). |
-| `ir_segmentation.py` | `get_neural_segments`, `build_ir_consumed_by` | Segment boundaries and consumer map for hybrid compile (re-exported `get_neural_segments` from `ir_pruning_analysis`). |
-| `pruning_apply.py` | `compact_hardware_bias_columns` | Wired from `ir_pruning` and `softcore_mapping.compact_soft_core_mapping` when pruning compacts `hardware_bias`. |
-| `core_geometry.py` | `used_axons`, `used_neurons` | Shared axon/neuron occupancy helpers for HCM, Lava, and SANA-FE. |
-| `chip_quantize.py` | `quantize_ir_graph`, `verify_ir_graph_quantized` | IR weight/bias quantization shared by SCM; `verify_ir_graph_quantized` used by `CoreQuantizationVerificationStep` via `transformations.quantization_verify`. |
-| `activation_scales.py` | `compute_node_output_scales`, `compute_node_input_scales`, `perceptron_wrapped_activation_scale` | TTFS node scale computation for hybrid mapping and unified flow. |
-| `ttfs_bias.py` | `apply_ttfs_quantization_bias_compensation` | Idempotent TTFS quantization bias bake at mapping time (`ttfs_quantized` + activation quantization only). |
-| `ir_source_spans.py` | `IRSourceSpan`, `compress_ir_sources` | Range-compressed IR source representations for efficient simulation |
-| `spike_source_spans.py` | `SpikeSourceSpan`, `compress_spike_sources` | Range-compressed spike source representations |
-| `mapping_verifier.py` | `verify_soft_core_mapping`, `verify_hardware_config`, `MappingVerificationResult` | Layout mapping verification; hardware config check. `verify_soft_core_mapping` accepts `allow_coalescing` and `hardware_bias` flags that are forwarded to `LayoutIRMapping` so layout-level core counts match actual IR mapping for wide FC layers. With multiple core types, at least one type must fit the largest softcore. `MappingVerificationResult` also carries `host_side_segment_count` (compute-only runs between / around neural segments) and `layout_preview` (compact input/host/latency-group/output flow summary for the wizard). `verify_hardware_config` returns a `"stats"` dict (from `LayoutVerificationStats.to_dict()`) alongside feasibility. Scheduling feasibility is determined entirely by `estimate_passes_for_layout_validated` with typed `pack_layout` validation and fragment expansion — no synthetic fallbacks or override flags. Infeasibility is reported when a softcore's fragments cannot fit any core type. |
-| `layout_verification_stats.py` | `LayoutVerificationStats`, `compute_mapping_stats`, `stats_dict_from_hybrid_mapping` | Layout packing stats plus wizard-shaped dict from a compiled `HybridHardCoreMapping` (used by GUI real mapping snapshot). |
-| `hw_config_suggester.py` | `suggest_hardware_config`, `suggest_hardware_config_scheduled`, `suggest_hardware_config_for_model`, `HardwareSuggestion` | Two-type hardware suggester: H×W and W×H (or H×H and W×H when coalescing); smallest H,W such that >50% of used cores host ≥4 softcores. `suggest_hardware_config_scheduled` explores the core-count ↔ pass-count tradeoff when scheduling is enabled, using cost model `area × passes^latency_weight`. `HardwareSuggestion` includes `num_passes` and `estimated_latency_multiplier`. |
+| Directory | Role |
+|-----------|------|
+| `ir/` | `IRGraph`, `NeuralCore`, `ComputeOp`, legacy SoftCore conversions |
+| `pruning/` | IR pruning, liveness, graph propagation, segmentation |
+| `packing/` | Soft/hard cores, bin packing, hybrid mapping |
+| `verification/` | Layout verifier, HW suggester, wizard layout service |
+| `latency/` | `IRLatency`, `ChipLatency`, `upstream.py` |
+| `platform/` | Platform constraints, coalescing, mapping structure |
+| `export/` | Chip export and IR quantization |
+| `layout/` | Shape-only layout SSoT |
+| `mappers/` | Mapper hierarchy |
 
-### ChipLatency pitfalls
+Compatibility shims at the package root (e.g. `mapping/ir.py` removed; use `from mimarsinan.mapping.ir import IRGraph` via the `ir/` package) re-export moved modules during migration.
 
-- **Off axons with non-zero weights**: IR pruning can mark `is_off_` without zeroing `core_matrix`. Treating those axons as signal sources made `get_delay_for` use delay 0 (`core_ == -1`), under-scheduling deep cores so consumers read buffers before the source fired.
-- **Per-neuron vs per-core scheduling**: The chip runs each core as a whole over `[latency, latency+T)`. The backward walk can under-estimate when a consumer’s only non-zero weights hit shallow source neurons (bias-only or off-axon leftovers); `_enforce_core_latency_invariant` raises consumer latency to `max(source core latency) + 1`.
-- **Shiftable dead-input chains**: After pruning, a core may have only `hardware_bias` / always-on inputs but still sit at `latency=0` while consumers at `L` read `[L, L+T)` against a buffer updated only in `[0, T)` — stale spikes and NF↔SCM drift. `_align_shiftable_cores` bumps those cores so their active window matches consumer reads.
-
-`ChipLatency.calculate()` ends with `_enforce_core_latency_invariant()` then `_align_shiftable_cores()`; empty `output_sources` raises immediately.
-
-### Liveness contract & death of the (1, 1) placeholder idiom
-
-Historically, when `ir_pruning._compact_node` saw every row or column of a
-NeuralCore as pruned, it would replace the matrix with a `(1, 1)` zero
-placeholder so the rest of the pipeline (HCM packer, simulators, GUI) had
-a well-shaped object to index into. This idiom was both wasteful (the
-placeholder consumed real hardware slots and simulation cycles for an
-all-zero computation) and confusing (the UI showed "live" cores that
-could not fire). It is now removed.
-
-After the refactor, `prune_ir_graph` runs `compute_liveness` and feeds
-the resulting `DEAD` set to `IRGraph.remove_nodes`. Surviving cores are
-either:
-
-- **`LIVE`** — at least one row with non-zero weight feeding a reachable
-  column. Compacted in place to its surviving rows × columns.
-- **`BIAS_ONLY`** — every axon weight is dead, but `hardware_bias` can
-  fire at least one column within `simulation_steps` LIF cycles, and
-  that column is reachable. Compacted to a single `(1, N)` matrix with a
-  single OFF-source axon row; the live `hardware_bias` is preserved and
-  surfaced to the GUI via `bias_resource`.
-
-`compact_soft_core_mapping` asserts the dead-cols branch is unreachable.
-Any pickle that still contains `(1, 1)` placeholders (legacy runs) is
-classified `dead_legacy` by the GUI snapshot builder so its data-flow
-group renders with the dark-red disabled tint without requiring a data
-migration.
-
-Output-referenced cores (any neuron in `IRGraph.output_sources`) are
-exempt from `DEAD` classification. An unfireable output core is
-preserved as `BIAS_ONLY` (with a "produces zero output" reason) so
-`_validate_outputs_remain` continues to hold.
-
-### Perceptron packaging rule
-
-Perceptron packaging follows the pattern **MM+ → BN? → ACT**. A single predicate
-in `mappers/base.py` controls the packaging decision:
-
-- `is_perceptron_activation(perceptron)` — True if the perceptron has a real
-  (non-Identity) activation. Uses `isinstance` check, not a hardcoded activation set.
-
-Any detected nonlinearity (ReLU, GELU, LeakyReLU, etc.) qualifies as a perceptron
-and maps to a NeuralCore. The adaptation pipeline converts all activations to
-LeakyGradReLU before deployment. Identity (no activation detected) produces a
-host-side linear ComputeOp.
-
-**Mapper eligibility contract**: Every concrete mapper type
-(`PerceptronMapper`, `Conv2DPerceptronMapper`, `Conv1DPerceptronMapper`) implements
-`owned_perceptron_groups()` using `is_perceptron_activation()`. This means
-`ModelRepresentation.get_perceptrons()` always returns only perceptrons with
-nonlinear activations. Downstream pipeline steps and tuners can rely on this
-contract and do not need to special-case `Identity` activation.
-
-### Scheduled mapping
-
-When `allow_scheduling=True` in the merged pipeline config (typically from `deployment_parameters`), `build_hybrid_hard_core_mapping`
-splits neural segments into multiple **schedule passes** that execute sequentially,
-reusing the same physical hardware cores.  This trades latency for chip area.
-
-**Key design**: schedule passes are additional `HybridStage` entries — the existing
-state-buffer execution model in `SpikingHybridCoreFlow` handles inter-pass data
-handoff identically to inter-segment handoff, requiring zero changes to the simulator.
-
-**Partitioning (single-pass-per-segment contract)**:
-1. Segmentation is entirely the layout mapper's responsibility.  It inserts
-   sync barriers (= segment boundaries) wherever the packer cannot place
-   the combined cores on the available hardware.  The wizard's neural-segment
-   count therefore already reflects the final deployment.
-2. The hard-core mapper flushes each segment **as one pass** by calling
-   `_flush_neural_segment` against a fresh hardware pool.  No latency-group
-   sub-splitting, no bin-packing retry loop, no `_flush_or_split` recursion.
-3. If the packer cannot place every core in a segment, the `RuntimeError`
-   propagates — this is a loud failure.  The user either up-sizes the
-   hardware config or inserts an explicit barrier in the model.  We never
-   silently rate-aggregate between latency groups (which would break
-   cycle-accurate LIF semantics on the simulator and misrepresent chip
-   behaviour).
-4. `effective_core_budget()` still reports the 0.8× heterogeneous-discount
-   total so the wizard and mapper share one budget number.
-5. `estimate_passes_for_layout` / `estimate_passes_for_layout_validated`
-   return one entry per `segment_id` and, in the typed variant, validate
-   that segment's softcores pack as a whole via `pack_layout`.
-
-**Coalescing constraint**: all coalescing cores for a single NeuralCore (wide
-axon tiling) must reside in the **same** pass.  The hardware lacks
-membrane-potential initialization across passes, so partial sums cannot be
-accumulated temporally.  Both the wizard verifier (fragment expander) and the
-build-time mapper (`_validate_coalescing_budget`) enforce this.
-
-**HW config suggester**: `suggest_hardware_config_scheduled` searches pass counts
-1..`max_schedule_passes`, finds minimum cores per pass count, and picks the
-configuration minimizing `core_area × passes^latency_weight`.
-
-### Subdirectory
-
-| Directory | Purpose |
-|-----------|---------|
-| `mappers/` | Mapper hierarchy split by role: `base`, `structural` (Input/Reshape/Permute/Concat/Stack/Subscript/Einops), `perceptron` (`PerceptronMapper`, **`ComputeOpMapper`**, `ModuleMapper`), `leading_dim` (Ensure2D / MergeLeadingDims / SplitLeadingDim), `conv` (`Conv1DPerceptronMapper`, `Conv2DPerceptronMapper`). **Non-neural ops collapse onto one `ComputeOpMapper(sources, nn.Module)`**; the wrapped `nn.Module` is either an existing torch module (`nn.LayerNorm`, `nn.MaxPool2d`, `nn.MultiheadAttention`, ...) or a `ComputeAdapter` from `compute_modules.py`. Re-exported by `mapping_utils.py` for backward compatibility. |
-| `layout/` | Shape-only layout estimation for architecture search (no weights) |
-
-## Dependencies
-
-- **Internal**: `code_generation.cpp_chip_model` (`SpikeSource`), `models.layers`, `models.perceptron_mixer.perceptron` (`Perceptron`), `transformations` (`PerceptronTransformer`, `TensorQuantization`).
-- **External**: `torch`, `numpy`, `einops`.
-
-## Dependents
-
-- `models` imports `Mapper` classes for building mapper graphs, IR types for spiking simulation
-- `pipelining` imports `IRMapping`, `IRGraph`, `NeuralCore` for mapping steps
-- `chip_simulation` imports mappings for nevresim code generation
-- `visualization` imports IR and mapping types for DOT generation
-- `tuning` imports `NeuralCore` where needed for adaptation steps
-- `search` imports layout utilities for architecture search
-- `config_schema` imports `mapping.coalescing` for deployment-config validation
-- `gui` imports IR types for snapshot extraction
-
-## Exported API (\_\_init\_\_.py)
-
-Core IR types (including `WeightBank`), mapping classes, packing utilities, shared structural helpers (`compute_core_input_count`, `compute_fc_tiling_mode`, `compute_psum_params`), `compute_per_source_scales`, `prune_ir_graph`, and `compute_propagated_pruned_rows_cols`.
-`mapping_utils` (the large mapper hierarchy) is intentionally **not** re-exported at
-the package level due to its size and star-import patterns; import directly from
-`mapping.mapping_utils`.
+See the module tables in the previous revision of this file for per-file contracts; paths are now `mapping/<subpackage>/<module>.py` with root-level shims where noted in `scripts/import_path_inventory.py`.

@@ -1,21 +1,8 @@
-from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
-from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner
+"""Compatibility shim — aliases implementation module for monkeypatch-safe imports."""
 
+import importlib as _importlib
+import sys as _sys
 
-class ActivationQuantizationStep(TunerPipelineStep):
-    def __init__(self, pipeline):
-        requires = ["model", "adaptation_manager"]
-        promises = []
-        updates = ["model", "adaptation_manager"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
-
-    def process(self):
-        model = self.get_entry("model")
-        adaptation_manager = self.get_entry("adaptation_manager")
-        self.run_tuner(
-            ActivationQuantizationTuner,
-            model,
-            adaptation_manager,
-            target_tq=self.pipeline.config["target_tq"],
-        )
+_TARGET = "mimarsinan.pipelining.pipeline_steps.quantization.activation_quantization_step"
+_impl = _importlib.import_module(_TARGET)
+_sys.modules[__name__] = _impl

@@ -118,7 +118,7 @@ class TestSoftCoreMappingStepSpikingMode:
         from pathlib import Path
 
         scm_path = Path(__file__).resolve().parents[3] / (
-            "src/mimarsinan/pipelining/pipeline_steps/soft_core_mapping_step.py"
+            "src/mimarsinan/pipelining/pipeline_steps/mapping/soft_core_mapping_step.py"
         )
         text = scm_path.read_text(encoding="utf-8")
         assert "prune_ir_graph(" in text

@@ -12,37 +12,23 @@ import torch.nn.functional as F
 from mimarsinan.chip_simulation import spike_modes
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, NeuralCore, WeightBank
 from mimarsinan.mapping.ir_source_spans import IRSourceSpan, compress_ir_sources
+from mimarsinan.models.signal_spans import fill_signal_from_spans
+from mimarsinan.models.spiking_config import (
+    COMPUTE_DTYPE,
+    TTFS_SPIKING_MODES,
+    validate_spiking_init,
+)
+from mimarsinan.models.lif_core_step import lif_core_contribute_and_fire
+from mimarsinan.models.ttfs_activation import ttfs_activation_from_type
 
-
-# float64 default: match nevresim signal_t; optional float32 via compute_dtype.
-_COMPUTE_DTYPE = torch.float64
-
-
-def _ttfs_activation_from_type(activation_type: str | None):
-    """Map IR activation_type (compound strings use the base name before ' + ') to torch.nn.functional."""
-    if activation_type is None or (isinstance(activation_type, str) and activation_type.strip() in ("", "ReLU")):
-        return F.relu
-    base = activation_type.split(" + ")[0].strip()
-    name_map = {
-        "LeakyReLU": "leaky_relu",
-        "LeakyGradReLU": "relu",  # LeakyGradReLU.forward is pure ReLU; leaky only in backward
-        "ReLU": "relu",
-        "GELU": "gelu",
-        "Identity": "identity",
-    }
-    f_name = name_map.get(base, "relu")
-    if f_name == "identity":
-        return lambda x: x
-    try:
-        return getattr(F, f_name)
-    except AttributeError:
-        return F.relu
+# Backward compatibility for tests and external callers.
+_ttfs_activation_from_type = ttfs_activation_from_type
 
 
 class SpikingUnifiedCoreFlow(nn.Module):
     """Flat IRGraph spiking sim: LIF/TTFS cores, ComputeOp sync barriers, shared WeightBank params."""
 
-    _TTFS_SPIKING_MODES = {"ttfs", "ttfs_quantized"}
+    _TTFS_SPIKING_MODES = TTFS_SPIKING_MODES
 
     def __init__(
         self,
@@ -54,7 +40,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
         spike_mode: str = "Uniform",
         thresholding_mode: str = "<=",
         spiking_mode: str = "lif",
-        compute_dtype: torch.dtype = _COMPUTE_DTYPE,
+        compute_dtype: torch.dtype = COMPUTE_DTYPE,
     ):
         super().__init__()
 
@@ -70,9 +56,11 @@ class SpikingUnifiedCoreFlow(nn.Module):
         self.spiking_mode = spiking_mode
         self._compute_dtype = compute_dtype
 
-        assert firing_mode in ["Default", "Novena", "TTFS"]
-        assert spike_mode in ["Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"]
-        assert thresholding_mode in ["<", "<="]
+        validate_spiking_init(
+            firing_mode=firing_mode,
+            spike_mode=spike_mode,
+            thresholding_mode=thresholding_mode,
+        )
 
         self._bank_params = nn.ParameterDict()
         for bank_id, bank in ir_graph.weight_banks.items():
@@ -108,9 +96,9 @@ class SpikingUnifiedCoreFlow(nn.Module):
             self._threshold_idx_cache[node.id] = len(threshold_vals) - 1
         self.register_buffer(
             "_thresholds_packed",
-            torch.tensor(threshold_vals, dtype=_COMPUTE_DTYPE)
+            torch.tensor(threshold_vals, dtype=COMPUTE_DTYPE)
             if threshold_vals
-            else torch.empty(0, dtype=_COMPUTE_DTYPE),
+            else torch.empty(0, dtype=COMPUTE_DTYPE),
         )
 
         hw_chunks: list[torch.Tensor] = []
@@ -119,13 +107,13 @@ class SpikingUnifiedCoreFlow(nn.Module):
         for node in self.nodes:
             if not isinstance(node, NeuralCore) or node.hardware_bias is None:
                 continue
-            hb = torch.tensor(node.hardware_bias, dtype=_COMPUTE_DTYPE).reshape(-1)
+            hb = torch.tensor(node.hardware_bias, dtype=COMPUTE_DTYPE).reshape(-1)
             hw_chunks.append(hb)
             self._hw_bias_spans[node.id] = (hw_offset, hb.numel())
             hw_offset += hb.numel()
         self.register_buffer(
             "_hw_bias_packed",
-            torch.cat(hw_chunks) if hw_chunks else torch.empty(0, dtype=_COMPUTE_DTYPE),
+            torch.cat(hw_chunks) if hw_chunks else torch.empty(0, dtype=COMPUTE_DTYPE),
         )
 
         self._id_to_out_dim: Dict[int, int] = {}
@@ -227,24 +215,30 @@ class SpikingUnifiedCoreFlow(nn.Module):
         spans: list[IRSourceSpan],
         cycle: int,
     ) -> None:
-        """
-        Fill `out` (B, N) from compressed IRSource spans for the given cycle.
-        """
-        out.zero_()
-        for sp in spans:
-            d0 = int(sp.dst_start)
-            d1 = int(sp.dst_end)
-            if sp.kind == "off":
-                continue
-            if sp.kind == "on":
-                if self.spiking_mode in self._TTFS_SPIKING_MODES and cycle != 0:
-                    continue  # TTFS always-on fires once at cycle 0 only
-                out[:, d0:d1].fill_(1.0)
-                continue
-            if sp.kind == "input":
-                out[:, d0:d1] = input_spike_train[cycle][:, int(sp.src_start):int(sp.src_end)]
-                continue
-            out[:, d0:d1] = spike_train_cache[int(sp.src_node_id)][cycle][:, int(sp.src_start):int(sp.src_end)]
+        """Fill ``out`` (B, N) from compressed IRSource spans for the given cycle."""
+        ttfs = self.spiking_mode in self._TTFS_SPIKING_MODES
+
+        def _on_always_on(d0: int, d1: int) -> None:
+            if ttfs and cycle != 0:
+                return
+            out[:, d0:d1].fill_(1.0)
+
+        fill_signal_from_spans(
+            out,
+            spans,
+            read_input=lambda sp: out.__setitem__(
+                (slice(None), slice(int(sp.dst_start), int(sp.dst_end))),
+                input_spike_train[cycle][:, int(sp.src_start) : int(sp.src_end)],
+            ),
+            read_upstream=lambda sp: out.__setitem__(
+                (slice(None), slice(int(sp.dst_start), int(sp.dst_end))),
+                spike_train_cache[int(sp.src_node_id)][cycle][
+                    :, int(sp.src_start) : int(sp.src_end)
+                ],
+            ),
+            on_always_on=_on_always_on,
+            cycle=cycle,
+        )
 
     def _fill_rate_tensor_from_spans(
         self,
@@ -298,8 +292,6 @@ class SpikingUnifiedCoreFlow(nn.Module):
         spike_train_cache: Dict[int, torch.Tensor] = {}
         self._last_core_spike_counts: Dict[int, float] = {}
 
-        from mimarsinan.models.lif_kernels import lif_fire_and_reset
-
         for node_idx, node in enumerate(self.nodes):
             if isinstance(node, NeuralCore):
                 weight = self._get_weight(node).to(torch.float32)  # (neurons, axons)
@@ -326,13 +318,12 @@ class SpikingUnifiedCoreFlow(nn.Module):
                         cycle=cycle,
                     )
 
-                    contribution = torch.matmul(weight, inp.T).T
-                    if hw_bias is not None:
-                        contribution = contribution + hw_bias
-                    memb += contribution
-                    spikes = lif_fire_and_reset(
+                    spikes = lif_core_contribute_and_fire(
                         memb,
+                        weight,
+                        inp,
                         threshold,
+                        hw_bias=hw_bias,
                         thresholding_mode=self.thresholding_mode,
                         firing_mode=self.firing_mode,
                     )
@@ -454,7 +445,7 @@ class SpikingUnifiedCoreFlow(nn.Module):
                 if hw_bias is not None:
                     out = out + hw_bias.to(compute_dtype)
 
-                act_fn = _ttfs_activation_from_type(node.activation_type)
+                act_fn = ttfs_activation_from_type(node.activation_type)
                 out = act_fn(out)
                 out = out / threshold
                 out = out.clamp(0.0, 1.0)

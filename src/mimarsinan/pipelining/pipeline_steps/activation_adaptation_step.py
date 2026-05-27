@@ -1,50 +1,8 @@
-"""Activation Adaptation: gradual non-ReLU → ReLU replacement."""
+"""Compatibility shim — aliases implementation module for monkeypatch-safe imports."""
 
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
-from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
-from mimarsinan.mapping.mappers.base import resolve_activation_type
-from mimarsinan.tuning.tuners.activation_adaptation_tuner import ActivationAdaptationTuner
+import importlib as _importlib
+import sys as _sys
 
-
-class ActivationAdaptationStep(TunerPipelineStep):
-    def __init__(self, pipeline):
-        requires = ["model", "adaptation_manager"]
-        promises = []
-        updates = ["model", "adaptation_manager"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
-
-    def process(self):
-        model = self.get_entry("model")
-        adaptation_manager = self.get_entry("adaptation_manager")
-
-        if has_non_relu_activations(model):
-            self.tuner = ActivationAdaptationTuner(
-                self.pipeline,
-                model=model,
-                target_accuracy=self.pipeline.get_target_metric(),
-                lr=self.pipeline.config["lr"],
-                adaptation_manager=adaptation_manager,
-            )
-            result = self.tuner.run()
-            print(
-                "[ActivationAdaptationStep] Gradual ReLU adaptation done; "
-                f"accuracy: {result:.4f}"
-            )
-        else:
-            print(
-                "[ActivationAdaptationStep] All activations are ReLU-compatible — "
-                "no adaptation needed."
-            )
-
-        act_types = {}
-        for p in model.get_perceptrons():
-            t = resolve_activation_type(p)
-            base = (t or "").split(" + ")[0].strip()
-            act_types[base] = act_types.get(base, 0) + 1
-        if act_types:
-            summary = ", ".join(f"{k}: {v}" for k, v in sorted(act_types.items()))
-            print(f"[ActivationAdaptationStep] Activation types (as seen by IR): {summary}")
-
-        self._commit_tuner_entries(model, adaptation_manager)
+_TARGET = "mimarsinan.pipelining.pipeline_steps.adaptation.activation_adaptation_step"
+_impl = _importlib.import_module(_TARGET)
+_sys.modules[__name__] = _impl
