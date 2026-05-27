@@ -1,6 +1,6 @@
 import operator
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import (
     ComputeOpMapper,
     EinopsRearrangeMapper,

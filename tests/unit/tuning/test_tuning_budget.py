@@ -3,7 +3,7 @@
 import math
 import pytest
 
-from mimarsinan.tuning.tuning_budget import TuningBudget, tuning_budget_from_pipeline
+from mimarsinan.tuning.orchestration.tuning_budget import TuningBudget, tuning_budget_from_pipeline
 from conftest import MockDataProviderFactory, default_config, MockPipeline
 
 

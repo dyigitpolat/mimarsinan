@@ -8,7 +8,7 @@ server can serve them lazily through dedicated HTTP endpoints.
 """
 
 from mimarsinan.gui.resources import ResourceDescriptor
-from mimarsinan.gui.snapshot.constants import (
+from mimarsinan.gui.snapshot.util.constants import (
     RESOURCE_KIND_CONNECTIVITY,
     RESOURCE_KIND_HARD_CORE_HEATMAP,
     RESOURCE_KIND_IR_BANK_HEATMAP,

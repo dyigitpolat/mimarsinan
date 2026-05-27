@@ -16,7 +16,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.decorators import ClampDecorator
+from mimarsinan.models.nn.decorators import ClampDecorator
 
 
 class TestBackwardsCompatibleConstruction:

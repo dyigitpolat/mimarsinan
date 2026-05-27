@@ -16,21 +16,22 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter as _CA
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter as _CA
 from mimarsinan.mapping.mappers.structural import (
     InputMapper, PermuteMapper, EinopsRearrangeMapper,
 )
-from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper, PerceptronMapper
-from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.latency.ir import IRLatency
-from mimarsinan.mapping.per_source_scales import compute_per_source_scales
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 
 CORES_CONFIG = [{"count": 512, "max_axons": 256, "max_neurons": 256}]
@@ -263,7 +264,7 @@ class TestHardCoreTTFSFullMixer:
         supermodel = convert_torch_model(model, input_shape, num_classes, device="cpu", Tq=4)
 
         # Fuse BN
-        from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+        from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
         pt = PerceptronTransformer()
         for p in supermodel.get_perceptrons():
             if isinstance(p.normalization, nn.Identity):

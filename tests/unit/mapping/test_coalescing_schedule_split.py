@@ -1,7 +1,7 @@
 """Coalescing groups must not be split across scheduled hybrid passes."""
 
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.schedule_partitioner import split_softcores_by_capacity
+from mimarsinan.mapping.support.schedule.schedule_partitioner import split_softcores_by_capacity
 
 
 def test_coalescing_group_stays_in_one_subsegment():

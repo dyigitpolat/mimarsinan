@@ -18,7 +18,7 @@ import torch
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.tuners.perceptron_transform_tuner import (
     PerceptronTransformTuner,
 )
@@ -26,7 +26,7 @@ from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner 
     NormalizationAwarePerceptronQuantizationTuner,
 )
 from mimarsinan.tuning.tuners.activation_shift_tuner import ActivationShiftTuner
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
 def _make_pipeline(tmp_path, degradation_tolerance=0.05):
@@ -83,7 +83,7 @@ class TestAfterRunForcesFullRate:
         (``_attempt_recovery_if_below_floor``, aliased as
         ``_ensure_pipeline_threshold``) which only trains when needed and
         saves/restores state to never make things worse."""
-        from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+        from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
         source_after = inspect.getsource(PerceptronTransformTuner._after_run)
         # _after_run does NOT call train_steps_until_target directly
         assert "train_steps_until_target" not in source_after

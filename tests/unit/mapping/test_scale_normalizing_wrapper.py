@@ -7,7 +7,7 @@ import torch
 
 import operator
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter, ScaleNormalizingWrapper
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter, ScaleNormalizingWrapper
 
 
 def _add():

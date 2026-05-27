@@ -8,7 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 
 

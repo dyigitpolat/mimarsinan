@@ -1,6 +1,6 @@
-from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
-from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-from mimarsinan.models.layers import FrozenStatsNormalization
+from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.models.nn.layers import FrozenStatsNormalization
 from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import (
     NormalizationAwarePerceptronQuantizationTuner,
 )

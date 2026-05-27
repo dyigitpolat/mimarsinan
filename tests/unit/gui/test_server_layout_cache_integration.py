@@ -20,36 +20,36 @@ def _wizard_body() -> dict:
 
 
 def test_two_identical_requests_share_underlying_softcores() -> None:
-    from mimarsinan.gui.server import _get_layout_result_from_request
+    from mimarsinan.gui.server.routes_layout import get_layout_result_from_request
     from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
 
     DEFAULT_LAYOUT_MAPPING_SERVICE.invalidate()
-    a = _get_layout_result_from_request(_wizard_body())
-    b = _get_layout_result_from_request(_wizard_body())
+    a = get_layout_result_from_request(_wizard_body())
+    b = get_layout_result_from_request(_wizard_body())
     assert a is b
 
 
 def test_verify_and_softcores_helpers_share_cache() -> None:
-    from mimarsinan.gui.server import (
-        _get_layout_result_from_request,
-        _get_softcores_from_request,
+    from mimarsinan.gui.server.routes_layout import (
+        get_layout_result_from_request,
+        get_softcores_from_request,
     )
     from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
 
     DEFAULT_LAYOUT_MAPPING_SERVICE.invalidate()
-    result = _get_layout_result_from_request(_wizard_body())
-    softcores = _get_softcores_from_request(_wizard_body())
+    result = get_layout_result_from_request(_wizard_body())
+    softcores = get_softcores_from_request(_wizard_body())
     assert softcores is result.softcores
 
 
 def test_different_tiling_reuses_model_repr() -> None:
     """Two requests differing only on tiling parameters must share the
     model_repr cache slot -- only the verification slot differs."""
-    from mimarsinan.gui.server import _get_layout_result_from_request
+    from mimarsinan.gui.server.routes_layout import get_layout_result_from_request
     from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
@@ -61,8 +61,8 @@ def test_different_tiling_reuses_model_repr() -> None:
     body_b["max_axons"] = 8192
     body_b["max_neurons"] = 8192
 
-    _get_layout_result_from_request(body_a)
-    _get_layout_result_from_request(body_b)
+    get_layout_result_from_request(body_a)
+    get_layout_result_from_request(body_b)
 
     req_a = LayoutMappingRequest.from_wizard_body(body_a)
     req_b = LayoutMappingRequest.from_wizard_body(body_b)

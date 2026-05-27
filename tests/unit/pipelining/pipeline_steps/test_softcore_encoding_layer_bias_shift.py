@@ -20,7 +20,7 @@ import torch.nn as nn
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 
 def _make_perceptron(is_encoding: bool, bias_value: float) -> Perceptron:

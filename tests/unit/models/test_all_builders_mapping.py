@@ -16,9 +16,9 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.verification.mapping_verifier import verify_soft_core_mapping
-from mimarsinan.mapping.verification.hw_config_suggester import suggest_hardware_config
-from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.mapping.verification.verifier import verify_soft_core_mapping
+from mimarsinan.mapping.verification.suggester.hw_config_suggester import suggest_hardware_config
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
 # ── Shared test helpers ─────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ class TestSimpleMLPBuilder:
         assert result.num_neural_cores >= 2  # at least input→hidden, hidden→output
 
     def test_suggestion_feasible_for_model(self):
-        from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
+        from mimarsinan.mapping.verification.verifier import verify_hardware_config
         result, suggestion = _check_builder(
             "simple_mlp",
             input_shape=(1, 28, 28),
@@ -166,7 +166,7 @@ class TestTorchSequentialLinearBuilderMapping:
         assert result.num_neural_cores >= 1
 
     def test_suggestion_sufficient(self):
-        from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
+        from mimarsinan.mapping.verification.verifier import verify_hardware_config
         result, suggestion = _check_builder(
             "torch_sequential_linear",
             input_shape=(1, 28, 28),
@@ -192,7 +192,7 @@ class TestTorchSequentialConvBuilderMapping:
 
     def test_produces_neural_cores_and_compute_ops(self):
         """Conv model should produce both neural cores (conv+fc) and at least 1 ComputeOp."""
-        from mimarsinan.mapping.ir_mapping import IRMapping
+        from mimarsinan.mapping.ir_mapping_class import IRMapping
         from mimarsinan.models.builders import BUILDERS_REGISTRY
         from mimarsinan.torch_mapping.converter import convert_torch_model
 
@@ -215,7 +215,7 @@ class TestTorchSequentialConvBuilderMapping:
         assert n_nc + n_co >= 3  # encoding + pool + FC may all be ComputeOps
 
     def test_suggestion_sufficient(self):
-        from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
+        from mimarsinan.mapping.verification.verifier import verify_hardware_config
         result, suggestion = _check_builder(
             "torch_sequential_conv",
             input_shape=(1, 16, 16),
@@ -266,7 +266,7 @@ class TestMlpMixerBuilderMapping:
         assert result.num_neural_cores == 0
 
     def test_suggestion_sufficient(self):
-        from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
+        from mimarsinan.mapping.verification.verifier import verify_hardware_config
         result, suggestion = _check_builder(
             "mlp_mixer",
             input_shape=(1, 28, 28),
@@ -313,7 +313,7 @@ class TestTorchVGG16BuilderMapping:
             assert model.eval()(torch.randn(1, 1, 28, 28)).shape == (1, 10)
 
     def test_validate_config_accepts_generic_shapes(self):
-        from mimarsinan.models.builders.torch_vgg16_builder import TorchVGG16Builder
+        from mimarsinan.models.builders.torch.torch_vgg16_builder import TorchVGG16Builder
         assert TorchVGG16Builder.validate_config({}, None, (1, 28, 28))
         assert TorchVGG16Builder.validate_config({}, None, (3, 32, 32))
 
@@ -370,7 +370,7 @@ class TestTorchSqueezeNet11BuilderMapping:
             assert model.eval()(torch.randn(1, 1, 28, 28)).shape == (1, 10)
 
     def test_validate_config_accepts_generic_shapes(self):
-        from mimarsinan.models.builders.torch_squeezenet11_builder import (
+        from mimarsinan.models.builders.torch.torch_squeezenet11_builder import (
             TorchSqueezeNet11Builder,
         )
         assert TorchSqueezeNet11Builder.validate_config({}, None, (1, 28, 28))
@@ -428,7 +428,7 @@ class TestTorchViTBuilderMapping:
             assert model.eval()(torch.randn(1, 1, 28, 28)).shape == (1, 10)
 
     def test_validate_config_accepts_square_sizes(self):
-        from mimarsinan.models.builders.torch_vit_builder import TorchViTBuilder
+        from mimarsinan.models.builders.torch.torch_vit_builder import TorchViTBuilder
         assert TorchViTBuilder.validate_config({}, None, (1, 28, 28))
         assert TorchViTBuilder.validate_config({}, None, (3, 224, 224))
         assert not TorchViTBuilder.validate_config({}, None, (1, 28, 30))
@@ -510,7 +510,7 @@ class TestGELUActivationIRMapping:
     def test_gelu_actual_ir_creates_neural_cores(self):
         """GELU perceptrons must map to NeuralCores (any nonlinearity is a perceptron)."""
         from mimarsinan.models.builders import BUILDERS_REGISTRY
-        from mimarsinan.mapping.ir_mapping import IRMapping
+        from mimarsinan.mapping.ir_mapping_class import IRMapping
 
         builder = BUILDERS_REGISTRY["simple_mlp"](
             device=DEVICE,
@@ -556,7 +556,7 @@ class TestGELUActivationIRMapping:
 ])
 def test_lightweight_builders_mapping(model_type, input_shape, num_classes, config, max_ax, max_neu):
     """Parametric test ensuring lightweight builders produce feasible mappings."""
-    from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
+    from mimarsinan.mapping.verification.verifier import verify_hardware_config
 
     result, suggestion = _check_builder(
         model_type, input_shape, num_classes, config, max_ax, max_neu

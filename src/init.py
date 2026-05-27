@@ -1,5 +1,5 @@
 from mimarsinan.data_handling.data_provider import DataProvider
-from mimarsinan.chip_simulation.nevresim_driver import NevresimDriver
+from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 
 import os
 

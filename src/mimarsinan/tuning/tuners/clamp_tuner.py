@@ -28,8 +28,8 @@ import math
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.layers import SavedTensorDecorator
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.models.nn.layers import SavedTensorDecorator
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
 def clamp_scale_regulariser(
@@ -263,7 +263,7 @@ class ClampTuner(SmoothAdaptationTuner):
         steps see a plain scalar ceiling (they don't know about
         ``nn.Parameter``).
         """
-        from mimarsinan.models.decorators import ClampDecorator
+        from mimarsinan.models.nn.decorators import ClampDecorator
 
         frozen_count = 0
         for perceptron in self.model.get_perceptrons():

@@ -2,7 +2,7 @@
 
 import pytest
 
-from mimarsinan.pipelining.model_registry import (
+from mimarsinan.pipelining.core.registry.model_registry import (
     ModelRegistry,
     get_model_types,
     get_model_config_schema,

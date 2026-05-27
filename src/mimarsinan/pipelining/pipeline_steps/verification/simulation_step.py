@@ -1,4 +1,4 @@
-from mimarsinan.pipelining.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 

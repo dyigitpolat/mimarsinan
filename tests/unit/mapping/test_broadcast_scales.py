@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from mimarsinan.mapping.per_source_scales import _broadcast_scale_pair
+from mimarsinan.mapping.support.per_source_scales import _broadcast_scale_pair
 
 
 class TestBroadcastScalePair:

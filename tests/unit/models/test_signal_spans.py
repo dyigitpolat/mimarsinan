@@ -1,6 +1,6 @@
 import torch
 
-from mimarsinan.models.signal_spans import fill_signal_from_spans
+from mimarsinan.models.spiking.signal_spans import fill_signal_from_spans
 
 
 class _Span:

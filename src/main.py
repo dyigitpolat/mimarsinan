@@ -17,7 +17,7 @@ def _load_project_dotenv() -> None:
 _load_project_dotenv()
 
 from mimarsinan.common.reporter import DefaultReporter
-from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     DeploymentPipeline,
 )
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
@@ -118,15 +118,15 @@ def run_pipeline_from_config(deployment_config, collector, gui_port=8501):
             resolved_start_step = parsed["start_step"]
 
     from mimarsinan.gui import GUIHandle
-    from mimarsinan.gui import _make_json_safe
-    from mimarsinan.gui.composite_reporter import CompositeReporter
+    from mimarsinan.gui.runtime.collector import to_json_safe
+    from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
 
     gui = GUIHandle(pipeline, collector)
     pipeline.reporter = CompositeReporter([reporter, gui.reporter])
     pipeline.register_pre_step_hook(gui.on_step_start)
     pipeline.register_post_step_hook(gui.on_step_end)
 
-    safe_config = _make_json_safe(pipeline.config)
+    safe_config = to_json_safe(pipeline.config)
     collector.set_pipeline_info([name for name, _ in pipeline.steps], safe_config)
 
     if parsed["target_metric_override"] is not None:
@@ -212,7 +212,7 @@ def run_pipeline(
     gui_started = False
     try:
         from mimarsinan.gui import start_gui
-        from mimarsinan.gui.composite_reporter import CompositeReporter
+        from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
 
         gui = start_gui(pipeline, port=gui_port, start_step=resolved_start_step)
         pipeline.reporter = CompositeReporter([reporter, gui.reporter])

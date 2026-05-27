@@ -18,7 +18,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.activations import LIFActivation
+from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFBlendActivation
 
 

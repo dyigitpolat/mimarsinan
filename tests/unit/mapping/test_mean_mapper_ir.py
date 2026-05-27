@@ -5,10 +5,10 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter
-from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.structural import InputMapper
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import ComputeOp, IRSource
 
 

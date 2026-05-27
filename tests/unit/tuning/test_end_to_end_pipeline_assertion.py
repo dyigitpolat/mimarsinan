@@ -20,7 +20,7 @@ from conftest import (
     default_config, make_activation_scale_stats,
 )
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 from mimarsinan.tuning.tuners.activation_adaptation_tuner import ActivationAdaptationTuner
 from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner
@@ -28,7 +28,7 @@ from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation
-from mimarsinan.models.layers import TransformedActivation
+from mimarsinan.models.nn.layers import TransformedActivation
 
 
 _MIN_PRETRAINED_ACC = 0.40  # skip if pretrained model is barely above chance

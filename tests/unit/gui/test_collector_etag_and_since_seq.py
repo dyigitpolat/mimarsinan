@@ -23,7 +23,7 @@ import threading
 
 import pytest
 
-from mimarsinan.gui.data_collector import DataCollector
+from mimarsinan.gui.runtime.collector import DataCollector
 
 
 class _CapturingWS:

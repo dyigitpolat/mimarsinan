@@ -8,11 +8,11 @@ from mimarsinan.chip_simulation.sanafe.records import (
     SanafeCoreRecord,
     SanafeEnergyBreakdown,
 )
-from mimarsinan.chip_simulation.sanafe.runner import (
+from mimarsinan.chip_simulation.sanafe.analysis import (
     _build_spike_capture_warning,
     _compute_ttfs_activity_diagnostics,
 )
-from mimarsinan.chip_simulation.ttfs_recorder import CoreTtfsActivations
+from mimarsinan.chip_simulation.ttfs.ttfs_recorder import CoreTtfsActivations
 
 
 def _energy() -> SanafeEnergyBreakdown:

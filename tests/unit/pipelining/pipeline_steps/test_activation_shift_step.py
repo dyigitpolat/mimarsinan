@@ -4,7 +4,7 @@ from conftest import make_tiny_supermodel
 
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.pipelining.pipeline_steps.adaptation.activation_shift_step import ActivationShiftStep
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
 
 def _seed_shift_step(mock_pipeline, *, target_metric=0.5):

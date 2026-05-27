@@ -10,7 +10,7 @@ from mimarsinan.visualization.graphviz import (
     try_render_dot,
     HybridVizArtifacts,
 )
-from mimarsinan.visualization.softcore_flowchart import (
+from mimarsinan.visualization.softcore_flowchart_dot import (
     write_softcore_flowchart_dot,
 )
 from mimarsinan.visualization.activation_function_visualization import (

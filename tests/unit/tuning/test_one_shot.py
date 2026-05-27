@@ -11,7 +11,7 @@ import torch
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner, CATASTROPHIC_DROP_FACTOR
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner, CATASTROPHIC_DROP_FACTOR
 
 
 class _OneShotTrackingTuner(SmoothAdaptationTuner):

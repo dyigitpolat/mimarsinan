@@ -13,7 +13,7 @@ from conftest import MockPipeline, make_tiny_supermodel, default_config
 from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner
 from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
 
 class TestAfterRunTarget:

@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from mimarsinan.gui.snapshot_executor import SnapshotExecutor
+from mimarsinan.gui.runtime.snapshot_executor import SnapshotExecutor
 
 
 class TestSnapshotExecutorBasics:

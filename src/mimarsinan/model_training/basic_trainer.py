@@ -1,4 +1,3 @@
-import os
 from contextlib import contextmanager
 
 from mimarsinan.model_training.training_utilities import AccuracyTracker
@@ -8,6 +7,10 @@ from mimarsinan.model_training.training_recipe import (
     build_optimizer,
     build_scheduler,
 )
+from mimarsinan.model_training import basic_trainer_subsample
+from mimarsinan.model_training import basic_trainer_steps
+from mimarsinan.model_training import basic_trainer_epochs
+from mimarsinan.model_training import basic_trainer_eval
 
 import warmup_scheduler
 import torch
@@ -63,7 +66,6 @@ class BasicTrainer:
             self.test_batch_size, self.data_provider)
 
     def close(self):
-        """Shut down DataLoader workers. Call when done with training/testing."""
         shutdown_data_loader(self.train_loader)
         shutdown_data_loader(self.validation_loader)
         shutdown_data_loader(self.test_loader)
@@ -78,14 +80,6 @@ class BasicTrainer:
             self.report_function(metric_name, metric_value)
 
     def _validation_metric_name(self, base: str) -> str:
-        """Suffix validation metric names with the active validation context.
-
-        Tuners wrap exploratory validations (LR probes, rate-proposal
-        evaluations) in :meth:`validation_context` so the Accuracy panel
-        can render committed tuning progress and exploratory probes as
-        distinct traces on the same chart. When no context is active the
-        name is emitted unchanged, preserving backwards compatibility.
-        """
         kind = getattr(self, "_validation_context", None)
         if kind is None:
             return base
@@ -93,12 +87,6 @@ class BasicTrainer:
 
     @contextmanager
     def validation_context(self, kind: str | None):
-        """Tag validation metrics reported inside the block with ``kind``.
-
-        Reentrant: nested contexts restore the previous kind on exit, and
-        the previous kind is restored even if an exception propagates
-        through the ``with`` block.
-        """
         previous = getattr(self, "_validation_context", None)
         self._validation_context = str(kind) if kind else None
         try:
@@ -124,11 +112,6 @@ class BasicTrainer:
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
     def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
-        """Schedule over ``total_steps`` gradient updates.
-
-        When *constant_lr* is ``True`` the learning rate stays fixed after a
-        short linear warmup (5% of steps).  Otherwise cosine annealing is used.
-        """
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5
         )
@@ -151,12 +134,6 @@ class BasicTrainer:
         return loss
     
     def _params_to_optimize(self):
-        """Parameters that the optimizer actually steps.
-
-        Subclasses that optimize a companion model (e.g.
-        :class:`PerceptronTransformTrainer` optimizes ``self.aux_model``)
-        override this so gradient clipping targets the correct parameters.
-        """
         return self.model.parameters()
 
     def _optimize(self, x, y, optimizer, scaler):
@@ -188,153 +165,15 @@ class BasicTrainer:
         self._report("LR", optimizer.param_groups[0]["lr"])
         return tracker.get_accuracy()
     
-    def _validate_on_loader(self, x, y):
-        total = 0
-        correct = 0
-        with torch.no_grad():
-            self.model = self.model.to(self.device)
-            x, y = x.to(self.device), y.to(self.device)
-            _, predicted = self.model(x).max(1)
-            total += float(y.size(0))
-            correct += float(predicted.eq(y).sum().item())
-            
-        return correct / total
-    
     def test(self, max_batches: int | None = None):
-        total = 0
-        correct = 0
-        with torch.no_grad():
-            for batch_idx, (x, y) in enumerate(self.test_loader):
-                if max_batches is not None and batch_idx >= int(max_batches):
-                    break
-                self.model.eval()
-                self.model = self.model.to(self.device)
-                x, y = x.to(self.device), y.to(self.device)
-                _, predicted = self.model(x).max(1)
-                total += float(y.size(0))
-                correct += float(predicted.eq(y).sum().item())
-
-        if total <= 0:
-            return 0.0
-        acc = correct / total
-        self._report("Test accuracy", acc)
-        return acc
+        return basic_trainer_eval.test(self, max_batches)
 
     def test_on_subsample(self, *, max_samples: int, seed: int = 0):
-        """Run test over a deterministic subsample of the test set.
-
-        SCM, HCM, and nevresim ``SimulationRunner`` all subsample via
-        :func:`compute_test_subsample_indices` so they see the **same**
-        samples for the same ``seed`` + ``max_samples`` — a hard
-        prerequisite for their accuracy numbers to be directly
-        comparable.
-
-        Memory note: prior revisions eagerly materialised the full test
-        set into two lists before subsampling — for CIFAR-10 at
-        ``resize_to=224`` that's ~6 GB of CPU RAM just to pick 500
-        samples.  We compute the index set up-front and retain only
-        those samples during the loader pass.
-        """
-        from mimarsinan.chip_simulation.test_subsample import (
-            compute_test_subsample_indices,
+        return basic_trainer_subsample.test_on_subsample(
+            self, max_samples=max_samples, seed=seed
         )
 
-        try:
-            total_samples = len(self.data_provider._get_test_dataset())
-        except Exception:
-            total_samples = None
-
-        if total_samples is None or total_samples <= 0:
-            # Unknown dataset length — fall back to eager collection,
-            # then subsample over the realised count.
-            xs_all: list[torch.Tensor] = []
-            ys_all: list[torch.Tensor] = []
-            with torch.no_grad():
-                for x, y in self.test_loader:
-                    for i in range(x.shape[0]):
-                        xs_all.append(x[i])
-                        ys_all.append(y[i])
-            total_samples = len(xs_all)
-            if total_samples == 0:
-                return 0.0
-            indices = compute_test_subsample_indices(
-                total_samples=total_samples,
-                seed=int(seed),
-                max_samples=int(max_samples),
-            )
-            if len(indices) < total_samples:
-                xs_all = [xs_all[i] for i in indices]
-                ys_all = [ys_all[i] for i in indices]
-        else:
-            indices = compute_test_subsample_indices(
-                total_samples=total_samples,
-                seed=int(seed),
-                max_samples=int(max_samples),
-            )
-            selected = set(indices) if len(indices) < total_samples else None
-
-            xs_all = []
-            ys_all = []
-            with torch.no_grad():
-                global_idx = 0
-                for x, y in self.test_loader:
-                    bsz = int(x.shape[0])
-                    for i in range(bsz):
-                        if selected is None or global_idx in selected:
-                            xs_all.append(x[i])
-                            ys_all.append(y[i])
-                        global_idx += 1
-                    if selected is not None and len(xs_all) >= len(selected):
-                        break
-            if not xs_all:
-                return 0.0
-
-        bs = int(self.test_batch_size)
-        total = 0
-        correct = 0
-        # Opt-in VRAM probe — logs per-batch CUDA allocated / reserved
-        # at the verification sim's batch boundaries so we can distinguish
-        # within-forward growth from cross-batch drift.
-        _probe = os.environ.get("MIMARSINAN_VRAM_PROBE") == "1"
-        with torch.no_grad():
-            for batch_idx, start in enumerate(range(0, len(xs_all), bs)):
-                x = torch.stack(xs_all[start:start + bs]).to(self.device)
-                y = torch.stack(ys_all[start:start + bs]).to(self.device)
-                self.model.eval()
-                self.model = self.model.to(self.device)
-                if _probe and torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                    alc = torch.cuda.memory_allocated()
-                    rsv = torch.cuda.memory_reserved()
-                    peak = torch.cuda.max_memory_allocated()
-                    print(
-                        f"[VRAM::batch {batch_idx:03d}] pre_forward  "
-                        f"alc={alc/1e6:8.1f} MB  rsv={rsv/1e6:8.1f} MB  "
-                        f"peak={peak/1e6:8.1f} MB",
-                        flush=True,
-                    )
-                _, predicted = self.model(x).max(1)
-                if _probe and torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                    alc = torch.cuda.memory_allocated()
-                    rsv = torch.cuda.memory_reserved()
-                    peak = torch.cuda.max_memory_allocated()
-                    print(
-                        f"[VRAM::batch {batch_idx:03d}] post_forward "
-                        f"alc={alc/1e6:8.1f} MB  rsv={rsv/1e6:8.1f} MB  "
-                        f"peak={peak/1e6:8.1f} MB",
-                        flush=True,
-                    )
-                total += float(y.size(0))
-                correct += float(predicted.eq(y).sum().item())
-        if total <= 0:
-            return 0.0
-        acc = correct / total
-        self._report("Test accuracy (subsample)", acc)
-        return acc
-
     def next_validation_batch(self):
-        """Return the next validation minibatch, rewinding on exhaustion."""
         try:
             x, y = next(self.val_iter)
         except StopIteration:
@@ -343,12 +182,10 @@ class BasicTrainer:
         return x, y
 
     def iter_validation_batches(self, n_batches: int):
-        """Yield ``n_batches`` validation minibatches with iterator wraparound."""
         for _ in range(int(n_batches)):
             yield self.next_validation_batch()
 
     def next_training_batch(self):
-        """Return the next training minibatch, rewinding on exhaustion."""
         try:
             x, y = next(self.train_iter)
         except StopIteration:
@@ -357,79 +194,21 @@ class BasicTrainer:
         return x, y
 
     def evaluate_loss_on_batch(self, batch) -> float:
-        """Evaluate loss on a fixed batch without updating model weights."""
-        x, y = batch
-        self.model.eval()
-        with torch.no_grad():
-            x, y = x.to(self.device), y.to(self.device)
-            loss = self.loss_function(self.model, x, y)
-        return float(loss.detach().item()) if hasattr(loss, "detach") else float(loss)
-    
+        return basic_trainer_eval.evaluate_loss_on_batch(self, batch)
+
     def validate(self):
-        x, y = self.next_validation_batch()
-        self.model.eval()
-        acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
-        self._report(self._validation_metric_name("Validation accuracy"), acc)
-        return acc
+        return basic_trainer_eval.validate(self)
 
     def validate_n_batches(self, n_batches: int) -> float:
-        """Average classification accuracy over ``n_batches`` validation minibatches."""
-        if n_batches <= 0:
-            return 0.0
-        self.model.eval()
-        total = 0
-        correct = 0
-        with torch.no_grad():
-            for x, y in self.iter_validation_batches(int(n_batches)):
-                x, y = x.to(self.device), y.to(self.device)
-                _, predicted = self.model(x).max(1)
-                total += float(y.size(0))
-                correct += float(predicted.eq(y).sum().item())
-        acc = correct / total if total else 0.0
-        self._report(self._validation_metric_name("Validation accuracy"), acc)
-        return acc
-    
+        return basic_trainer_eval.validate_n_batches(self, n_batches)
+
     def validate_train(self):
-        x, y = self.next_training_batch()
-        self.model.train()
-        acc = self._validate_on_loader(x.to(self.device), y.to(self.device))
-        self._report(
-            self._validation_metric_name("Validation accuracy on train set"), acc
-        )
-        return acc
+        return basic_trainer_eval.validate_train(self)
 
     def train_n_steps(self, lr, steps: int, warmup_steps: int = 0, *, constant_lr: bool = False):
-        """Run exactly ``steps`` gradient updates (plus optional LR warmup steps).
-
-        When *constant_lr* is True the learning rate is held fixed for the
-        entire run instead of following a CosineAnnealing schedule.  This is
-        used by the LR range finder so that each probe reflects the sustained
-        effect of a candidate LR, not its rapidly-decayed tail.
-        """
-        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler_steps(lr, steps)
-        if constant_lr:
-            scheduler = torch.optim.lr_scheduler.ConstantLR(
-                optimizer, factor=1.0, total_iters=0
-            )
-        if warmup_steps > 0:
-            scheduler = warmup_scheduler.GradualWarmupScheduler(
-                optimizer,
-                multiplier=1.0,
-                total_epoch=warmup_steps,
-                after_scheduler=scheduler,
-            )
-        total = int(steps) + int(warmup_steps)
-        for _ in range(total):
-            try:
-                x, y = next(self.train_iter)
-            except StopIteration:
-                self.train_iter = iter(self.train_loader)
-                x, y = next(self.train_iter)
-            x, y = x.to(self.device), y.to(self.device)
-            self._optimize(x, y, optimizer, scaler)
-            scheduler.step()
-            self._report("LR", optimizer.param_groups[0]["lr"])
-        del optimizer, scheduler, scaler
+        return basic_trainer_steps.train_n_steps(
+            self, lr, steps, warmup_steps, constant_lr=constant_lr
+        )
 
     def train_steps_until_target(
         self,
@@ -444,79 +223,18 @@ class BasicTrainer:
         min_steps: int = 0,
         min_improvement: float = 1e-3,
     ):
-        """Train until target reached, converged, or ``max_steps`` exhausted.
-
-        Uses constant LR with linear warmup (5% of steps) for predictable
-        behavior regardless of when convergence triggers.  Saves the best
-        model state and restores it on exit.
-
-        Progress is checked every ``check_interval`` steps. Training stops early
-        when the target is met or when ``patience`` consecutive checks show no
-        improvement of at least ``min_improvement`` (convergence). Patience-based
-        stopping is suppressed until at least ``min_steps`` gradient steps have
-        been executed, giving the optimizer a minimum runway before convergence
-        detection kicks in.
-        """
-        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler_steps(
-            lr, max_steps, constant_lr=True
+        return basic_trainer_steps.train_steps_until_target(
+            self,
+            lr,
+            max_steps,
+            target_accuracy,
+            warmup_steps,
+            validation_n_batches=validation_n_batches,
+            check_interval=check_interval,
+            patience=patience,
+            min_steps=min_steps,
+            min_improvement=min_improvement,
         )
-        if warmup_steps > 0:
-            scheduler = warmup_scheduler.GradualWarmupScheduler(
-                optimizer, multiplier=1.0, total_epoch=warmup_steps, after_scheduler=scheduler
-            )
-        total = int(max_steps) + int(warmup_steps)
-        n_val = max(1, int(validation_n_batches))
-        interval = max(1, int(check_interval))
-        min_s = max(0, int(min_steps))
-        imp_eps = float(min_improvement)
-
-        # Use the shared clone/restore helpers so that trainers with an
-        # ``aux_model`` (e.g. PerceptronTransformTrainer, where
-        # ``_update_and_transform_model`` regenerates self.model from aux
-        # every forward pass) round-trip BOTH models.  Without this the
-        # best-state restore only fixes self.model; the next
-        # ``_update_and_transform_model`` call regenerates self.model from
-        # the last (possibly worse) aux_model, silently destroying the
-        # best state we preserved.
-        from mimarsinan.tuning.learning_rate_explorer import (
-            clone_state_for_trainer,
-            restore_state_for_trainer,
-        )
-
-        best_acc = 0.0
-        best_state = None
-        stale_checks = 0
-
-        for step_idx in range(total):
-            x, y = self.next_training_batch()
-            x, y = x.to(self.device), y.to(self.device)
-            self._optimize(x, y, optimizer, scaler)
-            scheduler.step()
-            self._report("LR", optimizer.param_groups[0]["lr"])
-
-            if (step_idx + 1) % interval == 0 or step_idx == total - 1:
-                acc = self.validate_n_batches(n_val)
-                if acc >= target_accuracy:
-                    best_state = clone_state_for_trainer(self)
-                    for _ in range(2):
-                        x, y = self.next_training_batch()
-                        x, y = x.to(self.device), y.to(self.device)
-                        self._optimize(x, y, optimizer, scaler)
-                        scheduler.step()
-                    break
-                if acc > best_acc + imp_eps:
-                    best_acc = acc
-                    best_state = clone_state_for_trainer(self)
-                    stale_checks = 0
-                else:
-                    stale_checks += 1
-                    if step_idx + 1 >= min_s and stale_checks >= patience:
-                        break
-
-        if best_state is not None:
-            restore_state_for_trainer(self, best_state)
-        del optimizer, scheduler, scaler, best_state
-        return self.validate_n_batches(n_val)
 
     def train_one_step(
         self,
@@ -526,76 +244,24 @@ class BasicTrainer:
         eval_batch=None,
         return_post_update_loss: bool = False,
     ):
-        optimizer, _, scaler = self._get_optimizer_and_scheduler(lr, epochs=0)
-        if batch is None:
-            x, y = self.next_training_batch()
-        else:
-            x, y = batch
-        x, y = x.to(self.device), y.to(self.device)
-        loss = self._optimize(x, y, optimizer, scaler)
-        if return_post_update_loss:
-            probe_batch = eval_batch if eval_batch is not None else (x, y)
-            return self.evaluate_loss_on_batch(probe_batch)
-        return float(loss.detach().item()) if hasattr(loss, "detach") else float(loss)
+        return basic_trainer_steps.train_one_step(
+            self,
+            lr,
+            batch=batch,
+            eval_batch=eval_batch,
+            return_post_update_loss=return_post_update_loss,
+        )
     
     def train_n_epochs(self, lr, epochs, warmup_epochs = 0):
         return self.train_until_target_accuracy(lr, epochs, 1.0, warmup_epochs)
 
     def train_validation_epochs(self, lr, n, warmup_epochs=0):
-        """
-        Run exactly ``n`` training epochs (plus optional LR warmup), validating
-        after each epoch. Does **not** run :meth:`test` — for calibration and
-        other paths that must avoid a full test-set pass.
-        """
-        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler(lr, n)
-
-        if self.recipe is not None:
-            warmup_epochs = 0
-
-        if warmup_epochs > 0:
-            scheduler = warmup_scheduler.GradualWarmupScheduler(
-                optimizer,
-                multiplier=1.0,
-                total_epoch=warmup_epochs,
-                after_scheduler=scheduler,
-            )
-
-        validation_accuracy = 0.0
-        for _ in range(int(n) + int(warmup_epochs)):
-            training_accuracy = self._train_one_epoch(optimizer, scheduler, scaler)
-            self._report("Training accuracy", training_accuracy)
-            validation_accuracy = self.validate()
-
-        return validation_accuracy
+        return basic_trainer_epochs.train_validation_epochs(self, lr, n, warmup_epochs)
 
     def train_until_target_accuracy(self, lr, max_epochs, target_accuracy, warmup_epochs):
-        optimizer, scheduler, scaler = self._get_optimizer_and_scheduler(lr, max_epochs)
-
-        # When a recipe is active, warmup is already built into the scheduler
-        # via SequentialLR — do not double-wrap.
-        if self.recipe is not None:
-            warmup_epochs = 0
-
-        if warmup_epochs > 0:
-            scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1., total_epoch=warmup_epochs, after_scheduler=scheduler)
-
-        validation_accuracy = 0.0
-        for _ in range(max_epochs + warmup_epochs):
-            training_accuracy = self._train_one_epoch(optimizer, scheduler, scaler)
-            self._report("Training accuracy", training_accuracy)
-
-            validation_accuracy = self.validate()
-            if validation_accuracy >= target_accuracy:
-                self._train_one_epoch(optimizer, scheduler, scaler)
-                self._train_one_epoch(optimizer, scheduler, scaler)
-                # Re-measure after the extra epochs so the returned metric
-                # reflects the actual final model weights, not the pre-extra-epoch
-                # snapshot that triggered early stopping.
-                validation_accuracy = self.validate()
-                break
-
-        self.test()
-        return validation_accuracy
+        return basic_trainer_epochs.train_until_target_accuracy(
+            self, lr, max_epochs, target_accuracy, warmup_epochs
+        )
     
     def __getstate__(self):
         state = self.__dict__.copy()

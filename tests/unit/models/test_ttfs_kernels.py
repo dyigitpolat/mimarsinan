@@ -1,6 +1,6 @@
 import torch
 
-from mimarsinan.models.ttfs_kernels import ttfs_quantized_activation
+from mimarsinan.models.spiking.ttfs_kernels import ttfs_quantized_activation
 
 
 def test_ttfs_quantized_saturates_at_one():

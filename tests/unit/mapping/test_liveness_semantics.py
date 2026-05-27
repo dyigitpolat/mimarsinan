@@ -7,7 +7,7 @@ import pytest
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.pruning.ir_liveness import NodeLiveness, compute_liveness
-from mimarsinan.mapping.pruning.ir_pruning import prune_ir_graph
+from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.pruning.liveness_semantics import (
     bias_can_activate,
     lif_bias_can_fire,
@@ -117,13 +117,12 @@ class TestSoftCoreMappingStepSpikingMode:
     def test_soft_core_mapping_passes_spiking_mode_to_prune(self):
         from pathlib import Path
 
-        scm_path = Path(__file__).resolve().parents[3] / (
-            "src/mimarsinan/pipelining/pipeline_steps/mapping/soft_core_mapping_step.py"
-        )
-        text = scm_path.read_text(encoding="utf-8")
-        assert "prune_ir_graph(" in text
-        assert "spiking_mode=str(" in text
-        assert "_apply_ttfs_quantization_bias_compensation" in text
+        root = Path(__file__).resolve().parents[3] / "src/mimarsinan/pipelining/pipeline_steps/mapping"
+        prune_text = (root / "soft_core_mapping_ir_pruning.py").read_text(encoding="utf-8")
+        step_text = (root / "soft_core_mapping_step.py").read_text(encoding="utf-8")
+        assert "prune_ir_graph(" in prune_text
+        assert "spiking_mode=str(" in prune_text
+        assert "_apply_ttfs_quantization_bias_compensation" in step_text
 
 
 class TestPruneIrGraphSpikingMode:

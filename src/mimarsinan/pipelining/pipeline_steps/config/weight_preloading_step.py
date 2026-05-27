@@ -6,8 +6,8 @@ Supports torchvision pretrained weights, local checkpoints, and URLs.
 Optionally fine-tunes for a configurable number of epochs after loading.
 """
 
-from mimarsinan.pipelining.trainer_factory import make_basic_trainer
-from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.model_training.training_recipe import build_recipe
 from mimarsinan.model_training.weight_loading import resolve_weight_strategy
 

@@ -1,7 +1,7 @@
 """PruningAdaptationStep: pipeline step for progressive weight pruning."""
 
-from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
-from mimarsinan.tuning.tuners.pruning_tuner import PruningTuner
+from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
+from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
 
 class PruningAdaptationStep(TunerPipelineStep):

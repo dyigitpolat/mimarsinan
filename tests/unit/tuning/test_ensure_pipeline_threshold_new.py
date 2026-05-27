@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
 def _make_tuner_under_test(tmp_path, *, floor, lr=0.001):

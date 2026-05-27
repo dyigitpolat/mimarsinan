@@ -187,7 +187,7 @@ class TestWizardCapacityEstimator:
         from mimarsinan.mapping.layout.layout_types import (
             LayoutHardCoreType, LayoutSoftCoreSpec,
         )
-        from mimarsinan.mapping.schedule_partitioner import (
+        from mimarsinan.mapping.support.schedule.schedule_partitioner import (
             estimate_passes_for_layout_validated,
         )
 
@@ -222,7 +222,7 @@ class TestWizardCapacityEstimator:
         from mimarsinan.mapping.layout.layout_types import (
             LayoutHardCoreType, LayoutSoftCoreSpec,
         )
-        from mimarsinan.mapping.schedule_partitioner import (
+        from mimarsinan.mapping.support.schedule.schedule_partitioner import (
             estimate_passes_for_layout_validated,
         )
 
@@ -249,7 +249,7 @@ class TestWizardCapacityEstimator:
         from mimarsinan.mapping.layout.layout_types import (
             LayoutHardCoreType, LayoutSoftCoreSpec,
         )
-        from mimarsinan.mapping.schedule_partitioner import (
+        from mimarsinan.mapping.support.schedule.schedule_partitioner import (
             estimate_passes_for_layout_validated,
         )
         softcores = [

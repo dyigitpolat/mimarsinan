@@ -1,6 +1,6 @@
 import torch
 
-from mimarsinan.models.lif_kernels import lif_fire_and_reset
+from mimarsinan.models.nn.lif_kernels import lif_fire_and_reset
 
 
 def test_lif_fire_and_reset_default_mode():

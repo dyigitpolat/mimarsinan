@@ -1,4 +1,4 @@
-"""Unit tests for mimarsinan.gui.process_manager."""
+"""Unit tests for mimarsinan.gui.runtime.process_manager."""
 
 import json
 import time
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mimarsinan.gui.process_manager import ManagedRun, ProcessManager
+from mimarsinan.gui.runtime.process_manager import ManagedRun, ProcessManager
 
 
 class TestListActive:
@@ -25,7 +25,7 @@ class TestGetRunDetail:
 
     def test_get_run_detail_end_time_fallback_for_status(self, tmp_path):
         """Steps with end_time but no explicit status should be inferred as 'completed'."""
-        from mimarsinan.gui.persistence import (
+        from mimarsinan.gui.runtime.persistence import (
             save_run_info, save_step_to_persisted,
         )
         run_id = "test_exp_phased_deployment_run_20240101_120000"
@@ -58,7 +58,7 @@ class TestGetRunDetail:
 
     def test_get_run_step_detail_end_time_fallback(self, tmp_path):
         """get_run_step_detail uses end_time fallback when status key is missing."""
-        from mimarsinan.gui.persistence import (
+        from mimarsinan.gui.runtime.persistence import (
             save_run_info, save_step_to_persisted,
         )
         run_id = "test2_exp_phased_deployment_run_20240101_130000"
@@ -114,7 +114,7 @@ class TestRecoverOrphanedRuns:
 
     def test_list_active_handles_missing_finished_at_for_dead_run(self, tmp_path):
         """Recovered dead runs with ``finished_at: null`` must not crash cleanup."""
-        from mimarsinan.gui.persistence import save_run_info
+        from mimarsinan.gui.runtime.persistence import save_run_info
 
         run_id = "null_finished_at_phased_deployment_run_20240101_120000"
         run_dir = tmp_path / run_id
@@ -153,8 +153,8 @@ class TestRecoverOrphanedRuns:
 
 
 class TestSpawnRun:
-    @patch("mimarsinan.gui.process_manager.subprocess.Popen")
-    @patch("mimarsinan.gui.process_manager.time.strftime")
+    @patch("mimarsinan.gui.runtime.process_spawn.subprocess.Popen")
+    @patch("mimarsinan.gui.runtime.process_spawn.time.strftime")
     def test_spawn_run_appears_in_list_active_with_correct_format(
         self, mock_strftime, mock_popen, tmp_path
     ):

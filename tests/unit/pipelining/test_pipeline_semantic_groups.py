@@ -7,9 +7,11 @@ and that specific well-known steps map to expected group ids.
 
 import pytest
 
-from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     get_pipeline_step_specs,
     get_pipeline_semantic_group_by_step_name,
+)
+from mimarsinan.pipelining.core.pipelines.deployment_specs import (
     _SEMANTIC_GROUP_BY_STEP_CLASS,
 )
 

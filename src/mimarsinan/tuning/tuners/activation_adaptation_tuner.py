@@ -14,7 +14,7 @@ need to special-case Identity; ``needs_relu_adaptation`` handles only the
 already-ReLU-compatible check.
 """
 
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
 class ActivationAdaptationTuner(SmoothAdaptationTuner):

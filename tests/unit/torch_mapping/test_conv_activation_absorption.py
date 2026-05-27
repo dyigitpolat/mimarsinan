@@ -14,7 +14,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
+from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
 
@@ -122,7 +122,7 @@ def _get_conv_perceptron_activation_name(model_cls):
 
 def _has_conv_compute_mapper(model_cls):
     """Check that a no-activation conv produces a ComputeOpMapper (not PerceptronMapper)."""
-    from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
+    from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
     supermodel = _convert(model_cls)
     repr_ = supermodel.get_mapper_repr()
     repr_._ensure_exec_graph()

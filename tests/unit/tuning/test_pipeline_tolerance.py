@@ -31,7 +31,7 @@ _DEFAULT_CONSTRAINTS = {
 class TestPipelineToleranceFromConfig:
     def test_default_tolerance_is_0_95(self, tmp_path):
         """With default degradation_tolerance=0.05, pipeline tolerance = 0.95."""
-        from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
 
         dp = DeploymentPipeline(
             data_provider_factory=MockDataProviderFactory(),
@@ -44,7 +44,7 @@ class TestPipelineToleranceFromConfig:
 
     def test_custom_tolerance(self, tmp_path):
         """degradation_tolerance=0.10 -> pipeline tolerance = 0.90."""
-        from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
 
         dp = DeploymentPipeline(
             data_provider_factory=MockDataProviderFactory(),
@@ -57,7 +57,7 @@ class TestPipelineToleranceFromConfig:
 
     def test_tight_tolerance(self, tmp_path):
         """degradation_tolerance=0.01 -> pipeline tolerance = 0.99."""
-        from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
 
         dp = DeploymentPipeline(
             data_provider_factory=MockDataProviderFactory(),
@@ -71,7 +71,7 @@ class TestPipelineToleranceFromConfig:
     def test_tuner_and_pipeline_use_same_formula(self, tmp_path):
         """The tuner's rollback threshold and pipeline's step assertion must be
         algebraically equivalent to prevent the gap that caused the failures."""
-        from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
 
         for dt in [0.01, 0.05, 0.10, 0.20]:
             dp = DeploymentPipeline(
@@ -87,8 +87,8 @@ class TestPipelineToleranceFromConfig:
 
     def test_base_pipeline_tolerance_is_overridden(self, tmp_path):
         """DeploymentPipeline must override Pipeline.__init__'s hardcoded 0.95."""
-        from mimarsinan.pipelining.pipeline import Pipeline
-        from mimarsinan.pipelining.pipelines.deployment_pipeline import DeploymentPipeline
+        from mimarsinan.pipelining.core.engine.pipeline import Pipeline
+        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
 
         # Base class hardcodes 0.95
         base = Pipeline(str(tmp_path / "base"))

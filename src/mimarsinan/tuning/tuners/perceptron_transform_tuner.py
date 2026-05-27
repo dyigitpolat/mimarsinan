@@ -27,7 +27,7 @@ from mimarsinan.model_training.perceptron_transform_trainer import (
     PerceptronTransformTrainer,
 )
 from mimarsinan.tuning.per_layer_schedule import build_per_layer_schedule
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
 class PerceptronTransformTuner(SmoothAdaptationTuner):

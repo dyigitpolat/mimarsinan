@@ -1,0 +1,128 @@
+"""Step-based training APIs for :class:`BasicTrainer`."""
+
+from __future__ import annotations
+
+import warmup_scheduler
+import torch
+
+
+def train_n_steps(
+    trainer,
+    lr,
+    steps: int,
+    warmup_steps: int = 0,
+    *,
+    constant_lr: bool = False,
+):
+    optimizer, scheduler, scaler = trainer._get_optimizer_and_scheduler_steps(lr, steps)
+    if constant_lr:
+        scheduler = torch.optim.lr_scheduler.ConstantLR(
+            optimizer, factor=1.0, total_iters=0
+        )
+    if warmup_steps > 0:
+        scheduler = warmup_scheduler.GradualWarmupScheduler(
+            optimizer,
+            multiplier=1.0,
+            total_epoch=warmup_steps,
+            after_scheduler=scheduler,
+        )
+    total = int(steps) + int(warmup_steps)
+    for _ in range(total):
+        try:
+            x, y = next(trainer.train_iter)
+        except StopIteration:
+            trainer.train_iter = iter(trainer.train_loader)
+            x, y = next(trainer.train_iter)
+        x, y = x.to(trainer.device), y.to(trainer.device)
+        trainer._optimize(x, y, optimizer, scaler)
+        scheduler.step()
+        trainer._report("LR", optimizer.param_groups[0]["lr"])
+    del optimizer, scheduler, scaler
+
+
+def train_steps_until_target(
+    trainer,
+    lr,
+    max_steps,
+    target_accuracy,
+    warmup_steps=0,
+    *,
+    validation_n_batches: int = 1,
+    check_interval: int = 1,
+    patience: int = 3,
+    min_steps: int = 0,
+    min_improvement: float = 1e-3,
+):
+    from mimarsinan.tuning.learning_rate_explorer import (
+        clone_state_for_trainer,
+        restore_state_for_trainer,
+    )
+
+    optimizer, scheduler, scaler = trainer._get_optimizer_and_scheduler_steps(
+        lr, max_steps, constant_lr=True
+    )
+    if warmup_steps > 0:
+        scheduler = warmup_scheduler.GradualWarmupScheduler(
+            optimizer, multiplier=1.0, total_epoch=warmup_steps, after_scheduler=scheduler
+        )
+    total = int(max_steps) + int(warmup_steps)
+    n_val = max(1, int(validation_n_batches))
+    interval = max(1, int(check_interval))
+    min_s = max(0, int(min_steps))
+    imp_eps = float(min_improvement)
+
+    best_acc = 0.0
+    best_state = None
+    stale_checks = 0
+
+    for step_idx in range(total):
+        x, y = trainer.next_training_batch()
+        x, y = x.to(trainer.device), y.to(trainer.device)
+        trainer._optimize(x, y, optimizer, scaler)
+        scheduler.step()
+        trainer._report("LR", optimizer.param_groups[0]["lr"])
+
+        if (step_idx + 1) % interval == 0 or step_idx == total - 1:
+            acc = trainer.validate_n_batches(n_val)
+            if acc >= target_accuracy:
+                best_state = clone_state_for_trainer(trainer)
+                for _ in range(2):
+                    x, y = trainer.next_training_batch()
+                    x, y = x.to(trainer.device), y.to(trainer.device)
+                    trainer._optimize(x, y, optimizer, scaler)
+                    scheduler.step()
+                break
+            if acc > best_acc + imp_eps:
+                best_acc = acc
+                best_state = clone_state_for_trainer(trainer)
+                stale_checks = 0
+            else:
+                stale_checks += 1
+                if step_idx + 1 >= min_s and stale_checks >= patience:
+                    break
+
+    if best_state is not None:
+        restore_state_for_trainer(trainer, best_state)
+    del optimizer, scheduler, scaler, best_state
+    return trainer.validate_n_batches(n_val)
+
+
+def train_one_step(
+    trainer,
+    lr,
+    *,
+    batch=None,
+    eval_batch=None,
+    return_post_update_loss: bool = False,
+):
+    optimizer, _, scaler = trainer._get_optimizer_and_scheduler(lr, epochs=0)
+    if batch is None:
+        x, y = trainer.next_training_batch()
+    else:
+        x, y = batch
+    x, y = x.to(trainer.device), y.to(trainer.device)
+    loss = trainer._optimize(x, y, optimizer, scaler)
+    if return_post_update_loss:
+        probe_batch = eval_batch if eval_batch is not None else (x, y)
+        return trainer.evaluate_loss_on_batch(probe_batch)
+    return float(loss.detach().item()) if hasattr(loss, "detach") else float(loss)

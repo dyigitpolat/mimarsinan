@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 from mimarsinan.mapping.ir import IRGraph
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
-from mimarsinan.pipelining.simulation_factory import build_spiking_flow_for_metric
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.pipelining.core.simulation_factory import build_spiking_flow_for_metric
 
 
 @pytest.mark.parametrize("spiking_mode", ["ttfs", "ttfs_quantized", "lif"])

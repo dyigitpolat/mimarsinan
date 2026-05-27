@@ -1,6 +1,6 @@
 """Builder that wraps a user-provided model factory callable."""
 
-from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
 @ModelRegistry.register("torch_custom", label="Torch Custom", category="torch")

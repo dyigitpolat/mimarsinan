@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.layers import LeakyGradReLU
+from mimarsinan.models.nn.layers import LeakyGradReLU
 from mimarsinan.transformations.pruning import (
     compute_pruning_masks,
     compute_all_pruning_masks,

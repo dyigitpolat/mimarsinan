@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
 def _conv_output_size(size: int, kernel_size: int, stride: int, padding: int) -> int:

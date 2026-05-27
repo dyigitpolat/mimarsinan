@@ -50,7 +50,7 @@ def _load_dotenv_for_integration_gate() -> None:
 
 
 _load_dotenv_for_integration_gate()
-from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     DeploymentPipeline,
     get_pipeline_step_specs,
 )

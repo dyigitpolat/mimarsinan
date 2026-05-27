@@ -1,6 +1,6 @@
 """Neural network model definitions: layers, architectures, and spiking simulators."""
 
-from mimarsinan.models.layers import (
+from mimarsinan.models.nn.layers import (
     LeakyGradReLU,
     DifferentiableClamp,
     StaircaseFunction,

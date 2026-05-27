@@ -44,7 +44,7 @@ def _dump_top(stats: pstats.Stats, path: Path, n: int = 30) -> None:
 @pytest.mark.slow
 def test_profile_cifar_vit_layout_first_call() -> None:
     """Profile a cold-cache wizard layout call for the CIFAR-ViT preset."""
-    from mimarsinan.gui.server import _get_layout_result_from_request
+    from mimarsinan.gui.server.routes_layout import get_layout_result_from_request
 
     body = json.loads(_FIXTURE.read_text())
     _PROFILES_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,7 +56,7 @@ def test_profile_cifar_vit_layout_first_call() -> None:
     profiler = cProfile.Profile()
     wall_start = time.perf_counter()
     profiler.enable()
-    result = _get_layout_result_from_request(body)
+    result = get_layout_result_from_request(body)
     profiler.disable()
     wall_seconds = time.perf_counter() - wall_start
 

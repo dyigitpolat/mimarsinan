@@ -13,9 +13,9 @@ from conftest import MockPipeline, make_tiny_supermodel, default_config
 from mimarsinan.tuning.tuners.activation_adaptation_tuner import (
     ActivationAdaptationTuner,
 )
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation
-from mimarsinan.models.layers import TransformedActivation
+from mimarsinan.models.nn.layers import TransformedActivation
 from mimarsinan.pipelining.pipeline_steps.activation_utils import (
     has_non_relu_activations,
 )

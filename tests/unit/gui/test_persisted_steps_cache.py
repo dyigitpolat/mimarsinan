@@ -22,9 +22,9 @@ from pathlib import Path
 
 import pytest
 
-from mimarsinan.gui.persistence import (
-    _GUI_STATE_DIR,
-    _STEPS_FILENAME,
+from mimarsinan.gui.runtime.persistence import (
+    GUI_STATE_DIR,
+    STEPS_FILENAME,
     load_persisted_steps,
     load_persisted_steps_cache_clear,
     load_persisted_steps_cache_info,
@@ -32,9 +32,9 @@ from mimarsinan.gui.persistence import (
 
 
 def _write_steps(working_dir: Path, payload: dict) -> None:
-    state_dir = working_dir / _GUI_STATE_DIR
+    state_dir = working_dir / GUI_STATE_DIR
     state_dir.mkdir(parents=True, exist_ok=True)
-    (state_dir / _STEPS_FILENAME).write_text(json.dumps(payload))
+    (state_dir / STEPS_FILENAME).write_text(json.dumps(payload))
 
 
 class TestPersistedStepsCache:
@@ -62,7 +62,7 @@ class TestPersistedStepsCache:
         time.sleep(0.01)
         _write_steps(tmp_path, {"steps": {"s1": {"value": 2}}})
         # Force mtime change so the cache key differs even on fast FSes.
-        steps_file = tmp_path / _GUI_STATE_DIR / _STEPS_FILENAME
+        steps_file = tmp_path / GUI_STATE_DIR / STEPS_FILENAME
         later = time.time() + 1.0
         import os
         os.utime(steps_file, (later, later))
@@ -75,7 +75,7 @@ class TestPersistedStepsCache:
         assert load_persisted_steps(str(tmp_path)) == {}
         # Create the file, and the next call should pick it up.
         _write_steps(tmp_path, {"steps": {"s1": {}}})
-        steps_file = tmp_path / _GUI_STATE_DIR / _STEPS_FILENAME
+        steps_file = tmp_path / GUI_STATE_DIR / STEPS_FILENAME
         later = time.time() + 1.0
         import os
         os.utime(steps_file, (later, later))

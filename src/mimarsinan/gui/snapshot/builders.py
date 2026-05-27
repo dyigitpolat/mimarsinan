@@ -10,11 +10,14 @@ import numpy as np
 
 logger = logging.getLogger("mimarsinan.gui")
 
-from mimarsinan.gui.snapshot.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
+from mimarsinan.gui.snapshot.util.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
 from mimarsinan.common.layer_key import layer_key_from_node_name
 from mimarsinan.gui.resources import ResourceDescriptor
 
-from mimarsinan.gui.snapshot.constants import (
+from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import _group_consecutive_compute_stages
+from mimarsinan.gui.snapshot.ir_graph.ir_graph_topology_groups import _merge_consecutive_compute_groups
+
+from mimarsinan.gui.snapshot.util.constants import (
     LIVENESS_BIAS_ONLY,
     LIVENESS_DEAD_LEGACY,
     LIVENESS_LIVE,
@@ -30,7 +33,23 @@ from mimarsinan.gui.snapshot.constants import (
 
 from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer, _make_bias_strip_producer
 from mimarsinan.gui.snapshot.model_snapshot import snapshot_model, snapshot_pruning_layers
-from mimarsinan.gui.snapshot.ir_graph_snapshot import snapshot_ir_graph
+from mimarsinan.gui.snapshot.ir_graph import snapshot_ir_graph
+
+# Re-export for tests and legacy import paths.
+__all__ = [
+    "LIVENESS_BIAS_ONLY",
+    "LIVENESS_DEAD_LEGACY",
+    "LIVENESS_LIVE",
+    "RESOURCE_KIND_CONNECTIVITY",
+    "RESOURCE_KIND_HARD_CORE_HEATMAP",
+    "RESOURCE_KIND_IR_BANK_HEATMAP",
+    "RESOURCE_KIND_IR_CORE_BIAS",
+    "RESOURCE_KIND_IR_CORE_HEATMAP",
+    "RESOURCE_KIND_IR_CORE_PRE_PRUNING",
+    "RESOURCE_KIND_PRUNING_LAYER_HEATMAP",
+    "build_step_snapshot",
+    "snapshot_ir_graph",
+]
 from mimarsinan.gui.snapshot.mapping_snapshot import (
     snapshot_mapping_performance_planned,
     snapshot_mapping_performance_real,

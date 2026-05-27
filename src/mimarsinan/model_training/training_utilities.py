@@ -25,8 +25,8 @@ class BasicClassificationLoss:
     
 import torch
 
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
-from mimarsinan.models.layers import SavedTensorDecorator
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.models.nn.layers import SavedTensorDecorator
 
 class CustomClassificationLoss:
     def __init__(self):

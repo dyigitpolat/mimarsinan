@@ -134,7 +134,7 @@ class TestLayoutIRConsistency:
     def _count_ir_cores(self, in_f, out_f, max_ax, max_ne, has_bias, hw_bias, coalesce):
         import numpy as np
         import torch
-        from mimarsinan.mapping.ir_mapping import IRMapping
+        from mimarsinan.mapping.ir_mapping_class import IRMapping
         from mimarsinan.mapping.ir import IRSource
 
         mapping = IRMapping(

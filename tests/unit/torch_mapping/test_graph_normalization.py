@@ -322,12 +322,12 @@ class TestNoFusionCases:
 # ===========================================================================
 
 from mimarsinan.torch_mapping.converter import convert_torch_model
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
 from mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step import scale_from_activations
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
-from mimarsinan.models.layers import TransformedActivation, SavedTensorDecorator
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
+from mimarsinan.models.nn.layers import TransformedActivation, SavedTensorDecorator
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +478,7 @@ class TestBNFoldFusionPerceptronProperties:
         """Linear -> BN -> Linear -> Linear: all three fuse into one.
         No activation detected → no PerceptronMappers, only ComputeOpMappers.
         """
-        from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
+        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
         _, supermodel = _warmup_and_convert(LinearBNLinearNoActClassifier)
         mapper_repr = supermodel.get_mapper_repr()
         mapper_repr._ensure_exec_graph()

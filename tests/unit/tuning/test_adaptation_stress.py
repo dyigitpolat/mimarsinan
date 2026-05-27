@@ -8,10 +8,10 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.layers import TransformedActivation, LeakyGradReLU
+from mimarsinan.models.nn.layers import TransformedActivation, LeakyGradReLU
 from conftest import default_config
 
 

@@ -12,7 +12,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridStage,
 )
 from mimarsinan.mapping.ir import ComputeOp, IRSource
-from mimarsinan.models.activations import LIFActivation
+from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 
 

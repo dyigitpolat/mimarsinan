@@ -13,7 +13,7 @@ from collections import OrderedDict
 from typing import Any, Callable
 
 from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
-from mimarsinan.mapping.verification.mapping_verifier import (
+from mimarsinan.mapping.verification.verifier import (
     MappingVerificationResult,
     verify_soft_core_mapping,
 )

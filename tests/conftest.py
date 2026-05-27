@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(_repo_root, "spikingjelly"))
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
-from mimarsinan.models.layers import (
+from mimarsinan.models.nn.layers import (
     TransformedActivation,
     ClampDecorator,
     QuantizeDecorator,
@@ -273,7 +273,7 @@ class TinyPerceptronFlow(PerceptronFlow):
 
 def make_tiny_supermodel(input_shape=(1, 8, 8), num_classes=4, tq=4):
     """Build a minimal PerceptronFlow for testing, with proper activation setup."""
-    from mimarsinan.tuning.adaptation_manager import AdaptationManager
+    from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
     model = TinyPerceptronFlow(input_shape, num_classes)
     for p in model.get_perceptrons():

@@ -10,7 +10,7 @@ from mimarsinan.chip_simulation.sanafe.records import (
     SanafeRunRecord,
     SanafeSegmentRecord,
 )
-from mimarsinan.chip_simulation.ttfs_recorder import (
+from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
     CoreTtfsActivations,
     SegmentTtfsRecord,
     TtfsRunRecord,

@@ -14,15 +14,15 @@ import torch
 import torch.fx as fx
 import torch.nn as nn
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter, ScaleNormalizingWrapper
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter, ScaleNormalizingWrapper
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
-from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
 
 def _flow_to_ir(flow, input_shape):
-    from mimarsinan.mapping.ir_mapping import IRMapping
-    from mimarsinan.mapping.per_source_scales import compute_per_source_scales
+    from mimarsinan.mapping.ir_mapping_class import IRMapping
+    from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
     mapper_repr = flow.get_mapper_repr()
     if hasattr(mapper_repr, "assign_perceptron_indices"):
         mapper_repr.assign_perceptron_indices()

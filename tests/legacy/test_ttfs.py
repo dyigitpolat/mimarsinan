@@ -19,8 +19,8 @@ import numpy as np
 
 from mimarsinan.mapping.ir import NeuralCore, IRGraph, IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
-from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 
 
 # ----------------------------------------------------------------
@@ -657,7 +657,7 @@ def test_ttfs_pipeline_artifacts():
           f"mean={x_proc.mean().item():.4f}")
 
     # Check each core's output
-    from mimarsinan.mapping.ir_source_spans import compress_ir_sources
+    from mimarsinan.mapping.support.ir_source_spans import compress_ir_sources
     activation_cache = {}
     for node_idx, node in enumerate(ir_graph.nodes):
         if isinstance(node, NeuralCore):

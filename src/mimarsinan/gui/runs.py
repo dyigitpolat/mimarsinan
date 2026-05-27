@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from mimarsinan.gui.persistence import load_persisted_steps, load_live_metrics, load_console_logs
+from mimarsinan.gui.runtime.persistence import load_persisted_steps, load_live_metrics, load_console_logs
 from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
@@ -101,7 +101,7 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     # deployment_parameters dict (same structure as pipeline.config).
     flat_config = config.get("deployment_parameters", config)
     try:
-        from mimarsinan.pipelining.pipelines.deployment_pipeline import (
+        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
             get_pipeline_semantic_group_by_step_name,
         )
         groups = get_pipeline_semantic_group_by_step_name(flat_config)

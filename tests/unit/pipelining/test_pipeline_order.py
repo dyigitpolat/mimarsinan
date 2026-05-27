@@ -7,7 +7,7 @@ behaviour in place so doc/code never drift again.
 
 import pytest
 
-from mimarsinan.pipelining.pipelines.deployment_pipeline import get_pipeline_step_specs
+from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 
 
 def _names(config):

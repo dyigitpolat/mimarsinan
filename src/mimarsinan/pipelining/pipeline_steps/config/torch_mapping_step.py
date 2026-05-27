@@ -12,11 +12,11 @@ module (ReLU → LeakyGradReLU, LeakyReLU → nn.LeakyReLU, GELU → nn.GELU).
 The AdaptationManager then wraps each base_activation in TransformedActivation.
 """
 
-from mimarsinan.pipelining.pipeline_helpers import safe_warmup_forward
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.trainer_factory import make_basic_trainer
-from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
-from mimarsinan.tuning.adaptation_manager_factory import create_adaptation_manager_for_model
+from mimarsinan.pipelining.core.engine.pipeline_helpers import safe_warmup_forward
+from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.tuning.orchestration.adaptation_manager_factory import create_adaptation_manager_for_model
 import torch
 
 

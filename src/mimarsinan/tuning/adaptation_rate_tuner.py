@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from mimarsinan.tuning.unified_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
 class AdaptationRateTuner(SmoothAdaptationTuner):

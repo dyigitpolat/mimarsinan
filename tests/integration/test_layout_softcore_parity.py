@@ -71,7 +71,7 @@ def test_layout_softcores_identical_between_view_path_and_full_ir_path() -> None
     produce the same list of softcores -- otherwise the wizard's layout
     estimate would lie to the user about what the pipeline will actually
     build."""
-    from mimarsinan.mapping.ir_mapping import IRMapping
+    from mimarsinan.mapping.ir_mapping_class import IRMapping
     from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 
     model = _tiny_vit_like()
@@ -113,12 +113,12 @@ def test_cifar_vit_layout_under_3_seconds() -> None:
     if os.environ.get("MIMARSINAN_SKIP_PERF") == "1":
         pytest.skip("MIMARSINAN_SKIP_PERF=1")
 
-    from mimarsinan.gui.server import _get_layout_result_from_request
+    from mimarsinan.gui.server.routes_layout import get_layout_result_from_request
 
     body = json.loads(_FIXTURE.read_text())
 
     t0 = time.perf_counter()
-    result = _get_layout_result_from_request(body)
+    result = get_layout_result_from_request(body)
     elapsed = time.perf_counter() - t0
 
     assert result.feasible

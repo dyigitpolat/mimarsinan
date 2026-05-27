@@ -10,7 +10,9 @@ Static PNG and interactive HTML reports for NSGA-II / search results.
 | `history.py` | `plot_history_*` | Per-generation best-metric plots |
 | `scatter.py` | `plot_scatter`, `plot_default_pareto_scatters` | 2D Pareto projections |
 | `report_png.py` | `write_search_report_png` | Single-file matplotlib report |
-| `report_html.py` | `create_interactive_search_report` | Plotly HTML dashboard |
+| `html/template.py` | `create_interactive_search_report` | Plotly HTML dashboard assembly |
+| `html/data.py` | `parse_search_result`, `ReportData` | Result JSON parsing |
+| `html/sections_*.py` | section renderers | History, Pareto, table, layout HTML/JS |
 
 ## Dependents
 

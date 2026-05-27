@@ -1,6 +1,6 @@
-from mimarsinan.pipelining.pipeline_helpers import safe_warmup_forward
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.tuning.adaptation_manager_factory import create_adaptation_manager_for_model
+from mimarsinan.pipelining.core.engine.pipeline_helpers import safe_warmup_forward
+from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.tuning.orchestration.adaptation_manager_factory import create_adaptation_manager_for_model
 
 import torch
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from mimarsinan.models.activations import LIFActivation
+from mimarsinan.models.nn.activations import LIFActivation
 
 
 def unwrap_lif_activation(activation) -> LIFActivation | None:
     """Walk activation wrappers and return inner ``LIFActivation``, or None."""
-    from mimarsinan.models.layers import TransformedActivation
+    from mimarsinan.models.nn.layers import TransformedActivation
     from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFBlendActivation
 
     for _ in range(8):

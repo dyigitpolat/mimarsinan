@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mimarsinan.mapping.core_geometry import used_axons, used_neurons
+from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 
 
 def _core(*, axons_per_core=8, available_axons=2, neurons_per_core=4, available_neurons=1):

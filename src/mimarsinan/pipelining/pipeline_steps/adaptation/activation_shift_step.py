@@ -1,4 +1,4 @@
-from mimarsinan.pipelining.tuner_pipeline_step import TunerPipelineStep
+from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.tuning.tuners.activation_shift_tuner import ActivationShiftTuner
 
 

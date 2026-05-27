@@ -37,8 +37,8 @@ def _dump_top(stats: pstats.Stats, path: Path, n: int = 30) -> None:
 
 def _verify_request(body: dict) -> dict:
     """Run the same logic as server.api_hw_config_verify._run, minus FastAPI."""
-    from mimarsinan.gui.server import _get_layout_result_from_request
-    from mimarsinan.mapping.verification.mapping_verifier import verify_hardware_config
+    from mimarsinan.gui.server.routes_layout import get_layout_result_from_request
+    from mimarsinan.mapping.verification.verifier import verify_hardware_config
     from mimarsinan.mapping.platform.platform_constraints import (
         resolve_platform_mapping_params,
     )
@@ -62,7 +62,7 @@ def _verify_request(body: dict) -> dict:
     mr["max_axons"] = max(int(mr.get("max_axons", 1024)), 4096)
     mr["max_neurons"] = max(int(mr.get("max_neurons", 1024)), 4096)
 
-    layout_result = _get_layout_result_from_request(
+    layout_result = get_layout_result_from_request(
         mr,
         tiling_max_axons=tile_max_ax,
         tiling_max_neurons=tile_max_neu,

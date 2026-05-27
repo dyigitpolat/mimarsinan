@@ -21,7 +21,7 @@ def fake_record_hcm_reference(
     calls: dict | None = None,
 ):
     import torch
-    from mimarsinan.chip_simulation.spike_recorder import RunRecord
+    from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
 
     if calls is not None:
         calls.setdefault("hcm_samples", []).append(sample_index)

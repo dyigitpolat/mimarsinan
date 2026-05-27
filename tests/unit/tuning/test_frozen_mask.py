@@ -30,7 +30,7 @@ import torch
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import (
     NormalizationAwarePerceptronQuantizationTuner,
 )

@@ -66,7 +66,7 @@ class TestTensorQuantization:
 
 class TestPerceptronTransformer:
     def test_effective_weight_identity_norm(self):
-        from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+        from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
         from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
         import torch.nn as nn
 
@@ -78,7 +78,7 @@ class TestPerceptronTransformer:
         assert torch.allclose(eff_w, p.layer.weight.data)
 
     def test_effective_weight_with_batchnorm(self):
-        from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+        from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
         from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
         import torch.nn as nn
 
@@ -93,7 +93,7 @@ class TestPerceptronTransformer:
         assert eff_w.shape == p.layer.weight.data.shape
 
     def test_effective_bias_identity_norm(self):
-        from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+        from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
         from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
         import torch.nn as nn
 
@@ -106,7 +106,7 @@ class TestPerceptronTransformer:
 
     def test_roundtrip_weight_transform(self):
         """Applying identity transform should preserve effective weights."""
-        from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+        from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
         from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
         import torch.nn as nn
 

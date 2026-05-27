@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
 @ModelRegistry.register("torch_sequential_linear", label="Torch Seq. Linear", category="torch")

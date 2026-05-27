@@ -1,5 +1,5 @@
-from mimarsinan.pipelining.trainer_factory import make_basic_trainer
-from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
 
 

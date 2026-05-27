@@ -1,5 +1,5 @@
 from mimarsinan.models.perceptron_mixer.simple_mlp import SimpleMLP
-from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 import torch.nn as nn
 

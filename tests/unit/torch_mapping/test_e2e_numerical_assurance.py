@@ -13,7 +13,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
+from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
 
@@ -149,7 +149,8 @@ class TestE2ENumericalAssurance:
         Activation-less layers (e.g. final classifier) should be
         ComputeOpMapper, not PerceptronMapper with a fake Identity.
         """
-        from mimarsinan.mapping.mappers.perceptron import PerceptronMapper, ComputeOpMapper
+        from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 
         torch.manual_seed(42)
         model = model_cls()
@@ -201,7 +202,7 @@ class TestTorchMLPMixerE2E:
 
     def test_conv_patch_embedding_is_compute_op(self):
         """Conv2d patch embedding (no activation) should be ComputeOpMapper, not a perceptron."""
-        from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper
+        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
         from mimarsinan.models.torch_mlp_mixer import TorchMLPMixer
 
         model = TorchMLPMixer(

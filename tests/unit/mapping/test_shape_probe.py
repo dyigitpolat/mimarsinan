@@ -1,4 +1,4 @@
-"""Unit tests for :func:`mimarsinan.mapping.shape_probe.probe_module_io_shapes`."""
+"""Unit tests for :func:`mimarsinan.mapping.support.shape_probe.probe_module_io_shapes`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.shape_probe import probe_module_io_shapes, ProbedShapes
+from mimarsinan.mapping.support.shape_probe import probe_module_io_shapes, ProbedShapes
 
 
 class TestSingleInputShapes:

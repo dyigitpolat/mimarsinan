@@ -1,7 +1,7 @@
-from mimarsinan.pipelining.trainer_factory import make_basic_trainer
-from mimarsinan.pipelining.trainer_pipeline_step import TrainerPipelineStep
-from mimarsinan.tuning.tuning_budget import tuning_budget_from_pipeline
-from mimarsinan.models.layers import SavedTensorDecorator, TransformedActivation
+from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
+from mimarsinan.models.nn.layers import SavedTensorDecorator, TransformedActivation
 
 import torch
 

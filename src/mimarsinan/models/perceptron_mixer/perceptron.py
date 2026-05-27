@@ -1,4 +1,4 @@
-from mimarsinan.models.layers import MaxValueScaler, LeakyGradReLU
+from mimarsinan.models.nn.layers import MaxValueScaler, LeakyGradReLU
 
 
 import torch.nn as nn

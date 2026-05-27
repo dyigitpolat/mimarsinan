@@ -13,12 +13,12 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
     NormalizationAwarePerceptronQuantization,
 )
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 
 
 # ---------------------------------------------------------------------------

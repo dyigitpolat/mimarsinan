@@ -15,7 +15,7 @@ from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
 __all__ = ["SearchOptimizer", "NSGA2Optimizer"]
 
 try:
-    from mimarsinan.search.optimizers.agent_evolve_optimizer import AgentEvolveOptimizer
+    from mimarsinan.search.optimizers.agent_evolve import AgentEvolveOptimizer
     __all__.append("AgentEvolveOptimizer")
 except ImportError:
     pass

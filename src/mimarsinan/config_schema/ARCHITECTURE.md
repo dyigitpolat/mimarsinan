@@ -45,7 +45,7 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 - `pipelining.pipelines.deployment_pipeline`
 - `gui/wizard/schema.py` (wizard forms; labels should match defaults)
 - `gui/wizard/config_builder.py` (`derive_deployment_parameters` after preset)
-- `gui/server.py` (`build_flat_pipeline_config` for `/api/pipeline_steps`; `build_deployment_config_from_state` for `/api/run`)
+- `gui/server/` (`build_flat_pipeline_config` for `/api/pipeline_steps`; `build_deployment_config_from_state` for `/api/run`)
 - `gui/data_collector.py`, `gui/runs.py`, `gui/process_manager.py` (`build_config_display_view` / `build_pipeline_config_view` for monitor `config_view` in pipeline overview)
 
 ## Exported API (`__init__.py`)

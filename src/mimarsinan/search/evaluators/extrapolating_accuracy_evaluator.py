@@ -1,190 +1,31 @@
-"""
-Accuracy evaluator for NAS that fits a learning curve and extrapolates.
-
-Instead of training for one epoch and returning raw accuracy,
-this evaluator records accuracy at several checkpoints during training,
-fits parametric learning-curve models to the trajectory, and extrapolates
-to predict what accuracy would be at a larger epoch budget.
-
-This yields a more informative ranking signal for architecture search
-because it estimates the architecture's *potential* rather than its
-performance after minimal training.
-"""
+"""Accuracy evaluator for NAS that fits a learning curve and extrapolates."""
 
 from __future__ import annotations
 
-import math
-import warnings
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 import torch
-from scipy.optimize import curve_fit
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
+from .learning_curve import fit_and_extrapolate
 
-# Parametric learning-curve models
-# Each model maps (t, *params) -> predicted accuracy.
-# `t` is in *epochs* (so 0.2 means 20 % of the first epoch).
-
-def _exp3(t: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
-    """3-parameter saturating exponential: y = a - b * exp(-c * t)."""
-    return a - b * np.exp(-c * t)
-
-
-def _pow3(t: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
-    """3-parameter inverse power law: y = a - b * (t + 1)^{-c}."""
-    return a - b * np.power(t + 1.0, -c)
-
-
-def _log2(t: np.ndarray, a: float, b: float) -> np.ndarray:
-    """2-parameter log model: y = a * log(1 + b * t)."""
-    return a * np.log1p(b * t)
-
-
-def soft_clip_accuracy(raw: float, observed_max: float) -> float:
-    """Soft-clip an extrapolated accuracy value.
-
-    Allows modest improvement over the best observed value but applies
-    diminishing returns via an exponential saturation curve, preventing
-    unrealistic extrapolation overshoot.
-
-    The ceiling is capped at ``min(1.0, observed_max + 0.15)`` (at most
-    15 percentage-points above the best observation).
-    """
-    if raw <= 0.0:
-        return 0.0
-    ceiling = min(1.0, observed_max + 0.15)
-    if raw <= observed_max:
-        return raw
-    if raw >= ceiling:
-        return ceiling
-    margin = ceiling - observed_max
-    if margin <= 0:
-        return observed_max
-    excess = (raw - observed_max) / margin
-    compressed = 1.0 - math.exp(-2.0 * excess)
-    return observed_max + margin * compressed
-
-
-# Registry: (name, function, number_of_params, bounds_lo, bounds_hi)
-_CURVE_MODELS = [
-    (
-        "exp3",
-        _exp3,
-        3,
-        [0.0, 0.0, 1e-6],       # lower bounds for a, b, c
-        [1.0, 1.0, 50.0],       # upper bounds for a, b, c
-    ),
-    (
-        "pow3",
-        _pow3,
-        3,
-        [0.0, 0.0, 1e-6],
-        [1.0, 1.0, 10.0],
-    ),
-    (
-        "log2",
-        _log2,
-        2,
-        [0.0, 1e-6],
-        [1.0, 100.0],
-    ),
-]
-
-
-def _fit_and_extrapolate(
-    t_obs: np.ndarray,
-    y_obs: np.ndarray,
-    t_target: float,
-) -> Tuple[float, str]:
-    """
-    Try each curve model, pick the best fit, and extrapolate to *t_target*.
-
-    Returns (extrapolated_accuracy, model_name).
-    Falls back to the last observed accuracy if all fits fail.
-    """
-    best_residual = float("inf")
-    best_pred = float(y_obs[-1])   # fallback
-    best_name = "fallback"
-    observed_max = float(max(y_obs))
-
-    for name, func, n_params, lb, ub in _CURVE_MODELS:
-        if len(t_obs) < n_params + 1:
-            # Not enough data points for this model
-            continue
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                popt, _ = curve_fit(
-                    func,
-                    t_obs,
-                    y_obs,
-                    bounds=(lb, ub),
-                    maxfev=5000,
-                    p0=None,
-                )
-            y_fit = func(t_obs, *popt)
-            residual = float(np.mean((y_fit - y_obs) ** 2))
-
-            if residual < best_residual:
-                best_residual = residual
-                pred = float(func(np.array([t_target]), *popt)[0])
-                pred = soft_clip_accuracy(pred, observed_max)
-                best_pred = pred
-                best_name = name
-        except (RuntimeError, ValueError, TypeError):
-            # curve_fit failed to converge – skip this model
-            continue
-
-    return best_pred, best_name
-
-
-# Public evaluator
 
 @dataclass
 class ExtrapolatingAccuracyEvaluator:
-    """
-    Fast NAS accuracy evaluator with learning-curve extrapolation.
-
-    Schedule
-    --------
-    1. Train the candidate model for ``num_train_epochs`` epochs.
-    2. Every ``total_steps / num_checkpoints`` gradient steps, pause and
-       measure validation accuracy.
-    3. Fit parametric learning-curve models (exp-saturation, power-law,
-       logarithmic) to the recorded (step, accuracy) pairs.
-    4. Extrapolate the best-fitting curve to ``target_epochs`` and return
-       the predicted accuracy.
-
-    Parameters
-    ----------
-    num_train_epochs : int
-        How many actual training epochs to run (default 1, for speed).
-    num_checkpoints : int
-        Number of accuracy measurements during training. More checkpoints
-        give a better curve fit but cost validation time.
-    target_epochs : int
-        Epoch count to extrapolate accuracy to.  E.g. if the real pipeline
-        trains for 50 epochs, set ``target_epochs=50`` so the evaluator
-        predicts that final accuracy.
-    """
+    """Fast NAS accuracy evaluator with learning-curve extrapolation."""
 
     data_provider_factory: DataProviderFactory
     device: torch.device
     lr: float
 
-    # Training knobs
     num_train_epochs: int = 1
     num_checkpoints: int = 5
-
-    # Extrapolation target
     target_epochs: int = 10
 
-    # Shared knobs (same as FastAccuracyEvaluator)
     warmup_fraction: float = 0.10
     num_workers: int = 0
     training_batch_size: Optional[int] = None
@@ -192,7 +33,6 @@ class ExtrapolatingAccuracyEvaluator:
 
     def evaluate(self, model) -> float:
         """Train, record learning curve, extrapolate, and return predicted accuracy."""
-
         torch.manual_seed(int(self.seed))
         np.random.seed(int(self.seed))
 
@@ -236,27 +76,23 @@ class ExtrapolatingAccuracyEvaluator:
             total_steps = steps_per_epoch * int(self.num_train_epochs)
             warmup_steps = max(1, int(total_steps * float(self.warmup_fraction)))
 
-            # Decide at which global steps to measure accuracy.
-            # We always include the final step; the rest are spaced evenly.
             num_ckpt = max(1, int(self.num_checkpoints))
             checkpoint_interval = max(1, total_steps // num_ckpt)
             checkpoint_steps = set()
             for i in range(1, num_ckpt + 1):
                 checkpoint_steps.add(min(i * checkpoint_interval, total_steps))
-            checkpoint_steps.add(total_steps)  # always measure at the end
+            checkpoint_steps.add(total_steps)
 
-            # (epoch_fraction, accuracy) pairs
             curve_t: List[float] = []
             curve_y: List[float] = []
 
             global_step = 0
-            for epoch in range(int(self.num_train_epochs)):
+            for _epoch in range(int(self.num_train_epochs)):
                 model.train()
                 for x, y in train_loader:
                     x = x.to(self.device)
                     y = y.to(self.device)
 
-                    # LR warmup
                     if global_step < warmup_steps:
                         lr_now = float(self.lr) * float(global_step + 1) / float(warmup_steps)
                     else:
@@ -275,7 +111,7 @@ class ExtrapolatingAccuracyEvaluator:
 
                     if global_step in checkpoint_steps:
                         acc = self._validate(model, val_loader)
-                        t = float(global_step) / float(steps_per_epoch)  # in epochs
+                        t = float(global_step) / float(steps_per_epoch)
                         curve_t.append(t)
                         curve_y.append(acc)
 
@@ -284,16 +120,13 @@ class ExtrapolatingAccuracyEvaluator:
             t_target = float(self.target_epochs)
 
             if len(t_obs) < 2:
-                # Can't fit a curve with < 2 points; return raw accuracy.
                 return float(y_obs[-1]) if len(y_obs) > 0 else 0.0
 
-            extrapolated, model_name = _fit_and_extrapolate(t_obs, y_obs, t_target)
-
+            extrapolated, _model_name = fit_and_extrapolate(t_obs, y_obs, t_target)
             return float(extrapolated)
         finally:
             shutdown_data_loader(train_loader)
             shutdown_data_loader(val_loader)
-
 
     @torch.no_grad()
     def _validate(self, model: torch.nn.Module, val_loader) -> float:
@@ -308,4 +141,3 @@ class ExtrapolatingAccuracyEvaluator:
             correct += float(predicted.eq(y).sum().item())
         model.train()
         return float(correct / total) if total > 0 else 0.0
-

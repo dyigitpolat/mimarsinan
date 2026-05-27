@@ -10,7 +10,7 @@ import torch.nn as nn
 import numpy as np
 
 from mimarsinan.mapping.ir import NeuralCore, IRGraph, IRSource
-from mimarsinan.models.unified_core_flow import (
+from mimarsinan.models.spiking.unified.flow import (
     SpikingUnifiedCoreFlow,
     _ttfs_activation_from_type,
 )

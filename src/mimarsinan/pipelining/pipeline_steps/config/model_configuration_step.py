@@ -1,6 +1,6 @@
-from mimarsinan.pipelining.model_config_emit import emit_model_config_entries
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.platform_constraints_resolver import (
+from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
+from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
 

@@ -204,14 +204,14 @@ def test_step_ttfs_uses_ttfs_reference_path(monkeypatch):
 
     def _fake_ttfs_ref(pipeline, mapping, sample, sample_index=0):
         ttfs_calls.append(sample_index)
-        from mimarsinan.chip_simulation.ttfs_recorder import TtfsRunRecord
+        from mimarsinan.chip_simulation.ttfs.ttfs_recorder import TtfsRunRecord
 
         return None, TtfsRunRecord(
             sample_index=sample_index, simulation_length=4, spiking_mode="ttfs",
         )
 
     def _fake_ttfs_subset(self, spiking_mode="ttfs"):
-        from mimarsinan.chip_simulation.ttfs_recorder import TtfsRunRecord
+        from mimarsinan.chip_simulation.ttfs.ttfs_recorder import TtfsRunRecord
 
         return TtfsRunRecord(
             sample_index=self.sample_index,

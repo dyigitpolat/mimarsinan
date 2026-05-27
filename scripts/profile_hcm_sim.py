@@ -149,7 +149,7 @@ def main() -> None:
         hcm = pickle.load(f)
     log.mark("after_unpickle_hcm")
 
-    from mimarsinan.models.hybrid_core_flow import SpikingHybridCoreFlow
+    from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
     # Pull sim parameters from the run directory.
     import json

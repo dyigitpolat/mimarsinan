@@ -28,7 +28,7 @@ def test_step_class_lives_in_subpackage(cls, mod_path):
 
 
 def test_deployment_pipeline_registers_steps():
-    from mimarsinan.pipelining.pipelines.deployment_pipeline import get_pipeline_step_specs
+    from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 
     specs_default = get_pipeline_step_specs({})
     step_types = {cls for _, cls in specs_default}

@@ -12,8 +12,8 @@ from typing import Any, Dict, List
 
 from mimarsinan.models.builders.wizard_schema import get_all_model_type_schemas
 from mimarsinan.config_schema.defaults import get_default_platform_constraints
-from mimarsinan.pipelining.model_registry import ModelRegistry
-from mimarsinan.pipelining.pipelines.deployment_pipeline import get_pipeline_step_specs
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 from mimarsinan.search.results import ALL_OBJECTIVES, ACCURACY_OBJECTIVE_NAME
 
 

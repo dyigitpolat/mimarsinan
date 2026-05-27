@@ -26,7 +26,7 @@ from mimarsinan.chip_simulation.sanafe.records import (
     SanafeSegmentRecord,
     SanafeTileRecord,
 )
-from mimarsinan.chip_simulation.spike_recorder import (
+from mimarsinan.chip_simulation.recording.spike_recorder import (
     CoreSpikeCounts,
     RunRecord,
     SegmentSpikeRecord,

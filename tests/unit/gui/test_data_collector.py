@@ -1,8 +1,8 @@
-"""Unit tests for mimarsinan.gui.data_collector."""
+"""Unit tests for mimarsinan.gui.runtime.collector."""
 
 import pytest
 
-from mimarsinan.gui.data_collector import DataCollector
+from mimarsinan.gui.runtime.collector import DataCollector
 
 
 class TestStepStartedPurgesOldMetrics:

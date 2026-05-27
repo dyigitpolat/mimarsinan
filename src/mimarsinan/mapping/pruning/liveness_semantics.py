@@ -63,7 +63,7 @@ def ttfs_quantized_bias_can_activate(
     zero_threshold: float = 1e-8,
 ) -> bool:
     """Quantized TTFS: neuron fires iff closed-form activation at ``S`` is > 0."""
-    from mimarsinan.models.ttfs_kernels import ttfs_quantized_activation_np
+    from mimarsinan.models.spiking.ttfs_kernels import ttfs_quantized_activation_np
 
     arr = _normalized_bias_array(bias)
     if arr is None:

@@ -16,7 +16,7 @@ Rules:
 
 import pytest
 
-from mimarsinan.pipelining.accuracy_budget import AccuracyBudget
+from mimarsinan.pipelining.core.accuracy_budget import AccuracyBudget
 
 
 class TestAccuracyBudgetSeeding:

@@ -5,7 +5,7 @@ import torch
 
 from mimarsinan.models.torch_mlp_mixer import TorchMLPMixer
 from mimarsinan.models.builders.torch_mlp_mixer_builder import TorchMLPMixerBuilder
-from mimarsinan.pipelining.model_registry import ModelRegistry
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
 class TestTorchMLPMixer:

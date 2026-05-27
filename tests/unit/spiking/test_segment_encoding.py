@@ -11,11 +11,11 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     SegmentIOSlice,
     build_hybrid_hard_core_mapping,
 )
-from mimarsinan.mapping.ir_mapping import IRMapping
-from mimarsinan.mapping.mappers.perceptron import PerceptronMapper
+from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.mappers.structural import InputMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.models.activations import LIFActivation
+from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.spiking.segment_encoding import (
     SegmentEncodingConfig,
@@ -193,7 +193,7 @@ def test_build_segment_input_raw_input_uniform_encoded() -> None:
 def test_conv2d_perceptron_mapper_resolver_returns_none() -> None:
     """Conv2DPerceptronMapper wrappers are not LIF-Perceptron boundaries — the
     chip's calibrated weights expect rate-mode uniform encoding at their input."""
-    from mimarsinan.mapping.mappers.conv import Conv2DPerceptronMapper
+    from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
     from mimarsinan.mapping.mappers.structural import InputMapper
 
     src = InputMapper((1, 28, 28))

@@ -13,8 +13,8 @@ import operator
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.compute_modules import ComputeAdapter
-from mimarsinan.mapping.mappers.perceptron import ComputeOpMapper, PerceptronMapper
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper, PerceptronMapper
 from mimarsinan.mapping.mappers.structural import (
     EinopsRearrangeMapper,
     InputMapper,

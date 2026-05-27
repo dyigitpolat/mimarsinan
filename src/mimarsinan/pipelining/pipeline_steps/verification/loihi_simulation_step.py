@@ -10,11 +10,11 @@ cycle-accurate reference; this step then checks one deterministic sample
 with HCM-vs-Lava spike-count parity for every neural segment.
 """
 
-from mimarsinan.chip_simulation.lava_loihi_runner import LavaLoihiRunner
+from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
 from mimarsinan.data_handling.test_sample_loader import load_test_sample_by_index
-from mimarsinan.pipelining.pipeline_helpers import require_spiking_mode_supported
-from mimarsinan.pipelining.pipeline_step import PipelineStep
-from mimarsinan.pipelining.simulation_factory import (
+from mimarsinan.pipelining.core.engine.pipeline_helpers import require_spiking_mode_supported
+from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.simulation_factory import (
     assert_spike_parity_or_raise,
     record_hcm_reference,
 )

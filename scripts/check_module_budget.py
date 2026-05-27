@@ -11,42 +11,10 @@ MAX_LOC = 300
 MAX_SIBLING_PY = 10
 
 # Modules scheduled for split; exempt until refactored.
-ALLOWLIST_FILES: frozenset[str] = frozenset({
-    "search/optimizers/agent_evolve_optimizer.py",
-    "gui/server.py",
-    "visualization/search_viz/report_html.py",
-    "models/hybrid_core_flow.py",
-    "models/unified_core_flow.py",
-    "chip_simulation/sanafe/runner.py",
-    "chip_simulation/sanafe/runner_analysis.py",
-    "chip_simulation/lava_loihi_runner.py",
-    "gui/snapshot/ir_graph_snapshot.py",
-    "mapping/verification/layout_verification_stats.py",
-    "mapping/pruning/ir_pruning.py",
-    "visualization/graphviz/ir.py",
-    "visualization/graphviz/hybrid.py",
-    "mapping/packing/hybrid_segment.py",
-    "mapping/packing/hybrid_build.py",
-    "mapping/layout/layout_ir_mapping_fc.py",
-    "mapping/packing/softcore_mapping.py",
-    "mapping/layout/layout_source_view.py",
-    "search/problems/joint_arch_hw_problem.py",
-})
+ALLOWLIST_FILES: frozenset[str] = frozenset()
 
 # mapping/ root may keep orchestration modules until support/ extraction.
-ALLOWLIST_DIRS: frozenset[str] = frozenset({
-    "mapping",
-    "mapping/packing",
-    "pipelining/pipeline_steps",
-    "chip_simulation",
-    "gui",
-    "gui/snapshot",
-    "models",
-    "models/builders",
-    "tuning",
-    "transformations",
-    "pipelining",
-})
+ALLOWLIST_DIRS: frozenset[str] = frozenset()
 
 
 def _loc(path: Path) -> int:
@@ -59,12 +27,6 @@ def _loc(path: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--strict", action="store_true", help="Exit 1 on any violation")
-    parser.add_argument(
-        "--strict-prefix",
-        action="append",
-        default=[],
-        help="With --strict, only enforce LOC budget under these path prefixes",
-    )
     parser.add_argument("--max-loc", type=int, default=MAX_LOC)
     parser.add_argument("--max-sibling-py", type=int, default=MAX_SIBLING_PY)
     args = parser.parse_args(argv)
@@ -79,9 +41,6 @@ def main(argv: list[str] | None = None) -> int:
             continue
         n = _loc(path)
         if n > args.max_loc and rel not in ALLOWLIST_FILES:
-            if args.strict_prefix:
-                if not any(rel.startswith(p) for p in args.strict_prefix):
-                    continue
             loc_violations.append((n, rel))
 
     for directory in sorted(root.rglob("*")):

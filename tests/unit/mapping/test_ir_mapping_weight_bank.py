@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 
 
 def _inp(idx):

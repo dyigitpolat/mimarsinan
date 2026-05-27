@@ -6,13 +6,13 @@ import numpy as np
 import pytest
 import torch
 
-from mimarsinan.chip_simulation.ttfs_executor import (
+from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
     TtfsContractComputeStageResult,
     run_ttfs_contract_compute_stage,
     run_ttfs_contract_neural_stage,
     run_ttfs_hybrid_contract,
 )
-from mimarsinan.chip_simulation.ttfs_recorder import (
+from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
     CoreTtfsActivations,
     SegmentTtfsRecord,
     TtfsRunRecord,
@@ -21,8 +21,8 @@ from mimarsinan.chip_simulation.ttfs_recorder import (
     compare_ttfs_records,
 )
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.packing.softcore_mapping import HardCore, HardCoreMapping
-from mimarsinan.pipelining.simulation_factory import record_ttfs_hcm_reference
+from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
+from mimarsinan.pipelining.core.simulation_factory import record_ttfs_hcm_reference
 
 
 def _make_two_stage_mapping():

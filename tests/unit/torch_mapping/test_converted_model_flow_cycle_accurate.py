@@ -20,7 +20,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.activations import LIFActivation, run_cycle_accurate
+from mimarsinan.models.nn.activations import LIFActivation, run_cycle_accurate
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
 

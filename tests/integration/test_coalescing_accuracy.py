@@ -10,13 +10,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../s
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.mapping.mapping_utils import InputMapper, PerceptronMapper, ModelRepresentation, EinopsRearrangeMapper
-from mimarsinan.mapping.ir_mapping import IRMapping
+from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ir_graph_to_soft_core_mapping, IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HardCore, HardCoreMapping
-from mimarsinan.models.unified_core_flow import SpikingUnifiedCoreFlow
-from mimarsinan.mapping.per_source_scales import compute_per_source_scales
-from mimarsinan.transformations.perceptron_transformer import PerceptronTransformer
-from mimarsinan.models.layers import TransformedActivation, SavedTensorDecorator
+from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.models.nn.layers import TransformedActivation, SavedTensorDecorator
 
 class SimpleMLPModel(nn.Module):
     def __init__(self, in_features):

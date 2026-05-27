@@ -154,7 +154,7 @@ def test_runner_records_per_core_output_spikes():
 def test_runner_to_hcm_subset_returns_valid_run_record():
     """The HCM projection produces a RunRecord with matching segment indices."""
     from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
-    from mimarsinan.chip_simulation.spike_recorder import RunRecord
+    from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
     runner = SanafeRunner(mapping=_build_tiny_mapping(), simulation_length=32,
                           arch_preset="loihi")
     rec = runner.run(np.asarray([[1.0, 0.5, 0.25, 0.0]], dtype=np.float32),
@@ -205,7 +205,7 @@ def _build_subset_hybrid(work_dir: _Path, n_cores: int):
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping, HybridHardCoreMapping,
     )
-    from mimarsinan.mapping.packing.softcore_mapping import HardCoreMapping
+    from mimarsinan.mapping.packing.softcore import HardCoreMapping
 
     with open(work_dir / "Soft Core Mapping.ir_graph.pickle", "rb") as f:
         ir_graph = _pickle.load(f)

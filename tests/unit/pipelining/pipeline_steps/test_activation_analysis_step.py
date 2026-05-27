@@ -97,8 +97,8 @@ class TestActivationAnalysisStep:
         """Edge case: model with only one perceptron."""
         from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
         from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
-        from mimarsinan.models.layers import LeakyGradReLU
-        from mimarsinan.tuning.adaptation_manager import AdaptationManager
+        from mimarsinan.models.nn.layers import LeakyGradReLU
+        from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
         from mimarsinan.mapping.mapping_utils import (
             InputMapper, PerceptronMapper, Ensure2DMapper,
             EinopsRearrangeMapper, ModuleMapper, ModelRepresentation,

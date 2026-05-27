@@ -1,6 +1,6 @@
 import pytest
 
-from mimarsinan.pipelining.pipelines.deployment_pipeline import get_pipeline_step_specs
+from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 
 
 def test_loihi_sim_with_ttfs_raises_at_assembly():

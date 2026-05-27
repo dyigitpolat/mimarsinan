@@ -7,7 +7,7 @@ a discontinuity at rate=1.0, while MixAdjustmentStrategy alone is smooth.
 import pytest
 import torch
 
-from mimarsinan.models.layers import (
+from mimarsinan.models.nn.layers import (
     ClampDecorator,
     RateAdjustedDecorator,
     MixAdjustmentStrategy,
@@ -15,7 +15,7 @@ from mimarsinan.models.layers import (
     NestedAdjustmentStrategy,
     DifferentiableClamp,
 )
-from mimarsinan.tuning.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
 
 def _make_activations_with_outliers(n=1000, scale=2.0, outlier_frac=0.05):

@@ -7,7 +7,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.activations import LIFActivation, run_cycle_accurate
+from mimarsinan.models.nn.activations import LIFActivation, run_cycle_accurate
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.spike_trains import uniform_spike_train
 
