@@ -1,6 +1,12 @@
 main_cpp_template = \
 """
 #include "generate_chip.hpp"
+#include "simulator/compute_policy/fire_policy/lif_fire_policy.hpp"
+#include "simulator/compute_policy/compare_policy/strict_compare.hpp"
+#include "simulator/compute_policy/compare_policy/inclusive_compare.hpp"
+#include "simulator/compute_policy/reset_policy/subtractive_reset.hpp"
+#include "simulator/compute_policy/reset_policy/zero_reset.hpp"
+#include "simulator/compute_policy/fire_policy/default_fire.hpp"
 #include "simulator/compute_policy/fire_policy/novena_fire.hpp"
 #include "simulator/compute_policy/fire_policy/ttfs_fire.hpp"
 #include "_tests/all.hpp"
@@ -19,7 +25,7 @@ main_cpp_template = \
 #include "simulator/compute_policy/real_valued_compute.hpp"
 #include "simulator/compute_policy/ttfs_analytical_compute.hpp"
 #include "simulator/compute_policy/ttfs_quantized_compute.hpp"
-#include "simulator/compute_policy/fire_policy/novena_fire.hpp"
+#include "simulator/compute_policy/fire_policy/default_fire.hpp"
 
 #include <cstdlib>
 
@@ -37,7 +43,7 @@ void test_main(int start, int end)
 
     for(int idx = start; idx < end; ++idx)
     {{
-        auto [input, target] = load_input_n("{0}/inputs/", idx);
+        {10}
         auto buffer = chip.execute<exec>(input);
         for(auto i : buffer)
         {{

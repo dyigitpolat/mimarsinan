@@ -81,6 +81,7 @@ FIELD_DISPLAY_META: Dict[str, Dict[str, Any]] = {
                      "effect": "Selects LIF/TTFS path and simulation backends"},
     "firing_mode": {"group": "pipeline", "type": "enum", "label": "Firing Mode"},
     "spike_generation_mode": {"group": "pipeline", "type": "enum", "label": "Spike Generation Mode"},
+    "spike_encoding_seed": {"group": "pipeline", "type": "int", "label": "Spike Encoding Seed"},
     "thresholding_mode": {"group": "pipeline", "type": "enum", "label": "Thresholding Mode"},
     "activation_quantization": {"group": "pipeline", "type": "bool", "label": "Activation Quantization",
                                 "effect": "Gates activation quantization pipeline steps"},

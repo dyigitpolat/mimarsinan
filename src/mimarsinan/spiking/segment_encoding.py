@@ -242,6 +242,12 @@ def build_segment_input_spike_train(
         and int(stage.input_map[0].node_id) == -2
     )
     if not filled_ranges and only_raw_input:
+        if config.spike_mode == "SpikeTrain":
+            from mimarsinan.spiking.spike_trains import materialized_spike_train
+
+            return materialized_spike_train(
+                seg_input_rates_clamped, T,
+            ).to(config.compute_dtype)
         return uniform_spike_train(
             seg_input_rates_clamped, T,
         ).to(config.compute_dtype)

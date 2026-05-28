@@ -7,11 +7,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.sanafe.runner.neural_stage import SanafeNeuralStageMixin
 from mimarsinan.chip_simulation.sanafe.runner.neural_stage_record import SanafeNeuralStageRecordMixin
 from mimarsinan.chip_simulation.sanafe.runner.segment_io import SanafeSegmentIOMixin
 
-from mimarsinan.chip_simulation.recording._spike_encoding import uniform_rate_encode
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.sanafe.runner.constants import _COMPUTE_DTYPE, _RAW_INPUT_NODE_ID
 from mimarsinan.chip_simulation.sanafe.presets import PRESETS
@@ -39,6 +39,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         mapping: Any,
         simulation_length: int,
         *,
+        behavior: NeuralBehaviorConfig | None = None,
         arch_preset: str = "loihi",
         custom_arch_path: Optional[str] = None,
         thresholding_mode: str = "<=",
@@ -48,7 +49,18 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         log_message_trace: bool = True,
         cores_per_tile: int = 0,
     ):
-        self.spiking_mode = str(spiking_mode)
+        if behavior is None:
+            behavior = NeuralBehaviorConfig(
+                spiking_mode=str(spiking_mode),
+                firing_mode=str(firing_mode),
+                thresholding_mode=str(thresholding_mode),
+                spike_generation_mode="Uniform",
+            )
+        self._behavior = behavior
+        self.spiking_mode = behavior.spiking_mode
+        self.thresholding_mode = behavior.thresholding_mode
+        self.firing_mode = behavior.firing_mode
+        behavior.require_backend("sanafe")
         if arch_preset not in PRESETS:
             raise ValueError(
                 f"unknown SANA-FE arch preset {arch_preset!r}; "
@@ -60,22 +72,11 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.T = int(simulation_length)
         self.arch_preset = arch_preset
         self.custom_arch_path = custom_arch_path
-        self.thresholding_mode = thresholding_mode
-        self.firing_mode = str(firing_mode)
-        from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
-
         from mimarsinan.chip_simulation.spiking_semantics import require_spiking_mode_supported
 
         require_spiking_mode_supported(
             self.spiking_mode, backend="sanafe", context="SanafeRunner",
         )
-        FiringStrategyFactory.from_config(
-            {
-                "firing_mode": self.firing_mode,
-                "thresholding_mode": thresholding_mode,
-                "spiking_mode": self.spiking_mode,
-            }
-        ).require_backend("sanafe")
         self.log_potential_trace = log_potential_trace
         self.log_message_trace = log_message_trace
         self.cores_per_tile = cores_per_tile

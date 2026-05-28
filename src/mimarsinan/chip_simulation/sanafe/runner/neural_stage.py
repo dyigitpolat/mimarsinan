@@ -13,7 +13,6 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     lif_inter_stage_from_spike_counts,
     store_neural_segment_output,
 )
-from mimarsinan.chip_simulation.recording._spike_encoding import uniform_rate_encode
 from mimarsinan.chip_simulation.sanafe.analysis import (
     _build_spike_capture_warning,
     _compute_connectivity_edges,
@@ -142,7 +141,7 @@ class SanafeNeuralStageMixin:
                 )
                 encoded_padded = np.concatenate([encoded, pad], axis=2)
         else:
-            encoded = uniform_rate_encode(seg_input_rates, self.T)
+            encoded = self._behavior.encode_segment_input(seg_input_rates, self.T)
             encoded_padded = encoded
             if T_eff > encoded.shape[2]:
                 pad = np.zeros(

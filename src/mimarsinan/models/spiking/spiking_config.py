@@ -7,7 +7,14 @@ import torch
 COMPUTE_DTYPE = torch.float64
 
 FIRING_MODES = frozenset({"Default", "Novena", "TTFS"})
-SPIKE_MODES = frozenset({"Stochastic", "Deterministic", "FrontLoaded", "Uniform", "TTFS"})
+SPIKE_MODES = frozenset({
+    "Stochastic",
+    "Deterministic",
+    "FrontLoaded",
+    "Uniform",
+    "SpikeTrain",
+    "TTFS",
+})
 THRESHOLDING_MODES = frozenset({"<", "<="})
 TTFS_SPIKING_MODES = frozenset({"ttfs", "ttfs_quantized"})
 TTFS_FIRING_MODES = frozenset({"TTFS"})

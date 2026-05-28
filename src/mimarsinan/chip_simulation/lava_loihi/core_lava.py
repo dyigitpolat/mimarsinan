@@ -92,7 +92,7 @@ class LavaCoreMixin:
             reset_interval=T,
             reset_offset=reset_offset,
             thresholding_mode=self.thresholding_mode,
-            zero_reset=(self._firing_strategy.mode.value == "Novena"),
+            zero_reset=self._behavior.lava_zero_reset(),
         )
         sink = Sink(shape=(n_out,), buffer=total_steps)
 

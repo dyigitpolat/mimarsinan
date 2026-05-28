@@ -8,10 +8,15 @@ import numpy as np
 import torch
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.mapping.ir import IRGraph
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+
+
+def build_neural_behavior_config(pipeline) -> NeuralBehaviorConfig:
+    return NeuralBehaviorConfig.from_deployment_config(pipeline.config)
 
 
 def build_hybrid_mapping_for_pipeline(

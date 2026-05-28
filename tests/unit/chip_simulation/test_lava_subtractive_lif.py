@@ -20,8 +20,14 @@ import numpy as np
 import pytest
 
 
-def _reference_spikes(weights: np.ndarray, vth: float, sample_spikes: np.ndarray) -> np.ndarray:
-    """Strict-threshold subtractive IF reference for one packed sample."""
+def _reference_spikes(
+    weights: np.ndarray,
+    vth: float,
+    sample_spikes: np.ndarray,
+    *,
+    zero_reset: bool = False,
+) -> np.ndarray:
+    """Strict-threshold IF reference for one packed sample."""
     n_out = weights.shape[0]
     T = sample_spikes.shape[1]
     v = np.zeros((n_out,), dtype=np.float64)
@@ -30,7 +36,10 @@ def _reference_spikes(weights: np.ndarray, vth: float, sample_spikes: np.ndarray
         v += weights @ sample_spikes[:, cycle]
         fired = v > vth
         out[:, cycle] = fired.astype(np.float32)
-        v[fired] -= vth
+        if zero_reset:
+            v[fired] = 0.0
+        else:
+            v[fired] -= vth
     return out
 
 
@@ -39,6 +48,8 @@ def _run_single_core_lava(
     threshold: float,
     input_spikes: np.ndarray,
     T: int,
+    *,
+    zero_reset: bool = False,
 ) -> np.ndarray:
     """Build Source→Dense→SubtractiveLIFReset→Sink and return output spikes.
 
@@ -81,6 +92,7 @@ def _run_single_core_lava(
         bias_mant=np.zeros((n_out,), dtype=np.float32),
         reset_interval=T,
         reset_offset=reset_offset,
+        zero_reset=zero_reset,
     )
     sink = Sink(shape=(n_out,), buffer=total_steps)
     src.s_out.connect(dense.s_in)
@@ -163,3 +175,21 @@ def test_multi_input_multi_output_matches_reference():
                 f"(sample {i}, out {j}): expected={expected}, got={actual}, "
                 f"rates={rates[i]}"
             )
+
+
+@pytest.mark.slow
+def test_novena_zero_reset_matches_reference():
+    """Novena zero-reset semantics via ``zero_reset=True``."""
+    from mimarsinan.chip_simulation.lava_loihi import _uniform_rate_encode
+
+    T = 4
+    vth = 1.0
+    weights = np.array([[1.0]], dtype=np.float32)
+    rates = np.array([[1.0]], dtype=np.float32)
+    spikes = _uniform_rate_encode(rates, T)
+    packed = spikes.transpose(1, 0, 2).reshape(1, T)
+
+    out = _run_single_core_lava(weights, vth, packed, T, zero_reset=True)
+    expected = _reference_spikes(weights, vth, spikes[0].astype(np.float64), zero_reset=True)
+    np.testing.assert_array_equal(out, expected)
+

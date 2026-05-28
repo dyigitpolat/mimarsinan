@@ -27,6 +27,7 @@ class NevresimDriver:
     def __init__(
         self, input_buffer_size, hard_core_mapping, generated_files_path, weight_type,
         spike_generation_mode="Stochastic", firing_mode="Default", spiking_mode="lif",
+        thresholding_mode="<=",
         threshold_type=None, verbose=True,
     ):
         """Create driver and emit chip artifacts (JSON, weights, chip code). Does not compile.
@@ -40,6 +41,7 @@ class NevresimDriver:
 
         self.spike_generation_mode = spike_generation_mode
         self.firing_mode = firing_mode
+        self.thresholding_mode = thresholding_mode
         self.spiking_mode = spiking_mode
         self.weight_type = weight_type
         self.threshold_type = threshold_type if threshold_type is not None else weight_type
@@ -82,7 +84,8 @@ class NevresimDriver:
             self.generated_files_path, max_input_count, self.chip.output_size, simulation_length, latency,
             main_cpp_template, get_config(
                 self.spike_generation_mode, self.firing_mode,
-                wt_cpp, self.spiking_mode, threshold_type=tt_cpp),
+                wt_cpp, self.spiking_mode, threshold_type=tt_cpp,
+                thresholding_mode=self.thresholding_mode),
             verbose=verbose,
         )
 
@@ -107,7 +110,16 @@ class NevresimDriver:
             max_input_count = len(input_loader)
             print("  Max input count:", max_input_count)
 
-        save_inputs_to_files(self.generated_files_path, input_loader, max_input_count)
+        if self.spike_generation_mode == "SpikeTrain":
+            save_spike_train_inputs_to_files(
+                self.generated_files_path,
+                input_loader,
+                max_input_count,
+                input_size=self.chip.input_size,
+                simulation_length=int(simulation_length),
+            )
+        else:
+            save_inputs_to_files(self.generated_files_path, input_loader, max_input_count)
 
         if simulator_filename is None:
             simulator_filename = self.emit_main_and_compile(

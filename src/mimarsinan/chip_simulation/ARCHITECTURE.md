@@ -17,14 +17,15 @@ Also hosts optional Lava Loihi parity and SANA-FE detailed-stats backends.
 | `ttfs_recorder.py` | `TtfsRunRecord`, `compare_ttfs_contract_records`, `compare_ttfs_hardware_records` | TTFS activation parity records; contract vs hardware tolerance policies. |
 | `neural_segment_executor.py` | `execute_neural_segment_analytical` | TTFS analytical dispatch helper for shared hybrid loop. |
 | `hybrid_stage_runner.py` | `run_hybrid_stages`, `HybridStageContext` | Shared stage loop with `on_neural` / `on_compute` (and optional `after_neural` / `after_compute`). Used by **nevresim** (`SimulationRunner._run_hybrid`), **SANA-FE**, **Lava**, and **`SpikingHybridCoreFlow`** (HCM). |
-| `firing_strategy.py` | `resolve_firing_mode`, `apply_firing_to_lif` | Maps deployment `firing_mode` / reset semantics to training (`LIFActivation`), Lava (`SubtractiveLIFReset`), and SANA-FE attrs. See `mapping/FIRING.md`. |
+| `firing_strategy.py` | `FiringStrategy`, `FiringStrategyFactory` | Reset + threshold validation; backend capability gates. See `mapping/FIRING.md`. |
+| `behavior_config.py` | `NeuralBehaviorConfig` | SSOT for simulator-facing activation semantics (reset, comparison, spike encode). Used by Lava, SANA-FE, and codegen helpers. |
 | `spike_modes.py` | `to_spikes`, stochastic/deterministic helpers | Single torch spike-encoding implementation for unified and hybrid core flows. |
 | `spike_recorder.py` | `RunRecord`, `SegmentSpikeRecord`, `CoreSpikeCounts`, `compare_records` | HCM/Loihi spike-count recording and diff utilities (segment inputs, per-core in/out, segment outputs). |
-| `lava_loihi_runner.py` | `LavaLoihiRunner` | Optional Lava Loihi LIF runner. **`run_segments_from_reference()`** — production HCM-vs-Lava parity (one sample, segment replay). **`run()`** — exploratory accuracy (capped samples). |
-| `subtractive_lif.py` | `SubtractiveLIFReset` | Lava LIF process: subtractive reset, no decay, active-window gating, buffer latch — matches HCM hard-core LIF. |
+| `lava_loihi/runner.py` | `LavaLoihiRunner` | Optional Lava Loihi LIF runner. Accepts `NeuralBehaviorConfig`; **`run_segments_from_reference()`** — production HCM-vs-Lava parity. |
+| `subtractive_lif.py` | `SubtractiveLIFReset` | Lava LIF process: configurable reset (`zero_reset`), thresholding, active-window gating. |
 | `compile_nevresim.py` | `compile_simulator` | Compiles generated C++ with C++20 |
 | `execute_nevresim.py` | `execute_simulator` | Runs binary; defaults to `cpu_count // 2` when `num_proc=0` |
-| `_spike_encoding.py` | `uniform_rate_encode` | Shared uniform-rate encoder (HCM, Lava, SANA-FE) |
+| `_spike_encoding.py` | `encode_segment_input`, `uniform_rate_encode`, … | Shared numpy batch encoder for Lava/SANA-FE segment injection; Uniform uses torch parity path. |
 | `sanafe/` (sub-package) | `SanafeRunner`, `SanafeRunRecord`, … | Optional SANA-FE detailed-stats + parity. See `sanafe/ARCHITECTURE.md`. |
 
 ### Cross-backend numeric alignment

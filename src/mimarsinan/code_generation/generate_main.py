@@ -3,10 +3,29 @@ from mimarsinan.code_generation.main_cpp_template import *
 from mimarsinan.code_generation.main_cpp_template_real_valued_exec import *
 
 
+def resolve_lif_fire_policy(firing_mode: str, thresholding_mode: str) -> str:
+    reset = "ZeroReset" if firing_mode == "Novena" else "SubtractiveReset"
+    compare = "InclusiveCompare" if thresholding_mode == "<=" else "StrictCompare"
+    return f"LIFirePolicy<{reset}, {compare}>"
+
+
+def _input_load_statement(spike_gen_mode: str, generated_files_path: str) -> str:
+    if spike_gen_mode == "SpikeTrain":
+        return (
+            f'auto [input, target] = load_spike_train_input_n('
+            f'"{generated_files_path}/inputs/", idx);'
+        )
+    return (
+        f'auto [input, target] = load_input_n('
+        f'"{generated_files_path}/inputs/", idx);'
+    )
+
+
 def _build_chip_and_exec_decl(
     *,
     spiking_mode: str,
     firing_mode: str,
+    thresholding_mode: str,
     spike_gen_mode: str,
     weight_type: str,
     threshold_type: str,
@@ -47,14 +66,15 @@ def _build_chip_and_exec_decl(
     else:
         # Rate-coded modes (Default, Novena).
         gen_type = f"{spike_gen_mode}SpikeGenerator"
+        lif_policy = resolve_lif_fire_policy(firing_mode, thresholding_mode)
         return (
             f"static constinit auto chip = \n"
-            f"        generate_chip<SpikingCompute<{firing_mode}FirePolicy>, {weight_type}, {threshold_type}>();\n"
+            f"        generate_chip<SpikingCompute<{lif_policy}>, {weight_type}, {threshold_type}>();\n"
             f"\n"
             f"    using exec = SpikingExecution<"
             f"{simulation_length}, {latency}, {output_count}, "
             f"{gen_type}, {weight_type}, "
-            f"{firing_mode}FirePolicy>;"
+            f"{lif_policy}>;"
         )
 
 
@@ -64,6 +84,7 @@ def get_config(
     weight_type="double",
     spiking_mode="lif",
     threshold_type=None,
+    thresholding_mode="<=",
 ):
     # threshold_type defaults to weight_type: single-type (LIF / rate-coded,
     # hardware-accurate integer arithmetic) is the historic behaviour.
@@ -73,6 +94,7 @@ def get_config(
     return {
         "spike_gen_mode": spike_gen_mode,
         "firing_mode": firing_mode,
+        "thresholding_mode": thresholding_mode,
         "weight_type": weight_type,
         "threshold_type": threshold_type,
         "spiking_mode": spiking_mode,
@@ -95,6 +117,7 @@ def generate_main_function(
     chip_exec_decl = _build_chip_and_exec_decl(
         spiking_mode=simulation_config["spiking_mode"],
         firing_mode=simulation_config["firing_mode"],
+        thresholding_mode=simulation_config.get("thresholding_mode", "<="),
         spike_gen_mode=simulation_config["spike_gen_mode"],
         weight_type=simulation_config["weight_type"],
         threshold_type=simulation_config["threshold_type"],
@@ -114,6 +137,9 @@ def generate_main_function(
         latency,                # {7}
         chip_exec_decl,         # {8}  ← chip + exec declarations
         simulation_config["threshold_type"],   # {9}  ← threshold_t typedef
+        _input_load_statement(
+            simulation_config["spike_gen_mode"], generated_files_path,
+        ),  # {10}
     )
 
     main_cpp_filename = "{}/main/main.cpp".format(generated_files_path)

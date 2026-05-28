@@ -26,7 +26,7 @@ plugins into `build/mimarsinan_sanafe_plugins/` (`libmimarsinan_soma.so`,
 | `neuron_model.py` | `lif_model_attributes`, `input_neuron_attributes` | Builds `model_attributes` for **`mimarsinan_soma`** / input somas: subtractive LIF semantics, optional `active_start` / `active_length` per core (aligned with HCM active windows). |
 | `runner.py` | `SanafeRunner` | Only module calling `sanafe.SpikingChip`.  Neural stages on SANA-FE; compute stages via `hybrid_execution`.  **`_COMPUTE_DTYPE = float64`** for segment input assembly (must match HCM; float32 can flip ±1 spike at rate-encoding boundaries).  Simulation length **`T + max_latency + 1`** (+1 cycle: SANA-FE applies input spikes one cycle after emission).  Per-core **`active_start` / `active_length`** from `ChipLatency` (via `lif_model_attributes`). |
 | `plugins/CMakeLists.txt` | — | Builds `libmimarsinan_soma.so`, `libmimarsinan_dendrite.so`. |
-| `plugins/mimarsinan_soma.cpp` | — | Custom soma: subtractive LIF, strict/inclusive thresholding, active-window gating (replaces SANA-FE built-in `leaky_integrate_fire` Loihi caps). |
+| `plugins/mimarsinan_soma.cpp` | — | Custom soma: configurable reset (`reset_mode` soft/hard), strict/inclusive thresholding, active-window gating. |
 | `plugins/mimarsinan_ttfs_continuous_soma.cpp` | — | Analytical TTFS: `relu(I+b)/θ` in one active step. |
 | `plugins/mimarsinan_ttfs_quantized_soma.cpp` | — | Cycle-accurate TTFS quantized (nevresim `NeuronCompute` semantics). |
 | `plugins/mimarsinan_dendrite.cpp` | — | Custom dendrite plugin. |
