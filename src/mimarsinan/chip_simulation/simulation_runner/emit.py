@@ -27,8 +27,6 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
 from mimarsinan.chip_simulation.test_subsample import compute_test_subsample_indices
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.compile_nevresim import compile_simulator
-from mimarsinan.chip_simulation.nevresim.execute_nevresim import execute_simulator
-from mimarsinan.common.file_utils import save_inputs_to_files
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 
 
@@ -39,6 +37,7 @@ class _PreparedSegment:
     seg_dir: str
     binary_path: str
     output_size: int
+    input_size: int
 
 
 def _emit_and_compile_segment(
@@ -56,6 +55,7 @@ def _emit_and_compile_segment(
     num_samples: int,
     sim_length: int,
     nevresim_path: str,
+    connectivity_mode: str,
 ) -> _PreparedSegment:
     """Top-level function for ProcessPoolExecutor: emit chip artifacts and compile."""
     NevresimDriver.nevresim_path = nevresim_path
@@ -72,8 +72,15 @@ def _emit_and_compile_segment(
         spiking_mode=spiking_mode,
         threshold_type=threshold_type,
         verbose=False,
+        connectivity_mode=connectivity_mode,
     )
     driver.emit_main(num_samples, sim_length, latency, verbose=False)
+
+    if driver.chip.input_size != input_size:
+        raise ValueError(
+            f"segment {seg_idx}: hybrid input_map size {input_size} != "
+            f"chip input_size {driver.chip.input_size}"
+        )
 
     output_path = os.path.join(seg_dir, "bin", "simulator")
     binary = compile_simulator(
@@ -87,4 +94,5 @@ def _emit_and_compile_segment(
         seg_dir=seg_dir,
         binary_path=os.path.abspath(binary),
         output_size=driver.chip.output_size,
+        input_size=driver.chip.input_size,
     )

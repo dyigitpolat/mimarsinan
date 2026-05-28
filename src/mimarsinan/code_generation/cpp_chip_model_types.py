@@ -40,51 +40,21 @@ class CodegenSpan:
 
 def compress_sources_to_spans(sources: List[SpikeSource]) -> List[CodegenSpan]:
     """Run-length encode SpikeSource list into contiguous CodegenSpans."""
-    if not sources:
-        return []
+    from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 
-    spans: List[CodegenSpan] = []
-    i = 0
-    n = len(sources)
-
-    while i < n:
-        src = sources[i]
-
-        if src.is_off_:
-            core_str, start = "off", 0
-        elif src.is_input_:
-            core_str, start = "in", int(src.neuron_)
-        elif src.is_always_on_:
-            core_str, start = "on", 0
+    spans = compress_spike_sources(sources)
+    out: List[CodegenSpan] = []
+    for sp in spans:
+        if sp.kind == "off":
+            core_str = "off"
+        elif sp.kind == "input":
+            core_str = "in"
+        elif sp.kind == "on":
+            core_str = "on"
         else:
-            core_str, start = str(int(src.core_)), int(src.neuron_)
-
-        count = 1
-        prev_neuron = start
-        j = i + 1
-        while j < n:
-            nxt = sources[j]
-            if src.is_off_ and nxt.is_off_:
-                pass
-            elif src.is_always_on_ and nxt.is_always_on_:
-                pass
-            elif (src.is_input_ and nxt.is_input_
-                  and int(nxt.neuron_) == prev_neuron + 1):
-                prev_neuron = int(nxt.neuron_)
-            elif (not src.is_off_ and not src.is_input_ and not src.is_always_on_
-                  and not nxt.is_off_ and not nxt.is_input_ and not nxt.is_always_on_
-                  and int(nxt.core_) == int(src.core_)
-                  and int(nxt.neuron_) == prev_neuron + 1):
-                prev_neuron = int(nxt.neuron_)
-            else:
-                break
-            count += 1
-            j += 1
-
-        spans.append(CodegenSpan(core_str=core_str, start=start, count=count))
-        i += count
-
-    return spans
+            core_str = str(sp.src_core)
+        out.append(CodegenSpan(core_str=core_str, start=sp.src_start, count=sp.length))
+    return out
 
 
 class Connection:

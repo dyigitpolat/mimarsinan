@@ -8,9 +8,16 @@ Also hosts optional Lava Loihi parity and SANA-FE detailed-stats backends.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `nevresim_driver.py` | `NevresimDriver` | Python-C++ bridge: generates code, compiles, runs, parses output. Accepts separate **`weight_type`** and **`threshold_type`** template parameters (TTFS uses float/double thresholds with int weights when quantised). |
-| `simulation_runner.py` | `SimulationRunner` | End-to-end simulation for single-segment and multi-segment (hybrid) mappings. TTFS: rescales ComputeOp inputs via `node_activation_scales`. Sets `threshold_type = float` for TTFS, else matches `weight_type`. Parallel emit+compile capped at `cpu_count // 2`. |
-| `hybrid_execution.py` | `assemble_segment_input_*`, `execute_compute_op_*`, `store_segment_output_*`, `resolve_stage_compute_scales` | Shared segment I/O and compute ops. **`resolve_stage_compute_scales(mapping, op_id, apply_ttfs=…)`**: nevresim passes `apply_ttfs` only in TTFS modes; SANA-FE and HCM hybrid flow use always-on scales (`apply_ttfs=True`). SANA-FE segment assembly uses **float64**. |
+| `nevresim/nevresim_driver.py` | `NevresimDriver` | Python-C++ bridge. Default **`connectivity_mode=runtime`** (`nevresim/connectivity.py`); override via config `nevresim_connectivity_mode`. Optional **`compile_cache_dir`**. |
+| `nevresim/connectivity.py` | `DEFAULT_NEVRESIM_CONNECTIVITY_MODE`, `resolve_nevresim_connectivity_mode` | Deployment default and pipeline config resolution for chip wiring mode. |
+| `nevresim/compile_nevresim.py` | `compile_simulator`, `CompileResult` | Compiles generated C++ with C++20; optional `-ftime-trace`, `-O0` |
+| `nevresim/execute_nevresim.py` | `execute_simulator` | Runs binary; defaults to `cpu_count // 2` when `num_proc=0`. Drains stdout via `communicate()`, validates optional `expected_values`, surfaces stderr on failure. Protocol: one line per sample (`output_size` floats + newline). |
+| `nevresim/segment_execute.py` | `run_binary_raw`, `save_segment_inputs` | SSOT for segment binary execution (input serialization, run, reshape). Used by `NevresimDriver` and hybrid precompiled path. |
+| `nevresim/compile_cache.py` | `NevresimCompileCache` | Segment binary cache keyed by mapping + policy hash |
+| `nevresim/profiling/` | `profile_mapping_compile`, `build_synthetic_mapping`, … | Synthetic compile sweeps and timing records (`scripts/profile_nevresim_compile.py`) |
+| `code_generation/main_cpp_template_runtime.py` | Runtime main template | ``RuntimeChip`` uses **static** storage (not stack) to support large core counts |
+| `simulation_runner/core.py` | `SimulationRunner` | End-to-end simulation for single-segment and multi-segment (hybrid) mappings. Reads `nevresim_connectivity_mode` from pipeline config. Parallel emit+compile capped at `cpu_count // 2`. |
+| `hybrid_execution.py` | `assemble_segment_input_*`, `execute_compute_op_*`, … | Shared segment I/O and compute ops for hybrid backends. |
 | `hybrid_semantics.py` | `NeuralSegmentResult`, `store_neural_segment_output`, `lif_inter_stage_from_spike_counts` | **Inter-stage contract**: LIF/rate → spike count / T; TTFS → activation in [0, 1]. All hybrid backends must use `store_neural_segment_output` after neural stages. |
 | `ttfs_executor.py` | `TtfsAnalyticalExecutor`, `run_ttfs_hybrid_contract` | Canonical TTFS segment semantics and shared hybrid contract runner (numpy float64 compute ops). Used by `record_ttfs_hcm_reference` and SANA-FE `contract_ttfs_*` fields. |
 | `ttfs_segment.py` | `segment_ttfs_arrays_from_mapping`, `run_ttfs_*`, `gather_segment_ttfs_output_from_cores` | Numpy TTFS execution and output gather. |
@@ -23,8 +30,6 @@ Also hosts optional Lava Loihi parity and SANA-FE detailed-stats backends.
 | `spike_recorder.py` | `RunRecord`, `SegmentSpikeRecord`, `CoreSpikeCounts`, `compare_records` | HCM/Loihi spike-count recording and diff utilities (segment inputs, per-core in/out, segment outputs). |
 | `lava_loihi/runner.py` | `LavaLoihiRunner` | Optional Lava Loihi LIF runner. Accepts `NeuralBehaviorConfig`; **`run_segments_from_reference()`** — production HCM-vs-Lava parity. |
 | `subtractive_lif.py` | `SubtractiveLIFReset` | Lava LIF process: configurable reset (`zero_reset`), thresholding, active-window gating. |
-| `compile_nevresim.py` | `compile_simulator` | Compiles generated C++ with C++20 |
-| `execute_nevresim.py` | `execute_simulator` | Runs binary; defaults to `cpu_count // 2` when `num_proc=0` |
 | `_spike_encoding.py` | `encode_segment_input`, `uniform_rate_encode`, … | Shared numpy batch encoder for Lava/SANA-FE segment injection; Uniform uses torch parity path. |
 | `sanafe/` (sub-package) | `SanafeRunner`, `SanafeRunRecord`, … | Optional SANA-FE detailed-stats + parity. See `sanafe/ARCHITECTURE.md`. |
 

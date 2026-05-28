@@ -74,7 +74,15 @@ def save_spike_train_inputs_to_files(
         )
         
 
-def save_weights_and_chip_code(chip, generated_files_path, verbose=True):
+def save_weights_and_chip_code(
+    chip,
+    generated_files_path,
+    verbose=True,
+    *,
+    connectivity_mode: str | None = None,
+    weight_cpp: str = "double",
+    threshold_cpp: str = "double",
+):
     if verbose:
         print("Saving trained weights and chip generation code...")
 
@@ -82,11 +90,24 @@ def save_weights_and_chip_code(chip, generated_files_path, verbose=True):
     chip_file_path = "{}/chip/".format(generated_files_path)
 
     prepare_containing_directory(chip_file_path)
-    f = open("{}generate_chip.hpp".format(chip_file_path), "w")
-    f.write(chip.get_string())
-    f.close()
+    if connectivity_mode is None:
+        from mimarsinan.chip_simulation.nevresim.connectivity import default_nevresim_connectivity_mode
+
+        connectivity_mode = default_nevresim_connectivity_mode()
+    if connectivity_mode == "runtime":
+        from mimarsinan.code_generation.mapping_spans_export import (
+            chip_config_header,
+            write_mapping_spans_file,
+        )
+
+        config_path = "{}generate_chip_config.hpp".format(chip_file_path)
+        with open(config_path, "w") as f:
+            f.write(chip_config_header(chip, weight_cpp=weight_cpp, threshold_cpp=threshold_cpp))
+        write_mapping_spans_file(chip, chip_file_path + "chip_spans.txt")
+    else:
+        with open("{}generate_chip.hpp".format(chip_file_path), "w") as f:
+            f.write(chip.get_string())
 
     prepare_containing_directory(weight_file_path)
-    f = open("{}chip_weights.txt".format(weight_file_path), "w")
-    f.write(chip.get_weights_string())
-    f.close()
+    with open("{}chip_weights.txt".format(weight_file_path), "w") as f:
+        f.write(chip.get_weights_string())

@@ -19,6 +19,9 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         self.firing_mode = pipeline.config["firing_mode"]
         self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
         self.spiking_mode = pipeline.config.get("spiking_mode", "lif")
+        from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
+
+        self.nevresim_connectivity_mode = resolve_nevresim_connectivity_mode(pipeline.config)
 
         wt_q = pipeline.config.get("weight_quantization", True)
         self.weight_type = int if wt_q else float

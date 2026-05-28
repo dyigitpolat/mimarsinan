@@ -25,6 +25,7 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 | `cycle_accurate_lif_forward` | LIF training uses `run_cycle_accurate` when true (default **true** for new configs) |
 | `thresholding_mode` | `"<"` strict vs `"<="` inclusive LIF firing |
 | `enable_nevresim_simulation` | Append Nevresim Simulation step (default **true**) |
+| `nevresim_connectivity_mode` | `"runtime"` (default) or `"compile_time"` — chip wiring in generated C++ |
 | `enable_loihi_simulation` | Append Loihi Simulation step (LIF only) |
 | `enable_sanafe_simulation` | Append SANA-FE Simulation step |
 | `loihi_parity_sample_index` | Deterministic test index for Loihi parity |
