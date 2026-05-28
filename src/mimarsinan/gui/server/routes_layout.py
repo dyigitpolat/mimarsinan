@@ -239,8 +239,8 @@ def register_routes(app: FastAPI) -> None:
     @app.post("/api/hw_config_auto")
     async def api_hw_config_auto(body: dict):
         def _run():
-            from mimarsinan.mapping.verification.suggester.hw_config_suggester import (
-                suggest_hardware_config,
+            from mimarsinan.mapping.verification.suggester.hw_config_suggester import suggest_hardware_config
+            from mimarsinan.mapping.verification.suggester.hw_config_suggester_scheduled import (
                 suggest_hardware_config_scheduled,
             )
             layout_body = dict(body)

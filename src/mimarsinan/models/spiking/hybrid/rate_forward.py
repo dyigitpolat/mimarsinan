@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import execute_compute_op_torch
+from mimarsinan.chip_simulation.recording.records import SegmentSpikeRecord
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 

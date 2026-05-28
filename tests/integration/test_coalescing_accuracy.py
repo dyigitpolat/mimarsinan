@@ -12,7 +12,7 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.mapping.mapping_utils import InputMapper, PerceptronMapper, ModelRepresentation, EinopsRearrangeMapper
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ir_graph_to_soft_core_mapping, IRSource
-from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HardCore, HardCoreMapping
+from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
 from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer

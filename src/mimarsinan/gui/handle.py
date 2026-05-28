@@ -102,8 +102,10 @@ class GUIHandle:
                 self.pipeline, step_name, step=step
             )
         except Exception as e:
-            self.collector.step_failed(step_name, error=str(e))
-            return
+            logger.exception("build_step_snapshot failed for %s (pipeline step succeeded)", step_name)
+            snapshot = {"step_name": step_name, "snapshot_error": str(e)}
+            snapshot_key_kinds = {}
+            resource_descriptors = []
 
         working_dir = getattr(self.pipeline, "working_directory", None)
 

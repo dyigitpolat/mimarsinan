@@ -20,7 +20,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.ir_liveness import NodeLiveness, compute_liveness
+from mimarsinan.mapping.pruning.ir_liveness import NodeLiveness, compute_liveness
 
 
 MODES = ("lif", "ttfs", "ttfs_quantized")

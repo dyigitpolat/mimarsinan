@@ -62,7 +62,7 @@ class HardCoreMappingStep(PipelineStep):
         platform_constraints = self.get_entry("platform_constraints_resolved")
         _vram_probe("after_load_entries")
 
-        hybrid_mapping = load_hybrid_mapping_for_step(self.pipeline)
+        hybrid_mapping = load_hybrid_mapping_for_step(self.pipeline, self)
 
         neural_segs = hybrid_mapping.get_neural_segments()
         compute_ops = hybrid_mapping.get_compute_ops()
