@@ -23,6 +23,7 @@ class SimulationFlatMixin:
             self.weight_type,
             spike_generation_mode=self.spike_generation_mode,
             firing_mode=self.firing_mode,
+            thresholding_mode=self.thresholding_mode,
             spiking_mode=self.spiking_mode,
             threshold_type=self.threshold_type,
         )

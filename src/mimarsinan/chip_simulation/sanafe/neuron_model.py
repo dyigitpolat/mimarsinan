@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
+
 from .presets import SOMA_LIF_NAME, SOMA_TTFS_CONTINUOUS_NAME, SOMA_TTFS_QUANTIZED_NAME
 
 
@@ -62,17 +64,16 @@ def lif_model_attributes(
     preserving the pre-window default for tests built before the gate
     existed.
     """
-    reset_mode = "hard" if firing_mode == "Novena" else "soft"
+    reset_mode = FiringStrategyFactory.from_config(
+        {
+            "firing_mode": firing_mode,
+            "thresholding_mode": "<=",
+            "spiking_mode": "lif",
+        }
+    ).sanafe_reset_mode()
     attrs: dict = {
         "threshold": float(threshold),
-        "leak_decay": 1.0,
         "reset_mode": reset_mode,
-        "reset": 0.0,
-        # SANA-FE's leaky_integrate_fire enforces "must update every
-        # timestep" — without this flag, a cycle without input throws
-        # at runtime.  We always tick our neurons every cycle (matching
-        # the HCM contract), so this is the safe default.
-        "force_update": True,
     }
     if hardware_bias is not None:
         attrs["bias"] = float(hardware_bias)

@@ -64,6 +64,7 @@ from mimarsinan.pipelining.core.engine.pipeline_helpers import (
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.simulation_factory import (
     assert_spike_parity_or_raise,
+    build_neural_behavior_config,
     preprocess_hybrid_sample,
     record_hcm_reference,
     record_ttfs_hcm_reference,
@@ -102,7 +103,6 @@ class SanafeSimulationStep(PipelineStep):
         parity_check = bool(self.pipeline.config.get("sanafe_parity_check", True))
         arch_preset = self.pipeline.config.get("sanafe_arch_preset", "loihi")
         custom_arch_path = self.pipeline.config.get("sanafe_custom_arch_path") or None
-        thresholding_mode = self.pipeline.config.get("thresholding_mode", "<=")
         log_potential = bool(self.pipeline.config.get("sanafe_log_potential_trace", False))
         log_messages = bool(self.pipeline.config.get("sanafe_log_message_trace", True))
         device = self.pipeline.config["device"]
@@ -139,14 +139,13 @@ class SanafeSimulationStep(PipelineStep):
                     )
 
             # Run SANA-FE on the same sample.
+            behavior = build_neural_behavior_config(self.pipeline)
             runner = SanafeRunner(
                 mapping=hard_core_mapping,
                 simulation_length=T,
+                behavior=behavior,
                 arch_preset=arch_preset,
                 custom_arch_path=custom_arch_path,
-                thresholding_mode=thresholding_mode,
-                spiking_mode=spiking_mode,
-                firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
                 log_potential_trace=log_potential,
                 log_message_trace=log_messages,
             )

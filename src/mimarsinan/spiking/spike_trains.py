@@ -61,6 +61,15 @@ def lif_spike_train(
         lif.set_cycle_accurate(was_ca)
 
 
+def materialized_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
+    """Build a full ``(T, ...)`` train upfront for ``spike_mode='SpikeTrain'``.
+
+    When segment inputs are still expressed as rates, materialization uses the
+    same Uniform spacing as the per-cycle encoder so replay matches HCM.
+    """
+    return uniform_spike_train(rate, T)
+
+
 def rates_to_spike_train(
     rates: torch.Tensor,
     T: int,
@@ -72,6 +81,14 @@ def rates_to_spike_train(
 
     Not used on the encoding-ComputeOp path when cycle-accurate LIF is enabled.
     """
+    if spike_mode == "SpikeTrain":
+        if log_fallback:
+            logger.debug(
+                "rates_to_spike_train SpikeTrain materialization (T=%d, shape=%s)",
+                T, tuple(rates.shape),
+            )
+        return materialized_spike_train(rates.clamp(0.0, 1.0), int(T))
+
     if log_fallback:
         logger.debug(
             "rates_to_spike_train fallback (spike_mode=%r, T=%d, shape=%s)",

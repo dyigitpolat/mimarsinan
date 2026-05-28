@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from conftest import MockPipeline, MockDataProviderFactory, make_tiny_supermodel
+from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.pipelining.pipeline_steps.verification.loihi_simulation_step import (
     LoihiSimulationStep,
 )
@@ -73,13 +74,12 @@ def _prepare_step(monkeypatch, *, diffs=None):
             return torch.zeros((1, 1)), _fake_record(sample_index=sample_index)
 
     class FakeRunner:
-        def __init__(self, pipeline, mapping, simulation_length, *, thresholding_mode="<"):
+        def __init__(self, mapping, simulation_length, behavior):
             calls["runner_inits"].append(
                 {
-                    "pipeline": pipeline,
                     "mapping": mapping,
                     "simulation_length": simulation_length,
-                    "thresholding_mode": thresholding_mode,
+                    "behavior": behavior,
                 }
             )
 
@@ -118,6 +118,7 @@ def _prepare_step(monkeypatch, *, diffs=None):
     )
     pipeline.config["spiking_mode"] = "lif"
     pipeline.config["simulation_steps"] = 4
+    pipeline.config["firing_mode"] = "Novena"
     pipeline.config["thresholding_mode"] = "<"
     pipeline.config["loihi_parity_sample_index"] = 2
     pipeline.reporter = _RecordingReporter()
@@ -138,14 +139,12 @@ def test_loihi_simulation_step_runs_one_sample_spike_parity(monkeypatch):
 
     assert calls["runner_run_called"] is False
     assert calls["segments_from_reference"] == 1
-    assert calls["runner_inits"] == [
-        {
-            "pipeline": None,
-            "mapping": pipeline.cache["Hard Core Mapping.hard_core_mapping"],
-            "simulation_length": 4,
-            "thresholding_mode": "<",
-        }
-    ]
+    init = calls["runner_inits"][0]
+    assert init["simulation_length"] == 4
+    assert init["mapping"] is pipeline.cache["Hard Core Mapping.hard_core_mapping"]
+    assert init["behavior"].firing_mode == "Novena"
+    assert init["behavior"].thresholding_mode == "<"
+    assert init["behavior"].spiking_mode == "lif"
     assert len(calls["hcm_samples"]) == 1
     assert calls["hcm_samples"][0].shape[0] == 1
     assert step.validate() == 0.625

@@ -17,6 +17,7 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         self._preprocessor = preprocessor if preprocessor is not None else nn.Identity()
         self.spike_generation_mode = pipeline.config["spike_generation_mode"]
         self.firing_mode = pipeline.config["firing_mode"]
+        self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
         self.spiking_mode = pipeline.config.get("spiking_mode", "lif")
 
         wt_q = pipeline.config.get("weight_quantization", True)

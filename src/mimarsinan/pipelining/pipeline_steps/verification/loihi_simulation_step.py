@@ -16,6 +16,7 @@ from mimarsinan.pipelining.core.engine.pipeline_helpers import require_spiking_m
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.simulation_factory import (
     assert_spike_parity_or_raise,
+    build_neural_behavior_config,
     record_hcm_reference,
 )
 
@@ -59,11 +60,11 @@ class LoihiSimulationStep(PipelineStep):
             device=device,
         )
 
+        behavior = build_neural_behavior_config(self.pipeline)
         runner = LavaLoihiRunner(
-            pipeline=None,
             mapping=hard_core_mapping,
             simulation_length=simulation_length,
-            thresholding_mode=self.pipeline.config.get("thresholding_mode", "<="),
+            behavior=behavior,
         )
         actual = runner.run_segments_from_reference(ref)
         assert_spike_parity_or_raise(ref, actual)

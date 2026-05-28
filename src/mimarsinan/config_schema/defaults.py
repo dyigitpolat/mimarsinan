@@ -64,6 +64,7 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "sanafe_log_potential_trace": False,
     "sanafe_log_message_trace": True,
     "sanafe_parity_check": True,
+    "spike_encoding_seed": None,
     "training_recipe": dict(DEFAULT_TRAINING_RECIPE),
     "tuning_recipe": dict(DEFAULT_TUNING_RECIPE),
 }
@@ -94,6 +95,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "firing_mode",
     "spike_generation_mode",
     "thresholding_mode",
+    "spike_encoding_seed",
     "cycle_accurate_lif_forward",
     "model_config_mode",
     "hw_config_mode",

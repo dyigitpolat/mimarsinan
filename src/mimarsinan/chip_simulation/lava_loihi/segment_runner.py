@@ -6,7 +6,6 @@ from typing import Dict
 
 import numpy as np
 
-from mimarsinan.chip_simulation.recording._spike_encoding import uniform_rate_encode as _uniform_rate_encode
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.chip_simulation.lava_loihi.timing import _LAVA_DTYPE, _SegmentTiming
@@ -28,7 +27,7 @@ class LavaSegmentMixin:
         seg_in_size = seg_input_rates.shape[1]
         timing = _SegmentTiming.from_mapping(seg, T)
 
-        seg_input_spikes = _uniform_rate_encode(seg_input_rates, T)
+        seg_input_spikes = self._behavior.encode_segment_input(seg_input_rates, T)
         seg_input_logical = np.zeros(
             (seg_in_size, N, timing.sample_stride), dtype=_LAVA_DTYPE,
         )

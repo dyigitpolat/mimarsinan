@@ -109,18 +109,41 @@ def _build_hybrid_mapping(ir_graph, platform):
     )
 
 
-def _build_hcm(hybrid_mapping, sim_length: int):
+def _build_hcm(hybrid_mapping, sim_length: int, *, firing_mode="Default"):
     from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
     return SpikingHybridCoreFlow(
         input_shape=(1, 28, 28),
         hybrid_mapping=hybrid_mapping,
         simulation_length=sim_length,
         preprocessor=nn.Identity(),
-        firing_mode="Default",
+        firing_mode=firing_mode,
         spike_mode="Uniform",
         thresholding_mode="<",
         spiking_mode="lif",
     ).eval()
+
+
+def _default_lava_behavior(**overrides):
+    from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+
+    base = dict(
+        spiking_mode="lif",
+        firing_mode="Default",
+        thresholding_mode="<",
+        spike_generation_mode="Uniform",
+    )
+    base.update(overrides)
+    return NeuralBehaviorConfig(**base)
+
+
+def _make_lava_runner(hybrid, T, **behavior_overrides):
+    from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
+
+    return LavaLoihiRunner(
+        mapping=hybrid,
+        simulation_length=T,
+        behavior=_default_lava_behavior(**behavior_overrides),
+    )
 
 
 def _make_hard_core(
@@ -217,7 +240,7 @@ def test_loihi_delayed_core_input_window_matches_hcm():
     assert delayed_core.core_latency == 1
     assert delayed_core.input_spike_count[0] == 0
 
-    runner = LavaLoihiRunner(pipeline=None, mapping=hybrid, simulation_length=T)
+    runner = _make_lava_runner(hybrid, T)
     rec_loihi = runner.run_segments_from_reference(rec_hcm)
 
     assert not compare_records(rec_hcm, rec_loihi)
@@ -246,7 +269,7 @@ def test_loihi_delayed_hardware_bias_matches_hcm_active_window():
     assert delayed_core.core_latency == 1
     assert delayed_core.output_spike_count[0] == 1
 
-    runner = LavaLoihiRunner(pipeline=None, mapping=hybrid, simulation_length=T)
+    runner = _make_lava_runner(hybrid, T)
     rec_loihi = runner.run_segments_from_reference(rec_hcm)
 
     assert not compare_records(rec_hcm, rec_loihi)
@@ -296,7 +319,7 @@ def test_loihi_duplicate_source_axons_accumulate_weights():
     with torch.no_grad():
         _, rec_hcm = hcm.forward_with_recording(torch.tensor([[1.0]], dtype=torch.float32))
 
-    runner = LavaLoihiRunner(pipeline=None, mapping=hybrid, simulation_length=T)
+    runner = _make_lava_runner(hybrid, T)
     rec_loihi = runner.run_segments_from_reference(rec_hcm)
 
     assert not compare_records(rec_hcm, rec_loihi)
@@ -382,9 +405,7 @@ def test_loihi_hcm_spike_parity_single_sample():
         f"{len(rec_hcm.compute_outputs)} compute outputs"
     )
 
-    runner = LavaLoihiRunner(
-        pipeline=None, mapping=hybrid, simulation_length=sim_length,
-    )
+    runner = _make_lava_runner(hybrid, sim_length)
     rec_loihi = runner.run_segments_from_reference(rec_hcm)
 
     diffs = compare_records(rec_hcm, rec_loihi)

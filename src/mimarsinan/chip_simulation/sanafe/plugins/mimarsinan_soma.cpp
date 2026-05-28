@@ -48,7 +48,7 @@ public:
         // cascades, but each core in HCM only integrates for exactly ``T``
         // cycles inside ``[core.latency, T + core.latency)``.
         register_attributes({"threshold", "bias", "thresholding_mode",
-                "active_start", "active_length"});
+                "active_start", "active_length", "reset_mode"});
     }
 
     sanafe::PipelineResult update(std::size_t neuron_address,
@@ -91,8 +91,14 @@ public:
         sanafe::NeuronStatus status = sanafe::idle;
         if (fired)
         {
-            // Subtractive reset.
-            potential_[neuron_address] -= vth;
+            if (zero_reset_[neuron_address])
+            {
+                potential_[neuron_address] = 0.0;
+            }
+            else
+            {
+                potential_[neuron_address] -= vth;
+            }
             status = sanafe::fired;
         }
         else
@@ -122,6 +128,7 @@ public:
         bias_.clear();
         active_start_.clear();
         active_length_.clear();
+        zero_reset_.clear();
     }
 
     // Hardware-level attributes are set once at arch-construction time.
@@ -160,6 +167,11 @@ public:
             active_length_[neuron_address] =
                     static_cast<long int>(static_cast<int>(param));
         }
+        else if (attribute_name == "reset_mode")
+        {
+            const std::string mode = static_cast<std::string>(param);
+            zero_reset_[neuron_address] = (mode == "hard");
+        }
     }
 
     // No ``set_attribute_edge`` override — ``SomaUnit`` marks it ``final``
@@ -176,6 +188,7 @@ private:
     // never touch these attributes.
     std::vector<long int> active_start_;
     std::vector<long int> active_length_;
+    std::vector<bool> zero_reset_;
     // Strict ``<`` by default; flips to inclusive ``<=`` via hw attribute.
     bool inclusive_threshold_{false};
 
@@ -189,6 +202,7 @@ private:
             bias_.resize(new_size, 0.0);
             active_start_.resize(new_size, 0L);
             active_length_.resize(new_size, 0L);
+            zero_reset_.resize(new_size, false);
         }
     }
 };

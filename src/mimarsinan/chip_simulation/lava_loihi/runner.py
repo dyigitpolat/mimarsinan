@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_numpy,
     execute_compute_op_numpy,
@@ -18,7 +19,6 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
 from mimarsinan.chip_simulation.lava_loihi.core_lava import LavaCoreMixin, _subtractive_lif_cls
 from mimarsinan.chip_simulation.lava_loihi.segment_runner import LavaSegmentMixin
 from mimarsinan.chip_simulation.lava_loihi.timing import _RunProfile, _StageTrace
-from mimarsinan.chip_simulation.recording._spike_encoding import uniform_rate_encode as _uniform_rate_encode
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord, SegmentSpikeRecord
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
@@ -29,37 +29,20 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
 
     def __init__(
         self,
-        pipeline,
         mapping: HybridHardCoreMapping,
         simulation_length: int,
+        behavior: NeuralBehaviorConfig,
+        pipeline=None,
         preprocessor: nn.Module | None = None,
-        *,
-        thresholding_mode: str = "<=",
     ):
         self.pipeline = pipeline
         self.mapping = mapping
         self.T = int(simulation_length)
+        self._behavior = behavior
+        behavior.require_backend("lava")
+        self._firing_strategy = behavior.firing_strategy()
+        self.thresholding_mode = behavior.thresholding_mode
         self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
-        if pipeline is not None:
-            thresholding_mode = pipeline.config.get("thresholding_mode", thresholding_mode)
-        if thresholding_mode not in ("<", "<="):
-            raise ValueError(
-                f"thresholding_mode must be '<' or '<='; got {thresholding_mode!r}"
-            )
-        self.thresholding_mode = str(thresholding_mode)
-        firing_mode = "Default"
-        if pipeline is not None:
-            firing_mode = str(pipeline.config.get("firing_mode", "Default"))
-        from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
-
-        self._firing_strategy = FiringStrategyFactory.from_config(
-            {
-                "firing_mode": firing_mode,
-                "thresholding_mode": self.thresholding_mode,
-                "spiking_mode": "lif",
-            }
-        )
-        self._firing_strategy.require_backend("lava")
 
         if pipeline is None:
             self.device = None
@@ -68,12 +51,6 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         else:
             self.device = pipeline.config["device"]
             self.max_samples = int(pipeline.config.get("max_loihi_samples", 1))
-            spiking = pipeline.config.get("spiking_mode", "lif")
-            if spiking != "lif":
-                raise ValueError(
-                    f"LavaLoihiRunner only supports spiking_mode='lif'; got {spiking!r}. "
-                    "TTFS modes do not map onto Loihi LIF dynamics."
-                )
             self._data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
 
         _subtractive_lif_cls()
@@ -111,6 +88,8 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         return x.detach().cpu().numpy().reshape(x.shape[0], -1)
 
     def run(self) -> float:
+        if self.pipeline is None:
+            raise RuntimeError("LavaLoihiRunner.run() requires a pipeline for sample loading")
         t_total = time.time()
         x_np, y_np = self._load_test_samples()
         N = int(x_np.shape[0])
@@ -205,15 +184,14 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
                 assert seg is not None
                 seg_input_rates = ref_seg.seg_input_rates
 
+                encoded = self._behavior.encode_segment_input(seg_input_rates, self.T)
                 actual_seg = SegmentSpikeRecord(
                     stage_index=stage_index,
                     stage_name=stage.name,
                     schedule_segment_index=stage.schedule_segment_index,
                     schedule_pass_index=stage.schedule_pass_index,
                     seg_input_rates=seg_input_rates,
-                    seg_input_spike_count=_uniform_rate_encode(seg_input_rates, self.T)[0]
-                        .sum(axis=1)
-                        .astype(np.int64),
+                    seg_input_spike_count=encoded[0].sum(axis=1).astype(np.int64),
                     seg_output_spike_count=np.zeros(0, dtype=np.int64),
                 )
 
