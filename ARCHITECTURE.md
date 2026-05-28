@@ -1584,10 +1584,13 @@ Every `.py` file under `src/mimarsinan/` must stay at or below **300 lines of co
 ```bash
 python scripts/check_module_budget.py --strict
 python scripts/import_path_inventory.py --check-legacy-path
+python scripts/import_path_inventory.py --check-phase3-paths
+python scripts/import_path_inventory.py --check-resolved
+python scripts/check_import_symbols.py
 pytest tests/unit/architecture/ -q
 ```
 
-`tests/unit/architecture/test_module_budget.py` runs the budget script with `--strict` in CI. `tests/unit/architecture/test_package_flatness.py` asserts the per-directory sibling cap. Regenerate [`docs/source_tree_annotated.txt`](docs/source_tree_annotated.txt) after structural changes via `python scripts/annotate_source_tree.py > docs/source_tree_annotated.txt`.
+`tests/unit/architecture/test_module_budget.py` runs the budget script with `--strict` in CI. `tests/unit/architecture/test_package_flatness.py` asserts the per-directory sibling cap. `tests/unit/architecture/test_entrypoint_imports.py` guards GUI public exports (`to_json_safe`, etc.), headless `run.py` imports, and the import audit scripts above. Regenerate [`docs/source_tree_annotated.txt`](docs/source_tree_annotated.txt) after structural changes via `python scripts/annotate_source_tree.py > docs/source_tree_annotated.txt`.
 
 ### Naming Conventions
 - **Pipeline steps**: `{Action}Step` (e.g., `PretrainingStep`, `WeightQuantizationStep`)

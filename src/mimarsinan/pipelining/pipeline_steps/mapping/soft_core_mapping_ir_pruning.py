@@ -10,7 +10,8 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     if not step.pipeline.config.get("pruning", False):
         return ir_graph
 
-    from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph, get_initial_pruning_masks_from_model
+    from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
+    from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
 
     try:
         perceptrons_pre = model.get_perceptrons()

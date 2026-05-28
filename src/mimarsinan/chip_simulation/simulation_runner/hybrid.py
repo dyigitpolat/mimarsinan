@@ -19,8 +19,10 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     gather_final_output_numpy,
     store_segment_output_numpy,
 )
+from mimarsinan.chip_simulation.nevresim.execute_nevresim import execute_simulator
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.simulation_runner.emit import _PreparedSegment, _emit_and_compile_segment
+from mimarsinan.common.file_utils import save_inputs_to_files
 
 
 class SimulationHybridMixin:

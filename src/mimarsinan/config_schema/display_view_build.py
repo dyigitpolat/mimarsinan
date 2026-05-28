@@ -47,7 +47,7 @@ def build_model_config_fields(model_type: Optional[str], model_config: Any) -> L
     schema_by_key: Dict[str, Dict[str, Any]] = {}
     if model_type:
         try:
-            from mimarsinan.pipelining.model_registry import get_model_config_schema
+            from mimarsinan.pipelining.core.registry.model_registry import get_model_config_schema
             for entry in get_model_config_schema(model_type):
                 schema_by_key[entry["key"]] = entry
         except Exception:

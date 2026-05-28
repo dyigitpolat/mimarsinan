@@ -57,7 +57,10 @@ from mimarsinan.gui.snapshot.mapping_snapshot import (
 )
 from mimarsinan.gui.snapshot.search_snapshot import snapshot_search_result
 from mimarsinan.gui.snapshot.adaptation_snapshot import snapshot_adaptation_manager
-from mimarsinan.gui.snapshot.sanafe_snapshot import snapshot_sanafe_simulation
+from mimarsinan.gui.snapshot.sanafe_snapshot import (
+    _find_ir_graph_promiser,
+    snapshot_sanafe_simulation,
+)
 
 
 def build_step_snapshot(

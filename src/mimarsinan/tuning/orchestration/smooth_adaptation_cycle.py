@@ -5,6 +5,10 @@ from __future__ import annotations
 import time
 import warnings
 
+from mimarsinan.tuning.learning_rate_explorer import (
+    clone_state_for_trainer,
+    restore_state_for_trainer,
+)
 from mimarsinan.tuning.orchestration.tuner_base import (
     CATASTROPHIC_DROP_FACTOR,
     TunerBase,

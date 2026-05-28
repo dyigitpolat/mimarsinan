@@ -72,7 +72,7 @@ def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
     
     # Extract output buffer spans
     try:
-        from mimarsinan.mapping.spike_source_spans import compress_spike_sources
+        from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
         if hasattr(hcm, "output_sources") and hcm.output_sources is not None:
             out_srcs = hcm.output_sources.flatten().tolist()
             if out_srcs:

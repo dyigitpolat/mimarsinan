@@ -21,7 +21,9 @@ from mimarsinan.gui.runtime.run_cache_seed import (
 
 logger = logging.getLogger("mimarsinan.gui")
 
-_RUN_PY = str(Path(__file__).resolve().parents[3] / "run.py")
+# .../src/mimarsinan/gui/runtime/process_spawn.py -> repo root (mimarsinan/)
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_RUN_PY = str(_REPO_ROOT / "run.py")
 
 
 def start_console_reader(proc: subprocess.Popen, working_dir: str) -> None:
@@ -119,6 +121,7 @@ def spawn_run(
     python = sys.executable
     proc = subprocess.Popen(
         [python, "-u", _RUN_PY, "--headless", config_path],
+        cwd=str(_REPO_ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,

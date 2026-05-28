@@ -29,7 +29,7 @@ from collections import Counter
 import numpy as np
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.ir_liveness import (
+from mimarsinan.mapping.pruning.ir_liveness import (
     NodeLiveness,
     compute_liveness,
 )
