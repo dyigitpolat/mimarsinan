@@ -1587,10 +1587,11 @@ python scripts/import_path_inventory.py --check-legacy-path
 python scripts/import_path_inventory.py --check-phase3-paths
 python scripts/import_path_inventory.py --check-resolved
 python scripts/check_import_symbols.py
+python scripts/check_undefined_names.py
 pytest tests/unit/architecture/ -q
 ```
 
-`tests/unit/architecture/test_module_budget.py` runs the budget script with `--strict` in CI. `tests/unit/architecture/test_package_flatness.py` asserts the per-directory sibling cap. `tests/unit/architecture/test_entrypoint_imports.py` guards GUI public exports (`to_json_safe`, etc.), headless `run.py` imports, and the import audit scripts above. Regenerate [`docs/source_tree_annotated.txt`](docs/source_tree_annotated.txt) after structural changes via `python scripts/annotate_source_tree.py > docs/source_tree_annotated.txt`.
+`tests/unit/architecture/test_module_budget.py` runs the budget script with `--strict` in CI. `tests/unit/architecture/test_package_flatness.py` asserts the per-directory sibling cap. `tests/unit/architecture/test_entrypoint_imports.py` guards GUI public exports (`to_json_safe`, etc.), headless `run.py` imports, and the import audit scripts above. `check_undefined_names.py` catches symbols used in code but never imported (the class of `NameError` fixed after Phase 3 splits). Targeted GUI/model tests under `tests/unit/gui/test_build_step_snapshot.py`, `test_handle_snapshot_contract.py`, and `tests/unit/models/test_hybrid_rate_forward_symbols.py` pin the Hard Core Mapping snapshot branch and hybrid rate recording imports. Regenerate [`docs/source_tree_annotated.txt`](docs/source_tree_annotated.txt) after structural changes via `python scripts/annotate_source_tree.py > docs/source_tree_annotated.txt`.
 
 ### Naming Conventions
 - **Pipeline steps**: `{Action}Step` (e.g., `PretrainingStep`, `WeightQuantizationStep`)

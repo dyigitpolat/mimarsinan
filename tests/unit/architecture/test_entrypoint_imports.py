@@ -80,3 +80,33 @@ def test_import_symbols_script():
         timeout=120,
     )
     assert proc.returncode == 0, (proc.stdout or "") + (proc.stderr or "")
+
+
+def test_undefined_names_script():
+    """Catch uses of symbols that were never imported (post-refactor NameError class)."""
+    script = ROOT / "scripts" / "check_undefined_names.py"
+    proc = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, (proc.stdout or "") + (proc.stderr or "")
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    [
+        "mimarsinan.gui.snapshot.builders",
+        "mimarsinan.models.spiking.hybrid.rate_forward",
+        "mimarsinan.gui.handle",
+        "mimarsinan.pipelining.core.hybrid_mapping_consumer",
+        "mimarsinan.chip_simulation.simulation_runner.hybrid",
+        "mimarsinan.tuning.orchestration.smooth_adaptation_cycle",
+    ],
+)
+def test_bugfix_hotpath_modules_import(module_path: str):
+    import importlib
+
+    importlib.import_module(module_path)
