@@ -31,5 +31,5 @@ from mimarsinan.mapping.pruning.graph import (
     GlobalPruningResult,
     compute_global_pruned_sets,
 )
-from mimarsinan.mapping.pruning.ir_pruning_analysis import compute_graph_io_exemption
+from mimarsinan.mapping.pruning.boundary_policy import compute_model_io_boundary_policy
 

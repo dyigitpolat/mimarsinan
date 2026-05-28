@@ -40,13 +40,12 @@ def compute_masks_from_importance(
     pruning_fraction,
     base_row_imp,
     base_col_imp,
-    exempt_input_layers=None,
-    exempt_output_layers=None,
+    exempt_input_layers,
+    exempt_output_layers,
 ):
     """Compute per-layer pruning masks from importance scores with cross-layer propagation."""
     import math as _math
-    exempt_input_layers = exempt_input_layers if exempt_input_layers is not None else set()
-    exempt_output_layers = exempt_output_layers if exempt_output_layers is not None else set()
+
     n_layers = len(perceptrons)
     row_masks = []
     col_masks = []
@@ -77,9 +76,14 @@ def compute_masks_from_importance(
     return row_masks, col_masks
 
 
-def compute_all_pruning_masks(perceptrons, pruning_fraction, activation_stats=None):
+def compute_all_pruning_masks(
+    perceptrons,
+    pruning_fraction,
+    exempt_input_layers,
+    exempt_output_layers,
+    activation_stats=None,
+):
     """Compute pruning masks for all perceptrons with cross-layer propagation."""
-    n = len(perceptrons)
     base_row_imp = []
     base_col_imp = []
     for i, p in enumerate(perceptrons):
@@ -102,7 +106,30 @@ def compute_all_pruning_masks(perceptrons, pruning_fraction, activation_stats=No
         pruning_fraction,
         base_row_imp,
         base_col_imp,
-        exempt_input_layers={0},
-        exempt_output_layers={n - 1} if n > 0 else set(),
+        exempt_input_layers=exempt_input_layers,
+        exempt_output_layers=exempt_output_layers,
     )
     return list(zip(row_masks, col_masks))
+
+
+def compute_all_pruning_masks_for_ir(
+    perceptrons,
+    pruning_fraction,
+    ir_graph,
+    activation_stats=None,
+):
+    """Compute masks with model-I/O exemption derived from ``ir_graph``."""
+    from mimarsinan.mapping.pruning.boundary_policy import (
+        compute_perceptron_io_exemption_indices,
+    )
+
+    exempt_in, exempt_out = compute_perceptron_io_exemption_indices(
+        ir_graph, perceptrons
+    )
+    return compute_all_pruning_masks(
+        perceptrons,
+        pruning_fraction,
+        exempt_in,
+        exempt_out,
+        activation_stats=activation_stats,
+    )

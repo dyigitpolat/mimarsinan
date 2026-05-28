@@ -2,12 +2,13 @@ from __future__ import annotations
 from typing import Dict, List, Sequence, Set, Tuple
 import numpy as np
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.pruning.boundary_policy import assert_unified_ir_for_pruning
 from mimarsinan.mapping.pruning.ir_liveness import NodeLiveness, compute_liveness
 from mimarsinan.mapping.pruning.graph.pruning_graph_core import compute_global_pruned_sets
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 from mimarsinan.mapping.pruning.ir_pruning_helpers import (
     _attach_pre_compaction_metadata,
-    _collect_exemptions,
+    _boundary_policy_exemptions,
     _collect_initial_seeds,
     _force_dead_nodes_fully_pruned,
     _log_value_based_summary,
@@ -32,8 +33,9 @@ def prune_ir_graph(
     """Prune and compact ``ir_graph`` in place; return the same instance.
 
     Pruning is bidirectional and recursive across NeuralCore boundaries.
-    ComputeOp nodes act as barriers (their inputs and outputs always count as
-    live). Model-level input data axons (``IRSource.node_id == -2``) and model
+    ComputeOp nodes block functional cross-core propagation but structural
+    deadness (pruned upstream neurons) still flows through ComputeOp wiring.
+    Model-level input data axons (``IRSource.node_id == -2``) and model
     output logits (entries in ``ir_graph.output_sources``) are never pruned.
 
     After propagation, every NeuralCore is classified by
@@ -52,8 +54,9 @@ def prune_ir_graph(
         return ir_graph
 
     graph = ir_graph
+    assert_unified_ir_for_pruning(graph)
 
-    exempt_rows, exempt_cols = _collect_exemptions(graph)
+    exempt_rows, exempt_cols = _boundary_policy_exemptions(graph)
     seed_per_node, seed_per_bank = _collect_initial_seeds(
         graph, initial_pruned_per_node, initial_pruned_per_bank
     )

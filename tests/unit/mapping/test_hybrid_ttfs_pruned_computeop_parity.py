@@ -63,6 +63,10 @@ def _build_pruned_two_segment_graph():
         simulation_steps=SIM_LENGTH,
     )
     IRLatency(graph).calculate()
+    core_a = next(n for n in graph.nodes if isinstance(n, NeuralCore) and n.name == "A")
+    core_b = next(n for n in graph.nodes if isinstance(n, NeuralCore) and n.name == "B")
+    assert core_a.core_matrix.shape[1] <= 2
+    assert core_b.core_matrix.shape[0] <= 3
     return graph
 
 

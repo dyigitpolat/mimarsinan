@@ -16,10 +16,8 @@ from mimarsinan.mapping.ir import (
 )
 from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
-from mimarsinan.mapping.pruning.ir_pruning_analysis import (
-    compute_graph_io_exemption,
-    get_neural_segments,
-)
+from mimarsinan.mapping.pruning.boundary_policy import compute_model_io_boundary_policy
+from mimarsinan.mapping.pruning.ir_segmentation import get_neural_segments
 from mimarsinan.mapping.packing.softcore import compact_soft_core_mapping
 
 
@@ -864,16 +862,14 @@ class TestGraphIOExemption:
         assert len(segments[0]) == 2
         assert segments[0][0].id == 0 and segments[0][1].id == 1
 
-    def test_compute_graph_io_exemption_single_node_all_io_exempt(self):
+    def test_model_io_boundary_policy_single_node_all_io_exempt(self):
         """Single node: model-input rows and output-source cols are exempt."""
         src = _make_source_array([(-2, 0), (-2, 1), (-3, 0)])
         core = NeuralCore(id=0, name="c0", input_sources=src, core_matrix=np.ones((3, 2)), threshold=1.0, latency=0)
         graph = IRGraph(nodes=[core], output_sources=_make_source_array([(0, 0), (0, 1)]))
-        in_buf, out_buf = compute_graph_io_exemption(graph)
-        assert 0 in in_buf
-        assert in_buf[0] == {0, 1}, "Rows 0,1 are segment input (from -2); row 2 is bias (-3) not exempt"
-        assert 0 in out_buf
-        assert out_buf[0] == {0, 1}, "All 2 columns feed output_sources"
+        policy = compute_model_io_boundary_policy(graph)
+        assert policy.exempt_rows_per_node[0] == frozenset({0, 1})
+        assert policy.exempt_cols_per_node[0] == frozenset({0, 1})
 
     def test_graph_io_exemption_prevents_pruning_single_core(self):
         """With aggressive masks (all rows and cols pruned), model I/O exemption keeps input rows and output cols."""
@@ -898,11 +894,11 @@ class TestGraphIOExemption:
         src1 = _make_source_array([(0, 0), (0, 1), (-3, 0)])
         core1 = NeuralCore(id=1, name="c1", input_sources=src1, core_matrix=w1.copy(), threshold=1.0, latency=1)
         graph = IRGraph(nodes=[core0, core1], output_sources=_make_source_array([(1, 0), (1, 1)]))
-        in_buf, out_buf = compute_graph_io_exemption(graph)
-        assert in_buf[0] == {0, 1}, "Rows 0,1 from -2 (model input); row 2 is bias (-3) not exempt"
-        assert out_buf[0] == set(), "Node 0 feeds node 1 (NeuralCore consumer), not output_sources"
-        assert in_buf[1] == set(), "Node 1 rows are from node 0 or bias (-3), not model input"
-        assert out_buf[1] == {0, 1}, "Node 1 feeds output_sources"
+        policy = compute_model_io_boundary_policy(graph)
+        assert policy.exempt_rows_per_node[0] == frozenset({0, 1})
+        assert policy.exempt_cols_per_node[0] == frozenset()
+        assert policy.exempt_rows_per_node[1] == frozenset()
+        assert policy.exempt_cols_per_node[1] == frozenset({0, 1})
         row_mask0 = [True, True, True]
         col_mask0 = [True, True]
         # Do not pass init for output node 1 so model output exemption keeps its cols; only test node 0.
@@ -948,9 +944,9 @@ class TestGraphIOExemption:
         assert len(segments[0]) == 1 and segments[0][0].id == 0
         assert len(segments[1]) == 1 and segments[1][0].id == 2
 
-        in_buf, out_buf = compute_graph_io_exemption(graph)
-        assert out_buf[0] == set(), "Node 0 is not in output_sources; not exempt"
-        assert out_buf[2] == {0, 1}, "Node 2 feeds output_sources; both cols exempt"
+        policy = compute_model_io_boundary_policy(graph)
+        assert policy.exempt_cols_per_node[0] == frozenset()
+        assert policy.exempt_cols_per_node[2] == frozenset({0, 1})
 
         # Prune column 1 of core0 via initial mask; exemption does not protect it -> compaction removes it
         pruned = prune_ir_graph(
@@ -981,9 +977,9 @@ class TestGraphIOExemption:
             nodes=[core0, compute_op, core1],
             output_sources=_make_source_array([(2, 0), (2, 1)]),
         )
-        in_buf, out_buf = compute_graph_io_exemption(graph)
-        assert in_buf[0] == {0, 1}, "Node 0 has model input rows (-2)"
-        assert in_buf[2] == set(), "Node 2 has no model input rows; all rows from ComputeOp or bias"
+        policy = compute_model_io_boundary_policy(graph)
+        assert policy.exempt_rows_per_node[0] == frozenset({0, 1})
+        assert policy.exempt_rows_per_node[2] == frozenset()
 
         # Prune row 0 of core1 via initial mask; exemption does not protect it -> row compaction
         pruned = prune_ir_graph(
@@ -1069,8 +1065,8 @@ class TestCrossCorePruningIntegration:
         # C: row 0 pruned (read pruned B.0)
         assert pruned.nodes[2].core_matrix.shape[0] == 2
 
-    def test_compute_op_blocks_cross_core_compaction(self):
-        """A -> ComputeOp -> B: pruning A.col 0 must NOT cascade into B."""
+    def test_compute_op_relays_structural_deadness_into_downstream_core(self):
+        """A -> ComputeOp -> B: pruning A.col 0 compacts B axon fed from that column."""
         w_a = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
         op = ComputeOp(
             id=1, name="op",
@@ -1096,14 +1092,13 @@ class TestCrossCorePruningIntegration:
             graph,
             initial_pruned_per_node={0: ([False, False], [True, False])},
         )
-        # A col 0 pruned (from -2 model input axons - cols are not exempt because A is not last)
         assert pruned.nodes[0].core_matrix.shape[1] == 1
-        # B not compacted because ComputeOp barrier breaks propagation.
-        assert pruned.nodes[2].core_matrix.shape == (3, 2)
-        flat = pruned.nodes[2].input_sources.flatten()
-        assert flat[0].node_id == 1 and flat[0].index == 0  # from ComputeOp, untouched
-        assert flat[1].node_id == 1 and flat[1].index == 1
-        assert flat[2].is_always_on()
+        pruned_b = next(n for n in pruned.nodes if n.id == 2)
+        assert pruned_b.core_matrix.shape[0] == 2
+        flat = pruned_b.input_sources.flatten()
+        assert len(flat) == 2
+        assert flat[0].node_id == 1
+        assert flat[1].is_always_on()
 
     def test_unconsumed_neuron_pruned_in_first_core(self):
         """A.col j with no consumer (no other core reads it) is pruned."""

@@ -6,6 +6,7 @@ from mimarsinan.transformations.pruning.activation import (
 )
 from mimarsinan.transformations.pruning.masks import (
     compute_all_pruning_masks,
+    compute_all_pruning_masks_for_ir,
     compute_masks_from_importance,
     compute_pruning_masks,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "apply_pruning_masks",
     "compute_pruning_masks",
     "compute_all_pruning_masks",
+    "compute_all_pruning_masks_for_ir",
     "compute_masks_from_importance",
     "collect_activation_stats",
     "compute_pruning_masks_from_activations",

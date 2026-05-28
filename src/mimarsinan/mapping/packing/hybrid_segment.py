@@ -40,22 +40,22 @@ def _flush_neural_segment(
         if any(c not in segment_node_ids for c in consumers):
             output_nodes.append(n)
 
-    output_sources_list: list[IRSource] = []
+    segment_output_refs_list: list[IRSource] = []
     for n in output_nodes:
         for idx in range(n.get_output_count()):
-            output_sources_list.append(IRSource(node_id=n.id, index=idx))
+            segment_output_refs_list.append(IRSource(node_id=n.id, index=idx))
 
-    if output_nodes and not output_sources_list:
+    if output_nodes and not segment_output_refs_list:
         raise ValueError(
             "Segment has output_nodes but 0 output refs (all get_output_count() are 0). "
             "Output layer was over-pruned; at least one output neuron must remain."
         )
 
-    output_sources = np.array(output_sources_list, dtype=object)
+    segment_output_refs = np.array(segment_output_refs_list, dtype=object)
 
     seg_graph, input_map = _remap_external_sources_to_segment_inputs(
         nodes=current_neural,
-        output_sources=output_sources,
+        segment_output_refs=segment_output_refs,
         weight_banks=weight_banks,
     )
     from mimarsinan.mapping.packing.neural_segment_packing import (

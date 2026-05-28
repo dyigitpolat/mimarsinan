@@ -28,6 +28,7 @@ from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_mask
 from mimarsinan.transformations.pruning import (
     compute_pruning_masks,
     compute_all_pruning_masks,
+    compute_all_pruning_masks_for_ir,
 )
 from mimarsinan.mapping.packing.softcore import compact_soft_core_mapping
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
@@ -338,11 +339,11 @@ class TestSingleLayerPruningVerification:
         )
         shapes_B = _get_ir_core_shapes(ir_B)
         assert len(shapes_B) == 1
-        # With segment I/O exemption, the single layer is the output layer so columns (neurons) are not pruned.
-        expected_neurons_B = expected_neurons_A  # all kept (output-buffer)
+        # Single layer is both model input and model output: columns stay exempt.
+        expected_neurons_B = expected_neurons_A
         expected_axons_B = expected_axons_A - n_pruned
         assert shapes_B[0][1] == expected_neurons_B, (
-            f"Expected {expected_neurons_B} neurons (segment output-buffer exempt), got {shapes_B[0][1]}"
+            f"Expected {expected_neurons_B} neurons (model output exempt), got {shapes_B[0][1]}"
         )
         assert shapes_B[0][0] <= expected_axons_A, (
             f"Path B axons should be <= {expected_axons_A}, got {shapes_B[0][0]}"
@@ -392,7 +393,9 @@ class TestTwoLayerPruningVerification:
         model = _build_two_layer_model(device, in_dim, mid_dim, out_dim)
         perceptrons = model.get_perceptrons()
         assert len(perceptrons) == 2
-        masks = compute_all_pruning_masks(perceptrons, pruning_fraction)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, pruning_fraction, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
 
         # Path A: no prune buffers -> full IR
@@ -448,7 +451,9 @@ class TestTwoLayerPruningVerification:
         pruning_fraction = 0.15
         model = _build_two_layer_model(device, in_dim, mid_dim, out_dim)
         perceptrons = model.get_perceptrons()
-        masks = compute_all_pruning_masks(perceptrons, pruning_fraction)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, pruning_fraction, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
         model_B = copy.deepcopy(model)
         _set_prune_buffers(model_B, masks)
@@ -567,7 +572,9 @@ class TestPruningVerificationIntegration:
         pruning_fraction = 0.2
         model = _build_two_layer_model(device, in_dim, mid_dim, out_dim)
         perceptrons = model.get_perceptrons()
-        masks = compute_all_pruning_masks(perceptrons, pruning_fraction)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, pruning_fraction, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
 
         ir_A = _run_ir_mapping(model)
@@ -600,7 +607,9 @@ class TestPruningVerificationIntegration:
         pruning_fraction = 0.2
         model = _build_two_layer_model(device, in_dim, mid_dim, out_dim)
         perceptrons = model.get_perceptrons()
-        masks = compute_all_pruning_masks(perceptrons, pruning_fraction)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, pruning_fraction, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
 
         ir_A = _run_ir_mapping(model)
@@ -702,7 +711,9 @@ class TestMappingEquivalence:
         in_dim, d1, d2, d3, out_dim = 64, 32, 16, 10, 5
         model = _MinimalFourLayerFlow(device, in_dim, d1, d2, d3, out_dim)
         perceptrons = model.get_perceptrons()
-        masks = compute_all_pruning_masks(perceptrons, 0.1)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, 0.1, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
         _set_prune_buffers(model, masks)
 
@@ -729,7 +740,9 @@ class TestMappingEquivalence:
 
         model = _MinimalFourLayerFlow(device, in_dim, d1, d2, d3, out_dim, seed=seed)
         perceptrons = model.get_perceptrons()
-        masks = compute_all_pruning_masks(perceptrons, pruning_fraction)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, pruning_fraction, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
         _set_prune_buffers(model, masks)
 
@@ -785,7 +798,9 @@ class TestMappingEquivalence:
 
         model = _MinimalFourLayerFlow(device, in_dim, d1, d2, d3, out_dim, seed=seed)
         perceptrons = model.get_perceptrons()
-        masks = compute_all_pruning_masks(perceptrons, pruning_fraction)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, pruning_fraction, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
         _set_prune_buffers(model, masks)
 
@@ -833,7 +848,9 @@ class TestMappingEquivalence:
         in_dim, d1, d2, d3, out_dim = 48, 24, 12, 8, 5
         model = _MinimalFourLayerFlow(device, in_dim, d1, d2, d3, out_dim)
         perceptrons = model.get_perceptrons()
-        masks = compute_all_pruning_masks(perceptrons, 0.12)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, 0.12, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
         _set_prune_buffers(model, masks)
 
@@ -922,7 +939,9 @@ class TestMultilayerPruningVerification:
         model = _MinimalThreeLayerFlow(device, in_dim, d1, d2, out_dim)
         perceptrons = model.get_perceptrons()
         assert len(perceptrons) == 3
-        masks = compute_all_pruning_masks(perceptrons, 0.15)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, 0.15, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
 
         ir_A = _run_ir_mapping(model)
@@ -956,7 +975,9 @@ class TestMultilayerPruningVerification:
         in_dim, d1, d2, out_dim = 16, 12, 8, 4
         model = _MinimalThreeLayerFlow(device, in_dim, d1, d2, out_dim)
         perceptrons = model.get_perceptrons()
-        masks = compute_all_pruning_masks(perceptrons, 0.1)
+        masks = compute_all_pruning_masks_for_ir(
+            perceptrons, 0.1, _run_ir_mapping(model)
+        )
         _zero_weights_by_masks(model, masks)
         model_B = copy.deepcopy(model)
         _set_prune_buffers(model_B, masks)

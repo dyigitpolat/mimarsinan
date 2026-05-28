@@ -2,7 +2,11 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import AbstractSet, Dict, Mapping, Set, Tuple
 import numpy as np
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.pruning.boundary_policy import (
+    build_computeop_producer_map,
+    build_computeop_referenced_neurons,
+)
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 from mimarsinan.mapping.pruning.graph.pruning_propagation import compute_propagated_pruned_rows_cols
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
@@ -49,7 +53,9 @@ def compute_global_pruned_sets(
     if not exempt_cols:
         exempt_cols = {n.id: frozenset() for n in neural_cores}
 
-    consumer_axons, neurons_with_persistent_consumer = _build_consumer_index(graph)
+    consumer_axons, model_output_neurons = _build_consumer_index(graph)
+    computeop_referenced = build_computeop_referenced_neurons(graph)
+    computeop_producer_map = build_computeop_producer_map(graph)
     bank_consumers = _build_bank_consumer_map(neural_cores)
 
     pruned_rows: Dict[int, Set[int]] = {n.id: set() for n in neural_cores}
@@ -102,7 +108,9 @@ def compute_global_pruned_sets(
                 pruned_rows=pruned_rows,
                 pruned_cols=pruned_cols,
                 consumer_axons=consumer_axons,
-                neurons_with_persistent_consumer=neurons_with_persistent_consumer,
+                model_output_neurons=model_output_neurons,
+                computeop_referenced_neurons=computeop_referenced,
+                computeop_producer_map=computeop_producer_map,
                 exempt_rows=exempt_rows,
                 exempt_cols=exempt_cols,
             ):
@@ -115,7 +123,7 @@ def compute_global_pruned_sets(
                 zero_threshold=zero_threshold,
                 bank_nodes=bank_node_lookup[bank_id],
                 bank_consumers=bank_consumers.get(bank_id, set()),
-                neurons_with_persistent_consumer=neurons_with_persistent_consumer,
+                model_output_neurons=model_output_neurons,
                 pruned_rows=pruned_rows,
                 pruned_cols=pruned_cols,
                 bank_pruned_rows=bank_pruned_rows,
@@ -139,35 +147,28 @@ def compute_global_pruned_sets(
 def _build_consumer_index(
     graph: IRGraph,
 ) -> Tuple[Dict[Tuple[int, int], list[Tuple[int, int]]], Set[Tuple[int, int]]]:
-    """Index NeuralCore consumers and persistent-consumer markers per neuron.
+    """Index NeuralCore axon consumers and model-output neuron markers.
 
-    A neuron ``(producer_id, j)`` has a persistent consumer when it is
-    referenced by ``output_sources`` or by any ComputeOp's ``input_sources``;
-    persistence keeps the neuron alive against cross-core no-consumer pruning.
+    Model-output neurons (``output_sources``) are protected from orphan pruning.
+    ComputeOp wiring is handled separately via ``computeop_referenced_neurons``.
     """
     consumer_axons: Dict[Tuple[int, int], list[Tuple[int, int]]] = defaultdict(list)
-    persistent: Set[Tuple[int, int]] = set()
+    model_output_neurons: Set[Tuple[int, int]] = set()
 
     if graph.output_sources.size:
         for src in graph.output_sources.flatten():
             if isinstance(src, IRSource) and src.node_id >= 0:
-                persistent.add((src.node_id, src.index))
+                model_output_neurons.add((src.node_id, src.index))
 
     for node in graph.nodes:
-        if not hasattr(node, "input_sources"):
+        if not isinstance(node, NeuralCore) or not hasattr(node, "input_sources"):
             continue
         for axon_idx, src in enumerate(node.input_sources.flatten()):
             if not isinstance(src, IRSource) or src.node_id < 0:
                 continue
-            key = (src.node_id, src.index)
-            if isinstance(node, NeuralCore):
-                consumer_axons[key].append((node.id, axon_idx))
-            elif isinstance(node, ComputeOp):
-                persistent.add(key)
-            else:
-                persistent.add(key)
+            consumer_axons[(src.node_id, src.index)].append((node.id, axon_idx))
 
-    return consumer_axons, persistent
+    return consumer_axons, model_output_neurons
 
 
 def _build_bank_consumer_map(

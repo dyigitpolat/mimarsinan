@@ -228,7 +228,7 @@ class TestComputeAllPruningMasks:
             # Layer 1: all columns have similar weight
             p1.layer.weight.data = torch.ones(4, 4)
 
-        masks = compute_all_pruning_masks([p0, p1], pruning_fraction=0.5)
+        masks = compute_all_pruning_masks([p0, p1], 0.5, {0}, {1})
 
         # Layer 0 row mask: rows 0,1 pruned
         assert not masks[0][0][0].item()
@@ -247,35 +247,35 @@ class TestComputeAllPruningMasks:
             compute_pruning_masks(p0, 0.5),
             compute_pruning_masks(p1, 0.5),
         ]
-        masks_cross = compute_all_pruning_masks([p0, p1], pruning_fraction=0.5)
+        masks_cross = compute_all_pruning_masks([p0, p1], 0.5, {0}, {1})
 
         # With dimension mismatch, cross-layer masks should equal independent masks
         assert torch.equal(masks_independent[1][1], masks_cross[1][1])
 
     def test_guarantees_minimum_pruning(self):
         """Each layer must prune at least N% of its own rows and columns, except
-        first layer columns and last layer rows (input/output buffer exemption)."""
+        model input columns and model output rows (I/O exemption)."""
         p0 = self._make_perceptron(8, 16)
         p1 = self._make_perceptron(8, 8)
 
-        masks = compute_all_pruning_masks([p0, p1], pruning_fraction=0.25)
+        masks = compute_all_pruning_masks([p0, p1], 0.25, {0}, {1})
 
         # Layer 0: at least 25% rows pruned = 2 rows
         assert (~masks[0][0]).sum().item() >= 2
-        # First layer columns are exempt (input-buffer): none pruned
-        assert masks[0][1].all(), "First layer column mask must be all True"
-        # Last layer rows are exempt (output-buffer): none pruned
-        assert masks[1][0].all(), "Last layer row mask must be all True"
+        # Model-input layer columns are exempt: none pruned
+        assert masks[0][1].all(), "First layer column mask must be all True (model input exempt)"
+        # Model-output layer rows are exempt: none pruned
+        assert masks[1][0].all(), "Last layer row mask must be all True (model output exempt)"
         # Layer 1: cols pruned >= 25% (may be more due to propagation)
         assert (~masks[1][1]).sum().item() >= 2
 
-    def test_first_layer_columns_and_last_layer_rows_exempt_at_fraction_one(self):
-        """At pruning_fraction=1.0, first layer column mask and last layer row mask
-        must be all True (input-buffer and output-buffer dimensions are never pruned)."""
+    def test_model_io_layers_exempt_at_fraction_one(self):
+        """At pruning_fraction=1.0, model input column mask and model output row mask
+        must be all True (model I/O dimensions are never pruned)."""
         p0 = self._make_perceptron(4, 8)
         p1 = self._make_perceptron(4, 4)
 
-        masks = compute_all_pruning_masks([p0, p1], pruning_fraction=1.0)
+        masks = compute_all_pruning_masks([p0, p1], 1.0, {0}, {1})
 
-        assert masks[0][1].all(), "First layer column mask must be all True (input-buffer exempt)"
-        assert masks[-1][0].all(), "Last layer row mask must be all True (output-buffer exempt)"
+        assert masks[0][1].all(), "First layer column mask must be all True (model input exempt)"
+        assert masks[-1][0].all(), "Last layer row mask must be all True (model output exempt)"
