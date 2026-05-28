@@ -16,6 +16,10 @@ from mimarsinan.transformations.perceptron.perceptron_transformer import Percept
 
 from mimarsinan.mapping.mappers.base import Mapper
 
+
+class ShapeMismatchError(RuntimeError):
+    """Multi-input ComputeOpMapper received broadcast-incompatible inputs."""
+
 class ComputeOpMapper(Mapper):
     """Unified host-side ComputeOp mapper for any ``nn.Module``.
 
@@ -75,10 +79,26 @@ class ComputeOpMapper(Mapper):
             inputs: tuple = (x,)
         else:
             inputs = tuple(x) if isinstance(x, (tuple, list)) else (x,)
+            self._check_broadcastable(inputs)
         out = self.module(*inputs, **self.module_kwargs)
         if self.output_index is not None:
             out = out[self.output_index]
         return out
+
+    def _check_broadcastable(self, inputs: tuple) -> None:
+        tensor_shapes = [
+            tuple(t.shape) for t in inputs if isinstance(t, torch.Tensor)
+        ]
+        if len(tensor_shapes) < 2:
+            return
+        try:
+            torch.broadcast_shapes(*tensor_shapes)
+        except RuntimeError as exc:
+            raise ShapeMismatchError(
+                f"ComputeOpMapper(name={self.name!r}): inputs do not broadcast. "
+                f"observed_shapes={tensor_shapes}, "
+                f"recorded_input_shapes={self.input_shapes}"
+            ) from exc
 
     def _map_to_ir(self, ir_mapping):
         source_arrays = [src.map_to_ir(ir_mapping) for src in self._sources_list]
@@ -223,14 +243,17 @@ class ComputeOpMapper(Mapper):
     @staticmethod
     def _normalize_input_shapes(
         input_shapes,
-    ) -> tuple[tuple[int, ...], ...] | None:
+    ) -> tuple[tuple[int, ...] | None, ...] | None:
         if input_shapes is None:
             return None
         if len(input_shapes) == 0:
             return None
         first = input_shapes[0]
-        if isinstance(first, (tuple, list)):
-            return tuple(tuple(int(d) for d in s) for s in input_shapes)
+        if first is None or isinstance(first, (tuple, list)):
+            return tuple(
+                tuple(int(d) for d in s) if s is not None else None
+                for s in input_shapes
+            )
         return (tuple(int(d) for d in input_shapes),)
 
     @staticmethod

@@ -38,6 +38,10 @@ from mimarsinan.torch_mapping.converter_handlers import (
     StructuralConvertMixin,
 )
 from mimarsinan.torch_mapping.mapper_graph_fx import MapperGraphFxMixin
+from mimarsinan.torch_mapping.fx_shape_utils import (
+    node_output_shape,
+    strip_batch,
+)
 
 
 class MapperGraphConverter(
@@ -135,10 +139,8 @@ class MapperGraphConverter(
         elif isinstance(mod, nn.Flatten):
             self._convert_flatten_module(node, source)
         else:
-            in_shape = self._get_input_shape(node)
-            input_shape = tuple(in_shape[1:]) if in_shape and len(in_shape) >= 2 else None
-            out_shape = self._get_output_shape(node)
-            output_shape = tuple(out_shape[1:]) if out_shape and len(out_shape) >= 2 else None
+            input_shape = strip_batch(self._get_input_shape(node))
+            output_shape = strip_batch(node_output_shape(node))
             mapper = ComputeOpMapper(
                 source, mod, input_shapes=input_shape,
                 output_shape=output_shape, name=node.name,
@@ -251,14 +253,8 @@ class MapperGraphConverter(
         if not source_mappers:
             self._node_to_mapper[node] = None
             return
-        input_shapes = []
-        for arg in source_nodes:
-            shape = self._get_output_shape(arg)
-            input_shapes.append(tuple(shape[1:]) if shape is not None and len(shape) >= 2 else None)
-        query_shape = self._get_output_shape(source_nodes[0])
-        output_shape = (
-            tuple(query_shape[1:]) if query_shape is not None and len(query_shape) >= 2 else None
-        )
+        input_shapes = [strip_batch(node_output_shape(arg)) for arg in source_nodes]
+        output_shape = strip_batch(node_output_shape(source_nodes[0]))
         self._node_to_mapper[node] = ComputeOpMapper(
             source_mappers,
             copy.deepcopy(mod),

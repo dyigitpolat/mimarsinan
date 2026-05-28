@@ -51,6 +51,8 @@ def convert_torch_model(
     num_classes: int,
     device: Union[torch.device, str] = "cpu",
     Tq: int = 64,
+    *,
+    strict: bool = True,
 ) -> ConvertedModelFlow:
     """Convert a trained native PyTorch model to a ``ConvertedModelFlow``.
 
@@ -67,6 +69,9 @@ def convert_torch_model(
         num_classes: Number of output classes.
         device: Device for the tracing/warmup passes.
         Tq: Unused (kept for API compatibility); input quantization is not applied here.
+        strict: If True (default), warmup forward failure raises
+            ``ConversionProbeError``; if False, returns a flow whose forward
+            is known-broken.
 
     Returns:
         A ``ConvertedModelFlow`` ready for the adaptation / quantization pipeline.
@@ -74,7 +79,10 @@ def convert_torch_model(
     Raises:
         TracingError: If the model cannot be symbolically traced.
         RepresentabilityError: If the model contains unsupported operations.
+        ConversionProbeError: If ``strict`` and the warmup forward fails.
     """
+    from mimarsinan.torch_mapping.conversion_probe import probe_forward
+
     device = torch.device(device)
 
     gm = trace_model(model, input_shape, device=device)
@@ -96,21 +104,11 @@ def convert_torch_model(
 
     flow = flow.to(device)
 
-    # Warmup forward pass to initialise any lazy modules (e.g. LazyBatchNorm1d
-    # inside Conv2DPerceptronMapper).
-    import os
-    debug = os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1"
-    try:
-        flow.eval()
-        with torch.no_grad():
-            dummy = torch.zeros(1, *input_shape, device=device)
-            _ = flow(dummy)
-    except Exception as e:
-        if debug:
-            raise
-        print(
-            f"[convert_torch_model] Warmup forward failed (non-fatal): "
-            f"{type(e).__name__}: {e}"
-        )
+    result = probe_forward(
+        flow, input_shape, device=device, batch=1,
+        strict=strict, context="convert_torch_model",
+    )
+    if not result.ok:
+        print(f"[convert_torch_model] {result.format()}")
 
     return flow

@@ -19,6 +19,8 @@ class ModelRepresentation:
         self.pytorch_module = nn.Identity()
         self._exec_order = None
         self._deps = None
+        self._consumer_count = None
+        self._peak_live_values = 0
 
     def map_to_ir(self, ir_mapping):
         """
@@ -70,6 +72,13 @@ class ModelRepresentation:
 
         self._exec_order = order
         self._deps = deps_map
+
+        consumer_count = {n: 0 for n in order}
+        for n, deps in deps_map.items():
+            for dep in deps:
+                if dep is not None and dep in consumer_count:
+                    consumer_count[dep] += 1
+        self._consumer_count = consumer_count
 
     def get_perceptron_groups(self):
         """
@@ -123,7 +132,7 @@ class ModelRepresentation:
                         idx += 1
 
     def __call__(self, x):
-        """Execute the mapper graph as a single source of truth for forward."""
+        """Execute the mapper graph; frees intermediates once their consumers run."""
         self._ensure_exec_graph()
 
         # When cuda_debug is on, sync after every node's forward so an async
@@ -134,6 +143,10 @@ class ModelRepresentation:
         )
 
         values = {}
+        remaining = dict(self._consumer_count)
+        output_node = self.output_layer_mapper
+        peak = 0
+
         for node in self._exec_order:
             d = self._deps.get(node, [])
             try:
@@ -152,4 +165,15 @@ class ModelRepresentation:
                     f"{type(node).__name__}(name={node_name!r})"
                 ) from exc
 
-        return values[self.output_layer_mapper]
+            if len(values) > peak:
+                peak = len(values)
+
+            for dep in d:
+                if dep is None or dep is output_node:
+                    continue
+                remaining[dep] -= 1
+                if remaining[dep] == 0 and dep in values:
+                    del values[dep]
+
+        self._peak_live_values = peak
+        return values[output_node]

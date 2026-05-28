@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import operator
 from typing import Any, Dict, Optional, Tuple
 
 import torch
@@ -11,6 +10,18 @@ import torch.fx as fx
 
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper
+from mimarsinan.torch_mapping.fx_shape_utils import (
+    node_input_shapes,
+    node_output_shape,
+    strip_batch,
+)
+
+
+def _normalize_bound_tensor(t: torch.Tensor) -> torch.Tensor:
+    """Strip a leading singleton dim so ``ComputeAdapter`` can re-add the batch dim."""
+    if isinstance(t, torch.Tensor) and t.dim() >= 1 and t.shape[0] == 1:
+        return t.squeeze(0)
+    return t
 
 
 class MapperGraphFxMixin:
@@ -40,7 +51,7 @@ class MapperGraphFxMixin:
             if isinstance(arg, fx.Node):
                 const = self._get_constant_tensor(arg)
                 if const is not None:
-                    bound.append(const)
+                    bound.append(_normalize_bound_tensor(const))
                     continue
                 mapper = self._get_mapper(arg)
                 if mapper is not None:
@@ -63,35 +74,39 @@ class MapperGraphFxMixin:
             extra_args=extra,
             kwargs=kwargs,
         )
-        in_shape = self._get_input_shape(node)
-        input_shape = (
-            tuple(in_shape[1:]) if in_shape and len(in_shape) >= 2 else None
-        )
-        out_shape = self._get_output_shape(node)
-        output_shape = (
-            tuple(out_shape[1:]) if out_shape and len(out_shape) >= 2 else None
-        )
+        source_shapes = self._source_shapes_for(node)
+        output_shape = strip_batch(node_output_shape(node))
+        if len(sources) == 1:
+            input_shapes_arg: Any = source_shapes[0] if source_shapes else None
+        else:
+            input_shapes_arg = source_shapes
         self._node_to_mapper[node] = ComputeOpMapper(
             sources,
             adapter,
-            input_shapes=input_shape,
+            input_shapes=input_shapes_arg,
             output_shape=output_shape,
             name=node.name,
         )
 
+    def _source_shapes_for(self, node: fx.Node) -> list:
+        """Per-source batch-stripped FX shapes, mirroring ``_partition_fx_args``'s filter."""
+        shapes = []
+        for arg in node.args:
+            if not isinstance(arg, fx.Node):
+                continue
+            if self._get_constant_tensor(arg) is not None:
+                continue
+            if self._get_mapper(arg) is None:
+                continue
+            shapes.append(strip_batch(node_output_shape(arg)))
+        return shapes
+
     def _get_input_shape(self, node: fx.Node) -> Optional[Tuple[int, ...]]:
-        if len(node.args) >= 1 and isinstance(node.args[0], fx.Node):
-            input_node = node.args[0]
-            meta = input_node.meta.get("tensor_meta")
-            if meta is not None and hasattr(meta, "shape"):
-                return tuple(meta.shape)
-        return None
+        shapes = node_input_shapes(node)
+        return shapes[0] if shapes else None
 
     def _get_output_shape(self, node: fx.Node) -> Optional[Tuple[int, ...]]:
-        meta = node.meta.get("tensor_meta")
-        if meta is not None and hasattr(meta, "shape"):
-            return tuple(meta.shape)
-        return None
+        return node_output_shape(node)
 
     def _get_constant_tensor(self, node: fx.Node):
         if isinstance(node, fx.Node) and node.op == "get_attr":

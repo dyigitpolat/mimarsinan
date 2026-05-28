@@ -22,7 +22,25 @@ Converts PyTorch models to an intermediate representation (IR) and packs the IR 
 |------|------|
 | `ir_mapping.py` | `IRMapping` — materializes weights into `IRGraph` |
 | `mapping_utils.py` | Mapper registration and graph utilities |
-| `model_representation.py` | Dual-purpose mapper graph |
+| `model_representation.py` | Dual-purpose mapper graph.  `__call__` is a memory-frugal topological executor: a reverse-dependency refcount (computed once in `_ensure_exec_graph` as `self._consumer_count`) drives `del values[dep]` once every consumer has run, so peak live values is bounded by the maximum simultaneously-live working set rather than the total node count.  `self._peak_live_values` is exposed for testing / memory introspection. |
+
+## Multi-input `ComputeOpMapper` contract
+
+A `ComputeOpMapper` whose source list has length > 1 receives a tuple of
+tensors at forward time (one per source, in source order).  Two guards are
+in force before the wrapped module is invoked:
+
+1. **Compile-time shape recording.**  `MapperGraphConverter` records one
+   batch-stripped shape per source in `ComputeOpMapper.input_shapes`
+   (`tuple[tuple[int, ...] | None, ...]`).  Missing FX metadata becomes
+   `None` for that source; downstream callers fall back to source-array
+   shapes.
+2. **Runtime broadcast guard.**  `ComputeOpMapper._check_broadcastable`
+   runs `torch.broadcast_shapes` on the actual input shapes before
+   `self.module(*inputs, ...)` is called.  Any broadcast failure raises
+   `ShapeMismatchError` with the op name, observed shapes, and recorded
+   `input_shapes` — no large tensor is ever allocated with malformed
+   shapes.
 
 Import from subpackages directly (e.g. `from mimarsinan.mapping.ir import IRGraph`). [`__init__.py`](__init__.py) re-exports the public mapping API.
 
