@@ -15,10 +15,20 @@ from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 
 
 def _boundary_exemption_layers(tuner):
-    ir_graph = build_boundary_ir_graph(tuner.model, tuner.pipeline)
-    return compute_perceptron_io_exemption_indices(
-        ir_graph, tuner.model.get_perceptrons()
-    )
+    """Per-tuner cache of (exempt_input_layers, exempt_output_layers); topology-invariant."""
+    cached = getattr(tuner, "_boundary_exemption_cache", None)
+    if cached is None:
+        ir_graph = build_boundary_ir_graph(tuner.model, tuner.pipeline)
+        cached = compute_perceptron_io_exemption_indices(
+            ir_graph, tuner.model.get_perceptrons()
+        )
+        tuner._boundary_exemption_cache = cached
+    return cached
+
+
+def _invalidate_boundary_cache(tuner) -> None:
+    if hasattr(tuner, "_boundary_exemption_cache"):
+        tuner._boundary_exemption_cache = None
 
 
 def get_masks(tuner, rate):

@@ -12,7 +12,7 @@ management, data contract verification, and performance tolerance enforcement.
 | `trainer_pipeline_step.py` | `TrainerPipelineStep` | Base for steps that own a `BasicTrainer`; default `validate()` delegates to trainer. |
 | `tuner_pipeline_step.py` | `TunerPipelineStep` | Tuner-backed steps: `validate()`, `_commit_tuner_entries`, `run_tuner(TunerCls, …)`. |
 | `trainer_factory.py` | `make_basic_trainer` | Shared `BasicTrainer` construction (`report_function`, optional `recipe`). Used by pretrain, fusion, preload, torch map, activation analysis, SCM, quant verify. |
-| `pipeline_helpers.py` | `require_lif_spiking_mode`, `run_optional_viz`, `safe_warmup_forward` | Loihi/SANA-FE guards, non-fatal mapping viz, model warmup. |
+| `pipeline_helpers.py` | `require_lif_spiking_mode`, `run_optional_viz`, `safe_warmup_forward` | Loihi/SANA-FE guards, non-fatal mapping viz, plain-model warmup (used by `ModelBuildingStep` to initialise lazy modules; `TorchMappingStep` uses the strict `conversion_probe.probe_forward` instead, see [torch_mapping/ARCHITECTURE.md](../torch_mapping/ARCHITECTURE.md)). |
 | `platform_constraints_resolver.py` | `build_platform_constraints_resolved` | Single builder for `platform_constraints_resolved` (model config + NAS fixed path). |
 | `model_config_emit.py` | `emit_model_config_entries` | Shared `model_builder` / `model_config` cache emission. |
 | `simulation_factory.py` | `build_hybrid_mapping_for_pipeline`, … | Hybrid mapping, SCM/HCM metric, cached `hybrid_mapping`, Loihi/SANA-FE parity. Segment flush uses `neural_segment_packing`. |

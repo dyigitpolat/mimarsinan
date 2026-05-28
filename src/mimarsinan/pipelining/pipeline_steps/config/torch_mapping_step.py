@@ -12,8 +12,7 @@ module (ReLU → LeakyGradReLU, LeakyReLU → nn.LeakyReLU, GELU → nn.GELU).
 The AdaptationManager then wraps each base_activation in TransformedActivation.
 """
 
-from mimarsinan.pipelining.core.engine.pipeline_helpers import safe_warmup_forward
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.common.diagnostics import phase_profiler
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import create_adaptation_manager_for_model
@@ -42,47 +41,80 @@ class TorchMappingStep(TrainerPipelineStep):
     def process(self):
         from mimarsinan.torch_mapping.converter import convert_torch_model
 
+        tag = "TorchMappingStep"
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+
         native_model = self.get_entry("model")
 
-        flow = convert_torch_model(
-            native_model,
-            input_shape=tuple(self.pipeline.config["input_shape"]),
-            num_classes=self.pipeline.config["num_classes"],
-            device=self.pipeline.config["device"],
-            Tq=self.pipeline.config["target_tq"],
-        )
+        with phase_profiler(tag, "convert_torch_model"):
+            flow = convert_torch_model(
+                native_model,
+                input_shape=tuple(self.pipeline.config["input_shape"]),
+                num_classes=self.pipeline.config["num_classes"],
+                device=self.pipeline.config["device"],
+                Tq=self.pipeline.config["target_tq"],
+            )
 
         adaptation_manager = create_adaptation_manager_for_model(
             self.pipeline.config, flow
         )
 
-        self._verify_equivalence(native_model, flow)
+        with phase_profiler(tag, "verify_equivalence"):
+            self._verify_equivalence(native_model, flow)
         native_model.cpu()
         del native_model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-        self.trainer = make_basic_trainer(self.pipeline, flow)
+        with phase_profiler(tag, "make_basic_trainer"):
+            self.trainer = make_basic_trainer(self.pipeline, flow)
         self.update_entry("model", flow, "torch_model")
         self.add_entry("adaptation_manager", adaptation_manager, "pickle")
 
-        print(f"[TorchMappingStep] Converted native model to torch-mapped PerceptronFlow")
+        print(f"[{tag}] Converted native model to torch-mapped PerceptronFlow")
         print(f"  Perceptrons: {len(flow.get_perceptrons())}")
-        print(f"  Validation: {self.validate()}")
+        with phase_profiler(tag, "validate"):
+            val = self.validate()
+        print(f"  Validation: {val}")
+
+        if torch.cuda.is_available():
+            step_peak = torch.cuda.max_memory_allocated() / (1 << 20)
+            print(f"[{tag}] cuda peak (step): {step_peak:.0f} MiB")
 
     def _verify_equivalence(self, native_model, flow):
-        """Best-effort check that the converted model matches the original."""
+        """Compare native vs converted output shapes; converted-flow forward failure is fatal."""
+        from mimarsinan.torch_mapping.conversion_probe import ConversionProbeError
+
+        device = self.pipeline.config["device"]
+        input_shape = tuple(self.pipeline.config["input_shape"])
+
+        native_model.eval().to(device)
+        dummy = torch.randn(2, *input_shape, device=device)
+
         try:
-            device = self.pipeline.config["device"]
-            input_shape = tuple(self.pipeline.config["input_shape"])
-            dummy = torch.randn(2, *input_shape, device=device)
-            native_model.eval().to(device)
-            flow.eval().to(device)
             with torch.no_grad():
-                native_out = native_model(dummy)
-                super_out = flow(dummy)
-            if native_out.shape != super_out.shape:
-                print(
-                    f"[TorchMappingStep] WARNING: output shape mismatch: "
-                    f"native={native_out.shape} vs converted={super_out.shape}"
-                )
+                native_out = native_model(dummy).detach().cpu()
         except Exception as exc:
-            print(f"[TorchMappingStep] Equivalence check skipped: {exc}")
+            print(f"[TorchMappingStep] Native forward skipped: {exc}")
+            return
+
+        native_model.cpu()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        flow.eval().to(device)
+        try:
+            with torch.no_grad():
+                converted_out = flow(dummy).detach().cpu()
+        except Exception as exc:
+            raise ConversionProbeError(
+                "[TorchMappingStep] Converted-flow forward failed during "
+                "equivalence check; the converted model is structurally broken."
+            ) from exc
+
+        if native_out.shape != converted_out.shape:
+            print(
+                f"[TorchMappingStep] WARNING: output shape mismatch: "
+                f"native={native_out.shape} vs converted={converted_out.shape}"
+            )

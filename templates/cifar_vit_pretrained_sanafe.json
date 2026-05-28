@@ -1,0 +1,98 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "cifar_vit_pretrained_sanafe",
+  "generated_files_path": "./generated",
+  "data_provider_name": "CIFAR10_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 3072,
+        "max_neurons": 768,
+        "count": 160,
+        "has_bias": true
+      },
+      {
+        "max_axons": 768,
+        "max_neurons": 3072,
+        "count": 160,
+        "has_bias": true
+      }
+    ],
+    "max_axons": 3072,
+    "max_neurons": 3072,
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8,
+    "has_bias": true,
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true
+  },
+  "deployment_parameters": {
+    "lr": 0.0005,
+    "tuning_budget_scale": 0.5,
+    "degradation_tolerance": 0.1,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "torch_vit",
+    "model_config": {
+      "base_activation": "ReLU"
+    },
+    "spiking_mode": "ttfs_quantized",
+    "firing_mode": "TTFS",
+    "spike_generation_mode": "TTFS",
+    "thresholding_mode": "<=",
+    "activation_quantization": true,
+    "weight_quantization": true,
+    "pruning": true,
+    "pruning_fraction": 0.05,
+    "weight_source": "torchvision",
+    "finetune_epochs": 2,
+    "batch_size": 512,
+    "preprocessing": {
+      "interpolation": "bicubic",
+      "resize_to": 224,
+      "normalize": "imagenet"
+    },
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.05,
+      "warmup_ratio": 0.1,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 0.75,
+      "label_smoothing": 0.1,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.01,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "max_simulation_samples": 50,
+    "allow_scheduling": true,
+    "enable_nevresim_simulation": true,
+    "enable_loihi_simulation": false,
+    "enable_sanafe_simulation": true,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "sanafe_custom_arch_path": null,
+    "sanafe_parity_check": true,
+    "sanafe_log_potential_trace": false,
+    "sanafe_log_message_trace": true
+  },
+  "target_metric_override": null,
+  "start_step": "Model Configuration",
+  "stop_step": null
+}
