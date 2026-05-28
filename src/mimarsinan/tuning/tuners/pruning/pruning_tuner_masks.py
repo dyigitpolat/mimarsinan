@@ -6,15 +6,25 @@ import math
 
 import torch
 
+from mimarsinan.mapping.pruning.boundary_policy import (
+    build_boundary_ir_graph,
+    compute_perceptron_io_exemption_indices,
+)
 from mimarsinan.transformations.pruning import collect_activation_stats
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
+
+
+def _boundary_exemption_layers(tuner):
+    ir_graph = build_boundary_ir_graph(tuner.model, tuner.pipeline)
+    return compute_perceptron_io_exemption_indices(
+        ir_graph, tuner.model.get_perceptrons()
+    )
 
 
 def get_masks(tuner, rate):
     perceptrons = tuner.model.get_perceptrons()
     n_layers = len(perceptrons)
-    exempt_input_layers = {0}
-    exempt_output_layers = {n_layers - 1} if n_layers > 0 else set()
+    exempt_input_layers, exempt_output_layers = _boundary_exemption_layers(tuner)
 
     if len(tuner._persistent_pruned_rows) != n_layers:
         tuner._persistent_pruned_rows = [set() for _ in range(n_layers)]

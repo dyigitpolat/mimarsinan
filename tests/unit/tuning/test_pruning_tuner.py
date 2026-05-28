@@ -143,8 +143,7 @@ class TestPruningTuner:
                 "Weights should be unchanged at rate=0.0"
 
     def test_first_layer_columns_and_last_layer_rows_exempt_at_rate_one(self):
-        """At rate=1.0, first layer column mask and last layer row mask must be all True
-        (input-buffer and output-buffer dimensions are never pruned)."""
+        """At rate=1.0, model input column mask and model output row mask must be all True."""
         from mimarsinan.tuning.tuners.pruning.pruning_tuner import PruningTuner
 
         mock = MockPipeline()
@@ -168,8 +167,8 @@ class TestPruningTuner:
 
         row_masks, col_masks = tuner._get_masks(1.0)
 
-        assert col_masks[0].all(), "First layer column mask must be all True (input-buffer exempt)"
-        assert row_masks[-1].all(), "Last layer row mask must be all True (output-buffer exempt)"
+        assert col_masks[0].all(), "First layer column mask must be all True (model input exempt)"
+        assert row_masks[-1].all(), "Last layer row mask must be all True (model output exempt)"
 
     def test_refresh_pruning_importance_called_per_cycle(self):
         """When run(max_cycles=N) is used, activation stats (importance) should be collected at least N times."""
@@ -222,7 +221,10 @@ class TestPruningTuner:
             collect_calls.append(1)
             return _collect_activation_stats(*args, **kwargs)
 
-        with patch("mimarsinan.tuning.tuners.pruning.pruning_tuner._collect_activation_stats", side_effect=counting_collect):
+        with patch(
+            "mimarsinan.tuning.tuners.pruning.pruning_tuner_masks.collect_activation_stats",
+            side_effect=counting_collect,
+        ):
             tuner.run(max_cycles=3)
         assert len(collect_calls) >= 3, "Activation stats should be collected at least once per cycle (3 cycles)"
 
@@ -312,7 +314,10 @@ class TestPruningTuner:
             )
             if p.layer.bias is not None:
                 p.layer.register_buffer("prune_bias_mask", (~rm).clone())
-        tuner._enforce_pruning_persistently(perceptrons, row_masks, col_masks)
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner_enforce import (
+            enforce_pruning_persistently,
+        )
+        enforce_pruning_persistently(perceptrons, row_masks, col_masks)
 
         buf = io.BytesIO()
         torch.save(model, buf)

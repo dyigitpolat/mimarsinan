@@ -79,7 +79,9 @@ def cleanup_stale_runs(runs: dict[str, ManagedRun]) -> None:
 def list_active(runs: dict[str, ManagedRun]) -> list[dict]:
     cleanup_stale_runs(runs)
     results: list[dict] = []
-    for run_id, managed in runs.items():
+    # Snapshot before iteration: callers should hold a lock, but copying
+    # items avoids RuntimeError if the dict is mutated concurrently.
+    for run_id, managed in list(runs.items()):
         info = load_run_info(managed.working_dir)
         steps = load_persisted_steps(managed.working_dir)
 

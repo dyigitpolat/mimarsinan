@@ -261,11 +261,11 @@ class TestCrossCorePropagation:
         assert 1 not in res.pruned_cols_per_node[0]
 
 
-class TestComputeOpBarrier:
-    """ComputeOps act as opaque consumers/producers and block cross-core propagation."""
+class TestComputeOpStructuralRelay:
+    """ComputeOp relays structural deadness without hard-exempting segment boundaries."""
 
-    def test_compute_op_blocks_neuron_to_axon_propagation(self):
-        """A -> ComputeOp -> B: pruning A.col 0 must NOT cascade to B's axons."""
+    def test_compute_op_relays_upstream_col_prune_to_downstream_axons(self):
+        """A -> ComputeOp -> B: pruning A.col 0 marks B axon 0 dead via producer map."""
         w_a = np.array(
             [
                 [1.0, 2.0],
@@ -309,10 +309,8 @@ class TestComputeOpBarrier:
         )
         # A.col 0 still pruned.
         assert 0 in res.pruned_cols_per_node[0]
-        # ComputeOp barrier: B's axons unaffected.
-        assert res.pruned_rows_per_node[2] == set(), (
-            f"ComputeOp barrier should block cross-core propagation; "
-            f"got pruned axons {res.pruned_rows_per_node[2]} in B"
+        assert 0 in res.pruned_rows_per_node[2], (
+            "Upstream col 0 pruned -> ComputeOp output 0 dead -> B axon 0 pruned"
         )
 
     def test_compute_op_keeps_producer_neurons_alive(self):

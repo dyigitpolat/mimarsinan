@@ -226,7 +226,7 @@ def main() -> None:
             from typing import Dict, List, Sequence, Set, Tuple
             import numpy as np
             from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
-            from mimarsinan.mapping.pruning.ir_pruning_analysis import compute_graph_io_exemption
+            from mimarsinan.mapping.pruning.boundary_policy import compute_model_io_boundary_policy
             from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
             """
         ),
@@ -259,7 +259,7 @@ def main() -> None:
             from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
             from mimarsinan.mapping.pruning.ir_pruning_helpers import (
                 _attach_pre_compaction_metadata,
-                _collect_exemptions,
+                _boundary_policy_exemptions,
                 _collect_initial_seeds,
                 _force_dead_nodes_fully_pruned,
                 _log_value_based_summary,

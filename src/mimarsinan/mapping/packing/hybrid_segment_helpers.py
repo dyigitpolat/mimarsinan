@@ -27,7 +27,7 @@ def _make_available_hardware_cores(cores_config: Sequence[dict]) -> list[HardCor
 def _remap_external_sources_to_segment_inputs(
     *,
     nodes: list[NeuralCore],
-    output_sources: np.ndarray,
+    segment_output_refs: np.ndarray,
     weight_banks: dict | None = None,
 ) -> tuple[IRGraph, list[SegmentIOSlice]]:
     """Build a neural-only IRGraph with external sources remapped to segment inputs."""
@@ -35,10 +35,10 @@ def _remap_external_sources_to_segment_inputs(
         weight_banks = {}
     node_ids = {n.id for n in nodes}
 
-    for src in output_sources.flatten():
+    for src in segment_output_refs.flatten():
         if isinstance(src, IRSource) and src.node_id >= 0 and src.node_id not in node_ids:
             raise ValueError(
-                "Segment output_sources reference external node "
+                "Segment output refs reference external node "
                 f"(node_id={src.node_id})."
             )
 
@@ -83,9 +83,10 @@ def _remap_external_sources_to_segment_inputs(
 
     graph = IRGraph(
         nodes=new_nodes,
-        output_sources=np.array(output_sources, dtype=object),
+        output_sources=np.array(segment_output_refs, dtype=object),
         weight_banks=weight_banks,
     )
+    graph._is_segment_subgraph = True
     return graph, input_map
 
 

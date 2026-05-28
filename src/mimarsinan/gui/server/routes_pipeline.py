@@ -131,10 +131,10 @@ def register_routes(
     def api_active_console(run_id: str, offset: int = 0):
         if process_manager is None:
             return JSONResponse(status_code=404, content={"error": "not found"})
-        managed = process_manager._runs.get(run_id)
-        if managed is None:
+        working_dir = process_manager.get_working_dir(run_id)
+        if working_dir is None:
             return JSONResponse(status_code=404, content={"error": "run not found"})
-        return load_console_logs(managed.working_dir, offset=offset)
+        return load_console_logs(working_dir, offset=offset)
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):

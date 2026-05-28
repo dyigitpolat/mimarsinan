@@ -23,8 +23,9 @@ def _resolve_node_matrix(node: NeuralCore, banks: Mapping[int, WeightBank]) -> n
 def _cross_core_dead_axons(
     node: NeuralCore,
     pruned_cols: Mapping[int, AbstractSet[int]],
+    computeop_producer_map: Mapping[Tuple[int, int], Tuple[int, int]],
 ) -> Set[int]:
-    """Axons whose source neuron is already dead (off or pruned)."""
+    """Axons whose source neuron is already dead (off, pruned, or via ComputeOp relay)."""
     dead: Set[int] = set()
     for i, src in enumerate(node.input_sources.flatten()):
         if not isinstance(src, IRSource):
@@ -32,7 +33,12 @@ def _cross_core_dead_axons(
         if src.is_off():
             dead.add(i)
             continue
-        if src.node_id >= 0 and src.index in pruned_cols.get(src.node_id, frozenset()):
+        upstream = computeop_producer_map.get((src.node_id, src.index))
+        if upstream is not None:
+            up_nid, up_col = upstream
+            if up_col in pruned_cols.get(up_nid, frozenset()):
+                dead.add(i)
+        elif src.node_id >= 0 and src.index in pruned_cols.get(src.node_id, frozenset()):
             dead.add(i)
     return dead
 
@@ -42,13 +48,14 @@ def _orphan_neurons(
     n_neurons: int,
     pruned_rows: Mapping[int, AbstractSet[int]],
     consumer_axons: Mapping[Tuple[int, int], list[Tuple[int, int]]],
-    neurons_with_persistent_consumer: AbstractSet[Tuple[int, int]],
+    model_output_neurons: AbstractSet[Tuple[int, int]],
+    computeop_referenced_neurons: AbstractSet[Tuple[int, int]],
 ) -> Set[int]:
-    """Neurons whose only NeuralCore consumers are dead axons (and no persistent consumer)."""
+    """Neurons with no live NeuralCore consumers and no model/ComputeOp wiring."""
     dead: Set[int] = set()
     for j in range(n_neurons):
         key = (node_id, j)
-        if key in neurons_with_persistent_consumer:
+        if key in model_output_neurons or key in computeop_referenced_neurons:
             continue
         consumers = consumer_axons.get(key, ())
         if not consumers:
@@ -70,7 +77,9 @@ def _refresh_node_pruning(
     pruned_rows: Dict[int, Set[int]],
     pruned_cols: Dict[int, Set[int]],
     consumer_axons: Mapping[Tuple[int, int], list[Tuple[int, int]]],
-    neurons_with_persistent_consumer: AbstractSet[Tuple[int, int]],
+    model_output_neurons: AbstractSet[Tuple[int, int]],
+    computeop_referenced_neurons: AbstractSet[Tuple[int, int]],
+    computeop_producer_map: Mapping[Tuple[int, int], Tuple[int, int]],
     exempt_rows: Mapping[int, AbstractSet[int]],
     exempt_cols: Mapping[int, AbstractSet[int]],
 ) -> bool:
@@ -81,15 +90,16 @@ def _refresh_node_pruning(
     nid = node.id
     n_axons, n_neurons = mat.shape
 
-    cross_rows = _cross_core_dead_axons(node, pruned_cols) - exempt_rows.get(
-        nid, frozenset()
-    )
+    cross_rows = _cross_core_dead_axons(
+        node, pruned_cols, computeop_producer_map
+    ) - exempt_rows.get(nid, frozenset())
     cross_cols = _orphan_neurons(
         nid,
         n_neurons,
         pruned_rows,
         consumer_axons,
-        neurons_with_persistent_consumer,
+        model_output_neurons,
+        computeop_referenced_neurons,
     ) - exempt_cols.get(nid, frozenset())
 
     seed_rows = pruned_rows[nid] | cross_rows
@@ -137,7 +147,7 @@ def _refresh_bank_pruning(
     zero_threshold: float,
     bank_nodes: list[NeuralCore],
     bank_consumers: AbstractSet[int],
-    neurons_with_persistent_consumer: AbstractSet[Tuple[int, int]],
+    model_output_neurons: AbstractSet[Tuple[int, int]],
     pruned_rows: Dict[int, Set[int]],
     pruned_cols: Dict[int, Set[int]],
     bank_pruned_rows: Dict[int, Set[int]],
@@ -237,5 +247,5 @@ def _refresh_bank_pruning(
 
     # Suppress unused-arg lints for parameters retained for symmetry / future use
     _ = bank_consumers
-    _ = neurons_with_persistent_consumer
+    _ = model_output_neurons
     return changed
