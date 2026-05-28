@@ -29,6 +29,11 @@ from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 
+from mimarsinan.chip_simulation.nevresim.connectivity import (
+    ConnectivityMode as NevresimConnectivityMode,
+    default_nevresim_connectivity_mode,
+)
+
 BackendName = Literal["loihi", "nevresim", "sanafe"]
 
 SUPPORTED_FIRING_MODES: tuple[str, ...] = ("Default", "Novena")
@@ -79,6 +84,11 @@ class ParityResult:
 
 def mimarsinan_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def nevresim_connectivity_mode() -> NevresimConnectivityMode:
+    """Uses deployment default from ``nevresim.connectivity``."""
+    return default_nevresim_connectivity_mode()
 
 
 def ensure_nevresim_path() -> Path:
@@ -381,11 +391,19 @@ def _build_nevresim_input_loader(
     return [(rates[0], np.array([0.0], dtype=np.float32))]
 
 
-def run_nevresim_parity(behavior: NeuralBehaviorConfig, T: int = 4) -> ParityResult:
+def run_nevresim_parity(
+    behavior: NeuralBehaviorConfig,
+    T: int = 4,
+    *,
+    connectivity_mode: NevresimConnectivityMode | None = None,
+) -> ParityResult:
     result = ParityResult()
     ensure_nevresim_ready()
     from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
     from mimarsinan.mapping.latency.chip import ChipLatency
+
+    if connectivity_mode is None:
+        connectivity_mode = nevresim_connectivity_mode()
 
     hybrid = build_toy_hybrid_mapping()
     ref = record_toy_hcm(behavior, T)
@@ -405,6 +423,7 @@ def run_nevresim_parity(behavior: NeuralBehaviorConfig, T: int = 4) -> ParityRes
             firing_mode=behavior.firing_mode,
             thresholding_mode=behavior.thresholding_mode,
             spiking_mode=behavior.spiking_mode,
+            connectivity_mode=connectivity_mode,
             verbose=False,
         )
         raw = driver.predict_spiking_raw(input_data, T, latency)
@@ -512,33 +531,3 @@ def run_mini_hybrid_parity(
 
     return result
 
-
-@pytest.mark.parametrize("firing_mode", SUPPORTED_FIRING_MODES)
-@pytest.mark.slow
-def test_reset_parity_hcm_loihi(firing_mode):
-    behavior = default_behavior(firing_mode=firing_mode)
-    result = run_loihi_parity(behavior)
-    assert result.ok, result.first_diff_message()
-
-
-@pytest.mark.parametrize("thresholding_mode", ["<", "<="])
-@pytest.mark.slow
-def test_compare_parity_hcm_loihi(thresholding_mode):
-    behavior = default_behavior(thresholding_mode=thresholding_mode)
-    result = run_loihi_parity(behavior)
-    assert result.ok, result.first_diff_message()
-
-
-@pytest.mark.parametrize("spike_generation_mode", ["Uniform", "FrontLoaded", "Deterministic", "SpikeTrain"])
-@pytest.mark.slow
-def test_spike_encode_parity_hcm_loihi(spike_generation_mode):
-    behavior = default_behavior(spike_generation_mode=spike_generation_mode)
-    result = run_loihi_parity(behavior)
-    assert result.ok, result.first_diff_message()
-
-
-@pytest.mark.slow
-def test_combined_behavior_smoke_novena_inclusive():
-    behavior = default_behavior(firing_mode="Novena", thresholding_mode="<=")
-    result = run_loihi_parity(behavior)
-    assert result.ok, result.first_diff_message()

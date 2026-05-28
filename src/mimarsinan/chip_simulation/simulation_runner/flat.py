@@ -26,6 +26,7 @@ class SimulationFlatMixin:
             thresholding_mode=self.thresholding_mode,
             spiking_mode=self.spiking_mode,
             threshold_type=self.threshold_type,
+            connectivity_mode=self.nevresim_connectivity_mode,
         )
 
         simulation_steps = int(self.simulation_length)

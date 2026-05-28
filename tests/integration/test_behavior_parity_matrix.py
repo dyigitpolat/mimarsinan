@@ -9,9 +9,11 @@ backend on the same single-core toy hybrid mapping:
     (auto-rebuilds ``libmimarsinan_*.so`` when plugin sources are stale)
 
 Backends that compile or link artifacts (``nevresim``, ``sanafe``) are
-prepared via :func:`parity_harness.ensure_backend_ready`, which rebuilds
-when needed instead of skipping.  Lava remains opt-in (skipped when not
-installed).
+prepared via :func:`parity_harness.ensure_backend_ready`. Nevresim uses
+deployment default ``nevresim_connectivity_mode=runtime``. Lava remains
+opt-in (skipped when not installed).
+
+These tests are **not** marked ``slow`` (~9s full matrix with runtime nevresim).
 """
 
 from __future__ import annotations
@@ -35,7 +37,6 @@ _BACKENDS: tuple[BackendName, ...] = ("loihi", "nevresim", "sanafe")
 
 @pytest.mark.parametrize("firing_mode", SUPPORTED_FIRING_MODES)
 @pytest.mark.parametrize("backend", _BACKENDS)
-@pytest.mark.slow
 @pytest.mark.integration
 def test_firing_mode_backend_parity_matrix(firing_mode, backend):
     """HCM spike counts must match each backend for every firing mode."""
@@ -47,7 +48,6 @@ def test_firing_mode_backend_parity_matrix(firing_mode, backend):
 
 @pytest.mark.parametrize("thresholding_mode", SUPPORTED_THRESHOLDING_MODES)
 @pytest.mark.parametrize("backend", _BACKENDS)
-@pytest.mark.slow
 @pytest.mark.integration
 def test_thresholding_backend_parity_matrix(thresholding_mode, backend):
     """Comparison policy ``<`` vs ``<=`` must agree across all backends."""
@@ -59,7 +59,6 @@ def test_thresholding_backend_parity_matrix(thresholding_mode, backend):
 
 @pytest.mark.parametrize("spike_generation_mode", SUPPORTED_SPIKE_GENERATION_MODES)
 @pytest.mark.parametrize("backend", _BACKENDS)
-@pytest.mark.slow
 @pytest.mark.integration
 def test_spike_encode_backend_parity_matrix(spike_generation_mode, backend):
     """Spike-encoding modes must agree across all backends."""
@@ -70,7 +69,6 @@ def test_spike_encode_backend_parity_matrix(spike_generation_mode, backend):
 
 
 @pytest.mark.parametrize("backend", _BACKENDS)
-@pytest.mark.slow
 @pytest.mark.integration
 def test_combined_novena_inclusive_backend_parity_matrix(backend):
     """Novena reset + inclusive compare smoke on every backend."""
@@ -81,7 +79,6 @@ def test_combined_novena_inclusive_backend_parity_matrix(backend):
 
 
 @pytest.mark.parametrize("backend", tuple(b for b in _BACKENDS if backend_requires_rebuild(b)))
-@pytest.mark.slow
 @pytest.mark.integration
 def test_rebuild_backends_refresh_stale_plugins(backend):
     """Rebuild-dependent backends succeed after an explicit stale refresh."""

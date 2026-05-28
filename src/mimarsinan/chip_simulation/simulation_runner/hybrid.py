@@ -19,10 +19,9 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     gather_final_output_numpy,
     store_segment_output_numpy,
 )
-from mimarsinan.chip_simulation.nevresim.execute_nevresim import execute_simulator
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
+from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
 from mimarsinan.chip_simulation.simulation_runner.emit import _PreparedSegment, _emit_and_compile_segment
-from mimarsinan.common.file_utils import save_inputs_to_files
 
 
 class SimulationHybridMixin:
@@ -102,6 +101,7 @@ class SimulationHybridMixin:
                     num_samples,
                     sim_length,
                     nevresim_path,
+                    self.nevresim_connectivity_mode,
                 )
                 for seg_idx, seg_dir, seg_mapping, input_size, latency in segment_specs
             ]
@@ -124,9 +124,17 @@ class SimulationHybridMixin:
         Returns raw output as ``(num_samples, num_outputs)``.
         """
         max_input_count = len(input_data)
-        save_inputs_to_files(prepared.seg_dir, input_data, max_input_count)
-        raw = execute_simulator(prepared.binary_path, max_input_count, num_proc)
-        return np.array(raw).reshape((max_input_count, prepared.output_size))
+        return run_binary_raw(
+            binary_path=prepared.binary_path,
+            work_dir=prepared.seg_dir,
+            input_loader=input_data,
+            output_size=prepared.output_size,
+            simulation_length=int(self.simulation_length),
+            input_size=prepared.input_size,
+            spike_generation_mode=self.spike_generation_mode,
+            max_input_count=max_input_count,
+            num_proc=num_proc,
+        )
 
     def _run_neural_segment(
         self,
@@ -152,6 +160,7 @@ class SimulationHybridMixin:
             thresholding_mode=self.thresholding_mode,
             spiking_mode=self.spiking_mode,
             threshold_type=self.threshold_type,
+            connectivity_mode=self.nevresim_connectivity_mode,
         )
         return driver.predict_spiking_raw(
             input_data,

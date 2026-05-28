@@ -1,18 +1,38 @@
 import subprocess
-from mimarsinan.common.file_utils import *
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.common.build_utils import find_cpp20_compiler
 
-def compile_simulator(generated_files_path, nevresim_path, output_path=None, verbose=True):
+
+@dataclass
+class CompileResult:
+    binary_path: str | None
+    compile_s: float
+    compiler: str
+    compiler_family: str
+    success: bool
+    trace_json: str | None = None
+
+
+def compile_simulator(
+    generated_files_path,
+    nevresim_path,
+    output_path=None,
+    verbose=True,
+    *,
+    optimization: str = "-O3",
+    time_trace: bool = False,
+    trace_output_dir: str | Path | None = None,
+    extra_flags: list[str] | None = None,
+    return_timing: bool = False,
+) -> CompileResult | str | None:
     """Compile the nevresim simulator.
 
-    Args:
-        generated_files_path: Directory containing main.cpp and chip code.
-        nevresim_path: Path to nevresim include directory.
-        output_path: Optional path for the compiled binary. When None, uses ./bin/simulator.
-        verbose: When False, suppress per-compile progress messages (for batch parallel compile).
-
-    Returns:
-        Path to the compiled binary, or None on failure.
+    Returns CompileResult when *return_timing* or *time_trace* is set;
+    otherwise returns binary path string or None for backward compatibility.
     """
     if verbose:
         print("Compiling nevresim for mapped chip...")
@@ -20,15 +40,11 @@ def compile_simulator(generated_files_path, nevresim_path, output_path=None, ver
     cc_command, family = find_cpp20_compiler()
     if cc_command is None:
         print("No C++20-capable compiler found.")
-        return None
+        return None if not (time_trace or return_timing) else CompileResult(None, 0.0, "", "", False)
 
     if verbose:
         print(f"  Using compiler: {cc_command} (family={family})")
 
-    cpp_standard = "c++20"
-    optimization_flag = "-O3"
-
-    # constexpr budget – flag name differs between compilers
     step_limit = 256 * 256 * 10000
     if family == "gcc":
         step_limit_option = f"-fconstexpr-ops-limit={step_limit}"
@@ -40,26 +56,44 @@ def compile_simulator(generated_files_path, nevresim_path, output_path=None, ver
 
     cmd = [
         cc_command,
-        optimization_flag,
+        optimization,
         step_limit_option,
         "{}/main/main.cpp".format(generated_files_path),
         "-I", "{}/include".format(nevresim_path),
         "-I", "{}/chip".format(generated_files_path),
-        "-std={}".format(cpp_standard),
+        "-std=c++20",
     ]
 
-    # Only use libc++ with modern Clang (>= 17) where it actually works.
-    # Older Clang or GCC should use the default libstdc++.
     if family == "clang":
         cmd.append("-stdlib=libc++")
 
+    if time_trace and family == "clang":
+        cmd.append("-ftime-trace")
+
+    if extra_flags:
+        cmd.extend(extra_flags)
+
     cmd += ["-o", simulator_filename]
 
+    t0 = time.perf_counter()
     p = subprocess.Popen(cmd)
-    if p.wait() == 0:
+    rc = p.wait()
+    compile_s = time.perf_counter() - t0
+
+    trace_json = None
+    if time_trace and family == "clang" and success:
+        search_dir = Path(generated_files_path) / "main"
+        traces = sorted(search_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        trace_json = str(traces[0]) if traces else None
+
+    success = rc == 0
+    if success:
         if verbose:
             print("Compilation outcome:", simulator_filename)
-        return simulator_filename
-    else:
-        print("Compilation failed.")
-        return None
+        result = CompileResult(
+            str(simulator_filename), compile_s, cc_command, family, True, trace_json,
+        )
+        return result if (time_trace or return_timing) else result.binary_path
+    print("Compilation failed.")
+    result = CompileResult(None, compile_s, cc_command, family, False, trace_json)
+    return result if (time_trace or return_timing) else None
