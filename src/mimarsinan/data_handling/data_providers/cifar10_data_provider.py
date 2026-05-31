@@ -53,8 +53,8 @@ class CIFAR10_DataProvider(DataProvider):
     def ffcv_transforms(self) -> dict:
         # Strong CIFAR augmentation — pre-AutoAugment baseline: HFlip + ±4-px
         # translate ≡ RandomCrop(32, padding=4) + 16×16 cutout + color jitter.
-        # Followed by the standard FFCV image pipeline: ToTensor → ToDevice →
-        # ToTorchImage → NormalizeImage(ImageNet stats, fp32).
+        # NormalizeImage runs CPU-side (before ToDevice) so we don't depend
+        # on cupy for FFCV's GPU normalize path.
         normalize = self._normalize_op()
         return {
             "train": [
@@ -64,10 +64,10 @@ class CIFAR10_DataProvider(DataProvider):
                 ("RandomBrightness", {"magnitude": 0.3}),
                 ("RandomContrast", {"magnitude": 0.3}),
                 ("RandomSaturation", {"magnitude": 0.3}),
+                normalize,
                 ("ToTensor", {}),
                 ("ToDevice", {"non_blocking": True}),
                 ("ToTorchImage", {}),
-                normalize,
             ],
             "val":  self._eval_chain(normalize),
             "test": self._eval_chain(normalize),
@@ -76,10 +76,10 @@ class CIFAR10_DataProvider(DataProvider):
     @staticmethod
     def _eval_chain(normalize):
         return [
+            normalize,
             ("ToTensor", {}),
             ("ToDevice", {"non_blocking": True}),
             ("ToTorchImage", {}),
-            normalize,
         ]
 
     def _normalize_op(self):

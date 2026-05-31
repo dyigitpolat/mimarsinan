@@ -36,9 +36,54 @@ class _AsRGB(torch.utils.data.Dataset):
         return img, int(label)
 
 
+_PIL_INTERP = {"bicubic": 3, "bilinear": 2, "nearest": 0}  # PIL.Image constants
+
+
+class _PILResize(torch.utils.data.Dataset):
+    """Resize the PIL image half of each ``(image, label)`` to a fixed square.
+
+    FFCV's ``RGBImageField.max_resolution`` is an *upper bound* — it
+    downscales images larger than the target but doesn't upscale. To get
+    the beton stored at the model-input resolution (e.g. 224 for ViT-B on
+    32×32 CIFAR), the writer needs receive images already at that size.
+    """
+
+    def __init__(self, base, target_size: int, interpolation: str):
+        self._base = base
+        self._size = int(target_size)
+        self._interp = _PIL_INTERP.get((interpolation or "bicubic").lower(), 3)
+
+    def __len__(self):
+        return len(self._base)
+
+    def __getitem__(self, idx):
+        img, label = self._base[idx]
+        if hasattr(img, "resize"):
+            img = img.resize((self._size, self._size), self._interp)
+        return img, label
+
+
 def raw_dataset_for(provider, split: str):
-    """Return the raw dataset that will feed the FFCV writer for ``split``."""
-    return provider.raw_datasets()[split]
+    """Return the raw dataset that will feed the FFCV writer for ``split``.
+
+    Applies two structural wraps driven by the model-input contract:
+
+    * :class:`_AsRGB` if ``get_input_shape()`` says 1 channel (FFCV's
+      ``RGBImageField`` requires 3).
+    * :class:`_PILResize` if ``_preprocessing_spec.resize_to`` is set —
+      the beton then stores at the model-input resolution and no
+      post-decode resize is needed.
+    """
+    raw = provider.raw_datasets()[split]
+    in_shape = provider.get_input_shape()
+    channels = int(in_shape[0]) if len(in_shape) >= 3 else 3
+    if channels == 1:
+        raw = _AsRGB(raw)
+    preproc = getattr(provider, "_preprocessing_spec", None)
+    if preproc is not None and preproc.resize_to is not None:
+        raw = _PILResize(raw, int(preproc.resize_to),
+                         (preproc.interpolation or "bicubic"))
+    return raw
 
 
 def infer_spec(provider) -> PipelineSpec:
