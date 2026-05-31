@@ -1,16 +1,11 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 
-import numpy as np
 import torchvision.transforms as transforms
 import torchvision
 
 import torch
 import os
-
-
-_IMAGENET_MEAN_255 = np.array([0.485, 0.456, 0.406]) * 255.0
-_IMAGENET_STD_255  = np.array([0.229, 0.224, 0.225]) * 255.0
 
 
 @BasicDataProviderFactory.register("CIFAR100_DataProvider")
@@ -50,9 +45,9 @@ class CIFAR100_DataProvider(DataProvider):
         }
 
     def ffcv_transforms(self) -> dict:
-        # Strong CIFAR augmentation minus HFlip (CIFAR-100 has mirror-
-        # asymmetric classes; the torch transform also doesn't flip).
-        normalize = self._normalize_op()
+        # Augmentation only — spec_builder synthesizes the structural tail.
+        # CIFAR-100 has no flip (mirror-asymmetric classes); covers geometric
+        # + occlusion + color jitter as a best-effort AutoAugment substitute.
         return {
             "train": [
                 ("RandomTranslate", {"padding": 4}),
@@ -60,30 +55,7 @@ class CIFAR100_DataProvider(DataProvider):
                 ("RandomBrightness", {"magnitude": 0.3}),
                 ("RandomContrast", {"magnitude": 0.3}),
                 ("RandomSaturation", {"magnitude": 0.3}),
-                ("ToTensor", {}),
-                ("ToDevice", {"non_blocking": True}),
-                ("ToTorchImage", {}),
-                normalize,
             ],
-            "val":  self._eval_chain(normalize),
-            "test": self._eval_chain(normalize),
+            "val":  [],
+            "test": [],
         }
-
-    @staticmethod
-    def _eval_chain(normalize):
-        return [
-            ("ToTensor", {}),
-            ("ToDevice", {"non_blocking": True}),
-            ("ToTorchImage", {}),
-            normalize,
-        ]
-
-    def _normalize_op(self):
-        spec = self._preprocessing_spec
-        if spec is not None and spec.mean is not None and spec.std is not None:
-            mean = np.array(spec.mean) * 255.0
-            std  = np.array(spec.std)  * 255.0
-        else:
-            mean = _IMAGENET_MEAN_255
-            std  = _IMAGENET_STD_255
-        return ("NormalizeImage", {"mean": mean, "std": std, "type": np.float32})
