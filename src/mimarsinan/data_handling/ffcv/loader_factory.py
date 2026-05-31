@@ -37,16 +37,6 @@ def _build_ops(transform_chain, device):
     return ops
 
 
-def _decoder_for(field_spec):
-    if not field_spec.decode_type:
-        return None
-    from ffcv.fields import decoders as ffcv_decoders
-    cls = getattr(ffcv_decoders, field_spec.decode_type, None)
-    if cls is None:
-        raise ValueError(f"unknown FFCV decoder: {field_spec.decode_type}")
-    return cls()
-
-
 def build_loader(
     spec: PipelineSpec,
     split: str,
@@ -68,13 +58,8 @@ def build_loader(
 
     pipelines = {}
     for field in spec.fields:
-        chain: list = []
-        decoder = _decoder_for(field)
-        if decoder is not None:
-            chain.append(decoder)
         field_ops = [(cls, kw) for (fname, cls, kw) in split_spec.transforms if fname == field.name]
-        chain.extend(_build_ops(field_ops, device))
-        pipelines[field.name] = chain
+        pipelines[field.name] = _build_ops(field_ops, device)
 
     order = OrderOption.RANDOM if split_spec.shuffle else OrderOption.SEQUENTIAL
 

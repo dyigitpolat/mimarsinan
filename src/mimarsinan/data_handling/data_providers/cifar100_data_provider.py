@@ -45,17 +45,19 @@ class CIFAR100_DataProvider(DataProvider):
         }
 
     def ffcv_transforms(self) -> dict:
-        # Augmentation only — spec_builder synthesizes the structural tail.
-        # CIFAR-100 has no flip (mirror-asymmetric classes); covers geometric
-        # + occlusion + color jitter as a best-effort AutoAugment substitute.
+        # CIFAR-100 has no HFlip (mirror-asymmetric classes); same
+        # structural tail synthesis as CIFAR-10.
         return {
-            "train": [
-                ("RandomTranslate", {"padding": 4}),
-                ("Cutout", {"crop_size": 16}),
-                ("RandomBrightness", {"magnitude": 0.3}),
-                ("RandomContrast", {"magnitude": 0.3}),
-                ("RandomSaturation", {"magnitude": 0.3}),
-            ],
-            "val":  [],
-            "test": [],
+            "splits": {
+                "train": [
+                    ("SimpleRGBImageDecoder", {}),
+                    ("RandomTranslate", {"padding": 4}),
+                    ("Cutout", {"crop_size": 16}),
+                    ("RandomBrightness", {"magnitude": 0.3}),
+                    ("RandomContrast", {"magnitude": 0.3}),
+                    ("RandomSaturation", {"magnitude": 0.3}),
+                ],
+                "val":  [("SimpleRGBImageDecoder", {})],
+                "test": [("SimpleRGBImageDecoder", {})],
+            },
         }

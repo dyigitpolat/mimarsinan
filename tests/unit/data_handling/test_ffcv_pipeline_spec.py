@@ -16,8 +16,8 @@ def _toy_spec() -> PipelineSpec:
     return PipelineSpec(
         id="toy",
         fields=(
-            FieldSpec(name="image", write_type="RGBImageField", decode_type="SimpleRGBImageDecoder"),
-            FieldSpec(name="label", write_type="IntField", decode_type="IntDecoder"),
+            FieldSpec(name="image", write_type="RGBImageField"),
+            FieldSpec(name="label", write_type="IntField"),
         ),
         splits={
             "train": SplitSpec(transforms=(("image", "ToTensor", {}),), shuffle=True, drop_last=True),
@@ -60,11 +60,19 @@ class TestPipelineSpecHash:
         )
         assert a.stable_hash() != b.stable_hash()
 
-    def test_hash_changes_on_postprocess_change(self):
+    def test_hash_changes_on_image_field_write_kwargs_change(self):
+        """Changing ``max_resolution`` (which the FFCV layer derives from
+        ``_preprocessing_spec.resize_to``) must invalidate the cache."""
         a = _toy_spec()
         b = PipelineSpec(
-            id=a.id, fields=a.fields, splits=a.splits,
-            gpu_postprocess=(("GPUResizeNormalize", {"resize_to": 224}),),
+            id=a.id,
+            fields=tuple(
+                FieldSpec(name=f.name, write_type=f.write_type,
+                          write_kwargs={"max_resolution": 224})
+                if f.name == "image" else f
+                for f in a.fields
+            ),
+            splits=a.splits,
         )
         assert a.stable_hash() != b.stable_hash()
 

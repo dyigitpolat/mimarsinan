@@ -46,20 +46,23 @@ class CIFAR10_DataProvider(DataProvider):
         }
 
     def ffcv_transforms(self) -> dict:
-        # Augmentation only — spec_builder synthesizes the NormalizeImage +
-        # ToTensor/ToDevice/ToTorchImage tail from _preprocessing_spec.
-        # Strong CIFAR augmentation as a best-effort AutoAugment substitute:
-        # HFlip + ±4-px translate ≡ RandomCrop(32, padding=4), 16×16 cutout,
-        # brightness / contrast / saturation jitter.
+        # Per-split FFCV op chains; decoder is the first op. Structural
+        # tail (NormalizeImage + ToTensor/ToDevice/ToTorchImage) is
+        # synthesized by spec_builder from _preprocessing_spec.
+        # beton_image_size defaults to _preprocessing_spec.resize_to
+        # (224 for cifar_vit ViT-B input).
         return {
-            "train": [
-                ("RandomHorizontalFlip", {}),
-                ("RandomTranslate", {"padding": 4}),
-                ("Cutout", {"crop_size": 16}),
-                ("RandomBrightness", {"magnitude": 0.3}),
-                ("RandomContrast", {"magnitude": 0.3}),
-                ("RandomSaturation", {"magnitude": 0.3}),
-            ],
-            "val":  [],
-            "test": [],
+            "splits": {
+                "train": [
+                    ("SimpleRGBImageDecoder", {}),
+                    ("RandomHorizontalFlip", {}),
+                    ("RandomTranslate", {"padding": 4}),
+                    ("Cutout", {"crop_size": 16}),
+                    ("RandomBrightness", {"magnitude": 0.3}),
+                    ("RandomContrast", {"magnitude": 0.3}),
+                    ("RandomSaturation", {"magnitude": 0.3}),
+                ],
+                "val":  [("SimpleRGBImageDecoder", {})],
+                "test": [("SimpleRGBImageDecoder", {})],
+            },
         }

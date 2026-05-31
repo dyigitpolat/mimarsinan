@@ -20,8 +20,8 @@ class _AsRGB(torch.utils.data.Dataset):
     """Lift a (grayscale PIL, int) dataset to 3-channel RGB.
 
     FFCV's stock ``RGBImageField`` requires 3 channels at write time.
-    Provider authors that want FFCV on a grayscale dataset wrap with this
-    explicitly; the FFCV layer never auto-synthesizes the lift.
+    Applied automatically when the provider's ``get_input_shape()``
+    reports 1 channel.
     """
 
     def __init__(self, base):
@@ -45,8 +45,8 @@ class _PILResize(torch.utils.data.Dataset):
 
     FFCV's ``RGBImageField.max_resolution`` is an *upper bound* — it
     downscales images larger than the target but doesn't upscale. To get
-    the beton stored at the model-input resolution (e.g. 224 for ViT-B on
-    32×32 CIFAR), the writer needs receive images already at that size.
+    the beton stored at the size the decoder expects, the writer needs
+    to receive PIL images already at that size.
     """
 
     def __init__(self, base, target_size: int, interpolation: str):
@@ -64,61 +64,101 @@ class _PILResize(torch.utils.data.Dataset):
         return img, label
 
 
+def _ffcv_config(provider) -> dict:
+    """Return the provider's FFCV declaration, validated.
+
+    Expected shape::
+
+        {
+            "beton_image_size": int | None,    # optional
+            "splits": {"train": [...], "val": [...], "test": [...]},
+        }
+
+    where each split is a list of ``(ffcv_op_class_name, kwargs)`` tuples
+    starting with the per-split decoder. Empty / missing return value
+    means the provider opted out.
+    """
+    cfg = provider.ffcv_transforms()
+    if not cfg:
+        return {}
+    if "splits" not in cfg:
+        raise ValueError(
+            f"{type(provider).__name__}.ffcv_transforms() must return a dict "
+            f"with a 'splits' key (got keys: {sorted(cfg.keys())})"
+        )
+    splits = cfg["splits"]
+    for split in ("train", "val", "test"):
+        if split not in splits:
+            raise ValueError(
+                f"{type(provider).__name__}.ffcv_transforms()['splits'] missing "
+                f"required key '{split}' (got keys: {sorted(splits.keys())})"
+            )
+    return cfg
+
+
+def _beton_image_size(provider) -> int | None:
+    """Resolve the beton storage size: provider's FFCV declaration, else preprocessing_spec."""
+    cfg = _ffcv_config(provider)
+    if cfg and "beton_image_size" in cfg and cfg["beton_image_size"] is not None:
+        return int(cfg["beton_image_size"])
+    preproc = getattr(provider, "_preprocessing_spec", None)
+    if preproc is not None and preproc.resize_to is not None:
+        return int(preproc.resize_to)
+    return None
+
+
 def raw_dataset_for(provider, split: str):
     """Return the raw dataset that will feed the FFCV writer for ``split``.
 
-    Applies two structural wraps driven by the model-input contract:
+    Applies two structural wraps:
 
-    * :class:`_AsRGB` if ``get_input_shape()`` says 1 channel (FFCV's
-      ``RGBImageField`` requires 3).
-    * :class:`_PILResize` if ``_preprocessing_spec.resize_to`` is set —
-      the beton then stores at the model-input resolution and no
-      post-decode resize is needed.
+    * :class:`_AsRGB` if ``get_input_shape()`` says 1 channel.
+    * :class:`_PILResize` to ``beton_image_size`` (from
+      ``ffcv_transforms()['beton_image_size']`` if set, else
+      ``_preprocessing_spec.resize_to``) so the beton stores at the size
+      the decoder expects.
     """
     raw = provider.raw_datasets()[split]
     in_shape = provider.get_input_shape()
     channels = int(in_shape[0]) if len(in_shape) >= 3 else 3
     if channels == 1:
         raw = _AsRGB(raw)
-    preproc = getattr(provider, "_preprocessing_spec", None)
-    if preproc is not None and preproc.resize_to is not None:
-        raw = _PILResize(raw, int(preproc.resize_to),
-                         (preproc.interpolation or "bicubic"))
+    beton_size = _beton_image_size(provider)
+    if beton_size is not None:
+        preproc = getattr(provider, "_preprocessing_spec", None)
+        interp = (preproc.interpolation if preproc is not None else None) or "bicubic"
+        raw = _PILResize(raw, beton_size, interp)
     return raw
 
 
 def infer_spec(provider) -> PipelineSpec:
     """Build a :class:`PipelineSpec` from a provider's data surface.
 
-    Provider declares augmentation only via ``ffcv_transforms()``. The
-    structural pieces — normalize (from ``_preprocessing_spec.{mean,std}``)
-    and the standard ``ToTensor → ToDevice → ToTorchImage`` tail — are
-    synthesized here so both data paths consume the same model-input
-    contract uniformly. ``_preprocessing_spec.resize_to`` also drives
-    ``RGBImageField.max_resolution`` (cache-key disambiguator; the actual
-    upscale happens at beton-write via :class:`_PILResize` in
-    :func:`raw_dataset_for`).
+    Provider opts into FFCV by returning a structured ``ffcv_transforms()``
+    config with per-split FFCV op chains (decoder is the first op). The
+    structural tail — ``NormalizeImage`` (from
+    ``_preprocessing_spec.{mean,std}``) and ``ToTensor → ToDevice →
+    ToTorchImage`` — is synthesized here so both data paths consume the
+    same model-input contract uniformly.
     """
     preproc = getattr(provider, "_preprocessing_spec", None)
+    cfg = _ffcv_config(provider)
+    provider_splits = cfg.get("splits", {})
 
     image_write_kwargs = {}
-    if preproc is not None and preproc.resize_to is not None:
-        image_write_kwargs["max_resolution"] = int(preproc.resize_to)
+    beton_size = _beton_image_size(provider)
+    if beton_size is not None:
+        image_write_kwargs["max_resolution"] = int(beton_size)
     image_field = FieldSpec(
         name="image",
         write_type="RGBImageField",
         write_kwargs=image_write_kwargs,
-        decode_type="SimpleRGBImageDecoder",
     )
-    label_field = FieldSpec(
-        name="label", write_type="IntField", decode_type="IntDecoder",
-    )
-
-    provider_ffcv_tf = provider.ffcv_transforms()
+    label_field = FieldSpec(name="label", write_type="IntField")
 
     def _image_ops(split: str) -> tuple:
         return tuple(("image", cls_name, dict(kwargs))
-                     for cls_name, kwargs in provider_ffcv_tf.get(split, []))
+                     for cls_name, kwargs in provider_splits.get(split, []))
 
     # Structural image tail: NormalizeImage (from preprocessing) then the
     # standard FFCV plumbing. Normalize runs CPU-side (before ToDevice)
@@ -136,8 +176,10 @@ def infer_spec(provider) -> PipelineSpec:
     image_tail = tuple(("image", cls, kw) for cls, kw in image_tail_ops)
 
     # Labels are bypassed at consume time (see ffcv/loader.py) but FFCV's
-    # pipeline still has to materialize the label field.
+    # pipeline still has to materialize the label field — IntDecoder is
+    # the first label op, then the standard int-label conversion tail.
     label_tail = (
+        ("label", "IntDecoder", {}),
         ("label", "ToTensor", {}),
         ("label", "ToDevice", {}),
         ("label", "Squeeze", {}),
