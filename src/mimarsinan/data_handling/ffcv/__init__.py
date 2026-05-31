@@ -1,22 +1,17 @@
-"""FFCV-backed fast data loading."""
+"""FFCV-backed fast data loading.
+
+Reachable iff a provider opts in by overriding ``ffcv_transforms()`` with
+non-empty content. FFCV is then a hard requirement at runtime — there is
+no global toggle and no silent fallback. If FFCV isn't importable the
+ImportError surfaces normally.
+"""
 
 from __future__ import annotations
 
-from mimarsinan.data_handling.ffcv.adapters import (
-    GPUNormalize,
-    GPUResize,
-    GPUResizeNormalize,
-    TorchLoaderShim,
-)
 from mimarsinan.data_handling.ffcv.cache import beton_path_for
-from mimarsinan.data_handling.ffcv.label_passthrough import (
-    IndexedLoader,
-    preload_labels,
-)
+from mimarsinan.data_handling.ffcv.loader import IndexedLoader, preload_labels
 from mimarsinan.data_handling.ffcv.loader_factory import (
     FFCVLoaderFactory,
-    FFCVNotAvailable,
-    available,
     build_loader,
 )
 from mimarsinan.data_handling.ffcv.pipeline_spec import (
@@ -35,14 +30,8 @@ __all__ = [
     "FieldSpec",
     "PipelineSpec",
     "SplitSpec",
-    "TorchLoaderShim",
-    "GPUResize",
-    "GPUNormalize",
-    "GPUResizeNormalize",
     "IndexedLoader",
     "FFCVLoaderFactory",
-    "FFCVNotAvailable",
-    "available",
     "beton_path_for",
     "build_loader",
     "ensure_beton",

@@ -184,11 +184,12 @@ class TestImageNetDataProvider:
         (target / "meta.bin").write_bytes(b"x")
         monkeypatch.setenv("IMAGENET_ROOT", str(target))
 
+        from PIL import Image as _Image
         mock_ds = MagicMock()
         mock_ds.__len__ = lambda self: 10
 
         def _getitem(_self, _idx):
-            return torch.zeros(3, 224, 224), 0
+            return _Image.new("RGB", (256, 256)), 0
 
         mock_ds.__getitem__ = _getitem
 
