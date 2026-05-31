@@ -126,6 +126,7 @@ class TestRollback:
         tuner._validate_idx = 0
         tuner.set_validate_sequence([0.75, 0.60])
         tuner._patch_validate()
+        tuner._last_post_acc = None  # force fresh pre-validate from sequence
         result = tuner._adaptation(0.6)
         assert result == 0.5  # rolled back to last committed rate
 

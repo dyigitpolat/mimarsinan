@@ -117,6 +117,7 @@ class TestAbsoluteFloorInAdaptation:
         # absolute gate REJECTS (post 0.84 < floor 0.85). Must roll back.
         tuner._validate_idx = 0
         tuner.set_validate_sequence([0.86, 0.84])
+        tuner._last_post_acc = None  # force fresh pre-validate from sequence
         r = tuner._adaptation(0.4)
         assert r < 0.4, (
             "Second cycle must roll back because absolute floor was breached"
