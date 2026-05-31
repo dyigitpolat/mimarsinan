@@ -7,6 +7,7 @@ import torchvision
 import torch
 import os
 
+
 @BasicDataProviderFactory.register("CIFAR10_DataProvider")
 class CIFAR10_DataProvider(DataProvider):
     DISPLAY_LABEL = "CIFAR-10 (32×32×3, 10 classes)"
@@ -17,43 +18,46 @@ class CIFAR10_DataProvider(DataProvider):
         path_str = str(self.datasets_path + '/cifar-10-batches-py')
         download = not os.path.exists(path_str)
 
-        train_transform = self._apply_preprocessing([
-            transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
-            transforms.ToTensor(),
-        ], train=True)
-
-        test_validation_transform = self._apply_preprocessing([
-            transforms.ToTensor(),
-        ], train=False)
-
-        training_dataset = torchvision.datasets.CIFAR10(
-            root=self.datasets_path, train=True, download=download,
-            transform=train_transform)
-
-        validation_dataset = torchvision.datasets.CIFAR10(
-            root=self.datasets_path, train=True, download=download,
-            transform=test_validation_transform)
-
-        training_validation_split = 0.95
-        training_length = int(len(training_dataset) * training_validation_split)
-
-        self.training_dataset = torch.utils.data.Subset(
-            training_dataset, range(0, training_length))
-        self.validation_dataset = torch.utils.data.Subset(
-            validation_dataset, range(training_length, len(training_dataset)))
-
-        self.test_dataset = torchvision.datasets.CIFAR10(
-            root=self.datasets_path, train=False, download=download,
-            transform=test_validation_transform)
-
-    def _get_training_dataset(self):
-        return self.training_dataset
-
-    def _get_validation_dataset(self):
-        return self.validation_dataset
-
-    def _get_test_dataset(self):
-        return self.test_dataset
+        full_train = torchvision.datasets.CIFAR10(
+            root=self.datasets_path, train=True, download=download, transform=None,
+        )
+        cut = int(len(full_train) * 0.95)
+        self._train_raw = torch.utils.data.Subset(full_train, range(0, cut))
+        self._val_raw   = torch.utils.data.Subset(full_train, range(cut, len(full_train)))
+        self._test_raw  = torchvision.datasets.CIFAR10(
+            root=self.datasets_path, train=False, download=download, transform=None,
+        )
 
     def get_prediction_mode(self):
         return ClassificationMode(10)
+
+    def raw_datasets(self) -> dict:
+        return {"train": self._train_raw, "val": self._val_raw, "test": self._test_raw}
+
+    def torch_transforms(self) -> dict:
+        return {
+            "train": [
+                transforms.RandomHorizontalFlip(),
+                transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
+                transforms.ToTensor(),
+            ],
+            "val":  [transforms.ToTensor()],
+            "test": [transforms.ToTensor()],
+        }
+
+    def ffcv_transforms(self) -> dict:
+        # Strong CIFAR augmentation — best-effort substitute for AutoAugment
+        # using only FFCV CPU ops: HFlip + ±4-px translate ≡ RandomCrop(32,
+        # padding=4) + 16x16 cutout + color jitter.
+        return {
+            "train": [
+                ("RandomHorizontalFlip", {}),
+                ("RandomTranslate", {"padding": 4}),
+                ("Cutout", {"crop_size": 16}),
+                ("RandomBrightness", {"magnitude": 0.3}),
+                ("RandomContrast", {"magnitude": 0.3}),
+                ("RandomSaturation", {"magnitude": 0.3}),
+            ],
+            "val":  [],
+            "test": [],
+        }

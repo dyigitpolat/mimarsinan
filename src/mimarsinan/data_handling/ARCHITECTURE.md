@@ -7,11 +7,13 @@ tuning, and evaluation subsystems.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `data_provider.py` | `DataProvider`, `ClassificationMode`, `RegressionMode` | Abstract base for dataset providers; `get_validation_batch_size()` matches training batch size capped by validation set size (Phase 6) |
+| `data_provider.py` | `DataProvider`, `ClassificationMode`, `RegressionMode` | Abstract base. Subclasses override three per-split dict methods: `raw_datasets()` (datasets shared by both paths), `torch_transforms()` (raw torchvision transform lists, base class wraps with preprocessing), `ffcv_transforms()` (FFCV CPU op chains `[(op_name, kwargs), ...]`; non-empty opts the provider into FFCV — `enable_ffcv()` is derived). `get_validation_batch_size()` matches training batch size capped by validation set size. |
 | `data_provider_factory.py` | `DataProviderFactory`, `BasicDataProviderFactory` | Factory with class-level registry (`@register` decorator) |
-| `data_loader_factory.py` | `DataLoaderFactory`, `shutdown_data_loader` | Creates PyTorch `DataLoader`s for train/val/test splits; validation loaders use `shuffle=False`; helper to shut down multi-worker loaders |
+| `data_loader_factory.py` | `DataLoaderFactory`, `shutdown_data_loader` | Creates PyTorch `DataLoader`s for train/val/test splits; validation loaders use `shuffle=False`. Routes through `ffcv/` when `MIMARSINAN_PERF_FFCV=1` *and* the provider opts in via `enable_ffcv()`; otherwise falls back to the torch path. Helper to shut down multi-worker loaders. |
+| `dataset_views.py` | `ApplyTransform` | Wrapper that composes a raw dataset with a per-call transform. The base class uses this in `_assemble_split` to keep the raw dataset transform-free (the form FFCV needs for beton writing). |
 | `test_sample_loader.py` | `load_test_sample_by_index`, `load_test_samples_by_index` | Deterministic test-set sample fetch by global index (Loihi/SANA-FE parity steps). |
-| `data_providers/` | Concrete providers | MNIST, CIFAR-10, CIFAR-100, ECG, ImageNet; each may set `DISPLAY_LABEL` for GUI dropdowns |
+| `data_providers/` | Concrete providers | MNIST, MNIST-32, CIFAR-10, CIFAR-100, ECG, ImageNet; each may set `DISPLAY_LABEL` for GUI dropdowns. CIFAR-10/100 and MNIST/MNIST-32 opt into FFCV by overriding `ffcv_transforms()` with explicit per-split op chains (ImageNet / ECG inherit the empty default). |
+| `ffcv/` | FFCV-backed fast data loading | See `ffcv/ARCHITECTURE.md` |
 
 ## Dependencies
 

@@ -17,7 +17,7 @@ class ClassificationMode:
         # Lazy import to avoid importing training code when only inspecting datasets.
         from mimarsinan.model_training.training_utilities import BasicClassificationLoss
         return BasicClassificationLoss()
-    
+
 class RegressionMode:
     def mode(self):
         return "regression"
@@ -37,7 +37,7 @@ class RegressionMode:
                 return nn.MSELoss()(model(x), y)
 
         return _MSELossWrapper()
-    
+
 
 class DataProvider:
     # Providers whose transforms hard-code the input shape (e.g. ImageNet
@@ -56,12 +56,12 @@ class DataProvider:
         self._input_shape = None
         self._output_shape = None
 
-    def _apply_preprocessing(self, base_transforms, train: bool = False):
-        """Wrap a provider's native transform list with the configured preprocessing.
+    def _wrap_with_preprocessing(self, base_transforms):
+        """Wrap a raw transform list with the configured preprocessing.
 
-        Providers should call this on their ``train_transform`` / ``eval_transform``
-        lists; when no preprocessing is configured the list is returned as a
-        :class:`torchvision.transforms.Compose` unchanged.
+        Returns a :class:`torchvision.transforms.Compose`. With no
+        preprocessing configured, the list is returned unchanged inside
+        a Compose.
         """
         import torchvision.transforms as _T
 
@@ -81,27 +81,54 @@ class DataProvider:
         g.manual_seed(int(self.seed))
         return g
 
+    # ----- Per-split dataset / transform contract -----------------------------
+    # Three method overrides cover the full data surface. Each returns a dict
+    # keyed by split name ("train" / "val" / "test").
+    #   raw_datasets()     - raw datasets, shared by both data paths.
+    #   torch_transforms() - raw transform lists for the torch DataLoader path.
+    #                        The base class wraps each list with the configured
+    #                        preprocessing.
+    #   ffcv_transforms()  - FFCV CPU op chains [(op_name, kwargs), ...] for
+    #                        the FFCV path. Providing a non-empty dict opts
+    #                        the provider into FFCV; the empty default keeps
+    #                        it on the torch path regardless of the global
+    #                        FFCV toggle. enable_ffcv() is derived.
+
+    def raw_datasets(self) -> dict:
+        return {}
+
+    def torch_transforms(self) -> dict:
+        return {}
+
+    def ffcv_transforms(self) -> dict:
+        return {}
+
+    def enable_ffcv(self) -> bool:
+        return bool(self.ffcv_transforms())
+
+    def _assemble_split(self, split: str):
+        from mimarsinan.data_handling.dataset_views import ApplyTransform
+
+        raw = self.raw_datasets().get(split)
+        if raw is None:
+            raise NotImplementedError(
+                f"{type(self).__name__}: no raw_datasets()[{split!r}] and no "
+                f"override for _get_{split}_dataset()."
+            )
+        tf_list = self.torch_transforms().get(split)
+        if tf_list is None:
+            return raw
+        return ApplyTransform(raw, self._wrap_with_preprocessing(tf_list))
+
     def _get_training_dataset(self):
-        """
-        Dataset: Training - Validation
-        Transformation: Augmentation
-        """
-        raise NotImplementedError()
-    
+        return self._assemble_split("train")
+
     def _get_validation_dataset(self):
-        """
-        Dataset: Validation
-        Transformation: None
-        """
-        raise NotImplementedError()
-    
+        return self._assemble_split("val")
+
     def _get_test_dataset(self):
-        """
-        Dataset: Test
-        Transformation: None
-        """
-        raise NotImplementedError()
-    
+        return self._assemble_split("test")
+
     def get_prediction_mode(self):
         """
         Returns the classification mode
@@ -113,7 +140,7 @@ class DataProvider:
         Convenience helper: create the loss function for this provider based on its prediction mode.
         """
         return self.get_prediction_mode().create_loss()
-    
+
     def get_training_batch_size(self):
         if self._batch_size_override is not None:
             return self._batch_size_override
@@ -140,24 +167,24 @@ class DataProvider:
         if n_test <= 0:
             return max(1, train_bs)
         return min(max(1, train_bs), n_test)
-    
+
     def get_training_set_size(self):
         return len(self._get_training_dataset())
-    
+
     def get_validation_set_size(self):
         return len(self._get_validation_dataset())
-    
+
     def get_test_set_size(self):
         return len(self._get_test_dataset())
-    
+
     def get_input_shape(self):
         if self._input_shape is None:
             self._input_shape = self._get_test_dataset()[0][0].shape
-        
+
         return self._input_shape
-    
+
     def get_output_shape(self):
         return self.get_prediction_mode().num_classes
-    
+
     def is_mp_safe(self):
         return True
