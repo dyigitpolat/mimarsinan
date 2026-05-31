@@ -9,16 +9,17 @@ from dataclasses import dataclass, field, asdict
 
 @dataclass(frozen=True)
 class FieldSpec:
-    """One serialized field's name + the type-class name used for write/decode.
+    """One serialized field's name + the type-class name used at write time.
 
-    Stored as names (not classes) so the spec stays hashable and
-    JSON-serializable for cache-key computation.
+    Decoders are not stored on the field — they're the first op in each
+    split's chain (``SplitSpec.transforms``). This lets one field carry
+    split-asymmetric decoders (e.g. ``RandomResizedCrop`` on train vs
+    ``CenterCrop`` on val).
     """
 
     name: str
     write_type: str
     write_kwargs: dict = field(default_factory=dict)
-    decode_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,6 @@ class PipelineSpec:
     id: str
     fields: tuple[FieldSpec, ...]
     splits: dict[str, SplitSpec]
-    gpu_postprocess: tuple = ()
     notes: str = ""
 
     def stable_hash(self) -> str:

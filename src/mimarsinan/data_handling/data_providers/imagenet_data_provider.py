@@ -79,9 +79,18 @@ class ImageNet_DataProvider(DataProvider):
     training_validation_split = 0.95
 
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
-        # ImageNet supplies its own RandomResizedCrop / CenterCrop pipeline;
-        # ignore the configured preprocessing so we don't double-resize.
-        super().__init__(datasets_path, seed=seed, preprocessing=None, batch_size=batch_size)
+        # ImageNet's crop policy is split-asymmetric — train uses
+        # RandomResizedCrop(224), val uses Resize(256)+CenterCrop(224) —
+        # so ``_preprocessing_spec.resize_to`` (single value, shared
+        # across splits) can't express it. The provider declares the
+        # crops itself in ``torch_transforms`` / ``ffcv_image_decoder``.
+        # Normalize is symmetric across splits, so it goes via
+        # ``_preprocessing_spec`` and the base class appends it uniformly.
+        super().__init__(
+            datasets_path, seed=seed,
+            preprocessing={"normalize": {"mean": _IMAGENET_MEAN, "std": _IMAGENET_STD}},
+            batch_size=batch_size,
+        )
 
         root = _ensure_imagenet_symlink(str(self.datasets_path))
         if not os.path.isdir(root):
@@ -109,32 +118,58 @@ class ImageNet_DataProvider(DataProvider):
         return {"train": self._train_raw, "val": self._val_raw, "test": self._test_raw}
 
     def torch_transforms(self) -> dict:
+        # Normalize is appended uniformly by the base class from
+        # ``_preprocessing_spec``; only the crop/resize policy lives here.
         return {
             "train": [
                 transforms.RandomResizedCrop(224),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
             ],
             "val": [
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
             ],
             "test": [
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
             ],
         }
 
-    # No FFCV opt-in: ImageNet's train uses ``RandomResizedCrop`` with no
-    # pre-resize, while val uses ``Resize(256) + CenterCrop(224)``. The
-    # current FFCV layer carries one resize per spec (via
-    # ``_preprocessing_spec.resize_to``), which can't express this
-    # split-asymmetric crop policy without introducing per-split decoders.
+    def ffcv_transforms(self) -> dict:
+        # Per-split decoder carries the split-asymmetric crop policy:
+        # RandomResizedCrop on train (matches torch path's training
+        # recipe), CenterCrop on val/test (matches the deterministic
+        # eval recipe). The decoder is the first FFCV op in each split.
+        # beton_image_size=256 gives the train decoder room to sample
+        # 224-px windows with scale/ratio variety.
+        return {
+            "beton_image_size": 256,
+            "splits": {
+                "train": [
+                    ("RandomResizedCropRGBImageDecoder", {
+                        "output_size": (224, 224),
+                        "scale": (0.08, 1.0),
+                        "ratio": (3.0 / 4.0, 4.0 / 3.0),
+                    }),
+                    ("RandomHorizontalFlip", {}),
+                ],
+                "val": [
+                    ("CenterCropRGBImageDecoder", {
+                        "output_size": (224, 224),
+                        "ratio": 224.0 / 256.0,
+                    }),
+                ],
+                "test": [
+                    ("CenterCropRGBImageDecoder", {
+                        "output_size": (224, 224),
+                        "ratio": 224.0 / 256.0,
+                    }),
+                ],
+            },
+        }
 
     def get_training_batch_size(self):
         return self._batch_size_override or 16

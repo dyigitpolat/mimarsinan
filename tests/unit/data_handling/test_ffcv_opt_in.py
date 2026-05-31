@@ -39,15 +39,17 @@ class TestEnableFFCVDerivedFromFFCVTransforms:
         class _Opted(DataProvider):
             def __init__(self): pass
             def ffcv_transforms(self):
-                return {"train": [("ToTensor", {})], "val": [], "test": []}
+                return {"splits": {"train": [("SimpleRGBImageDecoder", {})],
+                                   "val":   [("SimpleRGBImageDecoder", {})],
+                                   "test":  [("SimpleRGBImageDecoder", {})]}}
 
-        p = _Opted()
-        assert p.enable_ffcv() is True
+        assert _Opted().enable_ffcv() is True
 
 
 class TestProvidersOptInExplicitly:
-    """Providers that ship FFCV-ready: their ``ffcv_transforms()`` returns a
-    non-empty dict and ``enable_ffcv()`` is True."""
+    """Providers that ship FFCV-ready: their ``ffcv_transforms()`` returns
+    a structured ``{'beton_image_size'?: int, 'splits': {...}}`` dict and
+    ``enable_ffcv()`` is True."""
 
     def test_cifar10_declares_strong_augmentation_chain(self):
         from mimarsinan.data_handling.data_providers.cifar10_data_provider import (
@@ -60,14 +62,17 @@ class TestProvidersOptInExplicitly:
                 p = CIFAR10_DataProvider(datasets_path=tmp)
             except Exception as e:
                 pytest.skip(f"CIFAR10 download/init not viable: {e!r}")
-            ffcv_tf = p.ffcv_transforms()
-            assert set(ffcv_tf.keys()) == {"train", "val", "test"}
-            train_names = [op[0] for op in ffcv_tf["train"]]
+            cfg = p.ffcv_transforms()
+            assert "splits" in cfg
+            assert set(cfg["splits"].keys()) == {"train", "val", "test"}
+            train_names = [op[0] for op in cfg["splits"]["train"]]
+            # Decoder is the first op.
+            assert train_names[0] == "SimpleRGBImageDecoder"
+            # Augments follow.
             assert "RandomHorizontalFlip" in train_names
             assert "RandomTranslate" in train_names
             assert "Cutout" in train_names
-            # NormalizeImage is synthesized by the spec_builder from
-            # _preprocessing_spec, not declared in the provider's chain.
+            # NormalizeImage is synthesized; not in the provider's chain.
             assert "NormalizeImage" not in train_names
             assert p.enable_ffcv() is True
 
@@ -82,32 +87,38 @@ class TestProvidersOptInExplicitly:
                 p = CIFAR100_DataProvider(datasets_path=tmp)
             except Exception as e:
                 pytest.skip(f"CIFAR100 download/init not viable: {e!r}")
-            train_names = [op[0] for op in p.ffcv_transforms()["train"]]
+            train_ops = p.ffcv_transforms()["splits"]["train"]
+            train_names = [op[0] for op in train_ops]
+            assert train_names[0] == "SimpleRGBImageDecoder"
             assert "RandomHorizontalFlip" not in train_names
             assert "RandomTranslate" in train_names
             assert "Cutout" in train_names
-            # NormalizeImage is synthesized; not in the provider's chain.
             assert "NormalizeImage" not in train_names
-            assert p.enable_ffcv() is True
 
-    # ImageNet currently doesn't opt into FFCV (its split-asymmetric
-    # RandomResizedCrop / CenterCrop policy doesn't fit the single
-    # max_resolution we derive from _preprocessing_spec); see
-    # test_imagenet_stays_opt_out below.
-
-
-class TestProvidersOptOut:
-    """Providers that don't ship FFCV-ready inherit the empty default."""
-
-    def test_imagenet_stays_opt_out(self):
-        """ImageNet's train/val crop policies don't share a single
-        ``resize_to``; FFCV opt-in is deferred until the spec supports
-        split-asymmetric decoders."""
+    def test_imagenet_declares_per_split_decoder_and_beton_size(self):
+        """ImageNet's split-asymmetric crop policy lives in per-split
+        decoders inside ``ffcv_transforms()``. ``beton_image_size=256`` so
+        the train decoder has source pixels to crop from."""
         from mimarsinan.data_handling.data_provider import DataProvider
         from mimarsinan.data_handling.data_providers.imagenet_data_provider import (
             ImageNet_DataProvider,
         )
-        assert ImageNet_DataProvider.ffcv_transforms is DataProvider.ffcv_transforms
+        # Class-level inspection (avoids needing the ImageNet metadata files).
+        assert ImageNet_DataProvider.ffcv_transforms is not DataProvider.ffcv_transforms
+        cfg = ImageNet_DataProvider.ffcv_transforms(SimpleNamespace())
+        assert cfg["beton_image_size"] == 256
+        train_first = cfg["splits"]["train"][0]
+        val_first   = cfg["splits"]["val"][0]
+        test_first  = cfg["splits"]["test"][0]
+        assert train_first[0] == "RandomResizedCropRGBImageDecoder"
+        assert val_first[0]   == "CenterCropRGBImageDecoder"
+        assert test_first[0]  == "CenterCropRGBImageDecoder"
+        assert train_first[1]["output_size"] == (224, 224)
+        assert val_first[1]["output_size"]   == (224, 224)
+
+
+class TestProvidersOptOut:
+    """Providers that don't ship FFCV-ready inherit the empty default."""
 
     def test_mnist_stays_opt_out(self):
         """FFCV's RGBImageField requires 3 channels and no stock op
