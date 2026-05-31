@@ -66,7 +66,9 @@ class TestProvidersOptInExplicitly:
             assert "RandomHorizontalFlip" in train_names
             assert "RandomTranslate" in train_names
             assert "Cutout" in train_names
-            assert "NormalizeImage" in train_names
+            # NormalizeImage is synthesized by the spec_builder from
+            # _preprocessing_spec, not declared in the provider's chain.
+            assert "NormalizeImage" not in train_names
             assert p.enable_ffcv() is True
 
     def test_cifar100_declares_strong_augmentation_no_flip(self):
@@ -84,7 +86,8 @@ class TestProvidersOptInExplicitly:
             assert "RandomHorizontalFlip" not in train_names
             assert "RandomTranslate" in train_names
             assert "Cutout" in train_names
-            assert "NormalizeImage" in train_names
+            # NormalizeImage is synthesized; not in the provider's chain.
+            assert "NormalizeImage" not in train_names
             assert p.enable_ffcv() is True
 
     # ImageNet currently doesn't opt into FFCV (its split-asymmetric

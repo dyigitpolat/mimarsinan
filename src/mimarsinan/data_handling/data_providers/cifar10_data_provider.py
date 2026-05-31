@@ -1,16 +1,11 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 
-import numpy as np
 import torchvision.transforms as transforms
 import torchvision
 
 import torch
 import os
-
-
-_IMAGENET_MEAN_255 = np.array([0.485, 0.456, 0.406]) * 255.0
-_IMAGENET_STD_255  = np.array([0.229, 0.224, 0.225]) * 255.0
 
 
 @BasicDataProviderFactory.register("CIFAR10_DataProvider")
@@ -51,11 +46,11 @@ class CIFAR10_DataProvider(DataProvider):
         }
 
     def ffcv_transforms(self) -> dict:
-        # Strong CIFAR augmentation — pre-AutoAugment baseline: HFlip + ±4-px
-        # translate ≡ RandomCrop(32, padding=4) + 16×16 cutout + color jitter.
-        # NormalizeImage runs CPU-side (before ToDevice) so we don't depend
-        # on cupy for FFCV's GPU normalize path.
-        normalize = self._normalize_op()
+        # Augmentation only — spec_builder synthesizes the NormalizeImage +
+        # ToTensor/ToDevice/ToTorchImage tail from _preprocessing_spec.
+        # Strong CIFAR augmentation as a best-effort AutoAugment substitute:
+        # HFlip + ±4-px translate ≡ RandomCrop(32, padding=4), 16×16 cutout,
+        # brightness / contrast / saturation jitter.
         return {
             "train": [
                 ("RandomHorizontalFlip", {}),
@@ -64,30 +59,7 @@ class CIFAR10_DataProvider(DataProvider):
                 ("RandomBrightness", {"magnitude": 0.3}),
                 ("RandomContrast", {"magnitude": 0.3}),
                 ("RandomSaturation", {"magnitude": 0.3}),
-                normalize,
-                ("ToTensor", {}),
-                ("ToDevice", {"non_blocking": True}),
-                ("ToTorchImage", {}),
             ],
-            "val":  self._eval_chain(normalize),
-            "test": self._eval_chain(normalize),
+            "val":  [],
+            "test": [],
         }
-
-    @staticmethod
-    def _eval_chain(normalize):
-        return [
-            normalize,
-            ("ToTensor", {}),
-            ("ToDevice", {"non_blocking": True}),
-            ("ToTorchImage", {}),
-        ]
-
-    def _normalize_op(self):
-        spec = self._preprocessing_spec
-        if spec is not None and spec.mean is not None and spec.std is not None:
-            mean = np.array(spec.mean) * 255.0
-            std  = np.array(spec.std)  * 255.0
-        else:
-            mean = _IMAGENET_MEAN_255
-            std  = _IMAGENET_STD_255
-        return ("NormalizeImage", {"mean": mean, "std": std, "type": np.float32})
