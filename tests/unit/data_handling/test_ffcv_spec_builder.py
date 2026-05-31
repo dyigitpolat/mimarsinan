@@ -136,6 +136,46 @@ def test_raw_dataset_for_returns_provider_raw():
     assert raw_dataset_for(p, "train") is p.raw_datasets()["train"]
 
 
+def test_raw_dataset_for_pre_resizes_pil_to_preprocessing_resize_to():
+    """When ``_preprocessing_spec.resize_to`` is set, ``raw_dataset_for``
+    wraps the dataset with a PIL resize so the beton stores at the model-
+    input resolution (FFCV's ``max_resolution`` is an upper bound and
+    doesn't upscale, so the writer needs to receive already-resized PIL)."""
+    from mimarsinan.data_handling.ffcv.spec_builder import raw_dataset_for
+
+    p = _FakeProvider(preprocessing={"resize_to": 224})
+    # _FakeProvider's _TinyDS yields tensors, not PIL — patch one entry with
+    # a tiny PIL image so we exercise the resize path end-to-end.
+    from PIL import Image
+    small = Image.new("RGB", (32, 32))
+    p._raw_map["train"] = type("DS", (), {
+        "__len__": lambda self: 1,
+        "__getitem__": lambda self, idx: (small, 7),
+    })()
+
+    wrapped = raw_dataset_for(p, "train")
+    img, label = wrapped[0]
+    assert img.size == (224, 224)
+    assert label == 7
+
+
+def test_raw_dataset_for_skips_resize_when_no_preprocessing_resize_to():
+    """No ``resize_to`` → no PIL resize wrap."""
+    from mimarsinan.data_handling.ffcv.spec_builder import raw_dataset_for
+
+    p = _FakeProvider(preprocessing=None)
+    from PIL import Image
+    small = Image.new("RGB", (32, 32))
+    p._raw_map["train"] = type("DS", (), {
+        "__len__": lambda self: 1,
+        "__getitem__": lambda self, idx: (small, 7),
+    })()
+
+    wrapped = raw_dataset_for(p, "train")
+    img, label = wrapped[0]
+    assert img.size == (32, 32)
+
+
 def test_as_rgb_wrapper_lifts_grayscale_pil_to_rgb():
     """``_AsRGB`` is the explicit wrapper providers can use when they have a
     grayscale source dataset. Never auto-applied by ``infer_spec``."""
