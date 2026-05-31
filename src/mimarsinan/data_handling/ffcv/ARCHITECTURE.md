@@ -1,48 +1,61 @@
 # data_handling/ffcv/ -- FFCV-backed fast data loading
 
-Drop-in alternative to PyTorch's `DataLoader` for the train / val / test
-loops. Trades a one-time cost (writing the dataset to a memory-mapped
+Drop-in alternative to PyTorch's `DataLoader` for image-classification
+training. Trades a one-time cost (writing the dataset to a memory-mapped
 `.beton` file) for lower per-batch overhead.
 
-Reachable via `MIMARSINAN_PERF_FFCV=1` *and* the provider opting in via
-`enable_ffcv()` (derived from a non-empty `ffcv_transforms()` override).
-Without either, `DataLoaderFactory` falls back to the torch DataLoader path.
+A provider opts in by overriding `ffcv_transforms()` (non-empty result) on
+its `DataProvider` subclass. FFCV is then a **hard requirement** at
+runtime — no global toggle, no silent fallback. If FFCV isn't importable
+the ImportError surfaces normally; any FFCV-side error from the spec /
+writer / loader propagates unchanged.
 
 ## Key Components
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `pipeline_spec.py` | `FieldSpec`, `SplitSpec`, `PipelineSpec`, `normalize_split_name` | Declarative spec for one (provider, dataset). Hashable / JSON-serializable so the beton cache can be keyed by spec. |
-| `spec_builder.py` | `infer_spec`, `raw_dataset_for` | Builds a `PipelineSpec` from a provider's surface (`raw_datasets()`, `ffcv_transforms()`, `_preprocessing_spec`, `get_input_shape()`, `get_prediction_mode()`). `raw_dataset_for` returns the FFCV-ready raw dataset, lifted to 3-channel RGB if the model input is 1-channel (FFCV's `RGBImageField` requires it; the GPU postprocess collapses back to 1 via `to_grayscale=True`). |
-| `cache.py` | `cache_root`, `beton_dir_for`, `beton_path_for` | Per-spec on-disk paths under `~/.cache/mimarsinan/ffcv/<provider_id>/<spec_hash>/<split>.beton`. Override root with `MIMARSINAN_FFCV_CACHE_DIR`. |
-| `writer.py` | `ensure_beton` | Writes the beton if absent. Idempotent + parallel-safe via a sibling `.lock` flock; concurrent processes wait then re-check. Writes go to a `.tmp` sibling then atomic-rename so readers never see partial files. |
-| `adapters.py` | `GPUResize`, `GPUNormalize`, `GPUResizeNormalize`, `TorchLoaderShim` | GPU postprocess ops + the torch-style shim around `ffcv.Loader`. The shim clones `x` at the FFCV boundary (FFCV yields views into a rotating buffer pool) and, when given a `label_lookup`, replaces FFCV's per-batch label tensor with an indexed lookup keyed by `batch_indices` pulled from `IndexedLoader`. |
-| `label_passthrough.py` | `IndexedLoader`, `preload_labels` | `IndexedLoader` is an `ffcv.Loader` subclass whose iterator surfaces per-batch indices via a thread-safe `batch_index_queue`. `preload_labels` returns all labels as a `torch.LongTensor`, walking `Subset` and `_AsRGB` wrappers and using fast `.targets` / `.labels` metadata when available. Together these bypass FFCV's stock `IntDecoder` (which is unreliable on ViT-class workloads under fused-multi-tensor-apply optimizer state). |
-| `loader_factory.py` | `available`, `build_loader`, `FFCVLoaderFactory`, `FFCVNotAvailable` | Entry point used by `DataLoaderFactory`. Materializes ops, wires the `IndexedLoader`, preloads labels on-device, and returns a `TorchLoaderShim` that yields `(x, y)` already on the GPU. |
+| `pipeline_spec.py` | `FieldSpec`, `SplitSpec`, `PipelineSpec`, `normalize_split_name` | Declarative, hashable, JSON-serializable spec for one (provider, dataset). The hash drives the on-disk cache key. |
+| `spec_builder.py` | `infer_spec`, `raw_dataset_for`, `_AsRGB` | Builds a `PipelineSpec` from a provider's surface (`raw_datasets()`, `ffcv_transforms()`, `ffcv_image_field_kwargs()`). The provider's per-split FFCV CPU op chain lands verbatim on the image pipeline — no tail synthesis, no `_preprocessing_spec` reading, no GPU postprocess magic. Only the label tail (`ToTensor`/`ToDevice`/`Squeeze`) is added because the loader bypasses labels anyway. `_AsRGB` is an explicit helper providers can use to lift grayscale source datasets to 3-channel for FFCV's `RGBImageField`. |
+| `cache.py` | `cache_root`, `beton_dir_for`, `beton_path_for` | Per-spec on-disk paths under `~/.cache/mimarsinan/ffcv/<provider_id>/<spec_hash>/<split>.beton`. Override with `MIMARSINAN_FFCV_CACHE_DIR`. |
+| `writer.py` | `ensure_beton` | Writes the beton if absent. Parallel-safe via a sibling `.lock` flock; concurrent writers wait then re-check. Writes go to a `.tmp` sibling then atomic-rename so readers never see partial files. |
+| `loader.py` | `IndexedLoader`, `preload_labels` | `ffcv.Loader` subclass. Iterator yields `(x.clone(), label_lookup[batch_indices])` directly — no shim, no torch-DataLoader-compat layer. The clone owns FFCV's rotating-buffer contract (downstream consumers can hold yielded tensors across iteration boundaries). The label-lookup path bypasses FFCV's stock `IntDecoder`, which is unreliable on ViT-class workloads under fused-multi-tensor-apply optimizer state. `preload_labels(dataset)` builds the lookup; walks `Subset` / `_AsRGB` wrappers and uses fast `.targets` / `.labels` metadata when available. |
+| `loader_factory.py` | `build_loader`, `FFCVLoaderFactory` | Materializes ops, runs the writer, preloads labels on-device, and returns an `IndexedLoader`. No try/except, no `available()` gate. |
 
 ## Dependencies
 
 - **Internal**: `data_handling.data_provider` (the provider surface).
-- **External**: `ffcv` (optional), `torch`, `torchvision`.
+- **External**: `ffcv` (hard requirement when reached), `torch`, `numpy`.
 
 ## Dependents
 
-- `data_handling.data_loader_factory` (single integration point: `_try_ffcv`).
-
-## Exported API (\_\_init\_\_.py)
-
-See `__init__.py` for the full re-export list. The two surfaces the rest
-of the codebase touches are `FFCVLoaderFactory` (constructed by
-`DataLoaderFactory`) and `available()` (gate check).
+- `data_handling.data_loader_factory._ffcv_loader` — single integration
+  point, gated on `provider.enable_ffcv()`.
 
 ## Provider opt-in contract
 
-Providers declare two per-split dicts that the FFCV layer reads:
+Providers that want FFCV override these four methods on `DataProvider`:
 
-- `raw_datasets()` — the underlying transform-free torchvision datasets
-  (used as both the beton source and the label-preload source).
-- `ffcv_transforms()` — `{"train": [...], "val": [...], "test": [...]}`
-  where each entry is `[(ffcv_op_class_name, kwargs_dict), ...]`. FFCV's
-  CPU op catalogue is a subset of torchvision's; provider author chooses
-  semantically-aligned ops (the `ffcv.transforms` module is the menu).
-  Returning the empty default keeps the provider on the torch path.
+```python
+def raw_datasets(self) -> dict:
+    """Per-split raw datasets shared by both paths (beton source)."""
+
+def torch_transforms(self) -> dict:
+    """Per-split raw transform lists for the torch path; base class
+    wraps with the configured preprocessing."""
+
+def ffcv_transforms(self) -> dict:
+    """Per-split FFCV op chains [(op_name, kwargs), ...]. Includes the
+    standard tail (ToTensor / ToDevice / ToTorchImage / NormalizeImage)
+    that FFCV's image pipeline requires — there is no auto-synthesis.
+    Non-empty content opts the provider into FFCV."""
+
+def ffcv_image_field_kwargs(self) -> dict:
+    """kwargs forwarded to `RGBImageField` at beton-write time
+    (e.g. `{"max_resolution": 224}` so the beton stores at the
+    model-input resolution and no post-decode resize is needed)."""
+```
+
+Currently shipping with FFCV opt-in: **CIFAR-10**, **CIFAR-100**, **ImageNet**.
+MNIST / MNIST-32 / ECG inherit the empty default and stay on the torch
+path (MNIST/MNIST-32 because FFCV's `RGBImageField` requires 3 channels
+with no collapse op; ECG because it is 1D signal data).

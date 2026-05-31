@@ -39,7 +39,6 @@ class MNIST_DataProvider(DataProvider):
             "test":  [transforms.ToTensor()],
         }
 
-    def ffcv_transforms(self) -> dict:
-        # MNIST is pose-sensitive — no train augments. Returning non-empty
-        # per-split lists (even empty) is the opt-in signal for FFCV.
-        return {"train": [], "val": [], "test": []}
+    # No FFCV opt-in: FFCV's RGBImageField requires 3 channels and there is
+    # no stock op to collapse back to 1. A future grayscale-aware FFCV
+    # field would unblock MNIST FFCV.

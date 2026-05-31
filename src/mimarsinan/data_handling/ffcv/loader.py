@@ -1,18 +1,24 @@
-"""FFCV loader that surfaces per-batch indices, plus a label preloader.
+"""FFCV loader subclass: exposes per-batch indices and substitutes labels.
 
-FFCV's stock label decoder is unreliable on ViT-class workloads under any
+FFCV's stock ``IntDecoder`` is unreliable on ViT-class workloads under any
 fused multi-tensor-apply optimizer state — the label tensor comes back
-filled with CUDA allocator-fill bytes (allocated, never written). We bypass
-it: preload all labels as a ``torch.LongTensor`` (CIFAR-10 = 50KB), capture
-FFCV's internal per-batch indices via a subclassed ``EpochIterator``, and
-look up the real labels in the pre-loaded tensor. The FFCV image path is
-untouched.
+filled with CUDA allocator-fill bytes (allocated, never written). We
+bypass it: preload all labels as a ``torch.LongTensor`` once at loader
+construction, capture FFCV's internal per-batch indices via a subclassed
+``EpochIterator``, and look up the real labels in the preloaded tensor.
+
+The loader's iterator yields ``(x.clone(), label_lookup[indices])``
+directly — no separate shim, no torch-DataLoader-compat layer. The clone
+on ``x`` is the contract that owns FFCV's rotating-buffer pool: FFCV
+yields tensor views into a small pre-allocated pool that gets overwritten
+as iteration advances, so downstream consumers that hold a yielded tensor
+across iteration boundaries would silently see corrupted data without it.
 """
 
 from __future__ import annotations
 
 from queue import Queue
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import torch
@@ -22,13 +28,10 @@ from ffcv.pipeline.compiler import Compiler
 
 
 class _IndexedEpochIterator(EpochIterator):
-    """``EpochIterator`` that records ``batch_indices`` for every produced batch.
-
-    The base class starts the worker thread inside ``__init__``; the queue
-    is allocated first so the first ``run_pipeline`` call finds it ready.
-    """
+    """``EpochIterator`` that records ``batch_indices`` for every produced batch."""
 
     def __init__(self, loader: Loader, order):
+        # Queue exists before super().__init__ kicks off the worker thread.
         self.batch_index_queue: Queue = Queue()
         super().__init__(loader, order)
 
@@ -39,16 +42,34 @@ class _IndexedEpochIterator(EpochIterator):
 
 
 class IndexedLoader(Loader):
-    """``ffcv.Loader`` whose iterator exposes per-batch indices."""
+    """FFCV ``Loader`` that yields ``(x_clone, lookup[batch_indices])``.
 
-    def __iter__(self) -> _IndexedEpochIterator:
+    ``label_lookup`` is the preloaded on-device tensor (one entry per
+    sample in the beton's order). Required; the lookup path is what makes
+    this loader reliable on ViT-class workloads.
+    """
+
+    def __init__(self, *args, label_lookup: torch.Tensor, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._label_lookup = label_lookup
+
+    def __iter__(self) -> Iterator:
         Compiler.set_num_threads(self.num_workers)
         order = self.next_traversal_order()
         selected_order = order[: len(self) * self.batch_size]
         self.next_epoch += 1
         if self.code is None or self.recompile:
             self.generate_code()
-        return _IndexedEpochIterator(self, selected_order)
+        ep_iter = _IndexedEpochIterator(self, selected_order)
+        return self._yield(ep_iter)
+
+    def _yield(self, ep_iter: _IndexedEpochIterator) -> Iterator:
+        for batch in ep_iter:
+            x = batch[0].clone()
+            idx_np = ep_iter.batch_index_queue.get_nowait()
+            idx_t = torch.as_tensor(idx_np, dtype=torch.long, device=self._label_lookup.device)
+            y = self._label_lookup.index_select(0, idx_t)
+            yield x, y
 
 
 def _unwrap(dataset: Any) -> Any:
@@ -61,9 +82,9 @@ def _unwrap(dataset: Any) -> Any:
 def preload_labels(dataset: Any) -> torch.LongTensor:
     """Return all integer labels of ``dataset`` as a CPU ``torch.LongTensor``.
 
-    Walks the common composition forms — ``Subset``, ``_AsRGB`` — and uses
-    fast ``.targets`` / ``.labels`` metadata when available; falls back to
-    per-sample ``__getitem__`` only as a last resort.
+    Walks ``Subset`` and ``_AsRGB`` wrappers; uses fast ``.targets`` /
+    ``.labels`` metadata when available, falls back to per-sample
+    ``__getitem__`` as a last resort.
     """
     dataset = _unwrap(dataset)
     from torch.utils.data import Subset
