@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 
-import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -58,8 +57,6 @@ def _ensure_imagenet_symlink(datasets_path: str) -> str:
 # ImageNet normalization used with pretrained checkpoints.
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
-_IMAGENET_MEAN_255 = np.array(_IMAGENET_MEAN) * 255.0
-_IMAGENET_STD_255  = np.array(_IMAGENET_STD)  * 255.0
 
 
 @BasicDataProviderFactory.register("ImageNet_DataProvider")
@@ -133,35 +130,11 @@ class ImageNet_DataProvider(DataProvider):
             ],
         }
 
-    def ffcv_image_field_kwargs(self) -> dict:
-        # Beton at 224 — matches the model input; train uses random crop +
-        # flip at the FFCV decoder level (RandomResizedCropRGBImageDecoder).
-        return {"max_resolution": 256}
-
-    def ffcv_transforms(self) -> dict:
-        normalize = ("NormalizeImage",
-                     {"mean": _IMAGENET_MEAN_255, "std": _IMAGENET_STD_255, "type": np.float32})
-        return {
-            "train": [
-                ("RandomHorizontalFlip", {}),
-                ("ToTensor", {}),
-                ("ToDevice", {"non_blocking": True}),
-                ("ToTorchImage", {}),
-                normalize,
-            ],
-            "val": [
-                ("ToTensor", {}),
-                ("ToDevice", {"non_blocking": True}),
-                ("ToTorchImage", {}),
-                normalize,
-            ],
-            "test": [
-                ("ToTensor", {}),
-                ("ToDevice", {"non_blocking": True}),
-                ("ToTorchImage", {}),
-                normalize,
-            ],
-        }
+    # No FFCV opt-in: ImageNet's train uses ``RandomResizedCrop`` with no
+    # pre-resize, while val uses ``Resize(256) + CenterCrop(224)``. The
+    # current FFCV layer carries one resize per spec (via
+    # ``_preprocessing_spec.resize_to``), which can't express this
+    # split-asymmetric crop policy without introducing per-split decoders.
 
     def get_training_batch_size(self):
         return self._batch_size_override or 16
