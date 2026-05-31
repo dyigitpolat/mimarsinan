@@ -31,7 +31,6 @@ class TestEnableFFCVDerivedFromFFCVTransforms:
 
         p = _Bare()
         assert p.ffcv_transforms() == {}
-        assert p.ffcv_image_field_kwargs() == {}
         assert p.enable_ffcv() is False
 
     def test_override_with_populated_dict_opts_in(self):
@@ -88,19 +87,24 @@ class TestProvidersOptInExplicitly:
             assert "NormalizeImage" in train_names
             assert p.enable_ffcv() is True
 
-    def test_imagenet_declares_random_crop_via_decoder_choice(self):
-        from mimarsinan.data_handling.data_providers.imagenet_data_provider import (
-            ImageNet_DataProvider,
-        )
-        from mimarsinan.data_handling.data_provider import DataProvider
-        # ImageNet overrides ffcv_transforms, so opt-in is on at the class level.
-        assert ImageNet_DataProvider.ffcv_transforms is not DataProvider.ffcv_transforms
-        # And ffcv_image_field_kwargs is overridden so beton resolution is fixed.
-        assert ImageNet_DataProvider.ffcv_image_field_kwargs is not DataProvider.ffcv_image_field_kwargs
+    # ImageNet currently doesn't opt into FFCV (its split-asymmetric
+    # RandomResizedCrop / CenterCrop policy doesn't fit the single
+    # max_resolution we derive from _preprocessing_spec); see
+    # test_imagenet_stays_opt_out below.
 
 
 class TestProvidersOptOut:
     """Providers that don't ship FFCV-ready inherit the empty default."""
+
+    def test_imagenet_stays_opt_out(self):
+        """ImageNet's train/val crop policies don't share a single
+        ``resize_to``; FFCV opt-in is deferred until the spec supports
+        split-asymmetric decoders."""
+        from mimarsinan.data_handling.data_provider import DataProvider
+        from mimarsinan.data_handling.data_providers.imagenet_data_provider import (
+            ImageNet_DataProvider,
+        )
+        assert ImageNet_DataProvider.ffcv_transforms is DataProvider.ffcv_transforms
 
     def test_mnist_stays_opt_out(self):
         """FFCV's RGBImageField requires 3 channels and no stock op

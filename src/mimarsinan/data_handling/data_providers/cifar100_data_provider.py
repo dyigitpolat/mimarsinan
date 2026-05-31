@@ -49,11 +49,6 @@ class CIFAR100_DataProvider(DataProvider):
             "test": [transforms.ToTensor()],
         }
 
-    def ffcv_image_field_kwargs(self) -> dict:
-        if self._preprocessing_spec and self._preprocessing_spec.resize_to:
-            return {"max_resolution": int(self._preprocessing_spec.resize_to)}
-        return {}
-
     def ffcv_transforms(self) -> dict:
         # Strong CIFAR augmentation minus HFlip (CIFAR-100 has mirror-
         # asymmetric classes; the torch transform also doesn't flip).

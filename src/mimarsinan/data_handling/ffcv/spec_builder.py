@@ -44,22 +44,21 @@ def raw_dataset_for(provider, split: str):
 def infer_spec(provider) -> PipelineSpec:
     """Build a :class:`PipelineSpec` from a provider's data surface.
 
-    Provider declares everything FFCV-side via three method overrides:
-
-    * ``raw_datasets()``             — beton source datasets
-    * ``ffcv_transforms()``          — per-split FFCV CPU op chains
-    * ``ffcv_image_field_kwargs()``  — kwargs for ``RGBImageField`` at
-      write time (e.g. ``max_resolution=224`` for fixed-size beton
-      storage). Resize is settled at write time, not by post-decode shims.
-
-    Normalize is declared in ``ffcv_transforms`` via FFCV's
-    ``NormalizeImage`` op. No GPU postprocess synthesis. No reading of
-    ``_preprocessing_spec`` inside this layer.
+    Reads two provider overrides — ``raw_datasets()`` (beton source) and
+    ``ffcv_transforms()`` (per-split FFCV op chains) — plus the
+    model-input contract from ``_preprocessing_spec`` (``resize_to`` →
+    ``RGBImageField.max_resolution`` so the beton stores at the model's
+    expected input size; no post-decode resize op needed). The provider's
+    op chain lands verbatim on each split's image pipeline.
     """
+    preproc = getattr(provider, "_preprocessing_spec", None)
+    image_write_kwargs = {}
+    if preproc is not None and preproc.resize_to is not None:
+        image_write_kwargs["max_resolution"] = int(preproc.resize_to)
     image_field = FieldSpec(
         name="image",
         write_type="RGBImageField",
-        write_kwargs=dict(provider.ffcv_image_field_kwargs()),
+        write_kwargs=image_write_kwargs,
         decode_type="SimpleRGBImageDecoder",
     )
     label_field = FieldSpec(

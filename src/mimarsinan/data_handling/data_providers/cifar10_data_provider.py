@@ -50,13 +50,6 @@ class CIFAR10_DataProvider(DataProvider):
             "test": [transforms.ToTensor()],
         }
 
-    def ffcv_image_field_kwargs(self) -> dict:
-        # Beton stores at the model-input resolution from preprocessing
-        # (e.g. 224 for ViT-B). No post-decode resize op needed.
-        if self._preprocessing_spec and self._preprocessing_spec.resize_to:
-            return {"max_resolution": int(self._preprocessing_spec.resize_to)}
-        return {}
-
     def ffcv_transforms(self) -> dict:
         # Strong CIFAR augmentation — pre-AutoAugment baseline: HFlip + ±4-px
         # translate ≡ RandomCrop(32, padding=4) + 16×16 cutout + color jitter.

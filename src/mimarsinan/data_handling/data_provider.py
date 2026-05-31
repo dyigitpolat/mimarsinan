@@ -103,15 +103,6 @@ class DataProvider:
     def ffcv_transforms(self) -> dict:
         return {}
 
-    def ffcv_image_field_kwargs(self) -> dict:
-        """kwargs forwarded to FFCV's ``RGBImageField`` at beton-write time.
-
-        Typical use: ``{"max_resolution": 224}`` so the beton stores the
-        image at the model-input resolution and no post-decode resize is
-        needed (FFCV doesn't ship a post-decode upscale op).
-        """
-        return {}
-
     def enable_ffcv(self) -> bool:
         return bool(self.ffcv_transforms())
 

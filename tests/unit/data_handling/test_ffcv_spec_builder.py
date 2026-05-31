@@ -16,7 +16,7 @@ class _TinyDS(torch.utils.data.Dataset):
 
 class _FakeProvider:
     def __init__(self, *, input_shape=(3, 32, 32), num_classes=10,
-                 ffcv_tf=None, field_kwargs=None):
+                 ffcv_tf=None, preprocessing=None):
         self._input_shape = input_shape
         self._num_classes = num_classes
         self._raw_map = {
@@ -27,7 +27,9 @@ class _FakeProvider:
         self._ffcv_tf_map = ffcv_tf if ffcv_tf is not None else {
             "train": [], "val": [], "test": [],
         }
-        self._field_kwargs = field_kwargs or {}
+        # PreprocessingSpec from a dict-like config, mirroring DataProvider's init.
+        from mimarsinan.data_handling.preprocessing import resolve_preprocessing
+        self._preprocessing_spec = resolve_preprocessing(preprocessing)
 
     def get_input_shape(self):
         return self._input_shape
@@ -41,9 +43,6 @@ class _FakeProvider:
 
     def ffcv_transforms(self):
         return self._ffcv_tf_map
-
-    def ffcv_image_field_kwargs(self):
-        return self._field_kwargs
 
     def enable_ffcv(self) -> bool:
         return bool(self._ffcv_tf_map)
@@ -62,15 +61,26 @@ def test_infer_spec_id_stable_per_provider_class():
     assert a.id == b.id
 
 
-def test_infer_spec_forwards_field_kwargs_to_image_field():
-    """``ffcv_image_field_kwargs()`` lands verbatim on the ``image`` FieldSpec —
-    the only way the provider controls beton-write parameters like
-    ``max_resolution``."""
+def test_infer_spec_sets_max_resolution_from_preprocessing_spec():
+    """``_preprocessing_spec.resize_to`` is the canonical model-input
+    contract; the FFCV layer reads it directly and sets ``max_resolution``
+    on the beton ``RGBImageField`` so the on-disk image is stored at the
+    size the model wants (no post-decode resize op needed)."""
     from mimarsinan.data_handling.ffcv.spec_builder import infer_spec
-    p = _FakeProvider(field_kwargs={"max_resolution": 224})
+    p = _FakeProvider(preprocessing={"resize_to": 224})
     spec = infer_spec(p)
     image_field = next(f for f in spec.fields if f.name == "image")
     assert image_field.write_kwargs == {"max_resolution": 224}
+
+
+def test_infer_spec_omits_max_resolution_when_no_preprocessing_resize():
+    """No ``resize_to`` in preprocessing → beton stores at native size,
+    no ``max_resolution`` kwarg."""
+    from mimarsinan.data_handling.ffcv.spec_builder import infer_spec
+    p = _FakeProvider(preprocessing=None)
+    spec = infer_spec(p)
+    image_field = next(f for f in spec.fields if f.name == "image")
+    assert image_field.write_kwargs == {}
 
 
 def test_infer_spec_image_chain_is_exactly_what_provider_declared():
