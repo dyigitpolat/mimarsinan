@@ -59,6 +59,7 @@ class BasicTrainer:
         self.validation_loader = self.data_loader_factory.create_validation_loader(
             self.validation_batch_size, self.data_provider)
         self.val_iter = iter(self.validation_loader)
+        self._gpu_val_cache = None
 
     def set_test_batch_size(self, batch_size):
         self.test_batch_size = batch_size
@@ -112,9 +113,10 @@ class BasicTrainer:
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
     def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
-        optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5
-        )
+        adam_kwargs = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
+        if torch.device(self.device).type == "cuda":
+            adam_kwargs["fused"] = True
+        optimizer = torch.optim.Adam(self.model.parameters(), **adam_kwargs)
         if constant_lr or total_steps <= 0:
             warmup_iters = max(1, int(total_steps * 0.05)) if total_steps > 0 else 1
             scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -182,8 +184,7 @@ class BasicTrainer:
         return x, y
 
     def iter_validation_batches(self, n_batches: int):
-        for _ in range(int(n_batches)):
-            yield self.next_validation_batch()
+        return basic_trainer_eval.iter_validation_batches(self, int(n_batches))
 
     def next_training_batch(self):
         try:

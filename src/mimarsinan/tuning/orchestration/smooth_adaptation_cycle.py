@@ -96,7 +96,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self.pipeline.reporter.report("Adaptation target", self._get_target())
 
         pre_state = self._clone_state()
-        pre_cycle_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        last = getattr(self, "_last_post_acc", None)
+        pre_cycle_acc = float(last) if last is not None else \
+            self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
         with self.trainer.validation_context("probe"):
             instant_acc = self._update_and_evaluate(rate)
@@ -145,7 +147,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
             rollback_threshold = relative_threshold
         if post_acc < rollback_threshold:
             self._restore_state(pre_state)
-            self._invalidate_lr_cache()
             if hasattr(self, "_cycle_log"): self._cycle_log.append({
                 "rate": rate, "committed": self._committed_rate,
                 "instant_acc": float(instant_acc) if instant_acc is not None else None,
@@ -186,6 +187,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
             "reached_target": bool(reached_target),
             "outcome": "commit", "elapsed_sec": time.time() - t_cycle_start,
         })
+        self._last_post_acc = float(post_acc)
         return rate
 
     def _attempt_recovery_if_below_floor(self):

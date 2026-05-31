@@ -18,19 +18,15 @@ import torch
 from mimarsinan.tuning.orchestration.tuning_budget import TuningBudget
 
 
-def clone_state_for_trainer(trainer) -> Any:
-    """Snapshot trainable weights to CPU; supports BasicTrainer and aux-model trainers.
+def _clone(model) -> dict:
+    return {k: v.detach().clone() for k, v in model.state_dict().items()}
 
-    Cloning to CPU keeps GPU memory free for training buffers (optimizer
-    momentum, gradients, activations).  ``load_state_dict`` uses in-place
-    ``copy_()`` which handles CPU→GPU transfer transparently on restore.
-    """
+
+def clone_state_for_trainer(trainer) -> Any:
+    """Snapshot trainable weights on the model's device; supports aux-model trainers."""
     if hasattr(trainer, "aux_model"):
-        return (
-            {k: v.detach().clone().cpu() for k, v in trainer.aux_model.state_dict().items()},
-            {k: v.detach().clone().cpu() for k, v in trainer.model.state_dict().items()},
-        )
-    return {k: v.detach().clone().cpu() for k, v in trainer.model.state_dict().items()}
+        return (_clone(trainer.aux_model), _clone(trainer.model))
+    return _clone(trainer.model)
 
 
 def restore_state_for_trainer(trainer, state: Any) -> None:
