@@ -5,6 +5,7 @@ import torchvision
 
 import torch
 
+
 @BasicDataProviderFactory.register("MNIST_DataProvider")
 class MNIST_DataProvider(DataProvider):
     DISPLAY_LABEL = "MNIST (28×28, 10 classes)"
@@ -12,37 +13,33 @@ class MNIST_DataProvider(DataProvider):
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
         super().__init__(datasets_path, seed=seed, preprocessing=preprocessing, batch_size=batch_size)
 
-        train_transform = self._apply_preprocessing([transforms.ToTensor()], train=True)
-        eval_transform = self._apply_preprocessing([transforms.ToTensor()], train=False)
-
-        base_training_dataset = torchvision.datasets.MNIST(
-            root=self.datasets_path, train=True, download=True,
-            transform=train_transform)
-
-        training_validation_split = 0.95
-        
-        base_training_length = len(base_training_dataset)
-        training_length = int(base_training_length * training_validation_split)
-        validation_length = base_training_length - training_length
-
-        self.training_dataset, self.validation_dataset = torch.utils.data.random_split(
-            base_training_dataset,
-            (training_length, validation_length),
-            generator=self._get_split_generator(),
+        full_train = torchvision.datasets.MNIST(
+            root=self.datasets_path, train=True, download=True, transform=None,
+        )
+        n = len(full_train)
+        train_n = int(n * 0.95)
+        val_n = n - train_n
+        self._train_raw, self._val_raw = torch.utils.data.random_split(
+            full_train, (train_n, val_n), generator=self._get_split_generator(),
+        )
+        self._test_raw = torchvision.datasets.MNIST(
+            root=self.datasets_path, train=False, download=True, transform=None,
         )
 
-        self.test_dataset = torchvision.datasets.MNIST(
-            root=self.datasets_path, train=False, download=True,
-            transform=eval_transform)
-
-    def _get_training_dataset(self):
-        return self.training_dataset
-
-    def _get_validation_dataset(self):
-        return self.validation_dataset
-
-    def _get_test_dataset(self):
-        return self.test_dataset
-    
     def get_prediction_mode(self):
         return ClassificationMode(10)
+
+    def raw_datasets(self) -> dict:
+        return {"train": self._train_raw, "val": self._val_raw, "test": self._test_raw}
+
+    def torch_transforms(self) -> dict:
+        return {
+            "train": [transforms.ToTensor()],
+            "val":   [transforms.ToTensor()],
+            "test":  [transforms.ToTensor()],
+        }
+
+    def ffcv_transforms(self) -> dict:
+        # MNIST is pose-sensitive — no train augments. Returning non-empty
+        # per-split lists (even empty) is the opt-in signal for FFCV.
+        return {"train": [], "val": [], "test": []}

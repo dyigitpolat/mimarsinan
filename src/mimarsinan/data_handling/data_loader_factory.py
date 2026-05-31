@@ -118,10 +118,47 @@ class DataLoaderFactory:
 
         self._persistent_workers = num_workers > 0
         self._pin_memory = True
+        self._ffcv_factory = None  # lazily created on first FFCV-eligible call
+
+    def _ffcv(self):
+        from mimarsinan.data_handling.ffcv.loader_factory import (
+            FFCVLoaderFactory,
+            available as ffcv_available,
+        )
+        if not ffcv_available():
+            return None
+        if self._ffcv_factory is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self._ffcv_factory = FFCVLoaderFactory(
+                self._data_provider_factory,
+                num_workers=self._num_workers,
+                device=device,
+            )
+        return self._ffcv_factory
+
+    def _try_ffcv(self, kind: str, batch_size, data_provider):
+        """Return an FFCV loader iff FFCV is available + provider opts in."""
+        ffcv_factory = self._ffcv()
+        if ffcv_factory is None:
+            return None
+        if not data_provider.enable_ffcv():
+            return None
+        try:
+            if kind == "train":
+                return ffcv_factory.create_training_loader(batch_size, data_provider)
+            if kind == "val":
+                return ffcv_factory.create_validation_loader(batch_size, data_provider)
+            if kind == "test":
+                return ffcv_factory.create_test_loader(batch_size, data_provider)
+        except Exception as exc:
+            # Never block a run on FFCV: fall back to the torch path.
+            print(f"[DataLoaderFactory] FFCV {kind} loader failed, falling back to torch: {exc}")
+            return None
+        return None
 
     def _get_torch_dataloader(
             self, dataset, batch_size, shuffle, mp_safe):
-        
+
         if not mp_safe:
             workers = 0
             pw = False
@@ -134,21 +171,30 @@ class DataLoaderFactory:
             dataset, batch_size=batch_size, shuffle=shuffle,
             num_workers=workers, pin_memory=self._pin_memory,
             persistent_workers=pw, multiprocessing_context=mp_ctx)
-    
+
     def create_data_provider(self) -> DataProvider:
         return self._data_provider_factory.create()
-    
+
     def create_training_loader(self, batch_size, data_provider):
+        ffcv = self._try_ffcv("train", batch_size, data_provider)
+        if ffcv is not None:
+            return ffcv
         return self._get_torch_dataloader(
             data_provider._get_training_dataset(),
             batch_size=batch_size, shuffle=True, mp_safe=data_provider.is_mp_safe())
-    
+
     def create_validation_loader(self, batch_size, data_provider):
+        ffcv = self._try_ffcv("val", batch_size, data_provider)
+        if ffcv is not None:
+            return ffcv
         return self._get_torch_dataloader(
             data_provider._get_validation_dataset(),
             batch_size=batch_size, shuffle=False, mp_safe=data_provider.is_mp_safe())
-    
+
     def create_test_loader(self, batch_size, data_provider):
+        ffcv = self._try_ffcv("test", batch_size, data_provider)
+        if ffcv is not None:
+            return ffcv
         return self._get_torch_dataloader(
             data_provider._get_test_dataset(),
             batch_size=batch_size, shuffle=False, mp_safe=data_provider.is_mp_safe())

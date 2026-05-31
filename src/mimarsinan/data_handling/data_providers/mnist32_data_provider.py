@@ -13,47 +13,44 @@ class MNIST32_DataProvider(DataProvider):
 
     """
     MNIST resized to 32x32 (still 1 channel).
-    This is required for VGG-style architectures with 5x (2x2,stride2) pooling:
+    Required for VGG-style architectures with 5x (2x2,stride2) pooling:
       32 -> 16 -> 8 -> 4 -> 2 -> 1
     """
 
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
+        # MNIST32 is defined by its 28→32 upscale; if no preprocessing was
+        # passed in, inject ``resize_to=32`` so both data paths upscale
+        # uniformly — torch via the base class's preprocessing wrap, FFCV
+        # via the GPU postprocess.
+        if preprocessing is None:
+            preprocessing = {"resize_to": 32}
         super().__init__(datasets_path, seed=seed, preprocessing=preprocessing, batch_size=batch_size)
 
-        tfm = self._apply_preprocessing([
-            transforms.Resize((32, 32)),
-            transforms.ToTensor(),
-        ], train=False)
-
-        base_training_dataset = torchvision.datasets.MNIST(
-            root=self.datasets_path, train=True, download=True, transform=tfm
+        full_train = torchvision.datasets.MNIST(
+            root=self.datasets_path, train=True, download=True, transform=None,
         )
-
-        training_validation_split = 0.95
-        base_training_length = len(base_training_dataset)
-        training_length = int(base_training_length * training_validation_split)
-        validation_length = base_training_length - training_length
-
-        self.training_dataset, self.validation_dataset = torch.utils.data.random_split(
-            base_training_dataset,
-            (training_length, validation_length),
-            generator=self._get_split_generator(),
+        n = len(full_train)
+        train_n = int(n * 0.95)
+        val_n = n - train_n
+        self._train_raw, self._val_raw = torch.utils.data.random_split(
+            full_train, (train_n, val_n), generator=self._get_split_generator(),
         )
-
-        self.test_dataset = torchvision.datasets.MNIST(
-            root=self.datasets_path, train=False, download=True, transform=tfm
+        self._test_raw = torchvision.datasets.MNIST(
+            root=self.datasets_path, train=False, download=True, transform=None,
         )
-
-    def _get_training_dataset(self):
-        return self.training_dataset
-
-    def _get_validation_dataset(self):
-        return self.validation_dataset
-
-    def _get_test_dataset(self):
-        return self.test_dataset
 
     def get_prediction_mode(self):
         return ClassificationMode(10)
 
+    def raw_datasets(self) -> dict:
+        return {"train": self._train_raw, "val": self._val_raw, "test": self._test_raw}
 
+    def torch_transforms(self) -> dict:
+        return {
+            "train": [transforms.ToTensor()],
+            "val":   [transforms.ToTensor()],
+            "test":  [transforms.ToTensor()],
+        }
+
+    def ffcv_transforms(self) -> dict:
+        return {"train": [], "val": [], "test": []}

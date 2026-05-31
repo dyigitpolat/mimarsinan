@@ -46,8 +46,8 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
 
         try:
             for xs, ys in test_loader:
-                self.test_input.extend(self._preprocessor(xs).detach())
-                self.test_targets.extend(ys)
+                self.test_input.extend(self._preprocessor(xs).detach().cpu())
+                self.test_targets.extend(ys.detach().cpu() if hasattr(ys, "detach") else ys)
             self.test_data = [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
         finally:
             shutdown_data_loader(test_loader)
