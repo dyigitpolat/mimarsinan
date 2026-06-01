@@ -120,13 +120,13 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
         specs.extend(_PRUNING_STEPS)
 
     specs.append(_ACTIVATION_ANALYSIS_STEP)
-    specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
 
     if spiking == "lif":
         specs.append(("LIF Adaptation", LIFAdaptationStep))
         if bool(config.get("enable_training_noise", False)):
             specs.append(("Noise Adaptation", NoiseAdaptationStep))
     else:
+        specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
         if act_q or spiking in ("ttfs", "ttfs_quantized"):
             specs.append(_CLAMP_ADAPTATION_STEP)
         if act_q:

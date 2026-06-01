@@ -331,7 +331,7 @@ A single `DeploymentPipeline` class (`pipelines/deployment_pipeline.py`) assembl
 
 **Spiking mode** controls which SNN simulation strategy is used:
 
-- **`"lif"`** (default) — Integrate-and-fire deployment.  After Activation Adaptation, **LIF Adaptation** swaps chip-targeted perceptron bases to `LIFActivation` (SpikingJelly multi-step IF, subtractive reset).  Clamp / Shift / Activation Quantization are **skipped** because LIF already clamps to `[0, activation_scale]` and quantises to `T+1` levels.  Optional **`cycle_accurate_lif_forward`** (default `False`) drives training through `run_cycle_accurate` so membrane trajectories match per-cycle chip injection (see §6.6).
+- **`"lif"`** (default) — Integrate-and-fire deployment.  After Activation Analysis, **LIF Adaptation** swaps chip-targeted perceptron bases to `LIFActivation` (SpikingJelly multi-step IF, subtractive reset).  Activation Adaptation is **skipped** — LIF Adaptation's KD blend ramp subsumes the non-ReLU→ReLU replacement (the original base is the ramp's starting point).  Clamp / Shift / Activation Quantization are **skipped** because LIF already clamps to `[0, activation_scale]` and quantises to `T+1` levels.  Optional **`cycle_accurate_lif_forward`** (default `False`) drives training through `run_cycle_accurate` so membrane trajectories match per-cycle chip injection (see §6.6).
 - **`"rate"`** — Rate-coded SNN (legacy path).  Uses the clamp / shift / activation-quantization chain when enabled; thresholds come from IR mapping (`parameter_scale` / per-core `threshold`), not a separate post-mapping tuning step.
 - **`"ttfs"`** — Time-to-first-spike SNN (continuous / analytical).  Analytical ReLU↔TTFS mapping; no threshold tuning needed.
 - **`"ttfs_quantized"`** — Time-to-first-spike SNN (time-step quantised).  Analytical closed-form computation with fire-once semantics and `S` discrete time steps per layer. Spike times are computed exactly and quantized to the nearest discrete step.
@@ -398,7 +398,7 @@ Model Configuration → Model Building → Pretraining
 
 ```
 Model Configuration → Model Building → Pretraining
-→ Activation Analysis → Activation Adaptation → LIF Adaptation
+→ Activation Analysis → LIF Adaptation
 → [Noise Adaptation]  (optional, `enable_training_noise`)
 → Normalization Fusion → Soft Core Mapping → Hard Core Mapping → Simulation
 → [Loihi Simulation] → [SANA-FE Simulation]
@@ -498,9 +498,9 @@ Runs immediately after Activation Analysis (and its companion Activation Adaptat
 
 - **Requires**: `model`, `adaptation_manager`
 - **Updates**: `model`, `adaptation_manager`
-- **Included when**: `spiking_mode == "lif"` (after Activation Adaptation; Clamp / Shift / Activation Quantization are omitted)
+- **Included when**: `spiking_mode == "lif"` (directly after Activation Analysis; Activation Adaptation / Clamp / Shift / Activation Quantization are omitted)
 
-Uses `LIFAdaptationTuner` to swap each chip-targeted perceptron's `base_activation` to `LIFActivation` via a gradual **`LIFBlendActivation`** (linear mix of pre-LIF ReLU-like activation and LIF, rate 0→1). Recovery uses knowledge distillation: frozen teacher = pre-LIF snapshot, student = blended model (α·CE + (1−α)·T²·KL, T=3, α=0.3).
+Uses `LIFAdaptationTuner` to swap each chip-targeted perceptron's `base_activation` to `LIFActivation` via a gradual **`LIFBlendActivation`** (linear mix of the perceptron's original base activation — ReLU, GELU, LeakyReLU, … — and LIF, rate 0→1). The blend ramp subsumes any non-ReLU→ReLU replacement, so no separate Activation Adaptation step runs on LIF paths. Recovery uses knowledge distillation: frozen teacher = pre-LIF snapshot, student = blended model (α·CE + (1−α)·T²·KL, T=3, α=0.3).
 
 When **`cycle_accurate_lif_forward`** is true, the tuner installs picklable **`_CycleAccurateForward`** on `model.forward` for the blend ramp (calls `run_cycle_accurate`: uniform-encode the input to `T` cycles, toggle each `LIFActivation` into single-step mode, run the mapper DAG once per cycle, mean-reduce logits). Once the blend reaches `rate==1.0`, `_after_run` unpatches the ramp wrapper and installs **`_ChipAlignedNFForward`** (delegating to `mimarsinan.spiking.chip_aligned_nf.chip_aligned_nf_forward`) as the permanent `model.forward` — encoding-layer perceptrons run once in rate mode and their outputs are uniform-encoded per cycle for the rest of the graph, mirroring the chip simulators' encoding semantics. All downstream pipeline steps (WQ, NormFusion, SCM probes) then validate against the same forward that Nevresim / SANA-FE / Lava run.
 
