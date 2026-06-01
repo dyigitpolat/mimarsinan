@@ -6,6 +6,7 @@ import sys
 
 import torch
 
+from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.pipelining.pipeline_steps import *
@@ -127,7 +128,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
             specs.append(("Noise Adaptation", NoiseAdaptationStep))
     else:
         specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
-        if act_q or spiking in ("ttfs", "ttfs_quantized"):
+        if act_q or requires_ttfs_firing(spiking):
             specs.append(_CLAMP_ADAPTATION_STEP)
         if act_q:
             specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
@@ -152,7 +153,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     if sanafe_sim:
         specs.append(("SANA-FE Simulation", SanafeSimulationStep))
 
-    if loihi_sim and spiking in ("ttfs", "ttfs_quantized"):
+    if loihi_sim and requires_ttfs_firing(spiking):
         raise ValueError(
             f"enable_loihi_simulation is not supported for spiking_mode={spiking!r}; "
             "Loihi/Lava only implements LIF dynamics."

@@ -32,8 +32,10 @@ class FiringStrategy:
     thresholding_mode: str
 
     def validate_for_spiking_mode(self, spiking_mode: str) -> None:
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
         spiking = str(spiking_mode or "lif")
-        if spiking in ("ttfs", "ttfs_quantized"):
+        if requires_ttfs_firing(spiking):
             if self.mode != FiringMode.TTFS:
                 raise ValueError(
                     f"spiking_mode={spiking!r} requires firing_mode='TTFS', "

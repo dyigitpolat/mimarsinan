@@ -23,6 +23,7 @@ from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
+from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.pipelining.core.search_mode import derive_search_mode  # noqa: F401 — re-export
 
 
@@ -75,7 +76,7 @@ class DeploymentPipeline(Pipeline):
         self.config["device"] = select_device()
 
         spiking = self.config.get("spiking_mode", "lif")
-        if spiking in ("ttfs", "ttfs_quantized"):
+        if requires_ttfs_firing(spiking):
             self.config.setdefault("firing_mode", "TTFS")
             self.config.setdefault("spike_generation_mode", "TTFS")
             self.config.setdefault("thresholding_mode", "<=")
