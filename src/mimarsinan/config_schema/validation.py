@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 
 
@@ -57,7 +58,7 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
 
         # TTFS consistency
         spiking = dp.get("spiking_mode", "lif")
-        if spiking in ("ttfs", "ttfs_quantized"):
+        if requires_ttfs_firing(spiking):
             if dp.get("firing_mode") != "TTFS":
                 errors.append(
                     f"spiking_mode is '{spiking}' but firing_mode must be 'TTFS', got {dp.get('firing_mode')!r}"
@@ -83,7 +84,7 @@ def validate_merged_config(flat: Dict[str, Any]) -> List[str]:
         return errors
 
     spiking = flat.get("spiking_mode", "lif")
-    if spiking in ("ttfs", "ttfs_quantized"):
+    if requires_ttfs_firing(spiking):
         if flat.get("firing_mode") != "TTFS":
             errors.append(
                 f"spiking_mode is '{spiking}' but firing_mode must be 'TTFS', got {flat.get('firing_mode')!r}"

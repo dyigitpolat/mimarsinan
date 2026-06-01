@@ -15,6 +15,12 @@ def test_ttfs_quantized_enables_activation_quant():
     assert dp["activation_quantization"] is True
 
 
+def test_ttfs_cycle_based_enables_activation_quant():
+    dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True}
+    derive_deployment_parameters(dp)
+    assert dp["activation_quantization"] is True
+
+
 def test_float_weights_vanilla():
     dp = {"weight_quantization": False, "spiking_mode": "ttfs_quantized"}
     derive_deployment_parameters(dp)

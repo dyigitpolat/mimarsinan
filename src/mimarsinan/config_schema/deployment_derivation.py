@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, MutableMapping
 
+from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+
 
 def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
     """Apply the same rules as ``gui/static/js/wizard.js`` ``buildConfig()`` in-place."""
@@ -16,7 +18,7 @@ def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
         dp["activation_quantization"] = False
         return
 
-    act_quant = spiking_mode == "ttfs_quantized"
+    act_quant = forces_activation_quantization(spiking_mode)
     wt_quant = bool(dp.get("weight_quantization", True))
     dp["activation_quantization"] = act_quant
     dp["weight_quantization"] = wt_quant

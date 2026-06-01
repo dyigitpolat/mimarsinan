@@ -36,3 +36,14 @@ def test_factory_lif_modes():
     assert s.mode == FiringMode.NOVENA
     assert s.training_lif_v_reset() == 0.0
     assert s.sanafe_reset_mode() == "hard"
+
+
+def test_factory_ttfs_cycle_based_requires_ttfs_firing():
+    with pytest.raises(ValueError):
+        FiringStrategyFactory.from_config(
+            {"spiking_mode": "ttfs_cycle_based", "firing_mode": "Default", "thresholding_mode": "<="}
+        )
+    s = FiringStrategyFactory.from_config(
+        {"spiking_mode": "ttfs_cycle_based", "firing_mode": "TTFS", "thresholding_mode": "<="}
+    )
+    assert s.mode == FiringMode.TTFS

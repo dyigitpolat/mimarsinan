@@ -32,6 +32,7 @@ def get_wizard_defaults() -> Dict[str, Any]:
             "lif": ["Default", "Novena"],
             "ttfs": ["TTFS"],
             "ttfs_quantized": ["TTFS"],
+            "ttfs_cycle_based": ["TTFS"],
         },
     }
 

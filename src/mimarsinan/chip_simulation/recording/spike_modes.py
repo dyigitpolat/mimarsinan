@@ -17,6 +17,18 @@ def to_deterministic_spikes(tensor: torch.Tensor, threshold: float = 0.5) -> tor
     return (tensor > threshold).float()
 
 
+def to_ttfs_latched_spikes(tensor: torch.Tensor, cycle: int, simulation_length: int) -> torch.Tensor:
+    """Latched time-to-first-spike: high from ``round(T*(1-rate))`` through ``T-1``.
+
+    Matches ``ttfs_encoding.ttfs_latched_spike_train`` and nevresim's
+    ``TTFSSpikeGenerator``; rate 0 never fires.
+    """
+    T = simulation_length
+    clamped = tensor.clamp(0.0, 1.0)
+    spike_time = torch.round(T * (1.0 - clamped))
+    return ((spike_time < T) & (cycle >= spike_time)).float()
+
+
 def to_uniform_spikes(tensor: torch.Tensor, cycle: int, simulation_length: int) -> torch.Tensor:
     T = simulation_length
     n = torch.round(tensor * T).to(torch.long)
@@ -44,4 +56,6 @@ def to_spikes(
         return to_front_loaded_spikes(tensor, cycle, simulation_length)
     if spike_mode == "Uniform":
         return to_uniform_spikes(tensor, cycle, simulation_length)
+    if spike_mode == "TTFS":
+        return to_ttfs_latched_spikes(tensor, cycle, simulation_length)
     raise ValueError("Invalid spike mode: " + str(spike_mode))

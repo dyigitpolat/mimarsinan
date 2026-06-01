@@ -197,6 +197,24 @@ class TestValidateMergedConfig:
         errors = validate_merged_config(flat)
         assert len(errors) >= 1
 
+    def test_merged_ttfs_cycle_based_requires_ttfs_firing(self):
+        flat = {
+            "spiking_mode": "ttfs_cycle_based",
+            "firing_mode": "Default",
+            "spike_generation_mode": "Deterministic",
+        }
+        errors = validate_merged_config(flat)
+        assert len(errors) >= 1
+
+    def test_merged_ttfs_cycle_based_valid_passes(self):
+        flat = {
+            "spiking_mode": "ttfs_cycle_based",
+            "firing_mode": "TTFS",
+            "spike_generation_mode": "TTFS",
+        }
+        errors = validate_merged_config(flat)
+        assert errors == []
+
 
 class TestConfigKeysSet:
     """Config keys set includes all keys read by pipeline consumers."""
