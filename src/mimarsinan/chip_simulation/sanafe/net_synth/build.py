@@ -89,9 +89,14 @@ def build_network_for_segment(
     """
     sanafe = _net_synth._sanafe()
     net = sanafe.Network()
+    from mimarsinan.chip_simulation.spiking_semantics import (
+        forces_activation_quantization,
+        requires_ttfs_firing,
+    )
+
     soma_hw = soma_hw_name_for_spiking_mode(spiking_mode)
-    is_ttfs = spiking_mode in ("ttfs", "ttfs_quantized")
-    is_quantized = spiking_mode == "ttfs_quantized"
+    is_ttfs = requires_ttfs_firing(spiking_mode)
+    is_quantized = forces_activation_quantization(spiking_mode)
 
     # 1. One neuron group per HardCore, mapped to its corresponding SANA-FE core.
     core_to_group: Dict[int, Any] = {}
@@ -137,7 +142,7 @@ def build_network_for_segment(
                 bias = None
                 if core.hardware_bias is not None:
                     bias = float(np.asarray(core.hardware_bias)[n_idx])
-                if spiking_mode == "ttfs_quantized":
+                if is_quantized:
                     model_attrs = ttfs_quantized_model_attributes(
                         threshold=float(core.threshold),
                         hardware_bias=bias,

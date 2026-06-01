@@ -18,6 +18,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     is_ttfs_spiking_mode,
     store_neural_segment_output,
 )
+from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
     run_ttfs_continuous_segment,
@@ -75,7 +76,7 @@ class TtfsAnalyticalExecutor:
         if seg_in.ndim != 2:
             raise ValueError(f"seg_input must be 2-D; got shape {seg_in.shape}")
         seg_arrays = segment_ttfs_arrays_from_mapping(hcm)
-        quantized = spiking_mode == "ttfs_quantized"
+        quantized = forces_activation_quantization(spiking_mode)
         if quantized:
             seg_out, bufs = run_ttfs_quantized_segment(
                 seg_arrays, seg_in, int(simulation_length),

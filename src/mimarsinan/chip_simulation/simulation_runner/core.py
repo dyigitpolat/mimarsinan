@@ -26,7 +26,9 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         wt_q = pipeline.config.get("weight_quantization", True)
         self.weight_type = int if wt_q else float
 
-        is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
+        is_ttfs = requires_ttfs_firing(self.spiking_mode)
         self.threshold_type = float if is_ttfs else self.weight_type
 
         self.input_size = pipeline.config["input_size"]

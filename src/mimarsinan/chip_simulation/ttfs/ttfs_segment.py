@@ -130,9 +130,11 @@ def _run_ttfs_segment_ordered(
     spiking_mode: str,
 ) -> tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
     """Execute TTFS cores in latency order; propagate activations between cores."""
+    from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+
     batch = input_activations.shape[0]
     n_cores = len(seg.core_params)
-    quantized = spiking_mode == "ttfs_quantized"
+    quantized = forces_activation_quantization(spiking_mode)
     s = max(int(simulation_length), 1)
 
     buffers = [

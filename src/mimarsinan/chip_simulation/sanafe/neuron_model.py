@@ -33,9 +33,13 @@ from .presets import SOMA_LIF_NAME, SOMA_TTFS_CONTINUOUS_NAME, SOMA_TTFS_QUANTIZ
 
 
 def soma_hw_name_for_spiking_mode(spiking_mode: str) -> str:
+    from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+
     if spiking_mode == "ttfs":
         return SOMA_TTFS_CONTINUOUS_NAME
-    if spiking_mode == "ttfs_quantized":
+    if forces_activation_quantization(spiking_mode):
+        # ttfs_cycle_based reuses the analytical quantized soma for now
+        # (numerically equivalent); a genuine single-spike soma replaces it next.
         return SOMA_TTFS_QUANTIZED_NAME
     return SOMA_LIF_NAME
 

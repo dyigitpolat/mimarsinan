@@ -178,7 +178,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
 
     def _ensure_arch(self) -> None:
         """Lazily build the shared SANA-FE architecture."""
-        need_T = self.spiking_mode == "ttfs_quantized"
+        from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+
+        need_T = forces_activation_quantization(self.spiking_mode)
         if self._arch is not None:
             if not need_T or self._arch_built_for_T == self.T:
                 return
