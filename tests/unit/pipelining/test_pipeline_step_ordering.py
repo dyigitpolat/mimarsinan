@@ -118,6 +118,38 @@ class TestActivationAdaptationAlwaysPresent:
         assert "LIF Adaptation" in names
         assert names.index("Activation Analysis") < names.index("LIF Adaptation")
 
+    def _ttfs_cycle_config(self, **overrides):
+        config = {
+            "configuration_mode": "user",
+            "spiking_mode": "ttfs_cycle_based",
+            "activation_quantization": True,
+            "weight_quantization": True,
+            "model_type": "mlp_mixer",
+        }
+        config.update(overrides)
+        return config
+
+    def test_ttfs_cycle_finetuning_present_after_actquant_before_weightquant(self):
+        names = _step_names(self._ttfs_cycle_config())
+        assert "TTFS Cycle Fine-Tuning" in names
+        assert names.index("Activation Quantization") < names.index("TTFS Cycle Fine-Tuning")
+        assert names.index("TTFS Cycle Fine-Tuning") < names.index("Weight Quantization")
+
+    def test_ttfs_cycle_finetuning_opt_out(self):
+        names = _step_names(self._ttfs_cycle_config(enable_ttfs_finetuning=False))
+        assert "TTFS Cycle Fine-Tuning" not in names
+
+    @pytest.mark.parametrize("spiking", ["ttfs", "ttfs_quantized", "lif", "rate"])
+    def test_ttfs_cycle_finetuning_absent_for_other_modes(self, spiking):
+        config = {
+            "configuration_mode": "user",
+            "spiking_mode": spiking,
+            "activation_quantization": True,
+            "weight_quantization": True,
+            "model_type": "mlp_mixer",
+        }
+        assert "TTFS Cycle Fine-Tuning" not in _step_names(config)
+
     @pytest.mark.parametrize("act_q", [True, False])
     def test_adaptation_before_normalization_fusion(self, act_q):
         config = {

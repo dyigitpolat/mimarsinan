@@ -18,7 +18,7 @@ class UnifiedTtfsStepMixin:
         x = self.preprocessor(x)
         x = x.view(x.shape[0], -1)
 
-        if self.spiking_mode == "ttfs_quantized":
+        if self.spiking_mode != "ttfs":
             return self._forward_ttfs_quantized(x)
         return self._forward_ttfs_continuous(x)
 

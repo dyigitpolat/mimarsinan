@@ -16,23 +16,31 @@ class AdaptationManager(nn.Module):
 
         self.noise_rate = 0.0
 
-        # When True, LIF forward already applies clamp/quant/shift — skip duplicate decorators.
+        # When True, the on-chip activation already applies clamp/quant/shift
+        # internally (LIFActivation / TTFSCycleActivation) — skip duplicate decorators.
         self.lif_active = False
+        self.ttfs_active = False
 
     def update_activation(self, pipeline_config, perceptron):
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
         spiking_mode = pipeline_config.get("spiking_mode", "lif")
-        use_ttfs = spiking_mode in ("ttfs", "ttfs_quantized")
-        lif_subsumes_decorators = self.lif_active or spiking_mode == "lif"
+        use_ttfs = requires_ttfs_firing(spiking_mode)
+        subsumes_decorators = (
+            getattr(self, "lif_active", False)
+            or getattr(self, "ttfs_active", False)
+            or spiking_mode == "lif"
+        )
         decorators = []
         if self.activation_adaptation_rate > 0:
             decorators.append(
                 self.get_rate_adjusted_activation_replacement_decorator(perceptron))
-        if not lif_subsumes_decorators and self.clamp_rate != 0.0:
+        if not subsumes_decorators and self.clamp_rate != 0.0:
             decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
-        if not lif_subsumes_decorators and self.quantization_rate != 0.0:
+        if not subsumes_decorators and self.quantization_rate != 0.0:
             decorators.append(
                 self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
-        if not lif_subsumes_decorators and not use_ttfs and self.shift_rate != 0.0:
+        if not subsumes_decorators and not use_ttfs and self.shift_rate != 0.0:
             decorators.append(self.get_shift_decorator(pipeline_config, perceptron))
 
         perceptron.set_activation(
@@ -65,7 +73,9 @@ class AdaptationManager(nn.Module):
         return ShiftDecorator(shift_amount)
     
     def get_rate_adjusted_quantization_decorator(self, pipeline_config, perceptron):
-        use_ttfs = pipeline_config.get("spiking_mode", "lif") in ("ttfs", "ttfs_quantized")
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
+        use_ttfs = requires_ttfs_firing(pipeline_config.get("spiking_mode", "lif"))
         shift = calculate_activation_shift(
             pipeline_config["target_tq"], perceptron.activation_scale
         )

@@ -141,6 +141,17 @@ class TestKnownStepGroupMappings:
         )
         assert groups["Core Quantization Verification"] == "core_verification"
 
+    def test_ttfs_cycle_finetuning_is_activation_group(self):
+        groups = get_pipeline_semantic_group_by_step_name(
+            _base_config(
+                spiking_mode="ttfs_cycle_based",
+                activation_quantization=True,
+                weight_quantization=True,
+            )
+        )
+        assert "TTFS Cycle Fine-Tuning" in groups
+        assert groups["TTFS Cycle Fine-Tuning"] == "activation"
+
     def test_lif_adaptation_only_in_lif_mode(self):
         lif_groups = get_pipeline_semantic_group_by_step_name(_base_config(spiking_mode="lif"))
         assert "LIF Adaptation" in lif_groups

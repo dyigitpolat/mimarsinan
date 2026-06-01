@@ -13,11 +13,13 @@ from mimarsinan.models.nn.activations.lif import (
     run_cycle_accurate,
     uniform_encode_to_spike_train,
 )
+from mimarsinan.models.nn.activations.ttfs_cycle import TTFSCycleActivation
 
 __all__ = [
     "ChipInputQuantizer",
     "DifferentiableClamp",
     "LIFActivation",
+    "TTFSCycleActivation",
     "LeakyGradReLU",
     "LeakyGradReLUFunction",
     "RoundedStaircaseFunction",

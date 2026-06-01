@@ -334,9 +334,10 @@ A single `DeploymentPipeline` class (`pipelines/deployment_pipeline.py`) assembl
 - **`"lif"`** (default) — Integrate-and-fire deployment.  After Activation Analysis, **LIF Adaptation** swaps chip-targeted perceptron bases to `LIFActivation` (SpikingJelly multi-step IF, subtractive reset).  Activation Adaptation is **skipped** — LIF Adaptation's KD blend ramp subsumes the non-ReLU→ReLU replacement (the original base is the ramp's starting point).  Clamp / Shift / Activation Quantization are **skipped** because LIF already clamps to `[0, activation_scale]` and quantises to `T+1` levels.  Optional **`cycle_accurate_lif_forward`** (default `False`) drives training through `run_cycle_accurate` so membrane trajectories match per-cycle chip injection (see §6.6).
 - **`"rate"`** — Rate-coded SNN (legacy path).  Uses the clamp / shift / activation-quantization chain when enabled; thresholds come from IR mapping (`parameter_scale` / per-core `threshold`), not a separate post-mapping tuning step.
 - **`"ttfs"`** — Time-to-first-spike SNN (continuous / analytical).  Analytical ReLU↔TTFS mapping; no threshold tuning needed.
-- **`"ttfs_quantized"`** — Time-to-first-spike SNN (time-step quantised).  Analytical closed-form computation with fire-once semantics and `S` discrete time steps per layer. Spike times are computed exactly and quantized to the nearest discrete step.
+- **`"ttfs_quantized"`** — Time-to-first-spike SNN (time-step quantised).  Analytical closed-form computation with fire-once semantics and `S` discrete time steps per layer. Spike times are computed exactly and quantized to the nearest discrete step. Cores exchange **real-valued** activations (the simulators inject the analytical membrane), not binary spikes.
+- **`"ttfs_cycle_based"`** — Genuine single-spike TTFS (Stanojevic et al., *Nat. Commun.* 2024). Each neuron fires **exactly one** spike whose timing encodes its value (bias-ramp paced); the backends reconstruct the membrane from incoming spike *timings* rather than injecting real values. By the ReLU↔TTFS equivalence this is **numerically identical** to `ttfs_quantized` (decodes to `floor(S·clamp(z,0,1))/S` = `ttfs_quantized_activation`), so the Python/HCM reference reuses the analytical quantized path; the distinct value is (a) **TTFS-Cycle Fine-Tuning** training through the *exact* kernel (`TTFSCycleActivation`, no half-LSB shift) — see §5.6c — and (b) genuine single-spike simulation in the nevresim/SANA-FE backends. Runs the clamp/shift/activation-quant chain, then the fine-tuning polish before Weight Quantization (opt-in `enable_ttfs_finetuning`).
 
-For both TTFS variants, `firing_mode` and `spike_generation_mode` are automatically set to `"TTFS"` and validated — the analytical vs cycle-based distinction is controlled exclusively by `spiking_mode`. If a config JSON explicitly sets `firing_mode` or `spike_generation_mode` to a value inconsistent with the TTFS spiking mode, a `ValueError` is raised at pipeline initialisation.
+For all TTFS variants (`ttfs`, `ttfs_quantized`, `ttfs_cycle_based`), `firing_mode` and `spike_generation_mode` are automatically set to `"TTFS"` and validated. If a config JSON explicitly sets `firing_mode` or `spike_generation_mode` to a value inconsistent with the TTFS spiking mode, a `ValueError` is raised at pipeline initialisation.
 
 Two quantization flags (booleans in `deployment_parameters`) provide fine-grained control:
 
@@ -504,7 +505,17 @@ Uses `LIFAdaptationTuner` to swap each chip-targeted perceptron's `base_activati
 
 When **`cycle_accurate_lif_forward`** is true, the tuner installs picklable **`_CycleAccurateForward`** on `model.forward` for the blend ramp (calls `run_cycle_accurate`: uniform-encode the input to `T` cycles, toggle each `LIFActivation` into single-step mode, run the mapper DAG once per cycle, mean-reduce logits). Once the blend reaches `rate==1.0`, `_after_run` unpatches the ramp wrapper and installs **`_ChipAlignedNFForward`** (delegating to `mimarsinan.spiking.chip_aligned_nf.chip_aligned_nf_forward`) as the permanent `model.forward` — encoding-layer perceptrons run once in rate mode and their outputs are uniform-encoded per cycle for the rest of the graph, mirroring the chip simulators' encoding semantics. All downstream pipeline steps (WQ, NormFusion, SCM probes) then validate against the same forward that Nevresim / SANA-FE / Lava run.
 
-### 5.6c Noise Adaptation
+### 5.6c TTFS-Cycle Fine-Tuning
+
+**File**: `pipeline_steps/adaptation/ttfs_cycle_adaptation_step.py`
+
+- **Requires**: `model`, `adaptation_manager`
+- **Updates**: `model`, `adaptation_manager`
+- **Included when**: `spiking_mode == "ttfs_cycle_based"` and `enable_ttfs_finetuning` (default true) — after Activation Quantization, before Weight Quantization (a final polish)
+
+Uses `TTFSCycleAdaptationTuner` (a `KDBlendAdaptationTuner` subclass, shared with LIF Adaptation) to ramp each perceptron's activation from the clamp/quantise-decorated ReLU produced by the prior steps to **`TTFSCycleActivation`** — the *exact* single-spike TTFS kernel (`ttfs_quantized_activation·θ`, no half-LSB shift, `S` levels), with a straight-through clamped-ReLU gradient. The blend's rate-0 side is the current decorated activation (so it matches the frozen KD teacher); KD recovery is α·CE + (1−α)·T²·KL (T=3, α=0.3). The exact kernel clamps/quantises internally, so the tuner sets `adaptation_manager.ttfs_active` to subsume the clamp/quant/shift decorators. Unlike LIF, no `model.forward` patching is needed — the single-spike value is a one-pass closed form. This closes the train↔deploy gap (the exact kernel vs the `StaircaseFunction` half-LSB-shifted, `target_tq`-level approximation the quant chain uses).
+
+### 5.6d Noise Adaptation
 
 **File**: `pipeline_steps/noise_adaptation_step.py`
 

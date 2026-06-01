@@ -14,6 +14,7 @@ from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner 
     NormalizationAwarePerceptronQuantizationTuner,
 )
 from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
+from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import TTFSCycleAdaptationTuner
 from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 from mimarsinan.tuning.tuners.perceptron_transform_tuner import (
     PerceptronTransformTuner,
