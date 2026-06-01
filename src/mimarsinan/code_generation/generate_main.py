@@ -54,12 +54,16 @@ def resolve_exec_policy(
       ``TTFSExecution``.
     * **lif** / **rate**: ``SpikingCompute`` + ``SpikingExecution``.
     """
+    from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+
     if spiking_mode == "ttfs":
         return ExecPolicySpec(
             compute_policy="TTFSAnalyticalCompute",
             exec_decl="using exec = TTFSContinuousExecution;",
         )
-    if spiking_mode == "ttfs_quantized":
+    if forces_activation_quantization(spiking_mode):
+        # ttfs_cycle_based reuses the analytical quantized compute for now
+        # (numerically equivalent); a genuine single-spike compute replaces it next.
         return ExecPolicySpec(
             compute_policy=f"TTFSQuantizedCompute<{simulation_length}>",
             exec_decl=f"using exec = TTFSExecution<{simulation_length}, {latency}>;",

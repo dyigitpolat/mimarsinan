@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from mimarsinan.chip_simulation.spiking_semantics import TTFS_MODES
+from mimarsinan.chip_simulation.spiking_semantics import (
+    forces_activation_quantization,
+    requires_ttfs_firing,
+)
 
 
 def bias_can_activate(
@@ -27,7 +30,7 @@ def bias_can_activate(
         return ttfs_continuous_bias_can_activate(
             bias=bias, zero_threshold=zero_threshold,
         )
-    if mode == "ttfs_quantized":
+    if forces_activation_quantization(mode):
         return ttfs_quantized_bias_can_activate(
             bias=bias,
             threshold=threshold,
@@ -113,4 +116,4 @@ def _normalized_bias_array(bias) -> np.ndarray | None:
 
 
 def is_ttfs_mode(spiking_mode: str) -> bool:
-    return str(spiking_mode or "lif").lower() in TTFS_MODES
+    return requires_ttfs_firing(spiking_mode)

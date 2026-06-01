@@ -170,15 +170,19 @@ class SimulationHybridMixin:
 
     def _raw_to_rates(self, raw: np.ndarray) -> np.ndarray:
         """Convert raw nevresim output to [0,1] rates."""
-        if self.spiking_mode in ("ttfs", "ttfs_quantized"):
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
+        if requires_ttfs_firing(self.spiking_mode):
             return raw
         return raw / max(int(self.simulation_length), 1)
 
     def _run_hybrid(self, hybrid: HybridHardCoreMapping) -> float:
         """Execute a multi-stage hybrid mapping using the state buffer."""
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
         stages = hybrid.stages
         num_samples = len(self.test_data)
-        is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
+        is_ttfs = requires_ttfs_firing(self.spiking_mode)
 
         original_input = np.stack([d[0] for d in self.test_data])
         original_input = original_input.reshape(original_input.shape[0], -1)

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import store_segment_output_numpy
-from mimarsinan.chip_simulation.spiking_semantics import TTFS_MODES
+from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 
 
 @dataclass
@@ -21,7 +21,9 @@ class NeuralSegmentResult:
 
 
 def is_ttfs_spiking_mode(spiking_mode: str) -> bool:
-    return str(spiking_mode) in TTFS_MODES
+    # Includes ttfs_cycle_based: it is TTFS-family and (by the ReLU↔TTFS
+    # equivalence) uses the analytical quantized reference in the Python paths.
+    return requires_ttfs_firing(spiking_mode)
 
 
 def lif_inter_stage_from_spike_counts(

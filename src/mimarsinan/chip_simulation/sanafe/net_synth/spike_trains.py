@@ -51,7 +51,9 @@ def set_always_on_spike_trains(
     """Inject always-on input spikes (rate: every cycle; TTFS: cycle 0 only)."""
     from mimarsinan.chip_simulation.ttfs.ttfs_encoding import ttfs_always_on_spike_times_1based
 
-    if spiking_mode in ("ttfs", "ttfs_quantized"):
+    from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
+    if requires_ttfs_firing(spiking_mode):
         train = ttfs_always_on_spike_times_1based(T)
     else:
         train = [1] * T
@@ -82,7 +84,9 @@ def apply_ttfs_preset_membranes(
                         else 0)
         active_start = ((core_latency + 1)
                         if simulation_length is not None else None)
-        is_quantized = spiking_mode == "ttfs_quantized"
+        from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+
+        is_quantized = forces_activation_quantization(spiking_mode)
         if is_quantized and simulation_length is not None:
             active_length = int(simulation_length)
         elif simulation_length is not None:

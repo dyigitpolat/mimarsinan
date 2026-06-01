@@ -149,3 +149,19 @@ def test_quantized_matches_ttfs_kernels():
     th = torch.tensor(seg.thresholds[0], dtype=torch.float64)
     expected = ttfs_quantized_activation(v_t, th, s).numpy()
     np.testing.assert_allclose(out_np[0], expected[0], rtol=1e-9)
+
+
+def test_ttfs_cycle_based_executor_matches_ttfs_quantized():
+    """ReLU↔TTFS equivalence: the analytical executor for ttfs_cycle_based reuses
+    the quantized path, so its segment outputs equal ttfs_quantized exactly."""
+    from mimarsinan.chip_simulation.ttfs.ttfs_executor import TtfsAnalyticalExecutor
+
+    mapping = _single_core_mapping()
+    inp = np.array([[0.25, 0.75]], dtype=np.float64)
+    s = 8
+    exec_ = TtfsAnalyticalExecutor()
+    q = exec_.run_segment(mapping, inp, simulation_length=s, spiking_mode="ttfs_quantized")
+    c = exec_.run_segment(mapping, inp, simulation_length=s, spiking_mode="ttfs_cycle_based")
+    np.testing.assert_array_equal(c.inter_stage, q.inter_stage)
+    for a, b in zip(c.per_core_activations, q.per_core_activations):
+        np.testing.assert_array_equal(a, b)

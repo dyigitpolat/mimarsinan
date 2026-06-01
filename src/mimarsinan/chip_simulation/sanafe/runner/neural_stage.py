@@ -88,7 +88,9 @@ class SanafeNeuralStageMixin:
             spiking_mode=self.spiking_mode,
         )
 
-        is_ttfs = self.spiking_mode in ("ttfs", "ttfs_quantized")
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
+        is_ttfs = requires_ttfs_firing(self.spiking_mode)
 
         max_latency = max(
             (int(c.latency) if getattr(c, "latency", None) is not None else 0)
