@@ -28,7 +28,8 @@ plugins into `build/mimarsinan_sanafe_plugins/` (`libmimarsinan_soma.so`,
 | `plugins/CMakeLists.txt` | — | Builds `libmimarsinan_soma.so`, `libmimarsinan_dendrite.so`. |
 | `plugins/mimarsinan_soma.cpp` | — | Custom soma: configurable reset (`reset_mode` soft/hard), strict/inclusive thresholding, active-window gating. |
 | `plugins/mimarsinan_ttfs_continuous_soma.cpp` | — | Analytical TTFS: `relu(I+b)/θ` in one active step. |
-| `plugins/mimarsinan_ttfs_quantized_soma.cpp` | — | Cycle-accurate TTFS quantized (nevresim `NeuronCompute` semantics). |
+| `plugins/mimarsinan_ttfs_quantized_soma.cpp` | — | TTFS quantized: analytical V injected via `preset_membrane`, fires at the precomputed step. Cores effectively exchange real values. |
+| `plugins/mimarsinan_ttfs_cycle_soma.cpp` | — | **Genuine single-spike TTFS** (`ttfs_cycle_based`): no preset; reconstructs `V` from incoming single-spike *timings* (decode-on-arrival, weight `(S−(cyc−1)%S)/S`), fires once at `k_fire=⌈S(1−V/θ)⌉`. Runs the **synchronized** `S×num_groups` schedule — each latency group owns window `[(g+1)·S, (g+2)·S)`, input window `[0,S)` — set by `net_synth/build.py`; single-shot input encoding (`ttfs_single_spike_train` via the binary-mask `set_input_spike_trains`); no `apply_ttfs_preset_membranes`. Parity vs analytical: `tests/integration/test_sanafe_ttfs_cycle_parity.py`. |
 | `plugins/mimarsinan_dendrite.cpp` | — | Custom dendrite plugin. |
 
 ## Neuron-model / architecture synthesis

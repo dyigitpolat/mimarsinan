@@ -29,17 +29,25 @@ from typing import Optional
 
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
 
-from .presets import SOMA_LIF_NAME, SOMA_TTFS_CONTINUOUS_NAME, SOMA_TTFS_QUANTIZED_NAME
+from .presets import (
+    SOMA_LIF_NAME,
+    SOMA_TTFS_CONTINUOUS_NAME,
+    SOMA_TTFS_CYCLE_NAME,
+    SOMA_TTFS_QUANTIZED_NAME,
+)
 
 
 def soma_hw_name_for_spiking_mode(spiking_mode: str) -> str:
-    from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+    from mimarsinan.chip_simulation.spiking_semantics import (
+        forces_activation_quantization,
+        is_ttfs_cycle_based,
+    )
 
     if spiking_mode == "ttfs":
         return SOMA_TTFS_CONTINUOUS_NAME
+    if is_ttfs_cycle_based(spiking_mode):
+        return SOMA_TTFS_CYCLE_NAME  # genuine single-spike, synchronized schedule
     if forces_activation_quantization(spiking_mode):
-        # ttfs_cycle_based reuses the analytical quantized soma for now
-        # (numerically equivalent); a genuine single-spike soma replaces it next.
         return SOMA_TTFS_QUANTIZED_NAME
     return SOMA_LIF_NAME
 
@@ -139,6 +147,22 @@ def ttfs_quantized_model_attributes(
         active_start=active_start,
         active_length=active_length,
         preset_membrane=preset_membrane,
+    )
+
+
+def ttfs_cycle_model_attributes(
+    *,
+    threshold: float,
+    hardware_bias: Optional[float] = None,
+    active_start: Optional[int] = None,
+    active_length: Optional[int] = None,
+) -> dict:
+    """Genuine single-spike soma attrs — no ``preset_membrane`` (reconstructs V)."""
+    return _ttfs_base_model_attributes(
+        threshold=threshold,
+        hardware_bias=hardware_bias,
+        active_start=active_start,
+        active_length=active_length,
     )
 
 

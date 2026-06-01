@@ -26,6 +26,24 @@ def ttfs_latched_spike_train(rates: np.ndarray, simulation_length: int) -> np.nd
     return out
 
 
+def ttfs_single_spike_train(rates: np.ndarray, simulation_length: int) -> np.ndarray:
+    """Single-shot TTFS train ``(N, D, S)``: exactly one spike at ``spike_time``.
+
+    Genuine single-spike encoding for ``ttfs_cycle_based`` (vs the latched train
+    used by ``ttfs_quantized``). A neuron with rate 0 never fires.
+    """
+    rates = np.asarray(rates, dtype=np.float64)
+    if rates.ndim != 2:
+        raise ValueError(f"rates must be (N, D); got shape {rates.shape}")
+    n, d = rates.shape
+    s = int(simulation_length)
+    out = np.zeros((n, d, s), dtype=np.float64)
+    spike_times = ttfs_spike_time(rates, s)
+    for cycle in range(s):
+        out[:, :, cycle] = (spike_times < s) & (cycle == spike_times)
+    return out
+
+
 def ttfs_input_spike_times_1based(rate: float, simulation_length: int) -> list[int]:
     """1-based SANA-FE ``input`` soma spike list for one scalar rate in ``[0, 1]``."""
     s = int(simulation_length)

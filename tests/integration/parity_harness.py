@@ -58,6 +58,7 @@ _PLUGIN_CPP_SOURCES = (
     "mimarsinan_soma.cpp",
     "mimarsinan_ttfs_continuous_soma.cpp",
     "mimarsinan_ttfs_quantized_soma.cpp",
+    "mimarsinan_ttfs_cycle_soma.cpp",
 )
 
 

@@ -18,6 +18,7 @@ from mimarsinan.chip_simulation.sanafe.presets import (
     SOMA_INPUT_RANGE_NAME,
     SOMA_LIF_NAME,
     SOMA_TTFS_CONTINUOUS_NAME,
+    SOMA_TTFS_CYCLE_NAME,
     SOMA_TTFS_QUANTIZED_NAME,
     SYNAPSE_NAME,
 )
@@ -89,6 +90,17 @@ def _render_arch_yaml(
               attributes:
                 plugin: {spec.ttfs_quantized_plugin_path}
                 model: mimarsinan_ttfs_quantized_soma
+                simulation_length: {simulation_length}
+                energy_access_neuron: {p["soma_access_energy_j"]}
+                latency_access_neuron: {p["soma_access_latency_s"]}
+                energy_update_neuron: {p["soma_update_energy_j"]}
+                latency_update_neuron: {p["soma_update_latency_s"]}
+                energy_spike_out: {p["soma_spike_out_energy_j"]}
+                latency_spike_out: {p["soma_spike_out_latency_s"]}
+            - name: {SOMA_TTFS_CYCLE_NAME}
+              attributes:
+                plugin: {spec.ttfs_cycle_plugin_path}
+                model: mimarsinan_ttfs_cycle_soma
                 simulation_length: {simulation_length}
                 energy_access_neuron: {p["soma_access_energy_j"]}
                 latency_access_neuron: {p["soma_access_latency_s"]}
