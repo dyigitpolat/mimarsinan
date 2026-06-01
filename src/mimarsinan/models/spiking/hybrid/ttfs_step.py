@@ -49,7 +49,7 @@ class HybridTtfsStepMixin:
         T = self.simulation_length
         batch_size = x.shape[0]
         device = x.device
-        quantized = self.spiking_mode == "ttfs_quantized"
+        quantized = self.spiking_mode != "ttfs"
 
         x_compute = x.to(COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}

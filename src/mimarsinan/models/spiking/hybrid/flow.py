@@ -157,18 +157,13 @@ class SpikingHybridCoreFlow(
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        from mimarsinan.chip_simulation.spiking_semantics import is_ttfs_cycle_based
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 
-        if is_ttfs_cycle_based(self.spiking_mode):
-            raise NotImplementedError(
-                "spiking_mode='ttfs_cycle_based' hybrid forward is not wired yet "
-                "(Phase 1 of the TTFS Cycle-Based feature)."
-            )
         try:
             x = self.preprocessor(x)
             x = x.view(x.shape[0], -1)
 
-            if self.spiking_mode in self._TTFS_SPIKING_MODES:
+            if requires_ttfs_firing(self.spiking_mode):
                 return self._forward_ttfs(x)
 
             return self._forward_rate(x)

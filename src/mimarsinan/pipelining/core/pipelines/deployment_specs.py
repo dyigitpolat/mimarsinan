@@ -6,7 +6,10 @@ import sys
 
 import torch
 
-from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+from mimarsinan.chip_simulation.spiking_semantics import (
+    is_ttfs_cycle_based,
+    requires_ttfs_firing,
+)
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.pipelining.pipeline_steps import *
@@ -63,6 +66,7 @@ _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
     ActivationAdaptationStep:           "activation",
     ClampAdaptationStep:                "activation",
     LIFAdaptationStep:                  "activation",
+    TTFSCycleAdaptationStep:            "activation",
     NoiseAdaptationStep:                "activation",
     ActivationShiftStep:                "activation_quantization",
     ActivationQuantizationStep:         "activation_quantization",
@@ -132,6 +136,8 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
             specs.append(_CLAMP_ADAPTATION_STEP)
         if act_q:
             specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
+        if is_ttfs_cycle_based(spiking) and config.get("enable_ttfs_finetuning", True):
+            specs.append(("TTFS Cycle Fine-Tuning", TTFSCycleAdaptationStep))
 
     if wt_q:
         specs.extend(_WEIGHT_QUANTIZATION_STEPS)

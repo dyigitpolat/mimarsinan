@@ -10,7 +10,7 @@ import torch
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
-from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
+from mimarsinan.models.spiking.lif_core_step import lif_core_contribute_and_fire
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
@@ -55,13 +55,9 @@ class HybridLifStepMixin:
                         device=device, dtype=COMPUTE_DTYPE)
             for c in cores
         ]
-        policy = cycle_neuron_policy(self.spiking_mode, self.firing_mode)
-        states = [
-            policy.make_state(
-                batch_size,
-                max(int(c.neurons_per_core - c.available_neurons), 1),
-                device, COMPUTE_DTYPE,
-            )
+        memb = [
+            torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
+                        device=device, dtype=COMPUTE_DTYPE)
             for c in cores
         ]
 
@@ -108,13 +104,15 @@ class HybridLifStepMixin:
                 if not (cycle >= core.latency and cycle < T + core.latency):
                     continue
 
-                buffers[core_idx] = policy.step(
-                    states[core_idx],
+                memb_i = memb[core_idx]
+                buffers[core_idx] = lif_core_contribute_and_fire(
+                    memb_i,
                     core_params[core_idx],
                     input_signals[core_idx],
                     thresholds[core_idx],
                     hw_bias=hw_biases[core_idx],
                     thresholding_mode=self.thresholding_mode,
+                    firing_mode=self.firing_mode,
                     output_dtype=COMPUTE_DTYPE,
                 )
 

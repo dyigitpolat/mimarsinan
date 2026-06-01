@@ -14,7 +14,9 @@ specific transformations while maintaining accuracy.
 | `activation_shift_tuner.py` | `ActivationShiftTuner` | Extends `TunerBase` (not smooth adaptation); applies shift once, recovers with LR-search + step-training using `min_improvement=accuracy_se()` and `eval_n_batches`; caches final `trainer.test()` metric |
 | `activation_quantization_tuner.py` | `ActivationQuantizationTuner` | Quantizes activations to Tq levels; extends `AdaptationRateTuner` (`quantization_rate`) |
 | `normalization_aware_perceptron_quantization_tuner.py` | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights with normalization awareness; extends `PerceptronTransformTuner` |
-| `lif_adaptation_tuner.py` | `LIFAdaptationTuner`, `LIFBlendActivation`, `_CycleAccurateForward` | Smooth ramp 0→1 via `LIFBlendActivation` (ReLU-like → LIF). **KD recovery:** teacher = deep-copied model before LIF swap; loss = `α·CE + (1−α)·T²·KL` with `T=3`, `α=0.3` (temperature-scaled KL). **Cycle-accurate:** when `cycle_accurate_lif_forward`, installs picklable `_CycleAccurateForward` on `model.forward` calling `run_cycle_accurate` with `simulation_steps` as `T`. **Symmetric patch/unpatch:** `_install_cycle_accurate_forward` asserts no double-patch; `_after_run` always removes the instance `model.forward` in a `try/finally`, regardless of the cycle-accurate flag, so downstream pipeline stages see the pristine class forward. Encoding-layer perceptrons are outside `get_perceptrons()` and are not LIF-blended here. |
+| `../orchestration/kd_blend_adaptation_tuner.py` | `KDBlendAdaptationTuner`, `BlendActivation`, `_KDClassificationLoss` | **Shared base** for blend-ramp-with-KD adaptation: snapshots a frozen teacher, installs a `BlendActivation` (old→target by rate) on each perceptron's `base_activation`, ramps 0→1 with `α·CE + (1−α)·T²·KL` (T=3, α=0.3). Subclasses override `_make_target_activation`, `_blend_old_activation`, `_make_blend`, `_after_make_target`, `_wrap_encoding_input`, `_after_install_blend`, `_finalize`. |
+| `lif_adaptation_tuner.py` | `LIFAdaptationTuner`, `LIFBlendActivation`, `_CycleAccurateForward` | `KDBlendAdaptationTuner` subclass: target = `LIFActivation`. **Cycle-accurate:** when `cycle_accurate_lif_forward`, installs picklable `_CycleAccurateForward` on `model.forward` calling `run_cycle_accurate` with `simulation_steps` as `T`. **Symmetric patch/unpatch:** `_install_cycle_accurate_forward` asserts no double-patch; `_after_run` always removes the instance `model.forward` in a `try/finally`, regardless of the cycle-accurate flag, so downstream pipeline stages see the pristine class forward. Encoding-layer perceptrons get a `ChipInputQuantizer`. `LIFBlendActivation` subclasses `BlendActivation` (keeps `.lif_activation`). |
+| `ttfs_cycle_adaptation_tuner.py` | `TTFSCycleAdaptationTuner` | `KDBlendAdaptationTuner` subclass for `ttfs_cycle_based`: target = `TTFSCycleActivation` (exact single-spike kernel = `ttfs_quantized_activation`). Old side = the current clamp/quant-decorated activation (rate-0 matches the teacher); sets `adaptation_manager.ttfs_active` so the kernel subsumes the clamp/quant/shift decorators. No forward patching (single-pass closed form). |
 | `noise_tuner.py` | `NoiseTuner` | Introduces training noise; extends `AdaptationRateTuner` (`noise_rate`); no pipeline step wired by default |
 | `pruning_tuner.py` | `PruningTuner` | Gradually zeros least-significant rows/columns; recomputes importance at each cycle; overrides `_before_cycle`, `_recovery_training_hooks`, `_after_run`, `_update_and_evaluate`; uses base-class `_find_lr` (anchored LR search); `_force_to_full_rate` drives pruning from committed rate to 1.0 in gradual increments with `min_improvement=accuracy_se()/2`; uses base-class `_adaptation` with LR search.  **Boundary-IR caching**: `_boundary_exemption_layers` (in `pruning_tuner_masks.py`) memoises the boundary-policy result on the tuner instance.  The IR build behind it is O(model) — ~27 s for ViT-B/16 — and `_get_masks` fires twice per cycle (`_apply_masks` + `register_recovery_hooks`), so the per-tuner cache shaves ~10 minutes off a 10-cycle ViT pruning step.  Topology is invariant during pruning; call `_invalidate_boundary_cache(tuner)` if it ever isn't. |
 
@@ -31,8 +33,10 @@ TunerBase
 │   ├── PruningTuner (overrides _before_cycle, _recovery_training_hooks, _after_run)
 │   └── PerceptronTransformTuner (PerceptronTransformTrainer)
 │       └── NormalizationAwarePerceptronQuantizationTuner
+│   └── KDBlendAdaptationTuner (teacher+KD blend ramp; in ../orchestration/)
+│       ├── LIFAdaptationTuner (target=LIFActivation; cycle-accurate forward)
+│       └── TTFSCycleAdaptationTuner (target=TTFSCycleActivation; ttfs_cycle_based)
 └── ActivationShiftTuner (one-shot, not smooth adaptation)
-LIFAdaptationTuner (standalone; knowledge-distillation recovery after LIF swap)
 ```
 
 ## Dependencies
@@ -48,8 +52,8 @@ LIFAdaptationTuner (standalone; knowledge-distillation recovery after LIF swap)
 
 `TunerBase`, `SmoothAdaptationTuner`, `ClampTuner`, `ActivationAdaptationTuner`,
 `ActivationQuantizationTuner`, `ActivationShiftTuner`,
-`NormalizationAwarePerceptronQuantizationTuner`, `LIFAdaptationTuner`, `NoiseTuner`,
-`PerceptronTransformTuner`, `PruningTuner`.
+`NormalizationAwarePerceptronQuantizationTuner`, `LIFAdaptationTuner`,
+`TTFSCycleAdaptationTuner`, `NoiseTuner`, `PerceptronTransformTuner`, `PruningTuner`.
 
 ## Per-cycle frozen mask (PerceptronTransformTuner)
 

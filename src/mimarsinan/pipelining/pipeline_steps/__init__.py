@@ -10,6 +10,7 @@ from .adaptation.clamp_adaptation_step import ClampAdaptationStep
 from .adaptation.activation_shift_step import ActivationShiftStep
 from .adaptation.pruning_adaptation_step import PruningAdaptationStep
 from .adaptation.lif_adaptation_step import LIFAdaptationStep
+from .adaptation.ttfs_cycle_adaptation_step import TTFSCycleAdaptationStep
 from .adaptation.noise_adaptation_step import NoiseAdaptationStep
 from .quantization.activation_quantization_step import ActivationQuantizationStep
 from .quantization.weight_quantization_step import WeightQuantizationStep

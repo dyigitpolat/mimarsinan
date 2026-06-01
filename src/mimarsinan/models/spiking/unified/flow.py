@@ -168,16 +168,16 @@ class SpikingUnifiedCoreFlow(
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """LIF spike-train sim or analytical TTFS; ComputeOps are rate-space sync barriers."""
-        from mimarsinan.chip_simulation.spiking_semantics import is_ttfs_cycle_based
+        """LIF spike-train sim or analytical TTFS; ComputeOps are rate-space sync barriers.
 
-        if is_ttfs_cycle_based(self.spiking_mode):
-            raise NotImplementedError(
-                "spiking_mode='ttfs_cycle_based' unified forward is not wired yet "
-                "(Phase 1 of the TTFS Cycle-Based feature)."
-            )
+        ``ttfs_cycle_based`` uses the analytical quantized reference here — by the
+        ReLU↔TTFS equivalence its value equals the single-spike result; the genuine
+        single-spike simulation lives in the nevresim / SANA-FE backends.
+        """
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
         try:
-            if self.spiking_mode in self._TTFS_SPIKING_MODES:
+            if requires_ttfs_firing(self.spiking_mode):
                 return self._forward_ttfs(x)
             return self._forward_lif(x)
         finally:
