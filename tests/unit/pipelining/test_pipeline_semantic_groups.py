@@ -91,9 +91,19 @@ class TestKnownStepGroupMappings:
         assert groups["Weight Preloading"] == "pretraining"
 
     def test_activation_analysis_and_adaptation_share_activation_group(self):
-        groups = get_pipeline_semantic_group_by_step_name(_base_config())
+        # Activation Adaptation only runs for non-LIF modes; LIF Adaptation
+        # subsumes the non-ReLU→ReLU replacement during its blend ramp.
+        groups = get_pipeline_semantic_group_by_step_name(
+            _base_config(spiking_mode="ttfs")
+        )
         assert groups["Activation Analysis"] == "activation"
         assert groups["Activation Adaptation"] == "activation"
+
+    def test_activation_adaptation_absent_for_lif(self):
+        groups = get_pipeline_semantic_group_by_step_name(_base_config(spiking_mode="lif"))
+        assert "Activation Analysis" in groups
+        assert "Activation Adaptation" not in groups
+        assert "LIF Adaptation" in groups
 
     def test_clamp_adaptation_is_activation_group(self):
         groups = get_pipeline_semantic_group_by_step_name(

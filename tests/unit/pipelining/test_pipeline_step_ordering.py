@@ -102,6 +102,22 @@ class TestActivationAdaptationAlwaysPresent:
         assert "Activation Adaptation" in names
         assert "Clamp Adaptation" not in names
 
+    def test_activation_adaptation_absent_for_lif(self):
+        """LIF mode: no Activation Adaptation — LIF Adaptation subsumes the
+        non-ReLU→ReLU replacement during its blend ramp."""
+        config = {
+            "configuration_mode": "user",
+            "spiking_mode": "lif",
+            "activation_quantization": False,
+            "weight_quantization": False,
+            "model_type": "mlp_mixer",
+        }
+        names = _step_names(config)
+        assert "Activation Analysis" in names
+        assert "Activation Adaptation" not in names
+        assert "LIF Adaptation" in names
+        assert names.index("Activation Analysis") < names.index("LIF Adaptation")
+
     @pytest.mark.parametrize("act_q", [True, False])
     def test_adaptation_before_normalization_fusion(self, act_q):
         config = {
