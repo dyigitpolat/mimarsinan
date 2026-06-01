@@ -88,16 +88,30 @@ class SanafeNeuralStageMixin:
             spiking_mode=self.spiking_mode,
         )
 
-        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            is_ttfs_cycle_based,
+            requires_ttfs_firing,
+        )
 
         is_ttfs = requires_ttfs_firing(self.spiking_mode)
+        is_cycle = is_ttfs_cycle_based(self.spiking_mode)
 
         max_latency = max(
             (int(c.latency) if getattr(c, "latency", None) is not None else 0)
             for c in hcm.cores
         ) if hcm.cores else 0
-        # +1: SANA-FE applies input spikes one cycle after emission.
-        T_eff = self.T + max_latency + 1
+        if is_cycle:
+            # Synchronized schedule: input window [0,S) + one S-window per latency
+            # group → total = (num_groups + 1) · S.
+            from mimarsinan.chip_simulation.ttfs.ttfs_cycle_genuine import latency_groups
+
+            num_groups, _ = latency_groups(
+                [getattr(c, "latency", None) for c in hcm.cores]
+            )
+            T_eff = (num_groups + 1) * self.T
+        else:
+            # +1: SANA-FE applies input spikes one cycle after emission.
+            T_eff = self.T + max_latency + 1
 
         contract_ttfs_cores: List[Any] = []
         contract_ttfs_seg_output: Optional[np.ndarray] = None
@@ -121,18 +135,27 @@ class SanafeNeuralStageMixin:
             contract_ttfs_seg_output = contract_stage.segment_record.seg_output
             membrane_V = contract_stage.membrane_voltages
             seg_input_rates = contract_stage.seg_input
-            apply_ttfs_preset_membranes(
-                core_to_group, hcm, membrane_V,
-                spiking_mode=self.spiking_mode,
-                simulation_length=self.T,
-                firing_mode=self.firing_mode,
+            if not is_cycle:
+                # ttfs_quantized: inject the analytical membrane (preset). The
+                # genuine ttfs_cycle soma reconstructs V from incoming spikes, so
+                # it gets no preset.
+                apply_ttfs_preset_membranes(
+                    core_to_group, hcm, membrane_V,
+                    spiking_mode=self.spiking_mode,
+                    simulation_length=self.T,
+                    firing_mode=self.firing_mode,
+                )
+            if not is_cycle:
+                _runner.set_ttfs_input_spike_trains(
+                    core_input_neurons, hcm, seg_input_rates, self.T,
+                )
+            from mimarsinan.chip_simulation.ttfs.ttfs_encoding import (
+                ttfs_latched_spike_train,
+                ttfs_single_spike_train,
             )
-            _runner.set_ttfs_input_spike_trains(
-                core_input_neurons, hcm, seg_input_rates, self.T,
-            )
-            from mimarsinan.chip_simulation.ttfs.ttfs_encoding import ttfs_latched_spike_train
 
-            encoded = ttfs_latched_spike_train(
+            _encode = ttfs_single_spike_train if is_cycle else ttfs_latched_spike_train
+            encoded = _encode(
                 seg_input_rates.astype(np.float64), self.T,
             ).astype(np.float32)
             encoded_padded = encoded
@@ -142,6 +165,11 @@ class SanafeNeuralStageMixin:
                     dtype=encoded.dtype,
                 )
                 encoded_padded = np.concatenate([encoded, pad], axis=2)
+            if is_cycle:
+                # Genuine single spikes on the wire: inject the single-shot binary
+                # train via the proven per-cycle mask path (SANA-FE reads "spikes"
+                # as a per-timestep mask), so each input fires at its TTFS cycle.
+                _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
         else:
             encoded = self._behavior.encode_segment_input(seg_input_rates, self.T)
             encoded_padded = encoded

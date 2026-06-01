@@ -123,7 +123,12 @@ def set_ttfs_input_spike_trains(
     seg_input_rates: np.ndarray,
     simulation_length: int,
 ) -> None:
-    """Inject latched TTFS spike times from segment input rates ``(1, D)``."""
+    """Inject latched TTFS spike times from segment input rates ``(1, D)``.
+
+    Used by ``ttfs``/``ttfs_quantized`` (which also inject preset membranes).
+    ``ttfs_cycle_based`` instead uses the binary single-spike train via
+    :func:`set_input_spike_trains` so the spike *timing* reaches the genuine soma.
+    """
     from mimarsinan.chip_simulation.ttfs.ttfs_encoding import ttfs_input_spike_times_1based
 
     s = int(simulation_length)

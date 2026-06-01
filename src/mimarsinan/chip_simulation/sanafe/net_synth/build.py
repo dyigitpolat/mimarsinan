@@ -43,6 +43,7 @@ from mimarsinan.chip_simulation.sanafe.neuron_model import (
     lif_model_attributes,
     soma_hw_name_for_spiking_mode,
     ttfs_continuous_model_attributes,
+    ttfs_cycle_model_attributes,
     ttfs_quantized_model_attributes,
 )
 from mimarsinan.chip_simulation.sanafe.presets import SOMA_INPUT_RANGE_NAME, SYNAPSE_NAME
@@ -91,12 +92,24 @@ def build_network_for_segment(
     net = sanafe.Network()
     from mimarsinan.chip_simulation.spiking_semantics import (
         forces_activation_quantization,
+        is_ttfs_cycle_based,
         requires_ttfs_firing,
     )
+    from mimarsinan.chip_simulation.ttfs.ttfs_cycle_genuine import latency_groups
 
     soma_hw = soma_hw_name_for_spiking_mode(spiking_mode)
     is_ttfs = requires_ttfs_firing(spiking_mode)
-    is_quantized = forces_activation_quantization(spiking_mode)
+    is_cycle = is_ttfs_cycle_based(spiking_mode)
+    is_quantized = forces_activation_quantization(spiking_mode) and not is_cycle
+
+    # Synchronized schedule for genuine single-spike TTFS: each latency group
+    # owns a non-overlapping S-cycle window after the input window. group g →
+    # active_start = (g+1)·S, active_length = S.
+    cycle_core_group = None
+    if is_cycle:
+        _, cycle_core_group = latency_groups(
+            [getattr(c, "latency", None) for c in hcm.cores]
+        )
 
     # 1. One neuron group per HardCore, mapped to its corresponding SANA-FE core.
     core_to_group: Dict[int, Any] = {}
@@ -127,22 +140,36 @@ def build_network_for_segment(
             # neuron's spike to its consumer's synapse on the NEXT sim
             # cycle (one-cycle input→synapse pipeline delay) — without
             # that offset depth-0 cores miss their first integration step.
-            active_start = ((core_latency + 1)
-                            if simulation_length is not None else None)
-            if is_ttfs and simulation_length is not None:
-                if is_quantized:
-                    active_length = int(simulation_length)
-                else:
-                    active_length = 1
+            if is_cycle and simulation_length is not None:
+                # Synchronized: latency group g fires in window [(g+1)·S, (g+2)·S);
+                # the input window is [0, S). active_length = S.
+                lat_group = int(cycle_core_group[core_idx])
+                active_start = (lat_group + 1) * int(simulation_length)
+                active_length = int(simulation_length)
             else:
-                active_length = (int(simulation_length)
-                                 if simulation_length is not None else None)
+                active_start = ((core_latency + 1)
+                                if simulation_length is not None else None)
+                if is_ttfs and simulation_length is not None:
+                    if is_quantized:
+                        active_length = int(simulation_length)
+                    else:
+                        active_length = 1
+                else:
+                    active_length = (int(simulation_length)
+                                     if simulation_length is not None else None)
             for n_idx in range(used_neurons):
                 neuron = group[n_idx]
                 bias = None
                 if core.hardware_bias is not None:
                     bias = float(np.asarray(core.hardware_bias)[n_idx])
-                if is_quantized:
+                if is_cycle:
+                    model_attrs = ttfs_cycle_model_attributes(
+                        threshold=float(core.threshold),
+                        hardware_bias=bias,
+                        active_start=active_start,
+                        active_length=active_length,
+                    )
+                elif is_quantized:
                     model_attrs = ttfs_quantized_model_attributes(
                         threshold=float(core.threshold),
                         hardware_bias=bias,

@@ -93,6 +93,7 @@ PRESETS: Dict[str, PerEventEnergy] = {
 SOMA_LIF_NAME = "lif"
 SOMA_TTFS_CONTINUOUS_NAME = "ttfs_continuous"
 SOMA_TTFS_QUANTIZED_NAME = "ttfs_quantized"
+SOMA_TTFS_CYCLE_NAME = "ttfs_cycle"   # genuine single-spike, synchronized schedule
 SOMA_INPUT_RANGE_NAME = "inputs"   # rendered as "inputs[0..MAX]" in YAML
 SYNAPSE_NAME = "dense_syn"
 DENDRITE_NAME = "dend"
