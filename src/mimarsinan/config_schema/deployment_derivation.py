@@ -31,6 +31,11 @@ def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
     if spiking_mode == "lif" or cycle_finetune:
         dp["activation_quantization"] = False
 
+    # nevresim has no genuine single-spike (synchronized-window) backend yet, so
+    # it is disabled for ttfs_cycle_based (use SANA-FE for genuine simulation).
+    if spiking_mode == "ttfs_cycle_based":
+        dp["enable_nevresim_simulation"] = False
+
     if act_quant or wt_quant:
         dp.setdefault("pipeline_mode", "phased")
     else:

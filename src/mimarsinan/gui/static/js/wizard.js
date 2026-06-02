@@ -603,6 +603,22 @@ function applySimulationDeps() {
   }
   if (loihiCard) loihiCard.classList.toggle('dimmed', !isLif);
 
+  // nevresim has no genuine single-spike (synchronized-window) backend yet, so
+  // it is locked off for ttfs_cycle_based — use SANA-FE for genuine simulation.
+  const isCycle = getSegVal('spikingMode') === 'ttfs_cycle_based';
+  const nevresimToggle = document.getElementById('nevresimSimulationToggle');
+  const nevresimCard = document.getElementById('nevresimSimCard');
+  if (nevresimToggle) {
+    if (isCycle) {
+      setToggle('nevresimSimulationToggle', false, true);
+      nevresimToggle.classList.add('disabled');
+    } else {
+      nevresimToggle.classList.remove('disabled');
+      if (!nevresimToggle.classList.contains('on')) nevresimToggle.classList.remove('forced');
+    }
+  }
+  if (nevresimCard) nevresimCard.classList.toggle('dimmed', isCycle);
+
   const sanafeOn = isToggleOn('sanafeSimulationToggle');
   const sanafeDrawer = document.getElementById('sanafeSettingsDrawer');
   if (sanafeDrawer) sanafeDrawer.classList.toggle('open', sanafeOn);

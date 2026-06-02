@@ -158,7 +158,9 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
         )
 
     specs.append(("Hard Core Mapping", HardCoreMappingStep))
-    if nevresim_sim:
+    # nevresim has no genuine single-spike backend for the synchronized
+    # cycle-based mode yet; skip it (it would only run the analytical fallback).
+    if nevresim_sim and not is_ttfs_cycle_based(spiking):
         specs.append(("Simulation", SimulationStep))
 
     if loihi_sim:
