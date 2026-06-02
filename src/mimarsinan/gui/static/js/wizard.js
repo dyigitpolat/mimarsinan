@@ -548,14 +548,15 @@ function applySpikingDeps() {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
     document.getElementById('thresholdMode').value = '<=';
-    // Genuine single-spike TTFS: forces activation quant (like ttfs_quantized)
-    // and adds the TTFS-Cycle Fine-Tuning polish before weight quantization.
-    setToggle('actQuantToggle', true, true);
+    // LIF-style: TTFS-Cycle Fine-Tuning blends straight to the exact single-spike
+    // kernel (clamps + quantises internally), so the activation-quant chain is
+    // subsumed and forced OFF — mirroring LIF.
+    setToggle('actQuantToggle', false, true);
     setWtQuantFromHw();
     applyHwDeps();
     deps.push({ text: 'Firing: TTFS', forced: true });
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
-    deps.push({ text: 'Activation Quant: forced ON', forced: true });
+    deps.push({ text: 'Activation Quant: subsumed by TTFS-Cycle Fine-Tuning', forced: true });
     deps.push({ text: 'TTFS-Cycle Fine-Tuning: included', active: true });
     deps.push({ text: 'Genuine single-spike (synchronized S×groups)', active: true });
   }
@@ -836,9 +837,10 @@ function buildConfig() {
 
   const floatWeights = isToggleOn('floatWeightsToggle');
   const wtQuant = !floatWeights;
-  // LIF mode subsumes activation quantization; the TTFS quantized + cycle-based
-  // modes still need the explicit discrete-levels chain.
-  const actQuant = (spikingMode === 'ttfs_quantized' || spikingMode === 'ttfs_cycle_based');
+  // LIF and ttfs_cycle_based subsume activation quantization (the on-chip
+  // activation clamps+quantises internally); only ttfs_quantized needs the
+  // explicit discrete-levels chain.
+  const actQuant = (spikingMode === 'ttfs_quantized');
   const pruning = isToggleOn('pruningToggle');
   let pipelineMode;
   if (floatWeights) {
