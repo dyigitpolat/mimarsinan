@@ -126,8 +126,18 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
 
     specs.append(_ACTIVATION_ANALYSIS_STEP)
 
-    if spiking == "lif":
-        specs.append(("LIF Adaptation", LIFAdaptationStep))
+    cycle_finetune = (
+        is_ttfs_cycle_based(spiking) and bool(config.get("enable_ttfs_finetuning", True))
+    )
+    if spiking == "lif" or cycle_finetune:
+        # LIF-style: one activation-replacement step (LIFActivation /
+        # TTFSCycleActivation) subsumes the non-ReLU→ReLU replacement AND the
+        # clamp/shift/activation-quantization chain — it clamps + quantises
+        # internally, so running that chain first is redundant and destabilising.
+        if spiking == "lif":
+            specs.append(("LIF Adaptation", LIFAdaptationStep))
+        else:
+            specs.append(("TTFS Cycle Fine-Tuning", TTFSCycleAdaptationStep))
         if bool(config.get("enable_training_noise", False)):
             specs.append(("Noise Adaptation", NoiseAdaptationStep))
     else:
@@ -136,8 +146,6 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
             specs.append(_CLAMP_ADAPTATION_STEP)
         if act_q:
             specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
-        if is_ttfs_cycle_based(spiking) and config.get("enable_ttfs_finetuning", True):
-            specs.append(("TTFS Cycle Fine-Tuning", TTFSCycleAdaptationStep))
 
     if wt_q:
         specs.extend(_WEIGHT_QUANTIZATION_STEPS)

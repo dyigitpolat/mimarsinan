@@ -15,8 +15,17 @@ def test_ttfs_quantized_enables_activation_quant():
     assert dp["activation_quantization"] is True
 
 
-def test_ttfs_cycle_based_enables_activation_quant():
+def test_ttfs_cycle_based_finetune_disables_activation_quant():
+    # LIF-style: TTFSCycleActivation subsumes the quant chain, so activation
+    # quantization is forced OFF when fine-tuning is on (the default).
     dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True}
+    derive_deployment_parameters(dp)
+    assert dp["activation_quantization"] is False
+
+
+def test_ttfs_cycle_based_without_finetune_enables_activation_quant():
+    dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
+          "enable_ttfs_finetuning": False}
     derive_deployment_parameters(dp)
     assert dp["activation_quantization"] is True
 
