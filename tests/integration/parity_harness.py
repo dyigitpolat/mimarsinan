@@ -59,6 +59,7 @@ _PLUGIN_CPP_SOURCES = (
     "mimarsinan_ttfs_continuous_soma.cpp",
     "mimarsinan_ttfs_quantized_soma.cpp",
     "mimarsinan_ttfs_cycle_soma.cpp",
+    "mimarsinan_ttfs_cascade_soma.cpp",
 )
 
 
@@ -327,10 +328,18 @@ def _build_nevresim_record_from_ref(
     """Project nevresim segment output into the HCM ``RunRecord`` shape."""
     out = RunRecord(sample_index=ref.sample_index, T=ref.T)
     for stage_index, ref_seg in ref.segments.items():
-        encoded = behavior.encode_segment_input(ref_seg.seg_input_rates, ref.T)
-        seg_input_spike_count = encoded[0].sum(axis=1).astype(np.int64)
         ref_core = ref_seg.cores[0]
-        core_input = seg_input_spike_count[: ref_core.n_in_used].copy()
+        if behavior.spike_generation_mode == "TTFS":
+            # nevresim doesn't report input counts; the latched TTFS input is fed
+            # identically to both backends (and HCM accumulates it over the full
+            # S+latency window), so mirror the HCM-recorded counts and let the
+            # output comparison carry the cross-backend parity.
+            seg_input_spike_count = ref_seg.seg_input_spike_count.astype(np.int64)
+            core_input = ref_core.input_spike_count.astype(np.int64).copy()
+        else:
+            encoded = behavior.encode_segment_input(ref_seg.seg_input_rates, ref.T)
+            seg_input_spike_count = encoded[0].sum(axis=1).astype(np.int64)
+            core_input = seg_input_spike_count[: ref_core.n_in_used].copy()
         output_spikes = np.rint(raw[0]).astype(np.int64)[: ref_core.n_out_used]
 
         out.segments[stage_index] = SegmentSpikeRecord(
@@ -397,6 +406,7 @@ def run_nevresim_parity(
     T: int = 4,
     *,
     connectivity_mode: NevresimConnectivityMode | None = None,
+    sample_value: float = 1.0,
 ) -> ParityResult:
     result = ParityResult()
     ensure_nevresim_ready()
@@ -407,7 +417,7 @@ def run_nevresim_parity(
         connectivity_mode = nevresim_connectivity_mode()
 
     hybrid = build_toy_hybrid_mapping()
-    ref = record_toy_hcm(behavior, T)
+    ref = record_toy_hcm(behavior, T, sample_value=sample_value)
     seg = hybrid.stages[0].hard_core_mapping
     assert seg is not None
     rates = ref.segments[0].seg_input_rates

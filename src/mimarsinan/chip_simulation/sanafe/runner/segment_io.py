@@ -98,6 +98,70 @@ class SanafeSegmentIOMixin:
         return counts, n_always_on
 
 
+    def _collect_first_fire_cycles(
+        self,
+        spike_trace: list,
+        *,
+        core_to_group: Dict[int, Any],
+        hcm: Any,
+    ) -> Dict[int, np.ndarray]:
+        """Per-core array of each neuron's FIRST fire cycle (``-1`` if silent).
+
+        Single-spike TTFS encodes the value in the fire time, so the host
+        reconstructs the ramp value ``T_eff − fire_cycle`` from this."""
+        out: Dict[int, np.ndarray] = {}
+        if not spike_trace:
+            return out
+        for core_idx, group in core_to_group.items():
+            group_name = _group_name(group)
+            n = len(group)
+            first = np.full(n, -1, dtype=np.int64)
+            for cycle, events in enumerate(spike_trace):
+                for event in events:
+                    s = str(event)
+                    if "." not in s:
+                        continue
+                    ev_group, idx_str = s.rsplit(".", 1)
+                    if ev_group != group_name:
+                        continue
+                    try:
+                        idx = int(idx_str)
+                    except ValueError:
+                        continue
+                    if 0 <= idx < n and first[idx] < 0:
+                        first[idx] = cycle
+            out[core_idx] = first
+        return out
+
+    def _single_spike_ramp_outputs(
+        self,
+        spike_trace: list,
+        *,
+        core_to_group: Dict[int, Any],
+        hcm: Any,
+        T_eff: int,
+    ) -> Dict[int, np.ndarray]:
+        """Per-core ramp value per neuron, decoded from fire timing **within the
+        core's own window**: ``(core.latency + 1 + T) − first_fire``, clamped to
+        ``[0, T]`` (0 if silent). Windowing per-source is essential — a global
+        ``T_eff − fire`` overcounts shallow sources by ``(max_latency − latency)``
+        and saturates everything when latency >> T."""
+        first = self._collect_first_fire_cycles(
+            spike_trace, core_to_group=core_to_group, hcm=hcm,
+        )
+        ramps: Dict[int, np.ndarray] = {}
+        for core_idx, fires in first.items():
+            core = hcm.cores[core_idx]
+            core_lat = int(getattr(core, "latency", 0) or 0)
+            window_end = core_lat + 1 + int(self.T)  # +1: SANA-FE delivery offset
+            ramp = np.where(
+                fires >= 0,
+                np.clip(window_end - fires, 0, int(self.T)),
+                0,
+            ).astype(np.int64)
+            ramps[core_idx] = ramp
+        return ramps
+
     def _compute_seg_output_spike_count(
         self,
         output_map: List[Any],
@@ -107,8 +171,11 @@ class SanafeSegmentIOMixin:
         T: int,
         hcm: Any,
         last_active_fires: Dict[int, np.ndarray],
+        core_output_override: Dict[int, np.ndarray] | None = None,
     ) -> np.ndarray:
-        """Gather per-output spike counts (in-window only, matching HCM)."""
+        """Gather per-output spike counts. ``core_output_override`` (single-spike
+        cascade) supplies the reconstructed ramp value per core neuron, used in
+        place of the raw per-core spike count for the gather."""
         flat_sources = (
             list(output_sources.flatten())
             if output_sources is not None and hasattr(output_sources, "flatten")
@@ -132,9 +199,10 @@ class SanafeSegmentIOMixin:
             return out
         out = np.zeros(n_out, dtype=np.int64)
 
-        core_outputs: Dict[int, np.ndarray] = {
-            rec.core_index: rec.output_spike_count for rec in per_core_records
-        }
+        core_outputs: Dict[int, np.ndarray] = (
+            core_output_override if core_output_override is not None
+            else {rec.core_index: rec.output_spike_count for rec in per_core_records}
+        )
 
         spans = compress_spike_sources(flat_sources)
         for sp in spans:

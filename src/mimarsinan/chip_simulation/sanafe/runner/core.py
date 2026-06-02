@@ -45,6 +45,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         thresholding_mode: str = "<=",
         spiking_mode: str = "lif",
         firing_mode: str = "Default",
+        ttfs_cycle_schedule: str = "cascaded",
         log_potential_trace: bool = False,
         log_message_trace: bool = True,
         cores_per_tile: int = 0,
@@ -60,6 +61,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.spiking_mode = behavior.spiking_mode
         self.thresholding_mode = behavior.thresholding_mode
         self.firing_mode = behavior.firing_mode
+        self.ttfs_cycle_schedule = str(ttfs_cycle_schedule)
         behavior.require_backend("sanafe")
         if arch_preset not in PRESETS:
             raise ValueError(

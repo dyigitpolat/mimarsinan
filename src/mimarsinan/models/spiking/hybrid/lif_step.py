@@ -10,7 +10,7 @@ import torch
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
-from mimarsinan.models.spiking.lif_core_step import lif_core_contribute_and_fire
+from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
@@ -55,9 +55,14 @@ class HybridLifStepMixin:
                         device=device, dtype=COMPUTE_DTYPE)
             for c in cores
         ]
-        memb = [
-            torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
-                        device=device, dtype=COMPUTE_DTYPE)
+        policy = cycle_neuron_policy(
+            self.spiking_mode, self.ttfs_cycle_schedule, self.firing_mode,
+        )
+        neuron_states = [
+            policy.make_state(
+                batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
+                device, COMPUTE_DTYPE,
+            )
             for c in cores
         ]
 
@@ -85,6 +90,21 @@ class HybridLifStepMixin:
             ]
 
         input_spike_train = input_spike_train.to(COMPUTE_DTYPE)
+        latency_gated = policy.latency_gated
+        single_spike = getattr(policy, "single_spike_io", False)
+
+        if single_spike:
+            # Single-spike TTFS: each input fires once (at its arrival cycle). The
+            # encoded train is latched, so the per-cycle arrival is its rising edge.
+            shifted = torch.zeros_like(input_spike_train)
+            shifted[1:] = input_spike_train[:-1]
+            input_spike_train = (input_spike_train - shifted).clamp_min_(0.0)
+
+        # Single-spike output decode: per-output-column arrival latch whose running
+        # sum over the window reconstructs the ramp value (= count for count/T).
+        out_arrival = (torch.zeros(batch_size, len(output_sources),
+                                   device=device, dtype=COMPUTE_DTYPE)
+                       if single_spike else None)
 
         for cycle in range(cycles):
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
@@ -96,23 +116,22 @@ class HybridLifStepMixin:
                     buffers=buffers,
                     spans=axon_spans[core_idx],
                     cycle=cycle,
+                    single_spike=single_spike,
                 )
 
             for core_idx, core in enumerate(cores):
                 if core.latency is None:
                     continue
-                if not (cycle >= core.latency and cycle < T + core.latency):
+                if latency_gated and not (cycle >= core.latency and cycle < T + core.latency):
                     continue
 
-                memb_i = memb[core_idx]
-                buffers[core_idx] = lif_core_contribute_and_fire(
-                    memb_i,
+                buffers[core_idx] = policy.step(
+                    neuron_states[core_idx],
                     core_params[core_idx],
                     input_signals[core_idx],
                     thresholds[core_idx],
                     hw_bias=hw_biases[core_idx],
                     thresholding_mode=self.thresholding_mode,
-                    firing_mode=self.firing_mode,
                     output_dtype=COMPUTE_DTYPE,
                 )
 
@@ -120,13 +139,52 @@ class HybridLifStepMixin:
                     record_in_t[core_idx] += input_signals[core_idx][0].to(torch.int64)
                     record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64).detach()
 
+            if single_spike:
+                # Single-spike decode: count each source's latched output ONLY
+                # within its own window [src_lat, src_lat+T), so the value is
+                # (src_lat + T - fire)/T ∈ [0,1] — the genuine TTFS value. Full-
+                # window accumulation would overcount shallow sources by
+                # (chip_latency - src_lat)/T, which saturates everything when
+                # latency >> T.
+                for sp in output_spans:
+                    d0 = int(sp.dst_start)
+                    d1 = int(sp.dst_end)
+                    if sp.kind == "off":
+                        continue
+                    if sp.kind == "on":
+                        # value 1.0 → fires at its window start; counts T over [0, T).
+                        if cycle < T:
+                            output_counts[:, d0:d1] += 1.0
+                        continue
+                    if sp.kind == "input":
+                        if cycle < T:
+                            torch.maximum(
+                                out_arrival[:, d0:d1],
+                                input_spikes[:, int(sp.src_start):int(sp.src_end)],
+                                out=out_arrival[:, d0:d1],
+                            )
+                            output_counts[:, d0:d1] += out_arrival[:, d0:d1]
+                        continue
+                    src_lat = cores[int(sp.src_core)].latency
+                    if src_lat is None:
+                        continue
+                    if cycle < int(src_lat) or cycle >= int(src_lat) + T:
+                        continue
+                    torch.maximum(
+                        out_arrival[:, d0:d1],
+                        buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)],
+                        out=out_arrival[:, d0:d1],
+                    )
+                    output_counts[:, d0:d1] += out_arrival[:, d0:d1]
+                continue
+
             for sp in output_spans:
                 d0 = int(sp.dst_start)
                 d1 = int(sp.dst_end)
                 if sp.kind == "off":
                     continue
                 if sp.kind == "on":
-                    # Always-on axon: one spike per input cycle only (cycles [0, T)).
+                    # Always-on axon: one spike per input cycle [0, T).
                     if cycle < T:
                         output_counts[:, d0:d1] += 1.0
                     continue
@@ -137,7 +195,7 @@ class HybridLifStepMixin:
                 src_lat = cores[int(sp.src_core)].latency
                 if src_lat is None:
                     continue
-                # Neuron output: accumulate only inside source core's active window [lat, lat+T).
+                # Accumulate only inside source core's active window [lat, lat+T).
                 if cycle < int(src_lat) or cycle >= int(src_lat) + T:
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]

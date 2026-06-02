@@ -132,7 +132,16 @@ class HybridStageIOMixin:
         buffers: list[torch.Tensor],
         spans: list[SpikeSourceSpan],
         cycle: int = -1,
+        single_spike: bool = False,
     ) -> None:
+        # Single-spike TTFS: an always-on (bias) axon encodes value 1.0, i.e. a
+        # single spike at cycle 0; its ramp is held downstream. Otherwise (LIF /
+        # latched) it injects one spike every cycle.
+        on_always_on = None
+        if single_spike:
+            def on_always_on(d0: int, d1: int) -> None:
+                out[:, d0:d1].fill_(1.0 if cycle == 0 else 0.0)
+
         fill_signal_from_spans(
             out,
             spans,
@@ -144,6 +153,7 @@ class HybridStageIOMixin:
                 (slice(None), slice(int(sp.dst_start), int(sp.dst_end))),
                 buffers[int(sp.src_core)][:, int(sp.src_start) : int(sp.src_end)],
             ),
+            on_always_on=on_always_on,
             cycle=cycle,
         )
 

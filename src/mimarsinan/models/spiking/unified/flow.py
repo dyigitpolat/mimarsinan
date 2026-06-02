@@ -41,6 +41,7 @@ class SpikingUnifiedCoreFlow(
         spike_mode: str = "Uniform",
         thresholding_mode: str = "<=",
         spiking_mode: str = "lif",
+        ttfs_cycle_schedule: str = "cascaded",
         compute_dtype: torch.dtype = COMPUTE_DTYPE,
     ):
         super().__init__()
@@ -55,6 +56,7 @@ class SpikingUnifiedCoreFlow(
         self.spike_mode = spike_mode
         self.thresholding_mode = thresholding_mode
         self.spiking_mode = spiking_mode
+        self.ttfs_cycle_schedule = ttfs_cycle_schedule
         self._compute_dtype = compute_dtype
 
         validate_spiking_init(
@@ -174,9 +176,14 @@ class SpikingUnifiedCoreFlow(
         ReLU↔TTFS equivalence its value equals the single-spike result; the genuine
         single-spike simulation lives in the nevresim / SANA-FE backends.
         """
-        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            is_cascaded_ttfs,
+            requires_ttfs_firing,
+        )
 
         try:
+            if is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule):
+                return self._forward_lif(x)
             if requires_ttfs_firing(self.spiking_mode):
                 return self._forward_ttfs(x)
             return self._forward_lif(x)

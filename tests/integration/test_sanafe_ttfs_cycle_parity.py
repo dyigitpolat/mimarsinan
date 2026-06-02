@@ -64,6 +64,7 @@ def _run_genuine(mapping, rates):
     runner = SanafeRunner(
         mapping=mapping, simulation_length=S, arch_preset="loihi",
         spiking_mode="ttfs_cycle_based", firing_mode="TTFS",
+        ttfs_cycle_schedule="synchronized",
         thresholding_mode="<=", log_potential_trace=True,
     )
     rec = runner.run(rates.astype(np.float32), sample_index=0)

@@ -49,6 +49,7 @@ class SpikingHybridCoreFlow(
         thresholding_mode: str = "<=",
         spiking_mode: str = "lif",
         cycle_accurate_lif_forward: bool = False,
+        ttfs_cycle_schedule: str = "cascaded",
     ):
         super().__init__()
 
@@ -61,6 +62,7 @@ class SpikingHybridCoreFlow(
         self.spike_mode = spike_mode
         self.thresholding_mode = thresholding_mode
         self.spiking_mode = spiking_mode
+        self.ttfs_cycle_schedule = ttfs_cycle_schedule
         self.cycle_accurate_lif_forward = bool(cycle_accurate_lif_forward)
         self._use_cycle_accurate_trains = (
             spiking_mode == "lif" and self.cycle_accurate_lif_forward
@@ -157,11 +159,17 @@ class SpikingHybridCoreFlow(
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            is_cascaded_ttfs,
+            requires_ttfs_firing,
+        )
 
         try:
             x = self.preprocessor(x)
             x = x.view(x.shape[0], -1)
+
+            if is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule):
+                return self._forward_rate(x)
 
             if requires_ttfs_firing(self.spiking_mode):
                 return self._forward_ttfs(x)
@@ -175,11 +183,21 @@ class SpikingHybridCoreFlow(
     def forward_with_recording(
         self, x: torch.Tensor, *, sample_index: int = 0,
     ) -> tuple[torch.Tensor, RunRecord]:
-        """Forward one sample (B=1, ``spiking_mode='lif'``) and return output plus spike record."""
+        """Forward one sample (B=1) and return output plus spike record.
+
+        Supported for the per-cycle cascade path: ``lif`` and cascaded
+        ``ttfs_cycle_based``. Analytical TTFS modes do not run the recording
+        cascade, so they are rejected.
+        """
+        from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
+
         assert x.shape[0] == 1, "forward_with_recording requires batch_size == 1"
-        assert self.spiking_mode == "lif", (
-            f"forward_with_recording requires spiking_mode='lif'; got "
-            f"{self.spiking_mode!r}"
+        assert (
+            self.spiking_mode == "lif"
+            or is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
+        ), (
+            f"forward_with_recording requires spiking_mode='lif' or cascaded "
+            f"ttfs_cycle_based; got {self.spiking_mode!r}"
         )
 
         record = RunRecord(sample_index=int(sample_index), T=int(self.simulation_length))

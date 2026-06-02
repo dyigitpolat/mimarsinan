@@ -86,15 +86,21 @@ class SanafeNeuralStageMixin:
             simulation_length=self.T,
             firing_mode=self.firing_mode,
             spiking_mode=self.spiking_mode,
+            ttfs_cycle_schedule=self.ttfs_cycle_schedule,
         )
 
         from mimarsinan.chip_simulation.spiking_semantics import (
-            is_ttfs_cycle_based,
+            is_cascaded_ttfs,
+            is_synchronized_ttfs,
             requires_ttfs_firing,
         )
 
-        is_ttfs = requires_ttfs_firing(self.spiking_mode)
-        is_cycle = is_ttfs_cycle_based(self.spiking_mode)
+        is_cascade = is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
+        # Cascaded greedy TTFS is decoded from spike counts (LIF-style), not the
+        # analytical contract / membrane potential — so it does *not* take the
+        # ``is_ttfs`` contract+preset path; only its input encoding is TTFS-latched.
+        is_ttfs = requires_ttfs_firing(self.spiking_mode) and not is_cascade
+        is_cycle = is_synchronized_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
 
         max_latency = max(
             (int(c.latency) if getattr(c, "latency", None) is not None else 0)
@@ -109,6 +115,17 @@ class SanafeNeuralStageMixin:
                 [getattr(c, "latency", None) for c in hcm.cores]
             )
             T_eff = (num_groups + 1) * self.T
+        elif is_cascade:
+            # Ungated full-window accumulation must match HCM's
+            # ``cycles = ChipLatency + T`` exactly (the count is set directly by
+            # the sim length, not a per-core window). +1 for SANA-FE's one-cycle
+            # input→synapse delivery delay. Use the full ChipLatency (includes the
+            # output hop), not just ``max(core.latency)``.
+            try:
+                chip_latency = int(ChipLatency(hcm).calculate())
+            except (RecursionError, ValueError):
+                chip_latency = max_latency
+            T_eff = self.T + chip_latency + 1
         else:
             # +1: SANA-FE applies input spikes one cycle after emission.
             T_eff = self.T + max_latency + 1
@@ -170,6 +187,25 @@ class SanafeNeuralStageMixin:
                 # train via the proven per-cycle mask path (SANA-FE reads "spikes"
                 # as a per-timestep mask), so each input fires at its TTFS cycle.
                 _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
+        elif is_cascade:
+            # Cascaded greedy TTFS: genuine SINGLE spike per input (one event at
+            # its TTFS cycle); the downstream soma's ramp_current reconstructs the
+            # contribution. No held/latched input — only the first spike is real.
+            from mimarsinan.chip_simulation.ttfs.ttfs_encoding import (
+                ttfs_single_spike_train,
+            )
+
+            encoded = ttfs_single_spike_train(
+                seg_input_rates.astype(np.float64), self.T,
+            ).astype(np.float32)
+            encoded_padded = encoded
+            if T_eff > encoded.shape[2]:
+                pad = np.zeros(
+                    (encoded.shape[0], encoded.shape[1], T_eff - encoded.shape[2]),
+                    dtype=encoded.dtype,
+                )
+                encoded_padded = np.concatenate([encoded, pad], axis=2)
+            _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
         else:
             encoded = self._behavior.encode_segment_input(seg_input_rates, self.T)
             encoded_padded = encoded

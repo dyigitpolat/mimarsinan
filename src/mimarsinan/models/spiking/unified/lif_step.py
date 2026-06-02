@@ -7,7 +7,7 @@ from typing import Dict
 import torch
 
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
-from mimarsinan.models.spiking.lif_core_step import lif_core_contribute_and_fire
+from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 
 
 class UnifiedLifStepMixin:
@@ -22,6 +22,9 @@ class UnifiedLifStepMixin:
         device = x.device
 
         T = self.simulation_length
+        policy = cycle_neuron_policy(
+            self.spiking_mode, self.ttfs_cycle_schedule, self.firing_mode,
+        )
 
         input_spike_train = torch.zeros(T, batch_size, x.shape[1], device=device)
         for cycle in range(T):
@@ -40,7 +43,7 @@ class UnifiedLifStepMixin:
                 in_dim = int(len(node.input_sources.flatten()))
                 out_dim = self._id_to_out_dim[node.id]
 
-                memb = torch.zeros(batch_size, out_dim, device=device)
+                state = policy.make_state(batch_size, out_dim, device, torch.float32)
                 out_train = torch.zeros(T, batch_size, out_dim, device=device)
                 inp = torch.zeros(batch_size, in_dim, device=device)
                 total_spikes = 0.0
@@ -56,14 +59,13 @@ class UnifiedLifStepMixin:
                         cycle=cycle,
                     )
 
-                    spikes = lif_core_contribute_and_fire(
-                        memb,
+                    spikes = policy.step(
+                        state,
                         weight,
                         inp,
                         threshold,
                         hw_bias=hw_bias,
                         thresholding_mode=self.thresholding_mode,
-                        firing_mode=self.firing_mode,
                     )
                     out_train[cycle] = spikes
                     total_spikes += spikes.sum().item()

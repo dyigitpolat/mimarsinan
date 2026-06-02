@@ -54,6 +54,7 @@ def build_spiking_hybrid_flow(
         cfg["thresholding_mode"],
         spiking_mode=cfg.get("spiking_mode", "lif"),
         cycle_accurate_lif_forward=bool(cfg.get("cycle_accurate_lif_forward", False)),
+        ttfs_cycle_schedule=cfg.get("ttfs_cycle_schedule", "cascaded"),
     )
     if cfg.get("cycle_accurate_lif_forward") and model is not None:
         from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model

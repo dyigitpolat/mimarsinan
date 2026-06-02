@@ -2,7 +2,7 @@ main_cpp_template_debug_spikes = \
 """
 #include "generate_chip.hpp"
 #include "simulator/compute_policy/fire_policy/novena_fire.hpp"
-#include "simulator/compute_policy/fire_policy/ttfs_fire.hpp"
+#include "simulator/compute_policy/ttfs_cascade_compute.hpp"
 #include "_tests/all.hpp"
 
 #include "simulator/spike_generation/stochastic_spike_generator.hpp"

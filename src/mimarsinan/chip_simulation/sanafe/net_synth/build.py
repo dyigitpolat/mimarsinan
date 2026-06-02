@@ -42,6 +42,7 @@ from mimarsinan.chip_simulation.sanafe.neuron_model import (
     input_neuron_attributes,
     lif_model_attributes,
     soma_hw_name_for_spiking_mode,
+    ttfs_cascade_model_attributes,
     ttfs_continuous_model_attributes,
     ttfs_cycle_model_attributes,
     ttfs_quantized_model_attributes,
@@ -69,6 +70,7 @@ def build_network_for_segment(
     simulation_length: Optional[int] = None,
     firing_mode: str = "Default",
     spiking_mode: str = "lif",
+    ttfs_cycle_schedule: str = "cascaded",
 ) -> Tuple[
     Any,
     Dict[int, Any],
@@ -92,15 +94,23 @@ def build_network_for_segment(
     net = sanafe.Network()
     from mimarsinan.chip_simulation.spiking_semantics import (
         forces_activation_quantization,
+        is_cascaded_ttfs,
+        is_synchronized_ttfs,
         is_ttfs_cycle_based,
         requires_ttfs_firing,
     )
     from mimarsinan.chip_simulation.ttfs.ttfs_cycle_genuine import latency_groups
 
-    soma_hw = soma_hw_name_for_spiking_mode(spiking_mode)
+    soma_hw = soma_hw_name_for_spiking_mode(spiking_mode, ttfs_cycle_schedule)
     is_ttfs = requires_ttfs_firing(spiking_mode)
-    is_cycle = is_ttfs_cycle_based(spiking_mode)
-    is_quantized = forces_activation_quantization(spiking_mode) and not is_cycle
+    # ``is_cycle`` is the *synchronized* genuine single-spike schedule (V-recon
+    # soma, S×groups windows). The cascaded schedule is count-based (LIF-style).
+    is_cycle = is_synchronized_ttfs(spiking_mode, ttfs_cycle_schedule)
+    is_cascade = is_cascaded_ttfs(spiking_mode, ttfs_cycle_schedule)
+    is_quantized = (forces_activation_quantization(spiking_mode)
+                    and not is_ttfs_cycle_based(spiking_mode))
+    # Cascade is decoded from spike counts, not the membrane potential trace.
+    log_potential = is_ttfs and not is_cascade
 
     # Synchronized schedule for genuine single-spike TTFS: each latency group
     # owns a non-overlapping S-cycle window after the input window. group g →
@@ -146,6 +156,15 @@ def build_network_for_segment(
                 lat_group = int(cycle_core_group[core_idx])
                 active_start = (lat_group + 1) * int(simulation_length)
                 active_length = int(simulation_length)
+            elif is_cascade:
+                # Cascaded greedy TTFS is latency-gated like LIF: each core is
+                # active only in its window [core.latency (+1 for the SANA-FE
+                # input-delivery offset), +S). Its bias/ramp start there and it
+                # fires in-window, where the per-source ramp decode reads it.
+                active_start = ((core_latency + 1)
+                                if simulation_length is not None else None)
+                active_length = (int(simulation_length)
+                                 if simulation_length is not None else None)
             else:
                 active_start = ((core_latency + 1)
                                 if simulation_length is not None else None)
@@ -164,6 +183,13 @@ def build_network_for_segment(
                     bias = float(np.asarray(core.hardware_bias)[n_idx])
                 if is_cycle:
                     model_attrs = ttfs_cycle_model_attributes(
+                        threshold=float(core.threshold),
+                        hardware_bias=bias,
+                        active_start=active_start,
+                        active_length=active_length,
+                    )
+                elif is_cascade:
+                    model_attrs = ttfs_cascade_model_attributes(
                         threshold=float(core.threshold),
                         hardware_bias=bias,
                         active_start=active_start,
@@ -195,7 +221,7 @@ def build_network_for_segment(
                     soma_hw_name=soma_hw,
                     default_synapse_hw_name=SYNAPSE_NAME,
                     log_spikes=True,
-                    log_potential=is_ttfs,
+                    log_potential=log_potential,
                     model_attributes=model_attrs,
                 )
                 neuron.map_to_core(sanafe_core)

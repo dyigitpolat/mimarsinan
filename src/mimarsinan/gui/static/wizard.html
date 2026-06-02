@@ -617,6 +617,17 @@
 
             <div class="dep-bar" id="spikingDeps"></div>
 
+            <!-- TTFS Cycle-Based execution schedule (shown only for that mode) -->
+            <div class="field" id="ttfsCycleScheduleField" style="margin-bottom:14px; display:none">
+              <label class="field-label">Cycle Schedule
+                <span class="hint">cascaded = greedy S+groups cycles (all backends); synchronized = exact S×groups (SANA-FE only)</span>
+              </label>
+              <select id="ttfsCycleSchedule" onchange="applySpikingDeps(); update()">
+                <option value="cascaded">Cascaded (greedy, fewer cycles)</option>
+                <option value="synchronized">Synchronized (exact, more cycles)</option>
+              </select>
+            </div>
+
             <!-- Row 1: Cycles, Target Tq — Row 2: Scheduled mapping -->
             <div class="field-grid" style="margin-bottom:10px">
               <div class="field">

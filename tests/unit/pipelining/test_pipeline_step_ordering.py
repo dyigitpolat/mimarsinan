@@ -143,11 +143,25 @@ class TestActivationAdaptationAlwaysPresent:
         assert names.index("Activation Analysis") < names.index("TTFS Cycle Fine-Tuning")
         assert names.index("TTFS Cycle Fine-Tuning") < names.index("Weight Quantization")
 
-    def test_ttfs_cycle_disables_nevresim_simulation(self):
-        # nevresim has no genuine synchronized-window backend yet; the analytical
-        # "Simulation" (nevresim) step is skipped for ttfs_cycle_based.
-        names = _step_names(self._ttfs_cycle_config(enable_nevresim_simulation=True))
+    def test_ttfs_cycle_synchronized_disables_nevresim_simulation(self):
+        # nevresim has no genuine synchronized-window backend yet; the "Simulation"
+        # (nevresim) step is skipped for the synchronized schedule only.
+        names = _step_names(self._ttfs_cycle_config(
+            enable_nevresim_simulation=True, ttfs_cycle_schedule="synchronized",
+        ))
         assert "Simulation" not in names
+
+    def test_ttfs_cycle_cascaded_keeps_nevresim_simulation(self):
+        # Cascaded greedy TTFS runs genuinely on nevresim (fire-once-latch policy).
+        names = _step_names(self._ttfs_cycle_config(
+            enable_nevresim_simulation=True, ttfs_cycle_schedule="cascaded",
+        ))
+        assert "Simulation" in names
+        # default schedule is cascaded → nevresim stays enabled.
+        default_names = _step_names(
+            self._ttfs_cycle_config(enable_nevresim_simulation=True)
+        )
+        assert "Simulation" in default_names
         # other modes keep nevresim Simulation.
         lif_names = _step_names({
             "configuration_mode": "user", "spiking_mode": "lif",

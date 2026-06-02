@@ -6,11 +6,14 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     TTFS_FAMILY_MODES,
     forces_activation_quantization,
     is_analytical_ttfs,
+    is_cascaded_ttfs,
     is_cycle_based,
+    is_synchronized_ttfs,
     is_ttfs_cycle_based,
     require_spiking_mode_supported,
     requires_ttfs_firing,
     supports_spiking_mode,
+    ttfs_cycle_schedule,
 )
 
 
@@ -70,3 +73,24 @@ def test_backends_support_ttfs_cycle_based():
 def test_loihi_lava_training_reject_ttfs_cycle_based():
     for backend in ("loihi", "lava", "training"):
         assert not supports_spiking_mode(backend, "ttfs_cycle_based"), backend
+
+
+class TestCycleSchedule:
+    def test_default_is_cascaded(self):
+        assert ttfs_cycle_schedule(None) == "cascaded"
+        assert ttfs_cycle_schedule("") == "cascaded"
+        assert ttfs_cycle_schedule("bogus") == "cascaded"
+        assert ttfs_cycle_schedule("synchronized") == "synchronized"
+
+    def test_cascaded_predicate(self):
+        assert is_cascaded_ttfs("ttfs_cycle_based", "cascaded")
+        assert is_cascaded_ttfs("ttfs_cycle_based", None)  # default cascaded
+        assert not is_cascaded_ttfs("ttfs_cycle_based", "synchronized")
+        assert not is_cascaded_ttfs("lif", "cascaded")
+        assert not is_cascaded_ttfs("ttfs_quantized", "cascaded")
+
+    def test_synchronized_predicate(self):
+        assert is_synchronized_ttfs("ttfs_cycle_based", "synchronized")
+        assert not is_synchronized_ttfs("ttfs_cycle_based", "cascaded")
+        assert not is_synchronized_ttfs("ttfs_cycle_based", None)  # default cascaded
+        assert not is_synchronized_ttfs("lif", "synchronized")
