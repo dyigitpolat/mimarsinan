@@ -8,7 +8,7 @@ main_cpp_template = \
 #include "simulator/compute_policy/reset_policy/zero_reset.hpp"
 #include "simulator/compute_policy/fire_policy/default_fire.hpp"
 #include "simulator/compute_policy/fire_policy/novena_fire.hpp"
-#include "simulator/compute_policy/fire_policy/ttfs_fire.hpp"
+#include "simulator/compute_policy/ttfs_cascade_compute.hpp"
 #include "_tests/all.hpp"
 
 #include "simulator/spike_generation/stochastic_spike_generator.hpp"

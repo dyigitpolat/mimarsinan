@@ -61,6 +61,29 @@ def forces_activation_quantization(spiking_mode: str) -> bool:
     return _norm(spiking_mode) in _ACT_QUANT_MODES
 
 
+# ── ttfs_cycle_based execution schedule ──────────────────────────────────────
+# "synchronized": exact, sequential per-group S-cycle windows (S × groups cycles).
+# "cascaded": greedy, pipelined fire-once-latch (S + groups cycles); nevresim-compatible.
+DEFAULT_TTFS_CYCLE_SCHEDULE = "cascaded"
+TTFS_CYCLE_SCHEDULES: FrozenSet[str] = frozenset({"cascaded", "synchronized"})
+
+
+def ttfs_cycle_schedule(schedule) -> str:
+    """Normalize the ttfs_cycle schedule value, defaulting to ``cascaded``."""
+    s = str(schedule or DEFAULT_TTFS_CYCLE_SCHEDULE)
+    return s if s in TTFS_CYCLE_SCHEDULES else DEFAULT_TTFS_CYCLE_SCHEDULE
+
+
+def is_cascaded_ttfs(spiking_mode: str, schedule) -> bool:
+    """ttfs_cycle_based running the greedy pipelined (cascaded) schedule."""
+    return is_ttfs_cycle_based(spiking_mode) and ttfs_cycle_schedule(schedule) == "cascaded"
+
+
+def is_synchronized_ttfs(spiking_mode: str, schedule) -> bool:
+    """ttfs_cycle_based running the exact sequential (synchronized) schedule."""
+    return is_ttfs_cycle_based(spiking_mode) and ttfs_cycle_schedule(schedule) == "synchronized"
+
+
 @dataclass(frozen=True)
 class BackendSpikingCapabilities:
     lif: bool

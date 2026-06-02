@@ -8,7 +8,7 @@ main_cpp_template_runtime = \
 #include "simulator/compute_policy/compare_policy/inclusive_compare.hpp"
 #include "simulator/compute_policy/reset_policy/subtractive_reset.hpp"
 #include "simulator/compute_policy/reset_policy/zero_reset.hpp"
-#include "simulator/compute_policy/fire_policy/ttfs_fire.hpp"
+#include "simulator/compute_policy/ttfs_cascade_compute.hpp"
 #include "simulator/spike_generation/stochastic_spike_generator.hpp"
 #include "simulator/spike_generation/deterministic_spike_generator.hpp"
 #include "simulator/spike_generation/front_loaded_spike_generator.hpp"

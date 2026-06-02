@@ -558,8 +558,16 @@ function applySpikingDeps() {
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
     deps.push({ text: 'Activation Quant: subsumed by TTFS-Cycle Fine-Tuning', forced: true });
     deps.push({ text: 'TTFS-Cycle Fine-Tuning: included', active: true });
-    deps.push({ text: 'Genuine single-spike (synchronized S×groups)', active: true });
+    const schedule = (document.getElementById('ttfsCycleSchedule') || {}).value || 'cascaded';
+    if (schedule === 'synchronized') {
+      deps.push({ text: 'Genuine single-spike (synchronized S×groups, SANA-FE)', active: true });
+    } else {
+      deps.push({ text: 'Greedy cascaded single-spike (S+groups, HCM/nevresim/SANA-FE)', active: true });
+    }
   }
+
+  const scheduleField = document.getElementById('ttfsCycleScheduleField');
+  if (scheduleField) scheduleField.style.display = (mode === 'ttfs_cycle_based') ? '' : 'none';
 
   depsEl.innerHTML = deps.map(d =>
     `<span class="dep-chip ${d.forced ? 'forced' : d.active ? 'triggered' : ''}"><span class="dot"></span>${d.text}</span>`
@@ -604,13 +612,15 @@ function applySimulationDeps() {
   }
   if (loihiCard) loihiCard.classList.toggle('dimmed', !isLif);
 
-  // nevresim has no genuine single-spike (synchronized-window) backend yet, so
-  // it is locked off for ttfs_cycle_based — use SANA-FE for genuine simulation.
+  // nevresim runs the genuine fire-once-latch cascade for the cascaded schedule,
+  // but has no genuine synchronized-window backend yet — lock it off only there.
   const isCycle = getSegVal('spikingMode') === 'ttfs_cycle_based';
+  const schedule = (document.getElementById('ttfsCycleSchedule') || {}).value || 'cascaded';
+  const lockNevresim = isCycle && schedule === 'synchronized';
   const nevresimToggle = document.getElementById('nevresimSimulationToggle');
   const nevresimCard = document.getElementById('nevresimSimCard');
   if (nevresimToggle) {
-    if (isCycle) {
+    if (lockNevresim) {
       setToggle('nevresimSimulationToggle', false, true);
       nevresimToggle.classList.add('disabled');
     } else {
@@ -618,7 +628,7 @@ function applySimulationDeps() {
       if (!nevresimToggle.classList.contains('on')) nevresimToggle.classList.remove('forced');
     }
   }
-  if (nevresimCard) nevresimCard.classList.toggle('dimmed', isCycle);
+  if (nevresimCard) nevresimCard.classList.toggle('dimmed', lockNevresim);
 
   const sanafeOn = isToggleOn('sanafeSimulationToggle');
   const sanafeDrawer = document.getElementById('sanafeSettingsDrawer');
@@ -883,6 +893,9 @@ function buildConfig() {
   };
   if (spikingMode === 'lif') {
     dp.cycle_accurate_lif_forward = isToggleOn('cycleAccurateLifToggle');
+  }
+  if (spikingMode === 'ttfs_cycle_based') {
+    dp.ttfs_cycle_schedule = v('ttfsCycleSchedule') || 'cascaded';
   }
 
   // Quantization flags
@@ -1234,6 +1247,7 @@ function loadStateFromConfig(config) {
   setVal('firingMode', dp.firing_mode);
   setVal('spikeGenMode', dp.spike_generation_mode);
   setVal('thresholdMode', dp.thresholding_mode);
+  setVal('ttfsCycleSchedule', dp.ttfs_cycle_schedule || 'cascaded');
   setToggleFromConfig('cycleAccurateLifToggle', !!dp.cycle_accurate_lif_forward);
   setToggleFromConfig('actQuantToggle', dp.activation_quantization);
   setToggleFromConfig('wtQuantToggle', dp.weight_quantization);

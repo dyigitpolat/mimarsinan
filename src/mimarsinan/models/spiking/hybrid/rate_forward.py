@@ -60,6 +60,15 @@ class HybridRateForwardMixin:
 
             recorder_seg: SegmentSpikeRecord | None = None
             if ctx.recorder is not None:
+                from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
+
+                if is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule):
+                    # Single-spike TTFS: the input is one spike per axon (the
+                    # latched train's rising edge), so the traffic count is its
+                    # presence, not the latched sum.
+                    seg_input_count = spike_train.amax(dim=0)[0]
+                else:
+                    seg_input_count = spike_train.sum(dim=0)[0]
                 recorder_seg = SegmentSpikeRecord(
                     stage_index=ctx.stage_index,
                     stage_name=stage.name,
@@ -67,7 +76,7 @@ class HybridRateForwardMixin:
                     schedule_pass_index=stage.schedule_pass_index,
                     seg_input_rates=seg_input_rates_clamped[0]
                         .detach().to(torch.float32).cpu().numpy().reshape(1, -1),
-                    seg_input_spike_count=spike_train.sum(dim=0)[0]
+                    seg_input_spike_count=seg_input_count
                         .to(torch.int64).cpu().numpy(),
                     seg_output_spike_count=np.zeros(0, dtype=np.int64),
                 )

@@ -166,12 +166,25 @@ class SanafeNeuralStageRecordMixin:
             hcm=hcm,
         )
 
+        # Single-spike cascade: the per-core spike count is single-spike *traffic*;
+        # the decoded segment-output *value* is the ramp reconstructed from each
+        # output neuron's fire timing (T_eff − first_fire).
+        from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
+
+        cascade_override = None
+        if is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule):
+            cascade_override = self._single_spike_ramp_outputs(
+                results.get("spike_trace", []),
+                core_to_group=core_to_group, hcm=hcm, T_eff=T_eff,
+            )
+
         seg_out_count = self._compute_seg_output_spike_count(
             stage.output_map, per_core_records,
             output_sources=getattr(hcm, "output_sources", None),
             T=self.T,
             hcm=hcm,
             last_active_fires=last_active_fires,
+            core_output_override=cascade_override,
         )
         seg_in_count = encoded[0].sum(axis=1).astype(np.int64)
 
@@ -246,12 +259,19 @@ class SanafeNeuralStageRecordMixin:
             contract_ttfs_seg_output=contract_ttfs_seg_output,
         )
 
-        if not _runner.is_ttfs_spiking_mode(self.spiking_mode):
+        from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
+
+        cascade = is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
+        if cascade or not _runner.is_ttfs_spiking_mode(self.spiking_mode):
+            # Count-based decode (count / T), shared by LIF and cascaded greedy
+            # TTFS. Cascaded counts can exceed T (the lossy ``+latency`` offset),
+            # exactly as HCM/nevresim produce — consistency across backends, not
+            # agreement with the analytical reference, is the contract.
             seg_output_rates = lif_inter_stage_from_spike_counts(
                 seg_out_count, self.T, dtype=_COMPUTE_DTYPE,
             )
             store_neural_segment_output(
-                self.spiking_mode,
+                "lif" if cascade else self.spiking_mode,
                 stage.output_map,
                 state_buffer,
                 NeuralSegmentResult(inter_stage=seg_output_rates),

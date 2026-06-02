@@ -30,12 +30,28 @@ def test_ttfs_cycle_based_without_finetune_enables_activation_quant():
     assert dp["activation_quantization"] is True
 
 
-def test_ttfs_cycle_based_disables_nevresim():
+def test_ttfs_cycle_based_synchronized_disables_nevresim():
     # No genuine synchronized-window nevresim backend yet → forced off.
+    dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
+          "ttfs_cycle_schedule": "synchronized", "enable_nevresim_simulation": True}
+    derive_deployment_parameters(dp)
+    assert dp["enable_nevresim_simulation"] is False
+
+
+def test_ttfs_cycle_based_cascaded_keeps_nevresim():
+    # Cascaded greedy TTFS runs genuinely on nevresim (fire-once-latch policy).
+    dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
+          "ttfs_cycle_schedule": "cascaded", "enable_nevresim_simulation": True}
+    derive_deployment_parameters(dp)
+    assert dp["enable_nevresim_simulation"] is True
+
+
+def test_ttfs_cycle_based_default_schedule_keeps_nevresim():
+    # Default schedule is cascaded → nevresim stays enabled.
     dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
           "enable_nevresim_simulation": True}
     derive_deployment_parameters(dp)
-    assert dp["enable_nevresim_simulation"] is False
+    assert dp["enable_nevresim_simulation"] is True
 
 
 def test_float_weights_vanilla():

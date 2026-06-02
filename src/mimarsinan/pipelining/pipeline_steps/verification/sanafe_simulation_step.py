@@ -147,6 +147,9 @@ class SanafeSimulationStep(PipelineStep):
                 behavior=behavior,
                 arch_preset=arch_preset,
                 custom_arch_path=custom_arch_path,
+                ttfs_cycle_schedule=self.pipeline.config.get(
+                    "ttfs_cycle_schedule", "cascaded"
+                ),
                 log_potential_trace=log_potential,
                 log_message_trace=log_messages,
             )

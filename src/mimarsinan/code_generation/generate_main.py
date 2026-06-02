@@ -6,10 +6,18 @@ from mimarsinan.code_generation.main_cpp_template_real_valued_exec import *
 from mimarsinan.code_generation.main_cpp_template_runtime import main_cpp_template_runtime
 
 
+def resolve_compare_policy(thresholding_mode: str) -> str:
+    """Map ``thresholding_mode`` to the nevresim compare policy type.
+
+    Shared by every spiking fire decision (LIF and genuine TTFS) so the
+    strict-``<`` vs inclusive-``<=`` comparator is config-driven, never hardcoded.
+    """
+    return "InclusiveCompare" if thresholding_mode == "<=" else "StrictCompare"
+
+
 def resolve_lif_fire_policy(firing_mode: str, thresholding_mode: str) -> str:
     reset = "ZeroReset" if firing_mode == "Novena" else "SubtractiveReset"
-    compare = "InclusiveCompare" if thresholding_mode == "<=" else "StrictCompare"
-    return f"LIFirePolicy<{reset}, {compare}>"
+    return f"LIFirePolicy<{reset}, {resolve_compare_policy(thresholding_mode)}>"
 
 
 @dataclass(frozen=True)
@@ -52,21 +60,43 @@ def resolve_exec_policy(
       ``TTFSContinuousExecution``.
     * **ttfs_quantized** (cycle-based): ``TTFSQuantizedCompute`` +
       ``TTFSExecution``.
+    * **ttfs_cycle_based** (genuine cascaded greedy single-spike): ``SpikingCompute``
+      with ``TTFSFirePolicy`` (fire-once-latch) + ``SpikingExecution`` over latched
+      TTFS inputs. The synchronized schedule disables nevresim, so any nevresim run
+      of this mode is the cascaded schedule.
     * **lif** / **rate**: ``SpikingCompute`` + ``SpikingExecution``.
     """
-    from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+    from mimarsinan.chip_simulation.spiking_semantics import (
+        forces_activation_quantization,
+        is_ttfs_cycle_based,
+    )
 
     if spiking_mode == "ttfs":
         return ExecPolicySpec(
             compute_policy="TTFSAnalyticalCompute",
             exec_decl="using exec = TTFSContinuousExecution;",
         )
-    if forces_activation_quantization(spiking_mode):
-        # ttfs_cycle_based reuses the analytical quantized compute for now
-        # (numerically equivalent); a genuine single-spike compute replaces it next.
+    compare = resolve_compare_policy(thresholding_mode)
+    if is_ttfs_cycle_based(spiking_mode):
+        # Genuine cascaded single-spike TTFS — its own TTFS compute/execution path
+        # (not the LIF SpikingCompute/SpikingExecution): each neuron fires once,
+        # the downstream ramp reconstructs the value.
+        gen_type = f"{spike_gen_mode}SpikeGenerator"
         return ExecPolicySpec(
-            compute_policy=f"TTFSQuantizedCompute<{simulation_length}>",
-            exec_decl=f"using exec = TTFSExecution<{simulation_length}, {latency}>;",
+            compute_policy=f"TTFSCascadeCompute<{compare}>",
+            exec_decl=(
+                f"using exec = TTFSCascadeExecution<"
+                f"{simulation_length}, {latency}, {output_count}, "
+                f"{gen_type}, {weight_type}, {compare}>;"
+            ),
+        )
+    if forces_activation_quantization(spiking_mode):
+        return ExecPolicySpec(
+            compute_policy=f"TTFSQuantizedCompute<{simulation_length}, {compare}>",
+            exec_decl=(
+                f"using exec = TTFSExecution<"
+                f"{simulation_length}, {latency}, {compare}>;"
+            ),
         )
 
     gen_type = f"{spike_gen_mode}SpikeGenerator"

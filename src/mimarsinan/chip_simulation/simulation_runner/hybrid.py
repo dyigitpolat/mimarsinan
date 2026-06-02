@@ -79,14 +79,18 @@ class SimulationHybridMixin:
                 state_sizes[stage.compute_op.id] = out_size
 
         num_segs = len(segment_specs)
-        print(f"  Emitting parameters and compiling {num_segs} segment(s) in parallel...")
+        print(f"  Emitting parameters and compiling {num_segs} segment(s) in parallel "
+              f"(stage kinds: {[s.kind for s in stages]})...")
 
         nevresim_path = NevresimDriver.nevresim_path
         assert nevresim_path is not None
         sim_length = int(self.simulation_length)
 
-        max_workers = min(num_segs, max(1, (os.cpu_count() or 2) // 2))
         prepared: Dict[int, _PreparedSegment] = {}
+        if num_segs == 0:
+            return prepared
+
+        max_workers = min(num_segs, max(1, (os.cpu_count() or 2) // 2))
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(
@@ -169,10 +173,14 @@ class SimulationHybridMixin:
         )
 
     def _raw_to_rates(self, raw: np.ndarray) -> np.ndarray:
-        """Convert raw nevresim output to [0,1] rates."""
-        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+        """Convert raw nevresim output to [0,1] rates.
 
-        if requires_ttfs_firing(self.spiking_mode):
+        Analytical TTFS returns real-valued activations directly; LIF and cascaded
+        ``ttfs_cycle_based`` return spike counts decoded as ``count / T``.
+        """
+        from mimarsinan.chip_simulation.spiking_semantics import is_analytical_ttfs
+
+        if is_analytical_ttfs(self.spiking_mode):
             return raw
         return raw / max(int(self.simulation_length), 1)
 

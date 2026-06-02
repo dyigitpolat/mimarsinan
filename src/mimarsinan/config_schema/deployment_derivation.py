@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, MutableMapping
 
-from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+from mimarsinan.chip_simulation.spiking_semantics import (
+    forces_activation_quantization,
+    is_synchronized_ttfs,
+)
 
 
 def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
@@ -31,9 +34,9 @@ def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
     if spiking_mode == "lif" or cycle_finetune:
         dp["activation_quantization"] = False
 
-    # nevresim has no genuine single-spike (synchronized-window) backend yet, so
-    # it is disabled for ttfs_cycle_based (use SANA-FE for genuine simulation).
-    if spiking_mode == "ttfs_cycle_based":
+    # nevresim has no genuine synchronized-window backend yet, so it is disabled
+    # only for the synchronized schedule; cascaded runs genuinely on nevresim.
+    if is_synchronized_ttfs(spiking_mode, dp.get("ttfs_cycle_schedule")):
         dp["enable_nevresim_simulation"] = False
 
     if act_quant or wt_quant:

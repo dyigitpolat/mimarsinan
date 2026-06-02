@@ -31,22 +31,28 @@ from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
 
 from .presets import (
     SOMA_LIF_NAME,
+    SOMA_TTFS_CASCADE_NAME,
     SOMA_TTFS_CONTINUOUS_NAME,
     SOMA_TTFS_CYCLE_NAME,
     SOMA_TTFS_QUANTIZED_NAME,
 )
 
 
-def soma_hw_name_for_spiking_mode(spiking_mode: str) -> str:
+def soma_hw_name_for_spiking_mode(spiking_mode: str, schedule=None) -> str:
     from mimarsinan.chip_simulation.spiking_semantics import (
         forces_activation_quantization,
+        is_synchronized_ttfs,
         is_ttfs_cycle_based,
     )
 
     if spiking_mode == "ttfs":
         return SOMA_TTFS_CONTINUOUS_NAME
     if is_ttfs_cycle_based(spiking_mode):
-        return SOMA_TTFS_CYCLE_NAME  # genuine single-spike, synchronized schedule
+        # synchronized → V-reconstruction single-spike soma; cascaded → genuine
+        # fire-once-latch soma (count-based decode, like LIF).
+        if is_synchronized_ttfs(spiking_mode, schedule):
+            return SOMA_TTFS_CYCLE_NAME
+        return SOMA_TTFS_CASCADE_NAME
     if forces_activation_quantization(spiking_mode):
         return SOMA_TTFS_QUANTIZED_NAME
     return SOMA_LIF_NAME
@@ -158,6 +164,23 @@ def ttfs_cycle_model_attributes(
     active_length: Optional[int] = None,
 ) -> dict:
     """Genuine single-spike soma attrs — no ``preset_membrane`` (reconstructs V)."""
+    return _ttfs_base_model_attributes(
+        threshold=threshold,
+        hardware_bias=hardware_bias,
+        active_start=active_start,
+        active_length=active_length,
+    )
+
+
+def ttfs_cascade_model_attributes(
+    *,
+    threshold: float,
+    hardware_bias: Optional[float] = None,
+    active_start: Optional[int] = None,
+    active_length: Optional[int] = None,
+) -> dict:
+    """Cascaded fire-once-latch soma attrs — no ``preset_membrane`` (genuine
+    integration of latched spikes; ungated when ``active_length`` is None)."""
     return _ttfs_base_model_attributes(
         threshold=threshold,
         hardware_bias=hardware_bias,

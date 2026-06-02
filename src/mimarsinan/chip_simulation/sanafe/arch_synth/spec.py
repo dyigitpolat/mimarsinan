@@ -59,6 +59,7 @@ class ArchSpec:
     ttfs_continuous_plugin_path: str = field(default="")
     ttfs_quantized_plugin_path: str = field(default="")
     ttfs_cycle_plugin_path: str = field(default="")
+    ttfs_cascade_plugin_path: str = field(default="")
     mesh_width: int = 1
     mesh_height: int = 1
     cores_per_tile_resolved: int = 1
@@ -111,6 +112,7 @@ def derive_arch_spec(
     ttfs_cont_so = _plugin_path("ttfs_continuous_soma")
     ttfs_q_so = _plugin_path("ttfs_quantized_soma")
     ttfs_cycle_so = _plugin_path("ttfs_cycle_soma")
+    ttfs_cascade_so = _plugin_path("ttfs_cascade_soma")
     missing = [
         name for name, path in (
             ("dendrite", dendrite_so),
@@ -118,6 +120,7 @@ def derive_arch_spec(
             ("ttfs_continuous_soma", ttfs_cont_so),
             ("ttfs_quantized_soma", ttfs_q_so),
             ("ttfs_cycle_soma", ttfs_cycle_so),
+            ("ttfs_cascade_soma", ttfs_cascade_so),
         )
         if path is None
     ]
@@ -155,6 +158,7 @@ def derive_arch_spec(
         ttfs_continuous_plugin_path=ttfs_cont_so,
         ttfs_quantized_plugin_path=ttfs_q_so,
         ttfs_cycle_plugin_path=ttfs_cycle_so,
+        ttfs_cascade_plugin_path=ttfs_cascade_so,
         mesh_width=mesh_width,
         mesh_height=mesh_height,
         cores_per_tile_resolved=cores_per_tile,

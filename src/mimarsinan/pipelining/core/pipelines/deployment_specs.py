@@ -7,6 +7,7 @@ import sys
 import torch
 
 from mimarsinan.chip_simulation.spiking_semantics import (
+    is_synchronized_ttfs,
     is_ttfs_cycle_based,
     requires_ttfs_firing,
 )
@@ -158,9 +159,9 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
         )
 
     specs.append(("Hard Core Mapping", HardCoreMappingStep))
-    # nevresim has no genuine single-spike backend for the synchronized
-    # cycle-based mode yet; skip it (it would only run the analytical fallback).
-    if nevresim_sim and not is_ttfs_cycle_based(spiking):
+    # nevresim runs the genuine fire-once-latch cascade for the cascaded schedule,
+    # but has no genuine synchronized-window backend yet — skip it only there.
+    if nevresim_sim and not is_synchronized_ttfs(spiking, config.get("ttfs_cycle_schedule")):
         specs.append(("Simulation", SimulationStep))
 
     if loihi_sim:
