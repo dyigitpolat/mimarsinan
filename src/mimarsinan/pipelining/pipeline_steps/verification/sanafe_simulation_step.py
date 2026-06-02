@@ -98,7 +98,8 @@ class SanafeSimulationStep(PipelineStep):
         require_spiking_mode_supported(
             self.pipeline, "SanafeSimulationStep", backend="sanafe",
         )
-        is_ttfs = spiking_mode in ("ttfs", "ttfs_quantized")
+        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+        is_ttfs = requires_ttfs_firing(spiking_mode)
 
         parity_check = bool(self.pipeline.config.get("sanafe_parity_check", True))
         arch_preset = self.pipeline.config.get("sanafe_arch_preset", "loihi")

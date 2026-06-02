@@ -24,14 +24,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self.name = "TTFS Cycle Fine-Tuning"
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
-        # The TTFS kernel clamps + quantises internally; disable the decorators so
-        # update_activation rebuilds each activation as the bare blend.
+        # LIF-style: this step replaces the clamp/shift/activation-quant chain.
+        # TTFSCycleActivation clamps + quantises internally, so disable the
+        # decorators (the blend ramps the bare base activation → TTFS kernel,
+        # exactly like LIF Adaptation ramps base → LIFActivation).
         self.adaptation_manager.ttfs_active = True
-
-    def _blend_old_activation(self, perceptron):
-        # Old side = the perceptron's current (clamp/quant-decorated) activation, so
-        # the rate-0 blend matches the teacher exactly.
-        return perceptron.activation
 
     def _make_target_activation(self, perceptron) -> TTFSCycleActivation:
         return TTFSCycleActivation(

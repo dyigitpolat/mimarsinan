@@ -129,15 +129,26 @@ class TestActivationAdaptationAlwaysPresent:
         config.update(overrides)
         return config
 
-    def test_ttfs_cycle_finetuning_present_after_actquant_before_weightquant(self):
+    def test_ttfs_cycle_is_lif_style_replacing_quant_chain(self):
+        """LIF-style: TTFS-Cycle Fine-Tuning REPLACES the activation-quant chain
+        (no Activation Adaptation / Clamp / Shift / Activation Quantization),
+        directly after Activation Analysis and before Weight Quantization."""
         names = _step_names(self._ttfs_cycle_config())
         assert "TTFS Cycle Fine-Tuning" in names
-        assert names.index("Activation Quantization") < names.index("TTFS Cycle Fine-Tuning")
+        for skipped in (
+            "Activation Adaptation", "Clamp Adaptation",
+            "Activation Shifting", "Activation Quantization",
+        ):
+            assert skipped not in names, f"{skipped} must be skipped (LIF-style)"
+        assert names.index("Activation Analysis") < names.index("TTFS Cycle Fine-Tuning")
         assert names.index("TTFS Cycle Fine-Tuning") < names.index("Weight Quantization")
 
-    def test_ttfs_cycle_finetuning_opt_out(self):
+    def test_ttfs_cycle_finetuning_opt_out_falls_back_to_quant_chain(self):
+        # Disabling fine-tuning reverts to the analytical clamp/shift/quant chain.
         names = _step_names(self._ttfs_cycle_config(enable_ttfs_finetuning=False))
         assert "TTFS Cycle Fine-Tuning" not in names
+        assert "Clamp Adaptation" in names
+        assert "Activation Quantization" in names
 
     @pytest.mark.parametrize("spiking", ["ttfs", "ttfs_quantized", "lif", "rate"])
     def test_ttfs_cycle_finetuning_absent_for_other_modes(self, spiking):
