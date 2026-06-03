@@ -49,6 +49,7 @@ class HybridRateForwardMixin:
             seg_input_rates = self._assemble_segment_input(
                 stage.input_map, ctx.state_buffer, batch_size, device
             )
+            seg_input_rates = self._apply_input_shifts(stage.input_map, seg_input_rates)
             seg_input_rates_clamped = seg_input_rates.clamp(0.0, 1.0)
             spike_train = self._encode_segment_input(
                 stage,

@@ -244,3 +244,27 @@ class HybridLifStepMixin:
             batch_size=batch_size,
             device=device,
         )
+
+    def _apply_input_shifts(self, input_map, seg_input_rates: torch.Tensor) -> torch.Tensor:
+        """Add the Round-2a per-producer-channel positive shift before the [0,1] clamp.
+
+        Keyed by producer ``node_id`` in ``hybrid_mapping.node_output_shifts``; empty
+        ⇒ identity. The consumer core's bias is pre-corrected (B' = B − W·s), so this
+        is value-preserving on the chip while making negative-producing boundaries
+        lossless for spike encoding.
+        """
+        shifts = getattr(self.hybrid_mapping, "node_output_shifts", None)
+        if not shifts:
+            return seg_input_rates
+        out = seg_input_rates
+        cloned = False
+        for s in input_map:
+            shift = shifts.get(int(s.node_id))
+            if shift is None:
+                continue
+            if not cloned:
+                out = out.clone()
+                cloned = True
+            sh = torch.as_tensor(shift, dtype=out.dtype, device=out.device).reshape(-1)
+            out[:, s.offset : s.offset + s.size] += sh[: s.size]
+        return out
