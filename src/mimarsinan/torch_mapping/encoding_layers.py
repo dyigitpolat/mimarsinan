@@ -52,11 +52,35 @@ def _is_encoding_segment_start(node) -> bool:
     return False
 
 
-def mark_encoding_layers(model_repr: ModelRepresentation) -> None:
-    """Set ``perceptron.is_encoding_layer`` on perceptrons that start a neural segment."""
+_VALID_PLACEMENTS = ("subsume", "offload")
+
+
+def mark_encoding_layers(
+    model_repr: ModelRepresentation, *, placement: str = "subsume",
+) -> None:
+    """Set ``perceptron.is_encoding_layer`` on perceptrons that start a neural segment.
+
+    ``placement="subsume"`` (default): segment-start perceptrons are marked, so the
+    mappers emit them as **host ComputeOps** that generate spike trains for the chip.
+
+    ``placement="offload"``: leave them unmarked, so the mappers emit them as on-chip
+    **NeuralCores** and the segment input is encoded directly (per
+    ``spike_generation_mode`` — Uniform for LIF, TTFS for TTFS), enlarging the
+    hardware-accelerated surface. The first core then reads the raw segment input,
+    which the flow uniform/TTFS-encodes exactly as it does any rate boundary.
+    """
+    if placement not in _VALID_PLACEMENTS:
+        raise ValueError(
+            f"mark_encoding_layers placement must be one of {_VALID_PLACEMENTS!r}; "
+            f"got {placement!r}"
+        )
     model_repr._ensure_exec_graph()
     for node in model_repr._exec_order:
         if not _is_perceptron_holder(node):
             continue
-        if _is_encoding_segment_start(node):
+        # Idempotent per placement: offload clears any prior marking (e.g. the
+        # subsume default applied at conversion time) so the perceptron maps on-chip.
+        if placement == "offload":
+            node.perceptron.is_encoding_layer = False
+        elif _is_encoding_segment_start(node):
             node.perceptron.is_encoding_layer = True

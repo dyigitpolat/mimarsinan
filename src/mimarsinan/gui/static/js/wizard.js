@@ -890,6 +890,7 @@ function buildConfig() {
     firing_mode: v('firingMode'),
     spike_generation_mode: v('spikeGenMode'),
     thresholding_mode: v('thresholdMode'),
+    encoding_layer_placement: v('encodingPlacement'),
   };
   if (spikingMode === 'lif') {
     dp.cycle_accurate_lif_forward = isToggleOn('cycleAccurateLifToggle');
@@ -1247,6 +1248,7 @@ function loadStateFromConfig(config) {
   setVal('firingMode', dp.firing_mode);
   setVal('spikeGenMode', dp.spike_generation_mode);
   setVal('thresholdMode', dp.thresholding_mode);
+  setVal('encodingPlacement', dp.encoding_layer_placement || 'subsume');
   setVal('ttfsCycleSchedule', dp.ttfs_cycle_schedule || 'cascaded');
   setToggleFromConfig('cycleAccurateLifToggle', !!dp.cycle_accurate_lif_forward);
   setToggleFromConfig('actQuantToggle', dp.activation_quantization);
