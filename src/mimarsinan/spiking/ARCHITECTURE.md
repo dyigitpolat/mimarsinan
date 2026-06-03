@@ -10,8 +10,8 @@ runners (SANA-FE, Lava, Nevresim).
 |---|---|---|
 | `spike_trains.py` | `lif_spike_train`, `uniform_spike_train`, `rates_to_spike_train` | Low-level spike-train constructors (signed IF — no relu on the membrane). |
 | `lif_utils.py` | `unwrap_lif_activation`, `apply_cycle_accurate_trains_to_model` | Walk-and-unwrap activation helpers. |
-| `segment_boundary.py` | `SegmentBoundary`, `BoundaryConfig`, `encode_segment_input`, `encode_compute_boundary`, `decode_segment_output`(`_torch`) | **Single source of truth** for boundary encode/decode (rates+cached trains → `(T,B,in)` spike train; spike counts → `counts/T` rates). Consumed identically by `SpikingHybridCoreFlow._forward_rate`, SANA-FE/Lava/Nevresim runners, and `chip_aligned_nf_forward`. `SegmentBoundary` carries inert Round-2 seams (`shift`, `placement`, `spike_generation_mode`). |
-| `chip_aligned_nf.py` | `chip_aligned_nf_forward` | Chip-aligned NF forward — encoding-layer perceptrons run once in rate mode, their outputs are uniform-encoded per cycle, and the rest of the graph runs single-step **signed-IF** LIF for `T` cycles. This is the per-neuron parity reference vs HCM (`tests/integration/test_nf_hcm_per_node_spike_parity_mmixcore.py`). |
+| `segment_boundary.py` | `SegmentBoundary`, `BoundaryConfig`, `encode_segment_input`, `encode_compute_boundary`, `decode_segment_output`(`_torch`) | **Single source of truth** for boundary encode/decode (rates+cached trains → `(T,B,in)` spike train; spike counts → `counts/T` rates). Consumed identically by `SpikingHybridCoreFlow._forward_rate`, SANA-FE/Lava/Nevresim runners, and `chip_aligned_segment_forward`. `SegmentBoundary` carries inert Round-2 seams (`shift`, `placement`, `spike_generation_mode`). |
+| `chip_aligned_nf.py` | `chip_aligned_segment_forward` | **Segment-aware** chip-aligned NF forward — the torch-side mirror of HCM `_forward_rate`. Walks the mapper exec graph keeping a per-cycle spike `train` (intra-segment perceptron cascade) and a `rate` (`count/T`) per node; perceptrons run single-step **signed-IF**, and **each ComputeOp runs once on the decoded rate** (not per-cycle on spikes) with downstream perceptrons re-encoding — the decode→compute→re-encode HCM does at each boundary. Encoding layers stay subsumed (rate mode + uniform encode). Matches HCM for multi-segment models incl. non-linear ComputeOps (LayerNorm); per-neuron parity reference (`test_nf_hcm_per_node_spike_parity_mmixcore.py`, `test_nf_hcm_multisegment_parity.py`). Installed as the LIF tuner's NF probe. |
 
 ## Boundary contract
 
@@ -40,14 +40,14 @@ See `tests/unit/models/test_lif_step_vs_activation_parity.py`.
 - "Raw input only" stages uniform-encode the gathered rate.
 - In legacy rate mode, missing slices fall back to `rates_to_spike_train` with the configured `spike_mode`.
 
-## `chip_aligned_nf_forward`
+## `chip_aligned_segment_forward`
 
 Installed by `LIFAdaptationTuner._after_run` as `model.forward` once the
 blend ramp completes (`rate == 1.0`). All downstream pipeline steps (WQ,
 NormFusion, SCM accuracy probes) then validate against the same forward
 that Nevresim / SANA-FE / Lava run, closing the NF→chip gap by
-construction. Falls back to `run_cycle_accurate` when the model has no
-mapper graph or no encoding-layer perceptron.
+construction. Falls back to `run_cycle_accurate` only when the model has no
+mapper graph.
 
 ## Dependencies
 
@@ -57,4 +57,4 @@ mapper graph or no encoding-layer perceptron.
 ## Dependents
 
 - `mimarsinan.models.hybrid_core_flow.SpikingHybridCoreFlow` — calls `encode_compute_boundary` / `encode_segment_input` in `_forward_rate`.
-- `mimarsinan.tuning.tuners.lif_adaptation_tuner` — installs `chip_aligned_nf_forward` as `model.forward` post-blend.
+- `mimarsinan.tuning.tuners.lif_adaptation_tuner` — installs `chip_aligned_segment_forward` as `model.forward` post-blend.

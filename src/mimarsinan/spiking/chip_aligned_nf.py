@@ -22,19 +22,25 @@ def _set_cycle_accurate(lifs, mode: bool) -> None:
             lif.set_cycle_accurate(mode)
 
 
-def chip_aligned_nf_forward(
-    model: nn.Module,
-    x: torch.Tensor,
-    T: int,
-) -> torch.Tensor:
-    """Drive ``model`` like the deployment chip does at structural boundaries.
+def _safe_scale(scale, ref: torch.Tensor):
+    if isinstance(scale, torch.Tensor):
+        return scale.to(device=ref.device, dtype=ref.dtype).clamp(min=1e-12)
+    return max(float(scale), 1e-12)
 
-    Encoding-layer perceptrons run once in rate mode; their outputs are
-    uniform-encoded to ``(T, B, …)`` binary trains and substituted into the
-    cycle-accurate pass for the rest of the graph. Falls back to
-    :func:`run_cycle_accurate` when no encoding-layer perceptron is present.
+
+def chip_aligned_segment_forward(model: nn.Module, x: torch.Tensor, T: int) -> torch.Tensor:
+    """Segment-aware chip-aligned NF forward (matches HCM ``_forward_rate``).
+
+    Walks the mapper exec graph, keeping two representations per node: a per-cycle
+    spike ``train`` (intra-segment perceptron cascade, like the chip core->core wire)
+    and a ``rate`` (``count/T`` ∈ [0,1], the inter-segment value). Perceptrons run
+    cycle-accurate (signed-IF) feeding off upstream trains; **ComputeOps run once on
+    the decoded rate** (not per-cycle on spikes) and downstream perceptrons re-encode
+    — exactly the decode->compute->re-encode HCM performs at each ComputeOp boundary.
+    Encoding-layer perceptrons stay subsumed (rate mode + uniform encode).
     """
     from spikingjelly.activation_based import functional
+    from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 
     if not hasattr(model, "get_mapper_repr"):
         return run_cycle_accurate(model, x, T)
@@ -42,77 +48,77 @@ def chip_aligned_nf_forward(
     if mapper_repr is None:
         return run_cycle_accurate(model, x, T)
     mapper_repr._ensure_exec_graph()
-
     exec_order = mapper_repr._exec_order
     deps_map = mapper_repr._deps
 
-    encoding_indices: list[int] = []
-    for i, node in enumerate(exec_order):
-        perceptron = getattr(node, "perceptron", None)
-        if perceptron is None:
-            continue
-        if getattr(perceptron, "is_encoding_layer", False):
-            encoding_indices.append(i)
-
-    if not encoding_indices:
-        return run_cycle_accurate(model, x, T)
-
-    encoding_perceptron_ids: set[int] = set()
-    for i in encoding_indices:
-        encoding_perceptron_ids.add(id(exec_order[i].perceptron))
-
-    all_lifs: list[LIFActivation] = []
-    non_encoding_lifs: list[LIFActivation] = []
-    for p in mapper_repr.get_perceptrons():
-        lif = _resolve_lif_for_perceptron(p)
-        if lif is None:
-            continue
-        all_lifs.append(lif)
-        if id(p) not in encoding_perceptron_ids:
-            non_encoding_lifs.append(lif)
-
+    all_lifs = [
+        lif for p in mapper_repr.get_perceptrons()
+        if (lif := _resolve_lif_for_perceptron(p)) is not None
+    ]
     _set_cycle_accurate(all_lifs, False)
     functional.reset_net(model)
 
-    last_encoding_idx = max(encoding_indices)
-    pre_nodes = exec_order[: last_encoding_idx + 1]
-    rest_nodes = exec_order[last_encoding_idx + 1 :]
+    node_train: dict = {}   # node -> (T, B, ...) per-cycle value (real, = spike*scale)
+    node_rate: dict = {}    # node -> rate (real); ComputeOp inter-stage value
 
-    def _run_node(node, values_dict, original_input):
+    def _is_perceptron(node) -> bool:
+        return getattr(node, "perceptron", None) is not None
+
+    def _forward(node, inputs: list):
         d = deps_map.get(node, [])
         if len(d) == 0:
-            return node.forward(original_input)
+            return node.forward(x)
         if len(d) == 1:
-            return node.forward(values_dict[d[0]])
-        return node.forward(tuple(values_dict[dep] for dep in d))
+            return node.forward(inputs[0])
+        return node.forward(tuple(inputs))
 
-    values: dict = {}
-    for node in pre_nodes:
-        values[node] = _run_node(node, values, x)
+    def _train_of(dep):
+        """Per-cycle train for ``dep``; encode (uniform, clamped) if only a rate exists."""
+        t = node_train.get(dep)
+        if t is not None:
+            return t
+        t = uniform_spike_train(node_rate[dep].clamp(0.0, 1.0), T)
+        node_train[dep] = t
+        return t
 
-    encoding_spike_trains: dict = {}
-    for i in encoding_indices:
-        node = exec_order[i]
-        lif = _resolve_lif_for_perceptron(node.perceptron)
-        scale = lif.activation_scale
-        if isinstance(scale, torch.Tensor):
-            safe_scale = scale.to(device=x.device, dtype=values[node].dtype).clamp(min=1e-12)
-        else:
-            safe_scale = max(float(scale), 1e-12)
-        rate_norm = (values[node] / safe_scale).clamp(0.0, 1.0)
-        encoding_spike_trains[node] = (uniform_spike_train(rate_norm, T), safe_scale)
-
-    _set_cycle_accurate(non_encoding_lifs, True)
-    functional.reset_net(model)
     try:
-        per_cycle_outputs = []
-        for t in range(T):
-            cycle_values = dict(values)
-            for node, (train, scale) in encoding_spike_trains.items():
-                cycle_values[node] = train[t] * scale
-            for node in rest_nodes:
-                cycle_values[node] = _run_node(node, cycle_values, x)
-            per_cycle_outputs.append(cycle_values[mapper_repr.output_layer_mapper])
-        return torch.stack(per_cycle_outputs, dim=0).mean(dim=0)
+        for node in exec_order:
+            d = deps_map.get(node, [])
+            if isinstance(node, ComputeOpMapper):
+                node_rate[node] = _forward(node, [node_rate[dep] for dep in d])
+                # boundary: leave node_train[node] unset (consumers re-encode the rate)
+            elif _is_perceptron(node):
+                p = node.perceptron
+                lif = _resolve_lif_for_perceptron(p)
+                scale = _safe_scale(getattr(lif, "activation_scale", 1.0), x)
+                if getattr(p, "is_encoding_layer", False):
+                    _set_cycle_accurate([lif], False)
+                    rate_out = _forward(node, [node_rate[dep] for dep in d])
+                    rate_norm = (rate_out / scale).clamp(0.0, 1.0)
+                    node_rate[node] = rate_norm
+                    node_train[node] = uniform_spike_train(rate_norm, T) * scale
+                else:
+                    _set_cycle_accurate([lif], True)
+                    functional.reset_net(lif.if_node)
+                    dep_trains = [_train_of(dep) for dep in d]
+                    outs = [_forward(node, [dt[t] for dt in dep_trains]) for t in range(T)]
+                    _set_cycle_accurate([lif], False)
+                    train = torch.stack(outs, dim=0)
+                    node_train[node] = train
+                    node_rate[node] = (train / scale).mean(dim=0)
+            else:
+                # Structural (input / reshape / permute / concat): transparent. Carry a
+                # train when every dep has one (per-cycle), and always carry a rate.
+                if d and all(node_train.get(dep) is not None for dep in d):
+                    dep_trains = [node_train[dep] for dep in d]
+                    node_train[node] = torch.stack(
+                        [_forward(node, [dt[t] for dt in dep_trains]) for t in range(T)],
+                        dim=0,
+                    )
+                node_rate[node] = _forward(node, [node_rate[dep] for dep in d])
     finally:
         _set_cycle_accurate(all_lifs, False)
+
+    out_node = mapper_repr.output_layer_mapper
+    train = node_train.get(out_node)
+    return train.mean(dim=0) if train is not None else node_rate[out_node]

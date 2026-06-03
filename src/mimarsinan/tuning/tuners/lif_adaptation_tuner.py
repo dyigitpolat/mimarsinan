@@ -36,7 +36,7 @@ class _CycleAccurateForward:
 
 class _ChipAlignedNFForward:
     """Picklable ``model.forward`` override installed post-blend (rate==1.0).
-    Routes NF through ``chip_aligned_nf_forward`` so downstream calibrators
+    Routes NF through ``chip_aligned_segment_forward`` so downstream calibrators
     (WQ, NormFusion, SCM probes) see the same forward the chip simulators run."""
 
     def __init__(self, model, T: int):
@@ -44,9 +44,9 @@ class _ChipAlignedNFForward:
         self.T = int(T)
 
     def __call__(self, x):
-        from mimarsinan.spiking.chip_aligned_nf import chip_aligned_nf_forward
+        from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
-        return chip_aligned_nf_forward(self.model, x, self.T)
+        return chip_aligned_segment_forward(self.model, x, self.T)
 
 
 class LIFBlendActivation(BlendActivation):

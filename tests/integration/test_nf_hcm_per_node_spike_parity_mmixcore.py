@@ -36,7 +36,7 @@ from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
-from mimarsinan.spiking.chip_aligned_nf import chip_aligned_nf_forward
+from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
 
 def _build(T, *, patch=4, chan=6, fc1=8, fc2=6, allow_coalescing=False, max_dim=512):
@@ -89,7 +89,7 @@ def _torch_node_counts(flow, nodes, x, T):
     handles = [nodes[i].register_forward_hook(mk(i)) for i in nodes]
     try:
         with torch.no_grad():
-            chip_aligned_nf_forward(flow, x, T)
+            chip_aligned_segment_forward(flow, x, T)
     finally:
         for h in handles:
             h.remove()
