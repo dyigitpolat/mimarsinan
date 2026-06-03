@@ -64,3 +64,16 @@ def test_idempotent():
     baked_once = p.layer.bias.data.clone()
     apply_negative_shift_bias(p, s)  # second call must be a no-op
     torch.testing.assert_close(p.layer.bias.data, baked_once, atol=0.0, rtol=0.0)
+
+
+def test_negative_shifts_from_min():
+    import numpy as np
+    from mimarsinan.mapping.support.neg_shift_bias import negative_shifts_from_min
+
+    mins = {
+        5: np.array([-0.4, 0.1, -1.2]),   # two negative channels → shift
+        7: np.array([0.0, 0.3, 0.5]),     # all >= 0 → dropped
+    }
+    out = negative_shifts_from_min(mins)
+    assert set(out) == {5}                # node 7 dropped (no shift needed)
+    np.testing.assert_allclose(out[5], [0.4, 0.0, 1.2])
