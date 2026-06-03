@@ -11,6 +11,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import execute_compu
 from mimarsinan.chip_simulation.recording.records import SegmentSpikeRecord
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
+from mimarsinan.spiking.segment_boundary import decode_segment_output_torch
 
 
 class HybridRateForwardMixin:
@@ -49,7 +50,7 @@ class HybridRateForwardMixin:
                 stage.input_map, ctx.state_buffer, batch_size, device
             )
             seg_input_rates_clamped = seg_input_rates.clamp(0.0, 1.0)
-            spike_train = self._build_segment_input_spike_train(
+            spike_train = self._encode_segment_input(
                 stage,
                 seg_input_rates_clamped,
                 ctx.state_buffer_spikes,
@@ -84,7 +85,7 @@ class HybridRateForwardMixin:
             counts = self._run_neural_segment_rate(
                 stage, input_spike_train=spike_train, recorder_seg=recorder_seg,
             )
-            seg_output_rates = counts / float(T)
+            seg_output_rates = decode_segment_output_torch(counts, T)
             self._store_segment_output(
                 stage.output_map, ctx.state_buffer, seg_output_rates,
             )
@@ -118,13 +119,13 @@ class HybridRateForwardMixin:
             )
             ctx.state_buffer[op.id] = result.to(COMPUTE_DTYPE)
 
-            from mimarsinan.spiking.segment_encoding import emit_compute_spike_train
+            from mimarsinan.spiking.segment_boundary import encode_compute_boundary
 
-            spike_train = emit_compute_spike_train(
+            spike_train = encode_compute_boundary(
                 op=op,
                 state_buffer=ctx.state_buffer,
                 state_buffer_spikes=ctx.state_buffer_spikes,
-                config=self._segment_encoding,
+                config=self._boundary_config,
                 hybrid_mapping=self.hybrid_mapping,
             )
             if spike_train is not None:

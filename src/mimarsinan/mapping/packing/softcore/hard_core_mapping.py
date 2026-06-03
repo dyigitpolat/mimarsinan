@@ -54,6 +54,9 @@ class HardCoreMapping:
             "neurons": neurons,
             "coalescing_group_id": getattr(softcore, "coalescing_group_id", None),
             "coalescing_role": getattr(softcore, "coalescing_role", None),
+            "perceptron_index": getattr(softcore, "perceptron_index", None),
+            "perceptron_output_slice": getattr(softcore, "perceptron_output_slice", None),
+            "psum_role": getattr(softcore, "psum_role", None),
         }
         bank_id = getattr(softcore, "weight_bank_id", None)
         if bank_id is not None:
@@ -157,6 +160,8 @@ class HardCoreMapping:
             frag.split_group_id = group_id
             frag.split_fragment_index = fragment_index
             frag.split_original_neurons = original_neurons
+            frag.perceptron_index = getattr(parent, "perceptron_index", None)
+            frag.perceptron_output_slice = getattr(parent, "perceptron_output_slice", None)
             if hardware_bias_slice is not None:
                 frag.hardware_bias = hardware_bias_slice
             if bank_neuron_slice is not None:

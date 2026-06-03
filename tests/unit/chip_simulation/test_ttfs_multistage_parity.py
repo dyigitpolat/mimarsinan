@@ -11,9 +11,9 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
 )
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult,
-    lif_inter_stage_from_spike_counts,
     store_neural_segment_output,
 )
+from mimarsinan.spiking.segment_boundary import decode_segment_output
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 from mimarsinan.chip_simulation.ttfs.ttfs_executor import TtfsAnalyticalExecutor
 from mimarsinan.chip_simulation.ttfs.ttfs_recorder import compare_ttfs_records
@@ -102,7 +102,7 @@ def test_wrong_buffer_spike_over_t_breaks_stage1(pipeline_config):
             simulation_length=T, spiking_mode="ttfs",
         )
         if stage.name == "stage0":
-            wrong = lif_inter_stage_from_spike_counts(
+            wrong = decode_segment_output(
                 np.zeros(1, dtype=np.int64),
                 T,
             )

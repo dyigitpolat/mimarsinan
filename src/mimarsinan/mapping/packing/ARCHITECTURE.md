@@ -29,3 +29,4 @@ Maps IR neural segments to `SoftCore` / `HardCore` layouts and hybrid programs.
 ## Invariants
 
 - Layout and runtime packers must use the same `canonical_*` predicates so wizard and deployment paths agree on placement.
+- `HardCoreMapping.merge_softcore_into` records per-softcore provenance on each placement dict: `ir_node_id` (== the source IR `NeuralCore.id`; compaction preserves ids and the segment remap rewrites only sources), `perceptron_index`, `perceptron_output_slice`, `psum_role`, `coalescing_role`, and split metadata. This lets per-neuron NF↔HCM spike-count parity reconstruct each perceptron's neurons by concatenating its accumulator cores in IR-id order (filtering coalescing/psum partials, reassembling neuron-split fragments by `neuron_range_in_original`).

@@ -80,7 +80,7 @@ def test_build_segment_input_uniform_fallback_for_missing_trains() -> None:
     stage = next(s for s in hybrid.stages if s.kind == "neural")
     in_size = sum(s.size for s in stage.input_map)
     rates = torch.rand(1, in_size)
-    train = flow._build_segment_input_spike_train(
+    train = flow._encode_segment_input(
         stage,
         rates,
         {},

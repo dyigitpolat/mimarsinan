@@ -221,7 +221,7 @@ class HybridLifStepMixin:
 
         return output_counts
 
-    def _build_segment_input_spike_train(
+    def _encode_segment_input(
         self,
         stage,
         seg_input_rates_clamped: torch.Tensor,
@@ -232,13 +232,13 @@ class HybridLifStepMixin:
         device: torch.device,
     ) -> torch.Tensor:
         """Build ``(T, B, in_size)`` spike train; prefer cached LIF trains over uniform encoding."""
-        from mimarsinan.spiking.segment_encoding import build_segment_input_spike_train
+        from mimarsinan.spiking.segment_boundary import encode_segment_input
 
-        return build_segment_input_spike_train(
+        return encode_segment_input(
             stage,
             seg_input_rates_clamped,
             state_buffer_spikes,
-            config=self._segment_encoding,
+            config=self._boundary_config,
             hybrid_mapping=self.hybrid_mapping,
             T=T,
             batch_size=batch_size,

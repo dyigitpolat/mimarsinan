@@ -26,19 +26,6 @@ def is_ttfs_spiking_mode(spiking_mode: str) -> bool:
     return requires_ttfs_firing(spiking_mode)
 
 
-def lif_inter_stage_from_spike_counts(
-    seg_out_spike_count: np.ndarray,
-    simulation_length: int,
-    *,
-    dtype: np.dtype = np.float64,
-) -> np.ndarray:
-    """LIF / rate: between-stage values are spike counts normalized by ``T``."""
-    t = max(int(simulation_length), 1)
-    return (
-        np.asarray(seg_out_spike_count, dtype=dtype).reshape(1, -1) / np.asarray(t, dtype=dtype)
-    )
-
-
 def store_neural_segment_output(
     spiking_mode: str,
     output_map,

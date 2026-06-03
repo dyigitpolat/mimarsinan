@@ -1,10 +1,26 @@
-"""Boundary spike-train encoding shared by SCM/HCM/SANA-FE/Lava/Nevresim."""
+"""Single source of truth for segment-boundary encode/decode.
+
+Owns both directions of a neural-segment boundary, consumed identically by the
+torch-side chip-aligned NF forward and every simulator (HCM/SCM/SANA-FE/Lava/
+nevresim):
+
+- **encode** — rates (+ optional cached LIF train) -> ``(T, B, in)`` spike train
+  (:func:`encode_segment_input`, :func:`encode_compute_boundary`).
+- **decode** — segment output spike counts -> inter-stage rates ``counts / T``
+  (:func:`decode_segment_output`).
+
+The :class:`SegmentBoundary` descriptor is the declarative object both sides read
+so they cannot drift. Its Round-2 fields (``shift``, ``placement``,
+``spike_generation_mode``) are present but default to the identity; they are the
+reserved seams for negative-value shifting and the subsume-vs-offload switch.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Union
 
+import numpy as np
 import torch
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
@@ -17,7 +33,14 @@ from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 
 
 @dataclass
-class SegmentEncodingConfig:
+class BoundaryConfig:
+    """Config for boundary encode/decode.
+
+    ``negative_shift`` (per-boundary positive-domain shift of negative-producing
+    ComputeOps) and ``spike_generation_mode`` (subsume vs offload selection) are the
+    Round-2 toggles.
+    """
+
     simulation_length: int
     spiking_mode: str
     cycle_accurate: bool
@@ -25,10 +48,58 @@ class SegmentEncodingConfig:
     thresholding_mode: str = "<="
     firing_mode: str = "Default"
     compute_dtype: torch.dtype = torch.float64
+    negative_shift: bool = False
+    spike_generation_mode: str = "Uniform"
 
     @property
     def use_cycle_accurate_trains(self) -> bool:
         return self.spiking_mode == "lif" and self.cycle_accurate
+
+
+@dataclass(frozen=True)
+class SegmentBoundary:
+    """Declarative description of how a producer's output crosses into a consumer.
+
+    Round-1 fields drive encode/decode; Round-2 fields are reserved seams that
+    default to the identity (``shift=0.0``, ``placement="subsume"``).
+    """
+
+    producer_kind: str            # "neural" | "compute" | "input"
+    consumer_node_id: int
+    encode_mode: str              # "cached_lif" | "uniform" | "verbatim"
+    scale: float = 1.0
+    decode: str = "count_over_T"  # counts / T
+    # --- Round 2a (negative-value shift) — declared, default-inert ---
+    shift: Union[np.ndarray, float] = 0.0
+    # --- Round 2b (subsume vs offload) — declared, default-inert ---
+    placement: str = "subsume"
+    spike_generation_mode: str = "Uniform"
+
+
+def decode_segment_output(
+    seg_out_spike_count: np.ndarray,
+    simulation_length: int,
+    *,
+    dtype: np.dtype = np.float64,
+) -> np.ndarray:
+    """LIF / rate decode (numpy inter-stage): spike counts ``/ T``, flattened to ``(1, N)``."""
+    t = max(int(simulation_length), 1)
+    return (
+        np.asarray(seg_out_spike_count, dtype=dtype).reshape(1, -1)
+        / np.asarray(t, dtype=dtype)
+    )
+
+
+def decode_segment_output_torch(
+    spike_counts: torch.Tensor, simulation_length: int
+) -> torch.Tensor:
+    """LIF / rate decode (torch, batch-preserving): spike counts ``/ T``.
+
+    Same ÷T semantics as :func:`decode_segment_output`; keeps the leading batch
+    dimension so the torch hybrid forward and the chip-aligned NF forward share it.
+    """
+    t = max(int(simulation_length), 1)
+    return spike_counts / float(t)
 
 
 def _resolve_lif_perceptron(module) -> tuple[object, LIFActivation] | None:
@@ -53,7 +124,7 @@ def _gather_op_input_train(
     state_buffer: Dict[int, torch.Tensor],
     state_buffer_spikes: Dict[int, torch.Tensor],
     T: int,
-    config: SegmentEncodingConfig,
+    config: BoundaryConfig,
 ) -> torch.Tensor | None:
     """Assemble ``(T, B, in_size)`` input train for ``op``: cached trains take precedence."""
     sources = op.input_sources.flatten()
@@ -118,7 +189,7 @@ def _run_perceptron_single_step_T(
     lif: LIFActivation,
     input_train: torch.Tensor,
     op: ComputeOp,
-    config: SegmentEncodingConfig,
+    config: BoundaryConfig,
 ) -> torch.Tensor:
     """``T`` single-step forwards of the Perceptron; return ``(T, B, D)`` binary spikes."""
     from spikingjelly.activation_based import functional
@@ -153,12 +224,12 @@ def _run_perceptron_single_step_T(
     return stacked.to(config.compute_dtype)
 
 
-def emit_compute_spike_train(
+def encode_compute_boundary(
     *,
     op: ComputeOp,
     state_buffer: Dict[int, torch.Tensor],
     state_buffer_spikes: Dict[int, torch.Tensor],
-    config: SegmentEncodingConfig,
+    config: BoundaryConfig,
     hybrid_mapping: HybridHardCoreMapping,
 ) -> torch.Tensor | None:
     """Return ``(T, B, D)`` spike train for ``op``, or ``None`` for non-LIF-Perceptron boundaries."""
@@ -184,12 +255,12 @@ def emit_compute_spike_train(
     return _run_perceptron_single_step_T(perceptron, lif, input_train, op, config)
 
 
-def build_segment_input_spike_train(
+def encode_segment_input(
     stage: HybridStage,
     seg_input_rates_clamped: torch.Tensor,
     state_buffer_spikes: Dict[int, torch.Tensor],
     *,
-    config: SegmentEncodingConfig,
+    config: BoundaryConfig,
     hybrid_mapping: HybridHardCoreMapping,
     T: int,
     batch_size: int,
@@ -258,13 +329,13 @@ def build_segment_input_spike_train(
     if non_raw_missing:
         if filled_ranges:
             raise ValueError(
-                f"build_segment_input_spike_train: stage {stage.name!r} has cached spike "
+                f"encode_segment_input: stage {stage.name!r} has cached spike "
                 f"trains for some inputs but is missing spike train(s) for node_id(s) "
                 f"{[m[0] for m in non_raw_missing]}. Every non-raw input slice must have a "
                 f"cached train (cycle-accurate parity)."
             )
         import logging
-        logging.getLogger("mimarsinan.spiking.segment_encoding").debug(
+        logging.getLogger("mimarsinan.spiking.segment_boundary").debug(
             "stage %r: rate-only boundary at non-raw inputs %s — uniform-encoding.",
             stage.name, [m[0] for m in non_raw_missing],
         )

@@ -74,8 +74,8 @@ class SpikingHybridCoreFlow(
             thresholding_mode=thresholding_mode,
         )
 
-        from mimarsinan.spiking.segment_encoding import SegmentEncodingConfig
-        self._segment_encoding = SegmentEncodingConfig(
+        from mimarsinan.spiking.segment_boundary import BoundaryConfig
+        self._boundary_config = BoundaryConfig(
             simulation_length=self.simulation_length,
             spiking_mode=self.spiking_mode,
             cycle_accurate=self.cycle_accurate_lif_forward,

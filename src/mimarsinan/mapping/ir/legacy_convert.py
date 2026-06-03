@@ -133,6 +133,8 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         bank_neuron_slice=bank_neuron_slice,
         bank_includes_bias_row=bank_includes_bias_row,
     )
+    soft.perceptron_index = int(pi) if pi is not None else None
+    soft.perceptron_output_slice = getattr(neural_core, "perceptron_output_slice", None)
     if pruned_row_mask is not None and pruned_col_mask is not None:
         soft.pruned_row_mask = pruned_row_mask
         soft.pruned_col_mask = pruned_col_mask
