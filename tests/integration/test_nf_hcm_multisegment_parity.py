@@ -73,3 +73,58 @@ def test_segment_aware_nf_matches_hcm_across_layernorm():
         nf = chip_aligned_segment_forward(flow, x, T)
         hc = hcm(x) / float(T)
     torch.testing.assert_close(nf, hc, atol=1e-6, rtol=0.0)
+
+
+def _build_with_lif(T, *, shift: bool):
+    """Build NF flow + HCM for the LayerNorm 2-seg model, optionally with the
+    negative-value shift applied (pre-mapping bake + tag + HCM propagation)."""
+    from mimarsinan.mapping.support.neg_shift_bias import (
+        apply_negative_value_shifts,
+        transfer_negative_shifts_to_ir,
+        propagate_negative_shifts_to_hybrid,
+    )
+    torch.manual_seed(0)
+    m = _TwoSegLayerNorm().eval()
+    flow = convert_torch_model(m, input_shape=(8,), num_classes=4)
+    for p in flow.get_perceptrons():
+        lif = LIFActivation(T=T, activation_scale=torch.tensor(1.0), thresholding_mode="<=")
+        p.base_activation = lif
+        p.activation = lif
+    repr_ = flow.get_mapper_repr()
+    if shift:
+        apply_negative_value_shifts(flow, torch.rand(16, 8), T)  # bakes consumer + tags ln
+    repr_.assign_perceptron_indices()
+    ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=64, max_neurons=64).map(repr_)
+    if shift:
+        transfer_negative_shifts_to_ir(flow, ir)
+    hybrid = build_hybrid_hard_core_mapping(
+        ir_graph=ir, cores_config=[{"max_axons": 64, "max_neurons": 64, "count": 50}],
+        allow_neuron_splitting=True,
+    )
+    if shift:
+        propagate_negative_shifts_to_hybrid(ir, hybrid)
+    hcm = SpikingHybridCoreFlow(
+        (8,), hybrid, simulation_length=T, preprocessor=nn.Identity(),
+        firing_mode="Default", spike_mode="Uniform", thresholding_mode="<=",
+        spiking_mode="lif", cycle_accurate_lif_forward=True,
+    )
+    return flow, hcm
+
+
+def test_negative_shift_nf_hcm_consistent_and_recovers():
+    from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
+
+    T = 8
+    x = torch.rand(4, 8)
+
+    flow_s, hcm_s = _build_with_lif(T, shift=True)
+    flow_n, hcm_n = _build_with_lif(T, shift=False)
+    with torch.no_grad():
+        nf_s, hc_s = chip_aligned_segment_forward(flow_s, x, T), hcm_s(x) / T
+        nf_n, hc_n = chip_aligned_segment_forward(flow_n, x, T), hcm_n(x) / T
+
+    # NF == HCM both with and without the shift (consistency holds either way).
+    torch.testing.assert_close(nf_s, hc_s, atol=1e-6, rtol=0.0)
+    torch.testing.assert_close(nf_n, hc_n, atol=1e-6, rtol=0.0)
+    # The shift recovers LayerNorm's negatives the clamp would have lost -> changes output.
+    assert not torch.allclose(nf_s, nf_n, atol=1e-6)

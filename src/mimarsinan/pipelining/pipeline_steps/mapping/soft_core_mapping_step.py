@@ -108,6 +108,7 @@ class SoftCoreMappingStep(PipelineStep):
             )
 
         self._apply_ttfs_quantization_bias_compensation(model, act_q)
+        self._apply_negative_value_shift_compensation(model)
 
         from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
@@ -128,6 +129,12 @@ class SoftCoreMappingStep(PipelineStep):
             mapper_repr.assign_perceptron_indices()
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
+
+        if bool(self.pipeline.config.get("negative_value_shift", False)):
+            from mimarsinan.mapping.support.neg_shift_bias import (
+                transfer_negative_shifts_to_ir,
+            )
+            transfer_negative_shifts_to_ir(model, ir_graph)
 
         wt_q = bool(self.pipeline.config.get("weight_quantization", False))
         from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
@@ -191,6 +198,26 @@ class SoftCoreMappingStep(PipelineStep):
         apply_ttfs_quantization_bias_compensation(
             model, self.pipeline.config["target_tq"],
         )
+
+    def _apply_negative_value_shift_compensation(self, model) -> None:
+        """Opt-in (``negative_value_shift``): shift negative-producing ComputeOp
+        boundaries into the encodable domain and pre-correct the consuming
+        perceptron's bias, so NF and HCM recover negatives losslessly. Pre-mapping so
+        the mapped core inherits the baked bias; the shift travels on the IR ComputeOps
+        (``transfer_negative_shifts_to_ir``) to the hybrid build."""
+        if not bool(self.pipeline.config.get("negative_value_shift", False)):
+            return
+        if str(self.pipeline.config.get("spiking_mode", "lif")) != "lif":
+            return
+        from mimarsinan.mapping.support.neg_shift_bias import apply_negative_value_shifts
+
+        T = int(self.pipeline.config["simulation_steps"])
+        device = self.pipeline.config["device"]
+        batches = [x for x, _ in self.trainer.iter_validation_batches(2)]
+        if not batches:
+            return
+        calibration_x = torch.cat(batches, dim=0).to(device)
+        apply_negative_value_shifts(model, calibration_x, T)
 
     def bring_back_bias(self, fused_linear_layer):
         assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'

@@ -480,6 +480,14 @@
                 </div>
               </div>
               <div class="note">Threads (T,B,…) spike trains through the mapper DAG during LIF Adaptation training; ~T× slower but closes the rate↔cycle mismatch for deep single-segment workloads.</div>
+              <div class="field" style="margin-top:12px">
+                <label class="field-label">Negative-value Shift <span class="hint">LIF, opt-in</span></label>
+                <div class="toggle-row" id="negativeValueShiftToggle" onclick="toggleClick(this)">
+                  <span class="toggle-label" style="font-size:0.78rem">Recover negative ComputeOp boundaries</span>
+                  <div class="toggle-switch"></div>
+                </div>
+              </div>
+              <div class="note">Shifts negative-producing ComputeOp outputs (e.g. LayerNorm/GELU) into the [0,1] encodable domain and pre-corrects the consuming perceptron's bias, so NF and the chip recover them losslessly.</div>
             </div>
           </div>
         </div>

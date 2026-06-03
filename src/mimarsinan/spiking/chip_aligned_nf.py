@@ -28,7 +28,10 @@ def _safe_scale(scale, ref: torch.Tensor):
     return max(float(scale), 1e-12)
 
 
-def chip_aligned_segment_forward(model: nn.Module, x: torch.Tensor, T: int) -> torch.Tensor:
+def chip_aligned_segment_forward(
+    model: nn.Module, x: torch.Tensor, T: int,
+    *, compute_min_recorder: dict | None = None,
+) -> torch.Tensor:
     """Segment-aware chip-aligned NF forward (matches HCM ``_forward_rate``).
 
     Walks the mapper exec graph, keeping two representations per node: a per-cycle
@@ -38,6 +41,14 @@ def chip_aligned_segment_forward(model: nn.Module, x: torch.Tensor, T: int) -> t
     the decoded rate** (not per-cycle on spikes) and downstream perceptrons re-encode
     — exactly the decode->compute->re-encode HCM performs at each ComputeOp boundary.
     Encoding-layer perceptrons stay subsumed (rate mode + uniform encode).
+
+    A ComputeOp node carrying a ``_negative_shift`` (per output channel) has it added
+    to its rate before the [0,1] re-encode clamp, so a negative-producing boundary is
+    lossless — the same shift HCM applies via ``node_output_shifts`` (the consuming
+    perceptron's bias is pre-corrected by ``apply_negative_shift_bias``).
+
+    ``compute_min_recorder``: when given, accumulates each ComputeOp node's per-channel
+    output minimum (calibration for deriving the shift).
     """
     from spikingjelly.activation_based import functional
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
@@ -85,7 +96,20 @@ def chip_aligned_segment_forward(model: nn.Module, x: torch.Tensor, T: int) -> t
         for node in exec_order:
             d = deps_map.get(node, [])
             if isinstance(node, ComputeOpMapper):
-                node_rate[node] = _forward(node, [node_rate[dep] for dep in d])
+                rate = _forward(node, [node_rate[dep] for dep in d])
+                if compute_min_recorder is not None:
+                    cur = rate.detach().amin(dim=0)
+                    prev = compute_min_recorder.get(node)
+                    compute_min_recorder[node] = (
+                        cur if prev is None else torch.minimum(prev, cur)
+                    )
+                # Round-2a positive-domain shift: added to the ComputeOp's rate so it
+                # propagates through downstream structural nodes to the consumer's
+                # re-encode clamp; the consumer perceptron's baked bias compensates.
+                shift = getattr(node, "_negative_shift", None)
+                if shift is not None:
+                    rate = rate + torch.as_tensor(shift, dtype=rate.dtype, device=rate.device)
+                node_rate[node] = rate
                 # boundary: leave node_train[node] unset (consumers re-encode the rate)
             elif _is_perceptron(node):
                 p = node.perceptron
