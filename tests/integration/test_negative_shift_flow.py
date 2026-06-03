@@ -65,3 +65,84 @@ def test_negative_input_recovered_by_shift():
     hybrid.node_output_shifts = {-2: np.array([0.9])}
     recovered2 = flow._apply_input_shifts(stage.input_map, neg).clamp(0.0, 1.0)
     assert abs(float(recovered2) - 0.5) < 1e-9  # -0.4 + 0.9 = 0.5, now encodable
+
+
+def test_calibrate_segment_input_mins_and_derive_shift():
+    """Calibration captures the per-producer-channel min of pre-clamp boundary
+    values; negative_shifts_from_min turns it into the positive-domain shift."""
+    from mimarsinan.mapping.support.neg_shift_bias import negative_shifts_from_min
+
+    hybrid = build_toy_hybrid_mapping()
+    flow = _flow(hybrid)
+    # Raw input node -2 feeds the toy segment; min over the batch is -0.7.
+    x = torch.tensor([[-0.4], [-0.7], [0.2]], dtype=torch.float32)
+
+    mins = flow.calibrate_segment_input_mins(x)
+    assert set(mins) == {-2}
+    assert abs(float(mins[-2][0]) - (-0.7)) < 1e-6
+
+    shifts = negative_shifts_from_min(mins)
+    assert abs(float(shifts[-2][0]) - 0.7) < 1e-6
+    # Accumulator is cleared after calibration.
+    assert flow._segment_input_min is None
+
+
+def _toy_mapping_with_bias(w, b):
+    """Single 1->1 core with a hardware bias, consuming raw input node -2."""
+    from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
+    from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+    from mimarsinan.mapping.packing.hybrid_types import HybridStage, SegmentIOSlice
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
+    from mimarsinan.mapping.ir import IRSource
+
+    core = HardCore(4, 4, has_bias_capability=True)
+    cm = np.zeros((4, 4), dtype=np.float64)
+    cm[0, 0] = w
+    core.core_matrix = cm
+    core.axon_sources = [SpikeSource(-2, 0, is_input=True)]
+    core.available_axons = 3
+    core.available_neurons = 3
+    core.threshold = 1.0
+    core.latency = 0
+    core.hardware_bias = np.array([b], dtype=np.float64)
+
+    seg = HardCoreMapping([])
+    seg.cores = [core]
+    seg.output_sources = np.asarray([SpikeSource(0, 0)], dtype=object)
+    stage = HybridStage(
+        kind="neural", name="toy", hard_core_mapping=seg,
+        input_map=[SegmentIOSlice(node_id=-2, offset=0, size=1)],
+        output_map=[SegmentIOSlice(node_id=0, offset=0, size=1)],
+    )
+    return HybridHardCoreMapping(
+        stages=[stage],
+        output_sources=np.asarray([IRSource(node_id=0, index=0)], dtype=object),
+    )
+
+
+def test_apply_negative_value_shifts_end_to_end():
+    """Full orchestration: calibrate -> derive shift -> install -> bake core bias.
+    A negative boundary value is recovered, and the result is count-exact with the
+    equivalent positive reference (same encoded rate + same baked bias)."""
+    from mimarsinan.mapping.support.neg_shift_bias import apply_negative_value_shifts
+
+    w, b, T = 2.0, 1.5, 4
+    x_cal = torch.tensor([[-0.9], [0.1]], dtype=torch.float32)  # min -0.9 -> s = 0.9
+    x_test = torch.tensor([[-0.4]], dtype=torch.float32)        # -0.4 + 0.9 = 0.5
+
+    shifted = _flow(_toy_mapping_with_bias(w, b), T)
+    shifts = apply_negative_value_shifts(shifted, x_cal)
+    assert abs(float(shifts[-2][0]) - 0.9) < 1e-6
+
+    # Equivalent positive reference: store 0.5 directly, bias already b - w*0.9.
+    ref = _flow(_toy_mapping_with_bias(w, b - w * 0.9), T)
+    # Clamped baseline: no shift, original bias; -0.4 clamps to 0 (info lost).
+    clamped = _flow(_toy_mapping_with_bias(w, b), T)
+
+    with torch.no_grad():
+        out_shifted = shifted(x_test)
+        out_ref = ref(torch.tensor([[0.5]], dtype=torch.float32))
+        out_clamped = clamped(x_test)
+
+    torch.testing.assert_close(out_shifted, out_ref, atol=0.0, rtol=0.0)  # count-exact
+    assert not torch.equal(out_shifted, out_clamped)  # negative was recovered
