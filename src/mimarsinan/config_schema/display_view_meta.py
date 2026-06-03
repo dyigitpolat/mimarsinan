@@ -81,6 +81,8 @@ FIELD_DISPLAY_META: Dict[str, Dict[str, Any]] = {
                      "effect": "Selects LIF/TTFS path and simulation backends"},
     "firing_mode": {"group": "pipeline", "type": "enum", "label": "Firing Mode"},
     "spike_generation_mode": {"group": "pipeline", "type": "enum", "label": "Spike Generation Mode"},
+    "encoding_layer_placement": {"group": "pipeline", "type": "enum", "label": "Encoding Layer Placement",
+                                 "effect": "Offload maps the encoding-layer neuralOp on-chip"},
     "spike_encoding_seed": {"group": "pipeline", "type": "int", "label": "Spike Encoding Seed"},
     "thresholding_mode": {"group": "pipeline", "type": "enum", "label": "Thresholding Mode"},
     "activation_quantization": {"group": "pipeline", "type": "bool", "label": "Activation Quantization",

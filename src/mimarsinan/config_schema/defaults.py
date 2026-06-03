@@ -97,6 +97,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "spiking_mode",
     "firing_mode",
     "spike_generation_mode",
+    "encoding_layer_placement",
     "thresholding_mode",
     "spike_encoding_seed",
     "cycle_accurate_lif_forward",

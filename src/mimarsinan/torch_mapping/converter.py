@@ -53,6 +53,7 @@ def convert_torch_model(
     Tq: int = 64,
     *,
     strict: bool = True,
+    encoding_layer_placement: str = "subsume",
 ) -> ConvertedModelFlow:
     """Convert a trained native PyTorch model to a ``ConvertedModelFlow``.
 
@@ -100,7 +101,7 @@ def convert_torch_model(
     mapper_repr = converter.convert(report)
 
     flow = ConvertedModelFlow(device, mapper_repr)
-    mark_encoding_layers(flow.get_mapper_repr())
+    mark_encoding_layers(flow.get_mapper_repr(), placement=encoding_layer_placement)
 
     flow = flow.to(device)
 

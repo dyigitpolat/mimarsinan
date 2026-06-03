@@ -717,6 +717,14 @@
                 </div>
               </div>
               <div class="note">Auto-set by spiking mode. Override only for advanced experiments.</div>
+              <div class="field" style="margin-top:12px">
+                <label class="field-label">Encoding Layer Placement</label>
+                <select id="encodingPlacement" onchange="update()">
+                  <option value="subsume">Subsume (host-side encoder)</option>
+                  <option value="offload">Offload (on-chip)</option>
+                </select>
+              </div>
+              <div class="note">Offload maps the encoding-layer neuralOp on-chip for a larger hardware-accelerated surface; functionally identical to subsume.</div>
             </div>
           </div>
         </div>

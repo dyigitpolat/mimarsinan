@@ -54,6 +54,9 @@ class TorchMappingStep(TrainerPipelineStep):
                 num_classes=self.pipeline.config["num_classes"],
                 device=self.pipeline.config["device"],
                 Tq=self.pipeline.config["target_tq"],
+                encoding_layer_placement=str(
+                    self.pipeline.config.get("encoding_layer_placement", "subsume")
+                ),
             )
 
         adaptation_manager = create_adaptation_manager_for_model(
