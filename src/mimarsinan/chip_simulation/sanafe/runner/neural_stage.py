@@ -10,7 +10,6 @@ import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import assemble_segment_input_numpy
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult,
-    lif_inter_stage_from_spike_counts,
     store_neural_segment_output,
 )
 from mimarsinan.chip_simulation.sanafe.analysis import (

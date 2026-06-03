@@ -17,17 +17,17 @@ from mimarsinan.mapping.mappers.structural import InputMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.spiking.segment_encoding import (
-    SegmentEncodingConfig,
+from mimarsinan.spiking.segment_boundary import (
+    BoundaryConfig,
     _resolve_lif_perceptron,
-    build_segment_input_spike_train,
-    emit_compute_spike_train,
+    encode_segment_input,
+    encode_compute_boundary,
 )
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
 
-def _config(T: int = 4, *, cycle_accurate: bool = True) -> SegmentEncodingConfig:
-    return SegmentEncodingConfig(
+def _config(T: int = 4, *, cycle_accurate: bool = True) -> BoundaryConfig:
+    return BoundaryConfig(
         simulation_length=T,
         spiking_mode="lif",
         cycle_accurate=cycle_accurate,
@@ -66,10 +66,10 @@ def _tiny_lif_model(T: int = 4):
     return hybrid, p1
 
 
-def test_segment_encoding_config_use_cycle_accurate_trains() -> None:
+def test_boundary_config_use_cycle_accurate_trains() -> None:
     assert _config().use_cycle_accurate_trains is True
     assert _config(cycle_accurate=False).use_cycle_accurate_trains is False
-    rate_cfg = SegmentEncodingConfig(
+    rate_cfg = BoundaryConfig(
         simulation_length=4,
         spiking_mode="rate",
         cycle_accurate=True,
@@ -77,7 +77,7 @@ def test_segment_encoding_config_use_cycle_accurate_trains() -> None:
     assert rate_cfg.use_cycle_accurate_trains is False
 
 
-def test_emit_compute_spike_train_matches_nf_for_encoding_perceptron() -> None:
+def test_encode_compute_boundary_matches_nf_for_encoding_perceptron() -> None:
     """Boundary emission must replay NF's per-cycle pattern, divided by activation_scale
     (chip's binary-input convention)."""
     torch.manual_seed(0)
@@ -101,7 +101,7 @@ def test_emit_compute_spike_train_matches_nf_for_encoding_perceptron() -> None:
     safe_scale = lif.activation_scale.clamp(min=1e-12)
     nf_per_cycle_binary = nf_per_cycle_scaled / safe_scale
 
-    emitted = emit_compute_spike_train(
+    emitted = encode_compute_boundary(
         op=op,
         state_buffer={-2: x},
         state_buffer_spikes={},
@@ -119,12 +119,12 @@ def test_emit_compute_spike_train_matches_nf_for_encoding_perceptron() -> None:
     assert unique.issubset({0.0, 1.0}), f"expected binary spikes; got {unique}"
 
 
-def test_emit_compute_spike_train_returns_none_in_legacy_rate_mode() -> None:
+def test_encode_compute_boundary_returns_none_in_rate_mode() -> None:
     hybrid, _ = _tiny_lif_model()
     cfg = _config(cycle_accurate=False)
     op = next(s.compute_op for s in hybrid.stages if s.kind == "compute")
     x = torch.rand(2, 8).to(cfg.compute_dtype)
-    out = emit_compute_spike_train(
+    out = encode_compute_boundary(
         op=op,
         state_buffer={-2: x},
         state_buffer_spikes={},
@@ -134,7 +134,7 @@ def test_emit_compute_spike_train_returns_none_in_legacy_rate_mode() -> None:
     assert out is None
 
 
-def test_build_segment_input_spike_train_consumes_cache_verbatim() -> None:
+def test_encode_segment_input_consumes_cache_verbatim() -> None:
     hybrid, _ = _tiny_lif_model()
     cfg = _config()
     stage = next(s for s in hybrid.stages if s.kind == "neural")
@@ -149,7 +149,7 @@ def test_build_segment_input_spike_train_consumes_cache_verbatim() -> None:
         offset += s.size
 
     rates = torch.zeros(1, in_size, dtype=cfg.compute_dtype)
-    out = build_segment_input_spike_train(
+    out = encode_segment_input(
         stage,
         rates,
         state_buffer_spikes,
@@ -176,7 +176,7 @@ def test_build_segment_input_raw_input_uniform_encoded() -> None:
     stage = raw_stages[0]
     in_size = sum(s.size for s in stage.input_map)
     rates = torch.tensor([[0.5] * in_size], dtype=cfg.compute_dtype)
-    out = build_segment_input_spike_train(
+    out = encode_segment_input(
         stage,
         rates,
         {},
@@ -242,7 +242,7 @@ def test_build_segment_input_partial_cache_raises() -> None:
     if int(s2.node_id) == -2:
         pytest.skip("test requires a non-raw missing slice")
     with pytest.raises(ValueError, match="missing spike train"):
-        build_segment_input_spike_train(
+        encode_segment_input(
             stage,
             rates,
             state_buffer_spikes,

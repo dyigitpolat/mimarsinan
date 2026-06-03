@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 import torch
-import torch.nn.functional as F
 
 from mimarsinan.chip_simulation import spike_modes
 from mimarsinan.models.nn.activations import LIFActivation
@@ -54,7 +53,8 @@ def lif_spike_train(
         else:
             safe_scale = max(float(scale), 1e-12)
 
-        x_norm = F.relu(pre_activation) / safe_scale
+        # Signed integration (no relu): membrane may go negative, matching the chip.
+        x_norm = pre_activation / safe_scale
         spikes = [lif.if_node(x_norm) for _ in range(T)]
         return torch.stack(spikes, dim=0)
     finally:

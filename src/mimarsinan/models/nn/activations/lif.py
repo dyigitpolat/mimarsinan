@@ -6,7 +6,6 @@ import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 def uniform_encode_to_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
@@ -175,14 +174,19 @@ class LIFActivation(nn.Module):
         return spikes
 
     def _forward_single_step(self, x: torch.Tensor) -> torch.Tensor:
-        """One cycle of LIF integration; returns spike * scale."""
+        """One cycle of signed LIF integration; returns spike * scale.
+
+        The membrane integrates the *signed* normalized input (no relu): negative
+        weighted input lowers the membrane and may recover, matching the deployed
+        chip / HCM ``memb += W@s + b`` dynamics.
+        """
         scale = self.activation_scale
         if isinstance(scale, torch.Tensor):
             safe_scale = scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
         else:
             safe_scale = max(float(scale), 1e-12)
 
-        x_norm = F.relu(x) / safe_scale
+        x_norm = x / safe_scale
         spike = self.if_node(x_norm)
         return spike * safe_scale
 
@@ -196,7 +200,10 @@ class LIFActivation(nn.Module):
             safe_scale = max(float(scale), 1e-12)
 
         # Threshold is 1 inside the IFNode; normalise input by activation_scale.
-        x_norm = F.relu(x) / safe_scale
+        # Signed integration (no relu): the membrane may go negative, matching the
+        # chip / HCM. Constant per-cycle input ⇒ rate output is unchanged for both
+        # signs; only the surrogate gradient differs for negative pre-activations.
+        x_norm = x / safe_scale
         x_t = x_norm.unsqueeze(0).expand(self.T, *x_norm.shape).contiguous()
 
         self.if_node.step_mode = "m"

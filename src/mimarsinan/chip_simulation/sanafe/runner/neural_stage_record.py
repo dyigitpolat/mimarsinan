@@ -9,9 +9,9 @@ import numpy as np
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult,
-    lif_inter_stage_from_spike_counts,
     store_neural_segment_output,
 )
+from mimarsinan.spiking.segment_boundary import decode_segment_output
 from mimarsinan.chip_simulation.sanafe.analysis import (
     _aggregate_noc_link_load,
     _aggregate_noc_links,
@@ -267,7 +267,7 @@ class SanafeNeuralStageRecordMixin:
             # TTFS. Cascaded counts can exceed T (the lossy ``+latency`` offset),
             # exactly as HCM/nevresim produce — consistency across backends, not
             # agreement with the analytical reference, is the contract.
-            seg_output_rates = lif_inter_stage_from_spike_counts(
+            seg_output_rates = decode_segment_output(
                 seg_out_count, self.T, dtype=_COMPUTE_DTYPE,
             )
             store_neural_segment_output(
