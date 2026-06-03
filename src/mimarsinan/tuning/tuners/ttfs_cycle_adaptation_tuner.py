@@ -1,22 +1,36 @@
-"""TTFS-cycle fine-tuning tuner: blend ramp to the exact single-spike TTFS kernel.
+"""TTFS-cycle fine-tuning: train through the genuine segment-aware spike forward.
 
-Final polish for ``spiking_mode == 'ttfs_cycle_based'``: ramp each perceptron's
-activation from the clamp/quantise-decorated ReLU produced by the prior steps to
-:class:`TTFSCycleActivation` (the exact ``ttfs_quantized_activation``, no half-LSB
-shift, ``S`` levels), recovering accuracy with KD against the pre-swap model. The
-exact kernel subsumes the clamp/quant/shift decorators, so they are disabled
-(``adaptation_manager.ttfs_active``) for the duration. No forward patching is
-needed — the single-spike value is a closed-form one-pass activation.
+The cascaded ``ttfs_cycle_based`` deployment runs each neural segment as a
+single-spike, ramp-integrate, fire-once simulation with value-domain compute ops
+between segments and a host-side encoding layer (value -> TTFS spike) at each
+segment entry. So -- like LIF's cycle-accurate path -- fine-tuning runs the model
+on actual TTFS spike trains via :class:`TTFSSegmentForward` (gradient through the
+per-cycle dynamics), not a pointwise analytical surrogate.
+
+TTFS single-spike decode is non-linear in a partial old/spike blend (unlike LIF's
+mean decode), so this tuner trains **pure spike** (rate pinned at 1.0) and relies
+on KD against the frozen pre-step teacher for recovery.
 """
 
 from __future__ import annotations
 
-from mimarsinan.models.nn.activations import TTFSCycleActivation
+from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+from mimarsinan.models.spiking.training.ttfs_segment_forward import TTFSSegmentForward
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import KDBlendAdaptationTuner
 
 
+class _SegmentSpikeForward:
+    """Picklable ``model.forward`` override driving the segment-aware spike sim."""
+
+    def __init__(self, mapper_repr, T: int):
+        self._driver = TTFSSegmentForward(mapper_repr, T)
+
+    def __call__(self, x):
+        return self._driver(x)
+
+
 class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
-    """Ramp base activation to TTFSCycleActivation with KD recovery."""
+    """Ramp to the TTFS spike node, training through the segment-aware spike forward."""
 
     _target_activation_type = "TTFS"
 
@@ -24,19 +38,46 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self.name = "TTFS Cycle Fine-Tuning"
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
-        # LIF-style: this step replaces the clamp/shift/activation-quant chain.
-        # TTFSCycleActivation clamps + quantises internally, so disable the
-        # decorators (the blend ramps the bare base activation → TTFS kernel,
-        # exactly like LIF Adaptation ramps base → LIFActivation).
+        self._firing_mode = str(self.pipeline.config.get("firing_mode", "TTFS"))
+        self._patched_forward = False
         self.adaptation_manager.ttfs_active = True
 
-    def _make_target_activation(self, perceptron) -> TTFSCycleActivation:
-        return TTFSCycleActivation(
+    def _make_target_activation(self, perceptron) -> TTFSActivation:
+        return TTFSActivation(
             T=self._T,
             activation_scale=perceptron.activation_scale,
+            input_scale=perceptron.input_activation_scale,
+            bias=perceptron.layer.bias,
             thresholding_mode=self._thresholding_mode,
+            firing_mode=self._firing_mode,
+            encoding=getattr(perceptron, "is_encoding_layer", False),
         )
 
+    # -- pure spike: pin the blend at full rate ------------------------------
+    def _install_blend(self) -> None:
+        super()._install_blend()
+        self._set_rate(1.0)
+
+    def _set_rate(self, rate: float) -> None:  # noqa: ARG002 - always full rate
+        super()._set_rate(1.0)
+
+    def _get_rates(self):
+        return [1.0 for _ in self.model.get_perceptrons()]
+
+    # -- install / remove the spike-train forward ----------------------------
+    def _after_install_blend(self) -> None:
+        assert "forward" not in self.model.__dict__, (
+            "TTFSCycleAdaptationTuner: model.forward already patched."
+        )
+        self._patched_forward = True
+        self.model.forward = _SegmentSpikeForward(self.model.get_mapper_repr(), self._T)
+
     def _finalize(self) -> None:
+        if getattr(self, "_patched_forward", False):
+            try:
+                del self.model.forward
+            except AttributeError:
+                pass
+            self._patched_forward = False
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
