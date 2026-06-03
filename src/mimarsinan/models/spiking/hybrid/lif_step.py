@@ -268,12 +268,3 @@ class HybridLifStepMixin:
             sh = torch.as_tensor(shift, dtype=out.dtype, device=out.device).reshape(-1)
             out[:, s.offset : s.offset + s.size] += sh[: s.size]
         return out
-
-    def _accumulate_segment_input_min(self, input_map, seg_input_rates: torch.Tensor) -> None:
-        """Merge per-producer-channel minimums of this segment's input into the
-        calibration accumulator (element-wise running min across samples/consumers)."""
-        acc = self._segment_input_min
-        for s in input_map:
-            chan_min = seg_input_rates[:, s.offset : s.offset + s.size].amin(dim=0).detach()
-            prev = acc.get(int(s.node_id))
-            acc[int(s.node_id)] = chan_min if prev is None else torch.minimum(prev, chan_min)

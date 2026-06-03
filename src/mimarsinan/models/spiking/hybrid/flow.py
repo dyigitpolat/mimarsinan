@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Dict
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -91,23 +90,6 @@ class SpikingHybridCoreFlow(
         self._segment_tensor_cache_key: int | None = None
 
         self._recorder: RunRecord | None = None
-        # Round-2a calibration: when set, accumulates per-producer-node per-channel
-        # min of the (pre-clamp, pre-shift) segment-input values.
-        self._segment_input_min: Dict[int, torch.Tensor] | None = None
-
-    def calibrate_segment_input_mins(self, x: torch.Tensor) -> Dict[int, np.ndarray]:
-        """Run a forward and return ``{producer node_id: per-channel min}`` of the
-        boundary values that feed each neural segment (before clamp/shift). Used to
-        derive negative-value shifts (``negative_shifts_from_min``)."""
-        self._segment_input_min = {}
-        try:
-            with torch.no_grad():
-                self.forward(x)
-            return {
-                nid: t.detach().cpu().numpy() for nid, t in self._segment_input_min.items()
-            }
-        finally:
-            self._segment_input_min = None
 
     def _build_consumer_counts(self) -> Dict[int, int]:
         """Return ``{node_id: downstream_read_count}`` for state-buffer refcount pruning."""

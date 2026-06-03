@@ -894,6 +894,7 @@ function buildConfig() {
   };
   if (spikingMode === 'lif') {
     dp.cycle_accurate_lif_forward = isToggleOn('cycleAccurateLifToggle');
+    dp.negative_value_shift = isToggleOn('negativeValueShiftToggle');
   }
   if (spikingMode === 'ttfs_cycle_based') {
     dp.ttfs_cycle_schedule = v('ttfsCycleSchedule') || 'cascaded';
@@ -1251,6 +1252,7 @@ function loadStateFromConfig(config) {
   setVal('encodingPlacement', dp.encoding_layer_placement || 'subsume');
   setVal('ttfsCycleSchedule', dp.ttfs_cycle_schedule || 'cascaded');
   setToggleFromConfig('cycleAccurateLifToggle', !!dp.cycle_accurate_lif_forward);
+  setToggleFromConfig('negativeValueShiftToggle', !!dp.negative_value_shift);
   setToggleFromConfig('actQuantToggle', dp.activation_quantization);
   setToggleFromConfig('wtQuantToggle', dp.weight_quantization);
   setToggleFromConfig('pruningToggle', dp.pruning);
