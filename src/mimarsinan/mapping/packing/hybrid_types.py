@@ -50,6 +50,11 @@ class HybridHardCoreMapping:
     output_sources: np.ndarray = field(default_factory=lambda: np.array([], dtype=object))
     node_activation_scales: dict[int, float] = field(default_factory=dict)
     node_input_activation_scales: dict[int, float] = field(default_factory=dict)
+    # Round-2a negative-value shift: per producer node_id, a per-output-channel rate
+    # shift added to that node's value before the [0,1] clamp + spike encoding, so a
+    # negative-producing ComputeOp is lossless. The consumer core's bias is
+    # pre-corrected (B' = B - W·s) so the on-chip result is unchanged. Empty = no shift.
+    node_output_shifts: dict[int, np.ndarray] = field(default_factory=dict)
 
     def get_compute_ops(self) -> List[ComputeOp]:
         return [s.compute_op for s in self.stages if s.kind == "compute" and s.compute_op is not None]
