@@ -70,6 +70,10 @@ class UnifiedStageIOMixin:
         ttfs = self.spiking_mode in self._TTFS_SPIKING_MODES
 
         def _on_always_on(d0: int, d1: int) -> None:
+            # Single-spike TTFS bias = one spike at the core's local window start.
+            # Each node runs its own [0, T) loop over materialized upstream trains,
+            # so cycle 0 IS the local window start here (no shared latency-gated loop
+            # as in the hybrid flow, where it must fire at cycle == core.latency).
             if ttfs and cycle != 0:
                 return
             out[:, d0:d1].fill_(1.0)

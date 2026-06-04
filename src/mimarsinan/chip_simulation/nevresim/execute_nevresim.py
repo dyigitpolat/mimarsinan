@@ -9,12 +9,42 @@ def _parse_stdout_tokens(stdout: str) -> list[float]:
     return [float(val) for val in stdout.split()]
 
 
+def parse_spike_records(stderr: str) -> list[dict[int, dict[str, list[int]]]]:
+    """Parse ``SPKREC`` lines (NEVRESIM_RECORD_SPIKES build) into per-sample records.
+
+    One ``SPKREC <core> IN ... OUT ...`` line per core; ``SPKREC_END`` closes a
+    sample. Returns a list (sample-major) of ``{core_index: {"in": [...], "out": [...]}}``.
+    The full per-axon / per-neuron arrays are emitted; trimming to used spans is
+    done at projection time against the reference mapping.
+    """
+    samples: list[dict[int, dict[str, list[int]]]] = []
+    current: dict[int, dict[str, list[int]]] = {}
+    for line in (stderr or "").splitlines():
+        line = line.strip()
+        if not line.startswith("SPKREC"):
+            continue
+        if line == "SPKREC_END":
+            samples.append(current)
+            current = {}
+            continue
+        toks = line.split()
+        # SPKREC <core> IN <ints...> OUT <ints...>
+        core = int(toks[1])
+        in_idx = toks.index("IN")
+        out_idx = toks.index("OUT")
+        in_counts = [int(v) for v in toks[in_idx + 1:out_idx]]
+        out_counts = [int(v) for v in toks[out_idx + 1:]]
+        current[core] = {"in": in_counts, "out": out_counts}
+    return samples
+
+
 def execute_simulator(
     simulator_filename,
     input_count,
     num_proc=0,
     *,
     expected_values: int | None = None,
+    record_spikes: bool = False,
 ):
     """Run the nevresim binary. Supports both absolute and relative paths.
 
@@ -57,6 +87,7 @@ def execute_simulator(
         workers.append((start, end, proc))
 
     output_values: list[float] = []
+    spike_records: list[dict] = []
     for start, end, proc in workers:
         stdout, stderr = proc.communicate()
         if proc.returncode != 0:
@@ -67,6 +98,8 @@ def execute_simulator(
                 + (f": {err}" if err else "")
             )
         output_values.extend(_parse_stdout_tokens(stdout))
+        if record_spikes:
+            spike_records.extend(parse_spike_records(stderr))
 
     end_time = time.time()
     print("  Simulation time:", end_time - start_time)
@@ -77,4 +110,6 @@ def execute_simulator(
             f"got {len(output_values)}"
         )
 
+    if record_spikes:
+        return output_values, spike_records
     return output_values

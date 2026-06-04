@@ -117,6 +117,7 @@ class HybridLifStepMixin:
                     spans=axon_spans[core_idx],
                     cycle=cycle,
                     single_spike=single_spike,
+                    latency=int(core.latency or 0),
                 )
 
             for core_idx, core in enumerate(cores):

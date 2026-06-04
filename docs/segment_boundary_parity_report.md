@@ -279,3 +279,37 @@ Residual notes:
   stage loops — backend-side shift parity is the natural next round.
 - The boundary single-spike encode at non-encoding cascade entries is a hard
   (non-differentiable) encode; gradient flows through encoding entries only.
+
+---
+
+## 8. `ttfs_cycle_based` fine-tune ↔ deploy parity (follow-up, same day)
+
+A `mnist_mmixcore_ttfs_cycle_60` run failed the SCM gate (HCM 0.594 vs reported 0.943).
+Forensics on the saved artifacts:
+
+- **NF↔HCM was already exact** with the unified driver (`SegmentForwardDriver` == HCM
+  bit-for-bit); the old `TTFSSegmentForward` had diverged (max|Δ|=0.365), so the driver
+  *improved* it. The gate failure was **not** a segment-boundary regression.
+- **Root cause:** `TTFSActivation`'s interior-cascade forward (`cycle_accurate=True`,
+  single-spike ramp) does **not** equal its analytical staircase forward — node-level
+  max|Δ|≈0.94 through one layer, compounding to a 0.90→0.62 gap across the mixer. For
+  **LIF** these two match per-neuron (the parity guarantee), so LIF trains on one and
+  deploys the other safely; TTFS-cycle could not.
+- **Tuner asymmetry vs LIF:** `LIFAdaptationTuner._after_run` re-installs the genuine
+  cycle-accurate forward (`_ChipAlignedNFForward`) and keeps it through the committed
+  metric + recovery + every downstream step. `TTFSCycleAdaptationTuner._finalize`
+  **stripped** the genuine `_SegmentSpikeForward` before the committed metric, so
+  fine-tuning recovered/committed the analytical staircase (0.90) while only HCM ran the
+  genuine cascade (0.62) — the gap surfaced at SCM.
+
+**Fix:** `TTFSCycleAdaptationTuner` now mirrors LIF — `_after_run` re-installs
+`_SegmentSpikeForward` after subsuming the decorators and **keeps it installed** through
+`_ensure_pipeline_threshold` (recovery) and all downstream steps, so fine-tuning
+validates/recovers/commits the exact deployed single-spike cascade. A scaled
+`ttfs_cycle_based` run is now metric-consistent end-to-end (Fine-Tuning == SCM ==
+Simulation) and no longer trips the gate. Locked by
+`test_ttfs_cycle_adaptation_step.py::TestFinalState::test_genuine_spike_forward_persists_after_step`
+(+ the stale `TTFSCycleActivation` target expectation corrected to the genuine
+`TTFSActivation` node). The cascade's accuracy ceiling for a given model/T is now
+honestly reported at fine-tuning instead of deferred to SCM — reaching high accuracy is
+a modeling concern (T/architecture/KD), no longer a hidden parity bug.

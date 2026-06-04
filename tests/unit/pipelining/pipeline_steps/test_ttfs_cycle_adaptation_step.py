@@ -15,7 +15,7 @@ from conftest import (
 )
 
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
-from mimarsinan.models.nn.activations.ttfs_cycle import TTFSCycleActivation
+from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.pipelining.pipeline_steps.adaptation.ttfs_cycle_adaptation_step import (
     TTFSCycleAdaptationStep,
 )
@@ -70,7 +70,25 @@ class TestFinalState:
             # base_activation is the blend, fully ramped to the TTFS target.
             assert p.base_activation.rate == pytest.approx(1.0)
             assert p.base_activation.activation_type == "TTFS"
-            assert isinstance(p.base_activation.target_activation, TTFSCycleActivation)
+            # Genuine cycle-accurate spike node (not the pointwise TTFSCycleActivation
+            # kernel) — fine-tuning trains through the exact deployed dynamics.
+            assert isinstance(p.base_activation.target_activation, TTFSActivation)
+
+    def test_genuine_spike_forward_persists_after_step(self, mock_pipeline):
+        """Mirror LIF: the genuine cycle-based cascade forward stays installed as
+        ``model.forward`` after the step, so the committed metric, recovery, and
+        every downstream calibration run the exact deployed dynamics (not the
+        analytical staircase)."""
+        from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
+            _SegmentSpikeForward,
+        )
+
+        model, am = _seed_ttfs_cycle_step(mock_pipeline)
+        _run_step(mock_pipeline)
+        assert isinstance(model.__dict__.get("forward"), _SegmentSpikeForward), (
+            "TTFS-cycle fine-tuning must leave the genuine spike forward installed "
+            "(like LIF's _ChipAlignedNFForward), not revert to the analytical path."
+        )
 
     def test_decorators_subsumed_no_clamp_quant_wrapping(self, mock_pipeline):
         # With ttfs_active, update_activation must not wrap the blend in clamp/quant

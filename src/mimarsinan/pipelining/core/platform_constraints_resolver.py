@@ -43,3 +43,20 @@ def build_platform_constraints_resolved(
         pcfg[CANONICAL_KEY] = False
     normalize_coalescing_config(pcfg)
     return pcfg
+
+
+def resolve_bias_mode(pipeline_config: dict[str, Any]) -> str:
+    """Deployment bias delivery (``"on_chip"`` / ``"param_encoded"``) for this config.
+
+    Single source shared by the tuners and the mapping step: reuses the same
+    ``all(has_bias)`` resolution as ``SoftCoreMappingStep`` so training-time nodes and
+    the deployed mapping agree on the declared mode.
+    """
+    from mimarsinan.mapping.platform.platform_constraints import (
+        resolve_platform_mapping_params,
+    )
+    from mimarsinan.models.nn.activations.bias_mode import bias_mode_from_hardware_bias
+
+    cores = build_platform_constraints_resolved(pipeline_config)["cores"]
+    params = resolve_platform_mapping_params(cores)
+    return bias_mode_from_hardware_bias(params.hardware_bias)
