@@ -8,7 +8,6 @@ import torch
 
 from mimarsinan.mapping.verification.verifier import (
     MappingVerificationResult,
-    verify_hardware_config,
     verify_soft_core_mapping,
 )
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
@@ -23,6 +22,7 @@ def model_repr_from_wizard_body(body: dict) -> Any:
     input_shape = tuple(int(x) for x in body.get("input_shape", [1, 28, 28]))
     num_classes = int(body.get("num_classes", 10))
     model_config = body.get("model_config", {})
+    placement = str(body.get("encoding_layer_placement", "subsume"))
     pipeline_config = {
         "target_tq": int(body.get("target_tq", 32)),
         "device": "cpu",
@@ -55,6 +55,7 @@ def model_repr_from_wizard_body(body: dict) -> Any:
             input_shape=input_shape,
             num_classes=num_classes,
             device="cpu",
+            encoding_layer_placement=placement,
         )
         model_repr = supermodel.get_mapper_repr()
     else:
@@ -65,6 +66,9 @@ def model_repr_from_wizard_body(body: dict) -> Any:
             except Exception:
                 pass
         model_repr = raw_model.get_mapper_repr()
+        from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+
+        mark_encoding_layers(model_repr, placement=placement)
 
     if hasattr(model_repr, "assign_perceptron_indices"):
         model_repr.assign_perceptron_indices()
@@ -185,6 +189,8 @@ def verify_planned_mapping_performance(
     if not soft.feasible:
         return {"feasible": False}
 
+    from mimarsinan.mapping.layout.layout_plan import build_layout_plan
+
     core_types_dicts = [
         {
             "max_axons": int(ct.get("max_axons", 0)),
@@ -193,18 +199,18 @@ def verify_planned_mapping_performance(
         }
         for ct in cores
     ]
-    result = verify_hardware_config(
-        soft.softcores,
+    plan = build_layout_plan(
+        soft,
         core_types_dicts,
         allow_neuron_splitting=allow_neuron_splitting,
         allow_coalescing=allow_coalescing,
         allow_scheduling=allow_scheduling,
     )
-    stats_out: dict = dict(result.get("stats") or {})
-    stats_out.setdefault("host_side_segment_count", soft.host_side_segment_count)
-    stats_out.setdefault("layout_preview", soft.layout_preview)
-    si = result.get("schedule_info") or {}
+    stats_out: dict = plan.stats.to_dict()
+    stats_out.setdefault("host_side_segment_count", plan.host_side_segment_count)
+    stats_out.setdefault("layout_preview", plan.layout_preview)
+    si = plan.schedule_info or {}
     if si.get("per_segment_passes"):
         stats_out["per_segment_passes"] = si["per_segment_passes"]
-    stats_out["feasible"] = bool(result.get("feasible", False))
+    stats_out["feasible"] = bool(plan.feasible)
     return stats_out

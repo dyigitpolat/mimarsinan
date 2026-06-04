@@ -45,6 +45,7 @@ class LayoutMappingRequest:
     max_neurons: int
     allow_coalescing: bool
     hardware_bias: bool
+    encoding_layer_placement: str = "subsume"
 
     @classmethod
     def from_wizard_body(
@@ -91,6 +92,9 @@ class LayoutMappingRequest:
             max_neurons=int(eff_neu),
             allow_coalescing=bool(coalescing),
             hardware_bias=bool(hw_bias),
+            encoding_layer_placement=str(
+                body.get("encoding_layer_placement", "subsume")
+            ),
         )
 
     def model_identity_key(self) -> tuple:
@@ -107,6 +111,7 @@ class LayoutMappingRequest:
             self.input_shape,
             self.num_classes,
             self.target_tq,
+            self.encoding_layer_placement,
         )
 
     def verification_key(self) -> tuple:
@@ -132,6 +137,7 @@ class LayoutMappingRequest:
             "max_neurons": self.max_neurons,
             "allow_coalescing": self.allow_coalescing,
             "hardware_bias": self.hardware_bias,
+            "encoding_layer_placement": self.encoding_layer_placement,
         }
 
 

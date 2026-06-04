@@ -1,0 +1,149 @@
+"""Single source of truth for neural/host segmentation of a mapper graph.
+
+Two complementary views of the same "neural regions separated by host
+ComputeOps" structure live here so both the deployment packer and the
+shape-only layout finalizer agree by construction:
+
+- :func:`partition_ir_graph` -- the ordered neural/host segmentation used by
+  the HCM build to flush neural runs and interleave ComputeOp barriers.
+- :func:`compute_segment_ids` / :func:`compute_node_latencies` /
+  :func:`compute_host_side_segment_count` -- the dependency-graph view used by
+  ``LayoutIRMapping`` finalize for per-softcore ``segment_id`` / ``latency_tag``
+  and the wizard ``host_side_segment_count``.
+
+The two views coincide on segment membership for topologically-ordered emission
+(the normal case); ``tests/unit/mapping/test_segmentation.py`` pins that
+agreement on the representative config matrix.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Union
+
+from mimarsinan.mapping.ir import ComputeOp, NeuralCore
+
+
+# ── Ordered neural/host partition (deployment packer view) ─────────────────
+
+@dataclass
+class NeuralSegment:
+    """A maximal run of consecutive ``NeuralCore`` nodes between host barriers."""
+
+    nodes: List[NeuralCore]
+    label: str
+
+
+@dataclass
+class HostSegment:
+    """A single host ``ComputeOp`` barrier between neural segments."""
+
+    compute_op: ComputeOp
+
+
+Segment = Union[NeuralSegment, HostSegment]
+
+
+def partition_ir_graph(ir_graph) -> List[Segment]:
+    """Partition ``ir_graph.nodes`` into ordered neural / host segments.
+
+    Consecutive ``NeuralCore`` nodes group into one :class:`NeuralSegment`;
+    each ``ComputeOp`` becomes a :class:`HostSegment` barrier.  A neural
+    segment is emitted immediately before the barrier that terminates it, and
+    a trailing :class:`NeuralSegment` (label ``"neural_segment_final"``) closes
+    the graph.  This is the exact grouping the single-pool / scheduled HCM
+    builders relied on inline.
+    """
+    segments: List[Segment] = []
+    current: List[NeuralCore] = []
+    for node in ir_graph.nodes:
+        if isinstance(node, NeuralCore):
+            current.append(node)
+            continue
+        if isinstance(node, ComputeOp):
+            if current:
+                segments.append(
+                    NeuralSegment(
+                        nodes=current,
+                        label=f"neural_segment_until:{node.name}",
+                    )
+                )
+                current = []
+            segments.append(HostSegment(compute_op=node))
+            continue
+        raise TypeError(
+            f"Unknown IR node type in hybrid compilation: {type(node)}"
+        )
+
+    if current:
+        segments.append(NeuralSegment(nodes=current, label="neural_segment_final"))
+    return segments
+
+
+# ── Dependency-graph view (layout finalize) ────────────────────────────────
+
+def compute_node_latencies(
+    node_input_node_ids: Dict[int, set],
+    node_is_neural: Dict[int, bool],
+) -> Dict[int, int]:
+    """Latency = longest path of neural nodes feeding each node."""
+    memo: Dict[int, int] = {}
+
+    def _get(node_id: int) -> int:
+        if node_id in memo:
+            return memo[node_id]
+        deps = node_input_node_ids.get(node_id)
+        if not deps:
+            memo[node_id] = 0
+            return 0
+        max_upstream = max(_get(d) for d in deps)
+        result = max_upstream + (1 if node_is_neural.get(node_id, False) else 0)
+        memo[node_id] = result
+        return result
+
+    for node_id in node_input_node_ids:
+        _get(node_id)
+    return memo
+
+
+def compute_segment_ids(
+    node_input_node_ids: Dict[int, set],
+    node_is_neural: Dict[int, bool],
+) -> Dict[int, int]:
+    """Neural-segment id per node: increments across a host ComputeOp dependency."""
+    memo: Dict[int, int] = {}
+
+    def _get(node_id: int) -> int:
+        if node_id in memo:
+            return memo[node_id]
+        deps = node_input_node_ids.get(node_id)
+        is_neural = node_is_neural.get(node_id, False)
+        if not deps:
+            memo[node_id] = 0 if is_neural else -1
+            return memo[node_id]
+        upstream = [_get(d) for d in deps]
+        if is_neural:
+            has_compute_dep = any(
+                not node_is_neural.get(d, False) for d in deps
+            )
+            memo[node_id] = max(upstream) + 1 if has_compute_dep else max(upstream)
+        else:
+            memo[node_id] = max(upstream)
+        return memo[node_id]
+
+    for node_id in node_input_node_ids:
+        _get(node_id)
+    return memo
+
+
+def compute_host_side_segment_count(
+    segment_ids: Dict[int, int],
+    node_is_neural: Dict[int, bool],
+) -> int:
+    """Number of distinct host-side slots (sync barriers) in the layout."""
+    host_segments = {
+        int(segment_ids[node_id] + 1)
+        for node_id, is_neural in node_is_neural.items()
+        if not is_neural and node_id in segment_ids
+    }
+    return len(host_segments)

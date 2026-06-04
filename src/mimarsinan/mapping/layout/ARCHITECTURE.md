@@ -34,9 +34,12 @@ without requiring trained weights.
 | `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutCoreSnapshot`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results. |
 | `layout_ir_mapping.py` | `LayoutIRMapping` | Shape-only mapping backend (core state, `map`, neural emission hooks) |
 | `layout_ir_mapping_fc.py` | `_LayoutIRMappingFC` | FC tiling dispatch (`map_fc`, psum, output-tiled) |
-| `layout_ir_mapping_finalize.py` | `_LayoutIRMappingFinalize` | Latency tags, segment ids, threshold groups, layout preview |
+| `layout_ir_mapping_finalize.py` | `_LayoutIRMappingFinalize` | Latency tags, segment ids, threshold groups, layout preview (delegates to `segmentation.py`) |
+| `segmentation.py` | `partition_ir_graph`, `compute_segment_ids`, `compute_node_latencies`, `compute_host_side_segment_count`, `NeuralSegment`, `HostSegment` | Single source of neural/host segmentation: the ordered partition the HCM builders flush **and** the dependency-graph segment ids/latencies the layout finalizer uses. |
 | `layout_source_view.py` | `LayoutSourceView`, `concat_source_views`, `stack_source_views`, `node_ids_of`, `total_size` | Lightweight composable shape descriptor that duck-types as a numpy object array of `IRSource` for the mapper graph; defers per-cell `IRSource` allocation until forced via `np.asarray`.  See "LayoutSourceView contract" below. |
-| `layout_packer.py` | `pack_layout` | Wraps `greedy_pack_softcores` around layout types. |
+| `layout_packer.py` | `pack_layout`, `LayoutMaterializer` | Shape-only `Materializer` + thin wrapper over the shared `placement_engine.run_placement`. |
+| `softcore_spec_adapter.py` | `spec_from_neural_core`, `spec_from_softcore` | Derive a shape-only `LayoutSoftCoreSpec` from an IR `NeuralCore` (scheduled splitting) or a compacted runtime `SoftCore` (deployment plan). |
+| `layout_plan.py` | `LayoutPlan`, `build_layout_plan` | Single placement-plan + stats artifact. `build_layout_plan` feeds the wizard/NAS/snapshot "planned" path; `LayoutPlan.from_hybrid_mapping` derives the same `LayoutVerificationStats` from a compiled deployment mapping, so miniview and deployment stats share one engine. |
 
 ## LayoutSourceView contract
 
@@ -84,4 +87,8 @@ single source of truth, lightweight as intended.
 
 ## Exported API (`__init__.py`)
 
-All layout types, `LayoutIRMapping`, and `pack_layout`.
+All layout types, `LayoutIRMapping`, `pack_layout`, `LayoutPlan` /
+`build_layout_plan`, the segmentation API (`partition_ir_graph`,
+`compute_segment_ids`, `compute_node_latencies`,
+`compute_host_side_segment_count`, `NeuralSegment`, `HostSegment`, `Segment`),
+and the spec adapters (`spec_from_neural_core`, `spec_from_softcore`).

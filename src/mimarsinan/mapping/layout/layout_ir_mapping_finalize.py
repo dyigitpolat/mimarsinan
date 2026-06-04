@@ -3,65 +3,29 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+from mimarsinan.mapping.layout.segmentation import (
+    compute_host_side_segment_count,
+    compute_node_latencies,
+    compute_segment_ids,
+)
 
 
 class _LayoutIRMappingFinalize:
 
     def _compute_latencies(self) -> Dict[int, int]:
-        memo: Dict[int, int] = {}
-
-        def _get(node_id: int) -> int:
-            if node_id in memo:
-                return memo[node_id]
-            deps = self._node_input_node_ids.get(node_id)
-            if not deps:
-                memo[node_id] = 0
-                return 0
-            max_upstream = max(_get(d) for d in deps)
-            result = max_upstream + (
-                1 if self._node_is_neural.get(node_id, False) else 0
-            )
-            memo[node_id] = result
-            return result
-
-        for node_id in self._node_input_node_ids:
-            _get(node_id)
-        return memo
+        return compute_node_latencies(
+            self._node_input_node_ids, self._node_is_neural
+        )
 
     def _compute_segment_ids(self) -> Dict[int, int]:
-        memo: Dict[int, int] = {}
-
-        def _get(node_id: int) -> int:
-            if node_id in memo:
-                return memo[node_id]
-            deps = self._node_input_node_ids.get(node_id)
-            is_neural = self._node_is_neural.get(node_id, False)
-            if not deps:
-                memo[node_id] = 0 if is_neural else -1
-                return memo[node_id]
-            upstream = [_get(d) for d in deps]
-            if is_neural:
-                has_compute_dep = any(
-                    not self._node_is_neural.get(d, False) for d in deps
-                )
-                memo[node_id] = max(upstream) + 1 if has_compute_dep else max(upstream)
-            else:
-                memo[node_id] = max(upstream)
-            return memo[node_id]
-
-        for node_id in self._node_input_node_ids:
-            _get(node_id)
-        return memo
+        return compute_segment_ids(
+            self._node_input_node_ids, self._node_is_neural
+        )
 
     def _compute_host_side_segment_count(
         self, segment_ids: Dict[int, int]
     ) -> int:
-        host_segments = {
-            int(segment_ids[node_id] + 1)
-            for node_id, is_neural in self._node_is_neural.items()
-            if not is_neural and node_id in segment_ids
-        }
-        return len(host_segments)
+        return compute_host_side_segment_count(segment_ids, self._node_is_neural)
 
     def _build_layout_preview(
         self,
