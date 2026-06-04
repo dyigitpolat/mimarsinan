@@ -37,6 +37,30 @@ def _heaviside_surrogate(pre: torch.Tensor, thresholding_mode: str, alpha: float
     return 1.0 - _StrictHeavisideFunction.apply(-pre, alpha)
 
 
+def _channel_broadcast_view(bias: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+    """View a per-output-channel ``bias`` so it broadcasts against ``x``.
+
+    Linear perceptrons emit channel-last tensors (``(B, F)`` / ``(B, T, F)``);
+    Conv1D/Conv2D mappers emit channel-first NCL / NCHW. Match the axis whose
+    size equals the bias length, preferring the last axis (channel-last
+    convention) and falling back to axis 1 (conv channel axis).
+    """
+    n = int(bias.shape[0])
+    dim = x.dim()
+    if x.shape[-1] == n:
+        axis = dim - 1
+    elif dim >= 2 and x.shape[1] == n:
+        axis = 1
+    else:
+        raise ValueError(
+            f"TTFSActivation: bias length {n} matches no broadcastable axis of "
+            f"input shape {tuple(x.shape)}"
+        )
+    shape = [1] * dim
+    shape[axis] = n
+    return bias.view(*shape)
+
+
 class TTFSActivation(nn.Module):
     """Single-spike TTFS spike node (fire-once ramp), surrogate gradient.
 
@@ -161,7 +185,7 @@ class TTFSActivation(nn.Module):
         bias = self._bias
         if bias is not None:
             bias = bias.to(x.device, x.dtype)
-            bias_b = bias.view(*([1] * (x.dim() - 1)), -1)
+            bias_b = _channel_broadcast_view(bias, x)
             weighted_raw = x - bias_b
             bias_norm = bias_b / scale_v
         else:
