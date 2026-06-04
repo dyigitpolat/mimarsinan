@@ -46,15 +46,17 @@ def probe_module_io_shapes(
     input_shapes = _normalize_input_shapes(input_shape)
 
     try:
-        device = next(module.parameters()).device
+        ref = next(module.parameters())
     except StopIteration:
         try:
-            device = next(module.buffers()).device
+            ref = next(module.buffers())
         except StopIteration:
-            device = torch.device("cpu")
+            ref = None
+    device = ref.device if ref is not None else torch.device("cpu")
+    dtype = ref.dtype if ref is not None and ref.dtype.is_floating_point else torch.float32
 
     dummy_inputs = tuple(
-        torch.zeros((1, *shape), dtype=torch.float32, device=device)
+        torch.zeros((1, *shape), dtype=dtype, device=device)
         for shape in input_shapes
     )
 

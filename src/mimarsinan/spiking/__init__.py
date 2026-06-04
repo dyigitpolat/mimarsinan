@@ -6,11 +6,15 @@ from mimarsinan.spiking.lif_utils import (
 )
 from mimarsinan.spiking.segment_boundary import (
     BoundaryConfig,
-    SegmentBoundary,
     decode_segment_output,
     decode_segment_output_torch,
     encode_compute_boundary,
     encode_segment_input,
+)
+from mimarsinan.spiking.segment_forward import (
+    LifSegmentPolicy,
+    SegmentForwardDriver,
+    TtfsSegmentPolicy,
 )
 from mimarsinan.spiking.spike_trains import (
     lif_spike_train,
@@ -20,7 +24,9 @@ from mimarsinan.spiking.spike_trains import (
 
 __all__ = [
     "BoundaryConfig",
-    "SegmentBoundary",
+    "LifSegmentPolicy",
+    "SegmentForwardDriver",
+    "TtfsSegmentPolicy",
     "apply_cycle_accurate_trains_to_model",
     "decode_segment_output",
     "decode_segment_output_torch",

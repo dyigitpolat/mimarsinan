@@ -84,7 +84,7 @@ FIELD_DISPLAY_META: Dict[str, Dict[str, Any]] = {
     "encoding_layer_placement": {"group": "pipeline", "type": "enum", "label": "Encoding Layer Placement",
                                  "effect": "Offload maps the encoding-layer neuralOp on-chip"},
     "negative_value_shift": {"group": "pipeline", "type": "bool", "label": "Negative-value Shift",
-                             "effect": "Shifts negative-producing ComputeOp boundaries into the encodable domain (LIF)"},
+                             "effect": "Shifts negative-producing ComputeOp boundaries into the encodable domain (LIF + TTFS family)"},
     "spike_encoding_seed": {"group": "pipeline", "type": "int", "label": "Spike Encoding Seed"},
     "thresholding_mode": {"group": "pipeline", "type": "enum", "label": "Thresholding Mode"},
     "activation_quantization": {"group": "pipeline", "type": "bool", "label": "Activation Quantization",

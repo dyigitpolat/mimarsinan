@@ -61,6 +61,16 @@ def gather_final_output_torch(
     return out
 
 
+def _compute_op_module_dtype(op: ComputeOp) -> torch.dtype:
+    """The op module's floating dtype (float32 for parameterless modules)."""
+    module = op.params.get("module")
+    if module is not None and hasattr(module, "parameters"):
+        for p in module.parameters():
+            if p.dtype.is_floating_point:
+                return p.dtype
+    return torch.float32
+
+
 def execute_compute_op_torch(
     op: ComputeOp,
     original_input: torch.Tensor,
@@ -75,7 +85,7 @@ def execute_compute_op_torch(
         out_scale = in_scale
 
     gathered = op.gather_inputs(original_input, state_buffer)
-    gathered = gathered.to(torch.float32)
+    gathered = gathered.to(_compute_op_module_dtype(op))
     if abs(in_scale - 1.0) > 1e-9:
         gathered = gathered * in_scale
 
@@ -102,6 +112,34 @@ def assemble_segment_input_numpy(
         buf = state_buffer[s.node_id]
         inp[:, s.offset : s.offset + s.size] = buf[:, : s.size]
     return inp
+
+
+def apply_input_shifts_numpy(
+    input_map,
+    seg_input: np.ndarray,
+    node_output_shifts,
+) -> np.ndarray:
+    """Add the per-producer-channel positive shift to an assembled segment input.
+
+    Numpy mirror of ``HybridLifStepMixin._apply_input_shifts``: keyed by producer
+    ``node_id`` in ``node_output_shifts``; empty/None ⇒ identity (no copy). The
+    consumer core's bias is pre-corrected (``B' = B − W·s``), so this is
+    value-preserving while moving the boundary into the encodable domain.
+    """
+    if not node_output_shifts:
+        return seg_input
+    out = seg_input
+    copied = False
+    for s in input_map:
+        shift = node_output_shifts.get(int(s.node_id))
+        if shift is None:
+            continue
+        if not copied:
+            out = seg_input.copy()
+            copied = True
+        sh = np.asarray(shift, dtype=out.dtype).reshape(-1)
+        out[:, s.offset : s.offset + s.size] += sh[: s.size]
+    return out
 
 
 def store_segment_output_numpy(

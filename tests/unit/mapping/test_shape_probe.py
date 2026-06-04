@@ -98,3 +98,15 @@ class TestStatePreservation:
         ln.eval()
         probe_module_io_shapes(ln, (4,))
         assert ln.training is False
+
+
+class TestDtypeFollowsModule:
+    def test_double_module_probes_with_double_dummy(self):
+        """A float64 module (e.g. a TTFS flow after ``.double()``) must probe
+        without a mixed-dtype error — the dummy follows the parameter dtype."""
+        out = probe_module_io_shapes(nn.LayerNorm([6]).double(), (6,))
+        assert out.output_shape == (6,)
+
+    def test_parameterless_module_defaults_to_float32(self):
+        out = probe_module_io_shapes(nn.MaxPool2d(kernel_size=2), (3, 8, 8))
+        assert out.output_shape == (3, 4, 4)

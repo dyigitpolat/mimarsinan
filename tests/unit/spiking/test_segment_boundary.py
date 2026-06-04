@@ -1,8 +1,8 @@
-"""SSOT segment-boundary contract: decode + descriptor + shim identity.
+"""SSOT segment-boundary contract: the decode side shared by every backend.
 
 The encode paths (``encode_segment_input`` / ``encode_compute_boundary``) are
-exercised end-to-end by ``test_segment_boundary_encode.py``; here we pin the decode
-contract and the declarative ``SegmentBoundary`` descriptor's inert Round-2 defaults.
+exercised end-to-end by ``test_segment_boundary_encode.py``; here we pin the
+decode contract and ``BoundaryConfig`` defaults.
 """
 
 from __future__ import annotations
@@ -37,17 +37,6 @@ def test_numpy_and_torch_decode_agree():
     n = sb.decode_segment_output(counts, 4).reshape(-1)
     t = sb.decode_segment_output_torch(torch.tensor(counts), 4).reshape(-1).numpy()
     np.testing.assert_allclose(n, t)
-
-
-def test_segment_boundary_descriptor_round2_fields_inert_by_default():
-    """Round-2 seams default to the identity so Round-1 behavior is exact."""
-    bnd = sb.SegmentBoundary(
-        producer_kind="neural", consumer_node_id=3, encode_mode="uniform",
-    )
-    assert bnd.shift == 0.0
-    assert bnd.placement == "subsume"
-    assert bnd.spike_generation_mode == "Uniform"
-    assert bnd.decode == "count_over_T"
 
 
 def test_boundary_config_defaults():

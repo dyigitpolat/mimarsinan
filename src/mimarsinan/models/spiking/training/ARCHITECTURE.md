@@ -9,7 +9,7 @@ for the cascaded `ttfs_cycle_based` single-spike cascade.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `ttfs_segment_forward.py` | `TTFSSegmentForward`, `classify_spike_producers`, `partition_spike_segments`, `partition_perceptron_segments` | Segment-aware TTFS spike forward over a `ModelRepresentation` exec graph. Walks the graph; **value-producing** nodes (raw input, unbounded raw-Linear/Conv `ComputeOp`s) run host-side, **spike-producing** regions (perceptrons + transparent routing downstream of them) run a `T`-cycle single-spike sim. Each segment: entry perceptron (`is_encoding_layer`) encodes value→TTFS spike (`TTFSActivation(encoding=True)`); interior perceptrons ramp from arriving single spikes; **latency-gated** per `depth` (perceptron-hops from entry = local `ChipLatency`), 1-cycle delay per core hop; each region node consumed by a value node is decoded `count_of_latched_spikes / T * activation_scale` over its own window `[depth, depth+T)`. Segments run sequentially (TTFS single-spike timing is causal). Differentiable end-to-end. |
+| `ttfs_segment_forward.py` | `TTFSSegmentForward`, `classify_spike_producers`, `partition_spike_segments`, `partition_perceptron_segments` | **Thin wrapper** over the unified `spiking.segment_forward.SegmentForwardDriver` with `TtfsSegmentPolicy` (the walk, classification, and partition live there; the partition symbols are re-exports). Each segment: entry perceptron (`is_encoding_layer`) encodes value→TTFS spike (`TTFSActivation(encoding=True)`); interior perceptrons ramp from arriving single spikes; **latency-gated** per `depth` (perceptron-hops from entry = local `ChipLatency`), 1-cycle delay per core hop; each region node consumed by a value node is decoded `count_of_latched_spikes / T * activation_scale` over its own window `[depth, depth+T)`. Segments run sequentially (TTFS single-spike timing is causal). Differentiable end-to-end. |
 
 ## Design notes
 
@@ -19,8 +19,10 @@ for the cascaded `ttfs_cycle_based` single-spike cascade.
   pipeline slot. Mirrors the deployed `SpikingHybridCoreFlow` but without a mapping.
 - **Encoding cut:** an `is_encoding_layer` perceptron consumes a *decoded value*, so
   the partition never unions it with its source — its upstream spike region decodes,
-  it re-encodes. Linear compute ops (mean/transpose/add) commute with the decode, so
-  running them on spikes then decoding equals decoding then running them.
+  it re-encodes.
+- **Every ComputeOp is a value boundary:** host ComputeOps run once on decoded
+  values (never per-cycle on spikes), matching HCM where every host op executes
+  between neural stages. This holds for non-linear ops (LayerNorm) too.
 - **Latency gating:** each core integrates only inside `[depth, depth+T)` (no
   premature bias-only firing), with a 1-cycle output delay per perceptron hop.
   `depth` is the per-segment perceptron-hop count (local-latency approximation of
@@ -29,10 +31,9 @@ for the cascaded `ttfs_cycle_based` single-spike cascade.
 
 ## Dependencies
 
-- **Internal**: `models.nn.activations.ttfs_spiking` (`TTFSActivation`),
-  `mapping.mappers.structural` (`InputMapper`), `mapping.mappers.compute_op_mapper`
-  (`ComputeOpMapper`), `torch_mapping.encoding_layers` (`_wraps_unbounded_raw_linear_or_conv`).
-- **External**: `torch`.
+- **Internal**: `spiking.segment_forward` (`SegmentForwardDriver`,
+  `TtfsSegmentPolicy`, partition re-exports).
+- **External**: `torch` (transitively).
 
 ## Dependents
 
