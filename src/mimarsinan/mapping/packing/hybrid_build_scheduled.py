@@ -20,6 +20,11 @@ from mimarsinan.mapping.packing.hybrid_segment import (
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_types import HybridHardCoreMapping, HybridStage
+from mimarsinan.mapping.layout.segmentation import (
+    HostSegment,
+    NeuralSegment,
+    partition_ir_graph,
+)
 
 
 def _flush_scheduled_subsegments(
@@ -85,50 +90,26 @@ def _build_scheduled(
     """Scheduled compilation: fresh core pool per pass."""
     segment_index = 0
 
-    current_neural: list[NeuralCore] = []
-    for node in ir_graph.nodes:
-        if isinstance(node, NeuralCore):
-            current_neural.append(node)
-            continue
-
-        if isinstance(node, ComputeOp):
-            if current_neural:
-                segment_index = _flush_scheduled_subsegments(
-                    cores=current_neural,
-                    consumed_by=consumed_by,
-                    cores_config=cores_config,
-                    weight_banks=ir_graph.weight_banks,
-                    segment_index_start=segment_index,
-                    segment_label_base=f"neural_segment_until:{node.name}",
-                    allow_neuron_splitting=allow_neuron_splitting,
-                    allow_coalescing=allow_coalescing,
-                    all_reindex_maps=all_reindex_maps,
-                    stages=stages,
-                    ir_graph=ir_graph,
-                )
-                current_neural = []
-
+    for segment in partition_ir_graph(ir_graph):
+        if isinstance(segment, NeuralSegment):
+            segment_index = _flush_scheduled_subsegments(
+                cores=segment.nodes,
+                consumed_by=consumed_by,
+                cores_config=cores_config,
+                weight_banks=ir_graph.weight_banks,
+                segment_index_start=segment_index,
+                segment_label_base=segment.label,
+                allow_neuron_splitting=allow_neuron_splitting,
+                allow_coalescing=allow_coalescing,
+                all_reindex_maps=all_reindex_maps,
+                stages=stages,
+                ir_graph=ir_graph,
+            )
+        else:
+            node = segment.compute_op
             op_copy = copy.copy(node)
             op_copy.input_sources = np.array(
                 node.input_sources.flatten(), dtype=object,
             ).reshape(node.input_sources.shape)
             _apply_reindex_to_ir_sources(op_copy.input_sources, all_reindex_maps)
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
-            continue
-
-        raise TypeError(f"Unknown IR node type in hybrid compilation: {type(node)}")
-
-    if current_neural:
-        _flush_scheduled_subsegments(
-            cores=current_neural,
-            consumed_by=consumed_by,
-            cores_config=cores_config,
-            weight_banks=ir_graph.weight_banks,
-            segment_index_start=segment_index,
-            segment_label_base="neural_segment_final",
-            allow_neuron_splitting=allow_neuron_splitting,
-            allow_coalescing=allow_coalescing,
-            all_reindex_maps=all_reindex_maps,
-            stages=stages,
-            ir_graph=ir_graph,
-        )

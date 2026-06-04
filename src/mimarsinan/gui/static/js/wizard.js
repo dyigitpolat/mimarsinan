@@ -1701,6 +1701,7 @@ function _buildHwApiBody() {
     allow_neuron_splitting: isToggleOn('neuronSplittingToggle'),
     allow_scheduling: isToggleOn('scheduledMappingToggle'),
     target_tq: targetTq,
+    encoding_layer_placement: v('encodingPlacement') || 'subsume',
   };
 }
 

@@ -21,6 +21,11 @@ from mimarsinan.mapping.packing.hybrid_segment import (
 )
 from mimarsinan.mapping.packing.hybrid_build_scheduled import _build_scheduled
 from mimarsinan.mapping.packing.hybrid_types import HybridHardCoreMapping, HybridStage
+from mimarsinan.mapping.layout.segmentation import (
+    HostSegment,
+    NeuralSegment,
+    partition_ir_graph,
+)
 
 
 def build_hybrid_hard_core_mapping(
@@ -90,51 +95,29 @@ def _build_single_pool(
     """Original single-shared-pool compilation path."""
     shared_pool: list[HardCore] = _make_available_hardware_cores(cores_config)
 
-    current_neural: list[NeuralCore] = []
-    for node in ir_graph.nodes:
-        if isinstance(node, NeuralCore):
-            current_neural.append(node)
-            continue
-
-        if isinstance(node, ComputeOp):
-            if current_neural:
-                if all_reindex_maps:
-                    current_neural = _reindex_nodes(current_neural, all_reindex_maps)
-                stage, seg_reindex = _flush_neural_segment(
-                    current_neural=current_neural,
-                    consumed_by=consumed_by,
-                    shared_pool=shared_pool,
-                    weight_banks=ir_graph.weight_banks,
-                    name=f"neural_segment_until:{node.name}",
-                    allow_neuron_splitting=allow_neuron_splitting,
-                )
-                stages.append(stage)
-                all_reindex_maps.update(seg_reindex)
-                current_neural = []
-
+    for segment in partition_ir_graph(ir_graph):
+        if isinstance(segment, NeuralSegment):
+            current_neural = segment.nodes
+            if all_reindex_maps:
+                current_neural = _reindex_nodes(current_neural, all_reindex_maps)
+            stage, seg_reindex = _flush_neural_segment(
+                current_neural=current_neural,
+                consumed_by=consumed_by,
+                shared_pool=shared_pool,
+                weight_banks=ir_graph.weight_banks,
+                name=segment.label,
+                allow_neuron_splitting=allow_neuron_splitting,
+            )
+            stages.append(stage)
+            all_reindex_maps.update(seg_reindex)
+        else:
+            node = segment.compute_op
             op_copy = copy.copy(node)
             op_copy.input_sources = np.array(
                 node.input_sources.flatten(), dtype=object,
             ).reshape(node.input_sources.shape)
             _apply_reindex_to_ir_sources(op_copy.input_sources, all_reindex_maps)
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
-            continue
-
-        raise TypeError(f"Unknown IR node type in hybrid compilation: {type(node)}")
-
-    if current_neural:
-        if all_reindex_maps:
-            current_neural = _reindex_nodes(current_neural, all_reindex_maps)
-        stage, seg_reindex = _flush_neural_segment(
-            current_neural=current_neural,
-            consumed_by=consumed_by,
-            shared_pool=shared_pool,
-            weight_banks=ir_graph.weight_banks,
-            name="neural_segment_final",
-            allow_neuron_splitting=allow_neuron_splitting,
-        )
-        stages.append(stage)
-        all_reindex_maps.update(seg_reindex)
 
 
 _SPLIT_FALLBACK_LOGGED = False
@@ -155,7 +138,7 @@ def _split_segment_by_capacity(
         return []
 
     from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-    from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
+    from mimarsinan.mapping.layout.softcore_spec_adapter import spec_from_neural_core
     from mimarsinan.mapping.support.schedule.schedule_partitioner import split_softcores_by_capacity
 
     hw_types = [
@@ -188,25 +171,10 @@ def _split_segment_by_capacity(
                     "(missing IRGraph.layout_softcores); input_count may diverge from SCM."
                 )
                 _SPLIT_FALLBACK_LOGGED = True
-            lat = int(core.latency) if core.latency is not None else 0
-            pi = getattr(core, "perceptron_index", None)
-            tg = int(pi) if pi is not None else -(idx + 1)
-            n_sources = int(len(core.input_sources.flatten()))
-            has_bias_axon = core.hardware_bias is None and any(
-                getattr(s, "is_always_on", lambda: False)() for s in core.input_sources.flatten()
-            )
-            in_count = compute_core_input_count(
-                n_sources - (1 if has_bias_axon else 0),
-                has_bias=has_bias_axon,
+            spec = spec_from_neural_core(
+                core,
                 hardware_bias=hardware_bias,
-            )
-            spec = LayoutSoftCoreSpec(
-                input_count=in_count,
-                output_count=int(core.get_output_count()),
-                threshold_group_id=tg,
-                latency_tag=lat,
-                segment_id=0,
-                name=core.name,
+                fallback_threshold_group_id=-(idx + 1),
             )
         specs.append(spec)
         coalescing_group_ids.append(getattr(core, "coalescing_group_id", None))

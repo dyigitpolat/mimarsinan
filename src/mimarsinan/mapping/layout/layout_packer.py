@@ -6,9 +6,11 @@ import re
 from typing import Dict, List, Sequence, Tuple
 
 from mimarsinan.mapping.packing.core_packing import (
+    canonical_fuse_hardcores,
+    canonical_is_mapping_possible,
     canonical_split_softcore,
-    greedy_pack_softcores,
 )
+from mimarsinan.mapping.packing.placement_engine import run_placement
 from mimarsinan.mapping.layout.layout_types import (
     LayoutCoreSnapshot,
     LayoutHardCoreInstance,
@@ -16,6 +18,53 @@ from mimarsinan.mapping.layout.layout_types import (
     LayoutPackingResult,
     LayoutSoftCoreSpec,
 )
+
+
+_SPLIT_SUFFIX_RE = re.compile(r"(_split_\d+)+$")
+
+
+def _split_root(name: str) -> str:
+    return _SPLIT_SUFFIX_RE.sub("", name) or name
+
+
+class LayoutMaterializer:
+    """Shape-only :class:`~mimarsinan.mapping.packing.placement_engine.Materializer`.
+
+    Mirrors the runtime placement decisions on shape-only ``LayoutSoftCoreSpec``
+    fragments / ``LayoutHardCoreInstance`` cores, and tracks split lineage so the
+    layout packing result can report split-fragment statistics.
+    """
+
+    def __init__(self) -> None:
+        self.split_counter = 0
+        self.split_lineage: Dict[str, int] = {}
+
+    @staticmethod
+    def is_mapping_possible(hardcore, softcore) -> bool:
+        return canonical_is_mapping_possible(hardcore, softcore)
+
+    def place(self, core_idx: int, hardcore: LayoutHardCoreInstance, core: LayoutSoftCoreSpec) -> None:
+        hardcore.add_softcore(core)
+
+    def fuse_hardcores(self, hcs):
+        def _mk(*, axons, neurons, template, components):
+            inst = LayoutHardCoreInstance(
+                axons_per_core=int(axons),
+                neurons_per_core=int(neurons),
+            )
+            inst.threshold_group_id = getattr(template, "threshold_group_id", None)
+            inst.latency_tag = getattr(template, "latency_tag", None)
+            return inst
+
+        return canonical_fuse_hardcores(hcs, make_fused=_mk)
+
+    def split_softcore(self, core: LayoutSoftCoreSpec, available_neurons: int):
+        self.split_counter += 1
+        root = _split_root(core.name or f"__noname_{id(core)}")
+        self.split_lineage[root] = self.split_lineage.get(root, 0) + 1
+        return canonical_split_softcore(
+            core, available_neurons, make_fragments=_make_layout_fragments,
+        )
 
 
 def _make_instances(core_types: Sequence[LayoutHardCoreType]) -> List[LayoutHardCoreInstance]:
@@ -149,55 +198,15 @@ def pack_layout(
                 name=f"__sc_{i}",
             )
 
-    _SPLIT_SUFFIX_RE = re.compile(r"(_split_\d+)+$")
-
-    split_counter = [0]
-    split_lineage: Dict[str, int] = {}  # root_name -> number of times any fragment was split
-
-    def _split_root(name: str) -> str:
-        return _SPLIT_SUFFIX_RE.sub("", name) or name
-
-    def _counting_split(core: LayoutSoftCoreSpec, available_neurons: int):
-        split_counter[0] += 1
-        root = _split_root(core.name or f"__noname_{id(core)}")
-        split_lineage[root] = split_lineage.get(root, 0) + 1
-        return canonical_split_softcore(
-            core, available_neurons, make_fragments=_make_layout_fragments,
-        )
-
-    from mimarsinan.mapping.packing.core_packing import (
-        canonical_fuse_hardcores,
-        canonical_is_mapping_possible,
-    )
-    is_mapping_possible = canonical_is_mapping_possible
-
-    def place(core_idx: int, hardcore: LayoutHardCoreInstance, core: LayoutSoftCoreSpec) -> None:
-        hardcore.add_softcore(core)
-
-    # Shape-only fuse for layout hardcores.  Gives the layout packer the same
-    # "try to fuse N unused cores for a wide softcore" branch the runtime
-    # packer takes, so ``greedy_pack_softcores`` explores identical decisions
-    # in both paths.
-    def _layout_fuse(hcs):
-        def _mk(*, axons, neurons, template, components):
-            inst = LayoutHardCoreInstance(
-                axons_per_core=int(axons),
-                neurons_per_core=int(neurons),
-            )
-            inst.threshold_group_id = getattr(template, "threshold_group_id", None)
-            inst.latency_tag = getattr(template, "latency_tag", None)
-            return inst
-        return canonical_fuse_hardcores(hcs, make_fused=_mk)
+    materializer = LayoutMaterializer()
 
     try:
-        greedy_pack_softcores(
+        run_placement(
             softcores=unmapped,
             used_hardcores=used_hardcores,
             unused_hardcores=unused_hardcores,
-            is_mapping_possible=is_mapping_possible,
-            place=place,
-            fuse_hardcores=_layout_fuse,
-            split_softcore=_counting_split if allow_neuron_splitting else None,
+            materializer=materializer,
+            allow_neuron_splitting=allow_neuron_splitting,
         )
     except Exception as e:
         # Infeasible mapping: return a structured result; search backends can apply penalties.
@@ -249,7 +258,11 @@ def pack_layout(
         used_core_softcore_counts=tuple(hc.softcore_count for hc in used_hardcores),
         used_core_snapshots=snapshots,
         coalesced_fragment_count=coalesced_fragment_count,
-        split_fragment_count=split_counter[0],
+        split_fragment_count=materializer.split_counter,
         coalescing_group_sizes=coalescing_group_sizes if coalescing_group_sizes else None,
-        split_counts_per_sc=tuple(split_lineage.values()) if split_lineage else None,
+        split_counts_per_sc=(
+            tuple(materializer.split_lineage.values())
+            if materializer.split_lineage
+            else None
+        ),
     )

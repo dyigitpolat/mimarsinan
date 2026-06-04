@@ -10,10 +10,11 @@ Maps IR neural segments to `SoftCore` / `HardCore` layouts and hybrid programs.
 | `canonical.py` | `canonical_*`, `pick_best_softcore` | Shared feasibility, split, fuse protocols for layout + runtime packers |
 | `greedy/` | `greedy_pack_softcores`, split helpers | Greedy bin-packing main loop and neuron-split helpers |
 | `core_packing.py` | Re-exports | Public packing API |
-| `softcore/` | `SoftCore`, `HardCore`, `HardCoreMapping`, `compact_soft_core_mapping` | Runtime soft→hard mapping split across `soft_core`, `hard_core`, `hard_core_mapping`, `compaction` |
+| `placement_engine.py` | `Materializer`, `run_placement` | Single greedy placement engine. The `Materializer` strategy (layout shape-only vs runtime weight-bearing) supplies the place / fuse / split hooks; both `pack_layout` and `HardCoreMapping.map` drive the identical assignment kernel through it. |
+| `softcore/` | `SoftCore`, `HardCore`, `HardCoreMapping`, `RuntimeMaterializer`, `compact_soft_core_mapping` | Runtime soft→hard mapping split across `soft_core`, `hard_core`, `hard_core_mapping` (now a thin wrapper over `placement_engine` via `RuntimeMaterializer`), `compaction` |
 | `hybrid_types.py` | `HybridHardCoreMapping`, `HybridStage` | Hybrid program datatypes |
 | `hybrid_segment.py` | `_flush_neural_segment`, … | Segment flush and IO remap |
-| `hybrid_build.py` | `build_hybrid_hard_core_mapping` | IRGraph → hybrid program compiler |
+| `hybrid_build_pool.py` / `hybrid_build_scheduled.py` | `build_hybrid_hard_core_mapping`, `_build_single_pool`, `_build_scheduled` | IRGraph → hybrid program compiler; both paths partition via `layout.segmentation.partition_ir_graph` (single segmentation source) |
 | `neural_segment_packing.py` | `neural_segment_to_soft_core_mapping` | Neural-only segment → SCM |
 | `softcore/soft_core_mapper.py` | Mapper helpers | Soft-core emission from mapper graph |
 
@@ -28,5 +29,6 @@ Maps IR neural segments to `SoftCore` / `HardCore` layouts and hybrid programs.
 
 ## Invariants
 
-- Layout and runtime packers must use the same `canonical_*` predicates so wizard and deployment paths agree on placement.
+- Layout and runtime packers share one engine (`placement_engine.run_placement`) and the same `canonical_*` predicates, so wizard and deployment paths agree on placement by construction (pinned by `tests/integration/test_placement_parity.py`).
+- Deployment mapping statistics are derived through `layout.LayoutPlan.from_hybrid_mapping` → the shared `build_stats_from_packing_result`, the same engine the wizard miniview uses (no parallel stats formulas).
 - `HardCoreMapping.merge_softcore_into` records per-softcore provenance on each placement dict: `ir_node_id` (== the source IR `NeuralCore.id`; compaction preserves ids and the segment remap rewrites only sources), `perceptron_index`, `perceptron_output_slice`, `psum_role`, `coalescing_role`, and split metadata. This lets per-neuron NF↔HCM spike-count parity reconstruct each perceptron's neurons by concatenating its accumulator cores in IR-id order (filtering coalescing/psum partials, reassembling neuron-split fragments by `neuron_range_in_original`).
