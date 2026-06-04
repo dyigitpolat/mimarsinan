@@ -44,7 +44,13 @@ class SanafeSegmentIOMixin:
             if getattr(src, "is_off_", False):
                 continue
             if getattr(src, "is_always_on_", False):
-                counts[a] = T
+                # Single-spike (cascaded TTFS) bias fires once at the window start;
+                # LIF / every-cycle delivery counts T. Mirror HCM's traffic count.
+                from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
+
+                counts[a] = 1 if is_cascaded_ttfs(
+                    self.spiking_mode, self.ttfs_cycle_schedule
+                ) else T
                 n_always_on += 1
                 continue
             if getattr(src, "is_input_", False):
