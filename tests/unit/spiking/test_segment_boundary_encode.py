@@ -252,3 +252,45 @@ def test_build_segment_input_partial_cache_raises() -> None:
             batch_size=1,
             device=rates.device,
         )
+
+
+def test_gather_op_input_train_applies_producer_shift() -> None:
+    """A negative producer rate is lifted by its ``node_output_shifts`` entry
+    before the [0,1] clamp (Case B: subsumed encoder fed by a negative-producing
+    ComputeOp); unshifted channels are untouched."""
+    import numpy as np
+    from mimarsinan.mapping.ir import ComputeOp, IRSource
+    from mimarsinan.spiking.segment_boundary import _gather_op_input_train
+
+    T = 4
+    cfg = _config(T=T)
+    sources = np.array(
+        [IRSource(node_id=5, index=0), IRSource(node_id=5, index=1)], dtype=object,
+    ).reshape(1, 2)
+    op = ComputeOp(id=9, name="enc", op_type="Perceptron", input_sources=sources)
+    rate = torch.tensor([[-0.5, 0.5]], dtype=cfg.compute_dtype)
+
+    train_no = _gather_op_input_train(op, {5: rate}, {}, T, cfg)
+    assert float(train_no[:, 0, 0].sum()) == 0.0          # clamped to silence
+    assert float(train_no[:, 0, 1].sum()) == T * 0.5
+
+    train_s = _gather_op_input_train(
+        op, {5: rate}, {}, T, cfg,
+        node_output_shifts={5: np.array([1.0, 0.0])},
+    )
+    assert float(train_s[:, 0, 0].sum()) == T * 0.5       # -0.5 + 1.0 recovered
+    assert float(train_s[:, 0, 1].sum()) == T * 0.5
+
+
+def test_gather_op_input_train_warns_on_unshifted_negative(capsys) -> None:
+    import numpy as np
+    from mimarsinan.mapping.ir import ComputeOp, IRSource
+    from mimarsinan.spiking.segment_boundary import _gather_op_input_train
+
+    cfg = _config(T=4)
+    sources = np.array([IRSource(node_id=6, index=0)], dtype=object).reshape(1, 1)
+    op = ComputeOp(id=11, name="enc2", op_type="Perceptron", input_sources=sources)
+    rate = torch.tensor([[-0.3]], dtype=cfg.compute_dtype)
+    _gather_op_input_train(op, {6: rate}, {}, 4, cfg)
+    captured = capsys.readouterr()
+    assert "negative" in captured.out.lower()

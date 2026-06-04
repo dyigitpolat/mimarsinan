@@ -114,3 +114,58 @@ def test_offload_runs_through_hcm_and_matches_subsume():
     # The encoding layer computes identically host-side (subsume) vs on-chip
     # (offload) — both uniform-encode the input then run the same signed-IF LIF.
     torch.testing.assert_close(out_off, out_sub, atol=1e-6, rtol=0.0)
+
+
+def _build_ttfs_hcm(placement, T=8):
+    import torch.nn as nn
+    from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+    from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+
+    torch.manual_seed(0)
+    m = TorchMLPMixerCore(
+        input_shape=(1, 28, 28), num_classes=10,
+        patch_n_1=4, patch_m_1=4, patch_c_1=6, fc_w_1=8, fc_w_2=6,
+    )
+    m.eval()
+    flow = convert_torch_model(
+        m, input_shape=(1, 28, 28), num_classes=10,
+        encoding_layer_placement=placement,
+    )
+    repr_ = flow.get_mapper_repr()
+    for p in flow.get_perceptrons():
+        p.set_activation(TTFSActivation(
+            T=T,
+            activation_scale=p.activation_scale,
+            input_scale=p.input_activation_scale,
+            bias=p.layer.bias,
+            thresholding_mode="<=",
+            encoding=getattr(p, "is_encoding_layer", False),
+        ))
+    repr_.assign_perceptron_indices()
+    ir = IRMapping(
+        q_max=127.0, firing_mode="TTFS", max_axons=512, max_neurons=512,
+    ).map(repr_)
+    hybrid = build_hybrid_hard_core_mapping(
+        ir_graph=ir, cores_config=[{"max_axons": 512, "max_neurons": 512, "count": 400}],
+        allow_neuron_splitting=True,
+    )
+    return SpikingHybridCoreFlow(
+        (1, 28, 28), hybrid, simulation_length=T, preprocessor=torch.nn.Identity(),
+        firing_mode="TTFS", spike_mode="TTFS", thresholding_mode="<=",
+        spiking_mode="ttfs_quantized",
+    )
+
+
+def test_offload_runs_through_hcm_and_matches_subsume_ttfs():
+    """GAP-3: the subsume/offload switch is mode-agnostic — analytical TTFS HCM
+    produces the same output whether the encoder runs host-side or on-chip."""
+    T = 8
+    sub = _build_ttfs_hcm("subsume", T)
+    off = _build_ttfs_hcm("offload", T)
+    x = torch.rand(1, 1, 28, 28)
+    with torch.no_grad():
+        out_sub = sub(x)
+        out_off = off(x)
+    assert out_sub.shape == out_off.shape == (1, 10)
+    torch.testing.assert_close(out_off, out_sub, atol=1e-6, rtol=0.0)

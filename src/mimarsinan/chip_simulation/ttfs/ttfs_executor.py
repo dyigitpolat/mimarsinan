@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 import numpy as np
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    apply_input_shifts_numpy,
     assemble_segment_input_numpy,
     execute_compute_op_numpy,
     resolve_stage_compute_scales,
@@ -186,6 +187,9 @@ def run_ttfs_contract_neural_stage(
             break
     seg_in = assemble_segment_input_numpy(
         stage.input_map, state_buffer, num_samples=num_samples, dtype=_CONTRACT_DTYPE,
+    )
+    seg_in = apply_input_shifts_numpy(
+        stage.input_map, seg_in, getattr(mapping, "node_output_shifts", None),
     )
     result = exec_.run_segment(
         hcm, seg_in, simulation_length=simulation_length, spiking_mode=spiking_mode,

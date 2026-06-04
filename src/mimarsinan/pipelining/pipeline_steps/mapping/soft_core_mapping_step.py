@@ -207,9 +207,14 @@ class SoftCoreMappingStep(PipelineStep):
         (``transfer_negative_shifts_to_ir``) to the hybrid build."""
         if not bool(self.pipeline.config.get("negative_value_shift", False)):
             return
-        if str(self.pipeline.config.get("spiking_mode", "lif")) != "lif":
-            return
-        from mimarsinan.mapping.support.neg_shift_bias import apply_negative_value_shifts
+        spiking_mode = str(self.pipeline.config.get("spiking_mode", "lif"))
+        from mimarsinan.mapping.support.neg_shift_bias import (
+            apply_negative_value_shifts,
+            calibration_forward_for_mode,
+        )
+
+        # Fails loud (NotImplementedError) for unsupported spiking modes.
+        forward_fn = calibration_forward_for_mode(spiking_mode)
 
         T = int(self.pipeline.config["simulation_steps"])
         device = self.pipeline.config["device"]
@@ -217,7 +222,7 @@ class SoftCoreMappingStep(PipelineStep):
         if not batches:
             return
         calibration_x = torch.cat(batches, dim=0).to(device)
-        apply_negative_value_shifts(model, calibration_x, T)
+        apply_negative_value_shifts(model, calibration_x, T, forward_fn=forward_fn)
 
     def bring_back_bias(self, fused_linear_layer):
         assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'

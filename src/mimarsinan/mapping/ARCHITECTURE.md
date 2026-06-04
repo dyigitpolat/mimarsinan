@@ -15,6 +15,7 @@ Converts PyTorch models to an intermediate representation (IR) and packs the IR 
 | `export/` | [export/ARCHITECTURE.md](export/ARCHITECTURE.md) | Chip export and IR quantization verify |
 | `layout/` | [layout/ARCHITECTURE.md](layout/ARCHITECTURE.md) | Shape-only layout SSoT |
 | `mappers/` | [mappers/ARCHITECTURE.md](mappers/ARCHITECTURE.md) | Mapper hierarchy |
+| `support/` | [support/ARCHITECTURE.md](support/ARCHITECTURE.md) | Scales, bias bakes (negative-value shift, TTFS), geometry, scheduling |
 
 ## Root modules (orchestration)
 

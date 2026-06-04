@@ -6,6 +6,7 @@ Run the deployment pipeline from the **project root** using **`run.py`**.
 - Always implement contained unit tests covering the entire design hierarchy BEFORE adding, removing or editing any code. The tests dictate software design and implementation. 
 - Always run tests after changing the code. 
 - Do not remove assertions or silence the checks to match potentially incorrect code. 
+- Boy scout rule: While you are working on code, if you encounter duplicate, redundant or similar logic, directly or indirectly related to the task, create meaningful abstractions that enable reuse of the shared mechanisms. Write tests for these new abstractions. 
 
 ## Architecture Documentation
 
