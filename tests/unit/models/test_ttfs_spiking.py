@@ -11,8 +11,46 @@ import numpy as np
 
 from mimarsinan.mapping.ir import NeuralCore, IRGraph, IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+
+
+class TestTTFSActivationBiasBroadcast:
+    """Cycle-accurate cascade bias subtraction must align with the perceptron's
+    output-channel axis for every tensor layout the mappers feed it.
+
+    Linear perceptrons emit channel-last tensors; Conv1D/Conv2D mappers emit
+    NCL / NCHW (channel at dim 1). An offloaded conv encoding layer maps as a
+    cascade neuron and hits this branch, so the bias broadcast must not assume
+    channel-last.
+    """
+
+    def _run(self, x, bias):
+        act = TTFSActivation(
+            T=4, activation_scale=2.0, input_scale=1.0,
+            bias=bias, thresholding_mode="<=", encoding=False,
+        )
+        act.set_cycle_accurate(True)
+        out = act.forward(x)
+        assert out.shape == x.shape
+        return out
+
+    def test_linear_channel_last_2d(self):
+        self._run(torch.randn(2, 7), torch.arange(7, dtype=torch.float32))
+
+    def test_linear_mixer_channel_last_3d(self):
+        # (B, tokens, features) with bias over features (last axis).
+        self._run(torch.randn(2, 5, 7), torch.arange(7, dtype=torch.float32))
+
+    def test_conv2d_channel_first_4d(self):
+        # (B, C, H, W) conv output — channel axis is dim 1, not the last dim.
+        # Regression: previously raised a broadcast size mismatch under offload.
+        self._run(torch.randn(2, 6, 3, 4), torch.arange(6, dtype=torch.float32))
+
+    def test_conv1d_channel_first_3d(self):
+        # (B, C, L) conv1d output where C != L so the channel axis is unambiguous.
+        self._run(torch.randn(2, 6, 4), torch.arange(6, dtype=torch.float32))
 
 
 # ---------------------------------------------------------------------------

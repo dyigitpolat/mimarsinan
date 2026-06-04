@@ -169,3 +169,48 @@ def test_offload_runs_through_hcm_and_matches_subsume_ttfs():
         out_off = off(x)
     assert out_sub.shape == out_off.shape == (1, 10)
     torch.testing.assert_close(out_off, out_sub, atol=1e-6, rtol=0.0)
+
+
+def _ttfs_segment_forward(placement, T=8):
+    """Install TTFSActivation on every perceptron and build the cycle-accurate
+    TTFS segment-forward driver used by the TTFS Cycle Fine-Tuning step."""
+    from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+    from mimarsinan.models.spiking.training.ttfs_segment_forward import (
+        TTFSSegmentForward,
+    )
+
+    torch.manual_seed(0)
+    m = TorchMLPMixerCore(
+        input_shape=(1, 28, 28), num_classes=10,
+        patch_n_1=4, patch_m_1=4, patch_c_1=6, fc_w_1=8, fc_w_2=6,
+    )
+    m.eval()
+    flow = convert_torch_model(
+        m, input_shape=(1, 28, 28), num_classes=10,
+        encoding_layer_placement=placement,
+    )
+    repr_ = flow.get_mapper_repr()
+    for p in flow.get_perceptrons():
+        p.set_activation(TTFSActivation(
+            T=T,
+            activation_scale=p.activation_scale,
+            input_scale=p.input_activation_scale,
+            bias=p.layer.bias,
+            thresholding_mode="<=",
+            encoding=getattr(p, "is_encoding_layer", False),
+        ))
+    repr_.assign_perceptron_indices()
+    return TTFSSegmentForward(repr_, T)
+
+
+def test_offload_conv_encoding_runs_through_ttfs_segment_forward():
+    """Regression for the TTFS Cycle Fine-Tuning crash: an offloaded Conv2D
+    encoding layer maps as an on-chip cascade neuron and must run through the
+    cycle-accurate segment forward. Previously this raised a per-channel bias
+    broadcast size mismatch (NCHW vs channel-last)."""
+    T = 8
+    x = torch.rand(2, 1, 28, 28)
+    for placement in ("subsume", "offload"):
+        driver = _ttfs_segment_forward(placement, T)
+        out = driver(x)
+        assert out.shape == (2, 10), f"{placement}: unexpected output {tuple(out.shape)}"
