@@ -215,8 +215,18 @@ class SanafeNeuralStageMixin:
                 )
                 encoded_padded = np.concatenate([encoded, pad], axis=2)
             _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
+        # Cascaded single-spike TTFS bias must land at each consuming core's gated
+        # window start (soma active_start = core.latency + 1); without per-core
+        # timing a global-cycle-0 spike is gated out of a latency>=1 core. The
+        # analytical/synchronized paths deliver bias via preset membranes, so they
+        # keep the legacy cycle-0 single spike.
+        core_latencies = {
+            i: (int(c.latency) if getattr(c, "latency", None) is not None else 0)
+            for i, c in enumerate(hcm.cores)
+        } if is_cascade else None
         _runner.set_always_on_spike_trains(
             core_always_on_neurons, T_eff, spiking_mode=self.spiking_mode,
+            core_latencies=core_latencies,
         )
 
         chip = sanafe.SpikingChip(self._arch)

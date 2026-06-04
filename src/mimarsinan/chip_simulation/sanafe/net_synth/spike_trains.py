@@ -47,17 +47,31 @@ def set_always_on_spike_trains(
     T: int,
     *,
     spiking_mode: str = "lif",
+    core_latencies: Dict[int, int] | None = None,
 ) -> None:
-    """Inject always-on input spikes (rate: every cycle; TTFS: cycle 0 only)."""
-    from mimarsinan.chip_simulation.ttfs.ttfs_encoding import ttfs_always_on_spike_times_1based
+    """Inject always-on (bias) input spikes.
 
+    ``"spikes"`` is a per-timestep binary mask (1 = fire that cycle). rate/LIF:
+    fire every cycle. Single-spike TTFS: one spike placed so it lands at the
+    consuming core's gated window start. The soma gates cycles before
+    ``active_start = core_latency + 1`` and SANA-FE delivers an input spike one
+    cycle after emission, so a spike emitted at mask position ``core_latency``
+    arrives exactly at ``active_start`` — a latency>=1 core then integrates its
+    bias instead of having a cycle-0 spike gated out. When ``core_latencies`` is
+    omitted (analytical/synchronized TTFS, which bias via preset membranes) the
+    legacy cycle-0 spike is kept.
+    """
     from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 
-    if requires_ttfs_firing(spiking_mode):
-        train = ttfs_always_on_spike_times_1based(T)
-    else:
-        train = [1] * T
-    for neuron in core_always_on_neurons.values():
+    ttfs = requires_ttfs_firing(spiking_mode)
+    for core_idx, neuron in core_always_on_neurons.items():
+        if not ttfs:
+            train = [1] * T
+        elif core_latencies is not None:
+            lat = int(core_latencies.get(core_idx, 0))
+            train = [0] * lat + [1]
+        else:
+            train = [1]
         neuron.set_attributes(
             model_attributes=input_neuron_attributes(train),
         )
