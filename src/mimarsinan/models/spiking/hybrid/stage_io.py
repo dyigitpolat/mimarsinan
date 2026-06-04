@@ -133,14 +133,16 @@ class HybridStageIOMixin:
         spans: list[SpikeSourceSpan],
         cycle: int = -1,
         single_spike: bool = False,
+        latency: int = 0,
     ) -> None:
         # Single-spike TTFS: an always-on (bias) axon encodes value 1.0, i.e. a
-        # single spike at cycle 0; its ramp is held downstream. Otherwise (LIF /
-        # latched) it injects one spike every cycle.
+        # single spike at the core's LOCAL window start (global cycle == latency);
+        # its ramp is held downstream so the bias works for cores at any depth.
+        # Otherwise (LIF / latched) it injects one spike every cycle.
         on_always_on = None
         if single_spike:
             def on_always_on(d0: int, d1: int) -> None:
-                out[:, d0:d1].fill_(1.0 if cycle == 0 else 0.0)
+                out[:, d0:d1].fill_(1.0 if cycle == latency else 0.0)
 
         fill_signal_from_spans(
             out,

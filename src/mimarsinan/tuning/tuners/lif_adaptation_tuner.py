@@ -75,6 +75,9 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         self._cycle_accurate = bool(self.pipeline.config.get("cycle_accurate_lif_forward", False))
+        from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
+
+        self._bias_mode = resolve_bias_mode(self.pipeline.config)
         self._patched_forward = False
 
     def _make_target_activation(self, perceptron) -> LIFActivation:
@@ -83,6 +86,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             activation_scale=perceptron.activation_scale,
             thresholding_mode=self._thresholding_mode,
             firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
+            bias_mode=self._bias_mode,
         )
 
     def _make_blend(self, old, target, rate):

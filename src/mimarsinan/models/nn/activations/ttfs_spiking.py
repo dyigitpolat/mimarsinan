@@ -57,6 +57,7 @@ class TTFSActivation(nn.Module):
         thresholding_mode: str = "<=",
         firing_mode: str = "TTFS",
         encoding: bool = False,
+        bias_mode: str = "on_chip",
     ):
         super().__init__()
         self.T = int(T)
@@ -64,6 +65,17 @@ class TTFSActivation(nn.Module):
         #   emits a TTFS single-spike train via charge V/theta + bias ramp theta/S).
         # encoding=False: cascade neuron (ramps from arriving single spikes).
         self.encoding = bool(encoding)
+        # bias_mode records the deployment's physical bias delivery (config-driven,
+        # from has_bias / IRMapping.hardware_bias). The two deliveries are
+        # *dynamically equivalent* — "on_chip" adds the per-neuron bias to the
+        # membrane each cycle; "param_encoded" delivers it as an always-on axon that
+        # (for single-spike TTFS) fires once at the core's local window start and is
+        # ramp-integrated. Both give cumulative membrane bias·(t_local+1), so this
+        # node has a single bias implementation and bias_mode does not branch the
+        # forward; it is threaded for config fidelity and consumed by the simulators.
+        from mimarsinan.models.nn.activations.bias_mode import validate_bias_mode
+
+        self.bias_mode = validate_bias_mode(bias_mode)
         if isinstance(activation_scale, (int, float)):
             activation_scale = nn.Parameter(
                 torch.tensor(float(activation_scale)), requires_grad=False
@@ -128,6 +140,8 @@ class TTFSActivation(nn.Module):
             # theta/S each cycle, fire once at k_fire = S*(1 - V/theta) -> a single
             # TTFS spike encoding V (Stanojevic input encoding). Gradient flows
             # through the charge (relu(V)/theta) and the surrogate fire.
+            # A subsumed encoding layer is a host ComputeOp (bias folded analytically),
+            # so this charge is bias-mode-agnostic: ``bias_mode`` does not branch here.
             scale_v, _ = self._scale_values(x)
             v_norm = (torch.relu(x) / scale_v).clamp(0.0, 1.0)
             if self._membrane is None:

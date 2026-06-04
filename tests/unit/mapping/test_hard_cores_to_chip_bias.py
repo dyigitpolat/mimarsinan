@@ -1,8 +1,13 @@
-"""Tests for hard_cores_to_chip bias handling across all three modes.
+"""Tests for hard_cores_to_chip bias handling across the two declared modes.
 
-Mode 1: hardware_bias field (dedicated bias register, no always-on row).
-Mode 2: Legacy always-on row (has_bias_capability=True, no hardware_bias).
-Mode 3: No bias (has_bias_capability=False, no hardware_bias).
+Mode A (on-chip): ``hardware_bias`` field — dedicated per-neuron bias register,
+no always-on row.
+Mode B (parameter-encoded): the bias is the weight on an **always-on axon** that
+fires every cycle (``has_bias_capability=True``, no ``hardware_bias``). nevresim
+must HONOR this mode — keep the always-on axon and the bias row as a weight — so
+its spike counts match HCM / SANA-FE, which deliver bias the same way. (It used
+to silently fold the row into on-chip ``neuron.bias`` and turn the axon off,
+switching the declared mode and breaking cross-backend spike parity.)
 """
 
 import numpy as np
@@ -13,15 +18,15 @@ from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
 from mimarsinan.mapping.mapping_utils import hard_cores_to_chip
 
 
-def test_bias_capable_core_folds_bias_no_always_on():
-    """When a HardCore has has_bias_capability=True, hard_cores_to_chip emits per-neuron bias
-    and replaces the bias axon's always-on source with off (no k_always_on for that core).
-    """
+def test_bias_capable_core_honors_parameter_encoded_bias():
+    """Mode B: a bias-capable core with an always-on bias row delivers the bias via
+    the always-on axon (kept ON, bias row kept as a weight) — NOT folded into the
+    on-chip ``neuron.bias`` register. This is the cross-backend parity contract."""
     # One hard core: 3 axons (2 inputs + 1 bias), 2 neurons. Last row = bias [0.5, -0.3].
     core_matrix = np.array([
         [0.1, 0.2],   # axon 0
         [0.3, 0.4],   # axon 1
-        [0.5, -0.3],  # bias row
+        [0.5, -0.3],  # bias row (weight on the always-on axon)
     ], dtype=np.float64)
     axon_sources = [
         SpikeSource(-2, 0, is_input=True, is_off=False),
@@ -52,21 +57,22 @@ def test_bias_capable_core_folds_bias_no_always_on():
 
     assert len(chip.connections) == 1
     conn = chip.connections[0]
-    # Last axon must be off, not always-on (bias folded into neuron.bias).
+    # The always-on bias axon is KEPT ON (delivered every cycle), not folded off.
     assert len(conn.axon_sources) == 3
-    assert conn.axon_sources[2].is_always_on_ is False
-    assert conn.axon_sources[2].is_off_ is True
+    assert conn.axon_sources[2].is_always_on_ is True
+    assert conn.axon_sources[2].is_off_ is False
 
     assert len(chip.cores) == 1
     core = chip.cores[0]
     assert len(core.neurons) == 2
-    assert core.neurons[0].bias == 0.5
-    assert core.neurons[1].bias == -0.3
-    # Weights should be 2 axons only (bias row dropped); padded to 3 with zero.
+    # No on-chip bias fold: the bias lives on the always-on axon's weight row.
+    assert core.neurons[0].bias == 0.0
+    assert core.neurons[1].bias == 0.0
     assert len(core.neurons[0].weights) == 3
     assert core.neurons[0].weights[0] == 0.1
     assert core.neurons[0].weights[1] == 0.3
-    assert core.neurons[0].weights[2] == 0.0
+    assert core.neurons[0].weights[2] == 0.5
+    assert core.neurons[1].weights[2] == -0.3
 
 
 def test_no_bias_capability_keeps_always_on_and_zero_bias():

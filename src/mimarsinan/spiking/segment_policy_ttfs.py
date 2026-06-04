@@ -121,6 +121,9 @@ class TtfsSegmentPolicy:
 
         def read(src, out, perc_prev, t, consumer):
             if src not in seg_set:
+                # A subsumed value-encoding entry charges the ideal value directly
+                # (bias-mode-agnostic — it mirrors HCM's host ComputeOp); an offload/
+                # interior cascade core reads the TTFS-encoded boundary train.
                 if is_encoding_perceptron(consumer):
                     return values[src]                  # value->spike entry (ideal value)
                 return boundary_spikes(src, t)          # spike entry: TTFS-encoded boundary

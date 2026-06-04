@@ -46,8 +46,14 @@ def run_binary_raw(
     spike_generation_mode: str,
     max_input_count: int,
     num_proc: int = 0,
-) -> np.ndarray:
-    """Run a pre-compiled nevresim binary and return ``(num_samples, output_size)``."""
+    record_spikes: bool = False,
+):
+    """Run a pre-compiled nevresim binary and return ``(num_samples, output_size)``.
+
+    When ``record_spikes`` is set (a ``NEVRESIM_RECORD_SPIKES`` build), returns
+    ``(raw, spike_records)`` — the per-sample per-core counts from
+    :func:`parse_spike_records`.
+    """
     samples = list(input_loader)[:max_input_count]
     if spike_generation_mode == "SpikeTrain":
         expected_flat = int(input_size) * int(simulation_length)
@@ -71,10 +77,15 @@ def run_binary_raw(
     )
 
     expected_values = max_input_count * output_size
-    raw = execute_simulator(
+    result = execute_simulator(
         binary_path,
         max_input_count,
         num_proc,
         expected_values=expected_values,
+        record_spikes=record_spikes,
     )
-    return np.array(raw, dtype=np.float64).reshape((max_input_count, output_size))
+    if record_spikes:
+        raw, spike_records = result
+        out = np.array(raw, dtype=np.float64).reshape((max_input_count, output_size))
+        return out, spike_records
+    return np.array(result, dtype=np.float64).reshape((max_input_count, output_size))

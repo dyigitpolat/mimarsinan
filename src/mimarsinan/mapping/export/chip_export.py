@@ -114,8 +114,11 @@ def hard_cores_to_chip(
                 )
             )
         elif has_bias_cap:
-            bias_tensor = hardcore.core_matrix[-1, :].copy()
-            weight_tensor = hardcore.core_matrix[:-1, :].transpose()
+            # Parameter-encoded bias: the last core_matrix row is the weight on an
+            # always-on axon. Honor that mode (like HCM / SANA-FE) — keep the row as
+            # a weight and the always-on axon ON; do NOT fold into on-chip bias_,
+            # which silently switches the declared mode and breaks spike parity.
+            weight_tensor = hardcore.core_matrix.transpose()
             hardcores.append(
                 generate_core_weights(
                     neurons_per_core,
@@ -124,7 +127,6 @@ def hard_cores_to_chip(
                     outs,
                     hardcore.threshold,
                     hardcore.latency,
-                    bias_tensor=bias_tensor,
                 )
             )
         else:
@@ -144,13 +146,6 @@ def hard_cores_to_chip(
         axon_sources = list(hardcore.axon_sources)
         while len(axon_sources) < axons_per_core:
             axon_sources.append(SpikeSource(-1, 0, is_input=False, is_off=True))
-        hw_bias = getattr(hardcore, "hardware_bias", None)
-        has_bias_cap = getattr(hardcore, "has_bias_capability", True)
-        if hw_bias is None and has_bias_cap:
-            for i in range(len(axon_sources) - 1, -1, -1):
-                if axon_sources[i].is_always_on_:
-                    axon_sources[i] = SpikeSource(-1, 0, is_input=False, is_off=True)
-                    break
         hardcore_connections.append(Connection(axon_sources))
 
     chip = ChipModel(

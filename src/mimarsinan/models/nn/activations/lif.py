@@ -91,9 +91,16 @@ class LIFActivation(nn.Module):
         activation_scale: nn.Parameter | torch.Tensor | float,
         thresholding_mode: str = "<=",
         firing_mode: str = "Default",
+        bias_mode: str = "on_chip",
     ):
         super().__init__()
         self.T = int(T)
+        # LIF integrates the post-bias pre-activation, so on_chip and param_encoded
+        # bias delivery are identical here; bias_mode is stored for config fidelity
+        # only (uniform with TTFSActivation) and never branches the dynamics.
+        from mimarsinan.models.nn.activations.bias_mode import validate_bias_mode
+
+        self.bias_mode = validate_bias_mode(bias_mode)
         if isinstance(activation_scale, (int, float)):
             activation_scale = nn.Parameter(
                 torch.tensor(float(activation_scale)), requires_grad=False

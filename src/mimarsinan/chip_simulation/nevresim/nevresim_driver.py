@@ -223,6 +223,49 @@ class NevresimDriver:
         prediction_count = int(len(simulator_output) / num_outputs)
         return np.array(simulator_output).reshape((prediction_count, num_outputs))
 
+    def emit_main_and_compile_recording(
+        self, max_input_count, simulation_length, latency, output_path=None,
+    ) -> str:
+        """Compile a dedicated ``NEVRESIM_RECORD_SPIKES`` binary (per-core spike
+        counts on stderr). Never cached — keep it off the production binary path."""
+        self.emit_main(max_input_count, simulation_length, latency, verbose=False)
+        binary = compile_simulator(
+            self.generated_files_path, NevresimDriver.nevresim_path,
+            output_path=output_path, verbose=False,
+            extra_flags=["-DNEVRESIM_RECORD_SPIKES"],
+        )
+        if binary is None:
+            raise Exception("Recording-build compilation failed.")
+        return binary
+
+    def predict_spiking_raw_with_records(
+        self, input_loader, simulation_length, latency,
+        max_input_count=None, num_proc=1,
+    ):
+        """Run a recording build and return ``(raw, spike_records)``.
+
+        ``spike_records`` is the per-sample list of ``{core: {"in","out"}}`` counts
+        windowed to ``[lat, lat+T)`` per core — the nevresim analogue of HCM's
+        ``CoreSpikeCounts``. Single-process by default to keep sample order simple."""
+        if max_input_count is None:
+            max_input_count = len(input_loader)
+        binary = self.emit_main_and_compile_recording(
+            max_input_count, simulation_length, latency,
+        )
+        raw, spike_records = run_binary_raw(
+            binary_path=binary,
+            work_dir=self.generated_files_path,
+            input_loader=input_loader,
+            output_size=self.chip.output_size,
+            simulation_length=int(simulation_length),
+            input_size=self.chip.input_size,
+            spike_generation_mode=self.spike_generation_mode,
+            max_input_count=max_input_count,
+            num_proc=num_proc,
+            record_spikes=True,
+        )
+        return raw, spike_records
+
     def predict_spiking_raw_from_binary(
         self,
         simulator_filename: str,
