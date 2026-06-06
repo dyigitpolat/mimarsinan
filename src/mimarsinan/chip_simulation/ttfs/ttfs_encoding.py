@@ -12,6 +12,17 @@ def ttfs_spike_time(rate: np.ndarray, simulation_length: int) -> np.ndarray:
     return np.rint(s * (1.0 - clamped)).astype(np.int64)
 
 
+def ttfs_input_grid_quantize(rates: np.ndarray, simulation_length: int) -> np.ndarray:
+    """Encode→decode round-trip: the value a single-spike timing can carry.
+
+    Mirrors the synchronized cycle soma's decode ``(S - k)/S`` of a spike
+    encoded at ``k = ttfs_spike_time(rate)``; ``k >= S`` never fires (0.0).
+    """
+    s = int(simulation_length)
+    spike_times = ttfs_spike_time(np.asarray(rates, dtype=np.float64), s)
+    return np.where(spike_times < s, (s - spike_times) / float(s), 0.0)
+
+
 def ttfs_latched_spike_train(rates: np.ndarray, simulation_length: int) -> np.ndarray:
     """Latched TTFS train ``(N, D, S)``: high from ``spike_time`` through ``S-1``."""
     rates = np.asarray(rates, dtype=np.float64)
