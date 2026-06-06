@@ -313,3 +313,45 @@ Simulation) and no longer trips the gate. Locked by
 `TTFSActivation` node). The cascade's accuracy ceiling for a given model/T is now
 honestly reported at fine-tuning instead of deferred to SCM — reaching high accuracy is
 a modeling concern (T/architecture/KD), no longer a hidden parity bug.
+
+## 9. Synchronized + offload + off-grid input (2026-06-06) — SANA-FE parity gate
+
+A `mnist_mmixcore_ttfs_cycle_30_offload_sync` deployment failed the SANA-FE parity gate
+at stage 0 (`ref=0.5 actual=0.75`, exactly one activation level). Two independent root
+causes, both fixed:
+
+- **Bank weight-slice transpose (all TTFS modes).** `segment_ttfs_arrays_from_mapping`
+  sliced `register_weight_bank`'s `(axons, neurons)` storage with the ranges swapped —
+  a no-op for square cores, but it zeroed every weight beyond `used_neurons` on
+  non-square bank-backed cores (exactly the offloaded conv). Fixed
+  (`bank_mat[axon_range, neuron_range].T`); locked by
+  `test_segment_arrays_bank.py`. Also fixed two pre-existing
+  `test_hardcore_ttfs_equivalence` failures on non-square cores.
+- **Reference must see the TTFS-grid-quantized stage input (synchronized only).** The
+  synchronized cycle soma reconstructs V from single-spike *timings*, so every neural-
+  stage input axon is quantized to the 1/S grid on the wire
+  (`q(x) = (S − round(S(1−clamp(x))))/S`, 0 when the spike falls off-grid). The
+  analytical HCM reference fed the continuous raw value to the offloaded encoding conv
+  and saw information the hardware cannot carry. Fix: `ttfs_input_grid_quantize`
+  (encode→decode round-trip SSOT in `ttfs_encoding.py`) applied to the **assembled,
+  post-`node_output_shifts` stage input** in the shared contract runner
+  (`run_ttfs_contract_neural_stage(quantize_input_to_ttfs_grid=…)`), gated on
+  `is_synchronized_ttfs`. The SANA-FE runner reuses the contract's `seg_input` for its
+  spike encode (idempotent round-trip), so reference and wire agree by construction.
+  The seam matters: quantizing the *raw* input before shifts leaves ±1-level diffs
+  (the earlier forensics' "residual ~6"); quantizing after shifts — where the hardware
+  encodes — resolves the gate completely (contract atol=1e-12 passes on the real model).
+- **Cascaded needs none of this**: both its reference and its soma reconstruct the same
+  ramp from the same quantized spike timing (`_boundary_single_spike_train` /
+  `ramp_current`), so the continuous-vs-quantized asymmetry is synchronized-only.
+
+**Known structural sensitivity (documented, not a defect).** On the real S=30 weight-
+quantized model, 12% of fire events sit *exactly* on an integer `ceil(S(1−V/θ))`
+boundary (min non-zero distance 3.2e-4 — bimodal). Parity holds because the soma's
+arrival-order float64 sum and the reference's BLAS dot are currently bit-identical; an
+FP-noise source on either side (different BLAS reduction order, GPU compute — see the
+`CUBLAS_WORKSPACE_CONFIG` note in `run.py`) would flip ties by ±1/S and trip the gate
+loudly (1/S ≫ tolerances). Debug aid: `MIMARSINAN_TTFS_CYCLE_TRACE=<path>` makes the
+synchronized soma dump per-event CSV (input decode, dropped-late deliveries, hexfloat
+fire-step resolution). Locked by `test_sanafe_ttfs_cycle_offgrid_parity.py` and
+`test_ttfs_contract_input_quantize.py` / `test_ttfs_input_quantize.py`.
