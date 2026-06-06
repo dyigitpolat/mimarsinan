@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -39,6 +41,18 @@ public:
                 "threshold", "bias", "active_start", "active_length",
                 "simulation_length",
         });
+        // Opt-in per-cycle CSV trace (debug): MIMARSINAN_TTFS_CYCLE_TRACE=<path>.
+        const char *trace_path = std::getenv("MIMARSINAN_TTFS_CYCLE_TRACE");
+        if (trace_path != nullptr && *trace_path != '\0')
+        {
+            trace_.open(trace_path, std::ios::app);
+            if (trace_.is_open())
+            {
+                trace_ << "event,neuron,sim_time,cycle,start,current_in,"
+                          "k_src,decode_weight,membrane,bias,theta,"
+                          "k_fire_raw,k_fire,activation\n";
+            }
+        }
     }
 
     sanafe::PipelineResult update(std::size_t neuron_address,
@@ -71,6 +85,16 @@ public:
             const long int local = ((cycle - 1) % s + s) % s;  // k_src
             const double weight = static_cast<double>(s - local) / static_cast<double>(s);
             membrane_[neuron_address] += current_in.value() * weight;
+            trace_event("in", neuron_address, simulation_time, cycle, start,
+                    current_in.value(), local, weight, s);
+        }
+        else if (current_in.has_value() && current_in.value() != 0.0)
+        {
+            // Input delivered after the window start is NOT integrated — traced
+            // to expose dropped-late-spike discrepancies.
+            const long int local = ((cycle - 1) % s + s) % s;
+            trace_event("late", neuron_address, simulation_time, cycle, start,
+                    current_in.value(), local, 0.0, s);
         }
 
         // At the window start V is complete (all earlier groups done) — resolve
@@ -165,6 +189,7 @@ public:
             activation_[neuron_address] = 0.0;
             has_fired_[neuron_address] = false;
             fire_step_[neuron_address] = -1;
+            trace_fire(neuron_address, s, v, theta, k_fire_raw, -1, 0.0);
             return;
         }
         const int k_fire = std::max(
@@ -173,9 +198,46 @@ public:
         activation_[neuron_address] =
                 static_cast<double>(s - k_fire) / static_cast<double>(s);
         has_fired_[neuron_address] = activation_[neuron_address] > 0.0;
+        trace_fire(neuron_address, s, v, theta, k_fire_raw, k_fire,
+                activation_[neuron_address]);
+    }
+
+    void trace_event(const char *event, std::size_t neuron_address,
+            long int simulation_time, long int cycle, long int start,
+            double current_in, long int k_src, double weight, int s)
+    {
+        if (!trace_.is_open())
+        {
+            return;
+        }
+        trace_ << event << ',' << neuron_address << ',' << simulation_time
+               << ',' << cycle << ',' << start << ','
+               << std::hexfloat << current_in << ',' << std::defaultfloat
+               << k_src << ',' << weight << ','
+               << std::hexfloat << membrane_[neuron_address]
+               << ',' << bias_[neuron_address] << std::defaultfloat
+               << ",,,," << '\n';
+        (void) s;
+    }
+
+    void trace_fire(std::size_t neuron_address, int s, double v, double theta,
+            double k_fire_raw, int k_fire, double activation)
+    {
+        if (!trace_.is_open())
+        {
+            return;
+        }
+        trace_ << "fire," << neuron_address << ",,,"
+               << active_start_[neuron_address] << ",,,,"
+               << std::hexfloat << v << ',' << bias_[neuron_address]
+               << ',' << theta << ',' << k_fire_raw << std::defaultfloat
+               << ',' << k_fire << ',' << activation << '\n';
+        trace_.flush();
+        (void) s;
     }
 
 private:
+    std::ofstream trace_;
     std::vector<double> membrane_;
     std::vector<double> activation_;
     std::vector<double> threshold_;
