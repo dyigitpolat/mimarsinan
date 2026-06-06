@@ -70,6 +70,7 @@ class HybridTtfsStepMixin:
             )
 
         def _on_neural_ttfs(ctx: HybridStageContext) -> None:
+            from mimarsinan.chip_simulation.spiking_semantics import is_synchronized_ttfs
             from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
                 run_ttfs_contract_neural_stage,
             )
@@ -86,6 +87,9 @@ class HybridTtfsStepMixin:
                 state_np,
                 simulation_length=self.simulation_length,
                 spiking_mode=mode,
+                quantize_input_to_ttfs_grid=is_synchronized_ttfs(
+                    self.spiking_mode, self.ttfs_cycle_schedule,
+                ),
             )
             for s in ctx.stage.output_map:
                 ctx.state_buffer[s.node_id] = torch.tensor(

@@ -194,6 +194,7 @@ def record_ttfs_hcm_reference(
         simulation_length=T,
         spiking_mode=spiking_mode,
         sample_index=sample_index,
+        ttfs_cycle_schedule=cfg.get("ttfs_cycle_schedule"),
     )
     return flow, contract.record
 

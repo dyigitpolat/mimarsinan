@@ -145,6 +145,7 @@ class SanafeNeuralStageMixin:
                 state_buffer,
                 simulation_length=self.T,
                 spiking_mode=self.spiking_mode,
+                quantize_input_to_ttfs_grid=is_cycle,
             )
             logical_ttfs_result = contract_stage.neural_result
             contract_ttfs_cores = list(contract_stage.segment_record.cores)

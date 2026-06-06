@@ -19,7 +19,11 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     is_ttfs_spiking_mode,
     store_neural_segment_output,
 )
-from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
+from mimarsinan.chip_simulation.spiking_semantics import (
+    forces_activation_quantization,
+    is_synchronized_ttfs,
+)
+from mimarsinan.chip_simulation.ttfs.ttfs_encoding import ttfs_input_grid_quantize
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
     run_ttfs_continuous_segment,
@@ -175,8 +179,14 @@ def run_ttfs_contract_neural_stage(
     simulation_length: int,
     spiking_mode: str,
     executor: TtfsAnalyticalExecutor | None = None,
+    quantize_input_to_ttfs_grid: bool = False,
 ) -> TtfsContractNeuralStageResult:
-    """Run one neural stage on the shared TTFS contract path (float64 numpy)."""
+    """Run one neural stage on the shared TTFS contract path (float64 numpy).
+
+    ``quantize_input_to_ttfs_grid`` snaps the assembled stage input to the
+    single-spike timing grid — the synchronized schedule's hardware boundary
+    (every axon is spike-time encoded, so off-grid values cannot cross it).
+    """
     hcm = stage.hard_core_mapping
     assert hcm is not None
     exec_ = executor or TtfsAnalyticalExecutor()
@@ -191,6 +201,8 @@ def run_ttfs_contract_neural_stage(
     seg_in = apply_input_shifts_numpy(
         stage.input_map, seg_in, getattr(mapping, "node_output_shifts", None),
     )
+    if quantize_input_to_ttfs_grid:
+        seg_in = ttfs_input_grid_quantize(seg_in, simulation_length)
     result = exec_.run_segment(
         hcm, seg_in, simulation_length=simulation_length, spiking_mode=spiking_mode,
     )
@@ -243,6 +255,7 @@ def run_ttfs_hybrid_contract(
     simulation_length: int,
     spiking_mode: str,
     sample_index: int = 0,
+    ttfs_cycle_schedule: str | None = None,
 ) -> TtfsContractRunResult:
     """Execute the full hybrid mapping on the canonical TTFS contract path."""
     from mimarsinan.chip_simulation.ttfs.ttfs_recorder import TtfsRunRecord
@@ -263,6 +276,7 @@ def run_ttfs_hybrid_contract(
     )
     executor = TtfsAnalyticalExecutor()
     T = int(simulation_length)
+    quantize_input = is_synchronized_ttfs(spiking_mode, ttfs_cycle_schedule)
 
     def _on_neural(stage_index: int, stage: Any, buf: Dict[int, np.ndarray]) -> None:
         out = run_ttfs_contract_neural_stage(
@@ -273,6 +287,7 @@ def run_ttfs_hybrid_contract(
             simulation_length=T,
             spiking_mode=spiking_mode,
             executor=executor,
+            quantize_input_to_ttfs_grid=quantize_input,
         )
         record.segments[stage_index] = out.segment_record
 
