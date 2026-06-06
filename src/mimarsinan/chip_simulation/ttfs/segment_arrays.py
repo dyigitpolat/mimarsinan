@@ -71,8 +71,13 @@ def segment_ttfs_arrays_from_mapping(mapping: Any) -> SegmentTtfsArrays:
                 if bank_mat is not None:
                     ba0, ba1 = pd.get("bank_axon_range") or (0, a)
                     bn0, bn1 = pd.get("bank_neuron_range") or (0, n)
+                    # ``bank.core_matrix`` is stored ``(axons, neurons)`` (see
+                    # ``register_weight_bank``); slice axons with the axon range
+                    # and neurons with the neuron range, then transpose to the
+                    # ``(neurons, axons)`` core_params layout. (Equal for square
+                    # cores, which is why the swapped form went unnoticed.)
                     core_weight = np.asarray(
-                        bank_mat[int(bn0):int(bn1), int(ba0):int(ba1)],
+                        bank_mat[int(ba0):int(ba1), int(bn0):int(bn1)],
                         dtype=np.float64,
                     ).T
 
