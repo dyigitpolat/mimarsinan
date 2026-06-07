@@ -7,7 +7,7 @@ Unified graph model for neural cores, compute ops, and weight banks.
 | File | Symbols | Role |
 |------|---------|------|
 | `types.py` | `IRSource`, `IRNode`, `NeuralCore`, `ComputeOp`, `WeightBank` | Core datatypes and `IRSource` sentinel conventions |
-| `graph.py` | `IRGraph` | Graph container, execution helpers, output sources |
+| `graph.py` | `IRGraph` | Graph container, execution helpers, output sources. `build_token` (uuid per construction; `None` on legacy pickles) — provenance stamp so derived artifacts (the packed hybrid mapping) can be detected as stale across pipeline resumes. |
 | `legacy_convert.py` | SoftCore conversion helpers | Bridge legacy SoftCore layouts to IR nodes |
 
 ## Dependencies

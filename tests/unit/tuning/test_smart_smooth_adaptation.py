@@ -168,3 +168,89 @@ class TestSmartSmoothAdaptation:
 
         # step starts at 0.5, halves: 0.25, 0.125, 0.0625 < 0.1 → stop
         assert call_count[0] <= 3
+
+
+class TestGradualStepParams:
+    """``initial_step``/``growth`` make the ramp genuinely gradual when asked.
+
+    The KD blend tuners (ANN->SNN activation ramps) request a small uniform
+    ladder (initial_step=0.125, growth=1.0) so the transformation is truly
+    gradual; the default (0.5, 1.5) keeps the historical fast ramp for cheap
+    analytic transforms.
+    """
+
+    def test_initial_step_uniform_ladder(self):
+        rates = []
+
+        def adapt_fn(rate):
+            rates.append(rate)
+            return rate  # commit
+
+        ssa = SmartSmoothAdaptation(
+            adaptation_fn=adapt_fn,
+            interpolators=[lambda t: t],
+            get_target=lambda: 0.9,
+            min_step=0.001,
+            initial_step=0.125,
+            growth=1.0,
+        )
+        ssa.adapt_smoothly(max_cycles=30)
+        assert rates == pytest.approx([0.125 * i for i in range(1, 9)])
+
+    def test_growth_one_never_exceeds_initial_step(self):
+        rates = []
+
+        def adapt_fn(rate):
+            rates.append(rate)
+            return rate
+
+        ssa = SmartSmoothAdaptation(
+            adaptation_fn=adapt_fn,
+            interpolators=[lambda t: t],
+            get_target=lambda: 0.9,
+            min_step=0.001,
+            initial_step=0.2,
+            growth=1.0,
+        )
+        ssa.adapt_smoothly(max_cycles=30)
+        diffs = [b - a for a, b in zip([0.0] + rates, rates)]
+        assert max(diffs) <= 0.2 + 1e-9
+        assert rates[-1] >= 0.99
+
+    def test_rollback_still_halves_with_custom_initial_step(self):
+        rates = []
+
+        def adapt_fn(rate):
+            rates.append(rate)
+            if len(rates) == 1:
+                return 0.0  # rollback the first proposal
+            return rate
+
+        ssa = SmartSmoothAdaptation(
+            adaptation_fn=adapt_fn,
+            interpolators=[lambda t: t],
+            get_target=lambda: 0.9,
+            min_step=0.001,
+            initial_step=0.2,
+            growth=1.0,
+        )
+        ssa.adapt_smoothly(max_cycles=40)
+        assert rates[0] == pytest.approx(0.2)
+        assert rates[1] == pytest.approx(0.1)
+        assert rates[-1] >= 0.99
+
+    def test_default_params_keep_historical_behavior(self):
+        rates = []
+
+        def adapt_fn(rate):
+            rates.append(rate)
+            return rate
+
+        ssa = SmartSmoothAdaptation(
+            adaptation_fn=adapt_fn,
+            interpolators=[lambda t: t],
+            get_target=lambda: 0.9,
+            min_step=0.001,
+        )
+        ssa.adapt_smoothly(max_cycles=30)
+        assert rates[0] == pytest.approx(0.5)

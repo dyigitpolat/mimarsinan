@@ -266,3 +266,137 @@ class TestStabilizationPreconditions:
         assert tuner.train_calls == [], (
             "Stabilization must be a no-op when _committed_rate < 1.0"
         )
+
+
+class _RoundsTuner(_StabilizationTuner):
+    """Tuner with multi-round stabilization and scripted eval sequence."""
+
+    def __init__(self, pipeline, model, target_accuracy, lr):
+        super().__init__(pipeline, model, target_accuracy, lr)
+        self.find_lr_calls = 0
+        self.eval_sequence = []
+
+    def _find_lr(self):
+        # Refreshed LRs below pipeline_lr so the min() clamp keeps them visible.
+        self.find_lr_calls += 1
+        return 0.001 / (1 + self.find_lr_calls)
+
+    def _wire_evals(self, values):
+        seq = iter(values)
+        last = values[-1]
+
+        def _val(n=None):
+            nonlocal last
+            try:
+                last = next(seq)
+            except StopIteration:
+                pass
+            return last
+
+        self.trainer.validate_n_batches = _val
+
+
+class TestStabilizationRounds:
+    """KD blend tuners run extra stabilization rounds with LR restarts while
+    each round still improves validation by more than accuracy_se()/2; the
+    default (rounds=1) keeps the historical single-pass contract."""
+
+    def _make(self, tmp_path, rounds):
+        cfg = default_config()
+        cfg["tuning_budget_scale"] = 1.0
+        pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+        t = _RoundsTuner(pipeline, make_tiny_supermodel(), 0.99, 0.001)
+        t._wire()
+        t._max_stabilization_rounds = rounds
+        t._committed_rate = 1.0
+        t._validation_baseline = 0.5
+        t._pipeline_hard_floor = None
+        t._rollback_tolerance = 0.05
+        return t
+
+    def test_improving_rounds_continue_with_fresh_lr(self, tmp_path):
+        t = self._make(tmp_path, rounds=3)
+        # pre-val 0.50; rounds end at 0.60, 0.70, 0.80 — always improving.
+        t._wire_evals([0.50, 0.60, 0.70, 0.80])
+        t._stabilize_at_full_rate()
+        assert len(t.train_calls) == 3
+        # LR re-found between rounds (cached LR invalidated).
+        assert t.find_lr_calls >= 2
+        lrs = [c["lr"] for c in t.train_calls]
+        assert len(set(lrs)) >= 2, f"rounds must use refreshed LRs, got {lrs}"
+
+    def test_plateau_stops_rounds(self, tmp_path):
+        t = self._make(tmp_path, rounds=3)
+        # pre-val 0.50; round 1 ends at 0.5 (no gain) -> stop after round 1.
+        t._wire_evals([0.50, 0.50])
+        t._stabilize_at_full_rate()
+        assert len(t.train_calls) == 1
+
+    def test_default_rounds_is_single_pass(self, tmp_path):
+        t = self._make(tmp_path, rounds=1)
+        t._wire_evals([0.50, 0.90])
+        t._stabilize_at_full_rate()
+        assert len(t.train_calls) == 1
+
+    def test_kd_blend_tuner_requests_multiple_rounds(self):
+        from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
+            KDBlendAdaptationTuner,
+        )
+
+        assert getattr(KDBlendAdaptationTuner, "_max_stabilization_rounds", 1) >= 3
+
+
+class TestStabilizationRefindsLR:
+    """When finalize installed a deployed forward distinct from the ramp (KD
+    blend cascaded / cycle-accurate LIF), the cached LR was tuned on the proxy
+    forward and is stale; stabilization re-finds it once at entry. Tuners that
+    do not swap the forward keep the cached LR (no wasted LR search)."""
+
+    def _tuner(self, tmp_path, refinds):
+        cfg = default_config()
+        cfg["tuning_budget_scale"] = 1.0
+        t = _RoundsTuner(MockPipeline(config=cfg, working_directory=str(tmp_path)),
+                         make_tiny_supermodel(), 0.99, 0.001)
+        t._wire()
+        t._committed_rate = 1.0
+        t._validation_baseline = 0.5
+        t._pipeline_hard_floor = None
+        t._rollback_tolerance = 0.05
+        t._cached_lr = 0.0005
+        t._stabilization_refinds_lr = refinds
+        return t
+
+    def test_refinds_lr_when_forward_swapped(self, tmp_path):
+        t = self._tuner(tmp_path, refinds=True)
+        t._wire_evals([0.5, 0.9])
+        t._stabilize_at_full_rate()
+        assert t.find_lr_calls >= 1, "must re-find LR for the deployed forward"
+
+    def test_keeps_cached_lr_when_no_swap(self, tmp_path):
+        t = self._tuner(tmp_path, refinds=False)
+        t._wire_evals([0.5, 0.9])
+        t._stabilize_at_full_rate()
+        assert t.find_lr_calls == 0
+        assert t.train_calls[0]["lr"] == 0.0005
+
+    def test_kd_blend_marks_refind_after_installing_forward(self):
+        from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
+            KDBlendAdaptationTuner,
+        )
+
+        class _Stub:
+            _installed = None
+
+            def _update_target_activations(self):
+                pass
+
+            def _finalize_forward(self):
+                return object()  # a deployed forward distinct from the ramp
+
+            def _install_forward(self, fwd):
+                self._installed = fwd
+
+        stub = _Stub()
+        KDBlendAdaptationTuner._finalize(stub)
+        assert stub._installed is not None
+        assert stub._stabilization_refinds_lr is True

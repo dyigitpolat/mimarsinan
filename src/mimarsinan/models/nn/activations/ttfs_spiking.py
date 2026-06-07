@@ -66,8 +66,12 @@ class TTFSActivation(nn.Module):
 
     ``input_scale`` = scale of the incoming activations (previous layer's
     ``activation_scale``); ``activation_scale`` = this layer's output scale (θ).
-    ``bias`` is the owning perceptron's ``linear.bias`` (held here so it can be
-    added linearly and removed from the post-linear pre-activation).
+    ``bias`` is the *effective* additive constant of the owning perceptron's
+    pre-activation path (``effective_preactivation_bias``: the norm-folded bias
+    when a normalization is present, else ``layer.bias``), held here so it can
+    be added linearly and removed from the post-norm pre-activation. At rest it
+    stores the raw ``layer.bias`` reference; ``TtfsSegmentPolicy`` installs the
+    effective bias for the duration of each cascade drive.
     """
 
     _VALID_THRESHOLDING_MODES = ("<", "<=")
@@ -106,7 +110,7 @@ class TTFSActivation(nn.Module):
             )
         self.activation_scale = activation_scale
         self.input_scale = input_scale
-        self._bias = bias  # reference to the perceptron's linear.bias (not a submodule)
+        self.set_bias(bias)
         if thresholding_mode not in self._VALID_THRESHOLDING_MODES:
             raise ValueError(
                 f"TTFSActivation thresholding_mode must be one of "
@@ -128,7 +132,15 @@ class TTFSActivation(nn.Module):
         return f"T={self.T}, thresholding_mode={self.thresholding_mode!r}"
 
     def set_bias(self, bias: torch.Tensor | None) -> None:
-        self._bias = bias
+        """Install the *effective* pre-activation bias this node subtracts.
+
+        Stored as a plain attribute (never a registered parameter/submodule) so
+        the segment policy can swap in a computed tensor — e.g. the norm-folded
+        ``effective_preactivation_bias`` — for the duration of a cascade drive
+        and restore the raw ``layer.bias`` reference afterwards.
+        """
+        self._parameters.pop("_bias", None)
+        object.__setattr__(self, "_bias", bias)
 
     def set_cycle_accurate(self, mode: bool) -> None:
         self._cycle_accurate_mode = bool(mode)
@@ -212,10 +224,13 @@ class TTFSActivation(nn.Module):
 def refresh_perceptron_bias_references(perceptron) -> None:
     """Re-point every ``TTFSActivation`` under ``perceptron`` at its live bias.
 
-    ``TTFSActivation`` holds ``perceptron.layer.bias`` by reference; any step
-    that REPLACES ``perceptron.layer`` (normalization fusion, bring_back_bias)
-    must call this, or the cascade forward subtracts a stale bias and pours
-    ``b_new − b_old`` into the ramp every cycle (2026-06-07 offload incident).
+    ``TTFSActivation`` stores ``perceptron.layer.bias`` by reference as its
+    resting (pickle-safe) bias; steps that REPLACE ``perceptron.layer``
+    (normalization fusion, bring_back_bias) call this to keep the stored
+    contract clean. Correctness no longer depends on it: ``TtfsSegmentPolicy``
+    recomputes the norm-folded ``effective_preactivation_bias`` fresh on every
+    cascade drive (the 2026-06-07/08 offload incidents — a stale reference, then
+    a raw-instead-of-effective bias — are both structurally closed by that).
     """
     bias = getattr(perceptron.layer, "bias", None)
     for module in perceptron.modules():

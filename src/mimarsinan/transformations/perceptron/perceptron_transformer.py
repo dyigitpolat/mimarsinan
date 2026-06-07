@@ -76,12 +76,7 @@ class PerceptronTransformer:
             perceptron.normalization.running_mean.data[:] = bias_transform(mean)
 
     def _get_u_beta_mean(self, bn_layer):
-        bn = bn_layer
-        gamma = bn.weight.data
-        beta = bn.bias.data
-        var = bn.running_var.data.to(gamma.device)
-        mean = bn.running_mean.data.to(gamma.device)
+        from mimarsinan.models.nn.layers import norm_affine_params
 
-        u = gamma / torch.sqrt(var + bn.eps)
-
-        return u, beta, mean
+        u, beta, mean = norm_affine_params(bn_layer)
+        return u.detach(), beta.detach(), mean.detach()

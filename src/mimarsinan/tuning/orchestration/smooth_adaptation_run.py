@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import warnings
 
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
@@ -16,11 +17,27 @@ from mimarsinan.tuning.orchestration.tuner_base import (
 
 class SmoothAdaptationRunMixin(TunerBase):
     def _stabilization_budget(self):
-        """Number of gradient steps for the final rate=1.0 stabilization pass."""
+        """Number of gradient steps for the final rate=1.0 stabilization pass
+        (per round; ``_max_stabilization_rounds`` controls the round count).
+        Subclasses may override (e.g. return ``None``/``0`` to disable)."""
         return 2 * int(self._budget.max_training_steps)
 
+    def _post_stabilization_hook(self):
+        """Called once after the final stabilization pass; subclasses may run
+        deployment-aware post-training calibration here (it must only commit
+        validation-improving changes — no training follows to undo them)."""
+
     def _stabilize_at_full_rate(self):
-        """Extra training at rate=1.0 after ``_after_run`` has committed."""
+        """Extra training at rate=1.0 after ``_after_run`` has committed.
+
+        Runs up to ``_max_stabilization_rounds`` passes (default 1 — the
+        historical single pass); each extra round restarts from a freshly
+        found LR and only happens while the previous round still improved
+        validation by more than ``accuracy_se()/2`` (constant-LR passes
+        plateau; an LR restart breaks the plateau — the same effect WQ's
+        fresh LR search showed downstream). The pre/post rollback guard
+        brackets ALL rounds, so the phase stays non-destructive.
+        """
         if self._committed_rate < 1.0 - 1e-6:
             return
         budget = self._stabilization_budget()
@@ -28,6 +45,11 @@ class SmoothAdaptationRunMixin(TunerBase):
             return
         budget = int(budget)
 
+        # When finalize swapped in a deployed forward distinct from the ramp
+        # (KD blend cascaded / cycle-accurate LIF), the cached LR was tuned on
+        # the proxy forward and is stale — re-find it for the deployed dynamics.
+        if getattr(self, "_stabilization_refinds_lr", False):
+            self._invalidate_lr_cache()
         lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
 
         n_eval = self._budget.eval_n_batches
@@ -42,22 +64,36 @@ class SmoothAdaptationRunMixin(TunerBase):
             self._budget.eval_n_batches,
         )
         max_patience = max(_RECOVERY_PATIENCE, budget // max(1, self._budget.check_interval))
-        hooks = self._recovery_training_hooks(1.0)
-        try:
-            self.trainer.train_steps_until_target(
-                lr,
-                budget,
-                self._get_target(),
-                0,
-                validation_n_batches=progress_n,
-                check_interval=self._budget.check_interval,
-                patience=max_patience,
-                min_steps=budget,
-                min_improvement=self._budget.accuracy_se() / 2,
-            )
-        finally:
-            for h in hooks:
-                h.remove()
+        rounds = max(1, int(getattr(self, "_max_stabilization_rounds", 1)))
+        last_val = pre_val
+        for round_idx in range(rounds):
+            hooks = self._recovery_training_hooks(1.0)
+            try:
+                self.trainer.train_steps_until_target(
+                    lr,
+                    budget,
+                    self._get_target(),
+                    0,
+                    validation_n_batches=progress_n,
+                    check_interval=self._budget.check_interval,
+                    patience=max_patience,
+                    min_steps=budget,
+                    min_improvement=self._budget.accuracy_se() / 2,
+                )
+            finally:
+                for h in hooks:
+                    h.remove()
+            if round_idx == rounds - 1 or last_val is None:
+                break
+            try:
+                round_val = float(self.trainer.validate_n_batches(n_eval))
+            except Exception:
+                break
+            if round_val - last_val <= self._budget.accuracy_se() / 2:
+                break
+            last_val = round_val
+            self._invalidate_lr_cache()
+            lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
 
         if pre_val is not None:
             try:
@@ -104,6 +140,8 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._pre_relaxation_target = None
         self._cycle_log = []
         self._cached_lr = None
+        self._phase_seconds = {}
+        self._run_t0 = time.time()
 
         self._pipeline_tolerance = float(
             self.pipeline.config.get("degradation_tolerance", 0.05)
@@ -161,13 +199,20 @@ class SmoothAdaptationRunMixin(TunerBase):
             self._adaptation(1.0)
             if self._committed_rate >= 1.0 - 1e-6:
                 self._natural_rate = self._committed_rate
+                self._phase_seconds["gradual"] = time.time() - self._run_t0
+                t_after = time.time()
                 result = self._after_run()
+                self._phase_seconds["after_run"] = time.time() - t_after
                 assert self._committed_rate >= 1.0 - 1e-6, (
                     f"Tuning rate must reach 1.0 by the end of the step, "
                     f"but _committed_rate is {self._committed_rate:.6f}"
                 )
+                t_stab = time.time()
                 self._stabilize_at_full_rate()
+                self._post_stabilization_hook()
+                self._phase_seconds["stabilization"] = time.time() - t_stab
                 self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
+                self.pipeline.reporter.report(f"{self.name} phase_seconds", self._phase_seconds)
                 self._log_cycle_summary()
                 return result
 
@@ -183,6 +228,11 @@ class SmoothAdaptationRunMixin(TunerBase):
             get_target=self._get_target,
             min_step=ms,
             before_cycle=self._before_cycle,
+            # A requested gradual ladder can never be finer than the budget's
+            # min_step (else the loop would no-op and the coarse
+            # _continue_to_full_rate fallback would take over).
+            initial_step=max(ms, float(getattr(self, "_initial_ramp_step", 0.5))),
+            growth=float(getattr(self, "_ramp_step_growth", 1.5)),
         )
         adapter.adapt_smoothly(max_cycles=max_cycles)
 
@@ -190,6 +240,7 @@ class SmoothAdaptationRunMixin(TunerBase):
             self._continue_to_full_rate()
 
         self._natural_rate = self._committed_rate
+        self._phase_seconds["gradual"] = time.time() - self._run_t0
 
         if self._natural_rate < 1.0 - 1e-6:
             import warnings
@@ -199,13 +250,19 @@ class SmoothAdaptationRunMixin(TunerBase):
                 stacklevel=2,
             )
 
+        t_after = time.time()
         result = self._after_run()
+        self._phase_seconds["after_run"] = time.time() - t_after
         assert self._committed_rate >= 1.0 - 1e-6, (
             f"Tuning rate must reach 1.0 by the end of the step, "
             f"but _committed_rate is {self._committed_rate:.6f}"
         )
+        t_stab = time.time()
         self._stabilize_at_full_rate()
+        self._post_stabilization_hook()
+        self._phase_seconds["stabilization"] = time.time() - t_stab
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
+        self.pipeline.reporter.report(f"{self.name} phase_seconds", self._phase_seconds)
         self._log_cycle_summary()
         return result
 

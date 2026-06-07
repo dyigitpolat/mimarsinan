@@ -23,7 +23,6 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 |-----|------|
 | `spiking_mode` | `"lif"` (default), `"rate"`, `"ttfs"`, `"ttfs_quantized"` |
 | `cycle_accurate_lif_forward` | LIF deploys the chip-aligned cross-layer forward (installed at finalize) when true (default **true**) |
-| `legacy_lif_blend_ramp` | Default **false** = golden value-domain ramp (no ramp forward; rate 0 == continuous teacher). When true the LIF blend ramp runs through the per-frame `_CycleAccurateForward` (leaks off the continuous teacher at rate 0). Finalize forward is unchanged either way |
 | `thresholding_mode` | `"<"` strict vs `"<="` inclusive LIF firing |
 | `enable_nevresim_simulation` | Append Nevresim Simulation step (default **true**) |
 | `nevresim_connectivity_mode` | `"runtime"` (default) or `"compile_time"` — chip wiring in generated C++ |
@@ -36,7 +35,7 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 | `max_simulation_samples`, `seed`, `simulation_steps` | Simulation subsampling and cycles |
 | `training_recipe`, `tuning_recipe` | AdamW + cosine defaults (ViT-aligned) |
 
-`CONFIG_KEYS_SET` in `defaults.py` lists keys consumed by steps/tuners/simulation (including `enable_nevresim_simulation`, `enable_loihi_simulation`, `sanafe_*`, `cycle_accurate_lif_forward`, `legacy_lif_blend_ramp`). Extend it when adding new pipeline config.
+`CONFIG_KEYS_SET` in `defaults.py` lists keys consumed by steps/tuners/simulation (including `enable_nevresim_simulation`, `enable_loihi_simulation`, `sanafe_*`, `cycle_accurate_lif_forward`). Extend it when adding new pipeline config.
 
 ## Dependencies
 

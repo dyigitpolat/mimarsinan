@@ -16,7 +16,7 @@ runners (SANA-FE, Lava, Nevresim).
 | `segment_partition.py` | `classify_spike_producers`, `partition_spike_segments`, `partition_perceptron_segments`, `perceptron_of`, `is_encoding_perceptron`, `is_value_boundary` | Mode-agnostic exec-graph classification. **Value boundaries** are the raw input and *every* host `ComputeOpMapper` (matching HCM, where every host ComputeOp runs once on decoded values); perceptrons produce spikes; structural nodes inherit. Segments = maximal connected spike regions; an `is_encoding_layer` perceptron starts a fresh segment (it consumes a decoded value). |
 | `segment_forward.py` | `SegmentForwardDriver` | **Unified segment-aware NF driver** — ONE walk for every spiking mode. Iterates the exec graph; host ComputeOps run **once on decoded values** (recording per-channel minima into `compute_min_recorder` and applying `_negative_shift` before downstream re-encode); spike segments are delegated to `policy.run_segment`. Fails loud (`NotImplementedError`) on host ops interleaved inside a neural segment (a segment runs atomically at its first member). |
 | `segment_policies.py` | `LifSegmentPolicy`, `AnalyticalSegmentPolicy` (+ re-export `TtfsSegmentPolicy`) | Per-mode segment dynamics. **LIF**: perceptrons cascade per-cycle signed-IF off upstream trains; a subsumed (encoding) perceptron mirrors HCM's two outputs — host-op rate value for ComputeOp consumers + cycle-emitted train (plain LIF only; Conv wrappers stay uniform); region exits decode `count/T`. **Analytical** (`ttfs`/`ttfs_quantized`): every node runs once on ideal values (the pointwise-analytical NF). Top-level picklable classes (tuner installs pickle the forwards). |
-| `segment_policy_ttfs.py` | `TtfsSegmentPolicy` | **TTFS** (`ttfs_cycle_based`): latency-windowed single-spike sim (1-cycle delay per perceptron hop, arrival latch, window `[depth, depth+T)`); non-encoding entries consume boundary values as single-spike TTFS trains (the rising edge of HCM's latched encode — ramp reconstruction makes the dynamics equal); a **subsumed encoding** entry charges the ideal decoded value directly (it mirrors HCM's host ComputeOp, so it is bias-mode-agnostic); region exits decode `count/T * activation_scale`. The per-neuron bias ramp is identical for `on_chip` and `param_encoded` (both give cumulative `bias·(t_local+1)`), so the NF forward does not branch on bias mode. |
+| `segment_policy_ttfs.py` | `TtfsSegmentPolicy` | **TTFS** (`ttfs_cycle_based`): latency-windowed single-spike sim (1-cycle delay per perceptron hop, arrival latch, window `[depth, depth+T)`); non-encoding entries consume boundary values as single-spike TTFS trains (the rising edge of HCM's latched encode — ramp reconstruction makes the dynamics equal); a **subsumed encoding** entry charges the ideal decoded value directly (it mirrors HCM's host ComputeOp, so it is bias-mode-agnostic); region exits decode `count/T * activation_scale`. The per-neuron bias ramp is identical for `on_chip` and `param_encoded` (both give cumulative `bias·(t_local+1)`), so the NF forward does not branch on bias mode. **Drive-time bias install**: `prepare()` recomputes each perceptron's `effective_preactivation_bias` (norm-folded; differentiable) fresh on every drive and installs it on the `TTFSActivation`s; `finalize()` restores the raw `layer.bias` reference (the picklable stored contract). Subtracting the raw bias under a non-identity normalization poured `fused_b − b` into the ramp (the 2026-06-08 cascaded+offload fusion cliff); the drive-time recompute also closes the stale-reference class of bugs structurally. |
 | `chip_aligned_nf.py` | `chip_aligned_segment_forward` | Thin LIF wrapper: `SegmentForwardDriver` + `LifSegmentPolicy` (falls back to `run_cycle_accurate` when the model has no mapper graph). The torch-side mirror of HCM `_forward_rate`; per-neuron parity reference (`test_nf_hcm_per_node_spike_parity_mmixcore.py`, `test_nf_hcm_multisegment_parity.py`). Installed as the LIF tuner's NF probe. |
 
 ## Boundary contract
@@ -49,15 +49,12 @@ See `tests/unit/models/test_lif_step_vs_activation_parity.py`.
 ## `chip_aligned_segment_forward`
 
 Installed by `LIFAdaptationTuner._finalize_forward` as `model.forward` at
-**finalize** (`rate == 1.0`), the genuine cross-layer dynamics deferred out of
-the ramp. The blend ramp itself runs in the value domain (golden,
-non-destructive: rate 0 == continuous teacher) unless the legacy per-frame
-`cycle_accurate_lif_forward` ramp is selected via `legacy_lif_blend_ramp`; the
-finalize forward is the same either way. All downstream pipeline steps (WQ,
-NormFusion, SCM accuracy probes) then validate against the same forward
-that Nevresim / SANA-FE / Lava run, closing the NF→chip gap by
-construction. Falls back to `run_cycle_accurate` only when the model has no
-mapper graph.
+**finalize** (`rate == 1.0`). The blend ramp runs in the value domain (golden,
+non-destructive); this forward is installed only at finalize. All
+downstream pipeline steps (WQ, NormFusion, SCM accuracy probes) then validate
+against the same forward that Nevresim / SANA-FE / Lava run, closing the NF→chip
+gap by construction. Falls back to `run_cycle_accurate` only when the model has
+no mapper graph.
 
 ## Unified segment-forward model
 

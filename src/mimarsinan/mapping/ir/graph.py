@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 import numpy as np
+
+
+def _new_build_token() -> str:
+    return uuid.uuid4().hex
 
 from mimarsinan.mapping.ir.types import (
     ComputeOp,
@@ -23,15 +28,22 @@ class IRGraph:
     output_sources: np.ndarray  # Array of IRSource for final outputs
     weight_banks: Dict[int, WeightBank] = field(default_factory=dict)
     layout_softcores: List[Any] = field(default_factory=list)
+    # Unique per construction; derived artifacts (the packed hybrid mapping)
+    # record it so cached copies can be detected as stale across resumes.
+    build_token: str = field(default_factory=_new_build_token)
 
     def __getattr__(self, name: str):
-        # Backward compat: old pickles lack weight_banks / layout_softcores
+        # Backward compat: old pickles lack weight_banks / layout_softcores /
+        # build_token
         if name == "weight_banks":
             self.weight_banks = {}
             return self.weight_banks
         if name == "layout_softcores":
             self.layout_softcores = []
             return self.layout_softcores
+        if name == "build_token":
+            self.build_token = None
+            return self.build_token
         raise AttributeError(f"'{type(self).__name__}' object has no attribute {name!r}")
 
     def get_neural_cores(self) -> List[NeuralCore]:

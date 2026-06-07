@@ -205,14 +205,14 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         quantize_ir_graph(ir_graph, bits, weight_quantization=False)
         return ir_graph
 
-    # -- finalize forward (cascaded installs the genuine cascade at full rate) --
+    # -- finalize forward ------------------------------------------------------
     def _finalize_forward(self):
         """Cascaded installs the genuine cascade forward at finalize and **keeps**
         it, so the committed metric, recovery, and every downstream step
         (WQ/NormFusion/SCM) run the exact deployed single-spike dynamics;
         synchronized keeps the class-level analytical forward — the dynamics its
-        deployment actually executes. Neither installs a ramp forward
-        (``_ramp_forward`` stays ``None``): both ramp the value-domain blend."""
+        deployment actually executes. Both ramp the value-domain blend
+        (``_ramp_forward`` stays ``None``)."""
         if not self._synchronized:
             return _SegmentSpikeForward(self.model, self._T)
         return None
