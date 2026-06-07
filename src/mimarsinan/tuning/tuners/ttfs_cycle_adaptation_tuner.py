@@ -1,17 +1,24 @@
-"""TTFS-cycle fine-tuning: train through the schedule's deployed dynamics.
+"""TTFS-cycle fine-tuning: gradual value-domain ramp, genuine cascade at finalize.
 
-The **cascaded** ``ttfs_cycle_based`` deployment runs each neural segment as a
-single-spike, ramp-integrate, fire-once simulation, so fine-tuning runs the
-model on actual TTFS spike trains via :class:`TTFSSegmentForward` (gradient
-through the per-cycle dynamics). Single-spike decode is non-linear in a partial
-old/spike blend, so the cascaded path trains **pure spike** (rate pinned at 1.0)
-with KD recovery against the frozen pre-step teacher.
+Both schedules ramp the per-perceptron ``TTFSActivation`` blend in the value
+domain (the plain class forward through ``BlendActivation``), exactly the
+golden LIF non-destructive ramp: rate 0 reproduces the continuous teacher,
+rate 1 is the pointwise on-chip staircase composition. The blend ramps
+naturally under ``SmartSmoothAdaptation`` (no rate pin), with KD recovery
+against the frozen pre-step teacher.
 
-The **synchronized** schedule composes per-group analytical staircases — the
-class-level forward through the ramped ``TTFSActivation`` blend already *is*
-that composition, so no instance forward is installed; the wire contract's
-stage-input grid snap q(x) is trained through an STE on encoding entries, and
-the blend ramps naturally like other pointwise adaptations.
+The genuine cross-layer dynamics are installed only at **finalize**:
+
+- **cascaded** ``ttfs_cycle_based`` is a single-spike, ramp-integrate, fire-once
+  cascade — the per-perceptron staircase blend cannot stay bit-identical to the
+  intra-segment sub-window spike timing, so (like LIF's chip-aligned forward)
+  finalize installs :class:`TTFSSegmentForward` via ``_finalize_forward`` and
+  keeps it, so the committed metric, recovery, and every downstream step run
+  the exact deployed single-spike dynamics.
+- **synchronized** composes per-group analytical staircases — the ramped class
+  forward already *is* that deployed composition, so no instance forward is
+  installed; the wire contract's stage-input grid snap q(x) is trained through
+  an STE on each segment entry.
 """
 
 from __future__ import annotations
@@ -21,18 +28,23 @@ import torch.nn as nn
 
 from mimarsinan.models.nn.activations.autograd import TTFSInputGridQuantizer
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
-from mimarsinan.models.spiking.training.ttfs_segment_forward import TTFSSegmentForward
-from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import KDBlendAdaptationTuner
+from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
+    KDBlendAdaptationTuner,
+    _InstalledForward,
+)
 
 
-class _SegmentSpikeForward:
+class _SegmentSpikeForward(_InstalledForward):
     """Picklable ``model.forward`` override driving the segment-aware spike sim."""
 
-    def __init__(self, mapper_repr, T: int):
-        self._driver = TTFSSegmentForward(mapper_repr, T)
+    def _run(self, x):
+        if self._executor is None:
+            from mimarsinan.models.spiking.training.ttfs_segment_forward import (
+                TTFSSegmentForward,
+            )
 
-    def __call__(self, x):
-        return self._driver(x)
+            self._executor = TTFSSegmentForward(self.model.get_mapper_repr(), self.T)
+        return self._executor(x)
 
 
 class _Rung2TeacherFlow(nn.Module):
@@ -78,7 +90,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
         contract = SpikingDeploymentContract.from_pipeline_config(self.pipeline.config)
         self._synchronized = contract.training_forward_kind() != "segment_spike"
-        self._patched_forward = False
         self._entry_perceptron_ids = None
         self.adaptation_manager.ttfs_active = True
 
@@ -93,20 +104,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             encoding=getattr(perceptron, "is_encoding_layer", False),
             bias_mode=self._bias_mode,
         )
-
-    # -- cascaded trains pure spike (rate pinned); synchronized ramps naturally --
-    def _install_blend(self) -> None:
-        super()._install_blend()
-        if not self._synchronized:
-            self._set_rate(1.0)
-
-    def _set_rate(self, rate: float) -> None:
-        super()._set_rate(rate if self._synchronized else 1.0)
-
-    def _get_rates(self):
-        if self._synchronized:
-            return super()._get_rates()
-        return [1.0 for _ in self.model.get_perceptrons()]
 
     def _wrap_encoding_input(self, perceptron) -> None:
         # Synchronized wire contract: every hybrid stage input is grid-quantized
@@ -208,35 +205,14 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         quantize_ir_graph(ir_graph, bits, weight_quantization=False)
         return ir_graph
 
-    # -- install / remove the spike-train forward (cascaded only) -------------
-    def _install_spike_forward(self) -> None:
-        assert "forward" not in self.model.__dict__, (
-            "TTFSCycleAdaptationTuner: model.forward already patched."
-        )
-        self._patched_forward = True
-        self.model.forward = _SegmentSpikeForward(self.model.get_mapper_repr(), self._T)
-
-    def _remove_spike_forward(self) -> None:
-        if getattr(self, "_patched_forward", False):
-            try:
-                del self.model.forward
-            except AttributeError:
-                pass
-            self._patched_forward = False
-
-    def _after_install_blend(self) -> None:
+    # -- finalize forward (cascaded installs the genuine cascade at full rate) --
+    def _finalize_forward(self):
+        """Cascaded installs the genuine cascade forward at finalize and **keeps**
+        it, so the committed metric, recovery, and every downstream step
+        (WQ/NormFusion/SCM) run the exact deployed single-spike dynamics;
+        synchronized keeps the class-level analytical forward — the dynamics its
+        deployment actually executes. Neither installs a ramp forward
+        (``_ramp_forward`` stays ``None``): both ramp the value-domain blend."""
         if not self._synchronized:
-            self._install_spike_forward()
-
-    def _finalize(self) -> None:
-        """Rebuild the (decorator-free, ttfs_active) activations. Cascaded then
-        **re-installs the genuine cascade forward** so the committed metric, the
-        recovery loop, and every downstream step (WQ/NormFusion/SCM) run the
-        exact deployed single-spike dynamics; synchronized keeps the class-level
-        analytical forward — the dynamics its deployment actually executes."""
-        if not self._synchronized:
-            self._remove_spike_forward()
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
-        if not self._synchronized:
-            self._install_spike_forward()
+            return _SegmentSpikeForward(self.model, self._T)
+        return None

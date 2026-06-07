@@ -332,3 +332,78 @@ Key code locations cited above:
 - `models/spiking/cycle_policy.py` — existing torch↔nevresim mirror precedent
 - `chip_simulation/ttfs/ttfs_executor.py` — contract runner (+ `quantize_input_to_ttfs_grid`)
 - `pipelining/core/simulation_factory.py:219` / `pipeline_steps/mapping/hard_core_mapping_step.py:94` — duplicated gate
+
+---
+
+## 7. Follow-up (2026-06): unified gradual ramp + the LIF r=0 leak
+
+**Status:** implemented. One value-domain blend ramp now backs both
+`LIFAdaptationTuner` and `TTFSCycleAdaptationTuner`; the genuine cross-layer
+dynamics are installed only at finalize. See
+`tuning/orchestration/kd_blend_adaptation_tuner.py`
+(`_InstalledForward`, `CascadeForwardInstall`, `_ramp_forward`/
+`_finalize_forward` hooks), `tuning/tuners/lif_adaptation_tuner.py`,
+`tuning/tuners/ttfs_cycle_adaptation_tuner.py`.
+
+### 7.1 Two defects, one root cause
+
+The cascaded `TTFSCycleAdaptationTuner` **pinned rate to 1.0** and installed
+`_SegmentSpikeForward` for the whole ramp — a one-shot jump from ReLU
+semantics to the full single-spike cascade, recovered only by KD (the
+`natural adaptation reached only 0.0000` symptom; §2.1's dominant cause). The
+gradual, non-destructive `SmartSmoothAdaptation` ramp that LIF relies on was
+bypassed entirely.
+
+Investigating LIF as the golden example surfaced a **latent LIF leak**: with
+`cycle_accurate_lif_forward` (default true), the ramp installed
+`_CycleAccurateForward`, applying the per-perceptron `BlendActivation`
+*per spike frame* inside `run_cycle_accurate`. At rate 0 the output is
+`mean_t ReLU(W s_t + b)` — a convex-Jensen-biased, layer-compounding
+rate-coded value, **not** the continuous teacher. The KD teacher (a pre-blend
+continuous snapshot) and the rate-0 student already disagreed; the
+"non-destructive ramp" was leaky.
+
+Both reduce to the same root cause: **blending a cross-layer cascade/cycle
+forward per frame is not the per-perceptron value blend** the ramp needs.
+
+### 7.2 The fix
+
+`BlendActivation(v) = (1−r)·ReLU(v) + r·OnChipAct(v)` in the **value domain**
+(the plain class forward, no per-frame/cascade wrapper) already is the
+per-perceptron, monotone, bit-exact-endpoint blend (`r=0` == continuous
+teacher, `r=1` == pointwise on-chip composition — LIF rate / TTFS staircase).
+It is what synchronized TTFS and non-cycle-accurate LIF already ramped
+through. So:
+
+- The ramp runs in the value domain (`_ramp_forward()` → `None`).
+- The genuine cross-layer dynamics are installed **only at finalize**
+  (`_finalize_forward()`): the single-spike cascade for cascaded TTFS, the
+  chip-aligned segment forward for cycle-accurate LIF. It stays bit-identical
+  at the committed `r=1`, preserving every existing parity gate (which all run
+  against the finalized forward).
+
+The legacy LIF per-frame ramp is retained behind `legacy_lif_blend_ramp`
+(default **off** — the value-domain ramp is the default) for fallback; the
+deployed finalize forward is identical for both ramp choices.
+
+### 7.3 Phase B (gradual genuine-cascade *entry*) — viable, deferred
+
+A second phase was scoped: gradually fade in the genuine cascade *output*
+during the ramp (rather than the one-shot finalize entry), so even the cascade
+entry is non-destructive.
+
+It is **feasible** — the cascade is already a per-core, node-by-node cycle walk
+that propagates exact spike trains (interior cores read the predecessor's exact
+1-cycle-delayed spike; cross-segment boundaries already decode→re-encode). A
+per-core blend that keeps the exact intra-segment trains flowing and blends
+only the per-core decoded readout / boundary values stays bit-identical at
+`r=1`. (The one thing that is *not* losslessly expressible as decode→re-encode
+at every core is the **intra-segment sub-window spike phase** — re-encoding a
+decoded value as a fresh single spike loses the partial-ramp arrival timing —
+so a blend must leave those interior trains untouched.)
+
+It is **not yet implemented**: Phase A (value-domain ramp + genuine forward at
+finalize + KD + `_stabilize_at_full_rate`) already mirrors the golden LIF
+pattern, which itself enters its cross-layer forward in one shot at finalize.
+Revisit if a measured finalize-entry regression appears on a deep cascaded
+graph.

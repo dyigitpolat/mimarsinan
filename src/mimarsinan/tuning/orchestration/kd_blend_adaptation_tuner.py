@@ -19,6 +19,65 @@ import torch.nn.functional as F
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
+class _InstalledForward:
+    """Picklable ``model.forward`` override running a cross-layer NF forward.
+
+    Subclasses implement :meth:`_run`. A lazily-built executor (e.g. a segment
+    driver) is cached per instance and dropped on pickling so checkpoints/
+    teacher-snapshots stay light. One shape for the cycle-accurate LIF ramp,
+    the chip-aligned LIF finalize, and the TTFS cascade forward.
+    """
+
+    def __init__(self, model, T: int):
+        self.model = model
+        self.T = int(T)
+        self._executor = None
+
+    def _unpatched_forward(self, x):
+        """The model's class-level forward, bypassing this instance override."""
+        return type(self.model).forward(self.model, x)
+
+    def _run(self, x):
+        raise NotImplementedError
+
+    def __call__(self, x):
+        return self._run(x)
+
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        state["_executor"] = None
+        return state
+
+
+class CascadeForwardInstall:
+    """Symmetric, single-owner install/remove of an instance ``model.forward``.
+
+    The cascade / cycle-accurate NF forwards are installed as an instance
+    attribute that shadows the class forward. This mixin guarantees no
+    double-patch (an unremoved prior wrapper would silently shadow the new one)
+    and an idempotent unpatch, so downstream pipeline stages always see the
+    pristine class forward.
+    """
+
+    _patched_forward = False
+
+    def _install_forward(self, forward_obj) -> None:
+        assert "forward" not in self.model.__dict__, (
+            f"{type(self).__name__}: model.forward is already patched; a double-"
+            "install would shadow the prior wrapper. Remove it first."
+        )
+        self._patched_forward = True
+        self.model.forward = forward_obj
+
+    def _remove_forward(self) -> None:
+        if getattr(self, "_patched_forward", False):
+            try:
+                del self.model.forward
+            except AttributeError:
+                pass
+            self._patched_forward = False
+
+
 class BlendActivation(nn.Module):
     """Linear blend of an old activation and a target activation controlled by ``rate``."""
 
@@ -78,7 +137,7 @@ class _KDClassificationLoss:
         return self.alpha * ce + (1.0 - self.alpha) * kd
 
 
-class KDBlendAdaptationTuner(SmoothAdaptationTuner):
+class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     """Blend each perceptron's base activation toward a target, with KD recovery."""
 
     _target_activation_type = "Target"
@@ -130,13 +189,40 @@ class KDBlendAdaptationTuner(SmoothAdaptationTuner):
             )
 
     def _after_install_blend(self) -> None:
-        """Hook after all blends + KD loss are installed (e.g. install a forward)."""
+        """Install the ramp forward (if any) after blends + KD loss are set."""
+        fwd = self._ramp_forward()
+        if fwd is not None:
+            self._install_forward(fwd)
 
     def _make_kd_loss(self):
         return _KDClassificationLoss(self._teacher)
 
+    def _ramp_forward(self):
+        """Cross-layer forward installed during the blend ramp.
+
+        Default ``None`` = the value-domain ramp (the plain class forward
+        through the per-perceptron ``BlendActivation``), the golden
+        non-destructive ramp. Subclasses may install a cross-layer forward.
+        """
+        return None
+
+    def _finalize_forward(self):
+        """Cross-layer forward installed at finalize (``None`` keeps the class
+        forward — the deployed dynamics for analytical/synchronized schedules)."""
+        return None
+
+    def _update_target_activations(self) -> None:
+        for perceptron in self.model.get_perceptrons():
+            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+
     def _finalize(self) -> None:
-        """Hook at full rate: set subsume flags, update activations, install forwards."""
+        """At full rate: rebuild the committed activations, then install the
+        genuine cross-layer forward so the committed metric, recovery, and every
+        downstream step run the exact deployed dynamics."""
+        self._update_target_activations()
+        fwd = self._finalize_forward()
+        if fwd is not None:
+            self._install_forward(fwd)
 
     # ── Shared machinery ─────────────────────────────────────────────────────
 
@@ -179,8 +265,11 @@ class KDBlendAdaptationTuner(SmoothAdaptationTuner):
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _after_run(self):
-        self._continue_to_full_rate()
-        self._set_rate(1.0)
+        try:
+            self._continue_to_full_rate()
+            self._set_rate(1.0)
+        finally:
+            self._remove_forward()
         self._finalize()
         self._final_metric = self._ensure_pipeline_threshold()
         self._committed_rate = 1.0

@@ -48,8 +48,12 @@ See `tests/unit/models/test_lif_step_vs_activation_parity.py`.
 
 ## `chip_aligned_segment_forward`
 
-Installed by `LIFAdaptationTuner._after_run` as `model.forward` once the
-blend ramp completes (`rate == 1.0`). All downstream pipeline steps (WQ,
+Installed by `LIFAdaptationTuner._finalize_forward` as `model.forward` at
+**finalize** (`rate == 1.0`), the genuine cross-layer dynamics deferred out of
+the ramp. The blend ramp itself runs in the value domain (golden,
+non-destructive: rate 0 == continuous teacher) unless the legacy per-frame
+`cycle_accurate_lif_forward` ramp is selected via `legacy_lif_blend_ramp`; the
+finalize forward is the same either way. All downstream pipeline steps (WQ,
 NormFusion, SCM accuracy probes) then validate against the same forward
 that Nevresim / SANA-FE / Lava run, closing the NF→chip gap by
 construction. Falls back to `run_cycle_accurate` only when the model has no
@@ -74,4 +78,4 @@ modes.
 ## Dependents
 
 - `mimarsinan.models.hybrid_core_flow.SpikingHybridCoreFlow` — calls `encode_compute_boundary` / `encode_segment_input` in `_forward_rate`.
-- `mimarsinan.tuning.tuners.lif_adaptation_tuner` — installs `chip_aligned_segment_forward` as `model.forward` post-blend.
+- `mimarsinan.tuning.tuners.lif_adaptation_tuner` — installs `chip_aligned_segment_forward` as `model.forward` at finalize (post-ramp).

@@ -49,7 +49,7 @@ def main() -> None:
     with torch.no_grad():
         if isinstance(model.forward, _CycleAccurateForward):
             out_nf = model(x)
-            native_fwd = model.forward._call_unpatched_forward
+            native_fwd = model.forward._unpatched_forward
             out_native = native_fwd(x)
         else:
             out_nf = model(x)

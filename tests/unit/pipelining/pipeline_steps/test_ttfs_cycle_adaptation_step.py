@@ -1,10 +1,12 @@
 """Unit tests for TTFSCycleAdaptationStep.
 
-Final-polish fine-tuning for ``spiking_mode == 'ttfs_cycle_based'``. The tuner is
-schedule-aware: the cascaded schedule trains through the genuine segment-aware
-spike forward (single-spike cascade dynamics), while the synchronized schedule
-trains through the analytical staircase composition with a TTFS grid-snap STE on
-encoding-layer inputs — the semantics the deployed chip actually executes.
+Final-polish fine-tuning for ``spiking_mode == 'ttfs_cycle_based'``. Both
+schedules ramp the per-perceptron TTFS blend gradually in the value domain (the
+golden LIF non-destructive ramp); the genuine cross-layer dynamics are installed
+only at finalize. Cascaded finalizes on the single-spike cascade forward
+(``_SegmentSpikeForward``); synchronized keeps the class-level analytical
+staircase composition with a TTFS grid-snap STE on segment-entry inputs — the
+semantics the deployed chip actually executes.
 """
 
 import numpy as np
@@ -171,6 +173,60 @@ class TestFinalState:
         for p in model.get_perceptrons():
             decorators = getattr(p.activation, "decorators", [])
             assert len(decorators) == 0
+
+
+class TestCascadedGradualRamp:
+    """Cascaded now ramps the value-domain blend gradually (golden LIF pattern):
+    no rate pin, no ramp-time cascade forward; the genuine single-spike cascade
+    is installed only at finalize."""
+
+    def test_cascaded_makes_natural_blend_progress(self, mock_pipeline):
+        """Regression for the incident's secondary anomaly: cascaded used to pin
+        rate at 1.0 (one-shot jump; ``natural adaptation reached only 0.0000``).
+        The gradual value-domain ramp must make genuine blend progress on its
+        own, like synchronized and LIF."""
+        torch.manual_seed(7)
+        _seed_ttfs_cycle_step(mock_pipeline, schedule="cascaded")
+        step = _run_step(mock_pipeline)
+        assert step.tuner._natural_rate > 0.0, (
+            "Cascaded adaptation made no natural blend progress — the rate-pin "
+            "regression."
+        )
+
+    def test_cascaded_installs_no_ramp_forward_genuine_at_finalize(self, mock_pipeline):
+        """The cascaded ramp runs in the value domain (no instance forward);
+        only ``_finalize_forward`` installs the genuine single-spike cascade."""
+        from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
+            _SegmentSpikeForward,
+        )
+
+        _seed_ttfs_cycle_step(mock_pipeline, schedule="cascaded")
+        step = _run_step(mock_pipeline)
+        assert step.tuner._ramp_forward() is None, (
+            "Cascaded must ramp in the value domain — no cascade forward during "
+            "the ramp (that was the rate-pinning one-shot)."
+        )
+        assert isinstance(step.tuner._finalize_forward(), _SegmentSpikeForward)
+
+    def test_cascaded_committed_model_runs_genuine_cascade(self, mock_pipeline):
+        """The committed model's installed forward IS the genuine single-spike
+        cascade: bit-exact to a freshly built cascade forward on the same
+        weights (so the committed metric and downstream steps run the deployed
+        dynamics, not the staircase ramp proxy)."""
+        from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
+            _SegmentSpikeForward,
+        )
+
+        model, _ = _seed_ttfs_cycle_step(mock_pipeline, schedule="cascaded")
+        _run_step(mock_pipeline)
+        installed = model.__dict__.get("forward")
+        assert isinstance(installed, _SegmentSpikeForward)
+
+        T = int(mock_pipeline.config["simulation_steps"])
+        x = torch.randn(3, *mock_pipeline.config["input_shape"])
+        fresh = _SegmentSpikeForward(model, T)
+        with torch.no_grad():
+            torch.testing.assert_close(model(x), fresh(x), rtol=0, atol=0)
 
 
 class TestSynchronizedAdaptation:
