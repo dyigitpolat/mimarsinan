@@ -13,7 +13,7 @@ from mimarsinan.mapping.mapping_utils import InputMapper, PerceptronMapper, Mode
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ir_graph_to_soft_core_mapping, IRSource
 from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.models.nn.layers import TransformedActivation, SavedTensorDecorator
@@ -132,11 +132,14 @@ def test_coalescing_accuracy_with_rearrange():
         ir_graph = ir_mapping.map(repr)
 
         # Soft Core Simulation
-        flow = SpikingUnifiedCoreFlow(
-            (1, 28, 28), ir_graph, 32, nn.Identity(), "TTFS", "TTFS", "<=", spiking_mode="ttfs"
+        sim_length = 32
+        flow = build_identity_spiking_flow(
+            (1, 28, 28), ir_graph, sim_length, nn.Identity(), "TTFS", "TTFS", "<=", spiking_mode="ttfs"
         ).to(device)
         with torch.no_grad():
-            sim_soft = flow(x)
+            # The hybrid executor returns count-scaled logits (× simulation_length);
+            # normalize back to the analytical activation the reference compares to.
+            sim_soft = flow(x) / float(sim_length)
         
         # Hard Core Simulation
         from mimarsinan.mapping.latency.chip import ChipLatency

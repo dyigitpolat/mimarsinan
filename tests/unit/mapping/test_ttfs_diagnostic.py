@@ -2,7 +2,8 @@
 
 This test builds a real TorchMLPMixer, converts it through MapperGraphConverter,
 fuses BN, creates IR, and compares the float ModelRepresentation forward against
-SpikingUnifiedCoreFlow TTFS continuous, identifying the first point of divergence.
+the identity-mapped hybrid flow's TTFS continuous output, identifying the first
+point of divergence.
 """
 
 import pytest
@@ -15,7 +16,10 @@ from mimarsinan.torch_mapping.mapper_graph_converter import MapperGraphConverter
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp, IRGraph
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow, _ttfs_activation_from_type
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
+from mimarsinan.models.spiking.ttfs_activation import (
+    ttfs_activation_from_type as _ttfs_activation_from_type,
+)
 
 
 def _build_small_mixer():
@@ -67,8 +71,11 @@ def _fuse_bn(supermodel):
         perceptron.normalization = nn.Identity()
 
 
+SIM_LENGTH = 32
+
+
 def _build_ir_flow(supermodel, input_shape):
-    """Build IR graph and SpikingUnifiedCoreFlow."""
+    """Build IR graph and identity-mapped hybrid flow."""
     mapper_repr = supermodel.get_mapper_repr()
     compute_per_source_scales(mapper_repr)
 
@@ -83,8 +90,8 @@ def _build_ir_flow(supermodel, input_shape):
             node.threshold = 1.0
             node.parameter_scale = torch.tensor(1.0)
 
-    flow = SpikingUnifiedCoreFlow(
-        input_shape, ir_graph, 32, nn.Identity(),
+    flow = build_identity_spiking_flow(
+        input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode="ttfs",
     )
     flow.eval()
@@ -132,7 +139,7 @@ class TestTTFSDiagnostic:
         # Compare TTFS output
         with torch.no_grad():
             float_out = supermodel.get_mapper_repr()(x)
-            flow_out = flow(x)
+            flow_out = flow(x) / SIM_LENGTH
 
         # They may differ by a constant factor (activation_scale), but
         # with activation_scale=1.0 they should match closely
@@ -443,7 +450,7 @@ class TestTTFSDiagnostic:
         x = torch.rand(4, *input_shape)
         with torch.no_grad():
             float_out = supermodel.get_mapper_repr()(x)
-            flow_out = flow(x)
+            flow_out = flow(x) / SIM_LENGTH
 
         max_diff = (float_out - flow_out).abs().max().item()
         assert max_diff < 0.01, (

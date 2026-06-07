@@ -27,8 +27,13 @@ def _flush_neural_segment(
     name: str,
     allow_neuron_splitting: bool = False,
     skip_coalescing_check: bool = False,
+    identity: bool = False,
 ) -> tuple[HybridStage, dict[int, dict[int, int]]]:
-    """Pack a neural segment using cores drawn from shared_pool."""
+    """Pack a neural segment using cores drawn from shared_pool.
+
+    ``identity=True`` skips the pool entirely: each soft core gets its own
+    exactly-sized hard core (``HardCoreMapping.map_identity``).
+    """
     segment_node_ids = {n.id for n in current_neural}
 
     if not skip_coalescing_check:
@@ -79,7 +84,10 @@ def _flush_neural_segment(
 
     hard = HardCoreMapping(shared_pool)
     try:
-        hard.map(soft, allow_neuron_splitting=allow_neuron_splitting)
+        if identity:
+            hard.map_identity(soft)
+        else:
+            hard.map(soft, allow_neuron_splitting=allow_neuron_splitting)
     except RuntimeError as e:
         group_ids: dict[object, int] = {}
         rows = []

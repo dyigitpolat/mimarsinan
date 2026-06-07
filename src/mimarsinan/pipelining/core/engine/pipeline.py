@@ -22,6 +22,7 @@ class Pipeline:
         prepare_containing_directory(self.working_directory)
 
         self.tolerance = 0.95
+        self.step_tolerances = {}  # step name -> retention factor override
 
         self.load_cache()
         if '__target_metric' not in self.cache.keys():
@@ -120,9 +121,13 @@ class Pipeline:
 
     def get_target_metric(self):
         return self.cache['__target_metric']
-    
+
     def set_target_metric(self, target_metric):
         self.cache.add('__target_metric', target_metric)
+
+    def _step_tolerance(self, step_name: str) -> float:
+        """Retention factor for one step: per-step override or the global one."""
+        return float(self.step_tolerances.get(step_name, self.tolerance))
 
     def register_post_step_hook(self, hook):
         self.post_step_hooks.append(hook)
@@ -196,8 +201,9 @@ class Pipeline:
             assert all([self._create_real_key(step.name, entry) in self.cache for entry in step.updates]), \
                 f"Pipeline error: New values of some updated entries are not found in the cache."
 
-            assert self.get_target_metric() >= previous_metric * self.tolerance, \
-                f"[{step.name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {self.tolerance}) = {previous_metric * self.tolerance}"
+            step_tolerance = self._step_tolerance(step.name)
+            assert self.get_target_metric() >= previous_metric * step_tolerance, \
+                f"[{step.name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {step_tolerance}) = {previous_metric * step_tolerance}"
 
             for hook in self.post_step_hooks:
                 hook(name, step)

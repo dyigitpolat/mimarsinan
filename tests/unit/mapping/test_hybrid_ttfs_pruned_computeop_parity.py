@@ -12,7 +12,7 @@ from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 
 SIM_LENGTH = 8
 CORES_CONFIG = [{"count": 64, "max_axons": 32, "max_neurons": 32}]
@@ -81,7 +81,7 @@ def test_hybrid_matches_unified_on_pruned_computeop_graph(spiking_mode):
     assert any(s.kind == "compute" for s in hybrid_mapping.stages)
     assert len(hybrid_mapping.stages) >= 2
 
-    soft = SpikingUnifiedCoreFlow(
+    soft = build_identity_spiking_flow(
         input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode=spiking_mode,
     ).eval()
@@ -92,7 +92,7 @@ def test_hybrid_matches_unified_on_pruned_computeop_graph(spiking_mode):
 
     x = torch.rand(4, *input_shape)
     with torch.no_grad():
-        soft_out = soft(x)
+        soft_out = soft(x) / float(SIM_LENGTH)
         hard_out = hard(x) / float(SIM_LENGTH)
 
     max_diff = (soft_out - hard_out).abs().max().item()

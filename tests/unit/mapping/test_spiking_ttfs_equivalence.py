@@ -1,4 +1,4 @@
-"""TTFS continuous equivalence: ModelRepresentation forward vs SpikingUnifiedCoreFlow.
+"""TTFS continuous equivalence: ModelRepresentation forward vs identity-mapped hybrid flow.
 
 Tests that the analytical TTFS path (act(W@x+b)/threshold) produces the same
 logits (up to constant scaling) as the float model forward.  This catches:
@@ -26,11 +26,11 @@ from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 
 
 def _build_ir_and_flow(mapper_repr, input_shape):
-    """Build IR graph and SpikingUnifiedCoreFlow from a ModelRepresentation."""
+    """Build IR graph and identity-mapped hybrid flow from a ModelRepresentation."""
     compute_per_source_scales(mapper_repr)
 
     ir_mapping = IRMapping(
@@ -44,7 +44,7 @@ def _build_ir_and_flow(mapper_repr, input_shape):
             node.threshold = 1.0
             node.parameter_scale = torch.tensor(1.0)
 
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape, ir_graph, 32, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode="ttfs",
     )

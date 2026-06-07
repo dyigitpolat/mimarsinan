@@ -10,9 +10,9 @@ import torch.nn as nn
 import numpy as np
 
 from mimarsinan.mapping.ir import NeuralCore, IRGraph, IRSource
-from mimarsinan.models.spiking.unified.flow import (
-    SpikingUnifiedCoreFlow,
-    _ttfs_activation_from_type,
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
+from mimarsinan.models.spiking.ttfs_activation import (
+    ttfs_activation_from_type as _ttfs_activation_from_type,
 )
 
 
@@ -63,7 +63,7 @@ def test_ttfs_continuous_uses_leakyrelu_when_activation_type_leakyrelu():
     Activation resolution is tested via test_ttfs_activation_type_base_name_parsing.
     """
     ir_graph = _make_single_core_ir(activation_type="LeakyReLU")
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape=(2,),
         ir_graph=ir_graph,
         simulation_length=32,
@@ -97,7 +97,7 @@ def test_ttfs_continuous_falls_back_to_relu_when_activation_type_compound_string
     ir_graph = _make_single_core_ir(
         activation_type="LeakyReLU + ClampDecorator, QuantizeDecorator"
     )
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape=(2,),
         ir_graph=ir_graph,
         simulation_length=32,
@@ -117,7 +117,7 @@ def test_ttfs_continuous_falls_back_to_relu_when_activation_type_compound_string
 
     # Should match explicit LeakyReLU core (both produce 0 after TTFS clamp)
     ir_graph_explicit = _make_single_core_ir(activation_type="LeakyReLU")
-    flow_explicit = SpikingUnifiedCoreFlow(
+    flow_explicit = build_identity_spiking_flow(
         input_shape=(2,),
         ir_graph=ir_graph_explicit,
         simulation_length=32,

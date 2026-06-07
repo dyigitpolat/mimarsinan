@@ -1,6 +1,25 @@
 # Behavioral-contract unification: NF ↔ SCM parity and the deployment-semantics SSOT
 
-**Status:** working document (investigation complete, refactor not started)
+**Status:** implemented (R1–R5 landed 2026-06-07, plus R6 = config-gated rung-2 KD
+`ttfs_finetune_kd_against_rung2` and the opt-in `scm_degradation_tolerance`;
+see `pipelining/core/nf_scm_parity.py`, `chip_simulation/deployment_contract.py`,
+`models/spiking/wire_semantics.py`, `mapping/packing` identity build).
+Verified on the fresh synchronized regression run (20260607_045154): fine-tune
+0.9559 (was 0.8609), NF 0.9685 → SCM 0.968 → HCM 0.968 → SANA-FE 0.968 with the
+per-neuron gate enforced — the incident's 3.8 pp split is gone. The per-neuron
+gate covers synchronized ttfs_cycle and continuous ttfs; **cascaded** gets a
+decision-level gate (argmax agreement vs the genuine identity executor,
+default ≥0.98; healthy agreement is exactly 1.0 — driver ≡ executor, locked by
+`test_ttfs_segment_node_recorder`; the 2026-06-07 0.85 readings were stale
+`TTFSActivation` bias references after normalization fusion replaced
+`perceptron.layer` — fixed via `refresh_perceptron_bias_references` at the
+layer-replacing seams). **ttfs_quantized is
+excluded by design** — its NF trains the floor-staircase + half-step-bias
+convention, which matches the chip ceil kernel only within one step per layer,
+so per-neuron equality is not its invariant (~46 % step-flip fraction measured
+on a healthy mmixcore run with a 0.2 pp accuracy gap). NOTE: the contract
+runner's ttfs_cycle record is the ANALYTICAL staircase reference (rung-4
+SANA-FE contract fields), not the deployed greedy dynamics.
 **Date:** 2026-06-06
 **Incident run:** `generated/regression_phased_deployment_run_20260606_231505`
 (`ttfs_cycle_based`, `synchronized`, `offload`, S=4, weight-quantized, MNIST mixer)

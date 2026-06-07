@@ -83,6 +83,43 @@ def build_hybrid_hard_core_mapping(
     )
 
 
+def build_identity_hybrid_mapping(*, ir_graph: IRGraph) -> HybridHardCoreMapping:
+    """Compile an IRGraph into a 1:1 NeuralCore→HardCore hybrid program.
+
+    No pool, padding, reindexing-by-placement, coalescing, or splitting — the
+    mapping carries pure IR semantics. This is the rung-2 SCM gate executor;
+    the packed builder (rung 3) must be value-preserving relative to it.
+    """
+    from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
+
+    consumed_by = build_ir_consumed_by(ir_graph)
+
+    stages: list[HybridStage] = []
+    all_reindex_maps: dict[int, dict[int, int]] = {}
+    _build_single_pool(
+        ir_graph=ir_graph,
+        cores_config=(),
+        consumed_by=consumed_by,
+        stages=stages,
+        all_reindex_maps=all_reindex_maps,
+        allow_neuron_splitting=False,
+        identity=True,
+    )
+
+    if not stages:
+        raise ValueError("Cannot build identity hybrid mapping: IRGraph has no stages.")
+
+    output_sources = ir_graph.output_sources.copy()
+    _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
+
+    return HybridHardCoreMapping(
+        stages=stages,
+        output_sources=output_sources,
+        node_activation_scales=_compute_node_activation_scales(ir_graph),
+        node_input_activation_scales=_compute_node_input_activation_scales(ir_graph),
+    )
+
+
 def _build_single_pool(
     *,
     ir_graph: IRGraph,
@@ -91,9 +128,12 @@ def _build_single_pool(
     stages: list[HybridStage],
     all_reindex_maps: dict[int, dict[int, int]],
     allow_neuron_splitting: bool,
+    identity: bool = False,
 ) -> None:
-    """Original single-shared-pool compilation path."""
-    shared_pool: list[HardCore] = _make_available_hardware_cores(cores_config)
+    """Original single-shared-pool compilation path (``identity=True``: no pool)."""
+    shared_pool: list[HardCore] = (
+        [] if identity else _make_available_hardware_cores(cores_config)
+    )
 
     for segment in partition_ir_graph(ir_graph):
         if isinstance(segment, NeuralSegment):
@@ -107,6 +147,7 @@ def _build_single_pool(
                 weight_banks=ir_graph.weight_banks,
                 name=segment.label,
                 allow_neuron_splitting=allow_neuron_splitting,
+                identity=identity,
             )
             stages.append(stage)
             all_reindex_maps.update(seg_reindex)

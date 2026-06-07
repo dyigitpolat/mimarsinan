@@ -270,6 +270,27 @@ def default_behavior(**overrides) -> NeuralBehaviorConfig:
     return NeuralBehaviorConfig(**base)
 
 
+def default_contract(
+    *,
+    simulation_steps: int = 4,
+    ttfs_cycle_schedule: str = "cascaded",
+    encoding_layer_placement: str = "subsume",
+    bias_mode: str = "on_chip",
+    **behavior_overrides,
+):
+    from mimarsinan.chip_simulation.deployment_contract import (
+        SpikingDeploymentContract,
+    )
+
+    return SpikingDeploymentContract(
+        behavior=default_behavior(**behavior_overrides),
+        simulation_steps=simulation_steps,
+        ttfs_cycle_schedule=ttfs_cycle_schedule,
+        encoding_layer_placement=encoding_layer_placement,
+        bias_mode=bias_mode,
+    )
+
+
 def build_toy_hybrid_mapping(*, input_rate: float = 1.0) -> HybridHardCoreMapping:
     """Single-core toy mapping: one input axon -> one output neuron."""
     core = HardCore(4, 4, has_bias_capability=False)

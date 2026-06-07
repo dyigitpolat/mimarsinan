@@ -85,6 +85,47 @@ class TestPipelineToleranceFromConfig:
                 f"Pipeline tolerance must equal 1 - degradation_tolerance for dt={dt}"
             )
 
+    def test_scm_step_tolerance_opt_in(self, tmp_path):
+        """``scm_degradation_tolerance`` tightens only the SCM (rung-2) gate.
+
+        After the behavioral unification (rung 1 and rung 2 share semantics),
+        the NF↔SCM residual is the honest mapping-level wire effect, so a
+        ~2 pp budget is safe — but it is opt-in; the global tolerance keeps
+        governing every step until the config asks otherwise."""
+        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
+
+        dp = DeploymentPipeline(
+            data_provider_factory=MockDataProviderFactory(),
+            deployment_parameters={
+                "degradation_tolerance": 0.15,
+                "scm_degradation_tolerance": 0.02,
+            },
+            platform_constraints=_DEFAULT_CONSTRAINTS,
+            reporter=_noop_reporter(),
+            working_directory=str(tmp_path),
+        )
+        assert dp._step_tolerance("Soft Core Mapping") == pytest.approx(0.98)
+        assert dp._step_tolerance("Hard Core Mapping") == pytest.approx(0.85)
+        assert dp._step_tolerance("Normalization Fusion") == pytest.approx(0.85)
+
+    def test_scm_step_tolerance_defaults_to_global(self, tmp_path):
+        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
+
+        dp = DeploymentPipeline(
+            data_provider_factory=MockDataProviderFactory(),
+            deployment_parameters={"degradation_tolerance": 0.15},
+            platform_constraints=_DEFAULT_CONSTRAINTS,
+            reporter=_noop_reporter(),
+            working_directory=str(tmp_path),
+        )
+        assert dp._step_tolerance("Soft Core Mapping") == pytest.approx(0.85)
+
+    def test_base_pipeline_step_tolerance_falls_back_to_global(self, tmp_path):
+        from mimarsinan.pipelining.core.engine.pipeline import Pipeline
+
+        base = Pipeline(str(tmp_path / "base_step"))
+        assert base._step_tolerance("Any Step") == base.tolerance
+
     def test_base_pipeline_tolerance_is_overridden(self, tmp_path):
         """DeploymentPipeline must override Pipeline.__init__'s hardcoded 0.95."""
         from mimarsinan.pipelining.core.engine.pipeline import Pipeline

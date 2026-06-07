@@ -59,7 +59,6 @@
     - [SmartSmoothAdaptation](#103-smartsmoothadaptation)
     - [Tuner Hierarchy](#104-tuner-hierarchy)
 11. [Spiking Simulation](#11-spiking-simulation)
-    - [SpikingUnifiedCoreFlow](#111-spikingunifiedcoreflow)
     - [SpikingHybridCoreFlow](#111b-spikinghybridcoreflow)
     - [Nevresim (C++ Simulator)](#112-nevresim-c-simulator)
     - [SimulationRunner](#113-simulationrunner)
@@ -123,7 +122,7 @@ mimarsinan/
 │       │   ├── builders/           # Model builder classes
 │       │   │   ├── perceptron_mixer_builder.py
 │       │   │   └── vit_builder.py  # VisionTransformer builder
-│       │   ├── unified_core_flow.py # Spiking simulation for IRGraph
+│       │   ├── spiking/hybrid/identity_flow.py # build_identity_spiking_flow (IRGraph on 1:1 identity mapping)
 │       │   └── hybrid_core_flow.py  # Spiking simulation for HybridMapping
 │       ├── mapping/                # Model → hardware mapping
 │       │   ├── ir.py               # Unified IR (IRGraph, NeuralCore, ComputeOp)
@@ -591,7 +590,9 @@ This critical step converts the fused PyTorch model into an `IRGraph`:
 4. Traverses the mapper graph, converting each mapper to `NeuralCore`s and/or `ComputeOp`s
 5. Optionally quantizes weights and biases when `weight_quantization` is enabled: rounds `core_matrix` entries to integers by multiplying by `scale` and setting `threshold = scale`.  **Critically, `hardware_bias` is also multiplied by the same `scale`** so that the TTFS simulation formula `act(W_q @ x + b_hw) / threshold` correctly reconstructs `act(W_eff @ x + b_eff)`.  Without this, the bias contribution would be attenuated by ~`q_max / max_weight` (typically ~127× for 8-bit) relative to the weight contribution.  This applies to both owned-weight NeuralCores and bank-backed NeuralCores (Conv2D).
 6. Optionally generates Graphviz visualizations when `generate_visualizations` is enabled in the config (disabled by default)
-7. Runs an early **soft-core spiking simulation** as the step metric: builds `HybridHardCoreMapping` from the IR graph and evaluates via `SpikingHybridCoreFlow` (same simulator family as HCM, so SCM / HCM / nevresim are comparable on the same mapping). Uses `simulation_steps`, `thresholding_mode`, and optional `max_simulation_samples` / `seed` for subsampling.
+7. Runs the **rung-2 identity gate** as the step metric (`run_scm_identity_metric`): builds a 1:1 identity `HybridHardCoreMapping` (`build_identity_hybrid_mapping`, no pool/pad/reindex/coalesce/split) from the IR graph and evaluates it via `SpikingHybridCoreFlow`. This isolates **IR semantics** — weights, shifts, banks, segment partition, wire effects (psum decomposition) — from packing. Uses `simulation_steps`, `thresholding_mode`, and optional `max_simulation_samples` / `seed` for subsampling. SCM no longer caches the packed `hybrid_mapping`; HCM builds it on demand via `load_hybrid_mapping_for_step`.
+
+**Gate ladder** (design doc §5.3): rung 1 = training NF metric (schedule-correct torch forward); rung 2 = this SCM identity gate; rung 3 = the HCM gate over the packed mapping (§5.15, catches packing: placement, padding, reindex, coalescing, splitting, scheduling); rung 4 = backend parity (SANA-FE / nevresim / Lava vs the contract record).
 
 ### 5.14 Core Quantization Verification
 
@@ -615,7 +616,7 @@ Converts the `IRGraph` into a `HybridHardCoreMapping`:
 3. Flushes each neural segment to soft cores via `neural_segment_to_soft_core_mapping`, then packs into `HardCoreMapping` from the shared pool
 4. Packs `SoftCore`s into physical `HardCore`s using **best-fit** greedy bin-packing (smallest feasible core first)
 5. Produces the final deployable hybrid program
-6. Runs hard-core spiking simulation for verification
+6. Runs the **rung-3 HCM gate** (`run_hcm_mapping_metric`) — hard-core spiking simulation over the packed mapping (catches packing effects the rung-2 identity gate cannot: placement, padding, reindex, coalescing, splitting, scheduling)
 7. Optionally generates Graphviz visualizations when `generate_visualizations` is enabled in the config (disabled by default)
 
 ### 5.16 Simulation
@@ -781,7 +782,7 @@ Key custom functions:
 
 **Hybrid SCM encoding contract:** Encoding perceptrons map to host **`ComputeOp`** stages. After each encoding op, **`SpikingHybridCoreFlow`** calls **`forward_spiking`** and stores `(T, B, D)` in **`state_buffer_spikes`**. The following neural segment splices those trains into segment input. With **`cycle_accurate_lif_forward`**, missing encoding trains raise instead of silently re-encoding rates with **`rates_to_spike_train`**; the only allowed bypass is raw pipeline input (`node_id == -2`) via **`uniform_spike_train`**.
 
-`SpikingHybridCoreFlow` / `SpikingUnifiedCoreFlow` use **`float64`** compute dtype by default so TTFS threshold comparisons and integer sums match nevresim C++ (`double` / exact int paths).
+`SpikingHybridCoreFlow` uses **`float64`** compute dtype by default so TTFS threshold comparisons and integer sums match nevresim C++ (`double` / exact int paths).
 
 ### 6.5 Model Builders
 
@@ -943,9 +944,9 @@ In spiking simulation, `ComputeOp`s act as **synchronization barriers**: spike c
 
 ### 8.5 Mapping contracts (pruned IR and simulation)
 
-After pruning (`prune_ir_graph`), the **pruned IR graph is the single source of truth** for simulation. No separate "unpruned" view is used for inference; `SpikingUnifiedCoreFlow` is built from the same `ir_graph` instance that was pruned.
+After pruning (`prune_ir_graph`), the **pruned IR graph is the single source of truth** for simulation. No separate "unpruned" view is used for inference; the identity-mapped hybrid flow (`build_identity_spiking_flow`) is built from the same `ir_graph` instance that was pruned.
 
-**Dimension and index contracts** (enforced in `SpikingUnifiedCoreFlow.__init__` via `_assert_mapping_contracts`):
+**Dimension and index contracts** (enforced when the identity-mapped hybrid flow is built from the pruned graph):
 
 - For every `NeuralCore` in the pruned graph: `len(node.input_sources.flatten()) == core_matrix.shape[0]` (axons) and `core_matrix.shape[1] == node.get_output_count()` (neurons).
 - All `input_sources` and `output_sources` indices refer to **compacted** (post-pruning) dimensions.
@@ -1104,6 +1105,16 @@ so repeated marginal-but-in-tolerance drops cannot silently accumulate.
 The total budget defaults to `degradation_budget_total`
 (or, when unset, `degradation_tolerance * expected_step_count`).
 
+**Per-step tolerance override.** `Pipeline.step_tolerances` maps a step
+name to a retention factor that supersedes the global tolerance for that
+step's post-run assertion (`Pipeline._step_tolerance`). The opt-in
+`scm_degradation_tolerance` config key (e.g. `0.02`) tightens only the
+Soft Core Mapping (rung-2) gate: once NF and SCM share semantics, the
+honest rung-1↔rung-2 residual is the mapping-level wire effect, so a
+~2 pp budget catches semantic drift the global 5–15 % tolerance would
+absorb (the 2026-06-06 incident class). The `nf_scm_parity_*` keys gate
+the per-neuron NF↔SCM lock (`pipelining/core/nf_scm_parity.py`).
+
 **Baseline-anchored absolute floor.** The per-cycle rollback gate in
 `SmoothAdaptationTuner._adaptation()` is the stricter of a relative
 noise-only gate (`post_acc >= pre_cycle_acc - _rollback_tolerance`) and an
@@ -1165,20 +1176,11 @@ Each tuner defines:
 
 ## 11. Spiking Simulation
 
-### 11.1 SpikingUnifiedCoreFlow
+### 11.1 Identity-mapped hybrid flow (evaluation NF)
 
-**File**: `models/unified_core_flow.py`
+**File**: `models/spiking/hybrid/identity_flow.py`
 
-Legacy / auxiliary PyTorch spiking simulator for a flat `IRGraph` (single graph, no hybrid segments). Still used in tests and tooling; **pipeline soft-core verification uses `SpikingHybridCoreFlow` instead** (§5.13).
-
-- Implements membrane potential dynamics with configurable firing modes (`"Default"`, `"Novena"`, `"TTFS"`)
-- Supports multiple spike generation modes (`"Stochastic"`, `"Deterministic"`, `"FrontLoaded"`, `"Uniform"`, `"TTFS"`)
-- Handles `ComputeOp`s as sync barriers: converts spike counts to rates, applies the operation via `node.execute_on_gathered(flat_rates)`, converts back to spikes
-- Uses range-compressed `IRSourceSpan`s for efficient input gathering
-- Supports both `"<"` and `"<="` thresholding modes
-- Dispatches between rate-coded and TTFS forward paths based on `spiking_mode` (not `firing_mode`)
-- **TTFS continuous** (`spiking_mode="ttfs"`): Analytical spike-time computation — `relu(W @ x + b) / θ` per core in topological order. Equivalent to standard ReLU; no time-stepping.
-- **TTFS quantized** (`spiking_mode="ttfs_quantized"`): **Analytical closed-form** computation (not cycle-based). For each neuron: `t_exact = θ / (W @ x + b)`, then quantized to the nearest discrete time step `k = round((t_exact − t_min) / Δt)`, clamped to `[0, S−1]`. The output activation is `(S − k) / S`. Non-firing neurons (where `W @ x + b ≤ 0`) are masked to output 0. This matches the nevresim C++ TTFS quantized behaviour exactly while being orders of magnitude faster than cycle-based simulation.
+`build_identity_spiking_flow(input_shape, ir_graph, T, preprocessor, firing, spike_mode, thresholding, *, spiking_mode, ttfs_cycle_schedule)` runs a flat `IRGraph` on a **1:1 identity mapping** (`build_identity_hybrid_mapping`, no pool/pad/reindex/coalesce/split) through the single `SpikingHybridCoreFlow` executor. It is the drop-in replacement for the retired flat-`IRGraph` spiking simulator (tests, tooling, and the SCM rung-2 gate) and computes IR latencies only when missing. **Note:** hybrid TTFS output is count-scaled (×T), unlike the retired flow's normalized output.
 
 ### 11.1b SpikingHybridCoreFlow
 
@@ -1191,7 +1193,7 @@ A PyTorch-based spiking simulator for `HybridHardCoreMapping`, using the state-b
   - **Neural stages**: Assembles local input from `input_slices`, runs segment neural cores, writes outputs via `output_slices`; optional `after_neural` hooks for refcount and recording
   - **Compute stages**: Gathers inputs, executes `ComputeOp`, writes results back
 - Supports both rate-coded and TTFS (continuous + analytical quantized) forward paths
-- The analytical TTFS quantized path mirrors `SpikingUnifiedCoreFlow`'s closed-form computation
+- The analytical TTFS quantized path computes the closed-form `(S − round(θ/(W@x+b) − t_min)/Δt)/S` per core in topological order (continuous: `relu(W@x+b)/θ`, equivalent to ReLU)
 - **`forward_with_recording()`** → `(logits, RunRecord)` for Loihi / SANA-FE parity steps
 - **Weight banks**: shared `nn.Parameter` per `WeightBank`; multiple hard cores reference the same bank to avoid duplicating conv kernels in GPU memory
 - **Primary simulators** for SCM (soft-core step metric), HCM (hard-core step + parity references), Loihi, and SANA-FE parity
@@ -1613,7 +1615,7 @@ pytest tests/unit/architecture/ -q
 ### Shared modules
 Cross-cutting helpers live next to their domain rather than in pipeline steps. See per-package `ARCHITECTURE.md` files and `docs/ARCHITECTURE_STYLE.md` for module tables.
 
-**Facade vs shared kernels:** `SpikingUnifiedCoreFlow`, `SpikingHybridCoreFlow`, `IRLatency`, and `ChipLatency` remain separate public entry points (different inputs and pipeline phases). Duplicated logic lives in shared modules (`models/spiking_config.py`, `models/signal_spans.py`, `models/lif_core_step.py`, `chip_simulation/ttfs_kernels.py`, `mapping/latency/upstream.py`). See `mapping/LATENCY.md`.
+**Facade vs shared kernels:** `SpikingHybridCoreFlow` (the one executor; reached for a flat `IRGraph` via the identity-mapped `build_identity_spiking_flow`), `IRLatency`, and `ChipLatency` remain separate public entry points (different inputs and pipeline phases). Duplicated logic lives in shared modules (`models/spiking_config.py`, `models/signal_spans.py`, `models/lif_core_step.py`, `chip_simulation/ttfs_kernels.py`, `mapping/latency/upstream.py`). See `mapping/LATENCY.md`.
 
 **Subpackage imports:** Moved code lives under subpackages (e.g. `mapping/packing/`, `mapping/pruning/`). Import canonical paths directly; [`mapping/__init__.py`](mimarsinan/src/mimarsinan/mapping/__init__.py) may re-export the public API. Run `python scripts/import_path_inventory.py --check-legacy-path` to catch banned legacy paths.
 
@@ -1626,7 +1628,7 @@ Notable entry points:
 | `mapping/LATENCY.md`, `mapping/FIRING.md` | Latency engine boundaries and firing-mode contracts |
 | `chip_simulation/hybrid_stage_runner.py` | `run_hybrid_stages` — HCM, nevresim, Lava, SANA-FE |
 | `chip_simulation/firing_strategy.py` | `firing_mode` / reset semantics across training and backends |
-| `pipelining/simulation_factory.py` | HCM metric, parity helpers, `run_hcm_mapping_metric` |
+| `pipelining/simulation_factory.py` | SCM identity gate (`run_scm_identity_metric`), HCM metric (`run_hcm_mapping_metric`), `build_identity_mapping_for_pipeline`, `build_spiking_hybrid_flow`, parity helpers |
 | `config_schema/deployment_derivation.py` | Python mirror of wizard deployment flags |
 | `gui/json_util.py` | `to_json_safe` for API and snapshots |
 
@@ -1708,7 +1710,7 @@ PyTorch `nn.Module` and let the `torch_mapping` module convert it automatically:
 
 1. Add the operation name to `ComputeOp._dispatch()` in `mapping/ir.py`
 2. Implement the `_exec_{op_type}(flat_input, batch_size)` method — receives flat `(B, N)` tensor, reshapes internally as needed, returns flat output
-3. Both `SpikingUnifiedCoreFlow` and `SpikingHybridCoreFlow` use `node.execute_on_gathered()` generically, so no changes are needed in the simulators unless the operation requires special spiking semantics
+3. `SpikingHybridCoreFlow` uses `node.execute_on_gathered()` generically, so no changes are needed in the simulator unless the operation requires special spiking semantics
 4. Create the appropriate `Mapper` subclass in `mapping_utils.py` that emits the new ComputeOp via `ir_mapping.add_compute_op()`
 
 ### Running the Pipeline

@@ -236,6 +236,32 @@ class HardCoreMapping:
             allow_neuron_splitting=allow_neuron_splitting,
         )
 
+        self._finalize_sources(softcore_mapping)
+
+    def map_identity(self, softcore_mapping):
+        """1:1 SoftCore→HardCore placement: no pool, padding, fusion, or splits.
+
+        Each soft core gets an exactly-sized hard core, so the mapping carries
+        pure IR semantics — the rung-2 gate that isolates packing effects.
+        """
+        banks = getattr(softcore_mapping, "weight_banks", None)
+        if banks:
+            self.weight_banks = dict(banks)
+
+        for core_idx, softcore in enumerate(softcore_mapping.cores):
+            hardcore = HardCore(
+                axons_per_core=softcore.get_input_count(),
+                neurons_per_core=softcore.get_output_count(),
+                has_bias_capability=getattr(softcore, "hardware_bias", None) is not None,
+            )
+            self.cores.append(hardcore)
+            self.merge_softcore_into(core_idx, hardcore, softcore)
+
+        self._finalize_sources(softcore_mapping)
+
+    def _finalize_sources(self, softcore_mapping):
+        """Remap placed sources to (core, neuron) and pad unused axons off."""
+
         def remap_sources(sources):
             for source in sources:
                 if source.is_off_ or source.is_input_ or source.is_always_on_:

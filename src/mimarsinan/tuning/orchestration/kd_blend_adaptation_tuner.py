@@ -63,7 +63,8 @@ class _KDClassificationLoss:
 
     def __call__(self, model: nn.Module, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
-            if next(self.teacher.parameters()).device != x.device:
+            teacher_param = next(self.teacher.parameters(), None)
+            if teacher_param is not None and teacher_param.device != x.device:
                 self.teacher.to(x.device)
             teacher_logits = self.teacher(x)
         student_logits = model(x)
@@ -118,6 +119,15 @@ class KDBlendAdaptationTuner(SmoothAdaptationTuner):
 
     def _wrap_encoding_input(self, perceptron) -> None:
         """Optional encoding-layer input wrapping (e.g. ChipInputQuantizer)."""
+
+    def _append_encoding_input_module(self, perceptron, module: nn.Module) -> None:
+        """Append a wire op (e.g. an STE input quantizer) after input_activation."""
+        if isinstance(perceptron.input_activation, nn.Identity):
+            perceptron.input_activation = module
+        else:
+            perceptron.input_activation = nn.Sequential(
+                perceptron.input_activation, module,
+            )
 
     def _after_install_blend(self) -> None:
         """Hook after all blends + KD loss are installed (e.g. install a forward)."""

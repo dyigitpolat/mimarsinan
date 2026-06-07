@@ -252,14 +252,32 @@ def run_ttfs_hybrid_contract(
     mapping: Any,
     sample_input: np.ndarray,
     *,
-    simulation_length: int,
-    spiking_mode: str,
+    simulation_length: int | None = None,
+    spiking_mode: str | None = None,
     sample_index: int = 0,
     ttfs_cycle_schedule: str | None = None,
+    contract: Any = None,
 ) -> TtfsContractRunResult:
-    """Execute the full hybrid mapping on the canonical TTFS contract path."""
+    """Execute the full hybrid mapping on the canonical TTFS contract path.
+
+    Pass a ``SpikingDeploymentContract`` to derive ``simulation_length`` /
+    ``spiking_mode`` / the wire grid-snap rule from the SSOT; the loose kwargs
+    remain honored for callers below the contract boundary.
+    """
     from mimarsinan.chip_simulation.ttfs.ttfs_recorder import TtfsRunRecord
 
+    if contract is not None:
+        if simulation_length is None:
+            simulation_length = contract.simulation_steps
+        if spiking_mode is None:
+            spiking_mode = contract.spiking_mode
+        if ttfs_cycle_schedule is None:
+            ttfs_cycle_schedule = contract.ttfs_cycle_schedule
+    if simulation_length is None or spiking_mode is None:
+        raise ValueError(
+            "run_ttfs_hybrid_contract requires simulation_length and "
+            "spiking_mode (directly or via contract=)"
+        )
     if not is_ttfs_spiking_mode(spiking_mode):
         raise ValueError(
             f"run_ttfs_hybrid_contract requires TTFS mode, got {spiking_mode!r}"

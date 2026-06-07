@@ -1,4 +1,4 @@
-"""IR equivalence: raw perceptron forward vs SpikingUnifiedCoreFlow (TTFS) forward.
+"""IR equivalence: raw perceptron forward vs identity-mapped hybrid flow (TTFS) forward.
 
 Check that the IR graph matches the model's forward pass when activations are
 plain ReLU (no TransformedActivation decorators), thresholds = 1.0, and
@@ -25,7 +25,7 @@ from mimarsinan.mapping.mapping_utils import (
 )
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import ir_graph_to_soft_core_mapping
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.models.nn.layers import TransformedActivation, SavedTensorDecorator
 
@@ -59,7 +59,7 @@ class _RawMLPModel(nn.Module):
 
 
 def test_ir_forward_matches_raw_model():
-    """SpikingUnifiedCoreFlow logits must match the raw model (no decorators)."""
+    """Identity-mapped hybrid flow logits must match the raw model (no decorators)."""
     torch.manual_seed(42)
     input_shape = (1, 8, 8)
     num_classes = 4
@@ -96,10 +96,11 @@ def test_ir_forward_matches_raw_model():
     )
     ir_graph = ir_mapping.map(repr)
 
-    flow = SpikingUnifiedCoreFlow(
+    simulation_length = 32
+    flow = build_identity_spiking_flow(
         input_shape,
         ir_graph,
-        32,
+        simulation_length,
         nn.Identity(),
         "TTFS",
         "TTFS",
@@ -111,7 +112,7 @@ def test_ir_forward_matches_raw_model():
     x = torch.rand(4, *input_shape)
     with torch.no_grad():
         model_out = model(x)
-        flow_out = flow(x)
+        flow_out = flow(x) / simulation_length
 
     assert model_out.shape == flow_out.shape
     diff = (model_out - flow_out).abs().max().item()

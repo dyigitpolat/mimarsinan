@@ -11,10 +11,10 @@ Maps IR neural segments to `SoftCore` / `HardCore` layouts and hybrid programs.
 | `greedy/` | `greedy_pack_softcores`, split helpers | Greedy bin-packing main loop and neuron-split helpers |
 | `core_packing.py` | Re-exports | Public packing API |
 | `placement_engine.py` | `Materializer`, `run_placement` | Single greedy placement engine. The `Materializer` strategy (layout shape-only vs runtime weight-bearing) supplies the place / fuse / split hooks; both `pack_layout` and `HardCoreMapping.map` drive the identical assignment kernel through it. |
-| `softcore/` | `SoftCore`, `HardCore`, `HardCoreMapping`, `RuntimeMaterializer`, `compact_soft_core_mapping` | Runtime soft→hard mapping split across `soft_core`, `hard_core`, `hard_core_mapping` (now a thin wrapper over `placement_engine` via `RuntimeMaterializer`), `compaction` |
+| `softcore/` | `SoftCore`, `HardCore`, `HardCoreMapping`, `RuntimeMaterializer`, `compact_soft_core_mapping` | Runtime soft→hard mapping split across `soft_core`, `hard_core`, `hard_core_mapping` (now a thin wrapper over `placement_engine` via `RuntimeMaterializer`), `compaction`. `HardCoreMapping.map_identity(softcore_mapping)` = 1:1 `SoftCore`→`HardCore` (no pack/pad/reindex); shares `_finalize_sources` with `map()` |
 | `hybrid_types.py` | `HybridHardCoreMapping`, `HybridStage` | Hybrid program datatypes |
-| `hybrid_segment.py` | `_flush_neural_segment`, … | Segment flush and IO remap |
-| `hybrid_build_pool.py` / `hybrid_build_scheduled.py` | `build_hybrid_hard_core_mapping`, `_build_single_pool`, `_build_scheduled` | IRGraph → hybrid program compiler; both paths partition via `layout.segmentation.partition_ir_graph` (single segmentation source) |
+| `hybrid_segment.py` | `_flush_neural_segment` (`identity: bool`), … | Segment flush and IO remap |
+| `hybrid_build_pool.py` / `hybrid_build_scheduled.py` | `build_hybrid_hard_core_mapping`, `build_identity_hybrid_mapping`, `_build_single_pool`, `_build_scheduled` | IRGraph → hybrid program compiler; both packed paths partition via `layout.segmentation.partition_ir_graph` (single segmentation source). `build_identity_hybrid_mapping(*, ir_graph)` (re-exported via `hybrid_hardcore_mapping.py`) = 1:1 `NeuralCore`→`HardCore`, no pool/pad/reindex/coalesce/split (SCM rung-2 identity gate) |
 | `neural_segment_packing.py` | `neural_segment_to_soft_core_mapping` | Neural-only segment → SCM |
 | `softcore/soft_core_mapper.py` | Mapper helpers | Soft-core emission from mapper graph |
 

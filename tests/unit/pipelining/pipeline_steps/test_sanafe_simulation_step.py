@@ -256,7 +256,7 @@ def test_step_runner_init_threads_thresholding_and_preset(monkeypatch):
     step.run()
     assert len(calls["runner_inits"]) == 1
     init = calls["runner_inits"][0]
-    assert init["behavior"].thresholding_mode == "<"
+    assert init["contract"].thresholding_mode == "<"
     assert init["arch_preset"] == "truenorth"
     assert init["simulation_length"] == 4
 

@@ -17,7 +17,7 @@ Computes per-node latency tiers on IR and chip mappings.
 
 ## Dependents
 
-- `mapping.ir_mapping`, `models.unified_core_flow`, `models.hybrid_core_flow`, SANA-FE runner.
+- `mapping.ir_mapping`, `models.hybrid_core_flow`, SANA-FE runner.
 
 ## Invariants
 

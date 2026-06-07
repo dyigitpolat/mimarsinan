@@ -26,7 +26,7 @@ from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 
@@ -78,7 +78,7 @@ def _build_quantized_flows(mapper_repr, input_shape):
     _quantize_ir_inplace(ir_graph)
     IRLatency(ir_graph).calculate()
 
-    soft_flow = SpikingUnifiedCoreFlow(
+    soft_flow = build_identity_spiking_flow(
         input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode="ttfs_quantized",
     ).eval()
@@ -121,7 +121,7 @@ class TestQuantizedHCMSCMEquivalence:
 
         x = torch.rand(8, *input_shape)
         with torch.no_grad():
-            soft_out = soft_flow(x).to(torch.float64)
+            soft_out = (soft_flow(x) / SIM_LENGTH).to(torch.float64)
             hard_out = (hard_flow(x) / SIM_LENGTH).to(torch.float64)
 
         max_diff = (soft_out - hard_out).abs().max().item()
