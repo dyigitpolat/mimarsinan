@@ -20,27 +20,49 @@ class TtfsSegmentPolicy:
     node_value_recorder: dict | None = None
 
     def prepare(self, driver):
-        for m in self._ttfs_nodes(driver._seg_of.keys()):
-            m.set_cycle_accurate(True)
+        # The walk feeds each node norm(W s_t + b) per cycle; the additive
+        # constant of that pre-activation is the norm-folded effective bias,
+        # so install it (differentiable, recomputed fresh every drive — no
+        # stale references across layer-replacing steps).
+        from mimarsinan.models.perceptron_mixer.perceptron import (
+            effective_preactivation_bias,
+        )
+
+        for p, mods in self._ttfs_perceptrons(driver._seg_of.keys()):
+            bias = effective_preactivation_bias(p)
+            for m in mods:
+                m.set_cycle_accurate(True)
+                m.set_bias(bias)
 
     def finalize(self, driver):
-        for m in self._ttfs_nodes(driver._seg_of.keys()):
-            m.set_cycle_accurate(False)
-            m.reset_state()
+        # Restore the raw layer.bias reference: the picklable stored contract
+        # (a drive-time effective bias may carry an autograd graph).
+        for p, mods in self._ttfs_perceptrons(driver._seg_of.keys()):
+            bias = getattr(p.layer, "bias", None)
+            for m in mods:
+                m.set_cycle_accurate(False)
+                m.reset_state()
+                m.set_bias(bias)
 
     @staticmethod
-    def _ttfs_nodes(nodes):
+    def _ttfs_perceptrons(nodes):
         from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 
         out = []
+        seen = set()
         for n in nodes:
             p = perceptron_of(n)
-            if p is None:
+            if p is None or id(p) in seen:
                 continue
-            for m in p.modules():
-                if isinstance(m, TTFSActivation):
-                    out.append(m)
+            seen.add(id(p))
+            mods = [m for m in p.modules() if isinstance(m, TTFSActivation)]
+            if mods:
+                out.append((p, mods))
         return out
+
+    @classmethod
+    def _ttfs_nodes(cls, nodes):
+        return [m for _, mods in cls._ttfs_perceptrons(nodes) for m in mods]
 
     def decode_scale(self, driver, node):
         """activation_scale of the perceptron that produced this region node's spikes."""

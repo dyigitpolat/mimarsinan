@@ -44,6 +44,9 @@ def build_hybrid_mapping_for_pipeline(
     from mimarsinan.mapping.support.neg_shift_bias import propagate_negative_shifts_to_hybrid
 
     propagate_negative_shifts_to_hybrid(ir_graph, hybrid_mapping)
+    # Provenance stamp: lets cached copies be detected as stale when the
+    # ir_graph is regenerated (e.g. a resumed run).
+    hybrid_mapping.source_ir_build_token = getattr(ir_graph, "build_token", None)
     return hybrid_mapping
 
 

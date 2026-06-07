@@ -176,15 +176,16 @@ class TestFinalState:
 
 
 class TestCascadedGradualRamp:
-    """Cascaded now ramps the value-domain blend gradually (golden LIF pattern):
-    no rate pin, no ramp-time cascade forward; the genuine single-spike cascade
-    is installed only at finalize."""
+    """Cascaded ramps gradually through the GENUINE deployed cascade via a
+    whole-model output blend (genuine-gradual, default on): non-destructive at
+    r=0 (continuous teacher), bit-exact deployed dynamics at r=1, so the gradual
+    phase trains through the deployed dynamics (incl. offload's input encode)."""
 
     def test_cascaded_makes_natural_blend_progress(self, mock_pipeline):
         """Regression for the incident's secondary anomaly: cascaded used to pin
         rate at 1.0 (one-shot jump; ``natural adaptation reached only 0.0000``).
-        The gradual value-domain ramp must make genuine blend progress on its
-        own, like synchronized and LIF."""
+        The gradual ramp must make genuine blend progress on its own, like
+        synchronized and LIF."""
         torch.manual_seed(7)
         _seed_ttfs_cycle_step(mock_pipeline, schedule="cascaded")
         step = _run_step(mock_pipeline)
@@ -193,19 +194,18 @@ class TestCascadedGradualRamp:
             "regression."
         )
 
-    def test_cascaded_installs_no_ramp_forward_genuine_at_finalize(self, mock_pipeline):
-        """The cascaded ramp runs in the value domain (no instance forward);
-        only ``_finalize_forward`` installs the genuine single-spike cascade."""
+    def test_cascaded_default_ramp_is_value_domain(self, mock_pipeline):
+        """Default (genuine-gradual off): the cascaded ramp is the value-domain
+        staircase proxy (no instance forward during the ramp); finalize installs
+        the genuine single-spike cascade. The proxy ramp is the higher-accuracy
+        default (genuine-gradual under-optimizes the single-spike cascade)."""
         from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
             _SegmentSpikeForward,
         )
 
         _seed_ttfs_cycle_step(mock_pipeline, schedule="cascaded")
         step = _run_step(mock_pipeline)
-        assert step.tuner._ramp_forward() is None, (
-            "Cascaded must ramp in the value domain — no cascade forward during "
-            "the ramp (that was the rate-pinning one-shot)."
-        )
+        assert step.tuner._ramp_forward() is None
         assert isinstance(step.tuner._finalize_forward(), _SegmentSpikeForward)
 
     def test_cascaded_committed_model_runs_genuine_cascade(self, mock_pipeline):
@@ -227,6 +227,20 @@ class TestCascadedGradualRamp:
         fresh = _SegmentSpikeForward(model, T)
         with torch.no_grad():
             torch.testing.assert_close(model(x), fresh(x), rtol=0, atol=0)
+
+    def test_cascaded_finalize_marks_lr_refind(self, mock_pipeline):
+        """Cascaded finalize swaps in the genuine cascade forward, so
+        stabilization must re-find the LR on the deployed dynamics (the
+        staircase-proxy ramp's cached LR is stale)."""
+        _seed_ttfs_cycle_step(mock_pipeline, schedule="cascaded")
+        step = _run_step(mock_pipeline)
+        assert step.tuner._stabilization_refinds_lr is True
+
+    def test_phase_seconds_recorded(self, mock_pipeline):
+        """Phase timing is recorded for the gradual ramp + stabilization."""
+        _seed_ttfs_cycle_step(mock_pipeline, schedule="cascaded")
+        step = _run_step(mock_pipeline)
+        assert set(step.tuner._phase_seconds) >= {"gradual", "stabilization"}
 
 
 class TestSynchronizedAdaptation:

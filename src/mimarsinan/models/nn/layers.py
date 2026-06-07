@@ -30,6 +30,20 @@ from mimarsinan.models.nn.decorators import (
 )
 
 
+def norm_affine_params(normalization):
+    """``(u, beta, mean)`` of a normalization's frozen-stats affine form
+    ``u * (z - mean) + beta`` — differentiable through ``weight``/``bias``.
+
+    Works for ``nn.BatchNorm1d/2d`` and ``FrozenStatsNormalization`` (anything
+    exposing ``weight``, ``bias``, ``running_mean``, ``running_var``, ``eps``).
+    """
+    weight = normalization.weight
+    var = normalization.running_var.to(weight.device)
+    mean = normalization.running_mean.to(weight.device)
+    u = weight / torch.sqrt(var + normalization.eps)
+    return u, normalization.bias, mean
+
+
 class TransformedActivation(nn.Module):
     def __init__(self, base_activation, decorators):
         super(TransformedActivation, self).__init__()

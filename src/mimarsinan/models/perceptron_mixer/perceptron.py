@@ -1,8 +1,22 @@
-from mimarsinan.models.nn.layers import MaxValueScaler, LeakyGradReLU
+from mimarsinan.models.nn.layers import MaxValueScaler, LeakyGradReLU, norm_affine_params
 
 
 import torch.nn as nn
 import torch
+
+
+def effective_preactivation_bias(perceptron):
+    """Additive constant of ``normalization(layer(x))`` under frozen stats —
+    the bias the deployed chip charges per cycle. ``None`` when there is none.
+    Differentiable through ``layer.bias`` and the norm's affine params."""
+    bias = perceptron.layer.bias
+    normalization = perceptron.normalization
+    if isinstance(normalization, nn.Identity):
+        return bias
+    u, beta, mean = norm_affine_params(normalization)
+    if bias is None:
+        bias = torch.zeros_like(mean)
+    return (bias - mean) * u + beta
 
 
 # Canonical mapping from string names to activation constructors.
@@ -82,6 +96,9 @@ class Perceptron(nn.Module):
             new_scale = torch.tensor(new_scale)
         self.scale_factor.data = new_scale.data
         
+    def effective_preactivation_bias(self):
+        return effective_preactivation_bias(self)
+
     def set_activation(self, activation):
         self.activation = activation
 

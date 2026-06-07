@@ -87,11 +87,12 @@ def test_default_cycle_accurate_lif_forward_is_true():
     assert dp["cycle_accurate_lif_forward"] is True
 
 
-def test_default_legacy_lif_blend_ramp_is_false():
-    """The golden value-domain ramp is the default; the legacy per-frame ramp
-    (which leaks off the continuous teacher at rate 0) is opt-in."""
+def test_legacy_ramp_switches_removed():
+    """The legacy per-frame ramp and the rejected genuine-gradual ramp switches
+    were removed; the value-domain blend ramp is the sole, non-optional path."""
     dp = get_default_deployment_parameters()
-    assert dp["legacy_lif_blend_ramp"] is False
+    assert "legacy_lif_blend_ramp" not in dp
+    assert "genuine_gradual_cascade_ramp" not in dp
 
 
 def test_default_enable_nevresim_simulation_is_true():

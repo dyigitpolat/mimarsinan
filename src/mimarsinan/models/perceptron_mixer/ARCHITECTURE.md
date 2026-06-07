@@ -8,7 +8,7 @@ Every architecture is built from `Perceptron` modules organized as a
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `perceptron.py` | `Perceptron` | Fundamental building block: Linear + Normalization + Activation + Regularization |
+| `perceptron.py` | `Perceptron`, `effective_preactivation_bias` | Fundamental building block: Linear + Normalization + Activation + Regularization. `effective_preactivation_bias(p)` (also a method) = the additive constant of `normalization(layer(x))` under frozen stats — the bias the deployed chip charges; differentiable; `None` when there is none. Consumed by normalization fusion (the fused bias) and `TtfsSegmentPolicy` (drive-time bias install). |
 | `perceptron_flow.py` | `PerceptronFlow` | Abstract base for models composed of `Perceptron`s; defines `get_perceptrons()`, `get_mapper_repr()` |
 | `perceptron_mixer.py` | `PerceptronMixer` | MLP-Mixer architecture (patch embed + token/channel mixing) |
 | `vision_transformer.py` | `VisionTransformer` | Vision Transformer (ViT) with CLS token, positional embeddings, MHSA |

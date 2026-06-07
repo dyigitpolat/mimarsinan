@@ -143,10 +143,25 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     _target_activation_type = "Target"
     _old_activation_type = "ReLU"
 
+    # SmartSmoothAdaptation philosophy: the ANN->SNN activation ramp must be
+    # genuinely gradual — many small committed increments, each recovered by
+    # training DURING the ramp. No one-shot jump to rate 1.0 (which relabels
+    # the recovery as "stabilization"), and a small uniform ladder instead of
+    # the historical 0.5-sized cliffs (each licensed to lose rollback_tolerance).
+    _skip_one_shot = True
+    _initial_ramp_step = 0.125
+    _ramp_step_growth = 1.0
+    # Post-finalize polish at the deployed dynamics: extra stabilization
+    # rounds with LR restarts while validation still improves (the proxy↔
+    # genuine gap means the deployed function needs real training after the
+    # finalize swap; a constant-LR single pass plateaus early).
+    _max_stabilization_rounds = 3
+
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.adaptation_manager = adaptation_manager
         self._final_metric = None
+        self._finalize_cliff = None
 
         self._configure()
         self._teacher = self._snapshot_teacher()
@@ -221,6 +236,9 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         downstream step run the exact deployed dynamics."""
         self._update_target_activations()
         fwd = self._finalize_forward()
+        # A deployed forward distinct from the ramp invalidates the ramp's
+        # cached LR; stabilization must re-find it on the deployed dynamics.
+        self._stabilization_refinds_lr = fwd is not None
         if fwd is not None:
             self._install_forward(fwd)
 
@@ -264,13 +282,30 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         self._set_rate(rate)
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
+    def _safe_eval(self):
+        try:
+            return float(self.trainer.validate_n_batches(self._budget.eval_n_batches))
+        except Exception:
+            return None
+
     def _after_run(self):
         try:
             self._continue_to_full_rate()
             self._set_rate(1.0)
+            ramp_metric = self._safe_eval()
         finally:
             self._remove_forward()
         self._finalize()
+        post_finalize = self._safe_eval()
+        if ramp_metric is not None and post_finalize is not None:
+            # Finalize cliff: ramp-end metric (ramp forward at r=1) minus the
+            # metric right after installing the deployed finalize forward. For
+            # the genuine-gradual ramp both run the deployed dynamics, so the
+            # cliff is ~0; the value-domain proxy ramp shows the proxy gap here.
+            self._finalize_cliff = ramp_metric - post_finalize
+            self.pipeline.reporter.report(
+                f"{self.name} finalize_cliff", self._finalize_cliff,
+            )
         self._final_metric = self._ensure_pipeline_threshold()
         self._committed_rate = 1.0
         return self._final_metric

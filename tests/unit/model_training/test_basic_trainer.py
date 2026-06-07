@@ -216,3 +216,4 @@ class TestBasicTrainer:
         acc0 = trainer.test(max_batches=0)
         assert call_count[0] == 0
         assert acc0 == 0.0
+

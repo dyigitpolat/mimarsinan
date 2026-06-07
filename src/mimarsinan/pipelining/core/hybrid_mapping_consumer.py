@@ -20,14 +20,21 @@ def load_hybrid_mapping_for_step(
     """Return cached hybrid mapping or build from the step's IR graph and platform constraints.
 
     ``run_hcm_mapping_metric`` stores the mapping on ``pipeline.cache`` under a flat
-    key (not step-scoped ``get_entry``), so lookups use ``cache.get`` here.
+    key (not step-scoped ``get_entry``), so lookups use ``cache.get`` here. A cached
+    mapping is trusted only when its recorded ``source_ir_build_token`` matches the
+    step's current ``ir_graph`` — a resumed run that regenerated the ir_graph must
+    not simulate the previous run's packed mapping (the 2026-06-08 stale-HCM
+    incident: SCM 0.954 vs HCM 0.916 on a cascaded+offload rerun).
     """
+    ir_graph = step.get_entry("ir_graph")
     if not rebuild:
         cached = pipeline.cache.get(cache_key)
-        if cached is not None:
+        if cached is not None and (
+            getattr(cached, "source_ir_build_token", None)
+            == getattr(ir_graph, "build_token", None)
+        ):
             return cached
 
-    ir_graph = step.get_entry("ir_graph")
     platform_constraints = step.get_entry("platform_constraints_resolved")
     hybrid_mapping = build_hybrid_mapping_for_pipeline(
         ir_graph,

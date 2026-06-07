@@ -8,23 +8,12 @@ import torch.nn as nn
 from mimarsinan.models.nn.activations import (
     ChipInputQuantizer,
     LIFActivation,
-    run_cycle_accurate,
 )
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     BlendActivation,
     KDBlendAdaptationTuner,
     _InstalledForward,
 )
-
-
-class _CycleAccurateForward(_InstalledForward):
-    """Picklable ``model.forward`` override that drives ``run_cycle_accurate``
-    on top of the model's class-level forward, used during the LIF blend ramp."""
-
-    def _run(self, x):
-        return run_cycle_accurate(
-            self.model, x, self.T, forward_fn=self._unpatched_forward,
-        )
 
 
 class _ChipAlignedNFForward(_InstalledForward):
@@ -64,14 +53,6 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         self._cycle_accurate = bool(self.pipeline.config.get("cycle_accurate_lif_forward", False))
-        # Legacy per-frame ramp leaks off the continuous teacher at rate 0 (the
-        # blend is applied inside ``run_cycle_accurate``). Default OFF: the ramp
-        # runs in the value domain (golden, non-destructive); the genuine
-        # chip-aligned forward is installed at finalize either way. Opt back in
-        # via ``legacy_lif_blend_ramp`` for the old behavior.
-        self._legacy_blend_ramp = bool(
-            self.pipeline.config.get("legacy_lif_blend_ramp", False)
-        )
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
 
         self._bias_mode = resolve_bias_mode(self.pipeline.config)
@@ -100,16 +81,6 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             )
             self._append_encoding_input_module(perceptron, quantizer)
 
-    def _ramp_forward(self):
-        """Legacy cycle-accurate ramp forward (per-frame blend). Installed only
-        when ``cycle_accurate_lif_forward`` AND ``legacy_lif_blend_ramp`` are set;
-        otherwise the ramp runs in the value domain (no forward — reproduces the
-        continuous teacher at rate 0, the golden non-destructive ramp). The
-        genuine chip-aligned forward is installed at finalize either way."""
-        if self._cycle_accurate and self._legacy_blend_ramp:
-            return _CycleAccurateForward(self.model, self._T)
-        return None
-
     def _finalize_forward(self):
         if self._cycle_accurate:
             return _ChipAlignedNFForward(self.model, self._T)
@@ -123,5 +94,8 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
 
             apply_cycle_accurate_trains_to_model(self.model, True)
         fwd = self._finalize_forward()
+        # A deployed forward distinct from the value-domain ramp invalidates the
+        # ramp's cached LR; stabilization must re-find it on the deployed dynamics.
+        self._stabilization_refinds_lr = fwd is not None
         if fwd is not None:
             self._install_forward(fwd)

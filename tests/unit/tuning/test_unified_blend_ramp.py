@@ -117,82 +117,39 @@ def test_value_domain_blend_is_monotone_interpolation(kind):
     assert not torch.allclose(lo, hi)
 
 
-def test_lif_cycle_accurate_ramp_rate0_leaks_off_continuous():
-    """LEAK REGRESSION: the legacy ``_CycleAccurateForward`` ramp applies the
-    blend per spike-frame, so at r=0 the output is ``mean_t ReLU(W s_t + b)`` —
-    a biased rate-coded value, NOT the continuous teacher. The unified ramp
-    (value domain) does reproduce the teacher; this test documents the gap the
-    refactor closes and guards against silently routing the ramp through the
-    cascade forward again."""
-    from mimarsinan.tuning.tuners.lif_adaptation_tuner import _CycleAccurateForward
-
-    model = _TwoLayerBlend("LIF", T=8, scale=2.0).eval()
-    # Non-negative inputs so the continuous ReLU path is active (worst case for
-    # the convex-Jensen rate-coding bias).
-    x = _inputs().abs()
-    model.set_rate(0.0)
-
-    with torch.no_grad():
-        continuous = model(x)                      # value-domain r=0 == teacher
-        cycle_accurate = _CycleAccurateForward(model, T=8)(x)
-
-    # Value-domain r=0 is the teacher (sanity, bit-exact).
-    torch.testing.assert_close(continuous, model.reference(x, model.old1, model.old2),
-                               rtol=0, atol=0)
-    # Cycle-accurate r=0 is demonstrably NOT the teacher (the leak).
-    assert not torch.allclose(cycle_accurate, continuous, atol=1e-3), (
-        "legacy cycle-accurate ramp unexpectedly reproduced the continuous "
-        "teacher at r=0 — the per-frame-blend leak this test guards is gone"
-    )
-
-
 class _LifModel(nn.Module):
     def get_perceptrons(self):
         return []
 
 
-def _lif_ramp_stub(*, cycle_accurate: bool, legacy: bool):
+def _lif_ramp_stub(*, cycle_accurate: bool):
     return types.SimpleNamespace(
-        model=_LifModel(), _T=8,
-        _cycle_accurate=cycle_accurate, _legacy_blend_ramp=legacy,
+        model=_LifModel(), _T=8, _cycle_accurate=cycle_accurate,
     )
 
 
 class TestLifRampSelection:
-    """The LIF tuner picks its ramp/finalize forwards by flag. Legacy per-frame
-    ramp is opt-in (default-on until verified); the unified value-domain ramp
-    installs no ramp forward. Finalize always installs the chip-aligned forward
-    when cycle-accurate, regardless of which ramp ran."""
+    """LIF always ramps in the value domain (no instance ``_ramp_forward``
+    override — it inherits the base ``None``); finalize installs the
+    chip-aligned forward when cycle-accurate, and nothing otherwise."""
 
-    def test_legacy_cycle_accurate_installs_ramp_forward(self):
-        from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
-            LIFAdaptationTuner, _CycleAccurateForward,
+    def test_lif_inherits_value_domain_ramp(self):
+        from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
+            KDBlendAdaptationTuner,
         )
-        stub = _lif_ramp_stub(cycle_accurate=True, legacy=True)
-        assert isinstance(LIFAdaptationTuner._ramp_forward(stub), _CycleAccurateForward)
-
-    def test_unified_cycle_accurate_installs_no_ramp_forward(self):
         from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
-        stub = _lif_ramp_stub(cycle_accurate=True, legacy=False)
-        assert LIFAdaptationTuner._ramp_forward(stub) is None
 
-    def test_non_cycle_accurate_installs_no_ramp_forward(self):
-        from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
-        for legacy in (True, False):
-            stub = _lif_ramp_stub(cycle_accurate=False, legacy=legacy)
-            assert LIFAdaptationTuner._ramp_forward(stub) is None
+        # No override: the base class returns None (value-domain ramp).
+        assert LIFAdaptationTuner._ramp_forward is KDBlendAdaptationTuner._ramp_forward
 
-    @pytest.mark.parametrize("legacy", [True, False])
-    def test_finalize_forward_is_chip_aligned_when_cycle_accurate(self, legacy):
+    @pytest.mark.parametrize("cycle_accurate", [True, False])
+    def test_finalize_forward_matches_cycle_accurate(self, cycle_accurate):
         from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
             LIFAdaptationTuner, _ChipAlignedNFForward,
         )
-        stub = _lif_ramp_stub(cycle_accurate=True, legacy=legacy)
-        assert isinstance(
-            LIFAdaptationTuner._finalize_forward(stub), _ChipAlignedNFForward
-        )
-
-    def test_finalize_forward_none_when_not_cycle_accurate(self):
-        from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
-        stub = _lif_ramp_stub(cycle_accurate=False, legacy=True)
-        assert LIFAdaptationTuner._finalize_forward(stub) is None
+        stub = _lif_ramp_stub(cycle_accurate=cycle_accurate)
+        fwd = LIFAdaptationTuner._finalize_forward(stub)
+        if cycle_accurate:
+            assert isinstance(fwd, _ChipAlignedNFForward)
+        else:
+            assert fwd is None

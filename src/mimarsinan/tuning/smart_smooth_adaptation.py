@@ -31,17 +31,24 @@ class SmartSmoothAdaptation:
         get_target: Callable[[], float],
         min_step: float,
         before_cycle: Optional[Callable[[], None]] = None,
+        initial_step: float = 0.5,
+        growth: float = 1.5,
     ):
         self.adaptation_fn = adaptation_fn
         self.interpolators = interpolators
         self.get_target = get_target
         self.min_step = float(min_step)
         self.before_cycle = before_cycle
+        # initial_step/growth select the ramp shape: (0.5, 1.5) is the historical
+        # fast ramp for cheap analytic transforms; genuinely gradual ramps (the
+        # ANN->SNN blend tuners) pass a small uniform ladder (e.g. 0.125, 1.0).
+        self.initial_step = float(initial_step)
+        self.growth = float(growth)
 
     def adapt_smoothly(self, max_cycles: Optional[int] = None) -> None:
         t = 0.0
         cycles = 0
-        step = 0.5  # moderate start; reaches 1.0 in 3-4 cycles via 1.5x growth
+        step = self.initial_step
 
         while t < 1.0 - 1e-6 and (not max_cycles or cycles < max_cycles):
             if step < self.min_step:
@@ -59,5 +66,5 @@ class SmartSmoothAdaptation:
             else:
                 t = t_proposed
                 remaining = 1.0 - t
-                step = min(step * 1.5, remaining) if remaining > 1e-6 else step
+                step = min(step * self.growth, remaining) if remaining > 1e-6 else step
             cycles += 1
