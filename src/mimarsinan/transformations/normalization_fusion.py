@@ -43,3 +43,9 @@ def fuse_into_perceptron(perceptron, *, device: torch.device | str) -> None:
         perceptron.layer.register_buffer(buf_name, buf_val)
 
     perceptron.normalization = nn.Identity()
+
+    from mimarsinan.models.nn.activations.ttfs_spiking import (
+        refresh_perceptron_bias_references,
+    )
+
+    refresh_perceptron_bias_references(perceptron)

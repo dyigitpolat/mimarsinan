@@ -23,9 +23,10 @@ def to_ttfs_latched_spikes(tensor: torch.Tensor, cycle: int, simulation_length: 
     Matches ``ttfs_encoding.ttfs_latched_spike_train`` and nevresim's
     ``TTFSSpikeGenerator``; rate 0 never fires.
     """
+    from mimarsinan.models.spiking.wire_semantics import ttfs_spike_time
+
     T = simulation_length
-    clamped = tensor.clamp(0.0, 1.0)
-    spike_time = torch.round(T * (1.0 - clamped))
+    spike_time = ttfs_spike_time(tensor, T)
     return ((spike_time < T) & (cycle >= spike_time)).float()
 
 

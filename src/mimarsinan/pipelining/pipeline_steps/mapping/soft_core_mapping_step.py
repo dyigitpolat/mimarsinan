@@ -4,7 +4,7 @@ from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.latency.ir import IRLatency
 
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
-from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
+from mimarsinan.pipelining.core.simulation_factory import run_scm_identity_metric
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.common.diagnostics import phase_profiler
 from mimarsinan.pipelining.pipeline_steps.mapping.fused_linear import FusedLinear
@@ -36,7 +36,7 @@ class SoftCoreMappingStep(PipelineStep):
         if self._soft_core_spiking_metric is None:
             raise RuntimeError(
                 "Soft-core spiking simulation did not produce a metric; "
-                "the step must run run_hcm_mapping_metric successfully."
+                "the step must run run_scm_identity_metric successfully."
             )
         return self._soft_core_spiking_metric
 
@@ -44,7 +44,7 @@ class SoftCoreMappingStep(PipelineStep):
         if self._soft_core_spiking_metric is None:
             raise RuntimeError(
                 "Soft-core spiking simulation did not produce a metric; "
-                "the step must run run_hcm_mapping_metric successfully."
+                "the step must run run_scm_identity_metric successfully."
             )
         return self._soft_core_spiking_metric
 
@@ -64,9 +64,14 @@ class SoftCoreMappingStep(PipelineStep):
         resolved_max_neurons = mapping_params.effective_max_neurons
         resolved_allow_coalescing = mapping_params.allow_coalescing
 
+        from mimarsinan.models.nn.activations.ttfs_spiking import (
+            refresh_perceptron_bias_references,
+        )
+
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):
                 perceptron.layer = self.bring_back_bias(perceptron.layer)
+                refresh_perceptron_bias_references(perceptron)
 
         if self.pipeline.config.get("generate_visualizations", False):
             def _flowchart():
@@ -161,6 +166,12 @@ class SoftCoreMappingStep(PipelineStep):
             for op in compute_ops:
                 print(f"  - {op.name}: {op.op_type}")
 
+        # Run the NF↔SCM gate while the model (incl. mapper-graph compute
+        # modules, which ``model.to("cpu")`` below does not move) is still on
+        # one device.
+        with _phase("nf_scm_parity_gate"):
+            self._run_nf_scm_parity_gate(model, ir_graph)
+
         device = self.pipeline.config["device"]
         try:
             model.to("cpu")
@@ -169,8 +180,8 @@ class SoftCoreMappingStep(PipelineStep):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        with _phase("sim_hcm_metric"):
-            acc = run_hcm_mapping_metric(
+        with _phase("sim_identity_metric"):
+            acc = run_scm_identity_metric(
                 self.pipeline,
                 ir_graph,
                 platform_constraints,
@@ -179,7 +190,77 @@ class SoftCoreMappingStep(PipelineStep):
                 outer_oom_retry=True,
             )
         self._soft_core_spiking_metric = float(acc)
-        print(f"[SoftCoreMappingStep] Soft-core Spiking Simulation Test: {acc}")
+        print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
+
+    def _run_nf_scm_parity_gate(self, model, ir_graph) -> None:
+        """Rung-1↔rung-2 per-neuron lock for analytic schedules.
+
+        Accuracy tolerance alone is too coarse (the 2026-06-06 incident hid a
+        3.8 pp semantic split under it); this compares NF activations against
+        the identity-mapped contract run neuron-by-neuron and fails loud.
+        """
+        import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
+        from mimarsinan.pipelining.core.simulation_factory import (
+            build_deployment_contract,
+        )
+
+        contract = build_deployment_contract(self.pipeline)
+        if not nf_scm_parity.nf_scm_parity_enabled(contract):
+            return
+        if contract.is_cascaded():
+            # Decision-level gate: per-logit atol is meaningless through host
+            # compute ops and WQ tie flips preclude per-neuron exactness.
+            n_samples = int(
+                self.pipeline.config.get("nf_scm_parity_samples_cascaded", 64)
+            )
+            if n_samples <= 0:
+                return
+            batches = [x for x, _ in self.trainer.iter_validation_batches(1)]
+            if not batches:
+                return
+            samples = batches[0][:n_samples]
+            agreement = nf_scm_parity.assert_cascaded_nf_scm_agreement_or_raise(
+                self.pipeline,
+                model,
+                ir_graph,
+                samples,
+                min_agreement=float(
+                    self.pipeline.config.get("nf_scm_parity_min_agreement", 0.98)
+                ),
+            )
+            print(
+                f"[SoftCoreMappingStep] NF↔SCM cascaded decision agreement: "
+                f"{agreement:.4f} over {int(samples.shape[0])} samples"
+            )
+            return
+        n_samples = int(self.pipeline.config.get("nf_scm_parity_samples", 2))
+        if n_samples <= 0:
+            return
+        batches = [x for x, _ in self.trainer.iter_validation_batches(1)]
+        if not batches:
+            return
+        samples = batches[0][:n_samples]
+        # Synchronized NF is the deployment kernel + segment-entry q(x) —
+        # measured bit-exact per-neuron — so it defaults tight (dtype-tie
+        # headroom only). Continuous ttfs keeps a loose default until its
+        # residual is calibrated; the wrong-dynamics signature is ~40 %.
+        default_budget = 0.02 if contract.is_synchronized() else 0.25
+        fraction = nf_scm_parity.assert_nf_scm_parity_or_raise(
+            self.pipeline,
+            model,
+            ir_graph,
+            samples,
+            atol=float(self.pipeline.config.get("nf_scm_parity_atol", 1e-6)),
+            max_mismatch_fraction=float(
+                self.pipeline.config.get(
+                    "nf_scm_parity_max_mismatch_fraction", default_budget
+                )
+            ),
+        )
+        print(
+            f"[SoftCoreMappingStep] NF↔SCM per-neuron parity: "
+            f"{fraction:.4%} mismatch fraction over {int(samples.shape[0])} samples"
+        )
 
     def _apply_ttfs_quantization_bias_compensation(self, model, act_q: bool) -> None:
         spiking = str(self.pipeline.config.get("spiking_mode", "lif"))

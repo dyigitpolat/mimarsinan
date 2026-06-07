@@ -46,10 +46,15 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         spiking_mode: str = "lif",
         firing_mode: str = "Default",
         ttfs_cycle_schedule: str = "cascaded",
+        contract: Any = None,
         log_potential_trace: bool = False,
         log_message_trace: bool = True,
         cores_per_tile: int = 0,
     ):
+        if contract is not None:
+            # SpikingDeploymentContract supersedes the loose semantic kwargs.
+            behavior = contract.behavior
+            ttfs_cycle_schedule = contract.ttfs_cycle_schedule
         if behavior is None:
             behavior = NeuralBehaviorConfig(
                 spiking_mode=str(spiking_mode),

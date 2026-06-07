@@ -64,7 +64,7 @@ from mimarsinan.pipelining.core.engine.pipeline_helpers import (
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.simulation_factory import (
     assert_spike_parity_or_raise,
-    build_neural_behavior_config,
+    build_deployment_contract,
     preprocess_hybrid_sample,
     record_hcm_reference,
     record_ttfs_hcm_reference,
@@ -140,16 +140,13 @@ class SanafeSimulationStep(PipelineStep):
                     )
 
             # Run SANA-FE on the same sample.
-            behavior = build_neural_behavior_config(self.pipeline)
+            contract = build_deployment_contract(self.pipeline)
             runner = SanafeRunner(
                 mapping=hard_core_mapping,
                 simulation_length=T,
-                behavior=behavior,
+                contract=contract,
                 arch_preset=arch_preset,
                 custom_arch_path=custom_arch_path,
-                ttfs_cycle_schedule=self.pipeline.config.get(
-                    "ttfs_cycle_schedule", "cascaded"
-                ),
                 log_potential_trace=log_potential,
                 log_message_trace=log_messages,
             )

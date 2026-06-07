@@ -44,7 +44,7 @@ from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ def _build_flow(mapper_repr, input_shape, tq, spiking_mode):
         if isinstance(node, NeuralCore):
             node.threshold = 1.0
             node.parameter_scale = torch.tensor(1.0)
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape, ir_graph, tq, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode=spiking_mode,
     )
@@ -142,7 +142,7 @@ class TestTTFSContinuousShiftError:
         p.eval()
         with torch.no_grad():
             train_out = repr_(x)     # includes shift → staircase
-            flow_out = flow(x)       # bare relu, no shift
+            flow_out = flow(x) / tq  # bare relu, no shift
 
         max_diff = (train_out / act_scale - flow_out).abs().max().item()
 
@@ -172,7 +172,7 @@ class TestTTFSContinuousShiftError:
             p.eval()
             with torch.no_grad():
                 train_out = repr_(x)
-                flow_out = flow(x)
+                flow_out = flow(x) / tq
             errors[tq] = (train_out / act_scale - flow_out).abs().max().item()
 
         # At very high tq the shift becomes negligible; overall error should be smaller
@@ -236,7 +236,7 @@ class TestTTFSContinuousBiasShiftFix:
 
         p.eval()
         with torch.no_grad():
-            flow_out = flow_with_shift(x)
+            flow_out = flow_with_shift(x) / tq
 
         # Compare IR output to the "pure analytical" TTFS output without staircase:
         # ir_out should = clamp(relu(W_eff @ x + b_eff) / threshold, 0, 1)
@@ -379,7 +379,7 @@ class TestArgmaxDegradationTTFSContinuous:
         p.eval()
         with torch.no_grad():
             train_out = repr_(x)
-            flow_out = flow(x)
+            flow_out = flow(x) / tq
 
         agreement = (train_out.argmax(1) == flow_out.argmax(1)).float().mean().item()
         shift_frac = act_scale * 0.5 / tq / act_scale  # = 0.5/tq
@@ -414,7 +414,7 @@ class TestArgmaxDegradationTTFSContinuous:
         p.eval()
         with torch.no_grad():
             train_out = repr_(x).clone()
-            no_shift_flow_out = flow_no_shift(x).clone()
+            no_shift_flow_out = (flow_no_shift(x) / tq).clone()
 
         agreement_before = (train_out.argmax(1) == no_shift_flow_out.argmax(1)).float().mean().item()
 
@@ -432,7 +432,7 @@ class TestArgmaxDegradationTTFSContinuous:
         b_eff = PerceptronTransformer().get_effective_bias(p).detach()
         with torch.no_grad():
             expected_out = torch.relu(x @ W_eff.T + b_eff).clamp(0.0, 1.0)
-            flow_with_shift_out = flow_with_shift(x)
+            flow_with_shift_out = flow_with_shift(x) / tq
 
         agreement_after = (expected_out.argmax(1) == flow_with_shift_out.argmax(1)).float().mean().item()
         assert agreement_after == 1.0, (

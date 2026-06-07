@@ -102,12 +102,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
                 T=self._T,
                 activation_scale=perceptron.input_activation_scale,
             )
-            if isinstance(perceptron.input_activation, nn.Identity):
-                perceptron.input_activation = quantizer
-            else:
-                perceptron.input_activation = nn.Sequential(
-                    perceptron.input_activation, quantizer,
-                )
+            self._append_encoding_input_module(perceptron, quantizer)
 
     def _after_install_blend(self) -> None:
         if self._cycle_accurate:

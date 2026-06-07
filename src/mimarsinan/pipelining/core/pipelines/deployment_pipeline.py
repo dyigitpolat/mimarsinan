@@ -98,6 +98,11 @@ class DeploymentPipeline(Pipeline):
             self.config.setdefault("cycle_accurate_lif_forward", True)
 
         self.tolerance = 1.0 - float(self.config.get("degradation_tolerance", 0.05))
+        # Opt-in rung-2 budget: with NF and SCM sharing semantics, the honest
+        # residual is the mapping-level wire effect, so ~0.02 is a sane value.
+        scm_dt = self.config.get("scm_degradation_tolerance")
+        if scm_dt is not None:
+            self.step_tolerances["Soft Core Mapping"] = 1.0 - float(scm_dt)
 
         default_budget = 2.0 * float(self.config.get("degradation_tolerance", 0.05))
         self.accuracy_budget.budget_total = float(

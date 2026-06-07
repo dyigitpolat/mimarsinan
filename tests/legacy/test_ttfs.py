@@ -2,7 +2,8 @@
 Quick test for the TTFS (Time-to-First-Spike) spiking simulation.
 
 Builds a small 2-layer MLP by hand, converts it to an IRGraph,
-and runs both UnifiedCoreFlow and HybridCoreFlow in TTFS mode.
+and runs it through the hybrid executor in TTFS mode, both via the
+identity flow (build_identity_spiking_flow) and a packed HybridCoreFlow.
 
 Key property: TTFS output ordering (argmax) should match the ReLU
 model's prediction, demonstrating the ReLU↔TTFS equivalence.
@@ -13,6 +14,7 @@ Tests include both unquantized and quantized (pipeline-matching) versions.
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import pytest
 import torch
 import torch.nn as nn
 import numpy as np
@@ -20,7 +22,7 @@ import numpy as np
 from mimarsinan.mapping.ir import NeuralCore, IRGraph, IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 
 
 # ----------------------------------------------------------------
@@ -126,6 +128,11 @@ def relu_model_to_ir_graph(model, in_dim, *, quantize=False, weight_bits=8):
 # ----------------------------------------------------------------
 # Test 1: TTFS input encoding
 # ----------------------------------------------------------------
+@pytest.mark.skip(
+    reason="Tested SpikingUnifiedCoreFlow._ttfs_encode_input, a retired unified-only "
+    "internal; the hybrid executor (build_identity_spiking_flow) has no equivalent "
+    "public encoder. Body kept for reference."
+)
 def test_ttfs_encoding():
     print("=" * 60)
     print("TEST 1: TTFS Input Encoding")
@@ -133,7 +140,7 @@ def test_ttfs_encoding():
 
     T = 16
     ir_graph = IRGraph(nodes=[], output_sources=np.array([], dtype=object))
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape=(5,),
         ir_graph=ir_graph,
         simulation_length=T,
@@ -195,7 +202,7 @@ def test_ttfs_unified_core_flow():
 
     ir_graph = relu_model_to_ir_graph(model, in_dim, quantize=False)
 
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape=(in_dim,),
         ir_graph=ir_graph,
         simulation_length=T,
@@ -321,7 +328,7 @@ def test_ttfs_quantized():
                   f"threshold={node.threshold:.1f}")
 
     # Test UnifiedCoreFlow
-    unified = SpikingUnifiedCoreFlow(
+    unified = build_identity_spiking_flow(
         input_shape=(in_dim,),
         ir_graph=ir_graph,
         simulation_length=T,
@@ -390,7 +397,7 @@ def test_ttfs_fire_once():
     model = make_simple_relu_model(in_dim, hidden_dim, out_dim)
     ir_graph = relu_model_to_ir_graph(model, in_dim)
 
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape=(in_dim,),
         ir_graph=ir_graph,
         simulation_length=T,
@@ -431,7 +438,7 @@ def test_unified_vs_hybrid_ttfs():
 
     ir_graph = relu_model_to_ir_graph(model, in_dim)
 
-    unified = SpikingUnifiedCoreFlow(
+    unified = build_identity_spiking_flow(
         input_shape=(in_dim,),
         ir_graph=ir_graph,
         simulation_length=T,
@@ -526,7 +533,7 @@ def test_ttfs_realistic_mixed_weights():
                   f"nonzero={np.count_nonzero(node.core_matrix)}/{node.core_matrix.size}")
 
     # UnifiedCoreFlow TTFS
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape=(in_dim,),
         ir_graph=ir_graph,
         simulation_length=32,
@@ -605,7 +612,7 @@ def test_ttfs_pipeline_artifacts():
     if len(cores) > 5:
         print(f"    ... ({len(cores) - 5} more)")
 
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape=(1, 28, 28),  # MNIST
         ir_graph=ir_graph,
         simulation_length=32,

@@ -84,3 +84,33 @@ def mark_encoding_layers(
             node.perceptron.is_encoding_layer = False
         elif _is_encoding_segment_start(node):
             node.perceptron.is_encoding_layer = True
+
+
+def segment_entry_perceptrons(model_repr: ModelRepresentation) -> list:
+    """Perceptrons that are the FIRST on-chip core of a neural segment.
+
+    These read a freshly assembled hybrid stage input — the seam the
+    synchronized TTFS wire contract grid-quantizes (q(x)). The walk treats
+    structural mappers as transparent; the raw input, any ``ComputeOpMapper``
+    (a hybrid stage barrier), and host encoding layers
+    (``is_encoding_layer=True``) start a segment; an upstream on-chip
+    perceptron ends the walk (its output is already grid-valued).
+    """
+    model_repr._ensure_exec_graph()
+    entries = []
+    for node in model_repr._exec_order:
+        if not _is_perceptron_holder(node):
+            continue
+        if getattr(node.perceptron, "is_encoding_layer", False):
+            continue  # host op: not on-chip, no stage input of its own
+        src = node.source_mapper
+        while src is not None:
+            if _is_perceptron_holder(src):
+                if getattr(src.perceptron, "is_encoding_layer", False):
+                    entries.append(node.perceptron)
+                break
+            if isinstance(src, (InputMapper, ComputeOpMapper)):
+                entries.append(node.perceptron)
+                break
+            src = src.source_mapper
+    return entries

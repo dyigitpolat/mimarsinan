@@ -6,6 +6,8 @@ from mimarsinan.models.nn.activations.autograd import (
     LeakyGradReLUFunction,
     RoundedStaircaseFunction,
     StaircaseFunction,
+    TTFSInputGridQuantizer,
+    TTFSStaircaseFunction,
 )
 from mimarsinan.models.nn.activations.lif import (
     LIFActivation,
@@ -25,6 +27,8 @@ __all__ = [
     "RoundedStaircaseFunction",
     "StaircaseFunction",
     "StrictATanSurrogate",
+    "TTFSInputGridQuantizer",
+    "TTFSStaircaseFunction",
     "run_cycle_accurate",
     "uniform_encode_to_spike_train",
 ]

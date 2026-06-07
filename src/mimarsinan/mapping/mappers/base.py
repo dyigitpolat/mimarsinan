@@ -70,7 +70,7 @@ class Mapper(nn.Module):
         # point and already memoises node outputs in its local ``values`` dict
         # (each node visited once per traversal).  A previous ``id(x)``-keyed
         # cache here was dead code in the primary path AND actively broken when
-        # a Mapper is called as a ComputeOp module from ``SpikingUnifiedCoreFlow``
+        # a Mapper is called as a ComputeOp module from ``SpikingHybridCoreFlow``
         # — Python recycles tensor ids and the CUDA allocator recycles data
         # pointers, so across successive ``BasicTrainer.test()`` runs we would
         # return a prior run's stale cached output (wrong batch dim → crash, or

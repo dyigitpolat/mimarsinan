@@ -1,14 +1,15 @@
-"""Hard-core TTFS equivalence: SpikingHybridCoreFlow must match SpikingUnifiedCoreFlow.
+"""Hard-core TTFS equivalence: SpikingHybridCoreFlow must match the identity-mapped hybrid flow.
 
 Tests that the hard-core mapping pipeline (segment splitting, compaction, HardCore
-packing) produces the same TTFS continuous outputs as the soft-core unified path.
+packing) produces the same TTFS continuous outputs as the identity-mapped soft path.
 
 The chip only supports ReLU activation. All activations must be adapted to
 ReLU-compatible forms (via Clamp Adaptation) before reaching deployment.
 These tests use ReLU activations throughout to match deployed behavior.
 
-NOTE: SpikingHybridCoreFlow._forward_ttfs multiplies output by T (simulation_length)
-while SpikingUnifiedCoreFlow does not. Tests normalize by dividing hard_out by T.
+NOTE: SpikingHybridCoreFlow._forward_ttfs multiplies output by T (simulation_length).
+Both the identity-mapped soft flow and the hard-core flow run on the hybrid executor,
+so both outputs are normalized by dividing by T before comparison.
 """
 
 import pytest
@@ -30,7 +31,7 @@ from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 
@@ -56,7 +57,7 @@ def _build_ir_and_flows(mapper_repr, input_shape):
     # Assign latencies (required for correct hard-core packing)
     IRLatency(ir_graph).calculate()
 
-    soft_flow = SpikingUnifiedCoreFlow(
+    soft_flow = build_identity_spiking_flow(
         input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode="ttfs",
     )
@@ -98,7 +99,7 @@ class TestHardCoreTTFSSimpleLinear:
 
         x = torch.rand(8, *input_shape)
         with torch.no_grad():
-            soft_out = soft_flow(x)
+            soft_out = soft_flow(x) / SIM_LENGTH
             hard_out = hard_flow(x) / SIM_LENGTH
 
         max_diff = (soft_out - hard_out).abs().max().item()
@@ -132,7 +133,7 @@ class TestHardCoreTTFSConvPlusFC:
 
         x = torch.rand(8, *input_shape)
         with torch.no_grad():
-            soft_out = soft_flow(x)
+            soft_out = soft_flow(x) / SIM_LENGTH
             hard_out = hard_flow(x) / SIM_LENGTH
 
         max_diff = (soft_out - hard_out).abs().max().item()
@@ -191,7 +192,7 @@ class TestHardCoreTTFSMiniMixer:
 
         x = torch.rand(16, *input_shape)
         with torch.no_grad():
-            soft_out = soft_flow(x)
+            soft_out = soft_flow(x) / SIM_LENGTH
             hard_out = hard_flow(x) / SIM_LENGTH
 
         max_diff = (soft_out - hard_out).abs().max().item()
@@ -298,7 +299,7 @@ class TestHardCoreTTFSFullMixer:
 
         IRLatency(ir_graph).calculate()
 
-        soft_flow = SpikingUnifiedCoreFlow(
+        soft_flow = build_identity_spiking_flow(
             input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
             "TTFS", "TTFS", "<=", spiking_mode="ttfs",
         )
@@ -316,7 +317,7 @@ class TestHardCoreTTFSFullMixer:
 
         x = torch.rand(8, *input_shape)
         with torch.no_grad():
-            soft_out = soft_flow(x)
+            soft_out = soft_flow(x) / SIM_LENGTH
             hard_out = hard_flow(x) / SIM_LENGTH
 
         max_diff = (soft_out - hard_out).abs().max().item()

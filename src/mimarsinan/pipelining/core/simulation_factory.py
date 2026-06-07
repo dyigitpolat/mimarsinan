@@ -9,7 +9,11 @@ import torch
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
-from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
+    build_hybrid_hard_core_mapping,
+    build_identity_hybrid_mapping,
+)
 from mimarsinan.mapping.ir import IRGraph
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
@@ -17,6 +21,10 @@ from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 def build_neural_behavior_config(pipeline) -> NeuralBehaviorConfig:
     return NeuralBehaviorConfig.from_deployment_config(pipeline.config)
+
+
+def build_deployment_contract(pipeline) -> SpikingDeploymentContract:
+    return SpikingDeploymentContract.from_pipeline_config(pipeline.config)
 
 
 def build_hybrid_mapping_for_pipeline(
@@ -47,19 +55,20 @@ def build_spiking_hybrid_flow(
     model=None,
 ) -> SpikingHybridCoreFlow:
     cfg = pipeline.config
+    contract = build_deployment_contract(pipeline)
     if preprocessor is None and model is not None:
         preprocessor = getattr(model, "preprocessor", None)
     flow = SpikingHybridCoreFlow(
         cfg["input_shape"],
         hybrid_mapping,
-        int(cfg["simulation_steps"]),
+        contract.simulation_steps,
         preprocessor,
-        cfg["firing_mode"],
-        cfg["spike_generation_mode"],
-        cfg["thresholding_mode"],
-        spiking_mode=cfg.get("spiking_mode", "lif"),
+        contract.firing_mode,
+        contract.spike_generation_mode,
+        contract.thresholding_mode,
+        spiking_mode=contract.spiking_mode,
         cycle_accurate_lif_forward=bool(cfg.get("cycle_accurate_lif_forward", False)),
-        ttfs_cycle_schedule=cfg.get("ttfs_cycle_schedule", "cascaded"),
+        ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
     )
     if cfg.get("cycle_accurate_lif_forward") and model is not None:
         from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
@@ -68,18 +77,18 @@ def build_spiking_hybrid_flow(
     return flow.to(cfg["device"])
 
 
-def build_spiking_flow_for_metric(
-    pipeline,
-    hybrid_mapping,
+def build_identity_mapping_for_pipeline(
     ir_graph: IRGraph,
     *,
-    preprocessor=None,
-    model=None,
-) -> SpikingHybridCoreFlow:
-    """Build the hybrid mapping metric executor (all spiking modes including TTFS)."""
-    return build_spiking_hybrid_flow(
-        pipeline, hybrid_mapping, preprocessor=preprocessor, model=model,
-    )
+    pipeline_config: dict[str, Any] | None = None,
+) -> Any:
+    """1:1 NeuralCore→HardCore mapping with the same wire effects as the packed
+    build (negative-value shifts propagated)."""
+    identity_mapping = build_identity_hybrid_mapping(ir_graph=ir_graph)
+    from mimarsinan.mapping.support.neg_shift_bias import propagate_negative_shifts_to_hybrid
+
+    propagate_negative_shifts_to_hybrid(ir_graph, identity_mapping)
+    return identity_mapping
 
 
 def run_trainer_metric(
@@ -179,24 +188,20 @@ def record_ttfs_hcm_reference(
     if sample.shape[0] != 1:
         raise ValueError("record_ttfs_hcm_reference requires batch_size == 1")
 
-    cfg = pipeline.config
-    spiking_mode = cfg.get("spiking_mode", "lif")
-    device = cfg["device"]
-    T = int(cfg["simulation_steps"])
+    contract = build_deployment_contract(pipeline)
+    device = pipeline.config["device"]
 
     flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping).to(device).eval()
     x_np = preprocess_hybrid_sample(
         pipeline, hybrid_mapping, sample, device=device,
     )
-    contract = run_ttfs_hybrid_contract(
+    run = run_ttfs_hybrid_contract(
         hybrid_mapping,
         x_np,
-        simulation_length=T,
-        spiking_mode=spiking_mode,
         sample_index=sample_index,
-        ttfs_cycle_schedule=cfg.get("ttfs_cycle_schedule"),
+        contract=contract,
     )
-    return flow, contract.record
+    return flow, run.record
 
 
 def record_hcm_reference(
@@ -247,8 +252,8 @@ def run_hcm_mapping_metric(
                     pipeline_config=pipeline.config,
                 )
                 pipeline.cache.add(cache_key, hybrid_mapping, "pickle")
-            flow = build_spiking_flow_for_metric(
-                pipeline, hybrid_mapping, ir_graph, model=model,
+            flow = build_spiking_hybrid_flow(
+                pipeline, hybrid_mapping, model=model,
             )
             return float(
                 run_hcm_spiking_test(
@@ -274,6 +279,61 @@ def run_hcm_mapping_metric(
     if last_exc is not None:
         raise last_exc
     raise RuntimeError("run_hcm_mapping_metric failed without raising")
+
+
+def run_scm_identity_metric(
+    pipeline,
+    ir_graph: IRGraph,
+    platform_constraints: dict[str, Any],
+    *,
+    model=None,
+    device: str | None = None,
+    max_batch_cap: int | None = None,
+    retry_on_oom: bool = False,
+    outer_oom_retry: bool = False,
+) -> float:
+    """Rung-2 gate: run the spiking test on the identity-mapped IR graph.
+
+    Isolates IR semantics (weights, shifts, banks, segment partition, wire
+    effects) from packing; the packed mapping is rung 3's concern
+    (``run_hcm_mapping_metric``) and is NOT built or cached here.
+    """
+    del platform_constraints  # identity mapping ignores hardware core shapes
+    device = device or pipeline.config["device"]
+    attempt_cap = max_batch_cap
+    last_exc: Exception | None = None
+
+    identity_mapping = build_identity_mapping_for_pipeline(
+        ir_graph, pipeline_config=pipeline.config,
+    )
+
+    for attempt in range(2 if outer_oom_retry else 1):
+        try:
+            flow = build_spiking_hybrid_flow(
+                pipeline, identity_mapping, model=model,
+            )
+            return float(
+                run_hcm_spiking_test(
+                    pipeline,
+                    flow,
+                    device=device,
+                    max_batch_cap=attempt_cap,
+                    retry_on_oom=retry_on_oom,
+                )
+            )
+        except RuntimeError as exc:
+            last_exc = exc
+            oom_cls = getattr(torch.cuda, "OutOfMemoryError", ())
+            is_oom = isinstance(exc, oom_cls) or "out of memory" in str(exc).lower()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if not outer_oom_retry or not is_oom or attempt >= 1:
+                raise
+            attempt_cap = int(pipeline.config.get("simulation_batch_size", 8))
+
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("run_scm_identity_metric failed without raising")
 
 
 def assert_spike_parity_or_raise(ref, actual) -> None:

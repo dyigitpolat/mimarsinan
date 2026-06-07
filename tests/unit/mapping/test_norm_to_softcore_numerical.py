@@ -4,7 +4,7 @@ This test replicates the exact sequence of transformations that the pipeline app
 comparing the model accuracy (or logit agreement) between:
 
   Stage 1: NormalizationFusionStep output  (float model with staircase decorators)
-  Stage 2: SoftCoreMappingStep output       (SpikingUnifiedCoreFlow on IRGraph)
+  Stage 2: SoftCoreMappingStep output       (identity-mapped hybrid flow on IRGraph)
 
 Tests are organized around:
   - spiking_mode: "ttfs" and "ttfs_quantized"
@@ -32,9 +32,9 @@ from mimarsinan.mapping.mappers.structural import InputMapper, EinopsRearrangeMa
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.ir_mapping_class import IRMapping
-from mimarsinan.mapping.ir import NeuralCore, ComputeOp
+from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ def _build_flow_from_repr(mapper_repr, input_shape, tq, spiking_mode):
         if isinstance(node, NeuralCore):
             node.threshold = 1.0
             node.parameter_scale = torch.tensor(1.0)
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape, ir_graph, tq, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode=spiking_mode,
     )
@@ -104,80 +104,6 @@ def _logit_agreement(out1, out2):
     pred1 = out1.argmax(1)
     pred2 = out2.argmax(1)
     return (pred1 == pred2).float().mean().item()
-
-
-def _per_layer_diagnostics(ir_graph, flow, x_flat):
-    """
-    Trace through each IR node and return per-node (input, output) ranges.
-    Useful for finding the first divergence point.
-    """
-    batch_size = x_flat.shape[0]
-    device = x_flat.device
-    diagnostics = []
-    activation_cache = {}
-
-    for node in ir_graph.nodes:
-        if isinstance(node, NeuralCore):
-            weight = flow._get_weight(node)
-            t_idx = flow._get_threshold_idx(node)
-            threshold = flow.thresholds[t_idx]
-            spans = flow._input_spans[int(node.id)]
-            in_dim = int(len(node.input_sources.flatten()))
-            inp = torch.zeros(batch_size, in_dim, device=device)
-            flow._fill_activation_from_ir_spans(
-                inp, x=x_flat, activation_cache=activation_cache, spans=spans
-            )
-            V = torch.matmul(weight, inp.T).T
-            if node.id in flow._hw_bias_params:
-                V = V + flow._hw_bias_params[node.id]
-            # ttfs_quantized formula
-            S = float(flow.simulation_length)
-            k_raw = torch.ceil(S * (1.0 - V / threshold.clamp(min=1e-12)))
-            fires = k_raw < S
-            k = k_raw.clamp(0, S - 1)
-            out = torch.where(fires, (S - k) / S, torch.zeros_like(k))
-            activation_cache[node.id] = out
-            diagnostics.append({
-                "id": node.id, "name": node.name, "type": "NeuralCore",
-                "act_type": node.activation_type,
-                "in_range": (float(inp.min()), float(inp.max())),
-                "V_range": (float(V.min()), float(V.max())),
-                "out_range": (float(out.min()), float(out.max())),
-                "threshold": float(threshold),
-            })
-        elif isinstance(node, ComputeOp):
-            spans = flow._input_spans[int(node.id)]
-            in_dim = int(len(node.input_sources.flatten()))
-            inp = torch.zeros(batch_size, in_dim, device=device)
-            flow._fill_activation_from_ir_spans(
-                inp, x=x_flat, activation_cache=activation_cache, spans=spans
-            )
-            out = node.execute_on_gathered(inp)
-            activation_cache[node.id] = out
-            diagnostics.append({
-                "id": node.id, "name": node.name, "type": "ComputeOp",
-                "op_type": node.op_type,
-                "in_range": (float(inp.min()), float(inp.max())),
-                "out_range": (float(out.min()), float(out.max())),
-            })
-
-    return diagnostics, activation_cache
-
-
-def _print_diagnostics(diagnostics):
-    print("\n=== Per-layer IR diagnostics ===")
-    for d in diagnostics:
-        if d["type"] == "NeuralCore":
-            print(f"  [{d['id']:3d}] NeuralCore  {d['name']:30s}  "
-                  f"act={d['act_type'] or 'None':25s}  "
-                  f"V=[{d['V_range'][0]:+.3f},{d['V_range'][1]:+.3f}]  "
-                  f"out=[{d['out_range'][0]:+.3f},{d['out_range'][1]:+.3f}]  "
-                  f"thresh={d['threshold']:.4f}")
-        else:
-            print(f"  [{d['id']:3d}] ComputeOp   {d['name']:30s}  "
-                  f"op={d['op_type']:15s}  "
-                  f"in=[{d['in_range'][0]:+.3f},{d['in_range'][1]:+.3f}]  "
-                  f"out=[{d['out_range'][0]:+.3f},{d['out_range'][1]:+.3f}]")
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +156,7 @@ class TestPureReLUModel:
         flow, ir_graph = _build_flow_from_repr(repr_, input_shape, tq, "ttfs_quantized")
 
         with torch.no_grad():
-            flow_out = flow(x)
+            flow_out = flow(x) / tq
 
         # Pre-shift training output == post-shift IR output (up to act_scale factor)
         max_diff = (train_out_pre / act_scale - flow_out).abs().max().item()
@@ -264,7 +190,7 @@ class TestPureReLUModel:
             p.eval()
         with torch.no_grad():
             train_out = repr_(x)
-            flow_out = flow(x)
+            flow_out = flow(x) / tq
 
         max_diff = (train_out - flow_out * act_scale).abs().max().item()
         shift = float(calculate_activation_shift(tq, act_scale))
@@ -346,7 +272,7 @@ class TestActivationQuantizationFalsePath:
             p.eval()
         with torch.no_grad():
             train_out = repr_(x)
-            flow_out = flow(x)
+            flow_out = flow(x) / tq
 
         # Training: clamp(relu(V), 0, 1).  Deploy: clamp(relu(V)/1.0, 0, 1).
         # With act_scale=threshold=1.0 these match exactly (float precision only).
@@ -391,7 +317,7 @@ class TestActivationQuantizationFalsePath:
         p1.eval()
         with torch.no_grad():
             train_out = repr_(x)   # relu(V) in [0, ~0.4]
-            flow_out = flow(x)     # floor(tq * relu(V)) / tq
+            flow_out = flow(x) / tq  # floor(tq * relu(V)) / tq
 
         # Verify outputs are in [0, act_scale] (otherwise TTFS clamp changes semantics)
         train_max = train_out.max().item()

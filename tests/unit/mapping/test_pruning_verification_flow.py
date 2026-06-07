@@ -32,7 +32,7 @@ from mimarsinan.transformations.pruning import (
 )
 from mimarsinan.mapping.packing.softcore import compact_soft_core_mapping
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 
 import torch.nn as nn
 
@@ -637,7 +637,7 @@ class TestPruningVerificationIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Mapping equivalence: model forward vs SpikingUnifiedCoreFlow(pruned IR)
+# Mapping equivalence: model forward vs identity-mapped hybrid flow (pruned IR)
 # ---------------------------------------------------------------------------
 # Plan: mapping_accuracy_drop_fix — Step 1 equivalence test to find root cause.
 
@@ -698,7 +698,7 @@ class _MinimalFourLayerFlow(PerceptronFlow):
 
 class TestMappingEquivalence:
     """
-    Equivalence test: fused model forward vs SpikingUnifiedCoreFlow(pruned ir_graph)
+    Equivalence test: fused model forward vs identity-mapped hybrid flow (pruned ir_graph)
     on the same batch. Used to pinpoint mapping accuracy drop (0.99 -> 0.098).
     """
 
@@ -729,8 +729,8 @@ class TestMappingEquivalence:
 
     def test_model_and_pruned_flow_same_argmax(self, device):
         """
-        Step 1: On the same input batch, model forward and SpikingUnifiedCoreFlow(pruned IR)
-        must yield the same predicted class (argmax) for every sample.
+        Step 1: On the same input batch, model forward and the identity-mapped hybrid
+        flow (pruned IR) must yield the same predicted class (argmax) for every sample.
         """
         in_dim, d1, d2, d3, out_dim = 64, 32, 16, 10, 5
         batch_size = 10
@@ -754,7 +754,7 @@ class TestMappingEquivalence:
             initial_pruned_per_bank=initial_bank or None,
         )
 
-        flow = SpikingUnifiedCoreFlow(
+        flow = build_identity_spiking_flow(
             input_shape=(1, in_dim),
             ir_graph=ir_graph,
             simulation_length=simulation_steps,
@@ -812,7 +812,7 @@ class TestMappingEquivalence:
             initial_pruned_per_bank=initial_bank or None,
         )
 
-        flow = SpikingUnifiedCoreFlow(
+        flow = build_identity_spiking_flow(
             input_shape=(1, in_dim),
             ir_graph=ir_graph,
             simulation_length=simulation_steps,

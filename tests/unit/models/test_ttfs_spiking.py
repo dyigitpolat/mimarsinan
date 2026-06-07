@@ -13,7 +13,8 @@ from mimarsinan.mapping.ir import NeuralCore, IRGraph, IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
+from mimarsinan.models.spiking.wire_semantics import ttfs_spike_time
 
 
 class TestTTFSActivationBiasBroadcast:
@@ -144,18 +145,21 @@ def _relu_model_to_ir_graph(model, in_dim, *, quantize=False, weight_bits=8):
 # Tests
 # ---------------------------------------------------------------------------
 
+def _ttfs_encode_input(activations: torch.Tensor, T: int) -> torch.Tensor:
+    """TTFS single-spike encode [0,1] → (T, B, N), via the wire-semantics SSOT."""
+    spike_times = ttfs_spike_time(activations, T).long()
+    spike_train = torch.zeros(T, *activations.shape, device=activations.device)
+    for cycle in range(T):
+        spike_train[cycle] = (spike_times == cycle).float()
+    return spike_train
+
+
 class TestTTFSEncoding:
     def test_ttfs_encode_input(self):
         T = 16
-        ir_graph = IRGraph(nodes=[], output_sources=np.array([], dtype=object))
-        flow = SpikingUnifiedCoreFlow(
-            input_shape=(5,), ir_graph=ir_graph, simulation_length=T,
-            preprocessor=nn.Identity(), firing_mode="TTFS",
-            spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
-        )
 
         activations = torch.tensor([[0.0, 0.25, 0.5, 0.75, 1.0]])
-        spike_train = flow._ttfs_encode_input(activations)
+        spike_train = _ttfs_encode_input(activations, T)
 
         for i in range(5):
             spike_cycles = (spike_train[:, 0, i] > 0).nonzero(as_tuple=True)[0].tolist()
@@ -183,7 +187,7 @@ class TestTTFSUnifiedCoreFlow:
             relu_preds = model(x).argmax(dim=1)
 
         ir_graph = _relu_model_to_ir_graph(model, in_dim, quantize=False)
-        flow = SpikingUnifiedCoreFlow(
+        flow = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_graph, simulation_length=T,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
@@ -244,7 +248,7 @@ class TestTTFSQuantized:
             relu_preds = model(x).argmax(dim=1)
 
         ir_graph = _relu_model_to_ir_graph(model, in_dim, quantize=True, weight_bits=8)
-        unified = SpikingUnifiedCoreFlow(
+        unified = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_graph, simulation_length=T,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
@@ -266,7 +270,7 @@ class TestTTFSFireOnce:
         model = _make_simple_relu_model(in_dim, hidden_dim, out_dim)
         ir_graph = _relu_model_to_ir_graph(model, in_dim)
 
-        flow = SpikingUnifiedCoreFlow(
+        flow = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_graph, simulation_length=T,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
@@ -292,7 +296,7 @@ class TestUnifiedVsHybridTTFS:
 
         ir_graph = _relu_model_to_ir_graph(model, in_dim)
 
-        unified = SpikingUnifiedCoreFlow(
+        unified = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_graph, simulation_length=T,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
@@ -400,7 +404,7 @@ def _relu_model_to_ir_graph_hw_bias(model, in_dim, *, quantize=False, weight_bit
 
 
 class TestHardwareBiasUnifiedTTFS:
-    """SpikingUnifiedCoreFlow with hardware_bias produces same results as legacy always-on."""
+    """Identity flow with hardware_bias produces same results as legacy always-on."""
 
     def test_hw_bias_matches_legacy_ttfs(self):
         torch.manual_seed(42)
@@ -413,7 +417,7 @@ class TestHardwareBiasUnifiedTTFS:
 
         # Legacy (always-on row)
         ir_legacy = _relu_model_to_ir_graph(model, in_dim, quantize=False)
-        flow_legacy = SpikingUnifiedCoreFlow(
+        flow_legacy = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_legacy, simulation_length=T,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
@@ -421,7 +425,7 @@ class TestHardwareBiasUnifiedTTFS:
 
         # Hardware-bias (no always-on row)
         ir_hw = _relu_model_to_ir_graph_hw_bias(model, in_dim, quantize=False)
-        flow_hw = SpikingUnifiedCoreFlow(
+        flow_hw = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_hw, simulation_length=T,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
@@ -446,7 +450,7 @@ class TestHardwareBiasUnifiedTTFS:
             relu_preds = model(x).argmax(dim=1)
 
         ir_hw = _relu_model_to_ir_graph_hw_bias(model, in_dim, quantize=False)
-        flow = SpikingUnifiedCoreFlow(
+        flow = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_hw, simulation_length=T,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
@@ -507,7 +511,7 @@ class TestHardwareBiasHybridTTFS:
 
         ir_graph = _relu_model_to_ir_graph_hw_bias(model, in_dim, quantize=False)
 
-        unified = SpikingUnifiedCoreFlow(
+        unified = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_graph, simulation_length=T,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",
@@ -548,7 +552,7 @@ class TestTTFSRealisticMixedWeights:
             relu_preds = model(x).argmax(dim=1)
 
         ir_graph = _relu_model_to_ir_graph(model, in_dim, quantize=True, weight_bits=8)
-        flow = SpikingUnifiedCoreFlow(
+        flow = build_identity_spiking_flow(
             input_shape=(in_dim,), ir_graph=ir_graph, simulation_length=32,
             preprocessor=nn.Identity(), firing_mode="TTFS",
             spike_mode="TTFS", thresholding_mode="<=", spiking_mode="ttfs",

@@ -55,8 +55,10 @@ class TestConvIRActivationType:
         ("ReLU", "relu"),
     ])
     def test_spiking_uses_correct_activation(self, act_type, expected_fn):
-        """SpikingUnifiedCoreFlow resolves activations correctly."""
-        from mimarsinan.models.spiking.unified.flow import _ttfs_activation_from_type
+        """The TTFS activation resolver maps activation types correctly."""
+        from mimarsinan.models.spiking.ttfs_activation import (
+            ttfs_activation_from_type as _ttfs_activation_from_type,
+        )
         import torch.nn.functional as F
 
         act_fn = _ttfs_activation_from_type(act_type)

@@ -1,6 +1,9 @@
 """Hybrid hard-core program construction."""
 
-from mimarsinan.mapping.packing.hybrid_build_pool import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.packing.hybrid_build_pool import (
+    build_hybrid_hard_core_mapping,
+    build_identity_hybrid_mapping,
+)
 from mimarsinan.mapping.packing.hybrid_types import (
     HybridHardCoreMapping,
     HybridStage,
@@ -14,4 +17,5 @@ __all__ = [
     "SegmentIOSlice",
     "_FINAL_OUTPUT_SENTINEL",
     "build_hybrid_hard_core_mapping",
+    "build_identity_hybrid_mapping",
 ]

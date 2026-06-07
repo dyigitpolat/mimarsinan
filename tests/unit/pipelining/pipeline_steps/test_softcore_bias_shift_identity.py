@@ -23,7 +23,7 @@ from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def _build_flow(mapper_repr, input_shape, tq=8, spiking_mode="ttfs_quantized"):
         if isinstance(node, NeuralCore):
             node.threshold = 1.0
             node.parameter_scale = torch.tensor(1.0)
-    flow = SpikingUnifiedCoreFlow(
+    flow = build_identity_spiking_flow(
         input_shape, ir_graph, tq, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode=spiking_mode,
     )
@@ -136,7 +136,9 @@ class TestReLUNeuralCoreTTFSQuantized:
         p.eval()
         with torch.no_grad():
             train_out = repr_(x)
-            flow_out = flow(x)
+            # Hybrid TTFS returns count-scaled logits (× simulation_length);
+            # renormalize to [0,1] rate to compare against the training staircase.
+            flow_out = flow(x) / tq
 
         max_diff = (train_out / act_scale - flow_out).abs().max().item()
         assert max_diff < 1.5 / tq, (

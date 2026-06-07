@@ -18,7 +18,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 from mimarsinan.pipelining.core.simulation_factory import build_spiking_hybrid_flow
 
 
@@ -59,7 +59,7 @@ def main() -> None:
         t.test_loader.num_workers = 0
         return float(t.test_on_subsample(max_samples=200, seed=0))
 
-    u = SpikingUnifiedCoreFlow(
+    u = build_identity_spiking_flow(
         (1, 28, 28),
         ir_graph,
         int(pc["simulation_steps"]),
@@ -69,7 +69,7 @@ def main() -> None:
         dp["thresholding_mode"],
         spiking_mode="ttfs",
     ).to(device).eval()
-    print(f"Unified ttfs: {acc_flow(u):.4f}")
+    print(f"Identity ttfs: {acc_flow(u):.4f}")
 
     hm = pickle.loads((run_dir / "hybrid_mapping.pickle").read_bytes())
     for mode in ("ttfs", "ttfs_quantized"):

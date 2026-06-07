@@ -49,3 +49,17 @@ class TTFSSegmentForward:
 
     def __call__(self, x):
         return self._driver(x)
+
+    def forward_with_node_values(self, x):
+        """Run the walk recording each perceptron node's decoded value.
+
+        Returns ``(output, {mapper_node: value_tensor})`` — the NF side of the
+        cascaded NF↔SCM per-neuron parity comparison.
+        """
+        recorder: dict = {}
+        self._driver.policy.node_value_recorder = recorder
+        try:
+            out = self._driver(x)
+        finally:
+            self._driver.policy.node_value_recorder = None
+        return out, recorder

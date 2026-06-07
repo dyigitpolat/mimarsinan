@@ -26,7 +26,7 @@ import torch.nn as nn
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
-from mimarsinan.models.spiking.unified.flow import SpikingUnifiedCoreFlow
+from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 
 
 WORK_DIR = Path("generated/mnist_hard_all_scm_profile")
@@ -47,6 +47,12 @@ def _load_inputs(n_samples: int = 8) -> torch.Tensor:
     return torch.cat(xs, dim=0)
 
 
+@pytest.mark.skip(
+    reason="Diagnostic compared the retired SpikingUnifiedCoreFlow (SCM) against "
+    "SpikingHybridCoreFlow (HCM); both paths now run the single hybrid executor "
+    "(build_identity_spiking_flow), so the per-node SCM-vs-HCM divergence it probed "
+    "no longer exists. Body kept for reference."
+)
 @pytest.mark.skipif(not IR_PICKLE.exists(), reason=f"missing {IR_PICKLE}")
 def test_mnist_scm_hcm_first_divergence():
     with open(IR_PICKLE, "rb") as f:
@@ -90,7 +96,7 @@ def test_mnist_scm_hcm_first_divergence():
     x = _load_inputs(256).to(device)
 
     # --- Build SCM and capture per-node activations ---
-    scm = SpikingUnifiedCoreFlow(
+    scm = build_identity_spiking_flow(
         input_shape, ir_graph, sim_length, nn.Identity(),
         "TTFS", "TTFS", "<=", spiking_mode=spiking_mode,
     ).eval().to(device)

@@ -31,14 +31,42 @@ class LeakyGradReLU(nn.Module):
 
 
 class StaircaseFunction(Function):
+    """Generic floor quantiser ``floor(x·Tq)/Tq`` with STE gradient.
+
+    Supports non-integer ``Tq`` (QuantizeDecorator's ``levels/c``); TTFS NF
+    activations use :class:`TTFSStaircaseFunction` (the deployment ceil kernel)
+    instead — the two agree on the unit domain only for integer ``Tq``.
+    """
+
     @staticmethod
     def forward(ctx, x, Tq):
-        return torch.floor(x * Tq) / Tq
+        from mimarsinan.models.spiking.wire_semantics import floor_staircase
+
+        return floor_staircase(x, Tq)
 
     @staticmethod
     def backward(ctx, grad_output):
         grad_input = grad_output.clone()
         return grad_input, None, None
+
+
+class TTFSStaircaseFunction(Function):
+    """Deployment TTFS staircase on the clamped unit domain with STE gradient.
+
+    Forward is the wire kernel pair's ceil form, so the torch NF quantiser is
+    bit-identical to the float64 contract reference at exact grid ties.
+    """
+
+    @staticmethod
+    def forward(ctx, r, S):
+        from mimarsinan.models.spiking.wire_semantics import ttfs_quantized_staircase
+
+        one = torch.ones((), dtype=r.dtype, device=r.device)
+        return ttfs_quantized_staircase(r, one, int(S))
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.clone(), None
 
 
 class RoundedStaircaseFunction(Function):
@@ -65,6 +93,9 @@ class ChipInputQuantizer(nn.Module):
             )
         self.activation_scale = activation_scale
 
+    def _snap(self, x_norm: torch.Tensor) -> torch.Tensor:
+        return RoundedStaircaseFunction.apply(x_norm, self.T)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         scale = self.activation_scale
         if isinstance(scale, torch.Tensor):
@@ -72,8 +103,33 @@ class ChipInputQuantizer(nn.Module):
         else:
             safe_scale = max(float(scale), 1e-12)
         x_norm = (x / safe_scale).clamp(0.0, 1.0)
-        x_q = RoundedStaircaseFunction.apply(x_norm, self.T)
-        return x_q * safe_scale
+        return self._snap(x_norm) * safe_scale
+
+
+class TTFSGridSnapFunction(Function):
+    """TTFS encode→decode round trip ``(S - round(S·(1-x)))/S`` with STE gradient.
+
+    Forward is the wire kernel pair's grid quantize (bit-identical to
+    ``ttfs_encoding.ttfs_input_grid_quantize``); differs from a plain
+    ``round(x·S)/S`` at half-step ties.
+    """
+
+    @staticmethod
+    def forward(ctx, x, S):
+        from mimarsinan.models.spiking.wire_semantics import ttfs_grid_quantize
+
+        return ttfs_grid_quantize(x, int(S))
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.clone(), None
+
+
+class TTFSInputGridQuantizer(ChipInputQuantizer):
+    """STE TTFS grid snap q(x) for synchronized encoding-layer inputs."""
+
+    def _snap(self, x_norm: torch.Tensor) -> torch.Tensor:
+        return TTFSGridSnapFunction.apply(x_norm, self.T)
 
 
 _CLAMP_LEAK = 0.01

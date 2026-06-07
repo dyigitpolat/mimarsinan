@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import numpy as np
 
+from mimarsinan.models.spiking.wire_semantics import (
+    ttfs_grid_quantize_np,
+    ttfs_spike_time_np,
+)
+
 
 def ttfs_spike_time(rate: np.ndarray, simulation_length: int) -> np.ndarray:
     """Per-element spike time: ``round(S * (1 - clamp(rate, 0, 1)))``."""
-    s = int(simulation_length)
-    clamped = np.clip(rate, 0.0, 1.0)
-    return np.rint(s * (1.0 - clamped)).astype(np.int64)
+    return ttfs_spike_time_np(rate, simulation_length)
 
 
 def ttfs_input_grid_quantize(rates: np.ndarray, simulation_length: int) -> np.ndarray:
@@ -18,9 +21,7 @@ def ttfs_input_grid_quantize(rates: np.ndarray, simulation_length: int) -> np.nd
     Mirrors the synchronized cycle soma's decode ``(S - k)/S`` of a spike
     encoded at ``k = ttfs_spike_time(rate)``; ``k >= S`` never fires (0.0).
     """
-    s = int(simulation_length)
-    spike_times = ttfs_spike_time(np.asarray(rates, dtype=np.float64), s)
-    return np.where(spike_times < s, (s - spike_times) / float(s), 0.0)
+    return ttfs_grid_quantize_np(rates, simulation_length)
 
 
 def ttfs_latched_spike_train(rates: np.ndarray, simulation_length: int) -> np.ndarray:

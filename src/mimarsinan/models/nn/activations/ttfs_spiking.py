@@ -150,13 +150,12 @@ class TTFSActivation(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not self._cycle_accurate_mode:
-            # Pointwise analytical value (floor-quant clamped ReLU) for eval /
+            # Pointwise analytical value (deployment staircase kernel) for eval /
             # downstream calibration when not driven by run_ttfs_cycle_accurate.
-            from mimarsinan.models.nn.activations.autograd import StaircaseFunction
+            from mimarsinan.models.nn.activations.autograd import TTFSStaircaseFunction
             scale_v, _ = self._scale_values(x)
-            levels = torch.tensor(float(self.T), device=x.device, dtype=x.dtype)
             r = (torch.relu(x) / scale_v).clamp(0.0, 1.0)
-            return StaircaseFunction.apply(r, levels) * scale_v
+            return TTFSStaircaseFunction.apply(r, self.T) * scale_v
 
         if self.encoding:
             # Value->spike entry: ``x`` is the ideal real pre-activation V (bias
@@ -208,6 +207,20 @@ class TTFSActivation(nn.Module):
         spike = spike_raw * (1.0 - self._has_fired)
         self._has_fired = (self._has_fired + spike.detach()).clamp(max=1.0)
         return spike
+
+
+def refresh_perceptron_bias_references(perceptron) -> None:
+    """Re-point every ``TTFSActivation`` under ``perceptron`` at its live bias.
+
+    ``TTFSActivation`` holds ``perceptron.layer.bias`` by reference; any step
+    that REPLACES ``perceptron.layer`` (normalization fusion, bring_back_bias)
+    must call this, or the cascade forward subtracts a stale bias and pours
+    ``b_new − b_old`` into the ramp every cycle (2026-06-07 offload incident).
+    """
+    bias = getattr(perceptron.layer, "bias", None)
+    for module in perceptron.modules():
+        if isinstance(module, TTFSActivation):
+            module.set_bias(bias)
 
 
 def run_ttfs_cycle_accurate(model, x: torch.Tensor, T: int, forward_fn=None) -> torch.Tensor:

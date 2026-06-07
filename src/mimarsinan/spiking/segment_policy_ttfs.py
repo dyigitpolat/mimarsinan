@@ -9,7 +9,15 @@ from mimarsinan.spiking.segment_partition import is_encoding_perceptron, percept
 
 class TtfsSegmentPolicy:
     """Single-spike TTFS: latency-windowed segment sim with arrival latch and
-    ramp decode; entry (encoding) perceptrons fire from the decoded value."""
+    ramp decode; entry (encoding) perceptrons fire from the decoded value.
+
+    ``node_value_recorder``: optional dict; when set, every perceptron node's
+    decoded value (latch-accumulated over its own window, scaled like a segment
+    output) is stored per node — the NF side of the cascaded NF↔SCM parity
+    comparison and the per-layer bisect instrument.
+    """
+
+    node_value_recorder: dict | None = None
 
     def prepare(self, driver):
         for m in self._ttfs_nodes(driver._seg_of.keys()):
@@ -131,6 +139,14 @@ class TtfsSegmentPolicy:
                 return perc_prev.get(src, zeros[src])   # core output, 1-cycle delayed
             return out[src]                             # transparent routing, this cycle
 
+        watch = list(ext)
+        if self.node_value_recorder is not None:
+            ext_set = set(ext)
+            watch += [
+                n for n in seg_nodes
+                if perceptron_of(n) is not None and n not in ext_set
+            ]
+
         accum: dict = {}
         latched: dict = {}
         perc_prev: dict = {}
@@ -153,17 +169,26 @@ class TtfsSegmentPolicy:
             for n in seg_nodes:
                 if perceptron_of(n) is not None:
                     perc_prev[n] = out[n]
-            for n in ext:                               # per-source window [lat, lat+T)
+            for n in watch:                             # per-source window [lat, lat+T)
                 if depth[n] <= t < depth[n] + T:
                     s = out[n]
                     latched[n] = s if n not in latched else torch.maximum(latched[n], s)
                     accum[n] = latched[n] if n not in accum else accum[n] + latched[n]
 
-        for n in ext:
+        def _decode(n):
             scale = self.decode_scale(driver, n)
             sv = (scale.to(accum[n].device, accum[n].dtype)
                   if isinstance(scale, torch.Tensor) else float(scale))
-            values[n] = (accum[n] / float(T)) * sv
+            return (accum[n] / float(T)) * sv
+
+        for n in ext:
+            values[n] = _decode(n)
+        if self.node_value_recorder is not None:
+            for n in watch:
+                if perceptron_of(n) is not None:
+                    self.node_value_recorder[n] = (
+                        values[n] if n in ext else _decode(n)
+                    ).detach()
         if driver._output in seg_set:
             return values[driver._output]
         return None

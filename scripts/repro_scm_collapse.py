@@ -18,7 +18,6 @@ from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFact
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.pipelining.core.simulation_factory import (
     build_hybrid_mapping_for_pipeline,
-    build_spiking_flow_for_metric,
     build_spiking_hybrid_flow,
     run_hcm_spiking_test,
 )
@@ -63,7 +62,7 @@ def main() -> None:
     hm = build_hybrid_mapping_for_pipeline(
         ir_graph, pc_res, pipeline_config=p.config
     )
-    flow = build_spiking_flow_for_metric(p, hm, ir_graph)
+    flow = build_spiking_hybrid_flow(p, hm)
     acc = run_hcm_spiking_test(
         p, flow, device=p.config["device"], max_batch_cap=32
     )

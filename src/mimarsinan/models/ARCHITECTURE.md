@@ -7,14 +7,15 @@ and architecture-specific implementations.
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `activations.py` | `LeakyGradReLU`, `LIFActivation`, `uniform_encode_to_spike_train`, `run_cycle_accurate`, `StrictATanSurrogate`, … | Custom autograd activations. **`LIFActivation`**: SpikingJelly IFNode (subtractive reset), **signed integrate-and-fire** — charges the membrane with `x/scale` (no relu), so it can go negative and recover, matching the chip/HCM (`memb += W@s + b`); rate mode = multi-step mean; **`set_cycle_accurate(True)`** = single-step per call; **`forward_spiking`** + **`use_cycle_accurate_trains`** delegate to **`mimarsinan.spiking.spike_trains.lif_spike_train`**. **`thresholding_mode`**: `"<"` strict vs `"<="` inclusive. |
+| `activations.py` | `LeakyGradReLU`, `LIFActivation`, `uniform_encode_to_spike_train`, `run_cycle_accurate`, `StrictATanSurrogate`, `ChipInputQuantizer`, `TTFSInputGridQuantizer`, … | Custom autograd activations. **Encoding-input quantizers** (`nn/activations/autograd.py`): `ChipInputQuantizer` = STE `round(x·T)/T` (LIF chip rate grid); `TTFSInputGridQuantizer` = STE TTFS encode→decode round trip `(S − round(S·(1−x)))/S` (`TTFSGridSnapFunction`), bit-identical to `ttfs_encoding.ttfs_input_grid_quantize` — they differ at half-step ties. **`LIFActivation`**: SpikingJelly IFNode (subtractive reset), **signed integrate-and-fire** — charges the membrane with `x/scale` (no relu), so it can go negative and recover, matching the chip/HCM (`memb += W@s + b`); rate mode = multi-step mean; **`set_cycle_accurate(True)`** = single-step per call; **`forward_spiking`** + **`use_cycle_accurate_trains`** delegate to **`mimarsinan.spiking.spike_trains.lif_spike_train`**. **`thresholding_mode`**: `"<"` strict vs `"<="` inclusive. |
 | `../spiking/spike_trains.py` | `lif_spike_train`, `uniform_spike_train`, `rates_to_spike_train` | Shared spike-train construction for PyTorch cycle-accurate path and hybrid SCM. |
 | `decorators.py` | `NoisyDropout`, `SavedTensorDecorator`, `ShiftDecorator`, `RateAdjustedDecorator`, … | Composable decorators. **Short-circuits**: omit `ShiftDecorator` when `shift_rate==0`; `RateAdjustedDecorator` / `NoisyDropout` no-op at rate 0. |
 | `layers.py` | Re-exports; `TransformedActivation`, … | Thin re-exporter + standalone layers |
 | `supermodel.py` | `Supermodel` | Top-level wrapper (preprocessor + perceptron flow) |
-| `unified_core_flow.py` | `SpikingUnifiedCoreFlow` | Spiking simulator for a flat `IRGraph` (tests / tooling). Default **`compute_dtype=torch.float64`**; optional `float32`. **Weight banks**: one `nn.Parameter` per `WeightBank`. Per-forward activation/spike caches with explicit release to limit GPU memory. **Not** used for the pipeline soft-core step metric (see `hybrid_core_flow`). |
+| `spiking/hybrid/identity_flow.py` | `build_identity_spiking_flow` | Runs a flat `IRGraph` on a 1:1 identity `HybridHardCoreMapping` (`build_identity_hybrid_mapping`, no pool/pad/reindex) through the single `SpikingHybridCoreFlow` executor. Drop-in for the retired flat-`IRGraph` spiking simulator (tests / tooling / SCM rung-2 gate); computes IR latencies only when missing. **Note:** hybrid TTFS output is count-scaled (×T), unlike the retired flow's normalized output. |
 | `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | **Primary** deployable simulator: `HybridHardCoreMapping`, per-core latencies, segment boundaries. Stages dispatch via `chip_simulation.hybrid_stage_runner.run_hybrid_stages` with `HybridStageContext` callbacks (`after_neural` / `after_compute`) for GPU refcount, segment weight cache, and `forward_with_recording()`. Compute stages use `resolve_stage_compute_scales` (always-on). |
-| `ttfs_kernels.py` | `ttfs_quantized_activation` | Shared `ceil(S*(1-V/θ))` TTFS quantized activation for unified and hybrid flows. |
+| `spiking/wire_semantics.py` | `WireSemantics`, `ttfs_quantized_staircase(_np)`, `ttfs_spike_time(_np)`, `ttfs_grid_quantize(_np)`, `floor_staircase(_np)` | **Kernel pairs**: each TTFS wire op defined once with torch+numpy twins (identical op order → bit-equal in float64; cross-twin tests sweep ±1 ULP around the S-grid). `WireSemantics(S, compare_mode)` bundles the ops per deployment (`contract.wire()`); `compare_mode='<'` = nevresim `StrictCompare` tie shift (exact grid ties fire one cycle later; C++ `<` parity not yet harness-covered). |
+| `ttfs_kernels.py` | `ttfs_quantized_activation` | Thin aliases over `spiking/wire_semantics.py` kernel pair (names kept for importers). |
 | `lif_kernels.py` | `lif_fire_and_reset` | Shared LIF threshold + Novena/Default reset step for unified and hybrid flows. |
 | `torch_mlp_mixer.py`, `torch_mlp_mixer_core.py`, `mlp_mixer_ref.py` | … | MLP-Mixer variants |
 
@@ -37,11 +38,11 @@ and architecture-specific implementations.
 
 ## Compute dtype (float64 default)
 
-`SpikingUnifiedCoreFlow` and `SpikingHybridCoreFlow` default to **`torch.float64`** for on-chip spiking math. Nevresim TTFS uses `signal_t = double`; float32 can flip `ceil(S*(1 - V/θ))` when `V` is within one ULP of `θ`, which compounds across layers (~multi–percentage-point SCM drift on MNIST-scale runs). Pass `compute_dtype=torch.float32` only after measuring sensitivity; weight `nn.Parameter`s stay float32 for matmul.
+`SpikingHybridCoreFlow` defaults to **`torch.float64`** for on-chip spiking math. Nevresim TTFS uses `signal_t = double`; float32 can flip `ceil(S*(1 - V/θ))` when `V` is within one ULP of `θ`, which compounds across layers (~multi–percentage-point SCM drift on MNIST-scale runs). Pass `compute_dtype=torch.float32` only after measuring sensitivity; weight `nn.Parameter`s stay float32 for matmul.
 
 **Packed buffers:** owned/bank **weights** are stored as float32 `nn.Parameter`s (matmul path). **Thresholds** and **hardware_bias** are packed in `compute_dtype` (float64 by default) so `ceil(S*(1-V/θ))` and gather/add paths match HCM/nevresim — Python float thresholds (e.g. 8.656…) do not round-trip exactly in float32.
 
-### TTFS ComputeOp scaling (`SpikingUnifiedCoreFlow` / HCM)
+### TTFS ComputeOp scaling (`SpikingHybridCoreFlow` / HCM)
 
 NeuralCore TTFS outputs are normalized to `[0, 1]` via effective weights; **ComputeOps** wrap the *training* module (unscaled bias). Two scales per ComputeOp node:
 
@@ -62,10 +63,10 @@ ComputeOp gather runs in **float32** (slice assignment into `inp` downcasts; do 
 - **Encoding boundary:** ComputeOps that wrap a plain LIF-Perceptron emit a `(T,B,D)` spike train via `mimarsinan.spiking.segment_encoding.emit_compute_spike_train` (single-step `T` cycles, divided by `activation_scale` for the chip's binary-input convention). Wrapper mappers (e.g. `Conv2DPerceptronMapper`), non-LIF perceptrons, and structural ops (mean/flatten/add/etc.) emit `None`; the downstream consumer uniform-encodes their rate. `build_segment_input_spike_train` consumes cached trains verbatim and raises on partial caches under cycle-accurate mode.
 - **`forward_with_recording()`:** requires `batch_size==1` and a per-cycle cascade mode (`lif` or cascaded `ttfs_cycle_based`); fills `RunRecord` for Loihi/SANA-FE/nevresim parity.
 
-### Rate vs TTFS always-on sources (`SpikingUnifiedCoreFlow`)
+### Rate vs TTFS always-on sources (`SpikingHybridCoreFlow`)
 
 In LIF/rate mode, always-on (`kind=="on"`) sources fire every cycle. In TTFS modes, always-on fires **only at cycle 0** (bias pulse once); later cycles skip the fill so rate and TTFS paths stay consistent with hardware.
 
 ## Exported API (`__init__.py`)
 
-Layer types from `layers.py` and `Supermodel`. Spiking simulators imported from `unified_core_flow` / `hybrid_core_flow` directly (heavy import cost).
+Layer types from `layers.py` and `Supermodel`. The spiking simulator is imported from `hybrid_core_flow` directly (heavy import cost); flat-`IRGraph` callers use `spiking/hybrid/identity_flow.build_identity_spiking_flow`.

@@ -167,7 +167,7 @@ class NeuralCore(IRNode):
             raise RuntimeError(
                 f"NeuralCore {self.name}: cannot execute without a resolved "
                 f"core_matrix.  Call get_core_matrix(graph) first or use "
-                f"SpikingUnifiedCoreFlow which resolves weight banks."
+                f"SpikingHybridCoreFlow which resolves weight banks."
             )
         weight = torch.tensor(
             mat.T,

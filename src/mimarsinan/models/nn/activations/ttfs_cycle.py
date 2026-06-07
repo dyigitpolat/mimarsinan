@@ -16,11 +16,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.models.nn.activations.autograd import StaircaseFunction
+from mimarsinan.models.nn.activations.autograd import TTFSStaircaseFunction
 
 
 class TTFSCycleActivation(nn.Module):
-    """Single-spike TTFS activation: ``floor(S·clamp(relu(x)/θ,0,1))·θ/S`` with STE grad."""
+    """Single-spike TTFS activation: the deployment staircase kernel on
+    ``clamp(relu(x)/θ, 0, 1)`` scaled by θ, with STE grad."""
 
     _VALID_THRESHOLDING_MODES = ("<", "<=")
 
@@ -62,6 +63,5 @@ class TTFSCycleActivation(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         scale = self._safe_scale(x)
-        levels = torch.tensor(float(self.T), device=x.device, dtype=x.dtype)
         r = (F.relu(x) / scale).clamp(0.0, 1.0)
-        return StaircaseFunction.apply(r, levels) * scale
+        return TTFSStaircaseFunction.apply(r, self.T) * scale
