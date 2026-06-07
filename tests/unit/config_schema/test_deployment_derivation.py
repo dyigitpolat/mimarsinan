@@ -87,6 +87,13 @@ def test_default_cycle_accurate_lif_forward_is_true():
     assert dp["cycle_accurate_lif_forward"] is True
 
 
+def test_default_legacy_lif_blend_ramp_is_false():
+    """The golden value-domain ramp is the default; the legacy per-frame ramp
+    (which leaks off the continuous teacher at rate 0) is opt-in."""
+    dp = get_default_deployment_parameters()
+    assert dp["legacy_lif_blend_ramp"] is False
+
+
 def test_default_enable_nevresim_simulation_is_true():
     dp = get_default_deployment_parameters()
     assert dp["enable_nevresim_simulation"] is True

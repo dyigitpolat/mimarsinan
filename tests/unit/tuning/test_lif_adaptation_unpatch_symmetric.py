@@ -26,7 +26,7 @@ class _FakePerceptronModel(nn.Module):
         return self.fc(x)
 
 
-def test_install_cycle_accurate_forward_assert_blocks_double_patch() -> None:
+def test_double_patch_assert_blocks_reinstall() -> None:
     model = _FakePerceptronModel()
     model.forward = _CycleAccurateForward(model, T=4)
     with pytest.raises(AssertionError, match="already patched"):
@@ -35,10 +35,10 @@ def test_install_cycle_accurate_forward_assert_blocks_double_patch() -> None:
 
 
 def _install_check(model: nn.Module, T: int) -> None:
-    """Mirror the install assertion path."""
+    """Mirror the shared ``CascadeForwardInstall._install_forward`` assertion."""
     assert "forward" not in model.__dict__, (
-        "LIFAdaptationTuner: model.forward is already patched; double-install would "
-        "shadow the prior wrapper. Call _after_run on the previous tuner first."
+        "model.forward is already patched; a double-install would shadow the "
+        "prior wrapper. Remove it first."
     )
     model.forward = _CycleAccurateForward(model, T=int(T))
 
@@ -72,67 +72,76 @@ def test_unpatch_idempotent() -> None:
     assert "forward" not in model.__dict__
 
 
-def test_tuner_install_assert_blocks_double_patch() -> None:
-    """The real tuner's ``_install_cycle_accurate_forward`` should assert when
-    the model already has an instance-level forward."""
-    class _Tuner:
-        def __init__(self, model, T):
+def test_shared_install_mixin_blocks_double_patch() -> None:
+    """The shared ``CascadeForwardInstall`` mixin asserts when an instance-level
+    forward already shadows the class forward (no double-install)."""
+    from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
+        CascadeForwardInstall,
+    )
+
+    class _Tuner(CascadeForwardInstall):
+        def __init__(self, model):
             self.model = model
-            self._T = int(T)
-            self._patched_forward = False
-            self.pipeline = type("P", (), {"config": {}})()
-
-        def _install_cycle_accurate_forward(self):
-            from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
-                LIFAdaptationTuner,
-            )
-            # Reuse the actual method
-            LIFAdaptationTuner._install_cycle_accurate_forward(self)
 
     model = _FakePerceptronModel()
-    tuner = _Tuner(model, T=4)
-    tuner._install_cycle_accurate_forward()
+    tuner = _Tuner(model)
+    tuner._install_forward(_CycleAccurateForward(model, T=4))
     with pytest.raises(AssertionError, match="already patched"):
-        tuner._install_cycle_accurate_forward()
-    # Cleanup
-    del model.forward
+        tuner._install_forward(_CycleAccurateForward(model, T=4))
+    tuner._remove_forward()
+    assert "forward" not in model.__dict__
 
 
-def test_tuner_after_run_unpatches_even_when_cycle_accurate() -> None:
-    """``_after_run`` must remove ``model.forward`` instance attr regardless of
-    the cycle-accurate flag. Prior versions left the patch in place when
-    ``self._cycle_accurate == True``, leaking into downstream pipeline stages."""
-    from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
+def test_shared_remove_forward_is_idempotent() -> None:
+    """``_remove_forward`` is a no-op once the instance forward is gone."""
+    from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
+        CascadeForwardInstall,
+    )
+
+    class _Tuner(CascadeForwardInstall):
+        def __init__(self, model):
+            self.model = model
+
+    model = _FakePerceptronModel()
+    tuner = _Tuner(model)
+    tuner._install_forward(_CycleAccurateForward(model, T=4))
+    tuner._remove_forward()
+    tuner._remove_forward()  # idempotent
+    assert "forward" not in model.__dict__
+
+
+def test_after_run_unpatches_ramp_forward() -> None:
+    """The shared ``_after_run`` removes the ramp forward in a ``finally`` before
+    finalize, so a tuner that installs no finalize forward (e.g. non-cycle-
+    accurate LIF / synchronized TTFS) leaves the pristine class forward for
+    downstream stages — regardless of which ramp wrapper was installed."""
+    from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
+        CascadeForwardInstall,
+        KDBlendAdaptationTuner,
+    )
 
     model = _FakePerceptronModel()
 
-    class _StubTuner:
+    class _Stub(CascadeForwardInstall):
         def __init__(self):
             self.model = model
-            # Keep cycle_accurate=False so the post-blend chip-aligned NF
-            # install does not fire (this test only checks the unpatch path).
-            self._cycle_accurate = False
-            self._T = 4
             self._patched_forward = True
-            self._continue_called = False
-            self._set_rate_called = False
-            self.adaptation_manager = type("M", (), {"lif_active": False})()
-            self.pipeline = type("P", (), {"config": {"firing_mode": "Default"}})()
             self._final_metric = None
             self._committed_rate = None
 
         def _continue_to_full_rate(self):
-            self._continue_called = True
+            pass
 
         def _set_rate(self, r):
-            self._set_rate_called = True
+            pass
+
+        def _finalize(self):  # no finalize forward reinstalled
+            pass
 
         def _ensure_pipeline_threshold(self):
             return 1.0
 
     model.forward = _CycleAccurateForward(model, T=4)
-    stub = _StubTuner()
-    LIFAdaptationTuner._after_run(stub)
-    assert "forward" not in model.__dict__, (
-        "after_run should always unpatch model.forward (was only when not cycle_accurate)"
-    )
+    stub = _Stub()
+    KDBlendAdaptationTuner._after_run(stub)
+    assert "forward" not in model.__dict__

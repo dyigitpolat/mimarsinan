@@ -57,7 +57,7 @@ def main() -> None:
         native = nn.Module()
 
         def _forward(x):
-            return wrapper._call_unpatched_forward(x)
+            return wrapper._unpatched_forward(x)
 
         native.forward = _forward  # type: ignore[method-assign]
         print(f"native single-step forward: {accuracy(native, device, pf):.4f}")

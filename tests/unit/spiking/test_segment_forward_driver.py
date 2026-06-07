@@ -208,7 +208,7 @@ def test_tuner_forward_installs_picklable():
 
     S = 8
     ttfs_flow = _ttfs_flow(_TinyMLP(6, 5, 4), (6,), 4, S)
-    fwd = _SegmentSpikeForward(ttfs_flow.get_mapper_repr(), S)
+    fwd = _SegmentSpikeForward(ttfs_flow, S)
     x = torch.randn(3, 6, dtype=torch.float64)
     with torch.no_grad():
         before = fwd(x)

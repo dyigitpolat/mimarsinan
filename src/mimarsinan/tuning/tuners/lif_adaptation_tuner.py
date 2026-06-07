@@ -13,37 +13,26 @@ from mimarsinan.models.nn.activations import (
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     BlendActivation,
     KDBlendAdaptationTuner,
+    _InstalledForward,
 )
 
 
-class _CycleAccurateForward:
+class _CycleAccurateForward(_InstalledForward):
     """Picklable ``model.forward`` override that drives ``run_cycle_accurate``
     on top of the model's class-level forward, used during the LIF blend ramp."""
 
-    def __init__(self, model, T: int):
-        self.model = model
-        self.T = int(T)
-
-    def _call_unpatched_forward(self, x):
-        return type(self.model).forward(self.model, x)
-
-    def __call__(self, x):
+    def _run(self, x):
         return run_cycle_accurate(
-            self.model, x, self.T,
-            forward_fn=self._call_unpatched_forward,
+            self.model, x, self.T, forward_fn=self._unpatched_forward,
         )
 
 
-class _ChipAlignedNFForward:
+class _ChipAlignedNFForward(_InstalledForward):
     """Picklable ``model.forward`` override installed post-blend (rate==1.0).
     Routes NF through ``chip_aligned_segment_forward`` so downstream calibrators
     (WQ, NormFusion, SCM probes) see the same forward the chip simulators run."""
 
-    def __init__(self, model, T: int):
-        self.model = model
-        self.T = int(T)
-
-    def __call__(self, x):
+    def _run(self, x):
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
         return chip_aligned_segment_forward(self.model, x, self.T)
@@ -75,10 +64,17 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         self._cycle_accurate = bool(self.pipeline.config.get("cycle_accurate_lif_forward", False))
+        # Legacy per-frame ramp leaks off the continuous teacher at rate 0 (the
+        # blend is applied inside ``run_cycle_accurate``). Default OFF: the ramp
+        # runs in the value domain (golden, non-destructive); the genuine
+        # chip-aligned forward is installed at finalize either way. Opt back in
+        # via ``legacy_lif_blend_ramp`` for the old behavior.
+        self._legacy_blend_ramp = bool(
+            self.pipeline.config.get("legacy_lif_blend_ramp", False)
+        )
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
 
         self._bias_mode = resolve_bias_mode(self.pipeline.config)
-        self._patched_forward = False
 
     def _make_target_activation(self, perceptron) -> LIFActivation:
         return LIFActivation(
@@ -104,45 +100,28 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             )
             self._append_encoding_input_module(perceptron, quantizer)
 
-    def _after_install_blend(self) -> None:
+    def _ramp_forward(self):
+        """Legacy cycle-accurate ramp forward (per-frame blend). Installed only
+        when ``cycle_accurate_lif_forward`` AND ``legacy_lif_blend_ramp`` are set;
+        otherwise the ramp runs in the value domain (no forward — reproduces the
+        continuous teacher at rate 0, the golden non-destructive ramp). The
+        genuine chip-aligned forward is installed at finalize either way."""
+        if self._cycle_accurate and self._legacy_blend_ramp:
+            return _CycleAccurateForward(self.model, self._T)
+        return None
+
+    def _finalize_forward(self):
         if self._cycle_accurate:
-            self._install_cycle_accurate_forward()
+            return _ChipAlignedNFForward(self.model, self._T)
+        return None
 
-    def _install_cycle_accurate_forward(self) -> None:
-        """Patch model.forward to run_cycle_accurate for the duration of the blend ramp."""
-        assert "forward" not in self.model.__dict__, (
-            "LIFAdaptationTuner: model.forward is already patched; double-install "
-            "would shadow the prior wrapper. Call _after_run on the previous tuner "
-            "first."
-        )
-        self._patched_forward = True
-        self.model.forward = _CycleAccurateForward(model=self.model, T=self._T)
-
-    def _after_run(self):
-        try:
-            self._continue_to_full_rate()
-            self._set_rate(1.0)
-        finally:
-            if getattr(self, "_patched_forward", False):
-                try:
-                    del self.model.forward
-                except AttributeError:
-                    pass
-                self._patched_forward = False
-
+    def _finalize(self) -> None:
         self.adaptation_manager.lif_active = True
-        for p in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, p)
+        self._update_target_activations()
         if self._cycle_accurate:
             from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
 
             apply_cycle_accurate_trains_to_model(self.model, True)
-            assert "forward" not in self.model.__dict__, (
-                "LIFAdaptationTuner._after_run: model.forward is already patched; "
-                "did the blend-ramp wrapper leak?"
-            )
-            self.model.forward = _ChipAlignedNFForward(self.model, self._T)
-
-        self._final_metric = self._ensure_pipeline_threshold()
-        self._committed_rate = 1.0
-        return self._final_metric
+        fwd = self._finalize_forward()
+        if fwd is not None:
+            self._install_forward(fwd)
