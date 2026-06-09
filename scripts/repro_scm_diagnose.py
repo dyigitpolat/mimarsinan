@@ -21,7 +21,7 @@ from mimarsinan.pipelining.core.simulation_factory import (
     build_hybrid_mapping_for_pipeline,
     build_spiking_hybrid_flow,
 )
-from mimarsinan.tuning.tuners.lif_adaptation_tuner import _CycleAccurateForward
+from mimarsinan.tuning.tuners.lif_adaptation_tuner import _ChipAlignedNFForward
 
 
 def accuracy(model, device, pf, max_samples=200):
@@ -52,7 +52,7 @@ def main() -> None:
     print("=== NF paths ===")
     print(f"current forward: {accuracy(model, device, pf):.4f}")
 
-    if isinstance(model.forward, _CycleAccurateForward):
+    if isinstance(model.forward, _ChipAlignedNFForward):
         wrapper = model.forward
         native = nn.Module()
 

@@ -19,7 +19,7 @@ from mimarsinan.pipelining.core.simulation_factory import (
     build_hybrid_mapping_for_pipeline,
     build_spiking_hybrid_flow,
 )
-from mimarsinan.tuning.tuners.lif_adaptation_tuner import _CycleAccurateForward
+from mimarsinan.tuning.tuners.lif_adaptation_tuner import _ChipAlignedNFForward
 
 
 def main() -> None:
@@ -47,7 +47,7 @@ def main() -> None:
     x = x.to(device)
 
     with torch.no_grad():
-        if isinstance(model.forward, _CycleAccurateForward):
+        if isinstance(model.forward, _ChipAlignedNFForward):
             out_nf = model(x)
             native_fwd = model.forward._unpatched_forward
             out_native = native_fwd(x)

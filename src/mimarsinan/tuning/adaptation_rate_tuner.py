@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.perceptron_rate import apply_manager_rate
 
 
 class AdaptationRateTuner(SmoothAdaptationTuner):
@@ -18,9 +19,10 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
         return getattr(self.adaptation_manager, self.rate_attr)
 
     def _apply_rate(self, rate) -> None:
-        setattr(self.adaptation_manager, self.rate_attr, rate)
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        apply_manager_rate(
+            self.model, self.adaptation_manager, self.pipeline.config,
+            self.rate_attr, rate,
+        )
 
     def _set_extra_state(self, extra):
         self._apply_rate(extra)
@@ -31,7 +33,9 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
 
     def _after_run(self):
         self._continue_to_full_rate()
-        setattr(self.adaptation_manager, self.rate_attr, 1.0)
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        self._apply_rate(1.0)
         self._committed_rate = 1.0
+        # Enforce the pipeline floor for the whole rate-tuner family (the
+        # subclasses used to each re-add this identical safety net).
+        self._final_metric = self._ensure_pipeline_threshold()
+        return self._final_metric

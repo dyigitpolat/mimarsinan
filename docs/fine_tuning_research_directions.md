@@ -253,3 +253,69 @@ than optimizing within it. (b) is available *today* as a deployment policy.
   cascade per-layer decode (§2.2 metric) for any new proxy.
 - Keep the `_finalize_cliff` and `_phase_seconds` instrumentation; they are the
   cheapest signal for whether a change closed the transfer gap.
+
+---
+
+## 7. Implementation status (2026-06-09)
+
+What landed is the **shared-primitive refactor** of the tuning system; the D1
+S-annealing *strategy* was prototyped, evaluated, found not to help on the target
+config, and **removed** (kept only as the empirical result + the diagnostic
+below).
+
+**Refactor / SSOT primitives (kept).** The tuning mechanics are now shared,
+axis-agnostic helpers rather than per-tuner copies — this is the genericity any
+future transformation (including a hypothetical RRAM-noise tuner) reuses:
+- `tuning/perceptron_rate.py` (`apply_manager_rate`, `rebuild_activations`,
+  `set_blend_rate`) — one place to apply a rate across perceptrons, replacing 4+
+  inlined `setattr; for p: update_activation` loops.
+- `tuning/teacher.py` (`snapshot_frozen_teacher`, `freeze_module`) and
+  `tuning/forward_install.py` (`LazyExecutorForward` with `_ensure_executor`,
+  `CascadeForwardInstall`) — leaf modules the tuners share for KD-teacher capture
+  and `model.forward` install.
+- **Bug fix:** the pipeline-floor check (`_ensure_pipeline_threshold`) now lives
+  once in `AdaptationRateTuner._after_run` — the activation-quant / noise tuners
+  used to each re-add it, and the base path silently skipped it.
+- LIF customizes finalize through ordered hooks (`_before/_after_finalize_rebuild`)
+  instead of copying the base `_finalize` body.
+- Continuous-rate axes (activation blend, decorator rate, and a future RRAM-noise
+  ramp) remain generic via the existing `SmoothAdaptationTuner` + `AdaptationManager`
+  rate-field extension point — a new axis is a thin `AdaptationRateTuner` subclass.
+
+**D1 (S-annealing) — evaluated and rejected for cascaded offload mmixcore.** A
+prototype (staircase-proxy ramp at a large `S₀`, genuine-cascade finalize, then
+anneal `S → deploy` via a per-stage KD recovery) was run on
+`mnist_mmixcore_ttfs_cycle_60_offload`, seed 0, deploy `S=4`:
+
+| | baseline (no curriculum) | curriculum `[16,4]` |
+|---|---|---|
+| finalize cliff | **0.205** | **0.746** |
+| deployed (Soft/Hard-core sim) | **0.946** | **0.918** |
+
+D1 **hurt by −2.8 pp**, and the mechanism refutes its premise: the finalize cliff
+(staircase-proxy minus genuine-cascade accuracy) **grew** with `S` (0.205 at S=4 →
+0.746 at S=16) instead of shrinking toward 0. So annealing *down* from a higher-`S`
+basin lands below training at deploy-`S` directly. This is consistent with the
+encode/decode finding below and the §2.2 structural divergence. The prototype was
+removed; the config knob, the curriculum machinery, and the RRAM glimpse were all
+deleted (they were never requested as shipped features).
+
+**Encode/decode diagnostic (kept).** A contained study (`tests/cascade_fixtures.py`
++ `tests/unit/tuning/test_cascade_encode_decode.py`, host-side compute ops
+before/between/after neural segments) pins the genuine cascade's gradient contract
+across segment boundaries:
+- A **subsume** segment entry charges the decoded value directly → the boundary is
+  **differentiable**, gradient crosses upstream.
+- An **offload / host-ComputeOp** entry reads a re-encoded single-spike train
+  (`round`-based TTFS encode, `segment_policy_ttfs._boundary_single_spike_train`)
+  → gradient to upstream segments is **severed**.
+
+So genuine-cascade training reaches all layers in a single subsume segment but only
+the *last* segment once host ComputeOps cut the graph (the real mmixcore target).
+This is the structural mechanism behind §2.2's deep-layer attenuation and behind
+D1's failure here. The real next lever for cascaded multi-segment models is making
+the boundary re-encode a straight-through/surrogate so the genuine backward trains
+every segment (the D2/D3 work; parity-critical — the forward must stay the bit-exact
+HCM encode). `TestEncodeDecodeGradientContract` pins the current contract so any
+such change is deliberate. For accuracy-critical `ttfs_cycle` today, D6(b)
+(synchronized, already ≥0.97) remains the pragmatic path.

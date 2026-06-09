@@ -28,23 +28,24 @@ import torch.nn as nn
 
 from mimarsinan.models.nn.activations.autograd import TTFSInputGridQuantizer
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+from mimarsinan.tuning.forward_install import LazyExecutorForward
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
-    _InstalledForward,
 )
 
 
-class _SegmentSpikeForward(_InstalledForward):
+class _SegmentSpikeForward(LazyExecutorForward):
     """Picklable ``model.forward`` override driving the segment-aware spike sim."""
 
-    def _run(self, x):
-        if self._executor is None:
-            from mimarsinan.models.spiking.training.ttfs_segment_forward import (
-                TTFSSegmentForward,
-            )
+    def _build_executor(self):
+        from mimarsinan.models.spiking.training.ttfs_segment_forward import (
+            TTFSSegmentForward,
+        )
 
-            self._executor = TTFSSegmentForward(self.model.get_mapper_repr(), self.T)
-        return self._executor(x)
+        return TTFSSegmentForward(self.model.get_mapper_repr(), self.T)
+
+    def _run(self, x):
+        return self._ensure_executor(self._build_executor)(x)
 
 
 class _Rung2TeacherFlow(nn.Module):

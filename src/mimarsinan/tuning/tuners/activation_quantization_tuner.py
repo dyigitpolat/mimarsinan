@@ -19,8 +19,3 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         if self._final_metric is not None:
             return self._final_metric
         return self.trainer.validate()
-
-    def _after_run(self):
-        super()._after_run()
-        self._final_metric = self._ensure_pipeline_threshold()
-        return self._final_metric
