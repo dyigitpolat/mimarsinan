@@ -86,16 +86,13 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             return _ChipAlignedNFForward(self.model, self._T)
         return None
 
-    def _finalize(self) -> None:
+    def _before_finalize_rebuild(self) -> None:
+        # lif_active before the rebuild so the committed activations subsume the
+        # clamp/quant/shift decorators (the base _finalize installs any forward).
         self.adaptation_manager.lif_active = True
-        self._update_target_activations()
+
+    def _after_finalize_rebuild(self) -> None:
         if self._cycle_accurate:
             from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
 
             apply_cycle_accurate_trains_to_model(self.model, True)
-        fwd = self._finalize_forward()
-        # A deployed forward distinct from the value-domain ramp invalidates the
-        # ramp's cached LR; stabilization must re-find it on the deployed dynamics.
-        self._stabilization_refinds_lr = fwd is not None
-        if fwd is not None:
-            self._install_forward(fwd)

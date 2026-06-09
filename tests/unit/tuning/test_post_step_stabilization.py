@@ -387,6 +387,14 @@ class TestStabilizationRefindsLR:
         class _Stub:
             _installed = None
 
+            # The base _finalize calls these ordered hooks (no-ops by default;
+            # LIF overrides them). A bare stub mirrors the base no-ops.
+            def _before_finalize_rebuild(self):
+                pass
+
+            def _after_finalize_rebuild(self):
+                pass
+
             def _update_target_activations(self):
                 pass
 

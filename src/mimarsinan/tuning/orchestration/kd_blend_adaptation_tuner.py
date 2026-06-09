@@ -10,72 +10,17 @@ activation and the finalize step.
 
 from __future__ import annotations
 
-import copy
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.tuning.forward_install import CascadeForwardInstall, LazyExecutorForward
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.perceptron_rate import rebuild_activations, set_blend_rate
+from mimarsinan.tuning.teacher import freeze_module, snapshot_frozen_teacher
 
-
-class _InstalledForward:
-    """Picklable ``model.forward`` override running a cross-layer NF forward.
-
-    Subclasses implement :meth:`_run`. A lazily-built executor (e.g. a segment
-    driver) is cached per instance and dropped on pickling so checkpoints/
-    teacher-snapshots stay light. One shape for the cycle-accurate LIF ramp,
-    the chip-aligned LIF finalize, and the TTFS cascade forward.
-    """
-
-    def __init__(self, model, T: int):
-        self.model = model
-        self.T = int(T)
-        self._executor = None
-
-    def _unpatched_forward(self, x):
-        """The model's class-level forward, bypassing this instance override."""
-        return type(self.model).forward(self.model, x)
-
-    def _run(self, x):
-        raise NotImplementedError
-
-    def __call__(self, x):
-        return self._run(x)
-
-    def __getstate__(self):
-        state = dict(self.__dict__)
-        state["_executor"] = None
-        return state
-
-
-class CascadeForwardInstall:
-    """Symmetric, single-owner install/remove of an instance ``model.forward``.
-
-    The cascade / cycle-accurate NF forwards are installed as an instance
-    attribute that shadows the class forward. This mixin guarantees no
-    double-patch (an unremoved prior wrapper would silently shadow the new one)
-    and an idempotent unpatch, so downstream pipeline stages always see the
-    pristine class forward.
-    """
-
-    _patched_forward = False
-
-    def _install_forward(self, forward_obj) -> None:
-        assert "forward" not in self.model.__dict__, (
-            f"{type(self).__name__}: model.forward is already patched; a double-"
-            "install would shadow the prior wrapper. Remove it first."
-        )
-        self._patched_forward = True
-        self.model.forward = forward_obj
-
-    def _remove_forward(self) -> None:
-        if getattr(self, "_patched_forward", False):
-            try:
-                del self.model.forward
-            except AttributeError:
-                pass
-            self._patched_forward = False
+# Back-compat alias: the LIF/TTFS finalize forwards subclass this name.
+_InstalledForward = LazyExecutorForward
 
 
 class BlendActivation(nn.Module):
@@ -116,9 +61,7 @@ class _KDClassificationLoss:
         self.teacher = teacher
         self.temperature = float(temperature)
         self.alpha = float(alpha)
-        self.teacher.eval()
-        for p in self.teacher.parameters():
-            p.requires_grad_(False)
+        freeze_module(self.teacher)
 
     def __call__(self, model: nn.Module, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
@@ -227,14 +170,25 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         return None
 
     def _update_target_activations(self) -> None:
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        rebuild_activations(self.model, self.adaptation_manager, self.pipeline.config)
+
+    def _before_finalize_rebuild(self) -> None:
+        """Set adaptation-manager flags the activation rebuild must see (e.g. LIF
+        sets ``lif_active`` so the rebuilt activations subsume the decorators)."""
+
+    def _after_finalize_rebuild(self) -> None:
+        """Per-model finalize work after activations are rebuilt, before the
+        deployed forward is installed (e.g. LIF applies cycle-accurate trains)."""
 
     def _finalize(self) -> None:
         """At full rate: rebuild the committed activations, then install the
         genuine cross-layer forward so the committed metric, recovery, and every
-        downstream step run the exact deployed dynamics."""
+        downstream step run the exact deployed dynamics. Subclasses customize via
+        the ordered ``_before_finalize_rebuild`` / ``_after_finalize_rebuild``
+        hooks rather than copying this body."""
+        self._before_finalize_rebuild()
         self._update_target_activations()
+        self._after_finalize_rebuild()
         fwd = self._finalize_forward()
         # A deployed forward distinct from the ramp invalidates the ramp's
         # cached LR; stabilization must re-find it on the deployed dynamics.
@@ -245,15 +199,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     # ── Shared machinery ─────────────────────────────────────────────────────
 
     def _snapshot_teacher(self) -> nn.Module:
-        device = self.pipeline.config["device"]
-        self.model.to("cpu")
-        teacher = copy.deepcopy(self.model)
-        self.model.to(device)
-        teacher.to(device)
-        teacher.eval()
-        for p in teacher.parameters():
-            p.requires_grad_(False)
-        return teacher
+        return snapshot_frozen_teacher(self.model, self.pipeline.config["device"])
 
     def _install_blend(self) -> None:
         for perceptron in self.model.get_perceptrons():
@@ -268,8 +214,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         return [p.base_activation.rate for p in self.model.get_perceptrons()]
 
     def _set_rate(self, rate: float) -> None:
-        for p in self.model.get_perceptrons():
-            p.base_activation.rate = float(rate)
+        set_blend_rate(self.model, rate)
 
     def _get_extra_state(self):
         return self._get_rates()
