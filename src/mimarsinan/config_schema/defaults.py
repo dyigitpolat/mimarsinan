@@ -69,6 +69,12 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "tuning_use_paired_sensor": False,
     "k_commit": 2.0,
     "paired_confirm_batches": 0,  # 0 → use eval_n_batches
+    # Tuning refactor flag (P6a): cache only the fixed decision subsample on the
+    # device instead of the whole validation set (the W8 ImageNet-scale fix).
+    "tuning_subsample_val_cache": False,
+    # Tuning refactor flag (P5b): start each round from the previously accepted
+    # step (last_successful_step policy) — cheaper probes on cliff-like axes.
+    "tuning_sensitivity_stepping": False,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -159,6 +165,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_use_paired_sensor",
     "k_commit",
     "paired_confirm_batches",
+    "tuning_subsample_val_cache",
+    "tuning_sensitivity_stepping",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",

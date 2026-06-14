@@ -295,6 +295,7 @@ class SmoothAdaptationRunMixin(TunerBase):
             max_rounds=max_cycles,
             skip_one_shot=getattr(self, "_skip_one_shot", False),
             initial_step=max(ms, float(getattr(self, "_initial_ramp_step", 0.5))),
+            sensitivity_stepping=self.pipeline.config.get("tuning_sensitivity_stepping", False),
         )
         driver = AdaptationDriver(
             scheduler=scheduler,

@@ -51,6 +51,10 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._k_commit = float(pipeline.config.get("k_commit", 2.0))
         self._confirm_indices = None
         self._ref_correct = None
+        # P6a: cache only the fixed decision subsample on the device (W8 scale fix).
+        if pipeline.config.get("tuning_subsample_val_cache", False):
+            self.trainer._val_cache_max_batches = self._budget.eval_n_batches
+            self.trainer._gpu_val_cache = None  # rebuild capped on next eval
 
     def _update_and_evaluate(self, rate):
         """Apply transformation T at *rate* and return a validation metric."""
