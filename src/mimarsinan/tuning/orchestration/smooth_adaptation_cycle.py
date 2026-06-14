@@ -54,6 +54,16 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._global_budget = float(pipeline.config.get("global_budget", 0.005))
         self._confirm_indices = None
         self._ref_correct = None
+        # Diagnostic (``tuning_full_transform_probe``, default off): after each
+        # commit, probe the value-domain full-transformation (rate 1.0) accuracy
+        # to check whether the gradual ramp is actually pulling the model toward
+        # 1.0-viability — i.e. whether ``drop = committed_acc - full_acc`` shrinks
+        # as the committed rate climbs. A flat/growing drop means the gradual
+        # adaptation is not contributing to the final transformed state.
+        self._full_transform_probe = bool(
+            pipeline.config.get("tuning_full_transform_probe", False)
+        )
+        self._full_transform_log = []
         # Opt-in (``tuning_subsample_val_cache``, the W8 ImageNet-scale fix): cache
         # only the fixed decision subsample on the device instead of the whole
         # validation set. Default-off keeps the full-set cache (representative on
@@ -266,7 +276,42 @@ class SmoothAdaptationCycleMixin(TunerBase):
             rollback_tolerance=float(noise_margin),
         ))
         self._last_post_acc = float(post_acc)
+        self._probe_full_transform(float(post_acc))
         return rate
+
+    def _probe_full_transform(self, committed_acc):
+        """Diagnostic: measure the value-domain rate-1.0 accuracy from the freshly
+        committed state (apply 1.0, evaluate, restore), without recovery. The
+        ``drop = committed_acc - full_acc`` trajectory shows whether the gradual
+        ramp converges the model toward 1.0-viability (drop shrinking) or merely
+        inches the rate up without adapting the endpoint (drop flat)."""
+        if not getattr(self, "_full_transform_probe", False):
+            return
+        if self._committed_rate >= 1.0 - 1e-6:
+            return
+        pre = self._clone_state()
+        try:
+            full_acc = float(self._update_and_evaluate(1.0))
+        finally:
+            self._restore_state(pre)
+        drop = committed_acc - full_acc
+        self._full_transform_log.append({
+            "committed": float(self._committed_rate),
+            "committed_acc": committed_acc,
+            "full_acc": full_acc,
+            "drop": drop,
+        })
+        print(
+            f"[{self.__class__.__name__}] FULL_TRANSFORM_PROBE "
+            f"α={self._committed_rate:.4f} committed_acc={committed_acc:.4f} "
+            f"full_acc={full_acc:.4f} drop={drop:+.4f}"
+        )
+        self.pipeline.reporter.report("FULL_TRANSFORM_PROBE", {
+            "committed": round(float(self._committed_rate), 4),
+            "committed_acc": round(committed_acc, 4),
+            "full_acc": round(full_acc, 4),
+            "drop": round(drop, 4),
+        })
 
     def _attempt_recovery_if_below_floor(self):
         """Last-resort recovery when validation is below the pipeline floor."""

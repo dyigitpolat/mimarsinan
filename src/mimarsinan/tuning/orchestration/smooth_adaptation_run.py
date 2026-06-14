@@ -271,8 +271,34 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._log_cycle_summary()
         return result
 
+    def _log_full_transform_trend(self):
+        """Report whether the gradual ramp converges toward 1.0-viability: the
+        ``drop = committed_acc - full_acc`` should shrink as the committed rate
+        climbs. A flat/growing drop means the gradual adaptation is not pulling
+        the model into the full-transformation state (the diagnostic the
+        ``tuning_full_transform_probe`` flag exists to surface)."""
+        log = getattr(self, "_full_transform_log", [])
+        if len(log) < 2:
+            return
+        first, last = log[0], log[-1]
+        shrinking = last["drop"] < first["drop"] - 1e-9
+        verdict = "CONVERGING" if shrinking else "FLAT/DIVERGING"
+        print(
+            f"[{self.__class__.__name__}] full-transform probe ({len(log)} pts): "
+            f"drop {first['drop']:+.4f}@α={first['committed']:.3f} → "
+            f"{last['drop']:+.4f}@α={last['committed']:.3f}  →  {verdict}"
+        )
+        self.pipeline.reporter.report(f"{self.name} full_transform_trend", {
+            "n": len(log),
+            "first_drop": round(first["drop"], 4),
+            "last_drop": round(last["drop"], 4),
+            "shrinking": shrinking,
+        })
+
     def _log_cycle_summary(self):
         """Print the full adaptation cycle log for debugging."""
+        if getattr(self, "_full_transform_log", None):
+            self._log_full_transform_trend()
         if not self._cycle_log:
             return
         print(f"[{self.__class__.__name__}] Cycle summary ({len(self._cycle_log)} cycles):")
