@@ -69,6 +69,9 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "tuning_use_paired_sensor": False,
     "k_commit": 2.0,
     "paired_confirm_batches": 0,  # 0 → use eval_n_batches
+    # Max acceptable cumulative drop at α=1 (spec §8.2); floors the paired gate
+    # so a several-fold-smaller paired SE doesn't roll back sub-budget drift.
+    "global_budget": 0.005,
     # Tuning refactor flag (P6a): cache only the fixed decision subsample on the
     # device instead of the whole validation set (the W8 ImageNet-scale fix).
     "tuning_subsample_val_cache": False,
@@ -178,6 +181,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_use_paired_sensor",
     "k_commit",
     "paired_confirm_batches",
+    "global_budget",
     "tuning_subsample_val_cache",
     "tuning_sensitivity_stepping",
     "tuning_inplace_rate",

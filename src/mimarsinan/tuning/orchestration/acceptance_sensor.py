@@ -106,7 +106,15 @@ class AcceptanceSensor:
         return delta, se
 
     @classmethod
-    def paired_is_rollback(cls, ref_correct, cand_correct, k_commit):
-        """Reject iff the paired drop exceeds ``k_commit`` standard errors."""
+    def paired_is_rollback(cls, ref_correct, cand_correct, k_commit, min_effect=0.0):
+        """Reject iff the paired drop is BOTH statistically significant (exceeds
+        ``k_commit`` SEs) AND practically meaningful (exceeds ``min_effect``).
+
+        ``min_effect`` is the global budget (spec §8.2): the paired SE is several-
+        fold smaller than the marginal SE, so a pure ``k·SE`` gate against the
+        fixed baseline rolls back negligible sub-budget drift and thrashes. The
+        budget floor keeps the more-powerful test from over-rejecting drops the
+        tuner is willing to tolerate, while still catching real budget breaches.
+        """
         delta, se = cls.paired_drop_se(ref_correct, cand_correct)
-        return delta > k_commit * se
+        return delta > k_commit * se and delta > min_effect

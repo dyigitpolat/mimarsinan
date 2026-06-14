@@ -54,6 +54,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
         # vector on a shared confirm subsample); off unless flagged.
         self._paired_gate = bool(pipeline.config.get("tuning_use_paired_sensor", False))
         self._k_commit = float(pipeline.config.get("k_commit", 2.0))
+        self._global_budget = float(pipeline.config.get("global_budget", 0.005))
         self._confirm_indices = None
         self._ref_correct = None
         # P6a: cache only the fixed decision subsample on the device (W8 scale fix).
@@ -202,7 +203,8 @@ class SmoothAdaptationCycleMixin(TunerBase):
         if getattr(self, "_paired_gate", False) and self._ref_correct is not None:
             cand_correct = self.trainer.validate_correctness_on_indices(self._confirm_indices)
             rolled_back = AcceptanceSensor.paired_is_rollback(
-                self._ref_correct, cand_correct, self._k_commit
+                self._ref_correct, cand_correct, self._k_commit,
+                min_effect=self._global_budget,
             )
         else:
             rolled_back = AcceptanceSensor.is_rollback(post_acc, rollback_threshold)

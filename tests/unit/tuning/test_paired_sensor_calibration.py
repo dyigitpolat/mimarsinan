@@ -32,6 +32,19 @@ def test_paired_gate_fires_only_past_k_se():
     assert AcceptanceSensor.paired_is_rollback(ref, cand_noise, 2.0) is False
 
 
+def test_min_effect_floors_significant_but_sub_budget_drops():
+    # b10=8/400 → delta=0.02, se=sqrt(8)/400≈0.0071; significant (>2·se=0.0141)
+    ref = [1] * 400
+    cand = [0] * 8 + [1] * 392
+    # below a 0.05 budget floor → not rolled back despite significance
+    assert AcceptanceSensor.paired_is_rollback(ref, cand, 2.0, min_effect=0.05) is False
+    # above the floor (and significant) → rolled back
+    assert AcceptanceSensor.paired_is_rollback(ref, cand, 2.0, min_effect=0.0) is True
+    # a genuine large drop clears both significance and any small budget
+    big = [0] * 60 + [1] * 340
+    assert AcceptanceSensor.paired_is_rollback(ref, big, 2.0, min_effect=0.005) is True
+
+
 def _simulate(rng, n, q10, q01):
     """One paired sample of size n with discordance probs q10/q01."""
     u = rng.random(n)
