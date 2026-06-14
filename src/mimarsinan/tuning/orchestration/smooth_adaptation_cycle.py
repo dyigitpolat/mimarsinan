@@ -12,7 +12,12 @@ from mimarsinan.tuning.learning_rate_explorer import (
 from mimarsinan.tuning.trace import DecisionRecord, DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.checkpoint_guard import CheckpointGuard
-from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
+from mimarsinan.tuning.orchestration.recovery_engine import (
+    PERSIST_WITHIN_CYCLE,
+    RESET_PER_CYCLE,
+    PersistentOptimizerOwner,
+    RecoveryEngine,
+)
 from mimarsinan.tuning.orchestration.tuner_base import (
     TunerBase,
     _RECOVERY_PATIENCE,
@@ -112,6 +117,21 @@ class SmoothAdaptationCycleMixin(TunerBase):
             getattr(self, "_pipeline_hard_floor", None),
         )
 
+    def _optimizer_policy(self):
+        """Recovery optimizer policy; persist requires the opt-in config flag."""
+        persist = bool(self.pipeline.config.get("tuning_persist_optimizer", False))
+        return PERSIST_WITHIN_CYCLE if persist else RESET_PER_CYCLE
+
+    def _recovery_optimizer(self, lr):
+        """Owned optimizer for the persist policy, else ``None`` (bit-exact path)."""
+        if self._optimizer_policy() != PERSIST_WITHIN_CYCLE:
+            return None
+        owner = getattr(self, "_persistent_optimizer_owner", None)
+        if owner is None:
+            owner = PersistentOptimizerOwner(self.trainer)
+            self._persistent_optimizer_owner = owner
+        return owner.optimizer_for(lr)
+
     def _adaptation(self, rate):
         """Recovery training at a given rate with rollback on regression."""
         t_cycle_start = time.time()
@@ -155,12 +175,13 @@ class SmoothAdaptationCycleMixin(TunerBase):
             lr,
             self._get_target(),
             max_steps=self._budget.max_training_steps,
+            hooks=hooks,
+            optimizer=self._recovery_optimizer(lr),
             validation_n_batches=self._budget.progress_eval_batches,
             check_interval=self._budget.check_interval,
             patience=_RECOVERY_PATIENCE,
             min_steps=self._budget.check_interval * 3,
             min_improvement=self._budget.accuracy_se(),
-            hooks=hooks,
         )
 
         post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
@@ -266,12 +287,13 @@ class SmoothAdaptationCycleMixin(TunerBase):
                 lr_to_use,
                 self._get_target(),
                 max_steps=self._budget.max_training_steps,
+                hooks=hooks,
+                optimizer=self._recovery_optimizer(lr_to_use),
                 validation_n_batches=self._budget.progress_eval_batches,
                 check_interval=self._budget.check_interval,
                 patience=_RECOVERY_PATIENCE,
                 min_steps=self._budget.check_interval * 3,
                 min_improvement=self._budget.accuracy_se() / 2,
-                hooks=hooks,
             )
             val_acc = float(self.trainer.validate_n_batches(n_eval))
             if val_acc > best_val:

@@ -13,8 +13,13 @@ def train_n_steps(
     warmup_steps: int = 0,
     *,
     constant_lr: bool = False,
+    optimizer=None,
 ):
-    optimizer, scheduler, scaler = trainer._get_optimizer_and_scheduler_steps(lr, steps)
+    owns_optimizer = optimizer is None
+    if owns_optimizer:
+        optimizer, scheduler, scaler = trainer._get_optimizer_and_scheduler_steps(lr, steps)
+    else:
+        scheduler, scaler = trainer._scheduler_and_scaler_for_optimizer(optimizer, lr, steps)
     if constant_lr:
         scheduler = torch.optim.lr_scheduler.ConstantLR(
             optimizer, factor=1.0, total_iters=0
@@ -37,7 +42,9 @@ def train_n_steps(
         trainer._optimize(x, y, optimizer, scaler)
         scheduler.step()
         trainer._report("LR", optimizer.param_groups[0]["lr"])
-    del optimizer, scheduler, scaler
+    del scheduler, scaler
+    if owns_optimizer:
+        del optimizer
 
 
 def train_steps_until_target(
@@ -52,15 +59,22 @@ def train_steps_until_target(
     patience: int = 3,
     min_steps: int = 0,
     min_improvement: float = 1e-3,
+    optimizer=None,
 ):
     from mimarsinan.tuning.learning_rate_explorer import (
         clone_state_for_trainer,
         restore_state_for_trainer,
     )
 
-    optimizer, scheduler, scaler = trainer._get_optimizer_and_scheduler_steps(
-        lr, max_steps, constant_lr=True
-    )
+    owns_optimizer = optimizer is None
+    if owns_optimizer:
+        optimizer, scheduler, scaler = trainer._get_optimizer_and_scheduler_steps(
+            lr, max_steps, constant_lr=True
+        )
+    else:
+        scheduler, scaler = trainer._scheduler_and_scaler_for_optimizer(
+            optimizer, lr, max_steps, constant_lr=True
+        )
     if warmup_steps > 0:
         scheduler = warmup_scheduler.GradualWarmupScheduler(
             optimizer, multiplier=1.0, total_epoch=warmup_steps, after_scheduler=scheduler
@@ -103,7 +117,9 @@ def train_steps_until_target(
 
     if best_state is not None:
         restore_state_for_trainer(trainer, best_state)
-    del optimizer, scheduler, scaler, best_state
+    del scheduler, scaler, best_state
+    if owns_optimizer:
+        del optimizer
     return trainer.validate_n_batches(n_val)
 
 
