@@ -330,6 +330,19 @@ class TestCycleOptimizerPolicy:
         tuner = _make_tuner(tmp_path, persist=True)
         assert tuner._optimizer_policy() == PERSIST_WITHIN_CYCLE
 
+    def test_param_transform_family_opts_out_of_persist(self, tmp_path):
+        """Tuners that replace params each cycle force reset even with the flag on."""
+        tuner = _make_tuner(tmp_path, persist=True)
+        tuner._supports_persistent_optimizer = False
+        assert tuner._optimizer_policy() == RESET_PER_CYCLE
+        assert tuner._recovery_optimizer(0.001) is None
+
+    def test_perceptron_transform_tuner_opts_out(self):
+        from mimarsinan.tuning.tuners.perceptron_transform_tuner import (
+            PerceptronTransformTuner,
+        )
+        assert PerceptronTransformTuner._supports_persistent_optimizer is False
+
     def test_default_path_passes_optimizer_none(self, tmp_path):
         """Flag-off recovery threads optimizer=None (bit-exact fresh-build path)."""
         tuner = _make_tuner(tmp_path, persist=False)
