@@ -23,6 +23,12 @@ class ActivationShiftTuner(TunerBase):
         )
         self._final_metric = None
         self.name = "Shift Recovery"
+        self._axis = None
+        if pipeline.config.get("tuning_use_axis", False):
+            from mimarsinan.tuning.axes import ActivationShiftAxis
+
+            self._axis = ActivationShiftAxis(self._apply_shift)
+            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
     def _apply_shift(self):
         config = self.pipeline.config
@@ -54,7 +60,10 @@ class ActivationShiftTuner(TunerBase):
         return self.trainer.validate()
 
     def run(self):
-        self._apply_shift()
+        if getattr(self, "_axis", None) is not None:
+            self._axis.set_rate(1.0)
+        else:
+            self._apply_shift()
         self.pipeline.reporter.report(self.name, 1.0)
         self.pipeline.reporter.report("Adaptation target", self._get_target())
 

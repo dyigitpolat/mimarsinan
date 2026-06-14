@@ -16,6 +16,13 @@ from mimarsinan.tuning.axes.manager_rate_axis import (
     NoiseAxis,
     ActivationAdaptationAxis,
 )
+from mimarsinan.tuning.axes.blend_axis import BlendAxis, LIFAxis, TTFSAxis
+from mimarsinan.tuning.axes.perceptron_transform_axis import (
+    PerceptronTransformAxis,
+    NAPQAxis,
+)
+from mimarsinan.tuning.axes.pruning_axis import PruningAxis
+from mimarsinan.tuning.axes.activation_shift_axis import ActivationShiftAxis
 
 __all__ = [
     "AdaptationAxis",
@@ -25,4 +32,11 @@ __all__ = [
     "ActQuantAxis",
     "NoiseAxis",
     "ActivationAdaptationAxis",
+    "BlendAxis",
+    "LIFAxis",
+    "TTFSAxis",
+    "PerceptronTransformAxis",
+    "NAPQAxis",
+    "PruningAxis",
+    "ActivationShiftAxis",
 ]
