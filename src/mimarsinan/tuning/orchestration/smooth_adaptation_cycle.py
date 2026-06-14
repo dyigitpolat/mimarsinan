@@ -12,6 +12,7 @@ from mimarsinan.tuning.learning_rate_explorer import (
 from mimarsinan.tuning.trace import DecisionRecord, DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.checkpoint_guard import CheckpointGuard
+from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import (
     TunerBase,
     _RECOVERY_PATIENCE,
@@ -139,21 +140,18 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self.pipeline.reporter.report("T_find_lr_sec", t_lr)
 
         hooks = self._recovery_training_hooks(rate)
-        try:
-            self.trainer.train_steps_until_target(
-                lr,
-                self._budget.max_training_steps,
-                self._get_target(),
-                0,
-                validation_n_batches=self._budget.progress_eval_batches,
-                check_interval=self._budget.check_interval,
-                patience=_RECOVERY_PATIENCE,
-                min_steps=self._budget.check_interval * 3,
-                min_improvement=self._budget.accuracy_se(),
-            )
-        finally:
-            for h in hooks:
-                h.remove()
+        RecoveryEngine.train_to_target(
+            self.trainer,
+            lr,
+            self._get_target(),
+            max_steps=self._budget.max_training_steps,
+            validation_n_batches=self._budget.progress_eval_batches,
+            check_interval=self._budget.check_interval,
+            patience=_RECOVERY_PATIENCE,
+            min_steps=self._budget.check_interval * 3,
+            min_improvement=self._budget.accuracy_se(),
+            hooks=hooks,
+        )
 
         post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
 
@@ -246,21 +244,18 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
         for attempt, lr_to_use in enumerate(_attempt_lrs()):
             hooks = self._recovery_training_hooks(1.0)
-            try:
-                self.trainer.train_steps_until_target(
-                    lr_to_use,
-                    self._budget.max_training_steps,
-                    self._get_target(),
-                    0,
-                    validation_n_batches=self._budget.progress_eval_batches,
-                    check_interval=self._budget.check_interval,
-                    patience=_RECOVERY_PATIENCE,
-                    min_steps=self._budget.check_interval * 3,
-                    min_improvement=self._budget.accuracy_se() / 2,
-                )
-            finally:
-                for h in hooks:
-                    h.remove()
+            RecoveryEngine.train_to_target(
+                self.trainer,
+                lr_to_use,
+                self._get_target(),
+                max_steps=self._budget.max_training_steps,
+                validation_n_batches=self._budget.progress_eval_batches,
+                check_interval=self._budget.check_interval,
+                patience=_RECOVERY_PATIENCE,
+                min_steps=self._budget.check_interval * 3,
+                min_improvement=self._budget.accuracy_se() / 2,
+                hooks=hooks,
+            )
             val_acc = float(self.trainer.validate_n_batches(n_eval))
             if val_acc > best_val:
                 best_val = val_acc

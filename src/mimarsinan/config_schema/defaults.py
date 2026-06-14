@@ -59,6 +59,10 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "tuning_use_checkpoint_guard": False,
     "checkpoint_scope": "full",
     "checkpoint_location": "device",
+    # Tuning refactor flag (P4): replace the one-shot + SmartSmoothAdaptation +
+    # _continue_to_full_rate loops with a single RateScheduler. Reaches the same
+    # final committed rate (outcome equivalence); trajectory is re-baselined.
+    "tuning_use_driver": False,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -145,6 +149,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_use_checkpoint_guard",
     "checkpoint_scope",
     "checkpoint_location",
+    "tuning_use_driver",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",

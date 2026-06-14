@@ -401,6 +401,50 @@ def platform_constraints():
     }
 
 
+def make_scripted_run_tuner(
+    pipeline, model, *, instant_fn, post_fn, ladder=False,
+    target_accuracy=0.9, lr=0.001,
+):
+    """A SmoothAdaptationTuner driven by rate-keyed instant/post accuracy surfaces.
+
+    Training and evaluation are stubbed deterministically (no gradients, no eval
+    RNG), so ``run()`` exercises the full loop branching reproducibly. Used by the
+    golden-trace and driver-equivalence tests. ``ladder=True`` is the KD-blend
+    uniform-0.125-step shape (skip one-shot, growth 1.0).
+    """
+    from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import (
+        SmoothAdaptationTuner,
+    )
+
+    class _ScriptedRunTuner(SmoothAdaptationTuner):
+        _skip_one_shot = ladder
+        _initial_ramp_step = 0.125 if ladder else 0.5
+        _ramp_step_growth = 1.0 if ladder else 1.5
+
+        def __init__(self, p, m, t, l):
+            super().__init__(p, m, t, l)
+            self._applied_rate = 0.0
+            self._committed_rate = 0.0
+            self.trainer.validate_n_batches = lambda n: post_fn(self._applied_rate)
+            self.trainer.validate = lambda: post_fn(self._committed_rate)
+            self.trainer.train_steps_until_target = lambda *a, **k: None
+            self.trainer.test = lambda: post_fn(1.0)
+
+        def _update_and_evaluate(self, rate):
+            self._applied_rate = rate
+            return instant_fn(rate)
+
+        def _find_lr(self):
+            return 0.001
+
+        def _after_run(self):
+            self._continue_to_full_rate()
+            self._committed_rate = 1.0
+            return post_fn(1.0)
+
+    return _ScriptedRunTuner(pipeline, model, target_accuracy, lr)
+
+
 # ---------------------------------------------------------------------------
 # Determinism + golden-trace harness (tuning refactor P0)
 # ---------------------------------------------------------------------------
