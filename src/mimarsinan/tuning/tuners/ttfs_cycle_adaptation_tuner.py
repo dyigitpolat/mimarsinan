@@ -4,8 +4,8 @@ Both schedules ramp the per-perceptron ``TTFSActivation`` blend in the value
 domain (the plain class forward through ``BlendActivation``), exactly the
 golden LIF non-destructive ramp: rate 0 reproduces the continuous teacher,
 rate 1 is the pointwise on-chip staircase composition. The blend ramps
-naturally under ``SmartSmoothAdaptation`` (no rate pin), with KD recovery
-against the frozen pre-step teacher.
+naturally under the rate scheduler's uniform ladder (no rate pin), with KD
+recovery against the frozen pre-step teacher.
 
 The genuine cross-layer dynamics are installed only at **finalize**:
 

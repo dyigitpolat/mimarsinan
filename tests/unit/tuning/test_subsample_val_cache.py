@@ -1,4 +1,4 @@
-"""P6a: tuning_subsample_val_cache caps the GPU val cache to the decision subsample."""
+"""The GPU val cache caps to the fixed decision subsample (the W8 scale fix)."""
 
 import torch
 

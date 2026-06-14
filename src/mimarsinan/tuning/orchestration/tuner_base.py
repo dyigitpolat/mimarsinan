@@ -8,14 +8,12 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.model_training.training_recipe import build_recipe
 from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
-from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.learning_rate_explorer import (
     clone_state_for_trainer,
     find_lr_range_for_trainer,
     make_loss_slope_signal,
     restore_state_for_trainer,
 )
-from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.tuning.orchestration.tuning_budget import (
     min_step_for_smooth_adaptation,
     resolve_tuning_batch_size,
@@ -84,6 +82,8 @@ class TunerBase:
             self.trainer.close()
 
     def _find_lr(self):
+        # Opt-in (``tuning_loss_slope_lr``): rank the coarse LR sweep by a cheap
+        # training loss-slope signal, reserving full validation for the top few.
         coarse_signal = None
         if self.pipeline.config.get("tuning_loss_slope_lr", False):
             coarse_signal = make_loss_slope_signal(self.trainer)

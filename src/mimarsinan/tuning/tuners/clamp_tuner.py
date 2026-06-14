@@ -29,8 +29,8 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.models.nn.layers import SavedTensorDecorator
+from mimarsinan.tuning.axes import ClampAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
-from mimarsinan.tuning.perceptron_rate import apply_manager_rate
 
 
 def clamp_scale_regulariser(
@@ -96,24 +96,13 @@ class ClampTuner(SmoothAdaptationTuner):
         self.saturation_diagnostics = self._probe_clamp_saturation()
         self._log_scale_diagnostics()
 
-        # P1 flag: route clamp-rate application through a ClampAxis. The axis
-        # delegates to apply_manager_rate, which is byte-identical to the inline
-        # ``clamp_rate = r; for p: update_activation`` (see test_perceptron_rate).
-        self._axis = None
-        if pipeline.config.get("tuning_use_axis", False):
-            from mimarsinan.tuning.axes import ClampAxis
-
-            self._axis = ClampAxis()
-            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+        # Clamp-rate application is owned by a ClampAxis, which delegates to the
+        # apply_manager_rate SSOT (test_axis_delegation / test_perceptron_rate).
+        self._axis = ClampAxis()
+        self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
     def _set_rate(self, rate):
-        if getattr(self, "_axis", None) is not None:
-            self._axis.set_rate(rate)
-            return
-        apply_manager_rate(
-            self.model, self.adaptation_manager, self.pipeline.config,
-            "clamp_rate", rate,
-        )
+        self._axis.set_rate(rate)
 
     def _calculate_activation_scales(self, scales, activation_scale_stats=None):
         perceptrons = list(self.model.get_perceptrons())
@@ -255,9 +244,7 @@ class ClampTuner(SmoothAdaptationTuner):
             )
 
     def _get_extra_state(self):
-        if getattr(self, "_axis", None) is not None:
-            return self._axis.get_extra_state()
-        return self.adaptation_manager.clamp_rate
+        return self._axis.get_extra_state()
 
     def _set_extra_state(self, extra):
         self._set_rate(extra)

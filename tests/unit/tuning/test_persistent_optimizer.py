@@ -1,10 +1,11 @@
-"""P6: persistent optimizer state across recovery calls.
+"""Persistent optimizer state across recovery calls.
 
-Feature flag: ``tuning_persist_optimizer`` (default False).
+Feature flag: ``tuning_persist_optimizer`` (opt-in, default False).
 
 Default (``reset_per_cycle``): every recovery call builds a fresh optimizer and
 deletes it — Adam moments are discarded each call (bit-exact historical path).
-Recovery passes ``optimizer=None`` to the trainer.
+Recovery passes ``optimizer=None``. Also forced for tuner families whose recovery
+replaces the parameter set each cycle (``_supports_persistent_optimizer = False``).
 
 Persist (``persist_within_cycle``): the cycle owns ONE optimizer and threads the
 same object through every recovery call, so Adam moments survive across calls.
@@ -27,10 +28,6 @@ import torch.nn as nn
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
-from mimarsinan.config_schema.defaults import (
-    DEFAULT_DEPLOYMENT_PARAMETERS,
-    CONFIG_KEYS_SET,
-)
 from mimarsinan.model_training import basic_trainer_steps
 from mimarsinan.tuning.orchestration.recovery_engine import (
     PERSIST_WITHIN_CYCLE,
@@ -323,6 +320,7 @@ def _make_tuner(tmp_path, *, persist):
 
 class TestCycleOptimizerPolicy:
     def test_default_policy_is_reset_per_cycle(self, tmp_path):
+        """Reset (fresh optimizer each cycle) is the default; persist is opt-in."""
         tuner = _make_tuner(tmp_path, persist=False)
         assert tuner._optimizer_policy() == RESET_PER_CYCLE
 
@@ -331,7 +329,8 @@ class TestCycleOptimizerPolicy:
         assert tuner._optimizer_policy() == PERSIST_WITHIN_CYCLE
 
     def test_param_transform_family_opts_out_of_persist(self, tmp_path):
-        """Tuners that replace params each cycle force reset even with the flag on."""
+        """Tuners that replace params each cycle force reset even with the flag on
+        (the crash guard)."""
         tuner = _make_tuner(tmp_path, persist=True)
         tuner._supports_persistent_optimizer = False
         assert tuner._optimizer_policy() == RESET_PER_CYCLE
@@ -344,7 +343,7 @@ class TestCycleOptimizerPolicy:
         assert PerceptronTransformTuner._supports_persistent_optimizer is False
 
     def test_default_path_passes_optimizer_none(self, tmp_path):
-        """Flag-off recovery threads optimizer=None (bit-exact fresh-build path)."""
+        """Default recovery threads optimizer=None (bit-exact fresh-build path)."""
         tuner = _make_tuner(tmp_path, persist=False)
 
         tuner._adaptation(0.5)
@@ -354,8 +353,8 @@ class TestCycleOptimizerPolicy:
         assert tuner.build_step_optimizer_calls == 0
 
     def test_persist_path_reuses_same_optimizer(self, tmp_path):
-        """Flag-on: both recover calls thread the SAME owned optimizer object,
-        so Adam moments are not discarded between calls."""
+        """Flag-on: both recover calls thread the SAME owned optimizer object, so
+        Adam moments are not discarded between calls."""
         tuner = _make_tuner(tmp_path, persist=True)
 
         tuner._adaptation(0.5)
@@ -405,7 +404,9 @@ class TestCycleOptimizerPolicy:
 
 class TestConfigFlagRegistered:
     def test_flag_default_off(self):
+        from mimarsinan.config_schema.defaults import DEFAULT_DEPLOYMENT_PARAMETERS
         assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_persist_optimizer"] is False
 
     def test_flag_in_config_keys_set(self):
+        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
         assert "tuning_persist_optimizer" in CONFIG_KEYS_SET

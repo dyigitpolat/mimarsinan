@@ -49,47 +49,38 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "tuning_budget_scale": 1.0,
     "tuner_target_floor_ratio": 0.90,
     "degradation_tolerance": 0.05,
-    # Tuning refactor flag (P1): route rate application through an
-    # ``AdaptationAxis`` instead of the legacy inline path. Default off; flipped
-    # after golden-trace equivalence, then removed with the old path.
-    "tuning_use_axis": False,
-    # Tuning refactor flags (P3a): route per-cycle rollback snapshots through
-    # CheckpointGuard. Default scope/location are byte-identical to the legacy
-    # on-device full clone; ``tunable``/``cpu_pinned`` are scaling opt-ins.
-    "tuning_use_checkpoint_guard": False,
+    # Per-cycle rollback snapshot scope/location (CheckpointGuard, graduated).
+    # Defaults ("full"/"device") delegate verbatim to the on-device clone;
+    # "tunable" (skip frozen backbone) / "cpu_pinned" (free model VRAM) scale out.
     "checkpoint_scope": "full",
     "checkpoint_location": "device",
-    # Tuning refactor flag (P4): replace the one-shot + SmartSmoothAdaptation +
-    # _continue_to_full_rate loops with a single RateScheduler. Reaches the same
-    # final committed rate (outcome equivalence); trajectory is re-baselined.
-    "tuning_use_driver": False,
-    # Tuning refactor flags (P2b): paired McNemar rollback gate vs the fixed
-    # baseline on a shared example subsample (tighter SE than marginal). Behavior-
-    # changing; Monte-Carlo-calibrated; trajectory re-baselined when flipped.
+    # Paired McNemar rollback gate (opt-in): reference vs candidate on a shared
+    # fixed example subsample (a several-fold tighter SE than the marginal gate,
+    # which is the default). +~0.5% deployed accuracy but ~5.6x the LR-finder
+    # cost — it bisects more carefully into the quantization cliff. ``global_budget``
+    # floors the gate (spec §8.2); 0.0 = no floor = the best-accuracy setting.
     "tuning_use_paired_sensor": False,
     "k_commit": 2.0,
     "paired_confirm_batches": 0,  # 0 → use eval_n_batches
-    # Max acceptable cumulative drop at α=1 (spec §8.2); floors the paired gate
-    # so a several-fold-smaller paired SE doesn't roll back sub-budget drift.
-    "global_budget": 0.005,
-    # Tuning refactor flag (P6a): cache only the fixed decision subsample on the
-    # device instead of the whole validation set (the W8 ImageNet-scale fix).
+    "global_budget": 0.0,
+    # Subsample the GPU val cache to the fixed decision subsample (opt-in, P6a;
+    # the W8 ImageNet-scale fix). Default-off keeps the full-set cache.
     "tuning_subsample_val_cache": False,
-    # Tuning refactor flag (P5b): start each round from the previously accepted
-    # step (last_successful_step policy) — cheaper probes on cliff-like axes.
-    "tuning_sensitivity_stepping": False,
-    # Tuning refactor flag (P5a): advance an AdaptationManager rate by writing a
-    # shared in-place RateBuffer (build the decorator stack once) instead of a
-    # full per-perceptron rebuild each step; output- and RNG-conformant.
-    "tuning_inplace_rate": False,
-    # Tuning refactor flag (P6): persist optimizer (Adam) moments across the LR
-    # sweep / recovery within a cycle instead of rebuilding fresh each call.
+    # Persist optimizer (Adam) moments across the LR sweep / recovery within a
+    # cycle (opt-in, P6) instead of rebuilding fresh each call.
     "tuning_persist_optimizer": False,
-    # Tuning refactor flag (P6): score the coarse LR sweep by a cheap training
-    # loss-slope signal, reserving full-validation scoring for the top candidates.
+    # Sensitivity-guided first step (opt-in, P5b): start each round from the
+    # previously accepted step (×2) — cheaper probes on cliff-like axes.
+    "tuning_sensitivity_stepping": False,
+    # In-place RateBuffer (opt-in, P5a): advance an AdaptationManager rate by an
+    # O(1) buffer write (build the decorator stack once) instead of a full
+    # per-perceptron rebuild each step; output- and RNG-conformant.
+    "tuning_inplace_rate": False,
+    # Loss-slope coarse LR signal (opt-in, P6e): rank the LR sweep by a cheap
+    # training loss-slope, reserving full validation for the top candidates.
     "tuning_loss_slope_lr": False,
-    # Tuning refactor flag (P7): interleaved multi-axis continuation over
-    # value-domain axes (research-grade; never touches LIF/TTFS finalize).
+    # Interleaved multi-axis continuation (opt-in, P7; research-grade; the
+    # value-domain guard keeps it away from LIF/TTFS finalize).
     "interleave_axes": False,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
@@ -173,19 +164,16 @@ CONFIG_KEYS_SET: Set[str] = {
     "weight_bits",
     "tuning_budget_scale",
     "tuner_target_floor_ratio",
-    "tuning_use_axis",
-    "tuning_use_checkpoint_guard",
     "checkpoint_scope",
     "checkpoint_location",
-    "tuning_use_driver",
     "tuning_use_paired_sensor",
     "k_commit",
     "paired_confirm_batches",
     "global_budget",
     "tuning_subsample_val_cache",
+    "tuning_persist_optimizer",
     "tuning_sensitivity_stepping",
     "tuning_inplace_rate",
-    "tuning_persist_optimizer",
     "tuning_loss_slope_lr",
     "interleave_axes",
     "finetune_epochs",

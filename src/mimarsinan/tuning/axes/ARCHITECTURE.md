@@ -23,12 +23,13 @@ they are **never** stored on the model or the pickled `adaptation_manager` cache
 
 ## Routing
 
-All tuner families route their rate application through an axis when
-`config["tuning_use_axis"]` is set (default off); flag-off is byte-identical
-(the seam delegates to the same SSOT / extracted callable). The flag is not yet
-flipped — the manager-rate / blend families own their mechanism in the axis; the
-closure / pruning / shift families present the seam over a tuner callable, so the
-mechanism-into-axis move (the standalone `AdaptationDriver`, P4) is still pending.
+All tuner families route their rate application through an axis (the sole path —
+graduated). The seam delegates to the same SSOT / extracted callable, so it is
+byte-identical to the deleted inline path (frozen into the golden traces and
+`test_axis_delegation`). The manager-rate / blend families own their mechanism in
+the axis; the closure / pruning / shift families present the seam over a tuner
+callable. The standalone `AdaptationDriver` consuming axes directly (dissolving
+`_adaptation`) is the remaining V6 step.
 
 ## Dependencies
 
@@ -37,7 +38,7 @@ mechanism-into-axis move (the standalone `AdaptationDriver`, P4) is still pendin
 
 ## Dependents
 
-- (P1+) The tuner's rate application, gated behind `tuning_use_axis`; later `AdaptationDriver` (P4) consumes axes directly.
+- The tuner's rate application (the sole path); the standalone `AdaptationDriver` will consume axes directly.
 
 ## Exported API (\_\_init\_\_.py)
 

@@ -1,4 +1,4 @@
-"""P5a: in-place RateBuffer for the AdaptationManager family (flag tuning_inplace_rate).
+"""P5a: in-place RateBuffer for the AdaptationManager family.
 
 The buffer path mutates one shared ``alpha`` buffer in place (O(1)) instead of
 rebuilding every perceptron's decorator stack. The conformance contract is two-
@@ -32,7 +32,12 @@ from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
     create_adaptation_manager_for_model,
 )
 from mimarsinan.tuning.perceptron_rate import apply_manager_rate
-from mimarsinan.tuning.axes import ClampAxis, ActQuantAxis, ActivationAdaptationAxis
+from mimarsinan.tuning.axes import (
+    ClampAxis,
+    ActQuantAxis,
+    ActivationAdaptationAxis,
+    NoiseAxis,
+)
 
 
 RATE_GRID = [0.0, 0.25, 0.5, 0.75, 1.0]
@@ -303,26 +308,22 @@ class TestInPlaceSemantics:
             assert quant.rate is buffer
 
 
-class TestFlagOffUnchanged:
-    def test_flag_off_uses_rebuild_path(self):
-        """Flag-off set_rate is byte-identical to apply_manager_rate (no buffer)."""
-        cfg = default_config()  # flag absent → off
-        x = torch.randn(2, 1, 8, 8)
+class TestRebuildPathForIneligibleRate:
+    def test_noise_rate_uses_rebuild_path(self):
+        """``noise_rate`` (NoisyDropout, not decorator-driven) keeps the rebuild
+        path: set_rate installs no RateBuffer and matches apply_manager_rate."""
+        cfg = default_config()
+        model = make_tiny_supermodel()
+        mgr = create_adaptation_manager_for_model(cfg, model)
 
-        model_axis = make_tiny_supermodel()
-        model_direct = copy.deepcopy(model_axis)
-        mgr_axis = create_adaptation_manager_for_model(cfg, model_axis)
-        mgr_direct = create_adaptation_manager_for_model(cfg, model_direct)
+        axis = NoiseAxis()
+        axis.attach(model, mgr, cfg)
+        assert axis._inplace_enabled() is False
 
-        axis = ActQuantAxis()
-        axis.attach(model_axis, mgr_axis, cfg)
         axis.set_rate(0.5)
-        apply_manager_rate(model_direct, mgr_direct, cfg, "quantization_rate", 0.5)
-
-        assert mgr_axis.quantization_rate == mgr_direct.quantization_rate == 0.5
-        # Flag-off path installs no RateBuffer on the manager.
-        assert not getattr(mgr_axis, "_rate_buffers", {})
-        assert torch.allclose(_fwd(model_axis, x), _fwd(model_direct, x))
+        assert mgr.noise_rate == 0.5
+        # the rebuild path installs no RateBuffer for an ineligible rate.
+        assert "noise_rate" not in getattr(mgr, "_rate_buffers", {})
 
     def test_buffer_path_state_carriage_roundtrip(self):
         """get/set_extra_state still round-trips under the buffer path."""

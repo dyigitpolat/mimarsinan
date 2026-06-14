@@ -86,14 +86,13 @@ def test_cpu_pinned_round_trips():
 
 
 def test_live_rollback_routes_through_guard(tmp_path):
-    """With the flag on, a rolled-back cycle restores via CheckpointGuard."""
+    """A rolled-back cycle restores via the (always-on) CheckpointGuard."""
     from conftest import MockPipeline, make_tiny_supermodel, default_config
     from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import (
         SmoothAdaptationTuner,
     )
 
     cfg = default_config()
-    cfg["tuning_use_checkpoint_guard"] = True
     cfg["tuning_budget_scale"] = 1.0
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     model = make_tiny_supermodel()

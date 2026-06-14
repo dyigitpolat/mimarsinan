@@ -21,6 +21,7 @@ import torch
 import torch.nn as nn
 
 from conftest import MockPipeline, make_tiny_supermodel, default_config
+from mimarsinan.tuning.orchestration.checkpoint_guard import CheckpointGuard
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
@@ -50,6 +51,7 @@ def _make_tuner_under_test(tmp_path, *, floor, lr=0.001):
     tuner._budget.accuracy_se.return_value = 0.005
     tuner._cached_lr = lr
     tuner.trainer = MagicMock()
+    tuner._checkpoint_guard = CheckpointGuard(tuner.trainer)
 
     def _test_boom(*args, **kwargs):
         raise AssertionError(

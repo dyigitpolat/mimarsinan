@@ -3,14 +3,14 @@
 Implements the spec's §5.2 search: each round greedily attempts the full jump to
 1.0, then bisects the *remaining gap* on failure (``1.0`` → ``committed+gap/2`` →
 …), committing the largest feasible increment and repeating. This subsumes the
-one-shot attempt, ``SmartSmoothAdaptation``'s grow/halve, and
-``_continue_to_full_rate`` into a single policy.
+legacy one-shot attempt, the grow/halve ramp, and the continue-to-full-rate
+loop into a single policy.
 
 ``attempt(target)`` is the per-cycle callable (the tuner's ``_adaptation``): it
 returns the committed rate after the attempt — ``target`` on commit, the prior
 committed rate on rollback. Equivalence tiers: the one-shot single attempt is
-Tier-A exact (== spec round 1); the SSA-ramp / ``_continue`` trajectories are
-Tier-B (outcome equivalence: same final committed rate, monotone progress,
+Tier-A exact (== spec round 1); the ramp / continue-to-full-rate trajectories
+are Tier-B (outcome equivalence: same final committed rate, monotone progress,
 bounded probes) and their goldens are re-baselined with a documented diff.
 """
 
@@ -63,7 +63,10 @@ class RateScheduler:
             else:
                 step = self._first_step(gap)
             accepted = False
-            while step >= self.epsilon:
+            # The first (greedy / ladder) jump is always attempted — epsilon only
+            # bounds the *bisection* refinement, never the initial jump, so a
+            # degenerate epsilon >= gap still tries the full step (spec §5.2).
+            while True:
                 target = min(committed + step, 1.0)
                 result = attempt(target)
                 now = float(result) if result is not None else committed
@@ -76,6 +79,8 @@ class RateScheduler:
                 if self.policy == "one_shot_only":
                     return committed
                 step /= 2.0
+                if step < self.epsilon:
+                    break
             if not accepted:
                 break
         return committed

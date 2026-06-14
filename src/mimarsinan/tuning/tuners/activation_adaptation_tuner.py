@@ -1,8 +1,8 @@
 """Tuner for gradual activation adaptation (non-ReLU -> ReLU).
 
-Uses SmartSmoothAdaptation to progressively blend from the original
-activation (e.g. GELU, LeakyReLU) to ReLU, following the same pattern
-as ClampTuner and ActivationQuantizationTuner.
+Progressively blends from the original activation (e.g. GELU, LeakyReLU) to
+ReLU under the rate scheduler, following the same pattern as ClampTuner and
+ActivationQuantizationTuner.
 
 Does not apply activation_scales -- that is the responsibility of
 downstream steps (Clamp Adaptation, etc.).
@@ -14,6 +14,7 @@ need to special-case Identity; ``needs_relu_adaptation`` handles only the
 already-ReLU-compatible check.
 """
 
+from mimarsinan.tuning.axes import ActivationAdaptationAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
@@ -29,22 +30,13 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
-        # P1 flag: route only the rate-application seam through the axis; the
-        # tuple extra-state (rate + saved base activations) stays tuner-managed.
-        self._axis = None
-        if pipeline.config.get("tuning_use_axis", False):
-            from mimarsinan.tuning.axes import ActivationAdaptationAxis
-
-            self._axis = ActivationAdaptationAxis()
-            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+        # Only the rate-application seam is routed through the axis; the tuple
+        # extra-state (rate + saved base activations) stays tuner-managed.
+        self._axis = ActivationAdaptationAxis()
+        self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
     def _set_rate(self, rate):
-        if getattr(self, "_axis", None) is not None:
-            self._axis.set_rate(rate)
-            return
-        self.adaptation_manager.activation_adaptation_rate = rate
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        self._axis.set_rate(rate)
 
     def _get_extra_state(self):
         base_acts = [

@@ -1,7 +1,8 @@
-"""P1 gate: routing rate application through an AdaptationAxis (tuning_use_axis)
-produces a byte-identical decision trace vs the legacy inline path."""
+"""AdaptationAxis is the sole rate-application path (P1 graduated): a manager-rate
+tuner drives its full ramp through the axis and reaches a committed rate of 1.0.
 
-import dataclasses
+The byte-for-byte equivalence with the (now-deleted) legacy inline path is frozen
+into the golden decision traces (test_golden_traces.py)."""
 
 import pytest
 
@@ -9,6 +10,7 @@ from conftest import MockPipeline, make_tiny_supermodel, default_config
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
     create_adaptation_manager_for_model,
 )
+from mimarsinan.tuning.axes import ManagerRateAxis
 from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
 
 
@@ -33,10 +35,9 @@ class _RateTuner(AdaptationRateTuner):
         super()._apply_rate(rate)
 
 
-def _run(use_axis, tmp_path):
+def _run(tmp_path):
     cfg = default_config()
     cfg["tuning_budget_scale"] = 1.0
-    cfg["tuning_use_axis"] = use_axis
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     model = make_tiny_supermodel()
     manager = create_adaptation_manager_for_model(cfg, model)
@@ -45,17 +46,10 @@ def _run(use_axis, tmp_path):
     return tuner
 
 
-def _records_no_timing(trace):
-    return [
-        dataclasses.replace(r, elapsed_sec=0.0, seeds=None) for r in trace.records
-    ]
-
-
-def test_axis_routing_matches_legacy_trace(tmp_path, deterministic_rng):
-    off = _run(False, tmp_path / "off")
-    on = _run(True, tmp_path / "on")
-
-    assert off._axis is None
-    assert on._axis is not None
-    assert _records_no_timing(off._cycle_log) == _records_no_timing(on._cycle_log)
-    assert off._committed_rate == on._committed_rate == pytest.approx(1.0)
+def test_axis_is_the_sole_rate_path(tmp_path, deterministic_rng):
+    tuner = _run(tmp_path)
+    assert isinstance(tuner._axis, ManagerRateAxis)
+    assert tuner._committed_rate == pytest.approx(1.0)
+    # the ramp ran (one-shot at 1.0 failed first) and committed at least once.
+    outcomes = [r.outcome for r in tuner._cycle_log.records]
+    assert "commit" in outcomes
