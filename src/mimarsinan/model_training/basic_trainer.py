@@ -203,6 +203,9 @@ class BasicTrainer:
     def validate_n_batches(self, n_batches: int) -> float:
         return basic_trainer_eval.validate_n_batches(self, n_batches)
 
+    def validate_correctness_on_indices(self, batch_indices):
+        return basic_trainer_eval.validate_correctness_on_indices(self, batch_indices)
+
     def validate_train(self):
         return basic_trainer_eval.validate_train(self)
 
