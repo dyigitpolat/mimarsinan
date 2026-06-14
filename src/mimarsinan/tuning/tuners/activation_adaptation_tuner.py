@@ -29,6 +29,23 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
+        # P1 flag: route only the rate-application seam through the axis; the
+        # tuple extra-state (rate + saved base activations) stays tuner-managed.
+        self._axis = None
+        if pipeline.config.get("tuning_use_axis", False):
+            from mimarsinan.tuning.axes import ActivationAdaptationAxis
+
+            self._axis = ActivationAdaptationAxis()
+            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+
+    def _set_rate(self, rate):
+        if getattr(self, "_axis", None) is not None:
+            self._axis.set_rate(rate)
+            return
+        self.adaptation_manager.activation_adaptation_rate = rate
+        for perceptron in self.model.get_perceptrons():
+            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+
     def _get_extra_state(self):
         base_acts = [
             (p.base_activation, p.base_activation_name)
@@ -38,17 +55,13 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
 
     def _set_extra_state(self, extra):
         rate, base_acts = extra
-        self.adaptation_manager.activation_adaptation_rate = rate
         for p, (ba, ban) in zip(self.model.get_perceptrons(), base_acts):
             p.base_activation = ba
             p.base_activation_name = ban
-        for p in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, p)
+        self._set_rate(rate)
 
     def _update_and_evaluate(self, rate):
-        self.adaptation_manager.activation_adaptation_rate = rate
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        self._set_rate(rate)
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _after_run(self):

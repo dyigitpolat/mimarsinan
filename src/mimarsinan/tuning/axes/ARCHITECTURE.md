@@ -14,15 +14,21 @@ they are **never** stored on the model or the pickled `adaptation_manager` cache
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `adaptation_axis.py` | `AdaptationAxis` (runtime-checkable `Protocol`), `AdaptationAxisBase` | The contract: `attach`/`set_rate`/`calibrate`/`tunable_parameters`/`recovery_hooks`/`finalize`/`get_extra_state`/`set_extra_state`/`set_decision_seed`/`descriptor` + descriptors `name`/`interpolation_mode`/`monotonicity`/`is_stochastic`/`supports_smooth`. `AdaptationAxisBase` supplies benign defaults (no-op calibrate/recovery/finalize, empty tunable params) so adapters only implement what is axis-specific. |
-| `manager_rate_axis.py` | `ManagerRateAxis`, `ClampAxis`, `ActQuantAxis`, `NoiseAxis`, `ActivationAdaptationAxis` | Adapters for the `AdaptationManager` rate-field family. `set_rate` delegates to `perceptron_rate.apply_manager_rate` (set one manager field, rebuild all decorator stacks) — byte-identical to `AdaptationRateTuner._apply_rate`. State carriage is the single manager float (`get/set_extra_state`). |
+| `adaptation_axis.py` | `AdaptationAxis` (runtime-checkable `Protocol`), `AdaptationAxisBase` | The contract: `attach`/`set_rate`/`calibrate`/`tunable_parameters`/`recovery_hooks`/`finalize`/`get_extra_state`/`set_extra_state`/`set_decision_seed`/`descriptor` + descriptors `name`/`interpolation_mode`/`monotonicity`/`is_stochastic`/`supports_smooth`. `AdaptationAxisBase` supplies benign defaults so adapters only implement what is axis-specific. |
+| `manager_rate_axis.py` | `ManagerRateAxis`, `ClampAxis`, `ActQuantAxis`, `NoiseAxis`, `ActivationAdaptationAxis` | `AdaptationManager` rate-field family. `set_rate` → `perceptron_rate.apply_manager_rate` (byte-identical to the inline path; see `test_perceptron_rate`). State carriage is the single manager float. Routes `AdaptationRateTuner`/`ClampTuner`/`ActivationAdaptationTuner`. |
+| `blend_axis.py` | `BlendAxis`, `LIFAxis`, `TTFSAxis` | KD-blend family. `set_rate` → `perceptron_rate.set_blend_rate` (live `BlendActivation.rate`, no rebuild); state is the per-perceptron rate list. Routes `KDBlendAdaptationTuner`. `finalize` is **not** owned — the parity-critical forward-install stays on the tuner's inherited `_finalize` (`test_finalize_contract` forbids reimplementing it). |
+| `perceptron_transform_axis.py` | `PerceptronTransformAxis`, `NAPQAxis` | Stochastic closure mechanism. Thin uniform `set_rate` seam over a tuner-provided `apply_fn` (the tuner owns the prev/new builders + trainer); folding the mechanism into the axis is the P4 driver refactor. Routes `NormalizationAwarePerceptronQuantizationTuner`. |
+| `pruning_axis.py` | `PruningAxis` | Structured pruning. Thin seam over the tuner's mask-apply + recovery-hook callables; persistent-prune `finalize` stays on the tuner. Routes `PruningTuner`. |
+| `activation_shift_axis.py` | `ActivationShiftAxis` | One-shot shift (`supports_smooth=False`); thin seam over the tuner's `_apply_shift`. Routes `ActivationShiftTuner`. |
 
-## Coverage plan (remaining adapters, same delegation discipline)
+## Routing
 
-- `blend_axis.py` — `BlendAxis`/`LIFAxis`/`TTFSAxis`: `set_rate` → `perceptron_rate.set_blend_rate` (live `BlendActivation.rate`, no rebuild); `finalize` **delegates to the inherited `KDBlendAdaptationTuner._finalize`** (parity-critical forward-install; `test_finalize_contract` forbids reimplementing it).
-- `perceptron_transform_axis.py` — `PerceptronTransformAxis`/`NAPQAxis`: closure mechanism (`_mixed_transform`); trainer passed at `set_rate` call time, never stored on the axis.
-- `activation_shift_axis.py` — `ActivationShiftAxis`: one-shot (`supports_smooth=False`).
-- `pruning_axis.py` — `PruningAxis`: dict-of-sets persistent state, `recovery_hooks` enforce masks during training, persistent-prune `finalize`.
+All tuner families route their rate application through an axis when
+`config["tuning_use_axis"]` is set (default off); flag-off is byte-identical
+(the seam delegates to the same SSOT / extracted callable). The flag is not yet
+flipped — the manager-rate / blend families own their mechanism in the axis; the
+closure / pruning / shift families present the seam over a tuner callable, so the
+mechanism-into-axis move (the standalone `AdaptationDriver`, P4) is still pending.
 
 ## Dependencies
 

@@ -48,6 +48,15 @@ class PruningTuner(SmoothAdaptationTuner):
         self._persistent_pruned_rows: list[set] = []
         self._persistent_pruned_cols: list[set] = []
 
+        self._axis = None
+        if pipeline.config.get("tuning_use_axis", False):
+            from mimarsinan.tuning.axes import PruningAxis
+
+            self._axis = PruningAxis(
+                self._apply_masks, recovery_hooks_fn=self._recovery_training_hooks
+            )
+            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+
     def _get_masks(self, rate):
         return get_masks(self, rate)
 
@@ -83,7 +92,10 @@ class PruningTuner(SmoothAdaptationTuner):
             )
 
     def _update_and_evaluate(self, rate):
-        self._apply_masks(rate)
+        if getattr(self, "_axis", None) is not None:
+            self._axis.set_rate(rate)
+        else:
+            self._apply_masks(rate)
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _recovery_training_hooks(self, rate):

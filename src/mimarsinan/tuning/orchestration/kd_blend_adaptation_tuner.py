@@ -112,6 +112,16 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         self.trainer.loss_function = self._make_kd_loss()
         self._after_install_blend()
 
+        # P1 flag: route blend-rate application through a BlendAxis (delegates to
+        # the same set_blend_rate SSOT — byte-identical). finalize stays on this
+        # tuner's inherited _finalize (parity-critical forward-install).
+        self._axis = None
+        if pipeline.config.get("tuning_use_axis", False):
+            from mimarsinan.tuning.axes import BlendAxis
+
+            self._axis = BlendAxis()
+            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+
     # ── Hooks (subclasses customize) ─────────────────────────────────────────
 
     def _configure(self) -> None:
@@ -214,12 +224,20 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         return [p.base_activation.rate for p in self.model.get_perceptrons()]
 
     def _set_rate(self, rate: float) -> None:
+        if getattr(self, "_axis", None) is not None:
+            self._axis.set_rate(rate)
+            return
         set_blend_rate(self.model, rate)
 
     def _get_extra_state(self):
+        if getattr(self, "_axis", None) is not None:
+            return self._axis.get_extra_state()
         return self._get_rates()
 
     def _set_extra_state(self, extra):
+        if getattr(self, "_axis", None) is not None:
+            self._axis.set_extra_state(extra)
+            return
         for p, r in zip(self.model.get_perceptrons(), extra):
             p.base_activation.rate = float(r)
 

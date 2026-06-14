@@ -30,6 +30,7 @@ import torch.nn as nn
 
 from mimarsinan.models.nn.layers import SavedTensorDecorator
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.perceptron_rate import apply_manager_rate
 
 
 def clamp_scale_regulariser(
@@ -94,6 +95,25 @@ class ClampTuner(SmoothAdaptationTuner):
 
         self.saturation_diagnostics = self._probe_clamp_saturation()
         self._log_scale_diagnostics()
+
+        # P1 flag: route clamp-rate application through a ClampAxis. The axis
+        # delegates to apply_manager_rate, which is byte-identical to the inline
+        # ``clamp_rate = r; for p: update_activation`` (see test_perceptron_rate).
+        self._axis = None
+        if pipeline.config.get("tuning_use_axis", False):
+            from mimarsinan.tuning.axes import ClampAxis
+
+            self._axis = ClampAxis()
+            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+
+    def _set_rate(self, rate):
+        if getattr(self, "_axis", None) is not None:
+            self._axis.set_rate(rate)
+            return
+        apply_manager_rate(
+            self.model, self.adaptation_manager, self.pipeline.config,
+            "clamp_rate", rate,
+        )
 
     def _calculate_activation_scales(self, scales, activation_scale_stats=None):
         perceptrons = list(self.model.get_perceptrons())
@@ -235,17 +255,15 @@ class ClampTuner(SmoothAdaptationTuner):
             )
 
     def _get_extra_state(self):
+        if getattr(self, "_axis", None) is not None:
+            return self._axis.get_extra_state()
         return self.adaptation_manager.clamp_rate
 
     def _set_extra_state(self, extra):
-        self.adaptation_manager.clamp_rate = extra
-        for p in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, p)
+        self._set_rate(extra)
 
     def _update_and_evaluate(self, rate):
-        self.adaptation_manager.clamp_rate = rate
-        for perceptron in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
+        self._set_rate(rate)
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def validate(self):
@@ -284,9 +302,7 @@ class ClampTuner(SmoothAdaptationTuner):
     def _after_run(self):
         self._continue_to_full_rate()
 
-        self.adaptation_manager.clamp_rate = 1.0
-        for p in self.model.get_perceptrons():
-            self.adaptation_manager.update_activation(self.pipeline.config, p)
+        self._set_rate(1.0)
 
         self._freeze_learnable_scales()
 
