@@ -21,6 +21,51 @@ class AdaptationManager(nn.Module):
         self.lif_active = False
         self.ttfs_active = False
 
+        # tuning_inplace_rate (P5a): rate fields bound here drive their
+        # RateAdjustedDecorator from a shared in-place RateBuffer instead of a
+        # float, so a ramp advances without rebuilding every perceptron's stack.
+        # An empty/absent map keeps the legacy float-rebuild behavior exactly.
+        self._rate_buffers = {}
+
+    def bind_rate_buffer(self, rate_attr):
+        """Return the shared ``RateBuffer`` for ``rate_attr``, creating it once.
+
+        The buffer is seeded from the field's current float so the first rebuild
+        is value-equivalent to the float it replaces.
+        """
+        from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
+
+        buffers = getattr(self, "_rate_buffers", None)
+        if buffers is None:
+            buffers = {}
+            self._rate_buffers = buffers
+        buffer = buffers.get(rate_attr)
+        if buffer is None:
+            buffer = RateBuffer()
+            buffer.set(float(getattr(self, rate_attr)))
+            buffers[rate_attr] = buffer
+        return buffer
+
+    def _rate_buffer(self, rate_attr):
+        return getattr(self, "_rate_buffers", {}).get(rate_attr)
+
+    def _rate_carrier(self, rate_attr):
+        """The decorator's rate source: the bound buffer if any, else the float."""
+        buffer = self._rate_buffer(rate_attr)
+        return buffer if buffer is not None else getattr(self, rate_attr)
+
+    def _rate_is_active(self, rate_attr, float_active):
+        """Whether to include ``rate_attr``'s decorator (gates the rebuild stack).
+
+        Flag-off (no bound buffer) this is exactly the legacy float predicate, so
+        the stack is byte-identical. A bound buffer counts as active even at alpha
+        0.0 so the buffer-backed stack is stable across the whole ramp (set(0.0)
+        must not drop a decorator set(0.5) installed — the in-place point is no
+        rebuild at all)."""
+        if self._rate_buffer(rate_attr) is not None:
+            return True
+        return float_active
+
     def update_activation(self, pipeline_config, perceptron):
         from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 
@@ -32,12 +77,12 @@ class AdaptationManager(nn.Module):
             or spiking_mode == "lif"
         )
         decorators = []
-        if self.activation_adaptation_rate > 0:
+        if self._rate_is_active("activation_adaptation_rate", self.activation_adaptation_rate > 0):
             decorators.append(
                 self.get_rate_adjusted_activation_replacement_decorator(perceptron))
-        if not subsumes_decorators and self.clamp_rate != 0.0:
+        if not subsumes_decorators and self._rate_is_active("clamp_rate", self.clamp_rate != 0.0):
             decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
-        if not subsumes_decorators and self.quantization_rate != 0.0:
+        if not subsumes_decorators and self._rate_is_active("quantization_rate", self.quantization_rate != 0.0):
             decorators.append(
                 self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
         if not subsumes_decorators and not use_ttfs and self.shift_rate != 0.0:
@@ -58,14 +103,14 @@ class AdaptationManager(nn.Module):
         """Gradually blend the base activation toward LeakyGradReLU (chip ReLU)."""
         from mimarsinan.models.nn.activations import LeakyGradReLU
         return RateAdjustedDecorator(
-            self.activation_adaptation_rate,
+            self._rate_carrier("activation_adaptation_rate"),
             ActivationReplacementDecorator(LeakyGradReLU()),
             MixAdjustmentStrategy())
 
     def get_rate_adjusted_clamp_decorator(self, perceptron):
         return RateAdjustedDecorator(
-            self.clamp_rate, 
-            ClampDecorator(torch.tensor(0.0), perceptron.activation_scale), 
+            self._rate_carrier("clamp_rate"),
+            ClampDecorator(torch.tensor(0.0), perceptron.activation_scale),
             MixAdjustmentStrategy())
 
     def get_shift_decorator(self, pipeline_config, perceptron):
@@ -85,9 +130,9 @@ class AdaptationManager(nn.Module):
             shift_back_amount = -shift * self.shift_rate
 
         return RateAdjustedDecorator(
-            self.quantization_rate, 
+            self._rate_carrier("quantization_rate"),
             NestedDecoration(
-                [ShiftDecorator(shift_back_amount), 
+                [ShiftDecorator(shift_back_amount),
                 QuantizeDecorator(torch.tensor(pipeline_config["target_tq"]), perceptron.activation_scale)]),
             NestedAdjustmentStrategy([RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]))
     

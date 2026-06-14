@@ -9,6 +9,7 @@ from mimarsinan.models.nn.decorators.adjustment import (
     RateAdjustedDecorator,
 )
 from mimarsinan.models.nn.decorators.clamp_quantize import ClampDecorator, QuantizeDecorator
+from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 from mimarsinan.models.nn.decorators.transforms import (
     NoisyDropout,
     SavedTensorDecorator,
@@ -27,6 +28,7 @@ __all__ = [
     "NoisyDropout",
     "QuantizeDecorator",
     "RandomMaskAdjustmentStrategy",
+    "RateBuffer",
     "RateAdjustedDecorator",
     "SavedTensorDecorator",
     "ScaleDecorator",

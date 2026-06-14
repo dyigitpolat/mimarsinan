@@ -5,6 +5,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
+
 
 class RandomMaskAdjustmentStrategy:
     def adjust(self, base, target, rate):
@@ -29,6 +31,15 @@ class RateAdjustedDecorator:
         self.decorator = decorator
         self.adjustment_strategy = adjustment_strategy
 
+    # ``rate`` may be a plain float or a shared ``RateBuffer`` (in-place ramp).
+    # The buffer carries one scalar ``alpha`` read live at transform time so the
+    # rate advances without rebuilding the decorator stack; resolving it to a
+    # float here keeps the 0/1 short-circuits and the adjust call bit-identical.
+    def _resolved_rate(self):
+        if isinstance(self.rate, RateBuffer):
+            return float(self.rate.alpha)
+        return self.rate
+
     # Rate=0 is the identity (all strategies reduce to "return base"), so skip
     # the inner decorator call and the adjustment tensor ops. Rate=1 with
     # Mix/RandomMask/Nested strategies collapses to "return target" (mask is
@@ -37,20 +48,22 @@ class RateAdjustedDecorator:
     # torch.rand() call that the un-optimized path would consume; this shifts
     # global RNG state slightly but has no semantic effect on outputs.
     def input_transform(self, x):
-        if self.rate == 0.0:
+        rate = self._resolved_rate()
+        if rate == 0.0:
             return x
         target = self.decorator.input_transform(x)
-        if self.rate == 1.0:
+        if rate == 1.0:
             return target
-        return self.adjustment_strategy.adjust(x, target, self.rate)
+        return self.adjustment_strategy.adjust(x, target, rate)
 
     def output_transform(self, x):
-        if self.rate == 0.0:
+        rate = self._resolved_rate()
+        if rate == 0.0:
             return x
         target = self.decorator.output_transform(x)
-        if self.rate == 1.0:
+        if rate == 1.0:
             return target
-        return self.adjustment_strategy.adjust(x, target, self.rate)
+        return self.adjustment_strategy.adjust(x, target, rate)
 
 
 class NestedDecoration:
