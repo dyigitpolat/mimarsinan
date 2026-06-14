@@ -75,6 +75,19 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # Tuning refactor flag (P5b): start each round from the previously accepted
     # step (last_successful_step policy) — cheaper probes on cliff-like axes.
     "tuning_sensitivity_stepping": False,
+    # Tuning refactor flag (P5a): advance an AdaptationManager rate by writing a
+    # shared in-place RateBuffer (build the decorator stack once) instead of a
+    # full per-perceptron rebuild each step; output- and RNG-conformant.
+    "tuning_inplace_rate": False,
+    # Tuning refactor flag (P6): persist optimizer (Adam) moments across the LR
+    # sweep / recovery within a cycle instead of rebuilding fresh each call.
+    "tuning_persist_optimizer": False,
+    # Tuning refactor flag (P6): score the coarse LR sweep by a cheap training
+    # loss-slope signal, reserving full-validation scoring for the top candidates.
+    "tuning_loss_slope_lr": False,
+    # Tuning refactor flag (P7): interleaved multi-axis continuation over
+    # value-domain axes (research-grade; never touches LIF/TTFS finalize).
+    "interleave_axes": False,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -167,6 +180,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "paired_confirm_batches",
     "tuning_subsample_val_cache",
     "tuning_sensitivity_stepping",
+    "tuning_inplace_rate",
+    "tuning_persist_optimizer",
+    "tuning_loss_slope_lr",
+    "interleave_axes",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",
