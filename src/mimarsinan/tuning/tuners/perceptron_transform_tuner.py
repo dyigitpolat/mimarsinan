@@ -31,6 +31,10 @@ from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdapta
 
 
 class PerceptronTransformTuner(SmoothAdaptationTuner):
+    # The forward applies a per-step parameter transform, so a persisted
+    # optimizer would step tensors that receive no gradients (GradScaler crash).
+    _supports_persistent_optimizer = False
+
     def __init__(self, pipeline, model, target_accuracy, lr):
         self._device = pipeline.config["device"]
         self._data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)

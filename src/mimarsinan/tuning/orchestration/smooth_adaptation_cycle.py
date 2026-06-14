@@ -117,8 +117,16 @@ class SmoothAdaptationCycleMixin(TunerBase):
             getattr(self, "_pipeline_hard_floor", None),
         )
 
+    # Tuners that REPLACE model parameters each cycle (weight-quant /
+    # PerceptronTransform) cannot persist Adam moments — a held optimizer would
+    # step stale tensors. They opt out via this flag.
+    _supports_persistent_optimizer = True
+
     def _optimizer_policy(self):
-        """Recovery optimizer policy; persist requires the opt-in config flag."""
+        """Recovery optimizer policy; persist requires the opt-in flag and a
+        param-stable tuner family."""
+        if not getattr(self, "_supports_persistent_optimizer", True):
+            return RESET_PER_CYCLE
         persist = bool(self.pipeline.config.get("tuning_persist_optimizer", False))
         return PERSIST_WITHIN_CYCLE if persist else RESET_PER_CYCLE
 
