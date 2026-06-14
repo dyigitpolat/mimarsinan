@@ -9,7 +9,7 @@ from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.tuning.trace import DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
-from mimarsinan.tuning.orchestration.rate_scheduler import RateScheduler
+from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuning_budget import min_step_for_smooth_adaptation
 from mimarsinan.tuning.orchestration.tuner_base import (
@@ -290,18 +290,19 @@ class SmoothAdaptationRunMixin(TunerBase):
             10,
             self._budget.max_training_steps // max(1, self._budget.check_interval),
         ))
-        if getattr(self, "_skip_one_shot", False):
-            scheduler = RateScheduler(
-                epsilon=ms,
-                policy="uniform_ladder",
-                initial_step=max(ms, float(getattr(self, "_initial_ramp_step", 0.5))),
-                max_rounds=max_cycles,
-            )
-        else:
-            scheduler = RateScheduler(epsilon=ms, policy="greedy_to_one", max_rounds=max_cycles)
-
-        scheduler.run(self._committed_rate, self._driver_attempt)
-        return self._finalize_run()
+        scheduler = AdaptationDriver.build_scheduler(
+            epsilon=ms,
+            max_rounds=max_cycles,
+            skip_one_shot=getattr(self, "_skip_one_shot", False),
+            initial_step=max(ms, float(getattr(self, "_initial_ramp_step", 0.5))),
+        )
+        driver = AdaptationDriver(
+            scheduler=scheduler,
+            attempt=self._driver_attempt,
+            finalize=self._finalize_run,
+            committed=self._committed_rate,
+        )
+        return driver.run()
 
     def _driver_attempt(self, target):
         """One scheduler attempt: refresh per-cycle state, then run a cycle."""
