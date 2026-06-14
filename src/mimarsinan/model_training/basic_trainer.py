@@ -128,6 +128,37 @@ class BasicTrainer:
             )
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
+    def build_step_optimizer(self, lr):
+        """Build a fresh step-training optimizer that a caller can own and reuse.
+
+        Mirrors the optimizer built by ``_get_optimizer_and_scheduler_steps`` so
+        persisting Adam moments across recovery calls stays consistent with the
+        per-call fresh-optimizer path.
+        """
+        adam_kwargs = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
+        if torch.device(self.device).type == "cuda":
+            adam_kwargs["fused"] = True
+        return torch.optim.Adam(self.model.parameters(), **adam_kwargs)
+
+    def _scheduler_and_scaler_for_optimizer(
+        self, optimizer, lr, total_steps: int, *, constant_lr: bool = False
+    ):
+        """Build the scheduler/scaler around an externally-owned optimizer.
+
+        The scheduler selection mirrors ``_get_optimizer_and_scheduler_steps`` so
+        an owned optimizer follows the same LR schedule as the fresh-built path.
+        """
+        if constant_lr or total_steps <= 0:
+            warmup_iters = max(1, int(total_steps * 0.05)) if total_steps > 0 else 1
+            scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_iters
+            )
+        else:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
+            )
+        return scheduler, torch.amp.GradScaler("cuda")
+
     def _backward_pass_on_loss(self, x, y, scaler):
         self.model.train()
         with torch.amp.autocast("cuda"):
@@ -209,9 +240,11 @@ class BasicTrainer:
     def validate_train(self):
         return basic_trainer_eval.validate_train(self)
 
-    def train_n_steps(self, lr, steps: int, warmup_steps: int = 0, *, constant_lr: bool = False):
+    def train_n_steps(
+        self, lr, steps: int, warmup_steps: int = 0, *, constant_lr: bool = False, optimizer=None
+    ):
         return basic_trainer_steps.train_n_steps(
-            self, lr, steps, warmup_steps, constant_lr=constant_lr
+            self, lr, steps, warmup_steps, constant_lr=constant_lr, optimizer=optimizer
         )
 
     def train_steps_until_target(
@@ -226,6 +259,7 @@ class BasicTrainer:
         patience: int = 3,
         min_steps: int = 0,
         min_improvement: float = 1e-3,
+        optimizer=None,
     ):
         return basic_trainer_steps.train_steps_until_target(
             self,
@@ -233,6 +267,7 @@ class BasicTrainer:
             max_steps,
             target_accuracy,
             warmup_steps,
+            optimizer=optimizer,
             validation_n_batches=validation_n_batches,
             check_interval=check_interval,
             patience=patience,

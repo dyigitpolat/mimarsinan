@@ -141,6 +141,7 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._pre_relaxation_target = None
         self._cycle_log = DecisionTrace.new()
         self._cached_lr = None
+        self._persistent_optimizer_owner = None
         self._phase_seconds = {}
         self._run_t0 = time.time()
 
