@@ -294,6 +294,15 @@ class SmoothAdaptationRunMixin(TunerBase):
             "last_drop": round(last["drop"], 4),
             "shrinking": shrinking,
         })
+        if not shrinking:
+            warnings.warn(
+                f"{self.__class__.__name__}: the full-transformation drop did not "
+                f"shrink as the committed rate climbed "
+                f"({first['drop']:+.4f}@α={first['committed']:.3f} → "
+                f"{last['drop']:+.4f}@α={last['committed']:.3f}). The gradual ramp "
+                f"may not be pulling the model toward 1.0-viability.",
+                stacklevel=2,
+            )
 
     def _log_cycle_summary(self):
         """Print the full adaptation cycle log for debugging."""
