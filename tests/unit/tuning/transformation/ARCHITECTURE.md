@@ -15,9 +15,10 @@ heterogeneous axis profiles before any expensive real run.
 | `test_determinism.py` | IV.8: `rng_snapshot`/`deterministic_rng` restore RNG around a probe; a fixed-seed scripted tuner replays an identical `DecisionTrace` (I6). |
 | `test_chaos_rollback.py` | IV.6: forced recovery divergence → exact bitwise restore; `CheckpointGuard.bracket()` restore; non-monotone surface still terminates (dense-grid safe mode is the future V9 handling). |
 | `test_axis_conformance.py` | IV.4: spec-14.1 over the ManagerRate family + BlendAxis — set_rate(0)==identity/reversible, idempotent attach, stable descriptor, state round-trip, set_decision_seed no-op. |
+| `test_perf_gates.py` | IV.7 (deterministic, CUDA-free): cliff probe-count is log-bounded (no linear rate scan); smooth axis commits in one greedy probe; `CheckpointGuard` `scope='tunable'` skips the frozen backbone (the W6 VRAM lever) while `scope='full'` round-trips bitwise. |
 
 ## Remaining (report Part IV)
 
-`test_perf_gates.py` (IV.7 — checkpoint bytes / LR wall-clock / probe-count /
-peak VRAM budgets on the ViT integration probe). The paired-gate Monte-Carlo
+The CUDA wall-clock / peak-VRAM budgets on the ViT integration probe (the
+non-deterministic half of IV.7) are not yet a gate. The paired-gate Monte-Carlo
 (IV.3) lives at `tests/unit/tuning/test_paired_sensor_calibration.py`.
