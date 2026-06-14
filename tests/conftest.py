@@ -399,3 +399,121 @@ def platform_constraints():
         "weight_bits": 8,
         "target_tq": 4,
     }
+
+
+# ---------------------------------------------------------------------------
+# Determinism + golden-trace harness (tuning refactor P0)
+# ---------------------------------------------------------------------------
+# These live in the root conftest (not a nested tuning conftest) so they
+# auto-inherit everywhere and never shadow ``from conftest import ...``.
+
+import contextlib  # noqa: E402
+import random  # noqa: E402
+
+
+def _snapshot_rng():
+    return (
+        random.getstate(),
+        np.random.get_state(),
+        torch.get_rng_state(),
+        torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+    )
+
+
+def _restore_rng(state):
+    py_state, np_state, torch_state, cuda_states = state
+    random.setstate(py_state)
+    np.random.set_state(np_state)
+    torch.set_rng_state(torch_state)
+    if cuda_states is not None:
+        torch.cuda.set_rng_state_all(cuda_states)
+
+
+@pytest.fixture
+def deterministic_rng():
+    """Seed python/numpy/torch RNG to 0 and restore prior state on teardown.
+
+    Opt-in (not autouse) so it never perturbs tests that do not request it.
+    """
+    state = _snapshot_rng()
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(0)
+    try:
+        yield
+    finally:
+        _restore_rng(state)
+
+
+@contextlib.contextmanager
+def rng_snapshot():
+    """Snapshot python/numpy/torch RNG on enter, restore on exit.
+
+    Wrap a probe block so its random draws do not perturb the committed path's
+    RNG trajectory (the spec's per-decision reproducibility, invariant I6).
+    """
+    state = _snapshot_rng()
+    try:
+        yield
+    finally:
+        _restore_rng(state)
+
+
+_GOLDEN_NUMERIC_FIELDS = (
+    "committed", "instant_acc", "pre_cycle_acc", "post_acc",
+    "target", "validation_baseline", "rollback_threshold",
+    "absolute_floor", "rollback_tolerance",
+)
+
+
+def _golden_close(a, b, atol, label):
+    if a is None or b is None:
+        assert a is None and b is None, f"{label}: {a!r} != {b!r}"
+        return
+    import math
+    assert math.isclose(a, b, rel_tol=0.0, abs_tol=atol), f"{label}: {a!r} != {b!r}"
+
+
+def assert_trace_matches(
+    actual, golden_path, *, exact_outcomes=True,
+    rate_atol=1e-9, acc_atol=1e-6, lr_rtol=1e-3,
+):
+    """Compare a ``DecisionTrace`` against a recorded golden file.
+
+    With ``MIMARSINAN_RECORD_GOLDEN`` set, (re)writes the baseline instead of
+    asserting — the only way goldens change. ``elapsed_sec``/``seeds`` (wall
+    clock / environment) are intentionally not compared.
+    """
+    import math
+    from mimarsinan.tuning.trace import DecisionTrace
+
+    if os.environ.get("MIMARSINAN_RECORD_GOLDEN"):
+        os.makedirs(os.path.dirname(golden_path), exist_ok=True)
+        with open(golden_path, "w") as fh:
+            fh.write(actual.to_json())
+        pytest.skip(f"recorded golden baseline: {golden_path}")
+
+    assert os.path.exists(golden_path), (
+        f"missing golden {golden_path}; record with MIMARSINAN_RECORD_GOLDEN=1"
+    )
+    with open(golden_path) as fh:
+        golden = DecisionTrace.from_json(fh.read())
+
+    a, g = actual.records, golden.records
+    assert len(a) == len(g), f"trace length {len(a)} != golden {len(g)}"
+    for i, (ra, rg) in enumerate(zip(a, g)):
+        if exact_outcomes:
+            assert ra.outcome == rg.outcome, f"[{i}] outcome {ra.outcome} != {rg.outcome}"
+        assert ra.cycle_index == rg.cycle_index, f"[{i}] cycle_index"
+        assert ra.reached_target == rg.reached_target, f"[{i}] reached_target"
+        _golden_close(ra.rate, rg.rate, rate_atol, f"[{i}] rate")
+        for fld in _GOLDEN_NUMERIC_FIELDS:
+            _golden_close(getattr(ra, fld), getattr(rg, fld), acc_atol, f"[{i}] {fld}")
+        if ra.lr is None or rg.lr is None:
+            assert ra.lr is None and rg.lr is None, f"[{i}] lr {ra.lr} != {rg.lr}"
+        else:
+            assert math.isclose(ra.lr, rg.lr, rel_tol=lr_rtol, abs_tol=0.0), (
+                f"[{i}] lr {ra.lr} != {rg.lr}"
+            )

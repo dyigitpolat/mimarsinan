@@ -1,0 +1,28 @@
+"""Rate-driven adaptation axes — the control-facing ``AdaptationAxis`` contract.
+
+Each axis delegates its math to ``mimarsinan.transformations`` and its rate
+application to ``mimarsinan.tuning.perceptron_rate``; it owns only the
+orchestration seam the driver/scheduler/recovery services consume.
+"""
+
+from mimarsinan.tuning.axes.adaptation_axis import (
+    AdaptationAxis,
+    AdaptationAxisBase,
+)
+from mimarsinan.tuning.axes.manager_rate_axis import (
+    ManagerRateAxis,
+    ClampAxis,
+    ActQuantAxis,
+    NoiseAxis,
+    ActivationAdaptationAxis,
+)
+
+__all__ = [
+    "AdaptationAxis",
+    "AdaptationAxisBase",
+    "ManagerRateAxis",
+    "ClampAxis",
+    "ActQuantAxis",
+    "NoiseAxis",
+    "ActivationAdaptationAxis",
+]

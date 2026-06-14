@@ -21,12 +21,15 @@ while maintaining model accuracy through smooth adaptation.
 | `perceptron_rate.py` | `rebuild_activations`, `apply_manager_rate`, `set_blend_rate` | SSOT for applying a transformation rate across all perceptrons: `rebuild_activations` re-runs `update_activation` per perceptron; `apply_manager_rate` sets one `AdaptationManager` rate field then rebuilds (the `AdaptationRateTuner`/`NoiseTuner` family); `set_blend_rate` sets every `BlendActivation.rate` (the `KDBlendAdaptationTuner` family). Replaces the 4+ inlined `setattr; for p: update_activation` loops. |
 | `forward_install.py` | `LazyExecutorForward`, `CascadeForwardInstall` | Leaf module (no tuner imports) for installing a cross-layer NF forward as a `model.forward` override. `LazyExecutorForward` is the picklable base with `_ensure_executor(builder)` (build-once, drop-on-pickle); `CascadeForwardInstall` is the symmetric single-owner install/remove mixin. `kd_blend_adaptation_tuner` re-exports `LazyExecutorForward` as `_InstalledForward` for back-compat. |
 | `teacher.py` | `snapshot_frozen_teacher`, `freeze_module` | Leaf module: SSOT for capturing an eval-mode, gradient-frozen deepcopy of a model to distill against (deepcopy on CPU to avoid double accelerator residency). Used by `KDBlendAdaptationTuner` (single snapshot) and available for any future tuner that distills against a frozen reference. |
+| `trace.py` | `DecisionRecord`, `DecisionTrace` | Structured, JSON-round-trippable decision-trace artifact. `SmoothAdaptationCycleMixin._adaptation` records one `DecisionRecord` per cycle exit (catastrophic/rollback/commit) into `self._cycle_log` (a `DecisionTrace`); fields absent at an exit stay `None`. `DecisionTrace` iterates as the legacy per-outcome `_cycle_log` dicts (`as_legacy_dict` always emits numeric `rate`+`committed`) so `_log_cycle_summary` is unchanged. `to_json`/`from_json` are the golden-trace equivalence contract that later refactor phases are gated against (recorded under `tests/unit/tuning/golden/`, regenerated only via `MIMARSINAN_RECORD_GOLDEN`). |
 
 ### Subdirectory
 
 | Directory | Purpose |
 |-----------|---------|
+| `orchestration/` | The smooth-adaptation control loop (cycle/run/tuner-base mixins), the `AdaptationManager` rate host, `TuningBudget`, the KD-blend base, and the extracted `AcceptanceSensor` decision service. See its `ARCHITECTURE.md`. |
 | `tuners/` | Concrete tuner implementations for specific transformations |
+| `axes/` | `AdaptationAxis` contract + adapters (the rate-driven, control-facing axis objects the tuner refactor collapses the tuner zoo into; each delegates to `perceptron_rate`/`transformations`). Manager-rate family landed; blend/closure/shift/pruning adapters follow the same delegation discipline. |
 
 ## Dependencies
 
