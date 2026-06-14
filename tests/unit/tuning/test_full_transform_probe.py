@@ -76,7 +76,8 @@ def test_trend_converging_vs_flat(tmp_path, deterministic_rng, capsys):
     flat = _make(tmp_path, probe=True, full_acc_fn=lambda a: 0.6)  # never improves
     for r in (0.3, 0.6, 0.9):
         flat._adaptation(r)
-    flat._log_full_transform_trend()
+    with pytest.warns(UserWarning, match="not be pulling the model toward 1.0"):
+        flat._log_full_transform_trend()
     assert "FLAT/DIVERGING" in capsys.readouterr().out
     flat.close()
 
