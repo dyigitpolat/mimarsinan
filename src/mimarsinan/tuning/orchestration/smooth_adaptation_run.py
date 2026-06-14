@@ -7,6 +7,8 @@ import warnings
 
 from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
+from mimarsinan.tuning.trace import DecisionTrace
+from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.tuning_budget import min_step_for_smooth_adaptation
 from mimarsinan.tuning.orchestration.tuner_base import (
     TunerBase,
@@ -138,7 +140,7 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._natural_rate = 0.0
         self._small_step_streak = 0
         self._pre_relaxation_target = None
-        self._cycle_log = []
+        self._cycle_log = DecisionTrace.new()
         self._cached_lr = None
         self._phase_seconds = {}
         self._run_t0 = time.time()
@@ -167,16 +169,13 @@ class SmoothAdaptationRunMixin(TunerBase):
         else:
             self._pipeline_hard_floor = None
 
-        se = self._budget.accuracy_se()
-        val_a = self.trainer.validate_n_batches(self._budget.eval_n_batches)
-        val_b = self.trainer.validate_n_batches(self._budget.eval_n_batches)
-        empirical_noise = abs(val_a - val_b)
-        self._rollback_tolerance = max(
-            min(max(3 * se, 3 * empirical_noise), 0.05),
-            0.005,
+        ref = AcceptanceSensor(self._budget).calibrate_baseline(
+            self.trainer.validate_n_batches, self._budget.eval_n_batches
         )
+        se = ref.se
+        self._rollback_tolerance = ref.rollback_tolerance
 
-        baseline_val = (val_a + val_b) / 2.0
+        baseline_val = ref.baseline
         self.target_adjuster.target_metric = baseline_val
         self.target_adjuster.original_metric = baseline_val
         self.target_adjuster.floor = baseline_val * (1.0 - self._pipeline_tolerance)

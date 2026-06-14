@@ -49,6 +49,16 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "tuning_budget_scale": 1.0,
     "tuner_target_floor_ratio": 0.90,
     "degradation_tolerance": 0.05,
+    # Tuning refactor flag (P1): route rate application through an
+    # ``AdaptationAxis`` instead of the legacy inline path. Default off; flipped
+    # after golden-trace equivalence, then removed with the old path.
+    "tuning_use_axis": False,
+    # Tuning refactor flags (P3a): route per-cycle rollback snapshots through
+    # CheckpointGuard. Default scope/location are byte-identical to the legacy
+    # on-device full clone; ``tunable``/``cpu_pinned`` are scaling opt-ins.
+    "tuning_use_checkpoint_guard": False,
+    "checkpoint_scope": "full",
+    "checkpoint_location": "device",
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -131,6 +141,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "weight_bits",
     "tuning_budget_scale",
     "tuner_target_floor_ratio",
+    "tuning_use_axis",
+    "tuning_use_checkpoint_guard",
+    "checkpoint_scope",
+    "checkpoint_location",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",
