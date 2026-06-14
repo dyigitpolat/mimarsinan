@@ -42,16 +42,27 @@ class RecoveryEngine:
 
 
 class PersistentOptimizerOwner:
-    """Lazily builds and owns one step optimizer for ``persist_within_cycle``."""
+    """Lazily builds and owns one step optimizer for ``persist_within_cycle``.
+
+    Rebuilds the optimizer whenever the model's parameter *set* changes identity,
+    so Adam moments persist across recovery calls for stable-param tuners (manager
+    rate / blend) but are correctly reset for tuners that replace parameters each
+    cycle (weight-quant / pruning) — where a stale optimizer would step the wrong
+    tensors (no grads → ``GradScaler`` "no inf checks" assertion).
+    """
 
     def __init__(self, trainer):
         self._trainer = trainer
         self._optimizer = None
+        self._param_ids = None
 
     def optimizer_for(self, lr):
-        if self._optimizer is None:
+        current = tuple(id(p) for p in self._trainer.model.parameters())
+        if self._optimizer is None or current != self._param_ids:
             self._optimizer = self._trainer.build_step_optimizer(lr)
+            self._param_ids = current
         return self._optimizer
 
     def reset(self):
         self._optimizer = None
+        self._param_ids = None

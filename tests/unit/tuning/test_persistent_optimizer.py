@@ -218,28 +218,52 @@ class TestRecoveryEngine:
         RecoveryEngine.train_to_target(_T(), lr=0.001, max_steps=1, target=0.5, hooks=None)
 
 
+class _ModelWithParams:
+    """A stand-in model whose parameter set can be swapped (param-transform)."""
+
+    def __init__(self):
+        self._params = [object(), object()]
+
+    def parameters(self):
+        return iter(self._params)
+
+    def replace_params(self):  # simulate a weight-quant param transform
+        self._params = [object(), object()]
+
+
+class _OwnerTrainer:
+    def __init__(self):
+        self.model = _ModelWithParams()
+        self.builds = []
+
+    def build_step_optimizer(self, lr):
+        self.builds.append(lr)
+        return _Sentinel()
+
+
 class TestPersistentOptimizerOwner:
-    def test_builds_once_and_reuses(self):
-        builds = []
-
-        class _T:
-            def build_step_optimizer(self, lr):
-                opt = _Sentinel()
-                builds.append(lr)
-                return opt
-
-        owner = PersistentOptimizerOwner(_T())
+    def test_builds_once_and_reuses_for_stable_params(self):
+        trainer = _OwnerTrainer()
+        owner = PersistentOptimizerOwner(trainer)
         a = owner.optimizer_for(0.01)
-        b = owner.optimizer_for(0.005)  # different lr, same object
+        b = owner.optimizer_for(0.005)  # different lr, params unchanged → same object
         assert a is b
-        assert builds == [0.01]  # built exactly once
+        assert trainer.builds == [0.01]  # built exactly once
+
+    def test_rebuilds_when_params_change(self):
+        """Weight-quant / pruning replace params each cycle; the owned optimizer
+        must rebuild so it never steps stale tensors (the GradScaler crash)."""
+        trainer = _OwnerTrainer()
+        owner = PersistentOptimizerOwner(trainer)
+        a = owner.optimizer_for(0.01)
+        trainer.model.replace_params()
+        b = owner.optimizer_for(0.01)
+        assert a is not b
+        assert len(trainer.builds) == 2
 
     def test_reset_drops_owned_optimizer(self):
-        class _T:
-            def build_step_optimizer(self, lr):
-                return _Sentinel()
-
-        owner = PersistentOptimizerOwner(_T())
+        trainer = _OwnerTrainer()
+        owner = PersistentOptimizerOwner(trainer)
         a = owner.optimizer_for(0.01)
         owner.reset()
         b = owner.optimizer_for(0.01)
