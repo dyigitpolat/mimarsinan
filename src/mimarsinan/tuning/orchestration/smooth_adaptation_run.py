@@ -5,8 +5,6 @@ from __future__ import annotations
 import time
 import warnings
 
-from mimarsinan.tuning.basic_interpolation import BasicInterpolation
-from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.tuning.trace import DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver
@@ -203,99 +201,33 @@ class SmoothAdaptationRunMixin(TunerBase):
             "pipeline_hard_floor": self._pipeline_hard_floor,
         })
 
-        if self.pipeline.config.get("tuning_use_driver", False):
-            return self._run_with_scheduler()
-
-        if not self._skip_one_shot:
-            self._before_cycle()
-            self._adaptation(1.0)
-            if self._committed_rate >= 1.0 - 1e-6:
-                self._natural_rate = self._committed_rate
-                self._phase_seconds["gradual"] = time.time() - self._run_t0
-                t_after = time.time()
-                result = self._after_run()
-                self._phase_seconds["after_run"] = time.time() - t_after
-                assert self._committed_rate >= 1.0 - 1e-6, (
-                    f"Tuning rate must reach 1.0 by the end of the step, "
-                    f"but _committed_rate is {self._committed_rate:.6f}"
-                )
-                t_stab = time.time()
-                self._stabilize_at_full_rate()
-                self._post_stabilization_hook()
-                self._phase_seconds["stabilization"] = time.time() - t_stab
-                self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
-                self.pipeline.reporter.report(f"{self.name} phase_seconds", self._phase_seconds)
-                self._log_cycle_summary()
-                return result
-
-        ms = min_step_for_smooth_adaptation(self.pipeline, self._budget)
-        max_cycles = min(30, max(
-            10,
-            self._budget.max_training_steps // max(1, self._budget.check_interval),
-        ))
-
-        adapter = SmartSmoothAdaptation(
-            self._adaptation,
-            interpolators=[BasicInterpolation(0.0, 1.0)],
-            get_target=self._get_target,
-            min_step=ms,
-            before_cycle=self._before_cycle,
-            # A requested gradual ladder can never be finer than the budget's
-            # min_step (else the loop would no-op and the coarse
-            # _continue_to_full_rate fallback would take over).
-            initial_step=max(ms, float(getattr(self, "_initial_ramp_step", 0.5))),
-            growth=float(getattr(self, "_ramp_step_growth", 1.5)),
-        )
-        adapter.adapt_smoothly(max_cycles=max_cycles)
-
-        if self._committed_rate < 1.0 - 1e-6:
-            self._continue_to_full_rate()
-
-        self._natural_rate = self._committed_rate
-        self._phase_seconds["gradual"] = time.time() - self._run_t0
-
-        if self._natural_rate < 1.0 - 1e-6:
-            import warnings
-            warnings.warn(
-                f"{self.__class__.__name__}: natural adaptation reached only "
-                f"{self._natural_rate:.4f}; _after_run will force to 1.0",
-                stacklevel=2,
-            )
-
-        t_after = time.time()
-        result = self._after_run()
-        self._phase_seconds["after_run"] = time.time() - t_after
-        assert self._committed_rate >= 1.0 - 1e-6, (
-            f"Tuning rate must reach 1.0 by the end of the step, "
-            f"but _committed_rate is {self._committed_rate:.6f}"
-        )
-        t_stab = time.time()
-        self._stabilize_at_full_rate()
-        self._post_stabilization_hook()
-        self._phase_seconds["stabilization"] = time.time() - t_stab
-        self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
-        self.pipeline.reporter.report(f"{self.name} phase_seconds", self._phase_seconds)
-        self._log_cycle_summary()
-        return result
+        return self._run_with_scheduler()
 
     def _run_with_scheduler(self):
-        """P4 driver path: one RateScheduler replaces one-shot + SSA + continue.
+        """The single rate-search loop: one RateScheduler replacing the legacy
+        one-shot + grow/halve ramp + continue-to-full-rate loops.
 
         Greedy-to-1.0 + bisect for the standard axes; a uniform ladder for the
-        ``_skip_one_shot`` (KD-blend) family. Reaches the same final committed
-        rate as the legacy loops (outcome equivalence) via a different,
-        re-baselined trajectory; the shared finalize + stabilization is reused.
+        ``_skip_one_shot`` (KD-blend) family. The shared finalize + stabilization
+        tail (``_finalize_run``) forces the rate to 1.0 and stabilizes.
         """
         ms = min_step_for_smooth_adaptation(self.pipeline, self._budget)
         max_cycles = min(30, max(
             10,
             self._budget.max_training_steps // max(1, self._budget.check_interval),
         ))
+        # The ladder uses its intended ramp step directly. The legacy
+        # ``max(ms, …)`` guard (against a no-op step finer than the budget min
+        # step) is no longer needed: the scheduler always attempts the first
+        # jump, so a sub-``epsilon`` ramp step still runs (epsilon only bounds
+        # the bisection). ``ms`` is an absurd ~1/3 for tiny models, which would
+        # otherwise coarsen the KD-blend ramp past its committable foothold.
+        initial_step = float(getattr(self, "_initial_ramp_step", 0.5))
         scheduler = AdaptationDriver.build_scheduler(
             epsilon=ms,
             max_rounds=max_cycles,
             skip_one_shot=getattr(self, "_skip_one_shot", False),
-            initial_step=max(ms, float(getattr(self, "_initial_ramp_step", 0.5))),
+            initial_step=initial_step,
             sensitivity_stepping=self.pipeline.config.get("tuning_sensitivity_stepping", False),
         )
         driver = AdaptationDriver(

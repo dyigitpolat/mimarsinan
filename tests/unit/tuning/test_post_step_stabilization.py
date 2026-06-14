@@ -218,9 +218,10 @@ class TestStabilizationIntegrationWithRun:
     rate=1.0 model, not the partial-rate model."""
 
     def test_run_source_calls_stabilize_after_after_run(self):
-        source = inspect.getsource(SmoothAdaptationTuner.run)
+        # The shared finalize tail (driver path) owns the after_run → stabilize order.
+        source = inspect.getsource(SmoothAdaptationTuner._finalize_run)
         assert "_stabilize_at_full_rate" in source, (
-            "run() must invoke _stabilize_at_full_rate"
+            "_finalize_run must invoke _stabilize_at_full_rate"
         )
         after_run_idx = source.index("_after_run")
         stabilize_idx = source.index("_stabilize_at_full_rate")

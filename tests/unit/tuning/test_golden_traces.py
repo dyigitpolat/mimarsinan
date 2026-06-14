@@ -91,8 +91,9 @@ def test_golden_run_one_shot_success(tmp_path, deterministic_rng):
     )
 
 
-def test_golden_run_ssa_ramp(tmp_path, deterministic_rng):
-    # One-shot at 1.0 catastrophically fails → SmartSmoothAdaptation ramp runs.
+def test_golden_run_driver_ramp(tmp_path, deterministic_rng):
+    # Greedy attempt at 1.0 catastrophically fails → the driver bisects into the
+    # cliff (greedy-to-gap + bisect), climbing monotonically toward 1.0.
     tuner = make_scripted_run_tuner(
         _pipeline(tmp_path), make_tiny_supermodel(),
         instant_fn=lambda r: 0.1 if r >= 0.99 else 0.85,
@@ -101,10 +102,10 @@ def test_golden_run_ssa_ramp(tmp_path, deterministic_rng):
     tuner.run()
     assert tuner._committed_rate >= 1.0 - 1e-6
     outcomes = [r.outcome for r in tuner._cycle_log.records]
-    assert outcomes[0] == "catastrophic"  # the failed one-shot
+    assert outcomes[0] == "catastrophic"  # the failed greedy one-shot
     assert "commit" in outcomes
     assert_trace_matches(
-        tuner._cycle_log, os.path.join(_GOLDEN_DIR, "run_ssa_ramp.json")
+        tuner._cycle_log, os.path.join(_GOLDEN_DIR, "run_driver_ramp.json")
     )
 
 

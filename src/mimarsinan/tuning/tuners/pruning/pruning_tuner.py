@@ -1,4 +1,4 @@
-"""PruningTuner: structured pruning using SmartSmoothAdaptation."""
+"""PruningTuner: structured pruning driven by the rate scheduler."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from mimarsinan.transformations.pruning import (
     apply_pruning_masks,
     collect_activation_stats as _collect_activation_stats,
 )
+from mimarsinan.tuning.axes import PruningAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.tuners.pruning.pruning_tuner_enforce import (
     enforce_pruning_persistently,
@@ -48,14 +49,10 @@ class PruningTuner(SmoothAdaptationTuner):
         self._persistent_pruned_rows: list[set] = []
         self._persistent_pruned_cols: list[set] = []
 
-        self._axis = None
-        if pipeline.config.get("tuning_use_axis", False):
-            from mimarsinan.tuning.axes import PruningAxis
-
-            self._axis = PruningAxis(
-                self._apply_masks, recovery_hooks_fn=self._recovery_training_hooks
-            )
-            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+        self._axis = PruningAxis(
+            self._apply_masks, recovery_hooks_fn=self._recovery_training_hooks
+        )
+        self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
     def _get_masks(self, rate):
         return get_masks(self, rate)
@@ -92,10 +89,7 @@ class PruningTuner(SmoothAdaptationTuner):
             )
 
     def _update_and_evaluate(self, rate):
-        if getattr(self, "_axis", None) is not None:
-            self._axis.set_rate(rate)
-        else:
-            self._apply_masks(rate)
+        self._axis.set_rate(rate)
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _recovery_training_hooks(self, rate):

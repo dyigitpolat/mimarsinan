@@ -14,9 +14,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.tuning.axes import BlendAxis
 from mimarsinan.tuning.forward_install import CascadeForwardInstall, LazyExecutorForward
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
-from mimarsinan.tuning.perceptron_rate import rebuild_activations, set_blend_rate
+from mimarsinan.tuning.perceptron_rate import rebuild_activations
 from mimarsinan.tuning.teacher import freeze_module, snapshot_frozen_teacher
 
 # Back-compat alias: the LIF/TTFS finalize forwards subclass this name.
@@ -86,7 +87,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     _target_activation_type = "Target"
     _old_activation_type = "ReLU"
 
-    # SmartSmoothAdaptation philosophy: the ANN->SNN activation ramp must be
+    # Gradual-ramp philosophy: the ANN->SNN activation ramp must be
     # genuinely gradual — many small committed increments, each recovered by
     # training DURING the ramp. No one-shot jump to rate 1.0 (which relabels
     # the recovery as "stabilization"), and a small uniform ladder instead of
@@ -112,15 +113,11 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         self.trainer.loss_function = self._make_kd_loss()
         self._after_install_blend()
 
-        # P1 flag: route blend-rate application through a BlendAxis (delegates to
-        # the same set_blend_rate SSOT — byte-identical). finalize stays on this
-        # tuner's inherited _finalize (parity-critical forward-install).
-        self._axis = None
-        if pipeline.config.get("tuning_use_axis", False):
-            from mimarsinan.tuning.axes import BlendAxis
-
-            self._axis = BlendAxis()
-            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+        # Blend-rate application is owned by a BlendAxis (delegates to the
+        # set_blend_rate SSOT). finalize stays on this tuner's inherited
+        # _finalize (parity-critical forward-install), never on the axis.
+        self._axis = BlendAxis()
+        self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
     # ── Hooks (subclasses customize) ─────────────────────────────────────────
 
@@ -220,26 +217,14 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
             self._wrap_encoding_input(perceptron)
 
-    def _get_rates(self) -> list[float]:
-        return [p.base_activation.rate for p in self.model.get_perceptrons()]
-
     def _set_rate(self, rate: float) -> None:
-        if getattr(self, "_axis", None) is not None:
-            self._axis.set_rate(rate)
-            return
-        set_blend_rate(self.model, rate)
+        self._axis.set_rate(rate)
 
     def _get_extra_state(self):
-        if getattr(self, "_axis", None) is not None:
-            return self._axis.get_extra_state()
-        return self._get_rates()
+        return self._axis.get_extra_state()
 
     def _set_extra_state(self, extra):
-        if getattr(self, "_axis", None) is not None:
-            self._axis.set_extra_state(extra)
-            return
-        for p, r in zip(self.model.get_perceptrons(), extra):
-            p.base_activation.rate = float(r)
+        self._axis.set_extra_state(extra)
 
     def _update_and_evaluate(self, rate: float):
         self._set_rate(rate)

@@ -5,10 +5,6 @@ from __future__ import annotations
 import time
 import warnings
 
-from mimarsinan.tuning.learning_rate_explorer import (
-    clone_state_for_trainer,
-    restore_state_for_trainer,
-)
 from mimarsinan.tuning.trace import DecisionRecord, DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.checkpoint_guard import CheckpointGuard
@@ -30,13 +26,14 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     def __init__(self, pipeline, model, target_accuracy, lr):
         super().__init__(pipeline, model, target_accuracy, lr)
-        self._checkpoint_guard = None
-        if pipeline.config.get("tuning_use_checkpoint_guard", False):
-            self._checkpoint_guard = CheckpointGuard(
-                self.trainer,
-                scope=pipeline.config.get("checkpoint_scope", "full"),
-                location=pipeline.config.get("checkpoint_location", "device"),
-            )
+        # Per-cycle rollback snapshots are owned by CheckpointGuard. The default
+        # scope/location ("full"/"device") delegate verbatim to the trainer-state
+        # clone; "tunable"/"cpu_pinned" are scaling opt-ins (test_checkpoint_guard).
+        self._checkpoint_guard = CheckpointGuard(
+            self.trainer,
+            scope=pipeline.config.get("checkpoint_scope", "full"),
+            location=pipeline.config.get("checkpoint_location", "device"),
+        )
         self._committed_rate = 0.0
         self._natural_rate = 0.0
         self._pipeline_tolerance = float(
@@ -57,7 +54,10 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._global_budget = float(pipeline.config.get("global_budget", 0.005))
         self._confirm_indices = None
         self._ref_correct = None
-        # P6a: cache only the fixed decision subsample on the device (W8 scale fix).
+        # Opt-in (``tuning_subsample_val_cache``, the W8 ImageNet-scale fix): cache
+        # only the fixed decision subsample on the device instead of the whole
+        # validation set. Default-off keeps the full-set cache (representative on
+        # small datasets; the bounded cursor would otherwise wrap a tiny subset).
         if pipeline.config.get("tuning_subsample_val_cache", False):
             self.trainer._val_cache_max_batches = self._budget.eval_n_batches
             self.trainer._gpu_val_cache = None  # rebuild capped on next eval
@@ -90,19 +90,11 @@ class SmoothAdaptationCycleMixin(TunerBase):
         """Override to restore tuner-specific state."""
 
     def _clone_state(self):
-        guard = getattr(self, "_checkpoint_guard", None)
-        if guard is not None:
-            return (guard.snapshot(), self._get_extra_state())
-        model_state = clone_state_for_trainer(self.trainer)
-        return (model_state, self._get_extra_state())
+        return (self._checkpoint_guard.snapshot(), self._get_extra_state())
 
     def _restore_state(self, state):
         model_state, extra = state
-        guard = getattr(self, "_checkpoint_guard", None)
-        if guard is not None:
-            guard.restore(model_state)
-        else:
-            restore_state_for_trainer(self.trainer, model_state)
+        self._checkpoint_guard.restore(model_state)
         if extra is not None:
             self._set_extra_state(extra)
 
@@ -124,8 +116,11 @@ class SmoothAdaptationCycleMixin(TunerBase):
     _supports_persistent_optimizer = True
 
     def _optimizer_policy(self):
-        """Recovery optimizer policy; persist requires the opt-in flag and a
-        param-stable tuner family."""
+        """Recovery optimizer policy. Default resets each cycle (bit-exact fresh
+        build). The ``tuning_persist_optimizer`` opt-in persists Adam moments
+        across the LR sweep / recovery within a cycle — except for tuner families
+        whose recovery replaces the parameter set (``_supports_persistent_optimizer
+        = False``), which always reset."""
         if not getattr(self, "_supports_persistent_optimizer", True):
             return RESET_PER_CYCLE
         persist = bool(self.pipeline.config.get("tuning_persist_optimizer", False))

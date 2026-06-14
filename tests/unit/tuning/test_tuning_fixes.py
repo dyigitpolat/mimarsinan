@@ -183,6 +183,8 @@ class TestEnsurePipelineThreshold:
         tuner._cached_lr = 0.001
         tuner.trainer = MagicMock()
         tuner.trainer.validate_n_batches.side_effect = [0.80, 0.88]
+        from mimarsinan.tuning.orchestration.checkpoint_guard import CheckpointGuard
+        tuner._checkpoint_guard = CheckpointGuard(tuner.trainer)
 
         tuner._find_lr = MagicMock(return_value=0.001)
 

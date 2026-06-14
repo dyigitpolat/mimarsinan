@@ -189,9 +189,10 @@ class TestCascadedGradualRamp:
         torch.manual_seed(7)
         _seed_ttfs_cycle_step(mock_pipeline, schedule="cascaded")
         step = _run_step(mock_pipeline)
-        assert step.tuner._natural_rate > 0.0, (
+        committed = [r.rate for r in step.tuner._cycle_log.records if r.outcome == "commit"]
+        assert committed and max(committed) > 0.0, (
             "Cascaded adaptation made no natural blend progress — the rate-pin "
-            "regression."
+            "regression (rate pinned at 0)."
         )
 
     def test_cascaded_default_ramp_is_value_domain(self, mock_pipeline):
@@ -253,9 +254,10 @@ class TestSynchronizedAdaptation:
         torch.manual_seed(7)
         _seed_ttfs_cycle_step(mock_pipeline, schedule="synchronized")
         step = _run_step(mock_pipeline)
-        assert step.tuner._natural_rate > 0.0, (
+        committed = [r.rate for r in step.tuner._cycle_log.records if r.outcome == "commit"]
+        assert committed and max(committed) > 0.0, (
             "Synchronized adaptation made no natural blend progress — the "
-            "incident's cascade-objective signature."
+            "incident's cascade-objective signature (rate pinned at 0)."
         )
 
 

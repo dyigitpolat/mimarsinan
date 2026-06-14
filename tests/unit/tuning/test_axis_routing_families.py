@@ -94,13 +94,12 @@ def test_activation_shift_axis_not_smooth():
     assert ActivationShiftAxis(lambda: None).supports_smooth is False
 
 
-def test_real_tuner_builds_axis_when_flagged(tmp_path):
+def test_real_tuner_builds_axis(tmp_path):
     from mimarsinan.tuning.tuners.activation_adaptation_tuner import (
         ActivationAdaptationTuner,
     )
 
     cfg = default_config()
-    cfg["tuning_use_axis"] = True
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     model = make_tiny_supermodel()
     manager = create_adaptation_manager_for_model(cfg, model)

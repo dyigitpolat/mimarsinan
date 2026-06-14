@@ -7,6 +7,7 @@ step-budgeted training. Not a smooth adaptation -- extends TunerBase directly.
 import torch
 
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.tuning.axes import ActivationShiftAxis
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import TunerBase
 
@@ -23,12 +24,8 @@ class ActivationShiftTuner(TunerBase):
         )
         self._final_metric = None
         self.name = "Shift Recovery"
-        self._axis = None
-        if pipeline.config.get("tuning_use_axis", False):
-            from mimarsinan.tuning.axes import ActivationShiftAxis
-
-            self._axis = ActivationShiftAxis(self._apply_shift)
-            self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+        self._axis = ActivationShiftAxis(self._apply_shift)
+        self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
     def _apply_shift(self):
         config = self.pipeline.config
@@ -60,10 +57,7 @@ class ActivationShiftTuner(TunerBase):
         return self.trainer.validate()
 
     def run(self):
-        if getattr(self, "_axis", None) is not None:
-            self._axis.set_rate(1.0)
-        else:
-            self._apply_shift()
+        self._axis.set_rate(1.0)
         self.pipeline.reporter.report(self.name, 1.0)
         self.pipeline.reporter.report("Adaptation target", self._get_target())
 

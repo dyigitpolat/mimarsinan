@@ -1,15 +1,16 @@
-"""Adapters for the ``AdaptationManager`` rate-field family (zero behavior change).
+"""Adapters for the ``AdaptationManager`` rate-field family.
 
-These wrap the ``AdaptationRateTuner`` mechanism: ``set_rate`` delegates to the
-``perceptron_rate.apply_manager_rate`` SSOT (set one manager field, rebuild every
-perceptron's decorator stack), so the axis path is byte-identical to today's
-``AdaptationRateTuner._apply_rate``. State carriage is the single manager float.
+By default ``set_rate`` delegates to the ``perceptron_rate.apply_manager_rate`` SSOT
+(set one manager field, rebuild every perceptron's decorator stack), so the axis
+path is byte-identical to ``AdaptationRateTuner._apply_rate``. State carriage is the
+single manager float.
 
-Under ``tuning_inplace_rate`` (P5a), ``RateAdjustedDecorator``-backed rates instead
+Under the ``tuning_inplace_rate`` opt-in, ``RateAdjustedDecorator``-backed rates
+(``quantization_rate`` / ``clamp_rate`` / ``activation_adaptation_rate``) instead
 drive a shared in-place ``RateBuffer``: the stack is built once, then a ramp step is
-an O(1) buffer write. The path is output- and RNG-conformant with the rebuild path
+an O(1) buffer write. That path is output- and RNG-conformant with the rebuild path
 (see ``test_rate_buffer``); ``NoisyDropout``-backed rates (``noise_rate``) are not
-decorator-driven, so they keep the rebuild path regardless of the flag.
+decorator-driven, so they keep the rebuild path regardless.
 """
 
 from __future__ import annotations
@@ -44,6 +45,9 @@ class ManagerRateAxis(AdaptationAxisBase):
         self._inplace_installed = False
 
     def _inplace_enabled(self) -> bool:
+        # Opt-in (``tuning_inplace_rate``): RateAdjustedDecorator-backed rates
+        # drive a shared in-place RateBuffer (build the stack once, then O(1)
+        # writes); the default rebuild path stays the byte-for-byte SSOT.
         config = getattr(self, "_config", None)
         if not config or not config.get("tuning_inplace_rate", False):
             return False

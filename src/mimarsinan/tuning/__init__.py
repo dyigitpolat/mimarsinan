@@ -1,7 +1,6 @@
 """Training-aware tuning: adaptation management and smooth adaptation framework."""
 
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
-from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
 from mimarsinan.tuning.learning_rate_explorer import LRRangeFinder
 from mimarsinan.tuning.per_layer_schedule import (
     LinearPerLayerSchedule,

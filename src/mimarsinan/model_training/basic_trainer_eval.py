@@ -17,10 +17,10 @@ def _build_gpu_val_cache(trainer):
     # ``.clone()`` is load-bearing: FFCV's IndexedLoader yields views into a
     # small rotating buffer pool, so aliased references silently corrupt
     # cached batches once the pool wraps.
-    # ``_val_cache_max_batches`` (tuning P6a, ``tuning_subsample_val_cache``)
-    # caps the cache to the fixed decision subsample instead of materializing the
-    # whole validation set on the device — the one change that makes the cache
-    # safe on ImageNet-scale val sets. The decision cursor rotates within it.
+    # ``_val_cache_max_batches`` (set by the tuning cycle) caps the cache to the
+    # fixed decision subsample instead of materializing the whole validation set
+    # on the device — the one change that makes the cache safe on ImageNet-scale
+    # val sets. The decision cursor rotates within it.
     max_batches = getattr(trainer, "_val_cache_max_batches", None)
     cache = []
     for i, (x, y) in enumerate(trainer.validation_loader):

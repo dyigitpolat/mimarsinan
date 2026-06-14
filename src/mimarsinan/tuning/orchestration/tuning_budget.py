@@ -153,7 +153,7 @@ def tuning_budget_from_pipeline(pipeline) -> TuningBudget:
 
 
 def max_total_training_steps(pipeline) -> int:
-    """Upper bound on gradient steps for full ``training_epochs`` (for ``SmartSmoothAdaptation`` ``min_step``).
+    """Upper bound on gradient steps for full ``training_epochs`` (the rate scheduler's ``epsilon`` min step).
 
     Intentionally keyed to the *training* batch size — this is the upper
     bound of a full training run, not the tuning budget, so it must not
@@ -167,7 +167,15 @@ def max_total_training_steps(pipeline) -> int:
     return max(1, te * spe)
 
 
+_MAX_MIN_STEP = 0.05  # a min adaptation step coarser than 5% is never sensible
+
+
 def min_step_for_smooth_adaptation(pipeline, budget: TuningBudget) -> float:
-    """``max(0.001, budget.check_interval / max_total_training_steps)``."""
+    """``check_interval / max_total_training_steps``, clamped to ``[0.001, 0.05]``.
+
+    The upper clamp matters for tiny models (few training steps), where the raw
+    ratio can reach ~1/3 — far too coarse a rate-search resolution for the
+    scheduler to bisect into a committable foothold.
+    """
     m = max_total_training_steps(pipeline)
-    return max(0.001, float(budget.check_interval) / float(m))
+    return min(_MAX_MIN_STEP, max(0.001, float(budget.check_interval) / float(m)))
