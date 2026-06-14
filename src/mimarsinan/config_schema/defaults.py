@@ -79,6 +79,11 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # Loss-slope coarse LR signal (opt-in, P6e): rank the LR sweep by a cheap
     # training loss-slope, reserving full validation for the top candidates.
     "tuning_loss_slope_lr": False,
+    # Diagnostic (default off): after each commit, probe the value-domain
+    # rate-1.0 accuracy and report whether the gradual ramp's full-transform
+    # drop shrinks as the committed rate climbs (is the ramp converging the
+    # model toward 1.0-viability, or just inching the rate up?).
+    "tuning_full_transform_probe": False,
     # Interleaved multi-axis continuation (opt-in, P7; research-grade; the
     # value-domain guard keeps it away from LIF/TTFS finalize).
     "interleave_axes": False,
@@ -175,6 +180,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_sensitivity_stepping",
     "tuning_inplace_rate",
     "tuning_loss_slope_lr",
+    "tuning_full_transform_probe",
     "interleave_axes",
     "finetune_epochs",
     "finetune_lr",
