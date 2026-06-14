@@ -79,3 +79,34 @@ class AcceptanceSensor:
     @staticmethod
     def reached_target(post_acc, target, rollback_tolerance) -> bool:
         return post_acc >= target - rollback_tolerance
+
+    # ── Paired McNemar gate (P2b, behind tuning_use_paired_sensor) ────────────
+    # Reference and candidate are evaluated on the SAME fixed examples, so only
+    # discordant pairs carry information — a several-fold tighter SE than the
+    # marginal 0.5/sqrt(n), which lets the rollback tolerance shrink (spec §6.2).
+
+    @staticmethod
+    def paired_drop_se(ref_correct, cand_correct):
+        """McNemar drop estimate and its SE from per-example correctness.
+
+        ``ref_correct``/``cand_correct`` are length-N boolean sequences over the
+        same examples. Returns ``(delta_hat, se)`` where positive ``delta_hat``
+        is the candidate's accuracy drop: ``(b10 - b01)/N``, ``sqrt(b10+b01)/N``
+        with ``b10`` = ref-right-cand-wrong, ``b01`` = ref-wrong-cand-right.
+        """
+        ref = [bool(v) for v in ref_correct]
+        cand = [bool(v) for v in cand_correct]
+        n = len(ref)
+        if n == 0 or len(cand) != n:
+            return 0.0, 0.0
+        b10 = sum(1 for r, c in zip(ref, cand) if r and not c)
+        b01 = sum(1 for r, c in zip(ref, cand) if (not r) and c)
+        delta = (b10 - b01) / n
+        se = (b10 + b01) ** 0.5 / n
+        return delta, se
+
+    @classmethod
+    def paired_is_rollback(cls, ref_correct, cand_correct, k_commit):
+        """Reject iff the paired drop exceeds ``k_commit`` standard errors."""
+        delta, se = cls.paired_drop_se(ref_correct, cand_correct)
+        return delta > k_commit * se

@@ -63,6 +63,12 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # _continue_to_full_rate loops with a single RateScheduler. Reaches the same
     # final committed rate (outcome equivalence); trajectory is re-baselined.
     "tuning_use_driver": False,
+    # Tuning refactor flags (P2b): paired McNemar rollback gate vs the fixed
+    # baseline on a shared example subsample (tighter SE than marginal). Behavior-
+    # changing; Monte-Carlo-calibrated; trajectory re-baselined when flipped.
+    "tuning_use_paired_sensor": False,
+    "k_commit": 2.0,
+    "paired_confirm_batches": 0,  # 0 → use eval_n_batches
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -150,6 +156,9 @@ CONFIG_KEYS_SET: Set[str] = {
     "checkpoint_scope",
     "checkpoint_location",
     "tuning_use_driver",
+    "tuning_use_paired_sensor",
+    "k_commit",
+    "paired_confirm_batches",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",

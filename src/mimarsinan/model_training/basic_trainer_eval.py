@@ -36,6 +36,29 @@ def iter_validation_batches(trainer, n_batches: int):
         trainer._gpu_val_cursor += 1
 
 
+def validate_correctness_on_indices(trainer, batch_indices):
+    """Per-example correctness (bool list) over fixed VALIDATION-cache batches.
+
+    Reads only the validation cache (never the test set — preserves test-set
+    isolation), evaluating the SAME examples each call so reference and candidate
+    are paired (spec §6.2). ``batch_indices`` index into the cached batch list.
+    """
+    if getattr(trainer, "_gpu_val_cache", None) is None:
+        _build_gpu_val_cache(trainer)
+    cache = trainer._gpu_val_cache
+    if not cache:
+        return []
+    trainer.model.eval()
+    correct: list[bool] = []
+    with torch.no_grad(), _eval_autocast(trainer.device):
+        for idx in batch_indices:
+            x, y = cache[idx % len(cache)]
+            x, y = x.to(trainer.device), y.to(trainer.device)
+            _, predicted = trainer.model(x).max(1)
+            correct.extend(bool(v) for v in predicted.eq(y).tolist())
+    return correct
+
+
 def test(trainer, max_batches: int | None = None):
     total = 0
     correct = 0

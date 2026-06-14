@@ -181,6 +181,16 @@ class SmoothAdaptationRunMixin(TunerBase):
 
         self._validation_baseline = baseline_val
 
+        # P2b: capture the fixed-baseline correctness vector for the paired gate,
+        # on the original (rate-0) model over a shared confirm subsample.
+        if getattr(self, "_paired_gate", False):
+            n_conf = int(self.pipeline.config.get("paired_confirm_batches", 0)) \
+                or self._budget.eval_n_batches
+            self._confirm_indices = list(range(int(n_conf)))
+            self._ref_correct = self.trainer.validate_correctness_on_indices(
+                self._confirm_indices
+            )
+
         self.pipeline.reporter.report("BUDGET", {
             "max_training_steps": self._budget.max_training_steps,
             "check_interval": self._budget.check_interval,

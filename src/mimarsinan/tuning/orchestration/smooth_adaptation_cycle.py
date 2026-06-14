@@ -45,6 +45,12 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._validation_baseline = None
         self._cycle_log = DecisionTrace.new()
         self._cached_lr = None
+        # P2b paired-McNemar rollback gate (vs the fixed baseline correctness
+        # vector on a shared confirm subsample); off unless flagged.
+        self._paired_gate = bool(pipeline.config.get("tuning_use_paired_sensor", False))
+        self._k_commit = float(pipeline.config.get("k_commit", 2.0))
+        self._confirm_indices = None
+        self._ref_correct = None
 
     def _update_and_evaluate(self, rate):
         """Apply transformation T at *rate* and return a validation metric."""
@@ -160,7 +166,14 @@ class SmoothAdaptationCycleMixin(TunerBase):
         rollback_threshold = AcceptanceSensor.rollback_threshold(
             pre_cycle_acc, noise_margin, absolute_floor
         )
-        if AcceptanceSensor.is_rollback(post_acc, rollback_threshold):
+        if getattr(self, "_paired_gate", False) and self._ref_correct is not None:
+            cand_correct = self.trainer.validate_correctness_on_indices(self._confirm_indices)
+            rolled_back = AcceptanceSensor.paired_is_rollback(
+                self._ref_correct, cand_correct, self._k_commit
+            )
+        else:
+            rolled_back = AcceptanceSensor.is_rollback(post_acc, rollback_threshold)
+        if rolled_back:
             self._restore_state(pre_state)
             if hasattr(self, "_cycle_log"): self._cycle_log.record(DecisionRecord(
                 cycle_index=len(self._cycle_log),
