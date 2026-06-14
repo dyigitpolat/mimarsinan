@@ -12,6 +12,7 @@ from mimarsinan.tuning.basic_interpolation import BasicInterpolation
 from mimarsinan.tuning.learning_rate_explorer import (
     clone_state_for_trainer,
     find_lr_range_for_trainer,
+    make_loss_slope_signal,
     restore_state_for_trainer,
 )
 from mimarsinan.tuning.smart_smooth_adaptation import SmartSmoothAdaptation
@@ -83,6 +84,9 @@ class TunerBase:
             self.trainer.close()
 
     def _find_lr(self):
+        coarse_signal = None
+        if self.pipeline.config.get("tuning_loss_slope_lr", False):
+            coarse_signal = make_loss_slope_signal(self.trainer)
         with self.trainer.validation_context("probe"):
             return find_lr_range_for_trainer(
                 self.trainer,
@@ -92,6 +96,7 @@ class TunerBase:
                     self._budget.progress_eval_batches
                 ),
                 anchor_lr=self.pipeline_lr,
+                coarse_signal=coarse_signal,
             )
 
     def _get_cached_lr(self):
