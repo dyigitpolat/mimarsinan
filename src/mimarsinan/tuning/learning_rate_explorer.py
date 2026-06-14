@@ -59,6 +59,8 @@ class LRRangeFinder:
         validate_fn: Callable[[], float],
         max_total_steps: int | None = None,
         margin: float = 0.005,
+        coarse_signal: Callable[[], float] | None = None,
+        coarse_top_k: int = 3,
     ):
         self.trainer = trainer
         self.clone_state = clone_state
@@ -70,8 +72,26 @@ class LRRangeFinder:
         self.validate_fn = validate_fn
         self.max_total_steps = max_total_steps
         self.margin = float(margin)
+        self.coarse_signal = coarse_signal
+        self.coarse_top_k = max(1, int(coarse_top_k))
+
+    def _probe_lr(self, i: int) -> float:
+        return self.lr_min * (self.lr_max / self.lr_min) ** (
+            i / max(1, self.num_probes - 1)
+        )
+
+    def _select(self, lrs, accs, baseline) -> float:
+        threshold = baseline - self.margin
+        non_destructive = [
+            (lr, acc) for lr, acc in zip(lrs, accs) if acc >= threshold
+        ]
+        if non_destructive:
+            return max(non_destructive, key=lambda x: x[0])[0]
+        return max(zip(lrs, accs), key=lambda x: x[1])[0]
 
     def find_best_lr(self) -> float:
+        if self.coarse_signal is not None:
+            return self._find_best_lr_coarse()
         state = self.clone_state()
         try:
             baseline = float(self.validate_fn())
@@ -81,9 +101,7 @@ class LRRangeFinder:
             cumulative_steps = 0
             for i in range(self.num_probes):
                 self.restore_state(state)
-                lr = self.lr_min * (self.lr_max / self.lr_min) ** (
-                    i / max(1, self.num_probes - 1)
-                )
+                lr = self._probe_lr(i)
                 self.trainer.train_n_steps(lr, self.steps_per_probe, constant_lr=True)
                 cumulative_steps += self.steps_per_probe
                 acc = float(self.validate_fn())
@@ -95,18 +113,71 @@ class LRRangeFinder:
                 if self.max_total_steps and cumulative_steps >= self.max_total_steps:
                     break
 
-            threshold = baseline - self.margin
-            non_destructive = [
-                (lr, acc) for lr, acc in zip(lrs, accs) if acc >= threshold
-            ]
-            if non_destructive:
-                return max(non_destructive, key=lambda x: x[0])[0]
-            return max(zip(lrs, accs), key=lambda x: x[1])[0]
+            return self._select(lrs, accs, baseline)
         finally:
             self.restore_state(state)
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
+    def _find_best_lr_coarse(self) -> float:
+        """Cheap loss-slope coarse pass; full validation only for the top-K.
+
+        Every probe is scored by ``coarse_signal`` (lower = better, a
+        training-loss / loss-slope signal); only the ``coarse_top_k`` best
+        candidates by that signal pay a full ``validate_fn`` call.  The
+        final selection reuses the largest-non-destructive heuristic over
+        the validated candidates.  Restore-after-probe and the lr range
+        are identical to the full-validation path.
+        """
+        state = self.clone_state()
+        try:
+            baseline = float(self.validate_fn())
+
+            signals: list[float] = []
+            lrs: list[float] = []
+            cumulative_steps = 0
+            for i in range(self.num_probes):
+                self.restore_state(state)
+                lr = self._probe_lr(i)
+                self.trainer.train_n_steps(lr, self.steps_per_probe, constant_lr=True)
+                cumulative_steps += self.steps_per_probe
+                signals.append(float(self.coarse_signal()))
+                lrs.append(float(lr))
+                if self.max_total_steps and cumulative_steps >= self.max_total_steps:
+                    break
+
+            order = sorted(range(len(lrs)), key=lambda j: signals[j])
+            top = sorted(order[: self.coarse_top_k])
+
+            fine_lrs: list[float] = []
+            fine_accs: list[float] = []
+            for j in top:
+                self.restore_state(state)
+                self.trainer.train_n_steps(
+                    lrs[j], self.steps_per_probe, constant_lr=True
+                )
+                fine_lrs.append(lrs[j])
+                fine_accs.append(float(self.validate_fn()))
+
+            return self._select(fine_lrs, fine_accs, baseline)
+        finally:
+            self.restore_state(state)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+
+
+def make_loss_slope_signal(trainer) -> Callable[[], float]:
+    """Cheap 'lower is better' coarse LR score: training-batch loss.
+
+    Used by the ``tuning_loss_slope_lr`` coarse pass to rank probes by a
+    single forward-pass loss (no validation sweep).  Reads one fresh
+    training batch per call; never touches the test set.
+    """
+    def signal() -> float:
+        return float(trainer.evaluate_loss_on_batch(trainer.next_training_batch()))
+
+    return signal
 
 
 def find_lr_range_for_trainer(
@@ -116,6 +187,7 @@ def find_lr_range_for_trainer(
     *,
     validate_fn: Callable[[], float],
     anchor_lr: float | None = None,
+    coarse_signal: Callable[[], float] | None = None,
 ) -> float:
     """Run :class:`LRRangeFinder` with budget-derived probe parameters.
 
@@ -123,6 +195,11 @@ def find_lr_range_for_trainer(
     (one order of magnitude each direction) instead of spanning the full
     config range.  This keeps probes relevant when ``pipeline_lr`` is far
     from the default ``[1e-5, 1e-1]`` band (e.g. ImageNet at 1e-4).
+
+    When *coarse_signal* is provided the sweep scores every probe by that
+    cheap signal and reserves full ``validate_fn`` scoring for the top
+    candidates (see :meth:`LRRangeFinder._find_best_lr_coarse`); ``None``
+    keeps the full-validation behavior unchanged.
     """
     cfg = pipeline.config
     if anchor_lr is not None:
@@ -145,4 +222,5 @@ def find_lr_range_for_trainer(
         validate_fn=validate_fn,
         max_total_steps=budget.max_lr_exploration_steps,
         margin=margin,
+        coarse_signal=coarse_signal,
     ).find_best_lr()

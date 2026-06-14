@@ -8,13 +8,16 @@ heterogeneous axis profiles before any expensive real run.
 
 | File | Purpose |
 |------|---------|
-| `mock_axis_zoo.py` | Analytic `attempt(target) -> committed` surfaces spanning the profile space: `smooth_monotone`, `cliff`, `plateau_then_drop`, `recovery_limited`, `adversarial_timing`, `non_monotone`. |
-| `test_controller_invariants.py` | Runs `RateScheduler` over each archetype and asserts: lands within the feasible edge (never commits past it, I1), monotone committed progress (I2), bounded probe count, partial-result on recovery-limited, and `last_successful_step` parity. |
+| `mock_axis_zoo.py` | Analytic `attempt(target) -> committed` surfaces: `smooth_monotone`, `cliff`, `plateau_then_drop`, `recovery_limited`, `adversarial_timing`, `non_monotone`. |
+| `test_controller_invariants.py` | RateScheduler over each archetype: lands within the feasible edge (I1), monotone progress (I2), bounded probes, partial-result on recovery-limited, `last_successful_step` parity. |
+| `test_multi_axis.py` | `MultiAxisDriver`/`VectorRateScheduler` (P7): each axis reaches its edge, monotone committed vector, value-domain guard rejects non-value-domain axes. |
+| `test_metamorphic.py` | IV.5 relations without ground truth: reducing ε weakly increases committed for a cliff; one-shot never commits past a cliff; larger N shrinks paired SE; tightening k never turns reject→accept; same config → identical trajectory. |
+| `test_determinism.py` | IV.8: `rng_snapshot`/`deterministic_rng` restore RNG around a probe; a fixed-seed scripted tuner replays an identical `DecisionTrace` (I6). |
+| `test_chaos_rollback.py` | IV.6: forced recovery divergence → exact bitwise restore; `CheckpointGuard.bracket()` restore; non-monotone surface still terminates (dense-grid safe mode is the future V9 handling). |
+| `test_axis_conformance.py` | IV.4: spec-14.1 over the ManagerRate family + BlendAxis — set_rate(0)==identity/reversible, idempotent attach, stable descriptor, state round-trip, set_decision_seed no-op. |
 
-## Remaining (report Part IV, not yet built)
+## Remaining (report Part IV)
 
-`test_sensor_montecarlo.py` (IV.3 — see `tests/unit/tuning/test_paired_sensor_calibration.py`
-for the paired-gate calibration already landed), `test_axis_conformance.py`
-(IV.4 — partial coverage in `tests/unit/tuning/test_adaptation_axis_conformance.py`),
-`test_metamorphic.py` (IV.5), `test_chaos_rollback.py` (IV.6),
-`test_perf_gates.py` (IV.7), `test_determinism.py` (IV.8).
+`test_perf_gates.py` (IV.7 — checkpoint bytes / LR wall-clock / probe-count /
+peak VRAM budgets on the ViT integration probe). The paired-gate Monte-Carlo
+(IV.3) lives at `tests/unit/tuning/test_paired_sensor_calibration.py`.
