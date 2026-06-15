@@ -43,6 +43,30 @@ walk a FIXED rate schedule (``ttfs_blend_fast_rates``) a FIXED number of steps e
 ``CE((1-R)*teacher + R*genuine) + 0.3*CE(genuine)`` (the validated prototype), then
 runs the same finalize (pure genuine cascade). No adaptation cycles, no RecoveryEngine,
 no rollback clone/restore, no stabilization pass, no per-cycle LR find.
+
+INVARIANT CORE vs OPTIONAL CONTROLLER (the line the fast hack must not cross).
+The genuine gradual-tuning *contract* (pinned in
+``tests/unit/tuning/test_genuine_gradual_invariants.py``: inert@low-rate, smooth
+degradation, r=1 == deployment bit-exact, tuning lifts the r=1 endpoint, rounds
+converge) is a property of the MECHANISM, not the controller — so the mechanism is
+installed in ``KDBlendAdaptationTuner.__init__`` (``_install_blend`` →
+``_make_kd_loss`` → ``_after_install_blend``) and is therefore ACTIVE UNDER BOTH
+paths, fast and slow:
+
+  INVARIANT CORE (always on, even under fast) — DO NOT gate behind the fast flag:
+    * scale-aware [0,1] boundaries + DFQ distribution matching
+      (``_calibrate_to_teacher_distribution``)
+    * the teacher<->genuine ``BlendedGenuineForward`` (rate 0 == teacher, rate 1 ==
+      deployed cascade bit-exact)
+    * the genuine-CE objective (``_BlendGenuineKDLoss`` / the fast loop's
+      ``+ 0.3*CE(genuine)``) — this is what lifts the r=1 endpoint
+    * the pure-genuine finalize (``_finalize``)
+
+  OPTIONAL CONTROLLER (the SmoothAdaptation machinery; disabled under the fast hack):
+    adaptive rate scheduler + bisect, recover-to-target, rollback clone/restore,
+    stabilization pass, per-cycle LR finder, catastrophic gate, target adjuster.
+    These add robustness/quality (the slow path), not invariant-correctness. The
+    fast hack trades them for ~30-60s; the proper controller keeps them.
 """
 
 from __future__ import annotations
@@ -405,8 +429,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
     # -- EXPERIMENTAL fast fixed-increment genuine-blend ramp ------------------
     def run(self):
         """EXPERIMENTAL fast path (``ttfs_genuine_blend_fast``, default OFF): skip
-        the SmoothAdaptation controller and walk a FIXED rate schedule with a fixed
-        step count. Otherwise the existing SmoothAdaptation flow runs UNCHANGED."""
+        the OPTIONAL controller machinery (recovery/rollback/stabilization/LR-find)
+        and walk a FIXED rate schedule with a fixed step count. The INVARIANT CORE
+        (distribution-matched blend forward + genuine-CE) is already installed in
+        ``__init__``, so it stays active here — only the controller is bypassed.
+        Otherwise the existing SmoothAdaptation flow runs UNCHANGED."""
         if self._genuine_blend_fast:
             return self._run_fast_genuine_blend()
         return super().run()
@@ -448,6 +475,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         ce_alpha = float(
             self.pipeline.config.get("ttfs_genuine_blend_ce_alpha", 0.3)
         )
+        self._fast_full_transform_log = []
 
         for rate in rates:
             self._set_rate(float(rate))
@@ -457,6 +485,8 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
                 self.model.train()
                 logits = self.model(x)
                 loss = F.cross_entropy(logits, y)
+                # INVARIANT CORE (kept under the fast hack): the pure-genuine CE is
+                # what lifts the r=1 endpoint (invariants 4/5) — never drop it here.
                 genuine = self._installed_genuine_branch()
                 if ce_alpha > 0.0 and genuine is not None:
                     loss = loss + ce_alpha * F.cross_entropy(genuine(x), y)
@@ -465,6 +495,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
                 optimizer.step()
                 scheduler.step()
                 self._fast_optimizer_steps += 1
+            # Observability (invariant 5): after each higher-rate round, record the
+            # r=1 full-transform accuracy so the convergence is visible even on the
+            # fast path. Gated by the probe flag — never slows the default fast run.
+            self._probe_fast_full_transform(float(rate))
 
         self._set_rate(1.0)
         self._remove_forward()
@@ -491,6 +525,35 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         (``None`` when no blend forward is installed — then ``model(x)`` IS genuine)."""
         installed = self.model.__dict__.get("forward")
         return getattr(installed, "_genuine", None)
+
+    def _probe_fast_full_transform(self, rate) -> None:
+        """Observability for invariant 5 (default off, ``tuning_full_transform_probe``):
+        after a fast-ramp round, record the r=1 full-transform (deployed) accuracy so
+        the convergence is visible even without the controller's per-cycle probe. The
+        installed blend forward at rate 1.0 IS the deployed cascade, so no deepcopy or
+        finalize-rebuild is needed — set 1.0, evaluate, restore the round's rate."""
+        if not getattr(self, "_full_transform_probe", False):
+            return
+        installed = self.model.__dict__.get("forward")
+        prev = float(getattr(installed, "rate", rate)) if installed is not None else rate
+        device = self.pipeline.config["device"]
+        self._set_rate(1.0)
+        self.model.eval()
+        correct = total = 0
+        with torch.no_grad():
+            for x, y in self.trainer.iter_validation_batches(self._budget.eval_n_batches):
+                pred = self.model(x.to(device)).argmax(dim=1)
+                correct += int((pred == y.to(device)).sum())
+                total += int(y.numel())
+        self._set_rate(prev)
+        acc = correct / total if total else 0.0
+        self._fast_full_transform_log.append(
+            {"rate": float(rate), "full_transform_acc": acc}
+        )
+        self.pipeline.reporter.report(
+            f"{self.name} fast_full_transform",
+            {"rate": round(float(rate), 4), "full_transform_acc": round(acc, 4)},
+        )
 
     def _build_fast_lr_schedule(self, optimizer, total_steps):
         """Warmup (5%, linear) -> cosine decay to ~0 over ``total_steps`` step()s."""
