@@ -44,6 +44,22 @@ def test_absolute_floor_combinations():
     assert AcceptanceSensor.absolute_floor(0.9, 0.05, 0.87) == pytest.approx(0.87)
 
 
+def test_absolute_floor_drops_unachievable_hard_floor():
+    """A hard floor ABOVE the rate-0 baseline can never be met by any transform, so
+    using it as a per-cycle rollback trigger stalls the ramp to rate 0 (every cycle
+    rolls back). An unachievable hard floor is dropped — the achievable
+    baseline-anchored floor governs the per-cycle gate; the deployment shortfall is
+    reported at finalize, not enforced as a ramp-stalling rollback trigger."""
+    # baseline 0.5, hard floor 0.855 (unachievable) → only the baseline term 0.475.
+    assert AcceptanceSensor.absolute_floor(0.5, 0.05, 0.855) == pytest.approx(0.475)
+    # An achievable hard floor (<= baseline) is still honored (the strong-teacher,
+    # golden-trace case is unchanged).
+    assert AcceptanceSensor.absolute_floor(0.96, 0.05, 0.90) == pytest.approx(0.912)
+    assert AcceptanceSensor.absolute_floor(0.9, 0.05, 0.87) == pytest.approx(0.87)
+    # No baseline known → achievability can't be judged → hard floor kept.
+    assert AcceptanceSensor.absolute_floor(None, None, 0.8) == pytest.approx(0.8)
+
+
 def test_is_catastrophic():
     assert AcceptanceSensor.is_catastrophic(0.71, 0.9) is True   # < 0.72
     assert AcceptanceSensor.is_catastrophic(0.73, 0.9) is False
