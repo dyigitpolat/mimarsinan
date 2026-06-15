@@ -118,6 +118,9 @@ class TTFSActivation(nn.Module):
             )
         self.thresholding_mode = thresholding_mode
         self.firing_mode = firing_mode
+        # Backward-only surrogate sharpness: shapes the ATan gradient of the fire
+        # Heaviside, never the exact ``pre > 0`` forward (see _heaviside_surrogate).
+        self.surrogate_alpha: float = 2.0
 
         self._cycle_accurate_mode = False
         self._ramp_current: torch.Tensor | None = None
@@ -141,6 +144,10 @@ class TTFSActivation(nn.Module):
         """
         self._parameters.pop("_bias", None)
         object.__setattr__(self, "_bias", bias)
+
+    def set_surrogate_alpha(self, a: float) -> None:
+        """Set the ATan-surrogate sharpness (backward only; forward is unchanged)."""
+        self.surrogate_alpha = float(a)
 
     def set_cycle_accurate(self, mode: bool) -> None:
         self._cycle_accurate_mode = bool(mode)
@@ -186,7 +193,7 @@ class TTFSActivation(nn.Module):
                 self._has_fired = torch.zeros_like(x)
             self._membrane = self._membrane + (1.0 / float(self.T))
             pre = self._membrane - 1.0
-            spike_raw = _heaviside_surrogate(pre, self.thresholding_mode)
+            spike_raw = _heaviside_surrogate(pre, self.thresholding_mode, alpha=self.surrogate_alpha)
             spike = spike_raw * (1.0 - self._has_fired)
             self._has_fired = (self._has_fired + spike.detach()).clamp(max=1.0)
             return spike
@@ -215,7 +222,7 @@ class TTFSActivation(nn.Module):
         self._membrane = self._membrane + self._ramp_current + bias_norm
 
         pre = self._membrane - 1.0
-        spike_raw = _heaviside_surrogate(pre, self.thresholding_mode)
+        spike_raw = _heaviside_surrogate(pre, self.thresholding_mode, alpha=self.surrogate_alpha)
         spike = spike_raw * (1.0 - self._has_fired)
         self._has_fired = (self._has_fired + spike.detach()).clamp(max=1.0)
         return spike
