@@ -60,9 +60,13 @@ class AcceptanceSensor:
         return max(floors)
 
     @staticmethod
-    def is_catastrophic(instant_acc, target) -> bool:
-        """Pre-tuning fast-fail: instant drop below ``target·0.8``."""
-        return instant_acc is not None and float(instant_acc) < target * CATASTROPHIC_DROP_FACTOR
+    def is_catastrophic(instant_acc, target, factor=CATASTROPHIC_DROP_FACTOR) -> bool:
+        """Pre-recovery fast-fail: the *instant* (pre-recovery) accuracy has
+        collapsed below ``target·factor``. ``factor`` defaults to the coarse
+        ``CATASTROPHIC_DROP_FACTOR`` — a deliberately loose margin, not an SE gate
+        (see its definition): the instant drop precedes recovery and is expected
+        to be large, so the gate only catches unrecoverable collapse."""
+        return instant_acc is not None and float(instant_acc) < target * factor
 
     @staticmethod
     def rollback_threshold(pre_cycle_acc, rollback_tolerance, absolute_floor):
