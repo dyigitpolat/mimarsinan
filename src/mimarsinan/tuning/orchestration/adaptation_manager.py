@@ -21,10 +21,10 @@ class AdaptationManager(nn.Module):
         self.lif_active = False
         self.ttfs_active = False
 
-        # tuning_inplace_rate (P5a): rate fields bound here drive their
+        # In-place rate buffers (P5a, the W9 fix): rate fields bound here drive their
         # RateAdjustedDecorator from a shared in-place RateBuffer instead of a
         # float, so a ramp advances without rebuilding every perceptron's stack.
-        # An empty/absent map keeps the legacy float-rebuild behavior exactly.
+        # An empty/absent map keeps the float-rebuild behavior (e.g. noise_rate).
         self._rate_buffers = {}
 
     def bind_rate_buffer(self, rate_attr):

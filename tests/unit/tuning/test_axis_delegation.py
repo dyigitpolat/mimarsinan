@@ -37,7 +37,12 @@ def test_set_rate_matches_apply_manager_rate_byte_for_byte():
     assert torch.allclose(_fwd(model_axis, x), _fwd(model_direct, x))
 
 
-def test_set_rate_calls_apply_manager_rate(monkeypatch):
+def test_noise_rate_calls_apply_manager_rate(monkeypatch):
+    # ``noise_rate`` (NoisyDropout, not decorator-driven) keeps the rebuild path:
+    # set_rate delegates to the apply_manager_rate SSOT. (Decorator-driven rates —
+    # quantization/clamp/activation_adaptation — instead write the in-place buffer.)
+    from mimarsinan.tuning.axes import NoiseAxis
+
     cfg = default_config()
     model = make_tiny_supermodel()
     manager = create_adaptation_manager_for_model(cfg, model)
@@ -52,8 +57,8 @@ def test_set_rate_calls_apply_manager_rate(monkeypatch):
 
     monkeypatch.setattr(mod, "apply_manager_rate", _spy)
 
-    axis = ActQuantAxis()
+    axis = NoiseAxis()
     axis.attach(model, manager, cfg)
     axis.set_rate(0.3)
 
-    assert seen["args"] == (model, manager, cfg, "quantization_rate", 0.3)
+    assert seen["args"] == (model, manager, cfg, "noise_rate", 0.3)

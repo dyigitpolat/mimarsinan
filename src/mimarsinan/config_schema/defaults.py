@@ -63,10 +63,6 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "k_commit": 2.0,
     "paired_confirm_batches": 0,  # 0 → use eval_n_batches
     "global_budget": 0.0,
-    # In-place RateBuffer (opt-in, P5a): advance an AdaptationManager rate by an
-    # O(1) buffer write (build the decorator stack once) instead of a full
-    # per-perceptron rebuild each step; output- and RNG-conformant.
-    "tuning_inplace_rate": False,
     # Diagnostic (default off): after each commit, probe the value-domain
     # rate-1.0 accuracy and report whether the gradual ramp's full-transform
     # drop shrinks as the committed rate climbs (is the ramp converging the
@@ -157,7 +153,6 @@ CONFIG_KEYS_SET: Set[str] = {
     "k_commit",
     "paired_confirm_batches",
     "global_budget",
-    "tuning_inplace_rate",
     "tuning_full_transform_probe",
     "finetune_epochs",
     "finetune_lr",
