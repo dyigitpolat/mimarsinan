@@ -15,7 +15,7 @@ they are **never** stored on the model or the pickled `adaptation_manager` cache
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `adaptation_axis.py` | `AdaptationAxis` (runtime-checkable `Protocol`), `AdaptationAxisBase` | The contract: `attach`/`set_rate`/`calibrate`/`tunable_parameters`/`recovery_hooks`/`finalize`/`get_extra_state`/`set_extra_state`/`set_decision_seed`/`descriptor` + descriptors `name`/`interpolation_mode`/`monotonicity`/`is_stochastic`/`supports_smooth`. `AdaptationAxisBase` supplies benign defaults so adapters only implement what is axis-specific. |
-| `manager_rate_axis.py` | `ManagerRateAxis`, `ClampAxis`, `ActQuantAxis`, `NoiseAxis`, `ActivationAdaptationAxis` | `AdaptationManager` rate-field family. The `RateAdjustedDecorator`-backed rates (`quantization_rate`/`clamp_rate`/`activation_adaptation_rate`) build the decorator stack once (`manager.bind_rate_buffer`) and write a shared in-place `RateBuffer` per step (O(1), no rebuild — the W9 fix; output- and RNG-conformant with a full rebuild, `test_rate_buffer`); the manager field is kept in sync as a write-through so state queries never see a stale rate. `noise_rate` is `NoisyDropout`-backed (not a decorator), so `set_rate` delegates to the `perceptron_rate.apply_manager_rate` SSOT (rebuild path). Routes `AdaptationRateTuner`/`ClampTuner`/`ActivationAdaptationTuner`. |
+| `manager_rate_axis.py` | `ManagerRateAxis`, `ClampAxis`, `ActQuantAxis`, `NoiseAxis`, `ActivationAdaptationAxis` | `AdaptationManager` rate-field family. The `RateAdjustedDecorator`-backed rates (`quantization_rate`/`clamp_rate`/`activation_adaptation_rate`) build the decorator stack once (`manager.bind_rate_buffer`) and write a shared in-place `RateBuffer` per step (O(1), no rebuild — the W9 fix; output- and RNG-conformant with a full rebuild, `test_rate_buffer`); the manager field is kept in sync as a write-through so state queries never see a stale rate. `noise_rate` is `NoisyDropout`-backed (not a decorator), so `set_rate` delegates to the `perceptron_rate.apply_manager_rate` SSOT (rebuild path). `set_decision_seed` (overridden here) wires a per-device seeded `torch.Generator` into the stochastic decorators it finds (`RandomMaskAdjustmentStrategy`/`NoisyDropout`), re-wiring after each `set_rate` rebuild, so ActQuant/Noise decisions are reproducible (default generator None = bit-exact global-RNG path). Routes `AdaptationRateTuner`/`ClampTuner`/`ActivationAdaptationTuner`. |
 | `blend_axis.py` | `BlendAxis`, `LIFAxis`, `TTFSAxis` | KD-blend family. `set_rate` → `perceptron_rate.set_blend_rate` (live `BlendActivation.rate`, no rebuild); state is the per-perceptron rate list. Routes `KDBlendAdaptationTuner`. `finalize` is **not** owned — the parity-critical forward-install stays on the tuner's inherited `_finalize` (`test_finalize_contract` forbids reimplementing it). |
 | `perceptron_transform_axis.py` | `PerceptronTransformAxis`, `NAPQAxis` | Stochastic closure mechanism. Thin uniform `set_rate` seam over a tuner-provided `apply_fn` (the tuner owns the prev/new builders + trainer); folding the mechanism into the axis is the P4 driver refactor. Routes `NormalizationAwarePerceptronQuantizationTuner`. |
 | `pruning_axis.py` | `PruningAxis` | Structured pruning. Thin seam over the tuner's mask-apply + recovery-hook callables; persistent-prune `finalize` stays on the tuner. Routes `PruningTuner`. |
@@ -28,8 +28,9 @@ graduated). The seam delegates to the same SSOT / extracted callable, so it is
 byte-identical to the deleted inline path (frozen into the golden traces and
 `test_axis_delegation`). The manager-rate / blend families own their mechanism in
 the axis; the closure / pruning / shift families present the seam over a tuner
-callable. The standalone `AdaptationDriver` consuming axes directly (dissolving
-`_adaptation`) is the remaining V6 step.
+callable. The per-cycle control flow is now owned by `AdaptationDriver.run_cycle`
+(the `_adaptation` god-method dissolved into named host phases); the fully
+standalone driver constructed from the services is the remaining V6 polish.
 
 ## Dependencies
 
