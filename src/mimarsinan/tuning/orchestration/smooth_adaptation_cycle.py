@@ -7,6 +7,7 @@ import warnings
 
 from mimarsinan.tuning.trace import DecisionRecord, DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
+from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver, CycleContext
 from mimarsinan.tuning.orchestration.checkpoint_guard import CheckpointGuard
 from mimarsinan.tuning.orchestration.recovery_engine import (
     PERSIST_WITHIN_CYCLE,
@@ -155,7 +156,17 @@ class SmoothAdaptationCycleMixin(TunerBase):
         return owner.optimizer_for(lr)
 
     def _adaptation(self, rate):
-        """Recovery training at a given rate with rollback on regression."""
+        """Recovery training at a given rate with rollback on regression.
+
+        The per-cycle control flow (predictor → corrector → commit/rollback) is
+        owned by ``AdaptationDriver.run_cycle``; this tuner supplies the phase
+        operations below (``_begin_cycle`` / ``_probe_instant`` / ``_recover`` /
+        ``_measure_post`` / ``_rollback_cycle`` / ``_commit_cycle``) that it
+        drives. The decision math stays in ``AcceptanceSensor``."""
+        return AdaptationDriver.run_cycle(self, rate)
+
+    def _begin_cycle(self, rate) -> CycleContext:
+        """Snapshot pre-state and the pre-cycle baseline; report the cycle start."""
         t_cycle_start = time.time()
         self.pipeline.reporter.report(self.name, rate)
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
@@ -165,33 +176,30 @@ class SmoothAdaptationCycleMixin(TunerBase):
         last = getattr(self, "_last_post_acc", None)
         pre_cycle_acc = float(last) if last is not None else \
             self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        return CycleContext(
+            rate=float(rate),
+            t_cycle_start=t_cycle_start,
+            pre_state=pre_state,
+            pre_cycle_acc=pre_cycle_acc,
+        )
 
+    def _probe_instant(self, ctx: CycleContext) -> None:
+        """Apply the transform and read the pre-recovery (instant) accuracy."""
         with self.trainer.validation_context("probe"):
-            instant_acc = self._update_and_evaluate(rate)
+            ctx.instant_acc = self._update_and_evaluate(ctx.rate)
+        ctx.is_catastrophic = AcceptanceSensor.is_catastrophic(
+            ctx.instant_acc, self._get_target()
+        )
 
-        if AcceptanceSensor.is_catastrophic(instant_acc, self._get_target()):
-            self._restore_state(pre_state)
-            if hasattr(self, "_cycle_log"): self._cycle_log.record(DecisionRecord(
-                cycle_index=len(self._cycle_log),
-                outcome="catastrophic",
-                rate=float(rate),
-                committed=float(self._committed_rate),
-                elapsed_sec=time.time() - t_cycle_start,
-                instant_acc=float(instant_acc),
-                pre_cycle_acc=float(pre_cycle_acc),
-                target=float(self._get_target()),
-                validation_baseline=self._baseline_or_none(),
-                rollback_tolerance=float(self._rollback_tolerance),
-            ))
-            return self._committed_rate
-
+    def _recover(self, ctx: CycleContext) -> None:
+        """Find the LR and run recovery training toward the target."""
         t0 = time.time()
         lr = self._get_cached_lr()
         t_lr = time.time() - t0
         self.pipeline.reporter.report("LR_found", lr)
         self.pipeline.reporter.report("T_find_lr_sec", t_lr)
 
-        hooks = self._recovery_training_hooks(rate)
+        hooks = self._recovery_training_hooks(ctx.rate)
         RecoveryEngine.train_to_target(
             self.trainer,
             lr,
@@ -205,47 +213,76 @@ class SmoothAdaptationCycleMixin(TunerBase):
             min_steps=self._budget.check_interval * 3,
             min_improvement=self._budget.accuracy_se(),
         )
+        ctx.lr = lr
 
-        post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
-
-        noise_margin = self._rollback_tolerance
-        absolute_floor = self._absolute_post_acc_floor()
-        rollback_threshold = AcceptanceSensor.rollback_threshold(
-            pre_cycle_acc, noise_margin, absolute_floor
+    def _measure_post(self, ctx: CycleContext) -> None:
+        """Post-recovery accuracy + the rollback decision (marginal or paired)."""
+        ctx.noise_margin = self._rollback_tolerance
+        ctx.absolute_floor = self._absolute_post_acc_floor()
+        ctx.rollback_threshold = AcceptanceSensor.rollback_threshold(
+            ctx.pre_cycle_acc, ctx.noise_margin, ctx.absolute_floor
         )
         if getattr(self, "_paired_gate", False) and self._ref_correct is not None:
+            # D6: a single post-recovery pass. ``post_acc`` is the accuracy of the
+            # SAME paired correctness vector the rollback gate uses — one eval, one
+            # statistical basis (the legacy path ran both ``validate_n_batches`` AND
+            # this correctness pass, part of the paired gate's +139% cost).
             cand_correct = self.trainer.validate_correctness_on_indices(self._confirm_indices)
-            rolled_back = AcceptanceSensor.paired_is_rollback(
+            ctx.cand_correct = cand_correct
+            ctx.post_acc = (
+                sum(1 for c in cand_correct if c) / len(cand_correct)
+            ) if cand_correct else 0.0
+            ctx.rolled_back = AcceptanceSensor.paired_is_rollback(
                 self._ref_correct, cand_correct, self._k_commit,
                 min_effect=self._global_budget,
             )
         else:
-            rolled_back = AcceptanceSensor.is_rollback(post_acc, rollback_threshold)
-        if rolled_back:
-            self._restore_state(pre_state)
-            if hasattr(self, "_cycle_log"): self._cycle_log.record(DecisionRecord(
-                cycle_index=len(self._cycle_log),
-                outcome="rollback",
-                rate=float(rate),
-                committed=float(self._committed_rate),
-                elapsed_sec=time.time() - t_cycle_start,
-                instant_acc=float(instant_acc) if instant_acc is not None else None,
-                pre_cycle_acc=float(pre_cycle_acc),
-                post_acc=float(post_acc),
-                lr=float(lr),
-                target=float(self._get_target()),
-                validation_baseline=self._baseline_or_none(),
-                rollback_threshold=float(rollback_threshold),
-                absolute_floor=(float(absolute_floor) if absolute_floor is not None else None),
-                rollback_tolerance=float(noise_margin),
-            ))
-            return self._committed_rate
+            ctx.post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+            ctx.rolled_back = AcceptanceSensor.is_rollback(ctx.post_acc, ctx.rollback_threshold)
 
-        self._committed_rate = rate
+    def _rollback_cycle(self, ctx: CycleContext, outcome: str):
+        """Restore the pre-cycle state and record the (catastrophic|rollback) trace."""
+        self._restore_state(ctx.pre_state)
+        if hasattr(self, "_cycle_log"):
+            if outcome == "catastrophic":
+                self._cycle_log.record(DecisionRecord(
+                    cycle_index=len(self._cycle_log),
+                    outcome="catastrophic",
+                    rate=float(ctx.rate),
+                    committed=float(self._committed_rate),
+                    elapsed_sec=time.time() - ctx.t_cycle_start,
+                    instant_acc=float(ctx.instant_acc),
+                    pre_cycle_acc=float(ctx.pre_cycle_acc),
+                    target=float(self._get_target()),
+                    validation_baseline=self._baseline_or_none(),
+                    rollback_tolerance=float(self._rollback_tolerance),
+                ))
+            else:
+                self._cycle_log.record(DecisionRecord(
+                    cycle_index=len(self._cycle_log),
+                    outcome="rollback",
+                    rate=float(ctx.rate),
+                    committed=float(self._committed_rate),
+                    elapsed_sec=time.time() - ctx.t_cycle_start,
+                    instant_acc=float(ctx.instant_acc) if ctx.instant_acc is not None else None,
+                    pre_cycle_acc=float(ctx.pre_cycle_acc),
+                    post_acc=float(ctx.post_acc),
+                    lr=float(ctx.lr),
+                    target=float(self._get_target()),
+                    validation_baseline=self._baseline_or_none(),
+                    rollback_threshold=float(ctx.rollback_threshold),
+                    absolute_floor=(float(ctx.absolute_floor) if ctx.absolute_floor is not None else None),
+                    rollback_tolerance=float(ctx.noise_margin),
+                ))
+        return self._committed_rate
+
+    def _commit_cycle(self, ctx: CycleContext):
+        """Commit the rate, run the stuck-streak target relaxation, record + probe."""
+        self._committed_rate = ctx.rate
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
 
         reached_target = AcceptanceSensor.reached_target(
-            post_acc, self._get_target(), noise_margin
+            ctx.post_acc, self._get_target(), ctx.noise_margin
         )
         if reached_target:
             self._missed_target_streak = 0
@@ -258,7 +295,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
         if self._missed_target_streak >= _STUCK_STREAK_REQUIRED:
             self._pre_relaxation_target = self._get_target()
-            self.target_adjuster.update_target(post_acc)
+            self.target_adjuster.update_target(ctx.post_acc)
             abs_floor = self._absolute_post_acc_floor()
             if abs_floor is not None:
                 self.target_adjuster.target_metric = max(
@@ -270,22 +307,22 @@ class SmoothAdaptationCycleMixin(TunerBase):
         if hasattr(self, "_cycle_log"): self._cycle_log.record(DecisionRecord(
             cycle_index=len(self._cycle_log),
             outcome="commit",
-            rate=float(rate),
+            rate=float(ctx.rate),
             committed=float(self._committed_rate),
-            elapsed_sec=time.time() - t_cycle_start,
-            pre_cycle_acc=float(pre_cycle_acc),
-            post_acc=float(post_acc),
-            lr=float(lr),
+            elapsed_sec=time.time() - ctx.t_cycle_start,
+            pre_cycle_acc=float(ctx.pre_cycle_acc),
+            post_acc=float(ctx.post_acc),
+            lr=float(ctx.lr),
             reached_target=bool(reached_target),
             target=float(self._get_target()),
             validation_baseline=self._baseline_or_none(),
-            rollback_threshold=float(rollback_threshold),
-            absolute_floor=(float(absolute_floor) if absolute_floor is not None else None),
-            rollback_tolerance=float(noise_margin),
+            rollback_threshold=float(ctx.rollback_threshold),
+            absolute_floor=(float(ctx.absolute_floor) if ctx.absolute_floor is not None else None),
+            rollback_tolerance=float(ctx.noise_margin),
         ))
-        self._last_post_acc = float(post_acc)
-        self._probe_full_transform(float(post_acc))
-        return rate
+        self._last_post_acc = float(ctx.post_acc)
+        self._probe_full_transform(float(ctx.post_acc))
+        return ctx.rate
 
     def _probe_full_transform(self, committed_acc):
         """Diagnostic: measure the value-domain rate-1.0 accuracy from the freshly
