@@ -31,7 +31,7 @@ class RateScheduler:
         initial_step: Optional[float] = None,
         max_rounds: Optional[int] = None,
     ):
-        if policy not in ("greedy_to_one", "uniform_ladder", "one_shot_only"):
+        if policy not in ("greedy_to_one", "uniform_ladder", "one_shot_only", "dense_grid"):
             raise ValueError(f"unknown rate policy: {policy!r}")
         self.epsilon = float(epsilon)
         self.alpha_tol = float(alpha_tol)
@@ -42,6 +42,13 @@ class RateScheduler:
     def _first_step(self, gap: float) -> float:
         if self.policy == "uniform_ladder" and self.initial_step is not None:
             return min(float(self.initial_step), gap)
+        if self.policy == "dense_grid":
+            # Safe mode for a non-monotone axis: never greedily jump to 1.0 (which
+            # could vault a feasible region into an infeasible one and wrongly
+            # conclude failure). Walk small uniform increments (the characterized
+            # epsilon_hint) instead, bisecting only on a local failure.
+            step = float(self.initial_step) if self.initial_step else self.epsilon
+            return min(step, gap)
         return gap  # greedy_to_one / one_shot_only: jump to 1.0
 
     def run(self, committed: float, attempt: Callable[[float], float]) -> float:
