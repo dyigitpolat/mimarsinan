@@ -9,11 +9,16 @@ import torch.nn as nn
 
 
 class NoisyDropout(nn.Module):
-    def __init__(self, dropout_p, rate, noise_radius):
+    # ``generator`` (default None) makes the mask + additive noise reproducible
+    # for a stochastic axis that called ``set_decision_seed``; None preserves the
+    # legacy global-RNG draws bit-for-bit. (nn.Dropout itself is identity in eval,
+    # so the seeded generator fully determines the eval-mode forward.)
+    def __init__(self, dropout_p, rate, noise_radius, generator=None):
         super(NoisyDropout, self).__init__()
         self.dropout_p = dropout_p
         self.rate = rate
         self.noise_radius = noise_radius
+        self._generator = generator
         # Cache the Dropout module instead of instantiating one per forward.
         # dropout_p may be a 0-d tensor; nn.Dropout wants a float.
         p = float(dropout_p.item()) if isinstance(dropout_p, torch.Tensor) else float(dropout_p)
@@ -25,11 +30,18 @@ class NoisyDropout(nn.Module):
         if self.rate == 0.0:
             return x
 
-        random_mask = torch.rand(x.shape, device=x.device)
+        if self._generator is not None:
+            random_mask = torch.rand(x.shape, device=x.device, generator=self._generator)
+        else:
+            random_mask = torch.rand(x.shape, device=x.device)
         random_mask = (random_mask < self.rate).float()
 
         out = self._dropout(x)
-        out = out + self.noise_radius * torch.rand_like(out) - 0.5 * self.noise_radius
+        if self._generator is not None:
+            noise = torch.rand(out.shape, dtype=out.dtype, device=out.device, generator=self._generator)
+        else:
+            noise = torch.rand_like(out)
+        out = out + self.noise_radius * noise - 0.5 * self.noise_radius
         return random_mask * out + (1.0 - random_mask) * x
 
 

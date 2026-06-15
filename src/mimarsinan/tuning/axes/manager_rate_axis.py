@@ -13,6 +13,10 @@ SSOT (set one manager field, rebuild every perceptron's decorator stack).
 
 from __future__ import annotations
 
+import torch
+
+from mimarsinan.models.nn.decorators.adjustment import RandomMaskAdjustmentStrategy
+from mimarsinan.models.nn.decorators.transforms import NoisyDropout
 from mimarsinan.tuning.axes.adaptation_axis import AdaptationAxisBase
 from mimarsinan.tuning.perceptron_rate import apply_manager_rate, rebuild_activations
 
@@ -21,6 +25,30 @@ from mimarsinan.tuning.perceptron_rate import apply_manager_rate, rebuild_activa
 _INPLACE_ELIGIBLE_RATES = frozenset(
     {"quantization_rate", "clamp_rate", "activation_adaptation_rate"}
 )
+
+# Containers walked to reach the stochastic decision objects in an activation.
+_DECISION_CHILD_ATTRS = ("base_activation", "decorator", "adjustment_strategy", "target_activation")
+_DECISION_SEQ_ATTRS = ("decorators", "strategies")
+
+
+def _iter_decision_objects(node, seen=None):
+    """Yield the stochastic-decision objects (``RandomMaskAdjustmentStrategy`` /
+    ``NoisyDropout``) reachable from an activation node through its decorator and
+    strategy containers."""
+    if seen is None:
+        seen = set()
+    if node is None or id(node) in seen:
+        return
+    seen.add(id(node))
+    if isinstance(node, (RandomMaskAdjustmentStrategy, NoisyDropout)):
+        yield node
+    for attr in _DECISION_CHILD_ATTRS:
+        yield from _iter_decision_objects(getattr(node, attr, None), seen)
+    for attr in _DECISION_SEQ_ATTRS:
+        seq = getattr(node, attr, None)
+        if isinstance(seq, (list, tuple)):
+            for child in seq:
+                yield from _iter_decision_objects(child, seen)
 
 
 class ManagerRateAxis(AdaptationAxisBase):
@@ -35,6 +63,8 @@ class ManagerRateAxis(AdaptationAxisBase):
             self.rate_attr = rate_attr
         if name is not None:
             self.name = name
+        self._decision_seed = None
+        self._decision_generators = {}
 
     def attach(self, model, adaptation_manager, config) -> None:
         super().attach(model, adaptation_manager, config)
@@ -52,10 +82,43 @@ class ManagerRateAxis(AdaptationAxisBase):
         alpha = float(alpha)
         if self._inplace_enabled():
             self._set_rate_inplace(alpha)
+        else:
+            apply_manager_rate(
+                self._model, self._manager, self._config, self.rate_attr, alpha
+            )
+        # Rebuilds (or the one-time in-place install) create fresh decorator
+        # objects; re-wire the seeded generator into them. No-op when unseeded.
+        self._wire_decision_generators()
+
+    def set_decision_seed(self, seed: int) -> None:
+        """Give this axis's stochastic decorators their own seeded RNG so a
+        re-seed reproduces the exact masks regardless of global RNG. A no-op for
+        non-stochastic rates (no ``RandomMask``/``NoisyDropout`` decorators)."""
+        self._decision_seed = int(seed)
+        for gen in self._decision_generators.values():
+            gen.manual_seed(self._decision_seed)
+        self._wire_decision_generators()
+
+    def _decision_generator_for(self, device):
+        key = str(device)
+        gen = self._decision_generators.get(key)
+        if gen is None:
+            gen = torch.Generator(device=device)
+            gen.manual_seed(self._decision_seed)
+            self._decision_generators[key] = gen
+        return gen
+
+    def _wire_decision_generators(self) -> None:
+        if self._decision_seed is None or self._model is None:
             return
-        apply_manager_rate(
-            self._model, self._manager, self._config, self.rate_attr, alpha
-        )
+        for perceptron in self._model.get_perceptrons():
+            try:
+                device = next(perceptron.parameters()).device
+            except StopIteration:
+                device = "cpu"
+            gen = self._decision_generator_for(device)
+            for obj in _iter_decision_objects(getattr(perceptron, "activation", None)):
+                obj._generator = gen
 
     def _set_rate_inplace(self, alpha: float) -> None:
         """Write the shared ``RateBuffer`` in place; build the stack once.

@@ -9,8 +9,17 @@ from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 
 
 class RandomMaskAdjustmentStrategy:
+    # ``generator`` (default None) makes the per-element mask reproducible: an
+    # axis that called ``set_decision_seed`` wires a seeded ``torch.Generator``
+    # here. None preserves the legacy global-RNG draw bit-for-bit.
+    def __init__(self, generator=None):
+        self._generator = generator
+
     def adjust(self, base, target, rate):
-        random_mask = torch.rand(base.shape, device=base.device)
+        if self._generator is not None:
+            random_mask = torch.rand(base.shape, device=base.device, generator=self._generator)
+        else:
+            random_mask = torch.rand(base.shape, device=base.device)
         random_mask = (random_mask < rate).float()
         return random_mask * target + (1.0 - random_mask) * base
 
