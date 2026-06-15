@@ -1,16 +1,14 @@
 """Adapters for the ``AdaptationManager`` rate-field family.
 
-By default ``set_rate`` delegates to the ``perceptron_rate.apply_manager_rate`` SSOT
-(set one manager field, rebuild every perceptron's decorator stack), so the axis
-path is byte-identical to ``AdaptationRateTuner._apply_rate``. State carriage is the
-single manager float.
+``RateAdjustedDecorator``-backed rates (``quantization_rate`` / ``clamp_rate`` /
+``activation_adaptation_rate``) drive a shared in-place ``RateBuffer``: the decorator
+stack is built once, then a ramp step is an O(1) buffer write (the report's W9 fix).
+This path is output- and RNG-conformant with a full per-step rebuild (see
+``test_rate_buffer``). State carriage is the single buffer float.
 
-Under the ``tuning_inplace_rate`` opt-in, ``RateAdjustedDecorator``-backed rates
-(``quantization_rate`` / ``clamp_rate`` / ``activation_adaptation_rate``) instead
-drive a shared in-place ``RateBuffer``: the stack is built once, then a ramp step is
-an O(1) buffer write. That path is output- and RNG-conformant with the rebuild path
-(see ``test_rate_buffer``); ``NoisyDropout``-backed rates (``noise_rate``) are not
-decorator-driven, so they keep the rebuild path regardless.
+``NoisyDropout``-backed rates (``noise_rate``) are not decorator-driven, so they keep
+the rebuild path: ``set_rate`` delegates to the ``perceptron_rate.apply_manager_rate``
+SSOT (set one manager field, rebuild every perceptron's decorator stack).
 """
 
 from __future__ import annotations
@@ -45,12 +43,9 @@ class ManagerRateAxis(AdaptationAxisBase):
         self._inplace_installed = False
 
     def _inplace_enabled(self) -> bool:
-        # Opt-in (``tuning_inplace_rate``): RateAdjustedDecorator-backed rates
-        # drive a shared in-place RateBuffer (build the stack once, then O(1)
-        # writes); the default rebuild path stays the byte-for-byte SSOT.
-        config = getattr(self, "_config", None)
-        if not config or not config.get("tuning_inplace_rate", False):
-            return False
+        # RateAdjustedDecorator-backed rates drive a shared in-place RateBuffer
+        # (build the decorator stack once, then O(1) writes); NoisyDropout-backed
+        # rates (noise_rate) are not decorator-driven, so they keep the rebuild path.
         return self.rate_attr in _INPLACE_ELIGIBLE_RATES
 
     def set_rate(self, alpha: float) -> None:
@@ -63,10 +58,15 @@ class ManagerRateAxis(AdaptationAxisBase):
         )
 
     def _set_rate_inplace(self, alpha: float) -> None:
-        """Write the shared ``RateBuffer`` in place; build the stack once."""
+        """Write the shared ``RateBuffer`` in place; build the stack once.
+
+        The decorators read the buffer live (the O(1) ramp step), so the manager
+        field is no longer load-bearing — but it is kept in sync as a write-through
+        so state queries (and the pickled manager) never see a stale rate."""
         buffer = self._manager.bind_rate_buffer(self.rate_attr)
         first_install = getattr(self, "_inplace_installed", False) is False
         buffer.set(alpha)
+        setattr(self._manager, self.rate_attr, alpha)
         if first_install:
             rebuild_activations(self._model, self._manager, self._config)
             self._inplace_installed = True

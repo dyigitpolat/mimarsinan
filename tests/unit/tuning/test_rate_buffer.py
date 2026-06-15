@@ -162,9 +162,8 @@ class TestRateAdjustedDecoratorBuffer:
 # ---------------------------------------------------------------------------
 
 def _buffer_config():
-    cfg = default_config()
-    cfg["tuning_inplace_rate"] = True
-    return cfg
+    # The in-place buffer is the baked default for eligible rates.
+    return default_config()
 
 
 def _make_axis(axis_cls, cfg, model, manager):

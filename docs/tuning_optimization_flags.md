@@ -25,12 +25,12 @@ ablation logs (per-step `[PROFILE] wall` + per-call `T_find_lr_sec`):
 
 | flag | status | accuracy | cost | note |
 |------|--------|----------|------|------|
-| `use_paired_sensor` | **opt-in** | +0.55% (proven) | **+139% tuning** | quality/cost trade; above the bar |
+| `use_paired_sensor` | **opt-in** (kept) | +0.55% (proven) | **+139% tuning** | quality/cost trade; far above the bar |
 | `persist_optimizer` | **BAKED** | neutral | ≤0% (no rebuild) | clean (crash-guard kept) |
 | `loss_slope_lr` | **BAKED** | neutral | ≤0% (cheap coarse LR) | degrades gracefully on stub trainers |
-| `subsample_val_cache` | opt-in (deferred) | +0.20% (proven) | ≤0% + scale fix | qualifies, but baking re-breaks 3 tiny-model parity tests |
-| `inplace_rate` | opt-in (deferred) | output-identical | ≤0% (O(1) write) | qualifies, but needs ~12 delegation-test migrations + an end-to-end run |
-| `sensitivity_stepping` | measuring | TBD | ≤0% | driver-on ablation in progress (inert in the first round) |
+| `subsample_val_cache` | **BAKED** | +0.20% (proven) | ≤0% + scale fix | parity fixed via a **seeded reservoir** subsample (representative + stable) |
+| `inplace_rate` | **BAKED** | output-identical | ≤0% (O(1) write) | W9 fix; the manager field is write-through, so no stale state |
+| `sensitivity_stepping` | **REMOVED** | within noise | no benefit | driver-on ablation: LR-find count 4=4 every seed, wall ±7% noise → deleted the `last_successful_step` logic |
 
 (`tuning_full_transform_probe` is a *diagnostic*, not an optimization — it adds a
 forward pass per commit to measure rate-1.0 convergence; opt-in by design.)
