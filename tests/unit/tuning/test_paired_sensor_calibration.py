@@ -152,6 +152,34 @@ def test_live_paired_gate_commits_when_no_drop(tmp_path):
     tuner.close()
 
 
+def test_paired_gate_uses_single_post_eval_pass(tmp_path):
+    """D6: under the paired gate the post-recovery accuracy is derived from the
+    SAME correctness vector the rollback gate uses — no separate marginal
+    validate_n_batches pass (the redundant second eval the +139% cost included)."""
+    tuner, _ = _paired_tuner(tmp_path, cand_correct=[True] * 8)
+    tuner._last_post_acc = 0.9  # skip the pre-cycle validate_n_batches as well
+
+    counts = {"vn": 0, "vc": 0}
+    real_vc = tuner.trainer.validate_correctness_on_indices
+
+    def counted_vn(n):
+        counts["vn"] += 1
+        return 0.9
+
+    def counted_vc(idx):
+        counts["vc"] += 1
+        return real_vc(idx)
+
+    tuner.trainer.validate_n_batches = counted_vn
+    tuner.trainer.validate_correctness_on_indices = counted_vc
+
+    result = tuner._adaptation(0.5)
+    assert result == 0.5  # committed (no drop)
+    assert counts["vc"] == 1  # one paired correctness pass (decision + post_acc)
+    assert counts["vn"] == 0  # the redundant marginal post pass is gone
+    tuner.close()
+
+
 def test_correctness_primitive_reads_validation_cache(tmp_path):
     from conftest import MockPipeline, default_config
     from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
