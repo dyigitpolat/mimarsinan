@@ -148,8 +148,12 @@ class TestLifRampSelection:
             LIFAdaptationTuner, _ChipAlignedNFForward,
         )
         stub = _lif_ramp_stub(cycle_accurate=cycle_accurate)
-        fwd = LIFAdaptationTuner._finalize_forward(stub)
+        # The per-tuner builder is now ``_finalize_forward_for(model)`` (shared by
+        # the finalize install and the genuine probe); ``_finalize_forward``
+        # delegates to it with ``self.model``.
+        fwd = LIFAdaptationTuner._finalize_forward_for(stub, stub.model)
         if cycle_accurate:
             assert isinstance(fwd, _ChipAlignedNFForward)
+            assert fwd.model is stub.model
         else:
             assert fwd is None

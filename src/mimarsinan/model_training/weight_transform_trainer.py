@@ -10,13 +10,19 @@ import copy
 class WeightTransformTrainer(BasicTrainer):
     def __init__(
             self, model, device, data_provider_factory, loss_function, weight_transformation,
-            recipe=None):
-        super().__init__(model, device, data_provider_factory, loss_function, recipe=recipe)
+            recipe=None, *, tuning_recipe_recovery=False):
+        super().__init__(
+            model, device, data_provider_factory, loss_function, recipe=recipe,
+            tuning_recipe_recovery=tuning_recipe_recovery,
+        )
         self.weight_transformation = weight_transformation
         self.aux_model = copy.deepcopy(self.model).to(self.device)
 
     def _params_to_optimize(self):
         return self.aux_model.parameters()
+
+    def _recipe_optimization_model(self):
+        return self.aux_model
 
     def _update_and_transform_model(self):
         for (name, param), (_, aux_param) in zip(self.model.named_parameters(), self.aux_model.named_parameters()):
@@ -54,6 +60,13 @@ class WeightTransformTrainer(BasicTrainer):
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
     def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
+        # ``tuning_recipe_recovery`` routes the STEP recovery through the recipe
+        # (over the aux model) regardless of ``constant_lr``; the discovered LR is
+        # the peak. The historical ``not constant_lr`` recipe routing is preserved.
+        if self._recipe_step_recovery_enabled():
+            optimizer = self._build_recipe_step_optimizer(lr)
+            scheduler = self._build_recipe_step_scheduler(optimizer, total_steps)
+            return optimizer, scheduler, torch.amp.GradScaler("cuda")
         if self.recipe is not None and total_steps > 0 and not constant_lr:
             optimizer = build_optimizer(self.aux_model, lr, self.recipe)
             scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=int(total_steps))

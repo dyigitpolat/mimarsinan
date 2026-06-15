@@ -33,3 +33,17 @@ def set_blend_rate(model, rate: float) -> None:
     r = float(rate)
     for perceptron in model.get_perceptrons():
         perceptron.base_activation.rate = r
+
+
+def set_surrogate_alpha(model, a: float) -> None:
+    """Set the spike-surrogate sharpness on every ``TTFSActivation`` under ``model``.
+
+    The SSOT for the genuine-cascade anneal: ``alpha`` shapes only the ATan
+    backward, never the exact ``pre > 0`` fire forward, so this is a pure
+    gradient-conditioning knob (the ``TTFSGenuineAxis`` schedule drives it)."""
+    from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+
+    alpha = float(a)
+    for module in model.modules():
+        if isinstance(module, TTFSActivation):
+            module.set_surrogate_alpha(alpha)

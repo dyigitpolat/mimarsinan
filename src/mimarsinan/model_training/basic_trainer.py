@@ -18,10 +18,18 @@ import torch
 
 class BasicTrainer:
     def __init__(
-            self, model, device, data_loader_factory, loss_function, recipe: TrainingRecipe | None = None):
+            self, model, device, data_loader_factory, loss_function,
+            recipe: TrainingRecipe | None = None, *,
+            tuning_recipe_recovery: bool = False):
         self.model = model.to(device)
         self.device = device
         self.recipe = recipe
+        # When True AND a recipe is configured, the STEP recovery builds its
+        # optimizer/scheduler from ``recipe`` (optimizer family, weight-decay,
+        # momentum/betas) and schedules the LR (warmup + cosine over the budget,
+        # discovered LR = peak) instead of the hardcoded Adam(wd=5e-5)/constant-LR
+        # path. Default False keeps the step recovery byte-identical.
+        self.tuning_recipe_recovery = bool(tuning_recipe_recovery)
 
         self.data_loader_factory = data_loader_factory
         self.data_provider = data_loader_factory.create_data_provider()
@@ -112,7 +120,35 @@ class BasicTrainer:
 
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
+    def _recipe_step_recovery_enabled(self) -> bool:
+        """Route the STEP recovery through ``self.recipe`` (optimizer + warmup/
+        cosine schedule) instead of the hardcoded Adam/constant-LR path."""
+        return bool(getattr(self, "tuning_recipe_recovery", False)) and self.recipe is not None
+
+    def _recipe_optimization_model(self):
+        """Model whose params the recipe optimizer groups. Defaults to ``self.model``;
+        ``WeightTransformTrainer`` overrides to its aux model."""
+        return self.model
+
+    def _build_recipe_step_optimizer(self, lr):
+        """Recipe-driven step optimizer (honors optimizer family, weight-decay,
+        momentum/betas). The supplied ``lr`` is the schedule's peak."""
+        return build_optimizer(self._recipe_optimization_model(), lr, self.recipe)
+
+    def _build_recipe_step_scheduler(self, optimizer, total_steps: int):
+        """Warmup + cosine recipe schedule over the recovery budget; the optimizer
+        base LR is the peak. Falls back to a 1-step budget when ``total_steps<=0``."""
+        scheduler, _warmup = build_scheduler(
+            optimizer, self.recipe, total_steps=max(1, int(total_steps))
+        )
+        return scheduler
+
     def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
+        if self._recipe_step_recovery_enabled():
+            optimizer = self._build_recipe_step_optimizer(lr)
+            scheduler = self._build_recipe_step_scheduler(optimizer, total_steps)
+            return optimizer, scheduler, torch.amp.GradScaler("cuda")
+
         adam_kwargs = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
         if torch.device(self.device).type == "cuda":
             adam_kwargs["fused"] = True
@@ -132,9 +168,12 @@ class BasicTrainer:
         """Build a fresh step-training optimizer that a caller can own and reuse.
 
         Mirrors the optimizer built by ``_get_optimizer_and_scheduler_steps`` so
-        persisting Adam moments across recovery calls stays consistent with the
-        per-call fresh-optimizer path.
+        persisting moments across recovery calls stays consistent with the
+        per-call fresh-optimizer path (recipe-driven when the flag is on).
         """
+        if self._recipe_step_recovery_enabled():
+            return self._build_recipe_step_optimizer(lr)
+
         adam_kwargs = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
         if torch.device(self.device).type == "cuda":
             adam_kwargs["fused"] = True
@@ -148,6 +187,10 @@ class BasicTrainer:
         The scheduler selection mirrors ``_get_optimizer_and_scheduler_steps`` so
         an owned optimizer follows the same LR schedule as the fresh-built path.
         """
+        if self._recipe_step_recovery_enabled():
+            scheduler = self._build_recipe_step_scheduler(optimizer, total_steps)
+            return scheduler, torch.amp.GradScaler("cuda")
+
         if constant_lr or total_steps <= 0:
             warmup_iters = max(1, int(total_steps * 0.05)) if total_steps > 0 else 1
             scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -260,6 +303,10 @@ class BasicTrainer:
         min_steps: int = 0,
         min_improvement: float = 1e-3,
         optimizer=None,
+        plateau_lr_factor: float = 1.0,
+        plateau_lr_reductions: int = 0,
+        return_steps: bool = False,
+        cosine_decay: bool = False,
     ):
         return basic_trainer_steps.train_steps_until_target(
             self,
@@ -273,6 +320,10 @@ class BasicTrainer:
             patience=patience,
             min_steps=min_steps,
             min_improvement=min_improvement,
+            plateau_lr_factor=plateau_lr_factor,
+            plateau_lr_reductions=plateau_lr_reductions,
+            return_steps=return_steps,
+            cosine_decay=cosine_decay,
         )
 
     def train_one_step(

@@ -82,6 +82,58 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # goldens bit-exact; enabling it changes the search trajectory (Tier-B).
     "tuning_enable_characterization": False,
     "tuning_characterization_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
+    # Recovery-quality knobs (all default-off → byte-identical to current behavior):
+    # re-find the LR after a committed cycle MISSES the target (else the LR is
+    # cached at cycle 0 forever); the next cycle re-discovers a fresh LR.
+    "tuning_refind_lr_on_miss": False,
+    # Plateau LR reduction within a recovery: on a plateau, multiply the optimizer
+    # LR by ``_factor`` (up to ``_reductions`` times) and continue instead of
+    # breaking immediately — a coarse-to-fine recovery ladder.
+    "tuning_recovery_lr_plateau": False,
+    "tuning_recovery_lr_plateau_factor": 0.3,
+    "tuning_recovery_lr_plateau_reductions": 2,
+    # Non-stalling rollback ratchet: KEEP the per-step relative gate (so the ramp
+    # keeps climbing — each step may give back a little) but cap the CUMULATIVE
+    # drift below the best-committed high-water mark; the bound tightens as the
+    # best ratchets up (no accumulation, no stall). Only used when the flag is on.
+    "tuning_rollback_ratchet": False,
+    "tuning_rollback_cumulative_bound": 0.05,
+    # Bounded cosine-scheduled stabilization: instead of the open-ended patience/
+    # round-based pass, run a SINGLE hard-cutoff pass of ``ratio * gradual_steps``
+    # steps with a cosine-decay LR (chosen LR -> ~0 over exactly N steps).
+    "tuning_stabilization_bounded": False,
+    "tuning_stabilization_ratio": 0.5,
+    # Tighter plateau detection (validation is cheap): divide the recovery check
+    # interval by ``_divisor`` so the stale-streak patience trips after fewer steps.
+    "tuning_tight_plateau": False,
+    "tuning_recovery_check_divisor": 1,
+    # Recipe-driven STEP recovery (generic: routes tuning_recipe + warmup/cosine
+    # into the step recovery instead of the hardcoded Adam(wd=5e-5)/constant-LR path).
+    "tuning_recipe_recovery": False,
+    # Genuine annealed TTFS-cascade ramp (opt-in): train through the genuine
+    # single-spike cascade for the whole ramp with the spike-surrogate sharpness
+    # annealed smooth->sharp. Must stay default-off until a full real-model run
+    # clears the accuracy-non-regression gate.
+    "ttfs_genuine_annealed_ramp": False,
+    "ttfs_ramp_alpha_min": 0.5,
+    "ttfs_ramp_alpha_max": 2.0,
+    # Scale-aware TTFS boundaries (opt-in): before ttfs_cycle fine-tuning, set each
+    # block's activation_scale to its Activation-Analysis theta_out and propagate
+    # input_activation_scale = upstream theta_out (the LIF scale-aware analog).
+    "ttfs_scale_aware_boundaries": False,
+    # Teacher->genuine blend ramp + per-neuron DFQ distribution matching (opt-in,
+    # experimental): ramp the output from (1-r)*teacher + r*genuine cascade while
+    # DFQ-correcting each perceptron's bias to match the ANN activation distribution.
+    "ttfs_genuine_blend_ramp": False,
+    "ttfs_distmatch_bias_iters": 15,
+    "ttfs_distmatch_bias_eta": 0.7,
+    "ttfs_distmatch_quantile": 0.99,
+    # EXPERIMENTAL fast fixed-increment genuine-blend ramp (opt-in, requires
+    # ttfs_genuine_blend_ramp): SKIP the SmoothAdaptation controller and walk a
+    # fixed rate schedule with a fixed step count + one Adam optimizer (~30-60s).
+    "ttfs_genuine_blend_fast": False,
+    "ttfs_blend_fast_steps_per_rate": 120,
+    "ttfs_blend_fast_rates": [0.5, 0.75, 0.9, 0.97, 1.0],
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -170,6 +222,28 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_full_transform_probe",
     "tuning_enable_characterization",
     "tuning_characterization_grid",
+    "tuning_refind_lr_on_miss",
+    "tuning_recovery_lr_plateau",
+    "tuning_recovery_lr_plateau_factor",
+    "tuning_recovery_lr_plateau_reductions",
+    "tuning_rollback_ratchet",
+    "tuning_rollback_cumulative_bound",
+    "tuning_stabilization_bounded",
+    "tuning_stabilization_ratio",
+    "tuning_tight_plateau",
+    "tuning_recovery_check_divisor",
+    "tuning_recipe_recovery",
+    "ttfs_genuine_annealed_ramp",
+    "ttfs_ramp_alpha_min",
+    "ttfs_ramp_alpha_max",
+    "ttfs_scale_aware_boundaries",
+    "ttfs_genuine_blend_ramp",
+    "ttfs_distmatch_bias_iters",
+    "ttfs_distmatch_bias_eta",
+    "ttfs_distmatch_quantile",
+    "ttfs_genuine_blend_fast",
+    "ttfs_blend_fast_steps_per_rate",
+    "ttfs_blend_fast_rates",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",

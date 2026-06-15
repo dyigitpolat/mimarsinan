@@ -93,6 +93,44 @@ def test_default_enable_nevresim_simulation_is_true():
     assert dp["enable_nevresim_simulation"] is True
 
 
+def test_ttfs_genuine_annealed_ramp_defaults_off():
+    """The genuine annealed ramp is opt-in and must stay default-off until a
+    full real-model run clears the accuracy-non-regression gate."""
+    dp = get_default_deployment_parameters()
+    assert dp["ttfs_genuine_annealed_ramp"] is False
+
+
+def test_ttfs_ramp_alpha_defaults():
+    dp = get_default_deployment_parameters()
+    assert dp["ttfs_ramp_alpha_min"] == 0.5
+    assert dp["ttfs_ramp_alpha_max"] == 2.0
+
+
 def test_config_builder_cycle_accurate_default_for_lif():
     cfg = build_deployment_config_from_state({})
     assert cfg["deployment_parameters"]["cycle_accurate_lif_forward"] is True
+
+
+def test_ttfs_genuine_blend_ramp_defaults_off():
+    """The teacher->genuine blend ramp + distribution matching is opt-in and must
+    stay default-off so golden traces and existing behavior are byte-identical."""
+    dp = get_default_deployment_parameters()
+    assert dp["ttfs_genuine_blend_ramp"] is False
+
+
+def test_ttfs_distmatch_defaults():
+    dp = get_default_deployment_parameters()
+    assert dp["ttfs_distmatch_bias_iters"] == 15
+    assert dp["ttfs_distmatch_bias_eta"] == 0.7
+    assert dp["ttfs_distmatch_quantile"] == 0.99
+
+
+def test_ttfs_genuine_blend_ramp_keys_in_config_keys_set():
+    from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
+    for key in (
+        "ttfs_genuine_blend_ramp",
+        "ttfs_distmatch_bias_iters",
+        "ttfs_distmatch_bias_eta",
+        "ttfs_distmatch_quantile",
+    ):
+        assert key in CONFIG_KEYS_SET
