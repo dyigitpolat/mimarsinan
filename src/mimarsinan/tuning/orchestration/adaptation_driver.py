@@ -29,9 +29,17 @@ class AdaptationDriver:
         return self._finalize()
 
     @staticmethod
-    def build_scheduler(*, epsilon, max_rounds, skip_one_shot, initial_step):
-        """Select the rate-search policy: a uniform ladder for the KD-blend family
-        (``skip_one_shot``); greedy-to-1.0 + bisect otherwise."""
+    def build_scheduler(*, epsilon, max_rounds, skip_one_shot, initial_step, policy_override=None):
+        """Select the rate-search policy: ``policy_override`` (e.g. ``dense_grid``
+        from a non-monotone characterization) wins; else a uniform ladder for the
+        KD-blend family (``skip_one_shot``); else greedy-to-1.0 + bisect."""
+        if policy_override == "dense_grid":
+            return RateScheduler(
+                epsilon=epsilon,
+                policy="dense_grid",
+                initial_step=initial_step,
+                max_rounds=max_rounds,
+            )
         if skip_one_shot:
             return RateScheduler(
                 epsilon=epsilon,

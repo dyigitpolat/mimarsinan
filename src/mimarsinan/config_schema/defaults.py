@@ -74,6 +74,14 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # drop shrinks as the committed rate climbs (is the ramp converging the
     # model toward 1.0-viability, or just inching the rate up?).
     "tuning_full_transform_probe": False,
+    # Characterization pre-phase (spec §10 / V9, default off): before the rate
+    # search, sweep a coarse α grid to profile the axis — feed the slope-derived
+    # epsilon_hint to the scheduler (A3) and, if the drop is non-monotone (A1, e.g.
+    # a re-aligning quant grid), downgrade the search to dense_grid safe mode
+    # instead of trusting the global monotonicity assumption. Default off keeps the
+    # goldens bit-exact; enabling it changes the search trajectory (Tier-B).
+    "tuning_enable_characterization": False,
+    "tuning_characterization_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -160,6 +168,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "paired_confirm_batches",
     "global_budget",
     "tuning_full_transform_probe",
+    "tuning_enable_characterization",
+    "tuning_characterization_grid",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",
