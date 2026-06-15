@@ -133,3 +133,60 @@ def test_bracket_restores_on_rollback():
         guard.restore(handle)  # caller restores on rollback signal
     for k, v in model.state_dict().items():
         assert torch.allclose(v, before[k], atol=1e-6)
+
+
+def test_tunable_cpu_pinned_round_trips_retained_tensors():
+    """tunable scope + cpu_pinned: the captured (trainable + buffer) tensors
+    restore bitwise; the frozen param is left untouched."""
+    model = make_tiny_supermodel()
+    params = list(model.named_parameters())
+    frozen_name = params[0][0]
+    params[0][1].requires_grad_(False)
+
+    stub = _Stub(model, device="cpu")
+    guard = CheckpointGuard(stub, scope="tunable", location="cpu_pinned")
+    handle = guard.snapshot()
+    assert frozen_name not in handle.state
+
+    trainable = [n for n, p in model.named_parameters() if p.requires_grad]
+    snap = {n: model.state_dict()[n].clone() for n in trainable}
+    _mutate(model)
+    guard.restore(handle)
+    sd = model.state_dict()
+    for n in trainable:
+        assert torch.equal(sd[n], snap[n])  # exact, not just allclose
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="pinned memory is CUDA-only")
+def test_cpu_pinned_actually_pins_and_frees_device_on_cuda():
+    """On CUDA the snapshot must land in *pinned* host memory (the real W6
+    offload), and the round-trip back onto the device is bitwise."""
+    model = make_tiny_supermodel().to("cuda")
+    stub = _Stub(model, device="cuda")
+    guard = CheckpointGuard(stub, scope="full", location="cpu_pinned")
+
+    handle = guard.snapshot()
+    assert all(v.device.type == "cpu" for v in handle.state.values())
+    assert all(v.is_pinned() for v in handle.state.values()), "snapshot is not pinned"
+
+    before = {k: v.detach().clone() for k, v in model.state_dict().items()}
+    _mutate(model)
+    guard.restore(handle)
+    sd = model.state_dict()
+    for k in before:
+        assert torch.equal(sd[k], before[k])
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="pinned memory is CUDA-only")
+def test_cpu_pinned_matches_device_clone_values_on_cuda():
+    """Pinned offload preserves the exact tensor values of an on-device clone."""
+    model = make_tiny_supermodel().to("cuda")
+    stub = _Stub(model, device="cuda")
+    device_guard = CheckpointGuard(stub, scope="tunable", location="device")
+    pinned_guard = CheckpointGuard(stub, scope="tunable", location="cpu_pinned")
+
+    dev = device_guard.snapshot()
+    pin = pinned_guard.snapshot()
+    assert set(dev.state) == set(pin.state)
+    for k in dev.state:
+        assert torch.equal(dev.state[k].cpu(), pin.state[k])

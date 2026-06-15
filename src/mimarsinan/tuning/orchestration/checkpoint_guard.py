@@ -29,6 +29,21 @@ from mimarsinan.tuning.learning_rate_explorer import (
 )
 
 
+def _to_pinned_host(src: "torch.Tensor") -> "torch.Tensor":
+    """Copy ``src`` to a pinned host buffer with a non-blocking d2h (CUDA only).
+
+    A fresh pinned buffer per call keeps nested snapshots (e.g. the full-transform
+    probe cloning while a cycle snapshot is live) from aliasing each other. The
+    caller issues a single ``cuda.synchronize`` after launching all copies, so
+    the per-tensor copies overlap. CPU tensors get a plain clone (pinning is a
+    GPU concept)."""
+    if src.is_cuda:
+        dst = torch.empty(src.shape, dtype=src.dtype, device="cpu", pin_memory=True)
+        dst.copy_(src, non_blocking=True)
+        return dst
+    return src.to("cpu", copy=True)
+
+
 @dataclass
 class Handle:
     """Opaque snapshot handle; ``state`` is the cloned model state."""
@@ -70,11 +85,18 @@ class CheckpointGuard:
         else:
             items = full
 
-        to_cpu = self.location == "cpu_pinned"
-        state = {
-            k: (v.detach().to("cpu", copy=True) if to_cpu else v.detach().clone())
-            for k, v in items.items()
-        }
+        if self.location == "cpu_pinned":
+            # Real async offload: each device tensor is copied into a *pinned*
+            # host buffer with a non-blocking d2h, then a single synchronize lets
+            # all copies overlap (vs. N serial blocking ``.to('cpu')`` copies) and
+            # pinned host memory gives ~2-3x d2h bandwidth. The snapshot lives in
+            # host RAM, freeing ~1x model of VRAM. CPU-source tensors (no CUDA)
+            # fall back to a plain clone — pinning is a GPU-only concept.
+            state = {k: _to_pinned_host(v.detach()) for k, v in items.items()}
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+        else:
+            state = {k: v.detach().clone() for k, v in items.items()}
         return Handle(state, self.scope, self.location)
 
     def restore(self, handle: Handle) -> None:
@@ -82,12 +104,20 @@ class CheckpointGuard:
             restore_state_for_trainer(self.trainer, handle.state)
             return
 
-        if handle.location == "cpu_pinned" and torch.cuda.is_available():
-            torch.cuda.synchronize()
         device = getattr(self.trainer, "device", None)
         state = handle.state
         if device is not None:
-            state = {k: v.to(device) for k, v in state.items()}
+            # Async h2d from the pinned snapshot back onto the device; one sync
+            # after launching all copies guarantees they land before the params
+            # are loaded. (Pageable/CPU paths use a plain blocking move.)
+            non_blocking = (
+                handle.location == "cpu_pinned"
+                and str(device) != "cpu"
+                and torch.cuda.is_available()
+            )
+            state = {k: v.to(device, non_blocking=non_blocking) for k, v in state.items()}
+            if non_blocking:
+                torch.cuda.synchronize()
         # ``strict=False``: tunable scope intentionally omits frozen params.
         self.trainer.model.load_state_dict(state, strict=False)
 
