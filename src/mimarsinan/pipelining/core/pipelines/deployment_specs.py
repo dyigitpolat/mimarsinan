@@ -127,9 +127,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
 
     specs.append(_ACTIVATION_ANALYSIS_STEP)
 
-    cycle_finetune = (
-        is_ttfs_cycle_based(spiking) and bool(config.get("enable_ttfs_finetuning", True))
-    )
+    cycle_finetune = is_ttfs_cycle_based(spiking)
     if spiking == "lif" or cycle_finetune:
         # LIF-style: one activation-replacement step (LIFActivation /
         # TTFSCycleActivation) subsumes the non-ReLU→ReLU replacement AND the

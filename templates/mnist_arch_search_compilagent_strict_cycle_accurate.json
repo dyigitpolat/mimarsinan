@@ -107,8 +107,7 @@
     "max_simulation_samples": 500,
     "allow_scheduling": true,
     "enable_loihi_simulation": true,
-    "enable_sanafe_simulation": true,
-    "sanafe_parity_check": true
+    "enable_sanafe_simulation": true
   },
   "target_metric_override": null,
   "start_step": "Architecture Search",

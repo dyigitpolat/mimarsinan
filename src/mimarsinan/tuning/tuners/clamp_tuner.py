@@ -1,70 +1,12 @@
-"""Tuner for gradual activation clamping.
-
-Learnable activation scale (optional)
--------------------------------------
-The clamp ceiling used to be fixed at construction from p99 activation
-analysis. That choice was reasonable on paper but brittle in practice:
-the p99 statistic is computed without considering downstream
-quantization-level alignment, so the optimal ceiling can drift during
-training.
-
-When ``pipeline.config["clamp_learnable_scale"]`` is truthy, the tuner
-makes each perceptron's clamp ceiling an ``nn.Parameter``. A quadratic
-log-scale regulariser (see :func:`clamp_scale_regulariser`) pulls the
-learned scalar toward the p99 reference so the IR-visible scale remains
-bounded. At the end of the tuner, the learned scale is frozen back onto
-``perceptron.set_activation_scale(...)`` so downstream IR / simulation
-stages see a plain scalar — exactly as before.
-
-Enabling the learnable scale is opt-in because downstream consumers
-that may subscribe to a *fixed* ceiling during tuning must be audited
-before flipping the default. The minimal refactor stops at "parameter
-added, regulariser + freeze wired"; more principled quantizer
-formulations (LSQ / LSQ+) are documented in ``TUNING_FUTURE_WORK.md``.
-"""
+"""Tuner for gradual activation clamping."""
 
 import math
 
 import torch
-import torch.nn as nn
 
 from mimarsinan.models.nn.layers import SavedTensorDecorator
 from mimarsinan.tuning.axes import ClampAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
-
-
-def clamp_scale_regulariser(
-    scale_param: nn.Parameter, reference: float
-) -> torch.Tensor:
-    """Symmetric quadratic penalty keeping ``scale_param`` near ``reference``.
-
-    Returns ``((scale - reference) / reference) ** 2``. This is:
-
-    - **Zero** at ``scale == reference``.
-    - **Symmetric** around the reference: ``scale = reference + delta``
-      incurs the same penalty as ``scale = reference - delta`` (for
-      any ``|delta| <= reference``).
-    - **Relative**: scaled by ``1 / reference`` so the same relative
-      drift produces the same loss regardless of the magnitude of the
-      reference.
-
-    Use as an additional loss term with a small multiplier — the
-    p99 reference is a soft prior, not a hard constraint.
-    """
-    ref = torch.as_tensor(reference, dtype=scale_param.dtype, device=scale_param.device)
-    ref = ref.clamp_min(torch.finfo(scale_param.dtype).eps)
-    return ((scale_param - ref) / ref) ** 2
-
-
-def freeze_learnable_scale(scale_param: nn.Parameter) -> float:
-    """Detach a learnable clamp scale to a plain Python float.
-
-    Called at the end of the tuner: downstream stages (IR assembly,
-    spike simulation) consume a scalar scale, so the learned parameter
-    is serialised to a float and the returned value is written back onto
-    the perceptron.
-    """
-    return float(scale_param.detach().cpu().item())
 
 
 class ClampTuner(SmoothAdaptationTuner):
@@ -258,40 +200,10 @@ class ClampTuner(SmoothAdaptationTuner):
             return self._final_metric
         return self.trainer.validate()
 
-    def _freeze_learnable_scales(self):
-        """Walk every perceptron's activation chain and freeze any learnable
-        clamp scale back onto ``perceptron.set_activation_scale(...)``.
-
-        When the learnable-scale path is not enabled (the default), no
-        ``ClampDecorator`` will carry a ``scale_param`` and this method is
-        a cheap no-op. When enabled, it ensures downstream IR / simulation
-        steps see a plain scalar ceiling (they don't know about
-        ``nn.Parameter``).
-        """
-        from mimarsinan.models.nn.decorators import ClampDecorator
-
-        frozen_count = 0
-        for perceptron in self.model.get_perceptrons():
-            activation = getattr(perceptron, "activation", None)
-            if activation is None:
-                continue
-            decorators = getattr(activation, "decorators", None) or []
-            for dec in decorators:
-                inner = getattr(dec, "decorator", dec)
-                if isinstance(inner, ClampDecorator) and inner.scale_param is not None:
-                    scalar = freeze_learnable_scale(inner.scale_param)
-                    perceptron.set_activation_scale(scalar)
-                    frozen_count += 1
-                    break
-        if frozen_count:
-            print(f"[ClampTuner] Froze {frozen_count} learnable clamp scales to scalars.")
-
     def _after_run(self):
         self._continue_to_full_rate()
 
         self._set_rate(1.0)
-
-        self._freeze_learnable_scales()
 
         self._final_metric = self._ensure_pipeline_threshold()
         self._committed_rate = 1.0

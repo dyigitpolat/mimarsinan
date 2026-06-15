@@ -109,10 +109,7 @@
     "enable_sanafe_simulation": true,
     "sanafe_arch_preset": "loihi",
     "sanafe_sample_count": 1,
-    "sanafe_custom_arch_path": null,
-    "sanafe_parity_check": true,
-    "sanafe_log_potential_trace": false,
-    "sanafe_log_message_trace": true
+    "sanafe_custom_arch_path": null
   },
   "target_metric_override": null,
   "start_step": "Architecture Search",

@@ -6,10 +6,9 @@ this step's primary value is the rich per-tile, per-core, per-neuron
 output SANA-FE provides — energy decomposition, latency, NoC packet
 traces, spike + potential traces.
 
-When ``sanafe_parity_check`` (default ``True``) is on, the step also
-builds an HCM reference for each sample and compares spike counts via
-the shared ``compare_records`` diff machinery; any divergence fails the
-pipeline with ``format_first_diff`` for triage.
+The step also builds an HCM reference for each sample and compares spike
+counts via the shared ``compare_records`` diff machinery; any divergence
+fails the pipeline with ``format_first_diff`` for triage.
 """
 
 from __future__ import annotations
@@ -101,11 +100,11 @@ class SanafeSimulationStep(PipelineStep):
         from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
         is_ttfs = requires_ttfs_firing(spiking_mode)
 
-        parity_check = bool(self.pipeline.config.get("sanafe_parity_check", True))
+        parity_check = True  # always cross-check SANA-FE against HCM
         arch_preset = self.pipeline.config.get("sanafe_arch_preset", "loihi")
         custom_arch_path = self.pipeline.config.get("sanafe_custom_arch_path") or None
-        log_potential = bool(self.pipeline.config.get("sanafe_log_potential_trace", False))
-        log_messages = bool(self.pipeline.config.get("sanafe_log_message_trace", True))
+        log_potential = False  # potential trace is heavy; not logged
+        log_messages = True   # message trace is the default record
         device = self.pipeline.config["device"]
 
         n = int(self.pipeline.config.get("sanafe_sample_count", 1))

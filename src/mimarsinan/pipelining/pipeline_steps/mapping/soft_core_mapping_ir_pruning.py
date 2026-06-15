@@ -44,23 +44,24 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     except Exception:
         pass
 
-    store_heatmap = bool(step.pipeline.config.get("store_pre_pruning_heatmap", True))
-    if store_heatmap:
-        heatmap_budget_bytes = int(step.pipeline.config.get(
-            "pre_pruning_heatmap_budget_bytes", 2 * 1024**3,
-        ))
-        est_bytes = 0
-        for nc in ir_graph.get_neural_cores():
-            if nc.core_matrix is not None:
-                est_bytes += nc.core_matrix.shape[0] * nc.core_matrix.shape[1] * 4
-        if est_bytes > heatmap_budget_bytes:
-            print(
-                f"[SoftCoreMappingStep] Pre-pruning heatmap would require "
-                f"{est_bytes/1e9:.1f} GB (budget {heatmap_budget_bytes/1e9:.1f} GB); "
-                f"disabling heatmap storage for this run. "
-                f"Set `pre_pruning_heatmap_budget_bytes` higher to override."
-            )
-            store_heatmap = False
+    # The pre-pruning heatmap is always stored, subject only to a memory-budget
+    # guard (a heatmap larger than ``pre_pruning_heatmap_budget_bytes`` is skipped).
+    store_heatmap = True
+    heatmap_budget_bytes = int(step.pipeline.config.get(
+        "pre_pruning_heatmap_budget_bytes", 2 * 1024**3,
+    ))
+    est_bytes = 0
+    for nc in ir_graph.get_neural_cores():
+        if nc.core_matrix is not None:
+            est_bytes += nc.core_matrix.shape[0] * nc.core_matrix.shape[1] * 4
+    if est_bytes > heatmap_budget_bytes:
+        print(
+            f"[SoftCoreMappingStep] Pre-pruning heatmap would require "
+            f"{est_bytes/1e9:.1f} GB (budget {heatmap_budget_bytes/1e9:.1f} GB); "
+            f"disabling heatmap storage for this run. "
+            f"Set `pre_pruning_heatmap_budget_bytes` higher to override."
+        )
+        store_heatmap = False
 
     with phase_profiler(phase_tag, "prune_ir_graph"):
         ir_graph = prune_ir_graph(

@@ -46,7 +46,7 @@ fail fast with a clear message if the `.so` files are missing.
 
 ## Parity gate (HCM ↔ SANA-FE)
 
-When `sanafe_parity_check` is true (default), `SanafeSimulationStep` for each sample:
+`SanafeSimulationStep` cross-checks against HCM for each sample:
 
 1. **TTFS:** `record_ttfs_hcm_reference()` (canonical `TtfsAnalyticalExecutor` + shared preprocessor via `preprocess_hybrid_sample`). **LIF:** `forward_with_recording()` → `RunRecord`.
 2. `SanafeRunner` with the same preprocessed sample; TTFS stages call `store_neural_segment_output` (activations, not spike/T).

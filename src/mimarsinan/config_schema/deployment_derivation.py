@@ -21,11 +21,10 @@ def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
         dp["activation_quantization"] = False
         return
 
-    # ttfs_cycle_based with fine-tuning is LIF-style: the TTFSCycleActivation
-    # subsumes the activation-quantization chain, so it is forced OFF (like LIF).
-    cycle_finetune = (
-        spiking_mode == "ttfs_cycle_based" and bool(dp.get("enable_ttfs_finetuning", True))
-    )
+    # ttfs_cycle_based is always cycle-accurate / fine-tuned (LIF-style): the
+    # TTFSCycleActivation subsumes the activation-quantization chain, so it is
+    # forced OFF (like LIF).
+    cycle_finetune = spiking_mode == "ttfs_cycle_based"
     act_quant = forces_activation_quantization(spiking_mode) and not cycle_finetune
     wt_quant = bool(dp.get("weight_quantization", True))
     dp["activation_quantization"] = act_quant
