@@ -69,9 +69,3 @@ def test_recovery_limited_returns_partial_result():
     assert 0.6 - EPS <= final <= 0.6  # a valid, recovered partial (I1), not 1.0
 
 
-def test_last_successful_step_reaches_edge_too():
-    attempt, _ = zoo.cliff(0.5)
-    final = RateScheduler(
-        epsilon=EPS, policy="last_successful_step", max_rounds=60
-    ).run(0.0, attempt)
-    assert 0.5 - EPS <= final <= 0.5

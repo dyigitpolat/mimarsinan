@@ -29,21 +29,14 @@ class AdaptationDriver:
         return self._finalize()
 
     @staticmethod
-    def build_scheduler(
-        *, epsilon, max_rounds, skip_one_shot, initial_step, sensitivity_stepping=False
-    ):
-        """Select the rate-search policy: uniform ladder for the KD-blend family
-        (``skip_one_shot``); ``last_successful_step`` when sensitivity-guided
-        (P5b, cheaper on cliff-like axes); greedy-to-1.0 + bisect otherwise."""
+    def build_scheduler(*, epsilon, max_rounds, skip_one_shot, initial_step):
+        """Select the rate-search policy: a uniform ladder for the KD-blend family
+        (``skip_one_shot``); greedy-to-1.0 + bisect otherwise."""
         if skip_one_shot:
             return RateScheduler(
                 epsilon=epsilon,
                 policy="uniform_ladder",
                 initial_step=initial_step,
                 max_rounds=max_rounds,
-            )
-        if sensitivity_stepping:
-            return RateScheduler(
-                epsilon=epsilon, policy="last_successful_step", max_rounds=max_rounds
             )
         return RateScheduler(epsilon=epsilon, policy="greedy_to_one", max_rounds=max_rounds)

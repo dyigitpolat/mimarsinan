@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import random
 
 import torch
+
+# Fixed seed for the decision-subsample reservoir: the tuning decision subset must
+# be representative AND identical across every validation in a run (so the paired
+# gate's reference/candidate and the pre/post comparisons all score the same
+# examples), and reproducible across runs.
+_VAL_SUBSAMPLE_SEED = 1234
 
 
 def _eval_autocast(device):
@@ -13,24 +20,40 @@ def _eval_autocast(device):
     return contextlib.nullcontext()
 
 
+def _to_device(trainer, x, y):
+    # ``.clone()`` is load-bearing: FFCV's IndexedLoader yields views into a small
+    # rotating buffer pool, so aliased references silently corrupt cached batches.
+    return (x.to(trainer.device, non_blocking=True).clone(),
+            y.to(trainer.device, non_blocking=True).clone())
+
+
 def _build_gpu_val_cache(trainer):
-    # ``.clone()`` is load-bearing: FFCV's IndexedLoader yields views into a
-    # small rotating buffer pool, so aliased references silently corrupt
-    # cached batches once the pool wraps.
     # ``_val_cache_max_batches`` (set by the tuning cycle) caps the cache to the
-    # fixed decision subsample instead of materializing the whole validation set
-    # on the device — the one change that makes the cache safe on ImageNet-scale
-    # val sets. The decision cursor rotates within it.
+    # fixed decision subsample instead of materializing the whole validation set on
+    # the device (the W8 ImageNet-scale fix). The subset is a SEEDED RESERVOIR
+    # SAMPLE — a representative, deterministic draw of ``max_batches`` batches from
+    # the full loader — not a degenerate first-N chunk (which can be unrepresentative
+    # and break tuning decisions). Only ``max_batches`` batches are ever resident on
+    # the device. The decision cursor rotates within it.
     max_batches = getattr(trainer, "_val_cache_max_batches", None)
-    cache = []
+    if max_batches is None:
+        trainer._gpu_val_cache = [
+            _to_device(trainer, x, y) for x, y in trainer.validation_loader
+        ]
+        trainer._gpu_val_cursor = 0
+        return
+
+    cap = int(max_batches)
+    rng = random.Random(_VAL_SUBSAMPLE_SEED)
+    reservoir = []
     for i, (x, y) in enumerate(trainer.validation_loader):
-        if max_batches is not None and i >= int(max_batches):
-            break
-        cache.append(
-            (x.to(trainer.device, non_blocking=True).clone(),
-             y.to(trainer.device, non_blocking=True).clone())
-        )
-    trainer._gpu_val_cache = cache
+        if i < cap:
+            reservoir.append(_to_device(trainer, x, y))
+        else:
+            j = rng.randint(0, i)
+            if j < cap:
+                reservoir[j] = _to_device(trainer, x, y)  # frees the replaced batch
+    trainer._gpu_val_cache = reservoir
     trainer._gpu_val_cursor = 0
 
 
