@@ -49,12 +49,23 @@ class AcceptanceSensor:
 
     @staticmethod
     def absolute_floor(baseline, pipeline_tolerance, pipeline_hard_floor):
-        """Baseline-anchored absolute floor (the cumulative-drift guard)."""
+        """Baseline-anchored absolute floor (the cumulative-drift guard).
+
+        Robustness: the pipeline hard floor (a DEPLOYMENT target) is a valid
+        per-cycle rollback trigger only when it is ACHIEVABLE — i.e. not above the
+        rate-0 baseline the model can actually reach. A hard floor above the
+        baseline can never be met by any transform, so using it would roll back
+        every cycle and stall the ramp to rate 0 (it makes zero gradual progress);
+        the deployment shortfall is instead reported at finalize. Such an
+        unachievable hard floor is dropped here so the achievable baseline-anchored
+        floor governs the per-cycle gate. No-op when the floor is achievable (the
+        normal / golden-trace case)."""
         floors = []
         if baseline is not None and pipeline_tolerance is not None:
             floors.append(float(baseline) * (1.0 - float(pipeline_tolerance)))
         if pipeline_hard_floor is not None:
-            floors.append(float(pipeline_hard_floor))
+            if baseline is None or float(pipeline_hard_floor) <= float(baseline):
+                floors.append(float(pipeline_hard_floor))
         if not floors:
             return None
         return max(floors)
