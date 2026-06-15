@@ -48,11 +48,25 @@ def _perceptron_nodes_in_order(model_repr):
 
 class TestCalibrateActivationScale:
     def test_activation_scale_set_to_provided_theta_out(self):
+        """Interior blocks get the provided theta_out; the encoding block is pinned
+        to the data scale (fixed by the input spike-encoding contract)."""
         model = make_tiny_supermodel()
         scales = [2.5, 3.0]
-        calibrate_scale_aware_boundaries(model, scales)
+        calibrate_scale_aware_boundaries(model, scales, input_data_scale=1.0)
         for p, s in zip(model.get_perceptrons(), scales):
-            assert float(p.activation_scale) == pytest.approx(s)
+            expected = 1.0 if getattr(p, "is_encoding_layer", False) else s
+            assert float(p.activation_scale) == pytest.approx(expected)
+
+    def test_encoding_layer_scale_pinned_to_data_scale(self):
+        """The encoding block's activation_scale is NOT retuned to its quantile — it
+        stays at ``input_data_scale``. Retuning it (e.g. 2.17 vs the data scale)
+        breaks NF↔SCM deployment parity, worst at the shallow consuming layers."""
+        model = make_tiny_supermodel()
+        calibrate_scale_aware_boundaries(model, [2.5, 3.0], input_data_scale=0.5)
+        enc = [p for p in model.get_perceptrons() if getattr(p, "is_encoding_layer", False)]
+        assert enc, "fixture must have an encoding layer"
+        for p in enc:
+            assert float(p.activation_scale) == pytest.approx(0.5)
 
 
 class TestPropagateInputScale:
@@ -141,6 +155,11 @@ class TestBoundaryEncodableProperty:
 
         eps = 1e-5
         for p in model.get_perceptrons():
+            # The encoding block is pinned to the data scale (input spike-encoding
+            # contract), not its own max, so the [0,1] property is the encoder's
+            # responsibility there, not the boundary calibration's.
+            if getattr(p, "is_encoding_layer", False):
+                continue
             out = captured[id(p)]
             theta_out = float(p.activation_scale)
             normalized = out / theta_out
@@ -228,10 +247,13 @@ class TestFlagOnIntegration:
 
         perceptrons = model.get_perceptrons()
         for p, s in zip(perceptrons, scales):
-            assert float(p.activation_scale) == pytest.approx(s)
-        # Downstream perceptron's input_scale equals upstream theta_out.
+            # The encoding block is pinned to the data scale (1.0), not its quantile.
+            expected = 1.0 if getattr(p, "is_encoding_layer", False) else s
+            assert float(p.activation_scale) == pytest.approx(expected)
+        # Downstream perceptron's input_scale equals upstream theta_out (here the
+        # encoding block, pinned to the data scale 1.0).
         assert float(perceptrons[1].input_activation_scale) == pytest.approx(
-            scales[0]
+            float(perceptrons[0].activation_scale)
         )
         # Input-boundary perceptron's input_scale defaults to 1.0 ([0,1] inputs).
         assert float(perceptrons[0].input_activation_scale) == pytest.approx(1.0)

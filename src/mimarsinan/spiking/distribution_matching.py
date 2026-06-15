@@ -2,9 +2,12 @@
 
 Two stages, both grounded in the teacher ANN's activation distribution:
 
-1. **Scale-aware boundaries** — each block's ``theta_out`` is the teacher's
-   per-perceptron activation quantile, so the [0,1] TTFS window normalizes that
-   block's output (and the downstream input un-normalizes it).
+1. **Scale-aware boundaries** — each interior block's ``theta_out`` is the
+   teacher's per-perceptron activation quantile, so the [0,1] TTFS window
+   normalizes that block's output (and the downstream input un-normalizes it).
+   The ENCODING block is excluded (pinned to the data scale): its scale is fixed
+   by the input spike-encoding contract, and retuning it breaks NF↔SCM
+   deployment parity (see ``calibrate_scale_aware_boundaries``).
 2. **DFQ per-neuron bias correction** — a few rounds of matching each
    perceptron's *cascade* channel-mean to the ANN's by nudging ``layer.bias``.
    Raising a starved neuron's membrane baseline revives it (reversing the

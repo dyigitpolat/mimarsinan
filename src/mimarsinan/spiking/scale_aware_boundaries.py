@@ -59,7 +59,15 @@ def propagate_boundary_input_scales(model_repr_or_model, input_data_scale: float
 def calibrate_scale_aware_boundaries(model, activation_scales, input_data_scale: float = 1.0):
     """Set each block's ``activation_scale`` to its distribution-grounded theta_out,
     then propagate so every input un-normalizes from [0,1] (input_scale = upstream
-    theta_out). Generic; no model-specific logic."""
+    theta_out). Generic; no model-specific logic.
+
+    The ENCODING layer is excluded: its output scale is fixed by the hardware
+    input spike-encoding contract (the data→spike generation), not free for
+    distribution matching to retune. Retuning it to a teacher quantile (e.g. 2.17
+    vs the data scale 1.0) silently breaks NF↔SCM deployment parity — the cascade
+    decodes the encoded input at the retuned scale but the hardware executor
+    encodes at the data scale, diverging worst at the shallow layers that consume
+    the encoded input. So the encoding block is pinned to ``input_data_scale``."""
     perceptrons = list(model.get_perceptrons())
     if len(activation_scales) != len(perceptrons):
         raise ValueError(
@@ -67,6 +75,9 @@ def calibrate_scale_aware_boundaries(model, activation_scales, input_data_scale:
             f"{len(perceptrons)}"
         )
     for perceptron, scale in zip(perceptrons, activation_scales):
-        perceptron.set_activation_scale(float(scale))
+        if getattr(perceptron, "is_encoding_layer", False):
+            perceptron.set_activation_scale(float(input_data_scale))
+        else:
+            perceptron.set_activation_scale(float(scale))
 
     propagate_boundary_input_scales(model, input_data_scale=input_data_scale)
