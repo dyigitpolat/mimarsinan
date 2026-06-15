@@ -121,6 +121,28 @@ class TestRampForwardIsBlend:
         torch.testing.assert_close(got, expected, rtol=0, atol=0)
 
 
+# ── Flag ON: genuine controller perf — the LR is found once, never re-found ───
+
+
+class TestGenuineLrCachedOnce:
+    def test_genuine_ramp_does_not_invalidate_lr_cache(self, tmp_path):
+        """The LR finder is the genuine controller's dominant cost (~55s/call on
+        the cascade); the LR is stable across the blend ramp, so the genuine path
+        caches it once and never re-finds (``_invalidate_lr_cache`` is a no-op)."""
+        tuner, _, _ = _make_tuner(tmp_path, blend=True)
+        tuner._cached_lr = 0.0042
+        tuner._invalidate_lr_cache()
+        assert tuner._cached_lr == 0.0042, "genuine ramp must NOT drop the cached LR"
+
+    def test_value_domain_ramp_still_invalidates(self, tmp_path):
+        """Flag off (the value-domain proxy ramp): the base behavior is unchanged —
+        the LR cache is still invalidated (golden-safe for every other tuner)."""
+        tuner, _, _ = _make_tuner(tmp_path, blend=False)
+        tuner._cached_lr = 0.0042
+        tuner._invalidate_lr_cache()
+        assert tuner._cached_lr is None
+
+
 # ── Flag ON: the axis drives the installed forward.rate ───────────────────────
 
 
