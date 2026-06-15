@@ -6,6 +6,13 @@ from mimarsinan.tuning.axes import ManagerRateAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
+# Fixed seed for stochastic-axis decisions (ActQuant random masks / Noise). Gives
+# each run a reproducible mask stream instead of one slaved to the global RNG; a
+# no-op for non-stochastic rates (clamp / activation-adaptation have no random
+# decorators), so it stays bit-exact there.
+_DECISION_SEED = 1234
+
+
 class AdaptationRateTuner(SmoothAdaptationTuner):
     """Drive one ``adaptation_manager.<rate_attr>`` across all perceptrons."""
 
@@ -18,6 +25,7 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
         # set_rate to the apply_manager_rate SSOT (test_axis_delegation).
         self._axis = ManagerRateAxis(self.rate_attr)
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+        self._axis.set_decision_seed(_DECISION_SEED)
 
     def _get_extra_state(self):
         return self._axis.get_extra_state()
