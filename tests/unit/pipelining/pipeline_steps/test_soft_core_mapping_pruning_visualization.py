@@ -15,8 +15,8 @@ These tests pin down the correct contract:
 * With pruning enabled and no explicit visualisation config, the Soft Core
   Mapping step **must** store ``pre_pruning_heatmap`` and the pre-compaction
   masks on every neural core whose weights were compacted.
-* A user who really needs to save memory can disable the heatmaps by setting
-  ``store_pre_pruning_heatmap`` to ``False`` in the pipeline config.
+* A run that exceeds ``pre_pruning_heatmap_budget_bytes`` skips the extra
+  full-matrix copy to save memory.
 """
 
 from __future__ import annotations
@@ -120,21 +120,22 @@ class TestPrePruningHeatmapDefaultRetention:
             assert arr.ndim == 2
             assert arr.dtype == np.float32
 
-    def test_explicit_opt_out_skips_pre_pruning_heatmap(
+    def test_budget_guard_skips_pre_pruning_heatmap(
         self, mock_pipeline, platform_constraints
     ):
-        """``store_pre_pruning_heatmap=False`` lets memory-constrained runs skip the extra copy."""
+        """A zero ``pre_pruning_heatmap_budget_bytes`` lets memory-constrained runs
+        skip the extra full-matrix copy (the heatmap is otherwise always stored)."""
         model = _fused_model_with_identity_norm()
         _register_prune_masks_zeroing_half_columns(model)
 
-        mock_pipeline.config["store_pre_pruning_heatmap"] = False
+        mock_pipeline.config["pre_pruning_heatmap_budget_bytes"] = 0
         ir_graph = _run_soft_core_mapping(mock_pipeline, model, platform_constraints)
 
         cores = [n for n in ir_graph.nodes if isinstance(n, NeuralCore) and n.core_matrix is not None]
         assert cores, "Expected at least one NeuralCore after Soft Core Mapping"
         for c in cores:
             assert getattr(c, "pre_pruning_heatmap", None) is None, (
-                "With store_pre_pruning_heatmap=False the step must not hold on "
+                "Over the heatmap byte budget, the step must not hold on "
                 "to the full-matrix pre-pruning copy."
             )
 

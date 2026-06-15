@@ -26,7 +26,7 @@ class TestDefaultsMatchPipeline:
     def test_sanafe_keys_in_defaults(self):
         d = get_default_deployment_parameters()
         assert "enable_sanafe_simulation" in d
-        assert "sanafe_parity_check" in d
+        assert "sanafe_arch_preset" in d
 
     def test_platform_defaults_include_scheduling_keys(self):
         p = get_default_platform_constraints()

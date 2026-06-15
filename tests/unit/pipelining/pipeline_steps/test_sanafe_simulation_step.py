@@ -3,9 +3,9 @@
 The step:
   * loads ``sanafe_sample_count`` deterministic samples,
   * runs the SANA-FE backend on each,
-  * for each sample, when ``sanafe_parity_check`` is on, builds an HCM
-    reference ``RunRecord`` and feeds ``compare_records(ref, actual_subset)``;
-    fails the pipeline with ``format_first_diff`` on any divergence,
+  * for each sample, builds an HCM reference ``RunRecord`` and feeds
+    ``compare_records(ref, actual_subset)``; fails the pipeline with
+    ``format_first_diff`` on any divergence,
   * persists the per-sample ``SanafeRunRecord``s as a ``SanafeStepReport``
     under cache key ``sanafe_simulation_results``,
   * reports headline metrics (parity, total energy, max sim time,
@@ -100,8 +100,7 @@ def _fake_sanafe_record(sample_index=0, energy_total=2.0,
 
 
 def _prepare_step(monkeypatch, *,
-                  diffs=None, sample_count=1, parity_check=True,
-                  arch_preset="loihi"):
+                  diffs=None, sample_count=1, arch_preset="loihi"):
     import mimarsinan.pipelining.pipeline_steps.verification.sanafe_simulation_step as step_mod
 
     calls = {
@@ -161,11 +160,8 @@ def _prepare_step(monkeypatch, *,
     pipeline.config["simulation_steps"] = 4
     pipeline.config["thresholding_mode"] = "<"
     pipeline.config["sanafe_sample_count"] = sample_count
-    pipeline.config["sanafe_parity_check"] = parity_check
     pipeline.config["sanafe_arch_preset"] = arch_preset
     pipeline.config["sanafe_custom_arch_path"] = None
-    pipeline.config["sanafe_log_potential_trace"] = False
-    pipeline.config["sanafe_log_message_trace"] = True
     pipeline.reporter = _RecordingReporter()
     pipeline.set_target_metric(0.875)
     pipeline.seed("model", make_tiny_supermodel(), step_name="Model Configuration")
@@ -288,19 +284,6 @@ def test_step_fails_with_formatted_record_diff_when_parity_breaks(monkeypatch):
     step, _, _ = _prepare_step(monkeypatch, diffs=["someDiff"])
     with pytest.raises(AssertionError, match="formatted sanafe diff"):
         step.run()
-
-
-def test_step_skips_hcm_reference_when_parity_check_disabled(monkeypatch):
-    step, pipeline, calls = _prepare_step(monkeypatch, parity_check=False)
-    step.run()
-    assert calls["hcm_built"] == 0
-
-
-def test_step_does_not_report_parity_when_disabled(monkeypatch):
-    step, pipeline, _ = _prepare_step(monkeypatch, parity_check=False)
-    step.run()
-    names = [e[0] for e in pipeline.reporter.events]
-    assert "SANA-FE Parity" not in names
 
 
 # ---------------------------------------------------------------------------

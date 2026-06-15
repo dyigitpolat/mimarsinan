@@ -23,13 +23,6 @@ def test_ttfs_cycle_based_finetune_disables_activation_quant():
     assert dp["activation_quantization"] is False
 
 
-def test_ttfs_cycle_based_without_finetune_enables_activation_quant():
-    dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
-          "enable_ttfs_finetuning": False}
-    derive_deployment_parameters(dp)
-    assert dp["activation_quantization"] is True
-
-
 def test_ttfs_cycle_based_synchronized_disables_nevresim():
     # No genuine synchronized-window nevresim backend yet → forced off.
     dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,

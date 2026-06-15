@@ -10,7 +10,7 @@ Activation analysis, adaptation tuners, clamp/LIF/noise/pruning adaptation, acti
 | `activation_shift_step.py` | `ActivationShiftStep` |
 | `pruning_adaptation_step.py` | `PruningAdaptationStep` |
 | `lif_adaptation_step.py` | `LIFAdaptationStep` |
-| `ttfs_cycle_adaptation_step.py` | `TTFSCycleAdaptationStep` (ttfs_cycle_based only; opt-in `enable_ttfs_finetuning`; after Activation Quantization, before Weight Quantization) |
+| `ttfs_cycle_adaptation_step.py` | `TTFSCycleAdaptationStep` (ttfs_cycle_based only; always runs for that mode; after Activation Quantization, before Weight Quantization) |
 | `noise_adaptation_step.py` | `NoiseAdaptationStep` |
 
 Shared helpers: `pipelining.pipeline_steps.activation_utils`.

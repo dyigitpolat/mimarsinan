@@ -1352,9 +1352,7 @@ function renderNocAnimation(elId, seg) {
   if (!el || !window.Plotly) return;
   if (!seg.has_message_trace && (seg.packets_sent || 0) === 0) {
     el.innerHTML =
-      '<div class="empty-state" style="padding:30px;font-size:13px">No NoC traffic recorded for this segment.<br>' +
-      '<span style="font-size:11px;color:var(--text-muted)">Enable ' +
-      '<code>sanafe_log_message_trace</code> in deployment parameters.</span></div>';
+      '<div class="empty-state" style="padding:30px;font-size:13px">No NoC traffic recorded for this segment.</div>';
     return;
   }
   if (interQuints === 0 && tilePktTotal === 0 && (seg.packets_sent || 0) === 0) {

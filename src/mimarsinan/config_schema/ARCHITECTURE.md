@@ -29,7 +29,7 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 | `enable_loihi_simulation` | Append Loihi Simulation step (LIF only) |
 | `enable_sanafe_simulation` | Append SANA-FE Simulation step |
 | `loihi_parity_sample_index` | Deterministic test index for Loihi parity |
-| `sanafe_sample_count`, `sanafe_arch_preset`, `sanafe_custom_arch_path`, `sanafe_parity_check`, `sanafe_log_*` | SANA-FE step behaviour |
+| `sanafe_sample_count`, `sanafe_arch_preset`, `sanafe_custom_arch_path` | SANA-FE step behaviour |
 | `activation_quantization`, `weight_quantization`, `pruning`, `pruning_fraction` | Step gating |
 | `enable_training_noise` | Optional `NoiseAdaptationStep` after LIF adaptation |
 | `max_simulation_samples`, `seed`, `simulation_steps` | Simulation subsampling and cycles |

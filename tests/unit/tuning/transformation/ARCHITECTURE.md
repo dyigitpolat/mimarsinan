@@ -10,7 +10,6 @@ heterogeneous axis profiles before any expensive real run.
 |------|---------|
 | `mock_axis_zoo.py` | Analytic `attempt(target) -> committed` surfaces: `smooth_monotone`, `cliff`, `plateau_then_drop`, `recovery_limited`, `adversarial_timing`, `non_monotone`. |
 | `test_controller_invariants.py` | RateScheduler over each archetype: lands within the feasible edge (I1), monotone progress (I2), bounded probes, partial-result on recovery-limited, `last_successful_step` parity. |
-| `test_multi_axis.py` | `MultiAxisDriver`/`VectorRateScheduler` (P7): each axis reaches its edge, monotone committed vector, value-domain guard rejects non-value-domain axes. |
 | `test_metamorphic.py` | IV.5 relations without ground truth: reducing ε weakly increases committed for a cliff; one-shot never commits past a cliff; larger N shrinks paired SE; tightening k never turns reject→accept; same config → identical trajectory. |
 | `test_determinism.py` | IV.8: `rng_snapshot`/`deterministic_rng` restore RNG around a probe; a fixed-seed scripted tuner replays an identical `DecisionTrace` (I6). |
 | `test_chaos_rollback.py` | IV.6: forced recovery divergence → exact bitwise restore; `CheckpointGuard.bracket()` restore; non-monotone surface still terminates (dense-grid safe mode is the future V9 handling). |

@@ -84,9 +84,6 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # drop shrinks as the committed rate climbs (is the ramp converging the
     # model toward 1.0-viability, or just inching the rate up?).
     "tuning_full_transform_probe": False,
-    # Interleaved multi-axis continuation (opt-in, P7; research-grade; the
-    # value-domain guard keeps it away from LIF/TTFS finalize).
-    "interleave_axes": False,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -97,14 +94,10 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "enable_sanafe_simulation": False,
     "cycle_accurate_lif_forward": True,
     "enable_training_noise": False,
-    "enable_ttfs_finetuning": True,
     "ttfs_cycle_schedule": "cascaded",
     "sanafe_sample_count": 1,
     "sanafe_arch_preset": "loihi",
     "sanafe_custom_arch_path": None,
-    "sanafe_log_potential_trace": False,
-    "sanafe_log_message_trace": True,
-    "sanafe_parity_check": True,
     "spike_encoding_seed": None,
     "training_recipe": dict(DEFAULT_TRAINING_RECIPE),
     "tuning_recipe": dict(DEFAULT_TUNING_RECIPE),
@@ -181,7 +174,6 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_inplace_rate",
     "tuning_loss_slope_lr",
     "tuning_full_transform_probe",
-    "interleave_axes",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",
@@ -190,7 +182,6 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_recipe",
     "activation_analysis_batch_size",
     "generate_visualizations",
-    "store_pre_pruning_heatmap",
     "max_simulation_samples",
     "seed",
     "enable_nevresim_simulation",
@@ -198,7 +189,6 @@ CONFIG_KEYS_SET: Set[str] = {
     "enable_loihi_simulation",
     "enable_sanafe_simulation",
     "enable_training_noise",
-    "enable_ttfs_finetuning",
     "ttfs_cycle_schedule",
     "ttfs_finetune_kd_against_rung2",
     "scm_degradation_tolerance",
@@ -211,9 +201,6 @@ CONFIG_KEYS_SET: Set[str] = {
     "sanafe_sample_count",
     "sanafe_arch_preset",
     "sanafe_custom_arch_path",
-    "sanafe_parity_check",
-    "sanafe_log_potential_trace",
-    "sanafe_log_message_trace",
     "simulation_batch_count",
 }
 

@@ -6,8 +6,18 @@
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
     "cores": [
-      {"max_axons": 256, "max_neurons": 512, "count": 30, "has_bias": true},
-      {"max_axons": 512, "max_neurons": 256, "count": 30, "has_bias": true}
+      {
+        "max_axons": 256,
+        "max_neurons": 512,
+        "count": 30,
+        "has_bias": true
+      },
+      {
+        "max_axons": 512,
+        "max_neurons": 256,
+        "count": 30,
+        "has_bias": true
+      }
     ],
     "max_axons": 512,
     "max_neurons": 512,
@@ -28,7 +38,11 @@
     "model_type": "mlp_mixer_core",
     "model_config": {
       "base_activation": "ReLU",
-      "patch_n_1": 4, "patch_m_1": 4, "patch_c_1": 128, "fc_w_1": 64, "fc_w_2": 128
+      "patch_n_1": 4,
+      "patch_m_1": 4,
+      "patch_c_1": 128,
+      "fc_w_1": 64,
+      "fc_w_2": 128
     },
     "spiking_mode": "lif",
     "firing_mode": "Default",
@@ -40,13 +54,36 @@
     "pruning": true,
     "pruning_fraction": 0.2,
     "batch_size": 128,
-    "training_recipe": {"optimizer": "adamw", "scheduler": "cosine", "weight_decay": 0.0001, "warmup_ratio": 0.05, "grad_clip_norm": 1, "layer_wise_lr_decay": 1, "label_smoothing": 0, "betas": [0.9, 0.999]},
-    "tuning_recipe": {"optimizer": "adamw", "scheduler": "cosine", "weight_decay": 0.0001, "warmup_ratio": 0, "grad_clip_norm": 1, "layer_wise_lr_decay": 1, "label_smoothing": 0, "betas": [0.9, 0.999]},
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
     "max_simulation_samples": 500,
     "allow_scheduling": true,
     "enable_loihi_simulation": false,
-    "enable_sanafe_simulation": true,
-    "sanafe_parity_check": true
+    "enable_sanafe_simulation": true
   },
   "target_metric_override": null,
   "start_step": "SANA-FE Simulation",

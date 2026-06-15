@@ -170,13 +170,6 @@ class TestActivationAdaptationAlwaysPresent:
         })
         assert "Simulation" in lif_names
 
-    def test_ttfs_cycle_finetuning_opt_out_falls_back_to_quant_chain(self):
-        # Disabling fine-tuning reverts to the analytical clamp/shift/quant chain.
-        names = _step_names(self._ttfs_cycle_config(enable_ttfs_finetuning=False))
-        assert "TTFS Cycle Fine-Tuning" not in names
-        assert "Clamp Adaptation" in names
-        assert "Activation Quantization" in names
-
     @pytest.mark.parametrize("spiking", ["ttfs", "ttfs_quantized", "lif", "rate"])
     def test_ttfs_cycle_finetuning_absent_for_other_modes(self, spiking):
         config = {
