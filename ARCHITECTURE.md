@@ -502,7 +502,7 @@ Runs immediately after Activation Analysis (and its companion Activation Adaptat
 
 Uses `LIFAdaptationTuner` to swap each chip-targeted perceptron's `base_activation` to `LIFActivation` via a gradual **`LIFBlendActivation`** (linear mix of the perceptron's original base activation — ReLU, GELU, LeakyReLU, … — and LIF, rate 0→1). The blend ramp subsumes any non-ReLU→ReLU replacement, so no separate Activation Adaptation step runs on LIF paths. Recovery uses knowledge distillation: frozen teacher = pre-LIF snapshot, student = blended model (α·CE + (1−α)·T²·KL, T=3, α=0.3).
 
-By default the blend ramp runs in the **value domain** (the `LIFBlendActivation` ramp — golden, non-destructive: rate 0 == continuous teacher bit-for-bit), and the genuine cross-layer dynamics are installed at finalize. (Optional ramp shapes: **`legacy_lif_blend_ramp`** uses the per-frame **`_CycleAccurateForward`** ramp, which leaks off the continuous teacher at rate 0; opt-in **`genuine_gradual_cascade_ramp`** wraps the chip-aligned forward in a **`BlendedGenuineForward`** output blend `(1−r)·continuous + r·genuine` so the ramp trains through the deployed dynamics with no finalize cliff — architecturally clean but empirically lower final accuracy than the proxy ramp.) When **`cycle_accurate_lif_forward`** is true, `_finalize` rebuilds the activations and installs **`_ChipAlignedNFForward`** (`chip_aligned_segment_forward`) as the permanent `model.forward`. The base `_after_run` symmetrically unpatches any ramp forward (`try/finally`) and records `_finalize_cliff` / `_phase_seconds`. All downstream pipeline steps (WQ, NormFusion, SCM probes) then validate against the same forward that Nevresim / SANA-FE / Lava run.
+By default the blend ramp runs in the **value domain** (the `LIFBlendActivation` ramp — golden, non-destructive: rate 0 == continuous teacher bit-for-bit), and the genuine cross-layer dynamics are installed at finalize. (Optional ramp shape: **`legacy_lif_blend_ramp`** uses the per-frame **`_CycleAccurateForward`** ramp, which leaks off the continuous teacher at rate 0.) When **`cycle_accurate_lif_forward`** is true, `_finalize` rebuilds the activations and installs **`_ChipAlignedNFForward`** (`chip_aligned_segment_forward`) as the permanent `model.forward`. The base `_after_run` symmetrically unpatches any ramp forward (`try/finally`) and records `_finalize_cliff` / `_phase_seconds`. All downstream pipeline steps (WQ, NormFusion, SCM probes) then validate against the same forward that Nevresim / SANA-FE / Lava run.
 
 ### 5.6c TTFS-Cycle Fine-Tuning
 
@@ -512,7 +512,9 @@ By default the blend ramp runs in the **value domain** (the `LIFBlendActivation`
 - **Updates**: `model`, `adaptation_manager`
 - **Included when**: `spiking_mode == "ttfs_cycle_based"` and `enable_ttfs_finetuning` (default true) — directly after Activation Analysis (**LIF-style**: it replaces the Activation Adaptation / Clamp / Shift / Activation Quantization chain, exactly like §5.6b LIF Adaptation)
 
-Uses `TTFSCycleAdaptationTuner` (a `KDBlendAdaptationTuner` subclass, shared with LIF Adaptation) to ramp each perceptron's `base_activation` (ReLU, possibly GELU/LeakyReLU) toward **`TTFSActivation`**, with KD recovery α·CE + (1−α)·T²·KL (T=3, α=0.3) against the pre-blend snapshot. The kernel clamps/quantises internally, so the tuner sets `adaptation_manager.ttfs_active` to subsume the clamp/quant/shift decorators (`activation_quantization` forced off). **cascaded** ramps the value-domain staircase proxy by default and installs the genuine single-spike cascade (`_SegmentSpikeForward`) at finalize — the accuracy-preferred path (the proxy is a better-conditioned optimizer and the genuine cascade inherits its optimum favorably; directly training the genuine cascade via the opt-in `genuine_gradual_cascade_ramp` `BlendedGenuineForward` is architecturally cleaner — no finalize cliff, NF==SCM-by-construction — but empirically lower final accuracy). **synchronized** keeps the class-level analytical staircase composition (its deployed dynamics) and trains the wire-contract `q(x)` grid snap via a `TTFSInputGridQuantizer` STE on each segment entry.
+Uses `TTFSCycleAdaptationTuner` (a `KDBlendAdaptationTuner` subclass, shared with LIF Adaptation) to ramp each perceptron's `base_activation` (ReLU, possibly GELU/LeakyReLU) toward **`TTFSActivation`**, with KD recovery α·CE + (1−α)·T²·KL (T=3, α=0.3) against the pre-blend snapshot. The kernel clamps/quantises internally, so the tuner sets `adaptation_manager.ttfs_active` to subsume the clamp/quant/shift decorators (`activation_quantization` forced off). **cascaded** ramps the value-domain staircase proxy by default and installs the genuine single-spike cascade (`_SegmentSpikeForward`) at finalize — the accuracy-preferred path (the proxy is a better-conditioned optimizer and the genuine cascade inherits its optimum favorably). **synchronized** keeps the class-level analytical staircase composition (its deployed dynamics) and trains the wire-contract `q(x)` grid snap via a `TTFSInputGridQuantizer` STE on each segment entry.
+
+**Genuine annealed ramp** (opt-in `ttfs_genuine_annealed_ramp`, default **false**; cascaded only — ignored under synchronized): instead of the value-domain proxy, the genuine single-spike cascade (`_SegmentSpikeForward`, the *same* forward `_finalize_forward_for` builds) is installed for the **whole** ramp and the committed rate anneals the spike-surrogate sharpness `alpha` smooth→sharp over `ttfs_ramp_alpha_min` (0.5) → `ttfs_ramp_alpha_max` (2.0) on the geometric schedule `alpha_min·(alpha_max/alpha_min)**rate` (owned by `TTFSGenuineAxis`). `alpha` is **backward-only** — the forward is the exact `pre>0` Heaviside at every rate — so rate 1 is bit-identical to the deployed cascade and the finalize cliff is **zero by construction** (`_finalize` becomes a no-op). `base_activation` is the bare `TTFSActivation` (no value-blend ReLU side to corrupt the cascade); the per-perceptron `.rate` carriage still applies. The prior whole-model output-blend (`genuine_gradual_cascade_ramp`, `BlendedGenuineForward`) was **removed** — empirically lower accuracy than the proxy. Flag-off is byte-identical to the proxy path; accuracy non-regression vs the proxy baseline is an empirical gate (full-run pending).
 
 ### 5.6d Noise Adaptation
 
@@ -1139,6 +1141,25 @@ state is restored if validation drops more than `_rollback_tolerance`) and
 never calls `trainer.test()`. Subclasses can return `None`/`0` from
 `_stabilization_budget()` to disable it.
 
+**Genuine full-transform probe** (`tuning_full_transform_probe`, default off).
+After each commit, `_probe_full_transform` measures BOTH the value-domain
+rate-1.0 accuracy (`value_full_acc`, the historical proxy) AND the **genuine**
+deployed full transform (`genuine_full_acc`) — the latter built via the same
+`_finalize_forward_for(model)` the finalize install uses, run at rate 1 on an
+isolated **deepcopy** (so probe ≡ deploy, and the live model + shared
+`adaptation_manager` are untouched). The record carries `value_drop`,
+`genuine_drop` (the authoritative trend signal = `committed_acc −
+genuine_full_acc`), and `proxy_gap = value_full_acc − genuine_full_acc` (the
+value↔genuine divergence the proxy hides). `_log_full_transform_trend` keys the
+CONVERGING / FLAT-DIVERGING verdict on `genuine_drop` shrinking, and warns the
+value probe **WAS FOOLED** when `value_drop` shrinks while `genuine_drop` does
+not. `_report_cliff_probe_consistency` cross-checks the last per-commit
+`genuine_drop` against the once-only `finalize_cliff` (warn on >0.1 drift).
+Helpers live in `tuning/orchestration/genuine_probe.py`
+(`eval_forward_over_val`, `genuine_acc_on_clone`); the value-domain measure is
+the base default for tuners whose `_finalize_forward_for` is `None`
+(synchronized TTFS / non-cycle-accurate LIF → genuine == value).
+
 **Rate-aware weight quantization.**
 `NormalizationAwarePerceptronQuantization.transform(perceptron)` interprets
 its `rate` argument as a linear interpolation in weight-value space
@@ -1165,6 +1186,7 @@ All tuners extend `BasicTuner`, which uses `SmartSmoothAdaptation`:
 | `NormalizationAwarePerceptronQuantizationTuner` | Quantizes weights (normalization-aware) |
 | `NoiseTuner` | Introduces training noise |
 | `LIFAdaptationTuner` | Gradual ReLU→LIF blend + KD recovery (see §5.6b) |
+| `TTFSCycleAdaptationTuner` | Gradual ReLU→TTFS blend + KD recovery; opt-in genuine annealed cascade ramp (see §5.6c) |
 
 `PruningTuner` extends `PerceptronTuner` and applies pruning masks (from `transformations/pruning.py`) that scale the bottom `pruning_fraction` of rows and columns by `(1 − rate)`. It uses `SmartSmoothAdaptation`'s `before_cycle` callback to recompute activation-based row/column importance at the start of each cycle, so the pruning candidate set is updated every cycle rather than fixed once. The zeroed structure is later compacted from the IR graph by `ir_pruning.prune_ir_graph()` (see §8.4).
 

@@ -141,6 +141,9 @@ def test_after_run_unpatches_ramp_forward() -> None:
         def _finalize(self):  # no finalize forward reinstalled
             pass
 
+        def _report_cliff_probe_consistency(self):  # no probe log in the stub
+            pass
+
         def _ensure_pipeline_threshold(self):
             return 1.0
 

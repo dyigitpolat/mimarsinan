@@ -43,6 +43,9 @@ class SmoothAdaptationRunMixin(TunerBase):
         """
         if self._committed_rate < 1.0 - 1e-6:
             return
+        if getattr(self, "_stabilization_bounded", False):
+            self._stabilize_bounded_cosine()
+            return
         budget = self._stabilization_budget()
         if budget is None or int(budget) <= 0:
             return
@@ -108,6 +111,59 @@ class SmoothAdaptationRunMixin(TunerBase):
                     {"pre": pre_val, "post": post_val},
                 )
 
+    def _stabilize_bounded_cosine(self):
+        """CHANGE 2: a SINGLE bounded stabilization pass of
+        ``N = int(tuning_stabilization_ratio * gradual_train_steps)`` steps with a
+        cosine-decay LR (from the chosen LR down to ~0 over exactly N steps). HARD
+        cutoff — no patience extension, no LR restarts, no extra rounds — bracketed
+        by the same pre/post rollback guard so the phase stays non-destructive."""
+        ratio = float(getattr(self, "_stabilization_ratio", 0.5))
+        gradual_steps = int(getattr(self, "_gradual_train_steps", 0))
+        n_steps = int(ratio * gradual_steps)
+        if n_steps <= 0:
+            return
+
+        if getattr(self, "_stabilization_refinds_lr", False):
+            self._invalidate_lr_cache()
+        lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
+
+        n_eval = self._budget.eval_n_batches
+        pre_state = self._clone_state()
+        try:
+            pre_val = float(self.trainer.validate_n_batches(n_eval))
+        except Exception:
+            pre_val = None
+
+        hooks = self._recovery_training_hooks(1.0)
+        # ``check_interval = n_steps`` => the only validation is the final step, so
+        # the unreachable target can never break the run early: exactly N steps run.
+        RecoveryEngine.train_to_target(
+            self.trainer,
+            lr,
+            self._get_target() + 1.0,
+            max_steps=n_steps,
+            validation_n_batches=self._budget.progress_eval_batches,
+            check_interval=n_steps,
+            patience=1,
+            min_steps=n_steps,
+            min_improvement=self._budget.accuracy_se() / 2,
+            hooks=hooks,
+            cosine_decay=True,
+        )
+
+        if pre_val is not None:
+            try:
+                post_val = float(self.trainer.validate_n_batches(n_eval))
+            except Exception:
+                post_val = None
+            if post_val is not None and post_val < pre_val - self._rollback_tolerance:
+                self._restore_state(pre_state)
+                self._invalidate_lr_cache()
+                self.pipeline.reporter.report(
+                    f"{self.name} stabilization rollback",
+                    {"pre": pre_val, "post": post_val},
+                )
+
     def _continue_to_full_rate(self):
         """Continue gradual adaptation from committed rate toward 1.0."""
         current = self._committed_rate
@@ -138,6 +194,8 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._natural_rate = 0.0
         self._small_step_streak = 0
         self._pre_relaxation_target = None
+        self._best_committed_acc = None
+        self._gradual_train_steps = 0
         self._cycle_log = DecisionTrace.new()
         self._cached_lr = None
         self._persistent_optimizer_owner = None
@@ -316,35 +374,54 @@ class SmoothAdaptationRunMixin(TunerBase):
         return result
 
     def _log_full_transform_trend(self):
-        """Report whether the gradual ramp converges toward 1.0-viability: the
-        ``drop = committed_acc - full_acc`` should shrink as the committed rate
-        climbs. A flat/growing drop means the gradual adaptation is not pulling
-        the model into the full-transformation state (the diagnostic the
-        ``tuning_full_transform_probe`` flag exists to surface)."""
+        """Report whether the gradual ramp converges toward 1.0-viability. The
+        verdict keys on the GENUINE drop (``committed_acc - genuine_full_acc``,
+        the deployed cliff) — NOT the value-domain proxy. The value↔genuine
+        divergence (``proxy_gap``) is surfaced alongside: when the value drop
+        shrinks while the genuine drop does not, the value-domain probe "was
+        fooled" — the deployed cascade stays as far off as ever
+        (``tuning_full_transform_probe`` exists to surface exactly this)."""
         log = getattr(self, "_full_transform_log", [])
         if len(log) < 2:
             return
         first, last = log[0], log[-1]
-        shrinking = last["drop"] < first["drop"] - 1e-9
-        verdict = "CONVERGING" if shrinking else "FLAT/DIVERGING"
+        genuine_shrinking = last["genuine_drop"] < first["genuine_drop"] - 1e-9
+        value_shrinking = last["value_drop"] < first["value_drop"] - 1e-9
+        verdict = "CONVERGING" if genuine_shrinking else "FLAT/DIVERGING"
         print(
             f"[{self.__class__.__name__}] full-transform probe ({len(log)} pts): "
-            f"drop {first['drop']:+.4f}@α={first['committed']:.3f} → "
-            f"{last['drop']:+.4f}@α={last['committed']:.3f}  →  {verdict}"
+            f"genuine_drop {first['genuine_drop']:+.4f}@α={first['committed']:.3f} → "
+            f"{last['genuine_drop']:+.4f}@α={last['committed']:.3f}  "
+            f"(value_drop {first['value_drop']:+.4f} → {last['value_drop']:+.4f}, "
+            f"proxy_gap {first['proxy_gap']:+.4f} → {last['proxy_gap']:+.4f})  →  {verdict}"
         )
         self.pipeline.reporter.report(f"{self.name} full_transform_trend", {
             "n": len(log),
-            "first_drop": round(first["drop"], 4),
-            "last_drop": round(last["drop"], 4),
-            "shrinking": shrinking,
+            "first_genuine_drop": round(first["genuine_drop"], 4),
+            "last_genuine_drop": round(last["genuine_drop"], 4),
+            "first_value_drop": round(first["value_drop"], 4),
+            "last_value_drop": round(last["value_drop"], 4),
+            "first_proxy_gap": round(first["proxy_gap"], 4),
+            "last_proxy_gap": round(last["proxy_gap"], 4),
+            "shrinking": genuine_shrinking,
         })
-        if not shrinking:
+        if not genuine_shrinking:
+            fooled = ""
+            if value_shrinking:
+                fooled = (
+                    " The value-domain probe WAS FOOLED: value_drop DID shrink "
+                    f"({first['value_drop']:+.4f} → {last['value_drop']:+.4f}) "
+                    "while the genuine deployed drop did not — the value-domain "
+                    "rate-1.0 measurement is not representative of the deployed "
+                    "forward (proxy_gap "
+                    f"{first['proxy_gap']:+.4f} → {last['proxy_gap']:+.4f})."
+                )
             warnings.warn(
-                f"{self.__class__.__name__}: the full-transformation drop did not "
-                f"shrink as the committed rate climbed "
-                f"({first['drop']:+.4f}@α={first['committed']:.3f} → "
-                f"{last['drop']:+.4f}@α={last['committed']:.3f}). The gradual ramp "
-                f"may not be pulling the model toward 1.0-viability.",
+                f"{self.__class__.__name__}: the GENUINE full-transformation drop "
+                f"did not shrink as the committed rate climbed "
+                f"({first['genuine_drop']:+.4f}@α={first['committed']:.3f} → "
+                f"{last['genuine_drop']:+.4f}@α={last['committed']:.3f}). The gradual "
+                f"ramp may not be pulling the model toward 1.0-viability.{fooled}",
                 stacklevel=2,
             )
 

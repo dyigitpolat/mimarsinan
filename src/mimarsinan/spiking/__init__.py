@@ -1,8 +1,15 @@
 """Spike-train encoding shared by PyTorch (cycle-accurate LIF) and hybrid simulation."""
 
+from mimarsinan.spiking.distribution_matching import (
+    match_activation_distributions,
+)
 from mimarsinan.spiking.lif_utils import (
     apply_cycle_accurate_trains_to_model,
     unwrap_lif_activation,
+)
+from mimarsinan.spiking.scale_aware_boundaries import (
+    calibrate_scale_aware_boundaries,
+    propagate_boundary_input_scales,
 )
 from mimarsinan.spiking.segment_boundary import (
     BoundaryConfig,
@@ -28,6 +35,9 @@ __all__ = [
     "SegmentForwardDriver",
     "TtfsSegmentPolicy",
     "apply_cycle_accurate_trains_to_model",
+    "calibrate_scale_aware_boundaries",
+    "match_activation_distributions",
+    "propagate_boundary_input_scales",
     "decode_segment_output",
     "decode_segment_output_torch",
     "encode_compute_boundary",
