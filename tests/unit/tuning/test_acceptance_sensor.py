@@ -50,6 +50,19 @@ def test_is_catastrophic():
     assert AcceptanceSensor.is_catastrophic(None, 0.9) is False
 
 
+def test_is_catastrophic_factor_is_injectable_and_deliberately_loose():
+    # The default margin (0.8) is deliberately coarse: ``instant_acc`` is the
+    # PRE-recovery accuracy, where a large drop is expected and reclaimed by
+    # recovery training. A 17% instant drop is NOT catastrophic — only an
+    # unrecoverable collapse past target*0.8 fast-fails.
+    assert AcceptanceSensor.is_catastrophic(0.75, 0.9) is False  # 0.75 > 0.72
+    assert AcceptanceSensor.is_catastrophic(0.71, 0.9) is True   # 0.71 < 0.72
+    # The factor is an injectable default, not a buried constant: a caller may
+    # pass a stricter margin without editing the module.
+    assert AcceptanceSensor.is_catastrophic(0.75, 0.9, factor=0.85) is True   # < 0.765
+    assert AcceptanceSensor.is_catastrophic(0.80, 0.9, factor=0.85) is False  # > 0.765
+
+
 def test_rollback_threshold_and_gate():
     # relative 0.85, abs floor 0.86 → stricter 0.86
     assert AcceptanceSensor.rollback_threshold(0.9, 0.05, 0.86) == pytest.approx(0.86)

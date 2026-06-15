@@ -22,7 +22,17 @@ from mimarsinan.tuning.orchestration.tuning_budget import (
 
 
 CATASTROPHIC_DROP_FACTOR = 0.8
-"""Fast-fail threshold as a fraction of the adaptation target."""
+"""Pre-recovery fast-fail margin, as a fraction of the adaptation target.
+
+Deliberately coarse, and NOT a standard-error gate: ``is_catastrophic`` runs on
+the *instant* accuracy right after a transformation step is applied but BEFORE
+recovery training, where a large drop is expected and routinely reclaimed by
+recovery. A statistically tight ``target - k·SE`` threshold would abort almost
+every cycle before recovery could run. 0.8 bails only when the raw post-transform
+accuracy has collapsed past a fifth of target — beyond any recoverable range. It
+is the default ``factor`` of ``AcceptanceSensor.is_catastrophic`` (injectable, so
+a caller may tighten it without mutating this module-level default).
+"""
 
 _RECOVERY_PATIENCE = 5
 """Default patience for recovery training."""
