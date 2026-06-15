@@ -66,9 +66,6 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # Subsample the GPU val cache to the fixed decision subsample (opt-in, P6a;
     # the W8 ImageNet-scale fix). Default-off keeps the full-set cache.
     "tuning_subsample_val_cache": False,
-    # Persist optimizer (Adam) moments across the LR sweep / recovery within a
-    # cycle (opt-in, P6) instead of rebuilding fresh each call.
-    "tuning_persist_optimizer": False,
     # Sensitivity-guided first step (opt-in, P5b): start each round from the
     # previously accepted step (×2) — cheaper probes on cliff-like axes.
     "tuning_sensitivity_stepping": False,
@@ -76,9 +73,6 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # O(1) buffer write (build the decorator stack once) instead of a full
     # per-perceptron rebuild each step; output- and RNG-conformant.
     "tuning_inplace_rate": False,
-    # Loss-slope coarse LR signal (opt-in, P6e): rank the LR sweep by a cheap
-    # training loss-slope, reserving full validation for the top candidates.
-    "tuning_loss_slope_lr": False,
     # Diagnostic (default off): after each commit, probe the value-domain
     # rate-1.0 accuracy and report whether the gradual ramp's full-transform
     # drop shrinks as the committed rate climbs (is the ramp converging the
@@ -98,6 +92,7 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "sanafe_sample_count": 1,
     "sanafe_arch_preset": "loihi",
     "sanafe_custom_arch_path": None,
+    "sanafe_log_potential_trace": False,  # heavy Vm trace; opt-in UI knob
     "spike_encoding_seed": None,
     "training_recipe": dict(DEFAULT_TRAINING_RECIPE),
     "tuning_recipe": dict(DEFAULT_TUNING_RECIPE),
@@ -169,10 +164,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "paired_confirm_batches",
     "global_budget",
     "tuning_subsample_val_cache",
-    "tuning_persist_optimizer",
     "tuning_sensitivity_stepping",
     "tuning_inplace_rate",
-    "tuning_loss_slope_lr",
     "tuning_full_transform_probe",
     "finetune_epochs",
     "finetune_lr",
@@ -201,6 +194,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "sanafe_sample_count",
     "sanafe_arch_preset",
     "sanafe_custom_arch_path",
+    "sanafe_log_potential_trace",
     "simulation_batch_count",
 }
 

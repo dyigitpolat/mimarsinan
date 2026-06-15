@@ -10,19 +10,30 @@ pile of opt-in toggles.
 
 All accuracy numbers are from a 3-seed real-pipeline ablation (MNIST/CIFAR ViT-class
 model, Normalization-Fusion accuracy; baseline run-to-run noise band σ ≈ 0.0035).
-"LR" = total `LRRangeFinder` sweeps across the 3 seeds (a tuning-wall-clock proxy).
 
-| flag | default | accuracy effect | cost | validated? | verdict |
-|------|---------|-----------------|------|------------|---------|
-| `tuning_use_paired_sensor` | OFF | **+0.55%** (best, most consistent) | **5.6× LR** (109 vs 17) | yes, 3-seed | genuine quality/cost trade |
-| `tuning_subsample_val_cache` | OFF | **+0.20%** (σ=0.0011, consistent) | none (cheaper) | yes, 3-seed | improvement + scale fix, but breaks tiny-model parity tests |
-| `tuning_persist_optimizer` | OFF | +0.37% (within noise) | none | yes, 3-seed → **neutral** | unproven; efficiency only |
-| `tuning_loss_slope_lr` | OFF | +0.27% (within noise) | none | yes, 3-seed → **neutral** | unproven; efficiency only |
-| `tuning_sensitivity_stepping` | OFF | −0.04% | n/a | **NO — inert arm** | no data |
-| `tuning_inplace_rate` | OFF | n/a (output-identical) | none (cheaper) | unit-only | conformance proven, never run end-to-end |
+**Cost measurement (the <10%-bake bar).** Decomposing tuning wall-clock from the
+ablation logs (per-step `[PROFILE] wall` + per-call `T_find_lr_sec`):
+- Real **LR-finding is ~13% of tuning time**; recovery training + validation are the
+  other ~87%. The "5.6× LR" headline was a **miscount** — it counted `LR_found`
+  *reports* (which fire on cache hits, ~1e-6 s), not real LR sweeps; real LR-find
+  time is essentially unchanged with paired (113 → 116 s over 3 seeds).
+- **Paired's true cost is +139% of total tuning wall** (869 → 2080 s), and it comes
+  from the **extra rollback recovery cycles** (paired rolls back ~10× more), not from
+  LR-finding. So paired is **far above the 10% bake bar → stays opt-in.**
+- The efficiency knobs (persist / loss-slope / in-place) are micro-optimizations that
+  *reduce* or are neutral on cost (≤ 0% added) → **under 10% → baked.**
+
+| flag | status | accuracy | cost | note |
+|------|--------|----------|------|------|
+| `use_paired_sensor` | **opt-in** | +0.55% (proven) | **+139% tuning** | quality/cost trade; above the bar |
+| `persist_optimizer` | **BAKED** | neutral | ≤0% (no rebuild) | clean (crash-guard kept) |
+| `loss_slope_lr` | **BAKED** | neutral | ≤0% (cheap coarse LR) | degrades gracefully on stub trainers |
+| `subsample_val_cache` | opt-in (deferred) | +0.20% (proven) | ≤0% + scale fix | qualifies, but baking re-breaks 3 tiny-model parity tests |
+| `inplace_rate` | opt-in (deferred) | output-identical | ≤0% (O(1) write) | qualifies, but needs ~12 delegation-test migrations + an end-to-end run |
+| `sensitivity_stepping` | measuring | TBD | ≤0% | driver-on ablation in progress (inert in the first round) |
 
 (`tuning_full_transform_probe` is a *diagnostic*, not an optimization — it adds a
-forward pass per commit to measure rate-1.0 convergence. It stays opt-in by design.)
+forward pass per commit to measure rate-1.0 convergence; opt-in by design.)
 
 ---
 

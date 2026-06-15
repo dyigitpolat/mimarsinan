@@ -134,6 +134,7 @@ FIELD_DISPLAY_META: Dict[str, Dict[str, Any]] = {
     "sanafe_sample_count": {"group": "simulation", "type": "int", "label": "SANA-FE Sample Count"},
     "sanafe_arch_preset": {"group": "simulation", "type": "str", "label": "SANA-FE Arch Preset"},
     "sanafe_custom_arch_path": {"group": "simulation", "type": "path", "label": "SANA-FE Custom Arch Path"},
+    "sanafe_log_potential_trace": {"group": "simulation", "type": "bool", "label": "SANA-FE Log Potential Trace"},
     "max_simulation_samples": {"group": "simulation", "type": "int", "label": "Max Simulation Samples"},
     "simulation_batch_count": {"group": "simulation", "type": "int", "label": "Simulation Batch Count"},
     "activation_analysis_batch_size": {"group": "training", "type": "int", "label": "Activation Analysis Batch Size"},

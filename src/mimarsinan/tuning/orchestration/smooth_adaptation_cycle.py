@@ -126,15 +126,13 @@ class SmoothAdaptationCycleMixin(TunerBase):
     _supports_persistent_optimizer = True
 
     def _optimizer_policy(self):
-        """Recovery optimizer policy. Default resets each cycle (bit-exact fresh
-        build). The ``tuning_persist_optimizer`` opt-in persists Adam moments
-        across the LR sweep / recovery within a cycle — except for tuner families
-        whose recovery replaces the parameter set (``_supports_persistent_optimizer
-        = False``), which always reset."""
+        """Persist optimizer (Adam) moments across the LR sweep / recovery within a
+        cycle — a near-zero-cost efficiency win (no per-call optimizer rebuild).
+        Tuner families whose recovery replaces the parameter set each cycle
+        (``_supports_persistent_optimizer = False``) always reset."""
         if not getattr(self, "_supports_persistent_optimizer", True):
             return RESET_PER_CYCLE
-        persist = bool(self.pipeline.config.get("tuning_persist_optimizer", False))
-        return PERSIST_WITHIN_CYCLE if persist else RESET_PER_CYCLE
+        return PERSIST_WITHIN_CYCLE
 
     def _recovery_optimizer(self, lr):
         """Owned optimizer for the persist policy, else ``None`` (bit-exact path)."""

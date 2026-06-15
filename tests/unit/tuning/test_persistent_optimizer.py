@@ -1,6 +1,6 @@
 """Persistent optimizer state across recovery calls.
 
-Feature flag: ``tuning_persist_optimizer`` (opt-in, default False).
+Persist (one optimizer per cycle) is the baked default.
 
 Default (``reset_per_cycle``): every recovery call builds a fresh optimizer and
 deletes it — Adam moments are discarded each call (bit-exact historical path).
@@ -305,10 +305,9 @@ class _PolicyTuner(SmoothAdaptationTuner):
         self.trainer.build_step_optimizer = _counting_build
 
 
-def _make_tuner(tmp_path, *, persist):
+def _make_tuner(tmp_path):
     cfg = default_config()
     cfg["tuning_budget_scale"] = 1.0
-    cfg["tuning_persist_optimizer"] = persist
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     tuner = _PolicyTuner(pipeline, make_tiny_supermodel(), target_accuracy=0.9, lr=0.001)
     tuner._wire()
@@ -319,19 +318,14 @@ def _make_tuner(tmp_path, *, persist):
 
 
 class TestCycleOptimizerPolicy:
-    def test_default_policy_is_reset_per_cycle(self, tmp_path):
-        """Reset (fresh optimizer each cycle) is the default; persist is opt-in."""
-        tuner = _make_tuner(tmp_path, persist=False)
-        assert tuner._optimizer_policy() == RESET_PER_CYCLE
-
-    def test_flag_selects_persist_policy(self, tmp_path):
-        tuner = _make_tuner(tmp_path, persist=True)
+    def test_default_policy_is_persist_within_cycle(self, tmp_path):
+        """Persist (reuse one optimizer per cycle) is the baked default."""
+        tuner = _make_tuner(tmp_path)
         assert tuner._optimizer_policy() == PERSIST_WITHIN_CYCLE
 
     def test_param_transform_family_opts_out_of_persist(self, tmp_path):
-        """Tuners that replace params each cycle force reset even with the flag on
-        (the crash guard)."""
-        tuner = _make_tuner(tmp_path, persist=True)
+        """Tuners that replace params each cycle force reset (the crash guard)."""
+        tuner = _make_tuner(tmp_path)
         tuner._supports_persistent_optimizer = False
         assert tuner._optimizer_policy() == RESET_PER_CYCLE
         assert tuner._recovery_optimizer(0.001) is None
@@ -342,9 +336,10 @@ class TestCycleOptimizerPolicy:
         )
         assert PerceptronTransformTuner._supports_persistent_optimizer is False
 
-    def test_default_path_passes_optimizer_none(self, tmp_path):
-        """Default recovery threads optimizer=None (bit-exact fresh-build path)."""
-        tuner = _make_tuner(tmp_path, persist=False)
+    def test_unsupported_family_threads_optimizer_none(self, tmp_path):
+        """A reset-only family threads optimizer=None (bit-exact fresh-build path)."""
+        tuner = _make_tuner(tmp_path)
+        tuner._supports_persistent_optimizer = False
 
         tuner._adaptation(0.5)
         tuner._adaptation(0.6)
@@ -355,7 +350,7 @@ class TestCycleOptimizerPolicy:
     def test_persist_path_reuses_same_optimizer(self, tmp_path):
         """Flag-on: both recover calls thread the SAME owned optimizer object, so
         Adam moments are not discarded between calls."""
-        tuner = _make_tuner(tmp_path, persist=True)
+        tuner = _make_tuner(tmp_path)
 
         tuner._adaptation(0.5)
         tuner._adaptation(0.6)
@@ -370,7 +365,7 @@ class TestCycleOptimizerPolicy:
         """The below-floor safety net shares the same owned optimizer."""
         import warnings
 
-        tuner = _make_tuner(tmp_path, persist=True)
+        tuner = _make_tuner(tmp_path)
         tuner._pipeline_hard_floor = 0.95  # force recovery attempts
 
         # one adaptation builds + owns the optimizer
@@ -389,7 +384,7 @@ class TestCycleOptimizerPolicy:
     def test_new_construct_via_new_does_not_crash_policy(self, tmp_path):
         """Tuners built via __new__ (bypassing __init__) must still answer
         _recovery_optimizer through the getattr-guarded owner slot."""
-        tuner = _make_tuner(tmp_path, persist=True)
+        tuner = _make_tuner(tmp_path)
         # Simulate the bypassed-attr path: owner slot absent.
         if hasattr(tuner, "_persistent_optimizer_owner"):
             del tuner._persistent_optimizer_owner
@@ -398,15 +393,3 @@ class TestCycleOptimizerPolicy:
         assert tuner._recovery_optimizer(0.001) is opt
 
 
-# ---------------------------------------------------------------------------
-# Config flag registration.
-# ---------------------------------------------------------------------------
-
-class TestConfigFlagRegistered:
-    def test_flag_default_off(self):
-        from mimarsinan.config_schema.defaults import DEFAULT_DEPLOYMENT_PARAMETERS
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_persist_optimizer"] is False
-
-    def test_flag_in_config_keys_set(self):
-        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
-        assert "tuning_persist_optimizer" in CONFIG_KEYS_SET

@@ -103,7 +103,8 @@ class SanafeSimulationStep(PipelineStep):
         parity_check = True  # always cross-check SANA-FE against HCM
         arch_preset = self.pipeline.config.get("sanafe_arch_preset", "loihi")
         custom_arch_path = self.pipeline.config.get("sanafe_custom_arch_path") or None
-        log_potential = False  # potential trace is heavy; not logged
+        # Potential (Vm) trace is heavy, so it stays an opt-in UI knob (default off).
+        log_potential = bool(self.pipeline.config.get("sanafe_log_potential_trace", False))
         log_messages = True   # message trace is the default record
         device = self.pipeline.config["device"]
 

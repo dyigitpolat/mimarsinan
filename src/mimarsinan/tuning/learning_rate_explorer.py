@@ -167,13 +167,18 @@ class LRRangeFinder:
 
 
 
-def make_loss_slope_signal(trainer) -> Callable[[], float]:
+def make_loss_slope_signal(trainer):
     """Cheap 'lower is better' coarse LR score: training-batch loss.
 
-    Used by the ``tuning_loss_slope_lr`` coarse pass to rank probes by a
-    single forward-pass loss (no validation sweep).  Reads one fresh
-    training batch per call; never touches the test set.
+    Ranks LR probes by a single forward-pass loss (no validation sweep); reads one
+    fresh training batch per call, never touches the test set. Returns ``None`` for
+    trainers that cannot evaluate a training-batch loss (some stubs), so the LR
+    finder falls back to full-validation scoring.
     """
+    if not (hasattr(trainer, "evaluate_loss_on_batch")
+            and hasattr(trainer, "next_training_batch")):
+        return None
+
     def signal() -> float:
         return float(trainer.evaluate_loss_on_batch(trainer.next_training_batch()))
 
