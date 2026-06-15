@@ -176,10 +176,13 @@ class TestFinalState:
 
 
 class TestCascadedGradualRamp:
-    """Cascaded ramps gradually through the GENUINE deployed cascade via a
-    whole-model output blend (genuine-gradual, default on): non-destructive at
-    r=0 (continuous teacher), bit-exact deployed dynamics at r=1, so the gradual
-    phase trains through the deployed dynamics (incl. offload's input encode)."""
+    """The DEFAULT cascaded ramp is the value-domain staircase proxy (no instance
+    forward during the ramp; ``_ramp_forward()`` is None): non-destructive at r=0
+    (continuous teacher), and it makes natural blend progress on its own. The
+    genuine single-spike cascade is installed at finalize and kept (the committed
+    model runs the deployed dynamics). The genuine annealed ramp that trains
+    through the deployed cascade for the whole ramp is the new OPT-IN
+    (``ttfs_genuine_annealed_ramp``, default off)."""
 
     def test_cascaded_makes_natural_blend_progress(self, mock_pipeline):
         """Regression for the incident's secondary anomaly: cascaded used to pin

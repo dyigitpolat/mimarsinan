@@ -70,6 +70,9 @@ class TunerBase:
                               num_workers=num_workers),
             self.pipeline.loss,
             recipe=self._tuning_recipe(),
+            tuning_recipe_recovery=bool(
+                self.pipeline.config.get("tuning_recipe_recovery", False)
+            ),
         )
         tuning_bs = resolve_tuning_batch_size(self.pipeline, trainer.training_batch_size)
         if tuning_bs != trainer.training_batch_size:

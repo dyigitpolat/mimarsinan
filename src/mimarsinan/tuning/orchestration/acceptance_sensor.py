@@ -73,6 +73,31 @@ class AcceptanceSensor:
         return relative
 
     @staticmethod
+    def ratchet_threshold(
+        pre_cycle_acc,
+        rollback_tolerance,
+        best_committed_acc,
+        cumulative_bound,
+        absolute_floor,
+    ):
+        """Non-stalling ratchet: the MAX of three lower bounds.
+
+        Keeps the per-step RELATIVE gate (``pre_cycle_acc - rollback_tolerance``)
+        so each step may give back a little and the ramp keeps climbing — no
+        stall — while capping the CUMULATIVE drift below the best-committed
+        high-water mark (``best_committed_acc - cumulative_bound``) so a sequence
+        of sub-margin slips can never accumulate more than ``cumulative_bound``
+        below the best; that bound TIGHTENS as the best ratchets up. The absolute
+        baseline floor is the third, hard lower bound.
+        """
+        bounds = [pre_cycle_acc - rollback_tolerance]
+        if best_committed_acc is not None:
+            bounds.append(best_committed_acc - cumulative_bound)
+        if absolute_floor is not None:
+            bounds.append(absolute_floor)
+        return max(bounds)
+
+    @staticmethod
     def is_rollback(post_acc, threshold) -> bool:
         return post_acc < threshold
 

@@ -6,6 +6,17 @@ import warmup_scheduler
 import torch
 
 
+def _recipe_recovery_enabled(trainer) -> bool:
+    """Whether the step recovery routes through ``tuning_recipe`` (warmup+cosine).
+
+    Defaults to ``False`` for duck-typed step trainers that do not implement the
+    predicate (test stubs), so the step API stays usable without the full
+    ``BasicTrainer`` recipe plumbing.
+    """
+    predicate = getattr(trainer, "_recipe_step_recovery_enabled", None)
+    return bool(predicate()) if callable(predicate) else False
+
+
 def train_n_steps(
     trainer,
     lr,
@@ -47,6 +58,40 @@ def train_n_steps(
         del optimizer
 
 
+def _rebuild_scheduler_at_reduced_lr(
+    trainer, optimizer, reduced_lr, max_steps, *, factor=None
+):
+    """Drop the optimizer LR and rebuild its scheduler so the reduction sticks.
+
+    Plateau-vs-recipe composition: the recipe schedule (warmup + cosine) is the
+    BASE LR trajectory, and a plateau reduction multiplies its PEAK on top. When
+    the recipe step recovery is on, each param group's LR is scaled by ``factor``
+    (preserving any layer-wise-LR-decay ratios) and the SAME recipe schedule is
+    rebuilt from the reduced peak. Otherwise every group is flattened to the
+    single ``reduced_lr`` and the historical constant schedule is rebuilt.
+
+    The schedulers re-read the stale ``initial_lr`` stamped at the original base
+    and would walk the LR back up on the next ``scheduler.step()``; clearing
+    ``initial_lr`` lets the rebuilt scheduler re-stamp it so the reduction sticks.
+    """
+    use_recipe = _recipe_recovery_enabled(trainer)
+    for group in optimizer.param_groups:
+        if use_recipe and factor is not None:
+            # The recipe schedule decays the live ``lr`` away from the peak, but
+            # ``initial_lr`` holds the per-group PEAK. Scale that peak by ``factor``
+            # (preserving layer-wise-LR-decay ratios) and re-stamp it so the rebuilt
+            # warmup+cosine restarts from the reduced peak.
+            reduced_peak = float(group.get("initial_lr", group["lr"])) * float(factor)
+            group["lr"] = reduced_peak
+        else:
+            group["lr"] = float(reduced_lr)
+        group.pop("initial_lr", None)
+    scheduler, _scaler = trainer._scheduler_and_scaler_for_optimizer(
+        optimizer, reduced_lr, max_steps, constant_lr=True
+    )
+    return scheduler
+
+
 def train_steps_until_target(
     trainer,
     lr,
@@ -60,20 +105,31 @@ def train_steps_until_target(
     min_steps: int = 0,
     min_improvement: float = 1e-3,
     optimizer=None,
+    plateau_lr_factor: float = 1.0,
+    plateau_lr_reductions: int = 0,
+    return_steps: bool = False,
+    cosine_decay: bool = False,
 ):
     from mimarsinan.tuning.learning_rate_explorer import (
         clone_state_for_trainer,
         restore_state_for_trainer,
     )
 
+    # ``cosine_decay`` (CHANGE 2, bounded stabilization) anneals the LR from ``lr``
+    # down to ~0 over exactly ``max_steps`` via CosineAnnealingLR; the historical
+    # path keeps the constant/linear-warmup schedule (default ``cosine_decay=False``).
+    # ``tuning_recipe_recovery`` drives the recipe (warmup + cosine) schedule: the
+    # step builders then ignore ``constant_lr`` and the discovered ``lr`` is the peak.
+    recipe_recovery = _recipe_recovery_enabled(trainer)
+    use_constant = (not cosine_decay) and not recipe_recovery
     owns_optimizer = optimizer is None
     if owns_optimizer:
         optimizer, scheduler, scaler = trainer._get_optimizer_and_scheduler_steps(
-            lr, max_steps, constant_lr=True
+            lr, max_steps, constant_lr=use_constant
         )
     else:
         scheduler, scaler = trainer._scheduler_and_scaler_for_optimizer(
-            optimizer, lr, max_steps, constant_lr=True
+            optimizer, lr, max_steps, constant_lr=use_constant
         )
     if warmup_steps > 0:
         scheduler = warmup_scheduler.GradualWarmupScheduler(
@@ -84,15 +140,21 @@ def train_steps_until_target(
     interval = max(1, int(check_interval))
     min_s = max(0, int(min_steps))
     imp_eps = float(min_improvement)
+    plateau_factor = float(plateau_lr_factor)
+    plateau_reductions_left = max(0, int(plateau_lr_reductions))
+    plateau_enabled = plateau_factor < 1.0 and plateau_reductions_left > 0
+    current_base_lr = float(lr)
 
     best_acc = 0.0
     best_state = None
     stale_checks = 0
+    steps_run = 0
 
     for step_idx in range(total):
         x, y = trainer.next_training_batch()
         x, y = x.to(trainer.device), y.to(trainer.device)
         trainer._optimize(x, y, optimizer, scaler)
+        steps_run += 1
         scheduler.step()
         trainer._report("LR", optimizer.param_groups[0]["lr"])
 
@@ -104,6 +166,7 @@ def train_steps_until_target(
                     x, y = trainer.next_training_batch()
                     x, y = x.to(trainer.device), y.to(trainer.device)
                     trainer._optimize(x, y, optimizer, scaler)
+                    steps_run += 1
                     scheduler.step()
                 break
             if acc > best_acc + imp_eps:
@@ -113,6 +176,15 @@ def train_steps_until_target(
             else:
                 stale_checks += 1
                 if step_idx + 1 >= min_s and stale_checks >= patience:
+                    if plateau_enabled and plateau_reductions_left > 0:
+                        current_base_lr *= plateau_factor
+                        scheduler = _rebuild_scheduler_at_reduced_lr(
+                            trainer, optimizer, current_base_lr, max_steps,
+                            factor=plateau_factor,
+                        )
+                        plateau_reductions_left -= 1
+                        stale_checks = 0
+                        continue
                     break
 
     if best_state is not None:
@@ -120,7 +192,10 @@ def train_steps_until_target(
     del scheduler, scaler, best_state
     if owns_optimizer:
         del optimizer
-    return trainer.validate_n_batches(n_val)
+    final_acc = trainer.validate_n_batches(n_val)
+    if return_steps:
+        return final_acc, steps_run
+    return final_acc
 
 
 def train_one_step(

@@ -81,18 +81,20 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             )
             self._append_encoding_input_module(perceptron, quantizer)
 
-    def _finalize_forward(self):
+    def _finalize_forward_for(self, model):
         if self._cycle_accurate:
-            return _ChipAlignedNFForward(self.model, self._T)
+            return _ChipAlignedNFForward(model, self._T)
         return None
 
-    def _before_finalize_rebuild(self) -> None:
+    def _before_finalize_rebuild(self, model=None) -> None:
         # lif_active before the rebuild so the committed activations subsume the
         # clamp/quant/shift decorators (the base _finalize installs any forward).
         self.adaptation_manager.lif_active = True
 
-    def _after_finalize_rebuild(self) -> None:
+    def _after_finalize_rebuild(self, model=None) -> None:
         if self._cycle_accurate:
             from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
 
-            apply_cycle_accurate_trains_to_model(self.model, True)
+            apply_cycle_accurate_trains_to_model(
+                self.model if model is None else model, True,
+            )
