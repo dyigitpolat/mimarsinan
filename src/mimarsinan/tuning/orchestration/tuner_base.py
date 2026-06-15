@@ -82,11 +82,10 @@ class TunerBase:
             self.trainer.close()
 
     def _find_lr(self):
-        # Opt-in (``tuning_loss_slope_lr``): rank the coarse LR sweep by a cheap
-        # training loss-slope signal, reserving full validation for the top few.
-        coarse_signal = None
-        if self.pipeline.config.get("tuning_loss_slope_lr", False):
-            coarse_signal = make_loss_slope_signal(self.trainer)
+        # Rank the coarse LR sweep by a cheap training loss-slope signal (reserving
+        # full validation for the top few). Trainers without a loss-slope signal
+        # (some stubs) fall back to full-validation scoring.
+        coarse_signal = make_loss_slope_signal(self.trainer)
         with self.trainer.validation_context("probe"):
             return find_lr_range_for_trainer(
                 self.trainer,

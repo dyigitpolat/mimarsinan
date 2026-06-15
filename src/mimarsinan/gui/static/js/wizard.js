@@ -1041,6 +1041,7 @@ function buildConfig() {
     dp.sanafe_sample_count = (sampleCount > 0) ? sampleCount : 1;
     const customPath = (v('sanafeCustomArchPath') || '').trim();
     dp.sanafe_custom_arch_path = customPath || null;
+    dp.sanafe_log_potential_trace = isToggleOn('sanafeLogPotentialTraceToggle');
   }
 
   // platform_constraints
@@ -1270,6 +1271,7 @@ function loadStateFromConfig(config) {
   setToggleFromConfig('nevresimSimulationToggle', dp.enable_nevresim_simulation !== false);
   setToggleFromConfig('loihiSimulationToggle', !!dp.enable_loihi_simulation);
   setToggleFromConfig('sanafeSimulationToggle', !!dp.enable_sanafe_simulation);
+  setToggleFromConfig('sanafeLogPotentialTraceToggle', !!dp.sanafe_log_potential_trace);
   (function applySanafePresetAndPath() {
     const presetEl = document.getElementById('sanafeArchPreset');
     if (presetEl) presetEl.value = dp.sanafe_arch_preset || 'loihi';

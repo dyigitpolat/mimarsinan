@@ -808,6 +808,13 @@
                     <label class="field-label">Custom Arch YAML <span class="hint">absolute path; preset = custom</span></label>
                     <input type="text" id="sanafeCustomArchPath" value="" placeholder="(leave blank for preset)" oninput="update()">
                   </div>
+                  <div class="field">
+                    <label class="field-label">Potential Trace <span class="hint">log per-neuron Vm (heavy)</span></label>
+                    <div class="toggle-row" id="sanafeLogPotentialTraceToggle" onclick="toggleClick(this)">
+                      <span class="toggle-label" style="font-size:0.78rem">Vm trace</span>
+                      <div class="toggle-switch"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
