@@ -253,7 +253,11 @@ class TestBoundaryCalibrationApplied:
 
         match_activation_distributions(model, teacher, cal_x, T_STEPS)
         for p, theta in zip(model.get_perceptrons(), expected_theta):
-            assert float(p.activation_scale) == pytest.approx(theta, abs=1e-5)
+            # The encoding block is pinned to the data scale (1.0), not its quantile
+            # (its scale is fixed by the input spike-encoding contract — retuning it
+            # breaks NF↔SCM deployment parity).
+            expected = 1.0 if getattr(p, "is_encoding_layer", False) else theta
+            assert float(p.activation_scale) == pytest.approx(expected, abs=1e-5)
 
     def test_downstream_input_scale_equals_upstream_theta_out(self, cal_x):
         model, teacher = _deployed_ttfs_model_and_teacher()
