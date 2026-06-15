@@ -64,13 +64,11 @@ class SmoothAdaptationCycleMixin(TunerBase):
             pipeline.config.get("tuning_full_transform_probe", False)
         )
         self._full_transform_log = []
-        # Opt-in (``tuning_subsample_val_cache``, the W8 ImageNet-scale fix): cache
-        # only the fixed decision subsample on the device instead of the whole
-        # validation set. Default-off keeps the full-set cache (representative on
-        # small datasets; the bounded cursor would otherwise wrap a tiny subset).
-        if pipeline.config.get("tuning_subsample_val_cache", False):
-            self.trainer._val_cache_max_batches = self._budget.eval_n_batches
-            self.trainer._gpu_val_cache = None  # rebuild capped on next eval
+        # Cache only the fixed decision subsample on the device — a seeded reservoir
+        # sample (representative + stable across the run) — instead of the whole
+        # validation set (the W8 ImageNet-scale fix).
+        self.trainer._val_cache_max_batches = self._budget.eval_n_batches
+        self.trainer._gpu_val_cache = None  # rebuild capped on next eval
 
     def _update_and_evaluate(self, rate):
         """Apply transformation T at *rate* and return a validation metric."""

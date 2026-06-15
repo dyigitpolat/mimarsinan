@@ -31,9 +31,7 @@ class RateScheduler:
         initial_step: Optional[float] = None,
         max_rounds: Optional[int] = None,
     ):
-        if policy not in (
-            "greedy_to_one", "uniform_ladder", "one_shot_only", "last_successful_step",
-        ):
+        if policy not in ("greedy_to_one", "uniform_ladder", "one_shot_only"):
             raise ValueError(f"unknown rate policy: {policy!r}")
         self.epsilon = float(epsilon)
         self.alpha_tol = float(alpha_tol)
@@ -50,18 +48,12 @@ class RateScheduler:
         """Drive ``committed`` toward 1.0; return the highest committed rate."""
         committed = float(committed)
         rounds = 0
-        last_step = None  # last accepted increment (last_successful_step policy)
         while committed < 1.0 - self.alpha_tol:
             if self.max_rounds is not None and rounds >= self.max_rounds:
                 break
             rounds += 1
             gap = 1.0 - committed
-            if self.policy == "last_successful_step" and last_step is not None:
-                # Start from the previously accepted step (×2), not the full gap —
-                # cheaper probes on cliff-like axes (spec §5.3).
-                step = min(last_step * 2.0, gap)
-            else:
-                step = self._first_step(gap)
+            step = self._first_step(gap)
             accepted = False
             # The first (greedy / ladder) jump is always attempted — epsilon only
             # bounds the *bisection* refinement, never the initial jump, so a
@@ -71,7 +63,6 @@ class RateScheduler:
                 result = attempt(target)
                 now = float(result) if result is not None else committed
                 if now >= target - 1e-9:
-                    last_step = now - committed
                     committed = now
                     accepted = True
                     break

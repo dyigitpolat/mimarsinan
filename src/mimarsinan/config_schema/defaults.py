@@ -63,12 +63,6 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "k_commit": 2.0,
     "paired_confirm_batches": 0,  # 0 → use eval_n_batches
     "global_budget": 0.0,
-    # Subsample the GPU val cache to the fixed decision subsample (opt-in, P6a;
-    # the W8 ImageNet-scale fix). Default-off keeps the full-set cache.
-    "tuning_subsample_val_cache": False,
-    # Sensitivity-guided first step (opt-in, P5b): start each round from the
-    # previously accepted step (×2) — cheaper probes on cliff-like axes.
-    "tuning_sensitivity_stepping": False,
     # In-place RateBuffer (opt-in, P5a): advance an AdaptationManager rate by an
     # O(1) buffer write (build the decorator stack once) instead of a full
     # per-perceptron rebuild each step; output- and RNG-conformant.
@@ -163,8 +157,6 @@ CONFIG_KEYS_SET: Set[str] = {
     "k_commit",
     "paired_confirm_batches",
     "global_budget",
-    "tuning_subsample_val_cache",
-    "tuning_sensitivity_stepping",
     "tuning_inplace_rate",
     "tuning_full_transform_probe",
     "finetune_epochs",
