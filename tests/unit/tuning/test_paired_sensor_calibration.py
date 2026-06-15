@@ -173,3 +173,61 @@ def test_correctness_primitive_reads_validation_cache(tmp_path):
     assert isinstance(c0, list) and all(isinstance(v, bool) for v in c0)
     assert c0 == c1  # same examples each call → paired/deterministic
     trainer.close()
+
+
+# ── D4: global_budget floor — consistency + validation (not the 0.005 footgun) ──
+# The ablation (docs/tuning_optimization_flags.md §1) measured a 0.005 floor to
+# ERASE the paired accuracy gain; 0.0 (no §8.2 floor) is strictly better and is
+# the registered default. These tests pin that contract: 0.0 stays the default,
+# the cycle mixin's fallback agrees with it (no silent 0.005 divergence), 0.0 is
+# a valid paired setting, and only a *negative* budget is rejected.
+
+def _budget_tuner(tmp_path, *, paired, global_budget=None):
+    from conftest import MockPipeline, default_config
+    from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import (
+        SmoothAdaptationTuner,
+    )
+
+    cfg = default_config()
+    if paired:
+        cfg["tuning_use_paired_sensor"] = True
+    if global_budget is not None:
+        cfg["global_budget"] = global_budget
+    pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+
+    class _T(SmoothAdaptationTuner):
+        def _update_and_evaluate(self, rate):
+            return 0.9
+
+        def _find_lr(self):
+            return 0.001
+
+    tuner = _T(pipeline, make_tiny_supermodel(), target_accuracy=0.9, lr=0.001)
+    return tuner
+
+
+def test_global_budget_registered_default_is_zero():
+    from mimarsinan.config_schema.defaults import DEFAULT_DEPLOYMENT_PARAMETERS
+
+    assert DEFAULT_DEPLOYMENT_PARAMETERS["global_budget"] == 0.0
+
+
+def test_cycle_global_budget_fallback_matches_registered_default(tmp_path):
+    # config omits the key → the mixin fallback must be 0.0 (the registered
+    # default), not a divergent hardcoded 0.005.
+    tuner = _budget_tuner(tmp_path, paired=False)
+    assert tuner._global_budget == 0.0
+    tuner.close()
+
+
+def test_paired_with_zero_budget_is_allowed(tmp_path):
+    # 0.0 (no floor) is the measured best-accuracy operating point — it MUST stay
+    # expressible with the paired gate on, not raised as a misconfiguration.
+    tuner = _budget_tuner(tmp_path, paired=True, global_budget=0.0)
+    assert tuner._paired_gate is True and tuner._global_budget == 0.0
+    tuner.close()
+
+
+def test_negative_global_budget_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="global_budget"):
+        _budget_tuner(tmp_path, paired=True, global_budget=-0.01)

@@ -51,7 +51,19 @@ class SmoothAdaptationCycleMixin(TunerBase):
         # vector on a shared confirm subsample); off unless flagged.
         self._paired_gate = bool(pipeline.config.get("tuning_use_paired_sensor", False))
         self._k_commit = float(pipeline.config.get("k_commit", 2.0))
-        self._global_budget = float(pipeline.config.get("global_budget", 0.005))
+        # §8.2 practical-significance floor. The fallback matches the registered
+        # default (0.0) so an absent key never silently diverges. 0.0 = no floor
+        # (the ablation-validated best-accuracy setting; a 0.005 floor was measured
+        # to erase the paired gain — docs/tuning_optimization_flags.md §1); a
+        # positive value trades accuracy for anti-thrash protection. A negative
+        # budget is meaningless and rejected here.
+        self._global_budget = float(pipeline.config.get("global_budget", 0.0))
+        if self._global_budget < 0.0:
+            raise ValueError(
+                f"global_budget must be non-negative; got {self._global_budget}. "
+                "0.0 disables the §8.2 floor (best-accuracy paired setting); a "
+                "positive value enables anti-thrash protection."
+            )
         self._confirm_indices = None
         self._ref_correct = None
         # Diagnostic (``tuning_full_transform_probe``, default off): after each

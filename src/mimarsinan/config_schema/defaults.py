@@ -56,9 +56,15 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "checkpoint_location": "device",
     # Paired McNemar rollback gate (opt-in): reference vs candidate on a shared
     # fixed example subsample (a several-fold tighter SE than the marginal gate,
-    # which is the default). +~0.5% deployed accuracy but ~5.6x the LR-finder
-    # cost — it bisects more carefully into the quantization cliff. ``global_budget``
-    # floors the gate (spec §8.2); 0.0 = no floor = the best-accuracy setting.
+    # which is the default). +~0.5% deployed accuracy but +139% tuning wall — it
+    # rolls back ~10x more, bisecting carefully into the quantization cliff.
+    # ``global_budget`` is the §8.2 practical-significance floor: a paired drop is
+    # rolled back only if it is BOTH statistically significant AND exceeds this
+    # budget. 0.0 = no floor (pure significance gate) and is the default because a
+    # 0.005 floor was MEASURED to erase the +0.5% gain (one seed fell to 0.9508 —
+    # docs/tuning_optimization_flags.md §1), so 0.0 is strictly better here. A
+    # positive value is valid (trades accuracy for anti-thrash); negatives are
+    # rejected at tuner construction. (Supersedes the "0.5%" of commit 09eef0d.)
     "tuning_use_paired_sensor": False,
     "k_commit": 2.0,
     "paired_confirm_batches": 0,  # 0 → use eval_n_batches
