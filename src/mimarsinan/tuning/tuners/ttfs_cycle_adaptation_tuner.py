@@ -214,6 +214,39 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
         self._distmatch_stats = None
 
+    def _invalidate_lr_cache(self):
+        """Genuine controller perf: the LR finder is the dominant cost on the
+        cascade (~55s/call — 8 probes × 30 steps through the S-step blend forward
+        that computes teacher AND genuine), and the base loop re-finds it on every
+        target relaxation (measured: 3-4 re-finds eating ~4-5 min before the rate
+        left 0.125). The LR is stable across the blend ramp — the fast hack proves
+        ONE LR suffices — so the genuine ramp finds it ONCE and never re-finds.
+        Scoped to the opt-in genuine ramp → golden-safe for every other tuner."""
+        if getattr(self, "_genuine_blend_ramp", False):
+            return
+        super()._invalidate_lr_cache()
+
+    def _find_lr(self):
+        """Genuine controller perf: a coarse 3×10 LR sweep instead of the default
+        8×30. Each probe step runs the expensive blend forward (teacher+genuine),
+        so the full 8×30 sweep costs ~55s — most of a <2-min budget — for a fine
+        LR that barely matters (the fast hack converges on the bare recipe LR).
+        Three probes around the anchor are enough to reject a destructive LR.
+        Scoped to the opt-in genuine ramp → golden-safe."""
+        if not getattr(self, "_genuine_blend_ramp", False):
+            return super()._find_lr()
+        import dataclasses
+        steps = min(10, self._budget.lr_steps_per_probe)
+        saved = self._budget
+        self._budget = dataclasses.replace(
+            saved, lr_num_probes=3, lr_steps_per_probe=steps,
+            max_lr_exploration_steps=3 * steps,
+        )
+        try:
+            return super()._find_lr()
+        finally:
+            self._budget = saved
+
     def _make_target_activation(self, perceptron) -> TTFSActivation:
         return TTFSActivation(
             T=self._T,
