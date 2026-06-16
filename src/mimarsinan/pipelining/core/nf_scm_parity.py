@@ -162,6 +162,42 @@ def assert_cascaded_nf_scm_agreement_or_raise(
     return agreement
 
 
+def assert_torch_vs_deployed_sim_parity_or_raise(
+    model,
+    flow,
+    samples: torch.Tensor,
+    *,
+    min_agreement: float = 0.98,
+) -> float:
+    """Torch↔DEPLOYED-sim parity: the NF model's torch forward must agree with the
+    EXACT spiking sim that ``run_scm_identity_metric`` deploys (``build_spiking_hybrid_flow``)
+    on at least ``min_agreement`` of ``samples``.
+
+    The cascaded decision gate above checks a SIBLING identity executor
+    (``build_identity_spiking_flow``, which omits ``cycle_accurate_lif_forward``);
+    this checks the deployed executor directly so a torch↔sim deployment divergence
+    cannot hide. Healthy agreement is ~1.0 (a single WQ tie-flip per few hundred
+    samples is the only expected residual — a sub-quantization-step effect);
+    a real fidelity regression craters it. Returns the measured agreement."""
+    model_param = next(model.parameters(), None)
+    if model_param is not None:
+        samples = samples.to(model_param.device)
+        flow = flow.to(model_param.device)
+    with torch.no_grad():
+        torch_pred = model(samples).argmax(dim=1)
+        sim_pred = flow(samples).argmax(dim=1)
+    agreement = float((torch_pred == sim_pred).double().mean())
+    if agreement < float(min_agreement):
+        raise NfScmParityError(
+            f"torch↔deployed-sim parity failed: {agreement:.4f} < "
+            f"min_agreement={min_agreement} over {int(samples.shape[0])} samples. "
+            f"The deployed spiking sim diverged from the trained torch cascade — a "
+            f"deployment-fidelity regression (expected residual is only the rare WQ "
+            f"tie-flip, ~1 sample per few hundred)."
+        )
+    return agreement
+
+
 def compare_normalized_records(
     nf: Dict[int, np.ndarray],
     scm: Dict[int, np.ndarray],

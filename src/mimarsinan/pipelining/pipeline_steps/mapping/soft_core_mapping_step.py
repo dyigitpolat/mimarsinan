@@ -171,6 +171,7 @@ class SoftCoreMappingStep(PipelineStep):
         # one device.
         with _phase("nf_scm_parity_gate"):
             self._run_nf_scm_parity_gate(model, ir_graph)
+            self._run_torch_sim_parity_check(model, ir_graph)
 
         device = self.pipeline.config["device"]
         try:
@@ -191,6 +192,50 @@ class SoftCoreMappingStep(PipelineStep):
             )
         self._soft_core_spiking_metric = float(acc)
         print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
+
+    def _run_torch_sim_parity_check(self, model, ir_graph) -> None:
+        """Torch↔DEPLOYED-sim parity (per-run): the NF model's torch forward must
+        agree with the EXACT spiking sim ``run_scm_identity_metric`` deploys
+        (``build_spiking_hybrid_flow``), on ≥ ``scm_torch_sim_parity_min_agreement``
+        of ``scm_torch_sim_parity_samples``. The cascaded decision gate above checks
+        a SIBLING identity executor (``build_identity_spiking_flow``); this checks the
+        DEPLOYED one, so a torch↔sim deployment divergence cannot hide behind the
+        metric's 500-sample subsample. Gated by ``nf_scm_parity_enabled`` (skips
+        ttfs_quantized, not torch-bit-exact by design) + ``scm_torch_sim_parity_check``
+        (default on)."""
+        if not bool(self.pipeline.config.get("scm_torch_sim_parity_check", True)):
+            return
+        import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
+        from mimarsinan.pipelining.core.simulation_factory import (
+            build_deployment_contract,
+            build_identity_mapping_for_pipeline,
+            build_spiking_hybrid_flow,
+        )
+
+        contract = build_deployment_contract(self.pipeline)
+        if not nf_scm_parity.nf_scm_parity_enabled(contract):
+            return
+        n = int(self.pipeline.config.get("scm_torch_sim_parity_samples", 256))
+        if n <= 0:
+            return
+        batches = [x for x, _ in self.trainer.iter_validation_batches(8)]
+        if not batches:
+            return
+        samples = torch.cat(batches)[:n]
+        identity_mapping = build_identity_mapping_for_pipeline(
+            ir_graph, pipeline_config=self.pipeline.config,
+        )
+        flow = build_spiking_hybrid_flow(self.pipeline, identity_mapping, model=model)
+        agreement = nf_scm_parity.assert_torch_vs_deployed_sim_parity_or_raise(
+            model, flow, samples,
+            min_agreement=float(
+                self.pipeline.config.get("scm_torch_sim_parity_min_agreement", 0.98)
+            ),
+        )
+        print(
+            f"[SoftCoreMappingStep] torch↔deployed-sim parity: {agreement:.4f} "
+            f"over {int(samples.shape[0])} samples"
+        )
 
     def _run_nf_scm_parity_gate(self, model, ir_graph) -> None:
         """Rung-1↔rung-2 per-neuron lock for analytic schedules.
