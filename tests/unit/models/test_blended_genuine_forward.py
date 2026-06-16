@@ -93,6 +93,19 @@ def test_rate_one_is_freshly_built_genuine_exact():
     assert torch.equal(got, expected)
 
 
+def test_genuine_logits_is_public_and_equals_cascade():
+    """The pure-genuine branch is exposed as a public ``genuine_logits(x)`` so
+    callers never reach into a private member to recover the cascade logits."""
+    S = 8
+    flow = _deployed_flow(S)
+    blend = BlendedGenuineForward(flow, _teacher_of(flow), S)
+    x = torch.randn(3, 6, dtype=torch.float64)
+    with torch.no_grad():
+        expected = TTFSSegmentForward(flow.get_mapper_repr(), S)(x)
+        got = blend.genuine_logits(x)
+    assert torch.equal(got, expected)
+
+
 def test_rate_half_is_midpoint():
     S = 8
     flow = _deployed_flow(S)

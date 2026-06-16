@@ -78,6 +78,43 @@ def test_one_shot_only_does_not_bisect():
     assert final == 0.0
 
 
+def test_fixed_ladder_walks_exact_rates_without_bisecting():
+    """The folded fast path's policy: walk a fixed rate list in order, committing
+    each via ``attempt``, never bisecting (no rollback search)."""
+    commits = []
+    attempt = lambda t: (commits.append(t), t)[1]
+    final = RateScheduler(
+        epsilon=EPS, policy="fixed_ladder", rates=[0.5, 0.75, 0.9, 0.97, 1.0]
+    ).run(0.0, attempt)
+    assert commits == pytest.approx([0.5, 0.75, 0.9, 0.97, 1.0])
+    assert final == pytest.approx(1.0)
+
+
+def test_fixed_ladder_does_not_bisect_on_shortfall():
+    """Even if an attempt reports a committed rate below the proposed target, the
+    fixed ladder walks straight to the next scheduled rate — no bisection probes."""
+    calls = []
+
+    def attempt(t):
+        calls.append(t)
+        return t - 0.1  # report a shortfall
+
+    final = RateScheduler(
+        epsilon=EPS, policy="fixed_ladder", rates=[0.5, 1.0]
+    ).run(0.0, attempt)
+    assert calls == pytest.approx([0.5, 1.0])  # both rates, no extra bisection calls
+    assert final == pytest.approx(0.9)  # last reported committed (1.0 - 0.1)
+
+
+def test_fixed_ladder_clamps_rates_above_one():
+    commits = []
+    attempt = lambda t: (commits.append(t), t)[1]
+    RateScheduler(
+        epsilon=EPS, policy="fixed_ladder", rates=[0.5, 1.2]
+    ).run(0.0, attempt)
+    assert commits == pytest.approx([0.5, 1.0])  # 1.2 clamped to 1.0
+
+
 def test_max_rounds_bounds_the_outer_loop():
     attempt = lambda t: t  # smooth, but cap rounds at 1 via uniform ladder
     final = RateScheduler(

@@ -128,9 +128,15 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "ttfs_distmatch_bias_iters": 15,
     "ttfs_distmatch_bias_eta": 0.7,
     "ttfs_distmatch_quantile": 0.99,
-    # EXPERIMENTAL fast fixed-increment genuine-blend ramp (opt-in, requires
-    # ttfs_genuine_blend_ramp): SKIP the SmoothAdaptation controller and walk a
-    # fixed rate schedule with a fixed step count + one Adam optimizer (~30-60s).
+    # Weight of the extra CE on the PURE genuine logits in the blend-ramp loss
+    # (the validated prototype value that pulls the rate-1 endpoint up). Canonical
+    # source for the constant; the tuner reads this key once.
+    "ttfs_genuine_blend_ce_alpha": 0.3,
+    # Fast fixed-increment genuine-blend ramp (opt-in, requires ttfs_genuine_blend_ramp):
+    # runs through the orchestrator with a fixed_ladder RateScheduler policy
+    # (schedule-not-search) instead of greedy/bisect — one shared optimizer + spanning
+    # warmup/cosine LR over the whole ladder, no per-cycle rollback/recovery/LR-find/
+    # stabilization (~30-60s). Inherits the DecisionTrace + finalize observability.
     "ttfs_genuine_blend_fast": False,
     "ttfs_blend_fast_steps_per_rate": 120,
     "ttfs_blend_fast_rates": [0.5, 0.75, 0.9, 0.97, 1.0],
@@ -241,6 +247,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "ttfs_distmatch_bias_iters",
     "ttfs_distmatch_bias_eta",
     "ttfs_distmatch_quantile",
+    "ttfs_genuine_blend_ce_alpha",
     "ttfs_genuine_blend_fast",
     "ttfs_blend_fast_steps_per_rate",
     "ttfs_blend_fast_rates",

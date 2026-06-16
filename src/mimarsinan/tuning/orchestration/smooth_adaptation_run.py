@@ -43,11 +43,14 @@ class SmoothAdaptationRunMixin(TunerBase):
         """
         if self._committed_rate < 1.0 - 1e-6:
             return
-        if getattr(self, "_stabilization_bounded", False):
-            self._stabilize_bounded_cosine()
-            return
         budget = self._stabilization_budget()
         if budget is None or int(budget) <= 0:
+            # A disabled stabilization budget (e.g. the fast genuine-blend path, which
+            # trains through the cascade for the whole ramp) wins over BOTH the
+            # patience pass and the bounded-cosine variant — no off-recipe pass.
+            return
+        if getattr(self, "_stabilization_bounded", False):
+            self._stabilize_bounded_cosine()
             return
         budget = int(budget)
 
@@ -284,20 +287,29 @@ class SmoothAdaptationRunMixin(TunerBase):
         initial_step = float(getattr(self, "_initial_ramp_step", 0.5))
         epsilon = ms
         policy_override = None
-        profile = self._maybe_characterize()
-        if profile is not None:
-            epsilon = float(profile.epsilon_hint)
-            if not profile.monotonic:
-                # A1: a non-monotone axis breaks the greedy/bisect monotonicity
-                # premise — walk a dense grid at the characterized safe step.
-                policy_override = "dense_grid"
-                initial_step = float(profile.epsilon_hint)
+        rates = None
+        if getattr(self, "_fixed_ladder_policy", False):
+            # Schedule-not-search: a well-conditioned transformation (the genuine
+            # blend fast path) walks an explicit rate ladder with no bisection and
+            # no characterization — the fixed schedule is the policy.
+            policy_override = "fixed_ladder"
+            rates = getattr(self, "_fixed_ladder_rates", None) or [1.0]
+        else:
+            profile = self._maybe_characterize()
+            if profile is not None:
+                epsilon = float(profile.epsilon_hint)
+                if not profile.monotonic:
+                    # A1: a non-monotone axis breaks the greedy/bisect monotonicity
+                    # premise — walk a dense grid at the characterized safe step.
+                    policy_override = "dense_grid"
+                    initial_step = float(profile.epsilon_hint)
         scheduler = AdaptationDriver.build_scheduler(
             epsilon=epsilon,
             max_rounds=max_cycles,
             skip_one_shot=getattr(self, "_skip_one_shot", False),
             initial_step=initial_step,
             policy_override=policy_override,
+            rates=rates,
         )
         driver = AdaptationDriver(
             scheduler=scheduler,
