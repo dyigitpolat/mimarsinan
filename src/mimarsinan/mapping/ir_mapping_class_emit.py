@@ -73,13 +73,7 @@ class IRMappingEmitMixin:
             result = np.asarray(result, dtype=object)
             node_id = int(result.flat[0].node_id)
 
-            # Psum partials receive the un-clamped tile slice from the base class
-            # (avoids clamp cost in shape-only path); materialise pos/neg here.
             w_np = self._to_numpy(weights) if weights is not None else None
-            if psum_role == "partial_pos" and w_np is not None:
-                w_np = np.clip(w_np, a_min=0, a_max=None)
-            elif psum_role == "partial_neg" and w_np is not None:
-                w_np = np.clip(-w_np, a_min=0, a_max=None)
 
             ir_input_list = list(ir_input_sources.flatten())
             in_features = len(ir_input_list)

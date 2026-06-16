@@ -166,7 +166,8 @@ class TestSnapshotMappedPlacements:
         out = np.array([IRSource(0, i) for i in range(32)], dtype=object)
         ir = IRGraph(nodes=[c], output_sources=out)
         cores_config = [{"max_axons": 64, "max_neurons": 32, "count": 4}]
-        hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
+        hm = build_hybrid_hard_core_mapping(
+            ir_graph=ir, cores_config=cores_config, allow_coalescing=True)
         snap, _descs = snapshot_hard_core_mapping(hm)
         neural_stages = [s for s in snap["stages"] if s.get("kind") == "neural" and s.get("cores")]
         assert len(neural_stages) == 1

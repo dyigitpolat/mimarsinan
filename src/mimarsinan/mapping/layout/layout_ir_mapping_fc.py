@@ -9,7 +9,6 @@ from mimarsinan.mapping.layout.layout_source_view_ops import (
     stack_source_views,
 )
 from mimarsinan.mapping.platform.mapping_structure import compute_fc_tiling_mode
-from mimarsinan.mapping.layout.layout_ir_mapping_fc_psum import map_fc_with_psum
 
 
 class _LayoutIRMappingFC:
@@ -82,21 +81,6 @@ class _LayoutIRMappingFC:
             self.max_axons, self.max_neurons,
             has_bias, self.hardware_bias, self.allow_coalescing,
         )
-
-        if mode == "psum":
-            return map_fc_with_psum(
-                self,
-                input_sources=src_arr.flatten(),
-                fc_weights=fc_weights,
-                fc_biases=fc_biases,
-                activation_scale=activation_scale,
-                parameter_scale=parameter_scale,
-                input_activation_scale=input_activation_scale,
-                name=name,
-                normalization_type=normalization_type,
-                activation_type=activation_type,
-                perceptron_index=perceptron_index,
-            )
 
         if mode == "coalescing" and coalescing_group_id is None:
             coalescing_group_id = self._coalescing_group_counter
