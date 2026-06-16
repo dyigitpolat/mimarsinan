@@ -82,3 +82,14 @@ def test_build_scheduler_selects_policy():
     )
     assert ladder.policy == "uniform_ladder"
     assert ladder.initial_step == 0.125
+
+
+def test_build_scheduler_fixed_ladder_policy():
+    """``policy_override='fixed_ladder'`` wins and carries the explicit rate list
+    (the folded fast genuine-blend path)."""
+    sched = AdaptationDriver.build_scheduler(
+        epsilon=EPS, max_rounds=5, skip_one_shot=True, initial_step=0.125,
+        policy_override="fixed_ladder", rates=[0.5, 1.0],
+    )
+    assert sched.policy == "fixed_ladder"
+    assert sched.rates == [0.5, 1.0]

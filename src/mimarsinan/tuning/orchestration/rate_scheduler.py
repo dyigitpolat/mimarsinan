@@ -4,7 +4,9 @@ Implements the spec's §5.2 search: each round greedily attempts the full jump t
 1.0, then bisects the *remaining gap* on failure (``1.0`` → ``committed+gap/2`` →
 …), committing the largest feasible increment and repeating. This subsumes the
 legacy one-shot attempt, the grow/halve ramp, and the continue-to-full-rate
-loop into a single policy.
+loop into a single policy. The ``fixed_ladder`` policy is the schedule-not-search
+variant (a well-conditioned transformation walks an explicit rate list with no
+bisection) — the home of the folded genuine-blend fast path.
 
 ``attempt(target)`` is the per-cycle callable (the tuner's ``_adaptation``): it
 returns the committed rate after the attempt — ``target`` on commit, the prior
@@ -30,14 +32,19 @@ class RateScheduler:
         policy: str = "greedy_to_one",
         initial_step: Optional[float] = None,
         max_rounds: Optional[int] = None,
+        rates: Optional[list] = None,
     ):
-        if policy not in ("greedy_to_one", "uniform_ladder", "one_shot_only", "dense_grid"):
+        if policy not in (
+            "greedy_to_one", "uniform_ladder", "one_shot_only", "dense_grid",
+            "fixed_ladder",
+        ):
             raise ValueError(f"unknown rate policy: {policy!r}")
         self.epsilon = float(epsilon)
         self.alpha_tol = float(alpha_tol)
         self.policy = policy
         self.initial_step = initial_step
         self.max_rounds = max_rounds
+        self.rates = list(rates) if rates is not None else None
 
     def _first_step(self, gap: float) -> float:
         if self.policy == "uniform_ladder" and self.initial_step is not None:
@@ -54,6 +61,15 @@ class RateScheduler:
     def run(self, committed: float, attempt: Callable[[float], float]) -> float:
         """Drive ``committed`` toward 1.0; return the highest committed rate."""
         committed = float(committed)
+        if self.policy == "fixed_ladder":
+            # Schedule-not-search: walk an explicit rate list in order, committing
+            # whatever each attempt reports, never bisecting (the well-conditioned
+            # transformation has no cliff to search). epsilon/max_rounds are unused.
+            for r in (self.rates or []):
+                result = attempt(min(float(r), 1.0))
+                if result is not None:
+                    committed = float(result)
+            return committed
         rounds = 0
         while committed < 1.0 - self.alpha_tol:
             if self.max_rounds is not None and rounds >= self.max_rounds:

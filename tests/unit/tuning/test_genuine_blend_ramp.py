@@ -263,6 +263,45 @@ class TestKDRecoveryTrainsGenuine:
         )
 
 
+# ── Flag ON: the genuine-CE loss resolves via a tuner-owned reference ─────────
+
+
+class TestLossDeFragilized:
+    """The genuine-CE term resolves the installed ``BlendedGenuineForward`` through
+    a tuner-owned reference + the public ``genuine_logits``, never by introspecting
+    ``model.__dict__['forward']`` and a private ``_genuine`` attr (review Part F)."""
+
+    def test_tuner_owns_installed_blend_forward(self, tmp_path):
+        tuner, model, _ = _make_tuner(tmp_path, blend=True)
+        assert isinstance(tuner._blend_forward, BlendedGenuineForward)
+        assert tuner._blend_forward is model.__dict__.get("forward")
+
+    def test_loss_resolves_genuine_via_owned_reference(self, tmp_path):
+        tuner, _, _ = _make_tuner(tmp_path, blend=True)
+        loss = tuner.trainer.loss_function
+        assert loss._blend_forward() is tuner._blend_forward
+
+    def test_loss_robust_to_install_convention_change(self, tmp_path):
+        """The old code read ``model.__dict__['forward']``; if the install
+        convention changed, the genuine-CE term silently vanished. The owned
+        reference is immune — swapping ``model.forward`` does not change what the
+        loss resolves."""
+        tuner, model, _ = _make_tuner(tmp_path, blend=True)
+        owned = tuner._blend_forward
+        model.forward = object()  # simulate a changed install convention
+        assert tuner.trainer.loss_function._blend_forward() is owned
+
+    def test_remove_forward_clears_owned_reference(self, tmp_path):
+        """After the blend is removed (finalize/stabilization run the pure
+        cascade), ``model(x)`` IS genuine, so the provider must return ``None`` and
+        the loss must skip the extra genuine-CE term (no double-count)."""
+        tuner, _, _ = _make_tuner(tmp_path, blend=True)
+        assert tuner._blend_forward is not None
+        tuner._remove_forward()
+        assert tuner._blend_forward is None
+        assert tuner.trainer.loss_function._blend_forward() is None
+
+
 # ── Flag ON: finalize deploys the PURE genuine cascade ────────────────────────
 
 

@@ -75,10 +75,21 @@ class AdaptationDriver:
         return host._commit_cycle(ctx)
 
     @staticmethod
-    def build_scheduler(*, epsilon, max_rounds, skip_one_shot, initial_step, policy_override=None):
-        """Select the rate-search policy: ``policy_override`` (e.g. ``dense_grid``
-        from a non-monotone characterization) wins; else a uniform ladder for the
-        KD-blend family (``skip_one_shot``); else greedy-to-1.0 + bisect."""
+    def build_scheduler(
+        *, epsilon, max_rounds, skip_one_shot, initial_step,
+        policy_override=None, rates=None,
+    ):
+        """Select the rate-search policy: ``policy_override`` (``fixed_ladder`` for a
+        scheduled well-conditioned ramp, ``dense_grid`` from a non-monotone
+        characterization) wins; else a uniform ladder for the KD-blend family
+        (``skip_one_shot``); else greedy-to-1.0 + bisect."""
+        if policy_override == "fixed_ladder":
+            return RateScheduler(
+                epsilon=epsilon,
+                policy="fixed_ladder",
+                rates=rates,
+                max_rounds=max_rounds,
+            )
         if policy_override == "dense_grid":
             return RateScheduler(
                 epsilon=epsilon,

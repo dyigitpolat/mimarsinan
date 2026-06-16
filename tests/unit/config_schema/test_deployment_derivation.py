@@ -123,6 +123,7 @@ def test_ttfs_distmatch_defaults():
     assert dp["ttfs_distmatch_bias_iters"] == 15
     assert dp["ttfs_distmatch_bias_eta"] == 0.7
     assert dp["ttfs_distmatch_quantile"] == 0.99
+    assert dp["ttfs_genuine_blend_ce_alpha"] == 0.3
 
 
 def test_ttfs_genuine_blend_ramp_keys_in_config_keys_set():
@@ -132,5 +133,6 @@ def test_ttfs_genuine_blend_ramp_keys_in_config_keys_set():
         "ttfs_distmatch_bias_iters",
         "ttfs_distmatch_bias_eta",
         "ttfs_distmatch_quantile",
+        "ttfs_genuine_blend_ce_alpha",
     ):
         assert key in CONFIG_KEYS_SET

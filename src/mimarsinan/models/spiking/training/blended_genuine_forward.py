@@ -35,7 +35,9 @@ class BlendedGenuineForward(LazyExecutorForward):
 
         return TTFSSegmentForward(self.model.get_mapper_repr(), self.T)
 
-    def _genuine(self, x):
+    def genuine_logits(self, x):
+        """The pure single-spike cascade logits (the ``rate=1`` branch). Public so
+        the KD loss can add a genuine-CE term without introspecting a private member."""
         return self._ensure_executor(self._build_executor)(x)
 
     def _run(self, x):
@@ -43,5 +45,5 @@ class BlendedGenuineForward(LazyExecutorForward):
         if rate == 0.0:
             return self.teacher(x)
         if rate == 1.0:
-            return self._genuine(x)
-        return (1.0 - rate) * self.teacher(x) + rate * self._genuine(x)
+            return self.genuine_logits(x)
+        return (1.0 - rate) * self.teacher(x) + rate * self.genuine_logits(x)

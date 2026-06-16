@@ -312,21 +312,27 @@ intermediate reps genuine and never annealed conditioning, and lost final
 accuracy): the blend is at the output but the *intermediate* reps are genuine
 throughout, and distribution matching addresses the death cascade (§5.5).
 
-### 5.4 The experimental fast genuine blend (LANDED, opt-in)
+### 5.4 The fast genuine blend (LANDED, opt-in; FOLDED into the one orchestrator)
 
 `ttfs_genuine_blend_fast` (default off, requires `ttfs_genuine_blend_ramp`;
 `ttfs_blend_fast_steps_per_rate=120`, `ttfs_blend_fast_rates=[0.5,0.75,0.9,0.97,1.0]`):
-`run()` bypasses the SmoothAdaptation control flow entirely. `_run_fast_genuine_blend`
-builds ONE optimizer + a warmup(5%)/cosine LR over `len(rates)·steps_per_rate`
-steps; for each fixed rate R it does `_set_rate(R)` + `steps_per_rate` training
-steps with loss `CE((1−R)·teacher + R·genuine) + α·CE(genuine)`; then `_set_rate(1.0)`,
-removes the ramp forward, runs `_finalize` (pure `_SegmentSpikeForward`). **No
-`_adaptation` cycles, no RecoveryEngine, no rollback clone/restore, no
-`_stabilize_at_full_rate`, no per-cycle LR find.** It reproduces
-`generated/_genuine_ab/full_ramp.py`: **genuine 0.41 → 0.9355**. This is the
-existence proof that a genuine-through-the-cascade ramp can recover cascaded
-accuracy cheaply — the candidate for the "<2-minute" target — but it sidesteps the
-controller's safety machinery, so it is experimental.
+runs through the ONE orchestrator (`AdaptationDriver`) via a **`fixed_ladder`**
+RateScheduler policy (schedule-not-search) — `_configure` sets `_fixed_ladder_policy`,
+so `_run_with_scheduler` selects the policy, which walks the rate ladder driving the
+overridden `_driver_attempt → _fast_rate_attempt`: ONE shared optimizer + a
+warmup(5%)/cosine LR over `len(rates)·steps_per_rate` steps (built once in
+`_ensure_fast_optimizer`); for each fixed rate R, `steps_per_rate` training steps with
+loss `CE((1−R)·teacher + R·genuine) + α·CE(genuine)`, then a post-rate eval recorded as
+one `commit` per rate in the DecisionTrace. The shared `_finalize_run`/`_after_run`
+deploys the pure `_SegmentSpikeForward`; `_stabilization_budget` returns 0 so there is
+**no `_stabilize_at_full_rate` pass**, and there is **no per-cycle rollback, recovery,
+or LR-find** (the `fixed_ladder` policy never bisects). It reproduces
+`generated/_genuine_ab/full_ramp.py`: **genuine 0.41 → 0.9355**. The earlier review's
+"second engine" fork (a bespoke `run()` / `_run_fast_genuine_blend` that bypassed the
+controller) is gone: the fast path now INHERITS the trace + finalize observability and
+the invariant-core seam through the same orchestrator every tuner uses, while keeping
+its validated numerics. The remaining open item is the full-run accuracy
+non-regression gate before any default flip.
 
 ### 5.5 Death cascade and distribution matching (the enabling win)
 

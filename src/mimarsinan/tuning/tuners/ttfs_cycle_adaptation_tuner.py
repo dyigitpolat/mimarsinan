@@ -85,7 +85,7 @@ from mimarsinan.models.spiking.training.blended_genuine_forward import (
 )
 from mimarsinan.tuning.axes.blend_axis import GenuineBlendAxis, TTFSGenuineAxis
 from mimarsinan.tuning.forward_install import LazyExecutorForward
-from mimarsinan.tuning.trace import DecisionTrace
+from mimarsinan.tuning.trace import DecisionRecord
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _KDClassificationLoss,
@@ -136,24 +136,28 @@ class _BlendGenuineKDLoss(_KDClassificationLoss):
     Reproduces the validated genuine-blend recipe: the base KD+CE distills the
     teacher onto the ramping ``BlendedGenuineForward`` output (``model(x)``), while
     an extra ``genuine_ce_alpha · CE(genuine_logits, y)`` term sharpens the pure
-    cascade so training at intermediate rates lifts the rate-1 endpoint. The
-    genuine logits are read from the installed ``BlendedGenuineForward`` (its
-    ``_genuine`` branch); when no blend forward is installed (e.g. finalize/
-    stabilization on the pure cascade) ``model(x)`` IS the genuine cascade, so the
-    base CE already covers it and the extra term is skipped.
+    cascade so training at intermediate rates lifts the rate-1 endpoint. The blend
+    forward is resolved through ``blend_forward_provider`` (a tuner-owned reference,
+    NOT ``model.__dict__``), so the term is decoupled from the install mechanism;
+    when the provider returns ``None`` (e.g. finalize/stabilization on the pure
+    cascade) ``model(x)`` IS the genuine cascade, so the base CE already covers it
+    and the extra term is skipped.
     """
 
-    def __init__(self, teacher, *, genuine_ce_alpha: float = 0.3,
+    def __init__(self, teacher, *, genuine_ce_alpha: float, blend_forward_provider,
                  temperature: float = 3.0, alpha: float = 0.3):
         super().__init__(teacher, temperature=temperature, alpha=alpha)
         self.genuine_ce_alpha = float(genuine_ce_alpha)
+        self._blend_forward = blend_forward_provider
 
     def __call__(self, model, x, y):
         loss = super().__call__(model, x, y)
-        blend = model.__dict__.get("forward")
-        genuine = getattr(blend, "_genuine", None)
-        if self.genuine_ce_alpha > 0.0 and callable(genuine):
-            loss = loss + self.genuine_ce_alpha * F.cross_entropy(genuine(x), y)
+        if self.genuine_ce_alpha > 0.0:
+            blend = self._blend_forward()
+            if blend is not None:
+                loss = loss + self.genuine_ce_alpha * F.cross_entropy(
+                    blend.genuine_logits(x), y,
+                )
         return loss
 
 
@@ -197,9 +201,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
         if self._genuine_blend_ramp:
             self._genuine_annealed_ramp = False
-        # EXPERIMENTAL fast fixed-increment genuine-blend ramp (default OFF, requires
-        # the genuine blend ramp): SKIP the SmoothAdaptation controller and walk a
-        # fixed rate schedule with a fixed step count + one Adam optimizer.
+        # Fast fixed-increment genuine-blend ramp (default OFF, requires the genuine
+        # blend ramp): run through the ONE orchestrator with a fixed_ladder
+        # RateScheduler policy (schedule-not-search) instead of the greedy/bisect
+        # controller. _run_with_scheduler reads _fixed_ladder_policy to route.
         self._genuine_blend_fast = self._genuine_blend_ramp and bool(
             self.pipeline.config.get("ttfs_genuine_blend_fast", False)
         )
@@ -211,6 +216,31 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         ]
         self._blend_fast_steps_per_rate = int(
             self.pipeline.config.get("ttfs_blend_fast_steps_per_rate", 120)
+        )
+        self._fixed_ladder_policy = self._genuine_blend_fast
+        # The fixed ladder MUST end at rate 1.0 (the deployed cascade): a ladder that
+        # stops short would leave _committed_rate < 1.0, and the shared _after_run's
+        # _continue_to_full_rate would then drive to 1.0 with the HEAVY controller
+        # (LR-find/recovery/rollback) — off-recipe. Normalize with a trailing 1.0.
+        ladder = list(self._blend_fast_rates) or [1.0]
+        if abs(float(ladder[-1]) - 1.0) > 1e-9:
+            ladder = [*ladder, 1.0]
+        self._fixed_ladder_rates = ladder
+        # Fast-path scratch (shared optimizer + spanning warmup/cosine LR across the
+        # whole ladder, built once on the first attempt; reset state defaults here).
+        self._fast_optimizer = None
+        self._fast_lr_schedule = None
+        self._fast_optimizer_steps = 0
+        self._fast_blend_path = False
+        self._fast_full_transform_log = []
+        # The installed teacher<->genuine blend forward (owned reference so the
+        # genuine-CE loss + the fast attempt resolve it without introspecting
+        # model.__dict__); set in _ramp_forward, cleared in _remove_forward.
+        self._blend_forward = None
+        # Single read of the genuine-CE weight (canonical default in defaults.py);
+        # both the KD loss and the fast loop consume this one value.
+        self._genuine_ce_alpha = float(
+            self.pipeline.config.get("ttfs_genuine_blend_ce_alpha", 0.3)
         )
         self._distmatch_stats = None
 
@@ -312,10 +342,20 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         spike surrogate alpha annealed — deployment dynamics exact at every rate.
         Flag-off keeps the value-domain ramp (``None``)."""
         if self._genuine_blend_ramp:
-            return BlendedGenuineForward(self.model, self._teacher, self._T, rate=0.0)
+            self._blend_forward = BlendedGenuineForward(
+                self.model, self._teacher, self._T, rate=0.0,
+            )
+            return self._blend_forward
         if self._genuine_annealed_ramp:
             return self._finalize_forward_for(self.model)
         return super()._ramp_forward()
+
+    def _remove_forward(self) -> None:
+        """Drop the owned blend reference alongside the instance forward: once the
+        blend is gone the deployed forward IS the genuine cascade, so the loss must
+        stop adding its genuine-CE term (the provider then returns ``None``)."""
+        self._blend_forward = None
+        super()._remove_forward()
 
     def _calibrate_to_teacher_distribution(self) -> None:
         """Distribution-match the deployed cascade to the frozen teacher ANN:
@@ -387,9 +427,8 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         if self._genuine_blend_ramp:
             return _BlendGenuineKDLoss(
                 self._teacher,
-                genuine_ce_alpha=float(
-                    self.pipeline.config.get("ttfs_genuine_blend_ce_alpha", 0.3)
-                ),
+                genuine_ce_alpha=self._genuine_ce_alpha,
+                blend_forward_provider=lambda: self._blend_forward,
             )
         if self._synchronized and bool(
             self.pipeline.config.get("ttfs_finetune_kd_against_rung2", False)
@@ -459,105 +498,124 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         quantize_ir_graph(ir_graph, bits, weight_quantization=False)
         return ir_graph
 
-    # -- EXPERIMENTAL fast fixed-increment genuine-blend ramp ------------------
+    # -- Fast fixed-increment genuine-blend ramp (fixed_ladder policy) ---------
+    # Folded into the ONE orchestrator (review Rec 2): no bespoke ``run()`` engine.
+    # ``_fixed_ladder_policy`` routes ``_run_with_scheduler`` to the ``fixed_ladder``
+    # RateScheduler policy, which walks the rate ladder driving ``_driver_attempt``
+    # (overridden below to train through the genuine cascade with one spanning LR),
+    # then the shared ``_finalize_run`` deploys the pure cascade and measures the
+    # cliff. So the fast path inherits the DecisionTrace + finalize observability.
     def run(self):
-        """EXPERIMENTAL fast path (``ttfs_genuine_blend_fast``, default OFF): skip
-        the OPTIONAL controller machinery (recovery/rollback/stabilization/LR-find)
-        and walk a FIXED rate schedule with a fixed step count. The INVARIANT CORE
-        (distribution-matched blend forward + genuine-CE) is already installed in
-        ``__init__``, so it stays active here — only the controller is bypassed.
-        Otherwise the existing SmoothAdaptation flow runs UNCHANGED."""
+        """Reset the fast-path scratch (the tuner-owned optimizer + spanning cosine)
+        so a re-run rebuilds them rather than re-stepping an exhausted schedule, then
+        drive the ONE orchestrator. NOT a fork — it unconditionally delegates to the
+        shared ``run()``; the fixed_ladder policy is selected in ``_run_with_scheduler``."""
         if self._genuine_blend_fast:
-            return self._run_fast_genuine_blend()
+            self._fast_optimizer = None
+            self._fast_lr_schedule = None
+            self._fast_optimizer_steps = 0
         return super().run()
 
-    def _run_fast_genuine_blend(self):
-        """Reproduce the validated prototype (``generated/_genuine_ab/full_ramp.py``):
-        one Adam optimizer + warmup/cosine LR over the whole schedule, walking a
-        FIXED ``[0.5, 0.75, 0.9, 0.97, 1.0]`` rate ladder a FIXED number of steps each
-        with loss ``CE((1-R)*teacher + R*genuine) + 0.3*CE(genuine)``, then deploy the
-        PURE genuine cascade (the existing finalize) — NO ``_adaptation`` cycles, NO
-        RecoveryEngine, NO rollback clone/restore, NO ``_stabilize_at_full_rate``, NO
-        per-cycle LR find. The blend output and the pure-genuine logits are read from
-        the installed :class:`BlendedGenuineForward` (``model(x)`` IS the blend; its
-        ``_genuine`` branch is the cascade), so this stays the prototype's recipe."""
+    def _driver_attempt(self, target):
+        """The per-rate attempt the driver/scheduler calls. The fast genuine-blend
+        path trains a fixed number of steps at ``target`` with the shared optimizer
+        + spanning cosine and the validated ``CE(blend) + ce_alpha·CE(genuine)``
+        objective; otherwise the standard predictor→corrector cycle runs."""
+        if self._genuine_blend_fast:
+            return self._fast_rate_attempt(target)
+        return super()._driver_attempt(target)
+
+    def _stabilization_budget(self):
+        """The fast path trains through the genuine cascade for the whole ramp, so
+        the finalize cliff is ~0 — skip the post-finalize stabilization pass
+        (preserving the validated ~30-60s recipe). Else the base budget applies."""
+        if self._genuine_blend_fast:
+            return 0
+        return super()._stabilization_budget()
+
+    def _ensure_fast_optimizer(self):
+        """Build the single optimizer + spanning warmup/cosine LR once, sized to the
+        whole fixed ladder so the LR anneals smooth→~0 across ALL rates (exactly the
+        validated prototype). Subsequent per-rate attempts reuse them."""
+        if self._fast_optimizer is not None:
+            return
         from mimarsinan.model_training.training_recipe import build_recipe
-
-        self._committed_rate = 0.0
-        self._cycle_log = DecisionTrace.new()
-        self._phase_seconds = {}
-        self._fast_blend_path = True
-        self._fast_optimizer_steps = 0
-        t0 = time.time()
-
-        rates = list(self._blend_fast_rates) or [1.0]
-        steps_per_rate = max(0, int(self._blend_fast_steps_per_rate))
-        total_steps = max(1, len(rates) * steps_per_rate)
 
         device = self.pipeline.config["device"]
         self.model = self.model.to(device)
         lr = float(self.pipeline_lr)
-
         recipe = build_recipe(self.pipeline.config, key="tuning_recipe")
         if recipe is not None:
-            optimizer = build_optimizer(self.model, lr, recipe)
+            self._fast_optimizer = build_optimizer(self.model, lr, recipe)
         else:
-            optimizer = self.trainer.build_step_optimizer(lr)
-        scheduler = self._build_fast_lr_schedule(optimizer, total_steps)
-
-        ce_alpha = float(
-            self.pipeline.config.get("ttfs_genuine_blend_ce_alpha", 0.3)
+            self._fast_optimizer = self.trainer.build_step_optimizer(lr)
+        steps_per_rate = max(0, int(self._blend_fast_steps_per_rate))
+        total_steps = max(1, len(self._fixed_ladder_rates) * steps_per_rate)
+        self._fast_lr_schedule = self._build_fast_lr_schedule(
+            self._fast_optimizer, total_steps,
         )
-        self._fast_full_transform_log = []
+        self._fast_blend_path = True
+        self._fast_optimizer_steps = 0
 
-        for rate in rates:
-            self._set_rate(float(rate))
-            for _ in range(steps_per_rate):
-                x, y = self.trainer.next_training_batch()
-                x, y = x.to(device), y.to(device)
-                self.model.train()
-                logits = self.model(x)
-                loss = F.cross_entropy(logits, y)
-                # INVARIANT CORE (kept under the fast hack): the pure-genuine CE is
-                # what lifts the r=1 endpoint (invariants 4/5) — never drop it here.
-                genuine = self._installed_genuine_branch()
-                if ce_alpha > 0.0 and genuine is not None:
-                    loss = loss + ce_alpha * F.cross_entropy(genuine(x), y)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                scheduler.step()
-                self._fast_optimizer_steps += 1
-            # Observability (invariant 5): after each higher-rate round, record the
-            # r=1 full-transform accuracy so the convergence is visible even on the
-            # fast path. Gated by the probe flag — never slows the default fast run.
-            self._probe_fast_full_transform(float(rate))
-
-        self._set_rate(1.0)
-        self._remove_forward()
-        self._finalize()
-        self._final_metric = self._ensure_pipeline_threshold()
-        self._committed_rate = 1.0
-
-        self._phase_seconds["fast_blend"] = time.time() - t0
-        self.pipeline.reporter.report(
-            f"{self.name} fast_blend",
-            {
-                "rates": rates,
-                "steps_per_rate": steps_per_rate,
-                "optimizer_steps": self._fast_optimizer_steps,
-                "final_metric": self._final_metric,
-            },
+    def _fast_rate_attempt(self, target):
+        """Train ``steps_per_rate`` steps at ``target`` with the shared optimizer +
+        spanning cosine and loss ``CE(blend) + ce_alpha·CE(genuine)`` (the INVARIANT
+        CORE genuine-CE lifts the r=1 endpoint, invariants 4/5), measure a post
+        accuracy, and record a commit into the trace. Always commits ``target`` (the
+        well-conditioned transformation needs no rollback)."""
+        self._ensure_fast_optimizer()
+        t0 = time.time()
+        device = self.pipeline.config["device"]
+        ce_alpha = self._genuine_ce_alpha
+        self._set_rate(float(target))
+        for _ in range(max(0, int(self._blend_fast_steps_per_rate))):
+            x, y = self.trainer.next_training_batch()
+            x, y = x.to(device), y.to(device)
+            self.model.train()
+            logits = self.model(x)
+            loss = F.cross_entropy(logits, y)
+            genuine = self._installed_genuine_branch()
+            if ce_alpha > 0.0 and genuine is not None:
+                loss = loss + ce_alpha * F.cross_entropy(genuine(x), y)
+            self._fast_optimizer.zero_grad()
+            loss.backward()
+            self._fast_optimizer.step()
+            self._fast_lr_schedule.step()
+            self._fast_optimizer_steps += 1
+        self._committed_rate = float(target)
+        post_acc = float(self.trainer.validate_n_batches(self._budget.eval_n_batches))
+        self._record_fast_cycle(float(target), post_acc, t0)
+        self._last_post_acc = post_acc
+        # Observability (invariant 5, probe-gated): the deployed r=1 full-transform.
+        self._probe_fast_full_transform(float(target))
+        self._phase_seconds["fast_blend"] = (
+            self._phase_seconds.get("fast_blend", 0.0) + (time.time() - t0)
         )
-        self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
-        self.pipeline.reporter.report(f"{self.name} phase_seconds", self._phase_seconds)
-        return self._final_metric
+        return float(target)
+
+    def _record_fast_cycle(self, target, post_acc, t0):
+        """Record one ``commit`` per scheduled rate so the fixed_ladder fast path
+        inherits the DecisionTrace the bespoke loop used to drop."""
+        if not hasattr(self, "_cycle_log"):
+            return
+        self._cycle_log.record(DecisionRecord(
+            cycle_index=len(self._cycle_log),
+            outcome="commit",
+            rate=float(target),
+            committed=float(self._committed_rate),
+            elapsed_sec=time.time() - t0,
+            pre_cycle_acc=getattr(self, "_last_post_acc", None),
+            post_acc=float(post_acc),
+            lr=float(self._fast_optimizer.param_groups[0]["lr"]),
+            target=float(self._get_target()),
+            validation_baseline=self._baseline_or_none(),
+        ))
 
     def _installed_genuine_branch(self):
-        """The PURE genuine-cascade branch of the installed ``BlendedGenuineForward``
+        """The PURE genuine-cascade branch of the owned ``BlendedGenuineForward``
         (``None`` when no blend forward is installed — then ``model(x)`` IS genuine)."""
-        installed = self.model.__dict__.get("forward")
-        return getattr(installed, "_genuine", None)
+        blend = self._blend_forward
+        return blend.genuine_logits if blend is not None else None
 
     def _probe_fast_full_transform(self, rate) -> None:
         """Observability for invariant 5 (default off, ``tuning_full_transform_probe``):
@@ -567,8 +625,8 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         finalize-rebuild is needed — set 1.0, evaluate, restore the round's rate."""
         if not getattr(self, "_full_transform_probe", False):
             return
-        installed = self.model.__dict__.get("forward")
-        prev = float(getattr(installed, "rate", rate)) if installed is not None else rate
+        blend = self._blend_forward
+        prev = float(blend.rate) if blend is not None else rate
         device = self.pipeline.config["device"]
         self._set_rate(1.0)
         self.model.eval()
