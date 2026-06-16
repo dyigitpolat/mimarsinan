@@ -114,7 +114,18 @@ def run_trainer_metric(
             trainer.set_test_batch_size(
                 min(int(trainer.test_batch_size), int(max_batch_cap))
             )
-        max_samples = int(pipeline.config.get("max_simulation_samples", 0) or 0)
+        # The deployment accuracy metric must be evaluated on the SAME test set as
+        # its torch reference (the NF step's full-set ``trainer.test()``); otherwise
+        # comparing a full-set NF number to a small ``max_simulation_samples``
+        # subsample manufactures a spurious "NF↔SCM drop" that is pure sampling
+        # variance (the sim is bit-exact to the torch cascade per-sample — see the
+        # torch↔deployed-sim parity check). Default to the full test set so the
+        # reported deployed accuracy is honest and comparable; ``max_simulation_samples``
+        # only subsamples when ``deployment_metric_full_eval`` is explicitly off.
+        full_eval = bool(pipeline.config.get("deployment_metric_full_eval", True))
+        max_samples = 0 if full_eval else int(
+            pipeline.config.get("max_simulation_samples", 0) or 0
+        )
         if max_samples > 0:
             return float(
                 trainer.test_on_subsample(

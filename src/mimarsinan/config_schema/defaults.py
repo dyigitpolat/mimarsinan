@@ -253,6 +253,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "activation_analysis_batch_size",
     "generate_visualizations",
     "max_simulation_samples",
+    "deployment_metric_full_eval",
     "seed",
     "enable_nevresim_simulation",
     "nevresim_connectivity_mode",
