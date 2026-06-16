@@ -42,12 +42,16 @@ def run_placement(
     unused_hardcores: list,
     materializer: Materializer,
     allow_neuron_splitting: bool,
+    allow_coalescing: bool = True,
 ) -> None:
     """Greedy-pack ``softcores`` onto hardcores using the materializer strategy.
 
     Mutates ``used_hardcores`` / ``unused_hardcores`` in place exactly as the
-    callers' inline ``greedy_pack_softcores`` invocations did; ``split_softcore``
-    is wired only when ``allow_neuron_splitting`` is set.
+    callers' inline ``greedy_pack_softcores`` invocations did. ``split_softcore``
+    is wired only when ``allow_neuron_splitting`` is set, and ``fuse_hardcores``
+    (combine N cores into one wider crossbar — the coalescing capability) only
+    when ``allow_coalescing`` is set; otherwise a softcore too wide for any single
+    hard core has no placement and the kernel raises.
     """
     greedy_pack_softcores(
         softcores=softcores,
@@ -55,7 +59,7 @@ def run_placement(
         unused_hardcores=unused_hardcores,
         is_mapping_possible=materializer.is_mapping_possible,
         place=materializer.place,
-        fuse_hardcores=materializer.fuse_hardcores,
+        fuse_hardcores=(materializer.fuse_hardcores if allow_coalescing else None),
         split_softcore=(
             materializer.split_softcore if allow_neuron_splitting else None
         ),

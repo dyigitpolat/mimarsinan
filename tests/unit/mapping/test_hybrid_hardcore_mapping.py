@@ -126,7 +126,9 @@ class TestBuildHybridHardCoreMapping:
         out = np.array([IRSource(0, i) for i in range(32)], dtype=object)
         ir = IRGraph(nodes=[c], output_sources=out)
         cores_config = [{"max_axons": 64, "max_neurons": 32, "count": 4}]
-        hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
+        # Fusion (combining cores into a wider crossbar) is the coalescing capability.
+        hm = build_hybrid_hard_core_mapping(
+            ir_graph=ir, cores_config=cores_config, allow_coalescing=True)
         neural_segs = hm.get_neural_segments()
         assert len(neural_segs) == 1
         assert len(neural_segs[0].cores) == 1

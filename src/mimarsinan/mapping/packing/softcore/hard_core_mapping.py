@@ -219,7 +219,8 @@ class HardCoreMapping:
             self.neuron_mapping[(softcore.id, original_neuron_idx)] = \
                 (target_core_idx, target_neuron_idx)
 
-    def map(self, softcore_mapping, *, allow_neuron_splitting: bool = False):
+    def map(self, softcore_mapping, *, allow_neuron_splitting: bool = False,
+            allow_coalescing: bool = True):
         banks = getattr(softcore_mapping, "weight_banks", None)
         if banks:
             self.weight_banks = dict(banks)
@@ -234,6 +235,7 @@ class HardCoreMapping:
             unused_hardcores=self.unused_cores,
             materializer=RuntimeMaterializer(self),
             allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
         )
 
         self._finalize_sources(softcore_mapping)

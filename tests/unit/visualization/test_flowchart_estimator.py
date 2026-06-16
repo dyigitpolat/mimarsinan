@@ -35,7 +35,21 @@ class TestFlowchartEstimator:
         )
         assert est == len(layout_scs) == 1
 
-    def test_psum_mode_core_count(self):
+    def test_coalescing_mode_core_count(self):
+        """A wide fan-in with coalescing fuses N cores — the estimate counts them."""
+        est = estimate_fc_cores(
+            in_features=512,
+            out_features=64,
+            instances=1,
+            has_bias=True,
+            max_axons=64,
+            max_neurons=64,
+            allow_coalescing=True,
+        )
+        assert est > 1
+
+    def test_wide_without_coalescing_is_unmappable(self):
+        """Without coalescing capability a wide fan-in cannot be mapped (estimate 0)."""
         est = estimate_fc_cores(
             in_features=512,
             out_features=64,
@@ -45,4 +59,4 @@ class TestFlowchartEstimator:
             max_neurons=64,
             allow_coalescing=False,
         )
-        assert est > 1
+        assert est == 0

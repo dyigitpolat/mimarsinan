@@ -6,6 +6,7 @@ import numpy as np
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore, IRGraph
 from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.platform.mapping_structure import WideFanInUnsupportedError
 
 
 class TestIRMappingBasic:
@@ -67,22 +68,13 @@ class TestIRMappingMapFC:
         assert len(m.nodes) >= 3
         assert len(out.flatten()) == 10
 
-    def test_wide_layer_psum_decomposition(self):
-        """Wide layers exceeding max_axons use psum decomposition (allow_coalescing=False)."""
+    def test_wide_layer_without_flag_is_unmappable(self):
+        """Wide layers need coalescing (inter-core membrane transfer); with the flag
+        off they are unmappable — the lossy firing partial-sum fallback was removed."""
         m = IRMapping(max_axons=6, max_neurons=64, allow_coalescing=False)
         sources = np.array([IRSource(-2, i) for i in range(10)])
-        out_shape = np.array([4])
-        w = torch.randn(4, 10)
-        b = torch.randn(4)
-        out = m.map_fc(sources, out_shape, w, b, name="fc_wide")
-
-        assert len(out.flatten()) == 4
-        # Psum: pos/neg partials per tile + accumulators
-        assert len(m.nodes) > 1
-        roles = [getattr(n, 'psum_role', None) for n in m.nodes]
-        assert 'partial_pos' in roles
-        assert 'partial_neg' in roles
-        assert 'accum' in roles
+        with pytest.raises(WideFanInUnsupportedError):
+            m.map_fc(sources, np.array([4]), torch.randn(4, 10), torch.randn(4), name="fc_wide")
 
     def test_wide_layer_coalescing_single_core(self):
         """Wide layers with allow_coalescing=True produce a single wide core."""

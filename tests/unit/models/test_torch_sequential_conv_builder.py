@@ -95,6 +95,9 @@ class TestTorchSequentialConvBuilder:
             firing_mode="Default",
             max_axons=1024,
             max_neurons=1024,
+            # The classifier's fan-in (1569) exceeds max_axons, so the chip must
+            # coalesce (fuse cores into one wider crossbar) to map this model.
+            allow_coalescing=True,
         )
         ir_graph = ir_mapping.map(mapper_repr)
         segments = get_neural_segments(ir_graph)
