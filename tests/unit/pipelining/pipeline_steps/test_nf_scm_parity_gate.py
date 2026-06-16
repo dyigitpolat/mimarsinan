@@ -365,3 +365,41 @@ class TestParityGate:
             _pipeline(), model, ir_graph, samples,
             max_mismatch_fraction=1.0,
         )
+
+
+class TestTorchVsDeployedSimParity:
+    """The added torch↔DEPLOYED-sim parity check: torch model argmax must agree
+    with the deployed sim's argmax (the exact executor run_scm_identity_metric runs)."""
+
+    class _Logits(nn.Module):
+        def __init__(self, roll=0):
+            super().__init__()
+            self.roll = roll
+            self.p = nn.Parameter(torch.zeros(1))
+
+        def forward(self, x):
+            return torch.roll(x, self.roll, dims=1)
+
+    def test_passes_when_argmax_agrees(self):
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            assert_torch_vs_deployed_sim_parity_or_raise,
+        )
+        model = self._Logits(0)
+        flow = self._Logits(0)
+        x = torch.randn(48, 5)
+        agree = assert_torch_vs_deployed_sim_parity_or_raise(
+            model, flow, x, min_agreement=0.98
+        )
+        assert agree == pytest.approx(1.0)
+
+    def test_raises_when_deployed_sim_diverges(self):
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            assert_torch_vs_deployed_sim_parity_or_raise,
+        )
+        model = self._Logits(0)
+        flow = self._Logits(1)  # the deployed sim shifts the argmax → diverges
+        x = torch.randn(64, 5)
+        with pytest.raises(NfScmParityError, match="deployed-sim parity"):
+            assert_torch_vs_deployed_sim_parity_or_raise(
+                model, flow, x, min_agreement=0.98
+            )
