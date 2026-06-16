@@ -1,9 +1,15 @@
 # mapping/layout/ — Shape-Only Mapping (Single Source of Truth)
 
 `LayoutIRMapping` is the single source of truth for every mapping
-decision: tiling mode (`single` / `output_tiled` / `psum` / `coalescing`),
-bias-axon counting, psum decomposition parameters, shared-bank wiring,
-latency / segment / threshold-group assignment.
+decision: tiling mode (`single` / `output_tiled` / `coalescing`),
+bias-axon counting, shared-bank wiring,
+latency / segment / threshold-group assignment. A wide fan-in maps via
+`coalescing` (one full-width core the packer fuses from N hard cores into a wider
+crossbar — bit-exact) when the chip supports inter-core membrane transfer
+(`allow_coalescing`); otherwise it is unmappable and raises
+`WideFanInUnsupportedError`. The lossy firing partial-sum (spike-domain) fallback
+was removed. Coalescing (axon overflow) and neuron splitting (fan-out) are
+independent chip-capability flags.
 
 The real `mapping.ir_mapping.IRMapping` is a subclass that overrides
 the emission hooks (`add_neural_core`, `add_shared_neural_core`,
@@ -16,7 +22,7 @@ to materialise weights.
 ## Threshold groups
 
 `threshold_group_id = perceptron_index`: every softcore produced by a
-single perceptron (output-tiles, psum fragments, shared-bank positions)
+single perceptron (output-tiles, shared-bank positions)
 shares one integer id, and the packer treats group-id equality as the
 sharing-compatibility rule.  Softcores without a `perceptron_index`
 (e.g. synthesised accumulator cores) fall back to a unique negative id
@@ -33,7 +39,7 @@ without requiring trained weights.
 |------|---------|---------|
 | `layout_types.py` | `LayoutSoftCoreSpec`, `LayoutHardCoreType`, `LayoutHardCoreInstance`, `LayoutCoreSnapshot`, `LayoutPackingResult` | Data classes for layout-only core specifications and packing results. |
 | `layout_ir_mapping.py` | `LayoutIRMapping` | Shape-only mapping backend (core state, `map`, neural emission hooks) |
-| `layout_ir_mapping_fc.py` | `_LayoutIRMappingFC` | FC tiling dispatch (`map_fc`, psum, output-tiled) |
+| `layout_ir_mapping_fc.py` | `_LayoutIRMappingFC` | FC tiling dispatch (`map_fc`: single / coalescing / output-tiled) |
 | `layout_ir_mapping_finalize.py` | `_LayoutIRMappingFinalize` | Latency tags, segment ids, threshold groups, layout preview (delegates to `segmentation.py`) |
 | `segmentation.py` | `partition_ir_graph`, `compute_segment_ids`, `compute_node_latencies`, `compute_host_side_segment_count`, `NeuralSegment`, `HostSegment` | Single source of neural/host segmentation: the ordered partition the HCM builders flush **and** the dependency-graph segment ids/latencies the layout finalizer uses. |
 | `layout_source_view.py` | `LayoutSourceView`, `concat_source_views`, `stack_source_views`, `node_ids_of`, `total_size` | Lightweight composable shape descriptor that duck-types as a numpy object array of `IRSource` for the mapper graph; defers per-cell `IRSource` allocation until forced via `np.asarray`.  See "LayoutSourceView contract" below. |
@@ -73,8 +79,7 @@ single source of truth, lightweight as intended.
 ## Dependencies
 
 - **Internal**: `mapping.ir` (`IRSource`), `mapping.mapping_structure`
-  (`compute_core_input_count`, `compute_fc_tiling_mode`,
-  `compute_psum_params`), `mapping.core_packing`
+  (`compute_core_input_count`, `compute_fc_tiling_mode`), `mapping.core_packing`
   (`greedy_pack_softcores`).
 - **External**: `numpy`.
 

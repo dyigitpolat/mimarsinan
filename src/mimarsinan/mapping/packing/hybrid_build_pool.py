@@ -64,6 +64,7 @@ def build_hybrid_hard_core_mapping(
             stages=stages,
             all_reindex_maps=all_reindex_maps,
             allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
         )
 
     if not stages:
@@ -128,6 +129,7 @@ def _build_single_pool(
     stages: list[HybridStage],
     all_reindex_maps: dict[int, dict[int, int]],
     allow_neuron_splitting: bool,
+    allow_coalescing: bool = True,
     identity: bool = False,
 ) -> None:
     """Original single-shared-pool compilation path (``identity=True``: no pool)."""
@@ -147,6 +149,7 @@ def _build_single_pool(
                 weight_banks=ir_graph.weight_banks,
                 name=segment.label,
                 allow_neuron_splitting=allow_neuron_splitting,
+                allow_coalescing=allow_coalescing,
                 identity=identity,
             )
             stages.append(stage)

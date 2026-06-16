@@ -174,8 +174,11 @@ class TestCoalescingFlagAlignment:
     }
 
     def test_allow_coalescing_false_blocks_wide_packing(self):
-        """With coalescing off, the wide layout scenario should fail HW packing."""
+        """With coalescing off, a wide fan-in is unmappable — rejected at layout time
+        (``WideFanInUnsupportedError``), which the search's evaluate loop catches and
+        penalizes. The lossy firing partial-sum fallback was removed."""
         from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
+        from mimarsinan.mapping.platform.mapping_structure import WideFanInUnsupportedError
 
         problem = _make_problem(
             objective_names=[
@@ -190,13 +193,9 @@ class TestCoalescingFlagAlignment:
         pcfg = {**self._WIDE_BASE, "allow_coalescing": False}
         normalize_coalescing_config(pcfg)
 
-        model, total_params = problem._build_model(mc, pcfg)
-        softcores, host_segments = problem._collect_softcores(model, pcfg)
-        hw_obj, error = problem._compute_hw_objectives(
-            softcores, pcfg, total_params, host_segments,
-        )
-        assert hw_obj is None
-        assert error is not None
+        model, _total_params = problem._build_model(mc, pcfg)
+        with pytest.raises(WideFanInUnsupportedError):
+            problem._collect_softcores(model, pcfg)
 
 
 class TestAgentEvolveLikeConfigs:

@@ -15,6 +15,7 @@ from mimarsinan.mapping.ir import NeuralCore, ir_graph_to_soft_core_mapping, IRS
 from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
 from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.mapping.platform.mapping_structure import WideFanInUnsupportedError
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.models.nn.layers import TransformedActivation, SavedTensorDecorator
 
@@ -44,8 +45,7 @@ def run_hard_analytical(hard_mapping, inputs, device):
     state = {(-2, i): inputs[i].item() for i in range(len(inputs))}
     core_outputs = {}
 
-    # Process cores in latency order to respect psum dependencies
-    # (partial cores at latency 0 must be processed before accumulator cores at latency 1)
+    # Process cores in latency order so each core's inputs are ready before it runs.
     core_order = sorted(range(len(hard_mapping.cores)),
                         key=lambda i: getattr(hard_mapping.cores[i], 'latency', 0) or 0)
     for i in core_order:
@@ -159,28 +159,24 @@ def test_coalescing_accuracy_with_rearrange():
         mode_str = f"Quantized(q={q_max})" if use_quantization else "Unquantized"
         print(f"  {mode_str}: SoftCore MSE: {mse_soft:.2e}, HardCore MSE: {mse_hard:.2e}, Soft vs Hard: {mse_soft_vs_hard:.2e}")
 
-        if not allow_coalescing and use_quantization:
-            # Psum decomposition introduces quantization error from intermediate
-            # activation clamping in partial cores. Verify soft≈hard agreement
-            # and that the error is bounded.
-            assert mse_soft_vs_hard < 1e-10, (
-                f"{mode_str} Psum: soft and hard disagree: MSE={mse_soft_vs_hard}"
-            )
-            assert mse_soft < 0.01, f"{mode_str} Psum SoftCore error too large: MSE={mse_soft}"
-        else:
-            assert mse_soft < 1e-10, f"{mode_str} SoftCore failed: MSE={mse_soft}"
-            assert mse_hard < 1e-10, f"{mode_str} HardCore failed: MSE={mse_hard}"
-
-    # Execution phases
-    def sweep_all(coalescing):
-        print(f"\n--- Testing Mode: Coalescing={'ON' if coalescing else 'OFF'} ---")
-        run_sim_case(q_max=1, use_quantization=False, allow_coalescing=coalescing)
-        run_sim_case(q_max=127, use_quantization=True, allow_coalescing=coalescing)
+        # Coalescing fuses the wide fan-in into one wider crossbar → bit-exact.
+        assert mse_soft < 1e-10, f"{mode_str} SoftCore failed: MSE={mse_soft}"
+        assert mse_hard < 1e-10, f"{mode_str} HardCore failed: MSE={mse_hard}"
 
     print("Verifying Mapping Accuracy...")
-    sweep_all(coalescing=True)
-    sweep_all(coalescing=False)
-    print("\nOK: All modes verified (MSE < 1e-10)")
+    # Coalescing ON: the wide p1 layer (784 inputs > max_axons=128) fuses into one
+    # wider crossbar and stays bit-exact (soft == hard == torch).
+    print("\n--- Testing Mode: Coalescing=ON ---")
+    run_sim_case(q_max=1, use_quantization=False, allow_coalescing=True)
+    run_sim_case(q_max=127, use_quantization=True, allow_coalescing=True)
+
+    # Coalescing OFF: the chip lacks inter-core membrane transfer, so a wide fan-in
+    # is unmappable — it must fail loudly (the lossy spike psum fallback was removed).
+    print("\n--- Testing Mode: Coalescing=OFF (wide fan-in unmappable) ---")
+    for q, uq in [(1, False), (127, True)]:
+        with pytest.raises(WideFanInUnsupportedError):
+            run_sim_case(q_max=q, use_quantization=uq, allow_coalescing=False)
+    print("\nOK: coalescing maps bit-exact; without it a wide fan-in is rejected")
 
 if __name__ == "__main__":
     test_coalescing_accuracy_with_rearrange()

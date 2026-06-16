@@ -10,7 +10,6 @@ from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 from mimarsinan.mapping.platform.mapping_structure import (
     compute_core_input_count,
     compute_fc_tiling_mode,
-    compute_psum_params,
 )
 import operator
 

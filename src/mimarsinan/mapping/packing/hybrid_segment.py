@@ -26,6 +26,7 @@ def _flush_neural_segment(
     weight_banks: dict,
     name: str,
     allow_neuron_splitting: bool = False,
+    allow_coalescing: bool = True,
     skip_coalescing_check: bool = False,
     identity: bool = False,
 ) -> tuple[HybridStage, dict[int, dict[int, int]]]:
@@ -87,7 +88,8 @@ def _flush_neural_segment(
         if identity:
             hard.map_identity(soft)
         else:
-            hard.map(soft, allow_neuron_splitting=allow_neuron_splitting)
+            hard.map(soft, allow_neuron_splitting=allow_neuron_splitting,
+                     allow_coalescing=allow_coalescing)
     except RuntimeError as e:
         group_ids: dict[object, int] = {}
         rows = []
@@ -197,6 +199,7 @@ def _flush_scheduled_segment(
         weight_banks=weight_banks,
         name=segment_label,
         allow_neuron_splitting=allow_neuron_splitting,
+        allow_coalescing=allow_coalescing,
         skip_coalescing_check=True,
     )
     stage.schedule_segment_index = segment_index

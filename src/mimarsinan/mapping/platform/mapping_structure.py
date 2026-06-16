@@ -1,14 +1,13 @@
 """Shared structural decision helpers for mapping backends.
 
 Both ``LayoutIRMapping`` (shape-only) and ``IRMapping`` (full IR) call these
-pure functions so that tiling mode, bias-axon counting, and psum parameters
-are computed identically.  No mapping state is accessed or mutated here.
+pure functions so that tiling mode and bias-axon counting are computed
+identically.  No mapping state is accessed or mutated here.
 """
 
 from __future__ import annotations
 
-import math
-from typing import List, Literal, NamedTuple, Tuple
+from typing import Literal
 
 
 # Bias axon counting
@@ -31,7 +30,19 @@ def compute_core_input_count(
 
 # FC tiling mode
 
-TilingMode = Literal["single", "coalescing", "psum", "output_tiled"]
+TilingMode = Literal["single", "coalescing", "output_tiled"]
+
+
+class WideFanInUnsupportedError(ValueError):
+    """A layer's fan-in exceeds one core and the chip cannot coalesce.
+
+    A wide fan-in can only be mapped by *coalescing* — fusing N hard cores into
+    one wider crossbar, which the chip realises by transferring partial-sum
+    membrane potentials between cores. When ``allow_coalescing`` is False the
+    chip lacks that capability, so the layer is unmappable (the lossy spike-domain
+    partial-sum fallback was removed). Raise rather than silently emit a mapping
+    the hardware cannot run.
+    """
 
 
 def compute_fc_tiling_mode(
@@ -47,92 +58,24 @@ def compute_fc_tiling_mode(
 
     The wide-layer test uses the effective axon count (including legacy bias
     axon when ``hardware_bias`` is False) so that both backends agree on when
-    a layer exceeds ``max_axons``.
+    a layer exceeds ``max_axons``. A wide fan-in maps via ``coalescing``: it emits
+    one full-width core that the packer fuses from N hard cores of the same type
+    (one wider crossbar), so the weighted sum is computed once and the deployment
+    is bit-exact. Coalescing is a chip capability (inter-core membrane transfer);
+    when ``allow_coalescing`` is False a wide fan-in is unmappable and raises
+    :class:`WideFanInUnsupportedError`.
     """
     effective_in = compute_core_input_count(in_features, has_bias, hardware_bias)
     is_wide = max_axons is not None and effective_in > max_axons
     if is_wide:
-        return "coalescing" if allow_coalescing else "psum"
+        if not allow_coalescing:
+            raise WideFanInUnsupportedError(
+                f"Layer fan-in {effective_in} exceeds max_axons {max_axons} but "
+                f"allow_coalescing=False: this chip cannot map a wide fan-in (no "
+                f"inter-core membrane partial-sum transfer). Enable coalescing, raise "
+                f"max_axons, or reduce the layer's fan-in."
+            )
+        return "coalescing"
     if max_neurons is not None and out_features > max_neurons:
         return "output_tiled"
     return "single"
-
-
-# Psum parameters
-
-class PsumParams(NamedTuple):
-    """Pre-computed structural parameters for a psum-decomposed FC layer."""
-    tile_count: int
-    tile_slices: List[Tuple[int, int]]
-    out_block_size: int
-    accum_bias_axons: int
-
-
-def compute_psum_params(
-    in_features: int,
-    out_features: int,
-    max_axons: int,
-    max_neurons: int | None,
-    has_bias: bool,
-    hardware_bias: bool,
-) -> PsumParams:
-    """Compute the tiling parameters for a psum-decomposed FC layer.
-
-    Both ``LayoutIRMapping._map_fc_psum_layout`` and
-    ``IRMapping._map_fc_with_psum`` must use identical values for
-    ``tile_count``, ``tile_slices``, ``out_block_size``, and
-    ``accum_bias_axons`` so the resulting core counts match.
-    """
-    eff_max_neurons = int(max_neurons) if max_neurons is not None else out_features
-
-    tile_slices: List[Tuple[int, int]] = []
-    start = 0
-    while start < in_features:
-        end = min(in_features, start + max_axons)
-        tile_slices.append((start, end))
-        start = end
-    tile_count = len(tile_slices)
-
-    accum_bias_axons = 1 if (has_bias and not hardware_bias) else 0
-    max_out_by_accum = (max_axons - accum_bias_axons) // (2 * tile_count)
-    if max_out_by_accum <= 0:
-        raise ValueError(
-            f"Cannot build psum accumulator: tile_count={tile_count} "
-            f"requires at least {2 * tile_count + accum_bias_axons} axons, "
-            f"but max_axons={max_axons}."
-        )
-    out_block_size = min(eff_max_neurons, max_out_by_accum)
-
-    return PsumParams(
-        tile_count=tile_count,
-        tile_slices=tile_slices,
-        out_block_size=out_block_size,
-        accum_bias_axons=accum_bias_axons,
-    )
-
-
-def build_psum_accumulator_weights(
-    block: int,
-    tile_count: int,
-    parameter_scale,
-) -> "np.ndarray":
-    """Build signed accumulator weight matrix for psum tiles (layout + legacy mapper)."""
-    import numpy as np
-
-    ps_val = (
-        parameter_scale.item()
-        if hasattr(parameter_scale, "item")
-        else float(parameter_scale)
-        if parameter_scale is not None
-        else 1.0
-    )
-    unit = 1.0 / float(ps_val) if ps_val else 1.0
-    acc_axons = 2 * tile_count * block
-    acc_w = np.zeros((block, acc_axons), dtype=float)
-    pos_off = 0
-    neg_off = tile_count * block
-    for t_idx in range(tile_count):
-        for n in range(block):
-            acc_w[n, pos_off + t_idx * block + n] = unit
-            acc_w[n, neg_off + t_idx * block + n] = -unit
-    return acc_w
