@@ -2,20 +2,21 @@
 
 Verifies:
 1. compute_core_input_count respects hardware_bias flag.
-2. compute_fc_tiling_mode returns correct modes for all input combinations.
-3. compute_psum_params returns identical results to the old inline logic.
-4. Layout and IR mapping produce identical core counts for FC layers (regression).
+2. compute_fc_tiling_mode returns correct modes for all input combinations —
+   a wide fan-in maps via ``coalescing`` (the bit-exact fuse) when allowed, and
+   raises when ``allow_coalescing=False`` (the chip lacks membrane transfer; the
+   lossy firing partial-sum fallback was removed).
+3. Layout and IR mapping produce identical core counts for FC layers (regression).
 """
 
 from __future__ import annotations
 
-import math
 import pytest
 
 from mimarsinan.mapping.platform.mapping_structure import (
+    WideFanInUnsupportedError,
     compute_core_input_count,
     compute_fc_tiling_mode,
-    compute_psum_params,
 )
 
 
@@ -37,80 +38,44 @@ class TestComputeCoreInputCount:
 
 class TestComputeFcTilingMode:
     def test_single_fits(self):
-        mode = compute_fc_tiling_mode(32, 16, 64, 64, False, False, False)
-        assert mode == "single"
+        assert compute_fc_tiling_mode(32, 16, 64, 64, False, False, False) == "single"
 
     def test_single_with_bias_still_fits(self):
-        mode = compute_fc_tiling_mode(63, 16, 64, 64, True, False, False)
-        assert mode == "single"
+        assert compute_fc_tiling_mode(63, 16, 64, 64, True, False, False) == "single"
 
-    def test_wide_triggers_psum_without_coalescing(self):
-        mode = compute_fc_tiling_mode(128, 16, 64, 64, False, False, False)
-        assert mode == "psum"
+    def test_wide_with_coalescing_fuses(self):
+        """A wide fan-in coalesces (fuse into one wider crossbar) when the chip
+        supports inter-core membrane transfer."""
+        assert compute_fc_tiling_mode(128, 16, 64, 64, False, False, True) == "coalescing"
 
-    def test_wide_triggers_coalescing(self):
-        mode = compute_fc_tiling_mode(128, 16, 64, 64, False, False, True)
-        assert mode == "coalescing"
+    def test_wide_without_coalescing_raises(self):
+        """Without coalescing capability a wide fan-in is unmappable — it must fail
+        loudly, not silently emit a mapping the chip cannot run."""
+        with pytest.raises(WideFanInUnsupportedError):
+            compute_fc_tiling_mode(128, 16, 64, 64, False, False, False)
 
-    def test_bias_pushes_over_max_axons_legacy(self):
-        mode = compute_fc_tiling_mode(64, 16, 64, 64, True, False, False)
-        assert mode == "psum"
+    def test_bias_pushes_over_max_axons_legacy_raises(self):
+        """64 features + legacy bias = 65 > 64 -> wide -> needs coalescing."""
+        with pytest.raises(WideFanInUnsupportedError):
+            compute_fc_tiling_mode(64, 16, 64, 64, True, False, False)
+        assert compute_fc_tiling_mode(64, 16, 64, 64, True, False, True) == "coalescing"
 
     def test_bias_does_not_push_over_with_hardware_bias(self):
-        mode = compute_fc_tiling_mode(64, 16, 64, 64, True, True, False)
-        assert mode == "single"
+        assert compute_fc_tiling_mode(64, 16, 64, 64, True, True, False) == "single"
 
     def test_output_tiled(self):
-        mode = compute_fc_tiling_mode(32, 128, 64, 64, False, False, False)
-        assert mode == "output_tiled"
+        assert compute_fc_tiling_mode(32, 128, 64, 64, False, False, False) == "output_tiled"
 
     def test_wide_takes_priority_over_output_tiled(self):
-        mode = compute_fc_tiling_mode(128, 128, 64, 64, False, False, False)
-        assert mode == "psum"
+        assert compute_fc_tiling_mode(128, 128, 64, 64, False, False, True) == "coalescing"
+        with pytest.raises(WideFanInUnsupportedError):
+            compute_fc_tiling_mode(128, 128, 64, 64, False, False, False)
 
     def test_no_max_axons(self):
-        mode = compute_fc_tiling_mode(999, 16, None, 64, False, False, False)
-        assert mode == "single"
+        assert compute_fc_tiling_mode(999, 16, None, 64, False, False, False) == "single"
 
     def test_no_max_neurons(self):
-        mode = compute_fc_tiling_mode(32, 999, 64, None, False, False, False)
-        assert mode == "single"
-
-
-class TestComputePsumParams:
-    def test_basic(self):
-        pp = compute_psum_params(128, 32, 64, 64, False, False)
-        assert pp.tile_count == 2
-        assert len(pp.tile_slices) == 2
-        assert pp.tile_slices[0] == (0, 64)
-        assert pp.tile_slices[1] == (64, 128)
-        assert pp.accum_bias_axons == 0
-        assert pp.out_block_size <= 64
-        assert pp.out_block_size == (64 - 0) // (2 * 2)  # 16
-
-    def test_with_bias_legacy(self):
-        pp = compute_psum_params(128, 32, 64, 64, True, False)
-        assert pp.accum_bias_axons == 1
-        assert pp.out_block_size == (64 - 1) // (2 * 2)  # 15
-
-    def test_with_bias_hardware(self):
-        pp = compute_psum_params(128, 32, 64, 64, True, True)
-        assert pp.accum_bias_axons == 0
-        assert pp.out_block_size == 64 // (2 * 2)  # 16
-
-    def test_tile_count_matches_slices(self):
-        pp = compute_psum_params(200, 50, 64, 64, False, False)
-        assert pp.tile_count == len(pp.tile_slices)
-        assert pp.tile_slices[0][0] == 0
-        assert pp.tile_slices[-1][1] == 200
-
-    def test_impossible_raises(self):
-        with pytest.raises(ValueError, match="Cannot build psum accumulator"):
-            compute_psum_params(10000, 32, 8, 8, False, False)
-
-    def test_out_block_capped_by_max_neurons(self):
-        pp = compute_psum_params(128, 500, 64, 4, False, False)
-        assert pp.out_block_size <= 4
+        assert compute_fc_tiling_mode(32, 999, 64, None, False, False, False) == "single"
 
 
 class TestLayoutIRConsistency:
@@ -164,9 +129,13 @@ class TestLayoutIRConsistency:
         (True, False),
         (True, True),
     ])
-    def test_psum(self, has_bias, hw_bias):
-        assert self._count_layout_cores(128, 32, 64, 64, has_bias, hw_bias, False) == \
-               self._count_ir_cores(128, 32, 64, 64, has_bias, hw_bias, False)
+    def test_wide_without_coalescing_is_unmappable(self, has_bias, hw_bias):
+        """A wide layer with coalescing off is unmappable in both layout and IR —
+        the lossy firing partial-sum fallback was removed."""
+        with pytest.raises(WideFanInUnsupportedError):
+            self._count_layout_cores(128, 32, 64, 64, has_bias, hw_bias, False)
+        with pytest.raises(WideFanInUnsupportedError):
+            self._count_ir_cores(128, 32, 64, 64, has_bias, hw_bias, False)
 
     @pytest.mark.parametrize("has_bias,hw_bias", [
         (False, False),
@@ -191,9 +160,9 @@ class TestLayoutIRConsistency:
         assert self._count_layout_cores(63, 16, 64, 64, True, False, False) == 1
         assert self._count_ir_cores(63, 16, 64, 64, True, False, False) == 1
 
-    def test_bias_boundary_psum_trigger(self):
-        """64 features + legacy bias = 65 > 64 -> should trigger psum."""
-        n_layout = self._count_layout_cores(64, 16, 64, 64, True, False, False)
-        n_ir = self._count_ir_cores(64, 16, 64, 64, True, False, False)
-        assert n_layout == n_ir
-        assert n_layout > 1
+    def test_bias_boundary_coalescing_trigger(self):
+        """64 features + legacy bias = 65 > 64 -> wide -> one coalescing core
+        (fused at pack time) when coalescing is enabled. Layout and IR agree."""
+        n_layout = self._count_layout_cores(64, 16, 64, 64, True, False, True)
+        n_ir = self._count_ir_cores(64, 16, 64, 64, True, False, True)
+        assert n_layout == n_ir == 1

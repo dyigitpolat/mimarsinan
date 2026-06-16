@@ -1,14 +1,11 @@
 """
 Unit tests for true core coalescing in IRMapping.
 
-When allow_coalescing is True, wide layers (in_features > max_axons) 
-should simply generate a single wider NeuralCore rather than falling back 
-to partial sum decomposition.
-
-Configuration notes:
-  - max_axons=20, in_features=40, out_features=2
-    → coalescing: 1 core (outputs fit in 1 tile)
-    → psum:      5 cores (2 tiles * 2 pos/neg + 1 accum)
+When allow_coalescing is True, wide layers (in_features > max_axons)
+generate a single wider NeuralCore (the packer fuses N hard cores into one wider
+crossbar). When allow_coalescing is False the chip lacks inter-core membrane
+transfer, so a wide layer is unmappable (the lossy partial-sum fallback was
+removed) and raises ``WideFanInUnsupportedError``.
 """
 from __future__ import annotations
 
@@ -18,6 +15,7 @@ import torch
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
 from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.platform.mapping_structure import WideFanInUnsupportedError
 
 
 def _make_sources(n: int) -> np.ndarray:
@@ -56,21 +54,12 @@ class TestCoreCoalescing:
         # Core has 40 inputs, exceeding max_axons=20
         assert cores[0].get_input_count() == 40
 
-    def test_wide_core_without_coalescing_psum_decomposition(self):
-        """When coalescing is disabled, wide layers use psum decomposition."""
+    def test_wide_core_without_flag_is_unmappable(self):
+        """Wide layers need coalescing (inter-core membrane transfer); with the flag
+        off they are unmappable — the lossy firing partial-sum fallback was removed."""
         m = _make_mapping(max_axons=20, max_neurons=64, allow_coalescing=False)
-        m.map_fc(_make_sources(40), np.array([2]), torch.randn(2, 40))
-        cores = _neural_cores(m)
-        # Psum produces: pos/neg partial cores per tile + accumulator cores
-        assert len(cores) > 1, f"Expected psum decomposition, got {len(cores)} cores"
-        roles = {getattr(c, 'psum_role', None) for c in cores}
-        assert 'partial_pos' in roles
-        assert 'partial_neg' in roles
-        assert 'accum' in roles
-        # No coalescing metadata on psum cores
-        for c in cores:
-            assert c.coalescing_group_id is None
-            assert c.coalescing_role is None
+        with pytest.raises(WideFanInUnsupportedError):
+            m.map_fc(_make_sources(40), np.array([2]), torch.randn(2, 40))
 
     def test_coalescing_tiles_outputs_when_necessary(self):
         """Even with wide cores allowed, it must tile if neurons exceed max_neurons."""

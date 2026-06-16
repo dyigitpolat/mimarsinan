@@ -10,7 +10,6 @@ from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 from mimarsinan.mapping.platform.mapping_structure import (
     compute_core_input_count,
     compute_fc_tiling_mode,
-    compute_psum_params,
 )
 import operator
 
@@ -84,15 +83,18 @@ def _estimate_map_fc(
     )
     bias_ax = required_axons - int(in_features)
 
-    mode = compute_fc_tiling_mode(
-        int(in_features),
-        int(out_features),
-        int(max_axons),
-        int(max_neurons),
-        has_bias,
-        hardware_bias,
-        allow_coalescing,
-    )
+    try:
+        mode = compute_fc_tiling_mode(
+            int(in_features),
+            int(out_features),
+            int(max_axons),
+            int(max_neurons),
+            has_bias,
+            hardware_bias,
+            allow_coalescing,
+        )
+    except ValueError as exc:
+        return HWEstimate(False, str(exc), 0, f"UNMAPPABLE: {exc}")
 
     if mode == "single":
         groups = _ceil_div(out_features, max_neurons)
@@ -118,40 +120,12 @@ def _estimate_map_fc(
         )
         return HWEstimate(True, None, cores_total, details)
 
-    if mode == "output_tiled":
-        out_groups = _ceil_div(out_features, max_neurons)
-        cores_total = int(instances) * out_groups
-        details = (
-            f"mode=output_tiled\n"
-            f"output_groups=ceil({out_features}/{max_neurons})={out_groups}\n"
-            f"cores_total={cores_total}"
-        )
-        return HWEstimate(True, None, cores_total, details)
-
-    # psum
-    try:
-        pp = compute_psum_params(
-            int(in_features),
-            int(out_features),
-            int(max_axons),
-            int(max_neurons),
-            has_bias,
-            hardware_bias,
-        )
-    except ValueError as exc:
-        return HWEstimate(False, str(exc), 0, f"UNMAPPABLE: {exc}")
-
-    out_blocks = _ceil_div(out_features, pp.out_block_size)
-    cores_per_instance_per_block = 2 * pp.tile_count + 1
-    cores_total = int(instances) * int(out_blocks) * int(cores_per_instance_per_block)
-
+    # output_tiled (the only remaining mode)
+    out_groups = _ceil_div(out_features, max_neurons)
+    cores_total = int(instances) * out_groups
     details = (
-        f"mode=psum\n"
-        f"required_axons={required_axons} (features={in_features}, bias={bias_ax}) > max_axons={max_axons}\n"
-        f"tile_count={pp.tile_count}\n"
-        f"out_block_size={pp.out_block_size}\n"
-        f"out_blocks={out_blocks}\n"
-        f"cores_per_instance_per_block=2*tile_count+1={cores_per_instance_per_block}\n"
+        f"mode=output_tiled\n"
+        f"output_groups=ceil({out_features}/{max_neurons})={out_groups}\n"
         f"cores_total={cores_total}"
     )
     return HWEstimate(True, None, cores_total, details)

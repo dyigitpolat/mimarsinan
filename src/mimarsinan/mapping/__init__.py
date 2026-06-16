@@ -12,7 +12,6 @@ from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.platform.mapping_structure import (
     compute_core_input_count,
     compute_fc_tiling_mode,
-    compute_psum_params,
 )
 from mimarsinan.mapping.packing.softcore import SoftCore, HardCore, HardCoreMapping
 from mimarsinan.mapping.packing.core_packing import greedy_pack_softcores
