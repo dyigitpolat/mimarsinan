@@ -56,6 +56,37 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
 
         self._bias_mode = resolve_bias_mode(self.pipeline.config)
+        # Fast fixed-ladder LIF ramp (opt-in, default OFF): run the value-domain
+        # blend ramp through the ONE orchestrator's fixed_ladder policy (one shared
+        # optimizer + spanning cosine, KD recovery per rung, no controller) instead
+        # of the greedy/bisect controller. LIF's rate code is bit-exact deployed, so
+        # the value-domain ramp suffices (cliff ≈ 0). Uses the shared _fast_loss
+        # (the installed KD loss) and no genuine probe.
+        self._setup_fast_ladder(
+            enabled=bool(self.pipeline.config.get("lif_blend_fast", False)),
+            rates=self.pipeline.config.get(
+                "lif_blend_fast_rates", [0.25, 0.5, 0.75, 1.0]
+            ),
+            steps_per_rate=int(
+                self.pipeline.config.get("lif_blend_fast_steps_per_rate", 120)
+            ),
+            # Floor the spanning cosine so the rate-1.0 rung keeps recovering the
+            # deployed LIF dynamics (the value-domain endpoint needs real training,
+            # unlike TTFS where genuine-CE carries it).
+            eta_min_factor=float(
+                self.pipeline.config.get("lif_blend_fast_lr_eta_min", 0.1)
+            ),
+        )
+        # Post-finalize bounded stabilization on the deployed cycle-accurate forward
+        # (the value-domain ramp under-trains the deployed LIF dynamics vs the
+        # controller's stabilization; this recovers it while staying fast).
+        self._fast_stabilize_steps = int(
+            self.pipeline.config.get("lif_blend_fast_stabilize_steps", 0)
+        )
+
+    def _post_stabilization_hook(self):
+        if getattr(self, "_fixed_ladder_policy", False):
+            self._fast_stabilize(getattr(self, "_fast_stabilize_steps", 0))
 
     def _make_target_activation(self, perceptron) -> LIFActivation:
         return LIFActivation(

@@ -140,6 +140,21 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "ttfs_genuine_blend_fast": False,
     "ttfs_blend_fast_steps_per_rate": 120,
     "ttfs_blend_fast_rates": [0.5, 0.75, 0.9, 0.97, 1.0],
+    # Fast PROXY ramp (opt-in, cascaded, NOT a genuine ramp): the value-domain
+    # blend ramp via the fixed_ladder policy + a post-finalize bounded stabilization
+    # on the genuine cascade (closes the proxy↔genuine cliff) — the LIF pattern for
+    # the better-accuracy TTFS path, made fast.
+    "ttfs_blend_fast": False,
+    "ttfs_blend_fast_stabilize_steps": 0,
+    "ttfs_blend_fast_lr_eta_min": 0.1,
+    # Fast fixed-ladder LIF ramp (opt-in): the LIF value-domain blend ramp through
+    # the orchestrator's fixed_ladder policy (one shared optimizer + spanning cosine,
+    # KD recovery, no controller) — the FAST analog of the slow LIF controller ramp.
+    "lif_blend_fast": False,
+    "lif_blend_fast_steps_per_rate": 120,
+    "lif_blend_fast_rates": [0.25, 0.5, 0.75, 1.0],
+    "lif_blend_fast_lr_eta_min": 0.1,
+    "lif_blend_fast_stabilize_steps": 0,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -251,6 +266,14 @@ CONFIG_KEYS_SET: Set[str] = {
     "ttfs_genuine_blend_fast",
     "ttfs_blend_fast_steps_per_rate",
     "ttfs_blend_fast_rates",
+    "ttfs_blend_fast",
+    "ttfs_blend_fast_stabilize_steps",
+    "ttfs_blend_fast_lr_eta_min",
+    "lif_blend_fast",
+    "lif_blend_fast_steps_per_rate",
+    "lif_blend_fast_rates",
+    "lif_blend_fast_lr_eta_min",
+    "lif_blend_fast_stabilize_steps",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",
