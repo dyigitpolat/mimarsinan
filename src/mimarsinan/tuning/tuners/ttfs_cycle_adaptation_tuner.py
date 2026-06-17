@@ -71,13 +71,10 @@ paths, fast and slow:
 
 from __future__ import annotations
 
-import time
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.model_training.training_recipe import build_optimizer
 from mimarsinan.models.nn.activations.autograd import TTFSInputGridQuantizer
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.spiking.training.blended_genuine_forward import (
@@ -85,7 +82,6 @@ from mimarsinan.models.spiking.training.blended_genuine_forward import (
 )
 from mimarsinan.tuning.axes.blend_axis import GenuineBlendAxis, TTFSGenuineAxis
 from mimarsinan.tuning.forward_install import LazyExecutorForward
-from mimarsinan.tuning.trace import DecisionRecord
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _KDClassificationLoss,
@@ -208,6 +204,17 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._genuine_blend_fast = self._genuine_blend_ramp and bool(
             self.pipeline.config.get("ttfs_genuine_blend_fast", False)
         )
+        # Fast PROXY ramp (default OFF, cascaded only, NOT a genuine ramp): the
+        # value-domain BlendActivation ramp run through the fixed_ladder policy +
+        # a post-finalize bounded stabilization on the genuine cascade (the LIF
+        # pattern). The proxy reaches a higher deployed accuracy than the genuine
+        # blend on this workload (it trains the value domain, then a short cascade
+        # stabilization closes the proxy↔genuine cliff), and is fast.
+        self._proxy_fast = (
+            bool(self.pipeline.config.get("ttfs_blend_fast", False))
+            and not self._genuine_bare_target_ramp
+            and not self._synchronized
+        )
         self._blend_fast_rates = [
             float(r)
             for r in self.pipeline.config.get(
@@ -217,21 +224,22 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._blend_fast_steps_per_rate = int(
             self.pipeline.config.get("ttfs_blend_fast_steps_per_rate", 120)
         )
-        self._fixed_ladder_policy = self._genuine_blend_fast
-        # The fixed ladder MUST end at rate 1.0 (the deployed cascade): a ladder that
-        # stops short would leave _committed_rate < 1.0, and the shared _after_run's
-        # _continue_to_full_rate would then drive to 1.0 with the HEAVY controller
-        # (LR-find/recovery/rollback) — off-recipe. Normalize with a trailing 1.0.
-        ladder = list(self._blend_fast_rates) or [1.0]
-        if abs(float(ladder[-1]) - 1.0) > 1e-9:
-            ladder = [*ladder, 1.0]
-        self._fixed_ladder_rates = ladder
-        # Fast-path scratch (shared optimizer + spanning warmup/cosine LR across the
-        # whole ladder, built once on the first attempt; reset state defaults here).
-        self._fast_optimizer = None
-        self._fast_lr_schedule = None
-        self._fast_optimizer_steps = 0
-        self._fast_blend_path = False
+        self._fast_stabilize_steps = int(
+            self.pipeline.config.get("ttfs_blend_fast_stabilize_steps", 0)
+        )
+        # Wire the shared fixed-ladder fast machinery (KDBlendAdaptationTuner); the
+        # TTFS-specific objective + probe are supplied via _fast_loss / _fast_probe.
+        # eta_min floors the endpoint LR for the proxy (its value-domain endpoint
+        # needs real recovery); the genuine blend lets its genuine-CE carry it.
+        self._setup_fast_ladder(
+            enabled=self._genuine_blend_fast or self._proxy_fast,
+            rates=self._blend_fast_rates,
+            steps_per_rate=self._blend_fast_steps_per_rate,
+            eta_min_factor=(
+                float(self.pipeline.config.get("ttfs_blend_fast_lr_eta_min", 0.1))
+                if self._proxy_fast else 0.0
+            ),
+        )
         self._fast_full_transform_log = []
         # The installed teacher<->genuine blend forward (owned reference so the
         # genuine-CE loss + the fast attempt resolve it without introspecting
@@ -498,118 +506,38 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         quantize_ir_graph(ir_graph, bits, weight_quantization=False)
         return ir_graph
 
-    # -- Fast fixed-increment genuine-blend ramp (fixed_ladder policy) ---------
-    # Folded into the ONE orchestrator (review Rec 2): no bespoke ``run()`` engine.
-    # ``_fixed_ladder_policy`` routes ``_run_with_scheduler`` to the ``fixed_ladder``
-    # RateScheduler policy, which walks the rate ladder driving ``_driver_attempt``
-    # (overridden below to train through the genuine cascade with one spanning LR),
-    # then the shared ``_finalize_run`` deploys the pure cascade and measures the
-    # cliff. So the fast path inherits the DecisionTrace + finalize observability.
-    def run(self):
-        """Reset the fast-path scratch (the tuner-owned optimizer + spanning cosine)
-        so a re-run rebuilds them rather than re-stepping an exhausted schedule, then
-        drive the ONE orchestrator. NOT a fork — it unconditionally delegates to the
-        shared ``run()``; the fixed_ladder policy is selected in ``_run_with_scheduler``."""
-        if self._genuine_blend_fast:
-            self._fast_optimizer = None
-            self._fast_lr_schedule = None
-            self._fast_optimizer_steps = 0
-        return super().run()
+    # -- Fast fixed-ladder genuine-blend ramp: TTFS-specific hooks -------------
+    # The shared fixed-ladder machinery (run-reset / _driver_attempt routing /
+    # _ensure_fast_optimizer / _fast_rate_attempt / _record_fast_cycle /
+    # _stabilization_budget→0) lives in KDBlendAdaptationTuner. TTFS supplies the
+    # validated genuine objective (plain CE on the blend + ce_alpha·CE on the PURE
+    # genuine logits — lifts the r=1 endpoint, invariants 4/5) and the deployed-r=1
+    # convergence probe via these two hooks.
+    def _fast_loss(self, x, y):
+        # Proxy fast path: use the installed KD loss (distil the teacher onto the
+        # value-domain blend) — there is no BlendedGenuineForward to read.
+        if not self._genuine_blend_ramp:
+            return super()._fast_loss(x, y)
+        logits = self.model(x)
+        loss = F.cross_entropy(logits, y)
+        genuine = self._installed_genuine_branch()
+        if self._genuine_ce_alpha > 0.0 and genuine is not None:
+            loss = loss + self._genuine_ce_alpha * F.cross_entropy(genuine(x), y)
+        return loss
 
-    def _driver_attempt(self, target):
-        """The per-rate attempt the driver/scheduler calls. The fast genuine-blend
-        path trains a fixed number of steps at ``target`` with the shared optimizer
-        + spanning cosine and the validated ``CE(blend) + ce_alpha·CE(genuine)``
-        objective; otherwise the standard predictor→corrector cycle runs."""
-        if self._genuine_blend_fast:
-            return self._fast_rate_attempt(target)
-        return super()._driver_attempt(target)
+    def _fast_probe(self, rate) -> None:
+        # The genuine-blend probe reads the installed BlendedGenuineForward; the
+        # proxy path has none (its deployed cascade is installed only at finalize).
+        if self._genuine_blend_ramp:
+            self._probe_fast_full_transform(rate)
 
-    def _stabilization_budget(self):
-        """The fast path trains through the genuine cascade for the whole ramp, so
-        the finalize cliff is ~0 — skip the post-finalize stabilization pass
-        (preserving the validated ~30-60s recipe). Else the base budget applies."""
-        if self._genuine_blend_fast:
-            return 0
-        return super()._stabilization_budget()
-
-    def _ensure_fast_optimizer(self):
-        """Build the single optimizer + spanning warmup/cosine LR once, sized to the
-        whole fixed ladder so the LR anneals smooth→~0 across ALL rates (exactly the
-        validated prototype). Subsequent per-rate attempts reuse them."""
-        if self._fast_optimizer is not None:
-            return
-        from mimarsinan.model_training.training_recipe import build_recipe
-
-        device = self.pipeline.config["device"]
-        self.model = self.model.to(device)
-        lr = float(self.pipeline_lr)
-        recipe = build_recipe(self.pipeline.config, key="tuning_recipe")
-        if recipe is not None:
-            self._fast_optimizer = build_optimizer(self.model, lr, recipe)
-        else:
-            self._fast_optimizer = self.trainer.build_step_optimizer(lr)
-        steps_per_rate = max(0, int(self._blend_fast_steps_per_rate))
-        total_steps = max(1, len(self._fixed_ladder_rates) * steps_per_rate)
-        self._fast_lr_schedule = self._build_fast_lr_schedule(
-            self._fast_optimizer, total_steps,
-        )
-        self._fast_blend_path = True
-        self._fast_optimizer_steps = 0
-
-    def _fast_rate_attempt(self, target):
-        """Train ``steps_per_rate`` steps at ``target`` with the shared optimizer +
-        spanning cosine and loss ``CE(blend) + ce_alpha·CE(genuine)`` (the INVARIANT
-        CORE genuine-CE lifts the r=1 endpoint, invariants 4/5), measure a post
-        accuracy, and record a commit into the trace. Always commits ``target`` (the
-        well-conditioned transformation needs no rollback)."""
-        self._ensure_fast_optimizer()
-        t0 = time.time()
-        device = self.pipeline.config["device"]
-        ce_alpha = self._genuine_ce_alpha
-        self._set_rate(float(target))
-        for _ in range(max(0, int(self._blend_fast_steps_per_rate))):
-            x, y = self.trainer.next_training_batch()
-            x, y = x.to(device), y.to(device)
-            self.model.train()
-            logits = self.model(x)
-            loss = F.cross_entropy(logits, y)
-            genuine = self._installed_genuine_branch()
-            if ce_alpha > 0.0 and genuine is not None:
-                loss = loss + ce_alpha * F.cross_entropy(genuine(x), y)
-            self._fast_optimizer.zero_grad()
-            loss.backward()
-            self._fast_optimizer.step()
-            self._fast_lr_schedule.step()
-            self._fast_optimizer_steps += 1
-        self._committed_rate = float(target)
-        post_acc = float(self.trainer.validate_n_batches(self._budget.eval_n_batches))
-        self._record_fast_cycle(float(target), post_acc, t0)
-        self._last_post_acc = post_acc
-        # Observability (invariant 5, probe-gated): the deployed r=1 full-transform.
-        self._probe_fast_full_transform(float(target))
-        self._phase_seconds["fast_blend"] = (
-            self._phase_seconds.get("fast_blend", 0.0) + (time.time() - t0)
-        )
-        return float(target)
-
-    def _record_fast_cycle(self, target, post_acc, t0):
-        """Record one ``commit`` per scheduled rate so the fixed_ladder fast path
-        inherits the DecisionTrace the bespoke loop used to drop."""
-        if not hasattr(self, "_cycle_log"):
-            return
-        self._cycle_log.record(DecisionRecord(
-            cycle_index=len(self._cycle_log),
-            outcome="commit",
-            rate=float(target),
-            committed=float(self._committed_rate),
-            elapsed_sec=time.time() - t0,
-            pre_cycle_acc=getattr(self, "_last_post_acc", None),
-            post_acc=float(post_acc),
-            lr=float(self._fast_optimizer.param_groups[0]["lr"]),
-            target=float(self._get_target()),
-            validation_baseline=self._baseline_or_none(),
-        ))
+    def _post_stabilization_hook(self):
+        # Proxy fast: the value-domain ramp leaves the deployed genuine cascade
+        # untrained (the proxy↔genuine cliff). A short bounded stabilization on the
+        # deployed _SegmentSpikeForward closes it (LIF pattern). The genuine blend
+        # trains through the cascade for the whole ramp (cliff≈0) → no stab needed.
+        if getattr(self, "_proxy_fast", False):
+            self._fast_stabilize(getattr(self, "_fast_stabilize_steps", 0))
 
     def _installed_genuine_branch(self):
         """The PURE genuine-cascade branch of the owned ``BlendedGenuineForward``
@@ -644,20 +572,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self.pipeline.reporter.report(
             f"{self.name} fast_full_transform",
             {"rate": round(float(rate), 4), "full_transform_acc": round(acc, 4)},
-        )
-
-    def _build_fast_lr_schedule(self, optimizer, total_steps):
-        """Warmup (5%, linear) -> cosine decay to ~0 over ``total_steps`` step()s."""
-        total = max(1, int(total_steps))
-        warmup_steps = max(1, int(round(0.05 * total)))
-        warmup = torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=1e-3, end_factor=1.0, total_iters=warmup_steps,
-        )
-        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=max(1, total - warmup_steps), eta_min=0.0,
-        )
-        return torch.optim.lr_scheduler.SequentialLR(
-            optimizer, schedulers=[warmup, cosine], milestones=[warmup_steps],
         )
 
     # -- finalize forward ------------------------------------------------------
