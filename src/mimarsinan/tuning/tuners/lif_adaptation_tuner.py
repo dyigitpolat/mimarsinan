@@ -83,10 +83,53 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._fast_stabilize_steps = int(
             self.pipeline.config.get("lif_blend_fast_stabilize_steps", 0)
         )
+        # DFQ per-neuron bias correction on the deployed cascade (opt-in, default
+        # OFF): match each perceptron's deployed cycle-accurate channel-mean to the
+        # frozen teacher ANN's, shrinking the systematic ANN->SNN first-moment
+        # conversion gap. Pure bias correction — no decode-scale retune (that is
+        # TTFS-only). Runs before the bounded stabilization so recovery refines the
+        # calibrated init. Needs the cycle-accurate cascade to read decoded values.
+        self._lif_distmatch = bool(self.pipeline.config.get("lif_distmatch", False))
+        self._lif_distmatch_bias_iters = int(
+            self.pipeline.config.get("lif_distmatch_bias_iters", 10)
+        )
+        self._lif_distmatch_eta = float(
+            self.pipeline.config.get("lif_distmatch_bias_eta", 0.5)
+        )
+        self._lif_distmatch_cal_batches = int(
+            self.pipeline.config.get("lif_distmatch_cal_batches", 8)
+        )
+        self._lif_distmatch_stats = None
 
     def _post_stabilization_hook(self):
+        if self._lif_distmatch:
+            self._calibrate_to_teacher_distribution()
         if getattr(self, "_fixed_ladder_policy", False):
             self._fast_stabilize(getattr(self, "_fast_stabilize_steps", 0))
+
+    def _calibrate_to_teacher_distribution(self) -> None:
+        """DFQ-match the deployed LIF cascade's per-neuron mean to the frozen
+        teacher ANN's. No-op unless the cycle-accurate cascade is deployed (the
+        decoded values are read from its segment forward). Stats are stashed on
+        ``self._lif_distmatch_stats`` and reported."""
+        if not self._cycle_accurate:
+            return
+        from mimarsinan.spiking.lif_distribution_matching import (
+            match_lif_activation_distributions,
+        )
+
+        cal_x = self._calibration_inputs(self._lif_distmatch_cal_batches)
+        self._lif_distmatch_stats = match_lif_activation_distributions(
+            self.model,
+            self._teacher,
+            cal_x,
+            self._T,
+            bias_iters=self._lif_distmatch_bias_iters,
+            eta=self._lif_distmatch_eta,
+        )
+        self.pipeline.reporter.report(
+            f"{self.name} distmatch", self._lif_distmatch_stats,
+        )
 
     def _make_target_activation(self, perceptron) -> LIFActivation:
         return LIFActivation(

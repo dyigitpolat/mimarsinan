@@ -89,14 +89,24 @@ from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
 
 
 class _SegmentSpikeForward(LazyExecutorForward):
-    """Picklable ``model.forward`` override driving the segment-aware spike sim."""
+    """Picklable ``model.forward`` override driving the segment-aware spike sim.
+
+    ``boundary_surrogate_temp`` (None = severed) enables the offload-boundary STE
+    so the genuine backward trains every segment; the forward is unchanged."""
+
+    def __init__(self, model, T: int, *, boundary_surrogate_temp: float | None = None):
+        super().__init__(model, T)
+        self.boundary_surrogate_temp = boundary_surrogate_temp
 
     def _build_executor(self):
         from mimarsinan.models.spiking.training.ttfs_segment_forward import (
             TTFSSegmentForward,
         )
 
-        return TTFSSegmentForward(self.model.get_mapper_repr(), self.T)
+        return TTFSSegmentForward(
+            self.model.get_mapper_repr(), self.T,
+            boundary_surrogate_temp=self.boundary_surrogate_temp,
+        )
 
     def _run(self, x):
         return self._ensure_executor(self._build_executor)(x)
@@ -157,6 +167,57 @@ class _BlendGenuineKDLoss(_KDClassificationLoss):
         return loss
 
 
+class _StaircaseSteKDLoss(_KDClassificationLoss):
+    """Straight-through estimator: forward value == the genuine single-spike cascade
+    (the exact deploy path), backward == a hedge of the CLEAN complete-sum staircase
+    gradient + the genuine surrogate. Fixes the deep high-S surrogate-gradient plateau
+    (research: lossless cascaded TTFS in <2min). ``mix`` (0.5 default) weights the
+    staircase half of the backward; the forward is genuine for any mix.
+
+        back = mix*staircase + (1-mix)*genuine
+        ste  = back + (genuine - back).detach()   # value=genuine, grad=back
+    """
+
+    def __init__(self, teacher, *, mix: float, forward_provider,
+                 temperature: float = 3.0, alpha: float = 0.3):
+        super().__init__(teacher, temperature=temperature, alpha=alpha)
+        self.mix = float(mix)
+        self._forward = forward_provider
+
+    @staticmethod
+    def _ste_logits(fwd, x, mix: float = 0.5):
+        """ste = back + (genuine-back).detach(); staircase via the model's unpatched
+        (analytical, cycle_accurate=False) forward, with the mode restored after."""
+        genuine = fwd(x)
+        nodes = [m for m in fwd.model.modules() if isinstance(m, TTFSActivation)]
+        prev = [n._cycle_accurate_mode for n in nodes]
+        for n in nodes:
+            n.set_cycle_accurate(False)
+        try:
+            staircase = fwd._unpatched_forward(x)
+        finally:
+            for n, p in zip(nodes, prev):
+                n.set_cycle_accurate(p)
+        back = mix * staircase + (1.0 - mix) * genuine
+        return back + (genuine - back).detach()
+
+    def __call__(self, model, x, y):
+        with torch.no_grad():
+            tp = next(self.teacher.parameters(), None)
+            if tp is not None and tp.device != x.device:
+                self.teacher.to(x.device)
+            teacher_logits = self.teacher(x)
+        student = self._ste_logits(self._forward(), x, self.mix)
+        ce = F.cross_entropy(student, y)
+        T = self.temperature
+        kd = F.kl_div(
+            F.log_softmax(student / T, dim=-1),
+            F.softmax(teacher_logits / T, dim=-1),
+            reduction="batchmean",
+        ) * (T * T)
+        return self.alpha * ce + (1.0 - self.alpha) * kd
+
+
 class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
     """Ramp to the TTFS spike node, training through the schedule's NF dynamics."""
 
@@ -197,6 +258,20 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
         if self._genuine_blend_ramp:
             self._genuine_annealed_ramp = False
+        # Staircase-backward STE (default OFF, cascaded only; not with the blend ramp):
+        # train the genuine cascade with a straight-through estimator -- forward = the
+        # genuine fire-once cascade (exact deploy path), backward = a hedge
+        # (ttfs_ste_mix, default 0.5) of the CLEAN complete-sum staircase gradient + the
+        # genuine surrogate. Fixes the deep high-S surrogate-gradient plateau (research:
+        # lossless cascaded TTFS in <2 min). Reuses the annealed ramp's genuine-forward
+        # install; only the loss differs (_StaircaseSteKDLoss).
+        self._staircase_ste = (
+            bool(self.pipeline.config.get("ttfs_staircase_ste", False))
+            and not self._synchronized and not self._genuine_blend_ramp
+        )
+        self._ste_mix = float(self.pipeline.config.get("ttfs_ste_mix", 0.5))
+        if self._staircase_ste:
+            self._genuine_annealed_ramp = True
         # Fast fixed-increment genuine-blend ramp (default OFF, requires the genuine
         # blend ramp): run through the ONE orchestrator with a fixed_ladder
         # RateScheduler policy (schedule-not-search) instead of the greedy/bisect
@@ -251,6 +326,83 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             self.pipeline.config.get("ttfs_genuine_blend_ce_alpha", 0.3)
         )
         self._distmatch_stats = None
+        # Offload-boundary straight-through estimator (default OFF, cascaded only):
+        # when set, the genuine single-spike cascade backward flows through the
+        # round-based re-encode at offload/host-ComputeOp segment boundaries (a soft
+        # spike-time STE), so EVERY neural segment trains on the deployed dynamics
+        # instead of only the last (the §7 gradient-severance root cause). Forward
+        # is byte-identical, so NF↔SCM parity and the deployed metric are unchanged.
+        self._boundary_surrogate_temp = (
+            float(self.pipeline.config.get("ttfs_boundary_surrogate_temp", 1.0))
+            if bool(self.pipeline.config.get("ttfs_boundary_surrogate", False))
+            and not self._synchronized
+            else None
+        )
+        self._gain_correction_stats = None
+        self._maybe_apply_gain_correction()
+        # Per-channel TRAINABLE theta co-training (default OFF, cascaded only): promote
+        # each non-encoding perceptron's activation_scale to a per-output-channel
+        # requires_grad Parameter (in _after_install_blend, after any scalar-theta
+        # distmatch/gain calibration) so the genuine fine-tune co-trains the firing-gain
+        # with the weights. Mutually exclusive with the per-depth gain ramp (both manage
+        # theta; the ramp's scalar set would clobber the per-channel param) — gain wins.
+        self._theta_cotrain = (
+            bool(self.pipeline.config.get("ttfs_theta_cotrain", False))
+            and not self._synchronized
+            and not self._gain_ramp
+        )
+        self._theta_cotrain_stats = None
+
+    def _maybe_apply_gain_correction(self) -> None:
+        """Per-cascade-depth activation_scale trim that inverts the deployed ramp
+        decode's depth attenuation (the death cascade). Two modes (cascaded only; a
+        pure calibration change -> decode bit-exact -> NF<->SCM parity holds):
+
+        * COLD (``ttfs_gain_correction``): apply the full trim once before node build.
+        * RATE-GATED RAMP (``ttfs_gain_correction_ramp``, wins if both set): capture
+          the base scales + target factors and ramp ``theta_d -> base*g_d**rate`` on
+          every ``_set_rate`` so the correction co-adapts WITH the KD blend (the model
+          learns the calibration and the spiking dynamics together) instead of being a
+          cold init a downstream fine-tune absorbs at the readout."""
+        self._gain_ramp = False
+        if self._synchronized:
+            return
+        config = self.pipeline.config
+        rule = str(config.get("ttfs_gain_correction_rule", "relative"))
+        c = float(config.get("ttfs_gain_correction_c", 1.9))
+
+        if bool(config.get("ttfs_gain_correction_ramp", False)):
+            # Base scales + factors are captured in _after_install_blend (AFTER any
+            # genuine-blend scale-aware-boundary calibration that also sets the
+            # scales), so the gain ramp multiplies the SETTLED scales by g_d**rate.
+            self._gain_ramp = True
+            self._gain_ramp_rule = rule
+            self._gain_ramp_c = c
+            self._gain_ramp_base = None
+            self._gain_ramp_factors = None
+            return
+
+        if bool(config.get("ttfs_gain_correction", False)):
+            from mimarsinan.spiking.gain_correction import apply_cascaded_gain_correction
+
+            self._gain_correction_stats = apply_cascaded_gain_correction(
+                self.model, self._T, rule=rule, c=c,
+            )
+            self.pipeline.reporter.report(
+                f"{self.name} gain_correction", self._gain_correction_stats,
+            )
+
+    def _apply_gain_at_rate(self, rate: float) -> None:
+        from mimarsinan.spiking.gain_correction import apply_gain_at_rate
+
+        apply_gain_at_rate(
+            self.model, self._gain_ramp_base, self._gain_ramp_factors, rate,
+        )
+
+    def _set_rate(self, rate: float) -> None:
+        super()._set_rate(rate)
+        if getattr(self, "_gain_ramp", False) and self._gain_ramp_base is not None:
+            self._apply_gain_at_rate(rate)
 
     def _invalidate_lr_cache(self):
         """Genuine controller perf: the LR finder is the dominant cost on the
@@ -339,7 +491,52 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             self._finalize_rebuild()
         if self._genuine_blend_ramp:
             self._calibrate_to_teacher_distribution()
+        self._capture_gain_ramp_base()
         super()._after_install_blend()
+        self._maybe_promote_theta_cotrain()
+
+    def _maybe_promote_theta_cotrain(self) -> None:
+        """Promote per-channel TRAINABLE theta AFTER any scalar-theta calibration
+        (distmatch / gain base capture, which call ``float(activation_scale)`` and
+        ``propagate_boundary_input_scales`` — both scalar-only). The bare-cascade or
+        blend nodes already reference ``perceptron.activation_scale`` by identity, so
+        rebinding it to a per-channel param (on the perceptron AND its nodes) routes
+        the optimiser's gradient into the deployed forward."""
+        if not self._theta_cotrain:
+            return
+        from mimarsinan.spiking.theta_cotrain import (
+            promote_activation_scale_per_channel,
+        )
+
+        params = promote_activation_scale_per_channel(self.model)
+        self._theta_cotrain_stats = {"n_theta": len(params)}
+        self.pipeline.reporter.report(
+            f"{self.name} theta_cotrain", self._theta_cotrain_stats,
+        )
+
+    def _capture_gain_ramp_base(self) -> None:
+        """Capture the (post-calibration) per-perceptron base scales + target gain
+        factors for the rate-gated ramp, and set rate 0 (= base). Runs after any
+        distmatch scale-aware-boundary calibration so the gain ramp composes on top."""
+        if not getattr(self, "_gain_ramp", False):
+            return
+        from mimarsinan.spiking.gain_correction import cascaded_gain_factors
+
+        self._gain_ramp_base = [
+            float(p.activation_scale) for p in self.model.get_perceptrons()
+        ]
+        self._gain_ramp_factors = cascaded_gain_factors(
+            self.model, self._T, rule=self._gain_ramp_rule, c=self._gain_ramp_c,
+        )
+        self._apply_gain_at_rate(0.0)
+        self._gain_correction_stats = {
+            "mode": "ramp", "rule": self._gain_ramp_rule, "S": int(self._T),
+            "n_perceptrons": len(self._gain_ramp_base),
+            "min_factor": round(min(self._gain_ramp_factors.values()), 4),
+        }
+        self.pipeline.reporter.report(
+            f"{self.name} gain_correction", self._gain_correction_stats,
+        )
 
     def _ramp_forward(self):
         """The genuine blend ramp installs a teacher<->genuine OUTPUT blend
@@ -352,6 +549,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         if self._genuine_blend_ramp:
             self._blend_forward = BlendedGenuineForward(
                 self.model, self._teacher, self._T, rate=0.0,
+                boundary_surrogate_temp=self._boundary_surrogate_temp,
             )
             return self._blend_forward
         if self._genuine_annealed_ramp:
@@ -391,15 +589,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             f"{self.name} distmatch", self._distmatch_stats,
         )
 
-    def _calibration_inputs(self, n_batches: int = 8) -> torch.Tensor:
-        """A few concatenated validation batches as the distribution-match anchor."""
-        device = self.pipeline.config["device"]
-        batches = [
-            x.to(device)
-            for x, _ in self.trainer.iter_validation_batches(n_batches)
-        ]
-        return torch.cat(batches)
-
     def _wrap_encoding_input(self, perceptron) -> None:
         # Synchronized wire contract: every hybrid stage input is grid-quantized
         # q(x); train through it via an STE on each segment-entry perceptron
@@ -432,6 +621,13 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         endpoint up). Synchronized + ``ttfs_finetune_kd_against_rung2``: distill
         against the frozen teacher evaluated under rung-2 semantics (identity-mapped
         contract flow) instead of its torch forward (design doc §6.1). Default off."""
+        if self._staircase_ste:
+            # The genuine cascade forward is installed (annealed-ramp path) as
+            # model.forward; resolve it lazily at loss time (installed after this).
+            return _StaircaseSteKDLoss(
+                self._teacher, mix=self._ste_mix,
+                forward_provider=lambda: self.model.__dict__.get("forward"),
+            )
         if self._genuine_blend_ramp:
             return _BlendGenuineKDLoss(
                 self._teacher,
@@ -584,4 +780,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         Both ramp the value-domain blend (``_ramp_forward`` stays ``None``)."""
         if self._synchronized:
             return None
-        return _SegmentSpikeForward(model, self._T)
+        return _SegmentSpikeForward(
+            model, self._T, boundary_surrogate_temp=self._boundary_surrogate_temp,
+        )

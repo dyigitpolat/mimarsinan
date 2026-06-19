@@ -35,8 +35,17 @@ def compute_per_source_scales(model_repr):
                 _assign_per_input_scales(node.perceptron, src)
 
             n_out = node.perceptron.output_channels
-            act_s = float(node.perceptron.activation_scale)
-            out_scales[node] = torch.full((n_out,), act_s)
+            act = node.perceptron.activation_scale
+            if isinstance(act, torch.Tensor) and act.dim() > 0:
+                # Per-output-channel theta (e.g. ttfs_theta_cotrain): carry it as the
+                # per-channel output scale; mean-fold only on a length mismatch.
+                vec = act.detach().to(torch.float32).reshape(-1)
+                out_scales[node] = (
+                    vec.clone() if vec.numel() == n_out
+                    else torch.full((n_out,), float(vec.mean()))
+                )
+            else:
+                out_scales[node] = torch.full((n_out,), float(act))
 
         elif isinstance(node, ConcatMapper):
             parts = [out_scales[d] for d in deps if d in out_scales]

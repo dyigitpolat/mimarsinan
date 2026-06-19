@@ -289,6 +289,16 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _snapshot_teacher(self) -> nn.Module:
         return snapshot_frozen_teacher(self.model, self.pipeline.config["device"])
 
+    def _calibration_inputs(self, n_batches: int = 8) -> torch.Tensor:
+        """A few concatenated validation batches as a calibration anchor (shared by
+        the TTFS/LIF teacher-distribution matchers)."""
+        device = self.pipeline.config["device"]
+        batches = [
+            x.to(device)
+            for x, _ in self.trainer.iter_validation_batches(n_batches)
+        ]
+        return torch.cat(batches)
+
     def _install_blend(self) -> None:
         for perceptron in self.model.get_perceptrons():
             old = self._blend_old_activation(perceptron)

@@ -12,6 +12,7 @@ from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardD
 def chip_aligned_segment_forward(
     model: nn.Module, x: torch.Tensor, T: int,
     *, compute_min_recorder: dict | None = None,
+    node_value_recorder: dict | None = None,
 ) -> torch.Tensor:
     """Segment-aware chip-aligned NF forward (matches HCM ``_forward_rate``).
 
@@ -27,4 +28,8 @@ def chip_aligned_segment_forward(
     if mapper_repr is None:
         return run_cycle_accurate(model, x, T)
     driver = SegmentForwardDriver(mapper_repr, T, LifSegmentPolicy())
-    return driver(x, compute_min_recorder=compute_min_recorder)
+    return driver(
+        x,
+        compute_min_recorder=compute_min_recorder,
+        node_value_recorder=node_value_recorder,
+    )

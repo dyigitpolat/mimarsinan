@@ -144,11 +144,15 @@ def segment_count(flow) -> int:
     return len(set(seg_of.values()))
 
 
-def cascade_forward(flow, x, S, *, grad: bool = False):
-    """Genuine single-spike ramp-integrate cascade (the deployed dynamics)."""
+def cascade_forward(flow, x, S, *, grad: bool = False, surrogate_temp: float | None = None):
+    """Genuine single-spike ramp-integrate cascade (the deployed dynamics).
+
+    ``surrogate_temp`` (None = the historical severed contract) enables the
+    offload-boundary straight-through estimator so the genuine backward flows
+    through every segment; the forward is unchanged."""
     from mimarsinan.models.spiking.training.ttfs_segment_forward import TTFSSegmentForward
 
-    drv = TTFSSegmentForward(flow.get_mapper_repr(), S)
+    drv = TTFSSegmentForward(flow.get_mapper_repr(), S, boundary_surrogate_temp=surrogate_temp)
     if grad:
         return drv(x.double())
     with torch.no_grad():
