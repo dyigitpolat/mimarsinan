@@ -308,118 +308,42 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._synchronized = contract.training_forward_kind() != "segment_spike"
         self._entry_perceptron_ids = None
         self.adaptation_manager.ttfs_active = True
-        # Genuine annealed ramp (default OFF, cascaded only): train through the
-        # genuine single-spike cascade for the WHOLE ramp, annealing the spike
-        # surrogate sharpness instead of blending the value domain. Synchronized
-        # composes per-group analytical staircases — the cascade walk is the wrong
-        # dynamics for it — so the flag is ignored there.
-        self._genuine_annealed_ramp = (
-            bool(self.pipeline.config.get("ttfs_genuine_annealed_ramp", False))
-            and not self._synchronized
+        # The adaptation flag-thicket (ramp strategy × optimization driver × fast-ladder
+        # rung) is resolved ONCE, declaratively: TtfsAdaptationPlan owns the precedence /
+        # compatibility rules (blend ⊐ annealed, STE ⇒ annealed, ste_fast ⊂ ste,
+        # proxy_fast excludes the genuine bare-target ramps + synchronized, ste_refine ⊂
+        # proxy_fast, the fast-ladder rung). _configure just binds the validated plan to
+        # the tuner's fields, so the dispatch is read in one tested place, not re-derived.
+        from mimarsinan.tuning.orchestration.ttfs_adaptation_plan import (
+            TtfsAdaptationPlan,
         )
-        # Genuine teacher->cascade blend ramp (default OFF, cascaded only): calibrate
-        # the deployed cascade to the teacher distribution, then ramp a teacher<->
-        # genuine OUTPUT blend with KD recovery (finalize deploys the pure cascade).
-        # Mutually exclusive with the annealed ramp — blend wins (annealed forced off).
-        self._genuine_blend_ramp = (
-            bool(self.pipeline.config.get("ttfs_genuine_blend_ramp", False))
-            and not self._synchronized
+
+        plan = TtfsAdaptationPlan.resolve(
+            self.pipeline.config, synchronized=self._synchronized,
         )
-        if self._genuine_blend_ramp:
-            self._genuine_annealed_ramp = False
-        # Staircase-backward STE (default OFF, cascaded only; not with the blend ramp):
-        # train the genuine cascade with a straight-through estimator -- forward = the
-        # genuine fire-once cascade (exact deploy path), backward = a hedge
-        # (ttfs_ste_mix, default 0.5) of the CLEAN complete-sum staircase gradient + the
-        # genuine surrogate. Fixes the deep high-S surrogate-gradient plateau (research:
-        # lossless cascaded TTFS in <2 min). Reuses the annealed ramp's genuine-forward
-        # install; only the loss differs (_StaircaseSteKDLoss).
-        self._staircase_ste = (
-            bool(self.pipeline.config.get("ttfs_staircase_ste", False))
-            and not self._synchronized and not self._genuine_blend_ramp
+        self._adaptation_plan = plan
+        self._genuine_annealed_ramp = plan.genuine_annealed_ramp
+        self._genuine_blend_ramp = plan.genuine_blend_ramp
+        self._staircase_ste = plan.staircase_ste
+        self._ste_mix = plan.ste_mix
+        self._staircase_ste_fast = plan.staircase_ste_fast
+        self._ste_steps = plan.ste_steps
+        self._ste_w_lr = plan.ste_w_lr
+        self._ste_theta_lr = plan.ste_theta_lr
+        self._ste_init_frac = plan.ste_init_frac
+        self._genuine_bare_target_ramp = plan.genuine_bare_target_ramp
+        self._genuine_blend_fast = plan.genuine_blend_fast
+        self._proxy_fast = plan.proxy_fast
+        self._staircase_ste_refine = plan.staircase_ste_refine
+        self._blend_fast_rates = plan.blend_fast_rates
+        self._blend_fast_steps_per_rate = plan.blend_fast_steps_per_rate
+        self._fast_stabilize_steps = plan.fast_stabilize_steps
+        self._setup_fast_ladder(
+            enabled=plan.fast_ladder_enabled,
+            rates=plan.fast_ladder_rates,
+            steps_per_rate=plan.fast_ladder_steps_per_rate,
+            eta_min_factor=plan.fast_ladder_eta_min_factor,
         )
-        self._ste_mix = float(self.pipeline.config.get("ttfs_ste_mix", 0.5))
-        if self._staircase_ste:
-            self._genuine_annealed_ramp = True
-        # Fast clean STE loop (requires the STE): route the STE through a dedicated
-        # fixed-step loop (the proven toy recipe — split-LR + progressive depth +
-        # cosine) instead of the rate-search controller, which caps the STE ~0.83 on
-        # MNIST. Walks a single fast-ladder rung at rate 1.0 (forward stays genuine).
-        self._staircase_ste_fast = self._staircase_ste and bool(
-            self.pipeline.config.get("ttfs_staircase_ste_fast", False)
-        )
-        self._ste_steps = max(1, int(self.pipeline.config.get("ttfs_ste_steps", 1000)))
-        self._ste_w_lr = float(self.pipeline.config.get("ttfs_ste_w_lr", 2e-3))
-        self._ste_theta_lr = float(self.pipeline.config.get("ttfs_ste_theta_lr", 5e-2))
-        self._ste_init_frac = float(
-            self.pipeline.config.get("ttfs_ste_init_frac", 1.0 / 3.0)
-        )
-        # Both genuine ramps drive the deployed single-spike cascade directly, so
-        # base_activation IS the bare TTFSActivation target (no value-domain blend
-        # proxy). Cached here, after the precedence rules settle the flags, because
-        # the proxy-fast guard below reads it BEFORE self._ramp exists.
-        self._genuine_bare_target_ramp = (
-            self._genuine_annealed_ramp or self._genuine_blend_ramp
-        )
-        # Fast fixed-increment genuine-blend ramp (default OFF, requires the genuine
-        # blend ramp): run through the ONE orchestrator with a fixed_ladder
-        # RateScheduler policy (schedule-not-search) instead of the greedy/bisect
-        # controller. _run_with_scheduler reads _fixed_ladder_policy to route.
-        self._genuine_blend_fast = self._genuine_blend_ramp and bool(
-            self.pipeline.config.get("ttfs_genuine_blend_fast", False)
-        )
-        # Fast PROXY ramp (default OFF, cascaded only, NOT a genuine ramp): the
-        # value-domain BlendActivation ramp run through the fixed_ladder policy +
-        # a post-finalize bounded stabilization on the genuine cascade (the LIF
-        # pattern). The proxy reaches a higher deployed accuracy than the genuine
-        # blend on this workload (it trains the value domain, then a short cascade
-        # stabilization closes the proxy↔genuine cliff), and is fast.
-        self._proxy_fast = (
-            bool(self.pipeline.config.get("ttfs_blend_fast", False))
-            and not self._genuine_bare_target_ramp
-            and not self._synchronized
-        )
-        # STE refine on the proxy path (requires ttfs_blend_fast): the proxy ramp
-        # REVIVES the cascade (alive), then the post-finalize stabilize refines the
-        # DEPLOYED cascade with the STE loss instead of plain KD — the two-stage
-        # revive->refine recipe (direct STE on the dead cold cascade is chance; the
-        # proxy revival makes the STE a refinement lever on an alive cascade).
-        self._staircase_ste_refine = self._proxy_fast and bool(
-            self.pipeline.config.get("ttfs_blend_fast_ste_refine", False)
-        )
-        self._blend_fast_rates = [
-            float(r)
-            for r in self.pipeline.config.get(
-                "ttfs_blend_fast_rates", [0.5, 0.75, 0.9, 0.97, 1.0]
-            )
-        ]
-        self._blend_fast_steps_per_rate = int(
-            self.pipeline.config.get("ttfs_blend_fast_steps_per_rate", 120)
-        )
-        self._fast_stabilize_steps = int(
-            self.pipeline.config.get("ttfs_blend_fast_stabilize_steps", 0)
-        )
-        # Wire the shared fixed-ladder fast machinery (KDBlendAdaptationTuner); the
-        # TTFS-specific objective + probe are supplied via _fast_loss / _fast_probe.
-        # eta_min floors the endpoint LR for the proxy (its value-domain endpoint
-        # needs real recovery); the genuine blend lets its genuine-CE carry it.
-        if self._staircase_ste_fast:
-            # One rung at full rate; the dedicated loop (_fast_rate_attempt override)
-            # owns its split-LR optimizer + progressive depth + cosine over _ste_steps.
-            self._setup_fast_ladder(
-                enabled=True, rates=[1.0], steps_per_rate=self._ste_steps,
-                eta_min_factor=0.0,
-            )
-        else:
-            self._setup_fast_ladder(
-                enabled=self._genuine_blend_fast or self._proxy_fast,
-                rates=self._blend_fast_rates,
-                steps_per_rate=self._blend_fast_steps_per_rate,
-                eta_min_factor=(
-                    float(self.pipeline.config.get("ttfs_blend_fast_lr_eta_min", 0.1))
-                    if self._proxy_fast else 0.0
-                ),
-            )
         self._fast_full_transform_log = []
         # The installed teacher<->genuine blend forward (owned reference so the
         # genuine-CE loss + the fast attempt resolve it without introspecting
