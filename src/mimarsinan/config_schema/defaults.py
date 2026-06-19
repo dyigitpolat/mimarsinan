@@ -48,6 +48,10 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "training_epochs": 10,
     "tuning_budget_scale": 1.0,
     "tuner_target_floor_ratio": 0.90,
+    # Activation-Analysis scale quantile = the per-perceptron LIF/TTFS decode scale
+    # AND clamp ceiling. Raising it toward 1.0 reduces the systematic top-percentile
+    # clip bias (trades a little rate-resolution); 0.99 = the historical default.
+    "activation_scale_quantile": 0.99,
     "degradation_tolerance": 0.05,
     # Per-cycle rollback snapshot scope/location (CheckpointGuard, graduated).
     # Defaults ("full"/"device") delegate verbatim to the on-device clone;
@@ -132,6 +136,42 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # (the validated prototype value that pulls the rate-1 endpoint up). Canonical
     # source for the constant; the tuner reads this key once.
     "ttfs_genuine_blend_ce_alpha": 0.3,
+    # Offload-boundary straight-through estimator (opt-in, cascaded only): flow the
+    # genuine cascade backward through the round-based re-encode at offload/host-
+    # ComputeOp segment boundaries (a soft spike-time STE) so EVERY segment trains
+    # on the deployed dynamics, not only the last. Forward stays bit-exact.
+    "ttfs_boundary_surrogate": False,
+    "ttfs_boundary_surrogate_temp": 1.0,
+    # Per-cascade-depth gain correction (opt-in, cascaded only): invert the deployed
+    # ramp decode's depth-dependent attenuation (the death cascade) with a per-layer
+    # activation_scale trim theta_d *= gamma^d, gamma = 1 - sqrt(S)/(S+1). A pure
+    # calibration change (decode untouched -> NF<->SCM parity holds); recovers most of
+    # the cold conversion gap and gives the genuine fine-tune a healthy (alive) init.
+    "ttfs_gain_correction": False,
+    "ttfs_gain_correction_rule": "relative",
+    "ttfs_gain_correction_c": 1.9,
+    # Rate-gated gain correction (opt-in): instead of applying the gain trim once
+    # (cold, where a downstream fine-tune absorbs it at the readout), ramp it as a
+    # parameter transformation gated by the SAME rate as the KD blend — theta_d ->
+    # base * g_d**rate as rate 0->1 — so the model co-adapts to the calibration and
+    # the spiking dynamics together (the gradual non-destructive transformation).
+    "ttfs_gain_correction_ramp": False,
+    # Per-channel TRAINABLE theta co-training (opt-in, cascaded only): promote each
+    # non-encoding perceptron's activation_scale to a per-output-channel requires_grad
+    # Parameter so the deployed-cascade fine-tune co-optimises the firing-gain (theta,
+    # the death-cascade's root cause) WITH the weights. The near-lossless cascaded
+    # recipe's key lever (docs/research_artifacts_for_cascaded_ttfs_tuning/51_*). Unlike
+    # the per-DEPTH fixed-geometric gain correction, theta is learned per-neuron; the
+    # two are mutually exclusive (gain ramp wins). Encoding/entry theta stays fixed.
+    "ttfs_theta_cotrain": False,
+    # Staircase-backward STE (opt-in, cascaded only): train the genuine cascade with a
+    # straight-through estimator -- forward = genuine fire-once cascade (exact deploy),
+    # backward = ttfs_ste_mix * clean complete-sum staircase gradient + (1-mix) * genuine
+    # surrogate. Fixes the deep high-S surrogate-gradient plateau -> near-lossless cascaded
+    # TTFS in <2 min (docs/.../52_lossless_fast_program.md). mix=0.5 is the robust default
+    # across depth (pure staircase scrambles the basin; pure genuine stays on the plateau).
+    "ttfs_staircase_ste": False,
+    "ttfs_ste_mix": 0.5,
     # Fast fixed-increment genuine-blend ramp (opt-in, requires ttfs_genuine_blend_ramp):
     # runs through the orchestrator with a fixed_ladder RateScheduler policy
     # (schedule-not-search) instead of greedy/bisect — one shared optimizer + spanning
@@ -155,6 +195,13 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "lif_blend_fast_rates": [0.25, 0.5, 0.75, 1.0],
     "lif_blend_fast_lr_eta_min": 0.1,
     "lif_blend_fast_stabilize_steps": 0,
+    # DFQ per-neuron bias correction on the deployed LIF cascade (opt-in): match
+    # each perceptron's deployed channel-mean to the teacher ANN's by nudging
+    # layer.bias, shrinking the systematic ANN->SNN first-moment conversion gap.
+    "lif_distmatch": False,
+    "lif_distmatch_bias_iters": 10,
+    "lif_distmatch_bias_eta": 0.5,
+    "lif_distmatch_cal_batches": 8,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -207,6 +254,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "cycle_accurate_lif_forward",
     "model_config_mode",
     "hw_config_mode",
+    "activation_scale_quantile",
     "activation_quantization",
     "weight_quantization",
     "pruning",
@@ -263,6 +311,15 @@ CONFIG_KEYS_SET: Set[str] = {
     "ttfs_distmatch_bias_eta",
     "ttfs_distmatch_quantile",
     "ttfs_genuine_blend_ce_alpha",
+    "ttfs_boundary_surrogate",
+    "ttfs_boundary_surrogate_temp",
+    "ttfs_gain_correction",
+    "ttfs_gain_correction_rule",
+    "ttfs_gain_correction_c",
+    "ttfs_gain_correction_ramp",
+    "ttfs_theta_cotrain",
+    "ttfs_staircase_ste",
+    "ttfs_ste_mix",
     "ttfs_genuine_blend_fast",
     "ttfs_blend_fast_steps_per_rate",
     "ttfs_blend_fast_rates",
@@ -274,6 +331,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "lif_blend_fast_rates",
     "lif_blend_fast_lr_eta_min",
     "lif_blend_fast_stabilize_steps",
+    "lif_distmatch",
+    "lif_distmatch_bias_iters",
+    "lif_distmatch_bias_eta",
+    "lif_distmatch_cal_batches",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",

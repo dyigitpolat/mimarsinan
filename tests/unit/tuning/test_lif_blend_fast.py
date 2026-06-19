@@ -95,3 +95,45 @@ class TestLifFastOffUnchanged:
         tuner.run()
         assert getattr(tuner, "_fast_blend_path", False) is False
         assert len(tuner._cycle_log) > 0
+
+
+class TestLifDistmatchHook:
+    """The DFQ teacher-distribution match fires from the post-stabilization hook
+    when ``lif_distmatch`` is on (and only then), on the deployed cycle-accurate
+    cascade."""
+
+    def _make(self, tmp_path, *, distmatch):
+        cfg = default_config()
+        cfg["spiking_mode"] = "lif"
+        cfg["firing_mode"] = "Default"
+        cfg["thresholding_mode"] = "<"
+        cfg["simulation_steps"] = 4
+        cfg["cycle_accurate_lif_forward"] = True
+        cfg["lif_blend_fast"] = True
+        cfg["lif_blend_fast_steps_per_rate"] = 2
+        cfg["lif_blend_fast_rates"] = [0.5, 1.0]
+        cfg["lif_distmatch"] = distmatch
+        cfg["lif_distmatch_bias_iters"] = 4
+        pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+        pipeline._target_metric = 0.5
+        model = make_tiny_supermodel()
+        am = AdaptationManager()
+        tuner = LIFAdaptationTuner(
+            pipeline, model=model, target_accuracy=0.5, lr=cfg["lr"],
+            adaptation_manager=am,
+        )
+        return tuner
+
+    def test_distmatch_stats_populated_when_on(self, tmp_path):
+        torch.manual_seed(0)
+        tuner = self._make(tmp_path, distmatch=True)
+        tuner.run()
+        assert tuner._lif_distmatch_stats is not None
+        assert "mean_gap_before" in tuner._lif_distmatch_stats
+        assert "mean_gap_after" in tuner._lif_distmatch_stats
+
+    def test_distmatch_not_run_when_off(self, tmp_path):
+        torch.manual_seed(0)
+        tuner = self._make(tmp_path, distmatch=False)
+        tuner.run()
+        assert tuner._lif_distmatch_stats is None

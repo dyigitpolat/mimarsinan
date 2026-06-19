@@ -202,6 +202,14 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             for cleanup in reversed(cleanup_callbacks):
                 cleanup()
 
+        # The per-perceptron activation_scale is both the LIF/TTFS decode scale AND
+        # the clamp ceiling: the top (1-q) of every layer's activations is clipped
+        # down to the q quantile — a systematic, S-independent downward bias. Expose
+        # the quantile so it can be raised toward 1.0 to trade rate-resolution for
+        # less saturation clipping (default 0.99 = byte-identical to the prior path).
+        quantile = float(
+            self.pipeline.config.get("activation_scale_quantile", DEFAULT_SCALE_QUANTILE)
+        )
         merged_samples = []
         activation_scales = []
         for layer_samples in sampled_activations:
@@ -213,7 +221,7 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             activation_scales.append(
                 scale_from_activations(
                     merged,
-                    quantile=DEFAULT_SCALE_QUANTILE,
+                    quantile=quantile,
                     min_scale=MIN_SCALE,
                 )
             )
@@ -223,13 +231,13 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             merged_samples,
             activation_scales,
             num_batches=n_batches,
-            quantile=DEFAULT_SCALE_QUANTILE,
+            quantile=quantile,
             max_samples_per_batch=MAX_SAMPLES_PER_BATCH,
         )
         scale_summary = activation_scale_stats["summary"]
         print(
             "[ActivationAnalysisStep] "
-            f"batches={n_batches}, q={DEFAULT_SCALE_QUANTILE}, "
+            f"batches={n_batches}, q={quantile}, "
             f"scale_range=[{scale_summary['min_scale']:.4f}, {scale_summary['max_scale']:.4f}]"
         )
 

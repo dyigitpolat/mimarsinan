@@ -36,6 +36,7 @@ class TorchMLPMixerCoreBuilder:
             fc_w_1=int(cfg["fc_w_1"]),
             fc_w_2=int(cfg["fc_w_2"]),
             base_activation=cfg.get("base_activation", "ReLU"),
+            num_blocks=int(cfg.get("num_blocks", 2)),
         )
 
     @classmethod
@@ -47,6 +48,7 @@ class TorchMLPMixerCoreBuilder:
             {"key": "patch_c_1", "type": "number", "label": "Patch Channels", "default": 32},
             {"key": "fc_w_1", "type": "number", "label": "FC Width 1", "default": 64},
             {"key": "fc_w_2", "type": "number", "label": "FC Width 2", "default": 64},
+            {"key": "num_blocks", "type": "number", "label": "Mixer Blocks", "default": 2},
         ]
 
     @classmethod

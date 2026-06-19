@@ -23,17 +23,24 @@ class BlendedGenuineForward(LazyExecutorForward):
     is dropped on pickle (the teacher snapshot stays light).
     """
 
-    def __init__(self, model, teacher, T: int, rate: float = 0.0):
+    def __init__(self, model, teacher, T: int, rate: float = 0.0,
+                 *, boundary_surrogate_temp: float | None = None):
         super().__init__(model, T)
         self.teacher = teacher
         self.rate = float(rate)
+        # STE backward through the offload boundary so the genuine branch trains
+        # every segment (None = severed). Forward is unchanged.
+        self.boundary_surrogate_temp = boundary_surrogate_temp
 
     def _build_executor(self):
         from mimarsinan.models.spiking.training.ttfs_segment_forward import (
             TTFSSegmentForward,
         )
 
-        return TTFSSegmentForward(self.model.get_mapper_repr(), self.T)
+        return TTFSSegmentForward(
+            self.model.get_mapper_repr(), self.T,
+            boundary_surrogate_temp=self.boundary_surrogate_temp,
+        )
 
     def genuine_logits(self, x):
         """The pure single-spike cascade logits (the ``rate=1`` branch). Public so

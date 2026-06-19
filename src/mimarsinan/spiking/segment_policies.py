@@ -54,6 +54,15 @@ class LifSegmentPolicy:
             if lif is not None:
                 lif.set_cycle_accurate(mode)
 
+    @staticmethod
+    def _record_decoded(driver, perceptron, train):
+        """Side-channel: record a perceptron's decoded cascade value (the per-cycle
+        train mean = rate*scale, in teacher-activation units) for DFQ calibration.
+        Never affects the forward output."""
+        recorder = getattr(driver, "_node_value_recorder", None)
+        if recorder is not None and perceptron is not None:
+            recorder[id(perceptron)] = train.detach().mean(dim=0)
+
     def run_segment(self, driver, seg_nodes, values, x):
         from spikingjelly.activation_based import functional
         from mimarsinan.spiking.spike_trains import uniform_spike_train
@@ -121,6 +130,7 @@ class LifSegmentPolicy:
                     train = torch.stack(outs, dim=0)
                     node_train[node] = train
                     node_rate[node] = (train / scale).mean(dim=0)
+                self._record_decoded(driver, p, node_train[node])
             else:
                 # Structural (reshape / permute / concat): transparent. Carry a
                 # train when every dep has one (per-cycle), and always carry a rate.
