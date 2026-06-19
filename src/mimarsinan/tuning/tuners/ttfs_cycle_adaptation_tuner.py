@@ -341,6 +341,19 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._ste_mix = float(self.pipeline.config.get("ttfs_ste_mix", 0.5))
         if self._staircase_ste:
             self._genuine_annealed_ramp = True
+        # Fast clean STE loop (requires the STE): route the STE through a dedicated
+        # fixed-step loop (the proven toy recipe — split-LR + progressive depth +
+        # cosine) instead of the rate-search controller, which caps the STE ~0.83 on
+        # MNIST. Walks a single fast-ladder rung at rate 1.0 (forward stays genuine).
+        self._staircase_ste_fast = self._staircase_ste and bool(
+            self.pipeline.config.get("ttfs_staircase_ste_fast", False)
+        )
+        self._ste_steps = max(1, int(self.pipeline.config.get("ttfs_ste_steps", 1000)))
+        self._ste_w_lr = float(self.pipeline.config.get("ttfs_ste_w_lr", 2e-3))
+        self._ste_theta_lr = float(self.pipeline.config.get("ttfs_ste_theta_lr", 5e-2))
+        self._ste_init_frac = float(
+            self.pipeline.config.get("ttfs_ste_init_frac", 1.0 / 3.0)
+        )
         # Both genuine ramps drive the deployed single-spike cascade directly, so
         # base_activation IS the bare TTFSActivation target (no value-domain blend
         # proxy). Cached here, after the precedence rules settle the flags, because
@@ -366,6 +379,14 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             and not self._genuine_bare_target_ramp
             and not self._synchronized
         )
+        # STE refine on the proxy path (requires ttfs_blend_fast): the proxy ramp
+        # REVIVES the cascade (alive), then the post-finalize stabilize refines the
+        # DEPLOYED cascade with the STE loss instead of plain KD — the two-stage
+        # revive->refine recipe (direct STE on the dead cold cascade is chance; the
+        # proxy revival makes the STE a refinement lever on an alive cascade).
+        self._staircase_ste_refine = self._proxy_fast and bool(
+            self.pipeline.config.get("ttfs_blend_fast_ste_refine", False)
+        )
         self._blend_fast_rates = [
             float(r)
             for r in self.pipeline.config.get(
@@ -382,15 +403,23 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         # TTFS-specific objective + probe are supplied via _fast_loss / _fast_probe.
         # eta_min floors the endpoint LR for the proxy (its value-domain endpoint
         # needs real recovery); the genuine blend lets its genuine-CE carry it.
-        self._setup_fast_ladder(
-            enabled=self._genuine_blend_fast or self._proxy_fast,
-            rates=self._blend_fast_rates,
-            steps_per_rate=self._blend_fast_steps_per_rate,
-            eta_min_factor=(
-                float(self.pipeline.config.get("ttfs_blend_fast_lr_eta_min", 0.1))
-                if self._proxy_fast else 0.0
-            ),
-        )
+        if self._staircase_ste_fast:
+            # One rung at full rate; the dedicated loop (_fast_rate_attempt override)
+            # owns its split-LR optimizer + progressive depth + cosine over _ste_steps.
+            self._setup_fast_ladder(
+                enabled=True, rates=[1.0], steps_per_rate=self._ste_steps,
+                eta_min_factor=0.0,
+            )
+        else:
+            self._setup_fast_ladder(
+                enabled=self._genuine_blend_fast or self._proxy_fast,
+                rates=self._blend_fast_rates,
+                steps_per_rate=self._blend_fast_steps_per_rate,
+                eta_min_factor=(
+                    float(self.pipeline.config.get("ttfs_blend_fast_lr_eta_min", 0.1))
+                    if self._proxy_fast else 0.0
+                ),
+            )
         self._fast_full_transform_log = []
         # The installed teacher<->genuine blend forward (owned reference so the
         # genuine-CE loss + the fast attempt resolve it without introspecting
@@ -428,6 +457,9 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             and not self._gain_ramp
         )
         self._theta_cotrain_stats = None
+        # The promoted per-channel theta Parameters (set in _maybe_promote_theta_cotrain);
+        # the STE-fast loop trains them in their own LR group.
+        self._theta_cotrain_params = None
 
     def _maybe_apply_gain_correction(self) -> None:
         """Per-cascade-depth activation_scale trim that inverts the deployed ramp
@@ -562,6 +594,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
 
         params = promote_activation_scale_per_channel(self.model)
+        self._theta_cotrain_params = list(params)
         self._theta_cotrain_stats = {"n_theta": len(params)}
         self.pipeline.reporter.report(
             f"{self.name} theta_cotrain", self._theta_cotrain_stats,
@@ -720,6 +753,104 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
     # validated genuine objective (plain CE on the blend + ce_alpha·CE on the PURE
     # genuine logits — lifts the r=1 endpoint, invariants 4/5) and the deployed-r=1
     # convergence probe via these two hooks.
+    def _fast_rate_attempt(self, target):
+        # STE-fast owns its single rung: the proven clean loop (split-LR +
+        # progressive depth + cosine) instead of the base single-optimizer ladder.
+        if getattr(self, "_staircase_ste_fast", False):
+            return self._run_staircase_ste_fast(float(target))
+        return super()._fast_rate_attempt(target)
+
+    def _weight_params_through(self, depth):
+        """Set ``requires_grad`` on the first ``depth`` perceptrons' layer weight/bias
+        (shallow->deep) and return the now-trainable ones; deeper layers stay frozen.
+        Progressive unfreeze grows ``depth`` to N so the final step trains all weights.
+        Frozen params just receive no gradient (Adam skips them) — no optimizer rebuild
+        is needed for the freeze itself; the rebuild on a depth CHANGE adds the newly
+        unfrozen params to the optimizer."""
+        out = []
+        for i, p in enumerate(self.model.get_perceptrons()):
+            req = i < depth
+            p.layer.weight.requires_grad_(req)
+            if p.layer.bias is not None:
+                p.layer.bias.requires_grad_(req)
+            if req:
+                out.append(p.layer.weight)
+                if p.layer.bias is not None:
+                    out.append(p.layer.bias)
+        return out
+
+    def _run_staircase_ste_fast(self, target):
+        """Clean fixed-step STE loop (the toy recipe that crossed the ~0.95 plateau):
+        split-LR optimizer (weights @ ``ttfs_ste_w_lr``, per-channel theta @
+        ``ttfs_ste_theta_lr`` when ``ttfs_theta_cotrain`` is on), progressive
+        shallow->deep weight unfreeze from ``ttfs_ste_init_frac`` of the depth, cosine
+        LR over ``ttfs_ste_steps``, and the installed STE+KD ``_fast_loss``. Forward is
+        the genuine cascade throughout (deploy-exact); commits ``target`` (== 1.0).
+        Replaces the rate-search controller, which caps the STE ~0.83 on MNIST."""
+        import time
+
+        t0 = time.time()
+        device = self.pipeline.config["device"]
+        self.model = self.model.to(device)
+        steps = self._ste_steps
+        thetas = list(getattr(self, "_theta_cotrain_params", None) or [])
+        n = len(self.model.get_perceptrons())
+        start = max(1, round(n * self._ste_init_frac))
+        schedule = [
+            min(n, start + round((n - start) * t / max(1, steps - 1)))
+            for t in range(steps)
+        ]
+        grad_clip = float(
+            (self.pipeline.config.get("tuning_recipe") or {}).get("grad_clip_norm", 1.0)
+        )
+        depth = -1
+        opt = sched = None
+        for t in range(steps):
+            if schedule[t] != depth:
+                depth = schedule[t]
+                weights = self._weight_params_through(depth)
+                groups = []
+                if thetas:
+                    groups.append({"params": thetas, "lr": self._ste_theta_lr})
+                groups.append({"params": weights, "lr": self._ste_w_lr})
+                opt = torch.optim.Adam(groups)
+                for g in opt.param_groups:
+                    g["initial_lr"] = g["lr"]
+                sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    opt, T_max=steps, last_epoch=t - 1,
+                )
+                # Expose the live optimizer so the shared trace (_record_fast_cycle)
+                # can read the rung LR; rebuilt on each depth change.
+                self._fast_optimizer = opt
+            # Anneal the spike-surrogate sharpness (the annealed-ramp rate) 0->1 across
+            # the budget instead of jumping to a sharp surrogate at step 0: a sharp
+            # surrogate on the cold/dead cascade gives ~0 genuine gradient (the
+            # controller climbs because it ramps; a single rung at 1.0 stalls at chance).
+            self._set_rate(min(1.0, (t + 1) / steps))
+            x, y = self.trainer.next_training_batch()
+            x, y = x.to(device), y.to(device)
+            self.model.train()
+            loss = self._fast_loss(x, y)
+            opt.zero_grad()
+            loss.backward()
+            if grad_clip and grad_clip > 0.0:
+                torch.nn.utils.clip_grad_norm_(
+                    [p for grp in opt.param_groups for p in grp["params"]], grad_clip,
+                )
+            opt.step()
+            sched.step()
+            self._fast_optimizer_steps += 1
+        self._set_rate(float(target))  # commit/eval at the deploy rate (sharp surrogate)
+        self._committed_rate = float(target)
+        post_acc = float(self.trainer.validate_n_batches(self._budget.eval_n_batches))
+        self._record_fast_cycle(float(target), post_acc, t0)
+        self._last_post_acc = post_acc
+        self._fast_probe(float(target))
+        self._phase_seconds["fast_blend"] = (
+            self._phase_seconds.get("fast_blend", 0.0) + (time.time() - t0)
+        )
+        return float(target)
+
     def _fast_loss(self, x, y):
         # Proxy fast path: use the installed KD loss (distil the teacher onto the
         # value-domain blend) — there is no BlendedGenuineForward to read.
@@ -743,8 +874,20 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         # untrained (the proxy↔genuine cliff). A short bounded stabilization on the
         # deployed _SegmentSpikeForward closes it (LIF pattern). The genuine blend
         # trains through the cascade for the whole ramp (cliff≈0) → no stab needed.
-        if getattr(self, "_proxy_fast", False):
-            self._fast_stabilize(getattr(self, "_fast_stabilize_steps", 0))
+        if not getattr(self, "_proxy_fast", False):
+            return
+        steps = getattr(self, "_fast_stabilize_steps", 0)
+        if getattr(self, "_staircase_ste_refine", False):
+            # Two-stage revive->refine: the deployed forward is now the revived genuine
+            # cascade, so refine it with the STE (staircase-backward hedge) instead of
+            # plain KD — the STE finally operates on an ALIVE cascade.
+            ste = _StaircaseSteKDLoss(
+                self._teacher, mix=self._ste_mix,
+                forward_provider=lambda: self.model.__dict__.get("forward"),
+            )
+            self._fast_stabilize(steps, loss_fn=lambda x, y: ste(self.model, x, y))
+        else:
+            self._fast_stabilize(steps)
 
     def _installed_genuine_branch(self):
         """The PURE genuine-cascade branch of the owned ``BlendedGenuineForward``

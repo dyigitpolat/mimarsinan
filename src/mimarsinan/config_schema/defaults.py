@@ -172,6 +172,19 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # across depth (pure staircase scrambles the basin; pure genuine stays on the plateau).
     "ttfs_staircase_ste": False,
     "ttfs_ste_mix": 0.5,
+    # Fast clean STE training (opt-in, requires ttfs_staircase_ste): route the STE
+    # through a dedicated fixed-step loop (the proven toy recipe) instead of the
+    # rate-search controller, which caps the STE at ~0.83 on MNIST (wrong driver: one
+    # high LR-find LR, no split-LR, no progressive depth). The loop trains
+    # ttfs_ste_steps steps with a split-LR optimizer (weights @ ttfs_ste_w_lr,
+    # per-channel theta @ ttfs_ste_theta_lr when ttfs_theta_cotrain is on), a cosine
+    # LR, and progressive shallow->deep weight unfreeze starting at ttfs_ste_init_frac
+    # of the depth. Forward stays the genuine cascade (deploy-exact).
+    "ttfs_staircase_ste_fast": False,
+    "ttfs_ste_steps": 1000,
+    "ttfs_ste_w_lr": 2e-3,
+    "ttfs_ste_theta_lr": 5e-2,
+    "ttfs_ste_init_frac": 1.0 / 3.0,
     # Fast fixed-increment genuine-blend ramp (opt-in, requires ttfs_genuine_blend_ramp):
     # runs through the orchestrator with a fixed_ladder RateScheduler policy
     # (schedule-not-search) instead of greedy/bisect — one shared optimizer + spanning
@@ -187,6 +200,12 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "ttfs_blend_fast": False,
     "ttfs_blend_fast_stabilize_steps": 0,
     "ttfs_blend_fast_lr_eta_min": 0.1,
+    # Two-stage revive->refine (requires ttfs_blend_fast): the proxy ramp revives the
+    # cascade, then the post-finalize stabilize refines the DEPLOYED cascade with the
+    # STE loss (staircase-backward hedge, ttfs_ste_mix) instead of plain KD. Direct STE
+    # on the dead cold cascade is chance; the proxy revival makes the STE a refinement
+    # lever on an alive cascade (docs/.../PHASE_C_stefast_findings.md).
+    "ttfs_blend_fast_ste_refine": False,
     # Fast fixed-ladder LIF ramp (opt-in): the LIF value-domain blend ramp through
     # the orchestrator's fixed_ladder policy (one shared optimizer + spanning cosine,
     # KD recovery, no controller) — the FAST analog of the slow LIF controller ramp.
@@ -320,12 +339,18 @@ CONFIG_KEYS_SET: Set[str] = {
     "ttfs_theta_cotrain",
     "ttfs_staircase_ste",
     "ttfs_ste_mix",
+    "ttfs_staircase_ste_fast",
+    "ttfs_ste_steps",
+    "ttfs_ste_w_lr",
+    "ttfs_ste_theta_lr",
+    "ttfs_ste_init_frac",
     "ttfs_genuine_blend_fast",
     "ttfs_blend_fast_steps_per_rate",
     "ttfs_blend_fast_rates",
     "ttfs_blend_fast",
     "ttfs_blend_fast_stabilize_steps",
     "ttfs_blend_fast_lr_eta_min",
+    "ttfs_blend_fast_ste_refine",
     "lif_blend_fast",
     "lif_blend_fast_steps_per_rate",
     "lif_blend_fast_rates",
