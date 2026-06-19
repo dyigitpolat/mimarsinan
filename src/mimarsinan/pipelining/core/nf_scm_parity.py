@@ -16,6 +16,26 @@ class NfScmParityError(AssertionError):
     """Per-neuron divergence between the analytical NF and the identity mapping."""
 
 
+def _unify_model_device(model):
+    """Place the WHOLE model on one device and return it (``None`` if param-less).
+
+    The mapper graph can leave compute-op modules and perceptrons on different
+    devices across the offload/cache seams, so a full-graph ``model(x)`` hits a
+    cross-device matmul (the 2026-06-19 SCM crash batch). Each gate owns its
+    forward's device contract: unify the model first, then move inputs/peers to
+    match. Prefers a CUDA device when the model holds any CUDA parameter so the
+    gate keeps running on the accelerator rather than dragging the model to CPU.
+    """
+    params = list(model.parameters())
+    if not params:
+        return None
+    device = next(
+        (p.device for p in params if p.device.type == "cuda"), params[0].device,
+    )
+    model.to(device)
+    return device
+
+
 def nf_scm_parity_enabled(contract: Any) -> bool:
     """Gate the modes whose NF can be held against the deployed executor.
 
@@ -144,10 +164,10 @@ def assert_cascaded_nf_scm_agreement_or_raise(
     agreement; raises :class:`NfScmParityError` below budget.
     """
     executor = _build_cascaded_identity_executor(pipeline, model, ir_graph)
-    model_param = next(model.parameters(), None)
-    if model_param is not None:
-        samples = samples.to(model_param.device)
-        executor = executor.to(model_param.device)
+    device = _unify_model_device(model)
+    if device is not None:
+        samples = samples.to(device)
+        executor = executor.to(device)
     with torch.no_grad():
         nf_pred = model(samples).argmax(dim=1)
         scm_pred = executor(samples).argmax(dim=1)
@@ -179,10 +199,10 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
     cannot hide. Healthy agreement is ~1.0 (a single WQ tie-flip per few hundred
     samples is the only expected residual — a sub-quantization-step effect);
     a real fidelity regression craters it. Returns the measured agreement."""
-    model_param = next(model.parameters(), None)
-    if model_param is not None:
-        samples = samples.to(model_param.device)
-        flow = flow.to(model_param.device)
+    device = _unify_model_device(model)
+    if device is not None:
+        samples = samples.to(device)
+        flow = flow.to(device)
     with torch.no_grad():
         torch_pred = model(samples).argmax(dim=1)
         sim_pred = flow(samples).argmax(dim=1)
@@ -253,9 +273,9 @@ def _capture_nf_normalized(model, samples: torch.Tensor) -> Dict[int, np.ndarray
     """Per-perceptron NF outputs over the batch, normalized to [0, 1]."""
     from mimarsinan.models.nn.activations.ttfs_spiking import _channel_broadcast_view
 
-    model_param = next(model.parameters(), None)
-    if model_param is not None:
-        samples = samples.to(model_param.device)
+    device = _unify_model_device(model)
+    if device is not None:
+        samples = samples.to(device)
     perceptrons = list(model.get_perceptrons())
     captured: Dict[int, torch.Tensor] = {}
 

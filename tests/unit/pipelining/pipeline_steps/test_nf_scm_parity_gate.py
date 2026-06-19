@@ -367,6 +367,71 @@ class TestParityGate:
         )
 
 
+class TestDeviceConsistency:
+    """The mapping pipeline can leave the mapper-graph compute modules and the
+    perceptrons on different devices (offload/cache seams), so a full-graph
+    forward hits a cross-device matmul. Each gate owns its forward's device
+    contract: it unifies the whole model onto one device before forwarding,
+    instead of only moving ``samples`` to the first parameter's device.
+
+    Root cause of the 2026-06-19 SCM crash batch: 3/9 runs died with
+    ``Expected all tensors to be on the same device`` at PerceptronMapper /
+    ComputeOpMapper(classifier) inside the gate forward."""
+
+    class _SplitModel(nn.Module):
+        """Two linears the forward chains device-naively; if they sit on
+        different devices a plain forward raises a cross-device RuntimeError."""
+
+        def __init__(self):
+            super().__init__()
+            self.a = nn.Linear(5, 5)
+            self.b = nn.Linear(5, 4)
+
+        def forward(self, x):
+            return self.b(self.a(x))
+
+    def test_unify_returns_param_device_and_is_consistent_on_cpu(self):
+        from mimarsinan.pipelining.core.nf_scm_parity import _unify_model_device
+
+        model = self._SplitModel()  # all CPU
+        device = _unify_model_device(model)
+        assert device.type == "cpu"
+        assert {p.device.type for p in model.parameters()} == {"cpu"}
+
+    def test_unify_handles_parameterless_model(self):
+        from mimarsinan.pipelining.core.nf_scm_parity import _unify_model_device
+
+        assert _unify_model_device(nn.Identity()) is None
+
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(),
+        reason="needs CUDA for a genuine cross-device model",
+    )
+    def test_gate_unifies_a_split_device_model(self):
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            assert_torch_vs_deployed_sim_parity_or_raise,
+        )
+
+        torch.manual_seed(0)
+        model = self._SplitModel()
+        flow = self._SplitModel()
+        flow.load_state_dict(model.state_dict())
+        # Deliberately strand the two linears on different devices (the offload
+        # seam): perceptron-side on CUDA, compute-side on CPU.
+        model.a.to("cuda:0"); model.b.to("cpu")
+        flow.a.to("cuda:0"); flow.b.to("cpu")
+        x = torch.randn(32, 5)
+
+        with pytest.raises(RuntimeError):
+            model(x.to("cuda:0"))  # plain forward crosses devices → crash
+
+        agreement = assert_torch_vs_deployed_sim_parity_or_raise(model, flow, x)
+        assert agreement == pytest.approx(1.0)
+        assert {p.device.type for p in model.parameters()} == {"cuda"}, (
+            "the gate must unify the whole model onto one device before forward"
+        )
+
+
 class TestTorchVsDeployedSimParity:
     """The added torch↔DEPLOYED-sim parity check: torch model argmax must agree
     with the deployed sim's argmax (the exact executor run_scm_identity_metric runs)."""
