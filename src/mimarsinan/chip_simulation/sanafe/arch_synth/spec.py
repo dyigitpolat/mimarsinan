@@ -15,6 +15,26 @@ from mimarsinan.chip_simulation.sanafe.presets import (
 )
 
 
+def _mesh_dims(n_tiles: int) -> tuple[int, int]:
+    """A FULL rectangular ``(width, height)`` mesh with EXACTLY ``n_tiles`` tiles.
+
+    The most-square exact factorization (``width >= height``, ``width*height ==
+    n_tiles``). A ceil-padded mesh (``width*height > n_tiles``) leaves phantom
+    tiles the emitted YAML never defines, and SANA-FE's C++ NoC setup then
+    divides/indexes on the missing tiles → SIGFPE (the 2026-06 mmixcore
+    incident: ``n_tiles=10`` → ``isqrt`` gave ``4×3=12`` → 2 phantom tiles →
+    crash in ``SpikingChip(arch)``). A prime ``n_tiles`` degrades to a line
+    mesh (``n×1``), which is still a full rectangle.
+    """
+    n = max(1, int(n_tiles))
+    height = 1
+    for h in range(int(math.isqrt(n)), 0, -1):
+        if n % h == 0:
+            height = h
+            break
+    return n // height, height
+
+
 def _plugin_path(name: str) -> Optional[str]:
     """Absolute path to ``build/mimarsinan_sanafe_plugins/libmimarsinan_<name>.so``."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -140,10 +160,9 @@ def derive_arch_spec(
     last = total_cores - cores_per_tile * (n_tiles - 1)
     n_cores_per_tile.append(last)
 
-    mesh_width = max(1, math.isqrt(n_tiles))
-    if mesh_width * mesh_width < n_tiles:
-        mesh_width += 1
-    mesh_height = (n_tiles + mesh_width - 1) // mesh_width
+    # Exact factorization (no phantom tiles) — a ceil-padded mesh crashes
+    # SANA-FE's C++ NoC with a SIGFPE on the undefined tiles. See _mesh_dims.
+    mesh_width, mesh_height = _mesh_dims(n_tiles)
 
     name = f"mimarsinan_{preset_name}_{total_cores}core"
     return ArchSpec(

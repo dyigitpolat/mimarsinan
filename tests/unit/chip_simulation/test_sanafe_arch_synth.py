@@ -129,6 +129,48 @@ def test_derive_arch_spec_cores_per_tile_splits_evenly():
     assert spec.n_cores_per_tile == [2, 2, 1]
 
 
+class TestMeshDimsAreExact:
+    """A ceil-padded mesh (width*height > n_tiles) leaves phantom tiles the YAML
+    never defines → SANA-FE's C++ NoC SIGFPEs in SpikingChip(arch) (the 2026-06
+    mmixcore incident: n_tiles=10 → 4×3=12 → 2 phantom tiles). `_mesh_dims` must
+    return a FULL rectangle (width*height == n_tiles), wider-than-tall."""
+
+    @pytest.mark.parametrize("n,expected", [
+        (1, (1, 1)), (2, (2, 1)), (3, (3, 1)), (4, (2, 2)), (9, (3, 3)),
+        (10, (5, 2)), (11, (11, 1)), (12, (4, 3)), (109 // 11 + 1, None),
+    ])
+    def test_specific_and_invariants(self, n, expected):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import _mesh_dims
+
+        w, h = _mesh_dims(n)
+        assert w * h == n, f"{n}: {w}x{h} is not a full rectangle (phantom tiles)"
+        assert w >= h, "wider-than-tall convention"
+        if expected is not None:
+            assert (w, h) == expected
+
+    def test_no_phantom_tiles_for_all_small_n(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import _mesh_dims
+
+        for n in range(1, 200):
+            w, h = _mesh_dims(n)
+            assert w * h == n and w >= h >= 1
+
+    def test_mmixcore_ten_tiles_is_5x2_not_4x3(self):
+        # The exact incident: 10 tiles must be 5×2 (=10), never 4×3 (=12).
+        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import _mesh_dims
+
+        assert _mesh_dims(10) == (5, 2)
+
+
+def test_derive_arch_spec_mesh_is_full_rectangle():
+    """End-to-end: the spec's mesh has no phantom tiles (width*height == n_tiles)."""
+    mapping = _fake_mapping(
+        _fake_stage("neural", _fake_hcm(*[(3, 2)] * 10)),
+    )
+    spec = derive_arch_spec(mapping, preset_name="loihi", cores_per_tile=1)
+    assert spec.mesh_width * spec.mesh_height == spec.n_tiles
+
+
 def test_derive_arch_spec_rejects_unknown_preset():
     mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((2, 1))))
     with pytest.raises(ValueError, match="unknown.*preset"):
