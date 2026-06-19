@@ -16,7 +16,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.tuning.axes import BlendAxis
 from mimarsinan.tuning.forward_install import CascadeForwardInstall, LazyExecutorForward
 from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
@@ -114,6 +113,10 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         self._finalize_cliff = None
 
         self._configure()
+        # The ramp strategy bundles every seam that varies 0→1 (axis / blend /
+        # ramp-forward / KD loss / pre-ramp setup); built from the (flag-derived)
+        # config in _configure, BEFORE the seams below consult it.
+        self._ramp = self._make_ramp_strategy()
         self._teacher = self._snapshot_teacher()
         self._install_blend()
         self.trainer.loss_function = self._make_kd_loss()
@@ -130,6 +133,13 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _configure(self) -> None:
         """Read config, set names/params, and any adaptation_manager flags."""
 
+    def _make_ramp_strategy(self):
+        """The ramp strategy bundling the 0→1 seams. Default = the value-domain
+        proxy ramp; subclasses pick a strategy from the flags set in ``_configure``."""
+        from mimarsinan.tuning.orchestration.ramp_strategy import ValueDomainProxyRamp
+
+        return ValueDomainProxyRamp()
+
     def _make_target_activation(self, perceptron) -> nn.Module:
         raise NotImplementedError
 
@@ -138,17 +148,12 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         return perceptron.base_activation
 
     def _make_blend(self, old: nn.Module, target: nn.Module, rate: float) -> nn.Module:
-        return BlendActivation(
-            old, target, rate,
-            target_type=self._target_activation_type,
-            old_type=self._old_activation_type,
-        )
+        return self._ramp.make_blend(self, old, target, rate)
 
     def _make_axis(self):
-        """The rate axis the tuner walks. Default: the value-domain ``BlendAxis``.
-        Subclasses may return a different axis (e.g. ``TTFSGenuineAxis`` to anneal
-        the spike surrogate alpha alongside the rate)."""
-        return BlendAxis()
+        """The rate axis the tuner walks (the ramp strategy owns the choice;
+        default = the value-domain ``BlendAxis``)."""
+        return self._ramp.make_axis(self)
 
     def _after_make_target(self, perceptron, target: nn.Module) -> None:
         """Per-perceptron hook after the blend is installed (before update_activation)."""
@@ -166,22 +171,28 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             )
 
     def _after_install_blend(self) -> None:
-        """Install the ramp forward (if any) after blends + KD loss are set."""
+        """Strategy-specific pre-ramp setup, then install the ramp forward (if any)
+        after blends + KD loss are set."""
+        self._ramp.after_install_blend_pre(self)
+        self._install_ramp_forward()
+
+    def _install_ramp_forward(self) -> None:
         fwd = self._ramp_forward()
         if fwd is not None:
             self._install_forward(fwd)
 
     def _make_kd_loss(self):
-        return _KDClassificationLoss(self._teacher)
+        return self._ramp.make_kd_loss(self)
+
+    def _remove_forward(self) -> None:
+        """Let the ramp strategy clean up its owned references, then unpatch."""
+        self._ramp.on_remove_forward(self)
+        super()._remove_forward()
 
     def _ramp_forward(self):
-        """Cross-layer forward installed during the blend ramp.
-
-        Default ``None`` = the value-domain ramp (the plain class forward
-        through the per-perceptron ``BlendActivation``), the golden
-        non-destructive ramp. Subclasses may install a cross-layer forward.
-        """
-        return None
+        """Cross-layer forward installed during the blend ramp (the ramp strategy
+        owns the choice; default ``None`` = the value-domain ramp)."""
+        return self._ramp.ramp_forward(self, self.model)
 
     def _finalize_forward_for(self, model):
         """The SHARED genuine-forward builder bound to ``model`` (``None`` for
