@@ -86,6 +86,7 @@ from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _KDClassificationLoss,
 )
+from mimarsinan.tuning.orchestration.ramp_strategy import RampStrategy
 
 
 class _SegmentSpikeForward(LazyExecutorForward):
@@ -218,6 +219,74 @@ class _StaircaseSteKDLoss(_KDClassificationLoss):
         return self.alpha * ce + (1.0 - self.alpha) * kd
 
 
+class _GenuineRamp(RampStrategy):
+    """Shared base of the genuine cascade ramps: ``base_activation`` IS the bare
+    ``TTFSActivation`` target (no value blend) and the deployed on-chip rebuild
+    runs before the ramp forward is installed."""
+
+    def is_bare_target(self, tuner) -> bool:
+        return True
+
+    def make_blend(self, tuner, old, target, rate):
+        target.rate = float(rate)
+        return target
+
+    def after_install_blend_pre(self, tuner) -> None:
+        tuner._finalize_rebuild()
+
+
+class GenuineAnnealedRamp(_GenuineRamp):
+    """Train through the genuine single-spike cascade for the WHOLE ramp, annealing
+    the spike surrogate alpha alongside the rate (``TTFSGenuineAxis``)."""
+
+    def make_axis(self, tuner):
+        return TTFSGenuineAxis()
+
+    def ramp_forward(self, tuner, model):
+        return tuner._finalize_forward_for(model)
+
+
+class GenuineBlendRamp(_GenuineRamp):
+    """Ramp a teacher<->genuine OUTPUT blend (``BlendedGenuineForward``, driven by
+    ``GenuineBlendAxis``) calibrated to the teacher distribution; finalize deploys
+    the pure cascade."""
+
+    def make_axis(self, tuner):
+        return GenuineBlendAxis()
+
+    def ramp_forward(self, tuner, model):
+        tuner._blend_forward = BlendedGenuineForward(
+            model, tuner._teacher, tuner._T, rate=0.0,
+            boundary_surrogate_temp=tuner._boundary_surrogate_temp,
+        )
+        return tuner._blend_forward
+
+    def make_kd_loss(self, tuner):
+        return _BlendGenuineKDLoss(
+            tuner._teacher,
+            genuine_ce_alpha=tuner._genuine_ce_alpha,
+            blend_forward_provider=lambda: tuner._blend_forward,
+        )
+
+    def after_install_blend_pre(self, tuner) -> None:
+        super().after_install_blend_pre(tuner)
+        tuner._calibrate_to_teacher_distribution()
+
+    def on_remove_forward(self, tuner) -> None:
+        tuner._blend_forward = None
+
+
+class StaircaseSteRamp(GenuineAnnealedRamp):
+    """Genuine annealed-ramp install with a straight-through estimator loss: forward
+    = the genuine cascade, backward = a staircase/genuine hedge."""
+
+    def make_kd_loss(self, tuner):
+        return _StaircaseSteKDLoss(
+            tuner._teacher, mix=tuner._ste_mix,
+            forward_provider=lambda: tuner.model.__dict__.get("forward"),
+        )
+
+
 class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
     """Ramp to the TTFS spike node, training through the schedule's NF dynamics."""
 
@@ -272,6 +341,13 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._ste_mix = float(self.pipeline.config.get("ttfs_ste_mix", 0.5))
         if self._staircase_ste:
             self._genuine_annealed_ramp = True
+        # Both genuine ramps drive the deployed single-spike cascade directly, so
+        # base_activation IS the bare TTFSActivation target (no value-domain blend
+        # proxy). Cached here, after the precedence rules settle the flags, because
+        # the proxy-fast guard below reads it BEFORE self._ramp exists.
+        self._genuine_bare_target_ramp = (
+            self._genuine_annealed_ramp or self._genuine_blend_ramp
+        )
         # Fast fixed-increment genuine-blend ramp (default OFF, requires the genuine
         # blend ramp): run through the ONE orchestrator with a fixed_ladder
         # RateScheduler policy (schedule-not-search) instead of the greedy/bisect
@@ -450,49 +526,26 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
 
     # -- genuine ramps (default OFF) -------------------------------------------
-    @property
-    def _genuine_bare_target_ramp(self) -> bool:
-        """Both genuine ramps (annealed + blend) drive the deployed single-spike
-        cascade directly, so ``base_activation`` IS the bare ``TTFSActivation``
-        target (no value-domain ``BlendActivation`` proxy)."""
-        return self._genuine_annealed_ramp or self._genuine_blend_ramp
-
-    def _make_axis(self):
-        """Genuine annealed ramp anneals the spike surrogate alpha alongside the
-        rate via ``TTFSGenuineAxis``; the genuine blend ramp drives the installed
-        teacher<->genuine output blend via ``GenuineBlendAxis``; the value-domain
-        proxy ramp keeps the plain ``BlendAxis``. Flag-off is byte-identical."""
+    def _make_ramp_strategy(self) -> RampStrategy:
+        """Pick the ramp strategy from the flags settled in ``_configure``. The
+        precedence (blend > annealed; STE forces the annealed install) is preserved
+        by the flag rules there — here it is a flat, mutually-exclusive dispatch."""
         if self._genuine_blend_ramp:
-            return GenuineBlendAxis()
+            return GenuineBlendRamp()
+        if self._staircase_ste:
+            return StaircaseSteRamp()
         if self._genuine_annealed_ramp:
-            return TTFSGenuineAxis()
-        return super()._make_axis()
-
-    def _make_blend(self, old, target, rate):
-        """Genuine ramps bypass the value blend: ``base_activation`` IS the bare
-        ``TTFSActivation`` target so the segment policy drives genuine spike nodes
-        (no ReLU side of a blend corrupting the cascade). The annealed ramp still
-        carries a per-perceptron ``.rate`` (axis state); the blend ramp drives the
-        OUTPUT blend on the installed forward instead. Flag-off keeps the
-        value-domain ``BlendActivation``."""
-        if self._genuine_bare_target_ramp:
-            target.rate = float(rate)
-            return target
-        return super()._make_blend(old, target, rate)
+            return GenuineAnnealedRamp()
+        return super()._make_ramp_strategy()
 
     def _after_install_blend(self) -> None:
-        """Genuine ramps: rebuild the bare TTFS activations into the deployed
-        on-chip (``ttfs_active``) state BEFORE installing the ramp forward, so the
-        segment policy finds genuine ``TTFSActivation`` nodes. The blend ramp then
-        calibrates the cascade to the teacher distribution (scale-aware boundaries
-        live-mutate the perceptron scale Parameters the bare nodes already
-        reference, so no second rebuild is needed). Flag-off defers to the base."""
-        if self._genuine_bare_target_ramp:
-            self._finalize_rebuild()
-        if self._genuine_blend_ramp:
-            self._calibrate_to_teacher_distribution()
+        """Strategy pre-step (genuine rebuild / blend distmatch), then the
+        rate-gated gain base capture, the ramp forward install, and finally the
+        per-channel theta promotion (after every scalar-theta calibration). The
+        ordering is parity-critical; the calibration wrapper stays here (P1)."""
+        self._ramp.after_install_blend_pre(self)
         self._capture_gain_ramp_base()
-        super()._after_install_blend()
+        self._install_ramp_forward()
         self._maybe_promote_theta_cotrain()
 
     def _maybe_promote_theta_cotrain(self) -> None:
@@ -537,31 +590,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self.pipeline.reporter.report(
             f"{self.name} gain_correction", self._gain_correction_stats,
         )
-
-    def _ramp_forward(self):
-        """The genuine blend ramp installs a teacher<->genuine OUTPUT blend
-        (``BlendedGenuineForward``, rate driven live by ``GenuineBlendAxis``) as the
-        WHOLE-ramp ``model.forward``: rate 0 reads the frozen teacher exactly, rate
-        1 the genuine cascade exactly. The annealed ramp installs the genuine
-        single-spike cascade directly (reusing the finalize forward), with the
-        spike surrogate alpha annealed — deployment dynamics exact at every rate.
-        Flag-off keeps the value-domain ramp (``None``)."""
-        if self._genuine_blend_ramp:
-            self._blend_forward = BlendedGenuineForward(
-                self.model, self._teacher, self._T, rate=0.0,
-                boundary_surrogate_temp=self._boundary_surrogate_temp,
-            )
-            return self._blend_forward
-        if self._genuine_annealed_ramp:
-            return self._finalize_forward_for(self.model)
-        return super()._ramp_forward()
-
-    def _remove_forward(self) -> None:
-        """Drop the owned blend reference alongside the instance forward: once the
-        blend is gone the deployed forward IS the genuine cascade, so the loss must
-        stop adding its genuine-CE term (the provider then returns ``None``)."""
-        self._blend_forward = None
-        super()._remove_forward()
 
     def _calibrate_to_teacher_distribution(self) -> None:
         """Distribution-match the deployed cascade to the frozen teacher ANN:
@@ -616,31 +644,14 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
     # -- KD teacher: optional rung-2 (identity-mapped contract) target ---------
     def _make_kd_loss(self):
-        """Genuine blend ramp: KD vs the frozen teacher on the blend output PLUS a
-        small CE on the PURE genuine logits (the validated recipe — pulls the r=1
-        endpoint up). Synchronized + ``ttfs_finetune_kd_against_rung2``: distill
-        against the frozen teacher evaluated under rung-2 semantics (identity-mapped
-        contract flow) instead of its torch forward (design doc §6.1). Default off."""
-        if self._staircase_ste:
-            # The genuine cascade forward is installed (annealed-ramp path) as
-            # model.forward; resolve it lazily at loss time (installed after this).
-            return _StaircaseSteKDLoss(
-                self._teacher, mix=self._ste_mix,
-                forward_provider=lambda: self.model.__dict__.get("forward"),
-            )
-        if self._genuine_blend_ramp:
-            return _BlendGenuineKDLoss(
-                self._teacher,
-                genuine_ce_alpha=self._genuine_ce_alpha,
-                blend_forward_provider=lambda: self._blend_forward,
-            )
+        """Synchronized + ``ttfs_finetune_kd_against_rung2``: distill against the
+        frozen teacher evaluated under rung-2 semantics (identity-mapped contract
+        flow) instead of its torch forward (design doc §6.1, default off). The
+        genuine/STE losses are owned by their ramp strategies (the base
+        delegation); synchronized always rides the value-domain proxy ramp."""
         if self._synchronized and bool(
             self.pipeline.config.get("ttfs_finetune_kd_against_rung2", False)
         ):
-            from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
-                _KDClassificationLoss,
-            )
-
             return _KDClassificationLoss(self._build_rung2_teacher())
         return super()._make_kd_loss()
 
