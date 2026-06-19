@@ -450,12 +450,14 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         )
         return float(target)
 
-    def _fast_stabilize(self, steps) -> None:
+    def _fast_stabilize(self, steps, loss_fn=None) -> None:
         """Post-finalize bounded recovery on the DEPLOYED forward, for fast ramps
         whose value-domain endpoint still needs the deployed dynamics trained (LIF:
-        the cycle-accurate forward; TTFS does NOT need this — its rate-1 blend IS the
-        deployed cascade by construction). Fresh optimizer + spanning cosine, the
-        installed KD ``_fast_loss``; non-destructive (rolls back on regression)."""
+        the cycle-accurate forward; TTFS proxy: refine the revived cascade past the
+        proxy↔genuine cliff). Fresh optimizer + spanning cosine, ``loss_fn`` (default
+        the installed KD ``_fast_loss``; TTFS passes the STE loss for revive→refine);
+        non-destructive (rolls back on regression)."""
+        loss_fn = loss_fn or self._fast_loss
         steps = max(0, int(steps))
         if steps <= 0:
             return
@@ -483,7 +485,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             x, y = self.trainer.next_training_batch()
             x, y = x.to(device), y.to(device)
             self.model.train()
-            loss = self._fast_loss(x, y)
+            loss = loss_fn(x, y)
             opt.zero_grad()
             loss.backward()
             opt.step()
