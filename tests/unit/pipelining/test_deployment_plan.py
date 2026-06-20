@@ -185,57 +185,179 @@ class TestPipelineAccessor:
         assert contract.simulation_steps == 32
 
 
+# ── V1 sole-reader guard (the deployment-decision flags) ───────────────────────
+
+# Deployment-decision flags owned by ``DeploymentPlan.resolve`` — NOT the broad
+# identity / sizing keys (model_type, seed, weight_bits, simulation_steps, …)
+# that consumers legitimately read directly. ``ttfs_cycle_schedule`` is omitted
+# here because it has its OWN src-wide sole-reader guard owned by
+# ``SpikingDeploymentContract`` (tests/unit/chip_simulation/test_deployment_contract.py).
+_FORBIDDEN_FLAGS = (
+    "spiking_mode",
+    "activation_quantization",
+    "weight_quantization",
+    "enable_training_noise",
+    "cycle_accurate_lif_forward",
+    "pruning",
+    "pruning_fraction",
+    "weight_source",
+    "enable_nevresim_simulation",
+    "enable_loihi_simulation",
+    "enable_sanafe_simulation",
+    "cuda_debug",
+    "deployment_metric_full_eval",
+)
+_FLAGS_ALT = "|".join(_FORBIDDEN_FLAGS)
+
+# A config-dict receiver: an identifier ending in ``config``/``cfg``/``params``
+# (so ``config``, ``cfg``, ``pipeline_config``, ``simulation_config``,
+# ``self.config``, ``pipeline.config`` all count) or the bare names ``dp``/
+# ``flat`` the config-schema layer uses. Anchored so it never matches
+# mid-identifier. The bracket arm has a write-guard ``(?!\s*=[^=])`` so an
+# assignment TARGET (``dp["weight_quantization"] = …`` in the derivation layer)
+# is not a READ offender. The guard has teeth: it matches BOTH ``.get("flag")``
+# and ``["flag"]`` read forms regardless of the receiver's local name.
+_RECEIVER = r"(?:[\w.]*?(?:config|cfg|params)|\bdp|\bflat)"
+_DEPLOYMENT_FLAG_READ = re.compile(
+    _RECEIVER
+    + r"""\s*(?:\.get\(\s*['"](?P<g>%s)['"]"""
+    r"""|\[\s*['"](?P<b>%s)['"]\s*\](?!\s*=[^=]))""" % (_FLAGS_ALT, _FLAGS_ALT)
+)
+
+
+def _src_root() -> Path:
+    return Path(__file__).resolve().parents[3] / "src" / "mimarsinan"
+
+
+def _flag_read_offenders(root: Path) -> list[str]:
+    offenders = []
+    for path in sorted(root.rglob("*.py")):
+        text = path.read_text()
+        for m in _DEPLOYMENT_FLAG_READ.finditer(text):
+            flag = m.group("g") or m.group("b")
+            offenders.append(f"{path.relative_to(root).as_posix()}: {flag}")
+    return offenders
+
+
 class TestPipelineStepsReadThePlan:
-    """V1 sole-reader guard, scoped to the migrated unit.
+    """Tightest scope: pipeline_steps/** has ZERO allowlist.
 
     Pipeline steps must read deployment-decision flags from the resolved
-    ``DeploymentPlan`` (``DeploymentPlan.of(self.pipeline).<field>``), not from a
-    raw ``config.get(<flag>)``. The guard is scoped to
-    ``pipelining/pipeline_steps/**`` — the directory this V1 propagation unit
-    fully migrated — so it locks the migration without flagging the legitimate
-    raw reads that other modules / round-2 units still own (the resolver, the
-    spiking contract, the config-schema layer, and the deployment_specs / core
-    pipeline driver that select steps on these predicates by design).
+    ``DeploymentPlan`` (``DeploymentPlan.of(self.pipeline).<field>``), never a
+    raw ``config.get(<flag>)``. No carve-out is permitted inside this directory.
     """
 
-    # Deployment-decision flags owned by ``DeploymentPlan.resolve`` — NOT the
-    # broad identity / sizing keys (model_type, seed, weight_bits,
-    # simulation_steps, …) that steps legitimately read directly.
-    FORBIDDEN_FLAGS = (
-        "spiking_mode",
-        "activation_quantization",
-        "weight_quantization",
-        "enable_training_noise",
-        "cycle_accurate_lif_forward",
-        "pruning",
-        "pruning_fraction",
-        "weight_source",
-        "enable_nevresim_simulation",
-        "enable_loihi_simulation",
-        "enable_sanafe_simulation",
-        "cuda_debug",
-        "deployment_metric_full_eval",
-    )
-    PATTERN = re.compile(
-        r"""(?:config|cfg)\s*(?:\.get\(\s*['"](?P<g>%s)['"]"""
-        r"""|\[\s*['"](?P<b>%s)['"]\s*\])"""
-        % ("|".join(FORBIDDEN_FLAGS), "|".join(FORBIDDEN_FLAGS))
-    )
-
     def test_pipeline_steps_have_no_raw_deployment_flag_reads(self):
-        steps_root = (
-            Path(__file__).resolve().parents[3]
-            / "src" / "mimarsinan" / "pipelining" / "pipeline_steps"
-        )
-        offenders = []
-        for path in steps_root.rglob("*.py"):
-            for m in self.PATTERN.finditer(path.read_text()):
-                flag = m.group("g") or m.group("b")
-                offenders.append(
-                    f"{path.relative_to(steps_root).as_posix()}: {flag}"
-                )
+        steps_root = _src_root() / "pipelining" / "pipeline_steps"
+        offenders = _flag_read_offenders(steps_root)
         assert offenders == [], (
             "pipeline steps must read deployment flags from "
             "DeploymentPlan.of(self.pipeline), not raw config.get(...); "
             f"offenders: {offenders}"
         )
+
+
+class TestNoStrayDeploymentFlagReadsAnywhere:
+    """V1 sole-reader guard BROADENED to all of ``src/mimarsinan``.
+
+    Deployment-DECISION flags are resolved once in ``DeploymentPlan`` and read
+    as resolved fields; a raw ``config.get(<flag>)`` / ``config[<flag>]`` of a
+    decision flag elsewhere bypasses the SSOT. The ALLOWLIST below is the tight,
+    documented set of files that legitimately read the raw key because they are
+    the RESOLVER / SSOT / derivation / presentation layers (not decision
+    consumers), plus one documented byte-identity carve-out.
+    """
+
+    # Each entry is a relative path (file or ``dir/`` prefix) + WHY it is exempt.
+    ALLOWLIST = (
+        # ── the resolver itself + the spiking-semantics sub-contract SSOT ──
+        # ``DeploymentPlan`` is the resolver; ``SpikingDeploymentContract`` /
+        # ``NeuralBehaviorConfig`` / ``FiringStrategyFactory`` are the firing-
+        # semantics SSOT layer (the C++-comparator factory + reset/compare
+        # policy) that resolve their own sub-contract from the raw config.
+        "pipelining/core/deployment_plan.py",
+        "chip_simulation/deployment_contract.py",
+        "chip_simulation/behavior_config.py",
+        "chip_simulation/firing_strategy.py",
+        # ── codegen: the C++ comparator/exec policy (FiringStrategyFactory SSOT
+        #    side); reads its own ``simulation_config`` codegen param ──
+        "code_generation/generate_main.py",
+        # ── config_schema: DEFINES / DERIVES / DISPLAYS / VALIDATES the keys ──
+        "config_schema/",
+        # ── tuners select their own TRAINING-FORWARD family from spiking_mode /
+        #    cycle_accurate_lif_forward (a V2 SpikingModePolicy concern, not a
+        #    V1 decision-flag consumer). The read sits on the per-perceptron
+        #    ``pipeline_config`` dict / a tuner's own knob (and ttfs_cycle's read
+        #    defaults to "ttfs_cycle_based", not the plan's "lif"); threading a
+        #    DeploymentPlan through these signatures removes no scattered branch
+        #    and would not be byte-identical — pure churn. Left as-is on purpose.
+        "tuning/orchestration/adaptation_manager.py",
+        "tuning/tuners/activation_shift_tuner.py",
+        "tuning/tuners/lif_adaptation_tuner.py",
+        "tuning/tuners/ttfs_cycle_adaptation_tuner.py",
+        # ── byte-identity carve-out (NOT a "this isn't a decision flag" claim) ──
+        # ``simulation_runner/core.py`` reads ``weight_quantization`` with a
+        # default of ``True`` (the legacy "quantized unless told otherwise"
+        # runner default); ``DeploymentPlan.weight_quantization`` resolves it
+        # with a default of ``False``. The key is genuinely absent for a
+        # ``vanilla`` config (the ``phased`` preset is what materialises it), so
+        # routing this read through the plan would FLIP the omitted-key value and
+        # break byte-identity. Left verbatim + noted (see judgment in the V1
+        # doc); ``spiking_mode`` in the same file WAS migrated to the plan.
+        "chip_simulation/simulation_runner/core.py",
+    )
+
+    def test_only_the_allowlisted_layers_read_raw_decision_flags(self):
+        root = _src_root()
+        offenders = []
+        for line in _flag_read_offenders(root):
+            rel = line.split(":", 1)[0]
+            if any(rel == a or rel.startswith(a) for a in self.ALLOWLIST):
+                continue
+            offenders.append(line)
+        assert offenders == [], (
+            "deployment-decision flags must be read from DeploymentPlan, not "
+            "raw config.get(...)/config[...]; either route through the plan or "
+            "add a documented entry to the ALLOWLIST; offenders: " + str(offenders)
+        )
+
+    # The resolver + the spiking sub-contract are structural anchors: the
+    # resolver reads via a ``get = config.get`` alias and the contract reads only
+    # the separately-guarded ``ttfs_cycle_schedule`` key, so the receiver-anchored
+    # guard pattern does not match a forbidden-flag read inside them even though
+    # they are the canonical exempt layers. They are checked for existence only.
+    _STRUCTURAL_ANCHORS = (
+        "pipelining/core/deployment_plan.py",
+        "chip_simulation/deployment_contract.py",
+    )
+
+    def test_allowlist_has_no_dead_entries(self):
+        """Keep the allowlist honest: no path may rot into a silent exemption.
+
+        Every entry must exist; every NON-anchor entry must additionally still
+        read a raw forbidden flag (so a carve-out whose read was migrated away,
+        or a deleted file, fails instead of lingering as a blanket exemption).
+        """
+        root = _src_root()
+        reading_files = {
+            line.split(":", 1)[0] for line in _flag_read_offenders(root)
+        }
+        dead = []
+        for entry in self.ALLOWLIST:
+            is_dir = entry.endswith("/")
+            if is_dir and not (root / entry).is_dir():
+                dead.append(f"{entry} (missing dir)")
+                continue
+            if not is_dir and not (root / entry).exists():
+                dead.append(f"{entry} (missing file)")
+                continue
+            if entry in self._STRUCTURAL_ANCHORS:
+                continue
+            reads = (
+                any(f.startswith(entry) for f in reading_files)
+                if is_dir
+                else entry in reading_files
+            )
+            if not reads:
+                dead.append(f"{entry} (no raw flag read — migrated away?)")
+        assert dead == [], f"stale ALLOWLIST entries: {dead}"

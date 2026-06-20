@@ -15,14 +15,21 @@ from mimarsinan.chip_simulation.simulation_runner.hybrid import SimulationHybrid
 class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
     def __init__(self, pipeline, mapping, simulation_length, preprocessor=None):
         self._preprocessor = preprocessor if preprocessor is not None else nn.Identity()
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+        plan = DeploymentPlan.of(pipeline)
         self.spike_generation_mode = pipeline.config["spike_generation_mode"]
         self.firing_mode = pipeline.config["firing_mode"]
         self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
-        self.spiking_mode = pipeline.config.get("spiking_mode", "lif")
+        self.spiking_mode = plan.spiking_mode
         from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
 
         self.nevresim_connectivity_mode = resolve_nevresim_connectivity_mode(pipeline.config)
 
+        # NB: this runner defaults weight_quantization to True (legacy "quantized
+        # unless told otherwise"), which differs from DeploymentPlan's False
+        # default; for a vanilla config that omits the key the two disagree, so
+        # this read is deliberately NOT routed through the plan (byte-identity).
         wt_q = pipeline.config.get("weight_quantization", True)
         self.weight_type = int if wt_q else float
 

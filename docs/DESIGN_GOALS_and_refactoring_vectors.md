@@ -134,6 +134,41 @@ derived table of §2b) that every module receives and reads; raw `config.get` of
 flag outside the resolver becomes a lint-failure (grep-guarded, like the existing
 `SpikingDeploymentContract` sole-reader guard). This is the backbone the rest hang off.
 
+**V1 status — sole-reader guard BROADENED + closed (2026-06-20).** R1 scoped the grep-guard to
+`pipeline_steps/**` only (the dir it fully migrated). This round migrated the remaining genuine
+deployment-DECISION reads to `DeploymentPlan` and broadened the guard to **all of
+`src/mimarsinan`** with a tight, documented allowlist
+(`tests/unit/pipelining/test_deployment_plan.py::TestNoStrayDeploymentFlagReadsAnywhere`). The
+guard has teeth (matches both `.get("flag")` and `["flag"]` read forms, receiver-agnostic, with a
+write-target guard so `dp["flag"] = …` in the derivation layer is not a false offender) and is
+non-flaky (a `test_allowlist_has_no_dead_entries` companion fails if any allowlisted carve-out
+rots — file deleted or its read migrated away). Migrated: `simulation_runner/core.py` `spiking_mode`,
+and `deployment_pipeline.py`'s `cuda_debug` (re-resolved AFTER the env `setdefault` so the plan
+observes it), the `act_quant`/`wt_quant` display line, and the `pruning`/`pruning_fraction` log
+reads — all byte-identical. Closed decisions:
+
+- **`ttfs_cycle_schedule` stays OUT of the V1 forbidden set.** It already has its own src-wide
+  sole-reader guard owned by `SpikingDeploymentContract`
+  (`test_deployment_contract.py::TestSingleReaderInvariant`); duplicating it here would only widen
+  the allowlist redundantly.
+- **`simulation_runner/core.py` `weight_quantization` is NOT migrated (byte-identity carve-out).**
+  The runner defaults it to `True` (legacy "quantized unless told otherwise"); `DeploymentPlan`
+  resolves it with `False`. The key is genuinely absent for a `vanilla` config (the `phased`
+  preset is what materialises it), so routing the read through the plan would FLIP the omitted-key
+  value. Left verbatim, allowlisted with the reason. (Unifying the two defaults is a behavior
+  change, deferred — not this finishing unit's mandate.)
+- **The firing-semantics SSOT layer is allowlisted, not migrated.** `behavior_config.py`
+  (`NeuralBehaviorConfig`), `firing_strategy.py` (`FiringStrategyFactory` — the C++-comparator
+  factory), `deployment_contract.py`, `code_generation/generate_main.py`, and `config_schema/*`
+  read the raw keys because they DEFINE / DERIVE / VALIDATE / DISPLAY the sub-contract (they are
+  resolvers, not decision consumers). Forcing them through the plan would invert the dependency.
+- **Tuner training-forward selection is allowlisted, not migrated.** `adaptation_manager.py` and
+  the `activation_shift` / `lif` / `ttfs_cycle` tuners read `spiking_mode` /
+  `cycle_accurate_lif_forward` to pick their training-forward family (a V2 `SpikingModePolicy`
+  concern). The read sits on a per-perceptron `pipeline_config` dict / a tuner-local knob (and the
+  ttfs_cycle read defaults to `"ttfs_cycle_based"`, not the plan's `"lif"`); threading a plan
+  through those signatures removes no scattered branch and is not byte-identical — pure churn.
+
 ### V2 — `SpikingModePolicy` registry: behavior-carrying, replace the predicate-then-branch
 **Principle 4, 5.** The single highest-blast-radius debt: `spiking_mode` /
 `ttfs_cycle_schedule` (`cascaded`/`synchronized`) dispatch across **15+ sites**
