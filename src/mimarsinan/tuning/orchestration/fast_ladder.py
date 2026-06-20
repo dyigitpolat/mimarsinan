@@ -37,6 +37,30 @@ class FastLadderMixin:
     observability hook (default no-op). Default-off ⇒ controller ⇒ byte-identical.
     """
 
+    def _consume_optimization_driver(
+        self, *, rates, steps_per_rate, eta_min_factor=0.0,
+    ):
+        """READ the pipeline-wide ``optimization_driver`` axis (EF1) and configure the
+        fast ladder from it. The single-switch families (the analytical clamp/
+        activation-quant/activation-adaptation chain + the manager-rate family) call
+        this in ``__init__`` so they CONSUME the axis instead of defaulting to the
+        controller with no axis read. The resolved ``OptimizationDriver`` is stashed on
+        ``self._optimization_driver`` (the family's recorded decision). Default
+        ``controller`` ⇒ ``_setup_fast_ladder(enabled=False)`` ⇒ byte-identical."""
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+        driver = DeploymentPlan.of(self.pipeline).optimization_driver_for_family(
+            rates=rates, steps_per_rate=steps_per_rate, eta_min_factor=eta_min_factor,
+        )
+        self._optimization_driver = driver
+        self._setup_fast_ladder(
+            enabled=driver.fast_ladder,
+            rates=driver.fast_ladder_rates,
+            steps_per_rate=driver.fast_ladder_steps_per_rate,
+            eta_min_factor=driver.fast_ladder_eta_min_factor,
+        )
+        return driver
+
     def _setup_fast_ladder(self, *, enabled, rates, steps_per_rate,
                            eta_min_factor=0.0) -> None:
         """Configure the fixed-ladder fast schedule. ``rates`` is normalized to a

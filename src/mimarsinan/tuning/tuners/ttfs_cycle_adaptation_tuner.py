@@ -318,8 +318,17 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             TtfsAdaptationPlan,
         )
 
+        # EF1: read the controller-vs-fast decision from the pipeline-wide axis
+        # (DeploymentPlan.optimization_driver via DeploymentPlan.of(pipeline)) and
+        # thread it into the plan as the GATE over TTFS's three-way fast fork; the
+        # per-`ttfs_*`-flag selectors still pick WHICH fast variant. Default
+        # `controller` ⇒ no fast variant ⇒ byte-identical.
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
         plan = TtfsAdaptationPlan.resolve(
-            self.pipeline.config, synchronized=self._synchronized,
+            self.pipeline.config,
+            synchronized=self._synchronized,
+            optimization_driver=DeploymentPlan.of(self.pipeline).optimization_driver,
         )
         self._adaptation_plan = plan
         self._genuine_annealed_ramp = plan.genuine_annealed_ramp

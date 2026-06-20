@@ -27,6 +27,19 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
         self._axis.set_decision_seed(_DECISION_SEED)
 
+        # EF1: the manager-rate family READS the pipeline-wide optimization-driver axis
+        # (it had no fast path before). Default `controller` ⇒ the fast ladder is
+        # carried but disabled ⇒ byte-identical; `optimization_driver=fast` drives the
+        # manager rate (`_apply_rate`) through the uniform fixed ladder.
+        self._consume_optimization_driver(
+            rates=self.pipeline.config.get(
+                "manager_rate_fast_rates", [0.25, 0.5, 0.75, 1.0]
+            ),
+            steps_per_rate=int(
+                self.pipeline.config.get("manager_rate_fast_steps_per_rate", 120)
+            ),
+        )
+
     def _get_extra_state(self):
         return self._axis.get_extra_state()
 
