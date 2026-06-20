@@ -230,6 +230,32 @@ seam (semantic queries, no hardcoded list) but still hand-assembles with per-fla
 plan filters the registry. "Which steps does this config need" becomes data each step owns,
 not a 80-line conditional. Composes with V2 (`policy.applicable_steps()`).
 
+**V5 status — FINISHED + CLOSED (2026-06-20).** The first part (`applies_to` + the ordered
+`StepPlan` registry) landed earlier. This unit finished the second part: each `PipelineStep`
+now declares its data contract at the CLASS level (`REQUIRES`/`PROMISES`/`UPDATES`/`CLEARS`
+tuples; `PipelineStep.declared_contract()` exposes them), lifted byte-identically from the
+former local `__init__` lists (`__init__` now reads the class attrs). `StepPlan.validate_data_contract(plan)`
+asserts the requires/promises DAG at ASSEMBLY time — every consumed entry is promised by an
+EARLIER selected step — raising `StepPlanContractError` that NAMES the missing producer (mirrors
+the runtime `Pipeline.verify`/`set_up_requirements` semantics: promises+updates publish, clears
+retract). `get_pipeline_step_specs` routes through it, so an unsatisfiable DAG fails loud at
+assembly instead of as a bare `requires X` assertion deep in a run. Verified byte-identical to
+the prior assembly across the full 7680-config cross-product (HEAD-vs-worktree diff = 0) + the
+`test_step_plan.py` registry-integrity locks + the nf_scm parity gate (25). Closed decisions:
+
+- **`TTFSCycleAdaptationStep` keeps its instance-specific `requires` extension (the ONE step
+  not fully lifted, on purpose).** It appends `activation_scales` to `requires` in `__init__`
+  ONLY when `ttfs_scale_aware_boundaries` is on — a per-instance, config-derived case that
+  cannot be a static class constant byte-identically (the flag-off path must NOT declare it).
+  Its `REQUIRES` declares the always-present static lower bound, which is what the assembly-time
+  DAG validation checks; the opt-in extra is itself always satisfiable (the unconditional
+  Activation Analysis step promises `activation_scales` earlier). Noted, not an open TODO.
+- **Instance `requires`/`promises`/`updates`/`clears` stay `list`s (not the class tuples).** The
+  base `__init__` does `list(...)` so the instance attribute is byte-identical to the pre-V5
+  hand-built lists (the class declaration is an immutable tuple of constants; the instance gets
+  its own mutable list). This keeps every existing reader — incl. the `ttfs_cycle` `requires + […]`
+  concatenation and the `test_sanafe_simulation_step` list-equality assertion — unchanged.
+
 ### V6 — Mapper-node visitor (kill the `isinstance` chains)
 **Principle 4, 5.** `isinstance(node, …Mapper)` chains re-implemented in 3+ files —
 `per_source_scales.py:29-65`, `visualization/softcore_flowchart_dot.py:111-175`,

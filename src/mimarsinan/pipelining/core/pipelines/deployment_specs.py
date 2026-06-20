@@ -107,9 +107,15 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     ``applies_to(plan)`` (the per-flag conditions now live on the steps). The
     backend tail still routes through ``BACKEND_REGISTRY`` so an enabled but
     unsupported backend×mode raises at assembly (V3), not mid-run.
+
+    The resolved sequence's requires/promises DAG is validated UP-FRONT
+    (``StepPlan.validate_data_contract``): every consumed cache entry must be
+    promised by an earlier selected step (read off the steps' CLASS-level
+    contract declarations), failing loud with the missing producer named —
+    instead of surfacing as a bare ``requires`` assertion deep in a run.
     """
     plan = DeploymentPlan.resolve(config)
-    return _STEP_PLAN.resolve(plan)
+    return _STEP_PLAN.validate_data_contract(plan)
 
 
 def validate_deployment_config(config: dict, *, model_name: str, cuda_debug: bool) -> None:

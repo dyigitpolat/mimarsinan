@@ -22,12 +22,10 @@ from mimarsinan.pipelining.core.simulation_factory import (
 
 
 class LoihiSimulationStep(PipelineStep):
+    REQUIRES = ("model", "hard_core_mapping")
+
     def __init__(self, pipeline):
-        requires = ["model", "hard_core_mapping"]
-        promises = []
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
         self.metric = None
 

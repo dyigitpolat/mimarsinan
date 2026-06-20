@@ -35,13 +35,11 @@ def _vram_probe(tag: str) -> None:
     )
 
 class HardCoreMappingStep(PipelineStep):
+    REQUIRES = ("model", "ir_graph", "platform_constraints_resolved")
+    PROMISES = ("hard_core_mapping",)
 
     def __init__(self, pipeline):
-        requires = ["model", "ir_graph", "platform_constraints_resolved"]
-        promises = ["hard_core_mapping"]
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def validate(self):
         """Return hard-core spiking simulation accuracy from the step metric run."""

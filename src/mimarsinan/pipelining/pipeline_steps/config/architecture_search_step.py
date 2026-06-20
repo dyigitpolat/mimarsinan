@@ -28,21 +28,19 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
 class ArchitectureSearchStep(PipelineStep):
     """Resolve model_config and platform_constraints (search or fixed passthrough)."""
 
+    PROMISES = (
+        "model_config",
+        "model_builder",
+        "platform_constraints_resolved",
+        "architecture_search_result",
+    )
+
     @classmethod
     def applies_to(cls, plan):
         return plan.search_mode != "fixed"
 
     def __init__(self, pipeline):
-        requires = []
-        promises = [
-            "model_config",
-            "model_builder",
-            "platform_constraints_resolved",
-            "architecture_search_result",
-        ]
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def validate(self):
         m = getattr(self, "_last_metric", None)
