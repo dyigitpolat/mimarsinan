@@ -9,6 +9,10 @@ import torch.nn as nn
 
 
 class WeightQuantizationStep(TunerPipelineStep):
+    @classmethod
+    def applies_to(cls, plan):
+        return plan.weight_quantization
+
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         promises = []

@@ -10,6 +10,8 @@ from mimarsinan.mapping.ir import (
 )
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.platform.mapping_structure import (
+    ChipCapabilities,
+    MappingStrategy,
     compute_core_input_count,
     compute_fc_tiling_mode,
 )

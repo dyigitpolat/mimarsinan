@@ -26,15 +26,13 @@ Single source of truth in `deployment_pipeline.py`. High-level branches:
 | `spiking_mode == "lif"` | `LIFAdaptationStep` after activation analysis |
 | `spiking_mode != "lif"` and (`activation_quantization` or TTFS) | `ClampAdaptationStep`; optional activation-quant chain when `activation_quantization` |
 | `weight_quantization` | weight-quant steps before mapping; `CoreQuantizationVerificationStep` after soft-core mapping |
-| `enable_nevresim_simulation` | `SimulationStep` (Nevresim) after hard-core mapping when true (default true) |
-| `enable_loihi_simulation` | `LoihiSimulationStep` after simulation when enabled (LIF only at runtime) |
-| `enable_sanafe_simulation` | `SanafeSimulationStep` after simulation (optional HCM parity gate) |
+| backend steps (nevresim / loihi / sanafe) | Selected + validated by **`chip_simulation.backend.BACKEND_REGISTRY`** (Vector V3): `selected_step_specs(plan)` reads each backend's `enable_*` predicate AND consults the `_BACKEND_CAPS` capability matrix UP-FRONT — an enabled backend×unsupported-mode (e.g. Loihi + TTFS) raises an actionable `ValueError` at assembly, before any step is appended. nevresim is skipped for the synchronized TTFS-cycle schedule (no synchronized-window backend yet). |
 
-Always: model build → (pretrain or preload) → optional torch map → optional pruning → activation analysis/adaptation → normalization fusion → soft core mapping → hard core mapping → nevresim simulation.
+Always: model build → (pretrain or preload) → optional torch map → optional pruning → activation analysis/adaptation → normalization fusion → soft core mapping → hard core mapping → backend simulation steps (registry-selected).
 
 ## Dependencies
 
-- **Internal**: `pipelining.pipeline`, `pipelining.pipeline_steps` (all step classes), `data_handling.data_provider_factory`.
+- **Internal**: `pipelining.pipeline`, `pipelining.pipeline_steps` (all step classes), `chip_simulation.backend` (`BACKEND_REGISTRY` for backend step selection/validation), `data_handling.data_provider_factory`.
 - **External**: None.
 
 ## Dependents

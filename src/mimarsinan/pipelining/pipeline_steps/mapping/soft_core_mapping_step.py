@@ -1,4 +1,5 @@
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.latency.ir import IRLatency
@@ -49,6 +50,7 @@ class SoftCoreMappingStep(PipelineStep):
         return self._soft_core_spiking_metric
 
     def process(self):
+        plan = DeploymentPlan.of(self.pipeline)
         model = self.get_entry("fused_model")
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
@@ -103,9 +105,9 @@ class SoftCoreMappingStep(PipelineStep):
         with _phase("basic_trainer_ctor"):
             self.trainer = make_basic_trainer(self.pipeline, model)
 
-        act_q = bool(self.pipeline.config.get("activation_quantization", False))
+        act_q = plan.activation_quantization
 
-        spiking_mode = self.pipeline.config.get("spiking_mode", "lif")
+        spiking_mode = plan.spiking_mode
         if spiking_mode == "ttfs_quantized" and not act_q:
             print(
                 "[SoftCoreMappingStep] Warning: ttfs_quantized is on but activation_quantization is off; "
@@ -141,7 +143,7 @@ class SoftCoreMappingStep(PipelineStep):
             )
             transfer_negative_shifts_to_ir(model, ir_graph)
 
-        wt_q = bool(self.pipeline.config.get("weight_quantization", False))
+        wt_q = plan.weight_quantization
         from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 
         with _phase("weight_quantization"):
@@ -308,7 +310,7 @@ class SoftCoreMappingStep(PipelineStep):
         )
 
     def _apply_ttfs_quantization_bias_compensation(self, model, act_q: bool) -> None:
-        spiking = str(self.pipeline.config.get("spiking_mode", "lif"))
+        spiking = str(DeploymentPlan.of(self.pipeline).spiking_mode)
         if spiking == "ttfs" and act_q:
             print(
                 "[SoftCoreMappingStep] WARNING: spiking_mode='ttfs' with "
@@ -333,7 +335,7 @@ class SoftCoreMappingStep(PipelineStep):
         (``transfer_negative_shifts_to_ir``) to the hybrid build."""
         if not bool(self.pipeline.config.get("negative_value_shift", False)):
             return
-        spiking_mode = str(self.pipeline.config.get("spiking_mode", "lif"))
+        spiking_mode = str(DeploymentPlan.of(self.pipeline).spiking_mode)
         from mimarsinan.mapping.support.neg_shift_bias import (
             apply_negative_value_shifts,
             calibration_forward_for_mode,

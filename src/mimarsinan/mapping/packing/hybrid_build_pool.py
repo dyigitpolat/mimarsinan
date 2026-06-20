@@ -21,6 +21,10 @@ from mimarsinan.mapping.packing.hybrid_segment import (
 )
 from mimarsinan.mapping.packing.hybrid_build_scheduled import _build_scheduled
 from mimarsinan.mapping.packing.hybrid_types import HybridHardCoreMapping, HybridStage
+from mimarsinan.mapping.platform.mapping_structure import (
+    ChipCapabilities,
+    MappingStrategy,
+)
 from mimarsinan.mapping.layout.segmentation import (
     HostSegment,
     NeuralSegment,
@@ -35,10 +39,26 @@ def build_hybrid_hard_core_mapping(
     allow_neuron_splitting: bool = False,
     allow_scheduling: bool = False,
     allow_coalescing: bool = False,
+    strategy: MappingStrategy | None = None,
 ) -> HybridHardCoreMapping:
-    """Compile a unified IRGraph into a HybridHardCoreMapping."""
+    """Compile a unified IRGraph into a HybridHardCoreMapping.
+
+    The packing decisions (coalesce / split / schedule passes) are governed by
+    a resolved :class:`MappingStrategy`. When *strategy* is not supplied it is
+    derived from the three permission flags (the legacy surface), so the dispatch
+    reads the resolved strategy's permissions, never the raw flags.
+    """
 
     from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
+
+    if strategy is None:
+        strategy = MappingStrategy.resolve(
+            ChipCapabilities(
+                allow_coalescing=bool(allow_coalescing),
+                allow_neuron_splitting=bool(allow_neuron_splitting),
+                allow_scheduling=bool(allow_scheduling),
+            )
+        )
 
     consumed_by = build_ir_consumed_by(ir_graph)
 
@@ -46,15 +66,15 @@ def build_hybrid_hard_core_mapping(
 
     all_reindex_maps: dict[int, dict[int, int]] = {}
 
-    if allow_scheduling:
+    if strategy.allow_scheduling:
         _build_scheduled(
             ir_graph=ir_graph,
             cores_config=cores_config,
             consumed_by=consumed_by,
             stages=stages,
             all_reindex_maps=all_reindex_maps,
-            allow_neuron_splitting=allow_neuron_splitting,
-            allow_coalescing=allow_coalescing,
+            allow_neuron_splitting=strategy.allow_neuron_splitting,
+            allow_coalescing=strategy.allow_coalescing,
         )
     else:
         _build_single_pool(
@@ -63,8 +83,8 @@ def build_hybrid_hard_core_mapping(
             consumed_by=consumed_by,
             stages=stages,
             all_reindex_maps=all_reindex_maps,
-            allow_neuron_splitting=allow_neuron_splitting,
-            allow_coalescing=allow_coalescing,
+            allow_neuron_splitting=strategy.allow_neuron_splitting,
+            allow_coalescing=strategy.allow_coalescing,
         )
 
     if not stages:

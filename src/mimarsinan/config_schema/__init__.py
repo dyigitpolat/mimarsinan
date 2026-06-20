@@ -30,6 +30,16 @@ from mimarsinan.config_schema.validation import (
     validate_deployment_config,
     validate_merged_config,
 )
+from mimarsinan.config_schema.namespaced_schema import (
+    CONCERN_GROUPS,
+    KEY_SPECS,
+    KeySpec,
+    LEGACY_KEY_TABLE,
+    keys_with_derivation,
+    provenance_table,
+    to_flat,
+    to_namespaced,
+)
 
 __all__ = [
     "DEFAULT_DEPLOYMENT_PARAMETERS",
@@ -50,4 +60,12 @@ __all__ = [
     "build_flat_pipeline_config",
     "build_config_display_view",
     "build_pipeline_config_view",
+    "CONCERN_GROUPS",
+    "KEY_SPECS",
+    "KeySpec",
+    "LEGACY_KEY_TABLE",
+    "keys_with_derivation",
+    "provenance_table",
+    "to_flat",
+    "to_namespaced",
 ]

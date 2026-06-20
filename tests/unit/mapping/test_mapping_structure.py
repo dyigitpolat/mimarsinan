@@ -14,6 +14,8 @@ from __future__ import annotations
 import pytest
 
 from mimarsinan.mapping.platform.mapping_structure import (
+    ChipCapabilities,
+    MappingStrategy,
     WideFanInUnsupportedError,
     compute_core_input_count,
     compute_fc_tiling_mode,
@@ -76,6 +78,138 @@ class TestComputeFcTilingMode:
 
     def test_no_max_neurons(self):
         assert compute_fc_tiling_mode(32, 999, 64, None, False, False, False) == "single"
+
+
+class TestChipCapabilities:
+    def test_defaults_are_conservative(self):
+        caps = ChipCapabilities()
+        assert caps.max_axons is None
+        assert caps.max_neurons is None
+        assert caps.hardware_bias is False
+        assert caps.allow_coalescing is False
+        assert caps.allow_neuron_splitting is False
+        assert caps.allow_scheduling is False
+
+    def test_frozen(self):
+        caps = ChipCapabilities(max_axons=64)
+        with pytest.raises(Exception):
+            caps.max_axons = 128  # type: ignore[misc]
+
+    def test_carries_grid_and_permissions(self):
+        caps = ChipCapabilities(
+            max_axons=64,
+            max_neurons=32,
+            hardware_bias=True,
+            allow_coalescing=True,
+            allow_neuron_splitting=True,
+            allow_scheduling=True,
+        )
+        assert caps.max_axons == 64
+        assert caps.max_neurons == 32
+        assert caps.hardware_bias is True
+        assert caps.allow_coalescing is True
+        assert caps.allow_neuron_splitting is True
+        assert caps.allow_scheduling is True
+
+    def test_from_platform_constraints_reads_three_bits(self):
+        caps = ChipCapabilities.from_platform_constraints(
+            {
+                "allow_coalescing": True,
+                "allow_neuron_splitting": True,
+                "allow_scheduling": False,
+                "cores": [{"max_axons": 64, "max_neurons": 64, "count": 4}],
+            }
+        )
+        assert caps.allow_coalescing is True
+        assert caps.allow_neuron_splitting is True
+        assert caps.allow_scheduling is False
+        # Grid is carried separately (cores/core_types), not by the capability factory.
+        assert caps.max_axons is None
+        assert caps.max_neurons is None
+
+    def test_from_platform_constraints_defaults_false(self):
+        caps = ChipCapabilities.from_platform_constraints({})
+        assert caps.allow_coalescing is False
+        assert caps.allow_neuron_splitting is False
+        assert caps.allow_scheduling is False
+
+    def test_from_platform_constraints_coerces_truthy(self):
+        caps = ChipCapabilities.from_platform_constraints(
+            {"allow_coalescing": 1, "allow_neuron_splitting": 0, "allow_scheduling": "x"}
+        )
+        assert caps.allow_coalescing is True
+        assert caps.allow_neuron_splitting is False
+        assert caps.allow_scheduling is True
+
+    def test_permission_kwargs_match_helper_signature(self):
+        caps = ChipCapabilities(
+            allow_coalescing=True,
+            allow_neuron_splitting=False,
+            allow_scheduling=True,
+        )
+        assert caps.permission_kwargs() == {
+            "allow_neuron_splitting": False,
+            "allow_coalescing": True,
+            "allow_scheduling": True,
+        }
+
+
+class TestMappingStrategy:
+    def test_permission_accessors_mirror_capabilities(self):
+        caps = ChipCapabilities(
+            allow_coalescing=True,
+            allow_neuron_splitting=False,
+            allow_scheduling=True,
+        )
+        strat = MappingStrategy.resolve(caps)
+        assert strat.allow_coalescing is True
+        assert strat.allow_neuron_splitting is False
+        assert strat.allow_scheduling is True
+        assert strat.capabilities is caps
+
+    def test_permission_kwargs_delegate_to_capabilities(self):
+        caps = ChipCapabilities(
+            allow_coalescing=True,
+            allow_neuron_splitting=True,
+            allow_scheduling=False,
+        )
+        strat = MappingStrategy.resolve(caps)
+        assert strat.permission_kwargs() == caps.permission_kwargs()
+
+    @pytest.mark.parametrize(
+        "in_f,out_f,max_ax,max_ne,has_bias,hw_bias,coalesce",
+        [
+            (32, 16, 64, 64, False, False, False),    # single
+            (63, 16, 64, 64, True, False, False),     # single (bias fits)
+            (128, 16, 64, 64, False, False, True),    # coalescing
+            (32, 128, 64, 64, False, False, False),   # output_tiled
+            (128, 128, 64, 64, False, False, True),   # coalescing > output_tiled
+            (64, 16, 64, 64, True, True, False),      # single (hw bias)
+            (999, 16, None, 64, False, False, False), # no max_axons
+            (32, 999, 64, None, False, False, False), # no max_neurons
+        ],
+    )
+    def test_tiling_mode_matches_compute_fc_tiling_mode(
+        self, in_f, out_f, max_ax, max_ne, has_bias, hw_bias, coalesce
+    ):
+        """The derived strategy decision is byte-identical to the standalone fn."""
+        caps = ChipCapabilities(
+            max_axons=max_ax,
+            max_neurons=max_ne,
+            hardware_bias=hw_bias,
+            allow_coalescing=coalesce,
+        )
+        strat = MappingStrategy.resolve(caps)
+        expected = compute_fc_tiling_mode(
+            in_f, out_f, max_ax, max_ne, has_bias, hw_bias, coalesce
+        )
+        assert strat.tiling_mode(in_f, out_f, has_bias) == expected
+
+    def test_tiling_mode_raises_when_wide_and_no_coalescing(self):
+        caps = ChipCapabilities(max_axons=64, max_neurons=64, allow_coalescing=False)
+        strat = MappingStrategy.resolve(caps)
+        with pytest.raises(WideFanInUnsupportedError):
+            strat.tiling_mode(128, 16, False)
 
 
 class TestLayoutIRConsistency:
