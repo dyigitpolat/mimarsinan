@@ -164,6 +164,53 @@ class TestByteIdentityWithInlineReads:
         assert p.seed == int(g("seed", 0))
 
 
+class TestOptimizationDriverAxis:
+    """E2 — the pipeline-wide ``controller | fast`` optimization-driver axis.
+
+    Default ``controller`` ⇒ byte-identical. Explicit ``optimization_driver`` wins;
+    else a legacy per-family fast switch (lif_blend_fast / ttfs_*_fast) is honoured
+    so a plan resolved from an existing config reports the driver the tuner runs.
+    """
+
+    def test_default_is_controller(self):
+        p = _resolve()
+        assert p.optimization_driver == "controller"
+        assert p.is_fast_driver is False
+
+    def test_explicit_fast(self):
+        p = _resolve(optimization_driver="fast")
+        assert p.optimization_driver == "fast"
+        assert p.is_fast_driver is True
+
+    def test_explicit_controller(self):
+        p = _resolve(optimization_driver="controller")
+        assert p.optimization_driver == "controller"
+        assert p.is_fast_driver is False
+
+    def test_case_insensitive(self):
+        assert _resolve(optimization_driver="FAST").optimization_driver == "fast"
+
+    def test_invalid_value_raises(self):
+        with pytest.raises(ValueError):
+            _resolve(optimization_driver="bisect")
+
+    @pytest.mark.parametrize(
+        "switch",
+        ["lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast",
+         "ttfs_staircase_ste_fast"],
+    )
+    def test_legacy_fast_switch_implies_fast(self, switch):
+        assert _resolve(**{switch: True}).optimization_driver == "fast"
+
+    def test_explicit_controller_overrides_legacy_switch(self):
+        # An explicit axis wins over a stray legacy switch.
+        p = _resolve(optimization_driver="controller", lif_blend_fast=True)
+        assert p.optimization_driver == "controller"
+
+    def test_legacy_switch_off_stays_controller(self):
+        assert _resolve(lif_blend_fast=False).optimization_driver == "controller"
+
+
 class TestPipelineAccessor:
     def test_of_reads_pipeline_config(self):
         class _Stub:
