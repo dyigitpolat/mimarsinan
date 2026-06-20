@@ -110,7 +110,8 @@ class DeploymentPipeline(Pipeline):
 
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":
             self.config.setdefault("cuda_debug", True)
-        self.cuda_debug = bool(self.config.get("cuda_debug", False))
+        # Re-resolve AFTER the env-driven setdefault so the plan observes it.
+        self.cuda_debug = DeploymentPlan.resolve(self.config).cuda_debug
 
         self._validate_config()
 
@@ -127,8 +128,8 @@ class DeploymentPipeline(Pipeline):
         print(
             f"Deployment pipeline  "
             f"[search_mode={plan.search_mode}, spiking={plan.spiking_mode}, "
-            f"act_quant={self.config.get('activation_quantization', False)}, "
-            f"wt_quant={self.config.get('weight_quantization', False)}]"
+            f"act_quant={plan.activation_quantization}, "
+            f"wt_quant={plan.weight_quantization}]"
         )
         for key, value in self.config.items():
             print(f"  {key}: {value}")
@@ -137,8 +138,8 @@ class DeploymentPipeline(Pipeline):
         for name, cls in get_pipeline_step_specs(self.config):
             self.add_pipeline_step(name, cls(self))
         plan = DeploymentPlan.resolve(self.config)
-        pruning = self.config.get("pruning", False)
-        pruning_fraction = float(self.config.get("pruning_fraction", 0.0))
+        pruning = plan.pruning
+        pruning_fraction = plan.pruning_fraction
         if plan.pruning_enabled:
             print(f"[DeploymentPipeline] Pruning enabled: pruning={pruning}, pruning_fraction={pruning_fraction}; PruningAdaptationStep added.")
         else:
