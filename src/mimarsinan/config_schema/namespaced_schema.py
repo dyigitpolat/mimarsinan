@@ -190,6 +190,7 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("tuning_tight_plateau", "tuning", "AdaptationManager"),
     _spec("tuning_recovery_check_divisor", "tuning", "AdaptationManager"),
     _spec("tuning_recipe_recovery", "tuning", "AdaptationManager"),
+    _spec("optimization_driver", "tuning", "OptimizationDriver"),
     # Training ────────────────────────────────────────────────────────────────
     _spec("lr", "training", "training_loop"),
     _spec("lr_range_min", "training", "lr_finder"),
