@@ -7,7 +7,6 @@ from typing import Any
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.spiking_semantics import (
-    is_analytical_ttfs,
     is_cascaded_ttfs,
     is_synchronized_ttfs,
     ttfs_cycle_schedule,
@@ -86,6 +85,14 @@ class SpikingDeploymentContract:
             compare_mode=self.thresholding_mode,
         )
 
+    def mode_policy(self, *, core: Any = None):
+        """The behavior-carrying ``SpikingModePolicy`` for this (firing × sync)."""
+        from mimarsinan.chip_simulation.spiking_mode_policy import (
+            policy_for_spiking_mode,
+        )
+
+        return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
+
     def training_forward_kind(self, *, core: Any = None) -> str:
         """NF algorithm the fine-tuners must train through for this deployment.
 
@@ -93,10 +100,4 @@ class SpikingDeploymentContract:
         ``analytical_staircase``: staircase composition (synchronized /
         analytical TTFS). ``lif_cycle`` / ``rate``: the LIF-family forwards.
         """
-        if self.is_cascaded(core=core):
-            return "segment_spike"
-        if self.is_synchronized(core=core) or is_analytical_ttfs(self.spiking_mode):
-            return "analytical_staircase"
-        if self.spiking_mode == "rate":
-            return "rate"
-        return "lif_cycle"
+        return self.mode_policy(core=core).training_forward_kind()
