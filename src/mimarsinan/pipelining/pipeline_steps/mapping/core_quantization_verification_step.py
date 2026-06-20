@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.mapping.export.chip_quantize import verify_ir_graph_quantized
 
 
@@ -23,7 +24,7 @@ class CoreQuantizationVerificationStep(PipelineStep):
 
     def process(self):
         ir_graph = self.get_entry("ir_graph")
-        if not self.pipeline.config.get("weight_quantization", False):
+        if not DeploymentPlan.of(self.pipeline).weight_quantization:
             cores = ir_graph.get_neural_cores()
             if cores:
                 print(

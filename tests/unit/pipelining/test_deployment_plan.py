@@ -5,6 +5,9 @@ schedule-derived spiking booleans, the budget default) and asserts the plan is
 byte-identical to the inline ``config.get(...)`` reads it replaces.
 """
 
+import re
+from pathlib import Path
+
 import pytest
 
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -180,3 +183,59 @@ class TestPipelineAccessor:
         assert isinstance(contract, SpikingDeploymentContract)
         assert contract.spiking_mode == "lif"
         assert contract.simulation_steps == 32
+
+
+class TestPipelineStepsReadThePlan:
+    """V1 sole-reader guard, scoped to the migrated unit.
+
+    Pipeline steps must read deployment-decision flags from the resolved
+    ``DeploymentPlan`` (``DeploymentPlan.of(self.pipeline).<field>``), not from a
+    raw ``config.get(<flag>)``. The guard is scoped to
+    ``pipelining/pipeline_steps/**`` — the directory this V1 propagation unit
+    fully migrated — so it locks the migration without flagging the legitimate
+    raw reads that other modules / round-2 units still own (the resolver, the
+    spiking contract, the config-schema layer, and the deployment_specs / core
+    pipeline driver that select steps on these predicates by design).
+    """
+
+    # Deployment-decision flags owned by ``DeploymentPlan.resolve`` — NOT the
+    # broad identity / sizing keys (model_type, seed, weight_bits,
+    # simulation_steps, …) that steps legitimately read directly.
+    FORBIDDEN_FLAGS = (
+        "spiking_mode",
+        "activation_quantization",
+        "weight_quantization",
+        "enable_training_noise",
+        "cycle_accurate_lif_forward",
+        "pruning",
+        "pruning_fraction",
+        "weight_source",
+        "enable_nevresim_simulation",
+        "enable_loihi_simulation",
+        "enable_sanafe_simulation",
+        "cuda_debug",
+        "deployment_metric_full_eval",
+    )
+    PATTERN = re.compile(
+        r"""(?:config|cfg)\s*(?:\.get\(\s*['"](?P<g>%s)['"]"""
+        r"""|\[\s*['"](?P<b>%s)['"]\s*\])"""
+        % ("|".join(FORBIDDEN_FLAGS), "|".join(FORBIDDEN_FLAGS))
+    )
+
+    def test_pipeline_steps_have_no_raw_deployment_flag_reads(self):
+        steps_root = (
+            Path(__file__).resolve().parents[3]
+            / "src" / "mimarsinan" / "pipelining" / "pipeline_steps"
+        )
+        offenders = []
+        for path in steps_root.rglob("*.py"):
+            for m in self.PATTERN.finditer(path.read_text()):
+                flag = m.group("g") or m.group("b")
+                offenders.append(
+                    f"{path.relative_to(steps_root).as_posix()}: {flag}"
+                )
+        assert offenders == [], (
+            "pipeline steps must read deployment flags from "
+            "DeploymentPlan.of(self.pipeline), not raw config.get(...); "
+            f"offenders: {offenders}"
+        )
