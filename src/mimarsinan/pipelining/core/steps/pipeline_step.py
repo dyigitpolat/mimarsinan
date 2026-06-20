@@ -1,4 +1,9 @@
 class PipelineStep:
+    REQUIRES: tuple[str, ...] = ()
+    PROMISES: tuple[str, ...] = ()
+    UPDATES: tuple[str, ...] = ()
+    CLEARS: tuple[str, ...] = ()
+
     @classmethod
     def applies_to(cls, plan):
         """Whether this step belongs in the pipeline for the resolved ``plan``.
@@ -10,12 +15,30 @@ class PipelineStep:
         """
         return True
 
+    @classmethod
+    def declared_contract(cls) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        """Class-level data contract ``(requires, promises, updates, clears)``.
+
+        Vector V5: each step declares its data contract at the CLASS level so
+        ``StepPlan`` can validate the requires/promises DAG at *assembly* time —
+        without instantiating any step. ``__init__`` reads these same class
+        attributes (a step's instance contract may extend them for an opt-in
+        case, e.g. ``TTFSCycleAdaptationStep`` adds ``activation_scales`` only
+        when its scale-aware-boundaries flag is on; the DAG check uses the
+        always-present static contract declared here, which is the conservative
+        lower bound — the extra entry is itself always produced earlier).
+        """
+        return (cls.REQUIRES, cls.PROMISES, cls.UPDATES, cls.CLEARS)
+
     def __init__(self, requires, promises, updates, clears, pipeline):
         self.name = self.__class__.__name__
-        self.requires = requires
-        self.promises = promises
-        self.updates = updates
-        self.clears = clears
+        # Instance contract stays a list (the class-level declaration is a tuple
+        # of constants; ``list(...)`` keeps the instance attribute byte-identical
+        # to the pre-V5 hand-built lists and isolates it from the class constant).
+        self.requires = list(requires)
+        self.promises = list(promises)
+        self.updates = list(updates)
+        self.clears = list(clears)
         self.pipeline = pipeline
 
         self._accessed_entries = set()

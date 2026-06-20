@@ -3,16 +3,15 @@ from mimarsinan.tuning.tuners.activation_shift_tuner import ActivationShiftTuner
 
 
 class ActivationShiftStep(TunerPipelineStep):
+    REQUIRES = ("model", "adaptation_manager")
+    UPDATES = ("model", "adaptation_manager")
+
     @classmethod
     def applies_to(cls, plan):
         return (not plan.is_lif_style) and plan.activation_quantization
 
     def __init__(self, pipeline):
-        requires = ["model", "adaptation_manager"]
-        promises = []
-        updates = ["model", "adaptation_manager"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
         self.trainer = None
 
     def cleanup(self):

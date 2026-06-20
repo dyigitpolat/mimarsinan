@@ -3,16 +3,15 @@ from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipeli
 
 
 class PretrainingStep(TrainerPipelineStep):
+    REQUIRES = ("model",)
+    UPDATES = ("model",)
+
     @classmethod
     def applies_to(cls, plan):
         return not plan.weight_source
 
     def __init__(self, pipeline):
-        requires = ["model"]
-        promises = []
-        updates = ["model"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def process(self):
         model = self.get_entry("model")

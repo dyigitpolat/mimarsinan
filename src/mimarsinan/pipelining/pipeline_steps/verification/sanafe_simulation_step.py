@@ -74,12 +74,11 @@ from mimarsinan.pipelining.core.simulation_factory import (
 class SanafeSimulationStep(PipelineStep):
     """Run SANA-FE on N deterministic samples; collect rich stats + parity-check."""
 
+    REQUIRES = ("model", "hard_core_mapping")
+    PROMISES = ("sanafe_simulation_results",)
+
     def __init__(self, pipeline):
-        requires = ["model", "hard_core_mapping"]
-        promises = ["sanafe_simulation_results"]
-        updates: List[str] = []
-        clears: List[str] = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
         self.metric = None
 
     def validate(self):
