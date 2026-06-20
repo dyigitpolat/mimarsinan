@@ -137,6 +137,24 @@ class SpikingModePolicy:
         """
         return False
 
+    # ── conversion-health calibration family (E3 CalibrationPipeline keying) ──
+    @property
+    def does_conversion_health_calibration(self) -> bool:
+        """Whether this (firing × sync) cell runs the conversion-health
+        calibration steps (gain-correction / theta-cotrain / distmatch /
+        boundary-STE).
+
+        The (firing × sync) decision the E3 ``CalibrationPipeline`` reads to
+        pick its active steps — hoisted off the ``ttfs_*`` flag names onto the
+        contract key so EVERY conversion tuner (not just TTFS) resolves its
+        calibration through the same policy. The default is inert (no
+        conversion-health steps); only the cell whose deployed cascade needs the
+        depth-attenuation / distribution correction overrides it. Default-off ⇒
+        the inert pipeline ⇒ byte-identical for LIF, analytical, and the
+        synchronized cycle.
+        """
+        return False
+
     # ── SANA-FE soma model ──────────────────────────────────────────────────
     def soma_hw_name(self) -> str:
         """Name of the SANA-FE soma plugin for this mode."""
@@ -381,6 +399,13 @@ class TtfsSyncCycleModePolicy(_TtfsCycleModePolicy):
 
 class TtfsCascadeModePolicy(_TtfsCycleModePolicy):
     """Genuine fire-once-latch, cascaded schedule (count-based decode, LIF-like)."""
+
+    @property
+    def does_conversion_health_calibration(self) -> bool:
+        # The greedy fire-once-latch cascade is the cell whose deployed decode
+        # suffers the depth-attenuation / distribution gap; the gain-correction /
+        # theta-cotrain / distmatch / boundary-STE steps target exactly it.
+        return True
 
     def training_forward_kind(self) -> str:
         return "segment_spike"

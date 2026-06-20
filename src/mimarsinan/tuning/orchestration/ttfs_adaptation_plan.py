@@ -24,7 +24,9 @@ Precedence (settled here, in order):
 * the fast-ladder rung is resolved by :class:`OptimizationDriver` (STE-fast → one rung
   at 1.0; else the blend/proxy ladder, with the proxy flooring the endpoint LR);
 * the calibration steps + their compatibility are resolved by
-  :class:`CalibrationPipeline` (distmatch driven by the blend ramp).
+  :class:`CalibrationPipeline` keyed by the (firing × sync) ``SpikingModePolicy``
+  (E3: the cascaded cycle opts into conversion-health, the synchronized cycle gets the
+  inert pipeline; distmatch driven by the blend ramp).
 """
 
 from __future__ import annotations
@@ -121,7 +123,10 @@ class TtfsAdaptationPlan:
             blend_fast_steps_per_rate=blend_fast_steps,
             blend_fast_lr_eta_min=eta_min,
         )
-        # The conversion-health concern: distmatch is owned by the genuine-blend ramp.
+        # The conversion-health concern (E3): the ENABLE is the (firing × sync)
+        # decision owned by the SpikingModePolicy, resolved off the `synchronized`
+        # cycle key (cascaded → opts in, synchronized → inert). `resolve` is the
+        # boolean alias for that policy; distmatch is owned by the genuine-blend ramp.
         calibration = CalibrationPipeline.resolve(
             config, synchronized=synchronized, distmatch_driven=blend,
         )

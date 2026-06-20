@@ -283,21 +283,27 @@ class SmoothAdaptationCycleMixin(TunerBase):
             ctx.instant_acc, self._get_target()
         )
 
-    def _recover(self, ctx: CycleContext) -> None:
-        """Find the LR and run recovery training toward the target."""
+    def _recover_to_target(self, target, rate):
+        """The corrector primitive: find the cached LR and run recovery training
+        toward ``target`` at the given ramp ``rate``. Returns ``(lr, result)``.
+
+        SSOT for the per-cycle ``_recover`` AND the driver-facing ``recover_to``
+        seam verb (``RateTunerSeamMixin``) — both reach the recovery engine through
+        this one assembly, so the seam is byte-identical to the legacy cycle path.
+        """
         t0 = time.time()
         lr = self._get_cached_lr()
         t_lr = time.time() - t0
         self.pipeline.reporter.report("LR_found", lr)
         self.pipeline.reporter.report("T_find_lr_sec", t_lr)
 
-        hooks = self._recovery_training_hooks(ctx.rate)
+        hooks = self._recovery_training_hooks(rate)
         plateau_factor, plateau_reductions = self._recovery_plateau_kwargs()
         check_interval = self._recovery_check_interval()
         recovery_result = RecoveryEngine.train_to_target(
             self.trainer,
             lr,
-            self._get_target(),
+            target,
             max_steps=self._budget.max_training_steps,
             hooks=hooks,
             optimizer=self._recovery_optimizer(lr),
@@ -311,6 +317,11 @@ class SmoothAdaptationCycleMixin(TunerBase):
             return_steps=getattr(self, "_stabilization_bounded", False),
         )
         self._accumulate_gradual_steps(recovery_result)
+        return lr, recovery_result
+
+    def _recover(self, ctx: CycleContext) -> None:
+        """Find the LR and run recovery training toward the target."""
+        lr, _ = self._recover_to_target(self._get_target(), ctx.rate)
         ctx.lr = lr
 
     def _measure_post(self, ctx: CycleContext) -> None:

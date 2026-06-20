@@ -75,3 +75,57 @@ class TestProxyFast:
     def test_proxy_steps_per_rate_carried(self):
         d = _resolve(proxy_fast=True, blend_fast_steps_per_rate=99)
         assert d.fast_ladder_steps_per_rate == 99
+
+
+class TestForFamily:
+    """E2 — the generic ``controller | fast`` axis for the single-switch families
+    (LIF + the analytical clamp/shift/quant/manager-rate chain). One declarative
+    switch resolves the driver; default ``fast=False`` ⇒ controller."""
+
+    def test_default_off_is_controller(self):
+        d = OptimizationDriver.for_family(
+            fast=False, rates=[0.25, 0.5, 1.0], steps_per_rate=120,
+        )
+        assert d.controller is True
+        assert d.fast_ladder is False
+
+    def test_fast_switch_selects_fast_ladder(self):
+        d = OptimizationDriver.for_family(
+            fast=True, rates=[0.25, 0.5, 0.75, 1.0], steps_per_rate=120,
+            eta_min_factor=0.1,
+        )
+        assert d.fast_ladder is True
+        assert d.fast_ladder_rates == [0.25, 0.5, 0.75, 1.0]
+        assert d.fast_ladder_steps_per_rate == 120
+        assert d.fast_ladder_eta_min_factor == 0.1
+
+    def test_carries_ladder_even_when_controller(self):
+        # The tuner configures _setup_fast_ladder(enabled=False) idempotently, so
+        # the ladder must be present even though the controller drives.
+        d = OptimizationDriver.for_family(
+            fast=False, rates=[0.5, 0.9], steps_per_rate=64,
+        )
+        assert d.fast_ladder_rates == [0.5, 0.9]
+        assert d.fast_ladder_steps_per_rate == 64
+
+    def test_empty_rates_default_to_full(self):
+        d = OptimizationDriver.for_family(fast=True, rates=[], steps_per_rate=10)
+        assert d.fast_ladder_rates == [1.0]
+
+    def test_eta_min_factor_floored_at_zero(self):
+        d = OptimizationDriver.for_family(
+            fast=True, rates=[1.0], steps_per_rate=10, eta_min_factor=-0.5,
+        )
+        assert d.fast_ladder_eta_min_factor == 0.0
+
+    def test_matches_lif_legacy_resolution(self):
+        # LIF's old inline read mapped (lif_blend_fast, rates, steps, eta) directly
+        # to _setup_fast_ladder; for_family must reproduce that mapping exactly.
+        rates = [0.25, 0.5, 0.75, 1.0]
+        d = OptimizationDriver.for_family(
+            fast=True, rates=rates, steps_per_rate=120, eta_min_factor=0.1,
+        )
+        assert d.fast_ladder is True
+        assert d.fast_ladder_rates == rates
+        assert d.fast_ladder_steps_per_rate == 120
+        assert d.fast_ladder_eta_min_factor == 0.1

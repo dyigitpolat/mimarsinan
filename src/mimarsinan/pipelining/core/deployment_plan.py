@@ -30,6 +30,40 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 
+OPTIMIZATION_DRIVER_CONTROLLER = "controller"
+OPTIMIZATION_DRIVER_FAST = "fast"
+
+# The per-family fast switches that selected the fast ladder BEFORE E2 unbound the
+# driver into a single axis. The pipeline-wide `optimization_driver` key (default
+# `controller`) wins when set; otherwise the axis reflects whichever legacy switch a
+# config still carries, so a plan resolved from an existing config reports the SAME
+# driver the tuner runs (byte-identical: all default off ⇒ `controller`).
+_LEGACY_FAST_SWITCHES = (
+    "lif_blend_fast",
+    "ttfs_genuine_blend_fast",
+    "ttfs_blend_fast",
+    "ttfs_staircase_ste_fast",
+)
+
+
+def _resolve_optimization_driver(config: dict[str, Any]) -> str:
+    """The pipeline-wide ``controller | fast`` driver axis (E2). Explicit
+    ``optimization_driver`` wins; else derived from any legacy per-family fast
+    switch; else ``controller`` (default ⇒ byte-identical)."""
+    explicit = config.get("optimization_driver")
+    if explicit:
+        value = str(explicit).lower()
+        if value in (OPTIMIZATION_DRIVER_CONTROLLER, OPTIMIZATION_DRIVER_FAST):
+            return value
+        raise ValueError(
+            f"optimization_driver must be "
+            f"'{OPTIMIZATION_DRIVER_CONTROLLER}' or '{OPTIMIZATION_DRIVER_FAST}', "
+            f"got {explicit!r}"
+        )
+    if any(bool(config.get(switch, False)) for switch in _LEGACY_FAST_SWITCHES):
+        return OPTIMIZATION_DRIVER_FAST
+    return OPTIMIZATION_DRIVER_CONTROLLER
+
 
 @dataclass(frozen=True)
 class DeploymentPlan:
@@ -55,6 +89,9 @@ class DeploymentPlan:
     weight_quantization: bool
     enable_training_noise: bool
     cycle_accurate_lif_forward: bool
+
+    # ── optimization driver (E2: how the rate is driven 0→1, pipeline-wide) ──
+    optimization_driver: str
 
     # ── pruning ────────────────────────────────────────────────────────────
     pruning: bool
@@ -113,6 +150,7 @@ class DeploymentPlan:
             weight_quantization=bool(get("weight_quantization", False)),
             enable_training_noise=bool(get("enable_training_noise", False)),
             cycle_accurate_lif_forward=bool(get("cycle_accurate_lif_forward", False)),
+            optimization_driver=_resolve_optimization_driver(config),
             pruning=bool(pruning),
             pruning_fraction=pruning_fraction,
             pruning_enabled=bool(pruning) and pruning_fraction > 0,
@@ -156,6 +194,11 @@ class DeploymentPlan:
         return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
 
     @property
+    def is_fast_driver(self) -> bool:
+        """Whether the resolved optimization-driver axis is the fast ladder (E2)."""
+        return self.optimization_driver == OPTIMIZATION_DRIVER_FAST
+
+    @property
     def is_lif_style(self) -> bool:
         """LIF or ttfs_cycle: one activation-replacement step subsumes the
         clamp/shift/activation-quantization chain (it clamps + quantises
@@ -171,3 +214,42 @@ class DeploymentPlan:
         )
 
         return SpikingDeploymentContract.from_pipeline_config(self.config)
+
+    def calibration_pipeline(self, *, distmatch_driven=False):
+        """The conversion-health ``CalibrationPipeline`` for this plan's (firing ×
+        sync) cell (E3).
+
+        Pipeline-wide: every conversion tuner reads ITS calibration through this one
+        contract-keyed resolver. Resolved from the schedule-derived policy (no
+        ``simulation_steps`` needed) and the plan's config; the cascaded cycle opts
+        into the conversion-health steps, LIF / analytical / synchronized get the
+        inert pipeline (default-off ⇒ byte-identical)."""
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        return CalibrationPipeline.for_mode(
+            self.config,
+            mode_policy=self.mode_policy(),
+            distmatch_driven=distmatch_driven,
+        )
+
+    def conversion_policy(self, *, model=None, characterizer=None):
+        """The E4 characterization-and-policy decision for this plan's (firing ×
+        sync) cell — the keystone seam (propose → confirm → escalate).
+
+        DEFAULT-OFF / byte-identical: until ``conversion_policy`` is set in config
+        the returned ``ConversionDecision`` names the CURRENT behavior
+        (driver=controller, no characterization run) so nothing changes. When opted
+        in, the plan's policy proposes the recipe, the ``characterizer`` confirms it
+        on ``model``, and a mismatch escalates to the controller fallback rather than
+        shipping a silent regression. This is the scaffolding Fix B switches on
+        later; it is exposed, NOT enabled."""
+        from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+
+        return ConversionPolicy.resolve(
+            self.config,
+            mode_policy=self.mode_policy(),
+            model=model,
+            characterizer=characterizer,
+        )
