@@ -7,6 +7,12 @@ declarative resolver: config (+ whether the schedule is synchronized) in, a vali
 frozen plan out. The tuner sets its ``self._*`` fields from the plan, so the precedence
 rules live (and are tested) in one place instead of being re-derived across the file.
 
+The plan composes the three orthogonal abstractions: it picks the ramp strategy flags
+(below), delegates the *optimization driver* (controller vs fast-ladder) rung to
+:class:`OptimizationDriver`, and the *conversion-health* steps to
+:class:`CalibrationPipeline` — so the adaptation trifecta (ramp × driver × calibration)
+is resolved once, each concern owning its own compatibility rules.
+
 Precedence (settled here, in order):
 * genuine ramps are cascaded-only (off when ``synchronized``);
 * the genuine **blend** ramp wins over the **annealed** ramp;
@@ -15,13 +21,18 @@ Precedence (settled here, in order):
 * ``staircase_ste_fast`` requires the STE; ``genuine_blend_fast`` requires the blend ramp;
 * the **proxy** fast path is value-domain — inert under any genuine bare-target ramp or
   synchronized; ``staircase_ste_refine`` requires the proxy path;
-* the fast-ladder rung is resolved from the chosen driver (STE-fast → one rung at 1.0;
-  else the blend/proxy ladder, with the proxy flooring the endpoint LR).
+* the fast-ladder rung is resolved by :class:`OptimizationDriver` (STE-fast → one rung
+  at 1.0; else the blend/proxy ladder, with the proxy flooring the endpoint LR);
+* the calibration steps + their compatibility are resolved by
+  :class:`CalibrationPipeline` (distmatch driven by the blend ramp).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from mimarsinan.tuning.orchestration.calibration_pipeline import CalibrationPipeline
+from mimarsinan.tuning.orchestration.optimization_driver import OptimizationDriver
 
 _DEFAULT_BLEND_FAST_RATES = [0.5, 0.75, 0.9, 0.97, 1.0]
 
@@ -48,11 +59,26 @@ class TtfsAdaptationPlan:
     blend_fast_steps_per_rate: int
     fast_stabilize_steps: int
     blend_fast_lr_eta_min: float
-    # ── resolved fast-ladder rung (what _setup_fast_ladder consumes) ──
-    fast_ladder_enabled: bool
-    fast_ladder_rates: list
-    fast_ladder_steps_per_rate: int
-    fast_ladder_eta_min_factor: float
+    # ── resolved optimization driver (controller vs fast-ladder rung) ──
+    driver: OptimizationDriver
+    # ── resolved conversion-health calibration steps ──
+    calibration: CalibrationPipeline
+
+    @property
+    def fast_ladder_enabled(self) -> bool:
+        return self.driver.fast_ladder
+
+    @property
+    def fast_ladder_rates(self) -> list:
+        return self.driver.fast_ladder_rates
+
+    @property
+    def fast_ladder_steps_per_rate(self) -> int:
+        return self.driver.fast_ladder_steps_per_rate
+
+    @property
+    def fast_ladder_eta_min_factor(self) -> float:
+        return self.driver.fast_ladder_eta_min_factor
 
     @classmethod
     def resolve(cls, config, *, synchronized: bool) -> "TtfsAdaptationPlan":
@@ -84,17 +110,21 @@ class TtfsAdaptationPlan:
         blend_fast_steps = int(get("ttfs_blend_fast_steps_per_rate", 120))
         eta_min = float(get("ttfs_blend_fast_lr_eta_min", 0.1))
 
-        if ste_fast:
-            # One rung at full rate; the dedicated STE loop owns its split-LR optimizer
-            # + progressive depth + cosine over ste_steps.
-            fl_enabled, fl_rates, fl_steps, fl_eta = True, [1.0], ste_steps, 0.0
-        else:
-            fl_enabled = blend_fast or proxy_fast
-            fl_rates = blend_fast_rates
-            fl_steps = blend_fast_steps
-            # eta floors the endpoint LR for the proxy (value-domain endpoint needs real
-            # recovery); the genuine blend lets its genuine-CE carry it.
-            fl_eta = eta_min if proxy_fast else 0.0
+        # The optimization-driver concern (controller vs fast-ladder rung) owns the
+        # rung derivation; the precedence above settles which fast selector is active.
+        driver = OptimizationDriver.resolve(
+            staircase_ste_fast=ste_fast,
+            genuine_blend_fast=blend_fast,
+            proxy_fast=proxy_fast,
+            ste_steps=ste_steps,
+            blend_fast_rates=blend_fast_rates,
+            blend_fast_steps_per_rate=blend_fast_steps,
+            blend_fast_lr_eta_min=eta_min,
+        )
+        # The conversion-health concern: distmatch is owned by the genuine-blend ramp.
+        calibration = CalibrationPipeline.resolve(
+            config, synchronized=synchronized, distmatch_driven=blend,
+        )
 
         return cls(
             genuine_annealed_ramp=annealed,
@@ -114,8 +144,6 @@ class TtfsAdaptationPlan:
             blend_fast_steps_per_rate=blend_fast_steps,
             fast_stabilize_steps=int(get("ttfs_blend_fast_stabilize_steps", 0)),
             blend_fast_lr_eta_min=eta_min,
-            fast_ladder_enabled=fl_enabled,
-            fast_ladder_rates=fl_rates,
-            fast_ladder_steps_per_rate=fl_steps,
-            fast_ladder_eta_min_factor=fl_eta,
+            driver=driver,
+            calibration=calibration,
         )
