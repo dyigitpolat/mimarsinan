@@ -39,11 +39,16 @@ certification protocol that must exist *before* any Fix B flip.
 - **E5 — R6 deployment-faithfulness gates.** Institutionalize: torch↔sim parity as a gate on
   every run; all external deps pinned with version/capability guards at each boundary; drift
   detection. (Mostly built — wire + document + audit.)
-- **E6 — Certification protocol (the protocol we do not yet have).** A frozen per-cell
-  regression-floor format + freezing script + a Pareto/regression gate harness: *deployed
-  accuracy ≥ floor − ε AND wall-clock ≤ budget*, per (firing × sync × backend). This REPLACES
-  byte-identity as the gate for Fix B. Mechanism lands here; the floor is populated by a
-  matrix run before the first Fix B flip.
+- **E6 — Certification protocol (the protocol we do not yet have). [LANDED]** A frozen
+  per-cell regression-floor format + freezing script + a Pareto/regression gate harness:
+  *deployed accuracy ≥ floor − ε AND wall-clock ≤ budget*, per (firing × sync × backend). This
+  REPLACES byte-identity as the gate for Fix B. The mechanism is
+  `mimarsinan.chip_simulation.certification` (`CertificationCell` keyed
+  `mode[/schedule]@backend`, `CertificationFloorBook` JSON FORMAT, `freeze_cell`, `certify`
+  → PASS / FAIL / MISSING_FLOOR) + the freezing CLI `scripts/freeze_certification_floor.py` +
+  `docs/CERTIFICATION_PROTOCOL.md` (how to freeze + gate). Pure additive infra ⇒ byte-identical
+  (nothing reads the floor until Fix B wires `certify` in). **The floor is populated by a GPU
+  matrix run before the first Fix B flip — NOT part of this unit.**
 
 ## Track R — Research threads (ISOLATED worktrees, NOT landed until grounded)
 
