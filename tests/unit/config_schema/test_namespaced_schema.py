@@ -24,12 +24,27 @@ from mimarsinan.config_schema.namespaced_schema import (
     KeySpec,
     LEGACY_KEY_TABLE,
     NAMESPACED_KEY_TABLE,
+    keys_with_derivation,
     provenance_table,
     registered_flat_keys,
     to_flat,
     to_namespaced,
     unregistered_default_keys,
 )
+from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
+
+# Keys produced by a derivation pass that are NOT in the defaults dict. The
+# conversion trio mirrors display_view_meta.DERIVED_KEYS; firing_mode /
+# spike_generation_mode / thresholding_mode are resolved in DeploymentPipeline.
+DERIVED_NON_DEFAULT_KEYS = {
+    "pipeline_mode",
+    "activation_quantization",
+    "weight_quantization",
+    "firing_mode",
+    "spike_generation_mode",
+    "thresholding_mode",
+}
+RUNTIME_KEYS = {"device", "input_shape", "input_size", "num_classes"}
 
 
 def _full_default_flat():
@@ -44,13 +59,21 @@ class TestRegistryCoverage:
     def test_all_default_keys_registered(self):
         assert unregistered_default_keys() == frozenset()
 
-    def test_registry_has_no_keys_outside_defaults(self):
+    def test_registry_has_no_stray_keys(self):
+        # The registry = defaults ∪ derived ∪ runtime; no other keys may appear.
         defaults = set(DEFAULT_DEPLOYMENT_PARAMETERS) | set(DEFAULT_PLATFORM_CONSTRAINTS)
-        assert set(registered_flat_keys()) <= defaults
+        non_default = set(registered_flat_keys()) - defaults
+        assert non_default == DERIVED_NON_DEFAULT_KEYS | RUNTIME_KEYS
 
-    def test_registered_count_matches_default_count(self):
+    def test_all_defaults_are_registered_as_default_or_preset(self):
         defaults = set(DEFAULT_DEPLOYMENT_PARAMETERS) | set(DEFAULT_PLATFORM_CONSTRAINTS)
-        assert len(registered_flat_keys()) == len(defaults)
+        for key in defaults:
+            assert KEY_SPECS[key].derivation in {"default", "preset"}, key
+
+    def test_registered_count_matches_defaults_plus_derived_plus_runtime(self):
+        defaults = set(DEFAULT_DEPLOYMENT_PARAMETERS) | set(DEFAULT_PLATFORM_CONSTRAINTS)
+        expected = defaults | DERIVED_NON_DEFAULT_KEYS | RUNTIME_KEYS
+        assert len(registered_flat_keys()) == len(expected)
 
     def test_every_spec_group_is_valid(self):
         valid = {g["id"] for g in CONCERN_GROUPS}
@@ -65,6 +88,61 @@ class TestRegistryCoverage:
     def test_every_spec_has_an_owner(self):
         for spec in KEY_SPECS.values():
             assert spec.owner and isinstance(spec.owner, str)
+
+
+class TestDerivationTagging:
+    """Provenance is real: derived/runtime keys are tagged, not all 'default'."""
+
+    def test_not_every_key_is_default(self):
+        # Regression guard: before V8-round2 every derivation was "default".
+        derivations = {s.derivation for s in KEY_SPECS.values()}
+        assert "derived" in derivations
+        assert "runtime" in derivations
+
+    def test_derived_keys_are_tagged_derived(self):
+        assert keys_with_derivation("derived") == DERIVED_NON_DEFAULT_KEYS
+
+    def test_runtime_keys_are_tagged_runtime(self):
+        assert keys_with_derivation("runtime") == RUNTIME_KEYS
+
+    def test_derivation_pass_only_writes_keys_tagged_derived_or_preset(self):
+        # Every key derive_deployment_parameters WRITES must be provenance-tagged
+        # as derived or preset (not a bare default) — locks the tagging to the
+        # actual derivation behavior, so a new derived key cannot regress to
+        # "default" silently.
+        dp = {"spiking_mode": "ttfs_quantized", "weight_quantization": True}
+        before = dict(dp)
+        derive_deployment_parameters(dp)
+        written = {k for k in dp if k not in before or dp[k] != before.get(k)}
+        # spiking_mode is read, not written; drop keys that pre-existed unchanged.
+        written = {k for k in written if k in KEY_SPECS}
+        for key in written:
+            assert KEY_SPECS[key].derivation in {"derived", "preset", "default"}, key
+        # The trio the derivation ALWAYS (re)writes must be tagged derived.
+        assert {"pipeline_mode", "activation_quantization",
+                "weight_quantization"} <= keys_with_derivation("derived")
+
+    def test_pipeline_init_derived_keys_are_spiking_semantics(self):
+        for key in ("firing_mode", "spike_generation_mode", "thresholding_mode"):
+            assert KEY_SPECS[key].derivation == "derived", key
+            assert KEY_SPECS[key].group == "spiking", key
+
+    def test_conversion_derived_keys_match_display_view_truth(self):
+        from mimarsinan.config_schema.display_view_meta import DERIVED_KEYS
+        # display_view's DERIVED_KEYS is the established UI truth; the schema's
+        # "derived" tag must be a superset (it also tags the pipeline-init keys).
+        assert DERIVED_KEYS <= keys_with_derivation("derived")
+
+    def test_runtime_keys_match_display_view_truth(self):
+        from mimarsinan.config_schema.display_view_meta import RUNTIME_KEYS as DV_RUNTIME
+        assert keys_with_derivation("runtime") == set(DV_RUNTIME)
+
+    def test_no_preset_only_keys_are_mislabeled(self):
+        # Keys that are BOTH a preset value and a derived output (activation/
+        # weight quantization) are tagged derived because derivation overwrites
+        # the preset (setdefault precedence: derivation wins on the always-path).
+        assert KEY_SPECS["activation_quantization"].derivation == "derived"
+        assert KEY_SPECS["weight_quantization"].derivation == "derived"
 
 
 class TestTranslationShimBijection:
