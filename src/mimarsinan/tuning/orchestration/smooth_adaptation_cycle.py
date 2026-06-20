@@ -266,8 +266,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
         pre_state = self._clone_state()
         last = getattr(self, "_last_post_acc", None)
-        pre_cycle_acc = float(last) if last is not None else \
-            self.trainer.validate_n_batches(self._budget.eval_n_batches)
+        # EF2: the pre-cycle baseline read goes THROUGH the seam ``probe`` verb
+        # (``probe`` == ``float(validate_n_batches(eval_n_batches))`` — byte-identical).
+        pre_cycle_acc = float(last) if last is not None else self.probe()
         return CycleContext(
             rate=float(rate),
             t_cycle_start=t_cycle_start,
@@ -276,9 +277,13 @@ class SmoothAdaptationCycleMixin(TunerBase):
         )
 
     def _probe_instant(self, ctx: CycleContext) -> None:
-        """Apply the transform and read the pre-recovery (instant) accuracy."""
+        """Apply the transform and read the pre-recovery (instant) accuracy.
+
+        EF2: the predictor goes THROUGH the seam ``ramp`` verb (``ramp(rate)`` ==
+        ``_update_and_evaluate(float(rate))`` — byte-identical), still tagged
+        ``probe`` for the GUI exploratory-trace channel."""
         with self.trainer.validation_context("probe"):
-            ctx.instant_acc = self._update_and_evaluate(ctx.rate)
+            ctx.instant_acc = self.ramp(ctx.rate)
         ctx.is_catastrophic = AcceptanceSensor.is_catastrophic(
             ctx.instant_acc, self._get_target()
         )
@@ -320,9 +325,14 @@ class SmoothAdaptationCycleMixin(TunerBase):
         return lr, recovery_result
 
     def _recover(self, ctx: CycleContext) -> None:
-        """Find the LR and run recovery training toward the target."""
-        lr, _ = self._recover_to_target(self._get_target(), ctx.rate)
-        ctx.lr = lr
+        """Find the LR and run recovery training toward the target.
+
+        EF2: the corrector goes THROUGH the seam ``recover_to`` verb (which routes
+        the SAME ``_recover_to_target`` SSOT and stashes the discovered LR on
+        ``self._last_recover_lr``); the cycle reads that lr back for the trace
+        record — byte-identical to the prior direct ``(lr, _)`` unpack."""
+        self.recover_to(self._get_target(), rate=ctx.rate)
+        ctx.lr = self._last_recover_lr
 
     def _measure_post(self, ctx: CycleContext) -> None:
         """Post-recovery accuracy + the rollback decision (marginal or paired)."""
@@ -355,7 +365,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
                 min_effect=self._global_budget,
             )
         else:
-            ctx.post_acc = self.trainer.validate_n_batches(self._budget.eval_n_batches)
+            # EF2: the post-recovery read goes THROUGH the seam ``probe`` verb
+            # (== ``float(validate_n_batches(eval_n_batches))`` — byte-identical).
+            ctx.post_acc = self.probe()
             ctx.rolled_back = AcceptanceSensor.is_rollback(ctx.post_acc, ctx.rollback_threshold)
 
     def _rollback_cycle(self, ctx: CycleContext, outcome: str):
