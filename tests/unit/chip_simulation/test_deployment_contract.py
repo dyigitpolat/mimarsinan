@@ -112,6 +112,57 @@ class TestReservedPerCoreSeam:
         )
 
 
+class TestCalibrationPipelineAccessor:
+    """E3: the contract resolves the conversion-health pipeline per (firing × sync)."""
+
+    def test_cascaded_cycle_opts_in(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        cal = contract.calibration_pipeline({"ttfs_gain_correction": True})
+        assert cal.gain_cold is True
+        assert cal.gain_active is True
+
+    def test_synchronized_cycle_is_inert(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="synchronized")
+        )
+        cal = contract.calibration_pipeline(
+            {"ttfs_gain_correction": True, "ttfs_theta_cotrain": True}
+        )
+        assert cal == CalibrationPipeline.inert()
+
+    def test_lif_is_inert(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        contract = SpikingDeploymentContract.from_pipeline_config(_cfg(spiking_mode="lif"))
+        cal = contract.calibration_pipeline({"ttfs_gain_correction": True})
+        assert cal == CalibrationPipeline.inert()
+
+    def test_distmatch_driver_threads_through(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        assert contract.calibration_pipeline({}, distmatch_driven=True).distmatch is True
+        assert contract.calibration_pipeline({}, distmatch_driven=False).distmatch is False
+
+    def test_core_kwarg_returns_global_answer(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        sentinel = object()
+        assert (
+            contract.calibration_pipeline({"ttfs_gain_correction": True}, core=sentinel)
+            == contract.calibration_pipeline({"ttfs_gain_correction": True})
+        )
+
+
 class TestSingleReaderInvariant:
     """``from_pipeline_config`` is the only place reading these config keys."""
 

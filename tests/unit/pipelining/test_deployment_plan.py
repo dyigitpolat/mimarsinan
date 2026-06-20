@@ -232,6 +232,49 @@ class TestPipelineAccessor:
         assert contract.simulation_steps == 32
 
 
+class TestCalibrationPipelineAxis:
+    """E3: the conversion-health pipeline is a contract-keyed, pipeline-wide axis."""
+
+    def test_lif_plan_gets_inert_pipeline_even_with_flags(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        # A non-cascade cell ignores the ttfs_* step flags → inert (byte-identical).
+        plan = _resolve(spiking_mode="lif", ttfs_gain_correction=True)
+        assert plan.calibration_pipeline() == CalibrationPipeline.inert()
+
+    def test_cascaded_cycle_plan_opts_in(self):
+        plan = _resolve(
+            spiking_mode="ttfs_cycle_based",
+            ttfs_cycle_schedule="cascaded",
+            ttfs_gain_correction=True,
+        )
+        cal = plan.calibration_pipeline()
+        assert cal.gain_cold is True
+        assert cal.gain_active is True
+
+    def test_synchronized_cycle_plan_is_inert(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        plan = _resolve(
+            spiking_mode="ttfs_cycle_based",
+            ttfs_cycle_schedule="synchronized",
+            ttfs_gain_correction=True,
+            ttfs_theta_cotrain=True,
+        )
+        assert plan.calibration_pipeline() == CalibrationPipeline.inert()
+
+    def test_distmatch_driver_threads_through(self):
+        plan = _resolve(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded",
+        )
+        assert plan.calibration_pipeline(distmatch_driven=True).distmatch is True
+        assert plan.calibration_pipeline(distmatch_driven=False).distmatch is False
+
+
 # ── V1 sole-reader guard (the deployment-decision flags) ───────────────────────
 
 # Deployment-decision flags owned by ``DeploymentPlan.resolve`` — NOT the broad
