@@ -8,12 +8,16 @@ import torch
 
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.tuning.axes import ActivationShiftAxis
+from mimarsinan.tuning.orchestration.rate_tuner_seam import OneShotRateTunerSeamMixin
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import TunerBase
 
 
-class ActivationShiftTuner(TunerBase):
-    """Apply activation-shift semantics, then recover with step-budgeted training."""
+class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
+    """Apply activation-shift semantics, then recover with step-budgeted training.
+
+    Exposes the uniform ``RateTunerSeam`` over its one-shot controller methods so a
+    driver can drive it through the same three verbs as the smooth family (E1)."""
 
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
