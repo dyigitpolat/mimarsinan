@@ -35,6 +35,19 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         self._axis = ActivationAdaptationAxis()
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
+        # EF1: READ the pipeline-wide optimization-driver axis (default `controller` ⇒
+        # the fast ladder is carried but disabled ⇒ byte-identical).
+        self._consume_optimization_driver(
+            rates=self.pipeline.config.get(
+                "activation_adaptation_fast_rates", [0.25, 0.5, 0.75, 1.0]
+            ),
+            steps_per_rate=int(
+                self.pipeline.config.get(
+                    "activation_adaptation_fast_steps_per_rate", 120
+                )
+            ),
+        )
+
     def _set_rate(self, rate):
         self._axis.set_rate(rate)
 

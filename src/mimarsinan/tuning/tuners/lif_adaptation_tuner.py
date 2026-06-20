@@ -63,18 +63,18 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         # the value-domain ramp suffices (cliff ≈ 0). Uses the inherited _fast_loss
         # (the installed KD loss) and no genuine probe.
         #
-        # E2: LIF no longer bypasses the driver with an inline `lif_blend_fast`
-        # read — the (`controller` | `fast`) decision is resolved by the SAME
-        # `OptimizationDriver` every family consumes. The fast switch floors the
-        # spanning cosine (the value-domain endpoint needs real LIF-dynamics
-        # training, unlike TTFS where genuine-CE carries it). Default-off ⇒
-        # controller ⇒ byte-identical.
-        from mimarsinan.tuning.orchestration.optimization_driver import (
-            OptimizationDriver,
-        )
+        # EF1: LIF no longer bypasses the driver with an inline `lif_blend_fast`
+        # read — the (`controller` | `fast`) decision is READ from the pipeline-wide
+        # axis (`DeploymentPlan.optimization_driver` via `DeploymentPlan.of(pipeline)`),
+        # the SAME axis every family consumes. The legacy `lif_blend_fast` switch still
+        # feeds that axis, so a config carrying only the switch is byte-identical; an
+        # explicit `optimization_driver` is the generic override. The fast switch floors
+        # the spanning cosine (the value-domain endpoint needs real LIF-dynamics
+        # training, unlike TTFS where genuine-CE carries it). Default `controller` ⇒
+        # byte-identical.
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-        driver = OptimizationDriver.for_family(
-            fast=bool(self.pipeline.config.get("lif_blend_fast", False)),
+        driver = DeploymentPlan.of(self.pipeline).optimization_driver_for_family(
             rates=self.pipeline.config.get(
                 "lif_blend_fast_rates", [0.25, 0.5, 0.75, 1.0]
             ),
