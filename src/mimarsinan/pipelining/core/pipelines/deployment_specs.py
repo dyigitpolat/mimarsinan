@@ -6,13 +6,9 @@ import sys
 
 import torch
 
-from mimarsinan.chip_simulation.spiking_semantics import (
-    is_synchronized_ttfs,
-    is_ttfs_cycle_based,
-    requires_ttfs_firing,
-)
-from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
-from mimarsinan.pipelining.core.search_mode import derive_search_mode
+from mimarsinan.chip_simulation.backend import BACKEND_REGISTRY
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.pipelining.core.step_plan import StepPlan, StepSpec
 from mimarsinan.pipelining.pipeline_steps import *
 
 
@@ -34,26 +30,39 @@ def select_device() -> torch.device:
     return device
 
 
-_ACTIVATION_ANALYSIS_STEP: tuple[str, type] = ("Activation Analysis", ActivationAnalysisStep)
-_CLAMP_ADAPTATION_STEP: tuple[str, type] = ("Clamp Adaptation", ClampAdaptationStep)
-_ACTIVATION_ADAPTATION_NO_QUANT_STEP: tuple[str, type] = (
-    "Activation Adaptation",
-    ActivationAdaptationStep,
-)
+_STEP_PLAN = StepPlan([
+    # ── configuration: search vs fixed (mutually exclusive on applies_to) ──
+    StepSpec("Architecture Search",            ArchitectureSearchStep),
+    StepSpec("Model Configuration",            ModelConfigurationStep),
+    StepSpec("Model Building",                 ModelBuildingStep),
+    # ── weights: preload vs pretrain (mutually exclusive on applies_to) ──
+    StepSpec("Weight Preloading",              WeightPreloadingStep),
+    StepSpec("Pretraining",                    PretrainingStep),
+    StepSpec("Torch Mapping",                  TorchMappingStep),
+    StepSpec("Pruning Adaptation",             PruningAdaptationStep),
+    StepSpec("Activation Analysis",            ActivationAnalysisStep),
+    # ── activation-adaptation family: V2 policy chooses LIF-style (one
+    #    replacement step) vs the analytical clamp→shift→quantize chain ──
+    StepSpec("LIF Adaptation",                 LIFAdaptationStep),
+    StepSpec("TTFS Cycle Fine-Tuning",         TTFSCycleAdaptationStep),
+    StepSpec("Noise Adaptation",               NoiseAdaptationStep),
+    StepSpec("Activation Adaptation",          ActivationAdaptationStep),
+    StepSpec("Clamp Adaptation",               ClampAdaptationStep),
+    StepSpec("Activation Shifting",            ActivationShiftStep),
+    StepSpec("Activation Quantization",        ActivationQuantizationStep),
+    # ── weight quantization ──
+    StepSpec("Weight Quantization",            WeightQuantizationStep),
+    StepSpec("Quantization Verification",      QuantizationVerificationStep),
+    # ── mapping ──
+    StepSpec("Normalization Fusion",           NormalizationFusionStep),
+    StepSpec("Soft Core Mapping",              SoftCoreMappingStep),
+    StepSpec("Core Quantization Verification", CoreQuantizationVerificationStep),
+    StepSpec("Hard Core Mapping",              HardCoreMappingStep),
+    # ── deployment backends (V3): validate every enabled backend against the
+    #    capability matrix UP-FRONT, then append the applicable backend steps ──
+    lambda plan: BACKEND_REGISTRY.selected_step_specs(plan),
+])
 
-_ACTIVATION_QUANTIZATION_STEPS: list[tuple[str, type]] = [
-    ("Activation Shifting",       ActivationShiftStep),
-    ("Activation Quantization",   ActivationQuantizationStep),
-]
-
-_PRUNING_STEPS: list[tuple[str, type]] = [
-    ("Pruning Adaptation",        PruningAdaptationStep),
-]
-
-_WEIGHT_QUANTIZATION_STEPS: list[tuple[str, type]] = [
-    ("Weight Quantization",       WeightQuantizationStep),
-    ("Quantization Verification", QuantizationVerificationStep),
-]
 
 _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
     ArchitectureSearchStep:             "configuration",
@@ -92,95 +101,22 @@ def get_pipeline_semantic_group_by_step_name(config: dict) -> dict[str, str]:
 
 
 def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
-    """Return ordered (step_name, step_class) list for the given config."""
-    search_mode = derive_search_mode(config)
-    spiking = config.get("spiking_mode", "lif")
-    act_q = config.get("activation_quantization", False)
-    wt_q = config.get("weight_quantization", False)
-    pruning = config.get("pruning", False)
-    pruning_fraction = float(config.get("pruning_fraction", 0.0))
-    weight_source = config.get("weight_source")
-    model_type = config.get("model_type", "")
-    loihi_sim = bool(config.get("enable_loihi_simulation", False))
-    sanafe_sim = bool(config.get("enable_sanafe_simulation", False))
-    nevresim_sim = config.get("enable_nevresim_simulation", True)
+    """Return ordered (step_name, step_class) list for the given config.
 
-    specs: list[tuple[str, type]] = []
-
-    if search_mode != "fixed":
-        specs.append(("Architecture Search", ArchitectureSearchStep))
-    else:
-        specs.append(("Model Configuration", ModelConfigurationStep))
-
-    specs.append(("Model Building", ModelBuildingStep))
-
-    if weight_source:
-        specs.append(("Weight Preloading", WeightPreloadingStep))
-    else:
-        specs.append(("Pretraining", PretrainingStep))
-
-    if ModelRegistry.get_category(model_type) == "torch":
-        specs.append(("Torch Mapping", TorchMappingStep))
-
-    if pruning and pruning_fraction > 0:
-        specs.extend(_PRUNING_STEPS)
-
-    specs.append(_ACTIVATION_ANALYSIS_STEP)
-
-    cycle_finetune = is_ttfs_cycle_based(spiking)
-    if spiking == "lif" or cycle_finetune:
-        # LIF-style: one activation-replacement step (LIFActivation /
-        # TTFSCycleActivation) subsumes the non-ReLU→ReLU replacement AND the
-        # clamp/shift/activation-quantization chain — it clamps + quantises
-        # internally, so running that chain first is redundant and destabilising.
-        if spiking == "lif":
-            specs.append(("LIF Adaptation", LIFAdaptationStep))
-        else:
-            specs.append(("TTFS Cycle Fine-Tuning", TTFSCycleAdaptationStep))
-        if bool(config.get("enable_training_noise", False)):
-            specs.append(("Noise Adaptation", NoiseAdaptationStep))
-    else:
-        specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
-        if act_q or requires_ttfs_firing(spiking):
-            specs.append(_CLAMP_ADAPTATION_STEP)
-        if act_q:
-            specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
-
-    if wt_q:
-        specs.extend(_WEIGHT_QUANTIZATION_STEPS)
-
-    specs.append(("Normalization Fusion", NormalizationFusionStep))
-    specs.append(("Soft Core Mapping", SoftCoreMappingStep))
-    if wt_q:
-        specs.append(
-            ("Core Quantization Verification", CoreQuantizationVerificationStep)
-        )
-
-    specs.append(("Hard Core Mapping", HardCoreMappingStep))
-    # nevresim runs the genuine fire-once-latch cascade for the cascaded schedule,
-    # but has no genuine synchronized-window backend yet — skip it only there.
-    if nevresim_sim and not is_synchronized_ttfs(spiking, config.get("ttfs_cycle_schedule")):
-        specs.append(("Simulation", SimulationStep))
-
-    if loihi_sim:
-        specs.append(("Loihi Simulation", LoihiSimulationStep))
-
-    if sanafe_sim:
-        specs.append(("SANA-FE Simulation", SanafeSimulationStep))
-
-    if loihi_sim and requires_ttfs_firing(spiking):
-        raise ValueError(
-            f"enable_loihi_simulation is not supported for spiking_mode={spiking!r}; "
-            "Loihi/Lava only implements LIF dynamics."
-        )
-
-    return specs
+    Vector V5: the ordered ``_STEP_PLAN`` registry filters itself by each step's
+    ``applies_to(plan)`` (the per-flag conditions now live on the steps). The
+    backend tail still routes through ``BACKEND_REGISTRY`` so an enabled but
+    unsupported backend×mode raises at assembly (V3), not mid-run.
+    """
+    plan = DeploymentPlan.resolve(config)
+    return _STEP_PLAN.resolve(plan)
 
 
 def validate_deployment_config(config: dict, *, model_name: str, cuda_debug: bool) -> None:
     """Non-fatal sanity checks; warnings go to stderr."""
-    act_q = bool(config.get("activation_quantization", False))
-    spiking = config.get("spiking_mode", "lif")
+    plan = DeploymentPlan.resolve(config)
+    act_q = plan.activation_quantization
+    spiking = plan.spiking_mode
     clamp_in_play = (spiking != "lif") and (act_q or spiking in ("ttfs", "ttfs_quantized"))
 
     if "vit" in model_name.lower() and clamp_in_play and not cuda_debug:

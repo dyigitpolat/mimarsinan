@@ -15,8 +15,13 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_identity_hybrid_mapping,
 )
 from mimarsinan.mapping.ir import IRGraph
+from mimarsinan.mapping.platform.mapping_structure import (
+    ChipCapabilities,
+    MappingStrategy,
+)
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
 def build_neural_behavior_config(pipeline) -> NeuralBehaviorConfig:
@@ -33,12 +38,13 @@ def build_hybrid_mapping_for_pipeline(
     *,
     pipeline_config: dict[str, Any] | None = None,
 ) -> Any:
+    strategy = MappingStrategy.resolve(
+        ChipCapabilities.from_platform_constraints(platform_constraints)
+    )
     hybrid_mapping = build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,
         cores_config=platform_constraints["cores"],
-        allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
-        allow_scheduling=bool(platform_constraints.get("allow_scheduling", False)),
-        allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
+        strategy=strategy,
     )
     # Install negative-value shifts carried on the IR ComputeOps (no-op when none).
     from mimarsinan.mapping.support.neg_shift_bias import propagate_negative_shifts_to_hybrid
@@ -58,6 +64,7 @@ def build_spiking_hybrid_flow(
     model=None,
 ) -> SpikingHybridCoreFlow:
     cfg = pipeline.config
+    plan = DeploymentPlan.of(pipeline)
     contract = build_deployment_contract(pipeline)
     if preprocessor is None and model is not None:
         preprocessor = getattr(model, "preprocessor", None)
@@ -70,10 +77,10 @@ def build_spiking_hybrid_flow(
         contract.spike_generation_mode,
         contract.thresholding_mode,
         spiking_mode=contract.spiking_mode,
-        cycle_accurate_lif_forward=bool(cfg.get("cycle_accurate_lif_forward", False)),
+        cycle_accurate_lif_forward=plan.cycle_accurate_lif_forward,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
     )
-    if cfg.get("cycle_accurate_lif_forward") and model is not None:
+    if plan.cycle_accurate_lif_forward and model is not None:
         from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
 
         apply_cycle_accurate_trains_to_model(model, True)
@@ -122,19 +129,16 @@ def run_trainer_metric(
         # torch↔deployed-sim parity check). Default to the full test set so the
         # reported deployed accuracy is honest and comparable; ``max_simulation_samples``
         # only subsamples when ``deployment_metric_full_eval`` is explicitly off.
-        full_eval = bool(pipeline.config.get("deployment_metric_full_eval", True))
-        max_samples = 0 if full_eval else int(
-            pipeline.config.get("max_simulation_samples", 0) or 0
-        )
+        plan = DeploymentPlan.of(pipeline)
+        max_samples = 0 if plan.deployment_metric_full_eval else plan.max_simulation_samples
         if max_samples > 0:
             return float(
                 trainer.test_on_subsample(
                     max_samples=max_samples,
-                    seed=int(pipeline.config.get("seed", 0)),
+                    seed=plan.seed,
                 )
             )
-        sim_batches = pipeline.config.get("simulation_batch_count", None)
-        return float(trainer.test(max_batches=sim_batches))
+        return float(trainer.test(max_batches=plan.simulation_batch_count))
     finally:
         trainer.close()
 
@@ -166,7 +170,7 @@ def run_hcm_spiking_test(
             is_oom = isinstance(exc, oom_cls) or "out of memory" in str(exc).lower()
             if not retry_on_oom or not is_oom or attempt >= 1:
                 raise
-            attempt_cap = int(pipeline.config.get("simulation_batch_size", 8))
+            attempt_cap = DeploymentPlan.of(pipeline).simulation_batch_size
 
     if last_error is not None:
         raise last_error
@@ -286,7 +290,7 @@ def run_hcm_mapping_metric(
                 torch.cuda.empty_cache()
             if not outer_oom_retry or not is_oom or attempt >= 1:
                 raise
-            attempt_cap = int(pipeline.config.get("simulation_batch_size", 8))
+            attempt_cap = DeploymentPlan.of(pipeline).simulation_batch_size
         except Exception:
             raise
 
@@ -343,7 +347,7 @@ def run_scm_identity_metric(
                 torch.cuda.empty_cache()
             if not outer_oom_retry or not is_oom or attempt >= 1:
                 raise
-            attempt_cap = int(pipeline.config.get("simulation_batch_size", 8))
+            attempt_cap = DeploymentPlan.of(pipeline).simulation_batch_size
 
     if last_exc is not None:
         raise last_exc

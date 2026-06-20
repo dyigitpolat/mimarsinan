@@ -7,7 +7,8 @@ identically.  No mapping state is accessed or mutated here.
 
 from __future__ import annotations
 
-from typing import Literal
+from dataclasses import dataclass
+from typing import Any, Literal, Mapping
 
 
 # Bias axon counting
@@ -79,3 +80,113 @@ def compute_fc_tiling_mode(
     if max_neurons is not None and out_features > max_neurons:
         return "output_tiled"
     return "single"
+
+
+# Capabilities (declared) + strategy (derived)
+
+
+@dataclass(frozen=True)
+class ChipCapabilities:
+    """Declared chip permissions and core grid — the *capability* layer.
+
+    Capabilities are what the chip allows: the core grid (``max_axons`` /
+    ``max_neurons`` / ``hardware_bias``) plus the three independent permission
+    bits (``allow_coalescing`` = inter-core membrane partial-sum transfer,
+    ``allow_neuron_splitting`` = a wide channel may span cores,
+    ``allow_scheduling`` = passes may run on fresh core pools). They are
+    *declared* once; the per-layer mapping *strategy* is derived from them
+    (see :class:`MappingStrategy`).
+    """
+
+    max_axons: int | None = None
+    max_neurons: int | None = None
+    hardware_bias: bool = False
+    allow_coalescing: bool = False
+    allow_neuron_splitting: bool = False
+    allow_scheduling: bool = False
+
+    @classmethod
+    def from_platform_constraints(
+        cls, constraints: Mapping[str, Any]
+    ) -> "ChipCapabilities":
+        """Read the three permission bits from a platform-constraints / wizard body dict.
+
+        Single source for ``bool(d.get("allow_coalescing", False))`` & friends, so
+        the entry points that assemble these three flags from config all read them
+        identically (the grid is carried separately as ``cores`` / ``core_types``).
+        """
+        return cls(
+            allow_coalescing=bool(constraints.get("allow_coalescing", False)),
+            allow_neuron_splitting=bool(constraints.get("allow_neuron_splitting", False)),
+            allow_scheduling=bool(constraints.get("allow_scheduling", False)),
+        )
+
+    def permission_kwargs(self) -> dict[str, bool]:
+        """The three permission bits as the kwargs the layout/verify helpers expect.
+
+        Lets an entry point spread one resolved capability object into the leaf
+        helper signatures (``verify_hardware_config`` / ``compute_mapping_stats`` /
+        ``build_layout_plan`` keep their bool params) instead of re-reading config.
+        """
+        return {
+            "allow_neuron_splitting": self.allow_neuron_splitting,
+            "allow_coalescing": self.allow_coalescing,
+            "allow_scheduling": self.allow_scheduling,
+        }
+
+
+@dataclass(frozen=True)
+class MappingStrategy:
+    """Resolver that *derives* the per-layer mapping decision from capabilities.
+
+    Given a layer's shape and the chip's :class:`ChipCapabilities`, this
+    resolver decides the FC tiling mode (coalesce / split / sync-point) — the
+    single place that turns capability permissions into a concrete mapping
+    decision. The builder consults the resolved strategy's permission
+    accessors (``allow_*``) and :meth:`tiling_mode`, never the raw flags.
+    """
+
+    capabilities: ChipCapabilities
+
+    @classmethod
+    def resolve(cls, capabilities: ChipCapabilities) -> "MappingStrategy":
+        """Resolve a strategy for the given declared capabilities."""
+        return cls(capabilities=capabilities)
+
+    @property
+    def allow_coalescing(self) -> bool:
+        return self.capabilities.allow_coalescing
+
+    @property
+    def allow_neuron_splitting(self) -> bool:
+        return self.capabilities.allow_neuron_splitting
+
+    @property
+    def allow_scheduling(self) -> bool:
+        return self.capabilities.allow_scheduling
+
+    def permission_kwargs(self) -> dict[str, bool]:
+        """The resolved permission bits as layout/verify helper kwargs."""
+        return self.capabilities.permission_kwargs()
+
+    def tiling_mode(
+        self,
+        in_features: int,
+        out_features: int,
+        has_bias: bool,
+    ) -> TilingMode:
+        """Derive the FC tiling mode for one layer from shape × capabilities.
+
+        Raises :class:`WideFanInUnsupportedError` when a wide fan-in cannot be
+        mapped because coalescing is not permitted.
+        """
+        caps = self.capabilities
+        return compute_fc_tiling_mode(
+            in_features,
+            out_features,
+            caps.max_axons,
+            caps.max_neurons,
+            has_bias,
+            caps.hardware_bias,
+            caps.allow_coalescing,
+        )

@@ -10,6 +10,7 @@ from mimarsinan.mapping.verification.verifier import (
     MappingVerificationResult,
     verify_soft_core_mapping,
 )
+from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
@@ -172,10 +173,10 @@ def verify_planned_mapping_performance(
     if not cores or model_repr is None:
         return None
 
-    allow_coalescing = bool(platform_constraints.get("allow_coalescing", False))
-    allow_neuron_splitting = bool(platform_constraints.get("allow_neuron_splitting", False))
-    allow_scheduling = bool(platform_constraints.get("allow_scheduling", False))
-    pmap = resolve_platform_mapping_params(cores, allow_coalescing=allow_coalescing)
+    capabilities = ChipCapabilities.from_platform_constraints(platform_constraints)
+    pmap = resolve_platform_mapping_params(
+        cores, allow_coalescing=capabilities.allow_coalescing
+    )
     if pmap.effective_max_axons <= 0 or pmap.effective_max_neurons <= 0:
         return None
 
@@ -202,9 +203,7 @@ def verify_planned_mapping_performance(
     plan = build_layout_plan(
         soft,
         core_types_dicts,
-        allow_neuron_splitting=allow_neuron_splitting,
-        allow_coalescing=allow_coalescing,
-        allow_scheduling=allow_scheduling,
+        **capabilities.permission_kwargs(),
     )
     stats_out: dict = plan.stats.to_dict()
     stats_out.setdefault("host_side_segment_count", plan.host_side_segment_count)

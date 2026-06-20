@@ -338,11 +338,16 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._blend_fast_rates = plan.blend_fast_rates
         self._blend_fast_steps_per_rate = plan.blend_fast_steps_per_rate
         self._fast_stabilize_steps = plan.fast_stabilize_steps
+        # The optimization-driver concern (controller vs fast-ladder rung) is owned by
+        # the plan's OptimizationDriver; the controller is the default (fast_ladder
+        # False → _setup_fast_ladder disables the fixed_ladder policy).
+        driver = plan.driver
+        self._optimization_driver = driver
         self._setup_fast_ladder(
-            enabled=plan.fast_ladder_enabled,
-            rates=plan.fast_ladder_rates,
-            steps_per_rate=plan.fast_ladder_steps_per_rate,
-            eta_min_factor=plan.fast_ladder_eta_min_factor,
+            enabled=driver.fast_ladder,
+            rates=driver.fast_ladder_rates,
+            steps_per_rate=driver.fast_ladder_steps_per_rate,
+            eta_min_factor=driver.fast_ladder_eta_min_factor,
         )
         self._fast_full_transform_log = []
         # The installed teacher<->genuine blend forward (owned reference so the
@@ -355,18 +360,21 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             self.pipeline.config.get("ttfs_genuine_blend_ce_alpha", 0.3)
         )
         self._distmatch_stats = None
+        # The conversion-health calibration steps (gain-correction / theta-cotrain /
+        # distmatch / boundary-STE) + their compatibility (theta ⊥ gain-ramp, gain-ramp
+        # ⊐ gain-cold, all cascaded-only) are resolved ONCE by the CalibrationPipeline
+        # the plan carries; _configure binds the resolved decisions instead of
+        # re-deriving the per-flag guards. The parity-critical APPLICATION order stays
+        # here (gain trim before node build, theta promotion after scalar-theta calib).
+        cal = plan.calibration
+        self._calibration = cal
         # Offload-boundary straight-through estimator (default OFF, cascaded only):
         # when set, the genuine single-spike cascade backward flows through the
         # round-based re-encode at offload/host-ComputeOp segment boundaries (a soft
         # spike-time STE), so EVERY neural segment trains on the deployed dynamics
         # instead of only the last (the §7 gradient-severance root cause). Forward
         # is byte-identical, so NF↔SCM parity and the deployed metric are unchanged.
-        self._boundary_surrogate_temp = (
-            float(self.pipeline.config.get("ttfs_boundary_surrogate_temp", 1.0))
-            if bool(self.pipeline.config.get("ttfs_boundary_surrogate", False))
-            and not self._synchronized
-            else None
-        )
+        self._boundary_surrogate_temp = cal.boundary_surrogate_temp
         self._gain_correction_stats = None
         self._maybe_apply_gain_correction()
         # Per-channel TRAINABLE theta co-training (default OFF, cascaded only): promote
@@ -375,11 +383,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         # distmatch/gain calibration) so the genuine fine-tune co-trains the firing-gain
         # with the weights. Mutually exclusive with the per-depth gain ramp (both manage
         # theta; the ramp's scalar set would clobber the per-channel param) — gain wins.
-        self._theta_cotrain = (
-            bool(self.pipeline.config.get("ttfs_theta_cotrain", False))
-            and not self._synchronized
-            and not self._gain_ramp
-        )
+        self._theta_cotrain = cal.theta_cotrain
         self._theta_cotrain_stats = None
         # The promoted per-channel theta Parameters (set in _maybe_promote_theta_cotrain);
         # the STE-fast loop trains them in their own LR group.
@@ -395,26 +399,25 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
           the base scales + target factors and ramp ``theta_d -> base*g_d**rate`` on
           every ``_set_rate`` so the correction co-adapts WITH the KD blend (the model
           learns the calibration and the spiking dynamics together) instead of being a
-          cold init a downstream fine-tune absorbs at the readout."""
-        self._gain_ramp = False
-        if self._synchronized:
-            return
-        config = self.pipeline.config
-        rule = str(config.get("ttfs_gain_correction_rule", "relative"))
-        c = float(config.get("ttfs_gain_correction_c", 1.9))
+          cold init a downstream fine-tune absorbs at the readout.
 
-        if bool(config.get("ttfs_gain_correction_ramp", False)):
+        Which mode is active (and its cascaded-only / ramp-wins-over-cold compatibility)
+        is resolved by the CalibrationPipeline; this method only applies the body."""
+        cal = self._calibration
+        rule, c = cal.gain_rule, cal.gain_c
+        self._gain_ramp = cal.gain_ramp
+
+        if cal.gain_ramp:
             # Base scales + factors are captured in _after_install_blend (AFTER any
             # genuine-blend scale-aware-boundary calibration that also sets the
             # scales), so the gain ramp multiplies the SETTLED scales by g_d**rate.
-            self._gain_ramp = True
             self._gain_ramp_rule = rule
             self._gain_ramp_c = c
             self._gain_ramp_base = None
             self._gain_ramp_factors = None
             return
 
-        if bool(config.get("ttfs_gain_correction", False)):
+        if cal.gain_cold:
             from mimarsinan.spiking.gain_correction import apply_cascaded_gain_correction
 
             self._gain_correction_stats = apply_cascaded_gain_correction(
@@ -559,16 +562,16 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             match_activation_distributions,
         )
 
-        config = self.pipeline.config
+        cal = self._calibration
         cal_x = self._calibration_inputs()
         self._distmatch_stats = match_activation_distributions(
             self.model,
             self._teacher,
             cal_x,
             self._T,
-            quantile=float(config.get("ttfs_distmatch_quantile", 0.99)),
-            bias_iters=int(config.get("ttfs_distmatch_bias_iters", 15)),
-            eta=float(config.get("ttfs_distmatch_bias_eta", 0.7)),
+            quantile=cal.distmatch_quantile,
+            bias_iters=cal.distmatch_bias_iters,
+            eta=cal.distmatch_bias_eta,
         )
         self.pipeline.reporter.report(
             f"{self.name} distmatch", self._distmatch_stats,

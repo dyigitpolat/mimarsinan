@@ -6,6 +6,7 @@ Supports torchvision pretrained weights, local checkpoints, and URLs.
 Optionally fine-tunes for a configurable number of epochs after loading.
 """
 
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.model_training.training_recipe import build_recipe
@@ -16,6 +17,10 @@ import torch
 
 class WeightPreloadingStep(TrainerPipelineStep):
     """Load pretrained weights into the model and optionally fine-tune."""
+
+    @classmethod
+    def applies_to(cls, plan):
+        return bool(plan.weight_source)
 
     def __init__(self, pipeline):
         requires = ["model", "model_builder"]
@@ -28,7 +33,7 @@ class WeightPreloadingStep(TrainerPipelineStep):
         model = self.get_entry("model")
         builder = self.get_entry("model_builder")
 
-        weight_source = self.pipeline.config.get("weight_source", "")
+        weight_source = DeploymentPlan.of(self.pipeline).weight_source
         strategy = resolve_weight_strategy(weight_source, model_builder=builder)
 
         if strategy is None:

@@ -24,12 +24,12 @@ from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.mappers.structural import ConcatMapper, EinopsRearrangeMapper, InputMapper
 from mimarsinan.mapping.mappers.leading_dim import Ensure2DMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.mapping.support.per_source_scales import (
+from mimarsinan.mapping.mappers.scale_propagation import (
     _all_sources_uniform,
-    _apply_compute_op_scale_policy,
     _is_per_channel_heterogeneous,
-    compute_per_source_scales,
+    apply_compute_op_scale_policy as _apply_compute_op_scale_policy,
 )
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 
 

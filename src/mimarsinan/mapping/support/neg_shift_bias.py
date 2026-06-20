@@ -122,22 +122,23 @@ def _analytical_segment_calibration_forward(model, x, T, *, compute_min_recorder
     return driver(x, compute_min_recorder=compute_min_recorder)
 
 
+_NEG_SHIFT_SUPPORTED_MODES = frozenset(
+    {"lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"}
+)
+
+
 def calibration_forward_for_mode(spiking_mode: str):
     """NF forward that produces ``spiking_mode``'s boundary values for calibration.
 
     The shift must live in the same domain the mode's encoder clamps, so each
-    mode calibrates through its own NF forward."""
-    if spiking_mode == "lif":
-        from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
+    mode calibrates through its own NF forward (resolved by the mode policy)."""
+    if spiking_mode not in _NEG_SHIFT_SUPPORTED_MODES:
+        raise NotImplementedError(
+            f"negative_value_shift is not implemented for spiking_mode={spiking_mode!r}"
+        )
+    from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
-        return chip_aligned_segment_forward
-    if spiking_mode == "ttfs_cycle_based":
-        return _ttfs_segment_calibration_forward
-    if spiking_mode in ("ttfs", "ttfs_quantized"):
-        return _analytical_segment_calibration_forward
-    raise NotImplementedError(
-        f"negative_value_shift is not implemented for spiking_mode={spiking_mode!r}"
-    )
+    return policy_for_spiking_mode(spiking_mode).calibration_forward()
 
 
 def apply_negative_value_shifts(

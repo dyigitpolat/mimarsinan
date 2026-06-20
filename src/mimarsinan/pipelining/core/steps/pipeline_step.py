@@ -1,4 +1,15 @@
 class PipelineStep:
+    @classmethod
+    def applies_to(cls, plan):
+        """Whether this step belongs in the pipeline for the resolved ``plan``.
+
+        Vector V5: each step owns its applicability so the step planner
+        (``StepPlan``) filters an ordered registry instead of hand-assembling
+        per-flag ``append``s. The base step always applies; conditional steps
+        override with the verbatim predicate that gated their former ``append``.
+        """
+        return True
+
     def __init__(self, requires, promises, updates, clears, pipeline):
         self.name = self.__class__.__name__
         self.requires = requires

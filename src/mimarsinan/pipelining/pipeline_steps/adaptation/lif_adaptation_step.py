@@ -5,6 +5,10 @@ from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 
 
 class LIFAdaptationStep(TunerPipelineStep):
+    @classmethod
+    def applies_to(cls, plan):
+        return plan.spiking_mode == "lif"
+
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         promises = []

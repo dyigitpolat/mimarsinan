@@ -159,21 +159,17 @@ class SpikingHybridCoreFlow(
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        from mimarsinan.chip_simulation.spiking_semantics import (
-            is_cascaded_ttfs,
-            requires_ttfs_firing,
+        from mimarsinan.chip_simulation.spiking_mode_policy import (
+            policy_for_spiking_mode,
         )
 
         try:
             x = self.preprocessor(x)
             x = x.view(x.shape[0], -1)
 
-            if is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule):
-                return self._forward_rate(x)
-
-            if requires_ttfs_firing(self.spiking_mode):
+            policy = policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
+            if policy.decode_mode() == "timing":
                 return self._forward_ttfs(x)
-
             return self._forward_rate(x)
         finally:
             self._evict_segment_cache()

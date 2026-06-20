@@ -6,6 +6,10 @@ from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import TTFSCycleAdapta
 
 
 class TTFSCycleAdaptationStep(TunerPipelineStep):
+    @classmethod
+    def applies_to(cls, plan):
+        return plan.is_ttfs_cycle_based
+
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         self._scale_aware_boundaries = bool(

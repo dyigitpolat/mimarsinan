@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategy, FiringStrategyFactory
-from mimarsinan.chip_simulation.spiking_semantics import require_spiking_mode_supported
 from mimarsinan.models.spiking.spiking_config import SPIKE_MODES
 
 
@@ -30,11 +29,17 @@ class NeuralBehaviorConfig:
             spike_encoding_seed=cfg.get("spike_encoding_seed"),
         )
 
+    def _mode_policy(self):
+        from mimarsinan.chip_simulation.spiking_mode_policy import (
+            policy_for_spiking_mode,
+        )
+
+        return policy_for_spiking_mode(self.spiking_mode)
+
     @classmethod
     def for_lava(cls, cfg: dict[str, Any]) -> NeuralBehaviorConfig:
         behavior = cls.from_deployment_config(cfg)
-        require_spiking_mode_supported(
-            behavior.spiking_mode,
+        behavior._mode_policy().require_backend_supported(
             backend="lava",
             context="NeuralBehaviorConfig.for_lava",
         )
@@ -51,8 +56,7 @@ class NeuralBehaviorConfig:
 
     def require_backend(self, backend: str) -> None:
         if backend.lower() in ("lava", "loihi"):
-            require_spiking_mode_supported(
-                self.spiking_mode,
+            self._mode_policy().require_backend_supported(
                 backend=backend,
                 context="NeuralBehaviorConfig",
             )

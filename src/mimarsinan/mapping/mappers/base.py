@@ -44,6 +44,41 @@ class Mapper(nn.Module):
         """Introspection hook for Perceptron-first pipelines. Default: no perceptrons."""
         return []
 
+    def propagate_source_scale(self, deps, out_scales):
+        """Per-node out-scale for weight-quant per-source scales (V6 polymorphism).
+
+        Default (transparent routing: reshape/permute/stack/ensure-2d): pass the
+        first source's out-scale through. Perceptron-bearing / Input / Concat /
+        ComputeOp mappers override. Used by ``compute_per_source_scales``.
+        """
+        from mimarsinan.mapping.mappers.scale_propagation import first_source_scale
+
+        return first_source_scale(deps, out_scales)
+
+    def propagate_boundary_scale(self, deps, out_scales, default):
+        """Per-node out-scale for TTFS theta-out boundary scales (V6 polymorphism).
+
+        Default (transparent routing): mean of present source out-scales, or
+        ``None`` if no source recorded one. Perceptron-bearing / Input mappers
+        override. Used by ``propagate_boundary_input_scales``.
+        """
+        from mimarsinan.mapping.mappers.scale_propagation import present_source_scales
+
+        present = present_source_scales(deps, out_scales)
+        if present:
+            return sum(present) / len(present)
+        return None
+
+    def flowchart_node_estimate(self, out_shape):
+        """Software summary + optional FC estimate spec for the softcore flowchart.
+
+        Default: no perceptrons, no FC estimate. Perceptron / Conv / Add-ComputeOp
+        / Stack mappers override. Used by ``generate_softcore_flowchart_dot`` (V6).
+        """
+        from mimarsinan.mapping.mappers.flowchart import FlowchartNodeEstimate
+
+        return FlowchartNodeEstimate()
+
     @property
     def source_mapper(self):
         return self._source_mapper_container[0]

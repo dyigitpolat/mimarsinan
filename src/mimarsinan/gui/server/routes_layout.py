@@ -162,6 +162,7 @@ def register_routes(app: FastAPI) -> None:
             from mimarsinan.mapping.verification.verifier import (
                 verify_hardware_config,
             )
+            from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
             mr = dict(body.get("model_repr_json", {}))
             core_types = body.get("core_types", [])
             from mimarsinan.mapping.platform.platform_constraints import (
@@ -188,14 +189,9 @@ def register_routes(app: FastAPI) -> None:
                 tiling_max_neurons=tile_max_neu,
             )
             softcores = layout_result.softcores
-            allow_neuron_splitting = bool(body.get("allow_neuron_splitting", False))
-            allow_coalescing = bool(body.get("allow_coalescing", False))
-            allow_scheduling = bool(body.get("allow_scheduling", False))
             result = verify_hardware_config(
                 softcores, core_types,
-                allow_neuron_splitting=allow_neuron_splitting,
-                allow_coalescing=allow_coalescing,
-                allow_scheduling=allow_scheduling,
+                **ChipCapabilities.from_platform_constraints(body).permission_kwargs(),
             )
             stats_out = {
                 **(result.get("stats") or {}),
