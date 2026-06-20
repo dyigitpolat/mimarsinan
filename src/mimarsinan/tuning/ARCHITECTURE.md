@@ -24,7 +24,7 @@ while maintaining model accuracy through smooth adaptation.
 
 | Directory | Purpose |
 |-----------|---------|
-| `orchestration/` | The smooth-adaptation control loop (cycle/run/tuner-base mixins), the `AdaptationManager` rate host, `TuningBudget`, the KD-blend base, and the extracted `AcceptanceSensor` decision service. See its `ARCHITECTURE.md`. |
+| `orchestration/` | The smooth-adaptation control loop (cycle/run/tuner-base mixins), the `AdaptationManager` rate host, `TuningBudget`, the KD-blend base, the extracted `AcceptanceSensor` decision service, and the **uniform rate-tuner seam** (`rate_tuner_seam.py`: `RateTunerSeam` / `RateTunerSeamMixin` / `OneShotRateTunerSeamMixin` — the `ramp`/`recover_to`/`probe` verbs every tuner exposes so a driver drives any tuner generically, E1/Fix A). See its `ARCHITECTURE.md`. |
 | `tuners/` | Concrete tuner implementations for specific transformations |
 | `axes/` | `AdaptationAxis` contract + adapters (the rate-driven, control-facing axis objects the tuner refactor collapses the tuner zoo into; each delegates to `perceptron_rate`/`transformations`). Manager-rate family landed; blend/closure/shift/pruning adapters follow the same delegation discipline. |
 

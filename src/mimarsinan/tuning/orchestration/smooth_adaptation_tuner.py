@@ -15,12 +15,22 @@ __all__ = [
     "_RECOVERY_PATIENCE",
     "_STUCK_STREAK_REQUIRED",
 ]
+from mimarsinan.tuning.orchestration.rate_tuner_seam import RateTunerSeamMixin
 from mimarsinan.tuning.orchestration.smooth_adaptation_cycle import SmoothAdaptationCycleMixin
 from mimarsinan.tuning.orchestration.smooth_adaptation_run import SmoothAdaptationRunMixin
 
 
-class SmoothAdaptationTuner(SmoothAdaptationCycleMixin, SmoothAdaptationRunMixin, TunerBase):
-    """Orchestration loop for smooth rate-based adaptation."""
+class SmoothAdaptationTuner(
+    RateTunerSeamMixin,
+    SmoothAdaptationCycleMixin,
+    SmoothAdaptationRunMixin,
+    TunerBase,
+):
+    """Orchestration loop for smooth rate-based adaptation.
+
+    Exposes the uniform ``RateTunerSeam`` (``ramp`` / ``recover_to`` / ``probe``)
+    so an ``OptimizationDriver`` can drive any smooth tuner generically (E1).
+    """
 
 
 UnifiedPerceptronTuner = SmoothAdaptationTuner

@@ -20,6 +20,18 @@ specific transformations while maintaining accuracy.
 | `noise_tuner.py` | `NoiseTuner` | Introduces training noise; extends `AdaptationRateTuner` (`noise_rate`); no pipeline step wired by default |
 | `pruning_tuner.py` | `PruningTuner` | Gradually zeros least-significant rows/columns; recomputes importance at each cycle; overrides `_before_cycle`, `_recovery_training_hooks`, `_after_run`, `_update_and_evaluate`; uses base-class `_find_lr` (anchored LR search); `_force_to_full_rate` drives pruning from committed rate to 1.0 in gradual increments with `min_improvement=accuracy_se()/2`; uses base-class `_adaptation` with LR search.  **Boundary-IR caching**: `_boundary_exemption_layers` (in `pruning_tuner_masks.py`) memoises the boundary-policy result on the tuner instance.  The IR build behind it is O(model) — ~27 s for ViT-B/16 — and `_get_masks` fires twice per cycle (`_apply_masks` + `register_recovery_hooks`), so the per-tuner cache shaves ~10 minutes off a 10-cycle ViT pruning step.  Topology is invariant during pruning; call `_invalidate_boundary_cache(tuner)` if it ever isn't. |
 
+## Uniform rate-tuner seam (E1 — Fix A)
+
+Every tuner exposes the driver-facing three-verb `RateTunerSeam`
+(`orchestration/rate_tuner_seam.py`) — `ramp(rate)` / `recover_to(target)` /
+`probe()` — so an `OptimizationDriver` can drive ANY tuner generically. The
+smooth family inherits `RateTunerSeamMixin` (via `SmoothAdaptationTuner`), mapping
+the verbs onto `_update_and_evaluate` / `_recover_to_target` / `validate_n_batches`;
+the one-shot `ActivationShiftTuner` inherits `OneShotRateTunerSeamMixin`, mapping
+them onto `_axis.set_rate` / `trainer.train_steps_until_target` / `trainer.validate`.
+The verbs DELEGATE to the legacy path (byte-identical) and the run loop is untouched
+— E2 will wire the driver to drive `run()` through this seam.
+
 ## Tuner Hierarchy
 
 ```
