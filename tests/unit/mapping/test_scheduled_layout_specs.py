@@ -3,6 +3,7 @@
 import torch.nn as nn
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.mappers.structural import InputMapper
@@ -44,8 +45,10 @@ class TestScheduledLayoutSpecs:
         hcm = build_hybrid_hard_core_mapping(
             ir_graph=ir,
             cores_config=cores_config,
-            allow_scheduling=True,
-            allow_coalescing=True,
+            strategy=MappingStrategy.from_permissions(
+                allow_scheduling=True,
+                allow_coalescing=True,
+            ),
         )
         assert len(hcm.stages) >= 1
         neural_stages = [s for s in hcm.stages if s.kind == "neural"]

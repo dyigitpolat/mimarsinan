@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 
 
@@ -102,8 +103,10 @@ class TestSinglePassSegments:
         mapping = build_hybrid_hard_core_mapping(
             ir_graph=ir,
             cores_config=cores_config,
-            allow_neuron_splitting=False,
-            allow_scheduling=True,
+            strategy=MappingStrategy.from_permissions(
+                allow_neuron_splitting=False,
+                allow_scheduling=True,
+            ),
         )
         neural_stages = [s for s in mapping.stages if s.kind == "neural"]
         assert len(neural_stages) == 1, (
@@ -119,8 +122,10 @@ class TestSinglePassSegments:
         mapping = build_hybrid_hard_core_mapping(
             ir_graph=ir,
             cores_config=cores_config,
-            allow_neuron_splitting=False,
-            allow_scheduling=True,
+            strategy=MappingStrategy.from_permissions(
+                allow_neuron_splitting=False,
+                allow_scheduling=True,
+            ),
         )
         neural_stages = [s for s in mapping.stages if s.kind == "neural"]
         compute_stages = [s for s in mapping.stages if s.kind == "compute"]
@@ -147,8 +152,10 @@ class TestCapacityDrivenSyncBarriers:
         mapping = build_hybrid_hard_core_mapping(
             ir_graph=ir,
             cores_config=cores_config,
-            allow_neuron_splitting=False,
-            allow_scheduling=True,
+            strategy=MappingStrategy.from_permissions(
+                allow_neuron_splitting=False,
+                allow_scheduling=True,
+            ),
         )
         neural_stages = [s for s in mapping.stages if s.kind == "neural"]
         assert len(neural_stages) == 2, (
@@ -170,8 +177,10 @@ class TestCapacityDrivenSyncBarriers:
         mapping = build_hybrid_hard_core_mapping(
             ir_graph=ir,
             cores_config=cores_config,
-            allow_neuron_splitting=False,
-            allow_scheduling=True,
+            strategy=MappingStrategy.from_permissions(
+                allow_neuron_splitting=False,
+                allow_scheduling=True,
+            ),
         )
         neural_stages = [s for s in mapping.stages if s.kind == "neural"]
         assert len(neural_stages) == 1

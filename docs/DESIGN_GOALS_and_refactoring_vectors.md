@@ -168,6 +168,26 @@ given a layer's shape and the capabilities, *derives* coalesce/split/sync-point 
 infeasibility error when no strategy fits. Capabilities declared once; strategy derived once;
 the builder consults the resolved strategy, not the raw flags.
 
+**V4 status — strangler-fig cleanup CLOSED (2026-06-20).** The three back-compat bool kwargs
+(`allow_coalescing` / `allow_neuron_splitting` / `allow_scheduling`) on
+`build_hybrid_hard_core_mapping` are **deleted**; the only knob is `strategy=` (a resolved
+`MappingStrategy`; omitted ⇒ all-permissions-off). The sole src caller already passed
+`strategy=`; the ~25 test call sites were migrated to construct one via
+`MappingStrategy.from_permissions(...)` / `ChipCapabilities.from_platform_constraints(...)`
+(the new SSOT for wrapping loose raw bools), byte-identical (placement goldens + nf_scm parity +
+torch↔sim fidelity green). Closed decisions:
+
+- **The V4 leaf helpers keep their individual bool params (no-value-churn, DO NOT migrate).**
+  `pack_layout` (`layout/layout_packer.py`), `verify_hardware_config`
+  (`verification/.../mapping_verifier_hw.py`), `split_softcores_by_capacity`
+  (`support/schedule/schedule_split.py` + `schedule_partitioner`), and the
+  `suggest_hardware_config*` suggesters genuinely read **individual** permission bits at leaf
+  level and are not called with the full three-bool tuple from a hot entry-point cross-section.
+  Wrapping them in a `MappingStrategy` would add an indirection without removing any
+  scattered branch (the blast-radius metric is unchanged) — pure churn. `permission_kwargs()`
+  already exists for the entry points that DO want to spread a resolved capability object into
+  these signatures. Kept as-is on purpose; this is **not** an open TODO.
+
 ### V5 — Contract-driven `StepPlan` (each step declares its applicability)
 **Principle 1, 4.** `get_pipeline_step_specs` (`deployment_specs.py:94-177`) is the *least bad*
 seam (semantic queries, no hardcoded list) but still hand-assembles with per-flag `append`s.
