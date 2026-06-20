@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from mimarsinan.common.diagnostics import phase_profiler
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
 def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     """Compact zeroed rows/columns when pruning was applied."""
-    if not step.pipeline.config.get("pruning", False):
+    plan = DeploymentPlan.of(step.pipeline)
+    if not plan.pruning:
         return ir_graph
 
     from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
@@ -70,7 +72,7 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
             initial_pruned_per_bank=initial_bank if initial_bank else None,
             store_heatmap=store_heatmap,
             simulation_steps=int(step.pipeline.config["simulation_steps"]),
-            spiking_mode=str(step.pipeline.config.get("spiking_mode", "lif")),
+            spiking_mode=str(plan.spiking_mode),
         )
     print("[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination)")
     return ir_graph

@@ -4,6 +4,8 @@ Each submodule implements `PipelineStep` subclasses for one pipeline phase. All 
 
 **Applicability (Vector V5):** each step declares `@classmethod applies_to(plan)` — whether it belongs in the pipeline for a resolved `DeploymentPlan`. The base `PipelineStep.applies_to` returns `True`; conditional steps override with the verbatim per-flag predicate that gated their former `append` in `deployment_specs` (e.g. `ArchitectureSearchStep` ↔ `plan.search_mode != "fixed"`, `WeightPreloadingStep` ↔ `bool(plan.weight_source)`, the activation-family steps ↔ `plan.is_lif_style` / `plan.activation_quantization` / `plan.requires_ttfs_firing`, the `*QuantizationStep`s ↔ `plan.weight_quantization`). The V5 `StepPlan` registry (`core/step_plan.py`) filters an ordered registry by these predicates; backend steps stay in `BACKEND_REGISTRY`.
 
+**Deployment-flag reads (Vector V1):** inside `process()`, steps read deployment-decision flags (`spiking_mode`, `activation_quantization`/`weight_quantization`, `pruning`/`pruning_fraction`, `weight_source`, …) from `DeploymentPlan.of(self.pipeline).<field>` — the single resolver (`core/deployment_plan.py`) — never via a raw `config.get(<flag>)`. A grep-guard (`tests/unit/pipelining/test_deployment_plan.py::TestPipelineStepsReadThePlan`) locks this for the whole subtree.
+
 ## Subpackages
 
 | Directory | Doc | Phase |

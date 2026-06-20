@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
@@ -163,7 +164,7 @@ class ArchitectureSearchStep(PipelineStep):
             extrapolation_num_train_epochs=extrapolation_num_train_epochs,
             extrapolation_num_checkpoints=extrapolation_num_checkpoints,
             extrapolation_target_epochs=extrapolation_target_epochs,
-            pruning_fraction=float(self.pipeline.config.get("pruning_fraction", 0.0)),
+            pruning_fraction=DeploymentPlan.of(self.pipeline).pruning_fraction,
         )
 
         optimizer = create_optimizer(
