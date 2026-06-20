@@ -205,6 +205,7 @@ def _build_subset_hybrid(work_dir: _Path, n_cores: int):
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping, HybridHardCoreMapping,
     )
+    from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
     from mimarsinan.mapping.packing.softcore import HardCoreMapping
 
     with open(work_dir / "Soft Core Mapping.ir_graph.pickle", "rb") as f:
@@ -214,9 +215,11 @@ def _build_subset_hybrid(work_dir: _Path, n_cores: int):
 
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir_graph, cores_config=platform["cores"],
-        allow_neuron_splitting=False,
-        allow_scheduling=bool(platform.get("allow_scheduling", False)),
-        allow_coalescing=False,
+        strategy=MappingStrategy.from_permissions(
+            allow_neuron_splitting=False,
+            allow_scheduling=bool(platform.get("allow_scheduling", False)),
+            allow_coalescing=False,
+        ),
     )
     stage1 = hybrid.stages[1]
 

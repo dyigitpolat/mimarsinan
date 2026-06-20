@@ -58,6 +58,7 @@ from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
@@ -243,8 +244,10 @@ def build_torch_and_hcm(
             "max_neurons": config.core_max_neurons,
             "count": 4000,
         }],
-        allow_neuron_splitting=config.allow_neuron_splitting,
-        allow_coalescing=config.allow_coalescing,
+        strategy=MappingStrategy.from_permissions(
+            allow_neuron_splitting=config.allow_neuron_splitting,
+            allow_coalescing=config.allow_coalescing,
+        ),
     )
     hcm = SpikingHybridCoreFlow(
         input_shape, hybrid, simulation_length=T, preprocessor=nn.Identity(),

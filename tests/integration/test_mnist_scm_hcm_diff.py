@@ -24,6 +24,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities, MappingStrategy
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.spiking.hybrid.identity_flow import build_identity_spiking_flow
@@ -149,9 +150,9 @@ def test_mnist_scm_hcm_first_divergence():
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,
         cores_config=cores_config,
-        allow_neuron_splitting=bool(platform.get("allow_neuron_splitting", False)),
-        allow_scheduling=bool(platform.get("allow_scheduling", False)),
-        allow_coalescing=bool(platform.get("allow_coalescing", False)),
+        strategy=MappingStrategy.resolve(
+            ChipCapabilities.from_platform_constraints(platform)
+        ),
     )
     hcm = SpikingHybridCoreFlow(
         input_shape, hybrid, sim_length, nn.Identity(),

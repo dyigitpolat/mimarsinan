@@ -70,6 +70,7 @@ def _build_hcm(placement, T=4):
     import torch.nn as nn
     from mimarsinan.models.nn.activations import LIFActivation
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+    from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
     from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
     torch.manual_seed(0)
@@ -93,7 +94,7 @@ def _build_hcm(placement, T=4):
     ).map(repr_)
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir, cores_config=[{"max_axons": 512, "max_neurons": 512, "count": 400}],
-        allow_neuron_splitting=True,
+        strategy=MappingStrategy.from_permissions(allow_neuron_splitting=True),
     )
     return SpikingHybridCoreFlow(
         (1, 28, 28), hybrid, simulation_length=T, preprocessor=nn.Identity(),
@@ -120,6 +121,7 @@ def _build_ttfs_hcm(placement, T=8):
     import torch.nn as nn
     from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+    from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
     from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
     torch.manual_seed(0)
@@ -148,7 +150,7 @@ def _build_ttfs_hcm(placement, T=8):
     ).map(repr_)
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir, cores_config=[{"max_axons": 512, "max_neurons": 512, "count": 400}],
-        allow_neuron_splitting=True,
+        strategy=MappingStrategy.from_permissions(allow_neuron_splitting=True),
     )
     return SpikingHybridCoreFlow(
         (1, 28, 28), hybrid, simulation_length=T, preprocessor=torch.nn.Identity(),

@@ -16,6 +16,7 @@ from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import ComputeOp
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.mapping.support.neg_shift_bias import (
@@ -76,7 +77,7 @@ def _build(T, *, shift: bool, calib_x=None):
         transfer_negative_shifts_to_ir(flow, ir)
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir, cores_config=[{"max_axons": 64, "max_neurons": 64, "count": 50}],
-        allow_neuron_splitting=True,
+        strategy=MappingStrategy.from_permissions(allow_neuron_splitting=True),
     )
     if shift:
         table = propagate_negative_shifts_to_hybrid(ir, hybrid)
