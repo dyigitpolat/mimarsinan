@@ -8,6 +8,7 @@ import torch
 
 from mimarsinan.chip_simulation.backend import BACKEND_REGISTRY
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.pipelining.core.step_plan import StepPlan, StepSpec
 from mimarsinan.pipelining.pipeline_steps import *
 
 
@@ -29,26 +30,39 @@ def select_device() -> torch.device:
     return device
 
 
-_ACTIVATION_ANALYSIS_STEP: tuple[str, type] = ("Activation Analysis", ActivationAnalysisStep)
-_CLAMP_ADAPTATION_STEP: tuple[str, type] = ("Clamp Adaptation", ClampAdaptationStep)
-_ACTIVATION_ADAPTATION_NO_QUANT_STEP: tuple[str, type] = (
-    "Activation Adaptation",
-    ActivationAdaptationStep,
-)
+_STEP_PLAN = StepPlan([
+    # ── configuration: search vs fixed (mutually exclusive on applies_to) ──
+    StepSpec("Architecture Search",            ArchitectureSearchStep),
+    StepSpec("Model Configuration",            ModelConfigurationStep),
+    StepSpec("Model Building",                 ModelBuildingStep),
+    # ── weights: preload vs pretrain (mutually exclusive on applies_to) ──
+    StepSpec("Weight Preloading",              WeightPreloadingStep),
+    StepSpec("Pretraining",                    PretrainingStep),
+    StepSpec("Torch Mapping",                  TorchMappingStep),
+    StepSpec("Pruning Adaptation",             PruningAdaptationStep),
+    StepSpec("Activation Analysis",            ActivationAnalysisStep),
+    # ── activation-adaptation family: V2 policy chooses LIF-style (one
+    #    replacement step) vs the analytical clamp→shift→quantize chain ──
+    StepSpec("LIF Adaptation",                 LIFAdaptationStep),
+    StepSpec("TTFS Cycle Fine-Tuning",         TTFSCycleAdaptationStep),
+    StepSpec("Noise Adaptation",               NoiseAdaptationStep),
+    StepSpec("Activation Adaptation",          ActivationAdaptationStep),
+    StepSpec("Clamp Adaptation",               ClampAdaptationStep),
+    StepSpec("Activation Shifting",            ActivationShiftStep),
+    StepSpec("Activation Quantization",        ActivationQuantizationStep),
+    # ── weight quantization ──
+    StepSpec("Weight Quantization",            WeightQuantizationStep),
+    StepSpec("Quantization Verification",      QuantizationVerificationStep),
+    # ── mapping ──
+    StepSpec("Normalization Fusion",           NormalizationFusionStep),
+    StepSpec("Soft Core Mapping",              SoftCoreMappingStep),
+    StepSpec("Core Quantization Verification", CoreQuantizationVerificationStep),
+    StepSpec("Hard Core Mapping",              HardCoreMappingStep),
+    # ── deployment backends (V3): validate every enabled backend against the
+    #    capability matrix UP-FRONT, then append the applicable backend steps ──
+    lambda plan: BACKEND_REGISTRY.selected_step_specs(plan),
+])
 
-_ACTIVATION_QUANTIZATION_STEPS: list[tuple[str, type]] = [
-    ("Activation Shifting",       ActivationShiftStep),
-    ("Activation Quantization",   ActivationQuantizationStep),
-]
-
-_PRUNING_STEPS: list[tuple[str, type]] = [
-    ("Pruning Adaptation",        PruningAdaptationStep),
-]
-
-_WEIGHT_QUANTIZATION_STEPS: list[tuple[str, type]] = [
-    ("Weight Quantization",       WeightQuantizationStep),
-    ("Quantization Verification", QuantizationVerificationStep),
-]
 
 _SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
     ArchitectureSearchStep:             "configuration",
@@ -87,69 +101,15 @@ def get_pipeline_semantic_group_by_step_name(config: dict) -> dict[str, str]:
 
 
 def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
-    """Return ordered (step_name, step_class) list for the given config."""
+    """Return ordered (step_name, step_class) list for the given config.
+
+    Vector V5: the ordered ``_STEP_PLAN`` registry filters itself by each step's
+    ``applies_to(plan)`` (the per-flag conditions now live on the steps). The
+    backend tail still routes through ``BACKEND_REGISTRY`` so an enabled but
+    unsupported backend×mode raises at assembly (V3), not mid-run.
+    """
     plan = DeploymentPlan.resolve(config)
-    spiking = plan.spiking_mode
-
-    specs: list[tuple[str, type]] = []
-
-    if plan.search_mode != "fixed":
-        specs.append(("Architecture Search", ArchitectureSearchStep))
-    else:
-        specs.append(("Model Configuration", ModelConfigurationStep))
-
-    specs.append(("Model Building", ModelBuildingStep))
-
-    if plan.weight_source:
-        specs.append(("Weight Preloading", WeightPreloadingStep))
-    else:
-        specs.append(("Pretraining", PretrainingStep))
-
-    if plan.model_category == "torch":
-        specs.append(("Torch Mapping", TorchMappingStep))
-
-    if plan.pruning_enabled:
-        specs.extend(_PRUNING_STEPS)
-
-    specs.append(_ACTIVATION_ANALYSIS_STEP)
-
-    cycle_finetune = plan.is_ttfs_cycle_based
-    if spiking == "lif" or cycle_finetune:
-        # LIF-style: one activation-replacement step (LIFActivation /
-        # TTFSCycleActivation) subsumes the non-ReLU→ReLU replacement AND the
-        # clamp/shift/activation-quantization chain — it clamps + quantises
-        # internally, so running that chain first is redundant and destabilising.
-        if spiking == "lif":
-            specs.append(("LIF Adaptation", LIFAdaptationStep))
-        else:
-            specs.append(("TTFS Cycle Fine-Tuning", TTFSCycleAdaptationStep))
-        if plan.enable_training_noise:
-            specs.append(("Noise Adaptation", NoiseAdaptationStep))
-    else:
-        specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
-        if plan.activation_quantization or plan.requires_ttfs_firing:
-            specs.append(_CLAMP_ADAPTATION_STEP)
-        if plan.activation_quantization:
-            specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
-
-    if plan.weight_quantization:
-        specs.extend(_WEIGHT_QUANTIZATION_STEPS)
-
-    specs.append(("Normalization Fusion", NormalizationFusionStep))
-    specs.append(("Soft Core Mapping", SoftCoreMappingStep))
-    if plan.weight_quantization:
-        specs.append(
-            ("Core Quantization Verification", CoreQuantizationVerificationStep)
-        )
-
-    specs.append(("Hard Core Mapping", HardCoreMappingStep))
-
-    # V3: the backend registry consults the capability matrix UP-FRONT — an
-    # enabled backend that does not support the plan's spiking mode raises an
-    # actionable error here (at assembly), not reactively mid-run.
-    specs.extend(BACKEND_REGISTRY.selected_step_specs(plan))
-
-    return specs
+    return _STEP_PLAN.resolve(plan)
 
 
 def validate_deployment_config(config: dict, *, model_name: str, cuda_debug: bool) -> None:

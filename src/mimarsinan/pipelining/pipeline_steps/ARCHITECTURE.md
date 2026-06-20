@@ -2,6 +2,8 @@
 
 Each submodule implements `PipelineStep` subclasses for one pipeline phase. All steps are re-exported from [`__init__.py`](__init__.py).
 
+**Applicability (Vector V5):** each step declares `@classmethod applies_to(plan)` — whether it belongs in the pipeline for a resolved `DeploymentPlan`. The base `PipelineStep.applies_to` returns `True`; conditional steps override with the verbatim per-flag predicate that gated their former `append` in `deployment_specs` (e.g. `ArchitectureSearchStep` ↔ `plan.search_mode != "fixed"`, `WeightPreloadingStep` ↔ `bool(plan.weight_source)`, the activation-family steps ↔ `plan.is_lif_style` / `plan.activation_quantization` / `plan.requires_ttfs_firing`, the `*QuantizationStep`s ↔ `plan.weight_quantization`). The V5 `StepPlan` registry (`core/step_plan.py`) filters an ordered registry by these predicates; backend steps stay in `BACKEND_REGISTRY`.
+
 ## Subpackages
 
 | Directory | Doc | Phase |

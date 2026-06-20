@@ -79,6 +79,19 @@ class SpikingModePolicy:
         """How a segment's output is decoded: ``count`` (rate) vs ``timing`` (TTFS)."""
         raise NotImplementedError
 
+    # ── activation-adaptation family (Vector V5 step planning) ──────────────
+    @property
+    def single_step_activation_replacement(self) -> bool:
+        """Whether one activation-replacement step (LIF / TTFS-cycle) subsumes
+        the multi-step clamp/shift/activation-quantization chain.
+
+        The (firing × sync) decision the V5 step planner reads to choose the
+        activation-adaptation family (a single fine-tuner vs the analytical
+        clamp→shift→quantize chain). Composes with ``DeploymentPlan`` via
+        ``plan.is_lif_style``.
+        """
+        return False
+
     # ── SANA-FE soma model ──────────────────────────────────────────────────
     def soma_hw_name(self) -> str:
         """Name of the SANA-FE soma plugin for this mode."""
@@ -115,6 +128,12 @@ class SpikingModePolicy:
 
 class LifModePolicy(SpikingModePolicy):
     """LIF rate family: per-cycle integrate-and-fire, count decode."""
+
+    @property
+    def single_step_activation_replacement(self) -> bool:
+        # LIFActivation clamps + quantises internally; one replacement step
+        # subsumes the non-ReLU→ReLU replacement AND the clamp/shift/quant chain.
+        return self.spiking_mode == "lif"
 
     def training_forward_kind(self) -> str:
         return "rate" if self.spiking_mode == "rate" else "lif_cycle"
@@ -215,6 +234,11 @@ class TtfsAnalyticalModePolicy(SpikingModePolicy):
 
 class _TtfsCycleModePolicy(SpikingModePolicy):
     """Shared base for the genuine single-spike (ttfs_cycle_based) schedules."""
+
+    @property
+    def single_step_activation_replacement(self) -> bool:
+        # TTFSCycleActivation subsumes the clamp/shift/quant chain like LIF.
+        return True
 
     def calibration_forward(self):
         from mimarsinan.mapping.support.neg_shift_bias import (

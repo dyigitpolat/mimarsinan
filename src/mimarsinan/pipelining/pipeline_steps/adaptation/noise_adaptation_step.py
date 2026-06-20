@@ -5,6 +5,10 @@ from mimarsinan.tuning.tuners.noise_tuner import NoiseTuner
 
 
 class NoiseAdaptationStep(TunerPipelineStep):
+    @classmethod
+    def applies_to(cls, plan):
+        return plan.is_lif_style and plan.enable_training_noise
+
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         promises = []

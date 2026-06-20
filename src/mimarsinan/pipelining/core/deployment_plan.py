@@ -142,6 +142,28 @@ class DeploymentPlan:
         """Resolve the plan for a pipeline (reads ``pipeline.config``)."""
         return cls.resolve(pipeline.config)
 
+    def mode_policy(self):
+        """The behavior-carrying ``SpikingModePolicy`` (V2) for this plan.
+
+        Resolved directly from the schedule-derived axes — no ``simulation_steps``
+        needed — so the step planner can compose with the policy at
+        pipeline-step-ordering time (the full contract is lazy via
+        ``spiking_contract``)."""
+        from mimarsinan.chip_simulation.spiking_mode_policy import (
+            policy_for_spiking_mode,
+        )
+
+        return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
+
+    @property
+    def is_lif_style(self) -> bool:
+        """LIF or ttfs_cycle: one activation-replacement step subsumes the
+        clamp/shift/activation-quantization chain (it clamps + quantises
+        internally), so that chain is skipped. The (firing × sync) branch the
+        step planner reads to choose the activation-adaptation family —
+        composed from the V2 ``SpikingModePolicy``."""
+        return self.mode_policy().single_step_activation_replacement
+
     def spiking_contract(self):
         """The spiking-semantics sub-part SSOT (needs ``simulation_steps``)."""
         from mimarsinan.chip_simulation.deployment_contract import (

@@ -3,6 +3,10 @@ from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipeli
 
 
 class PretrainingStep(TrainerPipelineStep):
+    @classmethod
+    def applies_to(cls, plan):
+        return not plan.weight_source
+
     def __init__(self, pipeline):
         requires = ["model"]
         promises = []

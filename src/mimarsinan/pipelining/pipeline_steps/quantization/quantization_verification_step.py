@@ -6,6 +6,10 @@ from mimarsinan.transformations.perceptron.perceptron_transformer import Percept
 
 
 class QuantizationVerificationStep(TrainerPipelineStep):
+    @classmethod
+    def applies_to(cls, plan):
+        return plan.weight_quantization
+
     def __init__(self, pipeline):
         requires = ["model"]
         promises = []

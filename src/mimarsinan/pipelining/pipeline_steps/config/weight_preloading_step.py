@@ -17,6 +17,10 @@ import torch
 class WeightPreloadingStep(TrainerPipelineStep):
     """Load pretrained weights into the model and optionally fine-tune."""
 
+    @classmethod
+    def applies_to(cls, plan):
+        return bool(plan.weight_source)
+
     def __init__(self, pipeline):
         requires = ["model", "model_builder"]
         promises = []
