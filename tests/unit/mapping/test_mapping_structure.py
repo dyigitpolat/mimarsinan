@@ -111,6 +111,48 @@ class TestChipCapabilities:
         assert caps.allow_neuron_splitting is True
         assert caps.allow_scheduling is True
 
+    def test_from_platform_constraints_reads_three_bits(self):
+        caps = ChipCapabilities.from_platform_constraints(
+            {
+                "allow_coalescing": True,
+                "allow_neuron_splitting": True,
+                "allow_scheduling": False,
+                "cores": [{"max_axons": 64, "max_neurons": 64, "count": 4}],
+            }
+        )
+        assert caps.allow_coalescing is True
+        assert caps.allow_neuron_splitting is True
+        assert caps.allow_scheduling is False
+        # Grid is carried separately (cores/core_types), not by the capability factory.
+        assert caps.max_axons is None
+        assert caps.max_neurons is None
+
+    def test_from_platform_constraints_defaults_false(self):
+        caps = ChipCapabilities.from_platform_constraints({})
+        assert caps.allow_coalescing is False
+        assert caps.allow_neuron_splitting is False
+        assert caps.allow_scheduling is False
+
+    def test_from_platform_constraints_coerces_truthy(self):
+        caps = ChipCapabilities.from_platform_constraints(
+            {"allow_coalescing": 1, "allow_neuron_splitting": 0, "allow_scheduling": "x"}
+        )
+        assert caps.allow_coalescing is True
+        assert caps.allow_neuron_splitting is False
+        assert caps.allow_scheduling is True
+
+    def test_permission_kwargs_match_helper_signature(self):
+        caps = ChipCapabilities(
+            allow_coalescing=True,
+            allow_neuron_splitting=False,
+            allow_scheduling=True,
+        )
+        assert caps.permission_kwargs() == {
+            "allow_neuron_splitting": False,
+            "allow_coalescing": True,
+            "allow_scheduling": True,
+        }
+
 
 class TestMappingStrategy:
     def test_permission_accessors_mirror_capabilities(self):
@@ -124,6 +166,15 @@ class TestMappingStrategy:
         assert strat.allow_neuron_splitting is False
         assert strat.allow_scheduling is True
         assert strat.capabilities is caps
+
+    def test_permission_kwargs_delegate_to_capabilities(self):
+        caps = ChipCapabilities(
+            allow_coalescing=True,
+            allow_neuron_splitting=True,
+            allow_scheduling=False,
+        )
+        strat = MappingStrategy.resolve(caps)
+        assert strat.permission_kwargs() == caps.permission_kwargs()
 
     @pytest.mark.parametrize(
         "in_f,out_f,max_ax,max_ne,has_bias,hw_bias,coalesce",
