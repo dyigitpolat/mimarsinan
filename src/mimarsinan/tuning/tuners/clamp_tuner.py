@@ -43,6 +43,17 @@ class ClampTuner(SmoothAdaptationTuner):
         self._axis = ClampAxis()
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
+        # EF1: READ the pipeline-wide optimization-driver axis (the analytical chain had
+        # NO fast path before). Default `controller` ⇒ the fast ladder is carried but
+        # disabled ⇒ byte-identical; an explicit `optimization_driver=fast` drives this
+        # uniform value-domain clamp ladder.
+        self._consume_optimization_driver(
+            rates=self.pipeline.config.get("clamp_fast_rates", [0.25, 0.5, 0.75, 1.0]),
+            steps_per_rate=int(
+                self.pipeline.config.get("clamp_fast_steps_per_rate", 120)
+            ),
+        )
+
     def _set_rate(self, rate):
         self._axis.set_rate(rate)
 

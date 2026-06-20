@@ -31,6 +31,17 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
         self._axis = ActivationShiftAxis(self._apply_shift)
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
+        # EF1: the one-shot shift tuner READS the pipeline-wide optimization-driver
+        # axis to record its resolved decision (`self._optimization_driver`). It has no
+        # smooth fast ladder (one-shot apply-then-recover, not a rate ramp), so the fast
+        # arm is a no-op for this family — it stays the controller path regardless,
+        # byte-identical — but it still consumes the axis like every other family.
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+        self._optimization_driver = DeploymentPlan.of(
+            self.pipeline
+        ).optimization_driver_for_family(rates=[1.0], steps_per_rate=0)
+
     def _apply_shift(self):
         config = self.pipeline.config
         transformer = PerceptronTransformer()

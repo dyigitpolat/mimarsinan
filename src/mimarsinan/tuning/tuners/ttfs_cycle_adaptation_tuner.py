@@ -89,6 +89,17 @@ from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
 from mimarsinan.tuning.orchestration.ramp_strategy import RampStrategy
 
 
+def _conversion_characterizer_for(tuner):
+    """The E4 pre-flight characterizer the live tuner hands the ConversionPolicy.
+
+    The propose → CONFIRM → escalate ``Characterizer`` seam (EF3). ``None`` makes the
+    policy use its conservative no-op default (:class:`AlwaysMatchesCharacterizer`) —
+    the byte-identical default while the layer is off. The real forward-mostly probes
+    (cold-cascade liveness / ramp monotonicity / staircase-vs-LIF ceiling / firing-gain)
+    are research thread R1; this is the seam Fix B overrides to supply them per model."""
+    return None
+
+
 class _SegmentSpikeForward(LazyExecutorForward):
     """Picklable ``model.forward`` override driving the segment-aware spike sim.
 
@@ -318,8 +329,41 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             TtfsAdaptationPlan,
         )
 
+        # EF1: read the controller-vs-fast decision from the pipeline-wide axis
+        # (DeploymentPlan.optimization_driver via DeploymentPlan.of(pipeline)) and
+        # thread it into the plan as the GATE over TTFS's three-way fast fork; the
+        # per-`ttfs_*`-flag selectors still pick WHICH fast variant. Default
+        # `controller` ⇒ no fast variant ⇒ byte-identical.
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+        # EF3: the (firing × sync) E3 CalibrationPipeline + E4 ConversionPolicy keystone
+        # are CONSULTED through the contract seam, not resolved off the tuner's booleans.
+        #   * calibration_resolver routes the conversion-health resolution through
+        #     `contract.calibration_pipeline` (the pipeline-wide seam) — keyed by the
+        #     (firing × sync) policy, byte-identical to the boolean alias it replaces.
+        #   * conversion_decision consults `contract.conversion_policy` (propose →
+        #     confirm → escalate). DEFAULT-OFF ⇒ the decision is inert (names the
+        #     current controller behavior, the characterizer is never run) ⇒ nothing
+        #     runs and the axis is untouched ⇒ byte-identical. Fix B is later just a
+        #     default flip + real probes.
+        def _calibration_resolver(config, *, synchronized, distmatch_driven):
+            return contract.calibration_pipeline(
+                config, distmatch_driven=distmatch_driven,
+            )
+
+        conversion_decision = contract.conversion_policy(
+            self.pipeline.config,
+            model=self.model,
+            characterizer=_conversion_characterizer_for(self),
+        )
+        self._conversion_decision = conversion_decision
+
         plan = TtfsAdaptationPlan.resolve(
-            self.pipeline.config, synchronized=self._synchronized,
+            self.pipeline.config,
+            synchronized=self._synchronized,
+            optimization_driver=DeploymentPlan.of(self.pipeline).optimization_driver,
+            calibration_resolver=_calibration_resolver,
+            conversion_decision=conversion_decision,
         )
         self._adaptation_plan = plan
         self._genuine_annealed_ramp = plan.genuine_annealed_ramp
@@ -769,7 +813,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             self._fast_optimizer_steps += 1
         self._set_rate(float(target))  # commit/eval at the deploy rate (sharp surrogate)
         self._committed_rate = float(target)
-        post_acc = float(self.trainer.validate_n_batches(self._budget.eval_n_batches))
+        post_acc = self.probe()  # EF2: the STE-fast rung reads through the seam verb
         self._record_fast_cycle(float(target), post_acc, t0)
         self._last_post_acc = post_acc
         self._fast_probe(float(target))
