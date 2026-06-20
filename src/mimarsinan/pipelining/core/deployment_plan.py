@@ -214,3 +214,22 @@ class DeploymentPlan:
         )
 
         return SpikingDeploymentContract.from_pipeline_config(self.config)
+
+    def calibration_pipeline(self, *, distmatch_driven=False):
+        """The conversion-health ``CalibrationPipeline`` for this plan's (firing ×
+        sync) cell (E3).
+
+        Pipeline-wide: every conversion tuner reads ITS calibration through this one
+        contract-keyed resolver. Resolved from the schedule-derived policy (no
+        ``simulation_steps`` needed) and the plan's config; the cascaded cycle opts
+        into the conversion-health steps, LIF / analytical / synchronized get the
+        inert pipeline (default-off ⇒ byte-identical)."""
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        return CalibrationPipeline.for_mode(
+            self.config,
+            mode_policy=self.mode_policy(),
+            distmatch_driven=distmatch_driven,
+        )

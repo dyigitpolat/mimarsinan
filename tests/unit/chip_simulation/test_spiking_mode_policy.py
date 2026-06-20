@@ -296,6 +296,45 @@ class TestValidBackends:
         assert set(got) == {"hcm", "nevresim", "unified", "hybrid", "sanafe"}
 
 
+# ── does_conversion_health_calibration (E3 CalibrationPipeline key) ───────────
+
+class TestConversionHealthCalibration:
+    """The (firing × sync) cell that opts into conversion-health calibration.
+
+    Only the cascaded fire-once-latch cycle does today (its deployed decode has the
+    depth-attenuation / distribution gap the steps correct); every other cell is
+    inert, so the E3 ``CalibrationPipeline`` stays byte-identically off for them.
+    """
+
+    CASES = [
+        ("lif", None, False),
+        ("rate", None, False),
+        ("ttfs", "cascaded", False),
+        ("ttfs", "synchronized", False),
+        ("ttfs_quantized", "cascaded", False),
+        ("ttfs_cycle_based", "synchronized", False),
+        ("ttfs_cycle_based", "cascaded", True),
+        ("ttfs_cycle_based", None, True),  # default cascaded
+    ]
+
+    @pytest.mark.parametrize("mode,schedule,expected", CASES)
+    def test_does_conversion_health_calibration(self, mode, schedule, expected):
+        policy = policy_for_spiking_mode(mode, schedule)
+        assert policy.does_conversion_health_calibration is expected
+
+    def test_only_cascade_policy_opts_in(self):
+        # The cascade policy is the sole opt-in; everything else inherits the
+        # inert base default.
+        assert TtfsCascadeModePolicy("ttfs_cycle_based", "cascaded") \
+            .does_conversion_health_calibration is True
+        for policy in (
+            LifModePolicy("lif"),
+            TtfsAnalyticalModePolicy("ttfs"),
+            TtfsSyncCycleModePolicy("ttfs_cycle_based", "synchronized"),
+        ):
+            assert policy.does_conversion_health_calibration is False
+
+
 # ── requires_ttfs_firing ──────────────────────────────────────────────────────
 
 class TestRequiresTtfsFiring:

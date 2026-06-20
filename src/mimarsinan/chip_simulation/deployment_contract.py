@@ -93,6 +93,24 @@ class SpikingDeploymentContract:
 
         return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
 
+    def calibration_pipeline(self, config, *, distmatch_driven=False, core: Any = None):
+        """The conversion-health ``CalibrationPipeline`` for this (firing × sync) cell.
+
+        E3: the pipeline-wide resolution every conversion tuner consumes — the
+        ENABLE is the contract's (firing × sync) decision (the cascaded cycle opts
+        in; LIF / analytical / synchronized get the inert pipeline). ``config``
+        carries the ``ttfs_*`` step params for a cell that opts in; ``distmatch_driven``
+        is whether the chosen ramp owns the distribution-matching call."""
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        return CalibrationPipeline.for_mode(
+            config,
+            mode_policy=self.mode_policy(core=core),
+            distmatch_driven=distmatch_driven,
+        )
+
     def training_forward_kind(self, *, core: Any = None) -> str:
         """NF algorithm the fine-tuners must train through for this deployment.
 
