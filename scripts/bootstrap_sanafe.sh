@@ -30,8 +30,12 @@ if [ "${MIMARSINAN_SANAFE_FROM_SOURCE:-0}" = "1" ]; then
     pip uninstall -y sanafe || true
     pip install -e ./sana_fe
 else
-    echo "==> Installing SANA-FE wheel from PyPI"
-    pip install sanafe
+    # PINNED: the integration (arch YAML, soma model_attributes, plugins) targets
+    # 2.1.1. An unpinned `pip install sanafe` upgraded it to 2.2.x on 2026-06-17,
+    # which SIGFPEs on arch load (see docs/.../SANAFE_fpe_investigation.md). Bump
+    # only after re-validating the SANA-FE parity gate + _SUPPORTED_SANAFE_VERSIONS.
+    echo "==> Installing SANA-FE wheel from PyPI (pinned 2.1.1)"
+    pip install "sanafe==2.1.1"
 fi
 
 echo "==> Building mimarsinan SANA-FE plugins"

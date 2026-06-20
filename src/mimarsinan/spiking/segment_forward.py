@@ -107,12 +107,21 @@ class SegmentForwardDriver:
                             "not supported"
                         )
 
-    def __call__(self, x, *, compute_min_recorder: dict | None = None):
+    def __call__(
+        self, x, *,
+        compute_min_recorder: dict | None = None,
+        node_value_recorder: dict | None = None,
+    ):
+        # ``node_value_recorder`` is a pure side-channel: a policy that supports it
+        # writes each perceptron's decoded value into it WITHOUT altering the
+        # forward output (consumed by the DFQ bias-correction calibrators).
+        self._node_value_recorder = node_value_recorder
         self.policy.prepare(self)
         try:
             return self._run(x, compute_min_recorder)
         finally:
             self.policy.finalize(self)
+            self._node_value_recorder = None
 
     def _forward_node(self, node, values, x):
         d = self._deps.get(node, [])

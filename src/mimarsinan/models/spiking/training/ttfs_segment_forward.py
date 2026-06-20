@@ -35,10 +35,14 @@ class TTFSSegmentForward:
     ``TTFSActivation`` with ``encoding`` set to match ``is_encoding_layer``.
     """
 
-    def __init__(self, mapper_repr, T: int):
+    def __init__(self, mapper_repr, T: int, *, boundary_surrogate_temp: float | None = None):
         self.repr = mapper_repr
         self.T = int(T)
-        self._driver = SegmentForwardDriver(mapper_repr, self.T, TtfsSegmentPolicy())
+        policy = TtfsSegmentPolicy()
+        # STE backward through the offload-boundary re-encode (None = severed,
+        # the historical contract). Forward is unchanged either way.
+        policy.boundary_surrogate_temp = boundary_surrogate_temp
+        self._driver = SegmentForwardDriver(mapper_repr, self.T, policy)
 
     @property
     def _segments(self) -> dict:
