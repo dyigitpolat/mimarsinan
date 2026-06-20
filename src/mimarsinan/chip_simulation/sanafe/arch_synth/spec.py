@@ -48,9 +48,31 @@ def _plugin_path(name: str) -> Optional[str]:
 
 _SANAFE_MODULE: Any = None
 
+# The integration (arch YAML, soma model_attributes, the custom plugins) targets
+# this SANA-FE. An unpinned `pip install sanafe` upgraded it to 2.2.x on
+# 2026-06-17, which SIGFPEs (core dump) on arch load — see
+# docs/research_artifacts_for_cascaded_ttfs_tuning/SANAFE_fpe_investigation.md.
+_SUPPORTED_SANAFE_VERSIONS = ("2.1.1",)
+
+
+def _check_sanafe_version(version: Optional[str]) -> None:
+    """Fail LOUD on an unsupported SANA-FE instead of letting it SIGFPE in C++.
+
+    ``None`` (version undeterminable) is permissive — we only block versions we
+    KNOW are incompatible, to avoid false positives on future validated bumps.
+    """
+    if version is not None and version not in _SUPPORTED_SANAFE_VERSIONS:
+        supported = _SUPPORTED_SANAFE_VERSIONS[0]
+        raise RuntimeError(
+            f"SANA-FE {version} is unsupported — the mimarsinan integration "
+            f"targets {supported} (2.2.x SIGFPEs on arch load). Pin it: "
+            f"`pip install sanafe=={supported}` or re-run "
+            f"scripts/bootstrap_sanafe.sh (now pinned)."
+        )
+
 
 def _sanafe() -> Any:
-    """Lazy ``import sanafe`` (cached; monkey-patched in tests)."""
+    """Lazy ``import sanafe`` (cached; monkey-patched in tests), version-guarded."""
     global _SANAFE_MODULE
     if _SANAFE_MODULE is None:
         try:
@@ -58,8 +80,15 @@ def _sanafe() -> Any:
         except ImportError as e:  # pragma: no cover — exercised by integration tests
             raise ImportError(
                 "SANA-FE is not installed.  Run scripts/bootstrap_sanafe.sh "
-                "(or `pip install sanafe`) to enable the detailed-stats backend."
+                "to enable the detailed-stats backend."
             ) from e
+        try:
+            import importlib.metadata as _md
+
+            _version = _md.version("sanafe")
+        except Exception:  # pragma: no cover — metadata edge cases
+            _version = getattr(sanafe, "__version__", None)
+        _check_sanafe_version(_version)
         _SANAFE_MODULE = sanafe
     return _SANAFE_MODULE
 
