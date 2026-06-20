@@ -8,7 +8,10 @@ from mimarsinan.mapping.layout.layout_source_view_ops import (
     concat_source_views,
     stack_source_views,
 )
-from mimarsinan.mapping.platform.mapping_structure import compute_fc_tiling_mode
+from mimarsinan.mapping.platform.mapping_structure import (
+    ChipCapabilities,
+    MappingStrategy,
+)
 
 
 class _LayoutIRMappingFC:
@@ -76,11 +79,15 @@ class _LayoutIRMappingFC:
             return out.reshape(tuple(output_shape))
 
         has_bias = fc_biases is not None
-        mode = compute_fc_tiling_mode(
-            in_features, out_features,
-            self.max_axons, self.max_neurons,
-            has_bias, self.hardware_bias, self.allow_coalescing,
+        strategy = MappingStrategy.resolve(
+            ChipCapabilities(
+                max_axons=self.max_axons,
+                max_neurons=self.max_neurons,
+                hardware_bias=self.hardware_bias,
+                allow_coalescing=self.allow_coalescing,
+            )
         )
+        mode = strategy.tiling_mode(in_features, out_features, has_bias)
 
         if mode == "coalescing" and coalescing_group_id is None:
             coalescing_group_id = self._coalescing_group_counter

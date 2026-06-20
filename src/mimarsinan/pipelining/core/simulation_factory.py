@@ -15,6 +15,10 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_identity_hybrid_mapping,
 )
 from mimarsinan.mapping.ir import IRGraph
+from mimarsinan.mapping.platform.mapping_structure import (
+    ChipCapabilities,
+    MappingStrategy,
+)
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -34,12 +38,17 @@ def build_hybrid_mapping_for_pipeline(
     *,
     pipeline_config: dict[str, Any] | None = None,
 ) -> Any:
+    strategy = MappingStrategy.resolve(
+        ChipCapabilities(
+            allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
+            allow_scheduling=bool(platform_constraints.get("allow_scheduling", False)),
+            allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
+        )
+    )
     hybrid_mapping = build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,
         cores_config=platform_constraints["cores"],
-        allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
-        allow_scheduling=bool(platform_constraints.get("allow_scheduling", False)),
-        allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
+        strategy=strategy,
     )
     # Install negative-value shifts carried on the IR ComputeOps (no-op when none).
     from mimarsinan.mapping.support.neg_shift_bias import propagate_negative_shifts_to_hybrid
