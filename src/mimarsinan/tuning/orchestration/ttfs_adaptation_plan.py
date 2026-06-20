@@ -84,7 +84,13 @@ class TtfsAdaptationPlan:
 
     @classmethod
     def resolve(
-        cls, config, *, synchronized: bool, optimization_driver: str | None = None,
+        cls,
+        config,
+        *,
+        synchronized: bool,
+        optimization_driver: str | None = None,
+        calibration_resolver=None,
+        conversion_decision=None,
     ) -> "TtfsAdaptationPlan":
         get = config.get
 
@@ -115,6 +121,16 @@ class TtfsAdaptationPlan:
             axis = resolve_optimization_driver(config)
         else:
             axis = str(optimization_driver).lower()
+        # EF3: the E4 ConversionPolicy keystone (propose → confirm → escalate) is the
+        # SAFE override of the axis when it ran. DEFAULT-OFF ⇒ the decision is inert
+        # (`enabled` False) ⇒ the axis is untouched ⇒ byte-identical. When opted in,
+        # the decision's driver (the proposed recipe's, or the controller fallback on
+        # an escalation) GATES the fast fork — escalation vetoes fast exactly like an
+        # explicit `controller` axis. This is the keystone consultation, not a flip.
+        if conversion_decision is not None and getattr(
+            conversion_decision, "enabled", False
+        ):
+            axis = str(conversion_decision.driver).lower()
         fast_enabled = axis == OPTIMIZATION_DRIVER_FAST
 
         ste_fast = (
@@ -150,9 +166,15 @@ class TtfsAdaptationPlan:
         )
         # The conversion-health concern (E3): the ENABLE is the (firing × sync)
         # decision owned by the SpikingModePolicy, resolved off the `synchronized`
-        # cycle key (cascaded → opts in, synchronized → inert). `resolve` is the
-        # boolean alias for that policy; distmatch is owned by the genuine-blend ramp.
-        calibration = CalibrationPipeline.resolve(
+        # cycle key (cascaded → opts in, synchronized → inert). distmatch is owned by
+        # the genuine-blend ramp. EF3: `calibration_resolver` (default None) is the
+        # injected CONTRACT seam — the live tuner passes the contract's
+        # `calibration_pipeline`, so the resolution is keyed by the (firing × sync)
+        # contract, not the tuner's boolean. None ⇒ the raw `CalibrationPipeline.resolve`
+        # boolean alias (back-compat for direct callers) — bit-exact, since the contract
+        # keys identically on cascaded-vs-synchronized.
+        resolver = calibration_resolver or CalibrationPipeline.resolve
+        calibration = resolver(
             config, synchronized=synchronized, distmatch_driven=blend,
         )
 
