@@ -6,6 +6,7 @@ import sys
 
 import torch
 
+from mimarsinan.chip_simulation.backend import BACKEND_REGISTRY
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.pipeline_steps import *
 
@@ -142,22 +143,11 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
         )
 
     specs.append(("Hard Core Mapping", HardCoreMappingStep))
-    # nevresim runs the genuine fire-once-latch cascade for the cascaded schedule,
-    # but has no genuine synchronized-window backend yet — skip it only there.
-    if plan.enable_nevresim_simulation and not plan.is_synchronized_ttfs:
-        specs.append(("Simulation", SimulationStep))
 
-    if plan.enable_loihi_simulation:
-        specs.append(("Loihi Simulation", LoihiSimulationStep))
-
-    if plan.enable_sanafe_simulation:
-        specs.append(("SANA-FE Simulation", SanafeSimulationStep))
-
-    if plan.enable_loihi_simulation and plan.requires_ttfs_firing:
-        raise ValueError(
-            f"enable_loihi_simulation is not supported for spiking_mode={spiking!r}; "
-            "Loihi/Lava only implements LIF dynamics."
-        )
+    # V3: the backend registry consults the capability matrix UP-FRONT — an
+    # enabled backend that does not support the plan's spiking mode raises an
+    # actionable error here (at assembly), not reactively mid-run.
+    specs.extend(BACKEND_REGISTRY.selected_step_specs(plan))
 
     return specs
 
