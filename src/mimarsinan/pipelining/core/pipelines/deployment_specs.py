@@ -6,13 +6,7 @@ import sys
 
 import torch
 
-from mimarsinan.chip_simulation.spiking_semantics import (
-    is_synchronized_ttfs,
-    is_ttfs_cycle_based,
-    requires_ttfs_firing,
-)
-from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
-from mimarsinan.pipelining.core.search_mode import derive_search_mode
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.pipeline_steps import *
 
 
@@ -93,41 +87,32 @@ def get_pipeline_semantic_group_by_step_name(config: dict) -> dict[str, str]:
 
 def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     """Return ordered (step_name, step_class) list for the given config."""
-    search_mode = derive_search_mode(config)
-    spiking = config.get("spiking_mode", "lif")
-    act_q = config.get("activation_quantization", False)
-    wt_q = config.get("weight_quantization", False)
-    pruning = config.get("pruning", False)
-    pruning_fraction = float(config.get("pruning_fraction", 0.0))
-    weight_source = config.get("weight_source")
-    model_type = config.get("model_type", "")
-    loihi_sim = bool(config.get("enable_loihi_simulation", False))
-    sanafe_sim = bool(config.get("enable_sanafe_simulation", False))
-    nevresim_sim = config.get("enable_nevresim_simulation", True)
+    plan = DeploymentPlan.resolve(config)
+    spiking = plan.spiking_mode
 
     specs: list[tuple[str, type]] = []
 
-    if search_mode != "fixed":
+    if plan.search_mode != "fixed":
         specs.append(("Architecture Search", ArchitectureSearchStep))
     else:
         specs.append(("Model Configuration", ModelConfigurationStep))
 
     specs.append(("Model Building", ModelBuildingStep))
 
-    if weight_source:
+    if plan.weight_source:
         specs.append(("Weight Preloading", WeightPreloadingStep))
     else:
         specs.append(("Pretraining", PretrainingStep))
 
-    if ModelRegistry.get_category(model_type) == "torch":
+    if plan.model_category == "torch":
         specs.append(("Torch Mapping", TorchMappingStep))
 
-    if pruning and pruning_fraction > 0:
+    if plan.pruning_enabled:
         specs.extend(_PRUNING_STEPS)
 
     specs.append(_ACTIVATION_ANALYSIS_STEP)
 
-    cycle_finetune = is_ttfs_cycle_based(spiking)
+    cycle_finetune = plan.is_ttfs_cycle_based
     if spiking == "lif" or cycle_finetune:
         # LIF-style: one activation-replacement step (LIFActivation /
         # TTFSCycleActivation) subsumes the non-ReLU→ReLU replacement AND the
@@ -137,21 +122,21 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
             specs.append(("LIF Adaptation", LIFAdaptationStep))
         else:
             specs.append(("TTFS Cycle Fine-Tuning", TTFSCycleAdaptationStep))
-        if bool(config.get("enable_training_noise", False)):
+        if plan.enable_training_noise:
             specs.append(("Noise Adaptation", NoiseAdaptationStep))
     else:
         specs.append(_ACTIVATION_ADAPTATION_NO_QUANT_STEP)
-        if act_q or requires_ttfs_firing(spiking):
+        if plan.activation_quantization or plan.requires_ttfs_firing:
             specs.append(_CLAMP_ADAPTATION_STEP)
-        if act_q:
+        if plan.activation_quantization:
             specs.extend(_ACTIVATION_QUANTIZATION_STEPS)
 
-    if wt_q:
+    if plan.weight_quantization:
         specs.extend(_WEIGHT_QUANTIZATION_STEPS)
 
     specs.append(("Normalization Fusion", NormalizationFusionStep))
     specs.append(("Soft Core Mapping", SoftCoreMappingStep))
-    if wt_q:
+    if plan.weight_quantization:
         specs.append(
             ("Core Quantization Verification", CoreQuantizationVerificationStep)
         )
@@ -159,16 +144,16 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     specs.append(("Hard Core Mapping", HardCoreMappingStep))
     # nevresim runs the genuine fire-once-latch cascade for the cascaded schedule,
     # but has no genuine synchronized-window backend yet — skip it only there.
-    if nevresim_sim and not is_synchronized_ttfs(spiking, config.get("ttfs_cycle_schedule")):
+    if plan.enable_nevresim_simulation and not plan.is_synchronized_ttfs:
         specs.append(("Simulation", SimulationStep))
 
-    if loihi_sim:
+    if plan.enable_loihi_simulation:
         specs.append(("Loihi Simulation", LoihiSimulationStep))
 
-    if sanafe_sim:
+    if plan.enable_sanafe_simulation:
         specs.append(("SANA-FE Simulation", SanafeSimulationStep))
 
-    if loihi_sim and requires_ttfs_firing(spiking):
+    if plan.enable_loihi_simulation and plan.requires_ttfs_firing:
         raise ValueError(
             f"enable_loihi_simulation is not supported for spiking_mode={spiking!r}; "
             "Loihi/Lava only implements LIF dynamics."
@@ -179,8 +164,9 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
 
 def validate_deployment_config(config: dict, *, model_name: str, cuda_debug: bool) -> None:
     """Non-fatal sanity checks; warnings go to stderr."""
-    act_q = bool(config.get("activation_quantization", False))
-    spiking = config.get("spiking_mode", "lif")
+    plan = DeploymentPlan.resolve(config)
+    act_q = plan.activation_quantization
+    spiking = plan.spiking_mode
     clamp_in_play = (spiking != "lif") and (act_q or spiking in ("ttfs", "ttfs_quantized"))
 
     if "vit" in model_name.lower() and clamp_in_play and not cuda_debug:

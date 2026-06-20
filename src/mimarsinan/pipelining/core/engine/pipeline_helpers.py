@@ -9,7 +9,9 @@ import torch
 
 
 def require_lif_spiking_mode(pipeline, step_name: str) -> None:
-    spiking_mode = pipeline.config.get("spiking_mode", "lif")
+    from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+    spiking_mode = DeploymentPlan.of(pipeline).spiking_mode
     if spiking_mode != "lif":
         raise ValueError(
             f"{step_name} requires spiking_mode='lif'; got {spiking_mode!r}"
@@ -23,8 +25,9 @@ def require_spiking_mode_supported(
     backend: str,
 ) -> None:
     from mimarsinan.chip_simulation.spiking_semantics import require_spiking_mode_supported
+    from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-    spiking_mode = pipeline.config.get("spiking_mode", "lif")
+    spiking_mode = DeploymentPlan.of(pipeline).spiking_mode
     require_spiking_mode_supported(
         spiking_mode,
         backend=backend,
