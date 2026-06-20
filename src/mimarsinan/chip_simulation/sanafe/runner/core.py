@@ -79,11 +79,13 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.T = int(simulation_length)
         self.arch_preset = arch_preset
         self.custom_arch_path = custom_arch_path
-        from mimarsinan.chip_simulation.spiking_semantics import require_spiking_mode_supported
-
-        require_spiking_mode_supported(
-            self.spiking_mode, backend="sanafe", context="SanafeRunner",
+        from mimarsinan.chip_simulation.spiking_mode_policy import (
+            policy_for_spiking_mode,
         )
+
+        policy_for_spiking_mode(
+            self.spiking_mode, self.ttfs_cycle_schedule
+        ).require_backend_supported(backend="sanafe", context="SanafeRunner")
         self.log_potential_trace = log_potential_trace
         self.log_message_trace = log_message_trace
         self.cores_per_tile = cores_per_tile

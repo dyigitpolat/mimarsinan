@@ -29,6 +29,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
     is_ttfs_cycle_based,
+    require_spiking_mode_supported,
     requires_ttfs_firing,
     supports_spiking_mode,
 )
@@ -118,12 +119,20 @@ class SpikingModePolicy:
     def requires_ttfs_firing(self) -> bool:
         return requires_ttfs_firing(self.spiking_mode)
 
-    # ── backend capability ──────────────────────────────────────────────────
+    # ── backend capability (the policy is the SSOT; spiking_semantics is its internals) ──
+    def supports_backend(self, backend: str) -> bool:
+        """Whether ``backend``'s capabilities support this mode."""
+        return supports_spiking_mode(backend, self.spiking_mode)
+
+    def require_backend_supported(self, *, backend: str, context: str) -> None:
+        """Raise an actionable error if ``backend`` cannot run this mode."""
+        require_spiking_mode_supported(
+            self.spiking_mode, backend=backend, context=context
+        )
+
     def valid_backends(self, candidates) -> tuple[str, ...]:
         """Subset of ``candidates`` whose capabilities support this mode."""
-        return tuple(
-            b for b in candidates if supports_spiking_mode(b, self.spiking_mode)
-        )
+        return tuple(b for b in candidates if self.supports_backend(b))
 
 
 class LifModePolicy(SpikingModePolicy):

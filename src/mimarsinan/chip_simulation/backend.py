@@ -26,10 +26,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Optional
 
-from mimarsinan.chip_simulation.spiking_semantics import (
-    require_spiking_mode_supported,
-    supports_spiking_mode,
-)
+from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
 __all__ = [
     "Backend",
@@ -59,12 +56,14 @@ class Backend(ABC):
 
     def supports(self, contract: Any) -> bool:
         """Whether this backend supports the contract's spiking mode (matrix-driven)."""
-        return supports_spiking_mode(self.name, _spiking_mode_of(contract))
+        return policy_for_spiking_mode(_spiking_mode_of(contract)).supports_backend(
+            self.name
+        )
 
     def require_supported(self, contract: Any, *, context: str) -> None:
         """Raise an actionable error if this backend cannot run the contract's mode."""
-        require_spiking_mode_supported(
-            _spiking_mode_of(contract), backend=self.name, context=context
+        policy_for_spiking_mode(_spiking_mode_of(contract)).require_backend_supported(
+            backend=self.name, context=context
         )
 
     @abstractmethod

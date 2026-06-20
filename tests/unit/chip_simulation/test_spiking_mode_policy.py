@@ -305,3 +305,55 @@ class TestRequiresTtfsFiring:
     def test_ttfs_family_requires_ttfs(self):
         for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
             assert policy_for_spiking_mode(mode).requires_ttfs_firing is True
+
+
+# ── backend capability: the policy is the SSOT (spiking_semantics is internals) ─
+
+class TestBackendCapability:
+    ALL = ("hcm", "nevresim", "unified", "hybrid", "sanafe", "lava", "loihi", "training")
+    MODES = ("lif", "rate", "ttfs", "ttfs_quantized", "ttfs_cycle_based")
+
+    @pytest.mark.parametrize("mode", MODES)
+    @pytest.mark.parametrize("backend", ALL)
+    def test_supports_backend_matches_legacy_predicate(self, mode, backend):
+        from mimarsinan.chip_simulation.spiking_semantics import supports_spiking_mode
+
+        assert (
+            policy_for_spiking_mode(mode).supports_backend(backend)
+            is supports_spiking_mode(backend, mode)
+        )
+
+    def test_supports_backend_consistent_with_valid_backends(self):
+        for mode in self.MODES:
+            policy = policy_for_spiking_mode(mode)
+            assert policy.valid_backends(self.ALL) == tuple(
+                b for b in self.ALL if policy.supports_backend(b)
+            )
+
+    def test_require_backend_supported_passes_for_supported(self):
+        # lif is valid on every backend → no raise.
+        for backend in self.ALL:
+            policy_for_spiking_mode("lif").require_backend_supported(
+                backend=backend, context="ctx"
+            )
+
+    def test_require_backend_supported_raises_with_legacy_message(self):
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            require_spiking_mode_supported,
+        )
+
+        # Byte-identical error to the function the call-sites used to call.
+        with pytest.raises(ValueError) as policy_exc:
+            policy_for_spiking_mode("ttfs").require_backend_supported(
+                backend="loihi", context="ctx"
+            )
+        with pytest.raises(ValueError) as legacy_exc:
+            require_spiking_mode_supported("ttfs", backend="loihi", context="ctx")
+        assert str(policy_exc.value) == str(legacy_exc.value)
+
+    def test_require_backend_supported_schedule_irrelevant(self):
+        # Schedule never changes backend capability (only the mode does).
+        for schedule in ("cascaded", "synchronized"):
+            policy = policy_for_spiking_mode("ttfs_cycle_based", schedule)
+            assert policy.supports_backend("lava") is False
+            assert policy.supports_backend("nevresim") is True
