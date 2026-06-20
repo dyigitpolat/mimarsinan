@@ -7,6 +7,10 @@ from mimarsinan.mapping.export.chip_quantize import verify_ir_graph_quantized
 class CoreQuantizationVerificationStep(PipelineStep):
     """Fail fast if weight_quantization=True but IR NeuralCores are not chip-quantized."""
 
+    @classmethod
+    def applies_to(cls, plan):
+        return plan.weight_quantization
+
     def __init__(self, pipeline):
         requires = ["ir_graph"]
         promises = []

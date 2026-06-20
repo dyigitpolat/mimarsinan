@@ -3,6 +3,10 @@ from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQua
 
 
 class ActivationQuantizationStep(TunerPipelineStep):
+    @classmethod
+    def applies_to(cls, plan):
+        return (not plan.is_lif_style) and plan.activation_quantization
+
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         promises = []

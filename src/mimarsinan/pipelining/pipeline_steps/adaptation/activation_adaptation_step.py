@@ -8,6 +8,10 @@ from mimarsinan.tuning.tuners.activation_adaptation_tuner import ActivationAdapt
 
 
 class ActivationAdaptationStep(TunerPipelineStep):
+    @classmethod
+    def applies_to(cls, plan):
+        return not plan.is_lif_style
+
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager"]
         promises = []

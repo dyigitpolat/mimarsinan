@@ -5,6 +5,12 @@ from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
 class ClampAdaptationStep(TunerPipelineStep):
     """Introduces activation clamping (ClampDecorator) with recovery training."""
 
+    @classmethod
+    def applies_to(cls, plan):
+        return (not plan.is_lif_style) and (
+            plan.activation_quantization or plan.requires_ttfs_firing
+        )
+
     def __init__(self, pipeline):
         requires = ["model", "adaptation_manager", "activation_scales", "activation_scale_stats"]
         promises = []

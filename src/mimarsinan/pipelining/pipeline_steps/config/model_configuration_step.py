@@ -17,6 +17,10 @@ class ModelConfigurationStep(PipelineStep):
     downstream consumer — there is no separate "scaled" version.
     """
 
+    @classmethod
+    def applies_to(cls, plan):
+        return plan.search_mode == "fixed"
+
     def __init__(self, pipeline):
         requires = []
         promises = [
