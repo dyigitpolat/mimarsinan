@@ -129,6 +129,29 @@ def test_derive_arch_spec_cores_per_tile_splits_evenly():
     assert spec.n_cores_per_tile == [2, 2, 1]
 
 
+class TestSanafeVersionGuard:
+    """The integration (arch YAML, soma attrs, plugins) targets SANA-FE 2.1.1;
+    an unpinned `pip install sanafe` upgraded it to 2.2.6 on 2026-06-17, which
+    SIGFPEs on arch load. The guard must fail LOUD on an unsupported version
+    (an actionable error), not let it reach the C++ and core-dump."""
+
+    def test_supported_version_passes(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import (
+            _check_sanafe_version, _SUPPORTED_SANAFE_VERSIONS,
+        )
+        _check_sanafe_version(_SUPPORTED_SANAFE_VERSIONS[0])  # no raise
+
+    def test_unknown_version_is_permissive(self):
+        # Can't determine the version → don't block (avoid false positives).
+        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import _check_sanafe_version
+        _check_sanafe_version(None)
+
+    def test_unsupported_version_raises_actionable(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import _check_sanafe_version
+        with pytest.raises(RuntimeError, match=r"2\.1\.1"):
+            _check_sanafe_version("2.2.6")
+
+
 class TestMeshDimsAreExact:
     """A ceil-padded mesh (width*height > n_tiles) leaves phantom tiles the YAML
     never defines → SANA-FE's C++ NoC SIGFPEs in SpikingChip(arch) (the 2026-06
