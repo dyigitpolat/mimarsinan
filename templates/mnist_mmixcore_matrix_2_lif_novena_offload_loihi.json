@@ -75,7 +75,7 @@
     "allow_scheduling": false,
     "enable_nevresim_simulation": true,
     "enable_loihi_simulation": true,
-    "enable_sanafe_simulation": false,
+    "enable_sanafe_simulation": true,
     "sanafe_arch_preset": "loihi",
     "sanafe_sample_count": 1,
     "sanafe_custom_arch_path": null,
