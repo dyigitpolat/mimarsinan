@@ -21,6 +21,7 @@ is the SSOT for ``(spiking_mode, schedule) → policy``; mirrors
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from mimarsinan.chip_simulation.spiking_semantics import (
@@ -41,7 +42,40 @@ __all__ = [
     "TtfsSyncCycleModePolicy",
     "TtfsCascadeModePolicy",
     "policy_for_spiking_mode",
+    "ExecPolicySpec",
+    "NevresimExecParams",
 ]
+
+
+@dataclass(frozen=True)
+class ExecPolicySpec:
+    """C++ compute policy type and execution alias for nevresim main.cpp."""
+
+    compute_policy: str
+    exec_decl: str
+
+
+@dataclass(frozen=True)
+class NevresimExecParams:
+    """Codegen scalars for one nevresim ``main.cpp`` exec policy.
+
+    These are the comparator/reset strings (selected by the firing-strategy
+    SSOT, never here) plus the chip-shape constants the C++ templates need.
+    The (firing × sync) family — *which* compute/execution template to
+    instantiate — is the policy's decision, not part of this data.
+    """
+
+    compare: str
+    lif_fire_policy: str
+    spike_gen_mode: str
+    weight_type: str
+    simulation_length: int
+    latency: int
+    output_count: int
+
+    @property
+    def spike_generator(self) -> str:
+        return f"{self.spike_gen_mode}SpikeGenerator"
 
 
 class SpikingModePolicy:
@@ -78,6 +112,16 @@ class SpikingModePolicy:
     # ── decode ──────────────────────────────────────────────────────────────
     def decode_mode(self) -> str:
         """How a segment's output is decoded: ``count`` (rate) vs ``timing`` (TTFS)."""
+        raise NotImplementedError
+
+    # ── nevresim codegen (firing × sync → C++ compute/execution template) ────
+    def nevresim_exec_policy(self, params: "NevresimExecParams") -> "ExecPolicySpec":
+        """The nevresim ``(ComputePolicy, Execution)`` C++ types for this mode.
+
+        The firing × sync → codegen choice lives here (one place per family);
+        ``code_generation.generate_main`` delegates to it. The comparator/reset
+        strings in ``params`` come from the firing-strategy SSOT, not from here.
+        """
         raise NotImplementedError
 
     # ── activation-adaptation family (Vector V5 step planning) ──────────────
@@ -155,6 +199,19 @@ class LifModePolicy(SpikingModePolicy):
     def decode_mode(self) -> str:
         return "count"
 
+    def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
+        lif = params.lif_fire_policy
+        return ExecPolicySpec(
+            compute_policy=f"SpikingCompute<{lif}>",
+            exec_decl=(
+                f"using exec = SpikingExecution<"
+                f"{params.simulation_length}, {params.latency}, "
+                f"{params.output_count}, "
+                f"{params.spike_generator}, {params.weight_type}, "
+                f"{lif}>;"
+            ),
+        )
+
     def soma_hw_name(self) -> str:
         from mimarsinan.chip_simulation.sanafe.presets import SOMA_LIF_NAME
 
@@ -199,6 +256,24 @@ class TtfsAnalyticalModePolicy(SpikingModePolicy):
     @property
     def _is_quantized(self) -> bool:
         return forces_activation_quantization(self.spiking_mode)
+
+    def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
+        if not self._is_quantized:
+            return ExecPolicySpec(
+                compute_policy="TTFSAnalyticalCompute",
+                exec_decl="using exec = TTFSContinuousExecution;",
+            )
+        return ExecPolicySpec(
+            compute_policy=(
+                f"TTFSQuantizedCompute<{params.simulation_length}, "
+                f"{params.compare}>"
+            ),
+            exec_decl=(
+                f"using exec = TTFSExecution<"
+                f"{params.simulation_length}, {params.latency}, "
+                f"{params.compare}>;"
+            ),
+        )
 
     def soma_hw_name(self) -> str:
         from mimarsinan.chip_simulation.sanafe.presets import (
@@ -266,6 +341,14 @@ class TtfsSyncCycleModePolicy(_TtfsCycleModePolicy):
     def decode_mode(self) -> str:
         return "timing"
 
+    def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
+        # The synchronized schedule disables nevresim (it cannot express the
+        # sequential per-group windows), so nevresim codegen never reaches here.
+        raise ValueError(
+            "nevresim does not run the synchronized ttfs_cycle_based schedule; "
+            "any nevresim run of ttfs_cycle_based is the cascaded schedule"
+        )
+
     def soma_hw_name(self) -> str:
         from mimarsinan.chip_simulation.sanafe.presets import SOMA_TTFS_CYCLE_NAME
 
@@ -304,6 +387,21 @@ class TtfsCascadeModePolicy(_TtfsCycleModePolicy):
 
     def decode_mode(self) -> str:
         return "count"
+
+    def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
+        # Genuine cascaded single-spike TTFS — its own TTFS compute/execution
+        # path (not the LIF SpikingCompute/SpikingExecution): each neuron fires
+        # once, the downstream ramp reconstructs the value.
+        return ExecPolicySpec(
+            compute_policy=f"TTFSCascadeCompute<{params.compare}>",
+            exec_decl=(
+                f"using exec = TTFSCascadeExecution<"
+                f"{params.simulation_length}, {params.latency}, "
+                f"{params.output_count}, "
+                f"{params.spike_generator}, {params.weight_type}, "
+                f"{params.compare}>;"
+            ),
+        )
 
     def soma_hw_name(self) -> str:
         from mimarsinan.chip_simulation.sanafe.presets import SOMA_TTFS_CASCADE_NAME

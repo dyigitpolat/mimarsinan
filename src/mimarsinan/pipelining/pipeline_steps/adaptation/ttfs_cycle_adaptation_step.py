@@ -6,12 +6,21 @@ from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import TTFSCycleAdapta
 
 
 class TTFSCycleAdaptationStep(TunerPipelineStep):
+    # Class-level STATIC contract (the V5 DAG-validation lower bound). The
+    # ``activation_scales`` requirement is INSTANCE-SPECIFIC (opt-in flag) and is
+    # therefore added in ``__init__``, not declared here — it is also always
+    # produced earlier by the unconditional Activation Analysis step, so the
+    # static contract remains a sound conservative bound for assembly-time
+    # validation.
+    REQUIRES = ("model", "adaptation_manager")
+    UPDATES = ("model", "adaptation_manager")
+
     @classmethod
     def applies_to(cls, plan):
         return plan.is_ttfs_cycle_based
 
     def __init__(self, pipeline):
-        requires = ["model", "adaptation_manager"]
+        requires = list(self.REQUIRES)
         self._scale_aware_boundaries = bool(
             pipeline.config.get("ttfs_scale_aware_boundaries", False)
         )
@@ -20,10 +29,7 @@ class TTFSCycleAdaptationStep(TunerPipelineStep):
         # path byte-identical (and never depends on Activation Analysis output).
         if self._scale_aware_boundaries:
             requires = requires + ["activation_scales"]
-        promises = []
-        updates = ["model", "adaptation_manager"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(requires, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def process(self):
         model = self.get_entry("model")

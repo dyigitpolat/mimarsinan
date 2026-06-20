@@ -74,6 +74,7 @@ def _build_mlpmixer_hcm(placement: str, T: int = 4):
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping,
     )
+    from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
     from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
     torch.manual_seed(0)
@@ -97,7 +98,7 @@ def _build_mlpmixer_hcm(placement: str, T: int = 4):
     ).map(repr_)
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir, cores_config=[{"max_axons": 512, "max_neurons": 512, "count": 400}],
-        allow_neuron_splitting=True,
+        strategy=MappingStrategy.from_permissions(allow_neuron_splitting=True),
     )
     return SpikingHybridCoreFlow(
         (1, 28, 28), hybrid, simulation_length=T, preprocessor=nn.Identity(),

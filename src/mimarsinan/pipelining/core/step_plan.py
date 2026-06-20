@@ -29,6 +29,10 @@ from typing import Callable
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
+class StepPlanContractError(AssertionError):
+    """A resolved step sequence's requires/promises DAG is not satisfiable."""
+
+
 @dataclass(frozen=True)
 class StepSpec:
     """One registry entry: a named step that declares its own applicability.
@@ -74,6 +78,42 @@ class StepPlan:
                     specs.append(entry.to_pair())
             else:
                 specs.extend(entry(plan))
+        return specs
+
+    def validate_data_contract(self, plan: DeploymentPlan) -> list[tuple[str, type]]:
+        """Resolve the step sequence and assert its requires/promises DAG holds.
+
+        Vector V5: each step declares its data contract at the CLASS level
+        (``PipelineStep.declared_contract``), so the satisfiability of the whole
+        DAG — every consumed entry is promised by an EARLIER selected step — can
+        be checked at ASSEMBLY time, before any step is instantiated or run. This
+        mirrors the runtime ``Pipeline.verify`` / ``set_up_requirements``
+        semantics (promises and updates make an entry available downstream;
+        clears retract it) but fails loud with an actionable message naming the
+        missing producer instead of a bare "requires X" assertion deep in a run.
+
+        Returns the resolved ``(name, class)`` sequence (so callers can reuse it).
+        """
+        specs = self.resolve(plan)
+        available: dict[str, str] = {}  # entry -> producing step name
+        for name, step_class in specs:
+            requires, promises, updates, clears = step_class.declared_contract()
+            for requirement in requires:
+                if requirement not in available:
+                    raise StepPlanContractError(
+                        f"Pipeline step '{name}' requires '{requirement}', "
+                        f"but no earlier selected step promises it. "
+                        f"Available entries at this point: "
+                        f"{sorted(available)}. "
+                        f"Add a step that promises '{requirement}' before '{name}', "
+                        f"or fix the requires/promises class-level declarations."
+                    )
+            for entry in promises:
+                available[entry] = name
+            for entry in updates:
+                available[entry] = name
+            for entry in clears:
+                available.pop(entry, None)
         return specs
 
     def step_classes(self) -> list[type]:

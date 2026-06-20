@@ -100,12 +100,16 @@ def _build_hybrid_mapping(ir_graph, platform):
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping,
     )
+    from mimarsinan.mapping.platform.mapping_structure import (
+        ChipCapabilities,
+        MappingStrategy,
+    )
     return build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,
         cores_config=platform["cores"],
-        allow_neuron_splitting=bool(platform.get("allow_neuron_splitting", False)),
-        allow_scheduling=bool(platform.get("allow_scheduling", False)),
-        allow_coalescing=bool(platform.get("allow_coalescing", False)),
+        strategy=MappingStrategy.resolve(
+            ChipCapabilities.from_platform_constraints(platform)
+        ),
     )
 
 

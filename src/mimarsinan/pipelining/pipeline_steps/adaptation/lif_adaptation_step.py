@@ -5,16 +5,15 @@ from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 
 
 class LIFAdaptationStep(TunerPipelineStep):
+    REQUIRES = ("model", "adaptation_manager")
+    UPDATES = ("model", "adaptation_manager")
+
     @classmethod
     def applies_to(cls, plan):
         return plan.spiking_mode == "lif"
 
     def __init__(self, pipeline):
-        requires = ["model", "adaptation_manager"]
-        promises = []
-        updates = ["model", "adaptation_manager"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def process(self):
         self.run_tuner(

@@ -23,13 +23,11 @@ import os
 
 
 class SoftCoreMappingStep(PipelineStep):
+    REQUIRES = ("fused_model", "platform_constraints_resolved")
+    PROMISES = ("ir_graph",)
 
     def __init__(self, pipeline):
-        requires = ["fused_model", "platform_constraints_resolved"]
-        promises = ["ir_graph"]
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
         self.trainer = None
         self._soft_core_spiking_metric = None
 

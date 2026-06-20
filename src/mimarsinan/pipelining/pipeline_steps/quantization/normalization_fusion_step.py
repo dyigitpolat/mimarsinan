@@ -4,12 +4,12 @@ from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
 
 
 class NormalizationFusionStep(TrainerPipelineStep):
+    REQUIRES = ("model",)
+    PROMISES = ("fused_model",)
+    UPDATES = ("model",)
+
     def __init__(self, pipeline):
-        requires = ["model"]
-        promises = ["fused_model"]
-        updates = ["model"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def validate(self):
         if self.trainer is not None:

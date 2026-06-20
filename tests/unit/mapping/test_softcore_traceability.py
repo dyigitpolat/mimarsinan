@@ -158,6 +158,7 @@ class TestSnapshotMappedPlacements:
         """When a core has fused_component_axons, snapshot includes fused_axon_boundaries and fused_component_count."""
         from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
         from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+        from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
         w = np.ones((101, 32), dtype=np.float32) * 0.1
@@ -167,7 +168,8 @@ class TestSnapshotMappedPlacements:
         ir = IRGraph(nodes=[c], output_sources=out)
         cores_config = [{"max_axons": 64, "max_neurons": 32, "count": 4}]
         hm = build_hybrid_hard_core_mapping(
-            ir_graph=ir, cores_config=cores_config, allow_coalescing=True)
+            ir_graph=ir, cores_config=cores_config,
+            strategy=MappingStrategy.from_permissions(allow_coalescing=True))
         snap, _descs = snapshot_hard_core_mapping(hm)
         neural_stages = [s for s in snap["stages"] if s.get("kind") == "neural" and s.get("cores")]
         assert len(neural_stages) == 1

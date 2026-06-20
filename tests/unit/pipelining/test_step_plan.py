@@ -9,7 +9,11 @@ explicit on the steps — these tests make them assertable.
 import pytest
 
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-from mimarsinan.pipelining.core.step_plan import StepPlan, StepSpec
+from mimarsinan.pipelining.core.step_plan import (
+    StepPlan,
+    StepSpec,
+    StepPlanContractError,
+)
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.pipelines.deployment_specs import (
     get_pipeline_step_specs,
@@ -17,6 +21,7 @@ from mimarsinan.pipelining.core.pipelines.deployment_specs import (
 )
 from mimarsinan.pipelining.pipeline_steps import (
     ActivationAdaptationStep,
+    ActivationAnalysisStep,
     ActivationQuantizationStep,
     ActivationShiftStep,
     ArchitectureSearchStep,
@@ -212,3 +217,152 @@ class TestRegistryIntegrity:
     def test_registry_step_classes_have_a_step_class_each(self):
         for cls in _STEP_PLAN.step_classes():
             assert hasattr(cls, "applies_to")
+
+
+# ── class-level data-contract declarations (V5 finish) ───────────────────────
+
+class TestClassLevelDataContract:
+    """Each step declares requires/promises/updates/clears at the CLASS level.
+
+    The instance ``self.requires`` etc. set in ``__init__`` must read the class
+    declaration verbatim (so the DAG is validatable without instantiation).
+    """
+
+    def test_declared_contract_matches_instance_attrs(self):
+        # A real (uninstantiated) step's class contract == the instance contract
+        # built in its __init__ (byte-identical lift).
+        class _FakePipeline:
+            config: dict = {}
+
+        for step_cls in [
+            ModelBuildingStep, PretrainingStep, WeightPreloadingStep,
+            TorchMappingStep, ActivationAnalysisStep, LIFAdaptationStep,
+            ClampAdaptationStep, WeightQuantizationStep,
+            ModelConfigurationStep, ArchitectureSearchStep,
+        ]:
+            req, prom, upd, clr = step_cls.declared_contract()
+            inst = step_cls(_FakePipeline())
+            assert list(inst.requires) == list(req), step_cls.__name__
+            assert list(inst.promises) == list(prom), step_cls.__name__
+            assert list(inst.updates) == list(upd), step_cls.__name__
+            assert list(inst.clears) == list(clr), step_cls.__name__
+
+    def test_base_step_declares_empty_contract(self):
+        assert PipelineStep.declared_contract() == ((), (), (), ())
+
+    def test_ttfs_cycle_static_contract_is_lower_bound(self):
+        # The instance-specific opt-in (activation_scales) is NOT in the static
+        # class contract; the flag-off instance matches the class declaration.
+        class _FakePipeline:
+            config = {"ttfs_scale_aware_boundaries": False}
+
+        req, _, _, _ = TTFSCycleAdaptationStep.declared_contract()
+        assert "activation_scales" not in req
+        inst = TTFSCycleAdaptationStep(_FakePipeline())
+        assert list(inst.requires) == list(req)
+
+        class _FakePipelineOn:
+            config = {"ttfs_scale_aware_boundaries": True}
+
+        inst_on = TTFSCycleAdaptationStep(_FakePipelineOn())
+        assert "activation_scales" in inst_on.requires
+        # The opt-in extra is still itself satisfiable (Activation Analysis,
+        # which is unconditional, promises it earlier).
+        assert ActivationAnalysisStep.applies_to(_plan(spiking_mode="ttfs_cycle_based"))
+
+
+# ── assembly-time requires/promises DAG validation ──────────────────────────
+
+class TestDataContractDagValidation:
+    """``StepPlan.validate_data_contract`` asserts a producer for every consume."""
+
+    def test_valid_plan_returns_same_specs_as_resolve(self):
+        for overrides in [
+            {},
+            {"spiking_mode": "ttfs", "activation_quantization": True, "weight_quantization": True},
+            {"spiking_mode": "ttfs_cycle_based", "ttfs_cycle_schedule": "synchronized"},
+            {"model_type": "torch_custom", "weight_source": "w.pt"},
+            {"pruning": True, "pruning_fraction": 0.3, "enable_loihi_simulation": True},
+        ]:
+            plan = _plan(**overrides)
+            assert _STEP_PLAN.validate_data_contract(plan) == _STEP_PLAN.resolve(plan)
+
+    def test_public_entry_point_validates_the_dag(self):
+        # get_pipeline_step_specs routes through validate_data_contract; a valid
+        # config returns the resolved sequence unchanged.
+        cfg = {"configuration_mode": "user", "spiking_mode": "lif", "model_type": "mlp_mixer"}
+        assert get_pipeline_step_specs(cfg) == _STEP_PLAN.resolve(DeploymentPlan.resolve(cfg))
+
+    def test_missing_producer_raises_naming_the_entry(self):
+        class _Producer(PipelineStep):
+            PROMISES = ("model",)
+
+        class _Consumer(PipelineStep):
+            REQUIRES = ("model", "ghost_entry")
+
+        sp = StepPlan([StepSpec("P", _Producer), StepSpec("C", _Consumer)])
+        with pytest.raises(StepPlanContractError) as exc:
+            sp.validate_data_contract(_plan())
+        msg = str(exc.value)
+        assert "ghost_entry" in msg
+        assert "'C'" in msg  # the consuming step is named
+
+    def test_consumer_before_producer_is_rejected(self):
+        # A later step's promise does not satisfy an earlier step's require.
+        class _Producer(PipelineStep):
+            PROMISES = ("late_entry",)
+
+        class _Consumer(PipelineStep):
+            REQUIRES = ("late_entry",)
+
+        sp = StepPlan([StepSpec("C", _Consumer), StepSpec("P", _Producer)])
+        with pytest.raises(StepPlanContractError):
+            sp.validate_data_contract(_plan())
+
+    def test_update_keeps_entry_available_downstream(self):
+        class _Producer(PipelineStep):
+            PROMISES = ("model",)
+
+        class _Updater(PipelineStep):
+            REQUIRES = ("model",)
+            UPDATES = ("model",)
+
+        class _Consumer(PipelineStep):
+            REQUIRES = ("model",)
+
+        sp = StepPlan([
+            StepSpec("P", _Producer),
+            StepSpec("U", _Updater),
+            StepSpec("C", _Consumer),
+        ])
+        # No raise: update re-publishes the entry for downstream consumers.
+        assert len(sp.validate_data_contract(_plan())) == 3
+
+    def test_clear_retracts_entry_for_downstream(self):
+        class _Producer(PipelineStep):
+            PROMISES = ("scratch",)
+            CLEARS = ("scratch",)
+
+        class _Consumer(PipelineStep):
+            REQUIRES = ("scratch",)
+
+        sp = StepPlan([StepSpec("P", _Producer), StepSpec("C", _Consumer)])
+        with pytest.raises(StepPlanContractError):
+            sp.validate_data_contract(_plan())
+
+    @pytest.mark.parametrize("overrides", [
+        {},
+        {"spiking_mode": "ttfs", "activation_quantization": True, "weight_quantization": True},
+        {"spiking_mode": "ttfs_cycle_based"},
+        {"spiking_mode": "ttfs_cycle_based", "ttfs_scale_aware_boundaries": True},
+        {"model_type": "torch_custom", "weight_source": "w.pt"},
+        {"pruning": True, "pruning_fraction": 0.3},
+        {"enable_sanafe_simulation": True},
+        {"weight_quantization": True},
+    ])
+    def test_real_registry_dag_is_satisfiable_across_configs(self, overrides):
+        # The production registry must validate for every config cell — the
+        # assembly-time mirror of the runtime Pipeline.verify() DAG check.
+        plan = _plan(**overrides)
+        specs = _STEP_PLAN.validate_data_contract(plan)
+        assert specs == _STEP_PLAN.resolve(plan)

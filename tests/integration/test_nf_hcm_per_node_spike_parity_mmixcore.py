@@ -31,6 +31,7 @@ from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
@@ -68,7 +69,8 @@ def _build(T, *, patch=4, chan=6, fc1=8, fc2=6, allow_coalescing=False, max_dim=
     counts = [{"max_axons": max_dim, "max_neurons": max_dim, "count": 2000}]
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir, cores_config=counts,
-        allow_neuron_splitting=True, allow_coalescing=allow_coalescing,
+        strategy=MappingStrategy.from_permissions(
+            allow_neuron_splitting=True, allow_coalescing=allow_coalescing),
     )
     flow_hcm = SpikingHybridCoreFlow(
         (1, 28, 28), hybrid, simulation_length=T, preprocessor=nn.Identity(),

@@ -4,12 +4,10 @@ from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 
 
 class SimulationStep(PipelineStep):
+    REQUIRES = ("hard_core_mapping",)
+
     def __init__(self, pipeline):
-        requires = ["hard_core_mapping"]
-        promises = []
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
         self.accuracy = None
 

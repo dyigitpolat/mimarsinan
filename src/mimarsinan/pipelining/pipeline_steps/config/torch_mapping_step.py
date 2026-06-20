@@ -31,16 +31,16 @@ class TorchMappingStep(TrainerPipelineStep):
       5. Optionally verifies forward-pass equivalence with the original model.
     """
 
+    REQUIRES = ("model",)
+    PROMISES = ("adaptation_manager",)
+    UPDATES = ("model",)
+
     @classmethod
     def applies_to(cls, plan):
         return plan.model_category == "torch"
 
     def __init__(self, pipeline):
-        requires = ["model"]
-        promises = ["adaptation_manager"]
-        updates = ["model"]
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def process(self):
         from mimarsinan.torch_mapping.converter import convert_torch_model
