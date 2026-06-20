@@ -233,3 +233,23 @@ class DeploymentPlan:
             mode_policy=self.mode_policy(),
             distmatch_driven=distmatch_driven,
         )
+
+    def conversion_policy(self, *, model=None, characterizer=None):
+        """The E4 characterization-and-policy decision for this plan's (firing ×
+        sync) cell — the keystone seam (propose → confirm → escalate).
+
+        DEFAULT-OFF / byte-identical: until ``conversion_policy`` is set in config
+        the returned ``ConversionDecision`` names the CURRENT behavior
+        (driver=controller, no characterization run) so nothing changes. When opted
+        in, the plan's policy proposes the recipe, the ``characterizer`` confirms it
+        on ``model``, and a mismatch escalates to the controller fallback rather than
+        shipping a silent regression. This is the scaffolding Fix B switches on
+        later; it is exposed, NOT enabled."""
+        from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+
+        return ConversionPolicy.resolve(
+            self.config,
+            mode_policy=self.mode_policy(),
+            model=model,
+            characterizer=characterizer,
+        )
