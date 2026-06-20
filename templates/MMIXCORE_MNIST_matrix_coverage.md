@@ -15,7 +15,7 @@ up by `test_namespaced_schema.py::test_template_config_roundtrips`.
 | T | spiking_mode | firing | schedule | encoding | thr | quant | pruning | sync-pts | bias | mode | backends |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | lif | Default | — | subsume | `<` | WQ | — | — | on_chip | phased | nevresim·sanafe·hcm |
-| 2 | lif | **Novena** | — | **offload** | `<` | WQ | — | — | on_chip | phased | **loihi**·nevresim·hcm |
+| 2 | lif | **Novena** | — | **offload** | `<` | WQ | — | — | on_chip | phased | **loihi**·nevresim·sanafe·hcm |
 | 3 | lif | Default | — | subsume | `<` | WQ | **on (0.5)** | **on** | on_chip | phased | nevresim·sanafe·hcm |
 | 4 | ttfs | TTFS | — | subsume | `<=` | WQ | — | — | on_chip | phased | nevresim·sanafe·hcm |
 | 5 | **ttfs_quantized** | TTFS | — | **offload** | `<=` | WQ+**AQ** | — | — | on_chip | phased | nevresim·sanafe·hcm |

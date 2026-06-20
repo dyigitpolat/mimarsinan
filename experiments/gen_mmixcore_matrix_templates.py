@@ -104,11 +104,10 @@ TEMPLATES = {}
 TEMPLATES["mnist_mmixcore_matrix_1_lif_rate"] = doc(
     "mnist_mmixcore_matrix_1_lif_rate", lif_dp(firing="Default"))
 
-# T2 — LIF Novena firing + OFFLOAD + Loihi(Lava, LIF-only) backend
+# T2 — LIF Novena firing + OFFLOAD + Loihi(Lava, LIF-only) backend (+ nevresim + sanafe)
 _t2 = lif_dp(firing="Novena", cycle_accurate=False)
 _t2["encoding_layer_placement"] = "offload"
 _t2["enable_loihi_simulation"] = True
-_t2["enable_sanafe_simulation"] = False
 TEMPLATES["mnist_mmixcore_matrix_2_lif_novena_offload_loihi"] = doc(
     "mnist_mmixcore_matrix_2_lif_novena_offload_loihi", _t2)
 
