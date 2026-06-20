@@ -89,6 +89,48 @@ class Conv2DPerceptronMapper(Mapper):
     def owned_perceptron_groups(self):
         return [[self.perceptron]]
 
+    def propagate_source_scale(self, deps, out_scales):
+        from mimarsinan.mapping.mappers.scale_propagation import (
+            perceptron_per_source_scale,
+        )
+
+        return perceptron_per_source_scale(self, deps, out_scales)
+
+    def propagate_boundary_scale(self, deps, out_scales, default):
+        from mimarsinan.mapping.mappers.scale_propagation import (
+            perceptron_boundary_scale,
+        )
+
+        return perceptron_boundary_scale(self, deps, out_scales, default)
+
+    def flowchart_node_estimate(self, out_shape):
+        from mimarsinan.mapping.mappers.flowchart import (
+            FlowchartFCSpec,
+            FlowchartNodeEstimate,
+        )
+
+        k_h, k_w = self.kernel_size
+        in_f = int(self.in_channels * k_h * k_w)
+        out_f = int(self.out_channels)
+        sw_text = (
+            f"SW perceptrons=1 (shared conv weights, patch={in_f}, "
+            f"out_channels={out_f})"
+        )
+        if out_shape is not None and len(out_shape) == 3:
+            _, h, w = out_shape
+            inst = int(h * w)
+        else:
+            inst = 1
+        return FlowchartNodeEstimate(
+            sw_text=sw_text,
+            fc_spec=FlowchartFCSpec(
+                in_features=in_f,
+                out_features=out_f,
+                instances=inst,
+                has_bias=bool(self.bias),
+            ),
+        )
+
     def _forward_impl(self, x):
         if x.dim() != 4:
             raise ValueError(

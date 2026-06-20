@@ -37,6 +37,12 @@ class InputMapper(Mapper):
     def _forward_impl(self, x):
         return x
 
+    def propagate_source_scale(self, deps, out_scales):
+        return torch.ones(self.input_shape[0])
+
+    def propagate_boundary_scale(self, deps, out_scales, default):
+        return float(default)
+
 
 class ReshapeMapper(Mapper):
     def __init__(self, source_mapper, output_shape):
@@ -89,6 +95,11 @@ class StackMapper(Mapper):
         outputs = list(x)
         return torch.stack(outputs, dim=1).squeeze(1)
 
+    def flowchart_node_estimate(self, out_shape):
+        from mimarsinan.mapping.mappers.flowchart import FlowchartNodeEstimate
+
+        return FlowchartNodeEstimate(sw_text="SW stack (host-side)")
+
 
 class ConcatMapper(Mapper):
     def __init__(self, source_mappers, dim: int = 1, name: str = "Concat"):
@@ -106,6 +117,17 @@ class ConcatMapper(Mapper):
 
     def _forward_impl(self, x):
         return torch.cat(tuple(x), dim=self.dim)
+
+    def propagate_source_scale(self, deps, out_scales):
+        from mimarsinan.mapping.mappers.scale_propagation import present_source_scales
+
+        parts = present_source_scales(deps, out_scales)
+        return torch.cat(parts) if parts else None
+
+    def propagate_boundary_scale(self, deps, out_scales, default):
+        from mimarsinan.mapping.mappers.scale_propagation import mean_source_scale
+
+        return mean_source_scale(deps, out_scales, float(default))
 
 
 class SubscriptMapper(Mapper):

@@ -1,31 +1,17 @@
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
 from typing import Any
 
 import torch
 
-from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
-from mimarsinan.mapping.platform.mapping_structure import (
-    compute_core_input_count,
-    compute_fc_tiling_mode,
-)
-import operator
-
-from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import (
-    ComputeOpMapper,
-    Conv1DPerceptronMapper,
-    Conv2DPerceptronMapper,
     Mapper,
     ModelRepresentation,
     PerceptronMapper,
-    StackMapper,
 )
 
 
-from mimarsinan.visualization.softcore_flowchart_estimate import HWEstimate, estimate_fc_cores
+from mimarsinan.visualization.softcore_flowchart_estimate import _estimate_map_fc
 
 def _node_display_name(node: Any) -> str:
     if hasattr(node, "name"):
@@ -98,7 +84,6 @@ def generate_softcore_flowchart_dot(
 
         hw = None
         hw_text = "HW: n/a"
-        sw_text = "SW: n/a"
 
         _est_kw = dict(
             max_axons=int(max_axons),
@@ -107,73 +92,20 @@ def generate_softcore_flowchart_dot(
             allow_coalescing=allow_coalescing,
         )
 
-        # Estimate hardware usage for known mappable ops
-        if isinstance(node, PerceptronMapper):
-            p = node.perceptron
-            in_f = int(p.layer.weight.shape[1])
-            out_f = int(p.layer.weight.shape[0])
-            inst = 1
-            sw_text = f"SW perceptrons=1 (in_features={in_f}, out_features={out_f})"
+        # Per-kind SW summary + optional FC estimate spec is the mapper's own
+        # ``flowchart_node_estimate`` (V6 polymorphism): a new mapper kind adds one
+        # method, not a branch here. This layer only turns the FC spec into cores.
+        estimate = node.flowchart_node_estimate(out_shape)
+        sw_text = estimate.sw_text
+        if estimate.fc_spec is not None:
+            spec = estimate.fc_spec
             hw = _estimate_map_fc(
-                in_features=in_f,
-                out_features=out_f,
-                instances=inst,
-                has_bias=(p.layer.bias is not None),
+                in_features=spec.in_features,
+                out_features=spec.out_features,
+                instances=spec.instances,
+                has_bias=spec.has_bias,
                 **_est_kw,
             )
-        elif isinstance(node, Conv2DPerceptronMapper):
-            k_h, k_w = node.kernel_size
-            in_f = int(node.in_channels * k_h * k_w)
-            out_f = int(node.out_channels)
-            sw_text = f"SW perceptrons=1 (shared conv weights, patch={in_f}, out_channels={out_f})"
-            if out_shape is not None and len(out_shape) == 3:
-                _, h, w = out_shape
-                inst = int(h * w)
-            else:
-                inst = 1
-            hw = _estimate_map_fc(
-                in_features=in_f,
-                out_features=out_f,
-                instances=inst,
-                has_bias=bool(node.bias),
-                **_est_kw,
-            )
-        elif isinstance(node, Conv1DPerceptronMapper):
-            in_f = int(node.in_channels * node.kernel_size)
-            out_f = int(node.out_channels)
-            sw_text = f"SW perceptrons=1 (shared conv weights, patch={in_f}, out_channels={out_f})"
-            if out_shape is not None and len(out_shape) == 2:
-                _, l = out_shape
-                inst = int(l)
-            else:
-                inst = 1
-            hw = _estimate_map_fc(
-                in_features=in_f,
-                out_features=out_f,
-                instances=inst,
-                has_bias=bool(node.bias),
-                **_est_kw,
-            )
-        elif (
-            isinstance(node, ComputeOpMapper)
-            and isinstance(getattr(node, "module", None), ComputeAdapter)
-            and getattr(node.module, "fn", None) is operator.add
-            and getattr(node.module, "_bound_count", 0) == 0
-        ):
-            # Add is mapped as a linear op (concat + identity weights). Estimate roughly.
-            # For visualization purposes, treat it as 1 instance, axons=2*features, neurons=features.
-            if out_shape is not None and len(out_shape) == 1:
-                feat = int(out_shape[0])
-                sw_text = f"SW perceptrons=0 (Add op)"
-                hw = _estimate_map_fc(
-                    in_features=2 * feat,
-                    out_features=feat,
-                    instances=1,
-                    has_bias=False,
-                    **_est_kw,
-                )
-        elif isinstance(node, StackMapper):
-            sw_text = "SW stack (host-side)"
 
         if hw is not None:
             if hw.mappable:

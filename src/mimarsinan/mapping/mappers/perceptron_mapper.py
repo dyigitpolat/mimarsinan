@@ -97,3 +97,37 @@ class PerceptronMapper(Mapper):
     def owned_perceptron_groups(self):
         return [[self.perceptron]]
 
+    def propagate_source_scale(self, deps, out_scales):
+        from mimarsinan.mapping.mappers.scale_propagation import (
+            perceptron_per_source_scale,
+        )
+
+        return perceptron_per_source_scale(self, deps, out_scales)
+
+    def propagate_boundary_scale(self, deps, out_scales, default):
+        from mimarsinan.mapping.mappers.scale_propagation import (
+            perceptron_boundary_scale,
+        )
+
+        return perceptron_boundary_scale(self, deps, out_scales, default)
+
+    def flowchart_node_estimate(self, out_shape):
+        from mimarsinan.mapping.mappers.flowchart import (
+            FlowchartFCSpec,
+            FlowchartNodeEstimate,
+        )
+
+        p = self.perceptron
+        in_f = int(p.layer.weight.shape[1])
+        out_f = int(p.layer.weight.shape[0])
+        sw_text = f"SW perceptrons=1 (in_features={in_f}, out_features={out_f})"
+        return FlowchartNodeEstimate(
+            sw_text=sw_text,
+            fc_spec=FlowchartFCSpec(
+                in_features=in_f,
+                out_features=out_f,
+                instances=1,
+                has_bias=(p.layer.bias is not None),
+            ),
+        )
+
