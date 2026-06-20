@@ -183,6 +183,25 @@ the sanafe soma chain, the calibration-forward switch, and the flow forward-sele
 method overrides co-located in one class. **A new spiking mode = one new policy + one registry
 line** (vs. 6–8 files today).
 
+**V2 status — last dispatch site migrated; CLOSED (2026-06-20).** The final
+`spiking_mode`-branching dispatch outside the policy — `code_generation/generate_main.py:resolve_exec_policy`
+(the nevresim C++ `ComputePolicy`/`Execution` type-string choice) — now **delegates to
+`SpikingModePolicy.nevresim_exec_policy(NevresimExecParams) -> ExecPolicySpec`**. The firing × sync →
+codegen choice lives in one place per family (`LifModePolicy` / `TtfsAnalyticalModePolicy` /
+`TtfsCascadeModePolicy`; the sync-cycle policy raises since nevresim never runs the synchronized
+schedule). `resolve_exec_policy` keeps only the comparator/reset string selection (`resolve_compare_policy`
+/ `resolve_lif_fire_policy`) and packs the chip-shape scalars into `NevresimExecParams`. Byte-identical:
+the lock test in `tests/unit/code_generation/test_exec_policy.py` asserts the policy-driven output ==
+the legacy golden string for every mode; torch↔sim fidelity + nf_scm parity green. Closed decisions:
+
+- **The thresholding/firing → comparator-string selection stays on the codegen helpers, NOT the policy
+  (DO NOT move).** `resolve_compare_policy` (`<`/`<=` → `Strict`/`InclusiveCompare`) and
+  `resolve_lif_fire_policy` (`Default`/`Novena` + threshold → `LIFirePolicy<reset,compare>`) are the
+  thresholding/firing comparator SSOT (mirrored on `FiringStrategyFactory`), orthogonal to the firing × sync
+  *template family* the policy picks. They are passed into `NevresimExecParams` as data — folding them into
+  the policy would entangle two independent axes and duplicate the `FiringStrategy` truth table. Kept as-is
+  on purpose; **not** an open TODO.
+
 ### V3 — `Backend` interface + capability-validated registry (consult `_BACKEND_CAPS` at assembly)
 **Principle 7.** `_BACKEND_CAPS` (`spiking_semantics.py:95-104`) declares which backends
 support which modes — but it's **informational**; selection is `enable_*` flags
