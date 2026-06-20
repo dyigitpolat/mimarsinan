@@ -108,7 +108,10 @@ CONFIGS: Dict[str, Tuple[Callable[[], IRGraph], Dict[str, Any]]] = {
     ),
     "fusion_wide_axon": (
         _fusion_wide_axon,
-        {"cores_config": [{"max_axons": 64, "max_neurons": 32, "count": 4}]},
+        {
+            "cores_config": [{"max_axons": 64, "max_neurons": 32, "count": 4}],
+            "allow_coalescing": True,
+        },
     ),
     "scheduled_wide": (
         _coalescing_wide,
