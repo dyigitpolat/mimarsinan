@@ -23,7 +23,7 @@ from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
-from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.search_mode import derive_search_mode  # noqa: F401 — re-export
 
 
@@ -75,8 +75,9 @@ class DeploymentPipeline(Pipeline):
         self.config["num_classes"] = data_provider.get_prediction_mode().num_classes
         self.config["device"] = select_device()
 
-        spiking = self.config.get("spiking_mode", "lif")
-        if requires_ttfs_firing(spiking):
+        plan = DeploymentPlan.resolve(self.config)
+        spiking = plan.spiking_mode
+        if plan.requires_ttfs_firing:
             self.config.setdefault("firing_mode", "TTFS")
             self.config.setdefault("spike_generation_mode", "TTFS")
             self.config.setdefault("thresholding_mode", "<=")
@@ -97,17 +98,15 @@ class DeploymentPipeline(Pipeline):
             self.config.setdefault("thresholding_mode", "<=")
             self.config.setdefault("cycle_accurate_lif_forward", True)
 
-        self.tolerance = 1.0 - float(self.config.get("degradation_tolerance", 0.05))
+        self.tolerance = 1.0 - plan.degradation_tolerance
         # Opt-in rung-2 budget: with NF and SCM sharing semantics, the honest
         # residual is the mapping-level wire effect, so ~0.02 is a sane value.
-        scm_dt = self.config.get("scm_degradation_tolerance")
-        if scm_dt is not None:
-            self.step_tolerances["Soft Core Mapping"] = 1.0 - float(scm_dt)
+        if plan.scm_degradation_tolerance is not None:
+            self.step_tolerances["Soft Core Mapping"] = (
+                1.0 - plan.scm_degradation_tolerance
+            )
 
-        default_budget = 2.0 * float(self.config.get("degradation_tolerance", 0.05))
-        self.accuracy_budget.budget_total = float(
-            self.config.get("degradation_budget_total", default_budget)
-        )
+        self.accuracy_budget.budget_total = plan.degradation_budget_total
 
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":
             self.config.setdefault("cuda_debug", True)
@@ -124,14 +123,12 @@ class DeploymentPipeline(Pipeline):
         )
 
     def _display_config(self):
-        spiking = self.config.get("spiking_mode", "lif")
-        search_mode = derive_search_mode(self.config)
-        act_q = self.config.get("activation_quantization", False)
-        wt_q = self.config.get("weight_quantization", False)
+        plan = DeploymentPlan.resolve(self.config)
         print(
             f"Deployment pipeline  "
-            f"[search_mode={search_mode}, spiking={spiking}, "
-            f"act_quant={act_q}, wt_quant={wt_q}]"
+            f"[search_mode={plan.search_mode}, spiking={plan.spiking_mode}, "
+            f"act_quant={self.config.get('activation_quantization', False)}, "
+            f"wt_quant={self.config.get('weight_quantization', False)}]"
         )
         for key, value in self.config.items():
             print(f"  {key}: {value}")
@@ -139,9 +136,10 @@ class DeploymentPipeline(Pipeline):
     def _assemble_steps(self):
         for name, cls in get_pipeline_step_specs(self.config):
             self.add_pipeline_step(name, cls(self))
+        plan = DeploymentPlan.resolve(self.config)
         pruning = self.config.get("pruning", False)
         pruning_fraction = float(self.config.get("pruning_fraction", 0.0))
-        if pruning and pruning_fraction > 0:
+        if plan.pruning_enabled:
             print(f"[DeploymentPipeline] Pruning enabled: pruning={pruning}, pruning_fraction={pruning_fraction}; PruningAdaptationStep added.")
         else:
             print(f"[DeploymentPipeline] Pruning not in pipeline: pruning={pruning}, pruning_fraction={pruning_fraction}")
