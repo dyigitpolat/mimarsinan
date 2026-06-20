@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any, Dict, List
 
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
+from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
 from mimarsinan.search.problems.joint.problem import json_key
 
@@ -57,9 +58,7 @@ def collect_layout_payload(
     stats, _err = compute_mapping_stats(
         softcores=softcores,
         core_types=core_types,
-        allow_scheduling=bool(pcfg.get("allow_scheduling", False)),
-        allow_neuron_splitting=bool(pcfg.get("allow_neuron_splitting", False)),
-        allow_coalescing=bool(pcfg.get("allow_coalescing", False)),
+        **ChipCapabilities.from_platform_constraints(pcfg).permission_kwargs(),
     )
     per_softcore = [softcore_to_dict(sc, idx) for idx, sc in enumerate(softcores)]
     per_layer = aggregate_per_layer(softcores)

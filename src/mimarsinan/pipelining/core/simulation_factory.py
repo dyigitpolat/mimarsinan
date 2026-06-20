@@ -39,11 +39,7 @@ def build_hybrid_mapping_for_pipeline(
     pipeline_config: dict[str, Any] | None = None,
 ) -> Any:
     strategy = MappingStrategy.resolve(
-        ChipCapabilities(
-            allow_neuron_splitting=bool(platform_constraints.get("allow_neuron_splitting", False)),
-            allow_scheduling=bool(platform_constraints.get("allow_scheduling", False)),
-            allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
-        )
+        ChipCapabilities.from_platform_constraints(platform_constraints)
     )
     hybrid_mapping = build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,

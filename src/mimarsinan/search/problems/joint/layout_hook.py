@@ -10,6 +10,7 @@ import torch
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
+from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
 
 from .types import HwOnlyCache
@@ -153,9 +154,7 @@ class JointLayoutMixin:
         stats, error = compute_mapping_stats(
             softcores=softcores,
             core_types=core_types,
-            allow_scheduling=bool(pcfg.get("allow_scheduling", False)),
-            allow_neuron_splitting=bool(pcfg.get("allow_neuron_splitting", False)),
-            allow_coalescing=bool(pcfg.get("allow_coalescing", False)),
+            **ChipCapabilities.from_platform_constraints(pcfg).permission_kwargs(),
         )
 
         if not stats.feasible:

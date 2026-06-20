@@ -8,7 +8,7 @@ identically.  No mapping state is accessed or mutated here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal, Mapping
 
 
 # Bias axon counting
@@ -105,6 +105,35 @@ class ChipCapabilities:
     allow_neuron_splitting: bool = False
     allow_scheduling: bool = False
 
+    @classmethod
+    def from_platform_constraints(
+        cls, constraints: Mapping[str, Any]
+    ) -> "ChipCapabilities":
+        """Read the three permission bits from a platform-constraints / wizard body dict.
+
+        Single source for ``bool(d.get("allow_coalescing", False))`` & friends, so
+        the entry points that assemble these three flags from config all read them
+        identically (the grid is carried separately as ``cores`` / ``core_types``).
+        """
+        return cls(
+            allow_coalescing=bool(constraints.get("allow_coalescing", False)),
+            allow_neuron_splitting=bool(constraints.get("allow_neuron_splitting", False)),
+            allow_scheduling=bool(constraints.get("allow_scheduling", False)),
+        )
+
+    def permission_kwargs(self) -> dict[str, bool]:
+        """The three permission bits as the kwargs the layout/verify helpers expect.
+
+        Lets an entry point spread one resolved capability object into the leaf
+        helper signatures (``verify_hardware_config`` / ``compute_mapping_stats`` /
+        ``build_layout_plan`` keep their bool params) instead of re-reading config.
+        """
+        return {
+            "allow_neuron_splitting": self.allow_neuron_splitting,
+            "allow_coalescing": self.allow_coalescing,
+            "allow_scheduling": self.allow_scheduling,
+        }
+
 
 @dataclass(frozen=True)
 class MappingStrategy:
@@ -135,6 +164,10 @@ class MappingStrategy:
     @property
     def allow_scheduling(self) -> bool:
         return self.capabilities.allow_scheduling
+
+    def permission_kwargs(self) -> dict[str, bool]:
+        """The resolved permission bits as layout/verify helper kwargs."""
+        return self.capabilities.permission_kwargs()
 
     def tiling_mode(
         self,
