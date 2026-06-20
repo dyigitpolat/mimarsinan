@@ -46,10 +46,14 @@ _LEGACY_FAST_SWITCHES = (
 )
 
 
-def _resolve_optimization_driver(config: dict[str, Any]) -> str:
+def resolve_optimization_driver(config: dict[str, Any]) -> str:
     """The pipeline-wide ``controller | fast`` driver axis (E2). Explicit
     ``optimization_driver`` wins; else derived from any legacy per-family fast
-    switch; else ``controller`` (default ⇒ byte-identical)."""
+    switch; else ``controller`` (default ⇒ byte-identical).
+
+    Public so the consuming half (EF1) can resolve the axis directly from a config
+    dict — e.g. ``TtfsAdaptationPlan.resolve``'s back-compat path — without holding a
+    ``DeploymentPlan`` instance."""
     explicit = config.get("optimization_driver")
     if explicit:
         value = str(explicit).lower()
@@ -63,6 +67,10 @@ def _resolve_optimization_driver(config: dict[str, Any]) -> str:
     if any(bool(config.get(switch, False)) for switch in _LEGACY_FAST_SWITCHES):
         return OPTIMIZATION_DRIVER_FAST
     return OPTIMIZATION_DRIVER_CONTROLLER
+
+
+# Back-compat private alias (the dataclass body below referenced the old name).
+_resolve_optimization_driver = resolve_optimization_driver
 
 
 @dataclass(frozen=True)
@@ -197,6 +205,31 @@ class DeploymentPlan:
     def is_fast_driver(self) -> bool:
         """Whether the resolved optimization-driver axis is the fast ladder (E2)."""
         return self.optimization_driver == OPTIMIZATION_DRIVER_FAST
+
+    def optimization_driver_for_family(
+        self, *, rates, steps_per_rate, eta_min_factor=0.0,
+    ):
+        """The family's ``controller | fast`` ``OptimizationDriver``, READ from the
+        pipeline-wide axis (EF1, the consuming half).
+
+        The single-switch families (LIF + the analytical clamp/shift/activation-quant/
+        activation-adaptation chain + the manager-rate family) resolve their driver
+        through THIS one seam instead of each reading a hard-coded per-family fast
+        switch (or, for the analytical/manager families, never reading the axis at
+        all). ``fast`` is the pipeline-wide ``is_fast_driver`` decision; the family
+        supplies its uniform value-domain ladder. Default ``controller`` ⇒ the ladder
+        is carried but disabled (``_setup_fast_ladder(enabled=False)``) ⇒
+        byte-identical."""
+        from mimarsinan.tuning.orchestration.optimization_driver import (
+            OptimizationDriver,
+        )
+
+        return OptimizationDriver.for_family(
+            fast=self.is_fast_driver,
+            rates=rates,
+            steps_per_rate=steps_per_rate,
+            eta_min_factor=eta_min_factor,
+        )
 
     @property
     def is_lif_style(self) -> bool:

@@ -83,7 +83,9 @@ class TtfsAdaptationPlan:
         return self.driver.fast_ladder_eta_min_factor
 
     @classmethod
-    def resolve(cls, config, *, synchronized: bool) -> "TtfsAdaptationPlan":
+    def resolve(
+        cls, config, *, synchronized: bool, optimization_driver: str | None = None,
+    ) -> "TtfsAdaptationPlan":
         get = config.get
 
         annealed = bool(get("ttfs_genuine_annealed_ramp", False)) and not synchronized
@@ -98,10 +100,33 @@ class TtfsAdaptationPlan:
             annealed = True  # the STE reuses the annealed cascade-forward install
         bare = annealed or blend
 
-        ste_fast = ste and bool(get("ttfs_staircase_ste_fast", False))
-        blend_fast = blend and bool(get("ttfs_genuine_blend_fast", False))
+        # EF1: the pipeline-wide `optimization_driver` axis is the controller-vs-fast
+        # GATE over the three-way fast fork; the per-family flag below still selects
+        # WHICH fast variant runs. `None` (back-compat for direct callers) derives the
+        # gate from the legacy fast flags so the resolution stays byte-identical (those
+        # flags also feed DeploymentPlan.optimization_driver). An explicit `controller`
+        # vetoes every fast selector even if a legacy fast flag is set.
+        from mimarsinan.pipelining.core.deployment_plan import (
+            OPTIMIZATION_DRIVER_FAST,
+            resolve_optimization_driver,
+        )
+
+        if optimization_driver is None:
+            axis = resolve_optimization_driver(config)
+        else:
+            axis = str(optimization_driver).lower()
+        fast_enabled = axis == OPTIMIZATION_DRIVER_FAST
+
+        ste_fast = (
+            fast_enabled and ste and bool(get("ttfs_staircase_ste_fast", False))
+        )
+        blend_fast = (
+            fast_enabled and blend and bool(get("ttfs_genuine_blend_fast", False))
+        )
         proxy_fast = (
-            bool(get("ttfs_blend_fast", False)) and not bare and not synchronized
+            fast_enabled
+            and bool(get("ttfs_blend_fast", False))
+            and not bare and not synchronized
         )
         ste_refine = proxy_fast and bool(get("ttfs_blend_fast_ste_refine", False))
 

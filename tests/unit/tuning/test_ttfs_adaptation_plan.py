@@ -12,8 +12,12 @@ from __future__ import annotations
 from mimarsinan.tuning.orchestration.ttfs_adaptation_plan import TtfsAdaptationPlan
 
 
-def _resolve(synchronized=False, **flags):
-    return TtfsAdaptationPlan.resolve(dict(flags), synchronized=synchronized)
+def _resolve(synchronized=False, optimization_driver=None, **flags):
+    return TtfsAdaptationPlan.resolve(
+        dict(flags),
+        synchronized=synchronized,
+        optimization_driver=optimization_driver,
+    )
 
 
 class TestRampPrecedence:
@@ -154,6 +158,72 @@ class TestComposedTrifecta:
         assert not p.calibration.theta_cotrain
         assert not p.calibration.boundary_ste
         assert not p.calibration.distmatch, "blend ramp off under synchronized"
+
+
+class TestOptimizationDriverAxis:
+    """EF1 — TTFS reads the pipeline-wide ``optimization_driver`` axis, not just its
+    own ``ttfs_*`` flags. The axis is the controller-vs-fast GATE over the three-way
+    fork; the per-family flag still selects WHICH fast variant (STE / blend / proxy).
+    ``None`` (the back-compat default for direct callers) derives the axis from the
+    legacy flags, so the resolution stays byte-identical."""
+
+    def test_none_axis_derives_from_legacy_flags(self):
+        # No explicit axis: a TTFS fast flag still selects the fast ladder (the legacy
+        # switch feeds the pipeline-wide axis; byte-identical to pre-EF1 resolution).
+        p = _resolve(ttfs_blend_fast=True)
+        assert p.proxy_fast is True
+        assert p.fast_ladder_enabled is True
+
+    def test_controller_axis_forces_every_fast_selector_off(self):
+        # An explicit controller axis vetoes the fast path even with a fast flag set.
+        p = _resolve(
+            optimization_driver="controller",
+            ttfs_blend_fast=True,
+            ttfs_genuine_blend_ramp=True,
+            ttfs_genuine_blend_fast=True,
+            ttfs_staircase_ste=True,
+            ttfs_staircase_ste_fast=True,
+        )
+        assert p.proxy_fast is False
+        assert p.genuine_blend_fast is False
+        assert p.staircase_ste_fast is False
+        assert p.staircase_ste_refine is False
+        assert p.fast_ladder_enabled is False
+        assert p.driver.controller is True
+
+    def test_controller_axis_keeps_ramp_strategy(self):
+        # The axis only gates the optimization DRIVER; the genuine ramp strategy
+        # (a separate concern) is untouched.
+        p = _resolve(
+            optimization_driver="controller",
+            ttfs_genuine_blend_ramp=True,
+            ttfs_genuine_blend_fast=True,
+        )
+        assert p.genuine_blend_ramp is True
+        assert p.genuine_blend_fast is False
+
+    def test_fast_axis_selects_the_flagged_variant(self):
+        proxy = _resolve(optimization_driver="fast", ttfs_blend_fast=True)
+        assert proxy.proxy_fast is True
+        blend = _resolve(
+            optimization_driver="fast",
+            ttfs_genuine_blend_ramp=True, ttfs_genuine_blend_fast=True,
+        )
+        assert blend.genuine_blend_fast is True
+        ste = _resolve(
+            optimization_driver="fast",
+            ttfs_staircase_ste=True, ttfs_staircase_ste_fast=True,
+        )
+        assert ste.staircase_ste_fast is True
+
+    def test_fast_axis_without_a_flag_has_no_fast_variant(self):
+        # The axis enables fast, but with no per-family fast flag there is no variant
+        # to run (the flag selects WHICH fast path) — so the ladder stays disabled.
+        p = _resolve(optimization_driver="fast")
+        assert p.proxy_fast is False
+        assert p.genuine_blend_fast is False
+        assert p.staircase_ste_fast is False
+        assert p.fast_ladder_enabled is False
 
 
 class TestNumericPassThrough:
