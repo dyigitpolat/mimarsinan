@@ -114,6 +114,14 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # Recipe-driven STEP recovery (generic: routes tuning_recipe + warmup/cosine
     # into the step recovery instead of the hardcoded Adam(wd=5e-5)/constant-LR path).
     "tuning_recipe_recovery": False,
+    # Optimization-driver axis (E2 / Fix A): HOW the rate is driven 0->1, pipeline-
+    # wide and family-agnostic. "controller" = the full SmoothAdaptation machinery
+    # (adaptive rate scheduler + bisect / recover-to-target / rollback / stabilization
+    # / per-cycle LR-find), the robust default. "fast" = the schedule-not-search fixed
+    # ladder (one shared optimizer + spanning cosine, no per-cycle rollback/recovery).
+    # Default "controller" => byte-identical. None/unset also resolves to controller
+    # unless a legacy per-family fast switch (lif_blend_fast / ttfs_*_fast) is set.
+    "optimization_driver": None,
     # Genuine annealed TTFS-cascade ramp (opt-in): train through the genuine
     # single-spike cascade for the whole ramp with the spike-surrogate sharpness
     # annealed smooth->sharp. Must stay default-off until a full real-model run
@@ -321,6 +329,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_tight_plateau",
     "tuning_recovery_check_divisor",
     "tuning_recipe_recovery",
+    "optimization_driver",
     "ttfs_genuine_annealed_ramp",
     "ttfs_ramp_alpha_min",
     "ttfs_ramp_alpha_max",

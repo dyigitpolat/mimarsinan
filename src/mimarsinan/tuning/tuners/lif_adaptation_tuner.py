@@ -60,22 +60,37 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         # blend ramp through the ONE orchestrator's fixed_ladder policy (one shared
         # optimizer + spanning cosine, KD recovery per rung, no controller) instead
         # of the greedy/bisect controller. LIF's rate code is bit-exact deployed, so
-        # the value-domain ramp suffices (cliff ≈ 0). Uses the shared _fast_loss
+        # the value-domain ramp suffices (cliff ≈ 0). Uses the inherited _fast_loss
         # (the installed KD loss) and no genuine probe.
-        self._setup_fast_ladder(
-            enabled=bool(self.pipeline.config.get("lif_blend_fast", False)),
+        #
+        # E2: LIF no longer bypasses the driver with an inline `lif_blend_fast`
+        # read — the (`controller` | `fast`) decision is resolved by the SAME
+        # `OptimizationDriver` every family consumes. The fast switch floors the
+        # spanning cosine (the value-domain endpoint needs real LIF-dynamics
+        # training, unlike TTFS where genuine-CE carries it). Default-off ⇒
+        # controller ⇒ byte-identical.
+        from mimarsinan.tuning.orchestration.optimization_driver import (
+            OptimizationDriver,
+        )
+
+        driver = OptimizationDriver.for_family(
+            fast=bool(self.pipeline.config.get("lif_blend_fast", False)),
             rates=self.pipeline.config.get(
                 "lif_blend_fast_rates", [0.25, 0.5, 0.75, 1.0]
             ),
             steps_per_rate=int(
                 self.pipeline.config.get("lif_blend_fast_steps_per_rate", 120)
             ),
-            # Floor the spanning cosine so the rate-1.0 rung keeps recovering the
-            # deployed LIF dynamics (the value-domain endpoint needs real training,
-            # unlike TTFS where genuine-CE carries it).
             eta_min_factor=float(
                 self.pipeline.config.get("lif_blend_fast_lr_eta_min", 0.1)
             ),
+        )
+        self._optimization_driver = driver
+        self._setup_fast_ladder(
+            enabled=driver.fast_ladder,
+            rates=driver.fast_ladder_rates,
+            steps_per_rate=driver.fast_ladder_steps_per_rate,
+            eta_min_factor=driver.fast_ladder_eta_min_factor,
         )
         # Post-finalize bounded stabilization on the deployed cycle-accurate forward
         # (the value-domain ramp under-trains the deployed LIF dynamics vs the

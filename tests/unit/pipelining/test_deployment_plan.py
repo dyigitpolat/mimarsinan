@@ -164,6 +164,53 @@ class TestByteIdentityWithInlineReads:
         assert p.seed == int(g("seed", 0))
 
 
+class TestOptimizationDriverAxis:
+    """E2 — the pipeline-wide ``controller | fast`` optimization-driver axis.
+
+    Default ``controller`` ⇒ byte-identical. Explicit ``optimization_driver`` wins;
+    else a legacy per-family fast switch (lif_blend_fast / ttfs_*_fast) is honoured
+    so a plan resolved from an existing config reports the driver the tuner runs.
+    """
+
+    def test_default_is_controller(self):
+        p = _resolve()
+        assert p.optimization_driver == "controller"
+        assert p.is_fast_driver is False
+
+    def test_explicit_fast(self):
+        p = _resolve(optimization_driver="fast")
+        assert p.optimization_driver == "fast"
+        assert p.is_fast_driver is True
+
+    def test_explicit_controller(self):
+        p = _resolve(optimization_driver="controller")
+        assert p.optimization_driver == "controller"
+        assert p.is_fast_driver is False
+
+    def test_case_insensitive(self):
+        assert _resolve(optimization_driver="FAST").optimization_driver == "fast"
+
+    def test_invalid_value_raises(self):
+        with pytest.raises(ValueError):
+            _resolve(optimization_driver="bisect")
+
+    @pytest.mark.parametrize(
+        "switch",
+        ["lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast",
+         "ttfs_staircase_ste_fast"],
+    )
+    def test_legacy_fast_switch_implies_fast(self, switch):
+        assert _resolve(**{switch: True}).optimization_driver == "fast"
+
+    def test_explicit_controller_overrides_legacy_switch(self):
+        # An explicit axis wins over a stray legacy switch.
+        p = _resolve(optimization_driver="controller", lif_blend_fast=True)
+        assert p.optimization_driver == "controller"
+
+    def test_legacy_switch_off_stays_controller(self):
+        assert _resolve(lif_blend_fast=False).optimization_driver == "controller"
+
+
 class TestPipelineAccessor:
     def test_of_reads_pipeline_config(self):
         class _Stub:
@@ -183,6 +230,99 @@ class TestPipelineAccessor:
         assert isinstance(contract, SpikingDeploymentContract)
         assert contract.spiking_mode == "lif"
         assert contract.simulation_steps == 32
+
+
+class TestCalibrationPipelineAxis:
+    """E3: the conversion-health pipeline is a contract-keyed, pipeline-wide axis."""
+
+    def test_lif_plan_gets_inert_pipeline_even_with_flags(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        # A non-cascade cell ignores the ttfs_* step flags → inert (byte-identical).
+        plan = _resolve(spiking_mode="lif", ttfs_gain_correction=True)
+        assert plan.calibration_pipeline() == CalibrationPipeline.inert()
+
+    def test_cascaded_cycle_plan_opts_in(self):
+        plan = _resolve(
+            spiking_mode="ttfs_cycle_based",
+            ttfs_cycle_schedule="cascaded",
+            ttfs_gain_correction=True,
+        )
+        cal = plan.calibration_pipeline()
+        assert cal.gain_cold is True
+        assert cal.gain_active is True
+
+    def test_synchronized_cycle_plan_is_inert(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        plan = _resolve(
+            spiking_mode="ttfs_cycle_based",
+            ttfs_cycle_schedule="synchronized",
+            ttfs_gain_correction=True,
+            ttfs_theta_cotrain=True,
+        )
+        assert plan.calibration_pipeline() == CalibrationPipeline.inert()
+
+    def test_distmatch_driver_threads_through(self):
+        plan = _resolve(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded",
+        )
+        assert plan.calibration_pipeline(distmatch_driven=True).distmatch is True
+        assert plan.calibration_pipeline(distmatch_driven=False).distmatch is False
+
+
+class TestConversionPolicyAxis:
+    """E4: the characterization-and-policy keystone is a contract-keyed seam.
+
+    DEFAULT-OFF / byte-identical: the plan's decision names the CURRENT behavior
+    (driver=controller, no characterization run) until ``conversion_policy`` is set.
+    """
+
+    def test_default_off_is_inert_controller(self):
+        for mode, schedule in (
+            ("lif", "cascaded"),
+            ("ttfs", "cascaded"),
+            ("ttfs_cycle_based", "cascaded"),
+            ("ttfs_cycle_based", "synchronized"),
+        ):
+            decision = _resolve(
+                spiking_mode=mode, ttfs_cycle_schedule=schedule
+            ).conversion_policy()
+            assert decision.enabled is False
+            assert decision.driver == "controller"
+            assert decision.characterized is False
+            assert decision.escalated is False
+
+    def test_enabled_proposes_and_characterizes(self):
+        decision = _resolve(
+            spiking_mode="lif", conversion_policy=True
+        ).conversion_policy()
+        assert decision.enabled is True
+        assert decision.characterized is True
+        assert decision.escalated is False
+
+    def test_enabled_mismatch_escalates_to_controller(self):
+        from mimarsinan.tuning.orchestration.conversion_policy import (
+            CharacterizationResult,
+            Characterizer,
+        )
+
+        class _Reject(Characterizer):
+            def characterize(self, *, model, recipe, context=None):
+                return CharacterizationResult(matches=False, reason="cliff")
+
+        decision = _resolve(
+            spiking_mode="ttfs_cycle_based",
+            ttfs_cycle_schedule="cascaded",
+            conversion_policy=True,
+        ).conversion_policy(characterizer=_Reject())
+        assert decision.escalated is True
+        assert decision.driver == "controller"
+        assert decision.escalation_reason == "cliff"
 
 
 # ── V1 sole-reader guard (the deployment-decision flags) ───────────────────────

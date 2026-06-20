@@ -112,6 +112,111 @@ class TestReservedPerCoreSeam:
         )
 
 
+class TestCalibrationPipelineAccessor:
+    """E3: the contract resolves the conversion-health pipeline per (firing × sync)."""
+
+    def test_cascaded_cycle_opts_in(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        cal = contract.calibration_pipeline({"ttfs_gain_correction": True})
+        assert cal.gain_cold is True
+        assert cal.gain_active is True
+
+    def test_synchronized_cycle_is_inert(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="synchronized")
+        )
+        cal = contract.calibration_pipeline(
+            {"ttfs_gain_correction": True, "ttfs_theta_cotrain": True}
+        )
+        assert cal == CalibrationPipeline.inert()
+
+    def test_lif_is_inert(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        contract = SpikingDeploymentContract.from_pipeline_config(_cfg(spiking_mode="lif"))
+        cal = contract.calibration_pipeline({"ttfs_gain_correction": True})
+        assert cal == CalibrationPipeline.inert()
+
+    def test_distmatch_driver_threads_through(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        assert contract.calibration_pipeline({}, distmatch_driven=True).distmatch is True
+        assert contract.calibration_pipeline({}, distmatch_driven=False).distmatch is False
+
+    def test_core_kwarg_returns_global_answer(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        sentinel = object()
+        assert (
+            contract.calibration_pipeline({"ttfs_gain_correction": True}, core=sentinel)
+            == contract.calibration_pipeline({"ttfs_gain_correction": True})
+        )
+
+
+class TestConversionPolicyAccessor:
+    """E4: the contract exposes the characterization-and-policy keystone seam.
+
+    DEFAULT-OFF / byte-identical: the decision names the CURRENT behavior
+    (driver=controller, no characterization run) until ``conversion_policy`` is set.
+    """
+
+    def test_default_off_is_inert_controller(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        decision = contract.conversion_policy({})
+        assert decision.enabled is False
+        assert decision.driver == "controller"
+        assert decision.characterized is False
+        assert decision.escalated is False
+
+    def test_enabled_proposes_and_characterizes(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(_cfg(spiking_mode="lif"))
+        decision = contract.conversion_policy({"conversion_policy": True})
+        assert decision.enabled is True
+        assert decision.characterized is True
+
+    def test_enabled_mismatch_escalates(self):
+        from mimarsinan.tuning.orchestration.conversion_policy import (
+            CharacterizationResult,
+            Characterizer,
+        )
+
+        class _Reject(Characterizer):
+            def characterize(self, *, model, recipe, context=None):
+                return CharacterizationResult(matches=False, reason="off-distribution")
+
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        decision = contract.conversion_policy(
+            {"conversion_policy": True}, characterizer=_Reject()
+        )
+        assert decision.escalated is True
+        assert decision.driver == "controller"
+        assert decision.escalation_reason == "off-distribution"
+
+    def test_core_kwarg_returns_global_answer(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded")
+        )
+        sentinel = object()
+        assert (
+            contract.conversion_policy({}, core=sentinel).driver
+            == contract.conversion_policy({}).driver
+        )
+
+
 class TestSingleReaderInvariant:
     """``from_pipeline_config`` is the only place reading these config keys."""
 
