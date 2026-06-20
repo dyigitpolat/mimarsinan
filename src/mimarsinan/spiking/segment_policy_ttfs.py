@@ -18,6 +18,14 @@ class TtfsSegmentPolicy:
     """
 
     node_value_recorder: dict | None = None
+    # Straight-through surrogate temperature for the offload-boundary re-encode.
+    # None (default) = the historical contract: the round-based re-encode severs
+    # the genuine backward at offload/host-ComputeOp boundaries, so only the last
+    # neural segment trains on the deployed cascade. A float >0 enables an STE
+    # whose forward is the bit-exact hard train and whose backward flows through a
+    # soft spike-time, so the genuine cascade gradient reaches EVERY segment.
+    # Forward (hence NF↔SCM parity and deployed accuracy) is unchanged either way.
+    boundary_surrogate_temp: float | None = None
 
     def prepare(self, driver):
         # The walk feeds each node norm(W s_t + b) per cycle; the additive
@@ -116,12 +124,16 @@ class TtfsSegmentPolicy:
             m.reset_state()
         return zeros
 
-    @staticmethod
-    def _boundary_single_spike_train(value, T: int, n_cycles: int) -> torch.Tensor:
+    def _boundary_single_spike_train(self, value, T: int, n_cycles: int) -> torch.Tensor:
         """Single-spike TTFS train of a decoded boundary value, at the rising
         edge of HCM's latched encode (``spike_time = round(T(1 - clamp(v)))``).
         The cascade neuron's ramp reconstruction turns the single spike into the
-        same linear membrane growth HCM's greedy core gets from the latch."""
+        same linear membrane growth HCM's greedy core gets from the latch.
+
+        The forward train is the exact hard (``round``-based) encode. When
+        ``boundary_surrogate_temp`` is set, a straight-through estimator attaches a
+        backward path through a soft spike-time so the genuine cascade gradient
+        reaches the upstream segment; the forward value is byte-identical."""
         from mimarsinan.chip_simulation.recording import spike_modes
 
         v = value.clamp(0.0, 1.0)
@@ -130,7 +142,29 @@ class TtfsSegmentPolicy:
              for c in range(n_cycles)],
             dim=0,
         ).to(value.dtype)
-        return torch.cat([latched[:1], latched[1:] - latched[:-1]], dim=0)
+        train_hard = torch.cat([latched[:1], latched[1:] - latched[:-1]], dim=0)
+
+        temp = self.boundary_surrogate_temp
+        if temp is None or not torch.is_grad_enabled():
+            return train_hard
+        return self._straight_through(train_hard, v, T, n_cycles, float(temp))
+
+    @staticmethod
+    def _straight_through(train_hard, v, T, n_cycles, temp):
+        """STE: forward == ``train_hard`` exactly; backward flows through a soft
+        spike-time. The hard latch is a Heaviside in cycle index at
+        ``tau = T(1 - v)`` (the spike has arrived by cycle ``c`` iff ``c >= tau``);
+        softening it to ``sigmoid((c - tau)/temp)`` makes ``d train / d v`` nonzero
+        (a larger ``v`` lowers ``tau``, so the spike arrives earlier and the
+        downstream ramp integrates a higher decoded value — the correct sign)."""
+        cycles = torch.arange(n_cycles, device=v.device, dtype=v.dtype)
+        cycles = cycles.reshape((n_cycles,) + (1,) * v.dim())
+        tau = float(T) * (1.0 - v)
+        latched_soft = torch.sigmoid((cycles - tau) / temp)
+        train_soft = torch.cat(
+            [latched_soft[:1], latched_soft[1:] - latched_soft[:-1]], dim=0
+        )
+        return train_hard.detach() + (train_soft - train_soft.detach())
 
     def run_segment(self, driver, seg_nodes, values, x):
         T = driver.T

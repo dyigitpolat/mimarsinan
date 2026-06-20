@@ -319,3 +319,65 @@ every segment (the D2/D3 work; parity-critical — the forward must stay the bit
 HCM encode). `TestEncodeDecodeGradientContract` pins the current contract so any
 such change is deliberate. For accuracy-critical `ttfs_cycle` today, D6(b)
 (synchronized, already ≥0.97) remains the pragmatic path.
+
+## 8. Implementation status (2026-06-17)
+
+The D2/D3 **boundary straight-through estimator** was built and **evaluated — refuted
+as an accuracy lever** (kept default-off as the gradient-flow primitive, NOT retired):
+
+- **What landed (`ttfs_boundary_surrogate`, default off; `_temp=1.0`).** A straight-
+  through estimator on `segment_policy_ttfs._boundary_single_spike_train`: forward is
+  the **bit-exact** `round` train; backward flows through a soft spike-time
+  (`sigmoid((c − T(1−v))/temp)`), so the genuine cascade gradient reaches EVERY
+  segment, not just the last. Threaded into both genuine training forwards
+  (`_SegmentSpikeForward` for stabilization/deploy, `BlendedGenuineForward` for the
+  blend ramp) via `TtfsSegmentPolicy.boundary_surrogate_temp`. Skipped under
+  `no_grad`. Unit-tested: gradient now flows upstream past an offload boundary
+  (`test_offload_boundary_surrogate_propagates_gradient_upstream`) and the forward is
+  byte-identical (`test_surrogate_leaves_forward_bit_exact`). NF↔SCM parity stays 1.0.
+- **Why refuted.** A/B on the mmixcore S=8 genuine-blend-fast ramp (resume from a
+  fixed ANN=0.982 cache): **subsume** — deployed SCM {off 0.9321/0.9375, on
+  0.9361/0.9313}, fully overlapping (subsume entries are already differentiable, so
+  there is little severed gradient to recover). **offload** (severance maximal, every
+  segment entry re-encoded) — deployed SCM {off 0.913, on 0.9094/0.9091}, also within
+  noise (FT {off 0.8652/0.8738, on 0.8783/0.8724} overlapping). The severance is real
+  and correctly un-severed, but it is NOT the binding accuracy constraint: the
+  optimizer recovers enough via the last-segment gradient + the proxy/pretrained init,
+  and the dominant gap is the §2.2 forward attenuation + §2.3 generalization gap, which
+  a backward-only surrogate cannot touch. A *well-conditioned* timing-aware proxy (true
+  D2) — not this soft-sigmoid STE — remains the open bet if the optimization gap is to
+  be closed.
+- **The lever that DID move accuracy: more genuine training (D4).** `ttfs_blend_fast_
+  steps_per_rate` 120→300 lifted deployed **0.9365→0.9456 (+0.9 pp, above the ~0.5 pp
+  run-to-run noise)** on the genuine-blend path — no new code. This is the cheapest
+  real cascaded-TTFS accuracy lever measured to date; promote it for accuracy-critical
+  runs (the proxy path at ~0.95 is the better starting baseline to apply it to).
+- **LIF, for contrast (fully lossless).** Deployed *tracks* the ANN; more deployed-
+  cascade training (`lif_blend_fast_stabilize_steps` 400→6000) climbs monotonically to
+  **0.9784 ≥ ANN 0.9776**. DFQ per-neuron bias matching *hurts* LIF (0.972→0.962) —
+  the LIF rate code has no death cascade to revive, unlike TTFS, so first-moment
+  matching only perturbs the trained classifier. `lif_distmatch` shipped default-off.
+  The shared DFQ core (`spiking.dfq_bias_correction`) is the Boy-Scout refactor TTFS's
+  `distribution_matching` now reuses.
+
+**Higher S is NOT a practical lever (clean test).** A fixed-ANN (0.982) proxy S-sweep
+— resume the SAME pretrained model at Torch Mapping, vary only `simulation_steps`,
+deploy → Soft Core Mapping — gives **S=8 → 0.9344, S=16 → 0.9366 (+0.22 pp for a 2×
+timing-resolution doubling)**. Reaching LIF level (~0.975) from 0.934 would need ~18
+doublings. Prior cross-S "evidence" (proxy S4 0.9501 / S8 0.9513; genuine S8 0.9365 /
+S16 0.9338) was confounded by different ANN draws; this fixed-ANN test settles it.
+Combined with the refuted STE and the modest more-training (D4, +0.9 pp) lever, the
+single-spike cascade is **representation-limited** at ~0.93–0.95 — the §2.2 forward
+attenuation (a deployed-dynamics property the bit-exact forward cannot change) caps it.
+
+**Strategic conclusion.** For accuracy-critical `ttfs_cycle`, the **synchronized**
+schedule (D6(b), already ≥0.97 = LIF level) is the path; cascaded is the
+power-optimized variant carrying a documented ~2–3 pp accuracy trade. Closing that
+trade needs a *fundamental* advance, not the levers tried here:
+- (a) a timing-aware soft-spike proxy with matched gradients (true D2) — the crude STE
+  proved "gradient reaches ≠ gradient well-conditioned"; a proxy modelling sub-window
+  timing is the open bet for the optimization gap;
+- (c) mapping co-design to shorten cascade depth (D6(c)) — directly attacks the §2.2
+  depth-compounding attenuation, the binding *representation* limit.
+The §2.3 generalization gap appears narrowed on the current pipeline (FT-val ≈
+SCM-test on the genuine-blend runs), so D5/SWA is lower priority than D2/D6(c).

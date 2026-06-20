@@ -84,7 +84,7 @@ class TestEncodeDecodeGradientContract:
             g = p.layer.weight.grad
             assert g is not None and torch.isfinite(g).all() and g.abs().sum() > 0
 
-    def _build_two_segment(self, *, host_op):
+    def _build_two_segment(self, *, host_op, surrogate_temp=None, return_out=False):
         import torch.nn as nn
         from mimarsinan.torch_mapping.converter import convert_torch_model
         from cascade_fixtures import _calibrate_scales
@@ -115,9 +115,11 @@ class TestEncodeDecodeGradientContract:
         install_ttfs_nodes(flow, 32)
         for p in flow.get_perceptrons():
             p.layer.weight.grad = None
-        out = cascade_forward(flow, x.requires_grad_(True), 32, grad=True)
+        out = cascade_forward(
+            flow, x.requires_grad_(True), 32, grad=True, surrogate_temp=surrogate_temp,
+        )
         out.sum().backward()
-        return flow
+        return (flow, out) if return_out else flow
 
     def test_subsume_encode_cut_propagates_gradient_upstream(self):
         flow = self._build_two_segment(host_op=False)
@@ -127,12 +129,33 @@ class TestEncodeDecodeGradientContract:
         )
 
     def test_offload_computeop_boundary_severs_upstream_gradient(self):
-        flow = self._build_two_segment(host_op=True)
+        # Default contract (no surrogate): the offload boundary re-encode is the
+        # non-differentiable round-based encode, so upstream gradient is severed.
+        flow = self._build_two_segment(host_op=True, surrogate_temp=None)
         grads = [p.layer.weight.grad for p in flow.get_perceptrons()]
-        # Last segment trains; the upstream segment's gradient is severed at the
-        # non-differentiable boundary re-encode (the documented current contract).
         assert grads[-1] is not None and grads[-1].abs().sum() > 0
         assert grads[0] is None or grads[0].abs().sum() == 0, (
-            "offload/ComputeOp boundary currently severs upstream gradient "
-            "(round-based re-encode); flipping this is D2/D3 surrogate work"
+            "offload/ComputeOp boundary severs upstream gradient by default "
+            "(round-based re-encode); the STE surrogate flips this"
         )
+
+    def test_offload_boundary_surrogate_propagates_gradient_upstream(self):
+        # With the STE surrogate the genuine backward flows through the offload
+        # boundary, so the UPSTREAM segment trains too (D2/D3 — the real lever).
+        flow = self._build_two_segment(host_op=True, surrogate_temp=1.0)
+        grads = [p.layer.weight.grad for p in flow.get_perceptrons()]
+        assert all(g is not None and g.abs().sum() > 0 for g in grads), (
+            "the boundary STE must propagate gradient to every segment "
+            "(including the upstream segment past the offload boundary)"
+        )
+
+    def test_surrogate_leaves_forward_bit_exact(self):
+        # The STE is backward-only: the forward (hence NF↔SCM parity and deployed
+        # accuracy) must be byte-identical with and without the surrogate.
+        _, out_severed = self._build_two_segment(
+            host_op=True, surrogate_temp=None, return_out=True,
+        )
+        _, out_ste = self._build_two_segment(
+            host_op=True, surrogate_temp=1.0, return_out=True,
+        )
+        torch.testing.assert_close(out_ste, out_severed, atol=0, rtol=0)

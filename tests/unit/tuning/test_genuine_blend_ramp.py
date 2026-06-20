@@ -73,6 +73,112 @@ def _make_tuner(tmp_path, *, schedule="cascaded", blend=True, annealed=False):
     return tuner, model, am
 
 
+def _make_surrogate_tuner(tmp_path, *, surrogate, temp=1.0):
+    pipeline = _make_pipeline(tmp_path)
+    pipeline.config["ttfs_boundary_surrogate"] = surrogate
+    pipeline.config["ttfs_boundary_surrogate_temp"] = temp
+    model = make_tiny_supermodel()
+    am = AdaptationManager()
+    tuner = TTFSCycleAdaptationTuner(
+        pipeline, model=model, target_accuracy=0.5,
+        lr=pipeline.config["lr"], adaptation_manager=am,
+    )
+    return tuner
+
+
+class TestBoundarySurrogateFlag:
+    """The offload-boundary STE flag threads the temperature into the genuine
+    training forward (None = the historical severed contract)."""
+
+    def test_default_off_is_none(self, tmp_path):
+        tuner = _make_surrogate_tuner(tmp_path, surrogate=False)
+        assert tuner._boundary_surrogate_temp is None
+
+    def test_flag_sets_temp(self, tmp_path):
+        tuner = _make_surrogate_tuner(tmp_path, surrogate=True, temp=2.0)
+        assert tuner._boundary_surrogate_temp == 2.0
+
+    def test_blended_forward_carries_temp(self, tmp_path):
+        tuner = _make_surrogate_tuner(tmp_path, surrogate=True, temp=1.5)
+        fwd = tuner._ramp_forward()
+        assert fwd.boundary_surrogate_temp == 1.5
+
+    def test_finalize_forward_carries_temp(self, tmp_path):
+        tuner = _make_surrogate_tuner(tmp_path, surrogate=True, temp=1.5)
+        fwd = tuner._finalize_forward_for(tuner.model)
+        assert fwd.boundary_surrogate_temp == 1.5
+
+
+class TestGainCorrectionFlag:
+    """The per-depth gain correction fires during tuner construction (before the
+    nodes are built) when ``ttfs_gain_correction`` is on, cascaded only."""
+
+    def _make(self, tmp_path, *, on, rule="relative"):
+        pipeline = _make_pipeline(tmp_path)
+        pipeline.config["ttfs_gain_correction"] = on
+        pipeline.config["ttfs_gain_correction_rule"] = rule
+        model = make_tiny_supermodel()
+        before = [float(p.activation_scale) for p in model.get_perceptrons()]
+        am = AdaptationManager()
+        tuner = TTFSCycleAdaptationTuner(
+            pipeline, model=model, target_accuracy=0.5,
+            lr=pipeline.config["lr"], adaptation_manager=am,
+        )
+        return tuner, before
+
+    def test_default_off_no_correction(self, tmp_path):
+        tuner, _ = self._make(tmp_path, on=False)
+        assert tuner._gain_correction_stats is None
+
+    def test_flag_applies_correction(self, tmp_path):
+        tuner, before = self._make(tmp_path, on=True)
+        assert tuner._gain_correction_stats is not None
+        assert tuner._gain_correction_stats["n_corrected"] >= 1
+        after = [float(p.activation_scale) for p in tuner.model.get_perceptrons()]
+        # depth-0 unchanged, a deeper layer shrunk (relative rule)
+        assert after[0] == pytest.approx(before[0])
+        assert any(a < b - 1e-9 for a, b in zip(after, before))
+
+
+class TestGainCorrectionRamp:
+    """Rate-gated gain correction: scales ramp base -> base*g_d with _set_rate, so
+    the calibration co-adapts with the KD blend (rate 0 = base, rate 1 = full)."""
+
+    def _make(self, tmp_path, *, rule="relative"):
+        # Plain cascaded value-domain blend (no genuine-blend distmatch, which would
+        # ALSO set activation_scale and compete with the gain ramp): the gain ramp is
+        # the sole scale operation, co-ramping with the blend rate.
+        pipeline = _make_pipeline(tmp_path, blend=False)
+        pipeline.config["ttfs_gain_correction_ramp"] = True
+        pipeline.config["ttfs_gain_correction_rule"] = rule
+        model = make_tiny_supermodel()
+        base = [float(p.activation_scale) for p in model.get_perceptrons()]
+        am = AdaptationManager()
+        tuner = TTFSCycleAdaptationTuner(
+            pipeline, model=model, target_accuracy=0.5,
+            lr=pipeline.config["lr"], adaptation_manager=am,
+        )
+        return tuner, base
+
+    def test_ramp_flag_recognized_and_starts_at_base(self, tmp_path):
+        tuner, base = self._make(tmp_path)
+        assert tuner._gain_ramp is True
+        # after construction (_apply_gain_at_rate(0.0)) scales are at base
+        now = [float(p.activation_scale) for p in tuner.model.get_perceptrons()]
+        assert now == pytest.approx(base)
+
+    def test_set_rate_ramps_scales(self, tmp_path):
+        tuner, base = self._make(tmp_path)
+        factors = tuner._gain_ramp_factors
+        ps = list(tuner.model.get_perceptrons())
+        tuner._set_rate(1.0)
+        for p, b in zip(ps, base):
+            assert float(p.activation_scale) == pytest.approx(b * factors[id(p)], rel=1e-5)
+        tuner._set_rate(0.0)
+        for p, b in zip(ps, base):
+            assert float(p.activation_scale) == pytest.approx(b, rel=1e-5)
+
+
 def _x(pipeline, n=3):
     return torch.randn(n, *pipeline.config["input_shape"])
 

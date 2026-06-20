@@ -71,6 +71,7 @@ class TorchMLPMixerCore(nn.Module):
         fc_w_1: int,
         fc_w_2: int,
         base_activation: str = "ReLU",
+        num_blocks: int = 2,
     ):
         super().__init__()
         c, h, w = int(input_shape[-3]), int(input_shape[-2]), int(input_shape[-1])
@@ -79,6 +80,7 @@ class TorchMLPMixerCore(nn.Module):
         num_patches = patch_n_1 * patch_m_1
         self.num_patches = num_patches
         self.patch_channels = patch_c_1
+        self.num_blocks = int(num_blocks)
         self.patch_embed = nn.Conv2d(
             c, patch_c_1, kernel_size=(patch_h, patch_w), stride=(patch_h, patch_w)
         )
@@ -86,10 +88,15 @@ class TorchMLPMixerCore(nn.Module):
 
         act = _get_activation(base_activation)
         self.act = act
-        self.token_mix_1 = _TokenMixerCore(num_patches, patch_c_1, fc_w_1, act)
-        self.channel_mix_1 = _ChannelMixerCore(patch_c_1, fc_w_2, act)
-        self.token_mix_2 = _TokenMixerCore(num_patches, patch_c_1, fc_w_1, act)
-        self.channel_mix_2 = _ChannelMixerCore(patch_c_1, fc_w_2, act)
+        # ``num_blocks`` controls the on-chip cascade DEPTH: each block adds 4 spiking
+        # perceptrons (token fc1/fc2 + channel fc1/fc2). The cascaded single-spike TTFS
+        # depth budget is d_max(S)≈0.56·√S (≈1.6 at S=8), so deep stacks here are the
+        # dominant cascaded-deployment accuracy cost — keep this small (or use
+        # residuals / the synchronized schedule) for cascaded TTFS.
+        self.mixer_blocks = nn.ModuleList()
+        for _ in range(self.num_blocks):
+            self.mixer_blocks.append(_TokenMixerCore(num_patches, patch_c_1, fc_w_1, act))
+            self.mixer_blocks.append(_ChannelMixerCore(patch_c_1, fc_w_2, act))
 
         self.norm = nn.Identity()
         self.classifier = nn.Linear(patch_c_1, num_classes)
@@ -99,10 +106,8 @@ class TorchMLPMixerCore(nn.Module):
         x = self.patch_bn(x)
         x = self.act(x) # Activation for perceptron packaging
         x = x.flatten(2).permute(0, 2, 1)  # (B, num_patches, patch_c_1)
-        x = self.token_mix_1(x)
-        x = self.channel_mix_1(x)
-        x = self.token_mix_2(x)
-        x = self.channel_mix_2(x)
+        for block in self.mixer_blocks:
+            x = block(x)
         x = self.norm(x)
         x = x.mean(dim=1)  # (B, patch_c_1)
         x = self.classifier(x)
