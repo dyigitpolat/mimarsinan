@@ -13,7 +13,7 @@ Static visualization utilities for IR graphs, hardware mappings, activations, an
 
 | File | Role |
 |------|------|
-| `softcore_flowchart.py` | Mapper flowchart DOT + `estimate_fc_cores` |
+| `softcore_flowchart_dot.py` / `softcore_flowchart_estimate.py` | Mapper flowchart DOT + `estimate_fc_cores`. Per-node SW/HW estimation is the mapper's own `flowchart_node_estimate` (V6); this layer only turns the returned `FlowchartFCSpec` into core counts. |
 | `activation_function_visualization.py` | Activation plots |
 | `histogram_visualization.py` | Activation histograms |
 | `hardcore_visualization.py` | Core heatmaps |

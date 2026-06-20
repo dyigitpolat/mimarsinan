@@ -74,6 +74,53 @@ class ComputeOpMapper(Mapper):
         stacked = torch.stack([s.to(dtype=torch.float32) for s in source_scales])
         return stacked.mean(dim=0)
 
+    def propagate_source_scale(self, deps, out_scales):
+        from mimarsinan.mapping.mappers.scale_propagation import (
+            apply_compute_op_scale_policy,
+            present_source_scales,
+        )
+
+        return apply_compute_op_scale_policy(
+            self, present_source_scales(deps, out_scales)
+        )
+
+    def propagate_boundary_scale(self, deps, out_scales, default):
+        from mimarsinan.mapping.mappers.scale_propagation import mean_source_scale
+
+        return mean_source_scale(deps, out_scales, float(default))
+
+    def flowchart_node_estimate(self, out_shape):
+        import operator
+
+        from mimarsinan.mapping.mappers.flowchart import (
+            FlowchartFCSpec,
+            FlowchartNodeEstimate,
+        )
+        from mimarsinan.mapping.support.compute_modules import ComputeAdapter
+
+        is_unbound_add = (
+            isinstance(getattr(self, "module", None), ComputeAdapter)
+            and getattr(self.module, "fn", None) is operator.add
+            and getattr(self.module, "_bound_count", 0) == 0
+        )
+        if not is_unbound_add:
+            return FlowchartNodeEstimate()
+
+        # Add is mapped as a linear op (concat + identity weights). Estimate roughly:
+        # 1 instance, axons=2*features, neurons=features (visualization-only).
+        if out_shape is not None and len(out_shape) == 1:
+            feat = int(out_shape[0])
+            return FlowchartNodeEstimate(
+                sw_text="SW perceptrons=0 (Add op)",
+                fc_spec=FlowchartFCSpec(
+                    in_features=2 * feat,
+                    out_features=feat,
+                    instances=1,
+                    has_bias=False,
+                ),
+            )
+        return FlowchartNodeEstimate()
+
     def _forward_impl(self, x):
         if len(self._sources_list) == 1:
             inputs: tuple = (x,)

@@ -1,9 +1,11 @@
-"""Tests for _broadcast_scale_pair in per_source_scales.py."""
+"""Tests for broadcast_scale_pair in mapping/support/scale_broadcast.py."""
 
 import pytest
 import torch
 
-from mimarsinan.mapping.support.per_source_scales import _broadcast_scale_pair
+from mimarsinan.mapping.support.scale_broadcast import (
+    broadcast_scale_pair as _broadcast_scale_pair,
+)
 
 
 class TestBroadcastScalePair:
