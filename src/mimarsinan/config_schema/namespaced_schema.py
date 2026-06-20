@@ -11,7 +11,13 @@ existing flat configs resolve identically while new code can read the concern vi
 Strangler-fig status: the translation shim + provenance registry are the new seam;
 the ``hardware`` group is migrated end-to-end (its keys carry namespaced paths and a
 byte-identical accessor); the remaining groups are registered with provenance but
-still consumed flat by their owners. See ARCHITECTURE.md.
+still consumed flat by their owners. **Consumer-side resolution is owned by V1's
+``DeploymentPlan``, not this module** — this is the REGISTRY/PROVENANCE layer (it
+records each key's owner + derivation and gives the concern view); ``DeploymentPlan``
+is where steps read resolved decisions. Provenance is real: derived keys (written by
+``deployment_derivation`` / ``DeploymentPipeline``) and runtime keys (device / data
+provider) are tagged ``derived`` / ``runtime``; only declared defaults are
+``default``. See ARCHITECTURE.md.
 """
 
 from __future__ import annotations
@@ -202,11 +208,51 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("sanafe_log_potential_trace", "deployment_target", "sanafe_backend"),
 )
 
+# ── Derived keys: written by a derivation pass, NOT in the defaults dict ──────
+# These have no default value of their own — their value is *computed* from other
+# keys. ``deployment_derivation.derive_deployment_parameters`` (wizard parity)
+# writes ``pipeline_mode`` / ``activation_quantization`` / ``weight_quantization``
+# from ``spiking_mode`` × ``weight_quantization``; ``DeploymentPipeline.__init__``
+# resolves ``firing_mode`` / ``spike_generation_mode`` / ``thresholding_mode`` from
+# the spiking mode via ``setdefault``. Tagged ``derived`` so provenance is real.
+# (The SSOT for the conversion-trio matches ``display_view_meta.DERIVED_KEYS``.)
+_DERIVED_KEY_SPECS: Tuple[KeySpec, ...] = (
+    _spec("pipeline_mode", "run", "deployment_derivation", derivation="derived"),
+    _spec("activation_quantization", "conversion",
+          "deployment_derivation/activation_analysis", derivation="derived"),
+    _spec("weight_quantization", "conversion",
+          "deployment_derivation/weight_quantization", derivation="derived"),
+    _spec("firing_mode", "spiking", "DeploymentPipeline", derivation="derived"),
+    _spec("spike_generation_mode", "spiking", "DeploymentPipeline",
+          derivation="derived"),
+    _spec("thresholding_mode", "spiking", "DeploymentPipeline", derivation="derived"),
+)
+
+# ── Runtime keys: resolved by the pipeline at start (device / data-provider) ──
+# No default and not derivable from config alone — they need the live environment
+# (device probe) or the data provider (input shape / class count). Tagged
+# ``runtime`` (mirrors ``display_view_meta.RUNTIME_KEYS``).
+_RUNTIME_KEY_SPECS: Tuple[KeySpec, ...] = (
+    _spec("device", "run", "DeploymentPipeline/select_device", derivation="runtime"),
+    _spec("input_shape", "run", "DeploymentPipeline/data_provider",
+          derivation="runtime"),
+    _spec("input_size", "run", "DeploymentPipeline/data_provider",
+          derivation="runtime"),
+    _spec("num_classes", "run", "DeploymentPipeline/data_provider",
+          derivation="runtime"),
+)
+
+_ALL_KEY_SPECS: Tuple[KeySpec, ...] = (
+    _KEY_SPECS + _DERIVED_KEY_SPECS + _RUNTIME_KEY_SPECS
+)
+
 # flat_key -> KeySpec
-KEY_SPECS: Dict[str, KeySpec] = {s.flat_key: s for s in _KEY_SPECS}
+KEY_SPECS: Dict[str, KeySpec] = {s.flat_key: s for s in _ALL_KEY_SPECS}
 
 # ── The one translation table: legacy flat key <-> namespaced (group, name) ──
-LEGACY_KEY_TABLE: Dict[str, str] = {s.flat_key: s.namespaced_path for s in _KEY_SPECS}
+LEGACY_KEY_TABLE: Dict[str, str] = {
+    s.flat_key: s.namespaced_path for s in _ALL_KEY_SPECS
+}
 
 # Inverse, validated for uniqueness at import (the shim must be a bijection).
 NAMESPACED_KEY_TABLE: Dict[str, str] = {}
@@ -265,13 +311,20 @@ def provenance_table() -> Dict[str, Dict[str, str]]:
             "derivation": s.derivation,
             "namespaced_path": s.namespaced_path,
         }
-        for s in _KEY_SPECS
+        for s in _ALL_KEY_SPECS
     }
 
 
 def registered_flat_keys() -> frozenset:
     """All flat keys carrying a KeySpec (registered in the provenance table)."""
     return frozenset(KEY_SPECS)
+
+
+def keys_with_derivation(derivation: str) -> frozenset:
+    """Flat keys whose recorded provenance is ``derivation`` (see _VALID_DERIVATIONS)."""
+    if derivation not in _VALID_DERIVATIONS:
+        raise ValueError(f"unknown derivation {derivation!r}")
+    return frozenset(k for k, s in KEY_SPECS.items() if s.derivation == derivation)
 
 
 def unregistered_default_keys() -> frozenset:
