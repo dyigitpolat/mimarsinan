@@ -106,6 +106,56 @@ class TestFastLadderResolution:
         assert _resolve(ttfs_genuine_annealed_ramp=True).fast_ladder_enabled is False
 
 
+class TestComposedTrifecta:
+    """The plan composes the orthogonal abstractions: the optimization driver owns
+    the fast-ladder rung, the calibration pipeline owns the conversion-health steps.
+    The legacy ``fast_ladder_*`` accessors mirror the driver (back-compat for the
+    tuner binds)."""
+
+    def test_driver_is_an_optimization_driver(self):
+        from mimarsinan.tuning.orchestration.optimization_driver import (
+            OptimizationDriver,
+        )
+
+        p = _resolve(ttfs_staircase_ste=True, ttfs_staircase_ste_fast=True)
+        assert isinstance(p.driver, OptimizationDriver)
+        assert p.driver.fast_ladder is True
+
+    def test_fast_ladder_accessors_mirror_driver(self):
+        p = _resolve(ttfs_blend_fast=True, ttfs_blend_fast_lr_eta_min=0.3)
+        assert p.fast_ladder_enabled == p.driver.fast_ladder
+        assert p.fast_ladder_rates == p.driver.fast_ladder_rates
+        assert p.fast_ladder_steps_per_rate == p.driver.fast_ladder_steps_per_rate
+        assert p.fast_ladder_eta_min_factor == p.driver.fast_ladder_eta_min_factor
+
+    def test_calibration_is_a_calibration_pipeline(self):
+        from mimarsinan.tuning.orchestration.calibration_pipeline import (
+            CalibrationPipeline,
+        )
+
+        p = _resolve(ttfs_gain_correction=True, ttfs_theta_cotrain=True)
+        assert isinstance(p.calibration, CalibrationPipeline)
+        assert p.calibration.gain_cold is True
+        assert p.calibration.theta_cotrain is True
+
+    def test_distmatch_driven_by_blend_ramp(self):
+        assert _resolve(ttfs_genuine_blend_ramp=True).calibration.distmatch is True
+        assert _resolve().calibration.distmatch is False
+
+    def test_calibration_off_under_synchronized(self):
+        p = _resolve(
+            synchronized=True,
+            ttfs_gain_correction=True,
+            ttfs_theta_cotrain=True,
+            ttfs_boundary_surrogate=True,
+            ttfs_genuine_blend_ramp=True,
+        )
+        assert not p.calibration.gain_active
+        assert not p.calibration.theta_cotrain
+        assert not p.calibration.boundary_ste
+        assert not p.calibration.distmatch, "blend ramp off under synchronized"
+
+
 class TestNumericPassThrough:
     def test_numeric_params_carried(self):
         p = _resolve(
