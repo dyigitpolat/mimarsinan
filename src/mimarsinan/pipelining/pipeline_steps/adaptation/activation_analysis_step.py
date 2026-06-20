@@ -148,12 +148,11 @@ def _attach_saved_tensor_decorator(perceptron):
 
 
 class ActivationAnalysisStep(TrainerPipelineStep):
+    REQUIRES = ("model",)
+    PROMISES = ("activation_scales", "activation_scale_stats")
+
     def __init__(self, pipeline):
-        requires = ["model"]
-        promises = ["activation_scales", "activation_scale_stats"]
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def process(self):
         model = self.get_entry("model")

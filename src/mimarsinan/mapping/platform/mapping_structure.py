@@ -153,6 +153,28 @@ class MappingStrategy:
         """Resolve a strategy for the given declared capabilities."""
         return cls(capabilities=capabilities)
 
+    @classmethod
+    def from_permissions(
+        cls,
+        *,
+        allow_coalescing: bool = False,
+        allow_neuron_splitting: bool = False,
+        allow_scheduling: bool = False,
+    ) -> "MappingStrategy":
+        """Resolve a strategy from the three raw permission bits.
+
+        SSOT for the (now removed) ``build_hybrid_hard_core_mapping`` back-compat
+        kwargs: callers that only have the loose ``allow_*`` bools wrap them in
+        one capability object + strategy instead of threading three flags.
+        """
+        return cls.resolve(
+            ChipCapabilities(
+                allow_coalescing=bool(allow_coalescing),
+                allow_neuron_splitting=bool(allow_neuron_splitting),
+                allow_scheduling=bool(allow_scheduling),
+            )
+        )
+
     @property
     def allow_coalescing(self) -> bool:
         return self.capabilities.allow_coalescing

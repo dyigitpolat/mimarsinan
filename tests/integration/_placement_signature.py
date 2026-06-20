@@ -108,7 +108,10 @@ CONFIGS: Dict[str, Tuple[Callable[[], IRGraph], Dict[str, Any]]] = {
     ),
     "fusion_wide_axon": (
         _fusion_wide_axon,
-        {"cores_config": [{"max_axons": 64, "max_neurons": 32, "count": 4}]},
+        {
+            "cores_config": [{"max_axons": 64, "max_neurons": 32, "count": 4}],
+            "allow_coalescing": True,
+        },
     ),
     "scheduled_wide": (
         _coalescing_wide,
@@ -200,13 +203,27 @@ def build_signature(hybrid_mapping: Any) -> Dict[str, Any]:
     }
 
 
+_PERMISSION_KEYS = (
+    "allow_coalescing",
+    "allow_neuron_splitting",
+    "allow_scheduling",
+)
+
+
 def build_hybrid_for_config(name: str) -> Any:
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping,
     )
+    from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 
     builder, kwargs = CONFIGS[name]
-    return build_hybrid_hard_core_mapping(ir_graph=builder(), **kwargs)
+    kwargs = dict(kwargs)
+    permissions = {k: kwargs.pop(k) for k in _PERMISSION_KEYS if k in kwargs}
+    return build_hybrid_hard_core_mapping(
+        ir_graph=builder(),
+        strategy=MappingStrategy.from_permissions(**permissions),
+        **kwargs,
+    )
 
 
 def signature_for_config(name: str) -> Dict[str, Any]:

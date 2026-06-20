@@ -6,12 +6,11 @@ import torch
 
 
 class ModelBuildingStep(PipelineStep):
+    REQUIRES = ("model_config", "model_builder")
+    PROMISES = ("model", "adaptation_manager")
+
     def __init__(self, pipeline):
-        requires = ["model_config", "model_builder"]
-        promises = ["model", "adaptation_manager"]
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def validate(self):
         return self.pipeline.get_target_metric()

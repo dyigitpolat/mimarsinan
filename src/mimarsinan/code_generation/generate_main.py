@@ -1,9 +1,12 @@
-from dataclasses import dataclass
-
 from mimarsinan.common.file_utils import *
 from mimarsinan.code_generation.main_cpp_template import *
 from mimarsinan.code_generation.main_cpp_template_real_valued_exec import *
 from mimarsinan.code_generation.main_cpp_template_runtime import main_cpp_template_runtime
+from mimarsinan.chip_simulation.spiking_mode_policy import (
+    ExecPolicySpec,
+    NevresimExecParams,
+    policy_for_spiking_mode,
+)
 
 
 def resolve_compare_policy(thresholding_mode: str) -> str:
@@ -18,14 +21,6 @@ def resolve_compare_policy(thresholding_mode: str) -> str:
 def resolve_lif_fire_policy(firing_mode: str, thresholding_mode: str) -> str:
     reset = "ZeroReset" if firing_mode == "Novena" else "SubtractiveReset"
     return f"LIFirePolicy<{reset}, {resolve_compare_policy(thresholding_mode)}>"
-
-
-@dataclass(frozen=True)
-class ExecPolicySpec:
-    """C++ compute policy type and execution alias for nevresim main.cpp."""
-
-    compute_policy: str
-    exec_decl: str
 
 
 def _input_load_statement(spike_gen_mode: str, generated_files_path: str) -> str:
@@ -51,65 +46,27 @@ def resolve_exec_policy(
     latency: int,
     output_count: int,
 ) -> ExecPolicySpec:
+    """Return the (ComputePolicy, Execution) C++ types for nevresim main.
+
+    The firing × sync → codegen choice lives on ``SpikingModePolicy``
+    (``chip_simulation/spiking_mode_policy.py``); this delegates to it so a new
+    spiking mode updates the policy, not this dispatch. The comparator (``compare``)
+    and LIF reset/fire policy strings are selected here (the thresholding/firing
+    SSOT) and handed to the policy as data.
+
+    nevresim never runs the synchronized ``ttfs_cycle_based`` schedule (it disables
+    nevresim), so any ``ttfs_cycle_based`` here resolves to the cascaded policy.
     """
-    Return the (ComputePolicy, ExecutionPolicy) pair for nevresim main.
-
-    Dispatch is based on ``spiking_mode``:
-
-    * **ttfs** (continuous / analytical): ``TTFSAnalyticalCompute`` +
-      ``TTFSContinuousExecution``.
-    * **ttfs_quantized** (cycle-based): ``TTFSQuantizedCompute`` +
-      ``TTFSExecution``.
-    * **ttfs_cycle_based** (genuine cascaded greedy single-spike): ``SpikingCompute``
-      with ``TTFSFirePolicy`` (fire-once-latch) + ``SpikingExecution`` over latched
-      TTFS inputs. The synchronized schedule disables nevresim, so any nevresim run
-      of this mode is the cascaded schedule.
-    * **lif** / **rate**: ``SpikingCompute`` + ``SpikingExecution``.
-    """
-    from mimarsinan.chip_simulation.spiking_semantics import (
-        forces_activation_quantization,
-        is_ttfs_cycle_based,
+    params = NevresimExecParams(
+        compare=resolve_compare_policy(thresholding_mode),
+        lif_fire_policy=resolve_lif_fire_policy(firing_mode, thresholding_mode),
+        spike_gen_mode=spike_gen_mode,
+        weight_type=weight_type,
+        simulation_length=simulation_length,
+        latency=latency,
+        output_count=output_count,
     )
-
-    if spiking_mode == "ttfs":
-        return ExecPolicySpec(
-            compute_policy="TTFSAnalyticalCompute",
-            exec_decl="using exec = TTFSContinuousExecution;",
-        )
-    compare = resolve_compare_policy(thresholding_mode)
-    if is_ttfs_cycle_based(spiking_mode):
-        # Genuine cascaded single-spike TTFS — its own TTFS compute/execution path
-        # (not the LIF SpikingCompute/SpikingExecution): each neuron fires once,
-        # the downstream ramp reconstructs the value.
-        gen_type = f"{spike_gen_mode}SpikeGenerator"
-        return ExecPolicySpec(
-            compute_policy=f"TTFSCascadeCompute<{compare}>",
-            exec_decl=(
-                f"using exec = TTFSCascadeExecution<"
-                f"{simulation_length}, {latency}, {output_count}, "
-                f"{gen_type}, {weight_type}, {compare}>;"
-            ),
-        )
-    if forces_activation_quantization(spiking_mode):
-        return ExecPolicySpec(
-            compute_policy=f"TTFSQuantizedCompute<{simulation_length}, {compare}>",
-            exec_decl=(
-                f"using exec = TTFSExecution<"
-                f"{simulation_length}, {latency}, {compare}>;"
-            ),
-        )
-
-    gen_type = f"{spike_gen_mode}SpikeGenerator"
-    lif_policy = resolve_lif_fire_policy(firing_mode, thresholding_mode)
-    return ExecPolicySpec(
-        compute_policy=f"SpikingCompute<{lif_policy}>",
-        exec_decl=(
-            f"using exec = SpikingExecution<"
-            f"{simulation_length}, {latency}, {output_count}, "
-            f"{gen_type}, {weight_type}, "
-            f"{lif_policy}>;"
-        ),
-    )
+    return policy_for_spiking_mode(spiking_mode).nevresim_exec_policy(params)
 
 
 def _build_chip_and_exec_decl(

@@ -17,20 +17,18 @@ class ModelConfigurationStep(PipelineStep):
     downstream consumer — there is no separate "scaled" version.
     """
 
+    PROMISES = (
+        "model_config",
+        "model_builder",
+        "platform_constraints_resolved",
+    )
+
     @classmethod
     def applies_to(cls, plan):
         return plan.search_mode == "fixed"
 
     def __init__(self, pipeline):
-        requires = []
-        promises = [
-            "model_config",
-            "model_builder",
-            "platform_constraints_resolved",
-        ]
-        updates = []
-        clears = []
-        super().__init__(requires, promises, updates, clears, pipeline)
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def validate(self):
         return self.pipeline.get_target_metric()

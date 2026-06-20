@@ -68,9 +68,6 @@ def _tiny_setup(platform_constraints):
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,
         cores_config=platform_constraints["cores"],
-        allow_neuron_splitting=False,
-        allow_scheduling=False,
-        allow_coalescing=False,
     )
     return cfg, ir_graph, hybrid
 

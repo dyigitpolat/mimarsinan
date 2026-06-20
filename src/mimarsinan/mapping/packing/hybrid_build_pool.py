@@ -36,29 +36,20 @@ def build_hybrid_hard_core_mapping(
     *,
     ir_graph: IRGraph,
     cores_config: Sequence[dict],
-    allow_neuron_splitting: bool = False,
-    allow_scheduling: bool = False,
-    allow_coalescing: bool = False,
     strategy: MappingStrategy | None = None,
 ) -> HybridHardCoreMapping:
     """Compile a unified IRGraph into a HybridHardCoreMapping.
 
     The packing decisions (coalesce / split / schedule passes) are governed by
-    a resolved :class:`MappingStrategy`. When *strategy* is not supplied it is
-    derived from the three permission flags (the legacy surface), so the dispatch
-    reads the resolved strategy's permissions, never the raw flags.
+    a resolved :class:`MappingStrategy`. When *strategy* is not supplied the
+    all-permissions-off strategy is used (no coalesce / split / schedule), so
+    the dispatch reads the resolved strategy's permissions, never raw flags.
     """
 
     from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
 
     if strategy is None:
-        strategy = MappingStrategy.resolve(
-            ChipCapabilities(
-                allow_coalescing=bool(allow_coalescing),
-                allow_neuron_splitting=bool(allow_neuron_splitting),
-                allow_scheduling=bool(allow_scheduling),
-            )
-        )
+        strategy = MappingStrategy.resolve(ChipCapabilities())
 
     consumed_by = build_ir_consumed_by(ir_graph)
 
