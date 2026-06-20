@@ -71,9 +71,14 @@ class RateTunerSeamMixin:
 
         ``rate`` selects which recovery hooks are installed (pruning masks etc.);
         it defaults to the currently committed rate so the seam mirrors a cycle's
-        recovery at the live ramp position."""
+        recovery at the live ramp position. The discovered LR is stashed on
+        ``self._last_recover_lr`` (the per-cycle ``_recover`` reads it back for the
+        trace record) so the run loop can drive the corrector THROUGH this verb
+        without losing the lr the legacy ``(lr, result)`` tuple carried — the
+        public return stays the recovery RESULT (the driver-facing contract)."""
         ramp_rate = self._committed_rate if rate is None else float(rate)
-        _, result = self._recover_to_target(float(target), ramp_rate)
+        lr, result = self._recover_to_target(float(target), ramp_rate)
+        self._last_recover_lr = lr
         return result
 
     def probe(self) -> float:

@@ -167,14 +167,19 @@ class FastLadderMixin:
     def _fast_probe(self, rate) -> None:
         """Optional per-rung observability hook (default no-op)."""
 
-    def _fast_rate_attempt(self, target):
-        """Train ``steps_per_rate`` steps at ``target`` with the shared optimizer +
-        spanning cosine and ``_fast_loss``, measure a post accuracy, and record a
-        commit into the trace. Always commits ``target`` (no rollback)."""
-        self._ensure_fast_optimizer()
-        t0 = time.time()
+    def _fast_ramp(self, rate) -> None:
+        """The fast-ladder PREDICTOR seam verb: apply T at ``rate`` (the uniform
+        ``_fast_set_rate``) and train the rung's ``steps_per_rate`` steps with the
+        shared optimizer + spanning cosine and ``_fast_loss``.
+
+        This is the fast driver's analogue of the controller seam's ``ramp`` — the
+        controller's ``ramp`` applies T + reads an instant metric (a search needs the
+        read); the fast schedule does NOT search per rung, so its predictor applies T
+        and TRAINS the rung in place, then the universal ``probe`` reads the post
+        accuracy once. Same uniform rate-setter (``_set_rate`` / ``_apply_rate``), so
+        the fast ladder drives any family's rate through one seam."""
         device = self.pipeline.config["device"]
-        self._fast_set_rate(float(target))
+        self._fast_set_rate(float(rate))
         for _ in range(self._fast_steps_per_rate):
             x, y = self.trainer.next_training_batch()
             x, y = x.to(device), y.to(device)
@@ -185,8 +190,16 @@ class FastLadderMixin:
             self._fast_optimizer.step()
             self._fast_lr_schedule.step()
             self._fast_optimizer_steps += 1
+
+    def _fast_rate_attempt(self, target):
+        """One fast-ladder rung, driven THROUGH the seam verbs (EF2): the fast
+        predictor ``_fast_ramp`` (apply T + train) then the universal ``probe`` read.
+        Records a commit into the trace; always commits ``target`` (no rollback)."""
+        self._ensure_fast_optimizer()
+        t0 = time.time()
+        self._fast_ramp(float(target))
         self._committed_rate = float(target)
-        post_acc = float(self.trainer.validate_n_batches(self._budget.eval_n_batches))
+        post_acc = self.probe()
         self._record_fast_cycle(float(target), post_acc, t0)
         self._last_post_acc = post_acc
         self._fast_probe(float(target))

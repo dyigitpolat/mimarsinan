@@ -778,7 +778,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             self._fast_optimizer_steps += 1
         self._set_rate(float(target))  # commit/eval at the deploy rate (sharp surrogate)
         self._committed_rate = float(target)
-        post_acc = float(self.trainer.validate_n_batches(self._budget.eval_n_batches))
+        post_acc = self.probe()  # EF2: the STE-fast rung reads through the seam verb
         self._record_fast_cycle(float(target), post_acc, t0)
         self._last_post_acc = post_acc
         self._fast_probe(float(target))
