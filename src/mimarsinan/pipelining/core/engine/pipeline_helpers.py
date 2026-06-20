@@ -24,15 +24,13 @@ def require_spiking_mode_supported(
     *,
     backend: str,
 ) -> None:
-    from mimarsinan.chip_simulation.spiking_semantics import require_spiking_mode_supported
+    from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-    spiking_mode = DeploymentPlan.of(pipeline).spiking_mode
-    require_spiking_mode_supported(
-        spiking_mode,
-        backend=backend,
-        context=step_name,
-    )
+    plan = DeploymentPlan.of(pipeline)
+    policy_for_spiking_mode(
+        plan.spiking_mode, plan.ttfs_cycle_schedule
+    ).require_backend_supported(backend=backend, context=step_name)
 
 
 def run_optional_viz(step_name: str, fn: Callable[[], Any]) -> None:
