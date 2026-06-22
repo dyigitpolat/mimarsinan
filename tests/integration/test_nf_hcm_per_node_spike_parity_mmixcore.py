@@ -42,7 +42,10 @@ from integration._split_reassembly import (
 )
 
 
-def _build(T, *, patch=4, chan=6, fc1=8, fc2=6, allow_coalescing=False, max_dim=512):
+def _build(
+    T, *, patch=4, chan=6, fc1=8, fc2=6, allow_coalescing=False, max_dim=512,
+    firing_mode="Default", thresholding_mode="<=",
+):
     torch.manual_seed(0)
     m = TorchMLPMixerCore(
         input_shape=(1, 28, 28), num_classes=10,
@@ -55,7 +58,10 @@ def _build(T, *, patch=4, chan=6, fc1=8, fc2=6, allow_coalescing=False, max_dim=
 
     nodes = {}
     for i, p in enumerate(flow.get_perceptrons()):
-        lif = LIFActivation(T=T, activation_scale=torch.tensor(1.0), thresholding_mode="<=")
+        lif = LIFActivation(
+            T=T, activation_scale=torch.tensor(1.0),
+            thresholding_mode=thresholding_mode, firing_mode=firing_mode,
+        )
         p.base_activation = lif
         p.activation = lif
         nodes[i] = lif
@@ -63,7 +69,7 @@ def _build(T, *, patch=4, chan=6, fc1=8, fc2=6, allow_coalescing=False, max_dim=
     repr_.assign_perceptron_indices()
 
     ir = IRMapping(
-        q_max=127.0, firing_mode="Default",
+        q_max=127.0, firing_mode=firing_mode,
         max_axons=max_dim, max_neurons=max_dim, allow_coalescing=allow_coalescing,
     ).map(repr_)
     counts = [{"max_axons": max_dim, "max_neurons": max_dim, "count": 2000}]
@@ -74,7 +80,8 @@ def _build(T, *, patch=4, chan=6, fc1=8, fc2=6, allow_coalescing=False, max_dim=
     )
     flow_hcm = SpikingHybridCoreFlow(
         (1, 28, 28), hybrid, simulation_length=T, preprocessor=nn.Identity(),
-        firing_mode="Default", spike_mode="Uniform", thresholding_mode="<=",
+        firing_mode=firing_mode, spike_mode="Uniform",
+        thresholding_mode=thresholding_mode,
         spiking_mode="lif", cycle_accurate_lif_forward=True,
     )
     return flow, nodes, ir, hybrid, flow_hcm
@@ -116,3 +123,11 @@ def test_per_neuron_spike_parity_mmixcore_lif_neuron_split():
     """Force neuron tiling by shrinking the hard core so wide FCs split across cores;
     per-neuron concatenation must still reconstruct each node exactly."""
     _run_parity(allow_coalescing=False, patch=4, chan=6, fc1=8, fc2=6, max_dim=24)
+
+
+def test_per_neuron_spike_parity_mmixcore_lif_novena():
+    """Novena (zero-reset) cycle-accurate NF == HCM per-neuron: the chip-faithful
+    forward the deployment gate requires for Novena. The analytical rate forward
+    (cycle_accurate_lif_forward=False) is the one that diverges (~12pp on mmixcore);
+    this locks that the cascade path is bit-exact under the zero-reset kernel."""
+    _run_parity(allow_coalescing=False, firing_mode="Novena", thresholding_mode="<")

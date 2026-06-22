@@ -132,6 +132,19 @@ class SoftCoreMappingStep(PipelineStep):
         mapper_repr = model.get_mapper_repr()
         if hasattr(mapper_repr, "assign_perceptron_indices"):
             mapper_repr.assign_perceptron_indices()
+        # Per-source input scales bake each layer's upstream activation scale into
+        # the deployed effective weights (PerceptronTransformer.get_effective_weight
+        # reads ``per_input_scales``). This is a mapping-level invariant for EVERY
+        # deployment, but historically only WeightQuantizationStep populated it, so
+        # the no-WQ continuous-ttfs deploy shipped weights missing the input-scale
+        # factor (NF↔SCM diverged by ~upstream-θ). Recompute here so mapping is
+        # self-contained; idempotent (a pure function of the unchanged
+        # activation_scales) ⇒ byte-identical when WeightQuantizationStep ran.
+        from mimarsinan.mapping.support.per_source_scales import (
+            compute_per_source_scales,
+        )
+
+        compute_per_source_scales(mapper_repr)
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
 
