@@ -367,6 +367,122 @@ class TestParityGate:
         )
 
 
+class TestVanillaContinuousTtfsPerSourceScales:
+    """U2 regression: continuous-ttfs deploy must bake each layer's upstream
+    activation scale into the mapped weights via ``per_input_scales``.
+
+    Historically only ``WeightQuantizationStep`` populated ``per_input_scales``
+    (via ``compute_per_source_scales``), so a no-weight-quant vanilla run left
+    the deployed effective weights MISSING the upstream-θ factor. The
+    continuous-ttfs NF (real-valued cascade) and the identity-mapped SCM
+    (normalised cascade) then diverged by ~upstream-θ — a real 40%+ deploy
+    split, not a budget artefact (the WORST case measured nf=1.0 vs scm=0.09).
+    ``SoftCoreMappingStep`` now runs ``compute_per_source_scales`` for every
+    deployment, so the scale factor lands regardless of weight quantization.
+    """
+
+    class _ContinuousFlow(nn.Module):
+        def __init__(self, mapper_repr, perceptrons):
+            super().__init__()
+            self._mapper_repr = mapper_repr
+            self._perceptrons = nn.ModuleList(perceptrons)
+            self.preprocessor = None
+
+        def get_perceptrons(self):
+            return list(self._perceptrons)
+
+        def get_mapper_repr(self):
+            return self._mapper_repr
+
+        def forward(self, x):
+            return self._mapper_repr(x)
+
+    def _build_continuous_cascade(self, *, call_per_source_scales: bool):
+        from mimarsinan.models.nn.decorators.clamp_quantize import ClampDecorator
+        from mimarsinan.models.nn.layers import TransformedActivation
+
+        torch.manual_seed(0)
+        dims = [8, 8, 8, 8, 6]
+        perceptrons = []
+        for i in range(4):
+            p = Perceptron(
+                dims[i + 1], dims[i], normalization=nn.Identity(),
+                base_activation_name="ReLU",
+            )
+            # Distinct per-layer θ: exposes a missing input-scale factor (equal
+            # scales would mask it). Mirrors the real run's [1.18, 4.42] spread.
+            scale = torch.tensor(1.18 + 0.9 * i, dtype=torch.float64)
+            p.set_activation_scale(scale)
+            p.set_activation(TransformedActivation(
+                p.base_activation, [ClampDecorator(torch.tensor(0.0), scale)]))
+            perceptrons.append(p)
+
+        inp = InputMapper((dims[0],))
+        node = inp
+        for p in perceptrons:
+            node = PerceptronMapper(node, p)
+        repr_ = ModelRepresentation(node)
+        repr_.assign_perceptron_indices()
+        if call_per_source_scales:
+            compute_per_source_scales(repr_)
+
+        ir_graph = IRMapping(
+            q_max=15, firing_mode="TTFS", max_axons=1024, max_neurons=1024,
+        ).map(repr_)
+        from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
+
+        # The failing cell deploys with weight_quantization=False.
+        quantize_ir_graph(ir_graph, 5, weight_quantization=False)
+        IRLatency(ir_graph).calculate()
+        model = self._ContinuousFlow(repr_, perceptrons).double().eval()
+        return model, ir_graph
+
+    def test_parity_holds_with_per_source_scales(self):
+        """The fixed mapping path (per-source scales applied) is bit-exact."""
+        model, ir_graph = self._build_continuous_cascade(
+            call_per_source_scales=True,
+        )
+        torch.manual_seed(7)
+        samples = torch.rand(4, 8, dtype=torch.float64)
+        fraction = assert_nf_scm_parity_or_raise(
+            _pipeline(spiking_mode="ttfs"), model, ir_graph, samples,
+            atol=1e-6,
+        )
+        assert fraction == 0.0
+
+    def test_missing_per_source_scales_trips_the_gate(self):
+        """Guard: without per-source scales the deploy genuinely diverges — the
+        gate must FAIL LOUD rather than pass on a mis-scaled deployment."""
+        model, ir_graph = self._build_continuous_cascade(
+            call_per_source_scales=False,
+        )
+        torch.manual_seed(7)
+        samples = torch.rand(4, 8, dtype=torch.float64)
+        with pytest.raises(NfScmParityError):
+            assert_nf_scm_parity_or_raise(
+                _pipeline(spiking_mode="ttfs"), model, ir_graph, samples,
+                atol=1e-6, max_mismatch_fraction=0.25,
+            )
+
+    def test_soft_core_mapping_step_applies_per_source_scales(self):
+        """The step itself must populate ``per_input_scales`` (the SSOT fix is
+        in ``SoftCoreMappingStep``, not only in ``WeightQuantizationStep``)."""
+        model, _ = self._build_continuous_cascade(call_per_source_scales=False)
+        for p in model.get_perceptrons():
+            assert not hasattr(p, "per_input_scales") or p.per_input_scales is None
+
+        compute_per_source_scales(model.get_mapper_repr())
+        scaled = [
+            p for p in model.get_perceptrons()
+            if getattr(p, "per_input_scales", None) is not None
+        ]
+        # Every interior layer (a perceptron with an upstream perceptron source)
+        # carries a non-trivial input scale.
+        assert any(
+            float(p.per_input_scales.max()) != 1.0 for p in scaled
+        ), "interior layers must inherit a non-unit upstream activation scale"
+
+
 class TestDeviceConsistency:
     """The mapping pipeline can leave the mapper-graph compute modules and the
     perceptrons on different devices (offload/cache seams), so a full-graph
