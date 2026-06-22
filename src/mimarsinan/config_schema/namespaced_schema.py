@@ -121,6 +121,7 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("weight_bits", "hardware", "weight_quantization"),
     _spec("allow_coalescing", "hardware", "MappingStrategy"),
     _spec("allow_neuron_splitting", "hardware", "MappingStrategy"),
+    _spec("allow_per_layer_s", "hardware", "ChipCapabilities/TemporalAllocation"),
     _spec("allow_scheduling", "hardware", "MappingStrategy/scheduler"),
     _spec("max_schedule_passes", "hardware", "schedule_partitioner"),
     _spec("scheduling_latency_weight", "hardware", "schedule_partitioner"),
@@ -191,6 +192,11 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("tuning_recovery_check_divisor", "tuning", "AdaptationManager"),
     _spec("tuning_recipe_recovery", "tuning", "AdaptationManager"),
     _spec("optimization_driver", "tuning", "OptimizationDriver"),
+    # Per-layer-S temporal allocation (EW1 RESERVED): the Wizard declares the intent;
+    # the per-depth S map is derived by the ConversionPolicy keystone (TemporalAllocation).
+    _spec("s_allocation", "conversion", "TemporalAllocation"),
+    _spec("s_allocation_explicit", "conversion", "TemporalAllocation"),
+    _spec("s_allocation_budget", "conversion", "TemporalAllocation"),
     # Training ────────────────────────────────────────────────────────────────
     _spec("lr", "training", "training_loop"),
     _spec("lr_range_min", "training", "lr_finder"),
