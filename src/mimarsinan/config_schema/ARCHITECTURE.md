@@ -8,7 +8,7 @@ merged flat config for pipeline runtime).
 
 | File | Symbols | Purpose |
 |------|---------|---------|
-| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Defaults and preset merge. **`spiking_mode` default `"lif"`**. Tuner keys: `tuner_target_floor_ratio`, `tuner_calibrate_smooth_tolerance`, etc. Platform: `allow_coalescing`, `allow_scheduling`, `max_schedule_passes`, `scheduling_latency_weight`. |
+| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Defaults and preset merge. **`spiking_mode` default `"lif"`**. Tuner keys: `tuner_target_floor_ratio`, `tuner_calibrate_smooth_tolerance`, etc. Platform: `allow_coalescing`, `allow_per_layer_s` (EW1 RESERVED temporal capability gate), `allow_scheduling`, `max_schedule_passes`, `scheduling_latency_weight`. Temporal allocation (EW1 RESERVED): `s_allocation` (`uniform`/`explicit`/`budget`), `s_allocation_explicit`, `s_allocation_budget`. |
 | `deployment_derivation.py` | `derive_deployment_parameters` | Mirrors `gui/static/js/wizard.js` `buildConfig()` rules: float weights → vanilla; LIF disables `activation_quantization`; `ttfs_quantized` enables it. Called from `wizard/config_builder.py` and `runtime.build_flat_pipeline_config`. |
 | `runtime.py` | `build_flat_pipeline_config` | Merges defaults + deployment/platform dicts for API preview and wizard (no device I/O). Applies preset then `derive_deployment_parameters`. |
 | `validation.py` | `validate_deployment_config`, `validate_merged_config` | JSON / merged config validation; rejects deprecated coalescing keys via `mapping.coalescing`. |
@@ -28,10 +28,14 @@ keys pass through under the `run` group), so existing configs resolve identicall
 Groups mirror §2 of `docs/DESIGN_GOALS_and_refactoring_vectors.md`: `workload`,
 `spiking`, `hardware` (**migrated**: core grid + `weight_bits` + the `allow_*`
 capability gates), `conversion`, `tuning`, `training`, `deployment_target`, `run`.
-**Strangler-fig status:** all 93 default keys are registered with provenance and the
+**Strangler-fig status:** all default keys are registered with provenance and the
 shim is byte-identical; the `hardware` group is migrated end-to-end (declared owners +
 self-contained bijection), the other groups are registered but their owners still read
-the flat keys.
+the flat keys. The **EW1 RESERVED** per-layer-S axis adds `allow_per_layer_s` to
+`hardware` (the capability gate, owner `ChipCapabilities/TemporalAllocation`) and
+`s_allocation` / `s_allocation_explicit` / `s_allocation_budget` to `conversion`
+(owner `TemporalAllocation`); the per-depth S map is derived by the ConversionPolicy
+keystone (research), default `uniform` ⇒ byte-identical.
 
 #### Provenance is real (not all `default`)
 
@@ -43,7 +47,7 @@ the flat keys.
 | `derived` | `pipeline_mode`, `activation_quantization`, `weight_quantization` | `deployment_derivation.derive_deployment_parameters` (wizard parity) |
 | `derived` | `firing_mode`, `spike_generation_mode`, `thresholding_mode` | `DeploymentPipeline.__init__` (`setdefault` from `spiking_mode`) |
 | `runtime` | `device`, `input_shape`, `input_size`, `num_classes` | `DeploymentPipeline.__init__` (device probe / data provider) |
-| `default` | the remaining 93 declared defaults | `DEFAULT_DEPLOYMENT_PARAMETERS` / `DEFAULT_PLATFORM_CONSTRAINTS` |
+| `default` | the remaining declared defaults | `DEFAULT_DEPLOYMENT_PARAMETERS` / `DEFAULT_PLATFORM_CONSTRAINTS` |
 
 The derived/runtime keys are *not* in the defaults dict (they have no standalone
 default value); they are registered as extra KeySpecs so the provenance table is
