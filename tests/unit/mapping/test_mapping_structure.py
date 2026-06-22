@@ -89,6 +89,7 @@ class TestChipCapabilities:
         assert caps.allow_coalescing is False
         assert caps.allow_neuron_splitting is False
         assert caps.allow_scheduling is False
+        assert caps.allow_per_layer_s is False
 
     def test_frozen(self):
         caps = ChipCapabilities(max_axons=64)
@@ -153,6 +154,26 @@ class TestChipCapabilities:
             "allow_scheduling": True,
         }
 
+    def test_allow_per_layer_s_gate_default_false(self):
+        # EW1 RESERVED capability: declared, defaults False, carried + readable.
+        assert ChipCapabilities().allow_per_layer_s is False
+        assert ChipCapabilities(allow_per_layer_s=True).allow_per_layer_s is True
+
+    def test_from_platform_constraints_reads_allow_per_layer_s(self):
+        caps = ChipCapabilities.from_platform_constraints({"allow_per_layer_s": True})
+        assert caps.allow_per_layer_s is True
+        # Absent / falsey ⇒ False (byte-identical default).
+        assert ChipCapabilities.from_platform_constraints({}).allow_per_layer_s is False
+        assert ChipCapabilities.from_platform_constraints(
+            {"allow_per_layer_s": 0}
+        ).allow_per_layer_s is False
+
+    def test_permission_kwargs_excludes_per_layer_s(self):
+        # allow_per_layer_s is a TEMPORAL gate, not a layout/verify kwarg — the leaf
+        # helper signatures stay unchanged (byte-identical).
+        caps = ChipCapabilities(allow_per_layer_s=True)
+        assert "allow_per_layer_s" not in caps.permission_kwargs()
+
 
 class TestMappingStrategy:
     def test_permission_accessors_mirror_capabilities(self):
@@ -175,6 +196,13 @@ class TestMappingStrategy:
         )
         strat = MappingStrategy.resolve(caps)
         assert strat.permission_kwargs() == caps.permission_kwargs()
+
+    def test_allow_per_layer_s_accessor_mirrors_capabilities(self):
+        caps = ChipCapabilities(allow_per_layer_s=True)
+        assert MappingStrategy.resolve(caps).allow_per_layer_s is True
+        assert MappingStrategy.resolve(
+            ChipCapabilities()
+        ).allow_per_layer_s is False
 
     @pytest.mark.parametrize(
         "in_f,out_f,max_ax,max_ne,has_bias,hw_bias,coalesce",

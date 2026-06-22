@@ -265,6 +265,33 @@ class TestHardwareGroupMigrated:
         assert "MappingStrategy" in KEY_SPECS["allow_coalescing"].owner
         assert "MappingStrategy" in KEY_SPECS["allow_neuron_splitting"].owner
 
+    def test_allow_per_layer_s_is_a_hardware_capability_gate(self):
+        # EW1 RESERVED capability gate: declared in hardware alongside allow_coalescing.
+        spec = KEY_SPECS["allow_per_layer_s"]
+        assert spec.group == "hardware"
+        assert "ChipCapabilities" in spec.owner
+        assert spec.derivation == "default"
+
+
+class TestTemporalAllocationAxisRegistered:
+    """EW1 — the per-layer-S declaration keys are registered with provenance."""
+
+    def test_s_allocation_keys_in_conversion_group(self):
+        for key in ("s_allocation", "s_allocation_explicit", "s_allocation_budget"):
+            spec = KEY_SPECS[key]
+            assert spec.group == "conversion"
+            assert spec.owner == "TemporalAllocation"
+            assert spec.derivation == "default"
+
+    def test_s_allocation_keys_roundtrip(self):
+        flat = {
+            "s_allocation": "budget",
+            "s_allocation_explicit": [4, 8, 32],
+            "s_allocation_budget": {"target": 0.96},
+            "allow_per_layer_s": True,
+        }
+        assert to_flat(to_namespaced(flat)) == flat
+
 
 class TestProvenanceTable:
     """provenance_table records owner + derivation per key for the next reviewer."""

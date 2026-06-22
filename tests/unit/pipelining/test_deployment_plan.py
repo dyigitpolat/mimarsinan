@@ -211,6 +211,62 @@ class TestOptimizationDriverAxis:
         assert _resolve(lif_blend_fast=False).optimization_driver == "controller"
 
 
+class TestTemporalAllocationAxis:
+    """EW1 — the RESERVED per-layer-S temporal-allocation axis.
+
+    Default ``s_allocation='uniform'`` ⇒ the SAME global ``simulation_steps`` for every
+    cascade depth ⇒ byte-identical. ``explicit`` validates a declared per-depth list;
+    ``budget`` is a no-op returning uniform + a deferred marker. Nothing threads the
+    map into the forwards/sim yet (research).
+    """
+
+    def test_default_axis_is_uniform(self):
+        p = _resolve()
+        assert p.s_allocation == "uniform"
+
+    def test_explicit_and_budget_axis_resolved(self):
+        assert _resolve(s_allocation="explicit").s_allocation == "explicit"
+        assert _resolve(s_allocation="budget").s_allocation == "budget"
+
+    def test_invalid_axis_raises(self):
+        with pytest.raises(ValueError):
+            _resolve(s_allocation="per_depth")
+
+    def test_uniform_map_is_global_s_for_every_depth(self):
+        # The byte-identical lock: uniform returns the global S repeated.
+        p = _resolve(simulation_steps=32)
+        alloc = p.temporal_allocation(depth=9)
+        assert alloc.per_depth_steps == tuple([32] * 9)
+        assert alloc.is_uniform is True
+        assert alloc.global_steps == 32
+        assert alloc.derivation_deferred is None
+
+    def test_explicit_map_validates_and_returns_list(self):
+        p = _resolve(
+            simulation_steps=32,
+            s_allocation="explicit",
+            s_allocation_explicit=[4, 8, 32],
+        )
+        alloc = p.temporal_allocation(depth=3)
+        assert alloc.per_depth_steps == (4, 8, 32)
+        assert alloc.is_uniform is False
+
+    def test_budget_map_is_uniform_with_deferred_marker(self):
+        from mimarsinan.tuning.orchestration.temporal_allocation import (
+            BUDGET_DERIVATION_DEFERRED,
+        )
+
+        p = _resolve(
+            simulation_steps=32,
+            s_allocation="budget",
+            s_allocation_budget={"target": 0.96},
+        )
+        alloc = p.temporal_allocation(depth=4)
+        assert alloc.per_depth_steps == (32, 32, 32, 32)
+        assert alloc.is_uniform is True
+        assert alloc.derivation_deferred == BUDGET_DERIVATION_DEFERRED
+
+
 class TestPipelineAccessor:
     def test_of_reads_pipeline_config(self):
         class _Stub:

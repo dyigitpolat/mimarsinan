@@ -122,6 +122,24 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # Default "controller" => byte-identical. None/unset also resolves to controller
     # unless a legacy per-family fast switch (lif_blend_fast / ttfs_*_fast) is set.
     "optimization_driver": None,
+    # Per-layer-S temporal-allocation axis (EW1, RESERVED): each cascade depth /
+    # latency group MAY get its own temporal resolution S_d instead of one global
+    # simulation_steps. The Wizard DECLARES the intent here; the per-depth S map is
+    # DERIVED by the ConversionPolicy keystone (research) and certified by the cert
+    # protocol. "uniform" (default) => the SAME global S for every depth =>
+    # byte-identical (no consumer threads a non-uniform map yet). "explicit" reads
+    # s_allocation_explicit (a per-depth list, validated against the model depth).
+    # "budget" reads s_allocation_budget and is a no-op that returns uniform + a
+    # "derivation deferred" marker (the budget allocator is the research keystone).
+    # Gated by the allow_per_layer_s chip capability (platform_constraints).
+    "s_allocation": "uniform",
+    # Reserved per-depth S list, used ONLY when s_allocation == "explicit". None =>
+    # not declared; one positive int per cascade depth / latency group otherwise.
+    "s_allocation_explicit": None,
+    # Reserved budget body, used ONLY when s_allocation == "budget". None => not
+    # declared; otherwise a dict with optional {max_energy_proxy, max_latency_steps,
+    # target}. Parsed + validated now; its derivation into a map is deferred (research).
+    "s_allocation_budget": None,
     # Genuine annealed TTFS-cascade ramp (opt-in): train through the genuine
     # single-spike cascade for the whole ramp with the spike-surrogate sharpness
     # annealed smooth->sharp. Must stay default-off until a full real-model run
@@ -256,6 +274,11 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "weight_bits": 8,
     "allow_coalescing": False,
     "allow_neuron_splitting": False,
+    # EW1 RESERVED capability gate: the chip permits per-cascade-depth temporal
+    # resolution S_d (per-layer-S). Declared alongside allow_coalescing; no mapping
+    # decision consults it yet (the per-depth S map is derived by the ConversionPolicy
+    # keystone, research). Default False => uniform global S only => byte-identical.
+    "allow_per_layer_s": False,
     "max_schedule_passes": 8,
     "scheduling_latency_weight": 1.0,
 }
@@ -303,6 +326,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "target_tq",
     "allow_coalescing",
     "allow_neuron_splitting",
+    "allow_per_layer_s",
     "allow_scheduling",
     "max_schedule_passes",
     "scheduling_latency_weight",
@@ -330,6 +354,9 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_recovery_check_divisor",
     "tuning_recipe_recovery",
     "optimization_driver",
+    "s_allocation",
+    "s_allocation_explicit",
+    "s_allocation_budget",
     "ttfs_genuine_annealed_ramp",
     "ttfs_ramp_alpha_min",
     "ttfs_ramp_alpha_max",

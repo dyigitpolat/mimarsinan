@@ -29,6 +29,9 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 )
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
+from mimarsinan.tuning.orchestration.temporal_allocation import (
+    resolve_s_allocation_mode,
+)
 
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
@@ -101,6 +104,9 @@ class DeploymentPlan:
     # ── optimization driver (E2: how the rate is driven 0→1, pipeline-wide) ──
     optimization_driver: str
 
+    # ── per-layer-S temporal allocation (EW1: declared intent; map RESERVED) ──
+    s_allocation: str
+
     # ── pruning ────────────────────────────────────────────────────────────
     pruning: bool
     pruning_fraction: float
@@ -159,6 +165,7 @@ class DeploymentPlan:
             enable_training_noise=bool(get("enable_training_noise", False)),
             cycle_accurate_lif_forward=bool(get("cycle_accurate_lif_forward", False)),
             optimization_driver=_resolve_optimization_driver(config),
+            s_allocation=resolve_s_allocation_mode(config),
             pruning=bool(pruning),
             pruning_fraction=pruning_fraction,
             pruning_enabled=bool(pruning) and pruning_fraction > 0,
@@ -266,6 +273,23 @@ class DeploymentPlan:
             mode_policy=self.mode_policy(),
             distmatch_driven=distmatch_driven,
         )
+
+    def temporal_allocation(self, *, depth: int):
+        """The EW1 per-depth temporal-allocation map for a model of ``depth`` cascade
+        depths / latency groups — the RESERVED per-layer-S axis seam.
+
+        DEFAULT-OFF / byte-identical: ``s_allocation='uniform'`` (the default) returns
+        the SAME global ``simulation_steps`` for every depth, so nothing threads a
+        non-uniform map. ``explicit`` validates a declared per-depth list; ``budget`` is
+        a no-op that returns uniform + a ``derivation_deferred`` marker (the budget
+        allocator's derivation is deferred to the ConversionPolicy keystone, research).
+        ``depth`` is supplied by the caller (this layer does not introspect the model).
+        Gated by the ``allow_per_layer_s`` chip capability; nothing reads the map yet."""
+        from mimarsinan.tuning.orchestration.temporal_allocation import (
+            TemporalAllocationResolver,
+        )
+
+        return TemporalAllocationResolver.from_config(self.config).resolve(depth=depth)
 
     def conversion_policy(self, *, model=None, characterizer=None):
         """The E4 characterization-and-policy decision for this plan's (firing ×
