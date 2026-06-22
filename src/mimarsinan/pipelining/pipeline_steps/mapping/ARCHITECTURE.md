@@ -2,7 +2,7 @@
 
 | File | Step class | Gate metric |
 |------|------------|-------------|
-| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | **Rung 2** — `run_scm_identity_metric` over the 1:1 identity mapping (IR semantics: weights, shifts, banks, segment partition, wire/psum effects). Does **not** cache the packed `hybrid_mapping`. |
+| `soft_core_mapping_step.py` | `SoftCoreMappingStep` | **Rung 2** — `run_scm_identity_metric` over the 1:1 identity mapping (IR semantics: weights, shifts, banks, segment partition, wire/psum effects). Does **not** cache the packed `hybrid_mapping`. Runs `compute_per_source_scales` before mapping so each layer's upstream activation scale is baked into the deployed effective weights for **every** deployment (idempotent; historically only `WeightQuantizationStep` did this, so the no-weight-quant continuous-ttfs deploy shipped weights missing the input-scale factor and tripped the NF↔SCM gate). |
 | `core_quantization_verification_step.py` | `CoreQuantizationVerificationStep` | — |
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | **Rung 3** — `run_hcm_mapping_metric` over the packed mapping (packing: placement, padding, reindex, coalescing, splitting, scheduling). |
 

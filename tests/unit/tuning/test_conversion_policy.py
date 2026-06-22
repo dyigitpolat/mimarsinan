@@ -79,6 +79,47 @@ class TestProposeRecipe:
         with pytest.raises(Exception):
             recipe.driver = OPTIMIZATION_DRIVER_FAST  # type: ignore[misc]
 
+    def test_cascaded_recipe_proposes_the_r2_two_residual_and_ste_hedge(self):
+        # The keystone PROPOSES the R2-grounded cascaded recipe: train low-S (the FT
+        # sweet spot), deploy at the R1 ceiling-S capped at the train-aligned regime,
+        # and the STE hedge that escapes the deep-cascade plateau. The proposal is the
+        # prior, NOT enacted (default-off ⇒ never consumed ⇒ byte-identical).
+        recipe = propose_recipe(_policy("ttfs_cycle_based", "cascaded"))
+        assert recipe.train_s_hint == 16
+        assert recipe.deploy_s_hint == 32
+        assert recipe.train_s_hint < recipe.deploy_s_hint, "train low-S, deploy high-S"
+        assert recipe.staircase_ste is True
+        assert recipe.ste_mix == 0.5
+
+    @pytest.mark.parametrize(
+        "mode,schedule",
+        [
+            ("lif", None),
+            ("rate", None),
+            ("ttfs", "cascaded"),
+            ("ttfs_quantized", "cascaded"),
+            ("ttfs_cycle_based", "synchronized"),
+        ],
+    )
+    def test_non_cascaded_recipes_carry_no_s_hints(self, mode, schedule):
+        # Only the cascaded fire-once cell (does_conversion_health_calibration) carries
+        # the two-residual hints; every other cell leaves the configured S (None).
+        recipe = propose_recipe(_policy(mode, schedule))
+        assert recipe.train_s_hint is None
+        assert recipe.deploy_s_hint is None
+        assert recipe.staircase_ste is None
+        assert recipe.ste_mix is None
+
+    def test_escalation_preserves_the_two_residual_hints(self):
+        # Escalation changes WHO drives the rate (controller fallback), not the
+        # proposed S allocation / STE hedge intent.
+        proposed = propose_recipe(_policy("ttfs_cycle_based", "cascaded"))
+        escalated = escalate_to_controller(proposed)
+        assert escalated.train_s_hint == proposed.train_s_hint
+        assert escalated.deploy_s_hint == proposed.deploy_s_hint
+        assert escalated.staircase_ste == proposed.staircase_ste
+        assert escalated.ste_mix == proposed.ste_mix
+
 
 # ── (2) the CHARACTERIZER interface + default no-op (always-matches) ──────────
 

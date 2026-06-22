@@ -47,3 +47,22 @@ def test_factory_ttfs_cycle_based_requires_ttfs_firing():
         {"spiking_mode": "ttfs_cycle_based", "firing_mode": "TTFS", "thresholding_mode": "<="}
     )
     assert s.mode == FiringMode.TTFS
+
+
+def test_novena_requires_cycle_accurate_lif_forward():
+    s = FiringStrategyFactory.from_config(
+        {"spiking_mode": "lif", "firing_mode": "Novena", "thresholding_mode": "<"}
+    )
+    with pytest.raises(ValueError, match="cycle_accurate_lif_forward"):
+        s.require_chip_faithful_lif_forward(cycle_accurate_lif_forward=False)
+    # Faithful when the cycle-accurate cascade forward is on.
+    s.require_chip_faithful_lif_forward(cycle_accurate_lif_forward=True)
+
+
+def test_default_lif_allows_rate_forward():
+    s = FiringStrategyFactory.from_config(
+        {"spiking_mode": "lif", "firing_mode": "Default", "thresholding_mode": "<="}
+    )
+    # Default (subtractive) reset keeps the rate forward as its accepted approximation.
+    s.require_chip_faithful_lif_forward(cycle_accurate_lif_forward=False)
+    s.require_chip_faithful_lif_forward(cycle_accurate_lif_forward=True)

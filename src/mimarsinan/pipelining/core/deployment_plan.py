@@ -149,6 +149,8 @@ class DeploymentPlan:
 
         model_type = get("model_type", "")
 
+        cls._require_chip_faithful_lif_forward(config, spiking)
+
         return cls(
             config=config,
             search_mode=derive_search_mode(config),
@@ -188,6 +190,29 @@ class DeploymentPlan:
             simulation_batch_size=int(get("simulation_batch_size", 8)),
             seed=int(get("seed", 0)),
             model_name=get("model_name") or model_type,
+        )
+
+    @staticmethod
+    def _require_chip_faithful_lif_forward(config: dict[str, Any], spiking: str) -> None:
+        """LIF-family capability gate (V3): a Novena deployment must run the
+        chip-faithful cycle-accurate forward. Skipped for the TTFS family (firing
+        is TTFS there); the FiringStrategy owns the (firing × cycle-accurate) rule."""
+        if requires_ttfs_firing(spiking):
+            return
+        from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
+
+        strategy = FiringStrategyFactory.from_config({
+            "spiking_mode": spiking,
+            "firing_mode": config.get("firing_mode", "Default"),
+            "thresholding_mode": config.get("thresholding_mode", "<="),
+        })
+        # Absent ⇒ the LIF default (chip-faithful cascade) the pipeline setdefaults
+        # to True; only an EXPLICIT opt-out trips the gate. Keeps a config that
+        # merely omits the key (relying on the default) resolvable.
+        strategy.require_chip_faithful_lif_forward(
+            cycle_accurate_lif_forward=bool(
+                config.get("cycle_accurate_lif_forward", True)
+            ),
         )
 
     @classmethod
