@@ -79,6 +79,53 @@ class TestSpikingDerived:
         assert _resolve(spiking_mode="lif").is_ttfs_cycle_based is False
 
 
+class TestNovenaChipFaithfulGate:
+    """Novena's zero-reset needs the cycle-accurate cascade forward to deploy
+    faithfully; the analytical rate forward (cycle_accurate_lif_forward=False)
+    diverges from the deployed HCM (~12pp on mmixcore). Resolve fails loud (V3)."""
+
+    def test_novena_without_cycle_accurate_raises(self):
+        with pytest.raises(ValueError, match="cycle_accurate_lif_forward"):
+            _resolve(
+                spiking_mode="lif",
+                firing_mode="Novena",
+                thresholding_mode="<",
+                cycle_accurate_lif_forward=False,
+            )
+
+    def test_novena_with_cycle_accurate_resolves(self):
+        p = _resolve(
+            spiking_mode="lif",
+            firing_mode="Novena",
+            thresholding_mode="<",
+            cycle_accurate_lif_forward=True,
+        )
+        assert p.cycle_accurate_lif_forward is True
+
+    def test_novena_default_cycle_accurate_resolves(self):
+        # Omitting the key relies on the LIF default (chip-faithful cascade); the
+        # gate must not reject it.
+        p = _resolve(spiking_mode="lif", firing_mode="Novena", thresholding_mode="<")
+        assert p.config["firing_mode"] == "Novena"
+
+    def test_default_firing_rate_forward_unaffected(self):
+        p = _resolve(
+            spiking_mode="lif",
+            firing_mode="Default",
+            cycle_accurate_lif_forward=False,
+        )
+        assert p.cycle_accurate_lif_forward is False
+
+    def test_ttfs_family_not_gated_by_lif_rule(self):
+        # TTFS family fires with firing_mode='TTFS'; the LIF Novena rule is inert.
+        p = _resolve(
+            spiking_mode="ttfs_cycle_based",
+            firing_mode="TTFS",
+            cycle_accurate_lif_forward=False,
+        )
+        assert p.is_ttfs_cycle_based is True
+
+
 class TestPruningDerivation:
     def test_pruning_enabled_requires_positive_fraction(self):
         assert _resolve(pruning=True, pruning_fraction=0.0).pruning_enabled is False

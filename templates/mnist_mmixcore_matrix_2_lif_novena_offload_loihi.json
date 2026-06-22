@@ -84,7 +84,7 @@
     "spike_generation_mode": "Uniform",
     "thresholding_mode": "<",
     "encoding_layer_placement": "offload",
-    "cycle_accurate_lif_forward": false,
+    "cycle_accurate_lif_forward": true,
     "activation_quantization": false,
     "weight_quantization": true
   },
