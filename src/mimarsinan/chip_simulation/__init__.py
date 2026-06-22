@@ -17,6 +17,14 @@ from mimarsinan.chip_simulation.certification import (
     load_floor_book,
     save_floor_book,
 )
+from mimarsinan.chip_simulation.cost_extraction import (
+    CostRecord,
+    CostScatter,
+    extract_cost_record,
+    extract_cost_record_from_run,
+    load_cost_record,
+    save_cost_record,
+)
 from mimarsinan.chip_simulation.recording import spike_modes
 
 __all__ = [
@@ -34,4 +42,10 @@ __all__ = [
     "freeze_cell",
     "load_floor_book",
     "save_floor_book",
+    "CostRecord",
+    "CostScatter",
+    "extract_cost_record",
+    "extract_cost_record_from_run",
+    "load_cost_record",
+    "save_cost_record",
 ]
