@@ -168,6 +168,104 @@ class TestValidateDeploymentConfig:
         assert any("ttfs" in str(e).lower() or "firing" in str(e).lower() for e in errors)
 
 
+class TestSAllocationValidation:
+    """EW2 — the per-layer-S declaration is well-formed + capability-gated."""
+
+    @staticmethod
+    def _cfg(dp_extra=None, pc_extra=None):
+        dp = {"model_config_mode": "user", "model_type": "mlp_mixer", "model_config": {}}
+        if dp_extra:
+            dp.update(dp_extra)
+        pc = {"cores": [{"max_axons": 8, "max_neurons": 8, "count": 1}]}
+        if pc_extra:
+            pc.update(pc_extra)
+        return {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "test",
+            "generated_files_path": "./out",
+            "platform_constraints": pc,
+            "deployment_parameters": dp,
+            "start_step": None,
+        }
+
+    def test_uniform_default_is_valid_and_ungated(self):
+        # Default (no s_allocation key) => uniform => always valid, no capability needed.
+        assert validate_deployment_config(self._cfg()) == []
+        assert validate_deployment_config(self._cfg({"s_allocation": "uniform"})) == []
+
+    def test_unknown_mode_fails(self):
+        errs = validate_deployment_config(self._cfg({"s_allocation": "magic"}))
+        assert any("s_allocation must be one of" in e for e in errs)
+
+    def test_explicit_requires_capability(self):
+        errs = validate_deployment_config(self._cfg(
+            {"s_allocation": "explicit", "s_allocation_explicit": [4, 4]},
+        ))
+        assert any("allow_per_layer_s" in e for e in errs)
+
+    def test_budget_requires_capability(self):
+        errs = validate_deployment_config(self._cfg(
+            {"s_allocation": "budget", "s_allocation_budget": {"target": 0.96}},
+        ))
+        assert any("allow_per_layer_s" in e for e in errs)
+
+    def test_explicit_requires_nonempty_int_list(self):
+        gated = {"allow_per_layer_s": True}
+        for bad in (None, [], "not a list", [4, -1], [4, 0], {"a": 1}):
+            errs = validate_deployment_config(self._cfg(
+                {"s_allocation": "explicit", "s_allocation_explicit": bad},
+                gated,
+            ))
+            assert any("non-empty list of positive ints" in e for e in errs), bad
+
+    def test_explicit_gated_with_valid_list_passes(self):
+        errs = validate_deployment_config(self._cfg(
+            {"s_allocation": "explicit", "s_allocation_explicit": [4, 4, 8]},
+            {"allow_per_layer_s": True},
+        ))
+        assert errs == []
+
+    def test_budget_requires_an_objective(self):
+        gated = {"allow_per_layer_s": True}
+        for bad in (None, {}, "x", {"unrelated": 1}):
+            errs = validate_deployment_config(self._cfg(
+                {"s_allocation": "budget", "s_allocation_budget": bad},
+                gated,
+            ))
+            assert any("at least one of" in e or "requires s_allocation_budget" in e
+                       for e in errs), bad
+
+    def test_budget_gated_with_objective_passes(self):
+        for body in (
+            {"max_energy_proxy": 1.0},
+            {"max_latency_steps": 64},
+            {"target": 0.96},
+        ):
+            errs = validate_deployment_config(self._cfg(
+                {"s_allocation": "budget", "s_allocation_budget": body},
+                {"allow_per_layer_s": True},
+            ))
+            assert errs == [], body
+
+    def test_capability_gate_read_from_wrapped_user_platform(self):
+        # The capability is honored even when platform_constraints is the wizard's
+        # wrapped {mode: 'user', user: {...}} shape.
+        cfg = self._cfg({"s_allocation": "explicit", "s_allocation_explicit": [4]})
+        cfg["platform_constraints"] = {
+            "mode": "user",
+            "user": {"cores": [{"max_axons": 8, "max_neurons": 8, "count": 1}],
+                     "allow_per_layer_s": True},
+        }
+        assert validate_deployment_config(cfg) == []
+
+    def test_s_allocation_config_errors_is_exported(self):
+        from mimarsinan.config_schema import s_allocation_config_errors
+        assert s_allocation_config_errors(
+            {"s_allocation": "explicit", "s_allocation_explicit": [4]},
+            {"allow_per_layer_s": True},
+        ) == []
+
+
 class TestValidateMergedConfig:
     """validate_merged_config checks flat dict (runtime config)."""
 

@@ -1,7 +1,11 @@
 """Unit tests for wizard config builder, validation, and run utilities."""
 
+import json
+import os
+
 import pytest
 
+from mimarsinan.config_schema import build_flat_pipeline_config, to_flat, to_namespaced
 from mimarsinan.gui.runs import suggest_resume_step
 from mimarsinan.gui.wizard import build_deployment_config_from_state, validate_wizard_state
 from mimarsinan.gui.wizard.flow import (
@@ -12,8 +16,15 @@ from mimarsinan.gui.wizard.flow import (
 )
 from mimarsinan.gui.wizard.schema import (
     get_pipeline_step_names_for_config,
+    get_wizard_defaults,
     get_wizard_model_types,
     get_wizard_nas_schema,
+    get_wizard_temporal_allocation_schema,
+)
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+_PER_LAYER_S_TEMPLATE = os.path.join(
+    _REPO_ROOT, "templates", "mnist_mmixcore_per_layer_s_uniform.json"
 )
 
 
@@ -272,6 +283,117 @@ class TestWizardSchema:
         assert "total_params" in ids
         assert "param_utilization_pct" in ids
         assert "fragmentation_pct" in ids
+
+
+class TestWizardTemporalAllocationSurface:
+    """EW2 — the per-layer-S axis is wizard-constructible (form surface + gate)."""
+
+    def test_defaults_expose_temporal_allocation(self):
+        defaults = get_wizard_defaults()
+        ta = defaults["temporal_allocation"]
+        assert ta["field"] == "s_allocation"
+        assert ta["options"] == ["uniform", "explicit", "budget"]
+        assert ta["default"] == "uniform"
+        assert ta["capability_gate"] == "allow_per_layer_s"
+
+    def test_capability_gate_is_in_platform_defaults(self):
+        defaults = get_wizard_defaults()
+        assert "allow_per_layer_s" in defaults["platform_constraints"]
+        assert defaults["platform_constraints"]["allow_per_layer_s"] is False
+
+    def test_temporal_allocation_schema_declares_reserved_inputs(self):
+        ta = get_wizard_temporal_allocation_schema()
+        assert ta["explicit_field"] == "s_allocation_explicit"
+        assert ta["budget_field"] == "s_allocation_budget"
+        assert ta["requires_capability_modes"] == ["explicit", "budget"]
+        assert set(ta["budget_objective_keys"]) == {
+            "max_energy_proxy", "max_latency_steps", "target",
+        }
+
+    def test_uniform_wizard_state_validates_without_capability(self):
+        state = {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "t",
+            "generated_files_path": "./out",
+            "platform_constraints": {},
+            "deployment_parameters": {
+                "model_config_mode": "user", "model_type": "mlp_mixer",
+                "model_config": {}, "s_allocation": "uniform",
+            },
+            "start_step": None,
+        }
+        assert validate_wizard_state(state) == []
+
+    def test_explicit_state_without_capability_fails(self):
+        state = {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "t",
+            "generated_files_path": "./out",
+            "platform_constraints": {},
+            "deployment_parameters": {
+                "model_config_mode": "user", "model_type": "mlp_mixer",
+                "model_config": {},
+                "s_allocation": "explicit", "s_allocation_explicit": [4, 4],
+            },
+            "start_step": None,
+        }
+        errs = validate_wizard_state(state)
+        assert any("allow_per_layer_s" in e for e in errs)
+
+    def test_explicit_state_with_capability_passes(self):
+        state = {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "t",
+            "generated_files_path": "./out",
+            "platform_constraints": {"allow_per_layer_s": True},
+            "deployment_parameters": {
+                "model_config_mode": "user", "model_type": "mlp_mixer",
+                "model_config": {},
+                "s_allocation": "explicit", "s_allocation_explicit": [4, 4],
+            },
+            "start_step": None,
+        }
+        assert validate_wizard_state(state) == []
+
+
+class TestPerLayerSTemplate:
+    """EW2 — the demonstration template is wizard-valid + build/round-trips."""
+
+    @staticmethod
+    def _doc():
+        with open(_PER_LAYER_S_TEMPLATE) as fh:
+            return json.load(fh)
+
+    def test_template_exists_and_exercises_the_axis(self):
+        doc = self._doc()
+        dp = doc["deployment_parameters"]
+        pc = doc["platform_constraints"]
+        # Exercises the axis: explicit mode + the capability gate ON.
+        assert dp["s_allocation"] == "explicit"
+        assert pc["allow_per_layer_s"] is True
+        # Byte-identical-runnable: every explicit S equals the global uniform S.
+        assert all(s == pc["simulation_steps"] for s in dp["s_allocation_explicit"])
+
+    def test_template_validates_as_wizard_state(self):
+        assert validate_wizard_state(self._doc()) == []
+
+    def test_template_builds_flat_pipeline_config(self):
+        doc = self._doc()
+        cfg = build_flat_pipeline_config(
+            doc["deployment_parameters"], doc["platform_constraints"],
+            pipeline_mode=doc.get("pipeline_mode", "phased"),
+        )
+        assert cfg["s_allocation"] == "explicit"
+        assert cfg["allow_per_layer_s"] is True
+        assert cfg["s_allocation_explicit"] == [4, 4, 4]
+
+    def test_template_namespaced_roundtrips_byte_identical(self):
+        doc = self._doc()
+        cfg = build_flat_pipeline_config(
+            doc["deployment_parameters"], doc["platform_constraints"],
+            pipeline_mode=doc.get("pipeline_mode", "phased"),
+        )
+        assert to_flat(to_namespaced(cfg)) == cfg
 
 
 class TestSuggestResumeStep:
