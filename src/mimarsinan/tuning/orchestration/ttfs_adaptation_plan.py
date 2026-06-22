@@ -61,6 +61,10 @@ class TtfsAdaptationPlan:
     blend_fast_steps_per_rate: int
     fast_stabilize_steps: int
     blend_fast_lr_eta_min: float
+    # ── R2 two-residual S allocation (from the ConversionPolicy keystone) ──
+    # train_s_hint decouples the TRAINING-forward S from the deployed S; None (the
+    # default-off decision) ⇒ no decouple ⇒ train at the configured S ⇒ byte-identical.
+    train_s_hint: int | None
     # ── resolved optimization driver (controller vs fast-ladder rung) ──
     driver: OptimizationDriver
     # ── resolved conversion-health calibration steps ──
@@ -127,10 +131,16 @@ class TtfsAdaptationPlan:
         # the decision's driver (the proposed recipe's, or the controller fallback on
         # an escalation) GATES the fast fork — escalation vetoes fast exactly like an
         # explicit `controller` axis. This is the keystone consultation, not a flip.
+        train_s_hint = None
         if conversion_decision is not None and getattr(
             conversion_decision, "enabled", False
         ):
             axis = str(conversion_decision.driver).lower()
+            # R2: an enabled decision carries the two-residual train_s_hint that
+            # decouples the TRAINING-forward S from the deployed S. Inert by default
+            # (enabled=False ⇒ None ⇒ no decouple ⇒ byte-identical).
+            recipe = getattr(conversion_decision, "recipe", None)
+            train_s_hint = getattr(recipe, "train_s_hint", None)
         fast_enabled = axis == OPTIMIZATION_DRIVER_FAST
 
         ste_fast = (
@@ -196,6 +206,7 @@ class TtfsAdaptationPlan:
             blend_fast_steps_per_rate=blend_fast_steps,
             fast_stabilize_steps=int(get("ttfs_blend_fast_stabilize_steps", 0)),
             blend_fast_lr_eta_min=eta_min,
+            train_s_hint=train_s_hint,
             driver=driver,
             calibration=calibration,
         )

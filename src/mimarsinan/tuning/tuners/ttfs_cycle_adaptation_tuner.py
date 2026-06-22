@@ -254,7 +254,9 @@ class GenuineAnnealedRamp(_GenuineRamp):
         return TTFSGenuineAxis()
 
     def ramp_forward(self, tuner, model):
-        return tuner._finalize_forward_for(model)
+        # The RAMP (training) forward runs at train_S; finalize rebuilds the deploy
+        # nodes at deploy_S. They coincide (byte-identical) when train_S == deploy_S.
+        return tuner._ramp_forward_for(model)
 
 
 class GenuineBlendRamp(_GenuineRamp):
@@ -305,7 +307,13 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
     def _configure(self) -> None:
         self.name = "TTFS Cycle Fine-Tuning"
+        # self._T is the DEPLOY S (== simulation_steps): the deployed forward, node
+        # build, gain stats, and the contract.simulation_steps that parity/mapping read.
+        # _train_T is the TRAINING-forward S — R2's two-residual decouple (train the
+        # genuine cascade low-S, deploy high-S). Defaults to _T (set below from the
+        # plan's train_s_hint), so when train_S == deploy_S the path is byte-identical.
         self._T = int(self.pipeline.config["simulation_steps"])
+        self._train_T = self._T
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         self._firing_mode = str(self.pipeline.config.get("firing_mode", "TTFS"))
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
@@ -366,6 +374,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             conversion_decision=conversion_decision,
         )
         self._adaptation_plan = plan
+        # R2 two-residual decouple: train the genuine cascade at train_S (the
+        # ConversionPolicy keystone's train_s_hint), deploy at deploy_S (self._T).
+        # None (the default-off decision) ⇒ train at deploy_S ⇒ byte-identical.
+        if plan.train_s_hint is not None:
+            self._train_T = int(plan.train_s_hint)
         self._genuine_annealed_ramp = plan.genuine_annealed_ramp
         self._genuine_blend_ramp = plan.genuine_blend_ramp
         self._staircase_ste = plan.staircase_ste
@@ -895,16 +908,30 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             {"rate": round(float(rate), 4), "full_transform_acc": round(acc, 4)},
         )
 
-    # -- finalize forward ------------------------------------------------------
-    def _finalize_forward_for(self, model):
-        """Cascaded builds the genuine single-spike cascade forward bound to
-        ``model`` (kept at finalize, so the committed metric, recovery, and every
-        downstream step — WQ/NormFusion/SCM — run the exact deployed single-spike
-        dynamics; built on a clone for the genuine probe). Synchronized returns
-        ``None`` — the class-level analytical staircase forward IS its deployment.
-        Both ramp the value-domain blend (``_ramp_forward`` stays ``None``)."""
+    # -- finalize / ramp forward (R2 two-residual S) ---------------------------
+    def _segment_spike_forward_at(self, model, T):
+        """The genuine single-spike cascade forward bound to ``model`` at sim-length
+        ``T`` (``None`` synchronized — the class analytical staircase IS its forward)."""
         if self._synchronized:
             return None
         return _SegmentSpikeForward(
-            model, self._T, boundary_surrogate_temp=self._boundary_surrogate_temp,
+            model, int(T), boundary_surrogate_temp=self._boundary_surrogate_temp,
         )
+
+    def _ramp_forward_for(self, model):
+        """The RAMP (training) genuine cascade forward, built at TRAIN_S (``_train_T``)
+        for the genuine annealed / STE ramps. R2's two-residual decouple trains the
+        genuine cascade low-S (the FT sweet spot — train-AT-deploy-S collapses the deep
+        cascade); finalize rebuilds the deploy nodes at deploy_S. When
+        ``_train_T == _T`` (default) this is byte-identical to ``_finalize_forward_for``."""
+        return self._segment_spike_forward_at(model, self._train_T)
+
+    def _finalize_forward_for(self, model):
+        """Cascaded builds the genuine single-spike cascade forward bound to
+        ``model`` at DEPLOY_S (``_T``) — kept at finalize, so the committed metric,
+        recovery, and every downstream step — WQ/NormFusion/SCM — run the exact
+        deployed single-spike dynamics; built on a clone for the genuine probe.
+        Synchronized returns ``None`` — the class-level analytical staircase forward IS
+        its deployment. Both ramp the value-domain blend (``_ramp_forward`` stays
+        ``None``)."""
+        return self._segment_spike_forward_at(model, self._T)
