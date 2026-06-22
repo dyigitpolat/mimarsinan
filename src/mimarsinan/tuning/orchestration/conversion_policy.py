@@ -34,6 +34,15 @@ from typing import Any, Mapping, Optional
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
 
+# R2-grounded two-residual S allocation for the cascaded fire-once cell. The genuine
+# fine-tune is S-NEGATIVE (train-at-32 collapses d9 to 0.770), so train low-S; deploy
+# at the R1 staircase-ceiling S — capped at the train-aligned regime because >S32 HURTS
+# d9 (the fire-once surrogate regresses the deep cascade with budget). STE hedge mix=0.5
+# escapes the pure-genuine plateau (d6 train16/deploy32 = 0.968).
+_CASCADED_TRAIN_S_HINT = 16
+_CASCADED_DEPLOY_S_HINT = 32
+_CASCADED_STE_MIX = 0.5
+
 __all__ = [
     "OPTIMIZATION_DRIVER_CONTROLLER",
     "OPTIMIZATION_DRIVER_FAST",
@@ -58,9 +67,11 @@ class ConversionRecipe:
     decode needs the conversion-health revive (E3 keying). ``train_s_hint`` /
     ``deploy_s_hint`` carry the two-residual S allocation (train low-S because the
     genuine FT is S-negative; deploy high-S for the quantization floor) — ``None``
-    means "no hint, leave the configured S". ``assumptions`` names the probe checks
-    the recipe relies on, the ones a :class:`Characterizer` confirms before the
-    recipe is trusted.
+    means "no hint, leave the configured S". ``staircase_ste`` / ``ste_mix`` name the
+    STE-hedge refinement the cascaded recipe relies on (forward = the genuine cascade,
+    backward = a clean staircase/genuine hedge) — ``None`` means "no STE intent".
+    ``assumptions`` names the probe checks the recipe relies on, the ones a
+    :class:`Characterizer` confirms before the recipe is trusted.
     """
 
     name: str
@@ -68,6 +79,8 @@ class ConversionRecipe:
     expects_conversion_health: bool = False
     train_s_hint: Optional[int] = None
     deploy_s_hint: Optional[int] = None
+    staircase_ste: Optional[bool] = None
+    ste_mix: Optional[float] = None
     assumptions: tuple[str, ...] = ()
     escalated: bool = False
 
@@ -185,6 +198,10 @@ def propose_recipe(mode_policy: Any) -> ConversionRecipe:
     name = mode if schedule is None else f"{mode}/{schedule}"
 
     assumptions: tuple[str, ...] = ()
+    train_s_hint: Optional[int] = None
+    deploy_s_hint: Optional[int] = None
+    staircase_ste: Optional[bool] = None
+    ste_mix: Optional[float] = None
     if needs_health:
         # The cascaded fire-once recipe (two-stage revive → refine) relies on these
         # forward-mostly probes; a model that fails them escalates to the controller.
@@ -194,11 +211,23 @@ def propose_recipe(mode_policy: Any) -> ConversionRecipe:
             "staircase_lif_ceiling",
             "firing_gain",
         )
+        # R2: the two-residual S allocation (train low-S, deploy at the R1 ceiling-S
+        # capped at the train-aligned regime) + the STE hedge that escapes the
+        # pure-genuine deep-cascade plateau. Carried as hints, NOT enacted until Fix B
+        # flips the policy on per cell (default-off ⇒ never consumed ⇒ byte-identical).
+        train_s_hint = _CASCADED_TRAIN_S_HINT
+        deploy_s_hint = _CASCADED_DEPLOY_S_HINT
+        staircase_ste = True
+        ste_mix = _CASCADED_STE_MIX
 
     return ConversionRecipe(
         name=name,
         driver=OPTIMIZATION_DRIVER_CONTROLLER,
         expects_conversion_health=needs_health,
+        train_s_hint=train_s_hint,
+        deploy_s_hint=deploy_s_hint,
+        staircase_ste=staircase_ste,
+        ste_mix=ste_mix,
         assumptions=assumptions,
     )
 
