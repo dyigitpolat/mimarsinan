@@ -29,6 +29,7 @@ from mimarsinan.config_schema.display_view import build_config_display_view, bui
 from mimarsinan.config_schema.validation import (
     validate_deployment_config,
     validate_merged_config,
+    s_allocation_config_errors,
 )
 from mimarsinan.config_schema.namespaced_schema import (
     CONCERN_GROUPS,
@@ -57,6 +58,7 @@ __all__ = [
     "apply_preset",
     "validate_deployment_config",
     "validate_merged_config",
+    "s_allocation_config_errors",
     "build_flat_pipeline_config",
     "build_config_display_view",
     "build_pipeline_config_view",

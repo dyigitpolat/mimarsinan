@@ -11,10 +11,14 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from mimarsinan.models.builders.wizard_schema import get_all_model_type_schemas
-from mimarsinan.config_schema.defaults import get_default_platform_constraints
+from mimarsinan.config_schema.defaults import (
+    get_default_deployment_parameters,
+    get_default_platform_constraints,
+)
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 from mimarsinan.search.results import ALL_OBJECTIVES, ACCURACY_OBJECTIVE_NAME
+from mimarsinan.tuning.orchestration.temporal_allocation import S_ALLOCATION_MODES
 
 
 def get_wizard_model_types() -> List[Dict[str, Any]]:
@@ -34,6 +38,28 @@ def get_wizard_defaults() -> Dict[str, Any]:
             "ttfs_quantized": ["TTFS"],
             "ttfs_cycle_based": ["TTFS"],
         },
+        "temporal_allocation": get_wizard_temporal_allocation_schema(),
+    }
+
+
+def get_wizard_temporal_allocation_schema() -> Dict[str, Any]:
+    """Per-layer-S declaration surface (EW2) for the wizard form.
+
+    Declares the ``s_allocation`` axis modes + the reserved per-mode inputs + the
+    ``allow_per_layer_s`` capability gate so the form can render the choice. The
+    per-depth S map is DERIVED downstream (ConversionPolicy keystone); the wizard
+    only DECLARES the intent. SSOT with config_schema defaults + the resolver modes.
+    """
+    dp_defaults = get_default_deployment_parameters()
+    return {
+        "field": "s_allocation",
+        "options": list(S_ALLOCATION_MODES),
+        "default": dp_defaults.get("s_allocation", "uniform"),
+        "capability_gate": "allow_per_layer_s",
+        "explicit_field": "s_allocation_explicit",
+        "budget_field": "s_allocation_budget",
+        "budget_objective_keys": ["max_energy_proxy", "max_latency_steps", "target"],
+        "requires_capability_modes": ["explicit", "budget"],
     }
 
 
