@@ -1,0 +1,544 @@
+{
+  "matrix_1_lif_rate": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.968,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 1021.6,
+      "recipe": {
+        "lif_blend_fast": true,
+        "lif_blend_fast_stabilize_steps": 1200
+      },
+      "steps": {
+        "Activation Analysis": 15.54,
+        "Core Quantization Verification": 0.2,
+        "Hard Core Mapping": 205.63,
+        "LIF Adaptation": 72.75,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 13.61,
+        "Pretraining": 83.16,
+        "Quantization Verification": 12.55,
+        "SANA-FE Simulation": 11.37,
+        "Simulation": 31.14,
+        "Soft Core Mapping": 461.81,
+        "Torch Mapping": 12.51,
+        "Weight Quantization": 89.04
+      },
+      "wall_clock_s": 1009.4
+    },
+    "cell_key": "lif@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.972,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 1716.3,
+      "steps": {
+        "Activation Analysis": 14.97,
+        "Core Quantization Verification": 0.33,
+        "Hard Core Mapping": 197.35,
+        "LIF Adaptation": 390.3,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 12.88,
+        "Pretraining": 83.04,
+        "Quantization Verification": 12.23,
+        "SANA-FE Simulation": 10.44,
+        "Simulation": 31.59,
+        "Soft Core Mapping": 448.62,
+        "Torch Mapping": 11.88,
+        "Weight Quantization": 489.48
+      },
+      "wall_clock_s": 1703.19
+    },
+    "verdict": {
+      "accuracy_ok": true,
+      "reason": "certified: accuracy 0.9680 >= 0.9670 and wall-clock 1009.4s <= 2129.0s",
+      "status": "pass",
+      "wall_clock_ok": true
+    }
+  },
+  "matrix_2_lif_novena_offload_loihi": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.97,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 657.6,
+      "recipe": {
+        "lif_blend_fast": true,
+        "lif_blend_fast_stabilize_steps": 1200
+      },
+      "steps": {
+        "Activation Analysis": 15.78,
+        "Core Quantization Verification": 0.19,
+        "Hard Core Mapping": 151.49,
+        "LIF Adaptation": 60.92,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 13.33,
+        "Pretraining": 54.69,
+        "Quantization Verification": 12.39,
+        "SANA-FE Simulation": 10.25,
+        "Simulation": 33.45,
+        "Soft Core Mapping": 185.56,
+        "Torch Mapping": 12.62,
+        "Weight Quantization": 95.37
+      },
+      "wall_clock_s": 646.13
+    },
+    "cell_key": "lif@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.974,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 988.0,
+      "steps": {
+        "Activation Analysis": 15.54,
+        "Core Quantization Verification": 0.33,
+        "Hard Core Mapping": 143.35,
+        "LIF Adaptation": 389.46,
+        "Model Building": 0.1,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 13.16,
+        "Pretraining": 78.69,
+        "Quantization Verification": 12.74,
+        "SANA-FE Simulation": 9.73,
+        "Simulation": 34.97,
+        "Soft Core Mapping": 188.1,
+        "Torch Mapping": 12.66,
+        "Weight Quantization": 75.7
+      },
+      "wall_clock_s": 974.53
+    },
+    "verdict": {
+      "accuracy_ok": true,
+      "reason": "certified: accuracy 0.9700 >= 0.9690 and wall-clock 646.1s <= 1218.2s",
+      "status": "pass",
+      "wall_clock_ok": true
+    }
+  },
+  "matrix_3_lif_pruned_scheduled": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.924,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 996.3,
+      "recipe": {
+        "lif_blend_fast": true,
+        "lif_blend_fast_stabilize_steps": 1200
+      },
+      "steps": {
+        "Activation Analysis": 16.35,
+        "Core Quantization Verification": 0.27,
+        "Hard Core Mapping": 73.48,
+        "LIF Adaptation": 88.53,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 13.8,
+        "Pretraining": 85.97,
+        "Pruning Adaptation": 361.01,
+        "Quantization Verification": 13.23,
+        "SANA-FE Simulation": 5.16,
+        "Simulation": 8.98,
+        "Soft Core Mapping": 238.47,
+        "Torch Mapping": 12.4,
+        "Weight Quantization": 65.79
+      },
+      "wall_clock_s": 983.54
+    },
+    "cell_key": "lif@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.94,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 1220.0,
+      "steps": {
+        "Activation Analysis": 16.08,
+        "Core Quantization Verification": 0.29,
+        "Hard Core Mapping": 72.15,
+        "LIF Adaptation": 318.65,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 14.23,
+        "Pretraining": 82.53,
+        "Pruning Adaptation": 353.94,
+        "Quantization Verification": 13.35,
+        "SANA-FE Simulation": 5.2,
+        "Simulation": 8.64,
+        "Soft Core Mapping": 241.55,
+        "Torch Mapping": 12.62,
+        "Weight Quantization": 65.85
+      },
+      "wall_clock_s": 1205.18
+    },
+    "verdict": {
+      "accuracy_ok": false,
+      "reason": "regression: accuracy 0.9240 < floor 0.9350 (deployed 0.9400 \u2212 eps 0.0050)",
+      "status": "fail",
+      "wall_clock_ok": true
+    }
+  },
+  "matrix_4_ttfs_analytical": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.978,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 1220.0,
+      "recipe": "no-fast-lever (already fast/lossless)",
+      "steps": {
+        "Activation Adaptation": 0.06,
+        "Activation Analysis": 15.8,
+        "Clamp Adaptation": 30.54,
+        "Core Quantization Verification": 0.23,
+        "Hard Core Mapping": 23.59,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 12.6,
+        "Pretraining": 81.72,
+        "Quantization Verification": 12.7,
+        "SANA-FE Simulation": 8.35,
+        "Simulation": 583.59,
+        "Soft Core Mapping": 33.09,
+        "Torch Mapping": 12.25,
+        "Weight Quantization": 392.96
+      },
+      "wall_clock_s": 1207.58
+    },
+    "cell_key": "ttfs@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.978,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 1220.0,
+      "steps": {
+        "Activation Adaptation": 0.06,
+        "Activation Analysis": 15.8,
+        "Clamp Adaptation": 30.54,
+        "Core Quantization Verification": 0.23,
+        "Hard Core Mapping": 23.59,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 12.6,
+        "Pretraining": 81.72,
+        "Quantization Verification": 12.7,
+        "SANA-FE Simulation": 8.35,
+        "Simulation": 583.59,
+        "Soft Core Mapping": 33.09,
+        "Torch Mapping": 12.25,
+        "Weight Quantization": 392.96
+      },
+      "wall_clock_s": 1207.58
+    },
+    "verdict": {
+      "accuracy_ok": true,
+      "reason": "certified: accuracy 0.9780 >= 0.9730 and wall-clock 1207.6s <= 1509.5s",
+      "status": "pass",
+      "wall_clock_ok": true
+    }
+  },
+  "matrix_5_ttfs_quantized_offload": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.972,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 632.1,
+      "recipe": "no-fast-lever (already fast/lossless)",
+      "steps": {
+        "Activation Adaptation": 0.06,
+        "Activation Analysis": 15.58,
+        "Activation Quantization": 224.47,
+        "Activation Shifting": 26.61,
+        "Clamp Adaptation": 72.81,
+        "Core Quantization Verification": 0.35,
+        "Hard Core Mapping": 28.16,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 12.81,
+        "Pretraining": 84.94,
+        "Quantization Verification": 12.51,
+        "SANA-FE Simulation": 8.86,
+        "Simulation": 23.58,
+        "Soft Core Mapping": 33.0,
+        "Torch Mapping": 12.62,
+        "Weight Quantization": 60.63
+      },
+      "wall_clock_s": 617.08
+    },
+    "cell_key": "ttfs_quantized@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.972,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 632.1,
+      "steps": {
+        "Activation Adaptation": 0.06,
+        "Activation Analysis": 15.58,
+        "Activation Quantization": 224.47,
+        "Activation Shifting": 26.61,
+        "Clamp Adaptation": 72.81,
+        "Core Quantization Verification": 0.35,
+        "Hard Core Mapping": 28.16,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 12.81,
+        "Pretraining": 84.94,
+        "Quantization Verification": 12.51,
+        "SANA-FE Simulation": 8.86,
+        "Simulation": 23.58,
+        "Soft Core Mapping": 33.0,
+        "Torch Mapping": 12.62,
+        "Weight Quantization": 60.63
+      },
+      "wall_clock_s": 617.08
+    },
+    "verdict": {
+      "accuracy_ok": true,
+      "reason": "certified: accuracy 0.9720 >= 0.9670 and wall-clock 617.1s <= 771.4s",
+      "status": "pass",
+      "wall_clock_ok": true
+    }
+  },
+  "matrix_6_ttfs_cycle_cascaded": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.96,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 477.8,
+      "recipe": {
+        "ttfs_blend_fast": true,
+        "ttfs_blend_fast_stabilize_steps": 1200
+      },
+      "steps": {
+        "Activation Analysis": 14.37,
+        "Core Quantization Verification": 0.21,
+        "Hard Core Mapping": 110.99,
+        "Model Building": 0.1,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 12.74,
+        "Pretraining": 55.72,
+        "Quantization Verification": 11.77,
+        "SANA-FE Simulation": 8.64,
+        "Simulation": 31.84,
+        "Soft Core Mapping": 100.48,
+        "TTFS Cycle Fine-Tuning": 67.03,
+        "Torch Mapping": 11.7,
+        "Weight Quantization": 40.97
+      },
+      "wall_clock_s": 466.56
+    },
+    "cell_key": "ttfs_cycle_based/cascaded@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.96,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 775.4,
+      "steps": {
+        "Activation Analysis": 15.23,
+        "Core Quantization Verification": 0.24,
+        "Hard Core Mapping": 110.28,
+        "Model Building": 0.1,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 13.83,
+        "Pretraining": 63.24,
+        "Quantization Verification": 12.69,
+        "SANA-FE Simulation": 8.44,
+        "Simulation": 32.13,
+        "Soft Core Mapping": 102.19,
+        "TTFS Cycle Fine-Tuning": 312.68,
+        "Torch Mapping": 11.96,
+        "Weight Quantization": 79.82
+      },
+      "wall_clock_s": 762.84
+    },
+    "verdict": {
+      "accuracy_ok": true,
+      "reason": "certified: accuracy 0.9600 >= 0.9500 and wall-clock 466.6s <= 953.6s",
+      "status": "pass",
+      "wall_clock_ok": true
+    }
+  },
+  "matrix_7_ttfs_cycle_synchronized": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.9618,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 244.4,
+      "recipe": {
+        "ttfs_blend_fast": true,
+        "ttfs_blend_fast_stabilize_steps": 1200
+      },
+      "steps": {
+        "Activation Analysis": 13.77,
+        "Core Quantization Verification": 0.23,
+        "Hard Core Mapping": 25.64,
+        "Model Building": 0.1,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 12.2,
+        "Pretraining": 60.05,
+        "Quantization Verification": 11.49,
+        "SANA-FE Simulation": 8.72,
+        "Soft Core Mapping": 31.17,
+        "TTFS Cycle Fine-Tuning": 38.02,
+        "Torch Mapping": 11.92,
+        "Weight Quantization": 19.46
+      },
+      "wall_clock_s": 232.78
+    },
+    "cell_key": "ttfs_cycle_based/synchronized@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.9635,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 247.5,
+      "steps": {
+        "Activation Analysis": 14.67,
+        "Core Quantization Verification": 0.22,
+        "Hard Core Mapping": 23.64,
+        "Model Building": 0.09,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 12.61,
+        "Pretraining": 60.67,
+        "Quantization Verification": 11.71,
+        "SANA-FE Simulation": 8.45,
+        "Soft Core Mapping": 32.33,
+        "TTFS Cycle Fine-Tuning": 38.16,
+        "Torch Mapping": 11.28,
+        "Weight Quantization": 21.04
+      },
+      "wall_clock_s": 234.89
+    },
+    "verdict": {
+      "accuracy_ok": true,
+      "reason": "certified: accuracy 0.9618 >= 0.9585 and wall-clock 232.8s <= 293.6s",
+      "status": "pass",
+      "wall_clock_ok": true
+    }
+  },
+  "matrix_8_ttfs_cycle_offload_scheduled_nobias": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.924,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 590.4,
+      "recipe": {
+        "ttfs_blend_fast": true,
+        "ttfs_blend_fast_stabilize_steps": 1200
+      },
+      "steps": {
+        "Activation Analysis": 14.59,
+        "Core Quantization Verification": 0.19,
+        "Hard Core Mapping": 149.61,
+        "Model Building": 8.48,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 21.84,
+        "Pretraining": 57.68,
+        "Quantization Verification": 12.59,
+        "SANA-FE Simulation": 9.94,
+        "Simulation": 41.64,
+        "Soft Core Mapping": 129.04,
+        "TTFS Cycle Fine-Tuning": 86.57,
+        "Torch Mapping": 12.12,
+        "Weight Quantization": 34.05
+      },
+      "wall_clock_s": 578.34
+    },
+    "cell_key": "ttfs_cycle_based/cascaded@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.932,
+      "ok": true,
+      "proc_returncode": 0,
+      "proc_wall_s": 792.7,
+      "steps": {
+        "Activation Analysis": 14.24,
+        "Core Quantization Verification": 0.28,
+        "Hard Core Mapping": 139.0,
+        "Model Building": 8.28,
+        "Model Configuration": 0.0,
+        "Normalization Fusion": 21.69,
+        "Pretraining": 53.32,
+        "Quantization Verification": 12.3,
+        "SANA-FE Simulation": 9.87,
+        "Simulation": 39.02,
+        "Soft Core Mapping": 119.31,
+        "TTFS Cycle Fine-Tuning": 315.24,
+        "Torch Mapping": 11.23,
+        "Weight Quantization": 36.66
+      },
+      "wall_clock_s": 780.44
+    },
+    "verdict": {
+      "accuracy_ok": true,
+      "reason": "certified: accuracy 0.9240 >= 0.9220 and wall-clock 578.3s <= 975.6s",
+      "status": "pass",
+      "wall_clock_ok": true
+    }
+  },
+  "matrix_9_ttfs_vanilla_noWQ": {
+    "candidate": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.984,
+      "ok": true,
+      "proc_returncode": 0,
+      "recipe": "no-fast-lever (already fast/lossless)",
+      "steps": {
+        "Activation Adaptation": 0.05,
+        "Activation Analysis": 14.19,
+        "Clamp Adaptation": 24.85,
+        "Hard Core Mapping": 22.13,
+        "Model Building": 0.1,
+        "Model Configuration": 0.01,
+        "Normalization Fusion": 12.13,
+        "Pretraining": 56.9,
+        "SANA-FE Simulation": 10.16,
+        "Simulation": 521.01,
+        "Soft Core Mapping": 30.2,
+        "Torch Mapping": 11.56
+      },
+      "wall_clock_s": 703.27
+    },
+    "cell_key": "ttfs@nevresim",
+    "floor": {
+      "commit": "0d156c8",
+      "deployed_accuracy": 0.984,
+      "ok": true,
+      "proc_returncode": 0,
+      "steps": {
+        "Activation Adaptation": 0.05,
+        "Activation Analysis": 14.19,
+        "Clamp Adaptation": 24.85,
+        "Hard Core Mapping": 22.13,
+        "Model Building": 0.1,
+        "Model Configuration": 0.01,
+        "Normalization Fusion": 12.13,
+        "Pretraining": 56.9,
+        "SANA-FE Simulation": 10.16,
+        "Simulation": 521.01,
+        "Soft Core Mapping": 30.2,
+        "Torch Mapping": 11.56
+      },
+      "wall_clock_s": 703.27
+    },
+    "verdict": {
+      "accuracy_ok": true,
+      "reason": "certified: accuracy 0.9840 >= 0.9790 and wall-clock 703.3s <= 879.1s",
+      "status": "pass",
+      "wall_clock_ok": true
+    }
+  }
+}
