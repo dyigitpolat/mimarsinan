@@ -20,6 +20,8 @@ and architecture-specific implementations.
 | `torch_mlp_mixer.py`, `torch_mlp_mixer_core.py`, `mlp_mixer_ref.py` | … | MLP-Mixer variants |
 | `deep_mlp.py` | `DeepMLP` | Narrow configurable-depth `Flatten -> [Linear(width)+act] x depth -> Linear(classes)` stack (pure Linear+ReLU, no conv/attention); the depth-probe vehicle, registered as `deep_mlp` (category "torch") |
 
+| `lenet5.py` | `LeNet5` | Classic LeNet-5 CNN (Conv 1→6 k5, Conv 6→16 k5 with `padding=2`, two MaxPool, FC 120→84→n_classes); T1 classical rung, pipeline-native (no grouped/depthwise conv) |
+
 ### Subdirectories
 
 | Directory | Purpose |
