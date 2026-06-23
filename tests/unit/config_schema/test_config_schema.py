@@ -169,7 +169,11 @@ class TestValidateDeploymentConfig:
 
 
 class TestSAllocationValidation:
-    """EW2 — the per-layer-S declaration is well-formed + capability-gated."""
+    """EW2 — only ``uniform`` is wired; ``explicit``/``budget`` loud-reject (Q2 foot-gun).
+
+    The reserved modes would silently no-op to uniform, so validation rejects them at
+    config-validation time, BEFORE the silent-uniform resolver path is reachable.
+    """
 
     @staticmethod
     def _cfg(dp_extra=None, pc_extra=None):
@@ -197,45 +201,37 @@ class TestSAllocationValidation:
         errs = validate_deployment_config(self._cfg({"s_allocation": "magic"}))
         assert any("s_allocation must be one of" in e for e in errs)
 
-    def test_explicit_requires_capability(self):
+    def test_explicit_is_rejected_as_reserved(self):
+        # Reserved/not-implemented => loud-reject regardless of capability/shape.
         errs = validate_deployment_config(self._cfg(
             {"s_allocation": "explicit", "s_allocation_explicit": [4, 4]},
         ))
-        assert any("allow_per_layer_s" in e for e in errs)
+        assert any(
+            "s_allocation='explicit' is reserved/not implemented" in e
+            and "only 'uniform' is supported" in e
+            for e in errs
+        ), errs
 
-    def test_budget_requires_capability(self):
+    def test_budget_is_rejected_as_reserved(self):
         errs = validate_deployment_config(self._cfg(
             {"s_allocation": "budget", "s_allocation_budget": {"target": 0.96}},
         ))
-        assert any("allow_per_layer_s" in e for e in errs)
+        assert any(
+            "s_allocation='budget' is reserved/not implemented" in e
+            and "only 'uniform' is supported" in e
+            for e in errs
+        ), errs
 
-    def test_explicit_requires_nonempty_int_list(self):
-        gated = {"allow_per_layer_s": True}
-        for bad in (None, [], "not a list", [4, -1], [4, 0], {"a": 1}):
-            errs = validate_deployment_config(self._cfg(
-                {"s_allocation": "explicit", "s_allocation_explicit": bad},
-                gated,
-            ))
-            assert any("non-empty list of positive ints" in e for e in errs), bad
-
-    def test_explicit_gated_with_valid_list_passes(self):
+    def test_explicit_rejected_even_with_capability_and_valid_list(self):
+        # The capability gate + a well-formed list do NOT unlock a reserved mode.
         errs = validate_deployment_config(self._cfg(
             {"s_allocation": "explicit", "s_allocation_explicit": [4, 4, 8]},
             {"allow_per_layer_s": True},
         ))
-        assert errs == []
+        assert any("s_allocation='explicit' is reserved/not implemented" in e
+                   for e in errs), errs
 
-    def test_budget_requires_an_objective(self):
-        gated = {"allow_per_layer_s": True}
-        for bad in (None, {}, "x", {"unrelated": 1}):
-            errs = validate_deployment_config(self._cfg(
-                {"s_allocation": "budget", "s_allocation_budget": bad},
-                gated,
-            ))
-            assert any("at least one of" in e or "requires s_allocation_budget" in e
-                       for e in errs), bad
-
-    def test_budget_gated_with_objective_passes(self):
+    def test_budget_rejected_even_with_capability_and_objective(self):
         for body in (
             {"max_energy_proxy": 1.0},
             {"max_latency_steps": 64},
@@ -245,25 +241,31 @@ class TestSAllocationValidation:
                 {"s_allocation": "budget", "s_allocation_budget": body},
                 {"allow_per_layer_s": True},
             ))
-            assert errs == [], body
+            assert any("s_allocation='budget' is reserved/not implemented" in e
+                       for e in errs), body
 
-    def test_capability_gate_read_from_wrapped_user_platform(self):
-        # The capability is honored even when platform_constraints is the wizard's
-        # wrapped {mode: 'user', user: {...}} shape.
+    def test_explicit_rejected_in_wrapped_user_platform(self):
+        # Wrapped {mode:'user', user:{...}} platform shape still loud-rejects explicit.
         cfg = self._cfg({"s_allocation": "explicit", "s_allocation_explicit": [4]})
         cfg["platform_constraints"] = {
             "mode": "user",
             "user": {"cores": [{"max_axons": 8, "max_neurons": 8, "count": 1}],
                      "allow_per_layer_s": True},
         }
-        assert validate_deployment_config(cfg) == []
+        errs = validate_deployment_config(cfg)
+        assert any("s_allocation='explicit' is reserved/not implemented" in e
+                   for e in errs), errs
 
-    def test_s_allocation_config_errors_is_exported(self):
+    def test_s_allocation_config_errors_is_exported_and_rejects_reserved(self):
         from mimarsinan.config_schema import s_allocation_config_errors
-        assert s_allocation_config_errors(
-            {"s_allocation": "explicit", "s_allocation_explicit": [4]},
-            {"allow_per_layer_s": True},
-        ) == []
+        # uniform passes; explicit/budget loud-reject.
+        assert s_allocation_config_errors({"s_allocation": "uniform"}, {}) == []
+        for mode in ("explicit", "budget"):
+            errs = s_allocation_config_errors(
+                {"s_allocation": mode}, {"allow_per_layer_s": True},
+            )
+            assert any(f"s_allocation={mode!r} is reserved/not implemented" in e
+                       for e in errs), mode
 
 
 class TestValidateMergedConfig:

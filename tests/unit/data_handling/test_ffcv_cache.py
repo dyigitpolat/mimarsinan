@@ -7,6 +7,8 @@ import tempfile
 
 import pytest
 
+pytest.importorskip("ffcv", reason="ffcv not installed; beton cache paths are unavailable")
+
 from mimarsinan.data_handling.ffcv.cache import beton_path_for, cache_root
 from mimarsinan.data_handling.ffcv.pipeline_spec import (
     FieldSpec,

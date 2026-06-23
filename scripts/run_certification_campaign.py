@@ -76,6 +76,12 @@ class Cell:
     common_overrides: Dict[str, Any] = field(default_factory=dict)
     eps: float = 0.005
     wall_slack: float = 0.25
+    # F1 absolute-AC overlay targets (orthogonal to the relative gate): AC1 absolute
+    # deployed-accuracy goal, AC2 ANN reference (lossless), AC5 per-FT-step wall budget.
+    # None ⇒ no absolute sub-verdict for that axis; the relative gate is unchanged.
+    ac1_target: Optional[float] = None
+    ac2_reference: Optional[float] = None
+    ac5_budget_s: Optional[float] = None
 
     def cert_cell(self) -> CertificationCell:
         return CertificationCell(self.firing, self.sync, self.backend, variant=self.variant)
@@ -92,41 +98,54 @@ class Cell:
 LIF_FAST = {"lif_blend_fast": True, "lif_blend_fast_stabilize_steps": 1200}
 TTFS_FAST = {"ttfs_blend_fast": True, "ttfs_blend_fast_stabilize_steps": 1200}
 
+# F1 absolute-AC overlay (orthogonal to the relative non-regression gate):
+#   AC1 — the absolute deployed-accuracy goal "lossless" means hitting (the mmixcore
+#         MNIST ANN reference band, ~0.978);
+#   AC2 — the ANN reference accuracy the deployed forward must match to be lossless;
+#   AC5 — the per-FT-step wall budget (the plan's §6.2 "minutes, not the ~28-min
+#         controller floor" target → 5 min = 300 s).
+# These never change the relative PASS/FAIL — they only report whether each cell
+# clears the ABSOLUTE bar (and, for cascaded TTFS, how many pp it still owes).
+ANN_REFERENCE_ACC = 0.978
+AC5_FT_BUDGET_S = 300.0
+ABS = dict(ac1_target=ANN_REFERENCE_ACC, ac2_reference=ANN_REFERENCE_ACC,
+           ac5_budget_s=AC5_FT_BUDGET_S)
+
 CELLS: List[Cell] = [
     Cell("matrix_1_lif_rate",
          "templates/mnist_mmixcore_matrix_1_lif_rate.json",
-         "lif", None, variant="rate", fast_overrides=dict(LIF_FAST)),
+         "lif", None, variant="rate", fast_overrides=dict(LIF_FAST), **ABS),
     Cell("matrix_2_lif_novena_offload_loihi",
          "templates/mnist_mmixcore_matrix_2_lif_novena_offload_loihi.json",
          "lif", None, variant="novena_offload", fast_overrides=dict(LIF_FAST),
          # lava/loihi sim is unavailable in this env (no env310); it is an auxiliary
          # backend, not the deployed metric of record (nevresim/SCM full-test), so
          # disabling it on both sides keeps the comparison fair + the metric intact.
-         common_overrides={"enable_loihi_simulation": False}),
+         common_overrides={"enable_loihi_simulation": False}, **ABS),
     Cell("matrix_3_lif_pruned_scheduled",
          "templates/mnist_mmixcore_matrix_3_lif_pruned_scheduled.json",
-         "lif", None, variant="pruned_scheduled", fast_overrides=dict(LIF_FAST)),
+         "lif", None, variant="pruned_scheduled", fast_overrides=dict(LIF_FAST), **ABS),
     Cell("matrix_4_ttfs_analytical",
          "templates/mnist_mmixcore_matrix_4_ttfs_analytical.json",
-         "ttfs", None, variant="analytical"),
+         "ttfs", None, variant="analytical", **ABS),
     Cell("matrix_5_ttfs_quantized_offload",
          "templates/mnist_mmixcore_matrix_5_ttfs_quantized_offload.json",
-         "ttfs_quantized", None, variant="offload"),
+         "ttfs_quantized", None, variant="offload", **ABS),
     Cell("matrix_6_ttfs_cycle_cascaded",
          "templates/mnist_mmixcore_matrix_6_ttfs_cycle_cascaded.json",
          "ttfs_cycle_based", "cascaded", variant="plain",
-         fast_overrides=dict(TTFS_FAST), eps=0.01),
+         fast_overrides=dict(TTFS_FAST), eps=0.01, **ABS),
     Cell("matrix_7_ttfs_cycle_synchronized",
          "templates/mnist_mmixcore_matrix_7_ttfs_cycle_synchronized.json",
          "ttfs_cycle_based", "synchronized", variant="plain",
-         fast_overrides=dict(TTFS_FAST)),
+         fast_overrides=dict(TTFS_FAST), **ABS),
     Cell("matrix_8_ttfs_cycle_offload_scheduled_nobias",
          "templates/mnist_mmixcore_matrix_8_ttfs_cycle_offload_scheduled_nobias.json",
          "ttfs_cycle_based", "cascaded", variant="offload_scheduled_nobias",
-         fast_overrides=dict(TTFS_FAST), eps=0.01),
+         fast_overrides=dict(TTFS_FAST), eps=0.01, **ABS),
     Cell("matrix_9_ttfs_vanilla_noWQ",
          "templates/mnist_mmixcore_matrix_9_ttfs_vanilla_noWQ.json",
-         "ttfs", None, variant="vanilla_noWQ"),
+         "ttfs", None, variant="vanilla_noWQ", **ABS),
 ]
 
 # Escalation recipe for a cascaded cell whose plain fast recipe regresses below
@@ -171,11 +190,22 @@ def _run_dir_for(experiment_name: str, pipeline_mode: str = "phased") -> str:
     return os.path.join(GEN, f"{experiment_name}_{pipeline_mode}_deployment_run")
 
 
+# The fine-tune / conversion-recovery passes whose per-step wall AC5 budgets. Matched
+# by name substring so a step-rename does not silently drop the FT-step measurement.
+_FT_STEP_MARKERS = ("adaptation", "adapt", "fine", "tune", "recovery")
+
+
+def _is_ft_step(name: str) -> bool:
+    low = name.lower()
+    return any(marker in low for marker in _FT_STEP_MARKERS)
+
+
 def _measure(run_dir: str) -> Dict[str, Any]:
     acc = _deployed_accuracy_from_run(run_dir)
     steps_path = os.path.join(run_dir, "_GUI_STATE", "steps.json")
     steps = {}
     wall = 0.0
+    max_ft = 0.0
     if os.path.isfile(steps_path):
         with open(steps_path, "r", encoding="utf-8") as fh:
             raw = (json.load(fh) or {}).get("steps") or {}
@@ -183,7 +213,14 @@ def _measure(run_dir: str) -> Dict[str, Any]:
             dur = (st.get("end_time", 0) or 0) - (st.get("start_time", 0) or 0)
             steps[name] = round(float(dur), 2)
             wall += float(dur)
-    return {"deployed_accuracy": acc, "wall_clock_s": round(wall, 2), "steps": steps}
+            if _is_ft_step(name):
+                max_ft = max(max_ft, float(dur))
+    return {
+        "deployed_accuracy": acc,
+        "wall_clock_s": round(wall, 2),
+        "max_ft_pass_wall_s": round(max_ft, 2),
+        "steps": steps,
+    }
 
 
 def _run(config_path: str, experiment_name: str, timeout: int,
@@ -281,6 +318,9 @@ def _freeze_and_certify(results: Dict[str, Any], commit: str) -> None:
             wall_clock_s=f["wall_clock_s"],
             eps=cell.eps, wall_clock_slack=cell.wall_slack,
             provenance={"commit": f.get("commit", commit), "samples": "full_test"},
+            ac1_target=cell.ac1_target,
+            ac2_reference=cell.ac2_reference,
+            ac5_budget_s=cell.ac5_budget_s,
         )
     save_floor_book(book, FLOOR_BOOK)
 
@@ -294,32 +334,81 @@ def _freeze_and_certify(results: Dict[str, Any], commit: str) -> None:
             deployed_accuracy=cand["deployed_accuracy"],
             wall_clock_s=cand["wall_clock_s"],
             floor_book=book,
+            max_ft_pass_wall_s=cand.get("max_ft_pass_wall_s"),
         )
+        a = verdict.absolute
         slot["verdict"] = {
             "status": verdict.status.value,
             "accuracy_ok": verdict.accuracy_ok,
             "wall_clock_ok": verdict.wall_clock_ok,
             "reason": verdict.reason,
+            "absolute": {
+                "ac1_ok": a.ac1_ok,
+                "ac2_ok": a.ac2_ok,
+                "ac5_ok": a.ac5_ok,
+                "accuracy_gap_pp": a.accuracy_gap_pp,
+                "ac5_gap_s": a.ac5_gap_s,
+            },
         }
     _save_results(results)
+
+
+def _fmt_ok(flag: Optional[bool]) -> str:
+    return "-" if flag is None else ("yes" if flag else "no")
+
+
+def _abs_rollup(results: Dict[str, Any]) -> str:
+    """One-line F1 rollup: relative non-regression + absolute AC1/AC5 + cascaded debt."""
+    non_regress = clear_ac1 = clear_ac5 = 0
+    for cell in CELLS:
+        v = results.get(cell.name, {}).get("verdict")
+        if not v:
+            continue
+        if v.get("status") == "pass":
+            non_regress += 1
+        a = v.get("absolute", {})
+        if a.get("ac1_ok") is True:
+            clear_ac1 += 1
+        if a.get("ac5_ok") is True:
+            clear_ac5 += 1
+    debts = []
+    for cell in CELLS:
+        if cell.sync != "cascaded":
+            continue
+        a = (results.get(cell.name, {}).get("verdict") or {}).get("absolute", {})
+        gap = a.get("accuracy_gap_pp")
+        if gap is not None and gap < 0:
+            debts.append(f"{cell.cert_cell().cell_key} owes {abs(gap):.2f} pp")
+    debt = ("; cascaded debt: " + ", ".join(debts)) if debts else ""
+    return (f"{non_regress} non-regressing, {clear_ac1} clear AC1, "
+            f"{clear_ac5} clear AC5{debt}")
 
 
 def _write_report(results: Dict[str, Any]) -> None:
     lines = ["# Frontier Phase 2 — certification campaign report", "",
              "Per-cell freeze (controller floor) + Fix-B fast candidate + E6 verdict.",
-             "", "| cell | floor acc | floor wall | fast acc | fast wall | speedup | verdict |",
-             "|------|-----------|-----------|----------|-----------|---------|---------|"]
+             "F1 overlay: AC1 (absolute acc), AC2 (lossless vs ANN), AC5 (per-FT-step wall).",
+             "", "| cell | floor acc | floor wall | fast acc | fast wall | speedup | verdict | "
+             "AC1 | AC2 | AC5 | acc gap (pp) |",
+             "|------|-----------|-----------|----------|-----------|---------|---------|"
+             "-----|-----|-----|-------------|"]
     for cell in CELLS:
         slot = results.get(cell.name, {})
         f, c = slot.get("floor", {}), slot.get("candidate", {})
         v = slot.get("verdict", {})
+        a = v.get("absolute", {})
         fa = f.get("deployed_accuracy"); fw = f.get("wall_clock_s")
         ca = c.get("deployed_accuracy"); cw = c.get("wall_clock_s")
         spd = f"{fw/cw:.1f}x" if (fw and cw) else "-"
+        gap = a.get("accuracy_gap_pp")
+        gap_s = "-" if gap is None else f"{gap:+.2f}"
         lines.append(
             f"| {cell.cert_cell().cell_key} | "
-            f"{fa} | {fw} | {ca} | {cw} | {spd} | {v.get('status','-')} |")
-    lines += ["", f"Floor book: `{os.path.relpath(FLOOR_BOOK, REPO)}`",
+            f"{fa} | {fw} | {ca} | {cw} | {spd} | {v.get('status','-')} | "
+            f"{_fmt_ok(a.get('ac1_ok'))} | {_fmt_ok(a.get('ac2_ok'))} | "
+            f"{_fmt_ok(a.get('ac5_ok'))} | {gap_s} |")
+    lines += ["", f"**Rollup:** {_abs_rollup(results)}", "",
+              f"Floor book: `{os.path.relpath(FLOOR_BOOK, REPO)}`",
               f"Results: `{os.path.relpath(RESULTS, REPO)}`", ""]
     for cell in CELLS:
         v = results.get(cell.name, {}).get("verdict")

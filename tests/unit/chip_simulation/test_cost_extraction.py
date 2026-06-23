@@ -368,6 +368,116 @@ class TestCostScatter:
 
 
 # --------------------------------------------------------------------------- #
+# AC5 — the per-fine-tuning-PASS wall the cost record carries (task A5).
+# --------------------------------------------------------------------------- #
+
+class TestFtPassWall:
+    def test_default_is_zero(self):
+        # A run with no surfaced FT-pass wall still produces a well-defined record
+        # (0.0 ⇒ "no FT pass timed", never None — AC5 reads a float).
+        cell = CertificationCell("lif", None, "sanafe")
+        record = extract_cost_record(
+            cell=cell, deployed_accuracy=0.97, sanafe_snapshot=_single_segment_snapshot()
+        )
+        assert record.max_ft_pass_wall_s == 0.0
+        assert record.ft_pass_walls == ()
+
+    def test_carries_max_ft_pass_wall_and_breakdown(self):
+        # AC5 is judged on this exact field — the MAX single FT pass wall — plus the
+        # per-pass breakdown the verdict can drill into.
+        cell = CertificationCell("lif", None, "sanafe")
+        passes = (
+            {"label": "recover", "wall_s": 42.0},
+            {"label": "stabilize", "wall_s": 180.0},
+        )
+        record = extract_cost_record(
+            cell=cell,
+            deployed_accuracy=0.97,
+            sanafe_snapshot=_single_segment_snapshot(),
+            max_ft_pass_wall_s=180.0,
+            ft_pass_walls=passes,
+        )
+        assert record.max_ft_pass_wall_s == pytest.approx(180.0)
+        assert record.ft_pass_walls == passes
+
+    def test_max_ft_pass_wall_round_trips(self, tmp_path):
+        cell = CertificationCell("lif", None, "sanafe")
+        record = extract_cost_record(
+            cell=cell,
+            deployed_accuracy=0.97,
+            sanafe_snapshot=_single_segment_snapshot(),
+            max_ft_pass_wall_s=123.4,
+            ft_pass_walls=({"label": "recover", "wall_s": 123.4},),
+        )
+        assert CostRecord.from_dict(record.to_dict()) == record
+        path = save_cost_record(record, str(tmp_path / "run"))
+        assert load_cost_record(path) == record
+
+    def test_mines_ft_pass_walls_from_run_artifact(self, tmp_path):
+        # The standing path: the tuner persists ``ft_pass_walls.json`` alongside the
+        # run artifacts; ``extract_cost_record_from_run`` mines it into the record.
+        import os
+
+        run_dir = str(tmp_path / "mmix_lif")
+        os.makedirs(os.path.join(run_dir, "_GUI_STATE"), exist_ok=True)
+        os.makedirs(os.path.join(run_dir, "_RUN_CONFIG"), exist_ok=True)
+        with open(os.path.join(run_dir, "__target_metric.json"), "w") as fh:
+            json.dump(0.97, fh)
+        steps = {
+            "steps": {
+                "SANA-FE Simulation": {
+                    "snapshot": {"sanafe_simulation": _single_segment_snapshot()},
+                }
+            }
+        }
+        with open(os.path.join(run_dir, "_GUI_STATE", "steps.json"), "w") as fh:
+            json.dump(steps, fh)
+        with open(os.path.join(run_dir, "_RUN_CONFIG", "config.json"), "w") as fh:
+            json.dump({"deployment_parameters": {"spiking_mode": "lif"}}, fh)
+        from mimarsinan.chip_simulation.cost_extraction import FT_PASS_WALLS_FILENAME
+        with open(os.path.join(run_dir, FT_PASS_WALLS_FILENAME), "w") as fh:
+            json.dump(
+                {
+                    "max_ft_pass_wall_s": 73.2,
+                    "passes": [
+                        {"label": "recover", "wall_s": 30.0},
+                        {"label": "recover", "wall_s": 73.2},
+                    ],
+                },
+                fh,
+            )
+        record = extract_cost_record_from_run(run_dir)
+        assert record.max_ft_pass_wall_s == pytest.approx(73.2)
+        assert record.ft_pass_walls == (
+            {"label": "recover", "wall_s": 30.0},
+            {"label": "recover", "wall_s": 73.2},
+        )
+
+    def test_missing_ft_pass_walls_artifact_defaults_to_zero(self, tmp_path):
+        import os
+
+        run_dir = str(tmp_path / "mmix_lif_no_ft")
+        os.makedirs(os.path.join(run_dir, "_GUI_STATE"), exist_ok=True)
+        os.makedirs(os.path.join(run_dir, "_RUN_CONFIG"), exist_ok=True)
+        with open(os.path.join(run_dir, "__target_metric.json"), "w") as fh:
+            json.dump(0.97, fh)
+        steps = {
+            "steps": {
+                "SANA-FE Simulation": {
+                    "snapshot": {"sanafe_simulation": _single_segment_snapshot()},
+                }
+            }
+        }
+        with open(os.path.join(run_dir, "_GUI_STATE", "steps.json"), "w") as fh:
+            json.dump(steps, fh)
+        with open(os.path.join(run_dir, "_RUN_CONFIG", "config.json"), "w") as fh:
+            json.dump({"deployment_parameters": {"spiking_mode": "lif"}}, fh)
+        record = extract_cost_record_from_run(run_dir)
+        assert record.max_ft_pass_wall_s == 0.0
+        assert record.ft_pass_walls == ()
+
+
+# --------------------------------------------------------------------------- #
 # Cost-model cross-check — energy ∝ Σ_d neurons_d · S_d (the R3 soma-dominance).
 # --------------------------------------------------------------------------- #
 
