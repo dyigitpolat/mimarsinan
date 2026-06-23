@@ -37,6 +37,7 @@ def dispatch(jobs: List[dict], *, results_path: Optional[str] = None,
              snapshot: Callable[[], List[gl.GpuStat]] = gl.query_nvidia_smi,
              directory: Optional[str] = None,
              poll: float = 4.0,
+             max_per_gpu: Optional[int] = 2,
              sleep: Callable[[float], None] = time.sleep,
              clock: Callable[[], float] = time.monotonic,
              popen=subprocess.Popen) -> List[dict]:
@@ -60,7 +61,7 @@ def dispatch(jobs: List[dict], *, results_path: Optional[str] = None,
             mode = job.get("mode", "fit")
             need = int(job.get("need_mb", gl.DEFAULT_FIT_MB))
             lease = gl.acquire(mode, need, directory=directory, snapshot=snapshot,
-                               cmd=str(job.get("id", "")))
+                               cmd=str(job.get("id", "")), max_per_gpu=max_per_gpu)
             if lease is None:
                 still_pending.append(job)
                 continue
@@ -102,11 +103,13 @@ def main(argv=None) -> int:
     p.add_argument("--results", default=None)
     p.add_argument("--logdir", default=None)
     p.add_argument("--poll", type=float, default=4.0)
+    p.add_argument("--max-per-gpu", type=int, default=2,
+                   help="max concurrent fit jobs per GPU (avoid oversubscription)")
     args = p.parse_args(argv)
     with open(args.manifest) as fh:
         jobs = json.load(fh)
     results = dispatch(jobs, results_path=args.results, logdir=args.logdir,
-                       poll=args.poll)
+                       poll=args.poll, max_per_gpu=args.max_per_gpu)
     ok = sum(1 for r in results if r["returncode"] == 0)
     print(f"dispatched {len(results)} jobs: {ok} ok, {len(results) - ok} failed")
     for r in results:
