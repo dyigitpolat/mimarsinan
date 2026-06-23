@@ -205,6 +205,8 @@ class CascadeCharacterizer(Characterizer):
         prev = [n._cycle_accurate_mode for n in nodes]
         for n in nodes:
             n.set_cycle_accurate(False)
+        params = list(model.parameters())
+        orig_dtype = params[0].dtype if params else None
         model.double().eval()
         try:
             with torch.no_grad():
@@ -214,6 +216,11 @@ class CascadeCharacterizer(Characterizer):
             # verdict (firing-gain collapses), never a crash in _configure.
             means = {}
         finally:
+            # The float64 cast is a probe-local convenience; restore the model's
+            # original dtype so the next pipeline forward (baseline calibration)
+            # does not crash with `input Half / bias double`.
+            if orig_dtype is not None:
+                model.to(orig_dtype)
             for n, pmode in zip(nodes, prev):
                 n.set_cycle_accurate(pmode)
             for h in handles:
