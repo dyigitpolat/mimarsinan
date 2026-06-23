@@ -39,6 +39,12 @@ S_ALLOCATION_MODES: Tuple[str, ...] = (
     S_ALLOCATION_BUDGET,
 )
 
+# The modes actually WIRED into the forwards/sim. Only ``uniform`` threads a map today;
+# ``explicit``/``budget`` are RESERVED resolver seams (the resolver still understands them
+# so the derivation keystone can land later) but a USER reaching them silently gets uniform.
+# The config-validation layer reads this SSOT to loud-reject the reserved modes.
+S_ALLOCATION_SUPPORTED_MODES: Tuple[str, ...] = (S_ALLOCATION_UNIFORM,)
+
 # The marker a RESERVED (not-yet-derived) mode records on its decision, so a reader
 # can tell "this returned uniform because the derivation is deferred to research"
 # from "this is genuinely uniform". The budget allocator is a no-op keystone seam.
@@ -55,11 +61,25 @@ __all__ = [
     "S_ALLOCATION_EXPLICIT",
     "S_ALLOCATION_BUDGET",
     "S_ALLOCATION_MODES",
+    "S_ALLOCATION_SUPPORTED_MODES",
     "BUDGET_DERIVATION_DEFERRED",
     "resolve_s_allocation_mode",
+    "unsupported_s_allocation_error",
     "TemporalAllocation",
     "TemporalAllocationResolver",
 ]
+
+
+def unsupported_s_allocation_error(mode: str) -> str:
+    """Canonical loud-reject message for a RESERVED (unwired) ``s_allocation`` mode.
+
+    The reserved modes (``explicit``/``budget``) parse + resolve but no consumer threads
+    their map — they would silently no-op to uniform. Validation rejects them with this
+    message so the foot-gun fails loud at config-validation time, not mid-pipeline."""
+    return (
+        f"s_allocation={mode!r} is reserved/not implemented; "
+        "only 'uniform' is supported"
+    )
 
 
 def resolve_s_allocation_mode(config: Mapping[str, Any]) -> str:
