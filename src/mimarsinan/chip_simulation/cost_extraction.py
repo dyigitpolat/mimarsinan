@@ -44,6 +44,7 @@ __all__ = [
     "CostScatter",
     "COST_RECORD_FORMAT_VERSION",
     "COST_RECORD_FILENAME",
+    "FT_PASS_WALLS_FILENAME",
     "extract_cost_record",
     "extract_cost_record_from_run",
     "load_cost_record",
@@ -52,12 +53,19 @@ __all__ = [
 
 
 # The cost-record FORMAT version. A run writes this into the JSON so a future
-# format change fails loud instead of silently mis-reading an old record.
-COST_RECORD_FORMAT_VERSION = 1
+# format change fails loud instead of silently mis-reading an old record. Bumped
+# to 2 when the per-fine-tuning-PASS wall (AC5: ``max_ft_pass_wall_s`` + the
+# per-pass breakdown) was added to the record.
+COST_RECORD_FORMAT_VERSION = 2
 
 # The canonical filename a run writes its cost record under, alongside the run
 # artifacts (next to ``metadata.json`` in a generated run directory).
 COST_RECORD_FILENAME = "cost_record.json"
+
+# The canonical filename the tuning step writes the AC5 per-fine-tuning-PASS wall
+# bundle under (``{"max_ft_pass_wall_s", "passes"}``), alongside the run artifacts;
+# :func:`extract_cost_record_from_run` mines it into the cost record.
+FT_PASS_WALLS_FILENAME = "ft_pass_walls.json"
 
 
 def _neuron_steps_from_sanafe_snapshot(snapshot: Mapping[str, Any]) -> Tuple[int, int]:
@@ -114,6 +122,17 @@ def _depth_from_sanafe_snapshot(snapshot: Mapping[str, Any]) -> int:
     return len(per_sample[0].get("segments") or [])
 
 
+def _coerce_ft_pass_walls(
+    walls: Sequence[Mapping[str, Any]]
+) -> Tuple[Mapping[str, Any], ...]:
+    """Normalize an FT-pass breakdown to a hashable tuple of ``{label, wall_s}``
+    dicts (frozen-dataclass equality / JSON round-trip need an immutable shape)."""
+    return tuple(
+        {"label": str(p.get("label", "")), "wall_s": float(p.get("wall_s", 0.0))}
+        for p in (walls or ())
+    )
+
+
 @dataclass(frozen=True)
 class CostRecord:
     """The cost tuple a sim run emits, keyed to its E6 (firing × sync × backend) cell.
@@ -135,6 +154,12 @@ class CostRecord:
     ``energy_proxy_neuron_steps`` carries ``Σ_d neurons_d · S_d`` so the cost-model
     cross-check (``mj_per_sample`` ∝ this sum) is reproducible off the record alone;
     ``provenance`` records the run that emitted it.
+
+    ``max_ft_pass_wall_s`` is the worst single fine-tuning PASS wall (AC5: judged
+    PER fine-tuning pass, NOT on the end-to-end pipeline wall which is dominated by
+    the non-FT Soft-Core-Mapping / Weight-Quantization / Simulation steps); 0.0 when
+    the run surfaced no FT-pass timing. ``ft_pass_walls`` is the per-pass breakdown
+    (``({"label", "wall_s"}, ...)``) the verdict can drill into.
     """
 
     cell_key: str
@@ -148,6 +173,8 @@ class CostRecord:
     s_global: int
     depth: int
     energy_proxy_neuron_steps: int = 0
+    max_ft_pass_wall_s: float = 0.0
+    ft_pass_walls: Tuple[Mapping[str, Any], ...] = ()
     provenance: Mapping[str, Any] = field(default_factory=dict)
     format_version: int = COST_RECORD_FORMAT_VERSION
 
@@ -163,6 +190,7 @@ class CostRecord:
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
         data["provenance"] = dict(self.provenance)
+        data["ft_pass_walls"] = [dict(p) for p in self.ft_pass_walls]
         return data
 
     @classmethod
@@ -182,6 +210,7 @@ class CostRecord:
             )
         kwargs = dict(data)
         kwargs["provenance"] = dict(kwargs.get("provenance", {}))
+        kwargs["ft_pass_walls"] = _coerce_ft_pass_walls(kwargs.get("ft_pass_walls", ()))
         return cls(**kwargs)
 
 
@@ -191,6 +220,8 @@ def extract_cost_record(
     deployed_accuracy: float,
     sanafe_snapshot: Mapping[str, Any],
     provenance: Optional[Mapping[str, Any]] = None,
+    max_ft_pass_wall_s: float = 0.0,
+    ft_pass_walls: Sequence[Mapping[str, Any]] = (),
 ) -> CostRecord:
     """Build a :class:`CostRecord` from what a SANA-FE run already reports.
 
@@ -199,6 +230,10 @@ def extract_cost_record(
     per-core breakdown). This is a PURE READ of those numbers — it runs nothing and
     changes no sim behavior. ``deployed_accuracy`` is the parity-gated deployed-forward
     number (R6 / E5). The cell supplies the canonical ``mode[/schedule]`` and backend.
+
+    ``max_ft_pass_wall_s`` / ``ft_pass_walls`` carry the AC5 per-fine-tuning-PASS wall
+    the tuning step measured (the worst single pass + the per-pass breakdown) — judged
+    PER fine-tuning pass, not on the end-to-end pipeline wall.
     """
     aggregate = sanafe_snapshot.get("aggregate") or {}
     mj_per_sample = float(aggregate.get("total_energy_mj", 0.0))
@@ -226,6 +261,8 @@ def extract_cost_record(
         s_global=s_global,
         depth=depth,
         energy_proxy_neuron_steps=neuron_steps,
+        max_ft_pass_wall_s=float(max_ft_pass_wall_s),
+        ft_pass_walls=_coerce_ft_pass_walls(ft_pass_walls),
         provenance=dict(provenance or {}),
     )
 
@@ -258,6 +295,23 @@ def _sanafe_snapshot_from_run(run_dir: str) -> Optional[Mapping[str, Any]]:
     sanafe_step = steps.get("SANA-FE Simulation") or {}
     snapshot = sanafe_step.get("snapshot") or {}
     return snapshot.get("sanafe_simulation")
+
+
+def _ft_pass_walls_from_run(run_dir: str) -> Tuple[float, Tuple[Mapping[str, Any], ...]]:
+    """The AC5 per-fine-tuning-PASS wall bundle a run persisted, if any.
+
+    Reads ``ft_pass_walls.json`` (``{"max_ft_pass_wall_s", "passes"}``) the tuning
+    step writes alongside the run artifacts; returns ``(max_ft_pass_wall_s, passes)``
+    — ``(0.0, ())`` when the run wrote none (a run without instrumented FT passes).
+    """
+    path = os.path.join(run_dir, FT_PASS_WALLS_FILENAME)
+    if not os.path.exists(path):
+        return 0.0, ()
+    data = _read_json(path) or {}
+    return (
+        float(data.get("max_ft_pass_wall_s", 0.0)),
+        _coerce_ft_pass_walls(data.get("passes", ())),
+    )
 
 
 def _cell_from_run_config(run_dir: str, *, backend: str) -> Optional[CertificationCell]:
@@ -296,11 +350,14 @@ def extract_cost_record_from_run(
     if cell is None:
         return None
     deployed_accuracy = _deployed_accuracy_from_run(run_dir)
+    max_ft_pass_wall_s, ft_pass_walls = _ft_pass_walls_from_run(run_dir)
     return extract_cost_record(
         cell=cell,
         deployed_accuracy=deployed_accuracy,
         sanafe_snapshot=snapshot,
         provenance={"run_dir": os.path.basename(os.path.normpath(run_dir))},
+        max_ft_pass_wall_s=max_ft_pass_wall_s,
+        ft_pass_walls=ft_pass_walls,
     )
 
 
