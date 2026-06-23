@@ -9,6 +9,7 @@ from mimarsinan.tuning.trace import DecisionRecord, DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver, CycleContext
 from mimarsinan.tuning.orchestration.checkpoint_guard import CheckpointGuard
+from mimarsinan.tuning.orchestration.ft_pass_wall import FtPassWallLog
 from mimarsinan.tuning.orchestration.recovery_engine import (
     PERSIST_WITHIN_CYCLE,
     RESET_PER_CYCLE,
@@ -152,6 +153,45 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     def _set_extra_state(self, extra):
         """Override to restore tuner-specific state."""
+
+    def _ft_pass_wall_log(self) -> FtPassWallLog:
+        """The per-fine-tuning-PASS wall log (AC5), lazily created per run.
+
+        Each adaptation PASS (the recover / below-floor / stabilize fine-tuning
+        passes) is timed into this log on a MONOTONIC clock; ``max_ft_pass_wall_s``
+        is the worst single pass — the per-FT-step number AC5 is judged on, NOT the
+        end-to-end pipeline wall. The log is keyed to the run's ``_run_t0`` epoch
+        (set by ``run()``) so a re-run on the same instance starts a fresh log
+        instead of accumulating across runs — without the owned cycle code having to
+        hook the un-owned ``run()`` reset."""
+        run_epoch = getattr(self, "_run_t0", None)
+        log = getattr(self, "_ft_wall_log", None)
+        if log is None or getattr(self, "_ft_wall_log_epoch", None) != run_epoch:
+            log = FtPassWallLog()
+            self._ft_wall_log = log
+            self._ft_wall_log_epoch = run_epoch
+        return log
+
+    @property
+    def ft_pass_walls(self) -> list:
+        """The per-FT-pass wall breakdown (``[{"label", "wall_s"}, ...]``)."""
+        return self._ft_pass_wall_log().passes
+
+    @property
+    def max_ft_pass_wall_s(self) -> float:
+        """The worst single fine-tuning pass wall in seconds (AC5's number).
+
+        0.0 when no FT pass ran — a well-defined float, never ``None`` (A4's AC5
+        verdict reads ``max_ft_pass_wall_s`` as the per-FT-step wall to threshold)."""
+        return self._ft_pass_wall_log().max_wall_s
+
+    def ft_pass_wall_metrics(self) -> dict:
+        """The AC5 metric bundle the run can persist alongside its artifacts: the
+        max single-pass wall (the verdict number) + the per-pass breakdown."""
+        return {
+            "max_ft_pass_wall_s": self.max_ft_pass_wall_s,
+            "passes": self.ft_pass_walls,
+        }
 
     def _clone_state(self):
         return (self._checkpoint_guard.snapshot(), self._get_extra_state())
@@ -305,22 +345,23 @@ class SmoothAdaptationCycleMixin(TunerBase):
         hooks = self._recovery_training_hooks(rate)
         plateau_factor, plateau_reductions = self._recovery_plateau_kwargs()
         check_interval = self._recovery_check_interval()
-        recovery_result = RecoveryEngine.train_to_target(
-            self.trainer,
-            lr,
-            target,
-            max_steps=self._budget.max_training_steps,
-            hooks=hooks,
-            optimizer=self._recovery_optimizer(lr),
-            validation_n_batches=self._budget.progress_eval_batches,
-            check_interval=check_interval,
-            patience=_RECOVERY_PATIENCE,
-            min_steps=check_interval * 3,
-            min_improvement=self._budget.accuracy_se(),
-            plateau_lr_factor=plateau_factor,
-            plateau_lr_reductions=plateau_reductions,
-            return_steps=getattr(self, "_stabilization_bounded", False),
-        )
+        with self._ft_pass_wall_log().time_pass("recover"):
+            recovery_result = RecoveryEngine.train_to_target(
+                self.trainer,
+                lr,
+                target,
+                max_steps=self._budget.max_training_steps,
+                hooks=hooks,
+                optimizer=self._recovery_optimizer(lr),
+                validation_n_batches=self._budget.progress_eval_batches,
+                check_interval=check_interval,
+                patience=_RECOVERY_PATIENCE,
+                min_steps=check_interval * 3,
+                min_improvement=self._budget.accuracy_se(),
+                plateau_lr_factor=plateau_factor,
+                plateau_lr_reductions=plateau_reductions,
+                return_steps=getattr(self, "_stabilization_bounded", False),
+            )
         self._accumulate_gradual_steps(recovery_result)
         return lr, recovery_result
 
@@ -547,19 +588,20 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
         for attempt, lr_to_use in enumerate(_attempt_lrs()):
             hooks = self._recovery_training_hooks(1.0)
-            RecoveryEngine.train_to_target(
-                self.trainer,
-                lr_to_use,
-                self._get_target(),
-                max_steps=self._budget.max_training_steps,
-                hooks=hooks,
-                optimizer=self._recovery_optimizer(lr_to_use),
-                validation_n_batches=self._budget.progress_eval_batches,
-                check_interval=self._budget.check_interval,
-                patience=_RECOVERY_PATIENCE,
-                min_steps=self._budget.check_interval * 3,
-                min_improvement=self._budget.accuracy_se() / 2,
-            )
+            with self._ft_pass_wall_log().time_pass("below_floor_recover"):
+                RecoveryEngine.train_to_target(
+                    self.trainer,
+                    lr_to_use,
+                    self._get_target(),
+                    max_steps=self._budget.max_training_steps,
+                    hooks=hooks,
+                    optimizer=self._recovery_optimizer(lr_to_use),
+                    validation_n_batches=self._budget.progress_eval_batches,
+                    check_interval=self._budget.check_interval,
+                    patience=_RECOVERY_PATIENCE,
+                    min_steps=self._budget.check_interval * 3,
+                    min_improvement=self._budget.accuracy_se() / 2,
+                )
             val_acc = float(self.trainer.validate_n_batches(n_eval))
             if val_acc > best_val:
                 best_val = val_acc
