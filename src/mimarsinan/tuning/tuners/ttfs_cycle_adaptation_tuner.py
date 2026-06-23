@@ -92,12 +92,21 @@ from mimarsinan.tuning.orchestration.ramp_strategy import RampStrategy
 def _conversion_characterizer_for(tuner):
     """The E4 pre-flight characterizer the live tuner hands the ConversionPolicy.
 
-    The propose → CONFIRM → escalate ``Characterizer`` seam (EF3). ``None`` makes the
-    policy use its conservative no-op default (:class:`AlwaysMatchesCharacterizer`) —
-    the byte-identical default while the layer is off. The real forward-mostly probes
-    (cold-cascade liveness / ramp monotonicity / staircase-vs-LIF ceiling / firing-gain)
-    are research thread R1; this is the seam Fix B overrides to supply them per model."""
-    return None
+    The propose → CONFIRM → escalate ``Characterizer`` seam (EF3). DEFAULT-OFF
+    (``conversion_policy`` unset) ⇒ ``None`` ⇒ the policy is inert and the
+    characterizer is NEVER constructed ⇒ byte-identical. When the policy is enabled
+    AND the cell is the cascaded fire-once one (whose recipe carries the real probe
+    assumptions), build the real :class:`CascadeCharacterizer` with ``context`` =
+    the tuner's trainer (its ``iter_validation_batches`` is the calibration-batch
+    source); the four forward-only probes (cold-cascade liveness / ramp monotonicity
+    / staircase-vs-LIF ceiling / firing-gain) then confirm the recipe on this model."""
+    if not bool(tuner.pipeline.config.get("conversion_policy", False)):
+        return None
+    if tuner._synchronized:
+        return None
+    from mimarsinan.tuning.orchestration.characterization import CascadeCharacterizer
+
+    return CascadeCharacterizer(context=tuner.trainer, n_batches=1, S=tuner._T)
 
 
 class _SegmentSpikeForward(LazyExecutorForward):
@@ -359,6 +368,9 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
                 config, distmatch_driven=distmatch_driven,
             )
 
+        # The real characterizer self-carries ``context=self.trainer`` (its
+        # calibration-batch source), so the contract seam need not re-thread it —
+        # keeping the call signature byte-identical to the inert wiring.
         conversion_decision = contract.conversion_policy(
             self.pipeline.config,
             model=self.model,

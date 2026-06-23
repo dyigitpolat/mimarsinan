@@ -316,7 +316,7 @@ class DeploymentPlan:
 
         return TemporalAllocationResolver.from_config(self.config).resolve(depth=depth)
 
-    def conversion_policy(self, *, model=None, characterizer=None):
+    def conversion_policy(self, *, model=None, characterizer=None, context=None):
         """The E4 characterization-and-policy decision for this plan's (firing ×
         sync) cell — the keystone seam (propose → confirm → escalate).
 
@@ -324,9 +324,11 @@ class DeploymentPlan:
         the returned ``ConversionDecision`` names the CURRENT behavior
         (driver=controller, no characterization run) so nothing changes. When opted
         in, the plan's policy proposes the recipe, the ``characterizer`` confirms it
-        on ``model``, and a mismatch escalates to the controller fallback rather than
-        shipping a silent regression. This is the scaffolding Fix B switches on
-        later; it is exposed, NOT enabled."""
+        on ``model`` (calibration batches drawn from ``context``, the trainer), and a
+        mismatch escalates to the controller fallback rather than shipping a silent
+        regression. ``context`` is a backward-compatible keyword (default None ⇒
+        inert ⇒ byte-identical). This is the scaffolding Fix B switches on later; it
+        is exposed, NOT enabled."""
         from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
         return ConversionPolicy.resolve(
@@ -334,4 +336,5 @@ class DeploymentPlan:
             mode_policy=self.mode_policy(),
             model=model,
             characterizer=characterizer,
+            context=context,
         )
