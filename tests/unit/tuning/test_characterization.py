@@ -1,10 +1,47 @@
 """Characterization phase: monotonicity verdict + slope→epsilon (P5c)."""
 
 import pytest
+import torch
 
-from mimarsinan.tuning.orchestration.characterization import characterize, Profile
+from conftest import make_tiny_supermodel
+from mimarsinan.tuning.orchestration.characterization import (
+    CascadeCharacterizer,
+    characterize,
+    Profile,
+)
 
 GRID = [i / 10 for i in range(11)]  # 0.0 .. 1.0
+
+
+def _param_dtypes(model):
+    return {p.dtype for p in model.parameters()}
+
+
+def test_staircase_means_does_not_leak_double_dtype_into_the_model():
+    # The keystone CONFIRM runs the analytical staircase twin (which casts to
+    # float64 for the probe); the model it is handed MUST come back in its
+    # original dtype, or the very next pipeline forward (baseline calibration)
+    # crashes with `input Half / bias double`.
+    model = make_tiny_supermodel()
+    before = _param_dtypes(model)
+    assert before == {torch.float32}
+
+    char = CascadeCharacterizer(calib_inputs=torch.randn(2, 1, 8, 8), S=4)
+    char._staircase_means(model, torch.randn(2, 1, 8, 8))
+
+    assert _param_dtypes(model) == before
+
+
+def test_characterize_confirm_preserves_model_dtype():
+    # End-to-end CONFIRM verdict: a full characterize() call (all four probes)
+    # must not mutate the model's parameter dtype.
+    model = make_tiny_supermodel()
+    before = _param_dtypes(model)
+
+    char = CascadeCharacterizer(calib_inputs=torch.randn(2, 1, 8, 8), S=4)
+    char.characterize(model=model, recipe=None)
+
+    assert _param_dtypes(model) == before
 
 
 def test_smooth_monotone_curve_is_monotonic_with_large_epsilon():
