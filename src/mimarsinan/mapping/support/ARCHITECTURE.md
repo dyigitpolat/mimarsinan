@@ -7,7 +7,7 @@ activation scales, bias bakes, scheduling).
 
 | File | Exports | Role |
 |------|---------|------|
-| `activation_scales.py` | `compute_node_output_scales`, `compute_node_input_scales` | IR-graph activation scale tables for TTFS / ComputeOp rescaling. |
+| `activation_scales.py` | `compute_node_output_scales`, `compute_node_input_scales` | IR-graph activation scale tables for TTFS / ComputeOp rescaling. Neural-node values are scalar `float` or a per-channel `np.ndarray` (`ttfs_theta_cotrain` per-output theta, len == out features); ComputeOp in/out scales stay a single scalar mean (the value-preserving `in==out` cancel the executor's `float(...)` cast needs). |
 | `compute_modules.py` | host-op payload classes | Host-side ComputeOp payload classes. |
 | `core_geometry.py` | `used_neurons`, … | Occupied axon/neuron counts for HardCore-style objects. |
 | `ir_source_spans.py` / `spike_source_spans.py` | span builders | Source span tables for segment I/O. |
