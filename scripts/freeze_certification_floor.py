@@ -65,6 +65,18 @@ def _parse_args(argv=None) -> argparse.Namespace:
         "--wall-clock-budget-s", type=float, default=None,
         help="absolute wall-clock budget override (wins over --wall-clock-slack)",
     )
+    p.add_argument(
+        "--ac1-target", type=float, default=None,
+        help="F1 AC1 absolute deployed-accuracy target (overlay; relative gate unchanged)",
+    )
+    p.add_argument(
+        "--ac2-reference", type=float, default=None,
+        help="F1 AC2 ANN reference accuracy the deployed forward must match (lossless)",
+    )
+    p.add_argument(
+        "--ac5-budget-s", type=float, default=None,
+        help="F1 AC5 per-FT-step wall budget in seconds",
+    )
     p.add_argument("--commit", default=None, help="commit the numbers were measured at")
     p.add_argument(
         "--samples", type=int, default=None,
@@ -101,6 +113,9 @@ def main(argv=None) -> int:
         wall_clock_slack=args.wall_clock_slack,
         wall_clock_budget_s=args.wall_clock_budget_s,
         provenance=provenance,
+        ac1_target=args.ac1_target,
+        ac2_reference=args.ac2_reference,
+        ac5_budget_s=args.ac5_budget_s,
     )
     save_floor_book(book, args.book)
 
