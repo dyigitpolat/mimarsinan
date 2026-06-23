@@ -57,6 +57,28 @@ class TestCertificationCell:
         with pytest.raises(ValueError, match="@backend"):
             CertificationCell.from_key("lif")
 
+    def test_variant_defaults_none_keeps_canonical_key(self):
+        # Default variant => the key is byte-identical to the pre-variant format,
+        # so adding the field changes no existing floor-book key.
+        assert CertificationCell("lif", None, "nevresim").variant is None
+        assert CertificationCell("lif", None, "nevresim").cell_key == "lif@nevresim"
+
+    def test_variant_disambiguates_same_recipe_cell(self):
+        # Two deployment configs that share a (firing × sync) recipe cell but have
+        # distinct floors (e.g. plain vs pruned LIF) get distinct keys.
+        plain = CertificationCell("lif", None, "nevresim", variant="rate")
+        pruned = CertificationCell("lif", None, "nevresim", variant="pruned_scheduled")
+        assert plain.cell_key == "lif@nevresim#rate"
+        assert pruned.cell_key == "lif@nevresim#pruned_scheduled"
+        assert plain.cell_key != pruned.cell_key
+
+    def test_variant_key_round_trips(self):
+        for cell in (
+            CertificationCell("lif", None, "nevresim", variant="rate"),
+            CertificationCell("ttfs_cycle_based", "cascaded", "sanafe", variant="nobias"),
+        ):
+            assert CertificationCell.from_key(cell.cell_key) == cell
+
     def test_from_mode_policy_reuses_mode_naming(self):
         from mimarsinan.chip_simulation.spiking_mode_policy import (
             policy_for_spiking_mode,

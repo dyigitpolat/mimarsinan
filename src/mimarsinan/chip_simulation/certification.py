@@ -82,25 +82,38 @@ class CertificationCell:
     firing: str
     sync: Optional[str]
     backend: str
+    # An optional per-deployment-config discriminator within a (firing × sync ×
+    # backend) recipe cell. Two configs can share a recipe cell yet have distinct
+    # regression floors (e.g. plain vs pruned LIF, or biased vs no-bias cascaded);
+    # ``variant`` keeps their floors separate. ``None`` (the default) leaves the key
+    # byte-identical to the pre-variant ``mode[/schedule]@backend`` format.
+    variant: Optional[str] = None
 
     @property
     def cell_key(self) -> str:
-        """Canonical string key — ``mode[/schedule]@backend``.
+        """Canonical string key — ``mode[/schedule]@backend[#variant]``.
 
         Reuses the ``mode[/schedule]`` naming the E4 proposer and E3 calibration
         already use (so a cell is the SAME named thing across the program), suffixed
-        with the backend it was measured on.
+        with the backend it was measured on and, when set, a ``#variant`` tag that
+        distinguishes deployment configs sharing the same recipe cell.
         """
         mode = self.firing if self.sync is None else f"{self.firing}/{self.sync}"
-        return f"{mode}@{self.backend}"
+        key = f"{mode}@{self.backend}"
+        return key if self.variant is None else f"{key}#{self.variant}"
 
     @classmethod
     def from_key(cls, key: str) -> "CertificationCell":
-        """Parse a canonical ``mode[/schedule]@backend`` key back into a cell."""
+        """Parse a canonical ``mode[/schedule]@backend[#variant]`` key into a cell."""
         if "@" not in key:
             raise ValueError(
                 f"certification cell key {key!r} is missing the '@backend' suffix"
             )
+        variant = None
+        if "#" in key:
+            key, variant = key.rsplit("#", 1)
+            if not variant:
+                raise ValueError(f"certification cell key has an empty '#variant'")
         mode_part, backend = key.rsplit("@", 1)
         if "/" in mode_part:
             firing, sync = mode_part.split("/", 1)
@@ -108,19 +121,22 @@ class CertificationCell:
             firing, sync = mode_part, None
         if not firing or not backend:
             raise ValueError(f"certification cell key {key!r} is malformed")
-        return cls(firing=firing, sync=sync, backend=backend)
+        return cls(firing=firing, sync=sync, backend=backend, variant=variant)
 
     @classmethod
-    def from_mode_policy(cls, mode_policy: Any, *, backend: str) -> "CertificationCell":
+    def from_mode_policy(
+        cls, mode_policy: Any, *, backend: str, variant: Optional[str] = None
+    ) -> "CertificationCell":
         """Build a cell from a (firing × sync) ``SpikingModePolicy`` + a backend.
 
         Reuses the policy's ``spiking_mode`` / ``schedule`` so the cell names the
-        same (firing × sync) thing the E3/E4 layers key on.
+        same (firing × sync) thing the E3/E4 layers key on. ``variant`` optionally
+        tags the deployment config within that recipe cell.
         """
         firing = str(getattr(mode_policy, "spiking_mode", "lif"))
         sync = getattr(mode_policy, "schedule", None)
         sync = None if sync is None else str(sync)
-        return cls(firing=firing, sync=sync, backend=str(backend))
+        return cls(firing=firing, sync=sync, backend=str(backend), variant=variant)
 
 
 @dataclass(frozen=True)
