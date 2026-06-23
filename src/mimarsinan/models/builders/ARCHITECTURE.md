@@ -16,12 +16,13 @@ Factory classes that construct `Supermodel` instances (category "native") or nat
 | `torch_custom_builder.py` | `TorchCustomBuilder` | Builds a native model from a user-provided factory |
 | `torch_sequential_linear_builder.py` | `TorchSequentialLinearBuilder` | Builds native Sequential(Flatten, Linear, …) |
 | `torch_sequential_conv_builder.py` | `TorchSequentialConvBuilder` | Builds native Sequential(Conv2d, ReLU, MaxPool2d, Flatten, Linear, …); two IR segments |
+| `deep_mlp_builder.py` | `DeepMLPBuilder` | Builds native `DeepMLP` (registered as `deep_mlp`, category "torch"); configurable-depth narrow Linear+ReLU stack, the depth-probe vehicle |
 
 Each builder implements `build(configuration) -> nn.Module`. Builders self-register via `@ModelRegistry.register(id, label=..., category=...)` and implement `get_config_schema()`. Category "torch" builders return a plain `nn.Module`; `TorchMappingStep` converts them to `Supermodel` after pretraining.
 
 ## Dependencies
 
-- **Internal**: `models.supermodel`, `models.preprocessing.input_cq`, `models.perceptron_mixer.*`, `models.torch_mlp_mixer`, `models.torch_mlp_mixer_core`.
+- **Internal**: `models.supermodel`, `models.preprocessing.input_cq`, `models.perceptron_mixer.*`, `models.torch_mlp_mixer`, `models.torch_mlp_mixer_core`, `models.deep_mlp`.
 - **External**: `torch`, `torchvision` (for torch_* builders).
 
 ## Dependents
@@ -30,4 +31,4 @@ Each builder implements `build(configuration) -> nn.Module`. Builders self-regis
 
 ## Exported API (\_\_init\_\_.py)
 
-`SimpleMLPBuilder`, `TorchMLPMixerBuilder`, `TorchMLPMixerCoreBuilder`, `TorchVGG16Builder`, `TorchViTBuilder`, `TorchSqueezeNet11Builder`, `TorchCustomBuilder`, `TorchSequentialLinearBuilder`, `TorchSequentialConvBuilder`.
+`SimpleMLPBuilder`, `TorchMLPMixerBuilder`, `TorchMLPMixerCoreBuilder`, `TorchVGG16Builder`, `TorchViTBuilder`, `TorchSqueezeNet11Builder`, `TorchCustomBuilder`, `TorchSequentialLinearBuilder`, `TorchSequentialConvBuilder`, `DeepMLPBuilder`.
