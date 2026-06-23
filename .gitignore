@@ -164,3 +164,6 @@ experiments/fixb_demo/
 # Transient Lane-2 finish-campaign configs
 experiments/finish/
 .finish_patches/
+
+# Autonomous campaign queue/logs/status (transient)
+runs/campaign/
