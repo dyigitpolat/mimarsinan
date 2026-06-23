@@ -19,6 +19,7 @@ import torch
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.checkpoint_guard import Handle
 from mimarsinan.tuning.tuners.perceptron_transform_tuner import (
     PerceptronTransformTuner,
 )
@@ -112,8 +113,11 @@ class TestRollbackIncludesAuxModel:
     def test_clone_state_returns_tuple_for_aux_trainer(self, tuner):
         state = tuner._clone_state()
         model_state, extra = state
-        assert isinstance(model_state, tuple), (
-            "clone_state_for_trainer should return (aux_sd, model_sd) tuple"
+        assert isinstance(model_state, Handle), (
+            "_clone_state should wrap the model snapshot in a CheckpointGuard.Handle"
+        )
+        assert isinstance(model_state.state, tuple), (
+            "aux-trainer Handle.state should hold the (aux_sd, model_sd) tuple"
         )
 
     def test_aux_model_restored_on_rollback(self, tuner):
