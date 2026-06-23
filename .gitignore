@@ -155,3 +155,9 @@ data/
 
 .claude
 .compilagent
+
+# Transient certification-campaign configs (regenerable from
+# scripts/run_certification_campaign.py); the durable artifacts are the frozen
+# floor book + results + report under docs/certification/.
+experiments/certification/
+experiments/fixb_demo/
