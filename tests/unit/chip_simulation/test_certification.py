@@ -572,19 +572,27 @@ class TestFloorStaleness:
 # --------------------------------------------------------------------------- #
 
 class TestShippedFloorBookLoads:
-    def test_shipped_floor_book_loads_with_overlay_present(self):
-        # (e) The existing docs/certification/regression_floor.json — frozen WITHOUT
-        # any absolute targets — still loads, all absolute fields default None, and
-        # the relative verdict for one of its cells is unchanged.
-        import os
+    def test_pre_overlay_floor_book_loads_with_fields_defaulting_none(self, tmp_path):
+        # (e) A book frozen WITHOUT any absolute targets (the pre-overlay JSON format)
+        # still loads, all absolute fields default None, and the relative verdict is
+        # unchanged — A4's backward-compat invariant, tested against a synthetic book
+        # (decoupled from the live regression_floor.json, which Phase 3 legitimately
+        # populates with absolute targets).
+        import json
 
-        repo = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        )
-        path = os.path.join(repo, "docs", "certification", "regression_floor.json")
-        if not os.path.isfile(path):
-            pytest.skip("shipped regression_floor.json not present in this checkout")
-        book = load_floor_book(path)
+        data = {
+            "format_version": FLOOR_BOOK_FORMAT_VERSION,
+            "floors": {
+                "lif@nevresim#rate": {
+                    "deployed_accuracy": 0.972, "wall_clock_s": 1703.19,
+                    "eps": 0.005, "wall_clock_slack": 0.25,
+                    "wall_clock_budget_s": None, "provenance": {},
+                }
+            },
+        }
+        path = tmp_path / "pre_overlay_floor.json"
+        path.write_text(json.dumps(data))
+        book = load_floor_book(str(path))
         cell = CertificationCell("lif", None, "nevresim", variant="rate")
         floor = book.floor_for(cell)
         assert floor is not None
