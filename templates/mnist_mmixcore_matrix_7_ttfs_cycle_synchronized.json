@@ -86,7 +86,9 @@
     "encoding_layer_placement": "subsume",
     "activation_quantization": false,
     "weight_quantization": true,
-    "ttfs_cycle_schedule": "synchronized"
+    "ttfs_cycle_schedule": "synchronized",
+    "ttfs_blend_fast": true,
+    "ttfs_blend_fast_stabilize_steps": 1200
   },
   "target_metric_override": null,
   "start_step": null,
