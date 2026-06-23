@@ -161,3 +161,6 @@ data/
 # floor book + results + report under docs/certification/.
 experiments/certification/
 experiments/fixb_demo/
+# Transient Lane-2 finish-campaign configs
+experiments/finish/
+.finish_patches/
