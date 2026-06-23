@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip(
+    "lava.magma.core.run_configs",
+    reason="lava-nc not installed; LavaLoihiRunner is unavailable",
+)
+
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.lava_loihi.runner import LavaLoihiRunner
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
