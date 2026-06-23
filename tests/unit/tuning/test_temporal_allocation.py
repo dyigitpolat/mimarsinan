@@ -2,7 +2,10 @@
 
 Locks: default ``uniform`` returns the SAME global S for every depth (byte-identical);
 ``explicit`` parses + validates a per-depth list; ``budget`` is a no-op that returns
-uniform + a ``derivation_deferred`` marker; the mode resolver rejects unknowns.
+uniform + a ``derivation_deferred`` marker; the mode resolver rejects unknowns. The
+``uniform`` mode is the ONLY one actually wired into the forwards/sim — the supported-mode
+SSOT (``S_ALLOCATION_SUPPORTED_MODES`` + ``unsupported_s_allocation_error``) names that,
+so config-validation can loud-reject the still-reserved ``explicit``/``budget`` modes.
 """
 
 import pytest
@@ -12,10 +15,12 @@ from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_BUDGET,
     S_ALLOCATION_EXPLICIT,
     S_ALLOCATION_MODES,
+    S_ALLOCATION_SUPPORTED_MODES,
     S_ALLOCATION_UNIFORM,
     TemporalAllocation,
     TemporalAllocationResolver,
     resolve_s_allocation_mode,
+    unsupported_s_allocation_error,
 )
 
 
@@ -37,6 +42,35 @@ class TestModeResolution:
 
     def test_modes_tuple(self):
         assert S_ALLOCATION_MODES == ("uniform", "explicit", "budget")
+
+
+class TestSupportedModesSSOT:
+    """``uniform`` is the only WIRED mode; ``explicit``/``budget`` stay reserved.
+
+    The SSOT the config-validation layer reads to loud-reject the unwired modes
+    (so a user cannot silently reach the no-op/uniform resolver path).
+    """
+
+    def test_only_uniform_is_supported(self):
+        assert S_ALLOCATION_SUPPORTED_MODES == (S_ALLOCATION_UNIFORM,)
+
+    def test_reserved_modes_are_declared_but_not_supported(self):
+        # Every reserved mode is still a recognized mode (round-trips, has a resolver
+        # seam) but is NOT in the supported set => validation must reject it.
+        for mode in (S_ALLOCATION_EXPLICIT, S_ALLOCATION_BUDGET):
+            assert mode in S_ALLOCATION_MODES
+            assert mode not in S_ALLOCATION_SUPPORTED_MODES
+
+    def test_unsupported_error_message_names_mode_and_uniform(self):
+        for mode in (S_ALLOCATION_EXPLICIT, S_ALLOCATION_BUDGET):
+            msg = unsupported_s_allocation_error(mode)
+            assert f"s_allocation={mode!r}" in msg
+            assert "reserved" in msg or "not implemented" in msg
+            assert "only 'uniform' is supported" in msg
+
+    def test_unsupported_error_is_a_plain_string(self):
+        # A reusable message builder (validation appends it to its error list).
+        assert isinstance(unsupported_s_allocation_error(S_ALLOCATION_BUDGET), str)
 
 
 class TestUniformIsByteIdentical:
