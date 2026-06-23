@@ -271,6 +271,7 @@ class ConversionPolicy:
         mode_policy: Any,
         model: Any = None,
         characterizer: Optional[Characterizer] = None,
+        context: Any = None,
     ) -> ConversionDecision:
         recipe = propose_recipe(mode_policy)
 
@@ -285,7 +286,9 @@ class ConversionPolicy:
             )
 
         char = characterizer or cls.default_characterizer()
-        result = char.characterize(model=model, recipe=recipe)
+        # ``context`` is the calibration-batch source (the trainer); a None-context
+        # characterizer (the inert default) ignores it. Backward-compatible keyword.
+        result = char.characterize(model=model, recipe=recipe, context=context)
 
         if result.matches:
             return ConversionDecision(
