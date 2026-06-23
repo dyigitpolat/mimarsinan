@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("ffcv", reason="ffcv not installed; ffcv package import is unavailable")
+
 from mimarsinan.data_handling.ffcv.pipeline_spec import (
     FieldSpec,
     PipelineSpec,
