@@ -128,15 +128,21 @@ def read_leases(directory: Optional[str] = None,
 
 def choose(mode: str, need_mb: int, stats: Sequence[GpuStat],
            leases: Sequence[Lease],
-           free_frac: float = FREE_FRAC, util_max: int = UTIL_MAX) -> Optional[int]:
+           free_frac: float = FREE_FRAC, util_max: int = UTIL_MAX,
+           max_per_gpu: Optional[int] = None) -> Optional[int]:
     """Pure pick: the GPU index to claim for ``mode``, or None if none is eligible.
 
     ``free`` -> an exclusively-free, unleased GPU (load-balanced: most idle memory).
     ``fit``  -> a GPU not held by a ``free`` lease whose ``mem_free`` minus this
     pool's ``fit`` reservations fits ``need_mb`` (worst-fit: most remaining headroom).
+    ``max_per_gpu`` caps concurrent ``fit`` leases per GPU so memory packing can't
+    oversubscribe a card (compute/CPU thrash, false OOM crashes).
     """
     by_gpu_free = {s.index: any(l.gpu == s.index and l.mode == "free" for l in leases)
                    for s in stats}
+    fit_count = {s.index: sum(1 for l in leases
+                              if l.gpu == s.index and l.mode == "fit")
+                 for s in stats}
     fit_reserved = {s.index: sum(l.mb for l in leases
                                  if l.gpu == s.index and l.mode == "fit")
                     for s in stats}
@@ -148,10 +154,13 @@ def choose(mode: str, need_mb: int, stats: Sequence[GpuStat],
             if s.is_free(free_frac, util_max) and not held[s.index]:
                 candidates.append((s.mem_free, s.index))
         elif mode == "fit":
-            if not by_gpu_free[s.index]:
-                remaining = s.mem_free - fit_reserved[s.index]
-                if remaining >= need_mb:
-                    candidates.append((remaining, s.index))
+            if by_gpu_free[s.index]:
+                continue
+            if max_per_gpu is not None and fit_count[s.index] >= max_per_gpu:
+                continue
+            remaining = s.mem_free - fit_reserved[s.index]
+            if remaining >= need_mb:
+                candidates.append((remaining, s.index))
         else:
             raise ValueError(f"unknown mode {mode!r} (expected 'free' or 'fit')")
     if not candidates:
@@ -177,14 +186,14 @@ def _flock(directory: str):
 def acquire(mode: str, need_mb: int = DEFAULT_FIT_MB,
             directory: Optional[str] = None,
             snapshot: Callable[[], List[GpuStat]] = query_nvidia_smi,
-            cmd: str = "") -> Optional[Lease]:
+            cmd: str = "", max_per_gpu: Optional[int] = None) -> Optional[Lease]:
     """Atomically claim one GPU for ``mode``; returns the Lease or None if none free."""
     directory = directory or lease_dir()
     os.makedirs(directory, exist_ok=True)
     with _flock(directory):
         stats = snapshot()
         leases = read_leases(directory)
-        gpu = choose(mode, need_mb, stats, leases)
+        gpu = choose(mode, need_mb, stats, leases, max_per_gpu=max_per_gpu)
         if gpu is None:
             return None
         path = os.path.join(directory, f"{os.getpid()}_{uuid.uuid4().hex}.lease")

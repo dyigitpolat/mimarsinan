@@ -77,6 +77,16 @@ def test_choose_load_balances_to_most_headroom():
     assert gl.choose("fit", 8000, stats, leases=[]) == 1
 
 
+def test_choose_fit_respects_max_per_gpu_cap():
+    # One big GPU with room for many by memory, but capped at 2 concurrent fit jobs.
+    stats = [stat(0, free=96000, util=0)]
+    two = [gl.Lease(0, os.getpid(), "fit", 8000, "/a"),
+           gl.Lease(0, os.getpid(), "fit", 8000, "/b")]
+    assert gl.choose("fit", 8000, stats, [], max_per_gpu=2) == 0     # 0 leases < 2
+    assert gl.choose("fit", 8000, stats, two, max_per_gpu=2) is None  # at cap
+    assert gl.choose("fit", 8000, stats, two, max_per_gpu=None) == 0  # uncapped ok
+
+
 # --------------------------------------------------------------------------- #
 # lease lifecycle: dead-pid pruning + acquire/release round-trip
 # --------------------------------------------------------------------------- #
