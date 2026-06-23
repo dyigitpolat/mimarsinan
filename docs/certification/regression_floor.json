@@ -1,0 +1,104 @@
+{
+  "floors": {
+    "lif@nevresim#novena_offload": {
+      "deployed_accuracy": 0.974,
+      "eps": 0.005,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 974.53,
+      "wall_clock_slack": 0.25
+    },
+    "lif@nevresim#pruned_scheduled": {
+      "deployed_accuracy": 0.94,
+      "eps": 0.005,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 1205.18,
+      "wall_clock_slack": 0.25
+    },
+    "lif@nevresim#rate": {
+      "deployed_accuracy": 0.972,
+      "eps": 0.005,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 1703.19,
+      "wall_clock_slack": 0.25
+    },
+    "ttfs@nevresim#analytical": {
+      "deployed_accuracy": 0.978,
+      "eps": 0.005,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 1207.58,
+      "wall_clock_slack": 0.25
+    },
+    "ttfs@nevresim#vanilla_noWQ": {
+      "deployed_accuracy": 0.984,
+      "eps": 0.005,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 703.27,
+      "wall_clock_slack": 0.25
+    },
+    "ttfs_cycle_based/cascaded@nevresim#offload_scheduled_nobias": {
+      "deployed_accuracy": 0.932,
+      "eps": 0.01,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 780.44,
+      "wall_clock_slack": 0.25
+    },
+    "ttfs_cycle_based/cascaded@nevresim#plain": {
+      "deployed_accuracy": 0.96,
+      "eps": 0.01,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 762.84,
+      "wall_clock_slack": 0.25
+    },
+    "ttfs_cycle_based/synchronized@nevresim#plain": {
+      "deployed_accuracy": 0.9635,
+      "eps": 0.005,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 234.89,
+      "wall_clock_slack": 0.25
+    },
+    "ttfs_quantized@nevresim#offload": {
+      "deployed_accuracy": 0.972,
+      "eps": 0.005,
+      "provenance": {
+        "commit": "0d156c8",
+        "samples": "full_test"
+      },
+      "wall_clock_budget_s": null,
+      "wall_clock_s": 617.08,
+      "wall_clock_slack": 0.25
+    }
+  },
+  "format_version": 1
+}
