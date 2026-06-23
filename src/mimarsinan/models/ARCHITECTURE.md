@@ -18,6 +18,7 @@ and architecture-specific implementations.
 | `ttfs_kernels.py` | `ttfs_quantized_activation` | Thin aliases over `spiking/wire_semantics.py` kernel pair (names kept for importers). |
 | `lif_kernels.py` | `lif_fire_and_reset` | Shared LIF threshold + Novena/Default reset step for unified and hybrid flows. |
 | `torch_mlp_mixer.py`, `torch_mlp_mixer_core.py`, `mlp_mixer_ref.py` | … | MLP-Mixer variants |
+| `deep_mlp.py` | `DeepMLP` | Narrow configurable-depth `Flatten -> [Linear(width)+act] x depth -> Linear(classes)` stack (pure Linear+ReLU, no conv/attention); the depth-probe vehicle, registered as `deep_mlp` (category "torch") |
 
 ### Subdirectories
 
