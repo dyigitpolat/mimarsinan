@@ -19,11 +19,13 @@ import pytest
 from mimarsinan.chip_simulation.certification import (
     DEFAULT_ACCURACY_EPS,
     FLOOR_BOOK_FORMAT_VERSION,
+    AbsoluteVerdict,
     CertificationCell,
     CertificationFloorBook,
     CertificationStatus,
     RegressionFloor,
     certify,
+    floor_is_stale,
     freeze_cell,
     load_floor_book,
     save_floor_book,
@@ -347,3 +349,253 @@ class TestFreezeThenGate:
             cell, deployed_accuracy=0.94, wall_clock_s=12.0, floor_book=reloaded
         )
         assert verdict.passed
+
+
+# --------------------------------------------------------------------------- #
+# F1 absolute-AC overlay — the ABSOLUTE verdict ALONGSIDE the relative gate.
+# --------------------------------------------------------------------------- #
+
+class TestAbsoluteVerdictOverlay:
+    def _cell(self):
+        return CertificationCell("ttfs_cycle_based", "cascaded", "nevresim")
+
+    def _relative_book(self):
+        # A floor with NO absolute targets (the byte-identical default).
+        return freeze_cell(
+            CertificationFloorBook(), self._cell(),
+            deployed_accuracy=0.95, wall_clock_s=100.0, eps=0.01, wall_clock_slack=0.5,
+        )
+
+    def test_all_none_targets_give_all_none_absolute(self):
+        # (a) With every absolute target unset, the absolute sub-verdict is all-None
+        # and the relative verdict is exactly what it was before the overlay.
+        verdict = certify(
+            self._cell(),
+            deployed_accuracy=0.945, wall_clock_s=120.0,
+            floor_book=self._relative_book(),
+        )
+        assert verdict.status is CertificationStatus.PASS  # relative unchanged
+        abs_v = verdict.absolute
+        assert isinstance(abs_v, AbsoluteVerdict)
+        assert abs_v.ac1_ok is None
+        assert abs_v.ac2_ok is None
+        assert abs_v.ac5_ok is None
+        assert abs_v.accuracy_gap_pp is None
+        assert abs_v.ac5_gap_s is None
+
+    def test_ac1_target_below_does_not_change_relative_pass(self):
+        # (b) ac1_target set above the deployed number ⇒ ac1_ok False and
+        # accuracy_gap_pp < 0, but the RELATIVE status is still PASS (independence).
+        book = freeze_cell(
+            CertificationFloorBook(), self._cell(),
+            deployed_accuracy=0.95, wall_clock_s=100.0, eps=0.01, wall_clock_slack=0.5,
+            ac1_target=0.99,  # absolute lossless target the fast recipe owes
+        )
+        verdict = certify(
+            self._cell(),
+            deployed_accuracy=0.945,  # >= relative floor 0.94, < absolute 0.99
+            wall_clock_s=120.0,
+            floor_book=book,
+        )
+        assert verdict.status is CertificationStatus.PASS  # relative independent
+        assert verdict.passed
+        assert verdict.absolute.ac1_ok is False
+        assert verdict.absolute.accuracy_gap_pp == pytest.approx((0.945 - 0.99) * 100.0)
+        assert verdict.absolute.accuracy_gap_pp < 0
+
+    def test_ac1_target_met_is_ok_with_positive_gap(self):
+        book = freeze_cell(
+            CertificationFloorBook(), self._cell(),
+            deployed_accuracy=0.95, wall_clock_s=100.0,
+            ac1_target=0.94,
+        )
+        verdict = certify(
+            self._cell(), deployed_accuracy=0.96, wall_clock_s=50.0, floor_book=book
+        )
+        assert verdict.absolute.ac1_ok is True
+        assert verdict.absolute.accuracy_gap_pp == pytest.approx((0.96 - 0.94) * 100.0)
+        assert verdict.absolute.accuracy_gap_pp > 0
+
+    def test_ac2_reference_lossless(self):
+        book = freeze_cell(
+            CertificationFloorBook(), self._cell(),
+            deployed_accuracy=0.95, wall_clock_s=100.0,
+            ac2_reference=0.978,  # the ANN reference accuracy (lossless target)
+        )
+        below = certify(
+            self._cell(), deployed_accuracy=0.95, wall_clock_s=50.0, floor_book=book
+        )
+        assert below.absolute.ac2_ok is False  # 0.95 < 0.978 ⇒ not lossless
+        atref = certify(
+            self._cell(), deployed_accuracy=0.978, wall_clock_s=50.0, floor_book=book
+        )
+        assert atref.absolute.ac2_ok is True  # deployed == ANN ref ⇒ lossless
+
+    def test_ac5_budget_exceeded(self):
+        # (c) ac5_budget set + measured max FT wall exceeds it ⇒ ac5_ok False, and
+        # ac5_gap_s is the (measured − budget) overage. Relative unaffected.
+        book = freeze_cell(
+            CertificationFloorBook(), self._cell(),
+            deployed_accuracy=0.95, wall_clock_s=100.0, eps=0.01, wall_clock_slack=0.5,
+            ac5_budget_s=300.0,  # 5-min per-FT-step budget
+        )
+        verdict = certify(
+            self._cell(),
+            deployed_accuracy=0.945, wall_clock_s=120.0,
+            max_ft_pass_wall_s=420.0,  # 7 min > 5 min budget
+            floor_book=book,
+        )
+        assert verdict.status is CertificationStatus.PASS  # relative independent
+        assert verdict.absolute.ac5_ok is False
+        assert verdict.absolute.ac5_gap_s == pytest.approx(420.0 - 300.0)
+
+    def test_ac5_budget_met(self):
+        book = freeze_cell(
+            CertificationFloorBook(), self._cell(),
+            deployed_accuracy=0.95, wall_clock_s=100.0,
+            ac5_budget_s=300.0,
+        )
+        verdict = certify(
+            self._cell(),
+            deployed_accuracy=0.95, wall_clock_s=50.0,
+            max_ft_pass_wall_s=250.0,
+            floor_book=book,
+        )
+        assert verdict.absolute.ac5_ok is True
+        assert verdict.absolute.ac5_gap_s == pytest.approx(250.0 - 300.0)
+        assert verdict.absolute.ac5_gap_s < 0
+
+    def test_ac5_ok_none_when_measurement_absent(self):
+        # Budget set but no measured FT wall passed ⇒ ac5_ok None (cannot evaluate).
+        book = freeze_cell(
+            CertificationFloorBook(), self._cell(),
+            deployed_accuracy=0.95, wall_clock_s=100.0,
+            ac5_budget_s=300.0,
+        )
+        verdict = certify(
+            self._cell(), deployed_accuracy=0.95, wall_clock_s=50.0, floor_book=book
+        )
+        assert verdict.absolute.ac5_ok is None
+        assert verdict.absolute.ac5_gap_s is None
+
+    def test_missing_floor_has_all_none_absolute(self):
+        book = freeze_cell(
+            CertificationFloorBook(),
+            CertificationCell("lif", None, "nevresim"),
+            deployed_accuracy=0.97, wall_clock_s=60.0,
+        )
+        verdict = certify(
+            self._cell(),  # no floor for this cell
+            deployed_accuracy=0.99, wall_clock_s=1.0, max_ft_pass_wall_s=10.0,
+            floor_book=book,
+        )
+        assert verdict.status is CertificationStatus.MISSING_FLOOR
+        assert verdict.absolute.ac1_ok is None
+        assert verdict.absolute.ac2_ok is None
+        assert verdict.absolute.ac5_ok is None
+
+
+# --------------------------------------------------------------------------- #
+# Absolute-target fields on the floor — JSON round-trip + defaults.
+# --------------------------------------------------------------------------- #
+
+class TestAbsoluteTargetFields:
+    def test_defaults_are_none(self):
+        floor = RegressionFloor(deployed_accuracy=0.95, wall_clock_s=70.0)
+        assert floor.ac1_target is None
+        assert floor.ac2_reference is None
+        assert floor.ac5_budget_s is None
+
+    def test_round_trips_through_json_with_new_fields(self, tmp_path):
+        # (d) A floor carrying the new absolute targets serializes and reloads losslessly.
+        book = freeze_cell(
+            CertificationFloorBook(),
+            CertificationCell("ttfs_cycle_based", "cascaded", "nevresim"),
+            deployed_accuracy=0.95, wall_clock_s=70.0, eps=0.01,
+            ac1_target=0.97, ac2_reference=0.978, ac5_budget_s=300.0,
+        )
+        path = tmp_path / "floor.json"
+        save_floor_book(book, str(path))
+        reloaded = load_floor_book(str(path))
+        assert reloaded.to_dict() == book.to_dict()
+        floor = reloaded.floor_for(
+            CertificationCell("ttfs_cycle_based", "cascaded", "nevresim"))
+        assert floor.ac1_target == pytest.approx(0.97)
+        assert floor.ac2_reference == pytest.approx(0.978)
+        assert floor.ac5_budget_s == pytest.approx(300.0)
+
+    def test_freeze_cell_accepts_new_kwargs(self):
+        book = freeze_cell(
+            CertificationFloorBook(),
+            CertificationCell("lif", None, "nevresim"),
+            deployed_accuracy=0.97, wall_clock_s=60.0,
+            ac1_target=0.972, ac2_reference=0.978, ac5_budget_s=300.0,
+        )
+        floor = book.floor_for(CertificationCell("lif", None, "nevresim"))
+        assert floor.ac1_target == pytest.approx(0.972)
+        assert floor.ac2_reference == pytest.approx(0.978)
+        assert floor.ac5_budget_s == pytest.approx(300.0)
+
+
+# --------------------------------------------------------------------------- #
+# Q6 staleness — flag when controller-path code changed since the floor's commit.
+# --------------------------------------------------------------------------- #
+
+class TestFloorStaleness:
+    def _floor(self, commit):
+        return RegressionFloor(
+            deployed_accuracy=0.95, wall_clock_s=70.0,
+            provenance={"commit": commit},
+        )
+
+    def test_stale_when_controller_commit_differs(self):
+        floor = self._floor("deadbee")
+        assert floor_is_stale(floor, "cafef00d") is True
+
+    def test_not_stale_when_controller_commit_matches(self):
+        floor = self._floor("deadbee")
+        assert floor_is_stale(floor, "deadbee") is False
+
+    def test_stale_when_provenance_has_no_commit(self):
+        # No recorded commit ⇒ we cannot prove freshness ⇒ flag stale (warn-capable).
+        floor = RegressionFloor(deployed_accuracy=0.95, wall_clock_s=70.0)
+        assert floor_is_stale(floor, "cafef00d") is True
+
+    def test_not_stale_when_controller_commit_unknown(self):
+        # No controller commit to compare against ⇒ cannot flag (do not hard-fail).
+        floor = self._floor("deadbee")
+        assert floor_is_stale(floor, None) is False
+
+
+# --------------------------------------------------------------------------- #
+# The shipped regression_floor.json loads unchanged (byte-identical default).
+# --------------------------------------------------------------------------- #
+
+class TestShippedFloorBookLoads:
+    def test_shipped_floor_book_loads_with_overlay_present(self):
+        # (e) The existing docs/certification/regression_floor.json — frozen WITHOUT
+        # any absolute targets — still loads, all absolute fields default None, and
+        # the relative verdict for one of its cells is unchanged.
+        import os
+
+        repo = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        )
+        path = os.path.join(repo, "docs", "certification", "regression_floor.json")
+        if not os.path.isfile(path):
+            pytest.skip("shipped regression_floor.json not present in this checkout")
+        book = load_floor_book(path)
+        cell = CertificationCell("lif", None, "nevresim", variant="rate")
+        floor = book.floor_for(cell)
+        assert floor is not None
+        assert floor.ac1_target is None
+        assert floor.ac2_reference is None
+        assert floor.ac5_budget_s is None
+        verdict = certify(
+            cell,
+            deployed_accuracy=floor.deployed_accuracy,
+            wall_clock_s=floor.wall_clock_s,
+            floor_book=book,
+        )
+        assert verdict.status is CertificationStatus.PASS
+        assert verdict.absolute.ac1_ok is None
