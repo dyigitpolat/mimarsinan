@@ -7,8 +7,11 @@ Contains concrete `DataProvider` implementations that self-register with
 
 | File | Provider Name | Dataset |
 |------|--------------|---------|
-| `mnist_data_provider.py` | `"mnist"` | MNIST 28x28 |
-| `mnist32_data_provider.py` | `"mnist32"` | MNIST resized to 32x32 |
+| `mnist_data_provider.py` | `"MNIST_DataProvider"` | MNIST 28x28 |
+| `mnist32_data_provider.py` | `"MNIST32_DataProvider"` | MNIST resized to 32x32 |
+| `fashion_mnist_data_provider.py` | `"FashionMNIST_DataProvider"` | Fashion-MNIST 1x28x28, 10 classes |
+| `kmnist_data_provider.py` | `"KMNIST_DataProvider"` | KMNIST 1x28x28, 10 classes |
+| `svhn_data_provider.py` | `"SVHN_DataProvider"` | SVHN 3x32x32, 10 classes (`split=` train/test) |
 | `cifar10_data_provider.py` | `"cifar10"` | CIFAR-10 |
 | `cifar100_data_provider.py` | `"cifar100"` | CIFAR-100 |
 | `ecg_data_provider.py` | `"ecg"` | ECG time-series classification |
