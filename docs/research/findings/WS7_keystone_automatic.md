@@ -1,3 +1,5 @@
+> ⚠️ **VALIDITY:** deep_mlp results below are an **INVALID host-majority config** (<50% params on-chip; see [VALIDITY_AUDIT.md](VALIDITY_AUDIT.md)). The phenomena may be real but are NOT valid on-chip deployments. Valid trainable-deep vehicle = **deep_cnn**.
+
 # WS7 — The Keystone: Automatic Recipe Selection (propose → confirm → escalate)
 
 **Status (2026-06-24, ESCALATION RE-TEST HARVESTED): the clean re-test of §7 has now run
