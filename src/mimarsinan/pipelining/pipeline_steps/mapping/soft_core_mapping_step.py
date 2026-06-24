@@ -169,6 +169,9 @@ class SoftCoreMappingStep(PipelineStep):
         with _phase("onchip_majority_gate"):
             self._run_onchip_majority_gate(model, ir_graph)
 
+        with _phase("capacity_gate"):
+            self._run_capacity_gate(ir_graph, platform_constraints)
+
         with _phase("pickle_save"):
             self.add_entry("ir_graph", ir_graph, 'pickle')
 
@@ -238,6 +241,30 @@ class SoftCoreMappingStep(PipelineStep):
             f"(on-chip={breakdown.onchip_params}, host={breakdown.host_params}, "
             f"total={breakdown.total_params})"
         )
+
+    def _run_capacity_gate(self, ir_graph, platform_constraints):
+        """Static placement-capacity gate: reject provably-infeasible IR EARLY.
+
+        Computes the SOUND ``estimate_cores_needed`` lower bound (no placement, no
+        sim) and raises ``CapacityExceededError`` — naming the overflowing segment +
+        counts — when it exceeds the declared core budget, replacing the late greedy
+        packer crash (``"No more hard cores available"``) with a diagnosable up-front
+        verdict. Returns the estimate (``None`` when disabled). Opt-out via
+        ``capacity_gate`` (default on)."""
+        if not bool(self.pipeline.config.get("capacity_gate", True)):
+            return None
+        from mimarsinan.mapping.verification.capacity import (
+            estimate_cores_needed,
+        )
+
+        estimate = estimate_cores_needed(ir_graph, platform_constraints)
+        print(
+            f"[SoftCoreMappingStep] placement capacity: needs "
+            f">= {estimate.cores_needed} hard cores, budget {estimate.cores_available} "
+            f"(feasible={estimate.feasible})"
+        )
+        estimate.raise_if_infeasible()
+        return estimate
 
     def _run_torch_sim_parity_check(self, model, ir_graph) -> None:
         """Torch↔DEPLOYED-sim parity (per-run): the NF model's torch forward must

@@ -427,6 +427,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "onchip_majority_min_fraction",
     "onchip_min_fraction",
     "onchip_majority_fraction",
+    "capacity_gate",
     "loihi_parity_sample_index",
     "sanafe_sample_count",
     "sanafe_arch_preset",
