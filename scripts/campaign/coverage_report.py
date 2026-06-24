@@ -69,6 +69,8 @@ def _build_claim(args) -> list:
         pins["firing"] = args.firing
     if args.S:
         pins["S"] = args.S
+    if args.depth:
+        pins["depth"] = args.depth
     if not pins:
         return []
     return claimed_subproduct(**pins)
@@ -136,6 +138,7 @@ def main(argv=None) -> int:
     parser.add_argument("--sync", nargs="*", default=None, help="pin the sync axis")
     parser.add_argument("--firing", nargs="*", default=None, help="pin the firing axis")
     parser.add_argument("--S", nargs="*", default=None, help="pin the S axis")
+    parser.add_argument("--depth", nargs="*", default=None, help="pin the depth axis")
     parser.add_argument("--json", action="store_true", help="emit the report as JSON")
     parser.add_argument("--axes", action="store_true",
                         help="also print the axis classification")
