@@ -117,3 +117,26 @@ deep_cnn / lenet5 / mlp_mixer / VGG16 are VALID majority. **E3 toolset shortfall
 engine at ResNet-50/ViT-B scale) are recorded as research gaps; genericity of the *mechanisms*
 must still hold on the mappable surface. The coverage ledger (E1) reports
 {VALID, VALID_FLAGGED, INVALID, untested} per cell + the named research-gap frontier.
+
+## E3 verdict (measured) → E4 is now a CONFIRMED Wave-C prerequisite
+
+E3 mapping-scalability probe (VGG16 @ 32² and 224², ViT-B; no training):
+- **CIFAR-scale conv maps + completes + value-bit-exact** (940 cores, ~10s placement).
+- **ImageNet-scale conv does NOT map on the current toolset**: default chip → `WideFanInUnsupportedError`
+  (FC fan-in 25088 > 256 axons → coalescing required); with coalescing → placement **`No more hard
+  cores available`** (one early conv segment = 50,176 softcores; **~416,560 cores needed vs 1000 budget,
+  416× overflow**); plus a super-linear placement/sim-time wall. Doc: `docs/research/E3_SCALE_PROBE.md`.
+
+**Flagged research gaps** (per the vision — toolset shortfalls, not blockers): **GAP-1** per-neuron
+*attribution* reassembly scrambles ~2% at VGG-32 scale (value-exact + spike-conserved; a bookkeeping
+bug in `hcm_per_perceptron_counts` under fuse+split); **GAP-2** placement budget exhaustion at
+ImageNet scale (the E4 capacity problem); **GAP-3** wide-flattened-conv-FC needs coalescing (a
+mapping prerequisite).
+
+**Reorder:** E4 moves up from "as E3 demands" to a **confirmed Wave-C prerequisite**. E4 round 1 (cheap,
+launching now) = the **capacity diagnostic**: a static `estimate_cores_needed(ir, platform)` computed at
+SCM time → a clean *capacity verdict* (needed vs available + which segment overflows) replacing the HCM
+"no more cores" crash, wired into the enqueue pre-check so infeasible-at-scale configs never claim a GPU.
+E4 round 2 = capacity-aware placement (bin-packing/look-ahead vs greedy) + the GAP-1 reassembly scale-fix.
+Genericity of the *mechanisms* holds (conversion + value-domain bit-exact at CIFAR); the *toolset* gap to
+ImageNet scale is now named + measured.
