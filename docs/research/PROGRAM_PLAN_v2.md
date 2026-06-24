@@ -159,3 +159,22 @@ count, or is there mapping over-production / a better tiling — and what realis
 makes a 224²-conv deployable at all? The E4 capacity diagnostic (round 1, merged) must become
 **scheduling-aware** (feasible-via-time-multiplexing if peak-phase fits; report phase-count + cost), and
 the scaling program must center on the **Scheduled path**, not weight sharing.
+
+## E4 round 1 finding (Scheduled path): ImageNet conv IS deployable — at a reprogramming cost
+
+Research answer (empirically verified) to "why 413K + is it reducible":
+- **Irreducible spatial-unroll floor for VGG16@224 = ~137,788 softcores** (1 per conv output position — intrinsic,
+  NO weight sharing). The 419K–465K "core" counts are the SUM with axon-tiling frags (ceil(fan-in/max_axons)).
+- **The Scheduled path makes it deployable.** On a 256×256×**2048**-core chip, `allow_scheduling=True` flips
+  infeasible→**feasible-via-scheduling**: peak phase fits (2048), every conv's atomic coalescing unit (≤18) ≪ budget
+  (all schedulable), and VGG16@224 needs **≈209 chip-reprogramming phases** (per-segment fresh-pool model;
+  cross-checked against the real `split_softcores_by_capacity` = 239 sub-segments, lower bound 235 ≤ 239, sound).
+- **So "413K is extreme even scheduled" = it's COSTLY, not infeasible**: ~209 reprogram passes = a real
+  latency/energy cost that is **currently UNMODELED** in `cost_extraction` (GAP-R). The capacity verdict must become
+  scheduling-aware (peak-not-sum + phase_count), and the phase cost must enter the Pareto.
+
+Design: `docs/research/E4_PLACEMENT_SCALING_DESIGN.md`. The round-1 prototype was authored on a STALE base
+(missing the merged E4r1) and refuted (package collision) — the scheduling-aware extension is being re-done on
+current main, EXTENDING the merged `estimate_cores_needed` (not rebuilding). Next: (1) scheduling-aware capacity
+(peak+phase_count) wired into the existing SCM gate + enqueue pre-check; (2) GAP-R reprogramming cost term into
+`cost_extraction`; (3) a real VGG@224 scheduled-build probe confirming peak/phase_count; (4) GAP-1 reassembly fix.
