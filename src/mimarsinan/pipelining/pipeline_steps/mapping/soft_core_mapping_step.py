@@ -166,6 +166,9 @@ class SoftCoreMappingStep(PipelineStep):
 
         ir_graph = apply_ir_pruning_if_enabled(self, model, ir_graph, _PHASE_TAG)
 
+        with _phase("onchip_majority_gate"):
+            self._run_onchip_majority_gate(model, ir_graph)
+
         with _phase("pickle_save"):
             self.add_entry("ir_graph", ir_graph, 'pickle')
 
@@ -205,6 +208,35 @@ class SoftCoreMappingStep(PipelineStep):
             )
         self._soft_core_spiking_metric = float(acc)
         print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
+
+    def _run_onchip_majority_gate(self, model, ir_graph) -> None:
+        """Hard validity gate: the chip must hold the parameter majority.
+
+        A mapping that offloads > half of the deployed model's parameters to
+        host-side ComputeOps (encoding Linear/Conv, classifier readout,
+        attention) is not a genuine on-chip deployment. Gated by
+        ``onchip_majority_gate`` (default on); floor via ``onchip_majority_min_fraction``.
+        """
+        if not bool(self.pipeline.config.get("onchip_majority_gate", True)):
+            return
+        from mimarsinan.mapping.verification.onchip_majority import (
+            assert_onchip_majority_or_raise,
+        )
+
+        total_params = int(sum(p.numel() for p in model.parameters()))
+        breakdown = assert_onchip_majority_or_raise(
+            ir_graph,
+            total_params=total_params,
+            min_fraction=float(
+                self.pipeline.config.get("onchip_majority_min_fraction", 0.5)
+            ),
+        )
+        print(
+            f"[SoftCoreMappingStep] on-chip parameter majority: "
+            f"{breakdown.fraction:.2%} on chip "
+            f"(on-chip={breakdown.onchip_params}, host={breakdown.host_params}, "
+            f"total={breakdown.total_params})"
+        )
 
     def _run_torch_sim_parity_check(self, model, ir_graph) -> None:
         """Torch↔DEPLOYED-sim parity (per-run): the NF model's torch forward must
