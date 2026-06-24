@@ -38,6 +38,10 @@ def _run_soft_core_mapping_then_verification(
     mock_pipeline.config["weight_quantization"] = weight_quantization
     mock_pipeline.config["weight_bits"] = 8
     mock_pipeline.config.setdefault("firing_mode", "Default")
+    # The tiny toy model is host-majority by construction (its encoding layer
+    # is offloaded); this fixture exercises core-weight quantization, not the
+    # on-chip-majority gate (covered by test_onchip_majority.py).
+    mock_pipeline.config["onchip_majority_gate"] = False
 
     mock_pipeline.seed("fused_model", fused_model, step_name="Normalization Fusion")
     mock_pipeline.seed(
