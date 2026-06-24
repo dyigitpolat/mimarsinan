@@ -151,3 +151,31 @@ is the one that holds closest to ceiling among the cycle-based modes.
 
 Cluster `WS-mode`, kind `permode`. One per-mode roll-up verdict (×5) plus one
 synthesis verdict were appended to `runs/campaign/ledger.jsonl`.
+
+---
+
+## 7. Consolidated multi-seed roll-up — ledger upgrade (2026-06-24)
+
+The earlier ledger left **6 `WS-mode/permode` placeholder records with empty
+`run_ids` and `None` means** (the per-mode tables above were correct but not
+machine-cited). This round consolidates them into **one 3-seed roll-up record
+that cites all 15 run_ids** (`pm_{lif,ttfsanalytic,ttfsq,casc,sync}_mmix_mnist_s{0,1,2}`,
+all rc=0), so the director's per-run coverage drops every `permode_*` cell from
+`harvest_todo`. The numbers reproduce §2 exactly — nothing in the analysis changes:
+
+| mode | deployed (mean) | ANN gap (pp) | lossless? |
+|:-----|----------------:|-------------:|:----------|
+| ttfs (analytical) | 0.9807 | +0.15 | **LOSSLESS** (analytical V) |
+| ttfs_quantized | 0.9773 | +0.55 | **≈lossless** (analytical V, act-quant on) |
+| ttfs_cycle synchronized | 0.9607 | +2.19 | no (budget-bound S=4) |
+| lif | 0.9600 | +2.29 | no (budget-bound S=4) |
+| **ttfs_cycle cascaded** | **0.9523** | **+3.11** | **LOSSY OUTLIER** |
+
+**Verdict — CONFIRMED (n=3): cascaded-TTFS is the lossy outlier of the firing-mode
+family at S=4** (−0.84pp vs its synchronized sibling, +3.11pp ANN gap, widest seed
+sd ±0.91pp), while ttfs-analytical is lossless and ttfs_quantized effectively so.
+The cascaded→sync sign is corroborated per-seed (sync−casc = +1.62/+0.18/+0.72pp,
+all positive). **Confound (magnitude only):** the 0.84pp gap is "nevresim-subsampled
+cascaded (1000/10000) vs full-test SCM/HCM synchronized" — see §5.1; sign solid,
+magnitude instrument-mixed. Ledger record: `cluster:"WS-mode"`, `kind:"permode"`,
+`model:"mlp_mixer_core"`, all 15 `run_ids` cited.

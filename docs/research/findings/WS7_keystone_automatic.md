@@ -140,6 +140,92 @@ far above the implied WS3 fast-ladder ~0.77 floor. Runs:
 
 ---
 
+### 0.6 The clean negative control — `conversion_policy` is a *no-op* on a near-lossless VALID `lenet5` cascade (2026-06-24)
+
+§0.1–0.5 established the cp lift on the firing-gain-deficient `deep_mlp d8` (an
+INVALID host-majority vehicle). The complementary prediction: if the lift is
+**firing-gain-deficit-specific** (not a blanket accuracy boost), it must *vanish*
+where the cascade is already near-lossless. This is the negative control, run on the
+**VALID on-chip-majority `lenet5`** CNN (3 seeds/arm, `max_simulation_samples=1000`,
+`ttfs_cycle_based` S=4; all 12 runs `rc=0`, artifact_ok).
+
+| dataset | cpFalse (3-seed mean) | cpTrue | cp lift | cpFalse→ANN gap | deficit regime |
+|:--------|----------------------:|-------:|--------:|----------------:|:---------------|
+| mnist  | **0.9847** (.984/.983/.987) | **0.9840** (.978/.986/.988) | **−0.07pp** | −0.63pp (near-lossless) | none |
+| fashion_mnist | **0.8460** (.834/.852/.852) | **0.8577** (.865/.852/.856) | **+1.17pp** | −7.09pp (mild) | mild |
+| *(ref)* deep_mlp d8 mnist | 0.887 | 0.948 | **+6.1pp** | (host-majority, INVALID) | severe |
+| *(ref)* deep_mlp d8 fmnist | 0.756 | 0.858 | **+10.2pp** | (host-majority, INVALID) | severe |
+
+**Verdict — CONFIRMED: `conversion_policy` is a deficit-proportional lever, not a
+blanket boost.** On **MNIST/lenet5** (cascade already within 0.63pp of the 0.9910 ANN)
+cp produces a **−0.07pp** change — a tiny *regression*, i.e. a clean MATCH no-op
+exactly where predicted. On **FashionMNIST/lenet5** (only mildly degraded, −7pp vs the
+0.9169 ANN) cp lifts **+1.17pp** — real but an **order of magnitude below** the
++6.1pp / +10.2pp rescue it produced on the firing-gain-deficient deep_mlp d8 cells.
+The lift **scales with the deficit** (none → none, mild → small, severe → large),
+confirming the WS7 controller rescue is firing-gain-deficit-SPECIFIC.
+
+**Confounds.** (1) This is a `conversion_policy` true-vs-false control, **NOT** a
+cascaded-vs-synchronized pairing — all 12 runs are cascaded (`ttfs_cycle_based`,
+`target_tq=4`, S=4); in the ledger the `cascaded_to_sync_gap_pp` column is repurposed
+as `cp_lift = cpTrue − cpFalse`, and `synchronized_run_ids` holds the cpTrue ids.
+(2) `max_simulation_samples=1000` → ~±1pp granularity; read the lift, not third
+decimals (cpFalse MNIST seed spread .983–.987). (3) ANN refs healthy (MNIST ~0.991,
+FMNIST ~0.917) → genuine deployment, not an untrained/chance artifact. (4) The deep_mlp
+d8 cp baselines are quoted from the §0 records (those cells separately ledgered as
+INVALID host-majority); `lenet5` is the VALID vehicle for this control. Runs:
+`cp_lenet_{MNIST,FashionMNIST}_DataProvider_cp{False,True}_s{0,1,2}`. Ledger:
+`cluster:"WS7"`, `kind:"escalation"`, `model:"lenet5"`, `depth:"cnn"`.
+
+---
+
+### 0.7 The in-distribution VALID counterpart — removing `blend_fast` leaves the raw `mlp_mixer_core` cascade ROBUST (2026-06-24)
+
+§0.1–0.6 stress the keystone where the cascade is *deficient* (`deep_mlp d8`, INVALID)
+or *near-lossless* (`lenet5`, VALID). This row tests the **in-distribution VALID
+vehicle the keystone thresholds were calibrated on** — `mlp_mixer_core`, MNIST,
+cascaded, S=4 — by removing the `blend_fast` revive→refine recovery
+(`ttfs_blend_fast:false`, `conversion_policy:true`) and asking whether the raw cascade
+survives *without* that recovery. 6 runs, 3 seeds/arm, all `rc=0`,
+`max_simulation_samples=1000`. Ledger: `cluster:"WS7"`, `kind:"escalation"`,
+`model:"mlp_mixer_core"`.
+
+| arm | `ttfs_blend_fast` | `conversion_policy` | deployed (3-seed mean) | seeds | ANN | parity |
+|:----|:------------------|:--------------------|-----------------------:|:------|----:|:-------|
+| blend-OFF (cpTrue) | **false** | true | **0.9547** | .954/.956/.954 | 0.9832 | NF↔SCM 1.0, torch↔sim 1.0 |
+| blend-ON baseline (`pm_casc`, cp None) | **true** | None | **0.9523** | .942/.959/.956 | 0.9834 | — |
+| **DELTA** (blend_off − blend_on) | | | **+0.23pp** | | | |
+
+**Verdict — MATCH / robust cascade, NO escalation needed.** Removing the `blend_fast`
+recovery deploys **0.9547** vs the blend-on baseline **0.9523** — a **FLAT +0.23pp,
+within ~1.2pp seed sd** (the blend-on spread 0.942–0.959 is *wider* than the cross-arm
+gap). The raw `mlp_mixer_core` cascade therefore **survives architecturally**: its
+cascade robustness is *not* dependent on the `blend_fast` revive→refine recovery, so
+the keystone MATCHes and **no controller ESCALATE is required** on this in-distribution
+cell. This is the in-distribution VALID-vehicle counterpart to the §0.1–0.4 `deep_mlp`
+INVALID escalation re-test (where the cascade *did* need the controller's recovery):
+exactly where the cascade is healthy, the recovery is a no-op.
+
+**Confounds.** (1) **NOT a cascaded-vs-synchronized pairing** — both arms are cascaded
+(`ttfs_cycle_based`, `target_tq=4`, S=4); no finalized synchronized run exists in this
+batch, so in the ledger `synchronized_run_ids` holds the blend-ON baseline ids and
+`cascaded_to_sync_gap_pp` is repurposed as `blend_off_minus_blend_on = +0.23pp`.
+(2) `max_simulation_samples=1000` → ~±1pp sampling granularity; read the gap, not third
+decimals. (3) **Not a chance/untrained artifact** — ANN healthy (blend-off 0.9832,
+baseline 0.9834), NF↔SCM cascaded agreement 1.0 and torch↔sim parity 1.0 on all 3
+blend-off runs ⇒ the deployed metric is faithful, a genuine firing-gain/recovery
+result. (4) **ESCALATE-vs-MATCH still not separable** — `propose_recipe` always
+proposes `driver=controller` and the decision (`escalated`/`escalation_reason`) is not
+printed; the FLAT delta only shows the `blend_fast` recovery is *unnecessary* on this
+in-distribution cell (consistent with the §0.2 `deep_mlp` no-blend ablation:
+controller==controller no-op when blend off). (5) baseline cp is None (default-off) vs
+blend-off cp=True, but the no-blend ablation shows cp is a near no-op when `blend_fast`
+is off, so the +0.23pp reflects the `blend_fast` removal, not cp. Runs:
+`ws7esc_nb_mmix_cpTrue_s{0,1,2}` (blend-off), `pm_casc_mmix_mnist_s{0,1,2}` (blend-on
+baseline).
+
+---
+
 ## 1. What the keystone is
 
 The keystone is the E4 **CHARACTERIZE → CONFIRM → ESCALATE** layer that picks, per cell,
@@ -440,6 +526,148 @@ remains entirely unproven on real runs.
   `decision.characterization.probes` at the d8 TTFS step, and (optionally) make
   `propose_recipe` propose `fast` for cells expected to keep-fast, so MATCH→fast and
   ESCALATE→controller leave *distinguishable* traces again.
+
+### §8 — lenet5/FMNIST rescue on a VALID vehicle: PARTIAL, ~5.7pp floor remains; theta_cotrain=TRUE never run (2026-06-24)
+
+The §0 +7pp rescue was demonstrated on the **INVALID** host-majority `deep_mlp d8`.
+This batch re-tests the keystone's recoverability claim on the one **VALID**
+`lenet5`/FashionMNIST cascaded cell (ANN ~0.917, 99.1% on-chip), 3 seeds/arm,
+`max_simulation_samples=1000` (read pp, not 3rd decimals; binomial SE ~0.0092).
+Ledger: `cluster:"WS7"`, `kind:"escalation"`, `model:"lenet5"`.
+
+| arm | conversion_policy | theta_cotrain | deployed (3-seed) | ANN gap | lift vs cpFalse | fraction of 7.12pp closed |
+|:----|:-----------------:|:-------------:|------------------:|--------:|----------------:|:--------------------------|
+| cpFalse (baseline, routing OFF) | false | — | **0.846** | 7.12pp | — | — |
+| cpTrue (routing ON) | true | — | **0.8577** | 5.88pp | +1.17pp | ~17% |
+| plnrescue cotFalse | true | false | **0.8603** | 5.71pp | +1.43pp | ~20% |
+
+**Verdict — PARTIAL-RESCUE / FLOOR-REMAINS.** The deficit is real and
+gradient-bearing (NOT dead, NOT untrained-ANN: ANN ~0.917, logs show a
+`finalize_cliff` 0.177 that recovers to ~0.84). But the available controller-routing
+lever (`conversion_policy`) closes only ~17% of the ~7pp gap (+1.17pp) and the
+`plnrescue` baseline (cp ON, `theta_cotrain` OFF) reaches only 0.8603 (residual
+5.71pp). A **hard ~5.6–5.9pp ANN-gap floor remains**. The closeout-10.2 / WS3-4.2
+"non-dead, gradient-bearing deficit is recoverable" claim is therefore **NOT
+validated to lossless on this VALID on-chip vehicle** — it remains shown only on
+the INVALID `deep_mlp d8`. The **WS7 automatic-rescue-on-a-VALID-vehicle cell does
+NOT move to MET** on this evidence.
+
+**Confounds.**
+1. **NO synchronized arm** exists in these 9 runs — all three arms are
+   `ttfs_cycle_schedule=cascaded`; the only rescue/comparison axis is
+   `conversion_policy` (plus the `theta_cotrain=false` baseline). No cascaded→sync
+   gap is reportable; `synchronized_*` fields are null.
+2. **The named rescue lever `theta_cotrain` was NEVER turned ON for this cell.**
+   `plnrescue_*cotFalse` has `ttfs_theta_cotrain=false`, and **no `plnrescue_*cotTrue`
+   run exists** in `q/done/` or `q/failed/`. So the **upper bound of the rescue is
+   UNTESTED here** — recoverability is bounded only by what cpTrue/cotFalse achieve.
+3. **Subsampled eval** (`max_simulation_samples=1000`): 3rd decimals are within
+   binomial noise; only pp-scale gaps are reliable.
+4. NOT confounded by untrained ANN (all ~0.9152–0.9197 ≫ chance 0.10) nor by dead
+   neurons (gradient-bearing: cascade fine-tuning recovers from the finalize cliff).
+
+**Open (the missing rescue arm):** run `plnrescue_lenet_FashionMNIST_cotTrue_s{0,1,2}`
+(cp ON, `ttfs_theta_cotrain=TRUE`) to establish the actual upper bound of the
+per-channel θ-cotrain rescue on this VALID vehicle; without it the keystone's
+recoverability claim stays UNDEMONSTRATED on-chip.
+
+Run ids: `cp_lenet_FashionMNIST_DataProvider_{cpFalse,cpTrue}_s{0,1,2}`,
+`plnrescue_lenet_FashionMNIST_cotFalse_s{0,1,2}`.
+
+---
+
+### §9 — NO controller-rescue on the FIRST VALID `deep_cnn` d6 onset cell; θ-cotrain is BROKEN on the convnet (`item_id=dcnn_d6_onset_gatefix_rescue`, 2026-06-24)
+
+The §0 +7pp controller rescue and closeout-10.2's positive lift were both measured on
+the **INVALID host-majority `deep_mlp d8`**. This is the clean re-test on the **FIRST
+VALID `deep_cnn`** firing-gain-deficit vehicle — the d6 onset rung where the within-CNN
+cascade first breaks (AC_EVIDENCE §1f: lossless ≤d5, ~5pp deficit ≥d6). `deep_cnn` (w16),
+MNIST, `ttfs_cycle_based` S=4, on-chip-majority 99.41%, 3 seeds/arm,
+`max_simulation_samples=200`. Two orthogonal rescue knobs are gridded: `conversion_policy`
+(cp, the controller revive→refine routing) and `ttfs_theta_cotrain` (cot, the per-channel
+θ gain-trim). Ledger: `cluster:"WS7"`, `kind:"escalation"`, `model:"deep_cnn"`, `depth:6`.
+
+| arm | cp | cot | deployed (3-seed) | seeds | ANN | casc→sync gap | rc | verdict |
+|:----|:--:|:---:|------------------:|:------|----:|--------------:|:--:|:--------|
+| no-policy (baseline) | false | false | **0.9500** | .965/.955/.93 | 0.9938 | +4.04pp | 0 | gradient-bearing deficit, no auto-rescue |
+| controller revive→refine | **true** | false | **0.8983** | .985/.94/**.77** | 0.9941 | +9.21pp | 0 | **regresses** (cp lift −5.17pp mean) |
+| θ-cotrain (any cp) | — | **true** | **n/a** | — | — | — | **1** | **BROKEN (rc=1 crash)** |
+
+Synchronized ceiling (`pdcnnbc_d6_synchronized_*`, FULL 10k test): **0.9904**
+[.9889/.9918/.9906], ANN 0.992.
+
+**Verdict — NO-RESCUE-ON-VALID-VEHICLE; closeout-10.2's controller-rescue lift does NOT
+replicate.** On the valid convnet, `conversion_policy` does **not** auto-rescue the d6
+firing-gain deficit: the cpFalse→cpTrue lift is **NEGATIVE** (−5.17pp mean, −1.50pp
+median), because the policy is high-variance and **catastrophically regresses one seed**
+(cpTrue s2 = **0.77**, a genuine finalized collapse). The +2pp s0 lift (0.965→0.985)
+cited as the original signal is a **single-seed artifact** that does not survive seeds
+(s1 0.94, s2 0.77). The orthogonal θ-cotrain knob is **unusable** here (all 6 cotTrue
+runs crash rc=1). So on the convnet there is **no working firing-gain rescue lever**, and
+the no-policy cascaded mean **0.950 plateaus ~4.0pp below the 0.9904 synchronized
+ceiling** and ~4.4pp below ANN — squarely in the AC_EVIDENCE §1f ~5pp d6 plateau band.
+**Synchronized stays the unconditional deep_cnn default.**
+
+**Confounds.**
+1. **θ-cotrain BROKEN (decisive).** All 6 cotTrue runs (cpFalse + cpTrue) finalize rc=1
+   in `q/failed/` with `RuntimeError: [ModelRepresentation] forward failed at node
+   Conv2DPerceptronMapper(name='features_3')` in `converted_model_flow.forward`
+   (proximate torch error: a tensor-shape mismatch `28 vs 16 at dim 3`). The 0.99+
+   `__target_metric.json` floats on disk for those runs are **stale pre-deployment
+   ANN-stage artifacts** (the runs crash before deployment) — **not** valid deployed
+   metrics. ⇒ `conversion_policy` is the **only measurable** rescue lever on the convnet.
+2. **cpTrue s2 = 0.77 is VARIANCE, not a crash.** It is rc=0 in `q/done/`, on-chip
+   99.41%, NF↔SCM cascaded agreement **1.0000**, torch↔deployed-sim parity **1.0000** —
+   a **genuine deployed collapse** (revive→refine landed in a bad basin on that seed), so
+   the negative mean lift is a real property of the lever.
+3. **Eval-set granularity.** Cascaded `max_simulation_samples=200` (0.5% grid → read
+   pp-level gaps, not 3rd decimals); the synchronized ceiling is FULL 10k (4 decimals),
+   so the ~4pp cpFalse→sync gap is real but its sub-pp digits are not commensurable.
+4. **NOT chance / NOT untrained.** ANN ~0.994 and cpFalse cascaded ~0.95 are both
+   well-trained (≫ 0.1135 MNIST chance) ⇒ this IS a genuine non-dead, gradient-bearing
+   firing-gain-deficit cell, so the no-rescue verdict is meaningful.
+
+Run ids (cascaded): `pdcnnd6fix_cotFalse_cp{False,True}_s{0,1,2}` (rc=0),
+`pdcnnd6fix_cotTrue_cp{False,True}_s{0,1,2}` (rc=1, θ-cotrain broken). Synchronized
+ceiling: `pdcnnbc_d6_synchronized_s{0,1,2}`. **Open (the missing working lever):** the
+d6 firing-gain gate-fix (the AC_EVIDENCE §2b/§1k `plan_stage:25` proposal) — with
+`conversion_policy` no-rescue and `theta_cotrain` rc=1-broken on the convnet, no existing
+knob closes the d6 onset deficit; a θ-cotrain convnet-forward fix (or a relative-gain
+gate-fix) is the only remaining route to a working rescue.
+
+---
+
+### §10 — NO-RESCUE also at the d10 death-cascade rung (REFUTED note only, `item_id=dcnn_d10_gatefix_rescue`, NOT consolidated, 2026-06-25)
+
+A brief note (this item was adjudicated **REFUTED** and is recorded here for context only —
+it is **NOT** ledger-consolidated). The §9 NO-RESCUE finding at the d6 onset rung **extends
+to the d10 death-cascade rung**: at `deep_cnn` d10 MNIST cascaded (ANN ~0.99, a genuine
+firing-gain regime, not at-chance), the keystone gate-fix **does not auto-rescue**.
+
+- **θ-cotrain (cot=true) CRASHES the convnet** — all 6 cotTrue runs finalize `rc=1` with the
+  **same `Conv2DPerceptronMapper(name='features_3')` tensor-shape break** (`size of tensor a
+  (28) must match b (16) at dim 3`) seen at d6 (§9); no deployed metric exists. The high
+  `__target_metric.json` floats on disk for those runs are **stale pre-deployment artifacts**.
+- **Gate-fix-only (cp=true, cot=false) deploys ~0.79** (n=2 valid: s0 0.865, s1 0.715; s2 is
+  `rc=-9` timed-out with a STALE pre-SCM metric → excluded) — **at or below the ~0.95 cascaded
+  baseline and ~20pp under the ~0.992 synchronized ceiling** (faithful: NF↔SCM agreement 1.0,
+  torch↔sim 1.0). The cpFalse cpFalse arm has **no valid run** (all 3 `rc=-9` timeouts; their
+  high `__target_metric` values 0.94–0.98 are STALE pre-HCM analytical metrics, **not** deployed).
+- **Confounds (why REFUTED, not CONFIRMED):** the `pdcnnd10fix` batch has **no synchronized
+  arm** (ceiling/baseline imported from the matched `pdcnnbc` d10 batch: sync 0.9917, cascaded
+  baseline 0.9517 but **high-variance** 0.907–0.985); the cp:true s1 0.715 is a genuine
+  death-cascade collapse (val cliff to 0.19 at finalize, recovered only to 0.71), so the
+  gate-fix arm landed on the collapsed tail of a fragile cascade. The decisive, robust facts —
+  θ-cotrain `rc=1` convnet-crash (identical to §9) and cp:true-only ≤ the cascaded baseline —
+  stand regardless.
+
+Run ids: `pdcnnd10fix_cot{True,False}_cp{True,False}_s{0,1,2}`. **Takeaway (consistent with §9):**
+the keystone gate-fix has **no working firing-gain rescue lever on the deep convnet** at either
+the d6 onset or the d10 death-cascade rung; **synchronized remains the unconditional deep
+default and cascaded-deep is retired.** A θ-cotrain convnet-forward fix (the `features_3`
+tensor-shape break) is the prerequisite for any future gate-fix rescue test at depth.
+
+---
 
 ### Key file references
 
