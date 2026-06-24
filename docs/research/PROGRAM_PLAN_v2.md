@@ -140,3 +140,22 @@ SCM time → a clean *capacity verdict* (needed vs available + which segment ove
 E4 round 2 = capacity-aware placement (bin-packing/look-ahead vs greedy) + the GAP-1 reassembly scale-fix.
 Genericity of the *mechanisms* holds (conversion + value-domain bit-exact at CIFAR); the *toolset* gap to
 ImageNet scale is now named + measured.
+
+## E4 direction CORRECTED (user insight): no weight sharing — the Scheduled path is the lever
+
+**Weight sharing is NOT possible on the chip** (the spatial-multiplexing hypothesis is dead). Each conv
+output position × channel needs its own physical weight placement (softcore); the spatial unroll of a
+224²-spatial conv is therefore *intrinsic*, not a mapper bug. The existing mechanism for "cores too small
+/ too few" is the **Scheduled mapping path** (`allow_scheduling`): it distributes core placement **across
+time** — the chip is **re-programmed across phases / sync barriers**, reusing physical cores over phases
+instead of instantiating all at once. **The simulator must NOT assume weight sharing** (it may later be an
+*explicit, opt-in* hardware capability, never assumable for all deployments).
+
+So the E4 capacity question is reframed: not "do 413K cores fit at once" (they don't), but **under
+scheduling, does the PEAK phase fit the physical chip, and at what PHASE-COUNT + reprogramming
+latency/energy cost?** And **413K softcores is still extreme even time-multiplexed** (~413 phases on a
+1000-core chip), so the open investigation is: is 413K the irreducible no-weight-sharing spatial-unroll
+count, or is there mapping over-production / a better tiling — and what realistic chip size + phase budget
+makes a 224²-conv deployable at all? The E4 capacity diagnostic (round 1, merged) must become
+**scheduling-aware** (feasible-via-time-multiplexing if peak-phase fits; report phase-count + cost), and
+the scaling program must center on the **Scheduled path**, not weight sharing.
