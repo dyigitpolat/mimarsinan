@@ -59,14 +59,11 @@ def _next_plan_batch(backlog: List[dict]) -> Optional[dict]:
     return min(waiting, key=lambda b: b["plan_stage"]) if waiting else None
 
 
-def _cell_key(tags: dict) -> Optional[str]:
-    model, dataset, sched = tags.get("model"), tags.get("dataset"), tags.get("sched")
-    if not (model and dataset and sched):
-        return None
-    parts = [str(model), str(dataset), str(sched)]
-    if tags.get("depth") is not None:
-        parts.append(f"d{tags['depth']}")
-    return "/".join(parts)
+def _group_key(tags: dict) -> str:
+    """The coarsest stable label for an uncovered run, best-available first. Tag
+    schemas vary across batches (sched/model/dataset rarely co-occur), so group by
+    the batch that produced the run; fall back to its workstream/kind."""
+    return str(tags.get("batch_id") or tags.get("kind") or tags.get("ws") or "untagged")
 
 
 def _ledger_cited_run_ids(ledger_path: str) -> set:
@@ -88,25 +85,21 @@ def _ledger_cited_run_ids(ledger_path: str) -> set:
 
 
 def harvest_todo(q: GpuQueue, ledger_path: str = LEDGER) -> List[dict]:
-    """Finalized cells whose runs are NOT yet cited in any ledger row.
+    """Finalized runs NOT yet cited in any ledger row, grouped by their source batch.
 
-    A cell is "covered" if ANY of its finalized runs is already cited (the harvest
-    row references that cell), so a consolidated cell is never re-flagged.
+    Per-RUN coverage (not per-cell): a run is covered once its id appears in a
+    ``*_run_ids`` ledger field. So a freshly-added seed still surfaces even if its
+    cell was partially consolidated, and a fully-cited batch drops off the list.
     """
     cited = _ledger_cited_run_ids(ledger_path)
-    cells: dict = {}
+    groups: dict = {}
     for state in ("done", "failed"):
         for job in q.list_state(state):
-            key = _cell_key(job.get("tags", {}))
-            if key is None:
+            if job["id"] in cited:
                 continue
-            cells.setdefault(key, []).append(job["id"])
-    todo = []
-    for key, run_ids in sorted(cells.items()):
-        if any(rid in cited for rid in run_ids):
-            continue
-        todo.append({"cell": key, "run_ids": sorted(run_ids), "n_finalized": len(run_ids)})
-    return todo
+            groups.setdefault(_group_key(job.get("tags", {})), []).append(job["id"])
+    return [{"cell": k, "run_ids": sorted(v), "n_uncovered": len(v)}
+            for k, v in sorted(groups.items())]
 
 
 class Director:
