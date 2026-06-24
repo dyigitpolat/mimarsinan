@@ -119,6 +119,106 @@ def _classify_cfg_validity(cfg: dict, *, floor: float, majority: float):
     )
 
 
+def _estimate_cfg_capacity(cfg: dict):
+    """Statically estimate the hard cores this job's IR needs vs. its core budget.
+
+    Pure-static (no GPU, no run, no placement): builds the native model, converts
+    it to an IR graph exactly as ``SoftCoreMappingStep`` would, then runs the SOUND
+    ``estimate_cores_needed`` lower bound against the declared core budget. Heavy
+    torch / mapping imports are deferred here so the daemon import stays light;
+    patched in tests to avoid real IR construction.
+    """
+    for sub in ("src", "spikingjelly"):
+        path = os.path.join(REPO, sub)
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    import numpy as np
+
+    from mimarsinan.config_schema.runtime import build_flat_pipeline_config
+    from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
+    from mimarsinan.mapping.ir_mapping_class import IRMapping
+    from mimarsinan.mapping.platform.platform_constraints import (
+        resolve_platform_mapping_params,
+    )
+    from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+    from mimarsinan.mapping.verification.capacity import estimate_cores_needed
+    from mimarsinan.pipelining.core.platform_constraints_resolver import (
+        build_platform_constraints_resolved,
+    )
+    from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+    from mimarsinan.torch_mapping import convert_torch_model
+    from mimarsinan.transformations.quantization_bounds import quantization_bounds
+
+    dp = cfg.get("deployment_parameters", {}) or {}
+    pc = cfg.get("platform_constraints", {}) or {}
+    flat = build_flat_pipeline_config(
+        dp, pc, pipeline_mode=cfg.get("pipeline_mode", "vanilla"),
+    )
+    model_type = dp["model_type"]
+    model_config = dp.get("model_config", {}) or {}
+
+    meta = BasicDataProviderFactory.get_metadata(
+        cfg["data_provider_name"], os.path.join(REPO, "datasets"),
+    )
+    input_shape = tuple(meta["input_shape"])
+    num_classes = int(meta["num_classes"])
+
+    platform_constraints = build_platform_constraints_resolved(flat)
+    params = resolve_platform_mapping_params(
+        platform_constraints["cores"],
+        allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
+    )
+
+    builder_cls = ModelRegistry.get_builder_cls(model_type)
+    builder = builder_cls("cpu", input_shape, num_classes, flat)
+    flow = convert_torch_model(
+        builder.build(model_config), input_shape, num_classes,
+        device="cpu", strict=True,
+    ).eval()
+    _, q_max = quantization_bounds(flat["weight_bits"])
+    mapper_repr = flow.get_mapper_repr()
+    if hasattr(mapper_repr, "assign_perceptron_indices"):
+        mapper_repr.assign_perceptron_indices()
+    compute_per_source_scales(mapper_repr)
+    ir_mapping = IRMapping(
+        q_max=q_max, firing_mode=flat["firing_mode"],
+        max_axons=params.effective_max_axons,
+        max_neurons=params.effective_max_neurons,
+        allow_coalescing=params.allow_coalescing, hardware_bias=params.hardware_bias,
+    )
+    ir_graph = ir_mapping.map(mapper_repr)
+    return estimate_cores_needed(ir_graph, platform_constraints)
+
+
+def capacity_precheck(cfg: dict) -> Tuple[bool, Dict]:
+    """Decide whether a job may be enqueued under the STATIC placement-capacity gate.
+
+    Returns ``(enqueue_ok, info)``. Rejects (``False`` — no GPU claimed) a config
+    whose SOUND ``estimate_cores_needed`` lower bound EXCEEDS its declared core
+    budget (the net cannot be placed by any packing strategy — VGG16@224 on a
+    1000-core budget); admits a feasible one. Opt-out via
+    ``deployment_parameters.capacity_gate=False``. Any model-build / IR / estimate
+    failure is NON-FATAL — returns ``(True, {...})`` so a builder edge case never
+    silently drops valid work.
+    """
+    dp = cfg.get("deployment_parameters", {}) or {}
+    if not bool(dp.get("capacity_gate", True)):
+        return True, {"reason": "gate_disabled"}
+    try:
+        est = _estimate_cfg_capacity(cfg)
+    except Exception as exc:  # noqa: BLE001 - non-fatal by design
+        return True, {"reason": "estimate_failed", "error": repr(exc)}
+    info = {
+        "cores_needed": int(est.cores_needed),
+        "cores_available": int(est.cores_available),
+        "feasible": bool(est.feasible),
+        "overflowing_segment": est.overflowing_segment,
+    }
+    if not est.feasible:
+        return False, dict(info, reason="capacity_exceeded")
+    return True, dict(info, reason="ok")
+
+
 def onchip_precheck(cfg: dict) -> Tuple[bool, Dict]:
     """Decide whether a job may be enqueued under the TIERED validity gate (v2).
 
@@ -224,6 +324,17 @@ class Scheduler:
                         f"({_fmt_frac(info.get('param_frac'))},"
                         f"{_fmt_frac(info.get('mac_frac'))}) < floor "
                         f"{_fmt_frac(info.get('floor'))} — not enqueued, no GPU claimed."
+                    )
+                    existing.add(jid)
+                    continue
+                cap_ok, cap_info = capacity_precheck(cfg)
+                if not cap_ok:
+                    print(
+                        f"scheduler: SKIP {jid} (INFEASIBLE): needs "
+                        f">= {cap_info.get('cores_needed')} hard cores but budget is "
+                        f"{cap_info.get('cores_available')} (overflowing segment "
+                        f"{cap_info.get('overflowing_segment')!r}) — not enqueued, "
+                        "no GPU claimed."
                     )
                     existing.add(jid)
                     continue
