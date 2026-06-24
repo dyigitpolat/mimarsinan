@@ -25,6 +25,15 @@ from mimarsinan.chip_simulation.cost_extraction import (
     load_cost_record,
     save_cost_record,
 )
+from mimarsinan.chip_simulation.coverage_ledger import (
+    AXES,
+    CoverageReport,
+    CoverageStatus,
+    HypervolumeAxis,
+    HypervolumeCell,
+    claimed_subproduct,
+    coverage_report,
+)
 from mimarsinan.chip_simulation.recording import spike_modes
 
 __all__ = [
@@ -48,4 +57,11 @@ __all__ = [
     "extract_cost_record_from_run",
     "load_cost_record",
     "save_cost_record",
+    "AXES",
+    "HypervolumeAxis",
+    "HypervolumeCell",
+    "CoverageStatus",
+    "CoverageReport",
+    "coverage_report",
+    "claimed_subproduct",
 ]
