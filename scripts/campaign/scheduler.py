@@ -54,6 +54,24 @@ def get_path(d: dict, dotted: str):
     return d
 
 
+def existing_ids(q: GpuQueue) -> set:
+    """Every job id already enqueued or finalized (pending/running/done/failed).
+
+    The dedupe key for both the scheduler (don't re-enqueue) and the director
+    (count un-enqueued work). One source of truth so the two daemons agree.
+    """
+    ids = set()
+    for st in ("pending", "running", "done", "failed"):
+        for name in os.listdir(q._dir(st)):
+            if not name.endswith(".json"):
+                continue
+            try:
+                ids.add(json.load(open(os.path.join(q._dir(st), name)))["id"])
+            except (OSError, ValueError, KeyError):
+                pass
+    return ids
+
+
 def instantiate(batch: dict) -> Iterator[Tuple[str, dict]]:
     """Yield (job_id, config) for each point of the batch's grid."""
     template = json.load(open(os.path.join(REPO, batch["template"])))
@@ -85,16 +103,7 @@ class Scheduler:
         os.makedirs(CFG_DIR, exist_ok=True)
 
     def _existing_ids(self) -> set:
-        ids = set()
-        for st in ("pending", "running", "done", "failed"):
-            for name in os.listdir(self.q._dir(st)):
-                if not name.endswith(".json"):
-                    continue
-                try:
-                    ids.add(json.load(open(os.path.join(self.q._dir(st), name)))["id"])
-                except (OSError, ValueError, KeyError):
-                    pass
-        return ids
+        return existing_ids(self.q)
 
     def _load_backlog(self) -> List[dict]:
         try:
