@@ -49,14 +49,40 @@ __all__ = [
     "extract_cost_record_from_run",
     "load_cost_record",
     "save_cost_record",
+    "weight_reuse_mj",
 ]
 
 
 # The cost-record FORMAT version. A run writes this into the JSON so a future
 # format change fails loud instead of silently mis-reading an old record. Bumped
 # to 2 when the per-fine-tuning-PASS wall (AC5: ``max_ft_pass_wall_s`` + the
-# per-pass breakdown) was added to the record.
-COST_RECORD_FORMAT_VERSION = 2
+# per-pass breakdown) was added to the record. Bumped to 3 when the weight-reuse
+# scheduling phase fields (``reprogram_passes`` / ``reuse_passes`` /
+# ``params_reloaded`` / ``activation_bytes_moved``) were added.
+COST_RECORD_FORMAT_VERSION = 3
+
+
+def weight_reuse_mj(
+    *,
+    params_reloaded: int,
+    activation_bytes_moved: int,
+    mj_per_reprogram: float = 0.0,
+    mj_per_sync: float = 0.0,
+) -> float:
+    """The weight-reuse scheduling mJ term (GAP-R): reprogram reload + sync movement.
+
+    ``mj_per_reprogram`` is charged per PARAMETER RELOADED (``params_reloaded`` =
+    Σ over the N reprogram passes of the resident bank's weight count; a reuse pass
+    reloads nothing). ``mj_per_sync`` is charged per ACTIVATION BYTE moved at the sync
+    barriers (``activation_bytes_moved`` = Σ over the ``total_passes - 1`` barriers of
+    the gathered slice size). Both chip coefficients default 0.0 ⇒ the term is 0.0 ⇒
+    byte-identical. This is the ONE thing that makes a reuse phase cheaper than a
+    reprogram phase (today both cost 0).
+    """
+    return (
+        float(mj_per_reprogram) * float(params_reloaded)
+        + float(mj_per_sync) * float(activation_bytes_moved)
+    )
 
 # The canonical filename a run writes its cost record under, alongside the run
 # artifacts (next to ``metadata.json`` in a generated run directory).
@@ -160,6 +186,15 @@ class CostRecord:
     the non-FT Soft-Core-Mapping / Weight-Quantization / Simulation steps); 0.0 when
     the run surfaced no FT-pass timing. ``ft_pass_walls`` is the per-pass breakdown
     (``({"label", "wall_s"}, ...)``) the verdict can drill into.
+
+    The weight-reuse scheduling fields classify the deployment schedule's passes
+    (round-1 GAP-R): ``reprogram_passes`` (N) = #weight-distinct passes (full param
+    reloads); ``reuse_passes`` (M) = the cheap passes that time-multiplex through an
+    already-resident weight bank; ``params_reloaded`` = Σ over the N reprogram passes
+    of the resident weight count; ``activation_bytes_moved`` = Σ over the sync barriers
+    of the gathered activation slice size. All default 0 (every pass implicitly a
+    reprogram, no data-movement charge) ⇒ byte-identical to a pre-mode record. The mJ
+    term :meth:`reuse_mj` they feed is 0.0 at the default 0.0 chip coefficients.
     """
 
     cell_key: str
@@ -175,6 +210,10 @@ class CostRecord:
     energy_proxy_neuron_steps: int = 0
     max_ft_pass_wall_s: float = 0.0
     ft_pass_walls: Tuple[Mapping[str, Any], ...] = ()
+    reprogram_passes: int = 0
+    reuse_passes: int = 0
+    params_reloaded: int = 0
+    activation_bytes_moved: int = 0
     provenance: Mapping[str, Any] = field(default_factory=dict)
     format_version: int = COST_RECORD_FORMAT_VERSION
 
@@ -182,6 +221,37 @@ class CostRecord:
     def cell(self) -> CertificationCell:
         """The E6 cell this record is keyed to (parsed from ``cell_key``)."""
         return CertificationCell.from_key(self.cell_key)
+
+    @property
+    def total_passes(self) -> int:
+        """Total scheduled passes = reprogram (N) + reuse (M)."""
+        return self.reprogram_passes + self.reuse_passes
+
+    @property
+    def sync_barrier_count(self) -> int:
+        """Activation-gather barriers = ``total_passes - 1`` (0 when no passes)."""
+        return max(self.total_passes - 1, 0)
+
+    @property
+    def reuse_fraction(self) -> float:
+        """Fraction of passes that reuse a resident bank (0.0 when no passes)."""
+        if self.total_passes == 0:
+            return 0.0
+        return self.reuse_passes / self.total_passes
+
+    def reuse_mj(
+        self, *, mj_per_reprogram: float = 0.0, mj_per_sync: float = 0.0
+    ) -> float:
+        """The weight-reuse scheduling mJ term at the given chip coefficients.
+
+        Default 0.0 coefficients ⇒ 0.0 (byte-identical). See :func:`weight_reuse_mj`.
+        """
+        return weight_reuse_mj(
+            params_reloaded=self.params_reloaded,
+            activation_bytes_moved=self.activation_bytes_moved,
+            mj_per_reprogram=mj_per_reprogram,
+            mj_per_sync=mj_per_sync,
+        )
 
     def cost_tuple(self) -> Tuple[float, int, int, int]:
         """The cost axes ``(mj_per_sample, spikes, latency_steps, cores)``."""
@@ -222,6 +292,10 @@ def extract_cost_record(
     provenance: Optional[Mapping[str, Any]] = None,
     max_ft_pass_wall_s: float = 0.0,
     ft_pass_walls: Sequence[Mapping[str, Any]] = (),
+    reprogram_passes: int = 0,
+    reuse_passes: int = 0,
+    params_reloaded: int = 0,
+    activation_bytes_moved: int = 0,
 ) -> CostRecord:
     """Build a :class:`CostRecord` from what a SANA-FE run already reports.
 
@@ -234,6 +308,10 @@ def extract_cost_record(
     ``max_ft_pass_wall_s`` / ``ft_pass_walls`` carry the AC5 per-fine-tuning-PASS wall
     the tuning step measured (the worst single pass + the per-pass breakdown) — judged
     PER fine-tuning pass, not on the end-to-end pipeline wall.
+
+    ``reprogram_passes`` / ``reuse_passes`` / ``params_reloaded`` /
+    ``activation_bytes_moved`` are the weight-reuse scheduling classification (from
+    ``mimarsinan.mapping.weight_reuse``); all default 0 ⇒ byte-identical.
     """
     aggregate = sanafe_snapshot.get("aggregate") or {}
     mj_per_sample = float(aggregate.get("total_energy_mj", 0.0))
@@ -263,6 +341,10 @@ def extract_cost_record(
         energy_proxy_neuron_steps=neuron_steps,
         max_ft_pass_wall_s=float(max_ft_pass_wall_s),
         ft_pass_walls=_coerce_ft_pass_walls(ft_pass_walls),
+        reprogram_passes=int(reprogram_passes),
+        reuse_passes=int(reuse_passes),
+        params_reloaded=int(params_reloaded),
+        activation_bytes_moved=int(activation_bytes_moved),
         provenance=dict(provenance or {}),
     )
 

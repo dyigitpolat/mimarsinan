@@ -503,3 +503,130 @@ class TestCostModelCrossCheck:
         ratio_small = small.mj_per_sample / small.energy_proxy_neuron_steps
         ratio_big = big.mj_per_sample / big.energy_proxy_neuron_steps
         assert ratio_big == pytest.approx(ratio_small, rel=0.05)
+
+
+# --------------------------------------------------------------------------- #
+# Weight-reuse scheduling cost term (round-1 GAP-R fix). The cost model gains a
+# reprogram-vs-reuse distinction: a reuse pass costs activation data movement at a
+# sync barrier, NOT a parameter reload. Chip coefficients default 0.0 ⇒ the whole
+# term is 0 ⇒ byte-identical to a record without it.
+# --------------------------------------------------------------------------- #
+
+from mimarsinan.chip_simulation.cost_extraction import weight_reuse_mj
+
+
+class TestWeightReuseCostTerm:
+    def _record(self, **kw):
+        cell = CertificationCell("lif", None, "sanafe")
+        return extract_cost_record(
+            cell=cell,
+            deployed_accuracy=0.97,
+            sanafe_snapshot=_single_segment_snapshot(),
+            **kw,
+        )
+
+    def test_phase_fields_default_zero(self):
+        # A record built without phase info still has well-defined (0) phase fields —
+        # byte-identical to the pre-mode record (every pass implicitly a reprogram).
+        record = self._record()
+        assert record.reprogram_passes == 0
+        assert record.reuse_passes == 0
+        assert record.params_reloaded == 0
+        assert record.activation_bytes_moved == 0
+
+    def test_phase_fields_carried(self):
+        record = self._record(
+            reprogram_passes=16,
+            reuse_passes=142,
+            params_reloaded=1_000_000,
+            activation_bytes_moved=2_000_000,
+        )
+        assert record.reprogram_passes == 16
+        assert record.reuse_passes == 142
+        assert record.params_reloaded == 1_000_000
+        assert record.activation_bytes_moved == 2_000_000
+
+    def test_total_passes_property(self):
+        record = self._record(reprogram_passes=16, reuse_passes=142)
+        assert record.total_passes == 158
+        assert record.sync_barrier_count == 157  # total_passes - 1
+
+    def test_sync_barrier_count_floors_at_zero(self):
+        # No passes recorded ⇒ no barriers (never negative).
+        assert self._record().sync_barrier_count == 0
+
+    def test_reuse_fraction(self):
+        record = self._record(reprogram_passes=16, reuse_passes=142)
+        assert record.reuse_fraction == pytest.approx(142 / 158)
+
+    def test_reuse_mj_zero_coefficients_is_byte_identical(self):
+        # The keystone byte-identical guarantee: with both chip coefficients 0.0 the
+        # weight-reuse mJ term is exactly 0 — adds nothing to the deployed energy.
+        record = self._record(
+            reprogram_passes=16, reuse_passes=142,
+            params_reloaded=1_000_000, activation_bytes_moved=2_000_000,
+        )
+        assert record.reuse_mj() == 0.0
+        assert record.reuse_mj(mj_per_reprogram=0.0, mj_per_sync=0.0) == 0.0
+
+    def test_reuse_mj_charges_reprogram_per_param(self):
+        # mj_per_reprogram is charged per PARAM RELOADED (Σ over the N reprogram passes
+        # of the resident bank weight count) — reuse passes reload nothing.
+        record = self._record(
+            reprogram_passes=2, reuse_passes=200,
+            params_reloaded=1000, activation_bytes_moved=0,
+        )
+        assert record.reuse_mj(mj_per_reprogram=1e-3, mj_per_sync=0.0) == pytest.approx(
+            1000 * 1e-3
+        )
+
+    def test_reuse_mj_charges_sync_per_barrier_byte(self):
+        # mj_per_sync is charged per ACTIVATION BYTE moved at each of the
+        # (total_passes - 1) sync barriers.
+        record = self._record(
+            reprogram_passes=2, reuse_passes=2,
+            params_reloaded=0, activation_bytes_moved=500,
+        )
+        # 4 passes ⇒ 3 barriers; bytes is already the total over barriers (summed by
+        # the caller from the per-barrier slice walk), so charge it once per the
+        # supplied total.
+        assert record.reuse_mj(mj_per_reprogram=0.0, mj_per_sync=2e-6) == pytest.approx(
+            500 * 2e-6
+        )
+
+    def test_reuse_mj_helper_matches_record(self):
+        record = self._record(
+            reprogram_passes=3, reuse_passes=10,
+            params_reloaded=4000, activation_bytes_moved=900,
+        )
+        direct = weight_reuse_mj(
+            params_reloaded=4000,
+            activation_bytes_moved=900,
+            mj_per_reprogram=5e-4,
+            mj_per_sync=1e-5,
+        )
+        assert record.reuse_mj(mj_per_reprogram=5e-4, mj_per_sync=1e-5) == direct
+        assert direct == pytest.approx(4000 * 5e-4 + 900 * 1e-5)
+
+    def test_phase_fields_round_trip(self):
+        record = self._record(
+            reprogram_passes=16, reuse_passes=142,
+            params_reloaded=1_000_000, activation_bytes_moved=2_000_000,
+        )
+        assert CostRecord.from_dict(record.to_dict()) == record
+
+    def test_phase_fields_round_trip_disk(self, tmp_path):
+        record = self._record(reprogram_passes=5, reuse_passes=50, params_reloaded=99)
+        path = save_cost_record(record, str(tmp_path / "run"))
+        assert load_cost_record(path) == record
+
+    def test_format_version_is_three(self):
+        # The phase fields bumped the cost-record format 2 -> 3.
+        assert COST_RECORD_FORMAT_VERSION == 3
+        assert self._record().format_version == 3
+
+    def test_old_format_version_two_rejected(self):
+        data = self._record().to_dict()
+        data["format_version"] = 2
+        with pytest.raises(ValueError, match="format_version"):
+            CostRecord.from_dict(data)
