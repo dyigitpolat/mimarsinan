@@ -33,10 +33,15 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.certification import CertificationCell
+from mimarsinan.chip_simulation.weight_reuse_cost_model import (
+    DEFAULT_COEFFICIENT_BAND,
+    CoefficientBand,
+    phase_cost_band,
+)
 
 
 __all__ = [
@@ -261,6 +266,28 @@ class CostRecord:
             mj_per_sync=mj_per_sync,
         )
 
+    def reuse_mj_band(
+        self, coeffs: CoefficientBand = DEFAULT_COEFFICIENT_BAND
+    ) -> Tuple[float, float, float]:
+        """The GROUNDED weight-reuse mJ as a ``(low, nominal, high)`` RANGE.
+
+        Sources the defensible banded number from ``weight_reuse_cost_model``: it
+        evaluates :func:`weight_reuse_cost_model.phase_cost_band` over this record's
+        weight-reuse phase plan (``reprogram_passes`` / ``reuse_passes`` /
+        ``params_reloaded`` / ``activation_bytes_moved``) at the cited
+        :data:`DEFAULT_COEFFICIENT_BAND` (or a supplied band). Unlike the opaque
+        :meth:`reuse_mj` (default 0.0), this carries the named-physical-unit cost as a
+        range; ``(0.0, 0.0, 0.0)`` when the record has no scheduled passes.
+        """
+        band = phase_cost_band(
+            reprogram_passes=self.reprogram_passes,
+            reuse_passes=self.reuse_passes,
+            params_reloaded=self.params_reloaded,
+            activation_bytes_moved=self.activation_bytes_moved,
+            coefficient_band=coeffs,
+        )
+        return (band.low_mj, band.nominal_mj, band.high_mj)
+
     def cost_tuple(self) -> Tuple[float, int, int, int]:
         """The cost axes ``(mj_per_sample, spikes, latency_steps, cores)``."""
         return (self.mj_per_sample, self.spikes, self.latency_steps, self.cores)
@@ -304,6 +331,7 @@ def extract_cost_record(
     reuse_passes: int = 0,
     params_reloaded: int = 0,
     activation_bytes_moved: int = 0,
+    coefficient_band: Optional[CoefficientBand] = None,
 ) -> CostRecord:
     """Build a :class:`CostRecord` from what a SANA-FE run already reports.
 
@@ -320,6 +348,13 @@ def extract_cost_record(
     ``reprogram_passes`` / ``reuse_passes`` / ``params_reloaded`` /
     ``activation_bytes_moved`` are the weight-reuse scheduling classification (from
     ``mimarsinan.mapping.weight_reuse``); all default 0 ⇒ byte-identical.
+
+    ``coefficient_band`` is the OPT-IN cost-coefficient config (the cited
+    :data:`DEFAULT_COEFFICIENT_BAND` or a caller band): when supplied, the emitted
+    record carries the GROUNDED weight-reuse mJ RANGE (``reuse_mj_band``) under
+    ``provenance['reuse_cost_band_mj'] = [low, nominal, high]`` so cost records are
+    comparable per backend. When ``None`` (the default) NOTHING is attached and the
+    record is byte-identical to a pre-band record (``reuse_mj`` stays 0.0).
     """
     aggregate = sanafe_snapshot.get("aggregate") or {}
     mj_per_sample = float(aggregate.get("total_energy_mj", 0.0))
@@ -335,7 +370,7 @@ def extract_cost_record(
 
     mode = cell.cell_key.rsplit("@", 1)[0]
 
-    return CostRecord(
+    record = CostRecord(
         cell_key=cell.cell_key,
         mode=mode,
         backend=cell.backend,
@@ -355,6 +390,26 @@ def extract_cost_record(
         activation_bytes_moved=int(activation_bytes_moved),
         provenance=dict(provenance or {}),
     )
+    return _with_grounded_cost_band(record, coefficient_band)
+
+
+def _with_grounded_cost_band(
+    record: CostRecord, coefficient_band: Optional[CoefficientBand]
+) -> CostRecord:
+    """Attach the grounded weight-reuse mJ band to ``record`` ONLY when configured.
+
+    Idempotency / byte-identity rule: ``coefficient_band is None`` (the default)
+    returns ``record`` UNCHANGED ⇒ the emitted record is byte-identical to a
+    pre-band record. A supplied band stamps ``provenance['reuse_cost_band_mj'] =
+    [low, nominal, high]`` (a JSON list, since the record round-trips through JSON)
+    ALONGSIDE any caller provenance.
+    """
+    if coefficient_band is None:
+        return record
+    low, nominal, high = record.reuse_mj_band(coefficient_band)
+    provenance = dict(record.provenance)
+    provenance["reuse_cost_band_mj"] = [low, nominal, high]
+    return replace(record, provenance=provenance)
 
 
 def _read_json(path: str) -> Any:
