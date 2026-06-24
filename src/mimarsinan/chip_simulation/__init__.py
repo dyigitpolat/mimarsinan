@@ -27,12 +27,24 @@ from mimarsinan.chip_simulation.cost_extraction import (
 )
 from mimarsinan.chip_simulation.coverage_ledger import (
     AXES,
+    AttributionFidelity,
     CoverageReport,
     CoverageStatus,
+    FlagMetadata,
     HypervolumeAxis,
     HypervolumeCell,
+    ScreeningStatus,
     claimed_subproduct,
     coverage_report,
+    honest_claimed_subproduct,
+    interacting_axes,
+)
+from mimarsinan.chip_simulation.coverage_ci import (
+    CoverageGuardError,
+    assert_axes_screening_sound,
+    assert_no_aged_unowned_flags,
+    assert_no_merged_valid_tiers,
+    audit_coverage_instrument,
 )
 from mimarsinan.chip_simulation.recording import spike_modes
 
@@ -60,8 +72,18 @@ __all__ = [
     "AXES",
     "HypervolumeAxis",
     "HypervolumeCell",
+    "ScreeningStatus",
+    "AttributionFidelity",
+    "FlagMetadata",
     "CoverageStatus",
     "CoverageReport",
     "coverage_report",
     "claimed_subproduct",
+    "honest_claimed_subproduct",
+    "interacting_axes",
+    "CoverageGuardError",
+    "assert_axes_screening_sound",
+    "assert_no_merged_valid_tiers",
+    "assert_no_aged_unowned_flags",
+    "audit_coverage_instrument",
 ]
