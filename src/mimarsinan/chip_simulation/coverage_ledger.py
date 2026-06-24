@@ -33,6 +33,7 @@ Pure data + a reader: it runs nothing, mutates no sim behavior; it reads ledger 
 
 from __future__ import annotations
 
+import datetime as _dt
 import itertools
 import re
 from dataclasses import dataclass, field
@@ -49,15 +50,21 @@ from mimarsinan.mapping.verification.onchip_fraction import (
 
 __all__ = [
     "AxisKind",
+    "ScreeningStatus",
+    "AttributionFidelity",
     "HypervolumeAxis",
     "AXES",
     "AXIS_WILDCARD",
     "collapse_orthogonal_axes",
+    "interacting_axes",
     "active_axes",
     "HypervolumeCell",
     "CoverageStatus",
+    "FlagMetadata",
+    "KNOWN_CRACKED_REGIONS",
     "classify_validity_tier",
     "claimed_subproduct",
+    "honest_claimed_subproduct",
     "cell_covers",
     "row_to_cell",
     "row_to_cells",
@@ -90,25 +97,79 @@ class AxisKind(Enum):
     INTERACTING = "interacting"
 
 
+class ScreeningStatus(Enum):
+    """The KEYSTONE classification that gates whether an axis may collapse.
+
+    The coverage DENOMINATOR is a function of this status so collapse-on-a-hunch is
+    structurally impossible:
+
+    * ``SCREENED_COLLAPSED`` — a cheap screen PROVED the axis's values equivalent, so
+      it collapses to one representative and is NOT a cell coordinate. It REQUIRES a
+      non-empty ``screening_artifact`` (a doc / test / result ref); constructing one
+      without an artifact RAISES.
+    * ``ENUMERATED_INTERACTING`` — the axis is PROVEN to interact (the death-cascade
+      firing×sync law, the dual-axis depth×dataset law), so its cross-product is the
+      real surface; counted interacting (enumerated) in the denominator.
+    * ``ASSERTED_UNSCREENED`` — no screen has been run yet; we make NO collapse claim,
+      so it is counted interacting (enumerated) until a screen (P3) earns the collapse.
+    """
+
+    SCREENED_COLLAPSED = "screened_collapsed"
+    ENUMERATED_INTERACTING = "enumerated_interacting"
+    ASSERTED_UNSCREENED = "asserted_unscreened"
+
+
+class AttributionFidelity(Enum):
+    """How TRUSTWORTHY a covered region's per-neuron attribution is.
+
+    ``ATTRIBUTION`` — the per-neuron reassembly is bit-exact (the validated corner).
+    ``VALUE_DOMAIN_ONLY`` — only the VALUE-domain (deployed accuracy) is bit-exact; the
+    per-neuron ATTRIBUTION reassembly is KNOWN-CRACKED there (GAP-1 coalescing +
+    neuron_split at VGG scale scrambles ~2%; the residual Tier-1 merge). Marking these
+    NOW keeps the coverage instrument honest about what it can and cannot attribute.
+    """
+
+    ATTRIBUTION = "attribution"
+    VALUE_DOMAIN_ONLY = "value_domain_only"
+
+
 @dataclass(frozen=True)
 class HypervolumeAxis:
     """One typed deployment axis of the hypervolume, with its coverage classification.
 
-    ``name`` is the axis (a ``HypervolumeCell`` field); ``kind`` is ORTHOGONAL vs
-    INTERACTING; ``interacts_with`` names the axes it is tested jointly with (empty
-    for orthogonal); ``values`` is the (small) screened domain; ``collapsed`` marks an
-    ORTHOGONAL axis whose values were cheap-screened EQUIVALENT (so the product drops
-    it to one representative); ``representative`` is that value; ``justification`` is
-    the cheap-screening reason the classification is sound.
+    ``name`` is the axis (a ``HypervolumeCell`` field); ``kind`` is the legacy
+    ORTHOGONAL vs INTERACTING tag; ``screening_status`` is the KEYSTONE — it gates
+    collapse and the denominator. ``interacts_with`` names the axes it is tested
+    jointly with; ``values`` is the (small) screened domain; ``representative`` is the
+    single value a SCREENED_COLLAPSED axis drops to; ``screening_artifact`` is the
+    doc/test/result ref that JUSTIFIES the collapse (mandatory for SCREENED_COLLAPSED);
+    ``justification`` is the human-facing reason. ``collapsed`` is DERIVED — it is
+    exactly ``screening_status is SCREENED_COLLAPSED`` (no independent hunch flag).
     """
 
     name: str
     kind: AxisKind
     values: Tuple[str, ...]
+    screening_status: ScreeningStatus = ScreeningStatus.ENUMERATED_INTERACTING
     interacts_with: Tuple[str, ...] = ()
-    collapsed: bool = False
     representative: Optional[str] = None
+    screening_artifact: str = ""
     justification: str = ""
+
+    def __post_init__(self) -> None:
+        if self.screening_status is ScreeningStatus.SCREENED_COLLAPSED and not (
+            self.screening_artifact and self.screening_artifact.strip()
+        ):
+            raise ValueError(
+                f"axis {self.name!r} is SCREENED_COLLAPSED but carries no "
+                f"screening_artifact — a collapse REQUIRES a linked artifact "
+                f"(doc/test/result ref); collapse-on-a-hunch is forbidden"
+            )
+
+    @property
+    def collapsed(self) -> bool:
+        """DERIVED: an axis collapses iff a screen PROVED its values equivalent."""
+        return self.screening_status is ScreeningStatus.SCREENED_COLLAPSED
 
     @classmethod
     def get(cls, name: str) -> "HypervolumeAxis":
@@ -145,6 +206,7 @@ AXES: Tuple[HypervolumeAxis, ...] = (
         name="firing",
         kind=AxisKind.INTERACTING,
         values=("lif", "rate", "ttfs", "ttfs_quantized", "ttfs_cycle_based"),
+        screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
         interacts_with=("sync", "quantization", "S"),
         justification=(
             "firing interacts with sync (the death-cascade is a firing×sync law) "
@@ -155,6 +217,7 @@ AXES: Tuple[HypervolumeAxis, ...] = (
         name="sync",
         kind=AxisKind.INTERACTING,
         values=("none", "cascaded", "synchronized"),
+        screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
         interacts_with=("firing",),
         justification=(
             "the cascaded↔synchronized gap is a (firing×sync) joint result; "
@@ -165,19 +228,25 @@ AXES: Tuple[HypervolumeAxis, ...] = (
         name="encoding_placement",
         kind=AxisKind.ORTHOGONAL,
         values=("subsume", "offload"),
-        collapsed=True,
+        screening_status=ScreeningStatus.SCREENED_COLLAPSED,
         representative="subsume",
+        screening_artifact=(
+            "docs/research/PROGRAM_CHECKPOINT.md + E3_SCALE_PROBE.md — offload==subsume "
+            "to ~1e-6 under signed integrate-and-fire (the segment-boundary encode/decode "
+            "is value-preserving either way). FIDELITY-ONLY: not collapsed for cost/"
+            "utilization (see PROGRAM_PLAN_v2.md §E5/cost caveat)."
+        ),
         justification=(
             "CHEAP-SCREEN RESULT (checkpoint): offload≡subsume under signed "
-            "integrate-and-fire — the segment-boundary encode/decode is "
-            "value-preserving either way, so the deployed numbers do not move with "
-            "placement. Collapsed to a single representative; not a cell coordinate."
+            "integrate-and-fire — the deployed numbers do not move with placement. "
+            "Collapsed to a single representative; not a cell coordinate."
         ),
     ),
     HypervolumeAxis(
         name="quantization",
         kind=AxisKind.INTERACTING,
         values=("none", "wq", "aq", "wq_aq"),
+        screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
         interacts_with=("firing",),
         justification=(
             "weight/activation quantization interacts with the firing law "
@@ -189,34 +258,40 @@ AXES: Tuple[HypervolumeAxis, ...] = (
         name="pruning",
         kind=AxisKind.ORTHOGONAL,
         values=("dense", "pruned"),
+        screening_status=ScreeningStatus.ASSERTED_UNSCREENED,
         justification=(
-            "pruning is screened marginally against the dense reference (a pruned "
-            "variant shares the firing×sync recipe cell); covered marginally"
+            "NO SCREEN YET — pruning is ASSERTED equivalent to dense but never "
+            "cheap-screened; counted interacting (enumerated) until a P3 screen earns "
+            "the collapse"
         ),
     ),
     HypervolumeAxis(
         name="backend",
         kind=AxisKind.ORTHOGONAL,
         values=("nevresim", "sanafe", "hcm", "lava"),
+        screening_status=ScreeningStatus.ASSERTED_UNSCREENED,
         justification=(
-            "backends are parity-locked to the reference (NF↔SCM↔SANA-FE bit-exact "
-            "in the validated corner), so a backend is screened marginally"
+            "backends are parity-locked in the VALIDATED CORNER only; no cross-cell "
+            "screen proves backend-equivalence across the product, so counted "
+            "interacting (enumerated) until a P3 screen"
         ),
     ),
     HypervolumeAxis(
         name="mapping_strategy",
         kind=AxisKind.ORTHOGONAL,
         values=("packed", "identity", "neuron_split", "coalesced"),
+        screening_status=ScreeningStatus.ASSERTED_UNSCREENED,
         justification=(
-            "a mapping strategy (packed/neuron-split/coalesced) is screened "
-            "marginally against the identity-mapping reference (the torch↔sim "
-            "fidelity lock holds per-strategy); covered marginally"
+            "NO SCREEN YET — the torch↔sim fidelity lock holds per-strategy in the "
+            "corner, but GAP-1 (coalescing+neuron_split at VGG scale) is KNOWN-CRACKED "
+            "for attribution; counted interacting (enumerated) until a P3 screen"
         ),
     ),
     HypervolumeAxis(
         name="S",
         kind=AxisKind.INTERACTING,
         values=("4", "8", "16", "32"),
+        screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
         interacts_with=("firing",),
         justification=(
             "S interacts with the firing law (d_max(S)≈0.56√S firing-gain budget); "
@@ -227,6 +302,7 @@ AXES: Tuple[HypervolumeAxis, ...] = (
         name="depth",
         kind=AxisKind.INTERACTING,
         values=("4", "6", "8", "12", "16"),
+        screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
         interacts_with=("firing", "S"),
         justification=(
             "depth interacts with the firing law (the death-cascade is a depth-driven "
@@ -240,43 +316,90 @@ AXES: Tuple[HypervolumeAxis, ...] = (
         name="vehicle",
         kind=AxisKind.ORTHOGONAL,
         values=("deep_mlp", "deep_cnn", "lenet5", "mlp_mixer_core", "vit_b"),
+        screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
+        interacts_with=("depth", "dataset"),
+        screening_artifact=(
+            "docs/research/findings/WS3_depth_firing_gain.md + WS1_WS6_breadth_rigor.md — "
+            "the dual-axis depth×dataset law with an ARCHITECTURE-DEPENDENT onset PROVES "
+            "the vehicle interacts (the synchronized off-MNIST gap is architecture-"
+            "dependent); enumerated, never collapsed"
+        ),
         justification=(
-            "the model architecture is a breadth axis — genericity is the claim that "
-            "the mechanisms transfer across vehicles; enumerated by the claimed product"
+            "the model architecture PROVABLY interacts (architecture-dependent "
+            "death-cascade onset); enumerated by the claimed product, not collapsed"
         ),
     ),
     HypervolumeAxis(
         name="dataset",
         kind=AxisKind.ORTHOGONAL,
         values=("mnist", "fmnist", "kmnist", "svhn", "cifar10"),
+        screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
+        interacts_with=("depth", "vehicle"),
+        screening_artifact=(
+            "docs/research/findings/WS3_depth_firing_gain.md + PROGRAM_CHECKPOINT_v2.md — "
+            "the dual-axis depth×dataset law (deep_cnn KMNIST d4→d10 gap shrink; the "
+            "dataset-dominant death-cascade) PROVES the dataset interacts with depth; "
+            "enumerated, never collapsed"
+        ),
         justification=(
-            "the dataset is a breadth axis — the synchronized off-MNIST gap is a "
-            "training problem, not a deployment one; enumerated by the claimed product"
+            "the dataset PROVABLY interacts with depth (the dual-axis depth×dataset "
+            "law); enumerated by the claimed product, not collapsed"
         ),
     ),
     HypervolumeAxis(
         name="regime",
         kind=AxisKind.ORTHOGONAL,
         values=("from_scratch", "pretrained"),
+        screening_status=ScreeningStatus.ASSERTED_UNSCREENED,
         justification=(
-            "the training regime (from-scratch vs pretrained-bridge) is a breadth "
-            "axis for the dual-regime certification; enumerated by the claimed product"
+            "NO SCREEN YET — the from-scratch↔pretrained-bridge regimes are ASSERTED "
+            "to share the recipe but never cross-screened; counted interacting "
+            "(enumerated) until a P3 dual-regime screen"
         ),
     ),
+)
+
+
+# The KNOWN-CRACKED regions whose per-neuron attribution is VALUE_DOMAIN_ONLY (the
+# deployed accuracy is bit-exact, but the per-neuron reassembly is not): GAP-1 is the
+# coalescing+neuron_split scramble at VGG scale; the residual Tier-1 merge is the
+# remaining attribution overcount in the fused-mapping reassembler. Marking them NOW
+# keeps the instrument honest about what it can attribute.
+KNOWN_CRACKED_REGIONS: Tuple[str, ...] = (
+    "GAP-1: coalescing+neuron_split at VGG scale",
+    "residual Tier-1 merge (fused-mapping reassembly)",
 )
 
 
 def collapse_orthogonal_axes(
     axes: Sequence[HypervolumeAxis],
 ) -> Tuple[HypervolumeAxis, ...]:
-    """Drop every COLLAPSED axis — the active product the cell key is built over.
+    """Drop every SCREENED_COLLAPSED axis — the active product the cell key is built over.
 
-    A collapsed orthogonal axis (one whose values cheap-screened equivalent, e.g.
-    ``encoding_placement`` offload≡subsume) contributes a single representative and is
-    therefore NOT a coordinate of the hypervolume cell; this returns the axes that
-    remain (the active product).
+    Collapse CONSUMES ``screening_status``: ONLY a ``SCREENED_COLLAPSED`` axis (one whose
+    values a cheap screen PROVED equivalent, e.g. ``encoding_placement`` offload≡subsume)
+    contributes a single representative and is therefore NOT a coordinate of the
+    hypervolume cell. ``ENUMERATED_INTERACTING`` and ``ASSERTED_UNSCREENED`` axes are
+    BOTH counted interacting (they survive as coordinates) — an axis cannot collapse
+    without a linked artifact. Returns the axes that remain (the active product).
     """
-    return tuple(a for a in axes if not a.collapsed)
+    return tuple(
+        a
+        for a in axes
+        if a.screening_status is not ScreeningStatus.SCREENED_COLLAPSED
+    )
+
+
+def interacting_axes(
+    axes: Sequence[HypervolumeAxis] = AXES,
+) -> Tuple[HypervolumeAxis, ...]:
+    """The axes counted INTERACTING (enumerated) in the honest denominator.
+
+    Exactly the non-``SCREENED_COLLAPSED`` axes: ``ENUMERATED_INTERACTING`` (proven to
+    interact) and ``ASSERTED_UNSCREENED`` (no screen yet) are BOTH enumerated, so no
+    axis inflates coverage without a linked artifact.
+    """
+    return collapse_orthogonal_axes(axes)
 
 
 def active_axes() -> Tuple[HypervolumeAxis, ...]:
@@ -585,24 +708,19 @@ _CLAIMED_DEFAULTS: Dict[str, Tuple[str, ...]] = {
 }
 
 
-def claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeCell]:
-    """Enumerate a claimed sub-product of the hypervolume as concrete cells.
+# The two enumerated-interacting axes whose SSOT default is the WILDCARD (rows carry
+# concrete S/depth and a wildcard claim is covered by any concrete value). They are
+# cell COORDINATES (counted interacting), but the honest denominator keeps them
+# wildcard rather than exploding into untested S/depth values that would be a strictly
+# HARSHER (different) claim than "any S/depth".
+_WILDCARD_DEFAULT_AXES: Tuple[str, ...] = ("S", "depth")
 
-    Each keyword pins an axis to a list of values; unpinned axes take their single
-    screened default. A COLLAPSED axis (``encoding_placement``) is IGNORED — pinning
-    it to both values does not double the product (offload≡subsume), so the claimed
-    set is invariant to it. Returns the cartesian product as :class:`HypervolumeCell`s.
-    """
-    chosen: Dict[str, Tuple[str, ...]] = {}
-    for axis in _CELL_AXES:
-        if axis in axis_values:
-            chosen[axis] = tuple(axis_values[axis])
-        else:
-            chosen[axis] = _CLAIMED_DEFAULTS[axis]
 
+def _enumerate_claim(chosen: Mapping[str, Sequence[str]]) -> List[HypervolumeCell]:
+    """Build the deduped cartesian product of per-axis value lists into cells."""
     ordered_axes = list(_CELL_AXES)
     cells: List[HypervolumeCell] = []
-    for combo in itertools.product(*(chosen[a] for a in ordered_axes)):
+    for combo in itertools.product(*(tuple(chosen[a]) for a in ordered_axes)):
         kv = dict(zip(ordered_axes, combo))
         sync = None if kv["sync"] in (None, "none", "") else kv["sync"]
         cells.append(
@@ -625,6 +743,107 @@ def claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeCell]:
     for cell in cells:
         seen.setdefault(cell.cell_key, cell)
     return list(seen.values())
+
+
+def claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeCell]:
+    """Enumerate a claimed sub-product of the hypervolume as concrete cells.
+
+    Each keyword pins an axis to a list of values; unpinned axes take their single
+    screened default. A COLLAPSED axis (``encoding_placement``) is IGNORED — pinning
+    it to both values does not double the product (offload≡subsume), so the claimed
+    set is invariant to it. Returns the cartesian product as :class:`HypervolumeCell`s.
+
+    This is the LEGACY single-default claim (an unpinned breadth axis collapses to one
+    screened default). For the HONEST denominator that ENUMERATES every unscreened /
+    interacting axis (so no axis inflates coverage without a linked artifact), use
+    :func:`honest_claimed_subproduct`.
+    """
+    chosen: Dict[str, Tuple[str, ...]] = {}
+    for axis in _CELL_AXES:
+        if axis in axis_values:
+            chosen[axis] = tuple(axis_values[axis])
+        else:
+            chosen[axis] = _CLAIMED_DEFAULTS[axis]
+    return _enumerate_claim(chosen)
+
+
+def honest_claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeCell]:
+    """The HONEST claimed sub-product — the denominator CONSUMES screening status.
+
+    Each keyword pins an axis. For every UNPINNED axis the denominator is built from the
+    axis's ``screening_status``:
+
+    * a ``SCREENED_COLLAPSED`` axis (``encoding_placement``) contributes its single
+      representative — it cannot enlarge the denominator (offload≡subsume, artifact-
+      backed);
+    * an ``ENUMERATED_INTERACTING`` or ``ASSERTED_UNSCREENED`` axis is ENUMERATED over
+      its full screened domain (the ``S`` / ``depth`` wildcard axes excepted — they stay
+      wildcard, a strictly weaker "any S/depth" claim). A bigger denominator = LOWER
+      honest coverage, so collapse-on-a-hunch is impossible: an unscreened axis can only
+      shrink the denominator once a screen (P3) earns the collapse.
+    """
+    chosen: Dict[str, Tuple[str, ...]] = {}
+    for axis in _CELL_AXES:
+        if axis in axis_values:
+            chosen[axis] = tuple(axis_values[axis])
+            continue
+        if axis in _WILDCARD_DEFAULT_AXES:
+            chosen[axis] = _CLAIMED_DEFAULTS[axis]
+            continue
+        chosen[axis] = HypervolumeAxis.get(axis).values
+    return _enumerate_claim(chosen)
+
+
+def _parse_ts(value: Any) -> Optional[_dt.date]:
+    """Parse an ISO ``YYYY-MM-DD`` string OR a Unix-epoch number to a date.
+
+    The live ledger writes ``ts`` as a Unix-epoch FLOAT (e.g. ``1782258504.2``), while
+    explicit flag timestamps are ISO strings — both must yield a real date so the aging
+    check has teeth on real data. Returns ``None`` only when truly unparseable.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return _dt.datetime.utcfromtimestamp(float(value)).date()
+        except (ValueError, OverflowError, OSError):
+            return None
+    text = str(value).strip()
+    # A numeric string is also an epoch (the ledger sometimes stringifies ts).
+    try:
+        return _dt.datetime.utcfromtimestamp(float(text)).date()
+    except (ValueError, OverflowError, OSError):
+        pass
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return _dt.datetime.strptime(text[: len(fmt) + 4], fmt).date()
+        except ValueError:
+            continue
+    try:
+        return _dt.date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+@dataclass(frozen=True)
+class FlagMetadata:
+    """Owner + aging metadata for one VALID_FLAGGED cell — the flag-aging schema.
+
+    ``cell_key`` names the flagged cell; ``owner`` is who owns driving the flag to
+    resolution (``None`` ⇒ UNOWNED); ``flag_ts`` is when it was raised; ``age_days`` is
+    its age vs the report's ``now_ts`` (``None`` when either timestamp is missing). An
+    UNOWNED flag aged past the CI threshold is a guard violation — a flag must not rot
+    without an owner.
+    """
+
+    cell_key: str
+    owner: Optional[str]
+    flag_ts: Optional[str]
+    age_days: Optional[int]
+
+    @property
+    def is_unowned(self) -> bool:
+        return not (self.owner and str(self.owner).strip())
 
 
 @dataclass(frozen=True)
@@ -653,7 +872,24 @@ class CoverageReport:
     research_gap_frontier: List[str]
     placement_fixable_frontier: List[str] = field(default_factory=list)
     claimed_cells: Tuple[HypervolumeCell, ...] = ()
+    flag_metadata: Tuple[FlagMetadata, ...] = ()
+    attribution_fidelity: Dict[str, AttributionFidelity] = field(default_factory=dict)
     _covered_keys: frozenset = field(default_factory=frozenset)
+
+    @property
+    def claimed_subproduct_size(self) -> int:
+        """The claimed sub-product SIZE — the denominator printed next to the fraction.
+
+        The report ALWAYS surfaces this so a coverage fraction is never a bare ``0.75``
+        with no denominator: ``0.75`` over 4 cells and over 4000 cells are very
+        different honesty claims.
+        """
+        return len(self.claimed_cells)
+
+    @property
+    def aged_unowned_flags(self) -> List[FlagMetadata]:
+        """Flagged cells that have NO owner (regardless of age) — the aging worklist."""
+        return [m for m in self.flag_metadata if m.is_unowned]
 
     def _matching_statuses(self, claimed: HypervolumeCell) -> List[CoverageStatus]:
         """The tiers of every COVERED cell that satisfies ``claimed`` (wildcard-aware)."""
@@ -692,9 +928,14 @@ class CoverageReport:
         return max(matches, key=lambda s: _TIER_SEVERITY[s])
 
     def to_dict(self) -> Dict[str, Any]:
+        # The two valid tiers are ALWAYS reported separately — there is deliberately no
+        # merged ``valid_total`` / ``covered_valid_total`` headline that fuses VALID and
+        # VALID_FLAGGED (the CI guard fails on such a key; the instrument must never
+        # claim a flagged cell as plainly valid).
         return {
             "covered_cell_count": self.covered_cell_count,
             "claimed_cell_count": self.claimed_cell_count,
+            "claimed_subproduct_size": self.claimed_subproduct_size,
             "covered_claimed_count": self.covered_claimed_count,
             "coverage_fraction": self.coverage_fraction,
             "tier_counts": {s.value: n for s, n in self.tier_counts.items()},
@@ -702,6 +943,18 @@ class CoverageReport:
             "untested_frontier": [c.cell_key for c in self.untested_frontier],
             "research_gap_frontier": list(self.research_gap_frontier),
             "placement_fixable_frontier": list(self.placement_fixable_frontier),
+            "attribution_fidelity": {
+                region: fid.value for region, fid in self.attribution_fidelity.items()
+            },
+            "flag_metadata": [
+                {
+                    "cell_key": m.cell_key,
+                    "owner": m.owner,
+                    "flag_ts": m.flag_ts,
+                    "age_days": m.age_days,
+                }
+                for m in self.flag_metadata
+            ],
         }
 
 
@@ -732,9 +985,35 @@ def _mine_flagged_ops(row: Mapping[str, Any]) -> Tuple[List[str], List[str]]:
     return ["unsupported_host_op"], []
 
 
+def _attribution_fidelity_map() -> Dict[str, AttributionFidelity]:
+    """The per-region attribution-fidelity map — mark the KNOWN-CRACKED regions NOW.
+
+    The KNOWN-CRACKED regions (GAP-1 coalescing+neuron_split at VGG scale; the residual
+    Tier-1 merge) are ``VALUE_DOMAIN_ONLY`` — their deployed accuracy is bit-exact but
+    the per-neuron ATTRIBUTION reassembly is not. Every other region is full
+    ``ATTRIBUTION``. The instrument carries this so coverage is never silently claimed
+    as attributable where only the value domain is sound.
+    """
+    return {region: AttributionFidelity.VALUE_DOMAIN_ONLY for region in KNOWN_CRACKED_REGIONS}
+
+
+def _flag_owner_of(row: Mapping[str, Any]) -> Optional[str]:
+    """The flag owner named by a row (``flag_owner`` / ``owner``), else ``None``."""
+    owner = row.get("flag_owner") or row.get("owner")
+    owner = str(owner).strip() if owner is not None else ""
+    return owner or None
+
+
+def _flag_ts_of(row: Mapping[str, Any]) -> Optional[str]:
+    """The flag timestamp named by a row (``flag_ts`` / ``ts``), else ``None``."""
+    ts = row.get("flag_ts") or row.get("ts")
+    return str(ts) if ts else None
+
+
 def coverage_report(
     rows: Iterable[Mapping[str, Any]],
     claimed_subproduct: Optional[Sequence[HypervolumeCell]] = None,
+    now_ts: Optional[str] = None,
 ) -> CoverageReport:
     """GROUP BY the ledger by hypervolume cell-key + validity tier → coverage.
 
@@ -747,8 +1026,13 @@ def coverage_report(
     measures coverage against it: the fraction tested, the named UNTESTED frontier, and
     each claimed cell's status. Non-science rows (no tier) and rows with no model are
     skipped.
+
+    ``flag_metadata`` carries each FINAL-VALID_FLAGGED cell's owner + age (vs ``now_ts``,
+    today's date if unset) so an unowned flag cannot rot silently; ``attribution_fidelity``
+    marks the KNOWN-CRACKED regions VALUE_DOMAIN_ONLY.
     """
     materialized = list(rows)
+    now = _parse_ts(now_ts) or _dt.date.today()
 
     # Pass 1: resolve each cell's FINAL tier (the worst tier of its rows).
     cell_status: Dict[str, CoverageStatus] = {}
@@ -767,21 +1051,38 @@ def coverage_report(
             if prior is None or _TIER_SEVERITY[tier] > _TIER_SEVERITY[prior]:
                 cell_status[key] = tier
 
-    # Pass 2: mine the flag ops only from rows whose cell's FINAL tier is FLAGGED, so
-    # the frontiers are unions over the VALID_FLAGGED cells (a cell demoted to INVALID
-    # by a conflicting row is no longer a flagged-cell research target).
+    # Pass 2: mine the flag ops + owner/aging metadata only from rows whose cell's FINAL
+    # tier is FLAGGED (a cell demoted to INVALID is no longer a flagged-cell target).
     research_gaps: set = set()
     placement_fixable: set = set()
+    flag_meta: Dict[str, FlagMetadata] = {}
     for row, tier, cells in row_cells:
         if tier is not CoverageStatus.VALID_FLAGGED:
             continue
-        if not any(
-            cell_status[cell.cell_key] is CoverageStatus.VALID_FLAGGED for cell in cells
-        ):
+        flagged_cells = [
+            cell
+            for cell in cells
+            if cell_status[cell.cell_key] is CoverageStatus.VALID_FLAGGED
+        ]
+        if not flagged_cells:
             continue
         gaps, placement = _mine_flagged_ops(row)
         research_gaps.update(gaps)
         placement_fixable.update(placement)
+        owner = _flag_owner_of(row)
+        flag_ts = _flag_ts_of(row)
+        flagged_on = _parse_ts(flag_ts)
+        age_days = (now - flagged_on).days if flagged_on is not None else None
+        for cell in flagged_cells:
+            flag_meta.setdefault(
+                cell.cell_key,
+                FlagMetadata(
+                    cell_key=cell.cell_key,
+                    owner=owner,
+                    flag_ts=flag_ts,
+                    age_days=age_days,
+                ),
+            )
 
     tier_counts: Dict[CoverageStatus, int] = {
         CoverageStatus.VALID: 0,
@@ -800,5 +1101,7 @@ def coverage_report(
         research_gap_frontier=sorted(research_gaps),
         placement_fixable_frontier=sorted(placement_fixable),
         claimed_cells=claimed,
+        flag_metadata=tuple(flag_meta[k] for k in sorted(flag_meta)),
+        attribution_fidelity=_attribution_fidelity_map(),
         _covered_keys=covered_keys,
     )
