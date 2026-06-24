@@ -37,6 +37,31 @@ def _infeasible_estimate():
     )
 
 
+def _scheduled_feasible_estimate():
+    """VGG16@224-shaped verdict: SUM huge but feasible-via-scheduling (PEAK fits)."""
+    return CapacityEstimate(
+        cores_needed=315816, cores_available=2048, feasible=True,
+        overflowing_segment=None,
+        per_segment={"neural_segment_until:features_6": 112896},
+        scheduled=True, peak_phase_cores=2048, phase_count=155,
+    )
+
+
+def test_capacity_precheck_admits_scheduled_feasible():
+    cfg = {"deployment_parameters": {"model_type": "torch_vgg16"}}
+    import unittest.mock as mock
+    with mock.patch.object(
+        sch, "_estimate_cfg_capacity", lambda c: _scheduled_feasible_estimate()
+    ):
+        ok, info = sch.capacity_precheck(cfg)
+    assert ok is True
+    assert info["reason"] == "ok"
+    assert info["feasible"] is True
+    assert info["scheduled"] is True
+    assert info["peak_phase_cores"] == 2048
+    assert info["phase_count"] == 155
+
+
 def test_capacity_precheck_admits_feasible():
     cfg = {"deployment_parameters": {"model_type": "lenet5"}}
     import unittest.mock as mock

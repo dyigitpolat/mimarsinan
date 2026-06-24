@@ -196,10 +196,13 @@ def capacity_precheck(cfg: dict) -> Tuple[bool, Dict]:
     Returns ``(enqueue_ok, info)``. Rejects (``False`` — no GPU claimed) a config
     whose SOUND ``estimate_cores_needed`` lower bound EXCEEDS its declared core
     budget (the net cannot be placed by any packing strategy — VGG16@224 on a
-    1000-core budget); admits a feasible one. Opt-out via
-    ``deployment_parameters.capacity_gate=False``. Any model-build / IR / estimate
-    failure is NON-FATAL — returns ``(True, {...})`` so a builder edge case never
-    silently drops valid work.
+    1000-core budget); admits a feasible one. When the chip permits scheduling
+    (``allow_scheduling``), a config too big for one pool is admitted as
+    feasible-via-scheduling whenever its PEAK reprogram phase fits — the ``info``
+    then carries ``scheduled``, ``peak_phase_cores`` and ``phase_count``. Opt-out
+    via ``deployment_parameters.capacity_gate=False``. Any model-build / IR /
+    estimate failure is NON-FATAL — returns ``(True, {...})`` so a builder edge
+    case never silently drops valid work.
     """
     dp = cfg.get("deployment_parameters", {}) or {}
     if not bool(dp.get("capacity_gate", True)):
@@ -213,6 +216,9 @@ def capacity_precheck(cfg: dict) -> Tuple[bool, Dict]:
         "cores_available": int(est.cores_available),
         "feasible": bool(est.feasible),
         "overflowing_segment": est.overflowing_segment,
+        "scheduled": bool(est.scheduled),
+        "peak_phase_cores": int(est.peak_phase_cores),
+        "phase_count": int(est.phase_count),
     }
     if not est.feasible:
         return False, dict(info, reason="capacity_exceeded")

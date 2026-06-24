@@ -249,8 +249,11 @@ class SoftCoreMappingStep(PipelineStep):
         sim) and raises ``CapacityExceededError`` — naming the overflowing segment +
         counts — when it exceeds the declared core budget, replacing the late greedy
         packer crash (``"No more hard cores available"``) with a diagnosable up-front
-        verdict. Returns the estimate (``None`` when disabled). Opt-out via
-        ``capacity_gate`` (default on)."""
+        verdict. ``allow_scheduling`` is resolved from ``platform_constraints`` (the
+        chip's ``MappingStrategy`` capability): when scheduling is permitted the gate
+        does NOT raise if the PEAK phase fits — only when the peak phase or an atomic
+        coalescing bundle overflows the whole budget. Returns the estimate (``None``
+        when disabled). Opt-out via ``capacity_gate`` (default on)."""
         if not bool(self.pipeline.config.get("capacity_gate", True)):
             return None
         from mimarsinan.mapping.verification.capacity import (
@@ -258,11 +261,19 @@ class SoftCoreMappingStep(PipelineStep):
         )
 
         estimate = estimate_cores_needed(ir_graph, platform_constraints)
-        print(
-            f"[SoftCoreMappingStep] placement capacity: needs "
-            f">= {estimate.cores_needed} hard cores, budget {estimate.cores_available} "
-            f"(feasible={estimate.feasible})"
-        )
+        if estimate.scheduled:
+            print(
+                f"[SoftCoreMappingStep] placement capacity (SCHEDULED): "
+                f"peak phase {estimate.peak_phase_cores} cores over "
+                f"{estimate.phase_count} reprogram phases, budget "
+                f"{estimate.cores_available} (feasible={estimate.feasible})"
+            )
+        else:
+            print(
+                f"[SoftCoreMappingStep] placement capacity: needs "
+                f">= {estimate.cores_needed} hard cores, budget "
+                f"{estimate.cores_available} (feasible={estimate.feasible})"
+            )
         estimate.raise_if_infeasible()
         return estimate
 
