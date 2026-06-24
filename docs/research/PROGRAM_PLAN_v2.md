@@ -78,3 +78,16 @@ mapping_strategy, metric)` that reproduces the measured fractions (deep_mlp 19.7
 deep_cnn 98.5%, mlp_mixer 90.1%, lenet5 99.1%) *without* training/placement, wired into the
 campaign enqueue as a validity pre-check, and used to answer E7 (does ViT-B pass the param
 gate?). Tests-first, worktree-isolated, patch for review + safe-merge.
+
+## E7 result (measured, byte-exact vs the authoritative gate)
+
+**ViT-B FAILS the >=50% on-chip gate at ~0.33 on BOTH metrics** (param frac **0.3309**,
+MAC frac **0.3311**) — only the 12 MLP-block first Linears map on-chip; the second MLP
+Linear, all 12 attention blocks, 25 LayerNorms, patch-embed conv, and head are host. The
+**MAC metric does NOT rescue ViT** (attention is param- AND MAC-heavy host-side), so review
+option (b) [redefine the gate as MAC/energy] is **foreclosed by the data**. VGG16 passes
+comfortably (**0.9997** both metrics). The fork narrows to **(a)** build on-chip attention/LN
+(expensive, a genuine contribution) or **(c)** headline on conv backbones (ResNet-50 / VGG /
+ConvNeXt — they pass cleanly). Recommendation: **conv-backbone headline first; transformers
+become a separate on-chip-attention contribution if the conv headline lands.** The static
+gate earned its keep — it foreclosed a GPU-weeks dead-end for free, before any training.
