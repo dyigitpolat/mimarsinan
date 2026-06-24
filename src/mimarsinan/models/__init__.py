@@ -18,3 +18,4 @@ from mimarsinan.models.nn.layers import (
     MaxValueScaler,
     FrozenStatsMaxValueScaler,
 )
+from mimarsinan.models.squeezenet import SqueezeNet, FireModule
