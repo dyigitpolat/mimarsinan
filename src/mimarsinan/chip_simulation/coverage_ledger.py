@@ -34,6 +34,7 @@ Pure data + a reader: it runs nothing, mutates no sim behavior; it reads ledger 
 from __future__ import annotations
 
 import itertools
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -50,17 +51,29 @@ __all__ = [
     "AxisKind",
     "HypervolumeAxis",
     "AXES",
+    "AXIS_WILDCARD",
     "collapse_orthogonal_axes",
     "active_axes",
     "HypervolumeCell",
     "CoverageStatus",
     "classify_validity_tier",
     "claimed_subproduct",
+    "cell_covers",
     "row_to_cell",
     "row_to_cells",
     "CoverageReport",
     "coverage_report",
 ]
+
+
+# The per-axis WILDCARD sentinel — the single source of truth for "this axis is not
+# constrained". It is the value ``row_to_cells`` records when a row carries no value
+# for an axis (S/depth unknown), AND the default a ``claimed_subproduct`` gives an
+# UNPINNED axis. In coverage matching a claimed-cell coordinate set to the wildcard
+# matches ANY covered value on that axis, so a claim that does not pin S/depth is
+# covered when the recipe was tested at any S/depth (the deep_cnn rows carry concrete
+# S=4 / depth=8 yet a depth-agnostic claim must still match them).
+AXIS_WILDCARD = "any"
 
 
 class AxisKind(Enum):
@@ -211,6 +224,19 @@ AXES: Tuple[HypervolumeAxis, ...] = (
         ),
     ),
     HypervolumeAxis(
+        name="depth",
+        kind=AxisKind.INTERACTING,
+        values=("4", "6", "8", "12", "16"),
+        interacts_with=("firing", "S"),
+        justification=(
+            "depth interacts with the firing law (the death-cascade is a depth-driven "
+            "collapse: deep_mlp's cascaded gap widens with depth, d4→d8); a depth's "
+            "validity tier is depth-specific, so depth is a cell COORDINATE — a shallow "
+            "INVALID and a deeper VALID_FLAGGED at the same recipe must NOT collapse to "
+            "one cell (and mutually demote)"
+        ),
+    ),
+    HypervolumeAxis(
         name="vehicle",
         kind=AxisKind.ORTHOGONAL,
         values=("deep_mlp", "deep_cnn", "lenet5", "mlp_mixer_core", "vit_b"),
@@ -269,9 +295,11 @@ class HypervolumeCell:
 
     The (firing × sync × backend) sub-coordinate is exactly an E6
     :class:`CertificationCell` (``cert_cell``); the remaining fields (vehicle,
-    dataset, regime, quantization, pruning, mapping_strategy, S) extend it so each
-    science-valid ledger row maps to exactly one hypervolume cell. The collapsed
-    ``encoding_placement`` axis is NOT a field (offload≡subsume).
+    dataset, regime, quantization, pruning, mapping_strategy, S, depth) extend it so
+    each science-valid ledger row maps to exactly one hypervolume cell. ``depth`` is a
+    real coordinate so a shallow INVALID and a deeper VALID_FLAGGED at the same recipe
+    do not collapse. The collapsed ``encoding_placement`` axis is NOT a field
+    (offload≡subsume).
     """
 
     firing: str
@@ -284,6 +312,7 @@ class HypervolumeCell:
     pruning: str
     mapping_strategy: str
     s: str
+    depth: str
 
     @property
     def cert_cell(self) -> CertificationCell:
@@ -328,12 +357,41 @@ class HypervolumeCell:
             pruning=kv["pruning"],
             mapping_strategy=kv["mapping_strategy"],
             s=kv["S"],
+            depth=kv["depth"],
         )
 
 
 # axis-name → HypervolumeCell field name (``S`` is stored as ``s``).
 _FIELD_FOR_AXIS: Dict[str, str] = {a: a for a in _CELL_AXES}
 _FIELD_FOR_AXIS["S"] = "s"
+
+# The HypervolumeCell fields a claimed cell is matched on (every cell coordinate).
+_MATCH_FIELDS: Tuple[str, ...] = tuple(_FIELD_FOR_AXIS[a] for a in _CELL_AXES)
+
+
+def _coord(cell: "HypervolumeCell", field_name: str) -> str:
+    """A cell's coordinate value for a match field, with ``sync=None`` read as ``none``."""
+    value = getattr(cell, field_name)
+    if field_name == "sync" and value in (None, ""):
+        return "none"
+    return str(value)
+
+
+def cell_covers(claimed: "HypervolumeCell", covered: "HypervolumeCell") -> bool:
+    """True iff a COVERED cell satisfies a CLAIMED cell under wildcard semantics.
+
+    A claimed coordinate set to :data:`AXIS_WILDCARD` matches any covered value on that
+    axis (the claim does not constrain it); every other claimed coordinate must EQUAL
+    the covered one. So a depth/S-agnostic claim is covered by a row tested at a
+    concrete depth/S, but a claim that pins an axis is only covered by an exact hit.
+    """
+    for field_name in _MATCH_FIELDS:
+        claim_value = _coord(claimed, field_name)
+        if claim_value == AXIS_WILDCARD:
+            continue
+        if claim_value != _coord(covered, field_name):
+            return False
+    return True
 
 
 class CoverageStatus(Enum):
@@ -411,6 +469,33 @@ def _dataset_of(row: Mapping[str, Any]) -> str:
     return str(ds).lower().replace("fashionmnist", "fmnist").replace("fashion_mnist", "fmnist")
 
 
+# Parses a depth out of a ``_d<N>_`` token in a run_id (e.g. ``dcnn_d6_cascaded_s0``).
+_DEPTH_IN_RUN_ID = re.compile(r"_d(\d+)_")
+
+
+def _depth_of(row: Mapping[str, Any]) -> str:
+    """The depth axis value: the explicit ``depth`` field, else parsed from a run_id.
+
+    Reads the structured ``depth`` field first; if absent, parses a ``_d<N>_`` token
+    from any of the row's run-id fields (``run_id`` / ``cascaded_run_ids`` /
+    ``synchronized_run_ids``). A row with neither gets ``WILDCARD`` (``"any"``) — depth
+    is genuinely unknown for that row, so it does not claim a specific depth cell.
+    """
+    explicit = row.get("depth")
+    if explicit is not None and str(explicit) != "":
+        return str(explicit)
+    for field_name in ("run_id", "run_ids", "cascaded_run_ids", "synchronized_run_ids"):
+        value = row.get(field_name)
+        candidates = value if isinstance(value, (list, tuple)) else (value,)
+        for candidate in candidates:
+            if not candidate:
+                continue
+            match = _DEPTH_IN_RUN_ID.search(str(candidate))
+            if match:
+                return match.group(1)
+    return AXIS_WILDCARD
+
+
 def _syncs_of(row: Mapping[str, Any]) -> List[str]:
     """The sync axis value(s) a row covers.
 
@@ -445,7 +530,8 @@ def _cell_with_sync(row: Mapping[str, Any], vehicle: str, sync: str) -> Hypervol
         quantization=str(row.get("quantization") or "none"),
         pruning=str(row.get("pruning") or "dense"),
         mapping_strategy=str(row.get("mapping_strategy") or "packed"),
-        s=str(row.get("S") if row.get("S") is not None else "any"),
+        s=str(row.get("S") if row.get("S") is not None else AXIS_WILDCARD),
+        depth=_depth_of(row),
     )
 
 
@@ -476,9 +562,14 @@ def row_to_cell(row: Mapping[str, Any]) -> Optional[HypervolumeCell]:
     return cells[0] if cells else None
 
 
-# Defaults the claimed-product builder fills for any axis the caller does not pin (so
-# a partial claim resolves to ONE concrete representative per unpinned axis — the
-# coverage fraction is over a concrete set of cells, not an ambiguous template).
+# Defaults the claimed-product builder fills for any axis the caller does not pin.
+# These are the SAME per-axis defaults ``row_to_cells`` (via ``_cell_with_sync``)
+# records when a row carries no value for the axis — the single source of truth so a
+# real claim's cells match its covered cells. The breadth axes the rows always carry
+# explicitly (backend/quantization/pruning/mapping_strategy/regime) take their screened
+# representative; ``S`` and ``depth`` take the ``AXIS_WILDCARD`` so an S/depth-agnostic
+# claim is covered when the recipe was tested at any S/depth (the deep_cnn rows carry
+# concrete S=4 / depth=8, but a claim that does not pin them must still match).
 _CLAIMED_DEFAULTS: Dict[str, Tuple[str, ...]] = {
     "firing": ("ttfs_cycle_based",),
     "sync": ("cascaded",),
@@ -489,7 +580,8 @@ _CLAIMED_DEFAULTS: Dict[str, Tuple[str, ...]] = {
     "quantization": ("none",),
     "pruning": ("dense",),
     "mapping_strategy": ("packed",),
-    "S": ("any",),
+    "S": (AXIS_WILDCARD,),
+    "depth": (AXIS_WILDCARD,),
 }
 
 
@@ -525,6 +617,7 @@ def claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeCell]:
                 pruning=kv["pruning"],
                 mapping_strategy=kv["mapping_strategy"],
                 s=kv["S"],
+                depth=kv["depth"],
             )
         )
     # Dedupe (a collapsed axis pinned to multiple values yields identical cells).
@@ -542,13 +635,17 @@ class CoverageReport:
     ``tier_counts`` tallies the covered cells by tier. When a ``claimed_subproduct``
     is supplied, ``claimed_cells`` is it, ``covered_claimed_count`` is how many were
     tested, ``coverage_fraction`` = covered / claimed, ``untested_frontier`` is the
-    claimed cells with no row, and ``status_for`` answers a claimed cell's status
-    (UNTESTED when uncovered). ``research_gap_frontier`` is the sorted, deduped union
-    of ``research_gap_ops`` over the VALID_FLAGGED cells — the future-conversion
-    targets (host ops with NO on-chip SNN mapping yet). ``placement_fixable_frontier``
-    is the parallel union of ``placement_fixable_ops`` — supported encoders host-placed
-    under ``subsume`` that an ``offload`` flip would map on-chip (un-flagging the cell);
-    those are NOT research gaps, so they are reported separately.
+    claimed cells with NO matching row, and ``status_for`` answers a claimed cell's
+    status (UNTESTED when uncovered). A claimed cell is COVERED when at least one
+    covered cell satisfies it under :func:`cell_covers` wildcard semantics — a claim
+    that leaves S/depth unpinned matches a recipe tested at any S/depth; its status is
+    the WORST tier among the covered cells it matches (conservative). ``research_gap_
+    frontier`` is the sorted, deduped union of ``research_gap_ops`` over the
+    VALID_FLAGGED cells — the future-conversion targets (host ops with NO on-chip SNN
+    mapping yet). ``placement_fixable_frontier`` is the parallel union of
+    ``placement_fixable_ops`` — supported encoders host-placed under ``subsume`` that an
+    ``offload`` flip would map on-chip (un-flagging the cell); those are NOT research
+    gaps, so they are reported separately.
     """
 
     cell_status: Dict[str, CoverageStatus]
@@ -557,6 +654,14 @@ class CoverageReport:
     placement_fixable_frontier: List[str] = field(default_factory=list)
     claimed_cells: Tuple[HypervolumeCell, ...] = ()
     _covered_keys: frozenset = field(default_factory=frozenset)
+
+    def _matching_statuses(self, claimed: HypervolumeCell) -> List[CoverageStatus]:
+        """The tiers of every COVERED cell that satisfies ``claimed`` (wildcard-aware)."""
+        statuses: List[CoverageStatus] = []
+        for key, status in self.cell_status.items():
+            if cell_covers(claimed, HypervolumeCell.from_key(key)):
+                statuses.append(status)
+        return statuses
 
     @property
     def covered_cell_count(self) -> int:
@@ -568,7 +673,7 @@ class CoverageReport:
 
     @property
     def covered_claimed_count(self) -> int:
-        return sum(1 for c in self.claimed_cells if c.cell_key in self._covered_keys)
+        return sum(1 for c in self.claimed_cells if self._matching_statuses(c))
 
     @property
     def coverage_fraction(self) -> float:
@@ -578,10 +683,13 @@ class CoverageReport:
 
     @property
     def untested_frontier(self) -> List[HypervolumeCell]:
-        return [c for c in self.claimed_cells if c.cell_key not in self._covered_keys]
+        return [c for c in self.claimed_cells if not self._matching_statuses(c)]
 
     def status_for(self, cell: HypervolumeCell) -> CoverageStatus:
-        return self.cell_status.get(cell.cell_key, CoverageStatus.UNTESTED)
+        matches = self._matching_statuses(cell)
+        if not matches:
+            return CoverageStatus.UNTESTED
+        return max(matches, key=lambda s: _TIER_SEVERITY[s])
 
     def to_dict(self) -> Dict[str, Any]:
         return {

@@ -53,6 +53,7 @@ class TestAxisModel:
             "backend",
             "mapping_strategy",
             "S",
+            "depth",
             "vehicle",
             "dataset",
             "regime",
@@ -65,6 +66,13 @@ class TestAxisModel:
         # (firing × sync) is tested JOINTLY (the death-cascade is a firing×sync result).
         assert HypervolumeAxis.get("firing").kind is AxisKind.INTERACTING
         assert HypervolumeAxis.get("sync").kind is AxisKind.INTERACTING
+
+    def test_depth_is_a_modeled_axis(self):
+        # depth is a real coordinate of the hypervolume (the death-cascade is a
+        # depth-driven law: deep_mlp collapse worsens with depth).
+        axis = HypervolumeAxis.get("depth")
+        assert axis.kind in (AxisKind.ORTHOGONAL, AxisKind.INTERACTING)
+        assert "depth" in {a.name for a in collapse_orthogonal_axes(AXES)}
 
     def test_quantization_is_interacting_with_firing(self):
         # quantization × firing is tested jointly (quant interacts with the firing law).
@@ -106,6 +114,7 @@ class TestHypervolumeCell:
             pruning="dense",
             mapping_strategy="packed",
             s="4",
+            depth="8",
         )
         base.update(over)
         return HypervolumeCell(**base)
@@ -134,6 +143,16 @@ class TestHypervolumeCell:
         a = self._cell(dataset="mnist")
         b = self._cell(dataset="fmnist")
         assert a.cell_key != b.cell_key
+
+    def test_depth_is_a_distinct_coordinate(self):
+        # depth is a real coordinate: two cells differing only in depth are distinct,
+        # round-trip through the key, and the depth value is carried in the key.
+        d4 = self._cell(depth="4")
+        d8 = self._cell(depth="8")
+        assert d4.cell_key != d8.cell_key
+        assert "depth=4" in d4.cell_key
+        assert HypervolumeCell.from_key(d4.cell_key) == d4
+        assert HypervolumeCell.from_key(d8.cell_key) == d8
 
 
 # --------------------------------------------------------------------------- #
@@ -402,3 +421,112 @@ class TestFlagFrontiers:
         report = coverage_report(ledger)
         assert report.research_gap_frontier  # non-empty
         assert report.placement_fixable_frontier == []
+
+
+# --------------------------------------------------------------------------- #
+# Depth as a cell coordinate — deep_mlp d4 (INVALID) and d8 (VALID_FLAGGED) must
+# NOT collapse to one cell and mutually demote. This is defect #1 of the refine.
+# --------------------------------------------------------------------------- #
+
+class TestDepthCoordinate:
+    def test_depth_field_separates_d4_and_d8_into_distinct_cells(self):
+        # Two deep_mlp rows that differ ONLY in depth must land in DISTINCT cells.
+        d4 = _row("deep_mlp", "mnist", "cascaded", "INVALID_host_majority", depth=4)
+        d8 = _row("deep_mlp", "mnist", "cascaded", "VALID_FLAGGED_placement", depth=8)
+        c4 = row_to_cell(d4)
+        c8 = row_to_cell(d8)
+        assert c4.depth == "4"
+        assert c8.depth == "8"
+        assert c4.cell_key != c8.cell_key
+
+    def test_d4_invalid_and_d8_flagged_do_not_mutually_demote(self):
+        # The HEADLINE defect: a d4 INVALID row and a d8 VALID_FLAGGED row, sharing
+        # every other axis, must classify INDEPENDENTLY — d8 stays VALID_FLAGGED
+        # (it is no longer demoted to INVALID by the d4 row sharing its cell).
+        ledger = [
+            _row("deep_mlp", "mnist", "cascaded", "INVALID_host_majority", depth=4),
+            _row("deep_mlp", "mnist", "cascaded", "VALID_FLAGGED_placement", depth=8),
+        ]
+        report = coverage_report(ledger)
+        assert report.covered_cell_count == 2
+        assert report.tier_counts[CoverageStatus.INVALID] == 1
+        assert report.tier_counts[CoverageStatus.VALID_FLAGGED] == 1
+        statuses = {
+            HypervolumeCell.from_key(k).depth: v
+            for k, v in report.cell_status.items()
+        }
+        assert statuses["4"] is CoverageStatus.INVALID
+        assert statuses["8"] is CoverageStatus.VALID_FLAGGED
+
+    def test_depth_parsed_from_run_id_when_no_depth_field(self):
+        # A row with no `depth` field falls back to parsing `_d<N>_` from a run_id.
+        row = _row("deep_cnn", "mnist", "cascaded", "VALID_on_chip_majority")
+        row["run_id"] = "dcnn_d6_cascaded_s0"
+        assert row_to_cell(row).depth == "6"
+
+    def test_depth_defaults_to_any_without_depth_or_run_id(self):
+        # No depth field and no parseable run_id → depth="any".
+        row = _row("deep_cnn", "mnist", "cascaded", "VALID_on_chip_majority")
+        assert row_to_cell(row).depth == "any"
+
+
+# --------------------------------------------------------------------------- #
+# Claimed-default ↔ row-derivation SSOT — defect #2: a claim built from the SAME
+# axis values a set of rows carry must report a NON-ZERO coverage fraction.
+# --------------------------------------------------------------------------- #
+
+class TestClaimedDefaultReconciliation:
+    def _deep_cnn_ledger(self):
+        # Synthetic rows shaped like the REAL deep_cnn arch_dataset ledger rows: they
+        # carry an explicit S (=4), spiking_mode=ttfs_cycle_based, and no backend
+        # (→ sanafe default). mnist/fmnist/kmnist are tested; svhn is NOT.
+        def cnn(dataset, sync):
+            return _row("deep_cnn", dataset, sync, "VALID_on_chip_majority", S=4)
+        return [
+            cnn("mnist", "cascaded"), cnn("mnist", "synchronized"),
+            cnn("fmnist", "cascaded"), cnn("fmnist", "synchronized"),
+            cnn("kmnist", "cascaded"), cnn("kmnist", "synchronized"),
+        ]
+
+    def test_claim_from_same_axis_values_reports_nonzero_coverage(self):
+        # The claim leaves S/backend/quant/etc. UNPINNED; its defaults for those axes
+        # must match how row_to_cells derives them from the rows, so a real claim
+        # matches its covered cells (NOT the 0/8 the unreconciled defaults gave).
+        ledger = self._deep_cnn_ledger()
+        claim = claimed_subproduct(
+            firing=["ttfs_cycle_based"],
+            vehicle=["deep_cnn"],
+            dataset=["mnist", "fmnist", "kmnist", "svhn"],
+            sync=["cascaded", "synchronized"],
+        )
+        report = coverage_report(ledger, claimed_subproduct=claim)
+        assert report.claimed_cell_count == 8
+        # mnist/fmnist/kmnist × {cascaded, synchronized} = 6 covered; svhn × 2 = 2 not.
+        assert report.covered_claimed_count == 6
+        assert report.coverage_fraction == pytest.approx(6 / 8)
+
+    def test_uncovered_svhn_cells_are_named_in_the_untested_frontier(self):
+        ledger = self._deep_cnn_ledger()
+        claim = claimed_subproduct(
+            firing=["ttfs_cycle_based"],
+            vehicle=["deep_cnn"],
+            dataset=["mnist", "fmnist", "kmnist", "svhn"],
+            sync=["cascaded", "synchronized"],
+        )
+        report = coverage_report(ledger, claimed_subproduct=claim)
+        untested = {(c.dataset, c.sync) for c in report.untested_frontier}
+        assert untested == {("svhn", "cascaded"), ("svhn", "synchronized")}
+
+    def test_claimed_default_matches_row_derivation_for_unpinned_axes(self):
+        # SSOT: the cell a row maps to and the cell a claim (same pinned axes) builds
+        # are byte-identical when no extra axis is pinned — they share one default map.
+        row = _row("deep_cnn", "mnist", "cascaded", "VALID_on_chip_majority", S=4)
+        row_cell = row_to_cell(row)
+        claim_cell = claimed_subproduct(
+            firing=["ttfs_cycle_based"],
+            vehicle=["deep_cnn"],
+            dataset=["mnist"],
+            sync=["cascaded"],
+            S=["4"],
+        )[0]
+        assert claim_cell.cell_key == row_cell.cell_key
