@@ -14,6 +14,11 @@ from mimarsinan.mapping.verification.onchip_fraction import (
     classify_validity,
     estimate_onchip_fraction,
 )
+from mimarsinan.mapping.verification.capacity import (
+    CapacityEstimate,
+    CapacityExceededError,
+    estimate_cores_needed,
+)
 
 __all__ = [
     "OnchipMajorityError",
@@ -26,4 +31,7 @@ __all__ = [
     "assert_onchip_majority_estimate_or_raise",
     "classify_validity",
     "estimate_onchip_fraction",
+    "CapacityEstimate",
+    "CapacityExceededError",
+    "estimate_cores_needed",
 ]
