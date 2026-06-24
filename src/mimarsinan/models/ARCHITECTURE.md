@@ -19,6 +19,7 @@ and architecture-specific implementations.
 | `lif_kernels.py` | `lif_fire_and_reset` | Shared LIF threshold + Novena/Default reset step for unified and hybrid flows. |
 | `torch_mlp_mixer.py`, `torch_mlp_mixer_core.py`, `mlp_mixer_ref.py` | … | MLP-Mixer variants |
 | `deep_mlp.py` | `DeepMLP` | Narrow configurable-depth `Flatten -> [Linear(width)+act] x depth -> Linear(classes)` stack (pure Linear+ReLU, no conv/attention); the depth-probe vehicle, registered as `deep_mlp` (category "torch") |
+| `deep_cnn.py` | `DeepCNN`, `allowed_pool_count` | Configurable-depth (4..16) plain `[Conv(k3,pad1)+BatchNorm+ReLU] x depth` stack with periodic MaxPool (capped by `allowed_pool_count` so a 28x28/32x32 input never collapses below 1x1), channels doubling per pool boundary (cap 128), `AdaptiveAvgPool->Linear` head. No grouped/depthwise conv, no residuals — maps fully on-chip (SAME padding keeps multi-channel convs off the LayoutSourceView no-pad limitation). The TRAINABLE deep-conv vehicle for the cascaded single-spike firing-gain probe; registered as `deep_cnn` (category "torch"), input-shape-adaptive for MNIST (1x28x28) and SVHN (3x32x32) |
 
 | `lenet5.py` | `LeNet5` | Classic LeNet-5 CNN (Conv 1→6 k5, Conv 6→16 k5 with `padding=2`, two MaxPool, FC 120→84→n_classes); T1 classical rung, pipeline-native (no grouped/depthwise conv) |
 
