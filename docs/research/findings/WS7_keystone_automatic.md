@@ -93,6 +93,49 @@ FMNIST nb cpFalse 0.800 ≈ cpTrue 0.805 — same controller==controller no-op w
 > the corrected discriminator. The §4–§6 `c_keystone_*` keep-fast verdicts are unaffected
 > by this label fix (those cells deploy ~0.96 either way).
 
+### 0.5 No-blend cpTrue-vs-cpFalse, both datasets, 3 seeds (`__target_metric.json` basis, 2026-06-24)
+
+A clean 12-run no-blend batch (`ttfs_blend_fast:false`) re-reads the §0.2/§0.3 ablation
+from the bare `__target_metric.json` deployed float (the per-item reporting convention),
+across **both** datasets, 3 seeds/arm. All 12 runs finalized `rc=0`; NF↔SCM cascaded
+agreement and torch↔sim parity = 1.0 on every run (deployed metric faithful).
+
+| dataset | arm | deployed (3-seed mean) | seeds | ANN | sync ceiling | cp lift |
+|:--------|:----|-----------------------:|:------|----:|-------------:|--------:|
+| mnist  | cpFalse | **0.945** | .941/.953/.941 | 0.977 | 0.964 | — |
+| mnist  | cpTrue  | **0.948** | .955/.947/.942 | 0.977 | 0.964 | **+0.30pp** |
+| fmnist | cpFalse | **0.7943** | .774/.818/.791 | 0.883 | 0.857 | — |
+| fmnist | cpTrue  | **0.8123** | .810/.819/.808 | 0.883 | 0.857 | **+1.80pp** |
+
+**Verdict — REAL-BUT-SMALL cp lift; ESCALATION still NOT isolable (controller==controller).**
+With the fast 5-rung ladder vetoed in *both* arms, cpFalse and cpTrue **both** run the
+controller's 8-rung gradual ladder [0.125→1.0] + finalize cliff (~0.47–0.49 MNIST,
+~0.51–0.65 FMNIST) + ~270–350s adaptive post-finalize recovery. The FMNIST cpFalse trace
+shows *explicit* rate exploration (rate 1.0 rollback → 0.5 rollback → 0.25 commit → 1.0
+rollback → 0.625 rollback → 0.4375 commit → 1.0 commit @ lr 4.17e-3 — **not** a flat-lr
+all-commit ladder), confirming the genuine adaptive search runs in both arms. The cp lift
+is therefore a **controller-vs-controller residual**: +0.30pp on MNIST (within ~1.2pp seed
+sd — **not significant**) and +1.80pp on FMNIST (real but small). The keystone's measurable
+contribution is **routing** (auto-selecting the controller, vetoing the lossy fast ladder),
+not extra accuracy beyond what the controller already delivers — consistent with the §0.2
+no-blend ablation (+0.21pp) and the prior `escalation_result` ledger record. ESCALATE
+remains **inseparable** from MATCH on this cell: `propose_recipe` always proposes
+`driver=controller`, so both branches leave the same controller trace.
+
+**Confounds.** (1) **Deployed basis:** `__target_metric.json` (used here per convention)
+reads ~1pp **above** the in-log HardCore sim line (e.g. MNIST cpTrue s0 = 0.955 vs in-log
+0.945) and the §0.1 ledger means (0.9396/0.9417); read **gaps**, not third decimals.
+(2) `max_simulation_samples=1000` → individual deployed values carry ~±1pp sampling
+granularity. (3) **No paired synchronized run** in this batch — both prefixes are cascaded
+(cp true/false); the sync ceiling (MNIST 0.964, FMNIST 0.857) is the **stated** reference,
+not a finalized run here (`synchronized_run_ids` empty in the ledger record). (4) **Not a
+chance/untrained artifact:** ANN healthy on both datasets (MNIST 0.977, FMNIST 0.883),
+parity 1.0 — a genuine firing-gain/recovery result. The larger FMNIST residual ANN gap
+(7pp vs MNIST's 3pp) shows the FMNIST cascade is genuinely harder, but it is still recovered
+far above the implied WS3 fast-ladder ~0.77 floor. Runs:
+`ws7esc_nb_{MNIST,FashionMNIST}_DataProvider_cp{True,False}_s{0,1,2}`. Ledger:
+`cluster:"WS7"`, `kind:"escalation"`, `model:"deep_mlp"`, `depth:8`.
+
 ---
 
 ## 1. What the keystone is

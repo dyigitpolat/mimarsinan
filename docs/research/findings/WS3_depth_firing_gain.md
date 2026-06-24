@@ -328,6 +328,47 @@ gate-fix targets — but the gate-fix's prior plateau (~0.95–0.966) sits *belo
 synchronized on the harder cells here, so cascaded's only standing rationale stays
 single-spike traffic economy, not accuracy.
 
+## 4c. The cascade collapse is MLP-architecture-specific — `deep_cnn` d4 carries NO deficit (2026-06-24)
+
+**Question (the architecture axis, sharpened).** §4b's CNN row was the *shallow*
+LeNet5. Does a **trainable, genuinely deep CNN** (`deep_cnn`, the same conv-stack
+family used for the deep_mlp depth ladder) show the cascaded death-cascade that
+deep_mlp does at the same depth? This isolates *architecture* at fixed depth (d4)
+and fixed dataset (MNIST), against the deep_mlp baseline where d4 cascaded already
+costs 4.3pp and d8 costs 9.3pp.
+
+Runs: `dcnn_d4_{cascaded,synchronized}_s{0,1,2}` (6 runs, all `returncode==0`,
+3 seeds/arm, `max_simulation_samples=200`). Ledger: `cluster:"WS3"`,
+`kind:"arch_dataset"`, `model:"deep_cnn"`.
+
+| model | dataset | d | sched | deployed (3-seed mean) | ANN ref | casc→sync GAP | ANN-gap(casc) |
+|:------|:--------|:--|:------|:-----------------------|:--------|--------------:|--------------:|
+| deep_cnn | mnist | 4 | cascaded     | **0.9883** (.97/.995/1.0) | 0.9931 | — | 0.47 |
+| deep_cnn | mnist | 4 | synchronized | **0.9898** (.9911/.9865/.9918) | 0.9909 | **−0.15** | 0.11 |
+| *(ref)* deep_mlp | mnist | 4 | cascaded | 0.9267 | 0.9817 | +4.32 | 5.50 |
+| *(ref)* deep_mlp | mnist | 8 | cascaded | 0.8717 | 0.9783 | +9.27 | 9.63 |
+
+**Verdict — SUPPORTED (collapse is MLP-specific), but BOUNDED.** On the trainable
+`deep_cnn d4` the cascaded→sync gap is **−0.15pp** (cascaded is statistically *equal*
+to synchronized, not worse) and cascaded tracks its 0.9931 ANN reference within
+**0.47pp** — there is **no firing-gain death-cascade**, in sharp contrast to deep_mlp
+where d4 cascaded already shows 4.3pp widening to 9.3pp at d8. ANN refs 0.989–0.995
+(≫ 0.10 chance) confirm this is a genuine firing-gain comparison, not an
+untrained-floor artifact. Together with §4b (shallow LeNet5 MNIST cascaded 0.91pp,
+near-lossless) this **strengthens** the claim that the death-cascade is a property of
+the deep plain-Linear+ReLU MLP stack, not a depth-universal law.
+
+**Confounds / bounds.** (1) `max_simulation_samples=200` → read the ~0pp gap, *not*
+the third decimals: cascaded s0=0.97 (≈6/200 misses) and s2=1.0 are small-N
+variance that inflates the cascaded per-seed spread (0.97–1.0). (2) **The within-CNN
+depth ladder cannot be closed in this batch — every `deep_cnn d6` run failed (rc=1,
+a SANA-FE / mapping compile crash).** So the actual analogue of the MLP d4→d8
+widening (does a *deeper* CNN eventually cascade?) is **untested**; absence of a gap
+at d4 alone does not prove absence of a deeper cascade. The deep_mlp comparison
+numbers are carried from §2/§3, not recomputed here. **Next:** re-attempt the
+`deep_cnn` d5/d6/d7 rungs with SANA-FE/Loihi sim **off** (the crash surface) to fit a
+within-CNN depth law and confirm/deny a deeper CNN cascade (backlog `plan_stage:4`).
+
 ---
 
 ## 5. Ledger
