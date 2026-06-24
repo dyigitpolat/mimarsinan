@@ -17,6 +17,7 @@ Factory classes that construct `Supermodel` instances (category "native") or nat
 | `torch_sequential_linear_builder.py` | `TorchSequentialLinearBuilder` | Builds native Sequential(Flatten, Linear, …) |
 | `torch_sequential_conv_builder.py` | `TorchSequentialConvBuilder` | Builds native Sequential(Conv2d, ReLU, MaxPool2d, Flatten, Linear, …); two IR segments |
 | `deep_mlp_builder.py` | `DeepMLPBuilder` | Builds native `DeepMLP` (registered as `deep_mlp`, category "torch"); configurable-depth narrow Linear+ReLU stack, the depth-probe vehicle |
+| `deep_cnn_builder.py` | `DeepCNNBuilder` | Builds native `DeepCNN` (registered as `deep_cnn`, category "torch"); configurable-depth (4..16) plain Conv-BN-ReLU stack, the TRAINABLE deep-conv firing-gain probe vehicle; exposes `get_nas_search_options` (depth/width) |
 
 | `lenet5_builder.py` | `LeNet5Builder` | Builds native `LeNet5` (registered as `lenet5`, category "torch"); classic LeNet-5 CNN for the T1 classical rung |
 
@@ -37,4 +38,4 @@ Each builder implements `build(configuration) -> nn.Module`. Builders self-regis
 
 `SimpleMLPBuilder`, `TorchMLPMixerBuilder`, `TorchMLPMixerCoreBuilder`, `TorchVGG16Builder`, `TorchViTBuilder`, `TorchSqueezeNet11Builder`, `TorchCustomBuilder`, `TorchSequentialLinearBuilder`, `TorchSequentialConvBuilder`, `DeepMLPBuilder`.
 
-`SimpleMLPBuilder`, `TorchMLPMixerBuilder`, `TorchMLPMixerCoreBuilder`, `TorchVGG16Builder`, `TorchViTBuilder`, `TorchSqueezeNet11Builder`, `TorchCustomBuilder`, `TorchSequentialLinearBuilder`, `TorchSequentialConvBuilder`, `LeNet5Builder`.
+`SimpleMLPBuilder`, `TorchMLPMixerBuilder`, `TorchMLPMixerCoreBuilder`, `TorchVGG16Builder`, `TorchViTBuilder`, `TorchSqueezeNet11Builder`, `TorchCustomBuilder`, `TorchSequentialLinearBuilder`, `TorchSequentialConvBuilder`, `LeNet5Builder`, `DeepCNNBuilder`.
