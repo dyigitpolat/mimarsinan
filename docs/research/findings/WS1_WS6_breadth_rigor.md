@@ -1,3 +1,5 @@
+> ⚠️ **VALIDITY:** deep_mlp results below are an **INVALID host-majority config** (<50% params on-chip; see [VALIDITY_AUDIT.md](VALIDITY_AUDIT.md)). The phenomena may be real but are NOT valid on-chip deployments. Valid trainable-deep vehicle = **deep_cnn**.
+
 # WS1+WS6 — Breadth × Rigor (consolidated CI table)
 
 **Question.** Does the synchronized `deep_mlp` deployment story (ANN → on-chip
