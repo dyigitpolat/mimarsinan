@@ -178,3 +178,16 @@ Design: `docs/research/E4_PLACEMENT_SCALING_DESIGN.md`. The round-1 prototype wa
 current main, EXTENDING the merged `estimate_cores_needed` (not rebuilding). Next: (1) scheduling-aware capacity
 (peak+phase_count) wired into the existing SCM gate + enqueue pre-check; (2) GAP-R reprogramming cost term into
 `cost_extraction`; (3) a real VGG@224 scheduled-build probe confirming peak/phase_count; (4) GAP-1 reassembly fix.
+
+## Caveat for E5/cost-coverage: encoding_placement collapse is FIDELITY-ONLY
+
+`coverage_ledger` collapses `encoding_placement` (subsume≡offload) **only for the accuracy/fidelity
+cell-key** — offload-HCM == subsume to ~1e-6 under signed-IF, so testing one value proves the other's
+*deployed accuracy*. It is **NOT collapsed** for utilization or cost: subsume keeps the segment-start
+encoder host-side (lower on-chip fraction — deep_mlp 36% subsume vs 99% offload; can drop a model below
+the 20% validity floor) while offload maps it on-chip (higher utilization, more accelerator load); and
+host-encode vs on-chip-encode is a real energy/latency tradeoff. **Therefore: (a) the E5 Pareto allocator
+must treat subsume↔offload as a genuine knob (utilization vs encoding cost), choosing it from the budget,
+NOT pre-collapsed; (b) any future cost/utilization coverage report must NOT inherit the accuracy-collapse
+— the collapse is metric-dependent (fidelity-collapsed, validity/cost-intact).** Do not let the
+accuracy-coverage collapse leak into the cost model.
