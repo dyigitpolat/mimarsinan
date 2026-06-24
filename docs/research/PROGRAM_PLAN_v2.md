@@ -91,3 +91,29 @@ comfortably (**0.9997** both metrics). The fork narrows to **(a)** build on-chip
 ConvNeXt — they pass cleanly). Recommendation: **conv-backbone headline first; transformers
 become a separate on-chip-attention contribution if the conv headline lands.** The static
 gate earned its keep — it foreclosed a GPU-weeks dead-end for free, before any training.
+
+## Vision clarified — tiered validity + the research-gap frontier (supersedes the E7 "conv-only" recommendation)
+
+**Core claim:** the ANN→SNN **tuning/conversion mechanisms are transferable & generic across
+models** (architectures × datasets × regimes), achieving **lossless + fast** deployment **on
+the operations the chip can currently map** — and this holds *even though the deployment
+toolset is incomplete*. The un-mappable operations are an explicit, flagged **research
+frontier**, not a scope limit.
+
+**Validity gate v2 (tiered, both params AND MACs):**
+- **floor = 20%** on-chip (both metrics) AND the flow maps correctly for the supported ops.
+  Below 20% on either metric → **INVALID** (host does ~everything; reject at enqueue).
+- **20% ≤ min(param,mac) < 50% → VALID_FLAGGED** — deploys + counts as transferable-tuning
+  evidence, and records a **research-gap**: the host-side ops keeping it below majority,
+  classified as *placement* (a supported Linear/Conv host-placed under subsume → fixable via
+  `offload`) vs *unsupported_op* (attention / LayerNorm / … → no on-chip SNN mapping yet, the
+  future-research target).
+- **≥50% (both) → VALID** majority, no flag.
+
+**Consequences:** ViT-B (0.33/0.33) becomes a **VALID_FLAGGED headline vehicle** (research gap
+= on-chip attention/LN), not a retired model. deep_mlp's flag is *placement* (host encoder is a
+supported Linear → `offload` → ~0.99 VALID), so it is un-retired via offload, not flagged.
+deep_cnn / lenet5 / mlp_mixer / VGG16 are VALID majority. **E3 toolset shortfalls** (placement
+engine at ResNet-50/ViT-B scale) are recorded as research gaps; genericity of the *mechanisms*
+must still hold on the mappable surface. The coverage ledger (E1) reports
+{VALID, VALID_FLAGGED, INVALID, untested} per cell + the named research-gap frontier.
