@@ -56,6 +56,15 @@ from mimarsinan.chip_simulation.weight_reuse_cost_model import (
     phase_cost_model,
     vgg16_224_scheduled_cost,
 )
+from mimarsinan.chip_simulation.cross_sim_parity import (
+    CrossSimOutcome,
+    CrossSimParityError,
+    CrossSimState,
+    assert_cross_sim_screen_sound,
+    derive_applicability,
+    screen_cell_pair,
+    write_cross_sim_screen,
+)
 from mimarsinan.chip_simulation.recording import spike_modes
 
 __all__ = [
@@ -104,4 +113,11 @@ __all__ = [
     "assert_no_merged_valid_tiers",
     "assert_no_aged_unowned_flags",
     "audit_coverage_instrument",
+    "CrossSimState",
+    "CrossSimOutcome",
+    "CrossSimParityError",
+    "derive_applicability",
+    "screen_cell_pair",
+    "write_cross_sim_screen",
+    "assert_cross_sim_screen_sound",
 ]
