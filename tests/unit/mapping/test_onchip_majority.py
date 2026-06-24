@@ -159,3 +159,20 @@ class TestAssertOnchipMajority:
         graph = _graph([_neural_core(0, 8, 8), _compute_op(1, nn.Linear(10, 4), 10)])
         with pytest.raises(OnchipMajorityError):
             assert_onchip_majority_or_raise(graph, total_params=108, min_fraction=0.6)
+
+    def test_default_floor_is_the_tiered_0_2_floor_not_majority(self):
+        # Defense-in-depth: the params-based gate now raises only BELOW the 0.20
+        # tiered FLOOR, NOT below 0.50. A ~0.33 on-chip mapping (a VALID_FLAGGED
+        # tier) must NOT raise at the default — it deploys.
+        # on-chip = 100 (10x10 core); host = 200 (a 20x10 bias-free Linear) -> 0.33.
+        graph = _graph(
+            [_neural_core(0, 10, 10), _compute_op(1, nn.Linear(20, 10, bias=False), 20)]
+        )
+        out = assert_onchip_majority_or_raise(graph, total_params=300)
+        assert out.fraction == pytest.approx(1 / 3, abs=0.01)
+        # but a sub-floor mapping (< 0.20) still raises at the default floor.
+        sub = _graph(
+            [_neural_core(0, 4, 4), _compute_op(1, nn.Linear(100, 10), 100)]
+        )
+        with pytest.raises(OnchipMajorityError):
+            assert_onchip_majority_or_raise(sub, total_params=16 + (100 * 10 + 10))

@@ -210,12 +210,13 @@ class SoftCoreMappingStep(PipelineStep):
         print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
 
     def _run_onchip_majority_gate(self, model, ir_graph) -> None:
-        """Hard validity gate: the chip must hold the parameter majority.
+        """Tiered-validity FLOOR gate (params-based, defense-in-depth).
 
-        A mapping that offloads > half of the deployed model's parameters to
-        host-side ComputeOps (encoding Linear/Conv, classifier readout,
-        attention) is not a genuine on-chip deployment. Gated by
-        ``onchip_majority_gate`` (default on); floor via ``onchip_majority_min_fraction``.
+        Raises only BELOW the on-chip FLOOR (host does ~everything). Between the
+        floor and the 50% majority a mapping is VALID_FLAGGED — it deploys and must
+        NOT raise here; the full both-metrics tiered decision is the enqueue-time
+        ``classify_validity``. Gated by ``onchip_majority_gate`` (default on); floor
+        via ``onchip_majority_min_fraction`` (default 0.2).
         """
         if not bool(self.pipeline.config.get("onchip_majority_gate", True)):
             return
@@ -228,7 +229,7 @@ class SoftCoreMappingStep(PipelineStep):
             ir_graph,
             total_params=total_params,
             min_fraction=float(
-                self.pipeline.config.get("onchip_majority_min_fraction", 0.5)
+                self.pipeline.config.get("onchip_majority_min_fraction", 0.2)
             ),
         )
         print(

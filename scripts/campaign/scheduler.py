@@ -54,6 +54,10 @@ def get_path(d: dict, dotted: str):
     return d
 
 
+def _fmt_frac(value) -> str:
+    return f"{value:.2%}" if isinstance(value, (int, float)) else str(value)
+
+
 def existing_ids(q: GpuQueue) -> set:
     """Every job id already enqueued or finalized (pending/running/done/failed).
 
@@ -72,23 +76,22 @@ def existing_ids(q: GpuQueue) -> set:
     return ids
 
 
-def _estimate_cfg_onchip_fraction(cfg: dict):
-    """Build the job's model from its config and statically estimate the on-chip fraction.
+def _classify_cfg_validity(cfg: dict, *, floor: float, majority: float):
+    """Build the job's model from its config and run the TIERED validity classifier.
 
     Pure-static (no GPU, no run): resolves model_type / model_config from
     ``deployment_parameters`` and input_shape / num_classes from the data provider,
-    builds the native model via the registry, then runs the on-chip-fraction
-    resolver. Heavy torch imports are deferred to here so importing the scheduler
-    stays light for the daemon. Patched in tests to avoid real model construction.
+    builds the native model via the registry, then runs the tiered both-metrics
+    ``classify_validity``. Heavy torch imports are deferred to here so importing the
+    scheduler stays light for the daemon. Patched in tests to avoid real model
+    construction.
     """
     for sub in ("src", "spikingjelly"):
         path = os.path.join(REPO, sub)
         if path not in sys.path:
             sys.path.insert(0, path)
     from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
-    from mimarsinan.mapping.verification.onchip_fraction import (
-        estimate_onchip_fraction,
-    )
+    from mimarsinan.mapping.verification.onchip_fraction import classify_validity
     from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
     dp = cfg.get("deployment_parameters", {}) or {}
@@ -106,44 +109,53 @@ def _estimate_cfg_onchip_fraction(cfg: dict):
     builder_cls = ModelRegistry.get_builder_cls(model_type)
     builder = builder_cls("cpu", input_shape, num_classes, dp)
     model = builder.build(model_config)
-    return estimate_onchip_fraction(
+    return classify_validity(
         model,
         input_shape,
         num_classes,
         encoding_placement=placement,
-        metric="params",
+        floor=floor,
+        majority=majority,
     )
 
 
 def onchip_precheck(cfg: dict) -> Tuple[bool, Dict]:
-    """Decide whether a job may be enqueued under the on-chip-majority gate.
+    """Decide whether a job may be enqueued under the TIERED validity gate (v2).
 
-    Returns ``(enqueue_ok, info)``. A host-majority model (estimated on-chip
-    fraction below the floor) returns ``(False, {...})`` so no GPU is claimed.
-    The gate is opt-out via ``deployment_parameters.onchip_majority_gate=False``;
-    the floor is ``deployment_parameters.onchip_majority_min_fraction`` (default 0.5).
-    Any model-build / estimation failure is NON-FATAL — returns ``(True, {...})``
-    so a builder edge case never silently drops valid work.
+    Returns ``(enqueue_ok, info)``. Rejects (``False`` — no GPU claimed) only an
+    INVALID job: ``min(param_frac, mac_frac) < floor`` (the host does ~everything).
+    Admits (``True``) VALID and VALID_FLAGGED; a flagged job carries its named
+    ``research_gap_ops`` / ``placement_fixable_ops`` so the log records the
+    transferable-tuning gap. The gate is opt-out via
+    ``deployment_parameters.onchip_majority_gate=False``; the floor is
+    ``deployment_parameters.onchip_min_fraction`` (default 0.20) and the majority is
+    ``deployment_parameters.onchip_majority_fraction`` (default 0.50). Any
+    model-build / classification failure is NON-FATAL — returns ``(True, {...})`` so
+    a builder edge case never silently drops valid work.
     """
     dp = cfg.get("deployment_parameters", {}) or {}
     if not bool(dp.get("onchip_majority_gate", True)):
         return True, {"reason": "gate_disabled"}
-    floor = float(dp.get("onchip_majority_min_fraction", 0.5))
+    floor = float(dp.get("onchip_min_fraction", 0.20))
+    majority = float(dp.get("onchip_majority_fraction", 0.50))
     try:
-        est = _estimate_cfg_onchip_fraction(cfg)
+        verdict = _classify_cfg_validity(cfg, floor=floor, majority=majority)
     except Exception as exc:  # noqa: BLE001 - non-fatal by design
         return True, {"reason": "estimate_failed", "error": repr(exc)}
-    if est.fraction < floor:
-        return False, {
-            "reason": "invalid_host_majority",
-            "fraction": float(est.fraction),
-            "floor": floor,
-            "onchip": int(est.onchip),
-            "host": int(est.host),
-            "total": int(est.total),
-            "placement": est.placement,
-        }
-    return True, {"reason": "ok", "fraction": float(est.fraction), "floor": floor}
+    info = {
+        "tier": verdict.tier,
+        "param_frac": float(verdict.param_frac),
+        "mac_frac": float(verdict.mac_frac),
+        "floor": floor,
+        "majority": majority,
+        "research_gap_ops": list(verdict.research_gap_ops),
+        "placement_fixable_ops": list(verdict.placement_fixable_ops),
+    }
+    if verdict.tier == "INVALID":
+        return False, dict(info, reason="invalid_host_majority")
+    if verdict.tier == "VALID_FLAGGED":
+        return True, dict(info, reason="valid_flagged")
+    return True, dict(info, reason="ok")
 
 
 def instantiate(batch: dict) -> Iterator[Tuple[str, dict]]:
@@ -208,13 +220,22 @@ class Scheduler:
                 ok, info = onchip_precheck(cfg)
                 if not ok:
                     print(
-                        f"scheduler: SKIP {jid} ({info.get('reason')}): on-chip "
-                        f"{info.get('fraction'):.2%} < floor {info.get('floor'):.0%} "
-                        f"(host={info.get('host')}, total={info.get('total')}) — "
-                        "not enqueued, no GPU claimed."
+                        f"scheduler: SKIP {jid} (INVALID): min(param,mac) on-chip "
+                        f"({_fmt_frac(info.get('param_frac'))},"
+                        f"{_fmt_frac(info.get('mac_frac'))}) < floor "
+                        f"{_fmt_frac(info.get('floor'))} — not enqueued, no GPU claimed."
                     )
                     existing.add(jid)
                     continue
+                if info.get("reason") == "valid_flagged":
+                    print(
+                        f"scheduler: FLAGGED {jid}: param "
+                        f"{_fmt_frac(info.get('param_frac'))} / mac "
+                        f"{_fmt_frac(info.get('mac_frac'))} on-chip — VALID_FLAGGED "
+                        f"(research_gap={info.get('research_gap_ops')}, "
+                        f"placement_fixable={info.get('placement_fixable_ops')}); "
+                        "enqueued as transferable-tuning evidence."
+                    )
                 path = os.path.join(CFG_DIR, jid + ".json")
                 with open(path, "w") as fh:
                     json.dump(cfg, fh, indent=2)
