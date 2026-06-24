@@ -78,6 +78,14 @@ def weight_reuse_mj(
     the gathered slice size). Both chip coefficients default 0.0 ⇒ the term is 0.0 ⇒
     byte-identical. This is the ONE thing that makes a reuse phase cheaper than a
     reprogram phase (today both cost 0).
+
+    These two opaque coefficients are made DEFENSIBLE (decomposed into named physical
+    units with cited ranges + a low/nominal/high uncertainty band) in
+    ``weight_reuse_cost_model`` (GAP-R P2): ``mj_per_reprogram =
+    bytes_per_param · E_dma_per_byte`` and ``mj_per_sync = E_dma_per_byte``. Pass that
+    module's ``DmaCostCoefficients.mj_per_reprogrammed_param`` / ``.mj_per_activation_byte``
+    here for a grounded number, or call ``weight_reuse_cost_model.phase_cost_band`` for
+    a RANGE.
     """
     return (
         float(mj_per_reprogram) * float(params_reloaded)

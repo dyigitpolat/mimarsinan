@@ -34,6 +34,16 @@ from mimarsinan.chip_simulation.coverage_ledger import (
     claimed_subproduct,
     coverage_report,
 )
+from mimarsinan.chip_simulation.weight_reuse_cost_model import (
+    DEFAULT_COEFFICIENT_BAND,
+    CoefficientBand,
+    CostBand,
+    DmaCostCoefficients,
+    PhaseCostBreakdown,
+    phase_cost_band,
+    phase_cost_model,
+    vgg16_224_scheduled_cost,
+)
 from mimarsinan.chip_simulation.recording import spike_modes
 
 __all__ = [
@@ -57,6 +67,14 @@ __all__ = [
     "extract_cost_record_from_run",
     "load_cost_record",
     "save_cost_record",
+    "DmaCostCoefficients",
+    "CoefficientBand",
+    "CostBand",
+    "PhaseCostBreakdown",
+    "DEFAULT_COEFFICIENT_BAND",
+    "phase_cost_model",
+    "phase_cost_band",
+    "vgg16_224_scheduled_cost",
     "AXES",
     "HypervolumeAxis",
     "HypervolumeCell",
