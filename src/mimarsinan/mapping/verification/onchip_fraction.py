@@ -12,7 +12,7 @@ fork the transformer validity decision needs.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
@@ -32,6 +32,20 @@ _PERCEPTRON_MAPPER_TYPES = (
 _VALID_METRICS = ("params", "macs")
 _VALID_PLACEMENTS = ("subsume", "offload")
 
+_DEFAULT_FLOOR = 0.20
+_DEFAULT_MAJORITY = 0.50
+
+TIER_VALID = "VALID"
+TIER_VALID_FLAGGED = "VALID_FLAGGED"
+TIER_INVALID = "INVALID"
+
+# Host op types with NO on-chip SNN mapping yet — the research frontier.
+_UNSUPPORTED_HOST_OP_TYPES = (
+    nn.MultiheadAttention,
+    nn.LayerNorm,
+    nn.GELU,
+)
+
 
 @dataclass(frozen=True)
 class OnchipFractionEstimate:
@@ -48,6 +62,31 @@ class OnchipFractionEstimate:
         if self.total <= 0:
             return 0.0
         return self.onchip / self.total
+
+
+@dataclass(frozen=True)
+class ValidityVerdict:
+    """Tiered deployment-validity verdict on BOTH the param and MAC on-chip fractions.
+
+    ``tier`` is one of ``VALID`` / ``VALID_FLAGGED`` / ``INVALID``. ``research_gap_ops``
+    names the host ops with no on-chip SNN mapping yet (the future-research frontier);
+    ``placement_fixable_ops`` names supported Linear/Conv host-placed under ``subsume``
+    (fixable by switching to ``offload``).
+    """
+
+    tier: str
+    param_frac: float
+    mac_frac: float
+    research_gap_ops: list = field(default_factory=list)
+    placement_fixable_ops: list = field(default_factory=list)
+
+    @property
+    def is_valid(self) -> bool:
+        return self.tier != TIER_INVALID
+
+    @property
+    def is_flagged(self) -> bool:
+        return self.tier == TIER_VALID_FLAGGED
 
 
 def _is_perceptron_holder(node) -> bool:
@@ -80,6 +119,45 @@ def _onchip_unit(node):
     if _is_perceptron_holder(node) and not _is_encoding_perceptron(node):
         return node.perceptron
     return None
+
+
+def _unwrap_module(module):
+    """Peel a ``ScaleNormalizingWrapper`` to reach the wrapped op module."""
+    while _is_scale_wrapper(module):
+        module = module.module
+    return module
+
+
+def _perceptron_op_label(perceptron) -> str:
+    layer = getattr(perceptron, "layer", None)
+    return type(layer).__name__ if layer is not None else "Perceptron"
+
+
+def _is_unsupported_host_op(module) -> bool:
+    return isinstance(_unwrap_module(module), _UNSUPPORTED_HOST_OP_TYPES)
+
+
+def _host_op_label(module) -> str:
+    return type(_unwrap_module(module)).__name__
+
+
+def _classify_host_node(node):
+    """Classify a host-side node into a (category, op_label) pair.
+
+    ``placement`` — a supported encoding perceptron (Linear/Conv) host-placed under
+    ``subsume``; switching to ``offload`` maps it on-chip. ``unsupported_op`` — a host
+    ComputeOp wrapping a module with no on-chip SNN mapping yet (MultiheadAttention,
+    LayerNorm, GELU): the research frontier. ``supported_host`` — an always-host but
+    supported op (the classifier readout Linear, pooling, structural adapters); neither
+    a placement fix nor a research gap. Returns ``(None, None)`` for non-host nodes.
+    """
+    if _is_encoding_perceptron(node):
+        return "placement", _perceptron_op_label(node.perceptron)
+    if isinstance(node, ComputeOpMapper):
+        if _is_unsupported_host_op(node.module):
+            return "unsupported_op", _host_op_label(node.module)
+        return "supported_host", _host_op_label(node.module)
+    return None, None
 
 
 def _build_flow(model, input_shape, num_classes, placement):
@@ -270,12 +348,14 @@ def estimate_onchip_fraction(
         )
 
     flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    return _estimate_from_flow(flow, input_shape, encoding_placement, metric)
 
+
+def _estimate_from_flow(flow, input_shape, encoding_placement, metric):
     if metric == "params":
         host, total = _params_breakdown(flow)
     else:
         host, total = _macs_breakdown(flow, input_shape)
-
     return OnchipFractionEstimate(
         onchip=int(total) - int(host),
         host=int(host),
@@ -317,3 +397,76 @@ def assert_onchip_majority_estimate_or_raise(
             "a genuine on-chip deployment."
         )
     return est
+
+
+def _collect_host_op_classes(flow):
+    """Walk the flow once, returning ``(research_gap_ops, placement_fixable_ops)``.
+
+    ``research_gap_ops`` are host ops with no on-chip SNN mapping (the frontier);
+    ``placement_fixable_ops`` are supported encoders host-placed under ``subsume``
+    (offloadable). Always-host supported ops (readout, pooling, adapters) are in
+    neither list. Each host unit is classified once (deduped by identity).
+    """
+    seen: set[int] = set()
+    research_gap_ops: list[str] = []
+    placement_fixable_ops: list[str] = []
+    for node in _exec_nodes(flow):
+        unit = _host_unit(node)
+        if unit is None or id(unit) in seen:
+            continue
+        seen.add(id(unit))
+        category, label = _classify_host_node(node)
+        if category == "unsupported_op":
+            research_gap_ops.append(label)
+        elif category == "placement":
+            placement_fixable_ops.append(label)
+    return research_gap_ops, placement_fixable_ops
+
+
+def _tier_for(param_frac: float, mac_frac: float, floor: float, majority: float) -> str:
+    worst = min(param_frac, mac_frac)
+    if worst < floor:
+        return TIER_INVALID
+    if param_frac >= majority and mac_frac >= majority:
+        return TIER_VALID
+    return TIER_VALID_FLAGGED
+
+
+def classify_validity(
+    model,
+    input_shape,
+    num_classes,
+    *,
+    encoding_placement: str = "subsume",
+    floor: float = _DEFAULT_FLOOR,
+    majority: float = _DEFAULT_MAJORITY,
+) -> ValidityVerdict:
+    """Tiered deployment validity on BOTH the param and MAC on-chip fractions.
+
+    ``INVALID`` iff ``min(param_frac, mac_frac) < floor`` (the host does ~everything);
+    ``VALID`` iff both fractions ``>= majority``; ``VALID_FLAGGED`` otherwise (deploys
+    and counts as transferable-tuning evidence while carrying a research gap). The
+    host ops keeping a flagged model below majority are classified into
+    ``research_gap_ops`` (no on-chip mapping yet) vs ``placement_fixable_ops``
+    (supported encoders, fixable via ``offload``). One flow is built and reused for
+    both metrics and the op classification (conversion mutates ``model`` in place).
+    """
+    if encoding_placement not in _VALID_PLACEMENTS:
+        raise ValueError(
+            f"classify_validity encoding_placement must be one of "
+            f"{_VALID_PLACEMENTS!r}; got {encoding_placement!r}"
+        )
+
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    param_est = _estimate_from_flow(flow, input_shape, encoding_placement, "params")
+    mac_est = _estimate_from_flow(flow, input_shape, encoding_placement, "macs")
+    research_gap_ops, placement_fixable_ops = _collect_host_op_classes(flow)
+
+    tier = _tier_for(param_est.fraction, mac_est.fraction, floor, majority)
+    return ValidityVerdict(
+        tier=tier,
+        param_frac=param_est.fraction,
+        mac_frac=mac_est.fraction,
+        research_gap_ops=research_gap_ops,
+        placement_fixable_ops=placement_fixable_ops,
+    )
