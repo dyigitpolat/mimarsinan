@@ -107,33 +107,41 @@ def test_tick_does_not_roll_out_when_work_remains(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# harvest_todo: finalized cells whose runs are NOT all cited in the ledger
+# harvest_todo: finalized RUNS not yet cited, grouped by source batch
 # --------------------------------------------------------------------------- #
 
-def test_harvest_todo_flags_uncovered_finalized_cells(tmp_path):
+def test_harvest_todo_flags_uncovered_runs_grouped_by_batch(tmp_path):
     q = gq.GpuQueue(str(tmp_path / "q"))
-    # cell A: two seeds finalized, NOT in ledger -> flagged
-    _finalize(q, "a_s0", {"model": "deep_cnn", "dataset": "mnist", "sched": "cascaded"}, 0.9)
-    _finalize(q, "a_s1", {"model": "deep_cnn", "dataset": "mnist", "sched": "cascaded"}, 0.91)
-    # cell B: finalized AND already cited in ledger -> not flagged
-    _finalize(q, "b_s0", {"model": "lenet5", "dataset": "mnist", "sched": "cascaded"}, 0.98)
+    # batch A: two seeds finalized, NOT cited -> flagged under the batch id
+    _finalize(q, "a_s0", {"batch_id": "dcnn_depth", "ws": "WS3"}, 0.9)
+    _finalize(q, "a_s1", {"batch_id": "dcnn_depth", "ws": "WS3"}, 0.91)
+    # batch B: finalized AND cited in ledger -> not flagged
+    _finalize(q, "b_s0", {"batch_id": "lenet", "ws": "WS3"}, 0.98)
     ledger = tmp_path / "ledger.jsonl"
     ledger.write_text(json.dumps({"cluster": "WS3", "cascaded_run_ids": ["b_s0"]}) + "\n")
     todo = dr.harvest_todo(q, str(ledger))
     keys = {t["cell"] for t in todo}
-    assert "deep_cnn/mnist/cascaded" in keys
-    assert "lenet5/mnist/cascaded" not in keys  # already consolidated
-    a = [t for t in todo if t["cell"] == "deep_cnn/mnist/cascaded"][0]
-    assert sorted(a["run_ids"]) == ["a_s0", "a_s1"] and a["n_finalized"] == 2
+    assert "dcnn_depth" in keys and "lenet" not in keys  # cited batch drops off
+    a = [t for t in todo if t["cell"] == "dcnn_depth"][0]
+    assert a["run_ids"] == ["a_s0", "a_s1"] and a["n_uncovered"] == 2
 
 
-def test_harvest_todo_ignores_cells_with_partial_ledger_coverage(tmp_path):
-    """A cell counts as covered if ANY of its runs is already cited (the harvest
-    row references the cell); avoids re-flagging a consolidated cell forever."""
+def test_harvest_todo_is_per_run_so_a_new_seed_still_surfaces(tmp_path):
+    """Per-RUN coverage: a partially-cited batch still surfaces its un-cited seeds
+    (a freshly-added seed isn't hidden by the cell being 'mostly done')."""
     q = gq.GpuQueue(str(tmp_path / "q"))
-    _finalize(q, "c_s0", {"model": "deep_mlp", "dataset": "mnist", "sched": "synchronized", "depth": 8}, 0.96)
-    _finalize(q, "c_s1", {"model": "deep_mlp", "dataset": "mnist", "sched": "synchronized", "depth": 8}, 0.96)
+    _finalize(q, "c_s0", {"batch_id": "dmlp_sync"}, 0.96)
+    _finalize(q, "c_s1", {"batch_id": "dmlp_sync"}, 0.96)
+    _finalize(q, "c_s2", {"batch_id": "dmlp_sync"}, 0.96)  # added later, not yet cited
     ledger = tmp_path / "ledger.jsonl"
-    ledger.write_text(json.dumps({"synchronized_run_ids": ["c_s0"]}) + "\n")
+    ledger.write_text(json.dumps({"synchronized_run_ids": ["c_s0", "c_s1"]}) + "\n")
     todo = dr.harvest_todo(q, str(ledger))
-    assert todo == []  # c_s0 cited -> the deep_mlp/mnist/synchronized cell is covered
+    assert len(todo) == 1 and todo[0]["cell"] == "dmlp_sync"
+    assert todo[0]["run_ids"] == ["c_s2"]  # only the un-cited seed
+
+
+def test_harvest_todo_falls_back_to_ws_when_no_batch_id(tmp_path):
+    q = gq.GpuQueue(str(tmp_path / "q"))
+    _finalize(q, "old_run", {"ws": "WS6"}, 0.9)  # pre-scheduler run, no batch_id
+    todo = dr.harvest_todo(q, str(tmp_path / "absent_ledger.jsonl"))
+    assert todo == [{"cell": "WS6", "run_ids": ["old_run"], "n_uncovered": 1}]
