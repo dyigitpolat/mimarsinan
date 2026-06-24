@@ -157,7 +157,7 @@ class Runner:
                 if not self.running:
                     self._heartbeat()
                     return
-            else:
+            elif not self.q.pause_requested():
                 self._fill()
             self._heartbeat()
             time.sleep(self.poll)

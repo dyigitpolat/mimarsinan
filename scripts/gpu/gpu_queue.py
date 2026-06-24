@@ -49,6 +49,16 @@ class GpuQueue:
     def stop_requested(self) -> bool:
         return os.path.exists(self.stop_path)
 
+    @property
+    def pause_path(self) -> str:
+        return os.path.join(self.root, "PAUSE")
+
+    def pause_requested(self) -> bool:
+        # When present, the runner keeps reaping finished jobs but launches NO new
+        # ones — so the operator can do git integration on the runner's checkout
+        # without a half-written/conflict-marked .py corrupting an in-flight job.
+        return os.path.exists(self.pause_path)
+
     def request_stop(self) -> None:
         open(self.stop_path, "w").close()
 
