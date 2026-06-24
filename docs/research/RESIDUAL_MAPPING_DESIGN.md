@@ -256,3 +256,26 @@ existing seam — `add_neural_core`, signed-IF, `concat_source_views`,
 - `src/mimarsinan/spiking/segment_boundary.py` — decode `/T` (`:57`), compute-boundary re-encode.
 - `src/mimarsinan/models/perceptron_mixer/skip_perceptron_mixer.py` — existing residual (`:123`,`:144`).
 - `tests/unit/torch_mapping/test_unified_converter.py::TestAddRoutesThroughGenericPath` — the lock.
+
+## §7. Tier-1 status (round 2 — mechanism landed on branch, NOT bit-exact; not merged)
+
+Round 2 (branch `residual-tier1-onchip`, commit `bed8b36`, **isolated/not merged**) built the
+on-chip param-free identity-merge core: a **mapper-graph rewrite** (`mapping/support/residual_merge.py::lower_residual_adds_to_onchip_merge`)
+replaces the param-free host `ComputeAdapter(operator.add)` with a frozen identity-concat `[I|I]`
+signed-IF merge Perceptron (no bias, requires_grad=False), fed by a `_ResidualConcatMapper` that
+concats both branches into one 2·width axon space — reusing the existing
+`PerceptronMapper→map_fc→add_neural_core` path (so neuron_split / axon_fuse / coalescing work for
+free). Config-gated `onchip_residual_merge` (default OFF → byte-identical host add).
+
+**Proven:** param-free (count_host_params unchanged), on-chip fraction ON≥OFF, the merge stays in
+ONE neural segment (no host barrier), the residual sum is real, default-OFF byte-identical, 906+
+mapping/spiking tests unbroken.
+
+**OPEN (round 3):** full NF==HCM **bit-exactness is not reached** (max|Δ|=0.125; per-neuron parity
+0.25 — honestly xfailed). The in-segment merge diamond has two sources at **different cascade
+depths** (stem d1, F d2); `LifSegmentPolicy.run_segment`'s per-cycle cascade does not reproduce the
+HCM per-source latency-**window** integration at the merge boundary (stale/zero source buffer past
+`src_lat+T`), leaving a sparse ~1/T residual. A naive depth-aware train-shift over-corrected
+(off-by-1 → off-by-4) and was reverted. **Round 3 = a focused, depth-aware per-source window
+alignment in `LifSegmentPolicy.run_segment` matching the HCM merge-window boundary**, then wire
+`lower_residual_adds_to_onchip_merge` into the production conversion flow behind the flag.
