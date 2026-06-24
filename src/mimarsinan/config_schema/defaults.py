@@ -423,6 +423,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "scm_torch_sim_parity_check",
     "scm_torch_sim_parity_samples",
     "scm_torch_sim_parity_min_agreement",
+    "onchip_majority_gate",
+    "onchip_majority_min_fraction",
     "loihi_parity_sample_index",
     "sanafe_sample_count",
     "sanafe_arch_preset",
