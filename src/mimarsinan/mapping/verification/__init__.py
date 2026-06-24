@@ -7,6 +7,11 @@ from mimarsinan.mapping.verification.onchip_majority import (
     compute_onchip_fraction,
     count_host_params,
 )
+from mimarsinan.mapping.verification.onchip_fraction import (
+    OnchipFractionEstimate,
+    assert_onchip_majority_estimate_or_raise,
+    estimate_onchip_fraction,
+)
 
 __all__ = [
     "OnchipMajorityError",
@@ -14,4 +19,7 @@ __all__ = [
     "assert_onchip_majority_or_raise",
     "compute_onchip_fraction",
     "count_host_params",
+    "OnchipFractionEstimate",
+    "assert_onchip_majority_estimate_or_raise",
+    "estimate_onchip_fraction",
 ]

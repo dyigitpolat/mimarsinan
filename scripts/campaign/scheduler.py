@@ -72,6 +72,80 @@ def existing_ids(q: GpuQueue) -> set:
     return ids
 
 
+def _estimate_cfg_onchip_fraction(cfg: dict):
+    """Build the job's model from its config and statically estimate the on-chip fraction.
+
+    Pure-static (no GPU, no run): resolves model_type / model_config from
+    ``deployment_parameters`` and input_shape / num_classes from the data provider,
+    builds the native model via the registry, then runs the on-chip-fraction
+    resolver. Heavy torch imports are deferred to here so importing the scheduler
+    stays light for the daemon. Patched in tests to avoid real model construction.
+    """
+    for sub in ("src", "spikingjelly"):
+        path = os.path.join(REPO, sub)
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
+    from mimarsinan.mapping.verification.onchip_fraction import (
+        estimate_onchip_fraction,
+    )
+    from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+
+    dp = cfg.get("deployment_parameters", {}) or {}
+    model_type = dp["model_type"]
+    model_config = dp.get("model_config", {}) or {}
+    placement = str(dp.get("encoding_layer_placement", "subsume"))
+
+    meta = BasicDataProviderFactory.get_metadata(
+        cfg["data_provider_name"],
+        os.path.join(REPO, "datasets"),
+    )
+    input_shape = tuple(meta["input_shape"])
+    num_classes = int(meta["num_classes"])
+
+    builder_cls = ModelRegistry.get_builder_cls(model_type)
+    builder = builder_cls("cpu", input_shape, num_classes, dp)
+    model = builder.build(model_config)
+    return estimate_onchip_fraction(
+        model,
+        input_shape,
+        num_classes,
+        encoding_placement=placement,
+        metric="params",
+    )
+
+
+def onchip_precheck(cfg: dict) -> Tuple[bool, Dict]:
+    """Decide whether a job may be enqueued under the on-chip-majority gate.
+
+    Returns ``(enqueue_ok, info)``. A host-majority model (estimated on-chip
+    fraction below the floor) returns ``(False, {...})`` so no GPU is claimed.
+    The gate is opt-out via ``deployment_parameters.onchip_majority_gate=False``;
+    the floor is ``deployment_parameters.onchip_majority_min_fraction`` (default 0.5).
+    Any model-build / estimation failure is NON-FATAL — returns ``(True, {...})``
+    so a builder edge case never silently drops valid work.
+    """
+    dp = cfg.get("deployment_parameters", {}) or {}
+    if not bool(dp.get("onchip_majority_gate", True)):
+        return True, {"reason": "gate_disabled"}
+    floor = float(dp.get("onchip_majority_min_fraction", 0.5))
+    try:
+        est = _estimate_cfg_onchip_fraction(cfg)
+    except Exception as exc:  # noqa: BLE001 - non-fatal by design
+        return True, {"reason": "estimate_failed", "error": repr(exc)}
+    if est.fraction < floor:
+        return False, {
+            "reason": "invalid_host_majority",
+            "fraction": float(est.fraction),
+            "floor": floor,
+            "onchip": int(est.onchip),
+            "host": int(est.host),
+            "total": int(est.total),
+            "placement": est.placement,
+        }
+    return True, {"reason": "ok", "fraction": float(est.fraction), "floor": floor}
+
+
 def instantiate(batch: dict) -> Iterator[Tuple[str, dict]]:
     """Yield (job_id, config) for each point of the batch's grid."""
     template = json.load(open(os.path.join(REPO, batch["template"])))
@@ -124,6 +198,16 @@ class Scheduler:
                 if pending >= self.hi:
                     return added
                 if jid in existing:
+                    continue
+                ok, info = onchip_precheck(cfg)
+                if not ok:
+                    print(
+                        f"scheduler: SKIP {jid} ({info.get('reason')}): on-chip "
+                        f"{info.get('fraction'):.2%} < floor {info.get('floor'):.0%} "
+                        f"(host={info.get('host')}, total={info.get('total')}) — "
+                        "not enqueued, no GPU claimed."
+                    )
+                    existing.add(jid)
                     continue
                 path = os.path.join(CFG_DIR, jid + ".json")
                 with open(path, "w") as fh:
