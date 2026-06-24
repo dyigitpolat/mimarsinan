@@ -1,8 +1,10 @@
-"""Scheduler enqueue pre-check: a host-majority job must NOT claim a GPU.
+"""Scheduler enqueue pre-check: the TIERED validity gate (v2).
 
-Before enqueuing each instantiated job, the scheduler statically estimates the
-model's on-chip parameter fraction (no GPU, no run) and SKIPS host-majority jobs
-so they never reach the queue. A model-build failure is non-fatal: the job is
+Before enqueuing each instantiated job, the scheduler statically classifies the
+model's tiered validity (no GPU, no run) on BOTH params and MACs. It REJECTS only
+INVALID jobs (``min(param,mac)`` on-chip below the 20% floor — host does
+~everything) so they never claim a GPU; it ADMITS VALID and VALID_FLAGGED, logging
+the research gap for flagged jobs. A model-build failure is non-fatal: the job is
 enqueued anyway so a builder edge case never silently drops valid work.
 """
 
@@ -17,14 +19,16 @@ import gpu_queue as gq  # noqa: E402
 import scheduler as sch  # noqa: E402
 
 
-class _FakeEstimate:
-    def __init__(self, fraction):
-        self.fraction = fraction
-        self.onchip = int(fraction * 1000)
-        self.host = 1000 - self.onchip
-        self.total = 1000
-        self.metric = "params"
-        self.placement = "subsume"
+class _FakeVerdict:
+    """Stand-in for ``ValidityVerdict`` so the gate test never builds a real model."""
+
+    def __init__(self, tier, param_frac, mac_frac, research_gap_ops=None,
+                 placement_fixable_ops=None):
+        self.tier = tier
+        self.param_frac = param_frac
+        self.mac_frac = mac_frac
+        self.research_gap_ops = list(research_gap_ops or [])
+        self.placement_fixable_ops = list(placement_fixable_ops or [])
 
 
 def _template(tmp_path, model_type):
@@ -53,33 +57,82 @@ def _common_setup(tmp_path, monkeypatch):
     os.makedirs(str(tmp_path / "cfg"), exist_ok=True)
 
 
-def test_host_majority_job_is_not_enqueued_but_valid_is(tmp_path, monkeypatch):
+def test_invalid_rejected_but_valid_and_flagged_admitted(tmp_path, monkeypatch):
     _common_setup(tmp_path, monkeypatch)
-    bad_tpl = os.path.relpath(_template(tmp_path, "host_heavy"), str(tmp_path))
+    inv_tpl = os.path.relpath(_template(tmp_path, "host_heavy"), str(tmp_path))
+    flag_tpl = os.path.relpath(_template(tmp_path, "flagged"), str(tmp_path))
     good_tpl = os.path.relpath(_template(tmp_path, "chip_heavy"), str(tmp_path))
     backlog = tmp_path / "backlog.json"
-    backlog.write_text(json.dumps([_batch(bad_tpl, "bad"), _batch(good_tpl, "good")]))
+    backlog.write_text(json.dumps([
+        _batch(inv_tpl, "inv"), _batch(flag_tpl, "flag"), _batch(good_tpl, "good"),
+    ]))
 
-    # The model-build is patched: host_heavy is host-majority (0.20), chip_heavy
-    # is on-chip-majority (0.80). No real datasets / converters are touched.
-    def _fake_estimate(cfg):
-        if cfg["deployment_parameters"]["model_type"] == "host_heavy":
-            return _FakeEstimate(0.20)
-        return _FakeEstimate(0.80)
+    # Classification is patched: host_heavy is INVALID (0.10 < floor), flagged is
+    # VALID_FLAGGED (0.33 in [floor, majority)), chip_heavy is VALID (0.80). No real
+    # datasets / converters / models are touched.
+    def _fake_classify(cfg, *, floor, majority):
+        mt = cfg["deployment_parameters"]["model_type"]
+        if mt == "host_heavy":
+            return _FakeVerdict("INVALID", 0.10, 0.10)
+        if mt == "flagged":
+            return _FakeVerdict(
+                "VALID_FLAGGED", 0.33, 0.33,
+                research_gap_ops=["MultiheadAttention", "LayerNorm"],
+            )
+        return _FakeVerdict("VALID", 0.80, 0.80)
 
-    monkeypatch.setattr(sch, "_estimate_cfg_onchip_fraction", _fake_estimate)
+    monkeypatch.setattr(sch, "_classify_cfg_validity", _fake_classify)
 
     q = gq.GpuQueue(str(tmp_path / "q"))
     s = sch.Scheduler(q, hi=10, poll=0, backlog_path=str(backlog))
     added = s.refill()
 
     pending_ids = {j["id"] for j in q.list_state("pending")}
-    assert "good_s0" in pending_ids
-    assert "bad_s0" not in pending_ids
-    assert added == 1
+    assert "good_s0" in pending_ids       # VALID admitted
+    assert "flag_s0" in pending_ids       # VALID_FLAGGED admitted (deploys + flagged)
+    assert "inv_s0" not in pending_ids    # INVALID rejected, no GPU claimed
+    assert added == 2
 
 
-def test_gate_disabled_enqueues_host_majority(tmp_path, monkeypatch):
+def test_precheck_flagged_carries_research_gap_and_admits():
+    cfg = {
+        "deployment_parameters": {
+            "model_type": "torch_vit",
+            "onchip_majority_gate": True,
+        }
+    }
+
+    def _fake_classify(c, *, floor, majority):
+        assert floor == 0.20 and majority == 0.50
+        return _FakeVerdict(
+            "VALID_FLAGGED", 0.33, 0.33,
+            research_gap_ops=["MultiheadAttention", "LayerNorm"],
+            placement_fixable_ops=[],
+        )
+
+    import unittest.mock as mock
+    with mock.patch.object(sch, "_classify_cfg_validity", _fake_classify):
+        ok, info = sch.onchip_precheck(cfg)
+    assert ok is True
+    assert info["reason"] == "valid_flagged"
+    assert info["tier"] == "VALID_FLAGGED"
+    assert "MultiheadAttention" in info["research_gap_ops"]
+
+
+def test_precheck_invalid_below_floor_rejected():
+    cfg = {"deployment_parameters": {"model_type": "host_heavy"}}
+
+    import unittest.mock as mock
+    with mock.patch.object(
+        sch, "_classify_cfg_validity",
+        lambda c, *, floor, majority: _FakeVerdict("INVALID", 0.05, 0.05),
+    ):
+        ok, info = sch.onchip_precheck(cfg)
+    assert ok is False
+    assert info["reason"] == "invalid_host_majority"
+
+
+def test_gate_disabled_enqueues_invalid(tmp_path, monkeypatch):
     _common_setup(tmp_path, monkeypatch)
     tpl = os.path.relpath(_template(tmp_path, "host_heavy"), str(tmp_path))
     backlog = tmp_path / "backlog.json"
@@ -91,7 +144,8 @@ def test_gate_disabled_enqueues_host_majority(tmp_path, monkeypatch):
     backlog.write_text(json.dumps([b]))
 
     monkeypatch.setattr(
-        sch, "_estimate_cfg_onchip_fraction", lambda cfg: _FakeEstimate(0.05)
+        sch, "_classify_cfg_validity",
+        lambda cfg, *, floor, majority: _FakeVerdict("INVALID", 0.05, 0.05),
     )
     q = gq.GpuQueue(str(tmp_path / "q"))
     s = sch.Scheduler(q, hi=10, poll=0, backlog_path=str(backlog))
@@ -106,10 +160,10 @@ def test_build_failure_is_non_fatal_and_enqueues(tmp_path, monkeypatch):
     backlog = tmp_path / "backlog.json"
     backlog.write_text(json.dumps([_batch(tpl, "broken")]))
 
-    def _boom(cfg):
+    def _boom(cfg, *, floor, majority):
         raise RuntimeError("builder blew up")
 
-    monkeypatch.setattr(sch, "_estimate_cfg_onchip_fraction", _boom)
+    monkeypatch.setattr(sch, "_classify_cfg_validity", _boom)
     q = gq.GpuQueue(str(tmp_path / "q"))
     s = sch.Scheduler(q, hi=10, poll=0, backlog_path=str(backlog))
     added = s.refill()
@@ -117,19 +171,22 @@ def test_build_failure_is_non_fatal_and_enqueues(tmp_path, monkeypatch):
     assert {j["id"] for j in q.list_state("pending")} == {"broken_s0"}
 
 
-def test_custom_floor_respected(tmp_path, monkeypatch):
+def test_custom_floor_rejects_flagged_when_raised(tmp_path, monkeypatch):
     _common_setup(tmp_path, monkeypatch)
     tpl = os.path.relpath(_template(tmp_path, "mid"), str(tmp_path))
-    # raise the floor to 0.9 so a 0.80 model is rejected
+    # raise the floor to 0.4 so a 0.33/0.33 model now falls BELOW floor -> INVALID
     template = json.loads((tmp_path / "tpl_mid.json").read_text())
-    template["deployment_parameters"]["onchip_majority_min_fraction"] = 0.9
+    template["deployment_parameters"]["onchip_min_fraction"] = 0.4
     (tmp_path / "tpl_mid.json").write_text(json.dumps(template))
     backlog = tmp_path / "backlog.json"
     backlog.write_text(json.dumps([_batch(tpl, "mid")]))
 
-    monkeypatch.setattr(
-        sch, "_estimate_cfg_onchip_fraction", lambda cfg: _FakeEstimate(0.80)
-    )
+    def _fake_classify(cfg, *, floor, majority):
+        # honour the configured floor: 0.33 < 0.4 -> INVALID
+        tier = "INVALID" if min(0.33, 0.33) < floor else "VALID_FLAGGED"
+        return _FakeVerdict(tier, 0.33, 0.33)
+
+    monkeypatch.setattr(sch, "_classify_cfg_validity", _fake_classify)
     q = gq.GpuQueue(str(tmp_path / "q"))
     s = sch.Scheduler(q, hi=10, poll=0, backlog_path=str(backlog))
     added = s.refill()

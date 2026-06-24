@@ -14,7 +14,9 @@ import torch.nn as nn
 
 from mimarsinan.mapping.verification.onchip_fraction import (
     OnchipFractionEstimate,
+    ValidityVerdict,
     assert_onchip_majority_estimate_or_raise,
+    classify_validity,
     estimate_onchip_fraction,
 )
 from mimarsinan.mapping.verification.onchip_majority import (
@@ -234,3 +236,110 @@ class TestAssertHelper:
             assert_onchip_majority_estimate_or_raise(
                 model, input_shape, num_classes, min_fraction=0.50
             )
+
+
+class _HostMajorityModel(nn.Module):
+    """A model whose parameters live almost entirely in a host-side classifier head.
+
+    A tiny on-chip-mappable Linear stem feeds a huge readout Linear (the segment
+    output → host ComputeOp), so the on-chip param/MAC fraction sits well below the
+    20% floor: a synthetic INVALID case for the tiered gate.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.stem = nn.Linear(28 * 28, 8)
+        self.act = nn.ReLU()
+        self.head = nn.Linear(8, 10)
+
+    def forward(self, x):
+        x = torch.flatten(x, 1)
+        return self.head(self.act(self.stem(x)))
+
+
+class TestClassifyValidity:
+    """Tiered validity (floor=0.20, majority=0.50) on BOTH params and MACs."""
+
+    def _verdict(self, model_type, model_config, input_shape, num_classes, placement):
+        model = _build(model_type, model_config, input_shape, num_classes)
+        return classify_validity(
+            model, input_shape, num_classes, encoding_placement=placement
+        )
+
+    def test_deep_cnn_d8_is_valid(self):
+        v = self._verdict("deep_cnn", {"depth": 8, "width": 16}, (1, 28, 28), 10, "subsume")
+        assert isinstance(v, ValidityVerdict)
+        assert v.tier == "VALID"
+        assert min(v.param_frac, v.mac_frac) >= 0.50
+        assert v.research_gap_ops == []
+
+    def test_lenet5_is_valid(self):
+        v = self._verdict("lenet5", {"variant": "lenet5"}, (1, 28, 28), 10, "subsume")
+        assert v.tier == "VALID"
+        assert v.research_gap_ops == []
+
+    def test_mlp_mixer_core_is_valid(self):
+        cfg = {
+            "base_activation": "LeakyReLU",
+            "patch_n_1": 4,
+            "patch_m_1": 4,
+            "patch_c_1": 32,
+            "fc_w_1": 64,
+            "fc_w_2": 64,
+            "num_blocks": 2,
+        }
+        v = self._verdict("mlp_mixer_core", cfg, (1, 28, 28), 10, "subsume")
+        assert v.tier == "VALID"
+        assert v.research_gap_ops == []
+
+    def test_deep_mlp_w64_subsume_is_flagged_placement_only(self):
+        v = self._verdict("deep_mlp", {"depth": 8, "width": 64}, (1, 28, 28), 10, "subsume")
+        assert v.tier == "VALID_FLAGGED"
+        assert min(v.param_frac, v.mac_frac) >= 0.20
+        assert not (v.param_frac >= 0.50 and v.mac_frac >= 0.50)
+        # the flag is PLACEMENT (the host encoder Linear), NOT a research gap
+        assert v.placement_fixable_ops  # non-empty: the host encoder Linear
+        assert "Linear" in v.placement_fixable_ops
+        assert v.research_gap_ops == []
+
+    def test_deep_mlp_w64_offload_is_valid(self):
+        v = self._verdict("deep_mlp", {"depth": 8, "width": 64}, (1, 28, 28), 10, "offload")
+        assert v.tier == "VALID"
+        # offloading the encoder removes the placement flag entirely
+        assert v.placement_fixable_ops == []
+
+    def test_torch_vit_is_flagged_with_attention_and_layernorm_research_gap(self):
+        v = self._verdict("torch_vit", {}, (3, 32, 32), 10, "subsume")
+        assert v.tier == "VALID_FLAGGED"
+        assert v.tier != "INVALID"
+        # the on-chip-attention / LayerNorm frontier is the research gap
+        assert "MultiheadAttention" in v.research_gap_ops
+        assert "LayerNorm" in v.research_gap_ops
+
+    def test_torch_vgg16_is_valid(self):
+        v = self._verdict("torch_vgg16", {}, (3, 32, 32), 10, "subsume")
+        assert v.tier == "VALID"
+        assert min(v.param_frac, v.mac_frac) >= 0.50
+        assert v.research_gap_ops == []
+
+    def test_synthetic_host_majority_is_invalid(self):
+        model = _HostMajorityModel()
+        v = classify_validity(model, (1, 28, 28), 10, encoding_placement="subsume")
+        assert v.tier == "INVALID"
+        assert min(v.param_frac, v.mac_frac) < 0.20
+
+    def test_tier_boundaries_are_inclusive_on_both_metrics(self):
+        # both metrics exactly at majority -> VALID; one just below -> FLAGGED;
+        # one below floor -> INVALID. Drives the min()/>= semantics directly.
+        from mimarsinan.mapping.verification.onchip_fraction import _tier_for
+
+        assert _tier_for(0.50, 0.50, 0.20, 0.50) == "VALID"
+        assert _tier_for(0.50, 0.49, 0.20, 0.50) == "VALID_FLAGGED"
+        assert _tier_for(0.20, 0.90, 0.20, 0.50) == "VALID_FLAGGED"
+        assert _tier_for(0.19, 0.90, 0.20, 0.50) == "INVALID"
+        assert _tier_for(0.90, 0.19, 0.20, 0.50) == "INVALID"
+
+    def test_classify_validity_rejects_unknown_placement(self):
+        model = _build("deep_mlp", {"depth": 4, "width": 64}, (1, 28, 28), 10)
+        with pytest.raises(ValueError):
+            classify_validity(model, (1, 28, 28), 10, encoding_placement="nowhere")

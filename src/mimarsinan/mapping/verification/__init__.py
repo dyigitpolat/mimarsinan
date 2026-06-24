@@ -9,7 +9,9 @@ from mimarsinan.mapping.verification.onchip_majority import (
 )
 from mimarsinan.mapping.verification.onchip_fraction import (
     OnchipFractionEstimate,
+    ValidityVerdict,
     assert_onchip_majority_estimate_or_raise,
+    classify_validity,
     estimate_onchip_fraction,
 )
 
@@ -20,6 +22,8 @@ __all__ = [
     "compute_onchip_fraction",
     "count_host_params",
     "OnchipFractionEstimate",
+    "ValidityVerdict",
     "assert_onchip_majority_estimate_or_raise",
+    "classify_validity",
     "estimate_onchip_fraction",
 ]

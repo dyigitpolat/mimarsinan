@@ -82,13 +82,17 @@ def compute_onchip_fraction(
 
 
 def assert_onchip_majority_or_raise(
-    ir_graph: IRGraph, *, total_params: int, min_fraction: float = 0.5
+    ir_graph: IRGraph, *, total_params: int, min_fraction: float = 0.2
 ) -> OnchipParamBreakdown:
-    """Raise :class:`OnchipMajorityError` when the on-chip fraction is below the floor.
+    """Raise :class:`OnchipMajorityError` when the on-chip fraction is below the FLOOR.
 
-    The chip is the deployment vehicle only when the parameter majority is
-    physically placed on its cores; a host-majority mapping is not a genuine
-    on-chip deployment.
+    Defense-in-depth for the tiered validity gate (v2): this params-based check
+    raises only BELOW the 20% floor (host does ~everything). Between the floor and
+    the 50% majority a mapping is VALID_FLAGGED — it deploys and must NOT raise here;
+    the full both-metrics tiered decision lives in
+    :func:`onchip_fraction.classify_validity`. The chip is the deployment vehicle
+    only when at least the floor fraction of parameters is physically placed on its
+    cores; a host-dominated mapping is not a genuine on-chip deployment.
     """
     breakdown = compute_onchip_fraction(ir_graph, total_params=total_params)
     if breakdown.fraction < min_fraction:
