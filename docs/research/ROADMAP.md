@@ -27,7 +27,20 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
 ## Current honest state (the baseline this roadmap moves)
 
 - **Honest coverage ≈ 0.3%** (deep_cnn breadth 6 / 2048 cells); 97 science-valid cells
-  (VALID 43 / VALID_FLAGGED 38 / INVALID 16, tiers never merged).
+  (VALID 43 / VALID_FLAGGED 38 / INVALID 16, tiers never merged). *Unchanged by Wave 1 (instrument/
+  capability, no new ledger rows); Wave-2 `backend`+`mapping_strategy` screens shrink the denominator
+  → the number RISES then (measured, not asserted).*
+- **Wave-1 landed (main `2462241`, all default-off byte-identical + tested):** A4 self-defense guards
+  (`scripts/campaign/guards.py`: base-check / stash-intact / `fcntl` singleton) + gated scheduler
+  singleton; B4 SqueezeNet vehicle (region-add — VALID, on-chip frac 1.0 offload, 942/1000 cores
+  single-phase, measured by the framework's own instruments); C2 cost-wiring (`reuse_mj_band`
+  defensible band + backend cost coordinate, default 0.0 byte-identical); B1 cross-sim parity
+  screening instrument (`cross_sim_parity.py` + `justifies_collapse`/`assert_cross_sim_screen_sound`
+  honesty gate — the artifact A2 consumes to screen the `backend` axis).
+- **Infra note (Wave 1):** the harness's Workflow `isolation:'worktree'` snapshots a STALE base
+  (`bcacfeb`, an old session HEAD — its object DB lacks current `main`); the A4 base-check guard caught
+  it. Dispatch pattern is now **manually-created `git worktree` from current `main` + absolute-path
+  agents**; re-base worktrees per land (Wave 2 bases on `2462241`).
 - **Landed instruments:** E2 static validity pre-check; gate-v2 tiered validity (20%/50%, params+MACs);
   E1 coverage ledger + **P1 self-auditing** (screening-status→denominator, CI guard, flag aging,
   per-region attribution-fidelity); E4 capacity diagnostic + scheduling-aware verdict; **P2 defensible
@@ -47,23 +60,23 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | Item | Status | Dep | Cost |
 |---|---|---|---|
 | A1 Self-auditing coverage (screening-status denominator, CI guard, flag aging) | ✅ P1 | — | ◦ |
-| A2 **P3 screens** — flip `ASSERTED_UNSCREENED` axes (cross-sim parity = flagship; pruning; mapping_strategy; regime) → `SCREENED_COLLAPSED` w/ artifact | ⬜ | A1 | ◦ (regime needs B3) |
+| A2 **P3 screens** — flip `ASSERTED_UNSCREENED` axes (cross-sim parity = flagship; pruning; mapping_strategy; regime) → `SCREENED_COLLAPSED` w/ artifact | ⏳ Wave2 | A1, B1✅ | ◦ (regime needs B3) |
 | A3 P1↔P3 declare↔execute wiring (a screen mechanically updates `HYPERVOLUME.md` + re-prices) | ⬜ | A2 | ◦ |
-| A4 Engineering self-defense — base-check guard (stale `bcacfeb` trap), stash-pop guard, scheduler-restart idempotence | ⬜ | — | ◦ |
+| A4 Engineering self-defense — base-check guard (stale `bcacfeb` trap), stash-pop guard, scheduler-restart idempotence | ✅ Wave1 (`guards.py`, gated singleton) | — | ◦ |
 
 ### B — Raise honest coverage / breadth (the largest open terrain — the deliverable itself)
 | Item | Status | Dep | Cost |
 |---|---|---|---|
-| B1 **Cross-simulator parity** — shared cells across nevresim/SANA-FE/Lava; record agree / disagree(quantified) / inapplicable(capability gap) | ⬜ | A1 | ◦ |
+| B1 **Cross-simulator parity** — shared cells across nevresim/SANA-FE/Lava; record agree / disagree(quantified) / inapplicable(capability gap) | ✅ Wave1 (`cross_sim_parity.py` instrument + `justifies_collapse` gate; screen-consumption = A2) | A1 | ◦ |
 | B2 Dataset breadth — close the named frontier (SVHN, deeper cells), CIFAR | ⬜ | — | ◦–◦◦ |
 | B3 **Regime axis** — the pretrained bridge (timm/torchvision) + 1 small from-scratch↔pretrained cross-screen | ⬜ | — | ◦◦ |
-| B4 Scale vehicles — SqueezeNet (builder exists), ResNet-50 (needs B3 bridge) | ⬜ | B3(ResNet) | ◦–◦◦ |
+| B4 Scale vehicles — SqueezeNet ✅ Wave1 (VALID, frac 1.0 offload, 942/1000 cores, single-phase); ResNet-50 (needs B3 bridge) ⬜ | partial | B3(ResNet) | ◦–◦◦ |
 
 ### C — Per-cell output instrumentation (each cell must carry comparable numbers)
 | Item | Status | Dep | Cost |
 |---|---|---|---|
 | C1 GAP-R defensible cost model + band | ✅ P2 | — | ◦ |
-| C2 Wire cost into the production cost path + **backend as a first-class cost coordinate** | ⬜ | C1 | ◦ |
+| C2 Wire cost into the production cost path + **backend as a first-class cost coordinate** | ✅ Wave1 (`reuse_mj_band` band + `coefficient_band` opt-in emit, default byte-identical; backend coord locked) | C1 | ◦ |
 | C3 **GAP-1 attribution fix** — `(ir_core_id, neuron_range)` joint keying so per-neuron lock survives coalescing+split at scale | ⬜ | — | ◦ |
 | C4 Per-region fidelity recording (value-domain vs attribution) | ✅ P1 | — | ◦ |
 
