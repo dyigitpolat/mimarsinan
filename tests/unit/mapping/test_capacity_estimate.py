@@ -197,3 +197,177 @@ class TestEmptyAndEdgeCases:
         assert isinstance(est, CapacityEstimate)
         with pytest.raises(Exception):
             est.cores_needed = 999
+
+
+def _two_segment_graph(*, in_count, out_count, n_cores_each):
+    """Two equal neural segments (split by a host ComputeOp barrier).
+
+    Segment 1 = ``n_cores_each`` cores of (in_count, out_count); a barrier;
+    segment 2 = the same. The two segments are isomorphic so PEAK = either one
+    and SUM = 2 × PEAK — the exact shape that scheduling collapses (fresh pool
+    per phase ⇒ only the PEAK phase must fit).
+    """
+    nodes = []
+    for i in range(n_cores_each):
+        nodes.append(_core(i, f"A{i}", in_count, out_count))
+    barrier_id = n_cores_each
+    barrier = ComputeOp(
+        id=barrier_id, name="pool", input_sources=_src([(n_cores_each - 1, 0)]),
+        op_type="identity", input_shape=(out_count,), output_shape=(out_count,),
+    )
+    nodes.append(barrier)
+    for j in range(n_cores_each):
+        cid = barrier_id + 1 + j
+        c = _core(cid, f"B{j}", in_count, out_count)
+        c.input_sources = _src([(barrier_id, i % out_count) for i in range(in_count)])
+        nodes.append(c)
+    last = barrier_id + n_cores_each
+    return IRGraph(nodes=nodes, output_sources=_src([(last, 0)]))
+
+
+class TestSchedulingAwareIsByteIdenticalWhenOff:
+    """allow_scheduling resolved OFF must reproduce the merged SUM verdict exactly."""
+
+    def test_default_is_sum_verdict_and_not_scheduled(self):
+        # SUM (8) > PEAK-segment (4) but both fit a 64-core budget here.
+        graph = _two_segment_graph(in_count=2, out_count=3, n_cores_each=10)
+        est = estimate_cores_needed(graph, {"cores": _cores(8, 8, 64)})
+        # each segment: max(ceil(20/8)=3, ceil(30/8)=4, 1)=4 → SUM = 8
+        assert est.cores_needed == 8
+        assert est.feasible is True
+        assert est.scheduled is False
+        # peak_phase_cores defaults to the SUM (no scheduling collapse) and
+        # phase_count is 1 when off.
+        assert est.peak_phase_cores == 8
+        assert est.phase_count == 1
+
+    def test_off_keeps_existing_sum_overflow_verdict(self):
+        # Re-assert the merged infeasible case is byte-identical under the new fields.
+        a = _core(0, "small", 2, 2)
+        barrier = ComputeOp(
+            id=1, name="barrier", input_sources=_src([(0, 0)]),
+            op_type="identity", input_shape=(2,), output_shape=(2,),
+        )
+        huge = _core(2, "huge", in_count=80, out_count=80)
+        huge.input_sources = _src([(1, i) for i in range(80)])
+        graph = IRGraph(nodes=[a, barrier, huge], output_sources=_src([(2, 0)]))
+        est = estimate_cores_needed(graph, {"cores": _cores(8, 8, 2)})
+        assert est.feasible is False
+        assert est.cores_needed == 1 + 100
+        assert est.scheduled is False
+        assert est.overflowing_segment == "neural_segment_final"
+
+    def test_explicit_false_matches_resolved_off(self):
+        graph = _two_segment_graph(in_count=2, out_count=3, n_cores_each=10)
+        a = estimate_cores_needed(graph, {"cores": _cores(8, 8, 64)})
+        b = estimate_cores_needed(
+            graph, {"cores": _cores(8, 8, 64)}, allow_scheduling=False
+        )
+        assert (a.cores_needed, a.feasible, a.scheduled) == (
+            b.cores_needed, b.feasible, b.scheduled
+        )
+
+
+class TestSchedulingFlipsPeakVsSum:
+    """SUM > budget but PEAK ≤ budget: infeasible un-scheduled, feasible scheduled."""
+
+    def _graph_and_constraints(self):
+        # Each segment: 10 cores of (2 axons, 3 neurons) → segment bound 4.
+        # Two segments → SUM = 8. Budget = 5: SUM (8) > 5 but PEAK (4) ≤ 5.
+        graph = _two_segment_graph(in_count=2, out_count=3, n_cores_each=10)
+        return graph, {"cores": _cores(8, 8, 5)}
+
+    def test_infeasible_without_scheduling(self):
+        graph, constraints = self._graph_and_constraints()
+        est = estimate_cores_needed(graph, constraints, allow_scheduling=False)
+        assert est.cores_needed == 8
+        assert est.cores_available == 5
+        assert est.feasible is False
+        assert est.scheduled is False
+        assert est.overflowing_segment is not None
+
+    def test_feasible_via_scheduling_with_phase_count(self):
+        graph, constraints = self._graph_and_constraints()
+        est = estimate_cores_needed(graph, constraints, allow_scheduling=True)
+        assert est.scheduled is True
+        assert est.feasible is True
+        # PEAK phase = a single segment's bound (4) ≤ budget (5).
+        assert est.peak_phase_cores == 4
+        # phase_count = Σ ceil(segment_bound / budget) = ceil(4/5)+ceil(4/5) = 2.
+        assert est.phase_count == 2
+        assert est.overflowing_segment is None
+
+    def test_scheduling_resolved_from_platform_constraints_flag(self):
+        graph, constraints = self._graph_and_constraints()
+        constraints = dict(constraints, allow_scheduling=True)
+        est = estimate_cores_needed(graph, constraints)  # resolve from dict
+        assert est.scheduled is True
+        assert est.feasible is True
+        assert est.peak_phase_cores == 4
+        assert est.phase_count == 2
+
+    def test_phase_count_splits_a_segment_bigger_than_budget(self):
+        # One segment bound = 4 on a budget of 2 → ceil(4/2)=2 phases for it;
+        # the second segment ditto → 4 phases total; peak collapses to budget.
+        graph = _two_segment_graph(in_count=2, out_count=3, n_cores_each=10)
+        est = estimate_cores_needed(
+            graph, {"cores": _cores(8, 8, 2)}, allow_scheduling=True
+        )
+        # atomic unit per core = frags·groups = ceil(2/8)·ceil(3/8) = 1 ≤ 2 → schedulable
+        assert est.scheduled is True
+        assert est.feasible is True
+        assert est.phase_count == 4
+        assert est.peak_phase_cores == 2  # min(segment_bound=4, budget=2)
+
+
+class TestAtomicUnitGate:
+    """A single coalescing bundle bigger than the whole budget is infeasible even
+    under scheduling — it cannot split across phases."""
+
+    def test_single_oversized_bundle_rejected_under_scheduling(self):
+        # One core (80 axons, 80 neurons), 8x8 grid: frags=10, groups=10 →
+        # atomic unit = 100 cores. Budget = 50: even scheduling cannot place it
+        # (one softcore's fused bundle exceeds the whole chip).
+        huge = _core(0, "huge", in_count=80, out_count=80)
+        graph = IRGraph(nodes=[huge], output_sources=_src([(0, 0)]))
+        est = estimate_cores_needed(
+            graph, {"cores": _cores(8, 8, 50)}, allow_scheduling=True
+        )
+        assert est.scheduled is True
+        assert est.feasible is False
+        assert est.overflowing_segment is not None
+
+    def test_atomic_unit_fits_but_segment_does_not_is_feasible(self):
+        # The same softcore on a budget of 100: its atomic unit (100) fits exactly,
+        # so the segment is schedulable in 1 phase (it is the only latency group).
+        huge = _core(0, "huge", in_count=80, out_count=80)
+        graph = IRGraph(nodes=[huge], output_sources=_src([(0, 0)]))
+        est = estimate_cores_needed(
+            graph, {"cores": _cores(8, 8, 100)}, allow_scheduling=True
+        )
+        assert est.scheduled is True
+        assert est.feasible is True
+        assert est.peak_phase_cores == 100
+        assert est.phase_count == 1
+
+    def test_raise_if_infeasible_fires_on_atomic_overflow_under_scheduling(self):
+        huge = _core(0, "huge", in_count=80, out_count=80)
+        graph = IRGraph(nodes=[huge], output_sources=_src([(0, 0)]))
+        est = estimate_cores_needed(
+            graph, {"cores": _cores(8, 8, 50)}, allow_scheduling=True
+        )
+        with pytest.raises(CapacityExceededError):
+            est.raise_if_infeasible()
+
+
+class TestSchedulingFieldDefaults:
+    def test_capacity_estimate_constructs_without_scheduling_fields(self):
+        # Back-compat: existing callers (scheduler test fakes) build CapacityEstimate
+        # with only the original fields; the new fields default sanely.
+        est = CapacityEstimate(
+            cores_needed=830, cores_available=2048, feasible=True,
+            overflowing_segment=None, per_segment={"seg": 830},
+        )
+        assert est.scheduled is False
+        assert est.peak_phase_cores == 830
+        assert est.phase_count == 1
