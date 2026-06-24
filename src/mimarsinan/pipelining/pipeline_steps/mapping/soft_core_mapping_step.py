@@ -180,6 +180,16 @@ class SoftCoreMappingStep(PipelineStep):
         compute_ops = ir_graph.get_compute_ops()
         neural_cores = ir_graph.get_neural_cores()
         print(f"[SoftCoreMappingStep] IR Graph: {len(neural_cores)} neural cores, {len(compute_ops)} compute ops")
+        if bool(platform_constraints.get("allow_weight_reuse", False)):
+            from mimarsinan.mapping.weight_reuse import (
+                format_weight_reuse_summary,
+                weight_reuse_plan_from_graph,
+            )
+            reuse_plan = weight_reuse_plan_from_graph(ir_graph)
+            print(
+                "[SoftCoreMappingStep] Weight-reuse schedule: "
+                + format_weight_reuse_summary(reuse_plan)
+            )
         if compute_ops:
             print(f"[SoftCoreMappingStep] Model contains {len(compute_ops)} non-neural operations:")
             for op in compute_ops:

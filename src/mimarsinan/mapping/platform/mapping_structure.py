@@ -103,6 +103,13 @@ class ChipCapabilities:
     ``allow_coalescing`` but no mapping decision consults it yet (the per-depth S map
     is derived by the ConversionPolicy keystone, research). Default False ⇒ the
     uniform global S is the only path ⇒ byte-identical.
+
+    ``allow_weight_reuse`` is the RESERVED time-domain weight-reuse gate: when set, a
+    maximal run of scheduled passes over one resident weight bank is a CHEAP reuse
+    phase (positions time-multiplexed through fixed-mapping cores) instead of N
+    reprograms. Declared here alongside ``allow_per_layer_s``; no mapping/sim/build
+    decision consults it yet (round-1 only the cost model classifies reuse vs
+    reprogram phases). Default False ⇒ every pass is a reprogram ⇒ byte-identical.
     """
 
     max_axons: int | None = None
@@ -112,6 +119,7 @@ class ChipCapabilities:
     allow_neuron_splitting: bool = False
     allow_scheduling: bool = False
     allow_per_layer_s: bool = False
+    allow_weight_reuse: bool = False
 
     @classmethod
     def from_platform_constraints(
@@ -128,6 +136,7 @@ class ChipCapabilities:
             allow_neuron_splitting=bool(constraints.get("allow_neuron_splitting", False)),
             allow_scheduling=bool(constraints.get("allow_scheduling", False)),
             allow_per_layer_s=bool(constraints.get("allow_per_layer_s", False)),
+            allow_weight_reuse=bool(constraints.get("allow_weight_reuse", False)),
         )
 
     def permission_kwargs(self) -> dict[str, bool]:
@@ -200,6 +209,11 @@ class MappingStrategy:
     def allow_per_layer_s(self) -> bool:
         """The EW1 RESERVED per-layer-S gate (no mapping decision consults it yet)."""
         return self.capabilities.allow_per_layer_s
+
+    @property
+    def allow_weight_reuse(self) -> bool:
+        """The RESERVED weight-reuse gate (no mapping/build decision consults it yet)."""
+        return self.capabilities.allow_weight_reuse
 
     def permission_kwargs(self) -> dict[str, bool]:
         """The resolved MAPPING permission bits as layout/verify helper kwargs.
