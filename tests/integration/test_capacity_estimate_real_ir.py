@@ -145,6 +145,45 @@ def test_vgg16_imagenet_is_infeasible_on_1000_core_budget():
     assert exc.value.cores_available == 1000
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+def test_vgg16_imagenet_is_feasible_via_scheduling_on_realistic_chip():
+    """The corrected E4 verdict: VGG16@224 is INFEASIBLE as one pool but
+    FEASIBLE-VIA-SCHEDULING on a realistic 256x256x2048 chip — the chip reprograms
+    a fresh pool per phase, so only the PEAK phase must fit. Reports the peak-phase
+    occupancy and the per-segment fresh-pool reprogram-phase count (~209).
+
+    Marked slow: shares the heavy VGG16@224 IR build path.
+    """
+    cores = [{"max_axons": 256, "max_neurons": 256, "count": 2048, "has_bias": True}]
+    ir = _build_ir("torch_vgg16", (3, 224, 224), cores, allow_coalescing=True)
+    constraints = {
+        "cores": cores, "allow_coalescing": True, "allow_scheduling": True,
+    }
+    est = estimate_cores_needed(ir, constraints)
+    assert est.scheduled is True
+    assert est.feasible is True
+    assert est.cores_available == 2048
+    # peak reprogram phase must fit the chip; the SUM (hundreds of thousands) does not.
+    assert est.cores_needed > 100_000
+    assert 0 < est.peak_phase_cores <= 2048
+    # phase_count is the per-segment fresh-pool model = Σ ceil(segment_bound/budget),
+    # in the design's stated ~155–416-phase range for VGG16@224 (here ~158).
+    expected_phase_count = sum(
+        math.ceil(b / est.cores_available) for b in est.per_segment.values()
+    )
+    assert est.phase_count == expected_phase_count
+    assert 150 <= est.phase_count <= 260
+    est.raise_if_infeasible()  # feasible-via-scheduling must NOT raise
+    # Without scheduling the SAME IR/budget is rejected.
+    unsched = estimate_cores_needed(
+        ir, dict(constraints, allow_scheduling=False),
+    )
+    assert unsched.feasible is False
+    assert unsched.scheduled is False
+    assert unsched.cores_needed == est.cores_needed
+
+
 def test_synthetic_imagenet_conv_segment_overflows_1000_budget():
     """Fast stand-in for the E3 headline: a synthetic early-conv segment of 50,176
     softcores of (576 axons, 64 neurons) — the exact ``features_6`` shape E3 named —

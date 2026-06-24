@@ -106,3 +106,60 @@ def test_overflowing_segment_named_across_barrier():
     with pytest.raises(CapacityExceededError) as exc:
         step._run_capacity_gate(graph, _TINY_BUDGET)
     assert exc.value.overflowing_segment == "neural_segment_final"
+
+
+def _two_segment_sum_over_peak_ir():
+    """Two equal (2,3) segments split by a barrier: SUM=8, PEAK=4 on an 8x8 grid."""
+    nodes = [_core(i, f"A{i}", 2, 3) for i in range(10)]
+    barrier = ComputeOp(
+        id=10, name="pool", input_sources=_src([(9, 0)]),
+        op_type="identity", input_shape=(3,), output_shape=(3,),
+    )
+    nodes.append(barrier)
+    for j in range(10):
+        c = _core(11 + j, f"B{j}", 2, 3)
+        c.input_sources = _src([(10, i % 3) for i in range(2)])
+        nodes.append(c)
+    return IRGraph(nodes=nodes, output_sources=_src([(20, 0)]))
+
+
+_SCHEDULED_BUDGET = {
+    "cores": [{"max_axons": 8, "max_neurons": 8, "count": 5, "has_bias": True}],
+    "allow_coalescing": True,
+    "allow_scheduling": True,
+}
+
+_UNSCHEDULED_BUDGET = dict(_SCHEDULED_BUDGET, allow_scheduling=False)
+
+
+def test_scheduled_peak_fits_does_not_raise():
+    """SUM (8) > budget (5) but PEAK (4) ≤ budget: scheduling-aware gate ADMITS."""
+    step = _step()
+    graph = _two_segment_sum_over_peak_ir()
+    est = step._run_capacity_gate(graph, _SCHEDULED_BUDGET)
+    assert est.scheduled is True
+    assert est.feasible is True
+    assert est.peak_phase_cores == 4
+    assert est.phase_count == 2
+
+
+def test_unscheduled_same_ir_still_raises():
+    """The SAME IR/budget WITHOUT scheduling: SUM (8) > 5 → still rejected."""
+    step = _step()
+    graph = _two_segment_sum_over_peak_ir()
+    with pytest.raises(CapacityExceededError):
+        step._run_capacity_gate(graph, _UNSCHEDULED_BUDGET)
+
+
+def test_scheduled_atomic_overflow_still_raises():
+    """A single bundle bigger than the whole budget cannot split across phases —
+    the scheduling-aware gate STILL raises."""
+    step = _step()
+    # huge (80,80) on 8x8 → atomic unit 100 > 50-core budget, even scheduled.
+    budget = {
+        "cores": [{"max_axons": 8, "max_neurons": 8, "count": 50, "has_bias": True}],
+        "allow_coalescing": True,
+        "allow_scheduling": True,
+    }
+    with pytest.raises(CapacityExceededError):
+        step._run_capacity_gate(_infeasible_ir(), budget)
