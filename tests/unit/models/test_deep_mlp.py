@@ -69,6 +69,79 @@ class TestDeepMLP:
         assert linears[-1].out_features == 10
 
 
+class TestDeepMLPResidual:
+    """The opt-in ``residual`` flag adds equal-width skip connections across hidden
+    blocks (the residual-mapping prototype vehicle). Default-off keeps the plain
+    cascade byte-identical to the existing depth-probe model."""
+
+    def test_residual_defaults_off(self):
+        """Without the flag the model has no skip — forward equals the plain stack."""
+        torch.manual_seed(0)
+        plain = DeepMLP(input_shape=(16,), num_classes=10, depth=4, width=24)
+        assert plain.residual is False
+        torch.manual_seed(0)
+        also_plain = DeepMLP(input_shape=(16,), num_classes=10, depth=4, width=24, residual=False)
+        x = torch.randn(3, 16)
+        with torch.no_grad():
+            assert torch.equal(plain(x), also_plain(x))
+
+    @pytest.mark.parametrize("depth", [4, 6, 8])
+    def test_residual_keeps_linear_count_and_forward_shape(self, depth):
+        """A skip is a param-free add: it does not change the Linear count, and the
+        forward still produces ``[N, n_classes]``."""
+        width = 24
+        model = DeepMLP(
+            input_shape=(16,), num_classes=10, depth=depth, width=width, residual=True,
+        )
+        assert _count_linear(model) == depth + 1, (
+            "residual skips are param-free adds — Linear count is unchanged"
+        )
+        x = torch.randn(3, 16)
+        with torch.no_grad():
+            assert model(x).shape == (3, 10)
+
+    def test_residual_block_size_two_requires_even_hidden_blocks(self):
+        """With ``depth`` hidden layers split into 2-layer residual blocks, an odd
+        depth still maps (the trailing layer is a plain, non-skipped layer)."""
+        for depth in (4, 5, 6, 7):
+            model = DeepMLP(
+                input_shape=(16,), num_classes=10, depth=depth, width=24, residual=True,
+            )
+            x = torch.randn(2, 16)
+            with torch.no_grad():
+                assert model(x).shape == (2, 10)
+
+    def test_residual_forward_actually_adds_a_skip(self):
+        """The residual forward differs from the same-weights plain forward — proving
+        the skip is wired (not a no-op)."""
+        torch.manual_seed(7)
+        res = DeepMLP(input_shape=(16,), num_classes=10, depth=4, width=24, residual=True)
+        plain = DeepMLP(input_shape=(16,), num_classes=10, depth=4, width=24, residual=False)
+        plain.load_state_dict(res.state_dict())
+        x = torch.randn(4, 16)
+        with torch.no_grad():
+            assert not torch.allclose(res(x), plain(x)), (
+                "residual=True must change the forward vs the same-weights plain stack"
+            )
+
+    def test_residual_converts_and_matches_native_forward(self):
+        """The residual model converts through the torch->perceptron path and the
+        converted flow tracks the native forward (the host add is shared)."""
+        from mimarsinan.torch_mapping.converter import convert_torch_model
+
+        torch.manual_seed(0)
+        model = DeepMLP(input_shape=(16,), num_classes=10, depth=4, width=24, residual=True)
+        model.eval()
+        flow = convert_torch_model(model, input_shape=(16,), num_classes=10)
+        flow.eval()
+        x = torch.randn(4, 16)
+        with torch.no_grad():
+            assert torch.allclose(model(x), flow(x), atol=1e-3), (
+                f"converted residual flow diverges "
+                f"(max diff {(model(x) - flow(x)).abs().max().item():.6f})"
+            )
+
+
 class TestDeepMLPBuilder:
     def _builder(self, input_shape=(1, 28, 28), num_classes=10):
         return DeepMLPBuilder(
@@ -108,7 +181,17 @@ class TestDeepMLPBuilder:
 
     def test_config_schema_keys(self):
         keys = {f["key"] for f in DeepMLPBuilder.get_config_schema()}
-        assert {"depth", "width", "base_activation"} <= keys
+        assert {"depth", "width", "base_activation", "residual"} <= keys
+
+    def test_build_honors_residual_flag(self):
+        model = self._builder(input_shape=(16,)).build(
+            {"depth": 4, "width": 24, "base_activation": "ReLU", "residual": True}
+        )
+        assert isinstance(model, DeepMLP)
+        assert model.residual is True
+        x = torch.randn(2, 16)
+        with torch.no_grad():
+            assert model(x).shape == (2, 10)
 
 
 class TestDeepMLPConversion:
