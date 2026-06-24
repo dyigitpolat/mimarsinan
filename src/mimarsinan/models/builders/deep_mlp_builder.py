@@ -26,6 +26,7 @@ class DeepMLPBuilder:
             depth=int(cfg["depth"]),
             width=int(cfg["width"]),
             base_activation=cfg.get("base_activation", "ReLU"),
+            residual=bool(cfg.get("residual", False)),
         )
 
     @classmethod
@@ -34,6 +35,7 @@ class DeepMLPBuilder:
             {"key": "base_activation", "type": "select", "label": "Activation", "options": ["ReLU", "LeakyReLU", "GELU"], "default": "ReLU"},
             {"key": "depth", "type": "number", "label": "Hidden Layers (depth)", "default": 8, "min": 4, "max": 32},
             {"key": "width", "type": "number", "label": "Hidden Width", "default": 64},
+            {"key": "residual", "type": "toggle", "label": "Residual Skips (equal-width)", "default": False},
         ]
 
     @classmethod
