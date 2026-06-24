@@ -8,6 +8,7 @@ from .torch_custom_builder import TorchCustomBuilder
 from .torch_sequential_linear_builder import TorchSequentialLinearBuilder
 from .torch_sequential_conv_builder import TorchSequentialConvBuilder
 from .deep_mlp_builder import DeepMLPBuilder
+from .deep_cnn_builder import DeepCNNBuilder
 
 from .lenet5_builder import LeNet5Builder
 
@@ -23,6 +24,7 @@ BUILDERS_REGISTRY = {
     "torch_sequential_linear": TorchSequentialLinearBuilder,
     "torch_sequential_conv": TorchSequentialConvBuilder,
     "deep_mlp": DeepMLPBuilder,
+    "deep_cnn": DeepCNNBuilder,
 
     "lenet5": LeNet5Builder,
 }
