@@ -70,6 +70,26 @@ def test_refill_respects_watermark_and_dedupes(tmp_path, monkeypatch):
     assert allids == {"j_d4_s0", "j_d4_s1", "j_d8_s0", "j_d8_s1"}  # all 4, none duplicated
 
 
+def test_refill_skips_a_malformed_batch_without_crashing(tmp_path, monkeypatch):
+    """One bad batch (e.g. a synthesize-agent id_template with a dotted-path
+    placeholder) must not kill the daemon — it is logged and skipped, good
+    batches still enqueue."""
+    monkeypatch.setattr(sch, "REPO", str(tmp_path))
+    monkeypatch.setattr(sch, "CFG_DIR", str(tmp_path / "cfg"))
+    tpl = _write_template(tmp_path)
+    rel = os.path.relpath(tpl, str(tmp_path))
+    good = _batch(rel)
+    bad = {**_batch(rel), "id": "b_bad",
+           "id_template": "x_{deployment_parameters.model_config.depth}_s{seed}"}
+    backlog = tmp_path / "backlog.json"
+    backlog.write_text(json.dumps([bad, good]))
+    q = gq.GpuQueue(str(tmp_path / "q"))
+    s = sch.Scheduler(q, hi=10, poll=0, backlog_path=str(backlog))
+    added = s.refill()  # must NOT raise on the malformed batch
+    assert added == 4  # only the good batch's 2x2 grid enqueued
+    assert {j["id"] for j in q.list_state("pending")} == {"j_d4_s0", "j_d4_s1", "j_d8_s0", "j_d8_s1"}
+
+
 def test_disabled_batch_is_skipped(tmp_path, monkeypatch):
     monkeypatch.setattr(sch, "REPO", str(tmp_path))
     monkeypatch.setattr(sch, "CFG_DIR", str(tmp_path / "cfg"))

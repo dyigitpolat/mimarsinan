@@ -194,7 +194,13 @@ class Scheduler:
         existing = self._existing_ids()
         added = 0
         for batch in self._load_backlog():
-            for jid, cfg in instantiate(batch):
+            try:
+                jobs = list(instantiate(batch))
+            except Exception as exc:  # noqa: BLE001 - one bad batch must not kill the daemon
+                print(f"scheduler: SKIP batch {batch.get('id')!r} — malformed "
+                      f"(instantiate failed: {exc!r})")
+                continue
+            for jid, cfg in jobs:
                 if pending >= self.hi:
                     return added
                 if jid in existing:
