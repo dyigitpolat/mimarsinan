@@ -72,6 +72,10 @@ def _run_soft_core_mapping(mock_pipeline, fused_model, platform_constraints_dict
     mock_pipeline.config["pruning"] = True
     mock_pipeline.config["weight_quantization"] = False
     mock_pipeline.config["weight_bits"] = 8
+    # This fixture's tiny toy model offloads its host-side encoding layer, so it
+    # is host-majority by construction; the on-chip-majority gate is a separate
+    # concern (covered by test_onchip_majority.py) and is muted here.
+    mock_pipeline.config["onchip_majority_gate"] = False
 
     mock_pipeline.seed("fused_model", fused_model, step_name="Normalization Fusion")
     mock_pipeline.seed(
