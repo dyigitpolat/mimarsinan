@@ -39,3 +39,20 @@ e.g. W≥256) would be valid, but every deep_mlp run in this campaign used w64.
 - **Valid evidence base:** deep_cnn, mlp_mixer (the 6/9-MET cert vehicle), lenet5.
 - Optional future work: re-establish the depth law on a **wide** deep_mlp (W≥256) if a pure-MLP
   point is wanted — but deep_cnn already covers trainable-deep validly.
+
+## Gate v2 re-classification (tiered validity — 20% floor / 50% majority)
+
+Under the clarified vision (transferable tuning on the mappable surface; un-converted ops are
+a flagged research frontier), validity is tiered, not binary. The deep_mlp retirement is
+revised:
+
+| deep_mlp w64 | static on-chip | gate-v2 tier | meaning |
+|---|---|---|---|
+| d4 (& parse-unknown) | ~19.5% | **INVALID** (20 rows) | below the 20% floor — host does ~everything |
+| d6 / d8 | ~28.7% / ~36.1% | **VALID_FLAGGED_placement** (30 rows) | re-instated transferable-tuning evidence; flag = host encoder Linear is *offloadable* (→ ~99% VALID) |
+| d12 / d16 / d24 / d32 | ≥~45% | **VALID_FLAGGED_placement** (20 rows) | deployment-valid, but **also** ANN-training-floor confounds (untrained past d≈8) — separate flag |
+
+So the deep_mlp d6/d8 death-cascade is **valid-flagged evidence** again (the chip does 29–36% of
+the work — meaningful, ≥ floor), with the placement flag noting that `encoding_layer_placement=offload`
+would lift it to majority. The d4 onset stays INVALID. ViT-B (0.33/0.33) is VALID_FLAGGED with a
+*research-gap* flag (on-chip attention/LN — the future frontier), distinct from deep_mlp's *placement* flag.
