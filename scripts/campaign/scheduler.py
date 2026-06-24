@@ -390,11 +390,18 @@ class Scheduler:
         print("scheduler: stopped.")
 
 
+def _singleton_requested(args) -> bool:
+    return bool(args.singleton) or os.environ.get("CAMPAIGN_SINGLETON") == "1"
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--hi", type=int, default=24)
     p.add_argument("--poll", type=float, default=20.0)
     p.add_argument("--stop", action="store_true")
+    p.add_argument("--singleton", action="store_true",
+                   help="acquire an fcntl singleton lock so only one scheduler runs "
+                        "(also enabled by CAMPAIGN_SINGLETON=1); default OFF.")
     args = p.parse_args(argv)
     q = GpuQueue()
     if args.stop:
@@ -405,6 +412,11 @@ def main(argv=None) -> int:
     sp = os.path.join(q.root, "SCHED_STOP")
     if os.path.exists(sp):
         os.remove(sp)
+    if _singleton_requested(args):
+        from guards import singleton_lock
+        with singleton_lock("scheduler"):
+            Scheduler(q, hi=args.hi, poll=args.poll).run()
+        return 0
     Scheduler(q, hi=args.hi, poll=args.poll).run()
     return 0
 
