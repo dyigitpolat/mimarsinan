@@ -85,6 +85,26 @@ def test_runner_drains_queue_then_idles_until_stop(tmp_path):
     assert json.load(open(str(tmp_path / "status.json")))["done"] == 6
 
 
+def test_runner_pause_stops_launching_but_keeps_reaping(tmp_path):
+    q = GpuQueue(str(tmp_path / "q"))
+    for i in range(3):
+        q.enqueue({"id": f"j{i}", "mode": "fit", "cmd": [sys.executable, "-c", "pass"]})
+    open(q.pause_path, "w").close()  # PAUSE before the runner starts
+    runner = cr.Runner(q, poll=0.02, snapshot=two_gpus, lease_dir=str(tmp_path / "l"),
+                       status_path=str(tmp_path / "s.json"), logdir=str(tmp_path / "lg"))
+    th = threading.Thread(target=runner.run, daemon=True); th.start()
+    for _ in range(50):
+        time.sleep(0.02)
+    assert q.counts()["pending"] == 3 and q.counts()["running"] == 0  # nothing launched while paused
+    os.remove(q.pause_path)  # unpause -> drains
+    for _ in range(500):
+        if q.counts()["done"] == 3:
+            break
+        time.sleep(0.02)
+    assert q.counts()["done"] == 3
+    q.request_stop(); th.join(timeout=5)
+
+
 def test_runner_flags_a_job_that_exits_clean_but_writes_no_artifact(tmp_path):
     q = GpuQueue(str(tmp_path / "q"))
     q.enqueue({"id": "noout", "mode": "fit", "cmd": [sys.executable, "-c", "pass"],
