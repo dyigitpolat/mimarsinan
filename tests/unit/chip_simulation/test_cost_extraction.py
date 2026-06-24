@@ -630,3 +630,216 @@ class TestWeightReuseCostTerm:
         data["format_version"] = 2
         with pytest.raises(ValueError, match="format_version"):
             CostRecord.from_dict(data)
+
+
+# --------------------------------------------------------------------------- #
+# P2 — the grounded BANDED mJ wired into the production cost-emit path. The
+# record sources its low/nominal/high mJ from the defensible `weight_reuse_cost_
+# model` (consuming `phase_cost_band`); the default `reuse_mj` (0.0) stays
+# byte-identical, and the emit step attaches the band ONLY when a coefficient
+# config is supplied (no config ⇒ the emitted record is byte-identical to today).
+# --------------------------------------------------------------------------- #
+
+from mimarsinan.chip_simulation.weight_reuse_cost_model import (
+    DEFAULT_COEFFICIENT_BAND,
+    CoefficientBand,
+    DmaCostCoefficients,
+    phase_cost_band,
+)
+
+
+class TestReuseMjBand:
+    def _record(self, **kw):
+        cell = CertificationCell("lif", None, "sanafe")
+        return extract_cost_record(
+            cell=cell,
+            deployed_accuracy=0.97,
+            sanafe_snapshot=_single_segment_snapshot(),
+            **kw,
+        )
+
+    def test_band_matches_phase_cost_band_for_known_plan(self):
+        # The grounded BANDED mJ is sourced from `weight_reuse_cost_model`: the
+        # record's `reuse_mj_band` IS `phase_cost_band` evaluated over the record's
+        # phase plan + the default cited coefficient band.
+        record = self._record(
+            reprogram_passes=16,
+            reuse_passes=142,
+            params_reloaded=66_600_000,
+            activation_bytes_moved=3_000_000,
+        )
+        lo, mid, hi = record.reuse_mj_band()
+        expected = phase_cost_band(
+            reprogram_passes=16,
+            reuse_passes=142,
+            params_reloaded=66_600_000,
+            activation_bytes_moved=3_000_000,
+            coefficient_band=DEFAULT_COEFFICIENT_BAND,
+        )
+        assert lo == pytest.approx(expected.low_mj)
+        assert mid == pytest.approx(expected.nominal_mj)
+        assert hi == pytest.approx(expected.high_mj)
+
+    def test_band_is_ordered_lo_mid_hi(self):
+        record = self._record(
+            reprogram_passes=16,
+            reuse_passes=142,
+            params_reloaded=66_600_000,
+            activation_bytes_moved=3_000_000,
+        )
+        lo, mid, hi = record.reuse_mj_band()
+        assert lo <= mid <= hi
+        # A defensible band is a genuine RANGE — high strictly above low.
+        assert hi > lo
+
+    def test_band_accepts_a_custom_coefficient_band(self):
+        record = self._record(
+            reprogram_passes=2,
+            reuse_passes=0,
+            params_reloaded=1000,
+            activation_bytes_moved=0,
+        )
+        flat = DmaCostCoefficients(
+            e_dma_per_byte_mj=1e-6, bytes_per_param=1.0, e_sync_barrier_mj=0.0
+        )
+        custom = CoefficientBand(low=flat, nominal=flat, high=flat)
+        lo, mid, hi = record.reuse_mj_band(coeffs=custom)
+        # reprogram DMA = 1000 · 1 · 1e-6 = 1e-3, no sync charge.
+        assert lo == pytest.approx(1e-3)
+        assert mid == pytest.approx(1e-3)
+        assert hi == pytest.approx(1e-3)
+
+    def test_band_zero_when_no_phase_fields(self):
+        # A default record (no phase plan) ⇒ a 0/0/0 band — nothing to reload.
+        record = self._record()
+        assert record.reuse_mj_band() == (0.0, 0.0, 0.0)
+
+    def test_reuse_mj_default_stays_byte_identical(self):
+        # The grounded band is ADDITIVE: the default-off `reuse_mj` (0.0 coeffs)
+        # is untouched — still exactly 0.0 — so nothing else moves.
+        record = self._record(
+            reprogram_passes=16, reuse_passes=142,
+            params_reloaded=66_600_000, activation_bytes_moved=3_000_000,
+        )
+        assert record.reuse_mj() == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# Backend as a first-class cost coordinate — a CostRecord carries its backend so
+# cost records are comparable per backend (the E6 cell keys firing × sync ×
+# backend). This LOCKS the property; it is not a behavior change.
+# --------------------------------------------------------------------------- #
+
+class TestBackendCoordinate:
+    def _record(self, cell):
+        return extract_cost_record(
+            cell=cell,
+            deployed_accuracy=0.97,
+            sanafe_snapshot=_single_segment_snapshot(),
+        )
+
+    def test_record_carries_backend_field(self):
+        record = self._record(CertificationCell("lif", None, "sanafe"))
+        assert record.backend == "sanafe"
+
+    def test_cell_property_carries_backend(self):
+        # The cost cell (re-parsed from the key) names the SAME backend coordinate.
+        record = self._record(CertificationCell("lif", None, "nevresim"))
+        assert record.cell.backend == "nevresim"
+        assert record.cell_key.endswith("@nevresim")
+
+    def test_different_backends_produce_different_cells(self):
+        # The keystone lock: two records of the SAME (firing × sync) recipe on
+        # DIFFERENT backends are DISTINCT cells — never silently merged.
+        sanafe = self._record(CertificationCell("lif", None, "sanafe"))
+        nevresim = self._record(CertificationCell("lif", None, "nevresim"))
+        assert sanafe.cell != nevresim.cell
+        assert sanafe.cell_key != nevresim.cell_key
+        assert sanafe.cell.firing == nevresim.cell.firing  # same recipe
+        assert sanafe.cell.backend != nevresim.cell.backend  # different coordinate
+
+
+# --------------------------------------------------------------------------- #
+# Wiring — the production cost-emit step OPTIONALLY attaches the grounded band,
+# ONLY when a cost-coefficient config is supplied. With NO config (default) the
+# emitted record is byte-IDENTICAL to today (no band attached, reuse_mj 0.0).
+# --------------------------------------------------------------------------- #
+
+class TestEmitWiring:
+    def _emit(self, **kw):
+        cell = CertificationCell("lif", None, "sanafe")
+        return extract_cost_record(
+            cell=cell,
+            deployed_accuracy=0.97,
+            sanafe_snapshot=_single_segment_snapshot(),
+            reprogram_passes=16,
+            reuse_passes=142,
+            params_reloaded=66_600_000,
+            activation_bytes_moved=3_000_000,
+            **kw,
+        )
+
+    def test_default_emit_is_byte_identical(self):
+        # No coefficient config (default) ⇒ the emitted record is byte-identical to
+        # today: reuse_mj 0.0, NO band in provenance, the full dict unchanged.
+        with_default = self._emit()
+        no_kw = extract_cost_record(
+            cell=CertificationCell("lif", None, "sanafe"),
+            deployed_accuracy=0.97,
+            sanafe_snapshot=_single_segment_snapshot(),
+            reprogram_passes=16,
+            reuse_passes=142,
+            params_reloaded=66_600_000,
+            activation_bytes_moved=3_000_000,
+        )
+        assert with_default == no_kw
+        assert with_default.reuse_mj() == 0.0
+        assert "reuse_cost_band_mj" not in with_default.provenance
+        assert with_default.to_dict() == no_kw.to_dict()
+
+    def test_default_emit_provenance_unchanged(self):
+        # The default record's provenance is exactly what the caller passed (here
+        # empty) — the band wiring adds nothing when no config is supplied.
+        record = self._emit()
+        assert record.provenance == {}
+
+    def test_emit_with_band_attaches_grounded_range(self):
+        # A supplied coefficient band ⇒ the emitted record carries the grounded
+        # low/nominal/high mJ (sourced from `phase_cost_band`) in provenance,
+        # comparable per backend.
+        record = self._emit(coefficient_band=DEFAULT_COEFFICIENT_BAND)
+        band = record.provenance["reuse_cost_band_mj"]
+        expected = phase_cost_band(
+            reprogram_passes=16,
+            reuse_passes=142,
+            params_reloaded=66_600_000,
+            activation_bytes_moved=3_000_000,
+            coefficient_band=DEFAULT_COEFFICIENT_BAND,
+        )
+        assert band == [
+            pytest.approx(expected.low_mj),
+            pytest.approx(expected.nominal_mj),
+            pytest.approx(expected.high_mj),
+        ]
+
+    def test_emit_with_band_round_trips(self, tmp_path):
+        record = self._emit(coefficient_band=DEFAULT_COEFFICIENT_BAND)
+        assert CostRecord.from_dict(record.to_dict()) == record
+        path = save_cost_record(record, str(tmp_path / "run"))
+        assert load_cost_record(path) == record
+
+    def test_emit_band_preserves_explicit_provenance(self):
+        # The grounded band is added ALONGSIDE any caller provenance, not instead.
+        cell = CertificationCell("lif", None, "sanafe")
+        record = extract_cost_record(
+            cell=cell,
+            deployed_accuracy=0.97,
+            sanafe_snapshot=_single_segment_snapshot(),
+            reprogram_passes=2,
+            reuse_passes=0,
+            params_reloaded=1000,
+            provenance={"run_dir": "mnist_run"},
+            coefficient_band=DEFAULT_COEFFICIENT_BAND,
+        )
+        assert record.provenance["run_dir"] == "mnist_run"
+        assert "reuse_cost_band_mj" in record.provenance
