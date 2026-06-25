@@ -157,9 +157,13 @@ unconditional accuracy default while cascaded is retained purely for its latency
 These are *genuine* frontiers — each is either un-instrumented or needs a capability we do not yet
 have. Things we already understand or can fix in scope were NOT deferred here.
 
-1. **Per-sample energy instrumentation.** Cost is currently a defensible model-estimate-with-band;
-   measured per-(cell, schedule) energy/latency is not yet in the ledger. The largest single
-   instrumentation gap for a true cost-accuracy Pareto.
+1. **Per-sample energy instrumentation (now wired at the source; data fills forward).** Cost
+   extraction is now invoked at the end of the deployment path (`sanafe_simulation_step` emits a
+   measured `cost_record.json`, exception-isolated + result-byte-identical), and E5 prefers the measured
+   cost over the proxy when a record is resolvable. The remaining gap is purely temporal: the *existing*
+   ledger rows predate emission, so the cost-accuracy Pareto becomes fully *measured* (not proxy) only as
+   the campaign re-runs cells with emission on — and per-schedule run-dir→cost resolution is still
+   best-effort.
 2. **Pruning / regime equivalence screens.** Semantic knobs cannot collapse on fidelity; collapsing
    them honestly needs a real GPU cross-product equivalence screen — which needs the pruning
    deployment capability (D4) and the pretrained bridge (B3).
@@ -168,7 +172,12 @@ have. Things we already understand or can fix in scope were NOT deferred here.
    path is foreclosed — it is real research).
 4. **Pretrained near-SOTA + ImageNet headline (GPU-weeks).** Reachable via the Scheduled path at a
    costed phase budget, gated on the pretrained bridge + timm/torchvision import.
-5. **Residual Tier-1** (on-chip param-free merge) and the residual-merge attribution.
+5. **Residual Tier-1** (on-chip param-free merge) — *characterized as intrinsically `1/T`-bounded*: an
+   in-segment on-chip merge cannot be bit-exact to the Tier-0 host-add reference (the in-segment IF head
+   re-quantizes the merged spike train, differing by exactly 1 spike = `1/T` by construction; matching it
+   needs a host round-trip = Tier 0). It is feasible as a `1/T`-characterized deployment, not a
+   host-add-identical one; a closeable shared-HCM-fill alignment (Component A) separately tightens
+   NF==HCM to `atol=0`. See `findings/residual_tier1_intrinsic_limit.md`.
 6. **Published-baseline head-to-heads** (RMP/QCFS/percentile-norm) on the covered/valid cells.
 
 ## 6. How to reproduce / audit

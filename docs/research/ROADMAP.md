@@ -56,6 +56,12 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
   production gate is identity-mapping-only; only the harness reassembler was fixed). Research-round
   independently corroborated E5 (no working config-level firing-gain rescue lever at the convnet d6 onset).
   **F5 research document** (`RESEARCH_DOCUMENT.md`) drafted, all sections measured-and-cited.
+- **Wave-4 landed (main `33afcbeb`):** cost-EMIT (CONFIRMED_CLEAN — the deployment path now emits
+  measured `cost_record.json`, closing the cost gap at the source; E5 prefers measured over proxy).
+  residual-Tier1 produced a genuine NEGATIVE result kept ISOLATED (`wave4/residual-t1`): an in-segment
+  on-chip merge is intrinsically `1/T`-off from host-add (characterized, not a bug). **The cheap-code
+  frontier is now ~exhausted** — remaining DoD = capability builds (B3 pretrained bridge · D5 attention
+  · D6 timm · D7 baselines) + the GPU-weeks F-layer (F1-F4 ImageNet) = a genuine commitment fork.
 - **Infra note (Wave 1):** the harness's Workflow `isolation:'worktree'` snapshots a STALE base
   (`bcacfeb`, an old session HEAD — its object DB lacks current `main`); the A4 base-check guard caught
   it. Dispatch pattern is now **manually-created `git worktree` from current `main` + absolute-path
@@ -95,7 +101,7 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | Item | Status | Dep | Cost |
 |---|---|---|---|
 | C1 GAP-R defensible cost model + band | ✅ P2 | — | ◦ |
-| C2 Wire cost into the production cost path + **backend as a first-class cost coordinate** | ✅ Wave1 (`reuse_mj_band` band + `coefficient_band` opt-in emit, default byte-identical; backend coord locked) | C1 | ◦ |
+| C2 Wire cost into the production cost path + **backend as a first-class cost coordinate** | ✅ Wave1 (`reuse_mj_band` band + backend coord) **+ Wave4 cost-EMIT** (`sanafe_simulation_step` emits measured `cost_record.json`, exception-isolated + result-byte-identical; E5 prefers measured cost over proxy) | C1 | ◦ |
 | C3 **GAP-1 attribution fix** — `(ir_core_id, neuron_range)` joint keying so per-neuron lock survives coalescing+split at scale | ✅ Wave2 (sharpened: it's coalescing+output-tiling under compaction reorder; fixed bit-exact, value-domain unchanged; verifier reproduced the failing-first) | — | ◦ |
 | C4 Per-region fidelity recording (value-domain vs attribution) | ✅ P1 | — | ◦ |
 
@@ -103,7 +109,7 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | Item | Status | Dep | Cost |
 |---|---|---|---|
 | D1 Residual Tier-0 (host add, bit-exact) | ✅ | — | ◦ |
-| D2 **Residual Tier-1** (on-chip param-free merge) — round 3 = LIF merge-window alignment | 🔬 | D1 | ◦◦ |
+| D2 **Residual Tier-1** (on-chip param-free merge) — round 3 = LIF merge-window alignment | 🔬 Wave4: CHARACTERIZED as intrinsically `1/T`-bounded (in-segment IF re-quant ≠ host-add by 1 spike, by construction; not bit-exact to Tier-0). Isolated branch `wave4/residual-t1`; finding doc written. Path fwd: redefine success as `1/T`-characterized OR close Component A (shared-HCM-fill, NF==HCM atol=0) | D1 | ◦◦ |
 | D3 **Scheduled-scale realization** — real `_build_scheduled` end-to-end probe (confirm 16/142 + bit-exactness) | ✅ Wave3 (genuine overflow→3 stages `[6,6,2]`, 3 reprogram+33 reuse, bit-exact max\|Δ\|=0; VGG 16/142 confirmed-by-mechanism) | E4✅ | ◦–◦◦ |
 | D4 **Pruning × scheduling** — pruning shrinks cores → fewer reprogram phases (attacks the 80% cost term) | ⬜ | C1,D3 | ◦◦ |
 | D5 **On-chip attention / LayerNorm** — THE transformer contribution (E7 foreclosed the cheap path) | ⬜ | — | ◦◦◦ |
