@@ -130,12 +130,35 @@ class TestAxisReclassification:
         assert axis.screening_status is ScreeningStatus.ENUMERATED_INTERACTING
         assert axis.screening_artifact
 
-    @pytest.mark.parametrize(
-        "name", ["pruning", "mapping_strategy", "backend", "regime"]
-    )
+    @pytest.mark.parametrize("name", ["pruning", "regime"])
     def test_unscreened_axes_are_asserted_unscreened(self, name):
-        # No screen yet → ASSERTED_UNSCREENED → counted interacting until P3.
+        # No screen yet → ASSERTED_UNSCREENED → counted interacting until P3. pruning &
+        # regime are SEMANTIC knobs (they change the trained result), so they CANNOT
+        # collapse on a fidelity artifact — they stay ASSERTED_UNSCREENED.
         assert self._status(name) is ScreeningStatus.ASSERTED_UNSCREENED
+
+    @pytest.mark.parametrize("name", ["backend", "mapping_strategy"])
+    def test_faithfulness_axes_are_screened_collapsed_with_artifact(self, name):
+        # backend & mapping_strategy are FAITHFULNESS axes — different simulators /
+        # packings of the SAME deployment contract — so they collapse on a measured
+        # PARITY/FIDELITY artifact (faithful sims & equivalent packings agree on the
+        # deployed value). The collapse is FIDELITY-ONLY: the artifact must scope it.
+        axis = HypervolumeAxis.get(name)
+        assert axis.screening_status is ScreeningStatus.SCREENED_COLLAPSED
+        assert axis.collapsed is True
+        assert axis.representative
+        assert axis.screening_artifact
+        scope = axis.screening_artifact.lower()
+        assert "fidelity-only" in scope
+        assert "cost" in scope  # cost/utilization explicitly NOT collapsed
+
+    def test_backend_representative_is_a_known_backend(self):
+        axis = HypervolumeAxis.get("backend")
+        assert axis.representative in axis.values
+
+    def test_mapping_strategy_representative_is_a_known_strategy(self):
+        axis = HypervolumeAxis.get("mapping_strategy")
+        assert axis.representative in axis.values
 
 
 # --------------------------------------------------------------------------- #
@@ -145,11 +168,13 @@ class TestAxisReclassification:
 class TestDenominatorConsumesStatus:
     def test_only_screened_collapsed_axes_drop_from_the_active_product(self):
         active = {a.name for a in collapse_orthogonal_axes(AXES)}
-        # encoding_placement is the ONLY SCREENED_COLLAPSED axis → the only one dropped.
-        assert "encoding_placement" not in active
-        # The ASSERTED_UNSCREENED axes are counted interacting → they SURVIVE as
-        # coordinates (they cannot collapse without a screen).
-        for name in ("pruning", "mapping_strategy", "backend", "regime"):
+        # The SCREENED_COLLAPSED axes (encoding_placement + the two faithfulness axes
+        # backend & mapping_strategy) are the ones dropped from the active product.
+        for name in ("encoding_placement", "backend", "mapping_strategy"):
+            assert name not in active
+        # The ASSERTED_UNSCREENED SEMANTIC axes are counted interacting → they SURVIVE
+        # as coordinates (they cannot collapse without a real GPU equivalence screen).
+        for name in ("pruning", "regime"):
             assert name in active
 
     def test_interacting_axes_are_every_non_collapsed_axis(self):
@@ -162,22 +187,38 @@ class TestDenominatorConsumesStatus:
         all_names = {a.name for a in AXES}
         # interacting == everything that is NOT screened-collapsed.
         assert names == (all_names - collapsed)
-        assert collapsed == {"encoding_placement"}
+        # encoding_placement (precedent) + the two faithfulness axes now collapse.
+        assert collapsed == {"encoding_placement", "backend", "mapping_strategy"}
 
     def test_asserted_unscreened_axis_enlarges_the_honest_denominator(self):
-        # The HEADLINE invariant: an ASSERTED_UNSCREENED axis (e.g. mapping_strategy,
-        # 4 values) is ENUMERATED in the honest denominator — it multiplies the claim
+        # The HEADLINE invariant: an ASSERTED_UNSCREENED SEMANTIC axis (e.g. pruning,
+        # 2 values) is ENUMERATED in the honest denominator — it multiplies the claim
         # size rather than collapsing to one default. A bigger denominator = LOWER
         # honest coverage.
         pinned = honest_claimed_subproduct(vehicle=["deep_cnn"], dataset=["mnist"])
-        # Pin mapping_strategy down to one value → strictly fewer cells (the unscreened
-        # axis was being enumerated over its whole 4-value domain).
-        one_strategy = honest_claimed_subproduct(
-            vehicle=["deep_cnn"], dataset=["mnist"], mapping_strategy=["packed"]
+        # Pin pruning down to one value → strictly fewer cells (the unscreened semantic
+        # axis was being enumerated over its whole domain).
+        one_pruning = honest_claimed_subproduct(
+            vehicle=["deep_cnn"], dataset=["mnist"], pruning=["dense"]
         )
-        assert len(pinned) > len(one_strategy)
-        n_strategies = len(HypervolumeAxis.get("mapping_strategy").values)
-        assert len(pinned) == len(one_strategy) * n_strategies
+        assert len(pinned) > len(one_pruning)
+        n_pruning = len(HypervolumeAxis.get("pruning").values)
+        assert len(pinned) == len(one_pruning) * n_pruning
+
+    def test_collapsed_faithfulness_axis_does_not_enlarge_the_denominator(self):
+        # Pinning a SCREENED_COLLAPSED faithfulness axis (backend / mapping_strategy) to
+        # ALL its values does NOT change the honest denominator — it collapsed to one
+        # representative, exactly like encoding_placement.
+        base = honest_claimed_subproduct(vehicle=["deep_cnn"], dataset=["mnist"])
+        all_backends = honest_claimed_subproduct(
+            vehicle=["deep_cnn"], dataset=["mnist"],
+            backend=["nevresim", "sanafe", "hcm", "lava"],
+        )
+        all_strategies = honest_claimed_subproduct(
+            vehicle=["deep_cnn"], dataset=["mnist"],
+            mapping_strategy=["packed", "identity", "neuron_split", "coalesced"],
+        )
+        assert len(base) == len(all_backends) == len(all_strategies)
 
     def test_screened_collapsed_axis_does_not_enlarge_the_denominator(self):
         # Pinning the collapsed encoding_placement to BOTH values does not change the
@@ -385,18 +426,20 @@ class TestHonestDeepCnnFraction:
         honest = coverage_report(
             ledger, claimed_subproduct=honest_claimed_subproduct(**pins)
         )
-        # The honest denominator ENUMERATES the ASSERTED_UNSCREENED axes (backend,
-        # mapping_strategy, pruning, regime), so it is strictly larger and the honest
-        # fraction is strictly LOWER — collapse-on-a-hunch can no longer inflate it.
+        # The honest denominator ENUMERATES the non-collapsed unpinned axes
+        # (quantization, pruning, regime — backend & mapping_strategy now COLLAPSE on a
+        # fidelity artifact), so it is strictly larger and the honest fraction is
+        # strictly LOWER — collapse-on-a-hunch can no longer inflate it.
         assert honest.claimed_subproduct_size > legacy.claimed_subproduct_size
         assert honest.coverage_fraction < legacy.coverage_fraction
         # The enumerated-axis blow-up factor over the legacy single-default claim: the
-        # unpinned non-collapsed axes the legacy claim collapsed to one default —
-        # quantization(4)×pruning(2)×backend(4)×mapping_strategy(4)×regime(2) = 256.
+        # unpinned NON-COLLAPSED axes the legacy claim collapsed to one default —
+        # quantization(4)×pruning(2)×regime(2) = 16. backend & mapping_strategy are now
+        # SCREENED_COLLAPSED, so they no longer multiply the denominator.
         blow_up = 1
-        for name in ("quantization", "pruning", "backend", "mapping_strategy", "regime"):
+        for name in ("quantization", "pruning", "regime"):
             blow_up *= len(HypervolumeAxis.get(name).values)
-        assert blow_up == 256
+        assert blow_up == 16
         assert honest.claimed_subproduct_size == legacy.claimed_subproduct_size * blow_up
 
     def test_honest_report_passes_the_full_self_audit(self):
