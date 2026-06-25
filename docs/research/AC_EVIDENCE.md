@@ -1045,6 +1045,96 @@ the d6 onset on FMNIST maps recovery across the now-continuous-at-n1000 3.9–18
 
 ---
 
+## 1w. CONSOLIDATED — the VALID `deep_cnn` dataset-breadth × depth death-cascade with the SYNCHRONIZED ceiling attached (closes the §1v "no-sync-arm" gap at d8/d10) (`item_id=dcnn_dataset_breadth_depth`, 2026-06-25)
+
+§1v reproduced the death-cascade on the VALID `deep_cnn` vehicle but had **NO synchronized
+arm** — the AC2 deficit was only readable as cascaded→ANN. This item attaches the
+**matched-batch synchronized companions** at d8 (`pdcnnd8databc`) and d10 (`pdcnnd10data`),
+pools the d6 cells (`pdcnnd6kmfin`, `pdcnndatafix_d6`) and the gate-fix grid
+(`pdcnnd10datafix`), and rolls the whole dataset-breadth × depth corpus into one AC2 cell.
+`deep_cnn` (w16), S=4, `ttfs_cycle_based`, `max_simulation_samples=200`. Ledger:
+`cluster:"WS3"`, `kind:"arch_dataset"`, `item_id:"dcnn_dataset_breadth_depth"` (9 rows).
+
+| model | dataset (depth) | cascaded (mean, n) | synchronized (mean, n) | **AC2 casc→sync gap** | casc→ANN | sync→ANN | validity | AC2 verdict |
+|:------|:----------------|:-------------------|:-----------------------|----------------------:|---------:|---------:|:---------|:------------|
+| deep_cnn | FMNIST (d6)  | 0.855 (n=3) | — | — | +7.54 | — | VALID `rc=0` | cascaded-only (no sync companion) |
+| deep_cnn | KMNIST (d6)  | 0.9183 (n=3) | — | — | +5.58 | — | VALID `rc=0` | cascaded-only (smallest deficit) |
+| deep_cnn | FMNIST (d8)  | 0.790 (n=3) | 0.9034 (n=3) | **+11.34** | +14.32 | 2.98 | VALID `rc=0` | **NOT MET (collapse)** |
+| deep_cnn | KMNIST (d8)  | 0.8917 (n=3) | 0.9619 (n=3) | **+7.02** | +7.57 | 0.55 | VALID `rc=0` | lossy (sync near-lossless) |
+| deep_cnn | FMNIST (d10) | 0.725 (n=2†) | 0.9041 (n=3) | **+17.91** | +20.86 | 2.95 | VALID `rc=0` | **NOT MET (WORST corner)** |
+| deep_cnn | KMNIST (d10) | 0.8025 (n=2†) | 0.9623 (n=3) | **+15.98** | +15.91 | −0.07‡ | VALID `rc=0` | **NOT MET (collapse)** |
+
+† d10 cascaded n=2 (FMNIST s1 `rc=-9`, KMNIST s0 `rc=1`; sync arms full n=3). ‡ KMNIST d10
+sync 0.9623 vs 200-sample ANN 0.9616 = −0.07pp = sampling artifact of the coarse n=200 ANN
+eval, not a super-ANN result.
+
+**Gate-fix grid (cotFalse cpFalse, cascaded-only) does NOT close the deep × hard deficit:**
+FMNIST d10 0.750 (n=2) → +15.41pp vs the d10data sync ceiling 0.9041; KMNIST d10 0.8625
+(n=2) → +9.98pp vs 0.9623 (cpTrue s2=0.865 ≈ same). The firing-gain gate knobs sit at the
+**same depressed cascaded level**, corroborating (not closing) the deficit — consistent with
+WS7 §2d/§2e/§12.
+
+**Verdict — CONFIRMED; the death-cascade law holds across FMNIST + KMNIST × d6/d8/d10, the
+harder dataset-margin carries the LARGER cascaded AC2 deficit at every matched depth, and
+synchronized stays ~lossless.** The cascaded→sync firing-gain gap grows **monotonically with
+depth** on BOTH datasets (FMNIST +11.34@d8 → +17.91pp@d10; KMNIST +7.02@d8 → +15.98pp@d10)
+and is consistently larger on the harder FMNIST margin than on KMNIST at every matched depth.
+Synchronized AC2 stays MET within **0.55–2.98pp** of the ANN ceiling everywhere — the deficit
+is a **cascaded-firing-gain pathology, not a capacity limit**. This **closes the §1v
+"no-synchronized-arm" gap at d8/d10** and consolidates §1h (d10) + §1j (d8) + the d6 cells +
+the gate-fix grid into one dataset-breadth × depth item; **FMNIST × d10 is the worst corner
+in the whole deep_cnn table.**
+
+**Confounds.** (1) **No d5 runs in this corpus** (depths present d6/d8/d10) — the d5 leg is
+UNANSWERED here. (2) **d10 cascaded n=2** (one crash each). (3) **d6 cells cascaded-only** (no
+sync companion) so the d6 casc→sync gap is not directly measurable — only casc→ANN
+(~5.6–7.5pp); duplicate d6 KMNIST cell (`pdcnndatafix_d6 cotFalse` 0.8967) consistent with
+`pdcnnd6kmfin` (0.9183). (4) **All 45 valid runs `mss=200`** → 0.005 grid; **read pp-gaps,
+not 3rd decimals**. (5) **NO at-chance confound:** every ANN 0.93–0.98 ≫ 0.10. (6) Gate-fix
+`pdcnnd10datafix` cot/cp grid is cascaded-only — corroborating, not closing. Run ids: see
+ledger `item_id:"dcnn_dataset_breadth_depth"`. (Detailed analysis:
+`docs/research/findings/WS3_depth_firing_gain.md` §4w.)
+
+---
+
+## 2g. NEITHER escalation rescues the n=1000 bigcores-gatefix `deep_cnn` d8 MNIST cell — θ-cotrain CRASHES `rc=1` (unmeasurable) and conversion_policy REGRESSES −2.47pp; the cell is already near-lossless so there is almost no deficit (`item_id=dcnn_deep_controller_escalation`, 2026-06-25)
+
+§2d/§2e/§2f exhausted the d6 onset rescue space. This extends the rescue question one rung
+deeper, on the **n=1000-trained big-cores-gatefix `deep_cnn` at d8 (MNIST, S=4, cascaded
+`ttfs_cycle_based`)** — the controller-escalation grid
+`pdcnnbcn1000fix_d8_cot{T,F}_cp{T,F}_s{0,1,2}` (12 runs). Ledger: `cluster:"WS7"`,
+`kind:"escalation"`, `item_id:"dcnn_deep_controller_escalation"`.
+
+| arm | cot | cp | deployed (3-seed) | seeds | rc | ANN ref | AC2 verdict |
+|:----|:--:|:--:|------------------:|:------|:--:|--------:|:------------|
+| baseline (pure cascaded) | false | false | **0.9723** | .96/.981/.976 | 0 | ~0.974 | near-lossless (casc→ANN ~0.2pp) |
+| conversion_policy escalation | false | true | **0.9477** | .978/.954/**.911** | 0 | ~0.974 | **REGRESSES −2.47pp** |
+| θ-cotrain escalation (any cp) | true | — | **n/a** | — | **1** | — | **BROKEN (rc=1, unmeasurable)** |
+
+**Verdict — NEITHER ESCALATION RESCUES; the cell is already near-lossless so there is almost
+nothing to rescue.** The **θ-cotrain (cot) escalation is unmeasurable** (all 6 cotTrue runs
+`rc=1`, the `Conv2DPerceptronMapper features_3` tensor-shape break; their 0.99 floats are
+stale pre-deployment ANN-stage artifacts). **conversion_policy (cp) does NOT rescue:** across
+the 6 finalized rc=0 cotFalse runs, cp leaves accuracy unchanged-to-WORSE — cpFalse **0.9723**
+vs cpTrue **0.9477**, a cp lift of **−2.47pp** (a regression dragged by one seed collapse to
+0.911, NOT a lift toward the ~0.974 ANN ceiling). The d8 cell is already **near-lossless on
+cpFalse** (cascaded→ANN gap only ~0.2pp at n=1000) — there is almost no firing-gain deficit
+for an escalation to close. This is the **deeper-rung confirmation of the §2d MNIST d6 cp
+NO-OP/REGRESSION and the §2d–§2f cotTrue `rc=1` crash**; synchronized remains the
+unconditional deep_cnn default.
+
+**Confounds.** (1) **cot unmeasurable** (all 6 cotTrue `rc=1`, `q/failed/`; 0.99 floats are
+stale ANN-stage artifacts). (2) **cp regression one-seed-driven** (cpTrue 0.978/0.954/0.911;
+sd 2.77pp vs cpFalse 0.90pp). (3) **`mss=1000`** → read pp-gaps. (4) **NO at-chance confound:**
+in-log ANN 0.9704/0.9807/0.972 ≫ 0.1135. (5) **NO paired synchronized arm** in this batch.
+(6) **Negative-rescue cell:** the near-lossless baseline (casc→ANN ~0.2pp) shows the
+escalation levers do not HELP and can HURT even where the deficit is small. Run ids: baseline
+`pdcnnbcn1000fix_d8_cotFalse_cpFalse_s{0,1,2}`; cp escalation
+`…_cotFalse_cpTrue_s{0,1,2}`; cot-crashed `…_cotTrue_cp{False,True}_s{0,1,2}`. (Detailed
+analysis: `docs/research/findings/WS7_keystone_automatic.md` §12.)
+
+---
+
 ## 3. Open AC gaps (what these cells do NOT yet certify)
 
 - **No paired n=1000 synchronized lenet5 run** — the AC2 cascaded→synchronized

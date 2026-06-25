@@ -1665,3 +1665,70 @@ shows it. (6) 3 duplicate d8_KMNIST queue JSONs (id == filename) excluded by str
 (7) **NO at-chance confound:** ANN 0.93–0.97 ≫ 0.10. **Next:** add the synchronized arm
 at these dataset×depth cells (to convert the cascaded→ANN gap into a cascaded→sync gap)
 and fix the Conv2DPerceptronMapper forward bug to unlock the cotTrue gate-fix arm.
+
+---
+
+## 4w. The §4u open gap is CLOSED — matched-batch SYNCHRONIZED companions at d8/d10 convert cascaded→ANN into cascaded→SYNC, and the death-cascade law holds across the dataset-breadth × depth corpus (`item_id=dcnn_dataset_breadth_depth`, 2026-06-25)
+
+**Question (does the cascaded firing-gain death-cascade law hold across the dataset-breadth
+axis on the VALID deep_cnn vehicle, with a synchronized ceiling to separate firing-gain from
+capacity?).** §4u reproduced the death-cascade on the VALID vehicle but had **NO synchronized
+arm** at the dataset×depth cells, so the deficit was only measurable as cascaded→ANN. This
+item lands the **matched-batch synchronized companions** at d8 (`pdcnnd8databc`) and d10
+(`pdcnnd10data`) and pools the d6 and gate-fix grid cells — closing the §4u "add the
+synchronized arm" gap and giving a clean **cascaded→synchronized firing-gain gap** at every
+matched cell. `deep_cnn` (w16), S=4, `ttfs_cycle_based`, `max_simulation_samples=200`. Ledger:
+`cluster:"WS3"`, `kind:"arch_dataset"`, `item_id:"dcnn_dataset_breadth_depth"` (9 rows).
+
+### The dataset-breadth × depth death-cascade — cascaded vs synchronized (matched batch)
+
+ANN refs 0.93–0.97 ≫ 0.10 chance → genuine firing-gain at every cell (NO untrained-floor).
+
+| dataset | depth | cascaded (mean, n) | synchronized (mean, n) | **casc→sync GAP** | casc→ANN | sync→ANN | verdict |
+|:--------|:------|:-------------------|:-----------------------|------------------:|---------:|---------:|:--------|
+| FashionMNIST | 6  | 0.855  (n=3) | — | — | +7.54 | — | cascaded-only (no sync companion) |
+| KMNIST       | 6  | 0.9183 (n=3) | — | — | +5.58 | — | cascaded-only (smallest deficit: shallow + easy) |
+| FashionMNIST | 8  | 0.790  (n=3) | 0.9034 (n=3) | **+11.34** | +14.32 | 2.98 | death-cascade; harder margin = larger gap |
+| KMNIST       | 8  | 0.8917 (n=3) | 0.9619 (n=3) | **+7.02**  | +7.57  | 0.55 | sync near-lossless (0.55pp) |
+| FashionMNIST | 10 | 0.725  (n=2†) | 0.9041 (n=3) | **+17.91** | +20.86 | 2.95 | **WORST corner** (deep × hard) |
+| KMNIST       | 10 | 0.8025 (n=2†) | 0.9623 (n=3) | **+15.98** | +15.91 | −0.07‡ | sync near-lossless |
+
+† d10 cascaded is **n=2** (FMNIST s1 crashed `rc=-9`, KMNIST s0 crashed `rc=1`); sync arms full
+n=3. ‡ KMNIST d10 sync 0.9623 marginally exceeds its 200-sample ANN ref 0.9616 (−0.07pp) — a
+**sampling artifact** of the coarse n=200 ANN eval, not a super-ANN result.
+
+### The gate-fix grid does NOT close the deep × hard deficit
+
+| dataset | depth | gate-fix cascaded (cotF cpF) | sync ceiling (d10data) | casc→sync GAP | verdict |
+|:--------|:------|:-----------------------------|:-----------------------|--------------:|:--------|
+| FashionMNIST | 10 | 0.750 (n=2) | 0.9041 | **+15.41** | gate-fix knobs do NOT recover |
+| KMNIST       | 10 | 0.8625 (n=2) | 0.9623 | **+9.98** | cpTrue s2=0.865 ~same; no recovery |
+
+**Verdict — CONFIRMED. The death-cascade law holds across FashionMNIST + KMNIST × d6/d8/d10;
+the harder dataset-margin carries the LARGER cascaded deficit at every matched depth, and
+synchronized stays ~lossless.** The cascaded→sync firing-gain gap grows **monotonically with
+depth** on BOTH datasets (FMNIST +11.34pp@d8 → +17.91pp@d10; KMNIST +7.02pp@d8 → +15.98pp@d10)
+and is **consistently larger on the harder FMNIST margin** (lower ANN ceiling) than on KMNIST
+at every matched depth. Synchronized deployment stays within **0.55–2.98pp** of the well-above-
+chance ANN ceiling at every cell — so the cascaded deficit is a **firing-gain pathology, not a
+capacity limit**. The §4u open gap ("add the synchronized arm") is **CLOSED at d8/d10**: the
+cascaded→ANN gaps now carry a matched cascaded→sync decomposition, and the sync→ANN residual
+is ≤2.98pp everywhere. The gate-fix cot/cp grid (cotFalse cpFalse) sits at the **same depressed
+cascaded level** (~0.75 FMNIST, ~0.86 KMNIST), 10–15pp below the sync ceiling — it
+**corroborates, does not close**, the deep × hard deficit (matching §2e/§2f: no config-level
+firing-gain rescue on the convnet).
+
+**Confounds / bounds.** (1) **No d5 runs exist in this corpus** (depths present: d6/d8/d10) —
+the d5 leg is UNANSWERED here. (2) **d10 cascaded n=2** (one crash each: FMNIST s1 `rc=-9`,
+KMNIST s0 `rc=1`); sync arms full n=3. (3) **d6 cells are cascaded-only** (no synchronized
+companion in this batch) so the d6 casc→sync gap is not directly measurable — only casc→ANN
+(~5.6–7.5pp). The duplicate d6 KMNIST cell (`pdcnndatafix_d6 cotFalse` = 0.8967, casc→ANN
++7.31pp) is consistent with `pdcnnd6kmfin` (0.9183). (4) **All 45 valid runs use
+`max_simulation_samples=200`** — deployed accs are on a 0.005 grid; **trust pp-gaps, not 3rd
+decimals**. (5) **NO at-chance confound:** every ANN ref 0.93–0.98 ≫ 0.10, so every cell is a
+genuine firing-gain result, not an untrained floor. (6) The gate-fix `pdcnnd10datafix` cot/cp
+grid (n≤2) is **cascaded-only** with the firing-gain gate knobs — corroborating, not closing,
+the deficit. **This consolidates §4u + AC §1h/§1j into a single dataset-breadth × depth
+death-cascade item with the synchronized ceiling attached; FashionMNIST × d10 is the worst
+corner in the entire deep_cnn table.** (Run ids: see ledger
+`item_id:"dcnn_dataset_breadth_depth"`.)

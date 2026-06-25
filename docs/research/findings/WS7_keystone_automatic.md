@@ -734,6 +734,51 @@ remaining firing-gain rescue work is a **code fix to the per-channel θ knob**, 
 
 ---
 
+### §12 — NEITHER escalation rescues the n=1000 bigcores-gatefix `deep_cnn` d8 MNIST cell: θ-cotrain CRASHES `rc=1` (unmeasurable) and conversion_policy REGRESSES −2.47pp; the cell is already near-lossless so there is almost no deficit to rescue (`item_id=dcnn_deep_controller_escalation`, 2026-06-25)
+
+§9–§11 exhausted the d6 onset rescue space (θ-cotrain `rc=1`-broken, cp net-negative,
+staircase-STE regressing). This item asks the same rescue question one rung deeper, on the
+**n=1000-trained big-cores-gatefix `deep_cnn` at d8 (MNIST, S=4, cascaded `ttfs_cycle_based`)**
+— the controller-escalation grid `pdcnnbcn1000fix_d8_cot{T,F}_cp{T,F}_s{0,1,2}` (12 runs).
+Ledger: `cluster:"WS7"`, `kind:"escalation"`, `item_id:"dcnn_deep_controller_escalation"`.
+
+| arm | cot | cp | deployed (3-seed) | seeds | rc | ANN ref | verdict |
+|:----|:--:|:--:|------------------:|:------|:--:|--------:|:--------|
+| baseline (pure cascaded) | false | false | **0.9723** | .96/.981/.976 | 0 | ~0.974 | near-lossless (casc→ANN ~0.2pp) |
+| conversion_policy escalation | false | true | **0.9477** | .978/.954/**.911** | 0 | ~0.974 | **REGRESSES −2.47pp** (one-seed collapse) |
+| θ-cotrain escalation (any cp) | true | — | **n/a** | — | **1** | — | **BROKEN (rc=1 crash, unmeasurable)** |
+
+In-log ANN refs: 0.9704 / 0.9807 / 0.972 (mean ~0.9744, ≫ 0.1135 chance). cot=True runs'
+0.99 `__target_metric.json` floats are **stale pre-deployment ANN-stage artifacts** (the runs
+crash before deployment), NOT valid deployments.
+
+**Verdict — NEITHER ESCALATION RESCUES; the cell is already near-lossless so there is almost
+nothing to rescue.** The **θ-cotrain (cot) escalation CANNOT auto-rescue** the cell because all
+6 cotTrue runs crash `rc=1` (the same `Conv2DPerceptronMapper features_3` tensor-shape break as
+§9–§11) and are unmeasurable. The **conversion_policy (cp) escalation does NOT rescue either**:
+across the 6 finalized rc=0 cotFalse runs, cp leaves accuracy unchanged-to-WORSE — cpFalse
+**0.9723** vs cpTrue **0.9477**, a cp lift of **−2.47pp** (a regression dragged by one seed
+collapse to 0.911, NOT a lift toward the ~0.974 ANN ceiling). Crucially, the d8 cell is already
+**near-lossless on cpFalse** (cascaded→ANN gap only ~0.2pp at n=1000), so there is almost no
+firing-gain deficit for an escalation to close. This is the **deeper-rung confirmation of the
+§9 MNIST d6 cp NO-OP/REGRESSION and the §9–§11 cotTrue `rc=1` crash** — synchronized remains the
+unconditional deep_cnn default and the only remaining rescue route is a code fix to the
+per-channel θ-cotrain convnet-forward path.
+
+**Confounds.** (1) **cot escalation unmeasurable:** all 6 cotTrue runs `rc=1` (`q/failed/`),
+their 0.99 floats are stale ANN-stage artifacts, not valid deployments. (2) **cp regression is
+one-seed-driven:** cpTrue 0.978/0.954/0.911 — the −2.47pp mean is dragged by the s2=0.911
+collapse (cpTrue sd 2.77pp vs cpFalse 0.90pp). (3) **`max_simulation_samples=1000`** → read
+pp-gaps, not 3rd decimals. (4) **NO at-chance confound:** ANN ~0.974 ≫ 0.1135 → genuine
+result. (5) **NO paired synchronized arm** in this batch (only cot/cp axes). (6) The near-
+lossless baseline (casc→ANN ~0.2pp) makes this a *negative* rescue cell — it shows the
+escalation levers do not HELP and can HURT even where the deficit is small. Run ids: cpFalse
+baseline `pdcnnbcn1000fix_d8_cotFalse_cpFalse_s{0,1,2}`; cp escalation
+`pdcnnbcn1000fix_d8_cotFalse_cpTrue_s{0,1,2}`; cot-crashed (rc=1)
+`pdcnnbcn1000fix_d8_cotTrue_cp{False,True}_s{0,1,2}`.
+
+---
+
 ### Key file references
 
 - Decision logic + thresholds: `src/mimarsinan/tuning/orchestration/characterization.py`
