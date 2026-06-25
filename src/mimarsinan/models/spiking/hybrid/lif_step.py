@@ -107,12 +107,27 @@ class HybridLifStepMixin:
                        if single_spike else None)
 
         for cycle in range(cycles):
+            # Segment-output passthrough of a raw input is gathered at the segment
+            # boundary (latency 0), so its presentation stays the global [0, T).
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
 
             for core_idx, core in enumerate(cores):
+                # The raw input is read inside THIS core's own latency window:
+                # a core at latency L sees input local cycle (cycle - L), zero
+                # outside [0, T). This mirrors the always-on bias (fires at
+                # cycle == latency) and the neuron-source [lat, lat+T) windowing,
+                # so a raw-input skip into a latency>0 merge integrates the FULL
+                # train (not a one-cycle-short [L, L+T) slice of a global [0, T)
+                # presentation). No-op when L == 0 (every non-residual model).
+                local_cycle = cycle - int(core.latency or 0)
+                core_input_spikes = (
+                    input_spike_train[local_cycle]
+                    if 0 <= local_cycle < T
+                    else zeros_in
+                )
                 self._fill_signal_tensor_from_spans(
                     input_signals[core_idx],
-                    input_spikes=input_spikes,
+                    input_spikes=core_input_spikes,
                     buffers=buffers,
                     spans=axon_spans[core_idx],
                     cycle=cycle,
