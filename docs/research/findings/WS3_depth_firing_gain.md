@@ -1464,6 +1464,91 @@ rung remains unmeasured.
 
 ---
 
+## 4v. CONSOLIDATED — the full clean `rc==0` bigcores MNIST depth ladder, both resolutions, with the d12 rung CLOSED: sharp d6 onset → BOUNDED ~4–7pp plateau, NOT monotone-widening (`item_id=deep_cnn_depth_cascade_ladder_mnist`, 2026-06-25)
+
+This single section consolidates **every clean `rc==0` `pdcnnbc*` bigcores rung**
+of the within-CNN MNIST cascade ladder into one item, at **both** the n200
+(0.005-grid) and the genuine **n1000** (0.001-grid, 5× resolution) read, and
+**closes the d12 cascaded rung** that §4l Item A left at n=1 inconclusive. It
+SUPERSEDES the per-rung 4f/4l reads for the MNIST depth ladder and corrects the
+closeout §6 framing for the CNN.
+
+All cells: `deep_cnn` (width 16), MNIST, `ttfs_cycle_based`, S=4, paired
+cascaded-vs-synchronized by seed, on the **`bigcores` config (`cores.count = 480`,
+480/480)** that clears the d10/d12 `HardCoreMappingStep` "No more hard cores
+available" packing crash so the ladder finalizes `rc==0` with mapping numerics
+unchanged. ANN ~0.99 at every depth (≫ MNIST chance 0.1135) ⇒ every gap is a
+**genuine firing-gain** read, not an untrained-floor artifact. Ledger:
+`cluster:"WS3"`, `kind:"depth"`, `item_id:"deep_cnn_depth_cascade_ladder_mnist"`.
+
+### The full MNIST depth ladder — cascaded vs synchronized, both resolutions
+
+| d | casc n200 | casc n1000 | sync (n200/n1000) | ANN | **casc→sync gap n200** | **casc→sync gap n1000** | verdict |
+|--:|----------:|-----------:|:------------------|----:|-----------------------:|------------------------:|:--------|
+| 4  | 0.9883 | — | 0.9898 | 0.9931 | **+0.15** | — | tied to sync (pre-onset) |
+| 5  | 0.9917 | — | 0.9924 | 0.9913 | **+0.07** | — | tied to sync (last pre-onset) |
+| 6  | 0.9383 | 0.9563 | 0.9904 / 0.9924 | 0.992 | **+5.21** | **+3.61** | sharp ONSET |
+| 8  | 0.9483 | 0.9293 | 0.9934 / 0.9918 | 0.992 | **+4.50** | **+6.24** | degraded, bounded |
+| 10 | 0.9525 | 0.9318 | 0.9925 / 0.9909 | 0.992 | **+4.00** | **+5.91** | degraded, bounded |
+| 12 | 0.9175 ‡ | 0.9353 | 0.9916 / 0.9920 | 0.992 | **+7.41** ‡ | **+5.67** | degraded, bounded (d12 CLOSED) |
+
+‡ d12 **n200** cascaded is a **cross-vehicle pool** (1 `pdcnnbc_` s1=0.980 + 3
+`pdcnnbcd12fin_` 0.835/0.920/0.935) because the same-vehicle `pdcnnbc_`/`pdcnnbcclean_`
+d12 cascaded OOM-crashed (`rc=-9`, NOT firing-gain). The **d12 n1000** read is the
+**CLEANEST** d12 cell: a same-vehicle `pdcnnbcn1000seed_` s3/4/5 3-seed paired
+cascaded-vs-sync (gap **+5.67pp**) — prefer it for the headline.
+
+### Verdict — `cascaded_firing_gain_degraded_bounded_plateau_sharp_d6_onset`
+
+The within-CNN cascade follows **pattern (b)**: **byte-tied to synchronized and the
+ANN ceiling at d4/d5** (gap +0.15 / +0.07pp, near-lossless), then a **SHARP onset at
+d6** drops cascaded to a **BOUNDED ~4–7pp plateau** that **does NOT widen
+monotonically through d12** (n200 gaps 5.21→4.50→4.00→7.41; n1000 gaps
+3.61→6.24→5.91→5.67pp), while synchronized holds ~0.991–0.993 (within ~0.1–0.3pp of
+the ANN ceiling) **flat at every depth**. This is:
+
+- **NOT the deep_mlp-style monotonic widening** (pattern (a): the INVALID
+  host-majority deep_mlp shows +4.3pp at d4 → +9.3pp at d8, a smooth climb), and
+- **NOT absent** (pattern (c): §4c's "no within-CNN cascade" reading was a
+  *shallow-depth d4/d5 artifact*, corrected here and in §4f).
+
+Synchronized is the **unconditional deep default on the CNN** (gap to ANN ≤0.3pp,
+seed sd ≤0.16pp at every depth). The conv-shared/pooled structure **delays** the
+onset (d6 vs the MLP's d4) but does **not** abolish it; the deficit tracks the
+length of the greedy single-spike partial-sum chain.
+
+### Confounds / bounds
+
+1. **Resolution / metric provenance.** Cascaded subsamples to
+   `max_simulation_samples` (n=200 → 0.005 grid; n=1000 → 0.001 grid) while
+   synchronized uses the **FULL 10k** test set — so **read the GAPS, not the third
+   decimals**. The n200 vs n1000 cascaded means differ ~1–2pp at matched depth, and
+   cascaded seed sd is high (1–5pp) vs synchronized (~0.1–0.2pp) — a fragile,
+   high-variance code consistent with the death-cascade framing. Higher resolution
+   does **NOT** move the gap toward zero (n1000 ≥ n200 at d8/d10) → the depth-law
+   **hardens** with resolution.
+2. **d12 n200 cross-vehicle pool** (see ‡ above): its +7.41pp ladder-max is driven by
+   the 0.835 `pdcnnbcd12fin_` outlier; the clean same-vehicle d12 n1000 read (+5.67pp)
+   sits squarely **IN** the plateau and is the load-bearing d12 number.
+3. **EXCLUDED from this ladder** (different sub-questions / infra confounds): the WS7
+   gate-fix grids `pdcnnbcn1000fix_`/`pdcnnd6fix_` (cp/cot levers, all cascaded-only,
+   no synchronized counterpart; `cotTrue` arms `rc=1`-crash on
+   `Conv2DPerceptronMapper`); and the `rc=1`/`rc=-9` ladders `dcnn_d6/d8`,
+   `pdcnnladder_d6/d7`, `pdcnnd67retry_`, `pdcnnbc_d12 s0/s2`, `pdcnnbcclean_d12`
+   (the d10/d12 packing crash at `HardCoreMappingStep` — an infra/packing confound;
+   the deployed metric there was written PRE-crash).
+4. Every underlying clean run passed parity (NF↔SCM cascaded agreement 1.0,
+   torch↔deployed-sim 0.9961–1.0) before finalizing `rc==0`.
+
+**This corrects §4l Item A** (which read d12 as n=1 INCONCLUSIVE and the gap as
+"shrinks d6→d10"): with the d12 n1000 rung closed, the honest law is a **sharp d6
+onset followed by a bounded, non-monotone ~4–7pp plateau through d12** — the
+closeout §6 "monotonically widening" framing is **REFUTED in literal form for the
+CNN** (it holds only on the INVALID deep_mlp and on the *dataset-axis* FMNIST ladder
+of §4l Item B).
+
+---
+
 ## 6. One-line takeaway
 
 Over the trainable depth band (MNIST/FMNIST, d ≤ 8, w64), synchronized `deep_mlp`

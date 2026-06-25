@@ -20,7 +20,7 @@ single accuracy number. This document reports the toolchain and the quantitative
 | Honest deep_cnn coverage (self-auditing denominator) | **3.75%** (6/160), raised from 0.23% by two artifact-backed faithfulness-axis collapses | §4.1–4.2 |
 | The integrity rule for axis collapse | **faithfulness axes** (backend/mapping/placement) collapse on a *measured fidelity* artifact; **semantic knobs** (pruning/regime/quant) cannot | §4.2 |
 | Cascaded vs synchronized (decision science) | **REGIME_DEPENDENT** — synchronized is the accuracy default (+6.06/+7.19/+11.34pp); cascaded is retained for the hard-latency budget (~2.7–2.9× lower) | §4.7 |
-| Death cascade | depth-**monotone** cascaded→sync gap **3.61→9.48pp** (d6→d12); synchronized lossless; no working config-level rescue lever | §4.4 |
+| Death cascade | deep_cnn = sharp **d6 onset → bounded ~4–7pp plateau** through d12 (distinct from deep_mlp's monotone widening); synchronized lossless; no working config-level rescue lever | §4.4 |
 | Scale frontier | ImageNet conv = 138K soft-cores → Scheduled path → ~16 reprogram + 142 reuse; **scheduled build confirmed bit-exact** end-to-end | §4.5 |
 | Validity is **architecture-dependent** (3 flag causes) | ViT research-gap-flagged; ResNet-18 structural-host-flagged (offload **REFUTED** by test — `supported_host` residual shortcuts, 0.42 param/0.999 MAC); ResNet-50 **VALID** (Bottleneck param-majority 0.666, scheduled-feasible) | §4.3 |
 | Per-neuron attribution (GAP-1) | fixed bit-exact under coalescing+output-tiling; one residual VALUE_DOMAIN_ONLY region remains | §4.6 |
@@ -140,11 +140,13 @@ it is what kept this section honest.
 Genuine cascaded single-spike TTFS suffers a depth-driven **death cascade** — a correctable
 firing-gain deficit, architecture- and dataset-dependent in onset (dataset dominant). Synchronized
 execution is the **lossless, depth-stable** default (measured deep_cnn d10/S4 mnist: synchronized
-0.9903 vs cascaded 0.9297). The cascaded→synchronized gap is **depth-monotone** (deep_cnn MNIST
-n1000: **3.61 → 4.62 → 5.84 → 9.48 pp** at d6/d8/d10/d12), with synchronized lossless at every rung —
-and there is **no working config-level firing-gain rescue lever** at the convnet onset (theta_cotrain
-is rc=1-broken; the convnet staircase-STE and conversion_policy are both net-negative), so synchronized
-is the unconditional accuracy default. `firing × sync` and `depth × dataset` are PROVEN-interacting
+0.9903 vs cascaded 0.9297). For deep_cnn the cascaded→synchronized gap shows a **sharp d6
+onset then a BOUNDED ~4–7pp plateau through d12** (MNIST, n200+n1000; the load-bearing d12 rung is
+pending seed-firming) — **distinct from deep_mlp's monotone widening** (an earlier lower-n two-point
+read suggested monotone growth to ~9.5pp; the fuller pooled ladder corrects it to a bounded plateau).
+Synchronized is lossless at every depth, and there is **no working config-level firing-gain rescue
+lever** at the convnet onset (theta_cotrain is rc=1-broken; the convnet staircase-STE and
+conversion_policy are both net-negative), so synchronized is the unconditional accuracy default. `firing × sync` and `depth × dataset` are PROVEN-interacting
 axes (enumerated, never collapsed).
 
 ### 4.5 The scale frontier and weight-reuse scheduling
