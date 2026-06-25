@@ -112,6 +112,8 @@ def _run_headless(config_path: str) -> None:
     if parsed["target_metric_override"] is not None:
         pipeline.set_target_metric(parsed["target_metric_override"])
 
+    from mimarsinan.model_training.weight_loading import UnsupportedPreloadError
+
     exit_code = 0
     try:
         if resolved_start_step is None:
@@ -119,6 +121,14 @@ def _run_headless(config_path: str) -> None:
         else:
             pipeline.run_from(step_name=resolved_start_step, stop_step=parsed["stop_step"])
         update_run_status(working_dir, "completed")
+    except UnsupportedPreloadError as e:
+        # Ill-posed pretrained arm (no pretrained source for this builder): a CLEAN
+        # skip, not a failure — record UNSUPPORTED and exit 0 so the campaign ledgers
+        # it as a skip instead of an opaque rc=1.
+        sys.stderr.write(f"[run] UNSUPPORTED preload, skipping cleanly: {e}\n")
+        sys.stderr.flush()
+        update_run_status(working_dir, "skipped", error=f"UNSUPPORTED_PRELOAD: {e}")
+        exit_code = 0
     except Exception as e:
         import traceback
         traceback.print_exc()

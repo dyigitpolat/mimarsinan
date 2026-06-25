@@ -149,9 +149,14 @@ def test_f2_batches_carry_both_baseline_arms():
 
 # ---------------------------------------------------------------------------
 # F3 — dual-regime: from_scratch vs pretrained per (model, dataset).
+#
+# The pretrained arm is ill-posed for native from-scratch vehicles (no
+# get_pretrained_factory); F3 runs on the f3_dual_regime_matrix(), whose cells
+# carry a REAL pretrained source. The earlier rc=1 crash was exactly emitting the
+# pretrained arm for a source-less native cell.
 # ---------------------------------------------------------------------------
 def test_f3_batches_carry_both_regimes():
-    batches = em.gen_f3_batches(F_CELLS, seeds=(0, 1))
+    batches = em.gen_f3_batches(em.f3_dual_regime_matrix(), seeds=(0, 1))
     assert batches
     key = em.PRELOAD_KEY
     for b in batches:
@@ -159,6 +164,68 @@ def test_f3_batches_carry_both_regimes():
         assert key in b["grid"], f"F3 {b['id']} missing the regime axis"
         assert set(b["grid"][key]) == {False, True}
         assert b.get("tags", {}).get("study") == "F3"
+
+
+def test_f3_skips_native_from_scratch_only_cells():
+    """A cell with no pretrained source gets NO pretrained arm (no ill-posed batch).
+
+    F_CELLS are native deep_cnn / lenet5 (pretrained_source=None): the generator
+    must skip them rather than emit a preload=True arm that crashes rc=1.
+    """
+    assert all(c.pretrained_source is None for c in F_CELLS)
+    assert em.gen_f3_batches(F_CELLS, seeds=(0, 1)) == []
+
+
+def test_f3_dual_regime_cells_have_a_real_pretrained_source():
+    """Every F3 dual-regime cell names a real, resolvable pretrained source.
+
+    Registry-honest: the cell's model is a registered torchvision builder WITH a
+    get_pretrained_factory, so resolve_weight_strategy('torchvision', builder) does
+    NOT raise — i.e. the pretrained arm is computable, not a rc=1 trap.
+    """
+    from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+    from mimarsinan.model_training.weight_loading import (
+        resolve_weight_strategy,
+        torchvision_source_supported,
+        TorchvisionWeightStrategy,
+    )
+
+    cells = em.f3_dual_regime_matrix()
+    assert cells, "f3_dual_regime_matrix() is empty"
+    for cell in cells:
+        assert cell.pretrained_source == em.PRETRAINED_WEIGHT_SOURCE
+        builder_cls = ModelRegistry.get_builder_cls(cell.model)
+        # A bound builder is what the pipeline holds; the factory is an instance
+        # method, so build a minimal instance to query support honestly.
+        builder = builder_cls(
+            device="cpu", input_shape=(3, 32, 32), num_classes=10,
+            pipeline_config={},
+        )
+        assert torchvision_source_supported(builder), (
+            f"F3 cell {cell.slug()!r} model {cell.model!r} has no pretrained source")
+        strategy = resolve_weight_strategy("torchvision", model_builder=builder)
+        assert isinstance(strategy, TorchvisionWeightStrategy)
+
+
+def test_f3_rejects_checkpoint_source_for_boolean_grid():
+    """A non-torchvision source cannot be coupled to the preload_weights boolean.
+
+    The generator must fail LOUDLY (not silently emit a from_scratch-vs-from_scratch
+    pair) when a cell's pretrained_source is a checkpoint path.
+    """
+    bad = em.MatrixCell(
+        model="torch_resnet50", dataset="CIFAR10_DataProvider",
+        template="templates/cifar_squeezenet11_dualregime.json",
+        schedules=(), pretrained_source="runs/imagenet/resnet50_state.pt")
+    with pytest.raises(ValueError, match="checkpoint source"):
+        em.gen_f3_batches([bad])
+
+
+def test_f3_dual_regime_template_exists():
+    """The F3 dual-regime template must exist on disk (else the study never enqueues)."""
+    for cell in em.f3_dual_regime_matrix():
+        path = os.path.join(_REPO, cell.template)
+        assert os.path.exists(path), f"F3 template missing: {cell.template!r} ({path!r})"
 
 
 # ---------------------------------------------------------------------------

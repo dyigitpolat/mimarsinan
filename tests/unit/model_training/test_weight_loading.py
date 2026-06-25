@@ -11,7 +11,9 @@ from mimarsinan.model_training.weight_loading import (
     TorchvisionWeightStrategy,
     CheckpointWeightStrategy,
     URLWeightStrategy,
+    UnsupportedPreloadError,
     resolve_weight_strategy,
+    torchvision_source_supported,
 )
 
 
@@ -103,6 +105,35 @@ class TestResolveWeightStrategy:
     def test_torchvision_requires_builder(self):
         with pytest.raises(ValueError, match="get_pretrained_factory"):
             resolve_weight_strategy("torchvision", model_builder=None)
+
+    def test_torchvision_no_factory_raises_typed_unsupported_early(self):
+        """A builder with no pretrained factory => typed UnsupportedPreloadError.
+
+        This is the rc=1 root cause made GRACEFUL: a native from-scratch vehicle
+        (e.g. deep_cnn) has no get_pretrained_factory, so requesting a torchvision
+        preload for it must raise a CLEAR, typed, EARLY error the campaign can record
+        as a clean UNSUPPORTED skip — not an opaque mid-pipeline rc=1.
+        """
+        class NativeBuilder:  # mirrors DeepCNNBuilder: no get_pretrained_factory
+            pass
+
+        with pytest.raises(UnsupportedPreloadError, match="get_pretrained_factory"):
+            resolve_weight_strategy("torchvision", model_builder=NativeBuilder())
+        # Back-compat: it is still a ValueError subclass.
+        assert issubclass(UnsupportedPreloadError, ValueError)
+
+    def test_torchvision_source_supported_predicate(self):
+        """Non-raising predicate: True iff the builder has a pretrained factory."""
+        class NativeBuilder:
+            pass
+
+        class TorchBuilder:
+            def get_pretrained_factory(self):
+                return lambda: SimpleMLP()
+
+        assert torchvision_source_supported(None) is False
+        assert torchvision_source_supported(NativeBuilder()) is False
+        assert torchvision_source_supported(TorchBuilder()) is True
 
     def test_torchvision_with_builder(self):
         class FakeBuilder:

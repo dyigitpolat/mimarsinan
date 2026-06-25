@@ -48,6 +48,10 @@ QUANTILE_KEY = "deployment_parameters.activation_scale_quantile"
 
 # F3 regime arm: preload ImageNet/host weights (pretrained) vs from_scratch.
 PRELOAD_KEY = "deployment_parameters.preload_weights"
+# The pretrained source the ``preload_weights=True`` arm derives (mirrors
+# ``DeploymentPlan.PRETRAINED_WEIGHT_SOURCE``); a cell's ``pretrained_source`` must
+# equal this to be couplable to the boolean grid (a checkpoint path cannot).
+PRETRAINED_WEIGHT_SOURCE = "torchvision"
 
 # Student-t two-sided 95% critical values indexed by degrees of freedom
 # (df = n-1). Index 0 (df=0) is unused; for df >= 30 we use the normal
@@ -122,7 +126,14 @@ def validate_batch(batch: dict) -> None:
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class MatrixCell:
-    """One honestly-priced, covered/valid (model, dataset) point of the matrix."""
+    """One honestly-priced, covered/valid (model, dataset) point of the matrix.
+
+    ``pretrained_source`` marks a vehicle that HAS a real pretrained source — a
+    torchvision ImageNet factory (``"torchvision"``) or a checkpoint path (e.g.
+    ``"runs/imagenet/resnet50_state.pt"``). Only such cells get an F3 pretrained
+    arm; a native from-scratch vehicle (``None``) has no pretrained source, so an
+    F3 pretrained arm for it would be ill-posed (there is no pretrained deep_cnn).
+    """
 
     model: str
     dataset: str
@@ -131,6 +142,7 @@ class MatrixCell:
     depths: Tuple[int, ...] = ()
     base: Tuple[Tuple[str, object], ...] = ()
     tags: Tuple[Tuple[str, object], ...] = ()
+    pretrained_source: Optional[str] = None
 
     def base_dict(self) -> Dict[str, object]:
         return dict(self.base)
@@ -240,9 +252,37 @@ def gen_f2_batches(cells: Iterable[MatrixCell], *,
 def gen_f3_batches(cells: Iterable[MatrixCell], *,
                    seeds: Sequence[int] = (0, 1, 2),
                    priority: int = 40) -> List[dict]:
-    """from_scratch vs pretrained per (model, dataset)."""
+    """from_scratch vs pretrained per (model, dataset).
+
+    The pretrained arm (``preload_weights=True``) is emitted ONLY for cells whose
+    vehicle HAS a real pretrained source (``cell.pretrained_source``); for a native
+    from-scratch vehicle (no pretrained source) emitting it would be ill-posed —
+    ``weight_source='torchvision'`` has no factory to resolve, so the run crashes
+    rc=1.
+
+    The arms are selected by the ``preload_weights`` boolean grid axis, which keeps
+    the two arms COUPLED in a single cartesian batch (a grid cannot express a
+    per-arm ``weight_source`` override): ``True`` derives ``weight_source=
+    'torchvision'`` (the pretrained factory), ``False`` leaves it unset =>
+    from_scratch (unchanged). A torchvision-factory source is therefore the natural
+    dual-regime vehicle; a checkpoint-only source cannot be derived from the boolean
+    and is rejected here so a mis-marked cell fails loudly instead of silently
+    emitting a from_scratch-vs-from_scratch pair.
+
+    Cells with no pretrained source are SKIPPED (no spurious dual-regime row).
+    """
     out = []
     for cell in cells:
+        if cell.pretrained_source is None:
+            continue  # no pretrained source => no computable dual-regime contrast
+        if cell.pretrained_source != PRETRAINED_WEIGHT_SOURCE:
+            raise ValueError(
+                f"F3 dual-regime cell {cell.slug()!r} has pretrained_source="
+                f"{cell.pretrained_source!r}; only the torchvision factory source "
+                f"({PRETRAINED_WEIGHT_SOURCE!r}) can be coupled to the preload_weights "
+                f"boolean grid. A checkpoint source needs a per-arm weight_source "
+                f"override (two batches), not this generator."
+            )
         grid = _grid(cell, seeds, extra={PRELOAD_KEY: [False, True]})
         out.append(_batch("F3", "dualregime", cell, grid, priority=priority,
                           extra_tags={"kind": "dual_regime"}))
@@ -250,10 +290,16 @@ def gen_f3_batches(cells: Iterable[MatrixCell], *,
 
 
 def gen_all_batches(cells: Iterable[MatrixCell], **kw) -> List[dict]:
+    """F1/F2 over the supplied (from-scratch) cells; F3 over the dual-regime cells.
+
+    F3's from_scratch-vs-pretrained contrast needs a vehicle with a real pretrained
+    source, so it runs on ``f3_dual_regime_matrix()`` (not the native default cells,
+    which have no pretrained source and would be skipped).
+    """
     cells = list(cells)
     return gen_f1_batches(cells, **_kw(kw, "f1")) + \
         gen_f2_batches(cells, **_kw(kw, "f2")) + \
-        gen_f3_batches(cells, **_kw(kw, "f3"))
+        gen_f3_batches(f3_dual_regime_matrix(), **_kw(kw, "f3"))
 
 
 def _kw(kw: dict, _study: str) -> dict:
@@ -502,6 +548,27 @@ def default_matrix() -> List[MatrixCell]:
 
 
 # ---------------------------------------------------------------------------
+# F3 dual-regime matrix — from_scratch vs pretrained needs a vehicle with a REAL
+# pretrained source. The native default_matrix() cells (deep_cnn / lenet5) are
+# from-scratch-only: they have no get_pretrained_factory(), so a pretrained arm for
+# them is ill-posed (there is no pretrained deep_cnn). torch_squeezenet11 carries
+# a torchvision ImageNet factory and is small enough to be a VALID dual-regime cell
+# on CIFAR10 (3x32x32) — the cleanest from_scratch-vs-pretrained contrast: both arms
+# train the SAME architecture, the only difference is the ImageNet warm-start.
+# ---------------------------------------------------------------------------
+def f3_dual_regime_matrix() -> List[MatrixCell]:
+    """Cells with a real pretrained source for the F3 from_scratch-vs-pretrained delta."""
+    return [
+        MatrixCell(
+            model="torch_squeezenet11", dataset="CIFAR10_DataProvider",
+            template="templates/cifar_squeezenet11_dualregime.json",
+            schedules=(),
+            pretrained_source=PRETRAINED_WEIGHT_SOURCE,
+            tags=(("ws", "F"), ("trainable", True), ("regime", "dual"))),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # B2 — CIFAR breadth: extend the dataset-margin law to RGB (3x32x32).
 #
 # The research round flagged CIFAR10 as the next dataset-margin test. These
@@ -575,7 +642,7 @@ def cmd_generate(args) -> int:
         elif study == "f2":
             batches = gen_f2_batches(cells)
         elif study == "f3":
-            batches = gen_f3_batches(cells)
+            batches = gen_f3_batches(f3_dual_regime_matrix())
         elif study == "all":
             batches = gen_all_batches(cells)
         else:
