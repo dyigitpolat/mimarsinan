@@ -65,6 +65,17 @@ from mimarsinan.chip_simulation.cross_sim_parity import (
     screen_cell_pair,
     write_cross_sim_screen,
 )
+from mimarsinan.chip_simulation.pareto import (
+    CascadeVsSyncVerdict,
+    CostProxyBand,
+    RecipeProposal,
+    ScheduleVerdict,
+    cascaded_vs_synchronized,
+    load_deep_cnn_rows,
+    pareto_front,
+    propose_recipe,
+    schedule_cost_band,
+)
 from mimarsinan.chip_simulation.recording import spike_modes
 
 __all__ = [
@@ -120,4 +131,13 @@ __all__ = [
     "screen_cell_pair",
     "write_cross_sim_screen",
     "assert_cross_sim_screen_sound",
+    "CostProxyBand",
+    "ScheduleVerdict",
+    "CascadeVsSyncVerdict",
+    "RecipeProposal",
+    "pareto_front",
+    "schedule_cost_band",
+    "cascaded_vs_synchronized",
+    "propose_recipe",
+    "load_deep_cnn_rows",
 ]
