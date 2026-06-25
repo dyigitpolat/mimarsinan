@@ -141,7 +141,7 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | Item | Status | Dep | Cost |
 |---|---|---|---|
 | A1 Self-auditing coverage (screening-status denominator, CI guard, flag aging) | ✅ P1 | — | ◦ |
-| A2 **P3 screens** — `backend`+`mapping_strategy` ✅ Wave2 (faithfulness axes; measured artifacts: live cross-sim max_abs_diff=0 + bit-exact fidelity lock; fidelity-only). `pruning`/`regime` are SEMANTIC knobs → can't collapse on fidelity; gated on D4/B3 capability + a real GPU equivalence screen (NOT cheap) | partial Wave2 | A1, B1✅ | ◦ / ◦◦ |
+| A2 **P3 screens** — `backend`+`mapping_strategy` ✅ Wave2 (faithfulness; measured artifacts). `pruning`/`regime` SEMANTIC-knob screens now UNBLOCKED (D4 pruning ✅ + B3/D6 ✅); screen INSTRUMENTS = **Wave9** (measure dense↔pruned / from_scratch↔pretrained equivalence → flip if collapsible, else ENUMERATED with a MEASURED — not asserted — justification); the equivalence RUNS drain on 2,3 (pruned cells + F3 dual-regime) | partial; Wave9 instruments | A1, B1✅ | ◦ / ◦◦ |
 | A3 P1↔P3 declare↔execute wiring (a screen mechanically updates `HYPERVOLUME.md` + re-prices) | ✅ Wave2 (A2A3 flipped AXES + updated HYPERVOLUME + re-priced in one unit) | A2 | ◦ |
 | A4 Engineering self-defense — base-check guard (stale `bcacfeb` trap), stash-pop guard, scheduler-restart idempotence | ✅ Wave1 (`guards.py`, gated singleton) | — | ◦ |
 
@@ -149,8 +149,8 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | Item | Status | Dep | Cost |
 |---|---|---|---|
 | B1 **Cross-simulator parity** — shared cells across nevresim/SANA-FE/Lava; record agree / disagree(quantified) / inapplicable(capability gap) | ✅ Wave1 (`cross_sim_parity.py` instrument + `justifies_collapse` gate; screen-consumption = A2) | A1 | ◦ |
-| B2 Dataset breadth — close the named frontier (SVHN, deeper cells), CIFAR | ⬜ | — | ◦–◦◦ |
-| B3 **Regime axis** — the pretrained bridge (timm/torchvision) + 1 small from-scratch↔pretrained cross-screen | bridge ✅ Wave5 (`pretrained_bridge.py`; ResNet-18 ImageNet → VALID_FLAGGED 0.423/0.999, placement-flag not research-gap); the cross-screen RUN is GPU | — | ◦◦ |
+| B2 Dataset breadth — close the named frontier (SVHN, deeper cells), CIFAR | ⏳ in-flight — SVHN ✅ (research-round lenet 4-dataset table), deeper deep_cnn cells ✅ (d4-d12 ladders), **CIFAR10/100 enqueued Wave8** (draining on 2,3) | — | ◦–◦◦ |
+| B3 **Regime axis** — the pretrained bridge (timm/torchvision) + 1 small from-scratch↔pretrained cross-screen | bridge ✅ Wave5; deploy ✅ Wave8; **the dual-regime cross-screen (F3) is enqueued Wave8** (draining on 2,3) → consumed by the Wave9 regime-screen instrument | — | ◦◦ |
 | B4 Scale vehicles — SqueezeNet ✅ Wave1 (VALID, frac 1.0 offload, 942/1000); **ResNet-50 ✅ Wave6** (VALID, param 0.666 Bottleneck param-majority, SCHEDULED-feasible 16-17 phases peak 208); ResNet-18 ✅ Wave5 (VALID_FLAGGED structural-host, offload-refuted) | ✅ | B3✅ | ◦–◦◦ |
 
 ### C — Per-cell output instrumentation (each cell must carry comparable numbers)
@@ -167,9 +167,9 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | D1 Residual Tier-0 (host add, bit-exact) | ✅ | — | ◦ |
 | D2 **Residual Tier-1** (on-chip param-free merge) — round 3 = LIF merge-window alignment | 🔬 Wave4: CHARACTERIZED as intrinsically `1/T`-bounded (in-segment IF re-quant ≠ host-add by 1 spike, by construction; not bit-exact to Tier-0). Isolated branch `wave4/residual-t1`; finding doc written. Path fwd: redefine success as `1/T`-characterized OR close Component A (shared-HCM-fill, NF==HCM atol=0) | D1 | ◦◦ |
 | D3 **Scheduled-scale realization** — real `_build_scheduled` end-to-end probe (confirm 16/142 + bit-exactness) | ✅ Wave3 (genuine overflow→3 stages `[6,6,2]`, 3 reprogram+33 reuse, bit-exact max\|Δ\|=0; VGG 16/142 confirmed-by-mechanism) | E4✅ | ◦–◦◦ |
-| D4 **Pruning × scheduling** — pruning shrinks cores → fewer reprogram phases (attacks the 80% cost term) | ⬜ | C1,D3 | ◦◦ |
-| D5 **On-chip attention / LayerNorm** — THE transformer contribution (E7 foreclosed the cheap path) | ⬜ | — | ◦◦◦ |
-| D6 timm/torchvision bridge (ResNet-50/ViT-B near-SOTA checkpoints) | ⬜ | B3 | ◦◦ |
+| D4 **Pruning × scheduling** — pruning shrinks cores → fewer reprogram phases (attacks the 80% cost term) | ✅ Wave7 (`transformations/pruning/magnitude.py`; structured pruning 16→7 cores measured, dense byte-identical). Measured cost-demo (fewer phases→cost) = **Wave9** | C1,D3 | ◦◦ |
+| D5 **On-chip attention / LayerNorm** — THE transformer contribution (E7 foreclosed the cheap path) | ✅ Wave7 CHARACTERIZED — ships LayerNorm mean-centering as a tested on-chip 2-rail core + a **mutation-tested proof** that QK^T/softmax/P·V/LN-var are intrinsically host-only ⇒ the honestly-scoped **conv headline** is the transformer answer (DoD-3's "OR" branch) | — | ◦◦◦ |
+| D6 timm/torchvision bridge (ResNet-50/ViT-B near-SOTA checkpoints) | ✅ Wave5-6-8 for ResNet (bridge classify ✅ + `deploy_imagenet_snn.py` genuine deploy ✅); **ViT-B = research frontier** (gated on D5 — attention is host-only ⇒ ViT stays VALID_FLAGGED research-gap) | B3 | ◦◦ |
 | D7 Published baselines (RMP/QCFS/percentile-norm) | percentile-norm ✅ Wave5 (`activation_scale_policy.py`, selectable default-off, numerically verified); the GPU head-to-head is the remaining piece | — | ◦◦ |
 
 ### E — Decision & science closure
