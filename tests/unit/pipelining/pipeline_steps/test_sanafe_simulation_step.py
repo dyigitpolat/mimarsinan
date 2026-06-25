@@ -312,3 +312,95 @@ def test_step_rebuilds_runner_per_sample(monkeypatch):
     step, _, calls = _prepare_step(monkeypatch, sample_count=3)
     step.run()
     assert len(calls["runner_inits"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# Measured cost-record emission (cost-emit): the deployment NOW drops a
+# measured ``cost_record.json`` alongside the run as a pure additive side
+# effect — never crashing the run, never altering the deployment result.
+# ---------------------------------------------------------------------------
+
+
+def _emitted_cost_record(pipeline):
+    import os
+
+    from mimarsinan.chip_simulation.cost_extraction import (
+        COST_RECORD_FILENAME,
+        load_cost_record,
+    )
+
+    path = os.path.join(pipeline.working_directory, COST_RECORD_FILENAME)
+    assert os.path.exists(path), f"no cost record at {path}"
+    return load_cost_record(path)
+
+
+def test_step_emits_measured_cost_record(monkeypatch):
+    step, pipeline, _ = _prepare_step(monkeypatch)
+    step.run()
+
+    record = _emitted_cost_record(pipeline)
+    # The cell is the (firing × sync) coordinate of the run, measured on SANA-FE.
+    assert record.backend == "sanafe"
+    assert record.cell_key == "lif@sanafe"
+    # The deployed accuracy of record is the pipeline's target metric (R6 / E5).
+    assert record.acc_deploy == pytest.approx(0.875)
+    # The energy axis mirrors the SANA-FE aggregate (1 sample × 2.0 J = 2000 mJ).
+    assert record.mj_per_sample == pytest.approx(2000.0)
+    assert record.spikes == 10
+
+
+def test_cost_emission_does_not_alter_step_result(monkeypatch):
+    """Cost emission is a pure additive side-effect: the step's return (the
+    target metric) and the published report are byte-identical to a run with
+    cost emission disabled."""
+    step, pipeline, _ = _prepare_step(monkeypatch)
+    step.run()
+
+    assert step.validate() == 0.875
+    report = pipeline.cache["SANA-FE Simulation.sanafe_simulation_results"]
+    assert report.aggregate["total_energy_mj"] == pytest.approx(2000.0)
+    assert report.sample_indices == [0]
+
+
+def test_cost_extraction_raise_is_swallowed_and_run_succeeds(monkeypatch):
+    """A cost-extraction failure is logged and SWALLOWED — it never crashes the
+    deployment nor changes its result; no cost file is required to exist."""
+    import os
+
+    import mimarsinan.pipelining.pipeline_steps.verification.sanafe_simulation_step as step_mod
+
+    step, pipeline, _ = _prepare_step(monkeypatch)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("cost extraction blew up")
+
+    # Detonate the in-step extractor; the step must still complete normally.
+    monkeypatch.setattr(step_mod, "extract_cost_record", _boom)
+
+    step.run()  # must NOT raise
+
+    # The deployment result is unchanged.
+    assert step.validate() == 0.875
+    key = "SANA-FE Simulation.sanafe_simulation_results"
+    assert key in pipeline.cache
+    # No cost file was written (extraction raised), and that is tolerated.
+    from mimarsinan.chip_simulation.cost_extraction import COST_RECORD_FILENAME
+
+    assert not os.path.exists(
+        os.path.join(pipeline.working_directory, COST_RECORD_FILENAME)
+    )
+
+
+def test_cost_save_raise_is_swallowed_and_run_succeeds(monkeypatch):
+    """A failure in the WRITE path (save_cost_record) is also swallowed."""
+    import mimarsinan.pipelining.pipeline_steps.verification.sanafe_simulation_step as step_mod
+
+    step, pipeline, _ = _prepare_step(monkeypatch)
+
+    def _boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(step_mod, "save_cost_record", _boom)
+
+    step.run()  # must NOT raise
+    assert step.validate() == 0.875
