@@ -17,6 +17,8 @@ pytest.importorskip("torchvision")
 import torch.nn as nn
 
 from mimarsinan.models.pretrained_bridge import (
+    DeployedEval,
+    deploy_and_eval,
     load_pretrained_resnet18,
     load_pretrained_resnet50,
 )
@@ -381,3 +383,153 @@ def test_resnet50_rejects_nonpositive_num_classes():
     """num_classes must be a positive class count for the ResNet-50 bridge too."""
     with pytest.raises(ValueError):
         load_pretrained_resnet50(0, pretrained=False)
+
+
+# ── DEPLOY-and-EVAL: the model actually runs on the deployed spiking sim ───────
+#
+# These tests convert a (small) bridge model through the REAL SNN pipeline
+# (convert -> IR map -> hybrid HCM pack -> deployed SpikingHybridCoreFlow) and
+# read a DEPLOYED accuracy number off the on-chip sim. They are FAST/SUBSET by
+# construction: tiny input shape, tiny T, tiny eval batch -- NOT full ImageNet
+# (that deploy is a supervised Group-2 GPU run). The structural descriptor tests
+# above never depend on this path; offline random weights keep it deterministic.
+
+# A small pipeline-native classifier: conv/bn/relu/pool/linear only (the same op
+# set as the bridge residual nets, minus the residual add) -- the canonical small
+# "pretrained-style" deploy vehicle so the deployed sim is cheap. The hidden Linear
+# (after the GAP/flatten host encoder) is a genuine ON-CHIP neural layer, so the
+# model packs onto at least one hard core rather than fully subsuming host-side.
+class _TinyConvNet(nn.Module):
+    def __init__(self, num_classes: int):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 4, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(4)
+        self.relu1 = nn.ReLU()
+        self.pool = nn.MaxPool2d(2)
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.flatten = nn.Flatten()
+        self.hidden = nn.Linear(4, 8)
+        self.relu2 = nn.ReLU()
+        self.fc = nn.Linear(8, num_classes)
+
+    def forward(self, x):
+        x = self.pool(self.relu1(self.bn1(self.conv1(x))))
+        x = self.flatten(self.gap(x))
+        return self.fc(self.relu2(self.hidden(x)))
+
+
+_DEPLOY_SHAPE = (3, 8, 8)   # tiny spatial -> few cores -> fast deployed sim
+_DEPLOY_T = 4               # tiny spiking window -> fast sim
+_DEPLOY_CLASSES = 4
+_DEPLOY_N = 6               # tiny eval subset
+
+
+def _deploy_eval_batch(seed: int = 0):
+    torch.manual_seed(seed)
+    x = torch.rand(_DEPLOY_N, *_DEPLOY_SHAPE)
+    y = torch.randint(0, _DEPLOY_CLASSES, (_DEPLOY_N,))
+    return x, y
+
+
+def test_deploy_and_eval_returns_deployed_accuracy_from_real_sim():
+    """A small model DEPLOYS end-to-end and returns a deployed accuracy number.
+
+    The headline of the deploy bridge: this is NOT the static validity descriptor
+    -- the model is converted, mapped, packed into a hybrid hard-core mapping, and
+    RUN on the deployed ``SpikingHybridCoreFlow`` (the same executor production
+    ``SimulationRunner`` uses). The returned ``accuracy`` is the genuine deployed
+    top-1 on the (tiny) eval subset, and ``logits`` come straight off the sim.
+    """
+    x, y = _deploy_eval_batch()
+    result = deploy_and_eval(
+        _TinyConvNet(_DEPLOY_CLASSES).eval(),
+        _DEPLOY_SHAPE,
+        _DEPLOY_CLASSES,
+        x,
+        y,
+        simulation_length=_DEPLOY_T,
+    )
+    print(
+        f"\n[TinyConvNet DEPLOYED] acc={result.accuracy:.4f} "
+        f"n={result.num_samples} T={result.simulation_length} "
+        f"segments={result.neural_segments} hard_cores={result.hard_cores}"
+    )
+    assert isinstance(result, DeployedEval)
+    # A genuine accuracy fraction from the deployed sim (not a NaN / sentinel).
+    assert 0.0 <= result.accuracy <= 1.0
+    assert result.num_samples == _DEPLOY_N
+    assert result.num_classes == _DEPLOY_CLASSES
+    assert result.simulation_length == _DEPLOY_T
+    assert result.spiking_mode == "lif"
+    # The model actually packed onto hard cores (a real deployed structure).
+    assert result.neural_segments >= 1
+    assert result.hard_cores >= 1
+    # Deployed logits are finite, task-sized, and came off the sim (one per sample).
+    assert result.logits.shape == (_DEPLOY_N, _DEPLOY_CLASSES)
+    assert torch.isfinite(result.logits).all()
+    # The reported accuracy is exactly the argmax-vs-target rate of those logits.
+    predicted = result.logits.argmax(dim=1)
+    expected_acc = float((predicted == y).double().mean())
+    assert result.accuracy == pytest.approx(expected_acc, abs=1e-12)
+
+
+def test_deploy_and_eval_bridge_resnet18_deploys_on_small_input():
+    """A REAL bridge ResNet-18 deploys end-to-end through the SNN pipeline (subset).
+
+    The capability payload for F3/F4: the exact stock-residual bridge model
+    (``load_pretrained_resnet18``, random weights for an offline-safe / fast build)
+    is converted, mapped, packed, and RUN on the deployed spiking sim at a tiny
+    input shape + tiny T + tiny eval batch. It returns a deployed accuracy off the
+    REAL sim -- proving the residual-net bridge is deployable, not just classifiable.
+    The residual ``add`` boundaries split it into multiple neural segments, which the
+    deployed hybrid executor runs across the sync points.
+    """
+    _, y = _deploy_eval_batch(seed=1)
+    torch.manual_seed(1)
+    x = torch.rand(_DEPLOY_N, 3, 16, 16)  # tiny spatial keeps the ResNet deploy cheap
+    result = deploy_and_eval(
+        load_pretrained_resnet18(_DEPLOY_CLASSES, pretrained=False),
+        (3, 16, 16),
+        _DEPLOY_CLASSES,
+        x,
+        y,
+        simulation_length=_DEPLOY_T,
+    )
+    print(
+        f"\n[ResNet18 DEPLOYED] acc={result.accuracy:.4f} "
+        f"n={result.num_samples} T={result.simulation_length} "
+        f"segments={result.neural_segments} hard_cores={result.hard_cores}"
+    )
+    assert 0.0 <= result.accuracy <= 1.0
+    assert result.logits.shape == (_DEPLOY_N, _DEPLOY_CLASSES)
+    assert torch.isfinite(result.logits).all()
+    # The residual ``add`` boundaries make the deployed net multi-segment.
+    assert result.neural_segments >= 2
+    assert result.hard_cores >= result.neural_segments
+
+
+def test_deploy_and_eval_rejects_mismatched_eval_shapes():
+    """Inconsistent eval batch shapes are an honest, precise ValueError (not a crash)."""
+    x, y = _deploy_eval_batch()
+    # Sample count mismatch.
+    with pytest.raises(ValueError):
+        deploy_and_eval(
+            _TinyConvNet(_DEPLOY_CLASSES), _DEPLOY_SHAPE, _DEPLOY_CLASSES,
+            x, y[:-1], simulation_length=_DEPLOY_T,
+        )
+    # Wrong per-sample shape.
+    with pytest.raises(ValueError):
+        deploy_and_eval(
+            _TinyConvNet(_DEPLOY_CLASSES), _DEPLOY_SHAPE, _DEPLOY_CLASSES,
+            torch.rand(_DEPLOY_N, 3, 9, 9), y, simulation_length=_DEPLOY_T,
+        )
+
+
+def test_deploy_and_eval_rejects_unsupported_spiking_mode():
+    """Only the lossless-capable LIF deploy is wired; TTFS is a precise NotYet ValueError."""
+    x, y = _deploy_eval_batch()
+    with pytest.raises(ValueError):
+        deploy_and_eval(
+            _TinyConvNet(_DEPLOY_CLASSES), _DEPLOY_SHAPE, _DEPLOY_CLASSES,
+            x, y, simulation_length=_DEPLOY_T, spiking_mode="ttfs_quantized",
+        )
