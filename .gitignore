@@ -168,3 +168,4 @@ experiments/finish/
 # Autonomous campaign queue/logs/status (transient)
 runs/campaign/
 experiments/campaign/
+probe_ckpt/
