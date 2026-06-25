@@ -360,11 +360,10 @@ def _build_real_train_loader_factory(provider, *, per_proc_batch, num_workers, d
     from torch.utils.data import DataLoader, DistributedSampler
     from mimarsinan.data_handling.dataset_views import ApplyTransform
 
-    # Use the FULL train set (all 1000 classes). The provider's "train" split is a
-    # seeded-permutation 95/5 subset (both train and val span every class); this
-    # path instead trains on every image, so it reads the underlying ``.dataset``
-    # (the full ImageNet train) directly.
-    raw_train = provider.raw_datasets()["train"].dataset
+    # Train on the FULL official train (all 1000 classes). The provider exposes it
+    # via full_train_dataset() (the gate/test are slices of the OFFICIAL val, not
+    # carved from train), so this path is unaffected by the val/test split.
+    raw_train = provider.full_train_dataset()
 
     def build(size: int):
         tfm = provider._wrap_with_preprocessing([
@@ -426,10 +425,24 @@ def main(argv: Optional[list[str]] = None) -> int:
         num_workers=args.workers, prefer_ffcv=False,
         device=("cuda" if use_cuda else "cpu"),
     )
-    # Eval on the OFFICIAL ImageNet val (split="val", all 1000 classes) — the
-    # headline number. loaders["val"] is the provider's class-sorted 5% index-range
-    # holdout (the ~50 classes the model never trains on -> chance), unusable here.
-    val_loader = loaders["test"]
+    # Report on the FULL official ImageNet val (split="val", all 1000 classes, 50k
+    # images) — the headline from_scratch number. The provider's "val"/"test" are
+    # disjoint seeded slices of this same official val (the gate vs the deployment
+    # report); for the from_scratch checkpoint we evaluate the whole official val.
+    from torch.utils.data import DataLoader
+    from mimarsinan.data_handling.dataset_views import ApplyTransform
+    import torchvision.transforms as T
+
+    official_val = ApplyTransform(
+        provider.full_official_val_dataset(),
+        provider._wrap_with_preprocessing(
+            [T.Resize(256), T.CenterCrop(224), T.ToTensor()]
+        ),
+    )
+    val_loader = DataLoader(
+        official_val, batch_size=per_proc_batch, shuffle=False,
+        num_workers=args.workers, pin_memory=True,
+    )
 
     train_factory = _build_real_train_loader_factory(
         provider, per_proc_batch=per_proc_batch, num_workers=args.workers, dist=dist,

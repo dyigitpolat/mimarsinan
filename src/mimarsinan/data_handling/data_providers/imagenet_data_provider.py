@@ -59,19 +59,20 @@ _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
-def _seeded_train_val_indices(n_train: int, split_fraction: float, seed: int | None):
-    """Deterministic seeded train/val index partition spanning ALL classes.
+def _seeded_val_test_indices(n_official_val: int, val_fraction: float, seed: int | None):
+    """Deterministic seeded partition of the OFFICIAL val into (gate-val, test).
 
-    torchvision ImageNet ``split="train"`` is sorted by class, so a contiguous
-    ``range()`` split strands ~50 disjoint high-index classes in val. A
-    seed-derived permutation makes both holdouts representative random samples
-    over every class, disjoint, and reproducible for a given seed.
+    Both slices come from ``split="val"`` (genuinely held out for BOTH the
+    from_scratch and pretrained regimes — neither slice is ever a train image).
+    Official val is class-sorted, so a contiguous slice is class-starved; a
+    seed-derived permutation makes the gate slice a representative sample over
+    all 1000 classes, disjoint from the test slice, reproducible per seed.
     """
     g = torch.Generator()
     g.manual_seed(0 if seed is None else int(seed))
-    perm = torch.randperm(n_train, generator=g).tolist()
-    training_length = int(n_train * split_fraction)
-    return perm[:training_length], perm[training_length:]
+    perm = torch.randperm(n_official_val, generator=g).tolist()
+    val_length = int(n_official_val * val_fraction)
+    return perm[:val_length], perm[val_length:]
 
 
 @BasicDataProviderFactory.register("ImageNet_DataProvider")
@@ -81,17 +82,28 @@ class ImageNet_DataProvider(DataProvider):
     With ``IMAGENET_ROOT`` in ``.env``, creates ``<datasets_path>/imagenet`` as a symlink
     to that directory and uses it as the torchvision ``ImageNet`` root.
 
-    **Validation** is a tail of the **training** split (same convention as
-    MNIST/CIFAR-10): ``training_validation_split`` (default 0.95) for training, remainder
-    for validation.
+    **Train** is the FULL official ``split="train"`` (all 1000 classes) — used for any
+    from_scratch training / fine-tune.
 
-    **Test** uses the official ``split="val"`` set (held-out; no public test labels in ILSVRC).
+    **Validation** (the deployment TUNER GATE) is a seeded slice of the OFFICIAL
+    ``split="val"`` (``official_val_fraction``, default 0.2). A train holdout would
+    LEAK: a model trained on the full train (from_scratch) or any pretrained
+    checkpoint has seen every train image, so a train-sourced val scores memorized
+    accuracy. Sourcing the gate from the official val keeps it genuinely held out
+    for BOTH regimes.
+
+    **Test** (the final reported number) is the DISJOINT remaining slice of the
+    OFFICIAL ``split="val"``. val and test are seeded, disjoint partitions of
+    ``split="val"`` — never from train.
     """
 
     DISPLAY_LABEL = "ImageNet (224×224×3, 1000 classes)"
     SUPPORTS_PREPROCESSING = False
 
-    training_validation_split = 0.95
+    # Fraction of the 50k official val reserved for the tuner GATE; the rest is the
+    # reported-test slice. 0.2 -> ~10k gate (10/class, enough signal to gate
+    # adaptation) + 40k test (robust reported number). Both stay disjoint held-out.
+    official_val_fraction = 0.2
 
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
         # ImageNet's crop policy is split-asymmetric — train uses
@@ -121,19 +133,38 @@ class ImageNet_DataProvider(DataProvider):
             )
 
         # Raw datasets (transforms applied via torch_transforms()).
-        # ImageNet train is class-sorted; split via a seeded permutation (not a
-        # contiguous range) so train/val both span all 1000 classes.
-        training_full = torchvision.datasets.ImageNet(root=root, split="train", transform=None)
-        train_idx, val_idx = _seeded_train_val_indices(
-            len(training_full), self.training_validation_split, self.seed
-        )
+        # Train = the FULL official train. The tuner GATE (val) and the reported
+        # test are seeded, DISJOINT slices of the OFFICIAL val — never from train,
+        # so the gate is genuinely held out for both from_scratch and pretrained.
+        self._train_raw = torchvision.datasets.ImageNet(root=root, split="train", transform=None)
 
-        self._train_raw = torch.utils.data.Subset(training_full, train_idx)
-        self._val_raw   = torch.utils.data.Subset(training_full, val_idx)
-        self._test_raw  = torchvision.datasets.ImageNet(root=root, split="val", transform=None)
+        official_val = torchvision.datasets.ImageNet(root=root, split="val", transform=None)
+        val_idx, test_idx = _seeded_val_test_indices(
+            len(official_val), self.official_val_fraction, self.seed
+        )
+        self._val_raw  = torch.utils.data.Subset(official_val, val_idx)
+        self._test_raw = torch.utils.data.Subset(official_val, test_idx)
 
     def raw_datasets(self) -> dict:
         return {"train": self._train_raw, "val": self._val_raw, "test": self._test_raw}
+
+    def full_train_dataset(self):
+        """The FULL official train (all 1000 classes), unwrapping any Subset.
+
+        SSOT for from_scratch training: train is currently the raw train, but
+        callers must not depend on whether it is wrapped.
+        """
+        train = self._train_raw
+        return train.dataset if isinstance(train, torch.utils.data.Subset) else train
+
+    def full_official_val_dataset(self):
+        """The FULL 50k official val (all 1000 classes), unwrapping the Subset.
+
+        ``val`` and ``test`` are disjoint slices of this; the from_scratch run
+        reports the headline number on the full official val.
+        """
+        val = self._val_raw
+        return val.dataset if isinstance(val, torch.utils.data.Subset) else val
 
     def torch_transforms(self) -> dict:
         # Normalize is appended uniformly by the base class from
