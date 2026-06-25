@@ -59,6 +59,21 @@ _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
+def _seeded_train_val_indices(n_train: int, split_fraction: float, seed: int | None):
+    """Deterministic seeded train/val index partition spanning ALL classes.
+
+    torchvision ImageNet ``split="train"`` is sorted by class, so a contiguous
+    ``range()`` split strands ~50 disjoint high-index classes in val. A
+    seed-derived permutation makes both holdouts representative random samples
+    over every class, disjoint, and reproducible for a given seed.
+    """
+    g = torch.Generator()
+    g.manual_seed(0 if seed is None else int(seed))
+    perm = torch.randperm(n_train, generator=g).tolist()
+    training_length = int(n_train * split_fraction)
+    return perm[:training_length], perm[training_length:]
+
+
 @BasicDataProviderFactory.register("ImageNet_DataProvider")
 class ImageNet_DataProvider(DataProvider):
     """ILSVRC 2012 classification: 1000 classes.
@@ -106,12 +121,15 @@ class ImageNet_DataProvider(DataProvider):
             )
 
         # Raw datasets (transforms applied via torch_transforms()).
+        # ImageNet train is class-sorted; split via a seeded permutation (not a
+        # contiguous range) so train/val both span all 1000 classes.
         training_full = torchvision.datasets.ImageNet(root=root, split="train", transform=None)
-        n_train = len(training_full)
-        training_length = int(n_train * self.training_validation_split)
+        train_idx, val_idx = _seeded_train_val_indices(
+            len(training_full), self.training_validation_split, self.seed
+        )
 
-        self._train_raw = torch.utils.data.Subset(training_full, range(0, training_length))
-        self._val_raw   = torch.utils.data.Subset(training_full, range(training_length, n_train))
+        self._train_raw = torch.utils.data.Subset(training_full, train_idx)
+        self._val_raw   = torch.utils.data.Subset(training_full, val_idx)
         self._test_raw  = torchvision.datasets.ImageNet(root=root, split="val", transform=None)
 
     def raw_datasets(self) -> dict:

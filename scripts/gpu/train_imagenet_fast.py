@@ -361,10 +361,9 @@ def _build_real_train_loader_factory(provider, *, per_proc_batch, num_workers, d
     from mimarsinan.data_handling.dataset_views import ApplyTransform
 
     # Use the FULL train set (all 1000 classes). The provider's "train" split is a
-    # class-SORTED index-range 95/5 subset (range(0, 0.95N)) that drops the last
-    # ~50 classes — training on it handicaps the model and makes the matching
-    # index-range "val" holdout (the OTHER ~50 classes) score at chance. The
-    # underlying ``.dataset`` is the full ImageNet train.
+    # seeded-permutation 95/5 subset (both train and val span every class); this
+    # path instead trains on every image, so it reads the underlying ``.dataset``
+    # (the full ImageNet train) directly.
     raw_train = provider.raw_datasets()["train"].dataset
 
     def build(size: int):
