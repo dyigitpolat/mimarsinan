@@ -2195,3 +2195,83 @@ cpFalse corroborative numbers; on FMNIST cp is unmeasurable (cpTrue all crashed)
 `pdcnnd10datafix_{FashionMNIST,KMNIST}_DataProvider_cot{False,True}_cp{False,True}_s{0,1,2}`
 (cotTrue all `rc=1`-excluded; MNIST cpFalse all `rc=-9`-excluded).
 
+---
+
+## 5. deep_cnn FashionMNIST — cascaded vs synchronized at d4, d6 onset (2026-06-25)
+
+**Question.** On the VALID trainable `deep_cnn` vehicle at FashionMNIST, does the
+cascaded single-spike-TTFS death-cascade appear at the d4 onset, and does it widen
+from d4→d6 (depth-widening)? Knob = `ttfs_cycle_schedule ∈ {cascaded, synchronized}`,
+`spiking_mode=ttfs_cycle_based`, S=4, fixed-chip mode, `max_simulation_samples=50`.
+
+| d | sched | deployed (mean ± sd_pp) | n (rc=0) | ANN ref | gap→ANN (pp) | casc→sync (pp) |
+|:--|:------|:------------------------|:--------:|--------:|-------------:|---------------:|
+| 4 | cascaded     | **0.85 ± 3pp** (s1 0.82 / s4 0.88) | **2** | 0.9278 | **+7.78** | **+5.17** (paired s1,s4 +4.90) |
+| 4 | synchronized | **0.9017 ± 0.4pp** (5 seeds) | 5 | 0.9278 | +2.61 | — |
+| 6 | cascaded     | — (0/5 finalized) | **0** | 0.9314 | — | — |
+| 6 | synchronized | — (0/5 finalized) | **0** | 0.9314 | — | — |
+
+**Verdict — `cascaded_firing_gain_degraded_d4_seedstarved; d6_untestable_both_arms_crashed`.**
+(a) **d4 shows the death-cascade:** cascaded deploys ~5.2pp below the paired
+synchronized arm and ~7.8pp below the ~0.928 well-trained ANN (vs only ~2.6pp for
+synchronized) — a genuine firing-gain gap (ANN ≫ 0.10 chance, not an untrained-floor
+artifact). (b) **The d4 cascaded cell UNDERSTATES the collapse:** only 2/5 seeds
+finalized; s0/s2/s3 crashed AT the `TTFS Cycle Fine-Tuning` step-retention assertion
+with deployed ~0.714–0.728 (floor `0.85*prev`) — **those crashes ARE the death-cascade**,
+so the surviving 0.85 mean is survivorship-biased HIGH; the true cascaded value is below
+0.85. (c) **d6 is UNANSWERABLE on this vehicle:** all 5 cascaded d6 crashed (4 retention-floor
+death-cascade ~0.753–0.782 + 1 hard-core packing) and all 5 synchronized d6 crashed at
+hard-core packing (`softcore (1152 axons,128 neurons) does not fit even with coalescing`)
+— the d6 wall is a **fixed-chip MAPPING confound** for synchronized and a firing-gain+mapping
+mix for cascaded, so the **d4-vs-d6 depth-widening claim is UNTESTABLE here**.
+
+### Confounds / bounds
+
+(1) `max_simulation_samples=50` → deployed precise to ~±0.02; **read GAPS in pp, not 3rd
+decimals**. (2) Cascaded d4 has only n=2 valid (<3) and is **survivorship-biased** (the 3
+crashed seeds crashed because the cascade dropped to ~0.71–0.72 under the retention guard).
+(3) d6 has **0 finalized runs in either arm** — no cell numbers emitted; the synchronized
+d6 packing fail is a hardware-fit confound, NOT firing-gain. (4) ANN ~0.928 (d4) / ~0.931
+(d6) ≫ chance → the d4 gap is genuine, not an untrained-model artifact. Run ids —
+`f1_deep_cnn_fashionmnist_ci_FashionMNIST_DataProvider_{cascaded,synchronized}_d{4,6}_s{0..4}`.
+
+---
+
+## 6. deep_cnn d6 FashionMNIST — staircase-STE hedge mix sweep (2026-06-25)
+
+**Question.** Does any `ttfs_staircase_ste` hedge mix (`ttfs_ste_mix ∈
+{0.1, 0.25, 0.75, 0.9}`) recover the firing-gain deficit at the `deep_cnn` d6
+FashionMNIST cascaded onset (S=4, all cascaded, `ttfs_staircase_ste=True`,
+`allow_coalescing=True`, `max_simulation_samples=200`)? 12 clean rc=0 FMNIST seeds.
+
+| ttfs_ste_mix | deployed (mean ± sd_pp) | per-seed | ANN ref | vs no-lever baseline (0.8183) | vs sync ceiling (0.8962) |
+|:-------------|:------------------------|:---------|--------:|------------------------------:|-------------------------:|
+| 0.1  | 0.7933 ± 3.17pp | .825/.75/.805 | 0.9311 | **−2.50pp** (regress) | −10.29pp |
+| **0.25** | **0.8200 ± 2.45pp** | .85/.82/.79 | 0.9278 | **+0.17pp** (BEST, WASH) | −7.62pp |
+| 0.75 | 0.7950 ± 2.48pp | .81/.76/.815 | 0.9304 | **−2.33pp** (regress) | −10.12pp |
+| 0.9  | 0.7800 ± 4.60pp | .745/.845/.75 | 0.9304 | **−3.83pp** (worst regress) | −11.62pp |
+
+**Verdict — `staircase_ste_mix_sweep_DOES_NOT_recover_d6_FMNIST_cascade` (SUPPORTED-WITH-CONFOUND).**
+No mix recovers above the no-lever cascaded baseline beyond grid noise. The optimal
+**mix=0.25 (0.8200) is a WASH at +0.17pp** vs the sibling no-lever baseline 0.8183
+(within the n=200 0.005 grid) and still −7.62pp below the 0.8962 synchronized ceiling;
+every other mix REGRESSES the floor (−2.3 to −3.8pp). This **confirms the §4t mix=0.5
+regression is robust** across the staircase-vs-genuine backward blend and **closes the
+staircase-STE escape hatch** on the convnet d6 FMNIST onset (firing-gain origin confirmed,
+ANN ~0.93 ≫ 0.10 chance).
+
+### Confounds / bounds
+
+(1) **Lever is a MIX-SWEEP, not cascaded-vs-sync** — all 12 FMNIST runs are
+`ttfs_cycle_schedule=cascaded`; the only in-batch axis is `ttfs_ste_mix`. There is NO
+synchronized arm in this batch: the ledger `synchronized_deployed_mean` is the SIBLING
+`pdcnnbcd6data_FashionMNIST` sync ceiling 0.8962 (§4n), and the no-lever cascaded floor
+0.8183 is also a sibling. (2) `n=200` → 0.005 grid; the best-mix +0.17pp lift is WITHIN
+resolution (a WASH); only the multi-pp regressions exceed it. (3) Per-seed swings are large
+(mix=0.9 sd 4.60pp) → per-mix means at n=3 carry several-pp noise. (4) **EVAL-SET ASYMMETRY** —
+cascaded deployed on the n=200 cascaded-eval subset, sibling sync ceiling on the full 10000.
+(5) **No at-chance confound** — ANN refs ~0.928–0.932 ≫ 0.10 → genuine firing-gain, a valid
+result. (6) **KMNIST HALF UNUSABLE** — 10/12 KMNIST runs `rc=-9` (SIGKILL); only mix=0.1
+s0/s1 rc=0 → the mix axis CANNOT be characterized on KMNIST, no KMNIST rows emitted. Run ids —
+`pdcnnd6datastemix_FashionMNIST_DataProvider_mix{0.1,0.25,0.75,0.9}_s{0,1,2}`.
+

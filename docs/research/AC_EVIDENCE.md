@@ -1464,6 +1464,60 @@ record's `cascaded_to_sync_gap_pp` is NULL and the AC2 gap below is **cascaded�
   `pdcnnd10datafix_{FashionMNIST,KMNIST}_DataProvider_cot{False,True}_cp{False,True}_s{0,1,2}`
   (cotTrue all `rc=1`-excluded; MNIST cpFalse all `rc=-9`-excluded).
 
+## 2m. The `deep_cnn` FashionMNIST AC2 death-cascade appears at the d4 onset on the VALID vehicle — cascaded −5.2pp below the paired synchronized arm and −7.8pp below the trained ANN — but the d4-vs-d6 depth-widening question is UNTESTABLE (both arms crash at d6: synchronized = hard-core packing, cascaded = death-cascade + packing) (`item_id=dcnn_fmnist_depth_cascade_vs_sync`, 2026-06-25)
+
+`deep_cnn` w16 (VALID on-chip-majority), FashionMNIST, S=4, `ttfs_cycle_based`,
+fixed-chip mode, `max_simulation_samples=50`. Knob = `ttfs_cycle_schedule`. Ledger:
+`cluster:"WS3"`, `kind:"depth"`.
+
+| d | regime | deployed (cascaded) | deployed (sync) | ANN ref (AC2 target) | AC2 casc→ANN | AC2 sync→ANN | casc→sync |
+|:--|:-------|:--------------------|:----------------|---------------------:|-------------:|-------------:|----------:|
+| 4 | cascaded TTFS S=4 | **0.85 ± 3pp** (n=2) | **0.9017 ± 0.4pp** (n=5) | 0.9278 | **+7.78pp** | +2.61pp | **+5.17pp** (paired s1,s4 +4.90) |
+| 6 | cascaded TTFS S=4 | — (0/5 rc=0) | — (0/5 rc=0) | 0.9314 | — | — | — |
+
+- **d4 — AC2 NOT MET for cascaded:** the cascade carries a genuine **+7.78pp deployed→ANN**
+  firing-gain residual (vs +2.61pp for synchronized) on a VALID CNN; ANN ~0.928 ≫ 0.10 chance.
+  Synchronized AC2 is near-met (+2.61pp).
+- **The cascaded d4 cell UNDERSTATES the collapse:** only 2/5 seeds finalized; s0/s2/s3 crashed
+  AT the TTFS retention floor (deployed ~0.714–0.728 vs ~0.927 ANN) — **those crashes ARE the
+  death-cascade**, so the surviving 0.85 mean is survivorship-biased HIGH (true cascaded < 0.85).
+- **d6 is UNANSWERABLE:** all 5 synchronized d6 crashed at hard-core packing (`softcore
+  (1152 axons,128 neurons) does not fit even with coalescing` — a **fixed-chip MAPPING confound**,
+  not firing-gain) and all 5 cascaded d6 crashed (4 retention-floor death-cascade ~0.753–0.782 +
+  1 packing). The **d4-vs-d6 depth-widening claim is UNTESTABLE on this vehicle as-run.**
+- **Confounds:** (1) `max_simulation_samples=50` → ±0.02; read GAPS. (2) cascaded d4 n=2 (<3),
+  survivorship-biased. (3) d6 = 0 finalized in either arm. Run ids:
+  `f1_deep_cnn_fashionmnist_ci_FashionMNIST_DataProvider_{cascaded,synchronized}_d{4,6}_s{0..4}`.
+
+## 2n. The `ttfs_staircase_ste` hedge-mix sweep does NOT recover the `deep_cnn` d6 FashionMNIST cascaded AC2 deficit — the optimal mix=0.25 is a WASH (+0.17pp vs the no-lever baseline, within grid) and every other mix REGRESSES the floor; the staircase-STE escape hatch is CLOSED on the convnet d6 FMNIST onset (`item_id=dcnn_d6_fmnist_staircase_ste_mix_sweep`, 2026-06-25)
+
+`deep_cnn` w16 (VALID on-chip-majority), FashionMNIST, S=4, `ttfs_cycle_based`,
+cascaded, `ttfs_staircase_ste=True`, `allow_coalescing=True`,
+`max_simulation_samples=200`, 12 clean rc=0 seeds. Only in-batch axis = `ttfs_ste_mix`.
+Ledger: `cluster:"WS3"`, `kind:"ste_mix_sweep"`.
+
+| ttfs_ste_mix | deployed (cascaded-STE) ± sd | ANN ref | vs no-lever baseline (0.8183) | vs sync ceiling (0.8962) |
+|:-------------|:-----------------------------|--------:|------------------------------:|-------------------------:|
+| 0.1  | 0.7933 ± 3.17pp | 0.9311 | **−2.50pp** (regress) | −10.29pp |
+| **0.25** | **0.8200 ± 2.45pp** | 0.9278 | **+0.17pp** (BEST, WASH) | −7.62pp |
+| 0.75 | 0.7950 ± 2.48pp | 0.9304 | **−2.33pp** (regress) | −10.12pp |
+| 0.9  | 0.7800 ± 4.60pp | 0.9304 | **−3.83pp** (worst regress) | −11.62pp |
+
+- **AC2 NOT recovered by any mix:** the best arm (mix=0.25, 0.8200) is **+0.17pp vs the sibling
+  no-lever cascaded baseline 0.8183 — WITHIN the n=200 0.005 grid → a WASH**, and still −7.62pp
+  below the sibling synchronized ceiling 0.8962. Every other mix REGRESSES the floor (−2.3 to
+  −3.8pp). This confirms the §4t mix=0.5 regression is robust across the staircase-vs-genuine
+  backward blend and **CLOSES the staircase-STE escape hatch** at the d6 FMNIST onset.
+- **Firing-gain origin confirmed:** ANN refs ~0.928–0.932 ≫ 0.10 chance → the deficit is a
+  genuine firing-gain gap, not an untrained-floor artifact.
+- **Confounds:** (1) MIX-SWEEP, NOT casc-vs-sync — no synchronized arm in-batch; the ceiling
+  0.8962 and the no-lever baseline 0.8183 are SIBLING (`pdcnnbcd6data_FashionMNIST`, §4n), not
+  paired runs. (2) `n=200` → 0.005 grid; the +0.17pp best-mix lift is within resolution. (3)
+  large per-seed swings (mix=0.9 sd 4.60pp). (4) EVAL-SET ASYMMETRY: cascaded on n=200 subset,
+  sync ceiling on full 10000. (5) **KMNIST half UNUSABLE** — 10/12 KMNIST runs `rc=-9` (only
+  mix=0.1 s0/s1 rc=0); no KMNIST rows emitted. Run ids:
+  `pdcnnd6datastemix_FashionMNIST_DataProvider_mix{0.1,0.25,0.75,0.9}_s{0,1,2}`.
+
 ## 3. Open AC gaps (what these cells do NOT yet certify)
 
 - ~~**No paired n=1000 synchronized lenet5 run**~~ **CLOSED (§1x, 2026-06-25)** — the
