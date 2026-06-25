@@ -91,6 +91,30 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
 
 ---
 
+## F-LAYER EXECUTION — GREENLIT (Wave 7+, max-parallel isolated)
+
+User **greenlit the GPU-weeks F-layer** (2026-06-25). **ImageNet is constrained to a well-established
+FAST recipe, NOT from-scratch-to-SOTA**: target ~**67% top-1 ResNet-50 from-scratch in <1 hour**
+(FFCV-style — FFCV claims 67%/30min on one A100; we have 4× RTX PRO 6000 Blackwell). Deployed-SNN
+accuracy is then whatever the toolchain retains from that ANN, measured.
+
+**Infra reality (assessed 2026-06-25):** ImageNet is EXTRACTED at `/data/ImageNet` (train/+val/
+ImageFolder + devkit); `imagenet_data_provider.py` + cifar10/100 providers exist; `data_handling/ffcv/`
+is WIRED but the `ffcv` pip package is NOT installed (fast-loader enablement needed); the ImageNet
+tuning-collapse bug was fixed in a prior session; **NO imagenet ledger row yet** (never run to completion).
+
+**Reset dependency order (two groups):**
+- **Group 1 — codeable builds (parallel, isolated, no-GPU-to-land) = Wave 7:** D4 pruning×scheduling ·
+  D2A residual Component A (shared-HCM-fill NF==HCM `atol=0`) · D5 on-chip attention/LN (research;
+  partial+characterized OK per DoD-3's "or honestly-scoped conv headline") · F-harness (F1/F2/F3
+  experiment-matrix runner + aggregator) · D6 pretrained DEPLOY bridge · ImageNet fast-recipe (trainer
+  CODE; FFCV install + the actual run are a SUPERVISED post-build step to protect the live campaign venv).
+- **Group 2 — GPU runs (enqueue → runner drains, parallel):** F1/F2/F3 cells on existing
+  vehicles×datasets · B2 CIFAR10/100 · the ImageNet ResNet-50 run → consolidate into F1–F4 → finalize F5
+  with measured publication results.
+
+---
+
 ## The layers (status · dependency · cost)
 
 Status: ✅ landed · 🔬 isolated/not-merged · ⏳ in-flight · ⬜ open.
