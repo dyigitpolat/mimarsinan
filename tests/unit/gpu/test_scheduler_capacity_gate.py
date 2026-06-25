@@ -19,7 +19,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "sc
 import gpu_queue as gq  # noqa: E402
 import scheduler as sch  # noqa: E402
 
-from mimarsinan.mapping.verification.capacity import CapacityEstimate  # noqa: E402
+from mimarsinan.mapping.verification.capacity import (  # noqa: E402
+    CapacityEstimate,
+    PackFeasibility,
+)
 
 
 def _feasible_estimate():
@@ -52,7 +55,7 @@ def test_capacity_precheck_admits_scheduled_feasible():
     import unittest.mock as mock
     with mock.patch.object(
         sch, "_estimate_cfg_capacity", lambda c: _scheduled_feasible_estimate()
-    ):
+    ), mock.patch.object(sch, "_dryrun_cfg_packing", lambda c: _pack_feasible()):
         ok, info = sch.capacity_precheck(cfg)
     assert ok is True
     assert info["reason"] == "ok"
@@ -67,7 +70,7 @@ def test_capacity_precheck_admits_feasible():
     import unittest.mock as mock
     with mock.patch.object(
         sch, "_estimate_cfg_capacity", lambda c: _feasible_estimate()
-    ):
+    ), mock.patch.object(sch, "_dryrun_cfg_packing", lambda c: _pack_feasible()):
         ok, info = sch.capacity_precheck(cfg)
     assert ok is True
     assert info["reason"] == "ok"
@@ -96,6 +99,107 @@ def test_capacity_precheck_gate_disabled_admits_infeasible():
     with mock.patch.object(
         sch, "_estimate_cfg_capacity", lambda c: _infeasible_estimate()
     ):
+        ok, info = sch.capacity_precheck(cfg)
+    assert ok is True
+    assert info["reason"] == "gate_disabled"
+
+
+def _pack_feasible():
+    return PackFeasibility(
+        feasible=True, hard_cores=312, overflowing_segment=None, error=None,
+    )
+
+
+def _pack_infeasible():
+    return PackFeasibility(
+        feasible=False, hard_cores=None,
+        overflowing_segment="neural_segment_until:features_13",
+        error="Hard-core packing failed in segment "
+        "'neural_segment_until:features_13': No more hard cores available.",
+    )
+
+
+def test_capacity_precheck_rejects_pack_infeasible_after_lower_bound_admits():
+    """The SOUND lower bound admits (cores fit ideally) but the real packer cannot
+    place it (threshold-group fragmentation overflows) → reject, no GPU claimed."""
+    cfg = {"deployment_parameters": {"model_type": "deep_cnn"}}
+    import unittest.mock as mock
+    with mock.patch.object(sch, "_estimate_cfg_capacity", lambda c: _feasible_estimate()), \
+         mock.patch.object(sch, "_dryrun_cfg_packing", lambda c: _pack_infeasible()):
+        ok, info = sch.capacity_precheck(cfg)
+    assert ok is False
+    assert info["reason"] == "pack_infeasible"
+    assert info["overflowing_segment"] == "neural_segment_until:features_13"
+    assert "No more hard cores available" in info["pack_error"]
+
+
+def test_capacity_precheck_admits_pack_feasible():
+    cfg = {"deployment_parameters": {"model_type": "deep_cnn"}}
+    import unittest.mock as mock
+    with mock.patch.object(sch, "_estimate_cfg_capacity", lambda c: _feasible_estimate()), \
+         mock.patch.object(sch, "_dryrun_cfg_packing", lambda c: _pack_feasible()):
+        ok, info = sch.capacity_precheck(cfg)
+    assert ok is True
+    assert info["reason"] == "ok"
+    assert info["packed_hard_cores"] == 312
+
+
+def test_capacity_precheck_lower_bound_rejection_skips_dryrun():
+    """A config the lower bound already rejects must not pay for a real-packer dry-run."""
+    cfg = {"deployment_parameters": {"model_type": "torch_vgg16"}}
+
+    def _must_not_run(c):
+        raise AssertionError("dry-run must not run when the lower bound rejects")
+
+    import unittest.mock as mock
+    with mock.patch.object(sch, "_estimate_cfg_capacity", lambda c: _infeasible_estimate()), \
+         mock.patch.object(sch, "_dryrun_cfg_packing", _must_not_run):
+        ok, info = sch.capacity_precheck(cfg)
+    assert ok is False
+    assert info["reason"] == "capacity_exceeded"
+
+
+def test_capacity_precheck_dryrun_gate_disabled_skips_dryrun():
+    """capacity_dryrun_gate=False keeps only the cheap lower bound; the dry-run is skipped."""
+    cfg = {"deployment_parameters": {"model_type": "deep_cnn", "capacity_dryrun_gate": False}}
+
+    def _must_not_run(c):
+        raise AssertionError("dry-run must not run when capacity_dryrun_gate=False")
+
+    import unittest.mock as mock
+    with mock.patch.object(sch, "_estimate_cfg_capacity", lambda c: _feasible_estimate()), \
+         mock.patch.object(sch, "_dryrun_cfg_packing", _must_not_run):
+        ok, info = sch.capacity_precheck(cfg)
+    assert ok is True
+    assert info["reason"] == "ok"
+
+
+def test_capacity_precheck_dryrun_failure_is_non_fatal():
+    """An unexpected dry-run error never drops valid work — the job is admitted."""
+    cfg = {"deployment_parameters": {"model_type": "deep_cnn"}}
+
+    def _boom(c):
+        raise RuntimeError("packer import blew up")
+
+    import unittest.mock as mock
+    with mock.patch.object(sch, "_estimate_cfg_capacity", lambda c: _feasible_estimate()), \
+         mock.patch.object(sch, "_dryrun_cfg_packing", _boom):
+        ok, info = sch.capacity_precheck(cfg)
+    assert ok is True
+    assert info["reason"] == "dryrun_failed"
+    assert "packer import blew up" in info["dryrun_error"]
+
+
+def test_capacity_precheck_gate_disabled_skips_both_checks():
+    """capacity_gate=False short-circuits before the estimate AND the dry-run."""
+    cfg = {"deployment_parameters": {"model_type": "deep_cnn", "capacity_gate": False}}
+
+    def _must_not_run(c):
+        raise AssertionError("no capacity check may run when capacity_gate=False")
+
+    import unittest.mock as mock
+    with mock.patch.object(sch, "_estimate_cfg_capacity", _must_not_run), \
+         mock.patch.object(sch, "_dryrun_cfg_packing", _must_not_run):
         ok, info = sch.capacity_precheck(cfg)
     assert ok is True
     assert info["reason"] == "gate_disabled"

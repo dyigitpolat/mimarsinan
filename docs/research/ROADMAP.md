@@ -83,7 +83,11 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
   agents**; re-base worktrees per land (Wave 2 bases on `2462241`).
 - **Landed instruments:** E2 static validity pre-check; gate-v2 tiered validity (20%/50%, params+MACs);
   E1 coverage ledger + **P1 self-auditing** (screening-status→denominator, CI guard, flag aging,
-  per-region attribution-fidelity); E4 capacity diagnostic + scheduling-aware verdict; **P2 defensible
+  per-region attribution-fidelity); E4 capacity diagnostic + scheduling-aware verdict
+  + **real-packer DRY-RUN enqueue gate** (`capacity/dryrun.py`; the SOUND lower bound's
+  threshold-group-fragmentation hole let ~10% of runs burn ~20 min GPU then crash at
+  mapping — dry-running the real packer at enqueue is an exact oracle: 60/60 crash configs
+  rejected, 80/80 done admitted); **P2 defensible
   GAP-R cost** (VGG@224 ≈13.4 mJ, band 1.5–49.3, weight-reuse 6900×); weight-reuse phase classifier;
   Residual Tier-0; E6 cascaded-rescue quarantine.
 - **Frontier mapped + measured:** ImageNet conv = 138K irreducible softcores (no weight sharing),

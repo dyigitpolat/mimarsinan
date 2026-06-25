@@ -119,20 +119,19 @@ def _classify_cfg_validity(cfg: dict, *, floor: float, majority: float):
     )
 
 
-def _estimate_cfg_capacity(cfg: dict):
-    """Statically estimate the hard cores this job's IR needs vs. its core budget.
+def _build_cfg_ir_graph(cfg: dict):
+    """Build ``(ir_graph, platform_constraints)`` from a job config — no GPU, no run.
 
-    Pure-static (no GPU, no run, no placement): builds the native model, converts
-    it to an IR graph exactly as ``SoftCoreMappingStep`` would, then runs the SOUND
-    ``estimate_cores_needed`` lower bound against the declared core budget. Heavy
-    torch / mapping imports are deferred here so the daemon import stays light;
-    patched in tests to avoid real IR construction.
+    Builds the native model and converts it to an IR graph exactly as
+    ``SoftCoreMappingStep`` would (the packing-relevant structure: axon/neuron
+    counts, perceptron-indexed threshold groups). Shared by both capacity gates —
+    the SOUND lower bound and the real-packer dry-run — so they map the SAME IR.
+    Heavy torch / mapping imports are deferred so the daemon import stays light.
     """
     for sub in ("src", "spikingjelly"):
         path = os.path.join(REPO, sub)
         if path not in sys.path:
             sys.path.insert(0, path)
-    import numpy as np
 
     from mimarsinan.config_schema.runtime import build_flat_pipeline_config
     from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
@@ -141,7 +140,6 @@ def _estimate_cfg_capacity(cfg: dict):
         resolve_platform_mapping_params,
     )
     from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
-    from mimarsinan.mapping.verification.capacity import estimate_cores_needed
     from mimarsinan.pipelining.core.platform_constraints_resolver import (
         build_platform_constraints_resolved,
     )
@@ -187,22 +185,61 @@ def _estimate_cfg_capacity(cfg: dict):
         allow_coalescing=params.allow_coalescing, hardware_bias=params.hardware_bias,
     )
     ir_graph = ir_mapping.map(mapper_repr)
+    return ir_graph, platform_constraints
+
+
+def _estimate_cfg_capacity(cfg: dict):
+    """SOUND lower-bound capacity estimate for a job (no GPU, no run, no placement).
+
+    Maps the config to its IR graph and runs ``estimate_cores_needed`` against the
+    declared core budget. Patched in tests to avoid real IR construction.
+    """
+    ir_graph, platform_constraints = _build_cfg_ir_graph(cfg)  # sets sys.path
+    from mimarsinan.mapping.verification.capacity import estimate_cores_needed
+
     return estimate_cores_needed(ir_graph, platform_constraints)
+
+
+def _dryrun_cfg_packing(cfg: dict):
+    """Run the REAL hybrid packer on a job's IR (no GPU, no run) → ``PackFeasibility``.
+
+    The definitive feasibility verdict: the SOUND lower bound admits any config whose
+    ideal diagonal packing fits, but the greedy packer keeps each (perceptron-indexed)
+    threshold group on its own hard cores, so a config can pass the bound yet exhaust
+    the budget mid-pack. Because the grouping is structural (weight-independent), this
+    untrained dry-run matches the trained deployment's packing exactly. Patched in
+    tests to avoid real IR construction.
+    """
+    ir_graph, platform_constraints = _build_cfg_ir_graph(cfg)  # sets sys.path
+    from mimarsinan.mapping.verification.capacity import dryrun_pack_feasible
+
+    return dryrun_pack_feasible(ir_graph, platform_constraints)
 
 
 def capacity_precheck(cfg: dict) -> Tuple[bool, Dict]:
     """Decide whether a job may be enqueued under the STATIC placement-capacity gate.
 
-    Returns ``(enqueue_ok, info)``. Rejects (``False`` — no GPU claimed) a config
-    whose SOUND ``estimate_cores_needed`` lower bound EXCEEDS its declared core
-    budget (the net cannot be placed by any packing strategy — VGG16@224 on a
-    1000-core budget); admits a feasible one. When the chip permits scheduling
-    (``allow_scheduling``), a config too big for one pool is admitted as
-    feasible-via-scheduling whenever its PEAK reprogram phase fits — the ``info``
-    then carries ``scheduled``, ``peak_phase_cores`` and ``phase_count``. Opt-out
-    via ``deployment_parameters.capacity_gate=False``. Any model-build / IR /
-    estimate failure is NON-FATAL — returns ``(True, {...})`` so a builder edge
-    case never silently drops valid work.
+    Returns ``(enqueue_ok, info)``. Two layered checks reject (``False`` — no GPU
+    claimed) a config that cannot be placed:
+
+    1. The SOUND ``estimate_cores_needed`` lower bound: rejects a config whose ideal
+       diagonal packing already exceeds the budget (VGG16@224 on 1000 cores — no
+       packing strategy could place it). When the chip permits scheduling, a config
+       too big for one pool is admitted as feasible-via-scheduling whenever its PEAK
+       reprogram phase fits (``info`` carries ``scheduled`` / ``peak_phase_cores`` /
+       ``phase_count``).
+    2. The real-packer DRY-RUN (``capacity_dryrun_gate``, default on): the lower
+       bound is loose — it ignores that the greedy packer keeps each (perceptron-
+       indexed) threshold group on its own hard cores, so a config can pass the bound
+       yet exhaust the budget mid-pack (``deep_cnn`` d6/d8 on high-resolution inputs).
+       Running the actual packer on the (weight-independent) IR catches this in ~1s of
+       CPU instead of crashing ~20 min into a GPU run with "No more hard cores
+       available".
+
+    Opt-out of both via ``deployment_parameters.capacity_gate=False``; opt-out of just
+    the dry-run via ``capacity_dryrun_gate=False``. Any model-build / IR / estimate /
+    dry-run failure is NON-FATAL — returns ``(True, {...})`` so a builder edge case
+    never silently drops valid work.
     """
     dp = cfg.get("deployment_parameters", {}) or {}
     if not bool(dp.get("capacity_gate", True)):
@@ -222,7 +259,18 @@ def capacity_precheck(cfg: dict) -> Tuple[bool, Dict]:
     }
     if not est.feasible:
         return False, dict(info, reason="capacity_exceeded")
-    return True, dict(info, reason="ok")
+    if not bool(dp.get("capacity_dryrun_gate", True)):
+        return True, dict(info, reason="ok")
+    try:
+        pf = _dryrun_cfg_packing(cfg)
+    except Exception as exc:  # noqa: BLE001 - non-fatal by design
+        return True, dict(info, reason="dryrun_failed", dryrun_error=repr(exc))
+    if not pf.feasible:
+        return False, dict(
+            info, reason="pack_infeasible",
+            overflowing_segment=pf.overflowing_segment, pack_error=pf.error,
+        )
+    return True, dict(info, reason="ok", packed_hard_cores=pf.hard_cores)
 
 
 def onchip_precheck(cfg: dict) -> Tuple[bool, Dict]:
@@ -335,9 +383,19 @@ class Scheduler:
                     continue
                 cap_ok, cap_info = capacity_precheck(cfg)
                 if not cap_ok:
+                    if cap_info.get("reason") == "pack_infeasible":
+                        cause = (
+                            "the real packer overflowed (threshold-group "
+                            "fragmentation past the lower bound)"
+                        )
+                    else:
+                        cause = (
+                            f"lower bound needs >= {cap_info.get('cores_needed')} "
+                            "hard cores"
+                        )
                     print(
-                        f"scheduler: SKIP {jid} (INFEASIBLE): needs "
-                        f">= {cap_info.get('cores_needed')} hard cores but budget is "
+                        f"scheduler: SKIP {jid} (INFEASIBLE, "
+                        f"{cap_info.get('reason')}): {cause}; budget is "
                         f"{cap_info.get('cores_available')} (overflowing segment "
                         f"{cap_info.get('overflowing_segment')!r}) — not enqueued, "
                         "no GPU claimed."
