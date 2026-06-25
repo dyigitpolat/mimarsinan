@@ -20,6 +20,7 @@ AXIS flip in coverage_ledger is the later consume step.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -310,12 +311,28 @@ def test_outcome_to_dict_is_typed():
 
 
 # --- the LIVE-ledger helpers: honest INSUFFICIENT_DATA while data drains -------
+# The campaign ledger lives in the MAIN repo runtime tree, not the worktree git
+# state — resolve it cwd-robustly and skip the live checks when it is absent
+# (mirrors tests/unit/chip_simulation/test_pareto.py's pattern).
+_LEDGER_CANDIDATES = [
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "runs", "campaign", "ledger.jsonl"),
+    "/home/yigit/repos/research_stuff/mimarsinan/runs/campaign/ledger.jsonl",
+]
+
+
+def _real_ledger_path():
+    for cand in _LEDGER_CANDIDATES:
+        if os.path.exists(cand):
+            return cand
+    return None
+
 
 def _live_rows():
-    with open("runs/campaign/ledger.jsonl") as fh:
+    with open(_real_ledger_path()) as fh:
         return [json.loads(line) for line in fh if line.strip()]
 
 
+@pytest.mark.skipif(_real_ledger_path() is None, reason="campaign ledger not present in worktree runtime tree")
 def test_live_pruning_is_insufficient_data_no_pruned_rows():
     # No pruned rows exist in the live ledger yet ⇒ honest INSUFFICIENT_DATA.
     artifact = screen_live_pruning(_live_rows(), tol_pp=1.0)
@@ -326,6 +343,7 @@ def test_live_pruning_is_insufficient_data_no_pruned_rows():
     assert_semantic_screen_sound(artifact)  # an honest, non-collapse artifact is sound
 
 
+@pytest.mark.skipif(_real_ledger_path() is None, reason="campaign ledger not present in worktree runtime tree")
 def test_live_regime_drains_honestly():
     # The F3 dual-regime rows are draining: either too few pairs (INSUFFICIENT_DATA)
     # or a MEASURED outcome — never a fabricated collapse.
@@ -335,6 +353,7 @@ def test_live_regime_drains_honestly():
     assert_semantic_screen_sound(artifact)
 
 
+@pytest.mark.skipif(_real_ledger_path() is None, reason="campaign ledger not present in worktree runtime tree")
 def test_live_helpers_never_assert_collapse():
     # The instrument ships the MEASURED state; it must not flip the axis here.
     for artifact in (screen_live_regime(_live_rows(), tol_pp=1.0),
