@@ -25,5 +25,17 @@ read — no daemon, no heartbeat.
   Manifest: `[{"id","mode","need_mb","cmd":[...]|str,"cwd"?,"env"?}, …]`.
 - `bootstrap_worktree.sh` — symlink the gitignored runtime deps (venv, datasets,
   build, nevresim, spikingjelly) from the main checkout into a worktree.
+- `deploy_imagenet_snn.py` (F4 capstone) — load the trained ResNet-50 checkpoint
+  (`runs/imagenet/resnet50.pt`, `{model state_dict, val_top1}`) → deploy it as a LIF
+  SNN through the real pipeline (`pretrained_bridge.deploy_and_eval`) on an
+  ImageNet-val SUBSET → record ANN top-1, deployed top-1, validity tier
+  (`classify_validity`) + a cost record (`extract_cost_record`) → append a
+  campaign-shaped ledger row to `runs/campaign/ledger.jsonl` via the campaign
+  `ledger-append` convention. CLI:
+  `env/bin/python scripts/gpu/deploy_imagenet_snn.py --checkpoint runs/imagenet/resnet50.pt --num-eval 256 --T 4`.
+  The real run is a SUPERVISED step (slow LIF sim → subset is honest); the unit
+  tests (`test_deploy_imagenet_snn.py`) exercise the wiring on a tiny CPU stand-in
+  (no ImageNet, no GPU).
 
 Tests: `tests/unit/gpu/` (no real GPU needed — snapshots are injected).
+`scripts/gpu/test_deploy_imagenet_snn.py` covers the F4 deploy harness in-place.
