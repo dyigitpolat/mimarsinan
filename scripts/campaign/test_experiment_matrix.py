@@ -207,6 +207,8 @@ def test_aggregate_f1_mean_and_ci():
     assert a["deployed_acc_mean"] == pytest.approx(0.92, abs=1e-12)
     assert a["ci95"] == pytest.approx(_t_ci95_halfwidth([0.90, 0.92, 0.94]), rel=1e-9)
     assert sorted(a["run_ids"]) == ["a0", "a1", "a2"]
+    # per-seed path carries a real CI and is flagged as such.
+    assert a["source"] == "per_seed" and a["ci_available"] is True and a["measured"] is True
     b = by_cell[("lenet5", "fmnist", "synchronized", 3)]
     assert b["n_seeds"] == 2
     assert b["deployed_acc_mean"] == pytest.approx(0.82, abs=1e-12)
@@ -327,6 +329,185 @@ def test_read_ledger_skips_garbage(tmp_path):
     assert len(rows) == 2
     assert rows[0]["study"] == "F1" and rows[1]["study"] == "F2"
     assert em.read_ledger(str(tmp_path / "nope.jsonl")) == []
+
+
+# ---------------------------------------------------------------------------
+# Aggregator: PRE-AGGREGATED SUMMARY rows (the schema the LIVE campaign writes).
+#
+# The live ledger has ZERO ``study``-tagged per-seed rows; completed F-studies
+# are written as ONE summary row per cell, with run_ids prefixed f1_/f2_/f3_ and
+# both schedule arms in one row (cascaded_*/synchronized_* means + *_std_pp).
+# These fixtures are copied VERBATIM from runs/campaign/ledger.jsonl.
+# ---------------------------------------------------------------------------
+LIVE_F1 = [
+    {"item_id": "dcnn_d4_mnist_cascaded_vs_sync_ci", "kind": "arch_dataset",
+     "model": "deep_cnn", "dataset": "mnist", "depth": 4, "S": 4, "n_seeds": 3,
+     "cascaded_deployed_mean": 0.9867, "synchronized_deployed_mean": 0.9901,
+     "cascaded_deployed_std_pp": 1.89, "synchronized_deployed_std_pp": 0.12,
+     "ann_test_acc_mean": 0.9923, "cascaded_to_sync_gap_pp": -0.34,
+     "deployment_validity": "VALID_on_chip_majority_rc0",
+     "verdict": "cascaded_near_lossless_on_cell",
+     "cascaded_run_ids": ["f1_deep_cnn_mnist_ci_cascaded_d4_s0"],
+     "synchronized_run_ids": ["f1_deep_cnn_mnist_ci_synchronized_d4_s0"]},
+    {"item_id": "dcnn_fmnist_depth_cascade_vs_sync", "kind": "depth",
+     "model": "deep_cnn", "dataset": "fmnist", "depth": 4, "S": 4, "n_seeds": 2,
+     "cascaded_deployed_mean": 0.85, "synchronized_deployed_mean": 0.9017,
+     "cascaded_deployed_std_pp": 3, "synchronized_deployed_std_pp": 0.4,
+     "ann_test_acc_mean": 0.9278, "cascaded_to_sync_gap_pp": 5.17,
+     "deployment_validity": "VALID_onchip_majority",
+     "verdict": "cascaded_firing_gain_degraded",
+     "cascaded_run_ids": ["f1_deep_cnn_fashionmnist_ci_cascaded_d4_s1"],
+     "synchronized_run_ids": ["f1_deep_cnn_fashionmnist_ci_synchronized_d4_s0"]},
+    # d6: ALL runs crashed (rc=1) -> NOT-MEASURED cell (means None, n_seeds 0).
+    {"item_id": "dcnn_fmnist_depth_cascade_vs_sync", "kind": "depth",
+     "model": "deep_cnn", "dataset": "fmnist", "depth": 6, "S": 4, "n_seeds": 0,
+     "cascaded_deployed_mean": None, "synchronized_deployed_mean": None,
+     "cascaded_deployed_std_pp": None, "synchronized_deployed_std_pp": None,
+     "ann_test_acc_mean": 0.9314, "cascaded_to_sync_gap_pp": None,
+     "deployment_validity": "VALID_onchip_majority",
+     "verdict": "untestable_both_arms_crashed",
+     "cascaded_run_ids": ["f1_deep_cnn_fashionmnist_ci_cascaded_d6_s0"],
+     "synchronized_run_ids": ["f1_deep_cnn_fashionmnist_ci_synchronized_d6_s0"]},
+]
+
+LIVE_F2 = [
+    {"item_id": "f2_deep_cnn_mnist_baseline_quantile_ablation",
+     "kind": "quantile_head_to_head", "model": "deep_cnn", "dataset": "MNIST",
+     "depth": 4, "n_seeds": 3, "ann_test_acc_mean": 0.9924, "better_default": "0.99",
+     "lever": "activation_scale_quantile_0.99_vs_1.0",
+     "cascaded_deployed_mean_q099": 0.97, "cascaded_deployed_mean_q10": 0.97,
+     "synchronized_deployed_mean_q099": 0.99, "synchronized_deployed_mean_q10": 0.9877,
+     "quantile_delta_pp_cascaded": 0, "quantile_delta_pp_synchronized": 0.23,
+     "verdict": "NEUTRAL_LEVER",
+     "cascaded_run_ids": ["f2_deep_cnn_mnist_baseline_cascaded_q0.99_s1"]},
+]
+
+LIVE_F3 = [
+    {"item_id": "f3_deep_cnn_mnist_dualregime_preload", "kind": "mode",
+     "model": "deep_cnn", "dataset": "MNIST_DataProvider", "depth": 4, "n_seeds": 3,
+     "regime": "trained_from_scratch", "preload_weights": False,
+     "ann_test_acc_mean": 0.99247,
+     "cascaded_deployed_full_test_scm_per_seed": [0.9835, 0.9855, 0.9845],
+     "synchronized_deployed_full_test_scm_per_seed": [0.9912, 0.9866, 0.9916],
+     "cascaded_deployed_mean": 0.9845, "synchronized_deployed_mean": 0.9898,
+     "cascaded_to_sync_gap_pp": 0.53,
+     "verdict": "DUAL_REGIME_UNMET_pretrained_arm_crashed; scratch_arm_near_lossless_both_modes",
+     "cascaded_run_ids": ["f3_deep_cnn_mnist_dualregime_cascaded_d4_preload_False_s0"],
+     "synchronized_run_ids": ["f3_deep_cnn_mnist_dualregime_synchronized_d4_preload_False_s0"]},
+    # pretrained + d6 arms ALL crashed -> NOT-MEASURED dual-regime cell.
+    {"item_id": "f3_deep_cnn_mnist_dualregime_preload",
+     "kind": "dual_regime_missing_arms", "model": "deep_cnn",
+     "dataset": "MNIST_DataProvider", "n_seeds": 0, "regime": "pretrained_and_d6",
+     "preload_weights": True, "status": "ALL_FAILED_returncode_1",
+     "verdict": "PRETRAINED_AND_D6_ARMS_MISSING",
+     "failed_run_ids": ["f3_deep_cnn_mnist_dualregime_cascaded_d4_preload_True_s0"]},
+]
+
+
+def test_aggregate_f1_consumes_live_summary_rows():
+    """F1 aggregator emits one cell per (summary row, schedule arm) with the
+    means/std_pp the row carries — NOT a fabricated CI."""
+    table = em.aggregate_f1(LIVE_F1)
+    by = {(tuple(r["cell"]), r["cell"][2]): r for r in table}
+    # mnist d4 cascaded: mean 0.9867, std_pp 1.89, CI UNAVAILABLE (no per-seed data).
+    c = by[(("deep_cnn", "mnist", "cascaded", 4), "cascaded")]
+    assert c["source"] == "summary"
+    assert c["measured"] is True
+    assert c["deployed_acc_mean"] == pytest.approx(0.9867)
+    assert c["std_pp"] == pytest.approx(1.89)
+    assert c["ci_available"] is False
+    assert c["ci95"] is None  # never manufacture a CI from a std
+    assert c["n_seeds"] == 3
+    assert c["ann_test_acc_mean"] == pytest.approx(0.9923)
+    assert c["validity"] == "VALID_on_chip_majority_rc0"
+    assert c["verdict"] == "cascaded_near_lossless_on_cell"
+    # mnist d4 synchronized arm present too.
+    s = by[(("deep_cnn", "mnist", "synchronized", 4), "synchronized")]
+    assert s["deployed_acc_mean"] == pytest.approx(0.9901)
+    assert s["std_pp"] == pytest.approx(0.12)
+    # fmnist d6 crashed: BOTH arms NOT-MEASURED (mean None), not silently dropped.
+    crashed = [r for r in table if r["cell"][1] == "fmnist" and r["cell"][3] == 6]
+    assert len(crashed) == 2
+    for r in crashed:
+        assert r["measured"] is False
+        assert r["deployed_acc_mean"] is None
+        assert r["n_seeds"] == 0
+        assert r["verdict"] == "untestable_both_arms_crashed"
+    # 2 cells/row x 2 measured rows + 2 crashed = 6 cells.
+    assert len(table) == 6
+
+
+def test_aggregate_f1_summary_and_study_tagged_paths_coexist():
+    """A ledger mixing a study-tagged per-seed cell AND a summary row yields
+    BOTH (the legacy path is not broken by the summary path)."""
+    table = em.aggregate_f1(SYN_F1 + LIVE_F1)
+    sources = {r["source"] for r in table}
+    assert sources == {"per_seed", "summary"}
+    per_seed = [r for r in table if r["source"] == "per_seed"]
+    assert len(per_seed) == 2  # the two SYN_F1 cells, unchanged
+    summary = [r for r in table if r["source"] == "summary"]
+    assert len(summary) == 6
+
+
+def test_aggregate_f2_consumes_live_head_to_head_row():
+    """F2 aggregator reads the head-to-head summary row's per-arm means and
+    recomputes the delta (percentile-norm 1.0 - default 0.99) per schedule."""
+    table = em.aggregate_f2(LIVE_F2)
+    by = {r["cell"][2]: r for r in table}
+    casc = by["cascaded"]
+    assert casc["source"] == "summary"
+    assert casc["default_mean"] == pytest.approx(0.97)
+    assert casc["percentile_mean"] == pytest.approx(0.97)
+    assert casc["delta_pp"] == pytest.approx(0.0, abs=1e-9)
+    assert casc["ci_available"] is False
+    sync = by["synchronized"]
+    assert sync["default_mean"] == pytest.approx(0.99)
+    assert sync["percentile_mean"] == pytest.approx(0.9877)
+    # delta = (0.9877 - 0.99) * 100 = -0.23 pp
+    assert sync["delta_pp"] == pytest.approx(-0.23, abs=1e-9)
+    assert sync["verdict"] == "NEUTRAL_LEVER"
+
+
+def test_aggregate_f3_emits_scratch_arm_and_crashed_pretrained():
+    """F3 aggregator surfaces the from_scratch arm's REAL per-seed means and
+    emits the crashed pretrained arm as an explicit NOT-MEASURED delta cell."""
+    table = em.aggregate_f3(LIVE_F3)
+    by_sched = {r["cell"][2]: r for r in table if r.get("source") == "summary"}
+    # from_scratch cascaded arm: mean from the real per-seed list, n=3.
+    casc = by_sched["cascaded"]
+    assert casc["from_scratch_mean"] == pytest.approx(0.9845)
+    assert casc["n_from_scratch"] == 3
+    # pretrained arm crashed -> delta UNCOMPUTABLE, surfaced not dropped.
+    assert casc["pretrained_mean"] is None
+    assert casc["delta_pp"] is None
+    assert casc["delta_measured"] is False
+    assert "PRETRAINED" in casc["verdict"] or "pretrained_arm_crashed" in casc["verdict"]
+    sync = by_sched["synchronized"]
+    assert sync["from_scratch_mean"] == pytest.approx(0.9898)
+    assert sync["n_from_scratch"] == 3
+
+
+def test_live_ledger_renders_nonempty_data_rows(tmp_path):
+    """End-to-end: the live summary rows render markdown with DATA rows
+    (not just headers) in all three tables."""
+    f1 = em.aggregate_f1(LIVE_F1)
+    f2 = em.aggregate_f2(LIVE_F2)
+    f3 = em.aggregate_f3(LIVE_F3)
+    assert f1 and f2 and f3
+    out = tmp_path / "F.md"
+    em.write_findings_markdown(str(out), f1=f1, f2=f2, f3=f3)
+    text = out.read_text()
+    # The measured F1 mean appears as a data row.
+    assert "0.9867" in text
+    # CI-unavailable is stated honestly, not faked as a number.
+    assert "CI-unavailable" in text or "n/a" in text
+    # The crashed cell is rendered as NOT-MEASURED, not dropped.
+    assert "NOT-MEASURED" in text
+    # Count F1 data rows (lines after the header separator that are not headers).
+    f1_block = text.split("## F1")[1].split("## F2")[0]
+    data_rows = [ln for ln in f1_block.splitlines()
+                 if ln.startswith("| ") and "---" not in ln and "deployed" not in ln.lower()]
+    assert len(data_rows) >= 6
 
 
 # ---------------------------------------------------------------------------

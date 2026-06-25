@@ -14,8 +14,15 @@ the resulting ``runs/campaign/ledger.jsonl`` rows into the study tables:
       lenet5 (both VALID at 3x32x32) on CIFAR10 + CIFAR100, multi-seed.
 
 The generated batches are ENQUEUED later by the scheduler; the aggregator is run
-after those runs finalize and append per-seed ledger rows. The aggregator also
-writes a markdown findings report under ``docs/research/findings/``.
+after those runs finalize. The aggregator reads TWO ledger schemas: (1) the
+study-tagged per-seed rows (``study:F1|F2|F3`` + flat ``deployed_acc``) the
+generators target, and (2) the PRE-AGGREGATED SUMMARY rows the live campaign
+actually writes — one row per cell, run_ids prefixed ``f1_``/``f2_``/``f3_``,
+both schedule arms in one row (``{schedule}_deployed_mean``/``_std_pp``). Summary
+cells carry the row's ``std_pp`` honestly with the 95% CI marked UNAVAILABLE (a
+std is never reshaped into a CI) and emit crashed/0-seed arms as explicit
+NOT-MEASURED cells. The aggregator also writes a markdown findings report under
+``docs/research/findings/``.
 
 CLI:
   generate  python scripts/campaign/experiment_matrix.py generate \
@@ -301,13 +308,66 @@ def _mean_ci(values: Sequence[float]) -> Tuple[float, float]:
 
 
 # ---------------------------------------------------------------------------
+# Two ledger schemas the aggregators consume
+# ---------------------------------------------------------------------------
+# (1) STUDY-TAGGED per-seed rows: ``study:F1|F2|F3`` + a flat ``deployed_acc``
+#     (one row per seed). This is the generated batches' intended write-back.
+# (2) PRE-AGGREGATED SUMMARY rows: what the LIVE campaign actually writes — ONE
+#     row per cell, run_ids prefixed ``f1_``/``f2_``/``f3_``, both schedule arms
+#     in one row (``{schedule}_deployed_mean``/``{schedule}_deployed_std_pp``),
+#     carrying ``n_seeds``/``ann_test_acc_mean``/validity/verdict. A summary row
+#     has NO per-seed sample, so we carry its ``std_pp`` honestly and mark the CI
+#     UNAVAILABLE — we never reconstruct a 95% CI from a std.
+_F_SCHEDULES = ("cascaded", "synchronized")
+_RUN_ID_LIST_KEYS = ("cascaded_run_ids", "synchronized_run_ids", "run_ids",
+                     "failed_run_ids", "failed_run_ids_rc1")
+
+
+def _summary_study(row: dict) -> Optional[str]:
+    """``F1``/``F2``/``F3`` if a SUMMARY row's item_id or any run_id is so
+    prefixed, else ``None``. The live ledger's only F-study membership signal."""
+    tags = [str(row.get("item_id", ""))]
+    for k in _RUN_ID_LIST_KEYS:
+        v = row.get(k)
+        if isinstance(v, list):
+            tags.extend(str(x) for x in v)
+    for study in ("F1", "F2", "F3"):
+        if any(t.startswith(study.lower() + "_") for t in tags):
+            return study
+    return None
+
+
+def _f_number(row: dict, key: str) -> Optional[float]:
+    v = row.get(key)
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------------------
 # F1 aggregator — per-cell mean +/- CI
 # ---------------------------------------------------------------------------
 F1_CELL_KEYS = ("model", "dataset", "schedule", "depth")
 
 
 def aggregate_f1(rows: Iterable[dict]) -> List[dict]:
-    """Per-cell mean +/- 95% CI over the F1 multi-seed rows."""
+    """Per-cell deployed mean over F1 cells, from BOTH ledger schemas.
+
+    Study-tagged per-seed rows -> mean +/- 95% t-CI (``source:per_seed``).
+    Live summary rows -> one cell per (row, schedule arm) carrying the row's
+    mean + ``std_pp`` with the CI marked unavailable (``source:summary``); a
+    crashed arm (no mean) is emitted as an explicit NOT-MEASURED cell.
+    """
+    rows = list(rows)
+    table = _aggregate_f1_per_seed(rows)
+    table.extend(_aggregate_f1_summary(rows))
+    return table
+
+
+def _aggregate_f1_per_seed(rows: Sequence[dict]) -> List[dict]:
     groups: Dict[tuple, List[Tuple[float, str]]] = {}
     for r in rows:
         if r.get("study") != "F1":
@@ -322,20 +382,63 @@ def aggregate_f1(rows: Iterable[dict]) -> List[dict]:
         vals = [v for v, _ in items]
         mean, ci = _mean_ci(vals)
         table.append({
+            "source": "per_seed",
             "cell": list(key),
             "n_seeds": len(vals),
             "deployed_acc_mean": mean,
+            "std_pp": None,
             "ci95": ci,
+            "ci_available": True,
+            "measured": True,
             "run_ids": sorted(rid for _, rid in items if rid),
         })
     return table
+
+
+def _aggregate_f1_summary(rows: Sequence[dict]) -> List[dict]:
+    table = []
+    for r in rows:
+        if _summary_study(r) != "F1":
+            continue
+        for schedule in _F_SCHEDULES:
+            mean = _f_number(r, f"{schedule}_deployed_mean")
+            std_pp = _f_number(r, f"{schedule}_deployed_std_pp")
+            table.append({
+                "source": "summary",
+                "cell": [r.get("model"), r.get("dataset"), schedule, r.get("depth")],
+                "n_seeds": int(r.get("n_seeds") or 0),
+                "deployed_acc_mean": mean,
+                "std_pp": std_pp,
+                "ci95": None,
+                "ci_available": False,
+                "measured": mean is not None,
+                "ann_test_acc_mean": _f_number(r, "ann_test_acc_mean"),
+                "validity": r.get("deployment_validity") or r.get("validity"),
+                "verdict": r.get("verdict"),
+                "item_id": r.get("item_id"),
+            })
+    return sorted(table, key=lambda r: tuple(
+        "" if c is None else str(c) for c in r["cell"]))
 
 
 # ---------------------------------------------------------------------------
 # F2 aggregator — head-to-head delta (percentile-norm - default)
 # ---------------------------------------------------------------------------
 def aggregate_f2(rows: Iterable[dict]) -> List[dict]:
-    """Per-cell delta_pp = percentile-norm mean - default mean (only paired cells)."""
+    """Per-cell delta_pp = percentile-norm mean - default mean, from BOTH schemas.
+
+    Study-tagged: pair the per-seed 0.99 vs 1.0 arms per cell (``source:per_seed``).
+    Live summary: the ``quantile_head_to_head`` row carries both arms' means per
+    schedule (``{schedule}_deployed_mean_q099``/``_q10``) -> one cell per schedule
+    with the delta recomputed from the means (``source:summary``, CI unavailable).
+    """
+    rows = list(rows)
+    table = _aggregate_f2_per_seed(rows)
+    table.extend(_aggregate_f2_summary(rows))
+    return table
+
+
+def _aggregate_f2_per_seed(rows: Sequence[dict]) -> List[dict]:
     default: Dict[tuple, List[float]] = {}
     percentile: Dict[tuple, List[float]] = {}
     for r in rows:
@@ -355,6 +458,7 @@ def aggregate_f2(rows: Iterable[dict]) -> List[dict]:
         d_mean, d_ci = _mean_ci(default[key])
         p_mean, p_ci = _mean_ci(percentile[key])
         table.append({
+            "source": "per_seed",
             "cell": list(key),
             "default_mean": d_mean,
             "default_ci95": d_ci,
@@ -363,8 +467,37 @@ def aggregate_f2(rows: Iterable[dict]) -> List[dict]:
             "percentile_ci95": p_ci,
             "n_percentile": len(percentile[key]),
             "delta_pp": (p_mean - d_mean) * 100.0,
+            "ci_available": True,
         })
     return table
+
+
+def _aggregate_f2_summary(rows: Sequence[dict]) -> List[dict]:
+    table = []
+    for r in rows:
+        if _summary_study(r) != "F2" or r.get("kind") != "quantile_head_to_head":
+            continue
+        for schedule in _F_SCHEDULES:
+            d_mean = _f_number(r, f"{schedule}_deployed_mean_q099")
+            p_mean = _f_number(r, f"{schedule}_deployed_mean_q10")
+            if d_mean is None or p_mean is None:
+                continue
+            table.append({
+                "source": "summary",
+                "cell": [r.get("model"), r.get("dataset"), schedule, r.get("depth")],
+                "default_mean": d_mean,
+                "default_ci95": None,
+                "n_default": int(r.get("n_seeds") or 0),
+                "percentile_mean": p_mean,
+                "percentile_ci95": None,
+                "n_percentile": int(r.get("n_seeds") or 0),
+                "delta_pp": (p_mean - d_mean) * 100.0,
+                "ci_available": False,
+                "verdict": r.get("verdict"),
+                "item_id": r.get("item_id"),
+            })
+    return sorted(table, key=lambda r: tuple(
+        "" if c is None else str(c) for c in r["cell"]))
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +507,23 @@ F3_CELL_KEYS = ("model", "dataset")
 
 
 def aggregate_f3(rows: Iterable[dict]) -> List[dict]:
-    """Per-(model,dataset) delta_pp = pretrained mean - from_scratch mean."""
+    """Dual-regime delta_pp = pretrained mean - from_scratch mean, BOTH schemas.
+
+    Study-tagged: pair the per-seed from_scratch vs pretrained arms per
+    (model,dataset) (``source:per_seed``).
+    Live summary: the ``mode`` row carries the from_scratch arm's REAL per-seed
+    lists per schedule; the pretrained arm crashed (a ``dual_regime_missing_arms``
+    row, ``n_seeds=0``). One cell per schedule surfaces the from_scratch mean and
+    emits the pretrained arm + delta as NOT-MEASURED (``delta_measured:False``)
+    rather than dropping the cell.
+    """
+    rows = list(rows)
+    table = _aggregate_f3_per_seed(rows)
+    table.extend(_aggregate_f3_summary(rows))
+    return table
+
+
+def _aggregate_f3_per_seed(rows: Sequence[dict]) -> List[dict]:
     scratch: Dict[tuple, List[float]] = {}
     pretrained: Dict[tuple, List[float]] = {}
     for r in rows:
@@ -393,6 +542,7 @@ def aggregate_f3(rows: Iterable[dict]) -> List[dict]:
         s_mean, s_ci = _mean_ci(scratch[key])
         p_mean, p_ci = _mean_ci(pretrained[key])
         table.append({
+            "source": "per_seed",
             "cell": list(key),
             "from_scratch_mean": s_mean,
             "from_scratch_ci95": s_ci,
@@ -401,8 +551,51 @@ def aggregate_f3(rows: Iterable[dict]) -> List[dict]:
             "pretrained_ci95": p_ci,
             "n_pretrained": len(pretrained[key]),
             "delta_pp": (p_mean - s_mean) * 100.0,
+            "delta_measured": True,
         })
     return table
+
+
+def _seed_list_mean(row: dict, key: str) -> Tuple[Optional[float], int]:
+    vals = row.get(key)
+    if not isinstance(vals, list) or not vals:
+        return None, 0
+    nums = [float(v) for v in vals if isinstance(v, (int, float))]
+    return (fmean(nums) if nums else None), len(nums)
+
+
+def _aggregate_f3_summary(rows: Sequence[dict]) -> List[dict]:
+    table = []
+    for r in rows:
+        if _summary_study(r) != "F3" or r.get("kind") != "mode":
+            continue
+        if bool(r.get("preload_weights")):
+            continue  # this branch surfaces the from_scratch arm
+        for schedule in _F_SCHEDULES:
+            s_mean, n = _seed_list_mean(
+                r, f"{schedule}_deployed_full_test_scm_per_seed")
+            if s_mean is None:
+                s_mean = _f_number(r, f"{schedule}_deployed_mean")
+                n = int(r.get("n_seeds") or 0)
+            if s_mean is None:
+                continue
+            table.append({
+                "source": "summary",
+                "cell": [r.get("model"), r.get("dataset"), schedule],
+                "from_scratch_mean": s_mean,
+                "from_scratch_ci95": None,
+                "n_from_scratch": n,
+                "pretrained_mean": None,
+                "pretrained_ci95": None,
+                "n_pretrained": 0,
+                "delta_pp": None,
+                "delta_measured": False,
+                "ann_test_acc_mean": _f_number(r, "ann_test_acc_mean"),
+                "verdict": r.get("verdict"),
+                "item_id": r.get("item_id"),
+            })
+    return sorted(table, key=lambda r: tuple(
+        "" if c is None else str(c) for c in r["cell"]))
 
 
 def _is_close(a, b, tol: float = 1e-9) -> bool:
@@ -424,37 +617,59 @@ def _fmt_cell(cell: Sequence) -> str:
     return " / ".join("" if c is None else str(c) for c in cell)
 
 
+def _fmt_acc(v) -> str:
+    return "NOT-MEASURED" if v is None else f"{v:.4f}"
+
+
+def _fmt_delta(v) -> str:
+    return "NOT-MEASURED" if v is None else f"{v:+.2f}"
+
+
+def _f1_spread(r: dict) -> str:
+    """Honest dispersion column: a real CI for per-seed cells, the carried
+    std_pp marked CI-unavailable for summary cells, ``n/a`` when neither."""
+    if r.get("ci_available") and r.get("ci95") is not None:
+        return f"+/- {r['ci95']:.4f}"
+    if r.get("std_pp") is not None:
+        return f"std {r['std_pp']:.2f}pp (CI-unavailable)"
+    return "n/a (CI-unavailable)"
+
+
 def _f1_md(table: List[dict]) -> str:
     lines = ["## F1 — confidence intervals (per cell, mean +/- 95% CI)", "",
-             "| cell (model/dataset/schedule/depth) | n | deployed mean | +/- 95% CI |",
-             "|---|---|---|---|"]
+             "| cell (model/dataset/schedule/depth) | n | deployed mean | spread | source |",
+             "|---|---|---|---|---|"]
     for r in table:
         lines.append(
             f"| {_fmt_cell(r['cell'])} | {r['n_seeds']} | "
-            f"{r['deployed_acc_mean']:.4f} | {r['ci95']:.4f} |")
+            f"{_fmt_acc(r['deployed_acc_mean'])} | {_f1_spread(r)} | "
+            f"{r.get('source', 'per_seed')} |")
     return "\n".join(lines)
 
 
 def _f2_md(table: List[dict]) -> str:
     lines = ["## F2 — baseline head-to-head (percentile-norm vs default activation-scale)",
              "",
-             "| cell | default mean | percentile mean | delta (pp) |",
-             "|---|---|---|---|"]
+             "| cell | default mean | percentile mean | delta (pp) | source |",
+             "|---|---|---|---|---|"]
     for r in table:
+        ci = "" if r.get("ci_available") else " (CI-unavailable)"
         lines.append(
-            f"| {_fmt_cell(r['cell'])} | {r['default_mean']:.4f} | "
-            f"{r['percentile_mean']:.4f} | {r['delta_pp']:+.2f} |")
+            f"| {_fmt_cell(r['cell'])} | {_fmt_acc(r['default_mean'])} | "
+            f"{_fmt_acc(r['percentile_mean'])} | {_fmt_delta(r['delta_pp'])}{ci} | "
+            f"{r.get('source', 'per_seed')} |")
     return "\n".join(lines)
 
 
 def _f3_md(table: List[dict]) -> str:
     lines = ["## F3 — dual-regime (from_scratch vs pretrained)", "",
-             "| model / dataset | from_scratch mean | pretrained mean | delta (pp) |",
-             "|---|---|---|---|"]
+             "| cell | from_scratch mean | pretrained mean | delta (pp) | source |",
+             "|---|---|---|---|---|"]
     for r in table:
         lines.append(
-            f"| {_fmt_cell(r['cell'])} | {r['from_scratch_mean']:.4f} | "
-            f"{r['pretrained_mean']:.4f} | {r['delta_pp']:+.2f} |")
+            f"| {_fmt_cell(r['cell'])} | {_fmt_acc(r['from_scratch_mean'])} | "
+            f"{_fmt_acc(r['pretrained_mean'])} | {_fmt_delta(r['delta_pp'])} | "
+            f"{r.get('source', 'per_seed')} |")
     return "\n".join(lines)
 
 
