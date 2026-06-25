@@ -70,7 +70,8 @@
       "grad_clip_norm": 1.0,
       "layer_wise_lr_decay": 1.0,
       "label_smoothing": 0.0
-    }
+    },
+    "tuning_keepbest_certified": true
   },
   "target_metric_override": null,
   "start_step": null,
