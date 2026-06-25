@@ -1,0 +1,84 @@
+{
+  "backend_pairs": [
+    [
+      "nevresim",
+      "hcm"
+    ],
+    [
+      "hcm",
+      "lava"
+    ]
+  ],
+  "justifies_collapse": true,
+  "methodology": "LIVE cross_sim_parity screen: build_torch_and_hcm converts a representative model and runs the torch neuromorphic-forward (NF) reference (the nevresim Python sim path domain) against the deployed HCM/SCM analytical sim for each (mode, packing) cell; the per-perceptron deployed-VALUE records are compared by cross_sim_parity.measured_max_abs_diff (wrapping nf_scm_parity.compare_normalized_records, atol=0). nevresim(Python)/HCM/SCM are the fast already-bit-exact reference pair (the torch<->sim fidelity lock proves it cell-by-cell). SANA-FE/Lava are screened by CAPABILITY only (derived from the _BACKEND_CAPS registry, never run-to-hang); lava is LIF-only so a ttfs_cycle_based cell is INAPPLICABLE. EXISTING multi-backend parity LOCKS establish nevresim/sanafe/lava == HCM in the validated corner (env-gated when binaries absent): tests/integration/test_scm_hcm_sim_parity.py (SCM==HCM bit-identical, all modes), test_nf_hcm_per_node_spike_parity_mmixcore.py (per-neuron NF==HCM LIF), tests/unit/pipelining/pipeline_steps/test_nf_scm_parity_gate.py (NF<->SCM per-neuron gate), test_execute_simulator.py (nevresim execute-parity, compiler-gated), test_sanafe_hcm_parity.py (SANA-FE per-core spike parity, sanafe-gated), test_loihi_hcm_spike_parity.py (Lava LIF per-core parity, lava-gated). FIDELITY-ONLY (deployed value): a disagreement among faithful sims of the SAME contract is a BUG, not an interaction. CAPABILITY (which backend x mode runs) and COST/UTILIZATION (per-backend energy) are NOT collapsed -- recorded as frontiers, exactly like the encoding_placement fidelity-only precedent.",
+  "outcomes": [
+    {
+      "backend_pair": [
+        "nevresim",
+        "hcm"
+      ],
+      "cell": "lif/identity@T8",
+      "max_abs_diff": 0.0,
+      "reason": null,
+      "state": "agree",
+      "tolerance": 0.0
+    },
+    {
+      "backend_pair": [
+        "nevresim",
+        "hcm"
+      ],
+      "cell": "lif/neuron_split@T8",
+      "max_abs_diff": 0.0,
+      "reason": null,
+      "state": "agree",
+      "tolerance": 0.0
+    },
+    {
+      "backend_pair": [
+        "nevresim",
+        "hcm"
+      ],
+      "cell": "ttfs_cycle_based/cascaded/identity@T8",
+      "max_abs_diff": 0.0,
+      "reason": null,
+      "state": "agree",
+      "tolerance": 0.0
+    },
+    {
+      "backend_pair": [
+        "hcm",
+        "lava"
+      ],
+      "cell": "ttfs_cycle_based/cascaded/identity@T8",
+      "max_abs_diff": null,
+      "reason": "backend 'lava' cannot run spiking_mode='ttfs_cycle_based' (unsupported in the capability registry) \u2014 screened INAPPLICABLE, not executed",
+      "state": "inapplicable",
+      "tolerance": 0.0
+    },
+    {
+      "backend_pair": [
+        "nevresim",
+        "hcm"
+      ],
+      "cell": "ttfs_cycle_based/cascaded/neuron_split@T8",
+      "max_abs_diff": 0.0,
+      "reason": null,
+      "state": "agree",
+      "tolerance": 0.0
+    },
+    {
+      "backend_pair": [
+        "hcm",
+        "lava"
+      ],
+      "cell": "ttfs_cycle_based/cascaded/neuron_split@T8",
+      "max_abs_diff": null,
+      "reason": "backend 'lava' cannot run spiking_mode='ttfs_cycle_based' (unsupported in the capability registry) \u2014 screened INAPPLICABLE, not executed",
+      "state": "inapplicable",
+      "tolerance": 0.0
+    }
+  ],
+  "schema": "cross_sim_parity/v1",
+  "tolerance": 0.0
+}

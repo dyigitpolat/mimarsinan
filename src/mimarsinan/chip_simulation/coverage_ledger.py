@@ -56,11 +56,14 @@ __all__ = [
     "AXES",
     "AXIS_WILDCARD",
     "collapse_orthogonal_axes",
+    "collapsed_axis_representatives",
     "interacting_axes",
     "active_axes",
     "HypervolumeCell",
     "CoverageStatus",
     "FlagMetadata",
+    "PLACEMENT_FIXABLE_DEFAULT_OWNER",
+    "PLACEMENT_FIXABLE_FIX_PATH",
     "KNOWN_CRACKED_REGIONS",
     "classify_validity_tier",
     "claimed_subproduct",
@@ -269,22 +272,59 @@ AXES: Tuple[HypervolumeAxis, ...] = (
         name="backend",
         kind=AxisKind.ORTHOGONAL,
         values=("nevresim", "sanafe", "hcm", "lava"),
-        screening_status=ScreeningStatus.ASSERTED_UNSCREENED,
+        screening_status=ScreeningStatus.SCREENED_COLLAPSED,
+        representative="sanafe",
+        screening_artifact=(
+            "docs/research/findings/backend_cross_sim_screen.md (+ "
+            "backend_cross_sim_screen.json) — a LIVE cross_sim_parity screen records "
+            "nevresim/HCM/SCM (Python reference paths) AGREE to max_abs_diff=0 on "
+            "representative cells spanning lif + ttfs_cycle_based × identity + "
+            "neuron_split; the existing multi-backend parity LOCKS "
+            "(tests/integration/test_scm_hcm_sim_parity.py, "
+            "test_nf_hcm_per_node_spike_parity_mmixcore.py, "
+            "tests/unit/pipelining/pipeline_steps/test_nf_scm_parity_gate.py, and the "
+            "env-gated nevresim test_execute_simulator.py / SANA-FE "
+            "test_sanafe_hcm_parity.py / Lava test_loihi_hcm_spike_parity.py) establish "
+            "nevresim/sanafe/lava≡HCM in the validated corner. lava is INAPPLICABLE for "
+            "TTFS (LIF-only capability gap). FIDELITY-ONLY (deployed value): faithful "
+            "sims of the SAME contract must agree (a disagreement is a BUG, not an "
+            "interaction). CAPABILITY (which backend×mode runs) and COST/UTILIZATION "
+            "(per-backend energy) are NOT collapsed — frontiers, like the "
+            "encoding_placement precedent."
+        ),
         justification=(
-            "backends are parity-locked in the VALIDATED CORNER only; no cross-cell "
-            "screen proves backend-equivalence across the product, so counted "
-            "interacting (enumerated) until a P3 screen"
+            "FAITHFULNESS axis: backends are different SIMULATORS of the same "
+            "deployment contract — they collapse on a measured fidelity/parity "
+            "artifact (faithful sims agree on the deployed value), NOT a semantic "
+            "screen. Collapsed to one representative for fidelity; capability + cost "
+            "stay frontiers."
         ),
     ),
     HypervolumeAxis(
         name="mapping_strategy",
         kind=AxisKind.ORTHOGONAL,
         values=("packed", "identity", "neuron_split", "coalesced"),
-        screening_status=ScreeningStatus.ASSERTED_UNSCREENED,
+        screening_status=ScreeningStatus.SCREENED_COLLAPSED,
+        representative="packed",
+        screening_artifact=(
+            "docs/research/findings/mapping_strategy_fidelity_screen.md — "
+            "tests/integration/test_torch_sim_fidelity.py PROVES torch-NF == deployed "
+            "HCM sim BIT-EXACT (float64 atol=0; LIF per-neuron k==k) for "
+            "identity / neuron_split / axon_fuse across every bit-exact mode × model "
+            "(single-core, multi-core, sync-point). Equivalent packings of the SAME "
+            "contract compute the SAME deployed value (a mismatch is a packing BUG). "
+            "FIDELITY-ONLY (deployed value): coalescing carries the GAP-1 caveat — "
+            "value-domain bit-exact + spike-conserved, but per-neuron ATTRIBUTION "
+            "historically cracked at VGG scale (recorded VALUE_DOMAIN_ONLY). COST/"
+            "UTILIZATION (cores, axon budget per strategy) is NOT collapsed — frontier."
+        ),
         justification=(
-            "NO SCREEN YET — the torch↔sim fidelity lock holds per-strategy in the "
-            "corner, but GAP-1 (coalescing+neuron_split at VGG scale) is KNOWN-CRACKED "
-            "for attribution; counted interacting (enumerated) until a P3 screen"
+            "FAITHFULNESS axis: mapping strategies are different PACKINGS of the same "
+            "deployment contract — they collapse on a measured bit-exact fidelity "
+            "artifact (equivalent packings agree on the deployed value), NOT a semantic "
+            "screen. Collapsed to one representative for fidelity; per-neuron "
+            "attribution for coalescing stays VALUE_DOMAIN_ONLY and cost stays a "
+            "frontier."
         ),
     ),
     HypervolumeAxis(
@@ -390,6 +430,28 @@ def collapse_orthogonal_axes(
     )
 
 
+def collapsed_axis_representatives(
+    axes: Sequence[HypervolumeAxis] = AXES,
+) -> Dict[str, str]:
+    """The SSOT ``{collapsed axis name → representative}`` map.
+
+    Every ``SCREENED_COLLAPSED`` axis folds to a single representative value (its
+    ``__post_init__`` already guarantees a linked artifact). A collapsed axis is NOT
+    a cell coordinate, so any cell value on it must canonicalize to the representative
+    — this map is the single place that mapping lives, consumed by ``cell_key`` /
+    ``cert_cell`` (fold ``backend``) and ``HypervolumeCell.from_key`` (default a
+    dropped extending axis like ``mapping_strategy``). A collapsed axis with no
+    explicit ``representative`` falls back to its first screened value.
+    """
+    reps: Dict[str, str] = {}
+    for axis in axes:
+        if axis.screening_status is ScreeningStatus.SCREENED_COLLAPSED:
+            reps[axis.name] = axis.representative or (
+                axis.values[0] if axis.values else ""
+            )
+    return reps
+
+
 def interacting_axes(
     axes: Sequence[HypervolumeAxis] = AXES,
 ) -> Tuple[HypervolumeAxis, ...]:
@@ -410,6 +472,13 @@ def active_axes() -> Tuple[HypervolumeAxis, ...]:
 # The cell-key coordinate order (collapsed axes excluded). The (firing × sync ×
 # backend) prefix is the embedded CertificationCell; the rest extend it.
 _CELL_AXES: Tuple[str, ...] = tuple(a.name for a in collapse_orthogonal_axes(AXES))
+
+# SSOT: the representative each SCREENED_COLLAPSED axis folds to. ``cell_key`` /
+# ``cert_cell`` fold a collapsed axis's value to its representative so two rows
+# differing ONLY in a collapsed axis (e.g. backend nevresim vs sanafe, or
+# mapping_strategy identity vs packed) map to the SAME cell; ``from_key`` defaults a
+# dropped extending axis (mapping_strategy) to it so the round-trip still works.
+_COLLAPSED_REPRESENTATIVES: Dict[str, str] = collapsed_axis_representatives(AXES)
 
 
 @dataclass(frozen=True)
@@ -439,9 +508,15 @@ class HypervolumeCell:
 
     @property
     def cert_cell(self) -> CertificationCell:
-        """The embedded (firing × sync × backend) E6 cell."""
+        """The embedded (firing × sync × backend) E6 cell.
+
+        When ``backend`` is a SCREENED_COLLAPSED axis it folds to its representative
+        so two cells differing ONLY in backend (a faithfulness axis) produce the SAME
+        cert prefix — the collapse must not leak distinct cells through the cert key.
+        """
         sync = None if self.sync in (None, "none", "") else self.sync
-        return CertificationCell(firing=self.firing, sync=sync, backend=self.backend)
+        backend = _COLLAPSED_REPRESENTATIVES.get("backend", self.backend)
+        return CertificationCell(firing=self.firing, sync=sync, backend=backend)
 
     @property
     def cell_key(self) -> str:
@@ -460,7 +535,14 @@ class HypervolumeCell:
 
     @classmethod
     def from_key(cls, key: str) -> "HypervolumeCell":
-        """Parse a canonical full-tuple key back into a cell."""
+        """Parse a canonical full-tuple key back into a cell.
+
+        A SCREENED_COLLAPSED extending axis (e.g. ``mapping_strategy``) is dropped
+        from the key, so it is absent from the parsed segments; it defaults to its
+        representative (the SSOT ``_COLLAPSED_REPRESENTATIVES``) so the round-trip
+        ``from_key(cell.cell_key)`` reconstructs the canonical cell. ``backend`` is
+        already folded inside the cert prefix.
+        """
         cert_part, *rest = key.split("|")
         cert = CertificationCell.from_key(cert_part)
         kv = {}
@@ -469,18 +551,27 @@ class HypervolumeCell:
                 raise ValueError(f"malformed hypervolume cell segment {seg!r} in {key!r}")
             axis, value = seg.split("=", 1)
             kv[axis] = value
+
+        def _ext(axis: str) -> str:
+            if axis in kv:
+                return kv[axis]
+            rep = _COLLAPSED_REPRESENTATIVES.get(axis)
+            if rep is not None:
+                return rep
+            raise KeyError(axis)
+
         return cls(
             firing=cert.firing,
             sync=cert.sync,
             backend=cert.backend,
-            vehicle=kv["vehicle"],
-            dataset=kv["dataset"],
-            regime=kv["regime"],
-            quantization=kv["quantization"],
-            pruning=kv["pruning"],
-            mapping_strategy=kv["mapping_strategy"],
-            s=kv["S"],
-            depth=kv["depth"],
+            vehicle=_ext("vehicle"),
+            dataset=_ext("dataset"),
+            regime=_ext("regime"),
+            quantization=_ext("quantization"),
+            pruning=_ext("pruning"),
+            mapping_strategy=_ext("mapping_strategy"),
+            s=_ext("S"),
+            depth=_ext("depth"),
         )
 
 
@@ -717,25 +808,38 @@ _WILDCARD_DEFAULT_AXES: Tuple[str, ...] = ("S", "depth")
 
 
 def _enumerate_claim(chosen: Mapping[str, Sequence[str]]) -> List[HypervolumeCell]:
-    """Build the deduped cartesian product of per-axis value lists into cells."""
+    """Build the deduped cartesian product of per-axis value lists into cells.
+
+    Only the ACTIVE (non-collapsed) axes vary in the product; a SCREENED_COLLAPSED
+    axis (``backend`` / ``mapping_strategy``) is NOT a coordinate, so it folds to its
+    representative on every cell. ``cell_key`` re-folds collapsed coordinates, so even
+    if a caller pins a collapsed axis to several values the cells dedupe to one.
+    """
     ordered_axes = list(_CELL_AXES)
+
+    def field(kv: Dict[str, str], axis: str) -> str:
+        if axis in kv:
+            return kv[axis]
+        return _COLLAPSED_REPRESENTATIVES.get(axis, "")
+
     cells: List[HypervolumeCell] = []
     for combo in itertools.product(*(tuple(chosen[a]) for a in ordered_axes)):
         kv = dict(zip(ordered_axes, combo))
-        sync = None if kv["sync"] in (None, "none", "") else kv["sync"]
+        raw_sync = field(kv, "sync")
+        sync = None if raw_sync in (None, "none", "") else raw_sync
         cells.append(
             HypervolumeCell(
-                firing=kv["firing"],
+                firing=field(kv, "firing"),
                 sync=sync if sync is not None else "none",
-                backend=kv["backend"],
-                vehicle=kv["vehicle"],
-                dataset=kv["dataset"],
-                regime=kv["regime"],
-                quantization=kv["quantization"],
-                pruning=kv["pruning"],
-                mapping_strategy=kv["mapping_strategy"],
-                s=kv["S"],
-                depth=kv["depth"],
+                backend=field(kv, "backend"),
+                vehicle=field(kv, "vehicle"),
+                dataset=field(kv, "dataset"),
+                regime=field(kv, "regime"),
+                quantization=field(kv, "quantization"),
+                pruning=field(kv, "pruning"),
+                mapping_strategy=field(kv, "mapping_strategy"),
+                s=field(kv, "S"),
+                depth=field(kv, "depth"),
             )
         )
     # Dedupe (a collapsed axis pinned to multiple values yields identical cells).
@@ -831,15 +935,19 @@ class FlagMetadata:
 
     ``cell_key`` names the flagged cell; ``owner`` is who owns driving the flag to
     resolution (``None`` ⇒ UNOWNED); ``flag_ts`` is when it was raised; ``age_days`` is
-    its age vs the report's ``now_ts`` (``None`` when either timestamp is missing). An
-    UNOWNED flag aged past the CI threshold is a guard violation — a flag must not rot
-    without an owner.
+    its age vs the report's ``now_ts`` (``None`` when either timestamp is missing);
+    ``fix_path`` is the named resolution step when the flag has a KNOWN fix (e.g. a
+    placement-fixable flag's encoding-offload flip), else ``None``. An UNOWNED flag aged
+    past the CI threshold is a guard violation — a flag must not rot without an owner;
+    a placement-fixable flag is auto-assigned the standing placement-offload owner so it
+    is never UNOWNED.
     """
 
     cell_key: str
     owner: Optional[str]
     flag_ts: Optional[str]
     age_days: Optional[int]
+    fix_path: Optional[str] = None
 
     @property
     def is_unowned(self) -> bool:
@@ -952,6 +1060,7 @@ class CoverageReport:
                     "owner": m.owner,
                     "flag_ts": m.flag_ts,
                     "age_days": m.age_days,
+                    "fix_path": m.fix_path,
                 }
                 for m in self.flag_metadata
             ],
@@ -962,6 +1071,27 @@ class CoverageReport:
 # a placement fix (offloadable encoder), NOT a research gap. Any other flag category is
 # a research gap (an unsupported host op with no on-chip SNN mapping yet).
 _PLACEMENT_FLAG_MARKER = "PLACEMENT"
+
+# The DEFAULT owner + fix-path auto-assigned to a placement-fixable flag that carries no
+# explicit owner. A placement-fixable flag is NOT drift: it has a KNOWN fix (flip the
+# encoding-layer placement to offload, mapping the host-placed encoder on-chip and
+# un-flagging the cell), so it is owned by the standing placement-offload program rather
+# than left UNOWNED to rot. A research-gap flag (an unsupported host op with no on-chip
+# SNN mapping) gets NO default owner — it is a genuine open research target.
+PLACEMENT_FIXABLE_DEFAULT_OWNER = "program:placement-offload"
+PLACEMENT_FIXABLE_FIX_PATH = "set encoding_layer_placement=offload"
+
+
+def _is_placement_fixable_flag(row: Mapping[str, Any]) -> bool:
+    """True iff a VALID_FLAGGED row's flag is PLACEMENT-FIXABLE (a known offload fix).
+
+    A flag is placement-fixable when it names a structured ``placement_fixable_ops``
+    encoder AND names NO ``research_gap_ops`` (a row that ALSO owes a real research gap
+    is not auto-resolvable), or — for a live ledger row that predates those fields —
+    when its ``deployment_validity`` tier carries the ``_placement`` suffix.
+    """
+    gaps, placement = _mine_flagged_ops(row)
+    return bool(placement) and not gaps
 
 
 def _mine_flagged_ops(row: Mapping[str, Any]) -> Tuple[List[str], List[str]]:
@@ -1070,6 +1200,14 @@ def coverage_report(
         research_gaps.update(gaps)
         placement_fixable.update(placement)
         owner = _flag_owner_of(row)
+        # A placement-fixable flag has a KNOWN fix (the encoding-offload flip), so it is
+        # auto-assigned the standing placement-offload owner + fix-path rather than left
+        # UNOWNED — an explicit owner on the row always wins.
+        fix_path = None
+        if _is_placement_fixable_flag(row):
+            fix_path = PLACEMENT_FIXABLE_FIX_PATH
+            if owner is None:
+                owner = PLACEMENT_FIXABLE_DEFAULT_OWNER
         flag_ts = _flag_ts_of(row)
         flagged_on = _parse_ts(flag_ts)
         age_days = (now - flagged_on).days if flagged_on is not None else None
@@ -1081,6 +1219,7 @@ def coverage_report(
                     owner=owner,
                     flag_ts=flag_ts,
                     age_days=age_days,
+                    fix_path=fix_path,
                 ),
             )
 
