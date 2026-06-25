@@ -485,11 +485,11 @@ def write_findings_markdown(path: Optional[str], *, f1=None, f2=None, f3=None) -
 def default_matrix() -> List[MatrixCell]:
     return [
         MatrixCell(model="deep_cnn", dataset="MNIST_DataProvider",
-                   template="templates/mnist_deep_cnn_cascaded.json",
+                   template="templates/mnist_deep_cnn_d8_cascaded.json",
                    schedules=("cascaded", "synchronized"), depths=(4, 6, 8),
                    tags=(("ws", "F"), ("trainable", True))),
         MatrixCell(model="deep_cnn", dataset="FashionMNIST_DataProvider",
-                   template="templates/mnist_deep_cnn_cascaded.json",
+                   template="templates/mnist_deep_cnn_d8_cascaded.json",
                    schedules=("cascaded", "synchronized"), depths=(4, 6, 8),
                    tags=(("ws", "F"), ("trainable", True))),
         MatrixCell(model="lenet5", dataset="MNIST_DataProvider",

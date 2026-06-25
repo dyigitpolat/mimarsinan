@@ -28,6 +28,20 @@ import experiment_matrix as em  # noqa: E402
 import scheduler as sch  # noqa: E402
 
 
+def test_default_matrix_templates_exist():
+    """Every template ``default_matrix()`` ships MUST exist on disk — else the
+    primary deep_cnn studies silently never enqueue (``scheduler.refill`` skips
+    a FileNotFoundError batch, so the bug is non-fatal but the studies vanish)."""
+    cells = em.default_matrix()
+    assert cells, "default_matrix() is empty"
+    for cell in cells:
+        path = os.path.join(_REPO, cell.template)
+        assert os.path.exists(path), (
+            f"default_matrix template missing: {cell.template!r} "
+            f"(resolved {path!r}) — the study would never instantiate"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Cell fixtures: (model, dataset, template) covered/valid points.
 # ---------------------------------------------------------------------------
