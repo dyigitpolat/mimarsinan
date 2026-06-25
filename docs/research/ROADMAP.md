@@ -48,6 +48,14 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
   capability+cost kept as frontiers; the 38 placement-fixable flags auto-owned `program:placement-offload`;
   honest deep_cnn coverage re-priced **0.23%→3.75%** measured). Introduced the **faithfulness-axis vs
   semantic-knob** distinction (the integrity rule for which axes may collapse on a fidelity artifact).
+- **Wave-3 landed (main `f17f0ed2`, dynamic-workflow build→adversarial-verify):** E5 Pareto decision
+  layer (cascaded-vs-synchronized **REGIME_DEPENDENT** — cascaded NOT retired, it wins the hard-latency
+  budget; cost is a model-estimate-with-band, per-sample energy is the named UNINSTRUMENTED gap) +
+  `propose_recipe(budget)`; D3 scheduled-build probe (genuine overflow→scheduling, bit-exact, VGG 16/142
+  confirmed-by-mechanism); GAP1R honestly SHARPENED the GAP-1 attribution tag (kept VALUE_DOMAIN_ONLY —
+  production gate is identity-mapping-only; only the harness reassembler was fixed). Research-round
+  independently corroborated E5 (no working config-level firing-gain rescue lever at the convnet d6 onset).
+  **F5 research document** (`RESEARCH_DOCUMENT.md`) drafted, all sections measured-and-cited.
 - **Infra note (Wave 1):** the harness's Workflow `isolation:'worktree'` snapshots a STALE base
   (`bcacfeb`, an old session HEAD — its object DB lacks current `main`); the A4 base-check guard caught
   it. Dispatch pattern is now **manually-created `git worktree` from current `main` + absolute-path
@@ -96,7 +104,7 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 |---|---|---|---|
 | D1 Residual Tier-0 (host add, bit-exact) | ✅ | — | ◦ |
 | D2 **Residual Tier-1** (on-chip param-free merge) — round 3 = LIF merge-window alignment | 🔬 | D1 | ◦◦ |
-| D3 **Scheduled-scale realization** — real `_build_scheduled` end-to-end probe (confirm 16/142 + bit-exactness) | ⬜ | E4✅ | ◦–◦◦ |
+| D3 **Scheduled-scale realization** — real `_build_scheduled` end-to-end probe (confirm 16/142 + bit-exactness) | ✅ Wave3 (genuine overflow→3 stages `[6,6,2]`, 3 reprogram+33 reuse, bit-exact max\|Δ\|=0; VGG 16/142 confirmed-by-mechanism) | E4✅ | ◦–◦◦ |
 | D4 **Pruning × scheduling** — pruning shrinks cores → fewer reprogram phases (attacks the 80% cost term) | ⬜ | C1,D3 | ◦◦ |
 | D5 **On-chip attention / LayerNorm** — THE transformer contribution (E7 foreclosed the cheap path) | ⬜ | — | ◦◦◦ |
 | D6 timm/torchvision bridge (ResNet-50/ViT-B near-SOTA checkpoints) | ⬜ | B3 | ◦◦ |
@@ -105,9 +113,9 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 ### E — Decision & science closure
 | Item | Status | Dep | Cost |
 |---|---|---|---|
-| E5 **Pareto allocator** (consumes C1/C2 cost) → cascaded-vs-synchronized verdict on a valid vehicle | ⬜ | C2 | ◦◦ |
-| E5b **Retire cascaded-rescue** if synchronized dominates; characterize death-cascade as finished science | ⬜ | E5 | ◦ |
-| E5c **Automatic recipe selection** — `propose_recipe` picks (mode, schedule, S, placement) from the budget/Pareto (the "automatic genericity" evidence) | ⬜ | E5 | ◦◦ |
+| E5 **Pareto allocator** (consumes C1/C2 cost) → cascaded-vs-synchronized verdict on a valid vehicle | ✅ Wave3 (`pareto.py`; gap +6.06/+7.19/+11.34pp measured; cost=model-estimate+band, per-sample energy UNINSTRUMENTED gap) | C2 | ◦◦ |
+| E5b **Retire cascaded-rescue** if synchronized dominates; characterize death-cascade as finished science | ✅ Wave3 — verdict **REGIME_DEPENDENT, NOT retired** (cascaded ~2.7–2.9× lower latency keeps it on the front at hard-latency budgets; synchronized = accuracy default). Research-round corroborates: no working config rescue lever at the convnet d6 onset | E5 | ◦ |
+| E5c **Automatic recipe selection** — `propose_recipe` picks (mode, schedule, S, placement) from the budget/Pareto (the "automatic genericity" evidence) | ✅ Wave3 (`propose_recipe(budget)`: accuracy→sync, hard-latency→cascaded) | E5 | ◦◦ |
 
 ### F — Publication-grade rigor (the venue bar; gated on A–E trustworthy)
 | Item | Status | Dep | Cost |

@@ -43,7 +43,7 @@ analytical reference, Lava) → `certify` (parity gates + cost extraction). One 
 | Coverage ledger + **P1 self-audit** | `chip_simulation/coverage_ledger.py`, `coverage_ci.py` | genericity as a MEASURED fraction; the **denominator is a function of each axis's screening status** (collapse-on-a-hunch is structurally impossible — a collapse RAISES without a linked artifact); flag aging; per-region attribution fidelity; CI-enforced |
 | Defensible cost model + band | `chip_simulation/weight_reuse_cost_model.py`, `cost_extraction.py` | weight-reuse mJ as a `(lo, mid, hi)` band from cited DRAM/HBM coefficients; default 0.0 byte-identical |
 | Cross-simulator parity screen | `chip_simulation/cross_sim_parity.py` | 3-state AGREE(max_abs_diff) / DISAGREE(gap) / INAPPLICABLE(capability); `justifies_collapse` honesty gate |
-| Pareto decision layer | `chip_simulation/pareto.py` | ⟦pending Wave-3 E5⟧ cascaded-vs-synchronized verdict + `propose_recipe` |
+| Pareto decision layer | `chip_simulation/pareto.py` | cascaded-vs-synchronized verdict (REGIME_DEPENDENT, conditional on a cost band) + `propose_recipe(budget)` |
 | Campaign loop | `scripts/campaign/{scheduler,director}.py`, `scripts/gpu/campaign_runner.py` | scheduler FILLS · runner DRAINS · director GROWS+FLAGS · research-round CONSOLIDATES; validity+capacity pre-checks reject infeasible/invalid configs at enqueue |
 | Self-defense guards | `scripts/campaign/guards.py` | base-check (stale-base trap), stash-intact, `fcntl` singleton |
 
@@ -114,8 +114,13 @@ irreducible soft-cores**. The **Scheduled path** makes it *feasible-via-scheduli
 time-multiplexing across ~158 reprogram phases; **time-domain weight-reuse** (load weights once,
 stream data) re-factors this into ~**16 reprogram + 142 reuse** phases. The defensible cost model
 prices VGG@224 ≈ **13.4 mJ** (band 1.5–49.3, ~80% weight-DMA) — a *model-estimate with an
-uncertainty band*, the honest form for a number with no measured ground truth yet. ⟦Wave-3 D3
-confirms the phase decomposition + bit-exactness on a real built graph.⟧
+uncertainty band*, the honest form for a number with no measured ground truth yet. **D3 confirmed the
+mechanism end-to-end (measured):** a small model overflowing a 6-core budget genuinely triggers the
+Scheduled path (`phase_count=3>1`, stages `[6,6,2]` vs single-pool `[12,2]` — a real build-level
+split, not an estimate echo), realizes 3 reprogram + 33 reuse passes over 3 weight banks, and is
+**bit-exact** (`max|Δ|=0.0` scheduled-vs-reference and scheduled-vs-torch, non-degenerate control).
+The VGG@224 16-reprogram/142-reuse figure is thus *confirmed-by-mechanism*; the full ImageNet build
+itself remains a GPU-weeks run, not yet done.
 
 ### 4.6 Attribution fidelity — value-domain vs per-neuron
 The instrument distinguishes value-domain bit-exactness (deployed accuracy) from per-neuron
@@ -123,9 +128,25 @@ attribution. **GAP-1** (per-neuron attribution under coalescing + output-tiling-
 reorder) was fixed this campaign via joint `(perceptron_output_slice, ir_id)` keying — bit-exact,
 value-domain byte-identical. The residual Tier-1 merge remains the sole value-domain-only region.
 
-### 4.7 Decision science — cascaded vs synchronized ⟦pending Wave-3 E5⟧
-*(Filled from the E5 Pareto landing: the cascaded-vs-synchronized Pareto verdict under the
-cost-band, the retire-or-regime recommendation, and `propose_recipe(budget)` behavior.)*
+### 4.7 Decision science — cascaded vs synchronized (E5, measured)
+The Pareto decision layer (`pareto.py`) reads per-schedule accuracy from the ledger and prices a
+defensible cost band, then emits the verdict. **Measured accuracy gap (synchronized − cascaded):**
+mnist **+6.06pp** (d10/S4), kmnist **+7.19pp** (d8/S4), fmnist **+11.34pp** (d8/S4) — synchronized
+tracks its ANN reference within noise; the gap is the cascaded firing-gain deficit (§4.4), not a
+synchronized loss. **Cost** is a *model-estimate-with-band, not measured energy*: latency is a tight
+derivation from the documented execution model (synchronized `sim_time = S×groups`; cascaded pipelined
+`S+groups` → cascaded ~2.7–2.9× lower latency), and energy is a `cores×active_steps` proxy present
+only when cores are known; absolute per-sample spike energy is **UNINSTRUMENTED** (flagged, not
+invented — the single biggest cost gap). **Verdict: `REGIME_DEPENDENT` on every measured dataset —
+cascaded is NOT retired.** Synchronized is the accuracy-front schedule everywhere, but cascaded's
+lower pipelined latency keeps it on the (latency, accuracy) Pareto front, so it is the hard-latency-
+budget code; the verdict is explicitly **conditional on the cost band** (if measured per-sample energy
+turned out higher for cascaded it could flip to `RETIRE_CASCADED`). `propose_recipe(budget)` picks
+synchronized at an accuracy budget and cascaded at a hard-latency budget. This is independently
+corroborated by the campaign's research-round: the convnet staircase-STE *regresses* the deep_cnn d6
+onset (−5pp FMNIST, −4.33pp KMNIST) and does not compose with conversion_policy → there is **no
+working config-level firing-gain rescue lever** at the convnet onset, so synchronized stays the
+unconditional accuracy default while cascaded is retained purely for its latency regime.
 
 ## 5. Genuine future gaps (open research / capability, not deferral of understood work)
 
