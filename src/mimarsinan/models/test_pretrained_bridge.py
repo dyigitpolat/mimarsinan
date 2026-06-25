@@ -16,7 +16,10 @@ pytest.importorskip("torchvision")
 
 import torch.nn as nn
 
-from mimarsinan.models.pretrained_bridge import load_pretrained_resnet18
+from mimarsinan.models.pretrained_bridge import (
+    load_pretrained_resnet18,
+    load_pretrained_resnet50,
+)
 
 
 _SHAPE = (3, 32, 32)  # native 3-channel stem; small spatial keeps the core count sane
@@ -67,7 +70,9 @@ def test_composed_only_of_mappable_ops():
 # ── MEASURED region descriptor (framework instruments) ───────────────────────
 
 
-def _build_ir_graph(model, input_shape, num_classes, platform_constraints):
+def _build_ir_graph(
+    model, input_shape, num_classes, platform_constraints, *, encoding_placement="offload"
+):
     """Convert a native model to an IR graph the same way the pipeline does."""
     from mimarsinan.torch_mapping.converter import convert_torch_model
     from mimarsinan.mapping.ir_mapping_class import IRMapping
@@ -77,7 +82,7 @@ def _build_ir_graph(model, input_shape, num_classes, platform_constraints):
 
     flow = convert_torch_model(
         model, tuple(input_shape), int(num_classes),
-        encoding_layer_placement="offload",
+        encoding_layer_placement=encoding_placement,
     )
     mapper_repr = flow.get_mapper_repr()
     if hasattr(mapper_repr, "assign_perceptron_indices"):
@@ -136,6 +141,163 @@ def test_measured_validity_tier_is_valid_flagged():
     # MAC-majority on-chip but param-minority: the residual-boundary host cost.
     assert verdict.mac_frac >= 0.5
     assert verdict.param_frac < 0.5
+
+
+# ── PLACEMENT SWEEP: resolve the offload hypothesis on ResNet-18 ──────────────
+
+
+def _classify(loader, *, placement):
+    from mimarsinan.mapping.verification.onchip_fraction import classify_validity
+
+    return classify_validity(
+        loader(_NUM_CLASSES, pretrained=False),
+        _SHAPE,
+        _NUM_CLASSES,
+        encoding_placement=placement,
+    )
+
+
+def test_offload_does_not_lift_resnet18_to_valid():
+    """RESOLVED-STILL-FLAGGED: ``offload`` does NOT lift ResNet-18 to VALID.
+
+    The wave-5 hypothesis was that ``encoding_layer_placement=offload`` would lift
+    ResNet-18's ``param_frac`` above 0.50 (as it did for deep_mlp d8). MEASURED here
+    under BOTH placements from the SAME live instrument: it does NOT. Offload only
+    relocates the single ``placement`` Linear encoder on-chip (so it leaves
+    ``placement_fixable_ops``), nudging ``param_frac`` 0.4223 -> 0.4232 -- still a
+    param-MINORITY. The host param majority lives in the residual-boundary
+    ``Sequential`` ComputeOps (classified ``supported_host``, NOT placement-fixable),
+    which ``offload`` cannot relocate. Both placements stay VALID_FLAGGED.
+    """
+    from mimarsinan.mapping.verification.onchip_fraction import TIER_VALID_FLAGGED
+
+    subsume = _classify(load_pretrained_resnet18, placement="subsume")
+    offload = _classify(load_pretrained_resnet18, placement="offload")
+    print(
+        f"\n[ResNet18 SWEEP] subsume: tier={subsume.tier} "
+        f"param_frac={subsume.param_frac:.6f} mac_frac={subsume.mac_frac:.6f} "
+        f"fixable={subsume.placement_fixable_ops}"
+        f"\n[ResNet18 SWEEP] offload: tier={offload.tier} "
+        f"param_frac={offload.param_frac:.6f} mac_frac={offload.mac_frac:.6f} "
+        f"fixable={offload.placement_fixable_ops}"
+    )
+    # Neither placement carries a research-frontier op (pure residual CNN).
+    assert subsume.research_gap_ops == []
+    assert offload.research_gap_ops == []
+    # The verdict RESPONDS to placement: offload moves the single Linear encoder
+    # on-chip, clearing it from the placement-fixable list (live-instrument signal,
+    # not a hardcoded constant).
+    assert subsume.placement_fixable_ops == ["Linear"]
+    assert offload.placement_fixable_ops == []
+    # MEASURED fracs under each placement (recorded region descriptor).
+    assert subsume.param_frac == pytest.approx(0.422340, abs=1e-4)
+    assert subsume.mac_frac == pytest.approx(0.996931, abs=1e-4)
+    assert offload.param_frac == pytest.approx(0.423193, abs=1e-4)
+    assert offload.mac_frac == pytest.approx(0.998918, abs=1e-4)
+    # RESOLUTION: offload's param lift is negligible (~0.001) and STAYS below 0.50,
+    # so the tier is STILL VALID_FLAGGED under both placements. Hypothesis refuted.
+    assert offload.param_frac - subsume.param_frac < 0.01
+    assert subsume.param_frac < 0.5
+    assert offload.param_frac < 0.5
+    assert subsume.tier == TIER_VALID_FLAGGED
+    assert offload.tier == TIER_VALID_FLAGGED
+
+
+# ── ResNet-50 region: a bottleneck-block residual net stays param-MAJORITY ─────
+
+
+def test_resnet50_structural_op_set_is_mappable():
+    """ResNet-50 carries the same mappable op set (no grouped/depthwise conv)."""
+    forbidden = (nn.MultiheadAttention, nn.LayerNorm, nn.GroupNorm)
+    model = load_pretrained_resnet50(_NUM_CLASSES, pretrained=False)
+    for module in model.modules():
+        assert not isinstance(module, forbidden), type(module).__name__
+        if isinstance(module, nn.Conv2d):
+            assert module.groups == 1, module
+    assert model.fc.out_features == _NUM_CLASSES
+    assert model.conv1.in_channels == 3
+
+
+def test_resnet50_measured_validity_is_valid_under_both_placements():
+    """MEASURED: ResNet-50 is VALID (param-MAJORITY on-chip) under subsume AND offload.
+
+    The contrast with ResNet-18 is the headline result: ResNet-50's bottleneck
+    blocks (1x1->3x3->1x1 trunk) hold the param majority on-chip, so its
+    ``param_frac`` ~0.666 clears the 0.50 majority -- VALID, not flagged -- under
+    BOTH placements. The residual-boundary host cost is real but its FRACTION is
+    architecture-dependent: BasicBlock (R18) tips param-minority, Bottleneck (R50)
+    stays param-majority. Same live instrument, same shape; only the model differs.
+    """
+    from mimarsinan.mapping.verification.onchip_fraction import TIER_VALID
+
+    subsume = _classify(load_pretrained_resnet50, placement="subsume")
+    offload = _classify(load_pretrained_resnet50, placement="offload")
+    print(
+        f"\n[ResNet50 SWEEP] subsume: tier={subsume.tier} "
+        f"param_frac={subsume.param_frac:.6f} mac_frac={subsume.mac_frac:.6f}"
+        f"\n[ResNet50 SWEEP] offload: tier={offload.tier} "
+        f"param_frac={offload.param_frac:.6f} mac_frac={offload.mac_frac:.6f}"
+    )
+    assert subsume.research_gap_ops == []
+    assert offload.research_gap_ops == []
+    # MEASURED region descriptor (recorded).
+    assert subsume.param_frac == pytest.approx(0.665655, abs=1e-4)
+    assert subsume.mac_frac == pytest.approx(0.998093, abs=1e-4)
+    assert offload.param_frac == pytest.approx(0.666060, abs=1e-4)
+    assert offload.mac_frac == pytest.approx(0.998694, abs=1e-4)
+    # Param-MAJORITY on-chip under BOTH placements -> VALID (not flagged).
+    assert subsume.param_frac >= 0.5
+    assert offload.param_frac >= 0.5
+    assert subsume.tier == TIER_VALID
+    assert offload.tier == TIER_VALID
+    assert subsume.is_valid and not subsume.is_flagged
+    assert offload.is_valid and not offload.is_flagged
+
+
+def test_resnet50_measured_capacity_estimate():
+    """MEASURED capacity: ResNet-50 exceeds the 1000-core SUM budget; SCHEDULED fits.
+
+    Under the default single-pool SUM budget ResNet-50 (3x32x32) needs ~1460/1607
+    cores -> NOT feasible on 1000 -- an honest capacity verdict (valid in PLACEMENT
+    terms, over budget in CAPACITY terms). The SCHEDULED (fresh-pool-per-phase) path
+    time-multiplexes it: peak phase 208 cores fits the budget across ~16-17
+    reprogramming passes. All numbers come straight from ``estimate_cores_needed``.
+    """
+    from mimarsinan.config_schema.defaults import get_default_platform_constraints
+    from mimarsinan.mapping.verification.capacity import estimate_cores_needed
+
+    platform_constraints = get_default_platform_constraints()
+    for placement, sum_cores, sched_phases in (
+        ("subsume", 1460, 16),
+        ("offload", 1607, 17),
+    ):
+        ir_graph = _build_ir_graph(
+            load_pretrained_resnet50(_NUM_CLASSES, pretrained=False),
+            _SHAPE,
+            _NUM_CLASSES,
+            platform_constraints,
+            encoding_placement=placement,
+        )
+        summed = estimate_cores_needed(ir_graph, platform_constraints)
+        scheduled = estimate_cores_needed(
+            ir_graph, platform_constraints, allow_scheduling=True
+        )
+        print(
+            f"\n[ResNet50 {placement} MEASURED] sum.cores_needed={summed.cores_needed} "
+            f"sum.feasible={summed.feasible} | sched.feasible={scheduled.feasible} "
+            f"sched.phases={scheduled.phase_count} sched.peak={scheduled.peak_phase_cores}"
+        )
+        # SUM verdict: over the 1000-core single-pool budget (honest capacity gap).
+        assert summed.cores_available == 1000
+        assert summed.cores_needed == sum_cores
+        assert not summed.feasible
+        assert not summed.scheduled
+        # SCHEDULED verdict: time-multiplexed peak fits; reprogramming-pass count.
+        assert scheduled.scheduled
+        assert scheduled.feasible
+        assert scheduled.phase_count == sched_phases
+        assert scheduled.peak_phase_cores == 208
+        assert scheduled.peak_phase_cores < scheduled.cores_available
 
 
 def test_measured_capacity_estimate():
@@ -197,3 +359,25 @@ def test_loads_real_imagenet_weights():
     with torch.no_grad():
         y = model(torch.zeros(1, *_SHAPE))
     assert y.shape == (1, _NUM_CLASSES)
+
+
+def test_loads_real_imagenet_weights_resnet50():
+    """The ResNet-50 bridge imports GENUINE ImageNet1K weights (network-gated skip)."""
+    try:
+        model = load_pretrained_resnet50(_NUM_CLASSES, pretrained=True)
+    except Exception as exc:  # noqa: BLE001 - any download/transport failure is a skip
+        pytest.skip(f"pretrained weights unavailable in this environment: {exc}")
+
+    stem_w = model.conv1.weight.detach()
+    assert stem_w.shape == (64, 3, 7, 7)
+    assert torch.isfinite(stem_w).all()
+    assert stem_w.std().item() > 1e-3
+    with torch.no_grad():
+        y = model(torch.zeros(1, *_SHAPE))
+    assert y.shape == (1, _NUM_CLASSES)
+
+
+def test_resnet50_rejects_nonpositive_num_classes():
+    """num_classes must be a positive class count for the ResNet-50 bridge too."""
+    with pytest.raises(ValueError):
+        load_pretrained_resnet50(0, pretrained=False)
