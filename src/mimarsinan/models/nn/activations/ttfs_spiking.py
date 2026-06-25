@@ -159,13 +159,27 @@ class TTFSActivation(nn.Module):
         self._has_fired = None
 
     def _scale_values(self, x):
-        scale = self.activation_scale
-        sv = (scale.to(x.device, x.dtype).clamp(min=1e-12)
-              if isinstance(scale, torch.Tensor) else max(float(scale), 1e-12))
-        ins = self.input_scale
-        iv = (ins.to(x.device, x.dtype).clamp(min=1e-12)
-              if isinstance(ins, torch.Tensor) else max(float(ins), 1e-12))
+        sv = self._broadcast_scale(self.activation_scale, x)
+        iv = self._broadcast_scale(self.input_scale, x)
         return sv, iv
+
+    @staticmethod
+    def _broadcast_scale(scale, x):
+        """Clamp a scale and align a per-channel (multi-element) one to ``x``.
+
+        Scalar scales stay scalar. A per-output-channel ``[C]`` scale (the
+        ``theta_cotrain`` case) broadcasts correctly against a 2-D linear
+        ``[B, C]`` input as-is, but against a conv ``[B, C, H, W]`` it would
+        broadcast on the LAST dim (``W``) and crash when ``C != W``; for
+        ``ndim > 2`` it is reshaped to broadcast on the channel axis (dim 1),
+        matching ``_channel_broadcast_view`` used for the bias.
+        """
+        if not isinstance(scale, torch.Tensor):
+            return max(float(scale), 1e-12)
+        sv = scale.to(x.device, x.dtype).clamp(min=1e-12)
+        if sv.numel() > 1 and x.dim() > 2:
+            return _channel_broadcast_view(sv.reshape(-1), x)
+        return sv
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not self._cycle_accurate_mode:

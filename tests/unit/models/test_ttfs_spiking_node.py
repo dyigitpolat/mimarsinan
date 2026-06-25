@@ -134,3 +134,144 @@ def test_ttfs_encoding_mode_is_differentiable():
     out.sum().backward()
     assert V.grad is not None and torch.isfinite(V.grad).all()
     assert V.grad.abs().sum() > 0
+
+
+class TestPerChannelThetaConvBroadcast:
+    """theta_cotrain promotes ``activation_scale`` (and the upstream layer's
+    ``input_scale``) to a per-OUTPUT-CHANNEL vector ``[C]``. For a Conv2D output
+    ``[B, C, H, W]`` the channel axis is dim 1, not the last dim, so a raw ``[C]``
+    scale broadcasts against ``W`` and crashes when ``C != W`` (the
+    Conv2DPerceptronMapper ``features_3`` crash that blocks every lever-ON run).
+
+    ``_scale_values`` must reshape a multi-element scale to broadcast on the
+    channel axis for ``ndim > 2`` inputs, leaving scalar and the 2-D linear
+    ``[B, C]`` case (where ``[C]`` already broadcasts correctly) untouched.
+    """
+
+    @staticmethod
+    def _per_channel_scale(C):
+        return torch.arange(1, C + 1, dtype=torch.float64) * 0.5 + 0.25
+
+    def test_non_cycle_accurate_4d_conv_per_channel_scale(self):
+        # eval staircase path; C != W so a [C] scale on the last dim would crash.
+        C = 6
+        scale = self._per_channel_scale(C)
+        act = TTFSActivation(T=4, activation_scale=scale, input_scale=1.0,
+                             bias=None, thresholding_mode="<=", encoding=False)
+        x = torch.randn(2, C, 3, 4, dtype=torch.float64)  # C=6 != W=4
+        out = act.forward(x)
+        assert out.shape == x.shape
+
+        # Manual reference: scale broadcasts on the channel axis [1, C, 1, 1].
+        from mimarsinan.models.nn.activations.autograd import TTFSStaircaseFunction
+        sv = scale.view(1, C, 1, 1).clamp(min=1e-12)
+        r = (torch.relu(x) / sv).clamp(0.0, 1.0)
+        ref = TTFSStaircaseFunction.apply(r, 4) * sv
+        torch.testing.assert_close(out, ref)
+
+    def test_cascade_4d_conv_per_channel_scale(self):
+        # cascade branch (cycle-accurate, encoding=False) with per-channel theta
+        # AND per-channel input_scale on a 4-D conv tensor, C != W.
+        C = 6
+        scale = self._per_channel_scale(C)
+        in_scale = self._per_channel_scale(C) + 0.1
+        bias = torch.arange(C, dtype=torch.float64) * 0.05
+        act = TTFSActivation(T=4, activation_scale=scale, input_scale=in_scale,
+                             bias=bias, thresholding_mode="<=", encoding=False)
+        act.set_cycle_accurate(True)
+        x = torch.randn(2, C, 3, 4, dtype=torch.float64)
+        out = act.forward(x)
+        assert out.shape == x.shape
+        assert ((out == 0) | (out == 1)).all(), "cascade output must be 0/1 spikes"
+
+    def test_encoding_4d_conv_per_channel_scale(self):
+        # encoding branch (cycle-accurate, encoding=True) per-channel theta, 4-D.
+        C = 6
+        scale = self._per_channel_scale(C)
+        act = TTFSActivation(T=4, activation_scale=scale, input_scale=1.0,
+                             bias=None, thresholding_mode="<=", encoding=True)
+        act.set_cycle_accurate(True)
+        x = torch.rand(2, C, 3, 4, dtype=torch.float64)
+        accum = torch.zeros_like(x)
+        for _ in range(4):
+            spike = act.forward(x)
+            assert spike.shape == x.shape
+            accum = accum + spike
+        assert (accum <= 1).all(), "encoding must emit at most one spike per neuron"
+
+    def test_cascade_4d_per_channel_matches_manual_channel_reshape(self):
+        # The per-channel cascade forward must equal a forward where the scales
+        # are manually pre-reshaped to [1, C, 1, 1] — i.e. the fix only moves the
+        # broadcast onto the channel axis, it does not change the math.
+        C = 5
+        scale = self._per_channel_scale(C)
+        in_scale = self._per_channel_scale(C) + 0.2
+        bias = torch.arange(C, dtype=torch.float64) * 0.05
+        x = torch.randn(2, C, 3, 7, dtype=torch.float64)  # C=5 != W=7
+
+        act = TTFSActivation(T=4, activation_scale=scale, input_scale=in_scale,
+                             bias=bias, thresholding_mode="<=", encoding=False)
+        act.set_cycle_accurate(True)
+        out = act.forward(x)
+
+        ref_act = TTFSActivation(
+            T=4, activation_scale=scale.view(1, C, 1, 1),
+            input_scale=in_scale.view(1, C, 1, 1),
+            bias=bias, thresholding_mode="<=", encoding=False,
+        )
+        ref_act.set_cycle_accurate(True)
+        ref = ref_act.forward(x)
+        torch.testing.assert_close(out, ref)
+
+
+class TestScaleValuesByteIdentical:
+    """The scalar and 2-D-linear scale paths must be untouched by the conv fix."""
+
+    def test_scalar_scale_unchanged(self):
+        # Scalar activation_scale: _scale_values returns the same 0-dim tensor.
+        act = TTFSActivation(T=4, activation_scale=2.0, input_scale=3.0,
+                             bias=None, thresholding_mode="<=", encoding=False)
+        x = torch.randn(2, 6, 3, 4, dtype=torch.float64)
+        sv, iv = act._scale_values(x)
+        assert sv.dim() == 0 and float(sv) == 2.0
+        # input_scale 3.0 is a python float -> stays a float.
+        assert iv == 3.0
+        out = act.forward(x)
+        from mimarsinan.models.nn.activations.autograd import TTFSStaircaseFunction
+        r = (torch.relu(x) / 2.0).clamp(0.0, 1.0)
+        ref = TTFSStaircaseFunction.apply(r, 4) * 2.0
+        torch.testing.assert_close(out, ref)
+
+    def test_2d_linear_per_channel_scale_keeps_flat_shape(self):
+        # 2-D linear [B, C]: a per-channel [C] scale already broadcasts on the
+        # last (channel) dim, so _scale_values must NOT reshape it -> byte-identical.
+        C = 6
+        scale = torch.arange(1, C + 1, dtype=torch.float64)
+        in_scale = torch.arange(1, C + 1, dtype=torch.float64) + 0.5
+        act = TTFSActivation(T=4, activation_scale=scale, input_scale=in_scale,
+                             bias=None, thresholding_mode="<=", encoding=False)
+        x = torch.randn(3, C, dtype=torch.float64)
+        sv, iv = act._scale_values(x)
+        assert sv.shape == (C,), "2-D linear scale must keep its flat [C] shape"
+        assert iv.shape == (C,)
+        out = act.forward(x)
+        from mimarsinan.models.nn.activations.autograd import TTFSStaircaseFunction
+        r = (torch.relu(x) / scale).clamp(0.0, 1.0)
+        ref = TTFSStaircaseFunction.apply(r, 4) * scale
+        torch.testing.assert_close(out, ref)
+
+    def test_3d_mixer_channel_last_per_channel_forward_unchanged(self):
+        # 3-D mixer [B, tokens, F] with a per-channel [F] scale already broadcasts
+        # on the last (channel) axis. ndim>2 routes it through the channel-axis
+        # reshape, but the forward OUTPUT must stay byte-identical to the raw-[F]
+        # broadcast (same axis -> exact equality, not just close).
+        B, Tk, F = 2, 5, 7
+        scale = torch.arange(1, F + 1, dtype=torch.float64)
+        act = TTFSActivation(T=4, activation_scale=scale, input_scale=1.0,
+                             bias=None, thresholding_mode="<=", encoding=False)
+        x = torch.randn(B, Tk, F, dtype=torch.float64)
+        out = act.forward(x)
+        from mimarsinan.models.nn.activations.autograd import TTFSStaircaseFunction
+        r = (torch.relu(x) / scale).clamp(0.0, 1.0)
+        ref = TTFSStaircaseFunction.apply(r, 4) * scale
+        assert torch.equal(out, ref), "3-D channel-last forward must be byte-identical"
