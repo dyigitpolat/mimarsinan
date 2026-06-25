@@ -19,3 +19,4 @@ from mimarsinan.models.nn.layers import (
     FrozenStatsMaxValueScaler,
 )
 from mimarsinan.models.squeezenet import SqueezeNet, FireModule
+from mimarsinan.models.pretrained_bridge import load_pretrained_resnet18

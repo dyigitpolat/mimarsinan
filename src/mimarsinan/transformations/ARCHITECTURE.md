@@ -12,6 +12,7 @@ pipeline steps and hardware mapping.
 | `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization` | Weight quantization that accounts for normalization parameters. Accepts a `rate` argument and linearly interpolates in weight-value space between the FP and fully-quantized effective weights (`rate == 0` is identity, `rate == 1` matches the legacy full-quantization output). `parameter_scale` is always set to the full-range scale so downstream IR mapping is unaffected by rate |
 | `chip_quantization.py` | `ChipQuantization` | Legacy chip-level quantization utilities (mostly tests); production IR path uses `mapping.chip_quantize`. |
 | `quantization_bounds.py` | `quantization_bounds` | `(q_min, q_max)` from `weight_bits`; shared by SCM and `chip_quantize`. |
+| `activation_scale_policy.py` | `ActivationScalePolicy`, `CountQuantilePolicy`, `PercentileNormPolicy`, `MaxNormPolicy`, `make_activation_scale_policy` | Selectable per-layer activation-scale (ANN->SNN) calibration policies. DEFAULT `count_quantile` is byte-identical to the legacy `scale_from_activations` (count quantile over positive activations). `percentile_norm` = Rueckauer et al. (2017) robust-norm (p-th percentile of the FULL distribution; `p=100` == max-norm), a default-OFF baseline for head-to-head conversion comparison. |
 | `quantization_verify.py` | `assert_integer_scaled_matrix` | Shared integer-quantization checks for IR and perceptron verification. |
 | `normalization_fusion.py` | `fuse_into_perceptron` | Folds `perceptron.normalization` into `perceptron.layer` (fused bias = `effective_preactivation_bias`, the same SSOT the TTFS segment policy charges — fusion is therefore behavior-preserving under the cascade forward); used by `NormalizationFusionStep`. |
 | `weight_clipping.py` | `SoftTensorClipping`, `clip_core_weights` | Soft weight clipping for training stability |
@@ -39,4 +40,5 @@ pipeline steps and hardware mapping.
 ## Exported API (\_\_init\_\_.py)
 
 `PerceptronTransformer`, `TensorQuantization`, `NormalizationAwarePerceptronQuantization`,
-`transform_np_array`, `compute_pruning_masks`, `apply_pruning_masks`.
+`transform_np_array`, `compute_pruning_masks`, `apply_pruning_masks`,
+`ActivationScalePolicy`, `make_activation_scale_policy`, `DEFAULT_ACTIVATION_SCALE_POLICY`.
