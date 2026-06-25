@@ -238,9 +238,7 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._rollback_tolerance = ref.rollback_tolerance
 
         baseline_val = ref.baseline
-        self.target_adjuster.target_metric = baseline_val
-        self.target_adjuster.original_metric = baseline_val
-        self.target_adjuster.floor = baseline_val * (1.0 - self._pipeline_tolerance)
+        self._anchor_relaxation_target(baseline_val, pipeline_prev)
 
         self._validation_baseline = baseline_val
 
@@ -266,6 +264,43 @@ class SmoothAdaptationRunMixin(TunerBase):
         })
 
         return self._run_with_scheduler()
+
+    def _anchor_relaxation_target(self, baseline_val, real_target):
+        """Set the missed-target relaxation anchor (``target_adjuster``) and its floor.
+
+        Legacy (flag off => byte-identical): anchor target/original/floor on the
+        rate-0 ``baseline_val``. On an ANN→LIF conversion that collapses at rate 0
+        this is itself the collapsed read, so the relaxation death-spiral floors at
+        ``baseline_val * (1 - tol)``.
+
+        ``tuning_target_floor_on_real_target`` on AND the real pipeline target
+        (``pipeline.get_target_metric()``, already the constructor's anchor) ABOVE the
+        collapsed baseline: KEEP the real-target anchor and cap the relaxation floor at
+        ``max(baseline_floor, real_target * (1 - tol))`` — bounded below the real
+        target, never down to the collapsed floor — so the model AIMS to recover
+        toward the ANN. Falls back to baseline anchoring when the real target is
+        unavailable / not above the baseline (degenerate)."""
+        tol = self._pipeline_tolerance
+        baseline_floor = baseline_val * (1.0 - tol)
+        anchor_on_real = (
+            bool(self.pipeline.config.get("tuning_target_floor_on_real_target", False))
+            and real_target is not None
+            and float(real_target) > float(baseline_val)
+        )
+        if anchor_on_real:
+            real = float(real_target)
+            self.target_adjuster.target_metric = real
+            self.target_adjuster.original_metric = real
+            # Cap the give-back BELOW the real target but never below the achievable
+            # baseline floor; ``min(.., real)`` keeps the floor strictly under the
+            # anchor so the relaxation can still move.
+            self.target_adjuster.floor = min(
+                real, max(baseline_floor, real * (1.0 - tol))
+            )
+            return
+        self.target_adjuster.target_metric = baseline_val
+        self.target_adjuster.original_metric = baseline_val
+        self.target_adjuster.floor = baseline_floor
 
     def _run_with_scheduler(self):
         """The single rate-search loop: one RateScheduler replacing the legacy

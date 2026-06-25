@@ -191,6 +191,7 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("tuning_tight_plateau", "tuning", "AdaptationManager"),
     _spec("tuning_recovery_check_divisor", "tuning", "AdaptationManager"),
     _spec("tuning_keepbest_certified", "tuning", "rollback_sensor"),
+    _spec("tuning_target_floor_on_real_target", "tuning", "rollback_sensor"),
     _spec("tuning_recipe_recovery", "tuning", "AdaptationManager"),
     _spec("optimization_driver", "tuning", "OptimizationDriver"),
     # Per-layer-S temporal allocation (EW1 RESERVED): the Wizard declares the intent;

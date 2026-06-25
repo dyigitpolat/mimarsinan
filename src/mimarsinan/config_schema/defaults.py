@@ -122,6 +122,22 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # available), else validate_n_batches(eval_n_batches) — the same eval the per-cycle
     # commit uses, so the snapshot and finalize metrics share one statistical basis.
     "tuning_keepbest_certified": False,
+    # Anchor the adaptation RELAXATION target/floor on the REAL pipeline target
+    # (the upstream ANN metric carried by ``pipeline.get_target_metric()``, already
+    # passed to the tuner constructor as ``target_accuracy``) instead of the rate-0
+    # ``baseline_val``. On an ANN→LIF conversion that collapses at rate 0, the rate-0
+    # read is itself collapsed (~0.27 on the live ResNet-50 job); anchoring the target/
+    # original/floor on it (smooth_adaptation_run.py) lets the missed-target relaxation
+    # death-spiral down to ``baseline_val * (1 - tol)`` where it sticks, so the tuner
+    # stops aiming to recover toward the ANN. When ON and the real target is ABOVE the
+    # collapsed baseline, ``run()`` KEEPS the constructor's real-target anchor and caps
+    # the relaxation floor at ``max(baseline_floor, real_target * (1 - tol))`` — bounded
+    # below the real target, never down to the collapsed floor — so the model AIMS to
+    # recover toward the ANN. The per-cycle rollback gate stays baseline-anchored
+    # (acceptance_sensor.absolute_floor unchanged). Default off => byte-identical (the
+    # legacy baseline-anchored block at smooth_adaptation_run.py runs verbatim). Falls
+    # back to baseline anchoring when the real target is unavailable or <= baseline.
+    "tuning_target_floor_on_real_target": False,
     # Recipe-driven STEP recovery (generic: routes tuning_recipe + warmup/cosine
     # into the step recovery instead of the hardcoded Adam(wd=5e-5)/constant-LR path).
     "tuning_recipe_recovery": False,
@@ -366,6 +382,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_tight_plateau",
     "tuning_recovery_check_divisor",
     "tuning_keepbest_certified",
+    "tuning_target_floor_on_real_target",
     "tuning_recipe_recovery",
     "optimization_driver",
     "s_allocation",
