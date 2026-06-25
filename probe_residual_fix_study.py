@@ -146,6 +146,88 @@ def _deploy_qat(base, cal_x, Xtr, ytr, mode, sched, T, *, steps, lr, ramp_frac):
     return flow, hcm, teacher, ns
 
 
+def _reinstall_activation_T(flow, is_lif, deploy_T):
+    """Re-bind each perceptron's spiking activation to ``deploy_T`` IN PLACE,
+    keeping the QAT-adapted weights + current activation_scale. Decouples the
+    QAT train-T from the deploy-T (raise deploy-S without retraining at high S,
+    per the monotonic-in-deploy-S finding)."""
+    from mimarsinan.models.nn.activations import LIFActivation
+    from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+    for p in flow.get_perceptrons():
+        if is_lif:
+            p.set_activation(LIFActivation(
+                T=deploy_T, activation_scale=p.activation_scale, thresholding_mode="<="))
+        else:
+            p.set_activation(TTFSActivation(
+                T=deploy_T, activation_scale=p.activation_scale,
+                input_scale=p.input_activation_scale, bias=p.layer.bias,
+                thresholding_mode="<=", encoding=getattr(p, "is_encoding_layer", False)))
+
+
+def _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T, *,
+                         steps, lr, ramp_frac, train_T=None, recal=False,
+                         gain=False, gain_rule="relative"):
+    """Composed QAT: adapt weights through the genuine forward at ``train_T``,
+    then (optionally) re-install activations at the deploy ``T`` (decoupled
+    higher-S), re-run the per-mode distribution calibration on the moved
+    weights, and apply per-depth gain correction (cascaded TTFS only) before
+    mapping the SAME flow through the production SSOT."""
+    train_T = train_T or T
+    flow, teacher, is_lif = _build_flow_with_activation(base, mode, train_T)
+    _qat_adapt_flow(flow, teacher, is_lif, Xtr, ytr, train_T,
+                    steps=steps, lr=lr, ramp_frac=ramp_frac, seed=0)
+    if train_T != T:
+        _reinstall_activation_T(flow, is_lif, T)
+        compute_per_source_scales_after_reinstall(flow)
+    # _map_flow re-runs the per-mode calibration (recal=True default path);
+    # gain correction is injected post-calibration, pre-map (cascaded only).
+    flow, hcm, ns = _map_flow_composed(
+        flow, teacher, is_lif, cal_x, sched, T,
+        calibrate=recal or (train_T != T) or True, gain=gain, gain_rule=gain_rule,
+        is_cascaded=(mode != "lif" and (sched or "cascaded") == "cascaded"))
+    return flow, hcm, teacher, ns
+
+
+def compute_per_source_scales_after_reinstall(flow):
+    from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+    compute_per_source_scales(flow.get_mapper_repr())
+
+
+def _map_flow_composed(flow, teacher, is_lif, cal_x, sched, T, *,
+                       calibrate, gain, gain_rule, is_cascaded):
+    """``_map_flow`` + optional per-depth gain correction injected after the
+    distribution calibration but before IRMapping (cascaded TTFS only)."""
+    from mimarsinan.mapping.ir_mapping_class import IRMapping
+    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
+    from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
+    from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+    from mimarsinan.spiking.distribution_matching import match_activation_distributions
+    from mimarsinan.spiking.lif_distribution_matching import match_lif_activation_distributions
+    from mimarsinan.spiking.gain_correction import apply_cascaded_gain_correction
+
+    repr_ = flow.get_mapper_repr()
+    firing, spike = ("Default", "Uniform") if is_lif else ("TTFS", "TTFS")
+    if calibrate:
+        if is_lif:
+            match_lif_activation_distributions(flow, teacher, cal_x, T)
+        else:
+            match_activation_distributions(flow, teacher.double(), cal_x.double(), T, quantile=0.99)
+    if gain and is_cascaded:
+        apply_cascaded_gain_correction(flow, T, rule=gain_rule)
+    ir = IRMapping(q_max=127.0, firing_mode=firing, max_axons=8192, max_neurons=8192,
+                   allow_coalescing=False).map(repr_)
+    hybrid = build_hybrid_hard_core_mapping(
+        ir_graph=ir, cores_config=[{"max_axons": 8192, "max_neurons": 8192, "count": 8000}],
+        strategy=MappingStrategy.from_permissions(allow_neuron_splitting=False, allow_coalescing=False))
+    flow_kwargs = (dict(spiking_mode="lif", cycle_accurate_lif_forward=True) if is_lif
+                   else dict(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule=(sched or "cascaded")))
+    hcm = SpikingHybridCoreFlow(
+        (P.IN,), hybrid, simulation_length=T, preprocessor=nn.Identity(),
+        firing_mode=firing, spike_mode=spike, thresholding_mode="<=", **flow_kwargs)
+    nseg = sum(1 for s in hybrid.stages if s.hard_core_mapping is not None)
+    return flow, hcm, nseg
+
+
 def deploy_with_fix(fix, base, cal_x, Xtr, ytr, mode, sched, T):
     """Deploy ``base`` in ``mode`` applying ``fix``. Returns (flow, hcm, teacher, ns)."""
     if fix in ("baseline", "highT"):
@@ -165,6 +247,49 @@ def deploy_with_fix(fix, base, cal_x, Xtr, ytr, mode, sched, T):
         # revive = strong DFQ calibration init, then a longer genuine refine.
         return _deploy_qat(base, cal_x, Xtr, ytr, mode, sched, T,
                            steps=300, lr=2e-3, ramp_frac=0.35)
+
+    # COMPOSED fixes (QAT = the load-bearing pillar + a PTC-side lever).
+    if fix == "qat_highT":
+        # QAT-train at T=16, DEPLOY at the (higher) caller T. Decoupled S.
+        return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                    steps=200, lr=1.5e-3, ramp_frac=0.5, train_T=16)
+
+    if fix == "qat_gain":
+        # QAT + per-depth gain correction (cascaded TTFS only by physics).
+        return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                    steps=200, lr=1.5e-3, ramp_frac=0.5, gain=True)
+
+    if fix == "qat_more":
+        # QAT with a longer pure-genuine refine to close the capacity gap.
+        return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                    steps=400, lr=1.5e-3, ramp_frac=0.3)
+
+    if fix == "qat_more_highT":
+        # The full composition: longer genuine refine + decoupled higher-S deploy.
+        return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                    steps=400, lr=1.5e-3, ramp_frac=0.3, train_T=16)
+
+    if fix == "qat_more_gain_highT":
+        # Longer refine + gain (cascaded) + decoupled higher-S deploy.
+        return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                    steps=400, lr=1.5e-3, ramp_frac=0.3, train_T=16, gain=True)
+
+    if fix == "qat_cascaded_strong":
+        # Aggressive cascaded-targeted QAT: more steps, higher LR, fast ramp.
+        return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                    steps=600, lr=3e-3, ramp_frac=0.25)
+
+    if fix == "qat_best_per_mode":
+        # The headline composition: per-mode best recipe selected by physics.
+        # lif -> standard QAT; cascaded -> aggressive; sync -> longer refine.
+        if mode == "lif":
+            return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                        steps=200, lr=1.5e-3, ramp_frac=0.5)
+        if (sched or "cascaded") == "cascaded":
+            return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                        steps=600, lr=3e-3, ramp_frac=0.25)
+        return _deploy_qat_composed(base, cal_x, Xtr, ytr, mode, sched, T,
+                                    steps=400, lr=1.5e-3, ramp_frac=0.3)
 
     if fix in ("scale_dfq_strong", "resmerge"):
         return _deploy_calib(base, cal_x, mode, sched, T,
