@@ -2091,3 +2091,50 @@ direction unchanged. Run ids — `pdcnnd6datacotfix_{FashionMNIST,KMNIST}_DataPr
 (cotTrue all `rc=1`-excluded), synchronized
 `pdcnnbcd6data_{FashionMNIST,KMNIST}_DataProvider_synchronized_s{0,1,2}`.
 
+
+## 4ad. At the SHALLOWEST off-MNIST cascaded rung (`deep_cnn` d5, S=4), the `ttfs_staircase_ste` gradient only PARTIALLY and unevenly closes the dataset-margin firing-gain gap — a clean +1.4pp lift on KMNIST, a wash (+0.67pp, sign-flips by seed) on FashionMNIST; neither reaches the prior-item synchronized ceiling (`item_id=dcnn_d5_ste_onset`, 2026-06-25)
+
+The §4t d6 STE decomposition showed `ttfs_staircase_ste` is the dominant gate-fix knob but
+not lossless. This batch (`pdcnnd5stefix_*`) probes the **same STE lever one rung shallower**,
+at the **d5 cascaded onset off MNIST**, on the VALID on-chip-majority `deep_cnn` vehicle.
+
+**The in-batch lever is `ttfs_staircase_ste` (steTrue vs steFalse), BOTH at
+`ttfs_cycle_schedule=cascaded`** — this is NOT a cascaded-vs-synchronized contrast. The
+synchronized ceilings and canonical cascaded baselines below come from the PRIOR
+`pdcnnd5data_` item (`item_id=dcnn_d5_dataset_axis`), NOT from any run in this batch.
+
+### The d5 STE-on/off contrast — deployed mean, with prior-item sync ceiling
+
+| dataset | arm | deployed mean | per-seed | n (rc=0) | STE Δ (pp) | →prior sync ceiling |
+|:--------|:----|:-------------:|:---------|:--------:|:----------:|--------------------:|
+| FashionMNIST | steFalse (cascaded) | 0.8067 | 0.82 / 0.775 / 0.825 | 3 | — | +9.19pp below 0.8986 |
+| FashionMNIST | steTrue | 0.8133 | 0.875 / 0.80 / 0.765 | 3 | **+0.67** (sign-flips +5.5/+2.5/−6.0) | +8.53pp below 0.8986 |
+| KMNIST | steFalse (cascaded) | 0.8775 | 0.88 / 0.875 | **2** | — | +8.54pp below 0.9629 |
+| KMNIST | steTrue | 0.8917 | 0.935 / 0.85 / 0.89 | 3 | **+1.42** (+5.5/+1.5 shared seeds) | +7.12pp below 0.9629 |
+
+**Verdict — PARTIAL / MIXED.** STE gives a **clean partial lift on KMNIST** (+1.42pp mean,
+best steTrue 0.935 toward the 0.9629 sync ceiling) and is a **wash on FashionMNIST** (+0.67pp
+mean, within 200-sample noise, per-seed sign-flips +5.5/+2.5/−6.0pp). **Neither dataset reaches
+the prior-item synchronized ceiling** (residual +7.12pp KMNIST / +8.53pp FashionMNIST). The
+staircase-STE lever **narrows but does not close** the d5 dataset-margin gap — consistent with
+the §4t d6 finding (dominant but not lossless), now confirmed dataset-dependent one rung
+shallower. Firing-gain origin confirmed (ANN ≫ chance).
+
+### Confounds / bounds
+
+(1) **Lever is STE-on/off, NOT cascaded-vs-sync.** Both arms run `ttfs_cycle_schedule=cascaded`;
+in the ledger the schema's `cascaded_deployed_mean`←steFalse and `synchronized_deployed_mean`←steTrue,
+so `cascaded_to_sync_gap_pp` is repurposed as the STE delta (steTrue−steFalse), NOT a sync gap.
+(2) **`max_simulation_samples=200`** → ~0.005 grid; read gaps in pp, not 3rd decimals. The
+200-sample steFalse means (FMNIST 0.807, KMNIST 0.878) do not exactly reproduce the prior
+cascaded baselines (0.8383, 0.9167). (3) **KMNIST steFalse is n=2:** seed s1
+(`pdcnnd5stefix_KMNIST_DataProvider_steFalse_s1`) is in `q/failed/` — its log stops at *TTFS
+Cycle Fine-Tuning* BEFORE deployment, and its on-disk `__target_metric.json` 0.9559 is a
+**STALE pre-deployment ANN/torch-mapping artifact** (the `[PROFILE]` trace shows 0.9559 = ANN
+test acc, Δ=0), NOT a deployed metric → excluded. The other 11 runs are `rc=0`. (4) **No
+at-chance confound** — ANN ≈ 0.927 (FMNIST) / 0.969 (KMNIST) ≫ chance → genuine firing-gain
+gap. (5) **FashionMNIST per-seed STE delta is unstable** (+5.5/+2.5/−6.0pp) → its +0.67pp mean
+is not significant at n=3. Run ids —
+`pdcnnd5stefix_{FashionMNIST,KMNIST}_DataProvider_ste{False,True}_s{0,1,2}`
+(KMNIST steFalse s1 `rc=-9`-excluded).
+
