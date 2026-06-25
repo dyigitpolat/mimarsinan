@@ -1280,6 +1280,61 @@ Run ids: `pmmixnb_{FashionMNIST,KMNIST}_DataProvider_cpTrue_s{0,1,2}`. (Detailed
 
 ---
 
+## 1y. CONSOLIDATED — the two CONFIRMED `deep_cnn` AC2 death-cascade items with the synchronized ceiling attached: a BOUNDED MNIST depth ladder + a depth-first dataset-breadth re-opening off MNIST (`item_id`s `dcnn_deep_death_cascade_ladder` + `dcnn_dataset_breadth_cascaded`, 2026-06-25)
+
+These two consolidated items fold the clean-`rc=0` `deep_cnn` cascaded corpus into the AC2
+form §8/§10 demand — every cell carries its **own ANN reference** and the **synchronized arm**
+(the AC2-lossless instrument). VALID on-chip-majority (99.6% on-chip) `deep_cnn` w16 bigcores,
+`ttfs_cycle_based`, S=4. AC2 read = cascaded→ANN gap; synchronized→ANN gap reported separately
+to show the deployable ceiling. Ledger: `cluster:"WS3"`, `kind:"depth"` (4 rows, MNIST ladder)
++ `kind:"arch_dataset"` (4 rows, dataset breadth).
+
+**(A) MNIST depth ladder — n=1000 lower-noise family.**
+
+| depth | cascaded (AC2 deployed) | synchronized | ANN ref (AC2 target) | **cascaded→ANN (AC2)** | sync→ANN | validity | AC2 verdict |
+|:-----:|------------------------:|-------------:|---------------------:|-----------------------:|---------:|:---------|:------------|
+| d5 (ref) | 0.9917 | 0.9924 | 0.9913 | ≈0 | ≈0 | VALID | **near-lossless / tied** |
+| **d6**  | 0.9563 | 0.9924 | 0.9914 | **−3.51pp** | +0.10pp | VALID | onset |
+| **d8**  | 0.9450 | 0.9912 | 0.9921 | **−4.71pp** | −0.09pp | VALID | degraded |
+| **d10** | 0.9328 | 0.9912 | 0.9928 | **−6.00pp** | −0.16pp | VALID | degraded |
+| **d12** | 0.9353 | 0.9920 | 0.9923 | **−5.69pp** | −0.03pp | VALID | degraded (bounded) |
+
+Synchronized **MEETS AC2 at every depth** (sync→ANN within ±0.16pp). Cascaded AC2 is
+**near-lossless through d5, opens at d6, widens to a BOUNDED ~4–6pp plateau** — NOT a monotone
+collapse (the n=200 family reads a sharper d12 9.48pp; read the ladder direction).
+
+**(B) Dataset breadth off MNIST — n=200.**
+
+| dataset | depth | cascaded (AC2 deployed) | synchronized | ANN ref | **cascaded→ANN (AC2)** | sync→ANN | AC2 verdict |
+|:--------|:-----:|------------------------:|-------------:|--------:|-----------------------:|---------:|:------------|
+| FashionMNIST | d5  | 0.8383 | 0.8986 | 0.9283 | **−9.00pp** | −2.97pp | lossy |
+| KMNIST       | d5  | 0.9167 | 0.9629 | 0.9696 | **−5.29pp** | −0.67pp | lossy |
+| FashionMNIST | d10 | 0.7250 | 0.9041 | 0.9336 | **−20.86pp** | −2.95pp | collapse |
+| KMNIST       | d10 | 0.8025 | 0.9623 | 0.9616 | **−15.91pp** | +0.07pp | collapse |
+
+The cascade **re-opens off MNIST**, ordered by **DEPTH first** (d10 ≫ d5), then dataset, while
+synchronized stays near-lossless (sync→ANN +0.07 to −2.97pp). The cascaded deficit is **LARGER
+on FashionMNIST than on the nominally-harder KMNIST** at both depths — the CNN cascade does NOT
+reproduce the `deep_mlp` "harder-dataset = bigger-gap" ordering.
+
+**Headline-gating ruling.** The depth × firing-gain death-cascade is **REAL on the VALID
+vehicle but BOUNDED** vs the retired host-majority `deep_mlp` (delayed onset ~d6 vs d4; smaller
+MNIST deficit ~4–6pp vs 4.3→9.3pp). **Synchronized is the unconditional deep-model AC2 default.**
+
+**Confounds.** (1) **Two resolution families — read pp gaps, not 3rd decimals.** Both pair a
+subsampled-cascaded arm against a full-10000-sample synchronized SCM (means unbiased; gaps
+robust >2–4× the per-seed band; sub-0.2pp d5 gaps are noise). (2) **d10 dataset cells are n=2**
+(FMNIST cascaded s1 `rc=-9`, KMNIST cascaded s0 `rc=1` — excluded per strict `rc==0`; their
+consistent artifacts would not change the verdict direction). (3) **Crash exclusions** —
+`pdcnnbc_d12_cascaded` s0/s2 (OOM `rc=-9`) and the `dcnn_d6/d8_*` / `pdcnnladder_d6/d7_*` core-
+exhaustion `rc=1` runs are quarantined; the valid evidence is the `pdcnnbcn1000*` (A) and
+`pdcnnd{5,10}data_*` (B) families. (4) **No at-chance confound** (every ANN ≫ 0.10/0.1135;
+parity gates clean). Run ids — A: `pdcnnbcn1000plat_d{6,8,10}_*_s{0,1,2}` +
+`pdcnnbcn1000seed_d{8,10,12}_*_s{3,4,5}`; B: `pdcnnd{5,10}data_{FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_s{0,1,2}`.
+(Detailed analysis: `docs/research/findings/WS3_depth_firing_gain.md` §4aa.)
+
+---
+
 ## 3. Open AC gaps (what these cells do NOT yet certify)
 
 - ~~**No paired n=1000 synchronized lenet5 run**~~ **CLOSED (§1x, 2026-06-25)** — the

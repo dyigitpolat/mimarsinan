@@ -1934,3 +1934,75 @@ WS7 §12 `dcnn_deep_controller_escalation` row (in-log ANN 0.9744); this row use
 full-eval ANN 0.9949 and the depth-pairing framing. Run ids: cpFalse
 `pdcnnbcn1000fix_d{8,10}_cotFalse_cpFalse_s{0,1,2}`; cpTrue
 `pdcnnbcn1000fix_d{8,10}_cotFalse_cpTrue_s{0,1,2}` (d10 s2 `rc=1`).
+
+---
+
+## 4aa. SYNTHESIS — the two CONFIRMED `deep_cnn` death-cascade items consolidated: a BOUNDED depth ladder on MNIST and a depth-first dataset-breadth re-opening off MNIST, both with the synchronized ceiling attached (`item_id`s `dcnn_deep_death_cascade_ladder` + `dcnn_dataset_breadth_cascaded`, 2026-06-25)
+
+This round folds the scattered clean-`rc=0` `deep_cnn` cascaded evidence into **two
+CONFIRMED consolidated items** carrying the synchronized arm at every cell, replacing the
+retired INVALID host-majority `deep_mlp` §6 framing. Both ride the established VALID
+on-chip-majority (99.6% on-chip) `deep_cnn` w16 bigcores vehicle, `ttfs_cycle_based`, S=4;
+every ANN reference is ~0.92–0.99 (≫ 0.1135 chance), so these are genuine firing-gain
+results, not untrained floors. Ledger: `cluster:"WS3"`, `kind:"depth"` (4 rows) +
+`kind:"arch_dataset"` (4 rows).
+
+**(A) `dcnn_deep_death_cascade_ladder` — MNIST depth ladder (n=1000 lower-noise family).**
+
+| depth | cascaded (mean ±sd_pp) | synchronized (mean ±sd_pp) | ANN ref | cascaded→sync gap | n_seeds |
+|:-----:|-----------------------:|---------------------------:|--------:|------------------:|:-------:|
+| **d6**  | 0.9563 (±1.16) | 0.9924 (±0.15) | 0.9914 | **3.61pp** | 3 |
+| **d8**  | 0.9450 (±2.09) | 0.9912 (±0.13) | 0.9921 | **4.62pp** | 6 |
+| **d10** | 0.9328 (±3.76) | 0.9912 (±0.15) | 0.9928 | **5.84pp** | 6 |
+| **d12** | 0.9353 (±3.70) | 0.9920 (±0.11) | 0.9923 | **5.67pp** | 3 |
+
+(d5 baseline = lossless/tied, gap 0.07pp, from the §4v n=200 family.) Synchronized **holds
+the ANN ceiling at every depth** (all sd ≤ 0.15pp). The cascade is **near-lossless through
+d5, opens at d6, and widens to a BOUNDED ~4–6pp plateau** on this lower-noise n=1000 family —
+**NOT a monotone collapse**. The n=200 family reads a sharper d12 (gap 9.48pp, casc 0.8967,
+s0=0.835); read the ladder direction (widens with depth), not the d12 absolute. **Verdict —
+`cascaded_firing_gain_degraded`; synchronized is the unconditional deep-model default.**
+
+**(B) `dcnn_dataset_breadth_cascaded` — dataset spectrum off MNIST (n=200).**
+
+| dataset | depth | cascaded (mean) | synchronized (mean) | ANN ref | cascaded→sync gap | sync→ANN | n_seeds |
+|:--------|:-----:|----------------:|--------------------:|--------:|------------------:|---------:|:-------:|
+| FashionMNIST | d5  | 0.8383 | 0.8986 | 0.9283 | **6.03pp** | +2.97pp | 3 |
+| KMNIST       | d5  | 0.9167 | 0.9629 | 0.9696 | **4.62pp** | +0.67pp | 3 |
+| FashionMNIST | d10 | 0.7250 | 0.9041 | 0.9336 | **17.91pp** | +2.95pp | 2 |
+| KMNIST       | d10 | 0.8025 | 0.9623 | 0.9616 | **15.98pp** | +0.00pp | 2 |
+
+**Verdict — `cascaded_death_cascade_reopens_offmnist`: the cascade does NOT stay closed off
+MNIST.** It orders by **DEPTH first** (d10 gaps ~16–18pp ≫ d5 ~5–6pp), then by dataset, while
+synchronized stays near-lossless (sync→ANN +0.0 to +3.0pp) everywhere. Notably the cascaded
+deficit is **LARGER on FashionMNIST (ANN ~0.93) than on the nominally-harder KMNIST (ANN
+~0.96–0.97)** at both depths (d5 FMNIST +6.03 > KMNIST +4.62; d10 FMNIST +17.91 > KMNIST
++15.98) — so on this CNN vehicle the cascade does **NOT** reproduce the `deep_mlp`
+"harder-dataset = bigger-gap" ordering.
+
+**Headline-gating ruling.** The §6 depth × firing-gain (death-cascade) risk is **REAL on the
+VALID vehicle** but **BOUNDED** relative to the retired `deep_mlp`: delayed onset (~d6 vs MLP
+d4) and a smaller MNIST deficit (~4–6pp at n=1000 vs MLP 4.3→9.3pp). The `deep_mlp`
+catastrophic-collapse magnitude was inflated by its invalid host-majority + training-floor
+confounds.
+
+**Confounds / bounds.** (1) **Two resolution families — read gaps, not 3rd decimals.** The
+n=200 ladder (0.005 grid) and n=1000 ladder (0.001 grid) both pair a **subsampled-cascaded**
+arm against a **full-10000-sample synchronized SCM** (per commit 5568478/5568f); means are
+unbiased so the multi-pp gaps are robust (>2–4× the per-seed band), but sub-0.2pp d5 gaps are
+within noise (lossless). (2) **d12 severity is resolution/seed-sensitive** (n=200 9.48pp vs
+n=1000 5.67pp) — read the ladder direction. (3) **Crash exclusions (strict `rc==0`).** Item A:
+`pdcnnbc_d12_cascaded` s0/s2 (`rc=-9` OOM, `q/failed`), `dcnn_d6/d8_*` and `pdcnnladder_d6/d7_*`
+(`rc=1` "No more hard cores available") excluded; the valid d6/d12 cascaded evidence is the
+`pdcnnbcn1000*` family. Item B: FMNIST d10 cascaded s1 (`rc=-9`) and KMNIST d10 cascaded s0
+(`rc=1`) excluded → those cells are n=2; including the consistent crashed artifacts (FMNIST
+0.7416, KMNIST 0.8903) would not change the verdict direction. (4) **No at-chance confound**
+(every ANN ref ≫ chance; on-chip parameter majority 99.6% confirmed, parity gates clean).
+(5) Item B `pdcnndatafix_d6/d8` runs are **off-axis** (conversion-policy probe with no
+synchronized counterpart) and are excluded from these cells. Run ids — Item A: cascaded
+`pdcnnbcn1000plat_d{6,8,10}_cascaded_s{0,1,2}` + `pdcnnbcn1000seed_d{8,10,12}_cascaded_s{3,4,5}`,
+synchronized the matching `*_synchronized_*`; Item B: `pdcnnd5data_{FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_s{0,1,2}` (d5) +
+`pdcnnd10data_{FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_s{0,1,2}` (d10).
+**(REFUTED this round, not consolidated: `dcnn_deep_controller_cp_rescue_n1000` — the
+`conversion_policy` rescue is net-negative at depth, see §4z.)**
+
