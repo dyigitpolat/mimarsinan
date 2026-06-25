@@ -775,6 +775,80 @@ baselines `…_steFalse_cp{False,True}_s{0,1,2}`; paired ceiling/baseline
 
 ---
 
+## 2f. On the EASIER MNIST d6 onset the staircase-STE 2×2 DECOMPOSES — `ttfs_staircase_ste` is the DOMINANT knob and HALVES the AC2 deficit (unlike §2e's REGRESSION on the harder dataset axis), but the best combo still leaves +2.40pp ANN gap (`item_id=dcnn_d6_ste_gatefix_decomposition`, 2026-06-25)
+
+§2e found `ttfs_staircase_ste` **regresses** the d6 onset on the harder FMNIST/KMNIST axis. This
+cell tests the SAME convnet-compatible STE lever on the **easier MNIST** d6 onset and decomposes
+the full 2×2 (`ttfs_staircase_ste` × `conversion_policy`). `deep_cnn` (w16), `ttfs_cycle_based`
+S=4, VALID on-chip-majority, **all 12 runs `rc=0`**, 3 seeds/cell, `max_simulation_samples=200`.
+Ledger: `cluster:"WS3"`, `kind:"escalation"`, `item_id:"dcnn_d6_ste_gatefix_decomposition"` (2 rows).
+`conversion_policy=False=pure cascaded`, `True=synchronized/conversion route`.
+
+| cell | ste | cp | deployed mean (3 seeds) | ANN mean | **ANN gap (AC2)** | verdict |
+|:-----|:----|:---|------------------------:|---------:|------------------:|:--------|
+| steTrue_cpTrue (**best of grid**) | T | T | **0.9683** (.96/.96/.985) | 0.9923 | **+2.40pp** | partial rescue, NOT lossless |
+| steTrue_cpFalse | T | F | 0.9650 (.945/.99/.96) | 0.9907 | +2.57pp | partial rescue |
+| steFalse_cpTrue | F | T | 0.9600 (.97/.97/.94) | 0.9930 | +3.30pp | weak partial |
+| steFalse_cpFalse (**worst, pure cascaded**) | F | F | **0.9483** (.96/.955/.93) | 0.9920 | **+4.37pp** | full uncorrected deficit |
+
+Knob lifts (pp): **STE +0.83 @cpTrue / +1.67 @cpFalse** (dominant); conversion_policy +0.33 @steTrue / +1.17 @steFalse.
+
+**Verdict — `ttfs_staircase_ste` DOMINANT and PARTIAL on MNIST; AC2 still NOT MET.** Unlike the
+§2e dataset-axis regression, on the easier MNIST onset STE is the **larger knob on both columns**
+and roughly **halves** the AC2 deficit (worst pure-cascaded +4.37pp → best combo +2.40pp). But the
+best combo (steTrue+cpTrue 0.9683) does **NOT** reach the ~0.992 ANN/sync ceiling — a **+2.40pp
+residual remains, AC2 NOT MET**. With STE ON the conversion-route adds only +0.33pp (WITHIN n=200
+noise), i.e. STE has already substituted for the conversion-route rescue. This is the **first
+config-level lever that makes net-positive progress** on a VALID deep_cnn cascaded onset — but only
+on MNIST, and only halfway; the dataset-axis (§2e) and θ-cotrain (§2d) routes still fail/crash.
+
+**Confounds.** (1) **n=200 → 0.005 grid:** single-seed swings (e.g. steTrue_cpFalse .945/.99/.96)
+~1–2 samples of noise; sub-pp cell differences (the casc→sync +0.33pp under STE) WITHIN-noise — but
+the **+2.40pp best-combo ANN gap and +1.67pp STE-lift @cpFalse exceed** this resolution. (2) NOT
+chance: ANN ~0.9915 (range 0.9875–0.9941) ≫ 0.10 → genuine firing-gain. (3) All 12 runs `rc=0`,
+full 3 seeds/cell. (4) Eval-set asymmetry: deployed n=200 vs ANN n=10000. (5) θ-cotrain remains
+`rc=1`-broken on this convnet (§2d, §2e); STE is the working swap. Run ids:
+`pdcnnd6stefix_ste{True,False}_cp{True,False}_s{0,1,2}` (cpTrue=synchronized arm, cpFalse=cascaded
+arm). (Detailed analysis: `docs/research/findings/WS3_depth_firing_gain.md` §4t.)
+
+---
+
+## 1v. AC2 on the VALID `deep_cnn` dataset×depth vehicle at n=200 — the death-cascade reproduces, replacing the retired INVALID deep_mlp §10.1 table: depth-law HOLDS on FMNIST, FLAT on KMNIST (`item_id=dcnn_dataset_depth_deathcascade_valid_vehicle`, 2026-06-25)
+
+The headline depth × firing-gain death-cascade table was originally measured on the **INVALID
+host-majority `deep_mlp`** (retired). This cell reproduces it on the VALID on-chip-majority
+`deep_cnn` (w16) across {FMNIST,KMNIST}×{d6,d8}. `ttfs_cycle_based` S=4, cascaded schedule,
+`ttfs_theta_cotrain=False`, **11 valid `rc=0` cascaded runs**, `max_simulation_samples=200`.
+**NO synchronized arm in this batch** (only axis = cotrain T/F), so the AC2 gap is reported as
+**cascaded→ANN** only. Ledger: `cluster:"WS3"`, `kind:"arch_dataset"`,
+`item_id:"dcnn_dataset_depth_deathcascade_valid_vehicle"` (4 rows).
+
+| dataset | depth | cascaded n200 (mean ± sd) | ANN ref | **casc→ANN GAP (AC2)** | verdict |
+|:--------|:------|:--------------------------|:--------|-----------------------:|:--------|
+| fmnist | 6 | 0.855 ± 3.19pp | 0.9304 | **+7.54pp** | firing-gain degraded |
+| fmnist | 8 | 0.7675 ± 0.75pp (n=2†) | 0.9356 | **+16.81pp** | **COLLAPSE** (widens sharply) |
+| kmnist | 6 | 0.8967 ± 1.93pp | 0.9698 | **+7.31pp** | firing-gain degraded |
+| kmnist | 8 | 0.8967 ± 1.03pp | 0.9702 | **+7.35pp** | degraded (**FLAT** vs d6) |
+
+† FMNIST d8 is n=2 (s2 failed `rc=1`); all other cells n=3.
+
+**Verdict — SUPPORTED-WITH-CONFOUND; AC2 NOT MET, the death-cascade reproduces on the VALID
+vehicle.** The cascaded→ANN AC2 gap widens **sharply** with depth on FMNIST (+7.54 → +16.81pp,
+deployed 0.855 → 0.768) and with **dataset margin at d8** (FMNIST +16.81pp ≫ KMNIST +7.35pp). But
+on KMNIST the depth axis is **FLAT** (+7.31 → +7.35pp) — the depth-widening law does NOT hold on
+KMNIST. This **replaces the retired INVALID deep_mlp §10.1 death-cascade table** on a VALID
+on-chip-majority CNN.
+
+**Confounds.** (1) **NO synchronized arm** → AC2 gap is cascaded→ANN only (no cascaded→sync).
+(2) The gate-fix cotTrue arm: **all 12 runs failed `rc=1`** (Conv2DPerceptronMapper crash). (3)
+FMNIST d8 n=2 (s2 `rc=1`). (4) n=200 → 0.005 grid: read pp gaps, not 3rd decimals. (5) NOT chance:
+ANN 0.93–0.97 ≫ 0.10 → genuine firing-gain. (6) 3 duplicate d8_KMNIST queue JSONs (id==filename)
+excluded by strict rule. Run ids (cascaded, rc=0):
+`pdcnndatafix_d{6,8}_{FashionMNIST,KMNIST}_DataProvider_cotFalse_s{0,1,2}` (FMNIST d8 = s0,s1 only).
+(Detailed analysis: `docs/research/findings/WS3_depth_firing_gain.md` §4u.)
+
+---
+
 ## 2c. SYNTHESIS — the two CONFIRMED `deep_cnn` AC2 items consolidated, with the corrected verdicts (2026-06-24)
 
 Two `kind="synthesis"` ledger rows (`cluster:"WS3"`) roll the per-rung AC2 cells
