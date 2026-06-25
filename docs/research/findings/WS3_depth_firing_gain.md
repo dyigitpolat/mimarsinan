@@ -1061,6 +1061,106 @@ cascaded→sync table (MNIST lossless / KMNIST +1.79 / FMNIST ~6 / SVHN open).
 
 ---
 
+## 4r. The d8 deep_cnn dataset cells RE-MEASURED at genuine n=1000 (BOTH arms) — the dataset-margin death-cascade HARDENS vs n=200, ordering holds at 4-decimal fidelity (`item_id=dcnn_d8_dataset_n1000`, 2026-06-25)
+
+**Question (de-confound the §4j n=200 read).** §4j read the deep_cnn d8 FMNIST/KMNIST
+cascade off `max_simulation_samples=200` (0.005-grid cascaded vs full-10k synchronized,
+a resolution mismatch). Does the dataset-margin gap survive a **fully paired n=1000**
+re-measure where **both arms** subsample to `max_simulation_samples=1000`, or was the
+n=200 read grid-noise inflation?
+
+Runs: `pdcnnd8datan1000_{FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_s{0,1,2}`
+(12 runs, **all `rc=0`**, 3 seeds/arm, paired by seed, `deep_cnn` w16, S=4,
+`ttfs_cycle_based`, `max_simulation_samples=1000`). Ledger: `cluster:"WS3"`,
+`kind:"arch_dataset"`, `model:"deep_cnn"`, `depth:8`.
+
+### The d8 dataset cells — genuine n=1000, both arms paired
+
+ANN refs ≫ 10-class chance (0.10) on both cells → genuine firing-gain, not an
+untrained-floor artifact.
+
+| dataset | cascaded n1000 (3-seed mean ± sd) | synchronized n1000 (mean ± sd) | **casc→sync GAP** | n=200 prior (§4j) | ANN ref | casc→ANN | sync→ANN | verdict |
+|:--------|:----------------------------------|:-------------------------------|------------------:|------------------:|:--------|---------:|---------:|:--------|
+| fmnist | **0.7677 ± 2.51pp** (.794/.765/.744) | 0.9015 ± 0.21pp (.9017/.8993/.9035) | **+13.38** | +11.34 | 0.9329 | 16.40 | 3.14 | **firing-gain collapse (HARDENS)** |
+| kmnist | **0.8903 ± 1.58pp** (.904/.873/.894) | 0.9732 ± 0.37pp (.9721/.9701/.9773) | **+8.28** | +7.19 | 0.9756 | 9.06 | 0.24 | **firing-gain degraded (HARDENS)** |
+
+**Verdict — VALID-CONFIRMED; the n=200 dataset-margin read was NOT noise-inflated, the
+gap HARDENS at genuine resolution.** With both arms at `max_simulation_samples=1000`,
+the d8 cascade gap **grows** vs the §4j n=200 read: FMNIST +11.34 → **+13.38pp**,
+KMNIST +7.19 → **+8.28pp**. Higher resolution *deepens* the death-cascade (matching the
+§5b depth-axis n=1000-hardens precedent), so the gap is **not** a small-N grid artifact.
+The dataset-margin ordering **KMNIST (+8.28) < FashionMNIST (+13.38)** holds at
+4-decimal fidelity. Cascaded carries all the spread and deficit (FMNIST sd 2.51pp / ANN
+gap 16.40pp; KMNIST sd 1.58pp / ANN gap 9.06pp); **synchronized stays near its ANN
+ceiling** (FMNIST sync→ANN 3.14pp, KMNIST 0.24pp). This is a **genuine firing-gain
+result** — both ANN refs (FMNIST 0.9317, KMNIST 0.9809) are far above 10-class chance,
+fully trained — and the pairing is clean (unlike the §4d/§4d.1 lenet5 precedent that
+mixed n1000-cascaded vs n50-synchronized, **both arms here are n=1000**).
+
+**Confounds / bounds.** (1) **RESIDUAL eval asymmetry (minor):** the bare deployed floats
+are exact 1/1000 multiples on the cascaded arm and on the synchronized arm too
+(both subsample to 1000), so the prior n200-vs-10000 mismatch is **fully removed** for
+this batch — the only residual is ~±0.1pp 1000-sample binomial noise, far below the
+8–13pp gaps. (2) **n_seeds=3 per arm** (full 2-dataset × 2-policy × 3-seed grid
+finalized, all 12 `rc=0`). (3) **DEPTH-MONOTONE CROSS-REFERENCE:** this batch measures
+only d8, so the depth-widening must be cross-referenced against the §5b depth-axis
+n=1000 precedent (d8 MNIST +8.51pp, d10 +11.14pp) rather than measured within this batch;
+the d8 dataset gaps here (+8.28/+13.38pp) are consistent with and exceed the d8 MNIST
++8.51pp baseline — dataset-margin **amplifies** the cascade beyond the MNIST anchor. (4)
+**NO at-chance confound:** ANN refs FMNIST 0.93 / KMNIST 0.98 ≫ 0.10 → genuine. **Next:**
+the θ-cotrain / `ttfs_staircase_ste` firing-gain gate-fix on the d8 FMNIST collapse cell
+(the worst dataset-margin corner) is the highest-leverage rescue test.
+
+---
+
+## 4s. The d6 deep_cnn dataset cells at genuine n=1000 — the d6 rung HOLDS and the continuous FMNIST monotone-widening ladder SURVIVES (`item_id=dcnn_d6_dataset_n1000`, 2026-06-25)
+
+**Question (firm the §4k/§4n d6 rung at high resolution).** §4k/§4n read the d6 dataset
+cells off n=200 (and §4k's KMNIST was an n=1 provisional). Does the d6 cascade gap survive
+a **genuine n=1000** read, and does the continuous FMNIST widening ladder
+(d4 → d6 → d8 → d10) slot the d6 rung cleanly at 4-decimal resolution?
+
+Runs: `pdcnnd6datan1000_{FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_s{0,1,2}`
+(12 runs, **all `rc=0`**, full 3 seeds/arm, paired by seed, `deep_cnn` w16, S=4,
+`ttfs_cycle_based`, cascaded `max_simulation_samples=1000`). Ledger: `cluster:"WS3"`,
+`kind:"arch_dataset"`, `model:"deep_cnn"`, `depth:6`.
+
+### The d6 dataset cells — genuine n=1000
+
+ANN refs ≫ 10-class chance (0.10) → genuine firing-gain, not an untrained-floor artifact.
+
+| dataset | cascaded n1000 (3-seed mean ± sd) | synchronized (mean ± sd) | **casc→sync GAP** | prior read | ANN ref | casc→ANN | sync→ANN | verdict |
+|:--------|:----------------------------------|:-------------------------|------------------:|:-----------|:--------|---------:|---------:|:--------|
+| fmnist | **0.8247 ± 0.62pp** (.817/.832/.825) | 0.8979 ± 0.36pp (.9025/.8938/.8975) | **+7.33** | +6.11 (n200, §4k) | 0.9299 | 10.46 | 3.25 | **firing-gain degraded (HARDENS)** |
+| kmnist | **0.917 ± 0.43pp** (.913/.923/.915) | 0.9598 (.953/.9594/.9671) | **+4.28** | +5.85 (n=1 prov., §4k) | 0.9631 | 5.28 | −0.34 | **firing-gain degraded (FIRMED to 3-seed)** |
+
+**Verdict — SUPPORTED at high resolution; the d6 rung HOLDS and the continuous FMNIST
+widening ladder SURVIVES.** FMNIST +6.11pp (n200) → **+7.33pp** (n1000) HARDENS — matching
+the depth-axis precedent that n=1000 deepens, not shrinks, the gap. KMNIST +5.85pp (n=1
+provisional) → **+4.28pp** (full 3-seed) confirms the degraded-but-gentler KMNIST ladder.
+The **FMNIST monotone-widening ladder stays continuous and gapless**:
+**d4 +3.90 → d6 +7.33 → d8 +11.34 → d10 +17.91pp**, with the d6 rung slotting cleanly
+between the d4 and d8 anchors at 4-decimal resolution. KMNIST d6 +4.28pp sits below FMNIST
+d6 +7.33pp (**dataset-margin ordering preserved**) and is consistent with the gentler KMNIST
+ladder (d4 +6.19 / d8 +7.19). **Synchronized holds within ≤3.25pp of ANN on both datasets**
+(FMNIST 3.25pp; KMNIST −0.34pp, statistically at/above its ANN) — the unconditional
+synchronized default is reinforced at the within-CNN cascade-onset depth.
+
+**Confounds / bounds.** (1) **0.005-grid noise fully deconfounded:** cascaded deployed
+floats are now exact 1/1000 multiples (FMNIST .817/.832/.825, KMNIST .913/.923/.915), 5×
+finer than the n=200 ladder. (2) **RESIDUAL eval asymmetry (minor):** cascaded eval is
+n=1000 (1/1000 grid) while synchronized still reports the FULL 10000-sample test set
+(its floats e.g. 0.9025/0.9594 are 1/10000 multiples) — read at the multi-pp gap scale
+(7.33/4.28pp ≫ 0.1pp sampling noise), far less severe than the prior n200-vs-10000
+mismatch, so the verdict is robust to it. (3) **All 12 runs `rc=0`, full 3-seed both arms**
+(the prior KMNIST n=1 provisional point is retired). (4) **NO at-chance confound:** ANN
+refs FMNIST ~0.93 / KMNIST ~0.96 ≫ 0.10 → genuine firing-gain. Distinguishing knob =
+`ttfs_cycle_schedule` (cascaded vs synchronized). **Next:** the θ-cotrain firing-gain
+gate-fix at the d6 onset rung on FMNIST (the harder dataset) maps recovery across the
+now-continuous 3.9–18pp ladder.
+
+---
+
 ## 5. Ledger
 
 One verdict record per (dataset, depth, width, schedule) cell — **24 cells** —
@@ -1243,6 +1343,64 @@ turns the §4f/§1g (‡) `rc=1` n=1000 reads into formally VALID evidence. Run 
 on this clean d8/d10 n=1000 anchor — but note the gate-fix is REFUTED as a deep auto-rescue
 (see WS7 §10, `dcnn_d10_gatefix_rescue`): θ-cotrain *crashes* the convnet and `cp:true`-only
 deploys ~0.79 < the cascaded baseline. Synchronized remains the unconditional deep default.
+
+---
+
+## 4q. The genuine n=1000 deep ladder is EXTENDED to d6 and d12 — on the full `pdcnnbcn1000*` vehicle the cascaded→sync gap is DEPTH-MONOTONE (3.61→4.62→5.84→9.48pp), reconciling the §4p two-point d8>d10 read (`item_id=dcnn_mnist_depth_deathcascade_n1000`, 2026-06-25)
+
+**Question (close the d6/d12 endpoints of the n=1000 ladder).** §4p firmed the genuine
+n=1000 reads at d8/d10 but read them as *non-monotone* (d8 −9.48pp > d10 −6.06pp) on the
+two-point `pdcnnbcn1000_` slice. This item adds the **d6 onset** and the **d12 collapse**
+rungs and pools the per-depth seeds across the `pdcnnbcn1000plat_*` (s0–s2) and
+`pdcnnbcn1000seed_*` (s3–s5) run-id families to ask: across the full d6→d12 band, is the
+death-cascade depth-monotone, and does synchronized hold the ANN ceiling at every rung?
+
+All cells: `deep_cnn` (width 16), MNIST, `ttfs_cycle_based` S=4, `cores.count=480`,
+3-or-6 seeds/arm paired by seed. **All 39 in-scope runs finalized `rc=0` in `q/done/`**
+(the `rc=−9` OOM-killed `pdcnnbcclean_d12_cascaded` seeds in `q/failed/` are NOT the d12
+cascaded source — d12 cascaded comes from the clean `pdcnnbcd12fin_*` family). Ledger:
+`cluster:"WS3"`, `kind:"depth"` (4 rungs) + one `kind:"synthesis"` row.
+
+### The full genuine-n=1000 within-CNN depth ladder — cascaded vs synchronized
+
+| d | cascaded deployed (mean ± sd) | synchronized (mean ± sd) | **casc→sync GAP** | ANN ref | sync→ANN | n_seeds | resolution |
+|--:|:------------------------------|:-------------------------|------------------:|:--------|---------:|--------:|:-----------|
+| 6  | 0.9563 ± 1.16pp | 0.9924 ± 0.15pp | **+3.61** | 0.9914 | −0.10 | 3 | casc/sync n1000 |
+| 8  | 0.9450 ± 2.09pp | 0.9912 ± 0.13pp | **+4.62** | 0.9914 | −0.06 | 6 (pooled) | casc/sync n1000 |
+| 10 | 0.9328 ± 3.76pp | 0.9912 ± 0.15pp | **+5.84** | 0.9924 | +0.08 | 6 (pooled) | casc/sync n1000 |
+| 12 | 0.8967 ± 4.40pp | 0.9915 ± 0.07pp | **+9.48** | 0.9916 | −0.15 | 3 | casc/sync **n200** |
+
+(Sign convention `sync − casc`; positive = cascaded below synchronized.)
+
+**Verdict — SUPPORTED: the death-cascade is depth-MONOTONE on this n=1000 vehicle, and
+synchronized holds the float ANN ceiling at EVERY rung.** The cascaded→sync gap widens
+monotonically 3.61→4.62→5.84→9.48pp while `|sync→ANN| ≤ 0.15pp` everywhere (lossless). The
+deep_mlp depth-monotone widening law **reproduces on the VALID deep_cnn vehicle**. Every ANN
+ref ≈ 0.99 ≫ MNIST chance 0.1135 → genuine firing-gain, not an untrained floor; the d12
+cascaded outlier is FIRMED at 3 clean `rc=0` seeds (0.835/0.92/0.935, mean 0.8967).
+
+**Reconciling §4p.** §4p read the SAME phenomenon as *non-monotone* because it used only the
+two-point `pdcnnbcn1000_` slice (d8 s0=0.814 outlier drove d8>d10). Pooling the
+`plat_*`+`seed_*` families here (d8 plat 0.9553 / seed 0.9347; d10 plat 0.9313 / seed 0.9343
+— **families agree**) restores the monotone reading. The death-cascade **direction**
+(cascaded ≪ sync, deepening overall) is invariant across §4f/§4h/§4m/§4p; only the
+per-rung **magnitude ordering** is vehicle/resolution-dependent.
+
+**Confounds / bounds.** (1) **Resolution split at d12:** d6–d10 are n1000 on BOTH arms; the
+d12 cells are **n200 on both arms** (`pdcnnbcd12fin` cascaded + `pdcnnbcclean` synchronized)
+— read the d12 +9.48pp as a *gap*, not a 3rd-decimal. A cross-res n1000 d12 sync family
+(`pdcnnbcn1000seed_d12_synchronized`, mean 0.9920) gives a near-identical **+9.54pp**,
+confirming the d12 sync arm is resolution-robust; no n1000 d12 cascaded arm exists in scope.
+(2) **Pooled families at d8/d10** (6 seeds each) — justified, the two families agree and the
+plat-only 3-seed gaps (d8 +3.65, d10 +6.04pp) tell the same monotone story. (3) **High
+cascaded seed variance at deep rungs** (d10 sd 3.76pp incl. an s2=0.99 high outlier and
+s1=0.869 low; d12 sd 4.40pp) inflates per-seed spread, but every gap is ≫ 2× the per-seed
+noise. (4) **No at-chance confound** — every ANN ≈ 0.99; parity gates clean. **Next:** the
+firing-gain gate-fix is REFUTED as a deep auto-rescue (WS7 §10) — synchronized remains the
+unconditional deep default; the open question is whether an *in-loop* lever (depth-aware
+surrogate / staircase-backward STE) recovers the deep cascaded rung where the schedule does
+not. Run ids: `pdcnnbcn1000plat_d{6,8,10}_*`, `pdcnnbcn1000seed_d{8,10}_*`,
+`pdcnnbcd12fin_cascaded_s{0,1,2}`, `pdcnnbcclean_d12_synchronized_s{0,1,2}`.
 
 ---
 

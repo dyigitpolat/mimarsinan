@@ -669,6 +669,71 @@ tensor-shape break) is the prerequisite for any future gate-fix rescue test at d
 
 ---
 
+### §11 — The convnet-compatible STE replacement ALSO fails: staircase-STE REGRESSES the d6 onset on the DATASET axis (FashionMNIST, KMNIST) (`item_id=dcnn_d6_dataset_ste_gatefix`, 2026-06-25)
+
+§9/§10 left θ-cotrain `rc=1`-broken (the `Conv2DPerceptronMapper(features_3)` tensor-shape
+break) as the **only** un-tested firing-gain knob on the convnet, and `conversion_policy` as
+the only *measurable* lever (which net-regresses, −5.17pp on MNIST). This batch tests the
+**convnet-compatible replacement** for the broken θ-cotrain — `ttfs_staircase_ste`
+(`ste_mix=0.5`, the hedged staircase-backward STE) — gridded against `conversion_policy`, and
+extends the question to the **harder datasets** at the same d6 onset. `deep_cnn` (w16),
+`ttfs_cycle_based` S=4, on-chip-majority VALID, 3 seeds/arm, `max_simulation_samples=200`.
+Ledger: `cluster:"WS7"`, `kind:"escalation"`, `item_id:"dcnn_d6_dataset_ste_gatefix"` (2 rows).
+
+| dataset | ste | cp | deployed (3-seed) | seeds | ANN | lever lift | sync ceiling | verdict |
+|:--------|:--:|:--:|------------------:|:------|----:|-----------:|:------------:|:--------|
+| FashionMNIST | false | false | **0.8433** (baseline) | .875/.825/.83 | 0.932 | — | 0.8962 | no-lever baseline |
+| FashionMNIST | **true** | false | **0.7767** | .75/.78/.80 | 0.929 | **ste −6.66pp** | 0.8962 | STE regresses |
+| FashionMNIST | false | true | 0.8167 | .795/.83/.825 | 0.931 | cp −2.66pp | 0.8962 | cp net-negative |
+| FashionMNIST | true | true | 0.7933 | .745/.815/.82 | 0.931 | ste −2.34pp | 0.8962 | no compose |
+| KMNIST | false | false | **0.9083** (baseline) | .895/.935/.895 | 0.974 | — | 0.9619 | no-lever baseline |
+| KMNIST | **true** | false | **0.8583** | .895/.805/.875 | 0.966 | **ste −5.0pp** | 0.9619 | STE regresses |
+| KMNIST | false | true | 0.8583 | .815/.865/.895 | 0.969 | cp −5.0pp | 0.9619 | cp net-negative |
+| KMNIST | true | true | 0.865 | .855/.86/.88 | 0.963 | ste +0.67pp | 0.9619 | within noise |
+
+Synchronized ceiling + cascaded baseline are the SAME d6/S=4/n=200 cell (paired
+`pdcnnbcd6data_*`, commensurable): FMNIST sync **0.8962** / cascaded baseline 0.8183;
+KMNIST sync **0.9619** / cascaded baseline 0.9167.
+
+**Verdict — NO-FIRING-GAIN-RESCUE-LEVER-EXISTS-ON-CONVNET-d6-ONSET (the dataset axis confirms
+§9).** The convnet-compatible `ttfs_staircase_ste` (`ste_mix=0.5`) does **not** rescue and
+instead **REGRESSES** the cascade on both harder datasets: FMNIST steTrue best 0.7933 vs
+no-lever baseline 0.8433 = **−5.0pp** (and −10.29pp under sync 0.8962); KMNIST steTrue best
+0.865 vs baseline 0.9083 = **−4.33pp** (−9.69pp under sync 0.9619). The ste lift at cpFalse is
+−6.66pp (FMNIST) / −5.0pp (KMNIST). It does **not compose** with `conversion_policy`, which is
+itself net-negative on the convnet (cp lift −2.66pp FMNIST / −5.0pp KMNIST at steFalse) —
+identical sign to the §9 MNIST cp regression. Every steTrue arm sits **9.7–10.3pp below the
+synchronized ceiling** and **4.3–5.0pp below the no-lever baseline**. So with θ-cotrain `rc=1`
+(§9/§10), `conversion_policy` net-regressing (§9 MNIST + here), and now staircase-STE
+regressing, there is **NO working config-level firing-gain rescue lever at the d6 convnet
+onset on the dataset axis** — **synchronized remains the unconditional deep_cnn default.**
+
+**Confounds.**
+1. **All 24 grid runs rc=0** (`q/done/`, finalized, deployed `__target_metric.json` present);
+   3 seeds/arm; `max_simulation_samples=200` on EVERY run (grid + paired baseline/sync) →
+   1/200=0.5% granularity → **read pp-level gaps, not 3rd decimals**.
+2. **NOT chance / NOT untrained.** ANN is healthy on every cell (FMNIST ~0.929–0.932, KMNIST
+   ~0.963–0.974, both ≫ 0.10 chance) ⇒ the regression is a genuine firing-gain/gradient
+   effect, not an untrained-floor artifact.
+3. **Commensurable pairing.** The sync ceiling and cascaded baseline both come from the PAIRED
+   `pdcnnbcd6data_*` batch at the SAME d6 onset, SAME S=4, SAME n=200 (unlike the §9 MNIST sync
+   which was full-10k). This is an all-cascaded grid (`ttfs_cycle_based`, S=4); ste/cp are
+   levers, the synchronized arm is the external `pdcnnbcd6data` ceiling. The KMNIST
+   steFalse/cpFalse baseline 0.9083 dips ~1pp below the bc-batch cascaded baseline 0.9167
+   (both n=200, within seed/200-sample noise); both well below sync 0.9619.
+4. **θ-cotrain (the originally-planned knob) was NOT run here** — it crashes `rc=1` on
+   `deep_cnn` (`Conv2DPerceptronMapper features_3`, §9/§10). This grid is its convnet-compatible
+   replacement, which **also** fails to rescue.
+
+Run ids (lever, rc=0): `pdcnnd6datastefix_{FashionMNIST,KMNIST}_DataProvider_steTrue_cp{False,True}_s{0,1,2}`;
+baselines: `pdcnnd6datastefix_{...}_steFalse_cp{False,True}_s{0,1,2}`; paired ceiling/baseline:
+`pdcnnbcd6data_{...}_{synchronized,cascaded}_s{0,1,2}`. **Open (still the only route):** a
+θ-cotrain convnet-forward fix (the `features_3` tensor-shape break) — every config-level lever
+on the convnet d6 onset is now exhausted (cp net-negative, staircase-STE regressing), so the
+remaining firing-gain rescue work is a **code fix to the per-channel θ knob**, not a new schedule.
+
+---
+
 ### Key file references
 
 - Decision logic + thresholds: `src/mimarsinan/tuning/orchestration/characterization.py`

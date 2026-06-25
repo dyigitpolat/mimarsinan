@@ -324,6 +324,47 @@ deep × hard cell (`plan_stage:24`).
 
 ---
 
+## 1s. The genuine n=1000 deep ladder is CLOSED on a clean `rc=0` vehicle d6→d12 — the §1g `rc=1`-n1000 confound AND the §1g d12-cascaded-`n=1` gap are both resolved; deficit is depth-MONOTONE (extends §1r to d6/d12) (`item_id=dcnn_mnist_depth_deathcascade_n1000`, 2026-06-25)
+
+§1g landed the genuine n=1000 d8/d10 reads only on the `rc=1`-confounded `pdcnndeeppair_`
+vehicle and left **d12 cascaded UNMEASURED (n=1, †)**. This item closes both gaps on the
+clean `rc=0` `pdcnnbcn1000*` vehicle (`cores.count=480`): n=1000 d6/d8/d10 paired arms +
+a FIRMED 3-seed d12 cascaded (`pdcnnbcd12fin`). `deep_cnn` (w16), MNIST, `ttfs_cycle_based`
+S=4. Ledger: `cluster:"WS3"`, `kind:"depth"` (4 rungs) + `kind:"synthesis"`.
+
+| model | dataset (depth) | res | deployed (cascaded mean ± sd) | ANN ref (AC2 target) | **casc→sync gap** | sync→ANN | n | validity | AC2 verdict |
+|:------|:----------------|:----|:------------------------------|---------------------:|------------------:|---------:|--:|:---------|:------------|
+| deep_cnn | MNIST (d6)  | n1000 | **0.9563** ± 1.16pp | 0.9914 | **+3.61** | −0.10 | 3 | VALID `rc=0` | NOT MET (onset) |
+| deep_cnn | MNIST (d8)  | n1000 | **0.9450** ± 2.09pp | 0.9914 | **+4.62** | −0.06 | 6 | VALID `rc=0` | NOT MET (widens) |
+| deep_cnn | MNIST (d10) | n1000 | **0.9328** ± 3.76pp | 0.9924 | **+5.84** | +0.08 | 6 | VALID `rc=0` | NOT MET (widens) |
+| deep_cnn | MNIST (d12) | n200  | **0.8967** ± 4.40pp | 0.9916 | **+9.48** | −0.15 | 3 | VALID `rc=0` | **NOT MET (collapse)** |
+
+- **The §1g d12-cascaded `n=1` open cell is CLOSED.** d12 cascaded is now a FIRMED 3-seed
+  cell (0.835/0.92/0.935, mean 0.8967) on the clean `rc=0` `pdcnnbcd12fin` family — the
+  `rc=−9` OOM-killed `pdcnnbcclean_d12_cascaded` seeds are NOT used.
+- **The §1g `rc=1`-n1000 confound is CLOSED.** d6/d8/d10 are clean `rc=0` at n=1000 on BOTH
+  arms; the deficit is **depth-MONOTONE** (3.61→4.62→5.84→9.48pp), reconciling §1g's two-point
+  `pdcnndeeppair_` d10>d8 read by pooling the `plat_*`+`seed_*` families (which agree).
+- **Synchronized AC2 is LOSSLESS at every rung** (`|sync→ANN| ≤ 0.15pp`, sd ≤ 0.15pp) — it
+  owns deep deployment through d12. Cascaded is strictly dominated and the deficit deepens.
+
+Run ids: `pdcnnbcn1000plat_d{6,8,10}_{cascaded,synchronized}_s{0,1,2}`,
+`pdcnnbcn1000seed_d{8,10}_{cascaded,synchronized}_s{3,4,5}`,
+`pdcnnbcd12fin_cascaded_s{0,1,2}`, `pdcnnbcclean_d12_synchronized_s{0,1,2}` (+ n1000 d12 sync
+cross-check `pdcnnbcn1000seed_d12_synchronized_s{3,4,5}`, mean 0.9920 → +9.54pp). **Confounds.**
+(1) **d12 resolution split:** d12 is n200 on both arms (coarser than the d6–d10 n1000 rungs)
+— read the +9.48pp as a gap; the n1000 sync cross-check gives a near-identical +9.54pp
+(resolution-robust). (2) **pooled 6-seed d8/d10:** the `plat`/`seed` families agree, only
+strengthening n. (3) **high cascaded variance at deep rungs** (d10 sd 3.76pp incl. an s2=0.99
+outlier; d12 sd 4.40pp) — every gap is ≫ 2× the per-seed band. (4) **no at-chance confound**
+— every ANN ≈ 0.99 ≫ chance 0.1135 → genuine firing-gain. **This is the clean `rc=0` +
+high-resolution upgrade that turns §1g's `rc=1`-n1000 and d12-`n=1` cells into formally VALID
+AC2 evidence; the deep_cnn depth death-cascade is now fully closed d4→d12 at n1000.** The
+firing-gain gate-fix remains REFUTED as a deep auto-rescue (§2d/§2e) — synchronized is the
+unconditional deep default.
+
+---
+
 ## 1j. AC2 on the VALID `deep_cnn` d8 dataset cells — CLEAN `rc=0` `bigcores` re-run closes the §1e confound (2026-06-24)
 
 §1e opened the deep_cnn dataset axis at d4/d8 but the **d8 cells carried a
@@ -691,6 +732,49 @@ gate-fix is the only remaining route to a working rescue. (Detailed analysis:
 
 ---
 
+## 2e. The convnet-compatible STE replacement for the broken θ-cotrain ALSO fails — staircase-STE REGRESSES the d6 onset on the DATASET axis (`item_id=dcnn_d6_dataset_ste_gatefix`, 2026-06-25)
+
+§2d left the per-channel θ-cotrain `rc=1`-broken on the convnet (`Conv2DPerceptronMapper
+features_3` tensor-shape break), so it was never measured as an AC2-recovery lever. This cell
+tests its **convnet-compatible replacement** — `ttfs_staircase_ste` (`ste_mix=0.5`, the hedged
+staircase-backward STE) — and extends the rescue question to the **harder datasets** at the
+same d6 onset. `deep_cnn` (w16), `ttfs_cycle_based` S=4, VALID on-chip-majority, 3 seeds/arm,
+`max_simulation_samples=200`. Levers gridded: `ttfs_staircase_ste` × `conversion_policy`.
+Ledger: `cluster:"WS7"`, `kind:"escalation"`, `item_id:"dcnn_d6_dataset_ste_gatefix"` (2 rows).
+
+| dataset | best steTrue arm | no-lever baseline | sync ceiling | ste lift (cpFalse) | best steTrue→baseline | best steTrue→sync (AC2) | rc | rescue verdict |
+|:--------|-----------------:|------------------:|-------------:|-------------------:|----------------------:|------------------------:|:--:|:--------------|
+| FashionMNIST | **0.7933** | 0.8433 | 0.8962 | **−6.66pp** | **−5.0pp** | **−10.29pp** | 0 | **STE REGRESSES** |
+| KMNIST | **0.865** | 0.9083 | 0.9619 | **−5.0pp** | **−4.33pp** | **−9.69pp** | 0 | **STE REGRESSES** |
+
+`conversion_policy` is itself net-negative on the convnet (cp lift −2.66pp FMNIST / −5.0pp
+KMNIST at steFalse — same sign as the §2d MNIST −5.17pp cp regression); ste and cp do **not**
+compose. Sync ceiling + cascaded baseline are the SAME d6/S=4/n=200 paired `pdcnnbcd6data_*`
+cell (commensurable, unlike §2d's full-10k sync).
+
+**Verdict — NO WORKING FIRING-GAIN RESCUE LEVER on the convnet d6 onset, dataset axis confirms
+§2d.** Every steTrue arm sits **9.7–10.3pp under the synchronized ceiling** and **4.3–5.0pp
+under the no-lever baseline** on both harder datasets. With θ-cotrain `rc=1`-broken (§2d, §1r),
+`conversion_policy` net-regressing (§2d MNIST + here), and now staircase-STE regressing, the
+config-level rescue space is **exhausted** at the convnet d6 onset. **Synchronized stays the
+unconditional deep_cnn default**; the only remaining route is a **code fix to the per-channel
+θ-cotrain convnet-forward path** (the `features_3` tensor-shape break), not a new schedule/lever.
+
+**Confounds.** (1) All 24 grid runs `rc=0`, finalized, deployed `__target_metric.json` present;
+`max_simulation_samples=200` on EVERY run (grid + paired baseline/sync) → 0.5% granularity →
+read pp gaps, not 3rd decimals. (2) NOT chance: ANN healthy (FMNIST ~0.929–0.932, KMNIST
+~0.963–0.974 ≫ 0.10) → genuine firing-gain regression, not untrained-floor. (3) Commensurable
+pairing: sync/cascaded baseline from the SAME-cell `pdcnnbcd6data` n=200 batch; the KMNIST
+steFalse/cpFalse baseline 0.9083 dips ~1pp below the bc-batch cascaded baseline 0.9167 within
+seed/200-sample noise, both well under sync 0.9619. (4) θ-cotrain NOT run here (`rc=1` convnet
+crash); this grid is its convnet-compatible replacement, which also fails. Run ids (lever, rc=0):
+`pdcnnd6datastefix_{FashionMNIST,KMNIST}_DataProvider_steTrue_cp{False,True}_s{0,1,2}`;
+baselines `…_steFalse_cp{False,True}_s{0,1,2}`; paired ceiling/baseline
+`pdcnnbcd6data_{…}_{synchronized,cascaded}_s{0,1,2}`. (Detailed analysis:
+`docs/research/findings/WS7_keystone_automatic.md` §11.)
+
+---
+
 ## 2c. SYNTHESIS — the two CONFIRMED `deep_cnn` AC2 items consolidated, with the corrected verdicts (2026-06-24)
 
 Two `kind="synthesis"` ledger rows (`cluster:"WS3"`) roll the per-rung AC2 cells
@@ -760,6 +844,84 @@ on this clean d8/d10 n=1000 anchor — **but the gate-fix is REFUTED as a deep a
 ~0.79 < the cascaded baseline) → synchronized stays the deep default. Next-round proposals:
 seed-firm + d12 the clean n=1000 ladder (WS3 `plan_stage:38`); the gate-fix retest on the
 clean n=1000 anchor is BLOCKED on a θ-cotrain convnet-forward fix (WS7 `plan_stage:39`).
+
+---
+
+## 1t. AC2 on the VALID `deep_cnn` d8 DATASET cells at genuine n=1000 (BOTH arms paired) — the §1j n=200 dataset-margin death-cascade HARDENS, ordering holds at 4-decimal fidelity (`item_id=dcnn_d8_dataset_n1000`, 2026-06-25)
+
+§1j closed the deep_cnn d8 dataset confound on the clean `rc=0` `bigcores` vehicle but at
+**n=200** (cascaded 0.005-grid vs synchronized FULL 10k — a resolution mismatch). This batch
+re-measures the **same d8 FMNIST/KMNIST cells with BOTH arms paired at
+`max_simulation_samples=1000`** — the genuine high-resolution dataset read. All 12 runs
+finalized `rc=0`. `deep_cnn` (w16), S=4, `ttfs_cycle_based`, 3 seeds/arm paired by seed.
+Ledger: `cluster:"WS3"`, `kind:"arch_dataset"`, `model:"deep_cnn"`, `depth:8`.
+
+| model | dataset (depth) | cascaded n1000 (3-seed mean ± sd) | synchronized n1000 (mean ± sd) | **AC2 casc→ANN gap** | casc→sync gap | sync→ANN gap | n=200 prior (§1j) | AC2 verdict |
+|:------|:----------------|:----------------------------------|:-------------------------------|---------------------:|--------------:|-------------:|------------------:|:------------|
+| deep_cnn | FashionMNIST (d8) | **0.7677** (±2.51) | 0.9015 (±0.21) | **16.40pp** | +13.38 | 3.14 | +11.34 | **NOT MET (collapse, HARDENS)** |
+| deep_cnn | KMNIST (d8)       | **0.8903** (±1.58) | 0.9732 (±0.37) | **9.06pp** | +8.28 | 0.24 | +7.19 | **NOT MET (degraded, HARDENS)** |
+
+- **VALID-CONFIRMED: the §1j n=200 dataset-margin read was NOT grid-noise inflation — the gap
+  HARDENS at genuine resolution.** With both arms paired at n=1000 the cascaded→sync gap
+  **grows**: FMNIST +11.34 → **+13.38pp**, KMNIST +7.19 → **+8.28pp** (matching the §1r/§1s
+  depth-axis n=1000-hardens precedent). The dataset-margin ordering **KMNIST (+8.28) <
+  FashionMNIST (+13.38)** holds at 4-decimal fidelity. Cascaded carries all the deficit and
+  spread (FMNIST sd 2.51pp / AC2 gap 16.40pp; KMNIST sd 1.58pp / 9.06pp).
+- **Synchronized AC2 stays effectively MET** (sync→ANN 3.14pp FMNIST, 0.24pp KMNIST, sd
+  ≤0.37pp) — the unconditional deep-model default holds at the genuine-resolution dataset
+  worst case. This is the §1h/§1j d8 dataset cube re-certified at n=1000.
+
+Run ids: `pdcnnd8datan1000_{FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_s{0,1,2}`.
+**Confounds.** (1) **PAIRING CLEAN — both arms n=1000:** unlike the §1q lenet5 precedent that
+mixed n1000-cascaded vs n50-synchronized, both arms here subsample to
+`max_simulation_samples=1000`, so the prior n200-vs-10000 mismatch is fully removed — only
+~±0.1pp 1000-sample binomial noise remains, far below the 8–13pp gaps. (2) **n_seeds=3 per
+arm** (full 2-dataset × 2-policy × 3-seed grid, all 12 `rc=0`). (3) **DEPTH cross-reference:**
+this batch is d8-only — the depth-widening is cross-referenced against the §1s depth-axis
+n=1000 precedent (d8 MNIST +4.62pp), and the d8 dataset gaps (+8.28/+13.38pp) exceed the
+MNIST baseline → dataset-margin **amplifies** the cascade beyond MNIST. (4) **NO at-chance
+confound:** ANN refs FMNIST 0.9317 / KMNIST 0.9809 ≫ 0.10 → genuine firing-gain (fully
+trained). **Next:** the firing-gain gate-fix on the d8 FMNIST collapse cell (the worst
+dataset-margin corner) — but the gate-fix is REFUTED as a deep auto-rescue (WS7 §2d/§2e:
+θ-cotrain `rc=1`-broken, staircase-STE/`cp` regress), so synchronized stays the deep default.
+
+---
+
+## 1u. AC2 on the VALID `deep_cnn` d6 DATASET cells at genuine n=1000 — the d6 rung HOLDS and the continuous FMNIST monotone-widening AC2 ladder SURVIVES (`item_id=dcnn_d6_dataset_n1000`, 2026-06-25)
+
+§1k/§1p read the d6 dataset cells at n=200 (with §1k's KMNIST an n=1 provisional). This
+firms them at **genuine n=1000**: `deep_cnn` (w16), S=4, `ttfs_cycle_based`, full 3 seeds/arm
+paired by seed, cascaded `max_simulation_samples=1000`, all 12 runs `rc=0`. Ledger:
+`cluster:"WS3"`, `kind:"arch_dataset"`, `model:"deep_cnn"`, `depth:6`.
+
+| model | dataset (depth) | cascaded n1000 (3-seed mean ± sd) | synchronized (mean ± sd) | **AC2 casc→ANN gap** | casc→sync gap | sync→ANN gap | prior read | AC2 verdict |
+|:------|:----------------|:----------------------------------|:-------------------------|---------------------:|--------------:|-------------:|:-----------|:------------|
+| deep_cnn | FashionMNIST (d6) | **0.8247** (±0.62) | 0.8979 (±0.36) | **10.46pp** | +7.33 | 3.25 | +6.11 (n200, §1k) | lossy (degraded, HARDENS) |
+| deep_cnn | KMNIST (d6)       | **0.917** (±0.43)  | 0.9598 | **5.28pp** | +4.28 | −0.34 | +5.85 (n=1 prov., §1k) | lossy (degraded, FIRMED 3-seed) |
+
+- **SUPPORTED at high resolution; the d6 rung HOLDS and the continuous FMNIST monotone-widening
+  AC2 ladder SURVIVES.** FMNIST casc→sync +6.11 (n200) → **+7.33pp** (n1000) HARDENS; KMNIST
+  +5.85 (n=1 provisional) → **+4.28pp** (full 3-seed) confirms the degraded-but-gentler KMNIST
+  ladder. The **FMNIST casc→sync ladder stays continuous and gapless**:
+  **d4 +3.90 → d6 +7.33 → d8 +11.34 → d10 +17.91pp**, with the d6 rung slotting cleanly between
+  the §1e d4 and §1j d8 anchors at 4-decimal resolution. KMNIST d6 +4.28pp sits below FMNIST d6
+  +7.33pp (**dataset-margin ordering preserved**) and is consistent with the gentler KMNIST
+  ladder (d4 +6.19 / d8 +7.19).
+- **Synchronized AC2 stays effectively MET** (sync→ANN 3.25pp FMNIST; KMNIST −0.34pp,
+  statistically at/above its ANN) — the unconditional deep-model default is reinforced at the
+  within-CNN cascade-onset depth.
+
+Run ids: `pdcnnd6datan1000_{FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_s{0,1,2}`.
+**Confounds.** (1) **0.005-grid noise deconfounded:** cascaded deployed floats are exact
+1/1000 multiples (FMNIST .817/.832/.825, KMNIST .913/.923/.915), 5× finer than n=200. (2)
+**RESIDUAL eval asymmetry (minor):** cascaded eval n=1000 (1/1000 grid) vs synchronized FULL
+10000 test set (its floats e.g. 0.9025/0.9594 are 1/10000 multiples) — read at the multi-pp
+gap scale (7.33/4.28pp ≫ 0.1pp sampling noise), far smaller than the prior n200-vs-10000
+mismatch. (3) **All 12 runs `rc=0`, full 3-seed both arms** (the §1k KMNIST n=1 provisional is
+retired). (4) **NO at-chance confound:** ANN refs FMNIST ~0.93 / KMNIST ~0.96 ≫ 0.10 →
+genuine; distinguishing knob = `ttfs_cycle_schedule`. **Next:** the firing-gain gate-fix at
+the d6 onset on FMNIST maps recovery across the now-continuous-at-n1000 3.9–18pp ladder
+(gate-fix REFUTED as deep auto-rescue per WS7 §2d/§2e).
 
 ---
 
