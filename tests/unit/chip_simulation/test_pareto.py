@@ -26,11 +26,16 @@ import os
 
 import pytest
 
+from mimarsinan.chip_simulation.cost_extraction import (
+    CostRecord,
+    save_cost_record,
+)
 from mimarsinan.chip_simulation.pareto import (
     CostProxyBand,
     ScheduleVerdict,
     cascaded_vs_synchronized,
     load_deep_cnn_rows,
+    load_measured_cost,
     pareto_front,
     propose_recipe,
     schedule_cost_band,
@@ -285,3 +290,108 @@ def test_propose_recipe_falls_back_to_synchronized_when_cascaded_off_front():
 def test_propose_recipe_unknown_budget_rejected():
     with pytest.raises(ValueError):
         propose_recipe("free-energy", rows=_synthetic_rows(), dataset="mnist")
+
+
+# --------------------------------------------------------------------------- #
+# load_measured_cost — E5 PREFERS a measured cost_record over the proxy.
+# --------------------------------------------------------------------------- #
+
+def _write_cost_record(run_dir, *, schedule, latency_steps, mj_per_sample, acc):
+    sync = schedule if schedule in ("cascaded", "synchronized") else None
+    record = CostRecord(
+        cell_key=f"ttfs/{sync}@sanafe" if sync else "ttfs@sanafe",
+        mode=f"ttfs/{sync}" if sync else "ttfs",
+        backend="sanafe",
+        acc_deploy=float(acc),
+        mj_per_sample=float(mj_per_sample),
+        spikes=123,
+        latency_steps=int(latency_steps),
+        cores=480,
+        s_global=4,
+        depth=10,
+    )
+    save_cost_record(record, run_dir)
+
+
+def test_load_measured_cost_resolves_run_dir_record(tmp_path):
+    run_dir = tmp_path / "dcnn_d10_synchronized_s0"
+    _write_cost_record(
+        str(run_dir), schedule="synchronized",
+        latency_steps=40, mj_per_sample=12.5, acc=0.9903,
+    )
+    row = {"synchronized_run_ids": ["dcnn_d10_synchronized_s0"]}
+
+    def _resolver(run_id):
+        return str(tmp_path / run_id)
+
+    measured = load_measured_cost(
+        row, schedule="synchronized", run_dir_resolver=_resolver,
+    )
+    assert measured is not None
+    assert measured.latency_steps == 40
+    assert measured.mj_per_sample == pytest.approx(12.5)
+
+
+def test_load_measured_cost_returns_none_when_unresolvable(tmp_path):
+    row = {"synchronized_run_ids": ["does_not_exist"]}
+
+    def _resolver(run_id):
+        return str(tmp_path / run_id)  # directory has no cost_record.json
+
+    assert load_measured_cost(
+        row, schedule="synchronized", run_dir_resolver=_resolver,
+    ) is None
+
+
+def test_load_measured_cost_no_resolver_is_none():
+    # No resolver -> no measured cost (the proxy path stays in force).
+    row = {"synchronized_run_ids": ["dcnn_d10_synchronized_s0"]}
+    assert load_measured_cost(row, schedule="synchronized") is None
+
+
+def test_verdict_prefers_measured_latency_when_record_present(tmp_path):
+    rows = _synthetic_rows()
+    mnist = next(r for r in rows if r["dataset"] == "mnist")
+    mnist["cascaded_run_ids"] = ["dcnn_d10_cascaded_s0"]
+    mnist["synchronized_run_ids"] = ["dcnn_d10_synchronized_s0"]
+
+    # Measured latency that DIFFERS from the proxy (proxy: sync=40, cascaded=14).
+    _write_cost_record(
+        str(tmp_path / "dcnn_d10_synchronized_s0"), schedule="synchronized",
+        latency_steps=37, mj_per_sample=9.9, acc=0.9903,
+    )
+    _write_cost_record(
+        str(tmp_path / "dcnn_d10_cascaded_s0"), schedule="cascaded",
+        latency_steps=11, mj_per_sample=2.2, acc=0.9297,
+    )
+
+    def _resolver(run_id):
+        return str(tmp_path / run_id)
+
+    verdict = cascaded_vs_synchronized(rows, run_dir_resolver=_resolver)
+    cell = verdict.per_dataset["mnist"]
+    # The decision points now use the MEASURED latency, not the proxy
+    # (proxy would be sync=40 / cascaded=14; measured is 37 / 11).
+    costs = {p["label"]: p["cost"] for p in cell.decision_points}
+    assert costs["synchronized"] == 37
+    assert costs["cascaded"] == 11
+    # The proxy cost band is still carried as the documented fallback record.
+    assert cell.cost_band.nominal_latency_steps == 40
+    # The verdict still flags conditionality on the cost band.
+    assert cell.conditional_on_cost_band is True
+
+
+def test_verdict_falls_back_to_proxy_byte_identical_without_resolver():
+    """Without a resolver (no measured records), the verdict is byte-identical
+    to the established proxy path."""
+    rows = _synthetic_rows()
+    baseline = cascaded_vs_synchronized(rows).per_dataset["mnist"]
+    with_default = cascaded_vs_synchronized(rows, run_dir_resolver=None).per_dataset["mnist"]
+    assert baseline.front_points == with_default.front_points
+    assert baseline.recommendation == with_default.recommendation
+    assert baseline.accuracy_gap_pp == with_default.accuracy_gap_pp
+    # The proxy latency (sync = S*depth = 40) is in force.
+    sync_cost = next(
+        p["cost"] for p in with_default.front_points if p["label"] == "synchronized"
+    )
+    assert sync_cost == 40
