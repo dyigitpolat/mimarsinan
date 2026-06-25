@@ -104,7 +104,14 @@ is WIRED but the `ffcv` pip package is NOT installed (fast-loader enablement nee
 tuning-collapse bug was fixed in a prior session; **NO imagenet ledger row yet** (never run to completion).
 
 **Reset dependency order (two groups):**
-- **Group 1 — codeable builds (parallel, isolated, no-GPU-to-land) = Wave 7:** D4 pruning×scheduling ·
+- **Group 1 = Wave 7 ✅ LANDED (main `a1790fe2`, all 6 CONFIRMED_CLEAN):** D4 pruning (real 16→7 core
+  reduction, dense byte-identical) · D2A Component A CLOSED (latency-windowed HCM fill → residual NF==HCM
+  `atol=0`, **all 50 fidelity locks green**) · D5 = HONEST CHARACTERIZATION (ships LayerNorm
+  mean-centering as a tested on-chip 2-rail core + a **mutation-tested proof** that QK^T/softmax/P·V/LN-var
+  are intrinsically host-only → the conv-headline is the honest transformer scope) · F-harness (F1/F2/F3
+  matrix generator + aggregator, math-verified) · D6 genuine pretrained DEPLOY (real deployed accuracy) ·
+  ImageNet fast-recipe (16-epoch one-cycle, ffcv-optional + torchvision fallback). **Group-1 codeable
+  builds (the original plan):** D4 pruning×scheduling ·
   D2A residual Component A (shared-HCM-fill NF==HCM `atol=0`) · D5 on-chip attention/LN (research;
   partial+characterized OK per DoD-3's "or honestly-scoped conv headline") · F-harness (F1/F2/F3
   experiment-matrix runner + aggregator) · D6 pretrained DEPLOY bridge · ImageNet fast-recipe (trainer
