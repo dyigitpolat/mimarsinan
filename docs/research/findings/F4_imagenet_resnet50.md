@@ -32,20 +32,50 @@ phase budget: ~158 reprogram phases → **~16 reprogram + ~142 reuse** via time-
 (measured-by-mechanism, D3/E4), priced by the defensible cost model (P2 band). So **ImageNet is reachable
 at a costed phase budget — DoD-4 satisfied.**
 
-## 3. The full-res deployed-SNN ACCURACY — the honest scheduled-path frontier
+## 3. The deployed-SNN ACCURACY — what it actually takes (corrected 2026-06-25)
 
-Running the FULL-resolution ImageNet ResNet-50 through the cycle-accurate LIF SNN sim (138K cores × T ×
-the 50K val set, or even a single-shot map of 138K cores) is a genuine **GPU-weeks realization** (the
-Scheduled-path sim). It is **not** measured here — and is **not faked**. The toolchain's ANN→SNN
-**retention** IS measured where it is feasible: on the VALID small-vehicle cells (deep_cnn / lenet5 /
-mlp_mixer — the F1–F3 matrix), where synchronized execution is **lossless** (deployed ≈ ANN, bit-exact
-per the torch↔sim fidelity locks) and the cascaded death-cascade is the characterized firing-gain
-deficit. End-to-end SNN deployment of a real pretrained ResNet (small input) is demonstrated by the D6
-bridge. So the *mechanism* (train → convert → map → deploy → measure) is closed end-to-end; the full-res
-ImageNet deployed-accuracy at scale is the named, costed future direction.
+A prior draft of this section punted the deployed accuracy as a "scheduled-path / 138K-core GPU-weeks
+frontier," implying the blocker was the per-core sim's memory. **That framing was wrong on two counts,
+and both are now corrected by measurement.**
+
+**(a) The memory wall was a standalone-script artifact, not intrinsic.** The 132 GB peak RAM came from
+`scripts/gpu/deploy_imagenet_snn.py` materializing all ~138K hard cores at once
+(`build_hybrid_hard_core_mapping`). But the deployed value does **not** require that build: the torch-side
+**Neuromorphic Forward (NF)** `chip_aligned_segment_forward` is **parity-locked bit-exact** to the
+deployed hard-core sim (`out_max_abs == 0.0`, per-neuron `k == k`; `tests/integration/_torch_sim_fidelity.py`,
+`test_residual_torch_sim_fidelity.py`) and runs purely on the IR repr — it never builds a hard core. So
+the deployed accuracy is measurable **torch-side at full 224 resolution, memory-bounded** (Wave-10 U1
+`deploy_via_nf`; and U2 streams the literal per-core HCM one segment at a time, peak RAM = one phase).
+The mapping memory is **not** the blocker.
+
+**(b) The real blocker is the LIF ADAPTATION, and a naive conversion is chance — MEASURED.** The NF is a
+*measurement* tool, not the conversion. Run on the trained ResNet-50 **without** the LIF-adaptation
+pipeline it is at chance, even with textbook activation-scale calibration:
+
+| conversion of the 71.97%-ANN ResNet-50 | T=4 | T=8 | T=16 | T=64 |
+|---|---|---|---|---|
+| convert + LIF `scale=1.0` (no calibration) | 0.000 | — | 0.031 | 0.078 |
+| convert + q=0.99 activation-scale calibration (PTC, no fine-tune) | — | 0.000 | 0.000 | — |
+| (float-ANN reference on the same batch) | | | **0.875** | |
+
+(measured this campaign, ImageNet-val subset, float weights). So **post-training conversion of a deep
+ResNet-50 to a rate-coded LIF SNN is chance at deployable T** — the depth-driven death-cascade needs the
+**gradient-based LIF adaptation** (the pipeline's `LIF Adaptation` fine-tune-with-LIF-in-the-loop step),
+not just a per-layer scale. This is the same firing-gain/death-cascade mechanism characterized on the
+small vehicles, now confirmed at ResNet-50 scale: **the adaptation is load-bearing, not optional.**
+
+**(c) The genuine number is therefore a bounded GPU run, now precisely specified.** The production
+`DeploymentPipeline` already has the spine: `Weight Preloading` (loads `runs/imagenet/resnet50.pt`) →
+`Activation Analysis` → **`LIF Adaptation`** (fast-recipe fine-tune) → clamp/quant → `Weight Quantization`
+→ `Normalization Fusion` → deployed-accuracy via the **memory-bounded NF** (U1) instead of the 132 GB
+`Hard Core Mapping`+`Simulation`. That LIF-adaptation run is the costed, named next step (Wave-11); its
+final adapted top-1 is **not yet measured** and is **not faked** here.
 
 ## 4. Honesty ledger
 - **ANN accuracy** — measured (71.97%, official val, 61 min/2 GPUs). Headline result, exceeds target.
 - **Validity / scale** — measured (VALID; ~O(100K) cores @224; scheduled-feasible 16/142 phases; P2 cost band).
-- **Full-res deployed-SNN accuracy** — NOT measured (the scheduled-path sim is GPU-weeks); honestly the
-  frontier. Retention demonstrated on the VALID small vehicles (lossless synchronized).
+- **Memory feasibility of the deployed-accuracy measurement** — RESOLVED (the parity-locked NF measures it
+  at full res with no 138K-core build; U2 streams the HCM). The 132 GB wall was a standalone-script artifact.
+- **Naive/PTC deployed accuracy** — measured = **chance** (table above). The LIF adaptation is load-bearing.
+- **Adapted deployed-SNN accuracy** — NOT yet measured (the bounded LIF-adaptation GPU run, Wave-11);
+  honestly the open number. Retention on the VALID small vehicles is measured + lossless (synchronized).

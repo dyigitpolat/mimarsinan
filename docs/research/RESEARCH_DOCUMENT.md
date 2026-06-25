@@ -23,7 +23,7 @@ single accuracy number. This document reports the toolchain and the quantitative
 | Death cascade (firing-gain, not capacity) | sharp d6 onset; **depth×dataset-dependent** — bounded ~4–7pp on MNIST, monotone-widening on harder FMNIST/KMNIST (FMNIST×d10 worst, +17.9pp); synchronized lossless (≤3pp of ANN); no rescue lever | §4.4 |
 | Scale frontier | ImageNet conv = 138K soft-cores → Scheduled path → ~16 reprogram + 142 reuse; **scheduled build confirmed bit-exact** end-to-end | §4.5 |
 | Validity is **architecture-dependent** (3 flag causes) | ViT research-gap-flagged; ResNet-18 structural-host-flagged (offload **REFUTED** by test — `supported_host` residual shortcuts, 0.42 param/0.999 MAC); ResNet-50 **VALID** (Bottleneck param-majority 0.666, scheduled-feasible) | §4.3 |
-| **F4 — ImageNet ResNet-50 from-scratch** | **71.97% top-1** in 61 min on 2 GPUs (>67% target, FFCV not needed); deployable VALID + **reachable at a costed phase budget** (~16 reprogram + 142 reuse); full-res deployed-SNN accuracy = the GPU-weeks scheduled-path frontier (retention shown lossless on the small vehicles) | §4.8 |
+| **F4 — ImageNet ResNet-50 from-scratch** | **71.97% top-1** in 61 min on 2 GPUs (>67% target, FFCV not needed); deployable VALID + **reachable at a costed phase budget** (~16 reprogram + 142 reuse); deployed-SNN accuracy is measurable memory-bounded via the parity-locked NF (132 GB wall = a script artifact), but a naive/PTC conversion is **chance** (measured) — the genuine number needs a bounded **LIF-adaptation** GPU run (Wave-11, not yet measured) | §4.8 |
 | Per-neuron attribution (GAP-1) | fixed bit-exact under coalescing+output-tiling; one residual VALUE_DOMAIN_ONLY region remains | §4.6 |
 
 **The honesty is self-defending** (CI-enforced: no collapse-without-artifact, no merged tiers, no
@@ -200,13 +200,21 @@ The toolchain trains **ResNet-50 ImageNet from-scratch to 71.97% top-1 in 61 min
 Blackwell** (the constrained target was ~67%/<~1hr; torchvision dataloading sufficed at ~6000 img/s, so
 **FFCV was not needed**) and characterizes its SNN deployment as **VALID + reachable at a costed phase
 budget** (~O(100K) soft-cores at 224px → the Scheduled path's ~16 reprogram + 142 reuse phases, priced
-by the P2 cost band) — **DoD-4 satisfied**. The full-resolution deployed-SNN *accuracy* is the genuine
-GPU-weeks scheduled-path-sim frontier (the single-shot 138K-core map alone consumes ~132 GB host RAM);
-the toolchain's ANN→SNN **retention** is measured *lossless* on the VALID small vehicles (§4.4,
-synchronized ≈ ANN bit-exact), and end-to-end ResNet SNN deploy is closed by the D6 bridge. A real
-ImageNet methodology bug (a class-sorted index-range train/val split that handicapped training and made
-val score at chance) was caught + fixed mid-run — the test-don't-assert discipline at GPU scale. See
-`findings/F4_imagenet_resnet50.md`.
+by the P2 cost band) — **DoD-4 satisfied**. The deployed-SNN *accuracy* was previously punted as a
+"138K-core GPU-weeks frontier"; that was **wrong and is corrected (2026-06-25)**: (i) the ~132 GB peak
+RAM was a standalone-script artifact (`deploy_imagenet_snn.py` materializing all hard cores), **not**
+intrinsic — the deployed value is measurable torch-side via the **parity-locked NF**
+(`chip_aligned_segment_forward`, bit-exact to the deployed sim) at full 224 res with no hard-core build
+(Wave-10 U1; U2 streams the literal HCM one segment at a time); and (ii) the real blocker is the **LIF
+adaptation** — MEASURED: a naive/PTC conversion of the 71.97% ResNet-50 (even with q=0.99 activation-scale
+calibration) is **chance** at deployable T (T=8/16 → 0.000 vs 0.875 float-ANN), because the depth-driven
+death-cascade needs the gradient-based `LIF Adaptation` step, not just a scale. So the genuine number is a
+**bounded LIF-adaptation GPU run** (`weight_source=runs/imagenet/resnet50.pt` → adapt → NF-measure,
+memory-bounded; Wave-11) — costed and named, not yet measured. The toolchain's ANN→SNN **retention** is
+measured *lossless* on the VALID small vehicles (§4.4, synchronized ≈ ANN bit-exact), and end-to-end
+ResNet SNN deploy is closed by the D6 bridge. A real ImageNet methodology bug (a class-sorted index-range
+train/val split that handicapped training and made val score at chance) was caught + fixed mid-run — the
+test-don't-assert discipline at GPU scale. See `findings/F4_imagenet_resnet50.md`.
 
 ## 5. Genuine future gaps (open research / capability, not deferral of understood work)
 
@@ -228,14 +236,16 @@ have. Things we already understand or can fix in scope were NOT deferred here.
 3. **On-chip attention / LayerNorm (the transformer frontier).** ViT-B is VALID_FLAGGED because
    attention+LN have no on-chip SNN mapping yet; this is *the* headline capability gap (the cheap
    path is foreclosed — it is real research).
-4. **ImageNet headline — ANN + reachability now DONE (§4.8); the remaining frontier is the full-res
-   deployed-SNN accuracy at scale.** ResNet-50 ImageNet from-scratch is trained (**71.97%**) and the
-   deployment is characterized VALID + reachable at a costed phase budget. What remains GPU-weeks is the
-   *full-resolution deployed-SNN accuracy* — running the 138K-core ImageNet model through the
-   cycle-accurate Scheduled-path LIF sim over the 50K val set (the single-shot map alone is ~132 GB host
-   RAM). ViT/ImageNet additionally needs D5 (on-chip attention is host-only). The retention itself is
-   already measured *lossless* on the VALID small vehicles, so this is a scale realization, not an
-   unknown.
+4. **ImageNet headline — ANN + reachability now DONE (§4.8); the remaining gap is a bounded
+   LIF-adaptation run, NOT a memory frontier.** ResNet-50 ImageNet from-scratch is trained (**71.97%**)
+   and the deployment is characterized VALID + reachable at a costed phase budget. The deployed-SNN
+   accuracy is **measurable memory-bounded** via the parity-locked NF (the ~132 GB single-shot map was a
+   standalone-script artifact, now bypassed — Wave-10). The genuine open number is the **LIF-adaptation**
+   itself: a naive/PTC conversion of the trained ResNet-50 is **chance** at deployable T (measured — even
+   with q=0.99 calibration), so the deployed accuracy needs the gradient-based `LIF Adaptation` fine-tune
+   (a bounded GPU run, Wave-11), not a 138K-core sim. ViT/ImageNet additionally needs D5 (on-chip
+   attention is host-only). Retention is measured *lossless* on the VALID small vehicles; for the deep
+   pretrained ResNet the adaptation is the open, costed work.
 5. **Residual Tier-1** (on-chip param-free merge) — *characterized as intrinsically `1/T`-bounded*: an
    in-segment on-chip merge cannot be bit-exact to the Tier-0 host-add reference (the in-segment IF head
    re-quantizes the merged spike train, differing by exactly 1 spike = `1/T` by construction; matching it
