@@ -107,7 +107,7 @@ Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_depl
 | `max_simulation_samples`, `seed`, `simulation_steps` | Simulation subsampling and cycles |
 | `training_recipe`, `tuning_recipe` | AdamW + cosine defaults (ViT-aligned) |
 
-`CONFIG_KEYS_SET` in `defaults.py` lists keys consumed by steps/tuners/simulation (including `enable_nevresim_simulation`, `enable_loihi_simulation`, `sanafe_*`, `cycle_accurate_lif_forward`, `onchip_majority_gate`/`onchip_majority_min_fraction` — the SoftCoreMappingStep on-chip parameter-majority gate — and `capacity_gate`, the E4 placement-capacity gate (SoftCoreMappingStep `_run_capacity_gate` + scheduler `capacity_precheck`)). Extend it when adding new pipeline config.
+`CONFIG_KEYS_SET` in `defaults.py` lists keys consumed by steps/tuners/simulation (including `enable_nevresim_simulation`, `enable_loihi_simulation`, `sanafe_*`, `cycle_accurate_lif_forward`, `onchip_majority_gate`/`onchip_majority_min_fraction` — the SoftCoreMappingStep on-chip parameter-majority gate — and `capacity_gate`, the E4 placement-capacity gate (SoftCoreMappingStep `_run_capacity_gate` + scheduler `capacity_precheck`), and `preload_weights` — the F3 dual-regime boolean read by `DeploymentPlan._resolve_weight_source` to derive `weight_source='torchvision'` (unset/false ⇒ from_scratch, byte-identical)). Extend it when adding new pipeline config.
 
 ## Dependencies
 
