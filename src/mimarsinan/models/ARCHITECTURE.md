@@ -23,6 +23,7 @@ and architecture-specific implementations.
 
 | `lenet5.py` | `LeNet5` | Classic LeNet-5 CNN (Conv 1→6 k5, Conv 6→16 k5 with `padding=2`, two MaxPool, FC 120→84→n_classes); T1 classical rung, pipeline-native (no grouped/depthwise conv) |
 | `squeezenet.py` | `SqueezeNet`, `FireModule` | Scaled, input-adaptive SqueezeNet Fire-module conv vehicle (squeeze 1x1 → expand 1x1 + 3x3 with `padding=1`, `torch.cat` concat) for the SCALE breadth of the deployment hypervolume. Stem Conv(k3,pad1)+ReLU → periodic MaxPool → 6 Fire modules → Conv1x1 readout → AdaptiveAvgPool → Flatten; channels follow the squeeze/expand ratio and grow with `width` (default 24, ~379K params). Pipeline-native: Conv2d / ReLU / MaxPool2d / AdaptiveAvgPool2d / cat only — no grouped/depthwise conv, no attention/LayerNorm, maps fully on-chip (MEASURED `classify_validity` tier `VALID`, param_frac = mac_frac = 1.0 under `offload`; `estimate_cores_needed` ~942 hard cores on the default 256×256 / 1000-core budget). Input-adaptive for MNIST (1x28x28) and SVHN (3x32x32); not pipeline-registered (opt-in model) |
+| `pretrained_bridge.py` | `load_pretrained_resnet18` | The `regime=pretrained` REGION as a capability (no training, no GPU deploy). Imports a stock torchvision ResNet-18 (`ResNet18_Weights.IMAGENET1K_V1` when `pretrained=True`; random init offline) and re-sizes ONLY the `fc` head to `num_classes` — the pretrained conv trunk (native 3-channel stem, BasicBlock residuals) is kept verbatim. Pipeline-native: Conv2d / BatchNorm2d (absorbed into conv) / ReLU / MaxPool2d / AdaptiveAvgPool2d / Linear + residual `add` (host ComputeOp) — NO grouped/depthwise conv, NO attention/LayerNorm, so it carries NO research-frontier op. MEASURED region descriptor at 3x32x32 under `offload`: `classify_validity` tier `VALID_FLAGGED`, param_frac ≈ 0.423 (param-minority), mac_frac ≈ 0.999 (MAC-majority on-chip), `research_gap_ops=[]` — the residual `add` segment boundaries push the segment-start conv encoders host-side (the located pretrained-residual frontier); `estimate_cores_needed` = 651 hard cores, feasible, phase_count 1 on the default 256×256 / 1000-core budget. Validity/capacity verdict is structural (weight-independent); a network-gated test asserts the REAL ImageNet weights load. Not pipeline-registered (opt-in); finetune/deploy is a GPU follow-up |
 
 ### Subdirectories
 
@@ -35,7 +36,7 @@ and architecture-specific implementations.
 ## Dependencies
 
 - **Internal**: `mapping`, `code_generation` (via mapping), `chip_simulation.hybrid_execution`, `chip_simulation.spike_recorder`.
-- **External**: `torch`, `numpy`, `einops`; lazy `spikingjelly` for LIF.
+- **External**: `torch`, `numpy`, `einops`; lazy `spikingjelly` for LIF; lazy `torchvision` for `pretrained_bridge` (opt-in; ImportError raised verbatim when absent).
 
 ## Dependents
 
