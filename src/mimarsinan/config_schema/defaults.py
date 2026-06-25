@@ -111,6 +111,17 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # interval by ``_divisor`` so the stale-streak patience trips after fewer steps.
     "tuning_tight_plateau": False,
     "tuning_recovery_check_divisor": 1,
+    # CERTIFIED non-destructive controller (R7d, default off => byte-identical):
+    # snapshot the model STATE at every commit whose gate metric STRICTLY beats the
+    # running best, and at the END of _finalize_run restore that best state iff the
+    # finalized gate metric is worse than it (by more than the rollback tolerance).
+    # The guard brackets the WHOLE ramp + after_run + stabilization, so a long ramp /
+    # the forced jump to rate 1.0 / a degrading stabilization pass can never ship a
+    # model worse than the best COMMITTED cycle. The gate metric is the paired
+    # correctness vector when tuning_use_paired_sensor is on (deployed-anchored where
+    # available), else validate_n_batches(eval_n_batches) — the same eval the per-cycle
+    # commit uses, so the snapshot and finalize metrics share one statistical basis.
+    "tuning_keepbest_certified": False,
     # Recipe-driven STEP recovery (generic: routes tuning_recipe + warmup/cosine
     # into the step recovery instead of the hardcoded Adam(wd=5e-5)/constant-LR path).
     "tuning_recipe_recovery": False,
@@ -354,6 +365,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "tuning_stabilization_ratio",
     "tuning_tight_plateau",
     "tuning_recovery_check_divisor",
+    "tuning_keepbest_certified",
     "tuning_recipe_recovery",
     "optimization_driver",
     "s_allocation",

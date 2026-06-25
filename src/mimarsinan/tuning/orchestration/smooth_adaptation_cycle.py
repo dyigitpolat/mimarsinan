@@ -79,6 +79,16 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._recovery_check_divisor = max(
             1, int(pipeline.config.get("tuning_recovery_check_divisor", 1))
         )
+        # CERTIFIED non-destructive controller (R7d, default off → byte-identical):
+        # snapshot the best-committed STATE and restore it at finalize if the run
+        # ends worse. ``_best_committed_state``/``_best_committed_metric`` are the
+        # run-level keep-best record (distinct from ``_best_committed_acc``, the
+        # ratchet's scalar high-water mark — that snapshots no state).
+        self._keepbest_certified = bool(
+            pipeline.config.get("tuning_keepbest_certified", False)
+        )
+        self._best_committed_state = None
+        self._best_committed_metric = None
         # Bounded cosine-scheduled stabilization (CHANGE 2): a single hard-cutoff
         # pass of ``ratio * gradual_train_steps`` steps with a cosine-decay LR.
         self._stabilization_bounded = bool(
@@ -262,6 +272,33 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._best_committed_acc = (
             float(post_acc) if best is None else max(float(best), float(post_acc))
         )
+
+    def _certified_gate_metric(self, paired_post_acc=None):
+        """The keep-best gate metric (R7d). Reads the SAME basis the commit gate
+        uses: the paired correctness fraction over the shared confirm subsample when
+        ``tuning_use_paired_sensor`` is on (deployed-anchored where available), else
+        ``probe()`` (``validate_n_batches(eval_n_batches)``). ``paired_post_acc``
+        reuses an already-computed commit-time paired fraction to avoid a second eval
+        pass; ``None`` forces a fresh read (the finalize-time measurement)."""
+        if getattr(self, "_paired_gate", False) and self._ref_correct is not None:
+            if paired_post_acc is not None:
+                return float(paired_post_acc)
+            cand = self.trainer.validate_correctness_on_indices(self._confirm_indices)
+            return (sum(1 for c in cand if c) / len(cand)) if cand else 0.0
+        return float(self.probe())
+
+    def _snapshot_best_committed_if_improved(self, post_acc):
+        """R7d: on a commit whose gate metric STRICTLY beats the running best,
+        clone the model STATE into ``_best_committed_state`` (the run-level keep-best
+        record ``_finalize_run`` restores). No-op unless ``tuning_keepbest_certified``
+        is on, so the default path takes no snapshot."""
+        if not getattr(self, "_keepbest_certified", False):
+            return
+        metric = self._certified_gate_metric(paired_post_acc=post_acc)
+        best = getattr(self, "_best_committed_metric", None)
+        if best is None or metric > best:
+            self._best_committed_metric = float(metric)
+            self._best_committed_state = self._clone_state()
 
     # Tuners that REPLACE model parameters each cycle (weight-quant /
     # PerceptronTransform) cannot persist Adam moments — a held optimizer would
@@ -452,6 +489,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._committed_rate = ctx.rate
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
         self._update_best_committed_acc(ctx.post_acc)
+        self._snapshot_best_committed_if_improved(ctx.post_acc)
 
         reached_target = AcceptanceSensor.reached_target(
             ctx.post_acc, self._get_target(), ctx.noise_margin
