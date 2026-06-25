@@ -310,6 +310,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "pruning",
     "pruning_fraction",
     "weight_source",
+    "preload_weights",
     "model_type",
     "device",
     "input_shape",

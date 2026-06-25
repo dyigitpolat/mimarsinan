@@ -75,6 +75,22 @@ def resolve_optimization_driver(config: dict[str, Any]) -> str:
 # Back-compat private alias (the dataclass body below referenced the old name).
 _resolve_optimization_driver = resolve_optimization_driver
 
+# F3 dual-regime axis: ``preload_weights`` is the publication-batch boolean for
+# the pretrained regime. An EXPLICIT ``weight_source`` always wins; the flag only
+# derives the default torchvision-pretrained source when no source is set, so an
+# unset flag is byte-identical (``weight_source`` unchanged => from_scratch).
+PRETRAINED_WEIGHT_SOURCE = "torchvision"
+
+
+def _resolve_weight_source(config: dict[str, Any]) -> Any:
+    """``weight_source`` with the F3 ``preload_weights`` regime flag folded in."""
+    explicit = config.get("weight_source")
+    if explicit:
+        return explicit
+    if bool(config.get("preload_weights", False)):
+        return PRETRAINED_WEIGHT_SOURCE
+    return explicit
+
 
 @dataclass(frozen=True)
 class DeploymentPlan:
@@ -156,7 +172,7 @@ class DeploymentPlan:
             search_mode=derive_search_mode(config),
             model_type=model_type,
             model_category=ModelRegistry.get_category(model_type),
-            weight_source=get("weight_source"),
+            weight_source=_resolve_weight_source(config),
             spiking_mode=spiking,
             ttfs_cycle_schedule=ttfs_cycle_schedule(schedule_raw),
             requires_ttfs_firing=requires_ttfs_firing(spiking),
