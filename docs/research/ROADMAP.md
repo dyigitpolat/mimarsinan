@@ -119,6 +119,16 @@ tuning-collapse bug was fixed in a prior session; **NO imagenet ledger row yet**
 - **Group 2 — GPU runs (enqueue → runner drains, parallel):** F1/F2/F3 cells on existing
   vehicles×datasets · B2 CIFAR10/100 · the ImageNet ResNet-50 run → consolidate into F1–F4 → finalize F5
   with measured publication results.
+- **Group-2 progress (Wave 8, in flight):** F1 CI batches enqueued + draining on GPUs 2,3. **ImageNet
+  ResNet-50 TRAINING** on GPUs 0,1 (campaign pinned to 2,3 via `free` GPU leases — no runner stop;
+  `run_imagenet_leased.py`). **Found+fixed a real bug**: the provider's class-sorted index-range 95/5
+  split handicapped training (model saw only ~950 classes) and made per-epoch val score at chance —
+  fixed to train on the FULL train + eval on the OFFICIAL val (`273a9acb`), restarted. Codeable units
+  LANDED (`423b7eaf`, all CONFIRMED_CLEAN): F2/F3 wiring (F2 percentile-norm was already wired; F3
+  `preload_weights`→torchvision added, default byte-identical) · ImageNet ANN→SNN **deploy capstone
+  harness** (`deploy_imagenet_snn.py` — real deploy_and_eval on the official val, emits a campaign-schema
+  ledger row + cost) · B2 CIFAR breadth generator. NEXT: epoch-4 val confirms the fix → run completes →
+  deploy the checkpoint as SNN → F4 measured → aggregate F1–F4 → finalize F5.
 
 ---
 
