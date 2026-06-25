@@ -7,3 +7,12 @@
 | `hard_core_mapping_step.py` | `HardCoreMappingStep` | **Rung 3** — `run_hcm_mapping_metric` over the packed mapping (packing: placement, padding, reindex, coalescing, splitting, scheduling). |
 
 Uses `pipelining.hybrid_mapping_consumer` and `pipelining.simulation_factory` for the gate metrics and cached hybrid mappings. HCM builds the packed mapping via `load_hybrid_mapping_for_step` when uncached. The old `build_spiking_flow_for_metric` alias is gone.
+
+## Helper modules (consumed by `SoftCoreMappingStep`)
+
+| File | Export | Purpose |
+|------|--------|---------|
+| `fused_linear.py` | `FusedLinear` | Bias-folded linear; `bring_back_bias` restores a plain `nn.Linear` before mapping. |
+| `soft_core_mapping_ir_pruning.py` | `apply_ir_pruning_if_enabled` | In-loop mask pruning: compacts already-zeroed rows/cols on the IR when `plan.pruning` is on. |
+| `soft_core_structured_pruning.py` | `apply_structured_pruning_if_enabled` | **D4** structured pre-mapping pruning: when `prune_sparsity > 0` (default `0.0` ⇒ no-op, byte-identical), runs `transformations.pruning.magnitude.prune_perceptron_chain` on the fused model BEFORE mapping, structurally removing low-magnitude output channels so the IR maps to fewer cores / reprogram phases (see `docs/research/findings/D4_pruning_scheduling_cost.md`). Runs after norm-fusion (`normalization == Identity`). |
+| `soft_core_mapping_viz.py` | `write_ir_graph_visualizations` | Soft-core IR heatmaps / flowchart artifacts. |

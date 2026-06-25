@@ -127,6 +127,11 @@ class DeploymentPlan:
     pruning: bool
     pruning_fraction: float
     pruning_enabled: bool
+    # D4: structured magnitude-pruning fraction applied BEFORE mapping (default
+    # 0.0 ⇒ no structural pruning ⇒ byte-identical). Distinct from the in-loop
+    # ``pruning``/``pruning_fraction`` mask machinery above; this is the deployment
+    # knob the coverage ledger enumerates as ``pruning=dense`` vs ``pruning=pruned``.
+    prune_sparsity: float
 
     # ── deployment targets ─────────────────────────────────────────────────
     enable_nevresim_simulation: bool
@@ -158,6 +163,7 @@ class DeploymentPlan:
 
         pruning = get("pruning", False)
         pruning_fraction = float(get("pruning_fraction", 0.0))
+        prune_sparsity = float(get("prune_sparsity", 0.0) or 0.0)
 
         degradation_tolerance = float(get("degradation_tolerance", 0.05))
         scm_dt = get("scm_degradation_tolerance")
@@ -187,6 +193,7 @@ class DeploymentPlan:
             pruning=bool(pruning),
             pruning_fraction=pruning_fraction,
             pruning_enabled=bool(pruning) and pruning_fraction > 0,
+            prune_sparsity=prune_sparsity,
             enable_nevresim_simulation=bool(get("enable_nevresim_simulation", True)),
             enable_loihi_simulation=bool(get("enable_loihi_simulation", False)),
             enable_sanafe_simulation=bool(get("enable_sanafe_simulation", False)),
