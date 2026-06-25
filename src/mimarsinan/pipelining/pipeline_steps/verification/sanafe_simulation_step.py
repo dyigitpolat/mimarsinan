@@ -13,13 +13,21 @@ fails the pipeline with ``format_first_diff`` for triage.
 
 from __future__ import annotations
 
+import logging
 from typing import List
 
 import torch
 
+from mimarsinan.chip_simulation.certification import CertificationCell
+from mimarsinan.chip_simulation.cost_extraction import (
+    extract_cost_record,
+    save_cost_record,
+)
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
 from mimarsinan.chip_simulation.sanafe.records import SanafeCoreDiff, SanafeRunRecord
 from mimarsinan.chip_simulation.sanafe.stats import SanafeStepReport
+
+logger = logging.getLogger("mimarsinan.chip_simulation")
 
 
 def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
@@ -220,3 +228,34 @@ class SanafeSimulationStep(PipelineStep):
             f"{report.aggregate['total_spikes']} spikes, "
             f"{report.aggregate['total_packets']} packets"
         )
+
+        # Emit a MEASURED cost record alongside the run (cost-emit). This is a
+        # pure additive side-effect: it writes an extra ``cost_record.json`` and
+        # NEVER alters the deployment result. It is fully exception-isolated —
+        # a cost-extraction bug must never crash the live campaign runner.
+        self._emit_cost_record(report)
+
+    def _emit_cost_record(self, report: SanafeStepReport) -> None:
+        """Drop a measured ``cost_record.json`` next to the run artifacts.
+
+        Mines the in-memory SANA-FE report (the same ``to_snapshot_dict``
+        projection ``extract_cost_record_from_run`` reads off disk) plus the
+        run's (firing × sync) cell and deployed accuracy, then saves a cost
+        record under ``pipeline.working_directory``. Exception-isolated: any
+        failure is logged and swallowed so cost emission can never crash or
+        alter the deployment.
+        """
+        try:
+            plan = DeploymentPlan.of(self.pipeline)
+            cell = CertificationCell.from_mode_policy(
+                plan.mode_policy(), backend="sanafe",
+            )
+            record = extract_cost_record(
+                cell=cell,
+                deployed_accuracy=float(self.pipeline.get_target_metric()),
+                sanafe_snapshot=report.to_snapshot_dict(),
+                provenance={"run_dir": self.pipeline.working_directory},
+            )
+            save_cost_record(record, self.pipeline.working_directory)
+        except Exception:
+            logger.exception("SANA-FE cost-record emission failed; skipping")

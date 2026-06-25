@@ -41,8 +41,24 @@ operating on scalar (cost, accuracy) points so the verdict is human-auditable.
 from __future__ import annotations
 
 import json
+import logging
+import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
+
+from mimarsinan.chip_simulation.cost_extraction import (
+    COST_RECORD_FILENAME,
+    CostRecord,
+    load_cost_record,
+)
+
+logger = logging.getLogger("mimarsinan.chip_simulation")
+
+# A row-level run-id → run-directory resolver. The ledger row carries the
+# run-id(s) (``run_id`` / ``cascaded_run_ids`` / ``synchronized_run_ids``) but
+# NOT the absolute run directory (it depends on the campaign's
+# ``generated_files_path`` at run time), so the caller supplies the mapping.
+RunDirResolver = Callable[[str], Optional[str]]
 
 
 __all__ = [
@@ -51,9 +67,11 @@ __all__ = [
     "ScheduleVerdict",
     "CascadeVsSyncVerdict",
     "RecipeProposal",
+    "RunDirResolver",
     "COST_BAND_DISCLAIMER",
     "pareto_front",
     "schedule_cost_band",
+    "load_measured_cost",
     "cascaded_vs_synchronized",
     "propose_recipe",
     "load_deep_cnn_rows",
@@ -209,6 +227,74 @@ def schedule_cost_band(
 
 
 # --------------------------------------------------------------------------- #
+# load_measured_cost — PREFER a measured cost_record over the proxy when one
+# resolves for a row's run_ids (the cost-emit unlock); else None (proxy stays).
+# --------------------------------------------------------------------------- #
+
+# The row run-id fields, in schedule order, a measured record can hang off.
+_RUN_ID_FIELDS_BY_SCHEDULE = {
+    "cascaded": ("cascaded_run_ids",),
+    "synchronized": ("synchronized_run_ids",),
+}
+# Schedule-agnostic run-id fields tried for ANY schedule (a single-schedule row).
+_RUN_ID_FIELDS_ANY = ("run_id", "run_ids")
+
+
+def _run_ids_for_schedule(row: dict, schedule: str) -> List[str]:
+    """The row's run-id(s) for ``schedule`` (schedule-specific then generic)."""
+    fields = _RUN_ID_FIELDS_BY_SCHEDULE.get(schedule, ()) + _RUN_ID_FIELDS_ANY
+    ids: List[str] = []
+    for field_name in fields:
+        value = row.get(field_name)
+        if value is None:
+            continue
+        candidates = value if isinstance(value, (list, tuple)) else (value,)
+        ids.extend(str(c) for c in candidates if c)
+    return ids
+
+
+def load_measured_cost(
+    row: dict,
+    *,
+    schedule: str,
+    run_dir_resolver: Optional[RunDirResolver] = None,
+) -> Optional[CostRecord]:
+    """The MEASURED :class:`CostRecord` for a row's ``schedule``, or ``None``.
+
+    Resolves the row's run-id(s) for ``schedule`` to run directories via
+    ``run_dir_resolver`` and loads the first resolvable ``cost_record.json``
+    (the measured cost the deployment now emits, cost-emit). Returns ``None``
+    when no resolver is supplied or no record resolves — the caller then falls
+    back to the documented cost PROXY, keeping the proxy path byte-identical.
+
+    THE RESOLUTION GAP (documented, not guessed): the ledger row carries the
+    run-id(s) but NOT the absolute run directory (it depends on the campaign's
+    ``generated_files_path`` at run time). The mapping is therefore the caller's
+    responsibility via ``run_dir_resolver``; without one this returns ``None``
+    and E5 stays on the proxy.
+    """
+    if run_dir_resolver is None:
+        return None
+    for run_id in _run_ids_for_schedule(row, schedule):
+        try:
+            run_dir = run_dir_resolver(run_id)
+        except Exception:
+            logger.exception("run_dir_resolver raised for run_id %r", run_id)
+            continue
+        if not run_dir:
+            continue
+        path = os.path.join(run_dir, COST_RECORD_FILENAME)
+        if not os.path.exists(path):
+            continue
+        try:
+            return load_cost_record(path)
+        except Exception:
+            logger.exception("failed to load cost record at %s", path)
+            continue
+    return None
+
+
+# --------------------------------------------------------------------------- #
 # cascaded_vs_synchronized — the per-dataset verdict.
 # --------------------------------------------------------------------------- #
 
@@ -230,6 +316,12 @@ class ScheduleVerdict:
     cascaded_cost_band: CostProxyBand
     recommendation: str               # RETIRE_CASCADED / REGIME_DEPENDENT / NO_GAP
     conditional_on_cost_band: bool
+    # The (cost, accuracy) decision points the front was computed over. The
+    # ``cost`` is the MEASURED ``latency_steps`` when a cost_record resolved for
+    # the schedule's run-id(s), else the documented proxy ``nominal_latency_steps``.
+    decision_points: List[ParetoPoint] = field(default_factory=list)
+    # Whether the decision points used a MEASURED cost record (vs the proxy).
+    cost_measured: bool = False
     cost_band_assumption: str = COST_BAND_DISCLAIMER
 
     @property
@@ -301,7 +393,25 @@ def _norm_dataset(name) -> Optional[str]:
     return aliases.get(low, low)
 
 
-def _verdict_for_cell(row: dict) -> ScheduleVerdict:
+def _schedule_cost(
+    row: dict,
+    schedule: str,
+    proxy_band: CostProxyBand,
+    run_dir_resolver: Optional[RunDirResolver],
+) -> tuple:
+    """``(latency_cost, used_measured)`` for one schedule: PREFER the measured
+    cost_record's ``latency_steps``, else the documented proxy ``nominal_latency_steps``."""
+    measured = load_measured_cost(
+        row, schedule=schedule, run_dir_resolver=run_dir_resolver,
+    )
+    if measured is not None:
+        return int(measured.latency_steps), True
+    return int(proxy_band.nominal_latency_steps), False
+
+
+def _verdict_for_cell(
+    row: dict, *, run_dir_resolver: Optional[RunDirResolver] = None,
+) -> ScheduleVerdict:
     ds = _norm_dataset(row["dataset"])
     depth = int(row["depth"])
     s_global = int(row.get("S") or 4)
@@ -315,10 +425,15 @@ def _verdict_for_cell(row: dict) -> ScheduleVerdict:
     sync_band = schedule_cost_band("synchronized", s_global=s_global, depth=depth, cores=cores)
 
     # The (latency-cost, accuracy) decision points -- latency is the deterministic
-    # discriminating cost axis (energy tracks it; both are model-estimates with a band).
+    # discriminating cost axis (energy tracks it). The cost is the MEASURED
+    # latency_steps when a cost_record resolves for the schedule's run-id(s)
+    # (cost-emit), else the documented proxy band (byte-identical fallback).
+    casc_cost, casc_measured = _schedule_cost(row, "cascaded", casc_band, run_dir_resolver)
+    sync_cost, sync_measured = _schedule_cost(row, "synchronized", sync_band, run_dir_resolver)
+    cost_measured = casc_measured or sync_measured
     points = [
-        {"label": "cascaded", "cost": casc_band.nominal_latency_steps, "accuracy": casc},
-        {"label": "synchronized", "cost": sync_band.nominal_latency_steps, "accuracy": sync},
+        {"label": "cascaded", "cost": casc_cost, "accuracy": casc},
+        {"label": "synchronized", "cost": sync_cost, "accuracy": sync},
     ]
     front = pareto_front(points)
     front_labels = {p["label"] for p in front}
@@ -346,10 +461,16 @@ def _verdict_for_cell(row: dict) -> ScheduleVerdict:
         cost_band=sync_band, cascaded_cost_band=casc_band,
         recommendation=recommendation,
         conditional_on_cost_band=True,
+        decision_points=points,
+        cost_measured=cost_measured,
     )
 
 
-def cascaded_vs_synchronized(rows: Sequence[dict]) -> CascadeVsSyncVerdict:
+def cascaded_vs_synchronized(
+    rows: Sequence[dict],
+    *,
+    run_dir_resolver: Optional[RunDirResolver] = None,
+) -> CascadeVsSyncVerdict:
     """The cascaded-vs-synchronized verdict per deep_cnn dataset.
 
     Consumes campaign science rows (any ``kind``) carrying both schedule accuracies;
@@ -357,10 +478,19 @@ def cascaded_vs_synchronized(rows: Sequence[dict]) -> CascadeVsSyncVerdict:
     emits a :class:`ScheduleVerdict`. The verdict is CONDITIONAL on the cost-proxy band:
     synchronized is RETIRE-worthy only if it dominates on accuracy AND cost; cascaded's
     lower pipelined latency otherwise keeps the choice REGIME-dependent.
+
+    ``run_dir_resolver`` (cost-emit) optionally maps a row's run-id(s) to run
+    directories so the decision cost prefers the MEASURED ``latency_steps`` of an
+    emitted ``cost_record.json`` over the proxy. When ``None`` (the default) the
+    decision uses the documented cost proxy — byte-identical to the pre-cost-emit
+    path.
     """
     deep_cnn_rows = [r for r in rows if r.get("model") == "deep_cnn"]
     best = _best_cell_per_dataset(deep_cnn_rows)
-    per_dataset = {ds: _verdict_for_cell(row) for ds, row in best.items()}
+    per_dataset = {
+        ds: _verdict_for_cell(row, run_dir_resolver=run_dir_resolver)
+        for ds, row in best.items()
+    }
     return CascadeVsSyncVerdict(per_dataset=per_dataset)
 
 
