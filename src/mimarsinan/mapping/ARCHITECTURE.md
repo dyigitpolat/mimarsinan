@@ -16,6 +16,7 @@ Converts PyTorch models to an intermediate representation (IR) and packs the IR 
 | `layout/` | [layout/ARCHITECTURE.md](layout/ARCHITECTURE.md) | Shape-only layout SSoT |
 | `mappers/` | [mappers/ARCHITECTURE.md](mappers/ARCHITECTURE.md) | Mapper hierarchy |
 | `support/` | [support/ARCHITECTURE.md](support/ARCHITECTURE.md) | Scales, bias bakes (negative-value shift, TTFS), geometry, scheduling |
+| `onchip_attention/` | [onchip_attention/ARCHITECTURE.md](onchip_attention/ARCHITECTURE.md) | D5 transformer-frontier op→core mappability: realizability verdicts for attention/LN sub-ops + on-chip LayerNorm mean-centering (two-rail `NeuralCore`). Isolated research module; not in the deployment path. |
 
 ## Root modules (orchestration)
 
