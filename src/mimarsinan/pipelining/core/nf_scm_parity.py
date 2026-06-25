@@ -339,7 +339,12 @@ def _collect_scm_normalized(
 
 
 def _group_record_by_perceptron(record, identity_mapping) -> Dict[int, np.ndarray]:
-    per_core: Dict[int, tuple[int, np.ndarray]] = {}
+    # ir_id -> (perceptron_index, tile_offset, values). ``tile_offset`` is the IR
+    # output-tile's start in the original layer (perceptron_output_slice[0]) — the
+    # JOINT (ir_core_id, neuron_range) key that orders a perceptron's tiles. IR-id
+    # assignment is not monotone in the slice once compaction reorders ids, so
+    # sorted(ir_id) would scramble per-neuron attribution under output tiling.
+    per_core: Dict[int, tuple[int, int, np.ndarray]] = {}
     for stage_index, segment in record.segments.items():
         stage = identity_mapping.stages[stage_index]
         placements = stage.hard_core_mapping.soft_core_placements_per_hard_core
@@ -361,12 +366,21 @@ def _group_record_by_perceptron(record, identity_mapping) -> Dict[int, np.ndarra
                 core_record.output_activation[: core_record.n_out_used],
                 dtype=np.float64,
             )
-            per_core[placement["ir_node_id"]] = (int(perceptron_index), values)
+            out_slice = placement.get("perceptron_output_slice")
+            tile_offset = int(out_slice[0]) if out_slice is not None else 0
+            per_core[placement["ir_node_id"]] = (
+                int(perceptron_index), tile_offset, values,
+            )
 
     by_perceptron: Dict[int, list[int]] = defaultdict(list)
-    for ir_id, (perceptron_index, _) in per_core.items():
+    for ir_id, (perceptron_index, _, _) in per_core.items():
         by_perceptron[perceptron_index].append(ir_id)
     return {
-        pi: np.concatenate([per_core[ir_id][1] for ir_id in sorted(ir_ids)])
+        pi: np.concatenate(
+            [
+                per_core[ir_id][2]
+                for ir_id in sorted(ir_ids, key=lambda c: (per_core[c][1], c))
+            ]
+        )
         for pi, ir_ids in by_perceptron.items()
     }
