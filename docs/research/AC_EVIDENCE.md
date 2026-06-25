@@ -964,6 +964,15 @@ shrink the gap (n1000 ≥ n200 at d8/d10) → the depth-law hardens. (3) EXCLUDE
 `rc=1`/`rc=-9` ladders (`dcnn_d6/d8`, `pdcnnladder_d6/d7`, `pdcnnbc_d12 s0/s2`,
 `pdcnnbcclean_d12`) and the WS7 gate-fix grids (no sync counterpart). All clean runs
 passed parity (NF↔SCM 1.0, torch↔sim 0.9961–1.0).
+- **POOLED-BATCH hardening (synthesis row, 2026-06-25):** pooling the d8/d10 n1000 rungs
+  over THREE independent seed batches (`pdcnnbcn1000_` base + `pdcnnbcn1000plat_` plat +
+  `pdcnnbcn1000seed_` seed, **n=9/rung**) re-confirms the plateau: pooled gaps
+  d8 +6.24 / d10 +5.91 / d12 +5.67pp (`d10 ≤ d8`, `d12 ≤ d10`). The d8 pooled mean is
+  INFLATED by one base-batch outlier (`pdcnnbcn1000_d8_cascaded_s0=0.814`, verified
+  artifact); clean per-batch d8 gaps are **3.65 (plat) / 5.59 (seed)pp** and d10 agrees
+  tightly across batches at **5.63–6.06pp** — monotone-widening is refuted regardless of
+  outlier treatment. See WS3 findings §4x. Synthesis ledger row
+  `kind:"synthesis", item_id:"deep_cnn_depth_cascade_ladder_mnist"` cites all 54 run_ids.
 
 ---
 
@@ -1094,6 +1103,15 @@ not 3rd decimals**. (5) **NO at-chance confound:** every ANN 0.93–0.98 ≫ 0.1
 `pdcnnd10datafix` cot/cp grid is cascaded-only — corroborating, not closing. Run ids: see
 ledger `item_id:"dcnn_dataset_breadth_depth"`. (Detailed analysis:
 `docs/research/findings/WS3_depth_firing_gain.md` §4w.)
+- **The §1w-(1) "no d5 leg" gap is CLOSED (synthesis row, 2026-06-25):** the
+  `pdcnnd5data`/`pdcnnd6databc`/`pdcnnd8databc` dataset-axis corpus (36 paired runs, all
+  `rc=0`, mss=200) extends the ordering law to **d5/d6/d8** with the **dataset-margin
+  ordering CONFIRMED at every depth** — FMNIST cascaded→ANN > KMNIST at d5 (8.89>5.29),
+  d6 (9.00>8.42), d8 (14.30>7.71pp); synchronized near-ANN throughout (FMNIST 2.87–2.96,
+  KMNIST 0.48–0.68pp). Depth-growth is **clean/monotone on FMNIST** (8.89→9.00→14.30) but
+  **non-monotone on KMNIST** (d6 8.42 > d8 7.71, inside the KMNIST cascaded seed-std up to
+  2.48pp). See WS3 findings §4y; synthesis ledger row
+  `kind:"synthesis", item_id:"deep_cnn_dataset_axis_death_cascade"` cites the 36 run_ids.
 
 ---
 

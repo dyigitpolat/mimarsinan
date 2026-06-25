@@ -1549,6 +1549,52 @@ of §4l Item B).
 
 ---
 
+## 4x. POOLED-BATCH confirmation of the §4v plateau — d8/d10 over n=9 (three independent seed batches base/plat/seed) re-confirms `cascaded→sync` SATURATES, and isolates the d8 base-batch outlier (`item_id=deep_cnn_depth_cascade_ladder_mnist`, synthesis row, 2026-06-25)
+
+This subsection pools the §4v genuine-n1000 d8/d10 rungs over **three independent
+seed batches** (`pdcnnbcn1000_` s0–2 *base* + `pdcnnbcn1000plat_` s0–2 *plat* +
+`pdcnnbcn1000seed_` s3–5 *seed*, **n=9 per rung**) and re-anchors the shallow control
+(d4 n200) and the deep close (d6/d12 n1000). It does **not** supersede §4v; it
+hardens the plateau verdict against the d8 base-batch noise and records the
+consolidated synthesis ledger row.
+
+### The pooled MNIST depth ladder — cascaded vs synchronized
+
+| d | n | mss | casc mean | sync mean | ANN | **casc→sync gap** | per-batch gap (base/plat/seed) |
+|--:|--:|----:|----------:|----------:|----:|------------------:|:-------------------------------|
+| 4  | 3 |  200 | 0.9883 | 0.9898 | 0.992  | **+0.15** | — (shallow control; read gap not 3rd dec) |
+| 6  | 3 | 1000 | 0.9563 | 0.9924 | 0.9914 | **+3.61** | plat only |
+| 8  | 9 | 1000 | 0.9293 | 0.9918 | 0.9917 | **+6.24** | 9.48 / 3.65 / 5.59 |
+| 10 | 9 | 1000 | 0.9318 | 0.9909 | 0.9918 | **+5.91** | 6.06 / 6.04 / 5.63 |
+| 12 | 3 | 1000 | 0.9353 | 0.9920 | 0.9904 | **+5.67** | seed only |
+
+### Verdict — PLATEAU holds; the d8 pooled mean is INFLATED by one base-batch read
+
+The cascaded→sync gap rises steeply **d4(0.15)→d6(3.61)→d8(~6.2)** then **saturates**
+at d8/d10(5.91)/d12(5.67) — `d10 ≤ d8` and `d12 ≤ d10`, so **monotone-widening is
+refuted regardless of how the d8 outlier is treated**. The pooled d8 gap **+6.24pp** is
+dragged up by a single noisy base-batch seed (`pdcnnbcn1000_d8_cascaded_s0 = 0.814`,
+verified artifact); the **clean per-batch d8 gaps are 3.65 (plat) / 5.59 (seed)pp**, and
+d10's three batches agree tightly at **5.63–6.06pp**. The synchronized arm holds
+**~lossless (==ANN 0.990–0.992)** at every depth. Cascaded per-seed variance is high
+(d8 0.814–0.967, d10 0.869–0.99, d12 0.887–0.977), consistent with a fragile cascade,
+but the depth-trend of the MEAN gap is **flat/saturating, not rising**.
+
+### Confounds / bounds
+
+1. **No untrained-floor confound:** ANN ~0.99 (0.985–0.996) at every cell ≫ MNIST
+   chance 0.1135 → every gap is a genuine firing-gain read.
+2. **Resolution:** d6/d8/d10/d12 at `max_simulation_samples=1000` (read 2nd–3rd decimal
+   cautiously, but 3.6–6.2pp gaps are far above resolution noise); the **d4 shallow
+   control is n200** → read its +0.15pp as ~lossless, not a 3rd-decimal claim.
+3. **All 54 matched runs finalized `rc=0`** (done queue; zero failed-dir matches).
+   d8/d10 pool n=9 across base/plat/seed; d4/d6/d12 are n=3.
+4. This is a **consolidation** of the §4v per-rung reads — the per-cell rows already
+   live in the ledger under `item_id=deep_cnn_depth_cascade_ladder_mnist`; the new
+   synthesis row (`kind:"synthesis"`) cites all 54 run_ids for explicit coverage.
+
+---
+
 ## 6. One-line takeaway
 
 Over the trainable depth band (MNIST/FMNIST, d ≤ 8, w64), synchronized `deep_mlp`
@@ -1732,6 +1778,55 @@ the deficit. **This consolidates §4u + AC §1h/§1j into a single dataset-bread
 death-cascade item with the synchronized ceiling attached; FashionMNIST × d10 is the worst
 corner in the entire deep_cnn table.** (Run ids: see ledger
 `item_id:"dcnn_dataset_breadth_depth"`.)
+
+---
+
+## 4y. The dataset-margin ORDERING law spans d5/d6/d8 (incl. the §4w-UNANSWERED d5 leg) — FMNIST > KMNIST cascaded deficit at EVERY depth, monotone on FMNIST, non-monotone on KMNIST (`item_id=deep_cnn_dataset_axis_death_cascade`, synthesis row, 2026-06-25)
+
+This subsection consolidates the **`pdcnnd5data` / `pdcnnd6databc` / `pdcnnd8databc`**
+dataset-axis corpus into one synthesis row spanning **d5/d6/d8** — supplying the **d5
+leg that §4w confound #1 explicitly leaves UNANSWERED** — and states the dataset-margin
+ordering law across all three depths. `deep_cnn` (w16), S=4, `ttfs_cycle_based`,
+**`max_simulation_samples=200`**, paired cascaded-vs-synchronized by seed (only
+`ttfs_cycle_schedule` differs). 36 matched runs, all `rc=0`, 3 seeds/cell.
+
+### The dataset-margin × depth cascaded deficit — cascaded→ANN gap
+
+ANN refs FMNIST ~0.93 / KMNIST ~0.97 ≫ 0.10 chance → genuine firing-gain (no untrained floor).
+
+| dataset | depth | casc→ANN gap | sync→ANN gap | ordering |
+|:--------|:------|-------------:|-------------:|:---------|
+| FashionMNIST | 5 | **+8.89** | +2.87 | FMNIST > KMNIST |
+| KMNIST       | 5 | **+5.29** | +0.48 | (easier = smaller) |
+| FashionMNIST | 6 | **+9.00** | +2.96 | FMNIST > KMNIST |
+| KMNIST       | 6 | **+8.42** | +0.68 | |
+| FashionMNIST | 8 | **+14.30** | +2.90 | FMNIST > KMNIST (collapse) |
+| KMNIST       | 8 | **+7.71** | +0.55 | |
+
+### Verdict — CONFIRMED-WITH-CAVEAT: ordered by dataset margin, depth-monotone only on FMNIST
+
+The cascaded firing-gain deficit **orders by dataset margin** — the harder FMNIST
+(ANN~0.93) carries a **larger cascaded→ANN gap than KMNIST (ANN~0.97) at every depth**
+(d5 8.89>5.29, d6 9.00>8.42, d8 14.30>7.71pp) — while the synchronized schedule holds
+**near-ANN throughout** (FMNIST 2.87–2.96pp, KMNIST 0.48–0.68pp, no depth trend). Depth
+growth is **clean and monotone on FMNIST** (degraded d5/d6 → collapse d8: 8.89→9.00→14.30)
+but **non-monotone on KMNIST** (5.29→8.42→7.71; d6 > d8). The reproduction on this VALID
+deep_cnn vehicle confirms the death-cascade is a dataset-margin-modulated, depth-amplified
+**cascaded-only** deficit, not a training-floor/untrained-ANN artifact.
+
+### Confounds / bounds
+
+1. **n=200 → 0.005 grid:** read GAPS, not 3rd decimals (cascaded values land on the grid).
+2. **KMNIST non-monotonicity sits in the noise:** KMNIST cascaded seed-std is elevated
+   (d6 2.48pp, d5 1.03pp), which fully explains the non-monotone d6>d8 — depth-monotonicity
+   is only **clean on FMNIST**.
+3. **No at-chance confound:** ANN FMNIST ~0.93 / KMNIST ~0.97 ≫ 0.10; `ann_test_acc_mean`
+   = mean of the first `Test accuracy:` log line across all 6 runs per (depth,dataset) cell.
+4. **Complement, not duplicate:** §4w lands the d6/d8/d10 **cascaded→SYNC** decomposition
+   but states "No d5 runs exist in this corpus"; this row supplies the **d5 leg** and the
+   cross-depth cascaded→ANN ordering at matched n200. Per-cell rows already live in the
+   ledger (`dcnn_d5_dataset_axis` / `ws3_dcnn_d6_onset_dataset_axis` / `dcnn_dataset_breadth_depth`
+   / `deep_cnn_dataset_axis`); the new `kind:"synthesis"` row cites the 36 d5/d6/d8 run_ids.
 
 ---
 
