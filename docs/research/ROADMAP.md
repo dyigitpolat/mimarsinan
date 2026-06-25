@@ -62,6 +62,14 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
   on-chip merge is intrinsically `1/T`-off from host-add (characterized, not a bug). **The cheap-code
   frontier is now ~exhausted** — remaining DoD = capability builds (B3 pretrained bridge · D5 attention
   · D6 timm · D7 baselines) + the GPU-weeks F-layer (F1-F4 ImageNet) = a genuine commitment fork.
+- **Wave-5 landed (main `f9012f7f`, both CONFIRMED_CLEAN):** B3 pretrained bridge (`pretrained_bridge.py`
+  — real torchvision ResNet-18 mapped+validity-classified; the **two-class VALID_FLAGGED** insight:
+  ResNet-18 is flagged for a *placement* reason — residual-boundary host-side encoders, param 0.42 /
+  MAC 0.999, `research_gap_ops=[]` — NOT for unsupported ops like ViT; finding doc written) + D7
+  percentile-norm baseline (`activation_scale_policy.py`, selectable default-off, numerically verified).
+  **The codeable frontier is now exhausted** — every remaining DoD item needs GPU-weeks of campaign
+  compute (F1-F4) or a research build (D5 attention). Both deliverables produced; F5 finalized with the
+  Wave-4/5 results. Awaiting the GPU-weeks greenlight.
 - **Infra note (Wave 1):** the harness's Workflow `isolation:'worktree'` snapshots a STALE base
   (`bcacfeb`, an old session HEAD — its object DB lacks current `main`); the A4 base-check guard caught
   it. Dispatch pattern is now **manually-created `git worktree` from current `main` + absolute-path
@@ -94,7 +102,7 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 |---|---|---|---|
 | B1 **Cross-simulator parity** — shared cells across nevresim/SANA-FE/Lava; record agree / disagree(quantified) / inapplicable(capability gap) | ✅ Wave1 (`cross_sim_parity.py` instrument + `justifies_collapse` gate; screen-consumption = A2) | A1 | ◦ |
 | B2 Dataset breadth — close the named frontier (SVHN, deeper cells), CIFAR | ⬜ | — | ◦–◦◦ |
-| B3 **Regime axis** — the pretrained bridge (timm/torchvision) + 1 small from-scratch↔pretrained cross-screen | ⬜ | — | ◦◦ |
+| B3 **Regime axis** — the pretrained bridge (timm/torchvision) + 1 small from-scratch↔pretrained cross-screen | bridge ✅ Wave5 (`pretrained_bridge.py`; ResNet-18 ImageNet → VALID_FLAGGED 0.423/0.999, placement-flag not research-gap); the cross-screen RUN is GPU | — | ◦◦ |
 | B4 Scale vehicles — SqueezeNet ✅ Wave1 (VALID, frac 1.0 offload, 942/1000 cores, single-phase); ResNet-50 (needs B3 bridge) ⬜ | partial | B3(ResNet) | ◦–◦◦ |
 
 ### C — Per-cell output instrumentation (each cell must carry comparable numbers)
@@ -114,7 +122,7 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | D4 **Pruning × scheduling** — pruning shrinks cores → fewer reprogram phases (attacks the 80% cost term) | ⬜ | C1,D3 | ◦◦ |
 | D5 **On-chip attention / LayerNorm** — THE transformer contribution (E7 foreclosed the cheap path) | ⬜ | — | ◦◦◦ |
 | D6 timm/torchvision bridge (ResNet-50/ViT-B near-SOTA checkpoints) | ⬜ | B3 | ◦◦ |
-| D7 Published baselines (RMP/QCFS/percentile-norm) | ⬜ | — | ◦◦ |
+| D7 Published baselines (RMP/QCFS/percentile-norm) | percentile-norm ✅ Wave5 (`activation_scale_policy.py`, selectable default-off, numerically verified); the GPU head-to-head is the remaining piece | — | ◦◦ |
 
 ### E — Decision & science closure
 | Item | Status | Dep | Cost |

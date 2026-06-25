@@ -99,7 +99,14 @@ A deployment is only valid if ≥50% of params+MACs run on-chip (gate-v2; 20% fl
 This retired host-majority configurations as INVALID (e.g. deep_mlp w64 at 19.7–36.4% on-chip) and
 classified ViT-B as VALID_FLAGGED (0.33/0.33 — the MAC metric does not rescue attention). deep_cnn is
 the valid trainable-deep vehicle; SqueezeNet (added this campaign) is VALID at frac 1.0 (offload),
-942-of-1000 cores, single-phase.
+942-of-1000 cores, single-phase. The pretrained bridge (B3) then revealed that **VALID_FLAGGED splits
+into two structurally distinct classes**: (a) a **research-gap** flag — unsupported host ops, e.g.
+ViT-B (attention+LN), the genuine frontier; and (b) a **placement/structural** flag — e.g. a stock
+torchvision **ResNet-18**, measured **VALID_FLAGGED at param 0.423 / MAC 0.999 with `research_gap_ops=[]`**
+(no unsupported op at all — the deficit is residual-boundary conv encoders pushed host-side, a
+*param-minority but MAC-majority* artifact, the same family as the deep_mlp `subsume`→`offload`
+placement flag and a candidate to lift to VALID via offload). The instrument names *which* class each
+flag is — capability gap vs placement artifact — so the genericity claim is honest about the frontier.
 
 ### 4.4 The death-cascade science (firing × sync, depth × dataset)
 Genuine cascaded single-spike TTFS suffers a depth-driven **death cascade** — a correctable
@@ -165,20 +172,26 @@ have. Things we already understand or can fix in scope were NOT deferred here.
    the campaign re-runs cells with emission on — and per-schedule run-dir→cost resolution is still
    best-effort.
 2. **Pruning / regime equivalence screens.** Semantic knobs cannot collapse on fidelity; collapsing
-   them honestly needs a real GPU cross-product equivalence screen — which needs the pruning
-   deployment capability (D4) and the pretrained bridge (B3).
+   them honestly needs a real GPU cross-product equivalence screen. The **pretrained bridge now exists**
+   (B3 — a stock torchvision model is mappable + validity-classified), so the from-scratch↔pretrained
+   *regime* screen is now *runnable*; the remaining piece is the GPU run itself (the bridge enables it,
+   it is not a substitute). Pruning still needs the D4 pruning-deployment capability.
 3. **On-chip attention / LayerNorm (the transformer frontier).** ViT-B is VALID_FLAGGED because
    attention+LN have no on-chip SNN mapping yet; this is *the* headline capability gap (the cheap
    path is foreclosed — it is real research).
-4. **Pretrained near-SOTA + ImageNet headline (GPU-weeks).** Reachable via the Scheduled path at a
-   costed phase budget, gated on the pretrained bridge + timm/torchvision import.
+4. **Pretrained near-SOTA + ImageNet headline (GPU-weeks).** The pretrained bridge **now lands** (B3:
+   ResNet-18 imports, maps, and validity-classifies — VALID_FLAGGED for a *placement* reason, no
+   unsupported op); the remaining piece is the GPU-weeks run via the Scheduled path at a costed phase
+   budget. ViT/ImageNet at full breadth additionally needs D5 (on-chip attention/LN).
 5. **Residual Tier-1** (on-chip param-free merge) — *characterized as intrinsically `1/T`-bounded*: an
    in-segment on-chip merge cannot be bit-exact to the Tier-0 host-add reference (the in-segment IF head
    re-quantizes the merged spike train, differing by exactly 1 spike = `1/T` by construction; matching it
    needs a host round-trip = Tier 0). It is feasible as a `1/T`-characterized deployment, not a
    host-add-identical one; a closeable shared-HCM-fill alignment (Component A) separately tightens
    NF==HCM to `atol=0`. See `findings/residual_tier1_intrinsic_limit.md`.
-6. **Published-baseline head-to-heads** (RMP/QCFS/percentile-norm) on the covered/valid cells.
+6. **Published-baseline head-to-heads** (RMP/QCFS/percentile-norm). The **percentile-norm method now
+   lands** (D7 — a selectable, default-off activation-scale policy, numerically verified); the
+   remaining piece is the GPU head-to-head comparison on the covered/valid cells.
 
 ## 6. How to reproduce / audit
 
