@@ -182,3 +182,38 @@ class ImageNet_DataProvider(DataProvider):
 
     def get_prediction_mode(self):
         return ClassificationMode(1000)
+
+    def fast_fallback_dataloaders(self, *, batch_size: int, num_workers: int = 12):
+        """Optimized torchvision fallback loaders for the fast-recipe trainer.
+
+        The non-FFCV path: builds plain ``torch.utils.data.DataLoader`` over the
+        provider's already-composed (transform-wrapped) splits with the
+        throughput knobs FFCV would otherwise provide — many ``num_workers``,
+        ``pin_memory``, ``persistent_workers``, and ``prefetch_factor``. Train is
+        shuffled; val/test are sequential. This only assembles dataloaders; it is
+        NOT a pipeline step and does not change the torch-DataLoader path used by
+        the rest of the framework.
+        """
+        from torch.utils.data import DataLoader
+
+        datasets = {
+            "train": (self._get_training_dataset(), True),
+            "val": (self._get_validation_dataset(), False),
+            "test": (self._get_test_dataset(), False),
+        }
+        workers = max(0, int(num_workers))
+        loader_kwargs = dict(
+            batch_size=int(batch_size),
+            num_workers=workers,
+            pin_memory=True,
+        )
+        if workers > 0:
+            loader_kwargs["persistent_workers"] = True
+            loader_kwargs["prefetch_factor"] = 4
+
+        loaders = {}
+        for split, (dataset, shuffle) in datasets.items():
+            loaders[split] = DataLoader(
+                dataset, shuffle=shuffle, drop_last=shuffle, **loader_kwargs
+            )
+        return loaders

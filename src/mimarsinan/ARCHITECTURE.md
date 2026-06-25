@@ -18,6 +18,7 @@ purpose, components, dependencies, and exported API.
 | `common/` | Shared utilities (file I/O, compiler discovery, WandB) |
 | `data_handling/` | Dataset providers, factories, and data loaders |
 | `model_training/` | Training loops and utilities |
+| `training/` | Standalone fast training recipes (super-convergence ImageNet ResNet-50; not a pipeline step) |
 | `models/` | Neural network models, layers, spiking simulators |
 | `mapping/` | Model-to-hardware mapping (IR, mapper graph, core packing) |
 | `transformations/` | Weight/activation quantization and fusion transforms |
