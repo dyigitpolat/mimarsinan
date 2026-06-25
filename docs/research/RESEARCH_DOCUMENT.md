@@ -105,8 +105,12 @@ the valid trainable-deep vehicle; SqueezeNet (added this campaign) is VALID at f
 Genuine cascaded single-spike TTFS suffers a depth-driven **death cascade** — a correctable
 firing-gain deficit, architecture- and dataset-dependent in onset (dataset dominant). Synchronized
 execution is the **lossless, depth-stable** default (measured deep_cnn d10/S4 mnist: synchronized
-0.9903 vs cascaded 0.9297). `firing × sync` and `depth × dataset` are PROVEN-interacting axes
-(enumerated, never collapsed).
+0.9903 vs cascaded 0.9297). The cascaded→synchronized gap is **depth-monotone** (deep_cnn MNIST
+n1000: **3.61 → 4.62 → 5.84 → 9.48 pp** at d6/d8/d10/d12), with synchronized lossless at every rung —
+and there is **no working config-level firing-gain rescue lever** at the convnet onset (theta_cotrain
+is rc=1-broken; the convnet staircase-STE and conversion_policy are both net-negative), so synchronized
+is the unconditional accuracy default. `firing × sync` and `depth × dataset` are PROVEN-interacting
+axes (enumerated, never collapsed).
 
 ### 4.5 The scale frontier and weight-reuse scheduling
 ImageNet-scale conv does **not** map simultaneously (no on-chip weight sharing): VGG16@224 ≈ **138K
