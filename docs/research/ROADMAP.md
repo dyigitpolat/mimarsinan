@@ -70,6 +70,13 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
   **The codeable frontier is now exhausted** — every remaining DoD item needs GPU-weeks of campaign
   compute (F1-F4) or a research build (D5 attention). Both deliverables produced; F5 finalized with the
   Wave-4/5 results. Awaiting the GPU-weeks greenlight.
+- **Wave-6 landed (main `9a5a8936`, CONFIRMED_CLEAN):** pretrained-vehicle validity sweep — *tested and
+  REFUTED* the Wave-5 offload hypothesis (ResNet-18 stays VALID_FLAGGED under both placements; the host
+  param-majority is `supported_host` residual shortcuts, not offloadable encoders) and added the
+  **ResNet-50 region** (VALID, Bottleneck param-majority, scheduled-feasible). Result: **validity is
+  architecture-dependent (BasicBlock-minority vs Bottleneck-majority); VALID_FLAGGED has THREE causes**
+  (unsupported-op / offloadable-encoder / structural-host-residual). Testing-not-asserting corrected a
+  would-be F5 overclaim — the discipline working.
 - **Infra note (Wave 1):** the harness's Workflow `isolation:'worktree'` snapshots a STALE base
   (`bcacfeb`, an old session HEAD — its object DB lacks current `main`); the A4 base-check guard caught
   it. Dispatch pattern is now **manually-created `git worktree` from current `main` + absolute-path
@@ -103,7 +110,7 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | B1 **Cross-simulator parity** — shared cells across nevresim/SANA-FE/Lava; record agree / disagree(quantified) / inapplicable(capability gap) | ✅ Wave1 (`cross_sim_parity.py` instrument + `justifies_collapse` gate; screen-consumption = A2) | A1 | ◦ |
 | B2 Dataset breadth — close the named frontier (SVHN, deeper cells), CIFAR | ⬜ | — | ◦–◦◦ |
 | B3 **Regime axis** — the pretrained bridge (timm/torchvision) + 1 small from-scratch↔pretrained cross-screen | bridge ✅ Wave5 (`pretrained_bridge.py`; ResNet-18 ImageNet → VALID_FLAGGED 0.423/0.999, placement-flag not research-gap); the cross-screen RUN is GPU | — | ◦◦ |
-| B4 Scale vehicles — SqueezeNet ✅ Wave1 (VALID, frac 1.0 offload, 942/1000 cores, single-phase); ResNet-50 (needs B3 bridge) ⬜ | partial | B3(ResNet) | ◦–◦◦ |
+| B4 Scale vehicles — SqueezeNet ✅ Wave1 (VALID, frac 1.0 offload, 942/1000); **ResNet-50 ✅ Wave6** (VALID, param 0.666 Bottleneck param-majority, SCHEDULED-feasible 16-17 phases peak 208); ResNet-18 ✅ Wave5 (VALID_FLAGGED structural-host, offload-refuted) | ✅ | B3✅ | ◦–◦◦ |
 
 ### C — Per-cell output instrumentation (each cell must carry comparable numbers)
 | Item | Status | Dep | Cost |

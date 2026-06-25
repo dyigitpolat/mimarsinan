@@ -22,7 +22,7 @@ single accuracy number. This document reports the toolchain and the quantitative
 | Cascaded vs synchronized (decision science) | **REGIME_DEPENDENT** — synchronized is the accuracy default (+6.06/+7.19/+11.34pp); cascaded is retained for the hard-latency budget (~2.7–2.9× lower) | §4.7 |
 | Death cascade | depth-**monotone** cascaded→sync gap **3.61→9.48pp** (d6→d12); synchronized lossless; no working config-level rescue lever | §4.4 |
 | Scale frontier | ImageNet conv = 138K soft-cores → Scheduled path → ~16 reprogram + 142 reuse; **scheduled build confirmed bit-exact** end-to-end | §4.5 |
-| Validity has **two flag classes** | research-gap (ViT: unsupported attention/LN) vs placement (ResNet-18: residual-boundary host encoders, 0.42 param / 0.999 MAC, no unsupported op) | §4.3 |
+| Validity is **architecture-dependent** (3 flag causes) | ViT research-gap-flagged; ResNet-18 structural-host-flagged (offload **REFUTED** by test — `supported_host` residual shortcuts, 0.42 param/0.999 MAC); ResNet-50 **VALID** (Bottleneck param-majority 0.666, scheduled-feasible) | §4.3 |
 | Per-neuron attribution (GAP-1) | fixed bit-exact under coalescing+output-tiling; one residual VALUE_DOMAIN_ONLY region remains | §4.6 |
 
 **The honesty is self-defending** (CI-enforced: no collapse-without-artifact, no merged tiers, no
@@ -123,12 +123,18 @@ classified ViT-B as VALID_FLAGGED (0.33/0.33 — the MAC metric does not rescue 
 the valid trainable-deep vehicle; SqueezeNet (added this campaign) is VALID at frac 1.0 (offload),
 942-of-1000 cores, single-phase. The pretrained bridge (B3) then revealed that **VALID_FLAGGED splits
 into two structurally distinct classes**: (a) a **research-gap** flag — unsupported host ops, e.g.
-ViT-B (attention+LN), the genuine frontier; and (b) a **placement/structural** flag — e.g. a stock
+ViT-B (attention+LN), the genuine frontier; and (b) a **structural host-placement** flag — e.g. a stock
 torchvision **ResNet-18**, measured **VALID_FLAGGED at param 0.423 / MAC 0.999 with `research_gap_ops=[]`**
-(no unsupported op at all — the deficit is residual-boundary conv encoders pushed host-side, a
-*param-minority but MAC-majority* artifact, the same family as the deep_mlp `subsume`→`offload`
-placement flag and a candidate to lift to VALID via offload). The instrument names *which* class each
-flag is — capability gap vs placement artifact — so the genericity claim is honest about the frontier.
+(no unsupported op at all). The tempting fix was *tested and REFUTED* (Wave 6): `offload` does NOT lift
+ResNet-18 to VALID (param only 0.4223→0.4232) — the host param-majority is **11 residual-boundary
+`supported_host` shortcut/downsample Sequentials**, not offloadable encoders, so the deep_mlp
+`offload` analogy does not transfer. The deeper resolution is **architecture-dependence**: **ResNet-50**
+is measured **VALID** (param 0.666 — its Bottleneck trunk holds the param-majority on-chip natively,
+scheduled-feasible at peak 208 / 16–17 phases) with *no* placement trick. So VALID_FLAGGED resolves into
+**three** causes the instrument names per cell — *unsupported-op* (research frontier; ViT),
+*offloadable-encoder* (placement-fixable; deep_mlp d8), and *structural-host-residual* (NOT offload-fixable,
+BasicBlock-vs-Bottleneck architecture-dependent; ResNet-18). Testing the hypothesis rather than asserting
+it is what kept this section honest.
 
 ### 4.4 The death-cascade science (firing × sync, depth × dataset)
 Genuine cascaded single-spike TTFS suffers a depth-driven **death cascade** — a correctable
