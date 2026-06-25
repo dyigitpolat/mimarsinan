@@ -10,6 +10,8 @@ the resulting ``runs/campaign/ledger.jsonl`` rows into the study tables:
       activation-scale clip (0.99) on covered/valid cells -> per-cell delta_pp.
   F3  dual-regime        — from_scratch vs pretrained per (model,dataset)
       -> per-(model,dataset) delta_pp.
+  B2  CIFAR breadth      — extend the dataset-margin law to RGB: deep_cnn /
+      lenet5 (both VALID at 3x32x32) on CIFAR10 + CIFAR100, multi-seed.
 
 The generated batches are ENQUEUED later by the scheduler; the aggregator is run
 after those runs finalize and append per-seed ledger rows. The aggregator also
@@ -500,21 +502,84 @@ def default_matrix() -> List[MatrixCell]:
 
 
 # ---------------------------------------------------------------------------
+# B2 — CIFAR breadth: extend the dataset-margin law to RGB (3x32x32).
+#
+# The research round flagged CIFAR10 as the next dataset-margin test. These
+# cells reuse the MNIST deep_cnn / lenet5 templates and swap the dataset to a
+# CIFAR provider through the grid's ``data_provider_name`` axis (exactly how
+# the FashionMNIST cell reuses the MNIST template), so no new template file is
+# needed. deep_cnn (the VALID trainable-deep vehicle) and lenet5 are both VALID
+# on CIFAR at 3x32x32 (param/MAC on-chip fractions clear the majority — verified
+# by ``classify_validity`` in the breadth tests). CIFAR100 widens only the head.
+# ---------------------------------------------------------------------------
+CIFAR_PROVIDERS = ("CIFAR10_DataProvider", "CIFAR100_DataProvider")
+
+
+def cifar_breadth_matrix() -> List[MatrixCell]:
+    """deep_cnn (cascaded+synchronized, d=4/6/8) and lenet5 (synchronized) on
+    CIFAR10 and CIFAR100 — the RGB extension of the dataset-margin law."""
+    cells: List[MatrixCell] = []
+    for dataset in CIFAR_PROVIDERS:
+        cells.append(MatrixCell(
+            model="deep_cnn", dataset=dataset,
+            template="templates/mnist_deep_cnn_d8_cascaded.json",
+            schedules=("cascaded", "synchronized"), depths=(4, 6, 8),
+            tags=(("ws", "F"), ("trainable", True), ("breadth", "cifar_rgb"))))
+        cells.append(MatrixCell(
+            model="lenet5", dataset=dataset,
+            template="templates/mnist_lenet5_synchronized.json",
+            schedules=("synchronized",),
+            tags=(("ws", "F"), ("breadth", "cifar_rgb"))))
+    return cells
+
+
+def gen_cifar_breadth_batches(cells: Iterable[MatrixCell], *,
+                              seeds: Sequence[int] = (0, 1, 2),
+                              priority: int = 38) -> List[dict]:
+    """Multi-seed CIFAR breadth cells (study B2) for the dataset-margin estimate."""
+    if len(seeds) < 2:
+        raise ValueError("CIFAR breadth needs >= 2 seeds for a dataset margin")
+    out = []
+    for cell in cells:
+        grid = _grid(cell, seeds)
+        out.append(_batch("B2", "cifar", cell, grid, priority=priority,
+                          extra_tags={"kind": "cifar_breadth"}))
+    return out
+
+
+def emit_cifar_breadth_backlog(out_path: str, *,
+                               seeds: Sequence[int] = (0, 1, 2)) -> int:
+    """Write the CIFAR-breadth batches to ``out_path`` as a backlog JSON list.
+
+    Emits to a FILE only — the orchestrator (not this generator) appends to the
+    live backlog. Returns the number of batches written.
+    """
+    batches = gen_cifar_breadth_batches(cifar_breadth_matrix(), seeds=seeds)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    with open(out_path, "w") as fh:
+        json.dump(batches, fh, indent=2)
+    return len(batches)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def cmd_generate(args) -> int:
-    cells = default_matrix()
     study = args.study.lower()
-    if study == "f1":
-        batches = gen_f1_batches(cells)
-    elif study == "f2":
-        batches = gen_f2_batches(cells)
-    elif study == "f3":
-        batches = gen_f3_batches(cells)
-    elif study == "all":
-        batches = gen_all_batches(cells)
+    if study == "cifar":
+        batches = gen_cifar_breadth_batches(cifar_breadth_matrix())
     else:
-        raise SystemExit(f"unknown study {args.study!r}")
+        cells = default_matrix()
+        if study == "f1":
+            batches = gen_f1_batches(cells)
+        elif study == "f2":
+            batches = gen_f2_batches(cells)
+        elif study == "f3":
+            batches = gen_f3_batches(cells)
+        elif study == "all":
+            batches = gen_all_batches(cells)
+        else:
+            raise SystemExit(f"unknown study {args.study!r}")
     out = args.out or os.path.join(CAMPAIGN_DIR, f"backlog_{study}.json")
     existing = []
     if args.append and os.path.isfile(out):
@@ -547,7 +612,8 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("generate")
-    g.add_argument("--study", default="all", choices=["f1", "f2", "f3", "all"])
+    g.add_argument("--study", default="all",
+                   choices=["f1", "f2", "f3", "all", "cifar"])
     g.add_argument("--out", default=None)
     g.add_argument("--append", action="store_true")
     g.set_defaults(fn=cmd_generate)
