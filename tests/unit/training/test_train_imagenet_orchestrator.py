@@ -158,6 +158,24 @@ class TestTrainOneEpoch:
         # The optimizer's current LR is the LAST scheduled value.
         assert opt.param_groups[0]["lr"] == pytest.approx(seen_lrs[-1])
 
+    def test_max_steps_truncates_and_logs(self, orch):
+        """``max_steps`` caps the epoch (smoke / dry real run) and ``log_fn``+
+        ``log_every`` emit the per-step observability contract."""
+        model = _tiny_model()
+        opt = torch.optim.SGD(model.parameters(), lr=0.0)
+        loader = DataLoader(_tiny_dataset(_N_TRAIN, 16), batch_size=4, drop_last=False)
+        assert len(loader) > 3
+        logs: list[dict] = []
+        orch.train_one_epoch(
+            model, loader, opt, device=torch.device("cpu"),
+            lr_for_step=lambda s: 0.01, use_amp=False, channels_last=False,
+            max_steps=3, world_size=4, log_fn=logs.append, log_every=1,
+        )
+        assert len(logs) == 3  # capped below the full loader length
+        for i, line in enumerate(logs):
+            assert line["step"] == i and line["epoch"] == 0
+            assert {"loss", "lr", "imgs_per_s"} <= set(line)
+
 
 # --------------------------------------------------------------------------- #
 # run(): the full epoch loop end-to-end (DI; no DDP/CUDA/ImageNet)

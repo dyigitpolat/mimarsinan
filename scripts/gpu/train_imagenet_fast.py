@@ -91,17 +91,28 @@ def train_one_epoch(
     channels_last: bool = True,
     scaler: Optional["torch.cuda.amp.GradScaler"] = None,
     global_step_offset: int = 0,
+    max_steps: Optional[int] = None,
+    epoch: int = 0,
+    world_size: int = 1,
+    log_fn: Optional[Callable[[dict], None]] = None,
+    log_every: int = 0,
 ) -> float:
     """Run one epoch; set the per-step one-cycle LR; return the mean train loss.
 
     ``lr_for_step(global_step)`` is consulted once per optimizer step and pushed
     onto every param group BEFORE the step. ``global_step_offset`` is the number
     of steps completed in prior epochs (so the one-cycle schedule spans the run).
+    ``max_steps`` caps the epoch (a smoke / dry real run); ``log_fn``+``log_every``
+    emit a per-step progress line {epoch, step, loss, lr, imgs_per_s} so a long
+    real run is observable without waiting a full ~13-min epoch for the summary.
     """
     model.train()
     total_loss = 0.0
     n_steps = 0
     for local_step, batch in enumerate(loader):
+        if max_steps is not None and local_step >= max_steps:
+            break
+        step_t0 = time.time()
         lr = float(lr_for_step(global_step_offset + local_step))
         for group in optimizer.param_groups:
             group["lr"] = lr
@@ -115,6 +126,12 @@ def train_one_epoch(
         )
         total_loss += loss
         n_steps += 1
+        if log_fn is not None and log_every > 0 and local_step % log_every == 0:
+            dt = max(1e-9, time.time() - step_t0)
+            imgs = int(batch[0].shape[0]) * max(1, world_size)
+            log_fn({"epoch": int(epoch), "step": int(local_step),
+                    "loss": round(float(loss), 4), "lr": round(lr, 5),
+                    "imgs_per_s": round(imgs / dt, 1)})
     return total_loss / max(1, n_steps)
 
 
@@ -182,6 +199,7 @@ def run(
     channels_last: bool = True,
     set_epoch: Optional[Callable[[int], None]] = None,
     steps_per_epoch: Optional[int] = None,
+    step_log_every: int = 0,
 ) -> dict:
     """Full ResNet-50 ImageNet epoch loop. Returns ``{val_top1, wall_seconds}``.
 
@@ -249,6 +267,11 @@ def run(
             channels_last=channels_last,
             scaler=scaler,
             global_step_offset=epoch * steps_per_epoch,
+            max_steps=steps_per_epoch,
+            epoch=epoch,
+            world_size=world_size,
+            log_fn=log_fn,
+            log_every=step_log_every,
         )
 
         if _should_eval(epoch, epochs=recipe.epochs, eval_every=eval_every):
@@ -316,6 +339,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=str, default="runs/imagenet/resnet50.pt")
     p.add_argument("--eval-every", type=int, default=1,
                    help="Evaluate every K epochs (the final epoch is always evaluated).")
+    p.add_argument("--max-steps", type=int, default=0,
+                   help="Cap steps/epoch (0 = full epoch); >0 = smoke / dry real run.")
+    p.add_argument("--log-every", type=int, default=50,
+                   help="Per-step progress log cadence (0 = off).")
     return p
 
 
@@ -436,6 +463,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         use_amp=recipe.use_amp,
         channels_last=recipe.channels_last,
         set_epoch=set_epoch,
+        steps_per_epoch=(args.max_steps or None),
+        step_log_every=args.log_every,
     )
 
     if dist.is_main:
