@@ -7,6 +7,11 @@ from mimarsinan.transformations.normalization_aware_perceptron_quantization impo
 )
 from mimarsinan.transformations.transformation_utils import transform_np_array
 from mimarsinan.transformations.pruning import compute_pruning_masks, apply_pruning_masks
+from mimarsinan.transformations.pruning.magnitude import (
+    ChannelPruningResult,
+    kept_output_channels,
+    prune_perceptron_chain,
+)
 from mimarsinan.transformations.activation_scale_policy import (
     ActivationScalePolicy,
     make_activation_scale_policy,
