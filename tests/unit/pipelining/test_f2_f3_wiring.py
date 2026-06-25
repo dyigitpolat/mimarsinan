@@ -167,3 +167,70 @@ class TestF3PreloadWiring:
             {"preload_weights": False, "weight_source": "torchvision"}
         )
         assert plan.weight_source == "torchvision"
+
+
+# ---------------------------------------------------------------------------
+# F3 graceful failure: a preload arm on a builder with NO pretrained source must
+# raise a CLEAR, EARLY, typed error (the rc=1 root cause), not crash opaquely.
+# ---------------------------------------------------------------------------
+class TestF3PreloadGracefulFailure:
+    def test_step_raises_typed_unsupported_for_native_builder(self, tmp_path):
+        """preload_weights=True on a native (no-factory) builder => UnsupportedPreloadError.
+
+        Raised EARLY in process() — before any load/fine-tune — so run.py can map it
+        to a clean UNSUPPORTED skip instead of an opaque mid-pipeline rc=1.
+        """
+        from mimarsinan.model_training.weight_loading import UnsupportedPreloadError
+
+        class NativeBuilder:  # mirrors DeepCNNBuilder: no get_pretrained_factory
+            pass
+
+        cfg = default_config()
+        cfg["preload_weights"] = True
+        cfg["device"] = "cpu"
+        pipeline = MockPipeline(
+            config=cfg,
+            working_directory=str(tmp_path / "cache_preload"),
+            data_provider_factory=MockDataProviderFactory(size=8),
+        )
+        pipeline.seed("model", make_tiny_supermodel())
+        pipeline.seed("model_builder", NativeBuilder())
+
+        plan = DeploymentPlan.of(pipeline)
+        assert plan.weight_source == "torchvision"  # the ill-posed source
+        assert WeightPreloadingStep.applies_to(plan) is True
+
+        step = WeightPreloadingStep(pipeline)
+        step.name = "WeightPreloading"
+        pipeline.prepare_step(step)
+        with pytest.raises(UnsupportedPreloadError, match="get_pretrained_factory"):
+            step.process()
+
+    def test_run_headless_maps_unsupported_preload_to_clean_skip(self):
+        """run.py's headless loop must catch UnsupportedPreloadError as a CLEAN skip.
+
+        Source-level lock: the typed handler precedes the bare Exception handler and
+        records status 'skipped' with exit 0 (so the campaign ledgers a skip, not an
+        opaque rc=1). The behavioural raise is locked above; this guards the wiring.
+        """
+        import ast
+        import os
+
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))))
+        src = open(os.path.join(repo, "run.py")).read()
+        assert "UnsupportedPreloadError" in src
+        assert '"skipped"' in src
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Try):
+                names = [
+                    h.type.id if isinstance(h.type, ast.Name) else None
+                    for h in node.handlers
+                ]
+                if "UnsupportedPreloadError" in names:
+                    assert names.index("UnsupportedPreloadError") < names.index(
+                        "Exception"
+                    ), "typed UnsupportedPreloadError handler must precede Exception"
+                    return
+        raise AssertionError("run.py has no UnsupportedPreloadError handler")

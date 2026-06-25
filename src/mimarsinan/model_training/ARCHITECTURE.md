@@ -11,7 +11,7 @@ training, and shared training utilities.
 | `training_utilities.py` | `AccuracyTracker`, `BasicClassificationLoss`, `CustomClassificationLoss` | Loss functions and accuracy tracking |
 | `weight_transform_trainer.py` | `WeightTransformTrainer` | Trainer that applies weight transforms each epoch (for quantization-aware training). Overrides `_recipe_optimization_model()` to group the aux-model params, so recipe-driven recovery (`tuning_recipe_recovery`) and the epoch/step recipe paths optimize the aux weights. |
 | `perceptron_transform_trainer.py` | `PerceptronTransformTrainer` | Trainer that applies per-perceptron transforms each epoch |
-| `weight_loading.py` | `WeightLoadingStrategy`, `TorchvisionWeightStrategy`, `CheckpointWeightStrategy`, `URLWeightStrategy`, `resolve_weight_strategy` | Strategy pattern for loading pretrained weights from various sources |
+| `weight_loading.py` | `WeightLoadingStrategy`, `TorchvisionWeightStrategy`, `CheckpointWeightStrategy`, `URLWeightStrategy`, `UnsupportedPreloadError`, `resolve_weight_strategy`, `torchvision_source_supported` | Strategy pattern for loading pretrained weights from various sources. `resolve_weight_strategy("torchvision", builder)` raises the typed `UnsupportedPreloadError` (a `ValueError` subclass) EARLY when the builder has no `get_pretrained_factory()` — a native from-scratch vehicle (deep_cnn/deep_mlp/lenet5/mlp_mixer_core) has no pretrained source, so `run.py` catches this typed error and records a CLEAN `skipped`/UNSUPPORTED exit (0) instead of an opaque rc=1. `torchvision_source_supported(builder)` is the non-raising predicate (the F3 generator uses it to gate the pretrained arm). |
 
 ## Dependencies
 
@@ -29,4 +29,7 @@ Most-imported training module. Used by:
 ## Exported API (\_\_init\_\_.py)
 
 `BasicTrainer`, `AccuracyTracker`, `BasicClassificationLoss`,
-`WeightTransformTrainer`, `PerceptronTransformTrainer`.
+`WeightTransformTrainer`, `PerceptronTransformTrainer`,
+`WeightLoadingStrategy`, `TorchvisionWeightStrategy`, `CheckpointWeightStrategy`,
+`URLWeightStrategy`, `UnsupportedPreloadError`, `resolve_weight_strategy`,
+`torchvision_source_supported`.
