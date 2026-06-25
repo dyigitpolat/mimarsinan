@@ -2006,3 +2006,88 @@ synchronized the matching `*_synchronized_*`; Item B: `pdcnnd5data_{FashionMNIST
 **(REFUTED this round, not consolidated: `dcnn_deep_controller_cp_rescue_n1000` — the
 `conversion_policy` rescue is net-negative at depth, see §4z.)**
 
+## 4ab. The shallow d4 rung reads ZERO depth-risk on the VALID `deep_cnn` vehicle — cascaded HOLDS at the synchronized/ANN ceiling, replacing closeout v2 §10.1's INVALID `deep_mlp` shallow-rung death-cascade datapoint (`item_id=dcnn_d4_mnist_cascaded_vs_sync_ci`, 2026-06-25)
+
+The §4v/§4aa MNIST ladder placed the death-cascade **onset** at ~d6. This rung pins the
+**floor below onset**: `deep_cnn` **d4** w16, MNIST, `ttfs_cycle_based` S=4, the sole config
+diff being `ttfs_cycle_schedule` cascaded vs synchronized. It directly **replaces** the
+INVALID host-majority `deep_mlp` shallow-rung datapoint that closeout v2 §10.1 used to assert a
+nonzero depth floor.
+
+### The d4 MNIST rung — cascaded vs synchronized (deployed, ANN ref)
+
+| schedule | deployed (mean ± sd_pp) | n_seeds | ANN ref | deployed→ANN | casc→sync gap |
+|:---------|:------------------------|:-------:|--------:|-------------:|--------------:|
+| cascaded | **0.9867** (±1.89) | 3 | 0.9922 | −0.55pp | — |
+| synchronized | **0.9901** (±0.12) | 5 | 0.9924 | −0.23pp | **−0.34pp** |
+
+**Verdict — `cascaded_near_lossless_on_cell`: NO death-cascade at d4.** The cascaded forward
+holds **at/above** synchronized; the −0.34pp casc→sync "gap" is **within the 50-sample
+resolution and reads as ZERO**, so the §6 depth-risk floor is **nonzero=FALSE at d4**. This is
+the VALID-vehicle replacement for closeout v2 §10.1's INVALID `deep_mlp` shallow-rung
+datapoint — the catastrophic shallow collapse there was a host-majority + training-floor
+artifact, not a real depth floor.
+
+### Confounds / bounds
+
+(1) **Read gaps, not 3rd decimals (DOMINANT).** `max_simulation_samples=50` → deployed
+granularity is **2.0pp/sample**. Cascaded values are exactly `{1.0, 0.96, 1.0}` =
+`{50/50, 48/50, 50/50}`; the lone 0.96 is a **single** misclassified sample (2 errors), and the
+1.89pp std is small-sample noise. The synchronized 4-decimal values come from the **same**
+50-sample eval and are equally point-estimates. The −0.34pp casc→sync and −0.55pp cascaded→ANN
+"gaps" are **not statistically resolvable** at n=50 and must be read as **zero**, not as
+cascaded beating sync. (2) **Crash exclusions (strict `rc==0`).** Cascaded seeds **s1, s4
+FAILED `rc=1`** (in `runs/campaign/q/failed/`) and are excluded → cascaded is n=3
+(`cascaded_run_finalized=true`); synchronized has 5 finalized seeds. (3) **No at-chance
+confound** — ANN ≈ 0.992 ≫ 0.10 chance for all 8 runs, so the cells are genuinely trained and
+this is a legitimate firing-gain comparison. Run ids — cascaded
+`f1_deep_cnn_mnist_ci_MNIST_DataProvider_cascaded_d4_s{0,2,3}`, synchronized
+`...synchronized_d4_s{0,1,2,3,4}`, failed-excluded `...cascaded_d4_s{1,4}`.
+
+## 4ac. Neither firing-gain rescue lever recovers the d6 cascaded deficit off MNIST — `theta_cotrain` is UNMEASURABLE (all `cotTrue` crash `rc=1`) and `conversion_policy=controller` REGRESSES the cascade; the best arm never reaches the synchronized ceiling, contradicting closeout §10.2's positive controller-rescue on the INVALID `deep_mlp` d8 (`item_id=dcnn_d6_theta_cotrain_cp_rescue_fmnist_kmnist`, 2026-06-25)
+
+The §4aa dataset-breadth ladder showed the cascade re-opens off MNIST. This batch tests the two
+candidate **firing-gain rescue levers** at the d6 onset rung on the VALID on-chip-majority
+`deep_cnn` (w16, S=4, `ttfs_cycle_based` cascaded) vehicle, a 2×2 over
+`ttfs_theta_cotrain` × `conversion_policy=controller`, on FashionMNIST and KMNIST.
+
+### The d6 off-MNIST rescue 2×2 — deployed mean (3 seeds), with synchronized ceiling
+
+| dataset | arm | deployed (mean ± sd_pp) | n_seeds (rc=0) | ANN | →sync ceiling |
+|:--------|:----|:------------------------|:--------------:|----:|--------------:|
+| FashionMNIST | cotFalse_cpFalse (**best**) | **0.8283** (±2.78) | 3 | 0.9312 | **+6.79pp below** |
+| FashionMNIST | cotFalse_cpTrue | 0.8217 (±2.01) | 3 | 0.9307 | +7.45pp below |
+| FashionMNIST | cotTrue_cp{False,True} | **CRASH rc=1** | 0/3 each | — | unmeasurable |
+| FashionMNIST | synchronized (ceiling) | 0.8962 | 3 | — | — |
+| KMNIST | cotFalse_cpFalse (**best**) | **0.9167** (±1.03) | 3 | 0.9654 | **+4.53pp below** |
+| KMNIST | cotFalse_cpTrue | 0.8583 (±4.52) | 3 | 0.9711 | +10.36pp below |
+| KMNIST | cotTrue_cp{False,True} | **CRASH rc=1** | 0/3 each | — | unmeasurable |
+| KMNIST | synchronized (ceiling) | 0.9619 | 3 | — | — |
+
+**Verdict — `neither_firing_gain_lever_rescues_cascade`.** (a) `theta_cotrain` is
+**UNMEASURABLE**: all 12 `cotTrue` runs crash `rc=1`. (b) `conversion_policy=controller` does
+**not rescue but REGRESSES** the cascade: cpFalse→cpTrue lift **−0.67pp** (FMNIST), **−5.83pp**
+(KMNIST). (c) The best arm (`cotFalse_cpFalse`) stays **+6.79pp** (FMNIST) / **+4.53pp**
+(KMNIST) **below** the synchronized ceiling and **never reaches it**. This **directly
+contradicts** closeout §10.2's positive controller-auto-rescue lift, which was measured on the
+**INVALID host-majority** `deep_mlp` d8 — the rescue does not transfer to the VALID vehicle.
+
+### Confounds / bounds
+
+(1) **`cotTrue` crash (DOMINANT).** All 12 `theta_cotrain=True` runs FAIL `rc=1` (in
+`q/failed/`) with `RuntimeError '[ModelRepresentation] forward failed at node
+Conv2DPerceptronMapper(name=features_3)'` (proximate torch error: `size of tensor a (28) must
+match tensor b (16) at non-singleton dim 3`) at the **start of TTFS Cycle Fine-Tuning** — i.e.
+inside the cotrain firing-gain forward. The high `__target_metric.json` floats on disk for
+`cotTrue` (~0.928–0.932) are **STALE pre-deployment ANN/pretraining-stage artifacts** (carried
+through; not deployed) and must NOT be read as cotrain deployed accuracy. (2) **Controller
+high-variance, not a crash.** KMNIST `cotFalse_cpTrue` s0 = 0.80 is a **GENUINE `rc=0`
+finalized collapse** (99.41% on-chip, agreement 1.0, parity 1.0) — the controller policy is
+legitimately high-variance (sd 4.52pp), not a harvesting artifact. (3) **No at-chance
+confound** — ANN ≈ 0.931 (FMNIST) / 0.965 (KMNIST) ≫ chance. (4) **Sync-ceiling choice.**
+Primary synchronized ceiling = `pdcnnbcd6data_*_synchronized_s{0,1,2}` (matches the FMNIST batch
+vehicle exactly); an alt KMNIST sync batch `pdcnnd6databc` reads 0.9694 (gap +5.27pp) — verdict
+direction unchanged. Run ids — `pdcnnd6datacotfix_{FashionMNIST,KMNIST}_DataProvider_cot{False,True}_cp{False,True}_s{0,1,2}`
+(cotTrue all `rc=1`-excluded), synchronized
+`pdcnnbcd6data_{FashionMNIST,KMNIST}_DataProvider_synchronized_s{0,1,2}`.
+
