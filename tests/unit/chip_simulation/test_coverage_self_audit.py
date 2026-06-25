@@ -25,6 +25,7 @@ from mimarsinan.chip_simulation.coverage_ledger import (
     AXES,
     AttributionFidelity,
     HypervolumeAxis,
+    KNOWN_CRACKED_REGIONS,
     ScreeningStatus,
     AxisKind,
     CoverageStatus,
@@ -286,9 +287,10 @@ class TestReportDiscipline:
         assert d["tier_counts"]["VALID_FLAGGED"] == 1
 
     def test_report_marks_known_cracked_regions_value_domain_only(self):
-        # GAP-1 (coalescing+neuron_split at VGG scale) and the residual Tier-1 merge
-        # are KNOWN-CRACKED → their attribution fidelity is VALUE_DOMAIN_ONLY, not
-        # full ATTRIBUTION.
+        # GAP-1 (coalescing+output-tiling per-neuron attribution at VGG scale; kept
+        # VALUE_DOMAIN_ONLY after the Wave-2 C3 reconciliation — see
+        # TestGap1ReconciliationAfterC3) and the residual Tier-1 merge are KNOWN-CRACKED
+        # → their attribution fidelity is VALUE_DOMAIN_ONLY, not full ATTRIBUTION.
         report = coverage_report(self._ledger())
         fidelity = report.attribution_fidelity
         assert isinstance(fidelity, dict)
@@ -306,6 +308,62 @@ class TestReportDiscipline:
         d = report.to_dict()
         assert "attribution_fidelity" in d
         assert any(v == AttributionFidelity.VALUE_DOMAIN_ONLY.value for v in d["attribution_fidelity"].values())
+
+
+# --------------------------------------------------------------------------- #
+# (6b) GAP-1 reconciliation after Wave-2 C3 — the instrument must be HONEST about
+# what C3 fixed (the harness reassembler keying) vs what remains (the PRODUCTION
+# NF↔SCM gate is identity-mapping-only, so the coalescing+output-tiling fragment
+# attribution path is NOT exercised in deployment). C3 did NOT close GAP-1 in
+# production, so GAP-1 stays VALUE_DOMAIN_ONLY — but its text must be sharpened so
+# it is not stale-misleading.
+# --------------------------------------------------------------------------- #
+
+
+class TestGap1ReconciliationAfterC3:
+    def _gap1_region(self) -> str:
+        gap1 = [r for r in KNOWN_CRACKED_REGIONS if "gap-1" in r.lower()]
+        assert gap1, (
+            "GAP-1 must remain a KNOWN-CRACKED region — Wave-2 C3 fixed only the "
+            "fidelity-harness reassembler keying; the PRODUCTION NF↔SCM gate still "
+            "asserts identity-mapping-only, so coalescing+output-tiling per-neuron "
+            "attribution is NOT exercised in deployment"
+        )
+        return gap1[0]
+
+    def test_gap1_is_not_removed_after_c3(self):
+        # SHARPEN branch evidence: production nf_scm_parity._group_record_by_perceptron
+        # asserts len(core_placements)==1 (identity mapping) and split_group_id is None
+        # (no neuron-split fragments). It builds its OWN identity mapping
+        # (build_identity_mapping_for_pipeline) and never runs on the deployed
+        # coalesced/tiled mapping. So the fragment reassembly is exercised only by the
+        # test-only fidelity harness (integration._split_reassembly). GAP-1 STAYS.
+        assert self._gap1_region() in KNOWN_CRACKED_REGIONS
+
+    def test_both_known_cracked_regions_remain(self):
+        # The two VALUE_DOMAIN_ONLY regions are unchanged: GAP-1 + the residual Tier-1
+        # merge. C3 must NOT have silently dropped either.
+        joined = " ".join(KNOWN_CRACKED_REGIONS).lower()
+        assert "gap-1" in joined
+        assert "residual tier-1 merge" in joined
+        assert len(KNOWN_CRACKED_REGIONS) == 2
+
+    def test_gap1_remains_value_domain_only_in_the_report(self):
+        report = coverage_report([])
+        fidelity = report.attribution_fidelity
+        gap1 = self._gap1_region()
+        assert fidelity.get(gap1) is AttributionFidelity.VALUE_DOMAIN_ONLY
+
+    def test_gap1_text_credits_what_c3_fixed_and_names_what_remains(self):
+        # Honesty: the GAP-1 text must (a) credit C3's reassembler keying fix so the
+        # instrument is not stale, AND (b) name the residual — the production gate is
+        # identity-mapping-only, so the fragment attribution path is not exercised in
+        # deployment. Without (b) the region would over-claim "fixed".
+        text = self._gap1_region().lower()
+        # (a) credits the C3 fix (the reassembler / joint keying / harness).
+        assert "c3" in text or "reassembl" in text or "harness" in text
+        # (b) names what remains uncovered in production (identity-mapping-only gate).
+        assert "identity" in text or "production" in text or "deploy" in text
 
 
 # --------------------------------------------------------------------------- #

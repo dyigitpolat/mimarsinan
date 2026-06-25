@@ -127,9 +127,11 @@ class AttributionFidelity(Enum):
 
     ``ATTRIBUTION`` — the per-neuron reassembly is bit-exact (the validated corner).
     ``VALUE_DOMAIN_ONLY`` — only the VALUE-domain (deployed accuracy) is bit-exact; the
-    per-neuron ATTRIBUTION reassembly is KNOWN-CRACKED there (GAP-1 coalescing +
-    neuron_split at VGG scale scrambles ~2%; the residual Tier-1 merge). Marking these
-    NOW keeps the coverage instrument honest about what it can and cannot attribute.
+    per-neuron ATTRIBUTION reassembly is not gated in production there (GAP-1: the C3
+    fix makes coalescing+output-tiling bit-exact in the fidelity HARNESS, but the
+    production NF↔SCM gate is identity-mapping-only so the fragment path is unexercised
+    in deployment; the residual Tier-1 merge). Marking these NOW keeps the coverage
+    instrument honest about what it can and cannot attribute.
     """
 
     ATTRIBUTION = "attribution"
@@ -314,9 +316,12 @@ AXES: Tuple[HypervolumeAxis, ...] = (
             "(single-core, multi-core, sync-point). Equivalent packings of the SAME "
             "contract compute the SAME deployed value (a mismatch is a packing BUG). "
             "FIDELITY-ONLY (deployed value): coalescing carries the GAP-1 caveat — "
-            "value-domain bit-exact + spike-conserved, but per-neuron ATTRIBUTION "
-            "historically cracked at VGG scale (recorded VALUE_DOMAIN_ONLY). COST/"
-            "UTILIZATION (cores, axon budget per strategy) is NOT collapsed — frontier."
+            "value-domain bit-exact + spike-conserved, but per-neuron ATTRIBUTION under "
+            "coalescing+output-tiling is recorded VALUE_DOMAIN_ONLY: Wave-2 C3 made the "
+            "fidelity-HARNESS reassembler bit-exact (joint output_slice+ir_id keying), "
+            "yet the production NF↔SCM gate stays identity-mapping-only so the fragment "
+            "path is unexercised in deployment. COST/UTILIZATION (cores, axon budget per "
+            "strategy) is NOT collapsed — frontier."
         ),
         justification=(
             "FAITHFULNESS axis: mapping strategies are different PACKINGS of the same "
@@ -401,12 +406,29 @@ AXES: Tuple[HypervolumeAxis, ...] = (
 
 
 # The KNOWN-CRACKED regions whose per-neuron attribution is VALUE_DOMAIN_ONLY (the
-# deployed accuracy is bit-exact, but the per-neuron reassembly is not): GAP-1 is the
-# coalescing+neuron_split scramble at VGG scale; the residual Tier-1 merge is the
-# remaining attribution overcount in the fused-mapping reassembler. Marking them NOW
-# keeps the instrument honest about what it can attribute.
+# deployed accuracy is bit-exact, but the per-neuron reassembly is NOT exercised in
+# production): the residual Tier-1 merge is the remaining attribution overcount in the
+# fused-mapping reassembler. Marking them NOW keeps the instrument honest about what it
+# can attribute.
+#
+# GAP-1 STATUS (Wave-2 C3 reconciliation): C3 fixed the fidelity-HARNESS reassembler —
+# the joint ``(perceptron_output_slice, ir_id)`` keying makes coalescing+output-tiling
+# per-neuron attribution bit-exact in ``tests/integration/_split_reassembly.py`` (locked
+# by ``test_coalescing_neuron_split_attribution.py``). But the PRODUCTION NF↔SCM gate
+# (``nf_scm_parity._group_record_by_perceptron``) asserts identity-mapping-only
+# (one placement/core, ``split_group_id is None``) and runs on a freshly-built identity
+# mapping (``build_identity_mapping_for_pipeline``), so the coalesced/output-tiled
+# FRAGMENT attribution path is NOT exercised in deployment — only the harness exercises
+# it. GAP-1 therefore STAYS VALUE_DOMAIN_ONLY: production per-neuron attribution under
+# coalescing+output-tiling is not gated. (See docs/research/HYPERVOLUME.md.)
 KNOWN_CRACKED_REGIONS: Tuple[str, ...] = (
-    "GAP-1: coalescing+neuron_split at VGG scale",
+    (
+        "GAP-1: coalescing+output-tiling per-neuron attribution at VGG scale — "
+        "C3 fixed the fidelity-harness reassembler keying (joint (output_slice, ir_id) "
+        "is bit-exact in tests/integration/_split_reassembly.py); the PRODUCTION "
+        "NF↔SCM gate stays identity-mapping-only, so the fragment path is NOT exercised "
+        "in deployment"
+    ),
     "residual Tier-1 merge (fused-mapping reassembly)",
 )
 
@@ -1118,11 +1140,12 @@ def _mine_flagged_ops(row: Mapping[str, Any]) -> Tuple[List[str], List[str]]:
 def _attribution_fidelity_map() -> Dict[str, AttributionFidelity]:
     """The per-region attribution-fidelity map — mark the KNOWN-CRACKED regions NOW.
 
-    The KNOWN-CRACKED regions (GAP-1 coalescing+neuron_split at VGG scale; the residual
-    Tier-1 merge) are ``VALUE_DOMAIN_ONLY`` — their deployed accuracy is bit-exact but
-    the per-neuron ATTRIBUTION reassembly is not. Every other region is full
-    ``ATTRIBUTION``. The instrument carries this so coverage is never silently claimed
-    as attributable where only the value domain is sound.
+    The KNOWN-CRACKED regions (GAP-1 coalescing+output-tiling attribution at VGG scale,
+    fixed in the fidelity harness by C3 but identity-mapping-only in the production
+    gate; the residual Tier-1 merge) are ``VALUE_DOMAIN_ONLY`` — their deployed accuracy
+    is bit-exact but the per-neuron ATTRIBUTION reassembly is not gated in deployment.
+    Every other region is full ``ATTRIBUTION``. The instrument carries this so coverage
+    is never silently claimed as attributable where only the value domain is sound.
     """
     return {region: AttributionFidelity.VALUE_DOMAIN_ONLY for region in KNOWN_CRACKED_REGIONS}
 

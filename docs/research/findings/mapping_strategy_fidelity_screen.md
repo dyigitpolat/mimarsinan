@@ -45,15 +45,33 @@ neuromorphic-forward (NF) and the deployed HCM sim for every
 The bounded `ttfs` (continuous) cell is excluded from the bit-exact set by construction
 (real-valued NF vs S-step quantized sim) and is not part of this collapse.
 
-## The `coalescing` caveat — VALUE_DOMAIN_ONLY attribution (GAP-1)
+## The `coalescing` caveat — VALUE_DOMAIN_ONLY attribution (GAP-1, sharpened by Wave-2 C3)
 
 `coalescing` is **value-domain bit-exact** and **spike-conserving**, but its per-neuron
-**ATTRIBUTION** reassembly is historically cracked at VGG scale (**GAP-1**:
-`coalescing + neuron_split at VGG scale` scrambles ~2% of the per-neuron attribution
-while the deployed accuracy stays exact). The coverage instrument records this as
-`AttributionFidelity.VALUE_DOMAIN_ONLY` (`KNOWN_CRACKED_REGIONS` in `coverage_ledger.py`).
-The collapse therefore claims **only the deployed VALUE** for `coalesced`; it does **not**
-over-claim per-neuron attribution.
+**ATTRIBUTION** reassembly is cracked at VGG scale (**GAP-1**: under
+coalescing + output-tiling the IR-id order decouples from the output-slice order once
+IR-graph compaction reorders ids, so an `sorted(ir_id)` concatenation scrambles ~2% of
+the per-neuron attribution while the deployed accuracy stays exact).
+
+**Wave-2 C3 reconciliation (this is a SHARPEN, not a RESOLVE):** C3 fixed the
+**fidelity-HARNESS** reassembler — the joint `(perceptron_output_slice, ir_id)` keying in
+`tests/integration/_split_reassembly.py` (and the same keying in
+`nf_scm_parity._group_record_by_perceptron`) makes coalescing+output-tiling per-neuron
+attribution **bit-exact in the harness**, locked by
+`tests/integration/test_coalescing_neuron_split_attribution.py` (an end-to-end real-model
+LIF run **and** the genuine scrambled-id collision). **But the PRODUCTION NF↔SCM gate
+asserts identity-mapping-only** (`assert len(core_placements) == 1`,
+`split_group_id is None`) and runs against a freshly-built identity mapping
+(`build_identity_mapping_for_pipeline`) — it never reassembles the deployed
+coalesced/output-tiled FRAGMENT mapping. So the fragment attribution path is **NOT
+exercised in deployment**; only the test-only harness exercises it.
+
+GAP-1 therefore **stays** `AttributionFidelity.VALUE_DOMAIN_ONLY`
+(`KNOWN_CRACKED_REGIONS` in `coverage_ledger.py`): production per-neuron attribution under
+coalescing+output-tiling is not gated. The collapse claims **only the deployed VALUE** for
+`coalesced`; it does **not** over-claim per-neuron attribution. Closing GAP-1 would require
+a production gate that reassembles the deployed packed/tiled mapping (the harness
+reassembler is correct and ready) rather than rebuilding an identity mapping.
 
 ## Reproduce
 

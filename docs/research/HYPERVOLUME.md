@@ -62,10 +62,25 @@ other axis is counted interacting (enumerated) in the honest denominator.
 
 The instrument distinguishes **value-domain** bit-exactness from **per-neuron
 attribution** bit-exactness. The KNOWN-CRACKED regions are marked `VALUE_DOMAIN_ONLY`
-(deployed accuracy is bit-exact; the per-neuron reassembly is not):
+(deployed accuracy is bit-exact; the per-neuron reassembly is not gated in production):
 
-- **GAP-1**: coalescing + neuron_split at VGG scale (~2% per-neuron attribution scramble;
-  value-exact + spike-conserved).
+- **GAP-1**: coalescing + output-tiling per-neuron attribution at VGG scale (value-exact
+  + spike-conserved; the IR-id order decouples from the output-slice order once
+  compaction reorders ids → an id-sort scrambles ~2% of neurons).
+  **Wave-2 C3 reconciliation (SHARPEN, not RESOLVE):** C3 fixed the **fidelity-harness**
+  reassembler — the joint `(perceptron_output_slice, ir_id)` keying in
+  `tests/integration/_split_reassembly.py` makes coalescing+output-tiling per-neuron
+  attribution **bit-exact in the harness** (locked by
+  `tests/integration/test_coalescing_neuron_split_attribution.py`, incl. an end-to-end
+  real-model LIF run and the scrambled-id collision). The **production** NF↔SCM gate
+  (`nf_scm_parity._group_record_by_perceptron`) carries the same joint keying **but
+  asserts identity-mapping-only** (one placement/core, `split_group_id is None`) and
+  runs on a freshly-built identity mapping (`build_identity_mapping_for_pipeline`), so
+  the coalesced/output-tiled **fragment** attribution path is **NOT exercised in
+  deployment** — only the harness exercises it. GAP-1 therefore stays
+  `VALUE_DOMAIN_ONLY`: production per-neuron attribution under coalescing+output-tiling
+  is not gated. (Closing it = a production gate that runs on the deployed packed/tiled
+  mapping rather than rebuilding an identity mapping.)
 - **residual Tier-1 merge** in the fused-mapping reassembler.
 
 All other regions are full `ATTRIBUTION`.
