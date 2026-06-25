@@ -3,9 +3,31 @@
 *The research document (deliverable F5). System · research process · quantitative insights · genuine
 future gaps. Companion to `ROADMAP.md` (plan), `HYPERVOLUME.md` (axis SSOT), `PROGRAM_CHECKPOINT_v2.md`
 (state). Every coverage/cost number here is **measured by the instruments**, re-runnable from the
-cited command — none is asserted. Sections marked ⟦pending Wave-3⟧ are filled from the E5/D3 landings.*
+cited command — none is asserted.*
 
 ---
+
+## 0. Executive summary
+
+mimarsinan is a composable environment for deploying ANNs as SNNs on a multi-core neuromorphic chip,
+whose deliverable is **honest, measured, auditable coverage of a deployment hypervolume** rather than a
+single accuracy number. This document reports the toolchain and the quantitative findings it produced.
+
+**Headline results (all measured, re-runnable):**
+
+| Result | Value | Where |
+|---|---|---|
+| Honest deep_cnn coverage (self-auditing denominator) | **3.75%** (6/160), raised from 0.23% by two artifact-backed faithfulness-axis collapses | §4.1–4.2 |
+| The integrity rule for axis collapse | **faithfulness axes** (backend/mapping/placement) collapse on a *measured fidelity* artifact; **semantic knobs** (pruning/regime/quant) cannot | §4.2 |
+| Cascaded vs synchronized (decision science) | **REGIME_DEPENDENT** — synchronized is the accuracy default (+6.06/+7.19/+11.34pp); cascaded is retained for the hard-latency budget (~2.7–2.9× lower) | §4.7 |
+| Death cascade | depth-**monotone** cascaded→sync gap **3.61→9.48pp** (d6→d12); synchronized lossless; no working config-level rescue lever | §4.4 |
+| Scale frontier | ImageNet conv = 138K soft-cores → Scheduled path → ~16 reprogram + 142 reuse; **scheduled build confirmed bit-exact** end-to-end | §4.5 |
+| Validity has **two flag classes** | research-gap (ViT: unsupported attention/LN) vs placement (ResNet-18: residual-boundary host encoders, 0.42 param / 0.999 MAC, no unsupported op) | §4.3 |
+| Per-neuron attribution (GAP-1) | fixed bit-exact under coalescing+output-tiling; one residual VALUE_DOMAIN_ONLY region remains | §4.6 |
+
+**The honesty is self-defending** (CI-enforced: no collapse-without-artifact, no merged tiers, no
+aged-unowned flags). The remaining DoD is a **GPU-weeks commitment** (publication rigor + ImageNet) and
+one research build (on-chip attention) — §5.
 
 ## 1. What the system is
 
