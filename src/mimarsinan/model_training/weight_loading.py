@@ -146,6 +146,29 @@ class URLWeightStrategy(WeightLoadingStrategy):
         return model, info
 
 
+class UnsupportedPreloadError(ValueError):
+    """A pretrained-regime deploy was requested for a builder with no pretrained source.
+
+    Typed so the pipeline / campaign can record a CLEAN ``UNSUPPORTED`` skip instead
+    of an opaque mid-pipeline ``rc=1``: a from-scratch native builder (deep_cnn,
+    deep_mlp, lenet5, mlp_mixer_core) has no ``get_pretrained_factory()``, so a
+    ``weight_source='torchvision'`` request for it is ill-posed (there is no
+    pretrained deep_cnn). Subclasses ``ValueError`` for back-compat.
+    """
+
+
+def torchvision_source_supported(model_builder=None) -> bool:
+    """Whether a ``weight_source='torchvision'`` preload can resolve for this builder.
+
+    Non-raising predicate (the campaign generator queries it to decide whether a
+    vehicle gets a pretrained arm); the raising path lives in
+    ``resolve_weight_strategy``.
+    """
+    return model_builder is not None and hasattr(
+        model_builder, "get_pretrained_factory"
+    )
+
+
 def resolve_weight_strategy(
     weight_source: str,
     model_builder=None,
@@ -162,13 +185,17 @@ def resolve_weight_strategy(
 
     Returns:
         A ``WeightLoadingStrategy``, or ``None`` if ``weight_source`` is falsy.
+
+    Raises:
+        UnsupportedPreloadError: ``weight_source='torchvision'`` on a builder that
+            has no ``get_pretrained_factory()`` (raised EARLY, before any load).
     """
     if not weight_source:
         return None
 
     if weight_source == "torchvision":
-        if model_builder is None or not hasattr(model_builder, "get_pretrained_factory"):
-            raise ValueError(
+        if not torchvision_source_supported(model_builder):
+            raise UnsupportedPreloadError(
                 "weight_source='torchvision' requires a model builder with "
                 "get_pretrained_factory(). The current builder does not support it."
             )
