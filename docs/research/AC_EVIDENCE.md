@@ -1135,12 +1135,65 @@ analysis: `docs/research/findings/WS7_keystone_automatic.md` §12.)
 
 ---
 
+## 1x. The full 4-dataset lenet5 cascaded→sync AC2 table is COMPLETE at matched n=1000 — MNIST/FMNIST synchronized arms (§1i PENDING) FINALIZED; SVHN cascaded is a PARITY-GATE FAILURE, not a result (`item_id`s `lenet_sync_n1000_complete_cnn_gap` + `lenet_cascade_kmnist_rung_svhn_parityfail`, 2026-06-25)
+
+§1i/§1q left the MNIST and FashionMNIST n=1000 synchronized arms PENDING (gap mixed
+n1000-cascaded vs n50-synchronized), and §1q's KMNIST gap (+1.79pp) paired the `csr_lenet`
+cascaded arm. This batch FINALIZES the missing `plnsync_lenet_{MNIST,FashionMNIST}_synchronized_n1000`
+arms and re-reads KMNIST/SVHN on the `plnmargin` cascaded arm against `plncpair` synchronized
+— so all four CNN datasets now carry a **paired same-resolution n=1000 cascaded→sync AC2 gap**.
+Configs byte-identical except `ttfs_cycle_schedule`; TTFS `ttfs_cycle_based`, S=4, `mss=1000`.
+Ledger: `cluster:"WS3"`, `kind:"arch_dataset"`, `model:"lenet5"`.
+
+| dataset | ANN ref | cascaded n1000 (3-seed ± sd) | synchronized n1000 (3-seed ± sd) | **casc→sync gap (matched)** | casc→ANN | AC2 verdict |
+|:--------|--------:|:-----------------------------|:---------------------------------|----------------------------:|---------:|:-----------|
+| MNIST | 0.9922 | **0.9873** (±0.25) | **0.9894** (±0.11) | **+0.21pp** | 0.48pp | near-lossless / MILD (gap < seed sd) |
+| KMNIST | 0.9600 | **0.9310** (±0.10) | **0.9519** (±0.37) | **+2.09pp** | 2.90pp | mild firing-gain residual |
+| FashionMNIST | 0.9176 | **0.8397** (±0.84) | **0.8911** (±0.48) | **+5.14pp** | 7.79pp | real MODERATE residual (not mild) |
+| SVHN | 0.8945 | *cascaded all `rc=1` — PARITY-GATE FAIL* | **0.8593** (±0.44) | *null* | — | cascaded sync-only / UNAVAILABLE |
+
+- **§1i confound CLOSED for MNIST/FMNIST.** With the paired n1000 sync arms finalized,
+  MNIST casc→sync = **+0.21pp** (near-lossless, below seed sd) and FashionMNIST = **+5.14pp**.
+  The FMNIST figure TIGHTENS the §1i n50-context 6.02pp, because true n1000 sync (0.8911)
+  sits below the n50 sync baseline (0.8999) — and at +5.14pp FMNIST is a **real MODERATE
+  firing-gain residual above the 1–2pp "mild" band**, refining the §1i "MILD and
+  dataset-stable" framing for the hardest greyscale margin. Gap orders monotonically by
+  dataset margin: MNIST 0.21 < KMNIST 2.09 < FMNIST 5.14pp. **AC2 MET (near-lossless) on
+  MNIST; partially MET (mild) on KMNIST; bounded-lossy on FMNIST** — all far from the
+  `deep_mlp` death-cascade (10–16pp).
+- **The §1q KMNIST gap is REPRODUCED on an independent cascaded arm.** `plnmargin` cascaded
+  KMNIST (0.931, NF↔SCM agreement 1.0000) → sync gap +2.09pp ≈ §1q's +1.79pp (`csr_lenet`
+  arm) → the KMNIST mild residual is stable across cascaded vehicles.
+- **SVHN cascaded is a deployment-fidelity FAILURE.** All 3 `plnmargin` SVHN cascaded seeds
+  `rc=1` in `q/failed/`, crashing the TTFS Cycle Fine-Tuning `_run_nf_scm_parity_gate`
+  (`soft_core_mapping_step.py:312` → `nf_scm_parity.py:176` `NfScmParityError`) with cascaded
+  decision agreement **0.8906/0.7812/0.8750 < 0.98**. Post-crash deployed floats (~0.69/0.66)
+  are gate-fail artifacts, NOT a metric ⇒ `cascaded_to_sync_gap_pp=null`,
+  `cascaded_run_finalized=false`. The §1q parallel `plncpair` cascaded SVHN arm ALSO `rc=1`,
+  corroborating. The synchronized arm (0.8593, sync→ANN 3.52pp) is the only valid SVHN number.
+
+Run ids: `csr_lenet_{MNIST,FashionMNIST}_DataProvider_cascaded_n1000_s{0,1,2}` paired with
+`plnsync_lenet_{MNIST,FashionMNIST}_DataProvider_synchronized_n1000_s{0,1,2}`;
+`plnmargin_lenet_{KMNIST,SVHN}_DataProvider_cascaded_n1000_s{0,1,2}` paired with
+`plncpair_lenet_{KMNIST,SVHN}_DataProvider_synchronized_n1000_s{0,1,2}`.
+**Confounds:** (1) No at-chance confound — every ANN ref ≫ chance (SVHN 0.893–0.897 vs 0.196).
+(2) `mss=1000` on all valid arms → pp-gaps and 2–3 sig-fig reads trustworthy; KMNIST cascaded
+NF↔SCM = torch↔sim = 1.0000 all seeds. (3) lenet5 depth-axis stress is modest (IR max-latency
+~3) → this is the dataset-margin breadth axis, not the deep death-cascade (§1d/§1r). (4) SVHN
+cascaded matched gap stays OPEN pending a fidelity fix for the parity-gate crash. **This closes
+the §1i/§1q/§3 "no paired n=1000 synchronized lenet5 run" gap for MNIST/FMNIST/KMNIST and flags
+SVHN cascaded sync-only.**
+
+---
+
 ## 3. Open AC gaps (what these cells do NOT yet certify)
 
-- **No paired n=1000 synchronized lenet5 run** — the AC2 cascaded→synchronized
-  comparison still mixes n1000-cascaded against n50-synchronized. A paired n=1000
-  synchronized re-run on both datasets would close the only remaining confound
-  (proposed: WS3 `plan_stage:5`).
+- ~~**No paired n=1000 synchronized lenet5 run**~~ **CLOSED (§1x, 2026-06-25)** — the
+  MNIST/FMNIST/KMNIST cascaded→synchronized AC2 gaps are now read at matched n=1000
+  (MNIST +0.21 / KMNIST +2.09 / FMNIST +5.14pp). **Residual open item:** the **SVHN
+  cascaded** lenet5 cell is a PARITY-GATE FAILURE (all 3 `plnmargin` seeds `rc=1`,
+  cascaded NF↔SCM agreement 0.78–0.89 < 0.98) → SVHN matched cascaded→sync gap stays
+  OPEN pending a deployment-fidelity fix (proposed: WS3 `plan_stage:28`).
 - **Within-CNN depth ladder now reaches d12 — and the death-cascade APPEARS (§1d)** —
   the d6/d8/d10/d12 rungs closed the §1c "no-collapse" question: cascaded AC2 breaks with
   depth. **The d4–d8 rungs are now CLEAN-FINALIZED `rc=0` (§1f)** on the `pdcnnbc_`/

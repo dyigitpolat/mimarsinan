@@ -148,7 +148,10 @@ of the ANN ceiling at every depth — so the gap is a **firing-gain pathology, n
 and there is **no working config-level rescue lever** at the convnet onset (theta_cotrain is
 rc=1-broken; the convnet staircase-STE and conversion_policy are both net-negative), so synchronized is
 the unconditional accuracy default. This is the dual-axis depth×dataset law on the VALID deep_cnn
-vehicle. `firing × sync` and `depth × dataset` are PROVEN-interacting
+vehicle. It generalizes: **lenet5** (a 2nd valid vehicle) shows the same dataset-margin ordering
+(MNIST +0.21 / KMNIST +2.09 / FMNIST +5.14pp). And the toolchain's fidelity gate has teeth on real
+data — **SVHN cascaded trips the NF↔SCM per-neuron parity gate** (agreement 0.78–0.89 < 0.98 → rc=1,
+deployment-invalid), so that cell is honestly recorded sync-only. `firing × sync` and `depth × dataset` are PROVEN-interacting
 axes (enumerated, never collapsed).
 
 ### 4.5 The scale frontier and weight-reuse scheduling

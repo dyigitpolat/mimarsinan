@@ -1732,3 +1732,64 @@ the deficit. **This consolidates §4u + AC §1h/§1j into a single dataset-bread
 death-cascade item with the synchronized ceiling attached; FashionMNIST × d10 is the worst
 corner in the entire deep_cnn table.** (Run ids: see ledger
 `item_id:"dcnn_dataset_breadth_depth"`.)
+
+---
+
+## 5c. The §5b PENDING synchronized arms are now FINALIZED — the lenet5 cascaded→sync gap is computed at matched n=1000, completing the 4-dataset CNN cascaded table; SVHN cascaded FAILS the parity gate (`item_id`s `lenet_sync_n1000_complete_cnn_gap` + `lenet_cascade_kmnist_rung_svhn_parityfail`, 2026-06-25)
+
+The §5b confound #1 ("matched-resolution cascaded→sync gap is NOT yet computable —
+all n1000 synchronized counterparts remain PENDING") is **CLOSED**. The
+`plnsync_lenet_*_synchronized_n1000` (MNIST/FMNIST) and
+`plncpair_lenet_*_synchronized_n1000` (KMNIST/SVHN) arms have finalized `rc=0`,
+so every n1000 cascaded cell now carries a **paired, same-resolution** synchronized
+companion and a real `cascaded_to_sync_gap_pp` (the §5b records had `null`). Configs
+are byte-identical except `ttfs_cycle_schedule` (cascaded vs synchronized);
+`ttfs_cycle_based`, S=4, `simulation_steps=4`, `max_simulation_samples=1000`.
+
+### The 4-dataset lenet5 cascaded→sync table (paired n=1000, 3 seeds)
+
+| dataset | ANN ref | cascaded (3-seed ± sd_pp) | synchronized (3-seed ± sd_pp) | casc→sync GAP | casc→ANN | verdict |
+|:--------|--------:|:--------------------------|:------------------------------|--------------:|---------:|:--------|
+| MNIST | 0.9922 | **0.9873** (±0.25) | **0.9894** (±0.11) | **+0.21pp** | 0.48pp | near-lossless / MILD (gap < seed sd) |
+| KMNIST | 0.9600 | **0.9310** (±0.10) | **0.9519** (±0.37) | **+2.09pp** | 2.90pp | mild firing-gain residual |
+| FashionMNIST | 0.9176 | **0.8397** (±0.84) | **0.8911** (±0.48) | **+5.14pp** | 7.79pp | real MODERATE residual (>> seed sd; not mild) |
+| SVHN | 0.8945 | **PARITY-GATE FAIL** (rc=1) | **0.8593** (±0.44) | **null** | — | cascaded sync-only/unavailable |
+
+**Verdict — the cascaded CNN deficit orders monotonically by dataset margin**
+(MNIST +0.21 < KMNIST +2.09 < FMNIST +5.14pp). MNIST is near-lossless (gap below the
+seed sd), KMNIST is genuinely mild, but **FashionMNIST is a real MODERATE firing-gain
+residual at +5.14pp — above the 1–2pp "mild" band** on a VALID on-chip-majority CNN
+(99.1% on-chip), correcting the §5b "MILD and dataset-stable" framing for the hardest
+greyscale dataset. The clean paired n1000 sync arm **tightens** the §5b context-only
+mixed-resolution estimates: FMNIST drops from the 6.02pp (n1000-casc vs n50-sync)
+context figure to a true **5.14pp**, because real n1000 synchronized FMNIST (0.8911)
+sits BELOW the n50 sync baseline (0.8999). This is far milder than the `deep_mlp`
+death-cascade (d8 cascaded gaps 10.8pp MNIST / 16.0pp FMNIST) — the convnet does not
+collapse; it carries a bounded, dataset-margin-ordered residual.
+
+**SVHN cascaded is a deployment-fidelity FAILURE, NOT a firing-gain result.** All 3
+SVHN cascaded seeds (`plnmargin_lenet_SVHN_*_cascaded_n1000`) return `rc=1` and sit in
+`q/failed/`: they crash in TTFS Cycle Fine-Tuning's `_run_nf_scm_parity_gate`
+(`soft_core_mapping_step.py:312` → `nf_scm_parity.py:176` `NfScmParityError`) with
+cascaded decision agreement **0.8906 / 0.7812 / 0.8750 < `min_agreement`=0.98**. The
+post-crash deployed floats (~0.69/0.69/0.66) are gate-fail artifacts of a wrong-NF-
+dynamics incident class, **not** a deployment metric, so the apparent ~17.9pp SVHN
+casc→sync "gap" is spurious and EXCLUDED (`cascaded_to_sync_gap_pp=null`,
+`cascaded_run_finalized=false`). The SVHN synchronized arm
+(`plncpair_lenet_SVHN_*_synchronized_n1000`) is fully valid (rc=0, 0.8593 ± 0.44pp,
+sync→ANN 3.52pp) and is the only valid SVHN deployment number. A parallel `plncpair`
+cascaded SVHN arm ALSO returns rc=1, corroborating.
+
+**Confounds / bounds.** (1) **No at-chance confound:** every ANN ref ≫ chance (MNIST
+0.991–0.993, KMNIST 0.957–0.966, FMNIST 0.916–0.919, SVHN 0.893–0.897 vs 0.10), so
+every reported drop is a genuine firing-gain measurement, not an untrained floor.
+(2) `max_simulation_samples=1000` (not ≤50) → pp-gaps and 2–3 sig-fig deployed reads
+are trustworthy; KMNIST cascaded NF↔SCM agreement = 1.0000 and torch↔sim = 1.0000 on
+all 3 seeds. (3) **Depth-axis stress is modest** — lenet5 IR max-latency ~3, 2 neural
+segments — so this is the breadth/dataset-margin axis, not the deep death-cascade axis
+(that lives on `deep_cnn`, §4). (4) The MNIST cascaded `csr_lenet` rows are the §5b
+arm re-paired here against the now-finalized `plnsync` sync companion; no cascaded
+re-run. **This closes the §4d / §5b empty-synchronized-arm gap for the lenet5 cascaded
+CNN table and flags SVHN cascaded as sync-only.** (Run ids: see ledger
+`item_id:"lenet_sync_n1000_complete_cnn_gap"` and
+`item_id:"lenet_cascade_kmnist_rung_svhn_parityfail"`.)
