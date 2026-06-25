@@ -42,12 +42,14 @@ class IRMappingCore(LayoutIRMapping):
         max_neurons: int | None = None,
         allow_coalescing: bool = False,
         hardware_bias: bool = False,
+        onchip_residual_merge: bool = False,
     ):
         super().__init__(
             max_axons=max_axons,
             max_neurons=max_neurons,
             allow_coalescing=allow_coalescing,
             hardware_bias=hardware_bias,
+            onchip_residual_merge=onchip_residual_merge,
         )
 
         assert firing_mode in ("Default", "Novena", "TTFS"), \

@@ -309,6 +309,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "weight_quantization",
     "pruning",
     "pruning_fraction",
+    "prune_sparsity",
     "weight_source",
     "preload_weights",
     "model_type",

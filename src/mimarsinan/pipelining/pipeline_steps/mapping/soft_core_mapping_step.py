@@ -12,6 +12,9 @@ from mimarsinan.pipelining.pipeline_steps.mapping.fused_linear import FusedLinea
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_ir_pruning import (
     apply_ir_pruning_if_enabled,
 )
+from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning import (
+    apply_structured_pruning_if_enabled,
+)
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_viz import (
     write_ir_graph_visualizations,
 )
@@ -72,6 +75,12 @@ class SoftCoreMappingStep(PipelineStep):
             if isinstance(perceptron.layer, FusedLinear):
                 perceptron.layer = self.bring_back_bias(perceptron.layer)
                 refresh_perceptron_bias_references(perceptron)
+
+        # D4: opt-in structured magnitude pruning BEFORE mapping. Default-off
+        # (prune_sparsity unset/0.0) ⇒ no-op ⇒ byte-identical. Runs here, after
+        # normalization fusion folded each perceptron's norm into its linear, so
+        # shrinking output rows is structurally sound.
+        apply_structured_pruning_if_enabled(self, model, "SoftCoreMappingStep")
 
         if self.pipeline.config.get("generate_visualizations", False):
             def _flowchart():

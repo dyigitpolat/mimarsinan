@@ -47,12 +47,16 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
     max_neurons: Optional[int]
     allow_coalescing: bool = False
     hardware_bias: bool = False
+    # Tier-1 residual: lower a param-free equal-width add to an on-chip signed-IF
+    # identity-merge core (default off → host ComputeOp add, byte-identical).
+    onchip_residual_merge: bool = False
 
     def __post_init__(self):
         self.max_axons = int(self.max_axons) if self.max_axons is not None else None
         self.max_neurons = int(self.max_neurons) if self.max_neurons is not None else None
         self.allow_coalescing = bool(self.allow_coalescing)
         self.hardware_bias = bool(self.hardware_bias)
+        self.onchip_residual_merge = bool(self.onchip_residual_merge)
 
         self._next_node_id = 0
         self._coalescing_group_counter = 0
@@ -135,7 +139,18 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
 
         Returns the graph's output sources.  ``IRMapping`` subclasses this to
         wrap the result in an ``IRGraph``.
+
+        When ``onchip_residual_merge`` is set, every param-free equal-width
+        residual add is first lowered onto the crossbar as a signed-IF merge core
+        (Tier-1); the default (off) path leaves the host ComputeOp add untouched
+        and is byte-identical.
         """
+        if self.onchip_residual_merge:
+            from mimarsinan.mapping.support.residual_merge import (
+                lower_residual_adds_to_onchip_merge,
+            )
+
+            lower_residual_adds_to_onchip_merge(model_representation)
         output_sources = model_representation.map_to_ir(self)
         self.output_sources = output_sources
         self._finalize_softcores()

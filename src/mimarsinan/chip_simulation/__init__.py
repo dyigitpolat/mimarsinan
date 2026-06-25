@@ -65,6 +65,17 @@ from mimarsinan.chip_simulation.cross_sim_parity import (
     screen_cell_pair,
     write_cross_sim_screen,
 )
+from mimarsinan.chip_simulation.semantic_axis_screen import (
+    SEMANTIC_AXES,
+    SemanticAxisState,
+    SemanticPairOutcome,
+    SemanticScreenError,
+    assert_semantic_screen_sound,
+    screen_live_pruning,
+    screen_live_regime,
+    screen_semantic_axis,
+    write_semantic_screen,
+)
 from mimarsinan.chip_simulation.pareto import (
     CascadeVsSyncVerdict,
     CostProxyBand,
@@ -131,6 +142,15 @@ __all__ = [
     "screen_cell_pair",
     "write_cross_sim_screen",
     "assert_cross_sim_screen_sound",
+    "SemanticAxisState",
+    "SemanticPairOutcome",
+    "SemanticScreenError",
+    "SEMANTIC_AXES",
+    "screen_semantic_axis",
+    "write_semantic_screen",
+    "assert_semantic_screen_sound",
+    "screen_live_regime",
+    "screen_live_pruning",
     "CostProxyBand",
     "ScheduleVerdict",
     "CascadeVsSyncVerdict",

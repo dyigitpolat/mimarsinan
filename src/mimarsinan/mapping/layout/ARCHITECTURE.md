@@ -11,6 +11,14 @@ crossbar — bit-exact) when the chip supports inter-core membrane transfer
 was removed. Coalescing (axon overflow) and neuron splitting (fan-out) are
 independent chip-capability flags.
 
+`onchip_residual_merge` (default off) is a deployment-mode flag: when set,
+`LayoutIRMapping.map` first lowers every param-free equal-width residual add
+(`mapping/support/residual_merge.py`) onto the crossbar as a signed-IF
+identity-merge core (Tier-1), keeping the residual on-chip in one segment instead
+of a host ComputeOp add (Tier-0). Off → the host add, byte-identical. Tier-1 is a
+VALID, characterized deployment, NOT bit-exact to Tier-0 (a bounded ~1/T in-segment
+IF re-quant; see `docs/research/findings/D2_tier1_deployable.md`).
+
 The real `mapping.ir_mapping.IRMapping` is a subclass that overrides
 the emission hooks (`add_neural_core`, `add_shared_neural_core`,
 `add_compute_op`, `register_weight_bank`) to additionally attach weight
