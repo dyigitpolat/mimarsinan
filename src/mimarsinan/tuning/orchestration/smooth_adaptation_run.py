@@ -198,6 +198,8 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._small_step_streak = 0
         self._pre_relaxation_target = None
         self._best_committed_acc = None
+        self._best_committed_state = None
+        self._best_committed_metric = None
         self._gradual_train_steps = 0
         self._cycle_log = DecisionTrace.new()
         self._cached_lr = None
@@ -380,10 +382,37 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._stabilize_at_full_rate()
         self._post_stabilization_hook()
         self._phase_seconds["stabilization"] = time.time() - t_stab
+        result = self._restore_best_committed_state(result)
         self.pipeline.reporter.report(f"{self.name} committed", self._committed_rate)
         self.pipeline.reporter.report(f"{self.name} phase_seconds", self._phase_seconds)
         self._log_cycle_summary()
         return result
+
+    def _restore_best_committed_state(self, finalize_result):
+        """R7d certified non-destructive guard at RUN scope. When
+        ``tuning_keepbest_certified`` is on and the finalized gate metric is worse
+        than the best-committed state's metric (by more than the rollback tolerance),
+        restore that best state so the run can never ship below the best COMMITTED
+        cycle. Mirrors the local stabilization pre/post guard, but brackets the WHOLE
+        ramp + after_run + stabilization. No-op (returns ``finalize_result``
+        unchanged) when the flag is off or no best state was captured."""
+        if not getattr(self, "_keepbest_certified", False):
+            return finalize_result
+        best_state = getattr(self, "_best_committed_state", None)
+        best_metric = getattr(self, "_best_committed_metric", None)
+        if best_state is None or best_metric is None:
+            return finalize_result
+        final_metric = self._certified_gate_metric()
+        tol = float(getattr(self, "_rollback_tolerance", 0.0))
+        if final_metric < best_metric - tol:
+            self._restore_state(best_state)
+            self.pipeline.reporter.report(
+                f"{self.name} certified keepbest restore",
+                {"final": final_metric, "best_committed": best_metric},
+            )
+            self._final_metric = best_metric
+            return best_metric
+        return finalize_result
 
     def _log_full_transform_trend(self):
         """Report whether the gradual ramp converges toward 1.0-viability. The
