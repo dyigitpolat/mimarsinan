@@ -2138,3 +2138,60 @@ is not significant at n=3. Run ids —
 `pdcnnd5stefix_{FashionMNIST,KMNIST}_DataProvider_ste{False,True}_s{0,1,2}`
 (KMNIST steFalse s1 `rc=-9`-excluded).
 
+
+## 4ae. At the DEEPEST trainable CNN rung (`deep_cnn` d10, S=4), NEITHER firing-gain rescue lever recovers the cascaded death-cascade — `theta_cotrain` is UNMEASURABLE (all 12 `cotTrue` crash `rc=1`) and `conversion_policy=controller` is NET-NEGATIVE; the genuine cascade floor orders by dataset margin, confirming §4ac's d6 verdict one rung deeper (`item_id=dcnn_d10_firing_gain_rescue_levers`, 2026-06-25)
+
+§4ac probed the two firing-gain rescue levers at the **d6 onset** rung off MNIST; this batch
+takes the same `ttfs_theta_cotrain` × `conversion_policy=controller` 2×2 to the **deepest
+trainable CNN rung (`deep_cnn` d10, w16, S=4, `ttfs_cycle_based` cascaded)** on MNIST,
+FashionMNIST and KMNIST — the §4f/§4w death-cascade rung where the deficit is largest. **Both
+axes are cascaded (no synchronized arm in this batch)**; the synchronized ceilings cited for
+context come from the SIBLING `bigcores` dataset-axis item (FMNIST 0.9041, KMNIST 0.9623), NOT
+this batch, so `cascaded_to_sync_gap_pp` is NULL on every record and the reported gap is
+**cascaded→ANN only**.
+
+### The d10 rescue 2×2 — deployed mean (valid `rc=0` seeds), with cascade→ANN gap
+
+| dataset | arm | deployed (mean) | per-seed | n_seeds (rc=0) | ANN | casc→ANN gap | →sibling sync ceiling |
+|:--------|:----|:---------------:|:---------|:--------------:|----:|-------------:|----------------------:|
+| MNIST | cotFalse_cpTrue (**only valid cell**) | **0.79** | 0.865 / 0.715 | 2 | 0.9899 | **+19.99pp** | — |
+| MNIST | cotFalse_cpFalse *(corroborative)* | ~0.962 | 0.9677 / 0.9809 / 0.9375 | **0** | — | — | all `rc=-9`, EXCLUDED |
+| FashionMNIST | cotFalse_cpFalse (**floor**) | **0.75** | 0.755 / 0.745 | 2 | 0.9377 | **+18.77pp** | ~+15.4pp below 0.9041 |
+| FashionMNIST | cotFalse_cpTrue | — | — | **0** | — | — | all crash, UNMEASURABLE |
+| KMNIST | cotFalse_cpFalse (**floor**) | **0.8625** | 0.885 / 0.84 | 2 | 0.9615 | **+9.90pp** | ~+9.98pp below 0.9623 |
+| KMNIST | cotFalse_cpTrue | 0.865 | 0.865 | 1 | 0.9807 | +11.57pp | — |
+| ALL | cotTrue_cp{False,True} | — | — | **0/18** | — | — | `rc=1` CRASH, UNMEASURABLE |
+
+**Verdict — `neither_firing_gain_lever_rescues_cascade_at_d10` (SUPPORTED-WITH-CONFOUND).**
+(a) `theta_cotrain` is **UNMEASURABLE**: all 18 `cotTrue` runs crash `rc=1` on the unlanded
+`Conv2DPerceptronMapper(features_3)` forward bug. (b) `conversion_policy=controller` is
+**NET-NEGATIVE / non-rescuing**: the only directly-paired comparison (KMNIST) reads cpFalse
+0.8625 vs cpTrue 0.865 = **+0.0025pp FLAT** within the 0.005 grid and far below the 0.9623 sync
+ceiling, and MNIST cpTrue **collapses to 0.79** (s1 0.715) vs the `rc=-9`-corroborative cpFalse
+~0.962. (c) The genuine `cotFalse_cpFalse` cascade floor **orders by dataset margin**
+(MNIST > KMNIST +9.9pp > FMNIST +18.77pp casc→ANN) per the death-cascade law. This **confirms
+§4ac's d6 "neither lever rescues / `theta_cotrain` UNMEASURABLE" verdict one rung deeper at
+d10**, and reinforces that **synchronized remains the unconditional deep × hard default** — the
+cascaded gate-fix levers do NOT close the deep d10 deficit on this VALID on-chip-majority CNN.
+
+### Confounds / bounds
+
+(1) **`cotTrue` UNMEASURABLE (DOMINANT).** All 12 `cotTrue` runs (`pdcnnd10fix_` MNIST +
+`pdcnnd10datafix_*` FMNIST/KMNIST) fail `rc=1` (the `after_convnet_forward_fix` did NOT land).
+Their `__target_metric.json` == the ANN ref **bit-for-bit** (MNIST 0.9947, FMNIST 0.9351,
+KMNIST 0.9676) — a **STALE pre-deploy artifact** (no SoftCore spiking sim ran), EXCLUDED.
+(2) **MNIST `cotFalse_cpFalse` is NOT finalized:** all 3 seeds `rc=-9` (killed/OOM-or-timeout),
+so 0.9677/0.9809/0.9375 (~0.962) are **CORROBORATIVE-ONLY and EXCLUDED** per the strict `rc==0`
+rule; the only valid MNIST cell is cpTrue (n=2). (3) **No synchronized arm in this batch** (axes
+= cot × cp, both cascaded) → `cascaded_to_sync_gap_pp` NULL on every record; sync ceilings are
+sibling-item context. (4) **n≤2 on every valid cell** (MNIST cpTrue n=2, FMNIST cpFalse n=2,
+KMNIST cpFalse n=2, KMNIST cpTrue n=1; **FMNIST cpTrue ZERO valid seeds — all crashed**) due to
+per-seed `rc=-9`/`rc=1` attrition. (5) `max_simulation_samples=200` → 0.005 grid: read gaps, not
+3rd decimals. (6) **No at-chance confound** — all ANN refs 0.94–0.99 ≫ 0.10, so every drop is
+genuine firing-gain, not an untrained floor. (7) the cp lever is **directly paired only on
+KMNIST** (both cpFalse and cpTrue valid); on MNIST the comparison leans on the EXCLUDED `rc=-9`
+cpFalse corroborative numbers; on FMNIST cp is unmeasurable (cpTrue all crashed). Run ids —
+`pdcnnd10fix_cot{False,True}_cp{False,True}_s{0,1,2}` (MNIST) and
+`pdcnnd10datafix_{FashionMNIST,KMNIST}_DataProvider_cot{False,True}_cp{False,True}_s{0,1,2}`
+(cotTrue all `rc=1`-excluded; MNIST cpFalse all `rc=-9`-excluded).
+

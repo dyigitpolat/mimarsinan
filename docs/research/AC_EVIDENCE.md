@@ -1424,6 +1424,46 @@ baselines come from the PRIOR `pdcnnd5data_` item (§1n, `item_id=dcnn_d5_datase
   Run ids: `pdcnnd5stefix_{FashionMNIST,KMNIST}_DataProvider_ste{False,True}_s{0,1,2}`
   (KMNIST steFalse s1 `rc=-9`-excluded).
 
+## 2l. NEITHER firing-gain rescue lever recovers the cascaded AC2 deficit at the DEEPEST trainable CNN rung (`deep_cnn` d10) — θ-cotrain CRASHES `rc=1` (unmeasurable) and `conversion_policy=controller` is NET-NEGATIVE; the genuine floor orders by dataset margin, extending §2j's d6 verdict one rung deeper (`item_id=dcnn_d10_firing_gain_rescue_levers`, 2026-06-25)
+
+Companion to §2j (the same `ttfs_theta_cotrain` × `conversion_policy=controller` 2×2 at the
+**d6 onset**) carried to the **deepest trainable CNN rung** (`deep_cnn` d10, w16, S=4,
+`ttfs_cycle_based` cascaded) on MNIST, FashionMNIST and KMNIST — the §1g/§1w death-cascade rung
+where the AC2 deficit is largest. **Both axes are cascaded (NO synchronized arm in this batch)**;
+the sync ceilings are sibling-`bigcores`-item context (FMNIST 0.9041, KMNIST 0.9623), so every
+record's `cascaded_to_sync_gap_pp` is NULL and the AC2 gap below is **cascaded→ANN only**.
+
+| dataset | arm | deployed (mean) | n_seeds (rc=0) | AC2 ref (ANN) | casc→ANN gap | reaches ANN? |
+|:--------|:----|:---------------:|:--------------:|--------------:|-------------:|:------------:|
+| MNIST | cotFalse_cpTrue (**only valid cell**) | **0.79** (0.865/0.715) | 2 | 0.9899 | **+19.99pp** | **no** |
+| MNIST | cotFalse_cpFalse *(corroborative)* | ~0.962 | **0** (all `rc=-9`) | — | — | EXCLUDED |
+| FashionMNIST | cotFalse_cpFalse (**floor**) | **0.75** (0.755/0.745) | 2 | 0.9377 | **+18.77pp** | **no** |
+| FashionMNIST | cotFalse_cpTrue | — | **0** (all crash) | — | — | unmeasurable |
+| KMNIST | cotFalse_cpFalse (**floor**) | **0.8625** (0.885/0.84) | 2 | 0.9615 | **+9.90pp** | **no** |
+| KMNIST | cotFalse_cpTrue | 0.865 | 1 | 0.9807 | +11.57pp | no |
+| ALL | cotTrue_cp{False,True} | — | **0/18** (`rc=1`) | — | — | unmeasurable |
+
+- **Neither lever rescues; AC2 NOT MET on any arm.** `theta_cotrain` is **UNMEASURABLE** (all 18
+  `cotTrue` runs crash `rc=1` on the unlanded `Conv2DPerceptronMapper(features_3)` forward bug).
+  `conversion_policy=controller` is **NET-NEGATIVE**: the only directly-paired comparison (KMNIST)
+  reads cpFalse 0.8625 vs cpTrue 0.865 = **+0.0025pp FLAT**, and MNIST cpTrue **collapses to 0.79**
+  (s1 0.715) vs the `rc=-9`-corroborative cpFalse ~0.962. The genuine `cotFalse_cpFalse` floor
+  orders by dataset margin (MNIST > KMNIST +9.9pp > FMNIST +18.77pp).
+- **Extends §2j one rung deeper.** Confirms the d6 "neither firing-gain lever rescues / θ-cotrain
+  broken / controller net-negative" verdict at d10, the deepest trainable rung — consistent with
+  §2g/§2h (controller net-negative at d8/d10 MNIST). **Synchronized stays the unconditional deep ×
+  hard default;** the cascaded gate-fix levers do NOT close the deep d10 deficit on the VALID
+  `deep_cnn` vehicle.
+- **Confounds:** (1) all 12 `cotTrue` crash `rc=1`; their `__target_metric` == ANN bit-for-bit
+  (MNIST 0.9947, FMNIST 0.9351, KMNIST 0.9676) = STALE pre-deploy artifact, EXCLUDED. (2) MNIST
+  `cotFalse_cpFalse` all 3 seeds `rc=-9` → corroborative-only, EXCLUDED (only valid MNIST cell is
+  cpTrue, n=2). (3) NO synchronized arm → `cascaded_to_sync_gap_pp` NULL; AC2 gap is casc→ANN. (4)
+  n≤2 on every valid cell; FMNIST cpTrue has ZERO valid seeds. (5) `max_simulation_samples=200` →
+  0.005 grid, read gaps. (6) ANN ≫ chance on every cell → genuine firing-gain. (7) cp directly
+  paired only on KMNIST. Run ids: `pdcnnd10fix_cot{False,True}_cp{False,True}_s{0,1,2}` (MNIST) +
+  `pdcnnd10datafix_{FashionMNIST,KMNIST}_DataProvider_cot{False,True}_cp{False,True}_s{0,1,2}`
+  (cotTrue all `rc=1`-excluded; MNIST cpFalse all `rc=-9`-excluded).
+
 ## 3. Open AC gaps (what these cells do NOT yet certify)
 
 - ~~**No paired n=1000 synchronized lenet5 run**~~ **CLOSED (§1x, 2026-06-25)** — the
