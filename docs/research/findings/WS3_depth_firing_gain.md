@@ -1888,3 +1888,49 @@ re-run. **This closes the §4d / §5b empty-synchronized-arm gap for the lenet5 
 CNN table and flags SVHN cascaded as sync-only.** (Run ids: see ledger
 `item_id:"lenet_sync_n1000_complete_cnn_gap"` and
 `item_id:"lenet_cascade_kmnist_rung_svhn_parityfail"`.)
+
+---
+
+## 4z. The bigcores-gatefix `deep_cnn` cascaded→ANN deficit WIDENS d8→d10 against a full-eval trained-ANN reference, and `conversion_policy` is NET-NEGATIVE at BOTH rungs (`item_id=dcnn_deep_n1000_gatefix_d8_d10`, 2026-06-25)
+
+The §4v MNIST depth ladder measured `cascaded→synchronized`; the WS7 §12 d8 escalation
+measured `conversion_policy` against an *in-log* ANN (~0.9744). This row re-frames the
+**n=1000 bigcores-gatefix `deep_cnn` MNIST cascaded** cell at d8 **and** the next rung d10
+against the **full-eval trained ANN** (0.9949 / 0.9916) and pairs the `conversion_policy`
+lever at both depths. `deep_cnn` (w16), `ttfs_cycle_based`, `ttfs_cycle_schedule=cascaded`,
+S=4, `max_simulation_samples=1000`, on-chip-majority VALID. Ledger: `cluster:"WS3"`,
+`kind:"depth"`, `item_id:"dcnn_deep_n1000_gatefix_d8_d10"` (2 rows).
+
+| depth | cpFalse cascaded baseline (3-seed) | seeds | trained ANN | casc→ANN gap | cpTrue rescue | cp lift | rescue n |
+|:-----:|-----------------------------------:|:------|------------:|-------------:|--------------:|--------:|:--------:|
+| **d8**  | **0.9723** | .96/.981/.976 | 0.9949 | **2.26pp** | 0.9477 (.978/.954/.911) | **−2.46pp** | 3 |
+| **d10** | **0.9433** | .892/.96/.978 | 0.9916 | **4.83pp** | 0.925 (.94/.91) | **−1.83pp** | 2 (s2 `rc=1`) |
+
+**Verdict — `cascaded_firing_gain_degraded` (depth-widening 2.3→4.8pp), `conversion_policy`
+rescue REFUTED (net-negative at both rungs, NOT a no-op).** Against the full-eval trained
+ANN the cascaded baseline is degraded but **near-lossless, not collapse** — the conv
+inductive bias caps severity at d8 (2.26pp) and d10 (4.83pp), and the deficit **widens with
+depth** (consistent with the §4v sharp-onset → bounded-plateau ladder). The
+`conversion_policy` escalation lever **HURTS at both rungs** (d8 −2.46pp, d10 −1.83pp) and
+at d10 additionally **trips the NF↔SCM parity gate** (s2 `rc=1`), so it is a genuine
+net-negative lever, not a benign no-op. This is the **depth-extension of the WS7 §12 d8-only
+result** (cp net-negative) and confirms there is **no working `conversion_policy` firing-gain
+rescue at depth on the convnet**; synchronized remains the unconditional deep_cnn default.
+
+**Confounds / bounds.** (1) **No at-chance confound** — trained ANN ~0.99 at every cell
+(d8 .9961/.993/.9955, d10 .9888/.9956/.9904, all ≫ 0.1135 chance) ⇒ genuine firing-gain
+regime, not an untrained floor. (2) `max_simulation_samples=1000` → adequate resolution
+(3rd decimals usable, but read the pp gaps). (3) **No synchronized arm in this batch** — the
+pairing axis is `conversion_policy` (cpFalse baseline vs cpTrue rescue), so
+`cascaded_to_sync_gap_pp=null`; the ~0.99 lossless reference is the **trained ANN** plus the
+§4h/§4v synchronized deep_cnn ceiling (0.990–0.994). (4) **d10 cpTrue is n=2** — the third
+seed `pdcnnbcn1000fix_d10_cotFalse_cpTrue_s2` finalized `rc=1` (`NfScmParityError`: NF↔SCM
+cascaded agreement 0.9531 < 0.98 — a wrong-NF-dynamics incident **induced by the
+conversion_policy lever**); excluded per `rc==0`, its 0.9054 `__target_metric` is a pre-crash
+value not counted. (5) The companion `ttfs_theta_cotrain` lever is **not** analyzed — all
+cotTrue runs crashed `rc=1` (`Conv2DPerceptronMapper features_3` tensor-shape break) and are
+excluded (same break as WS7 §9–§12). (6) The d8 cpFalse/cpTrue run_ids are also cited in the
+WS7 §12 `dcnn_deep_controller_escalation` row (in-log ANN 0.9744); this row uses the
+full-eval ANN 0.9949 and the depth-pairing framing. Run ids: cpFalse
+`pdcnnbcn1000fix_d{8,10}_cotFalse_cpFalse_s{0,1,2}`; cpTrue
+`pdcnnbcn1000fix_d{8,10}_cotFalse_cpTrue_s{0,1,2}` (d10 s2 `rc=1`).

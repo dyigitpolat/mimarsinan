@@ -226,6 +226,49 @@ baseline).
 
 ---
 
+### 0.8 The mmixcore keystone OFF-MNIST — cascade survival is dataset-stable on FMNIST but DEGRADES on KMNIST (`item_id=mmix_blendoff_dataset_axis`, 2026-06-25)
+
+§0.7 established the in-distribution VALID `mlp_mixer_core` keystone MATCH on **MNIST**
+(blend-OFF cascade survives, +0.23pp FLAT vs blend-ON, no escalation needed). This row
+extends that exact blend-OFF / cpTrue cascade to the **off-MNIST dataset axis**
+(FashionMNIST, KMNIST) to ask whether the keystone's near-lossless MNIST survival is
+dataset-stable. `mlp_mixer_core`, `ttfs_cycle_based`, `ttfs_cycle_schedule=cascaded`,
+`ttfs_blend_fast=false`, `conversion_policy=true`, S=4/`target_tq=4`,
+`max_simulation_samples=1000`. 6 runs, 3 seeds/dataset, all `rc=0`. Ledger:
+`cluster:"WS7"`, `kind:"escalation"`, `item_id:"mmix_blendoff_dataset_axis"` (2 rows).
+
+| dataset | deployed (3-seed mean) | seeds | ANN | ANN gap | parity | verdict |
+|:--------|-----------------------:|:------|----:|--------:|:-------|:--------|
+| MNIST (§0.7 ref) | 0.9547 | .954/.956/.954 | 0.9832 | −2.85pp | 1.0 / 1.0 | keystone MATCH (in-distribution) |
+| **FashionMNIST** | **0.8547** | .870/.858/.836 | 0.8871 | **−3.25pp** | NF↔SCM 1.0, torch↔sim 1.0 | **MATCH / robust off-MNIST** |
+| **KMNIST** | **0.8067** | .815/.798/.807 | 0.9020 | **−9.53pp** (~3× FMNIST) | NF↔SCM 1.0, torch↔sim 1.0 | **DEGRADE off-MNIST** |
+
+**Verdict — BOUNDED-DEGRADE off-MNIST; the §0.7 keystone MATCH holds on FashionMNIST but
+NOT on KMNIST.** The blend-OFF cascade survives **architecturally robust on FashionMNIST**
+(−3.25pp ANN gap, close to the MNIST keystone's −2.85pp), but on the **harder KMNIST
+distribution it opens a real −9.53pp ANN gap (~3× FMNIST)** — the cascade survives
+dataset-stably on the easy/mild corner but degrades where the distribution is harder. This
+**bounds the §0.7 "no escalation needed" verdict to MNIST + FashionMNIST**: it does not
+extend to KMNIST, where a genuine firing-gain deficit appears that the blend-OFF raw
+cascade does not survive.
+
+**Confounds.** (1) **NOT a cascaded-vs-synchronized nor a cp true-vs-false pairing** — all 6
+finalized runs are cascaded blend-OFF cpTrue (only `pmmixnb_*` exist; **no** blend-ON
+`pm_casc_mmix` and **no** cpFalse counterpart on FMNIST/KMNIST), so in the ledger
+`cascaded_to_sync_gap_pp` is **repurposed as the ANN gap** (`deployed_mean − ann_mean`) and
+`synchronized_deployed_mean`/`synchronized_run_ids` are null/empty. (2) **Not a
+chance/untrained artifact** — ANN refs healthy (FMNIST 0.8871, KMNIST 0.9020, both ≫ 0.10
+chance) ⇒ genuine firing-gain/deployment result. (3) **Deployed metric faithful** — NF↔SCM
+cascaded decision agreement 1.0 and torch↔deployed-sim parity 1.0 on **all 6** runs ⇒ not a
+sim artifact. (4) `max_simulation_samples=1000` → ~±1pp granularity; read the ANN gaps not
+third decimals (FMNIST seed spread .836–.870 ≈ 3.4pp). (5) All 6 runs `rc=0`, artifact_ok,
+3 seeds each. (6) **ESCALATE-vs-MATCH still not separable** — `propose_recipe` always
+proposes `controller` and `escalation_reason` is not printed; the KMNIST −9.53pp gap shows
+the cascade IS deficient there but **cannot prove** whether the absent controller/blend
+recovery would close it. Runs: `pmmixnb_{FashionMNIST,KMNIST}_DataProvider_cpTrue_s{0,1,2}`.
+
+---
+
 ## 1. What the keystone is
 
 The keystone is the E4 **CHARACTERIZE → CONFIRM → ESCALATE** layer that picks, per cell,

@@ -1204,6 +1204,82 @@ SVHN cascaded sync-only.**
 
 ---
 
+## 2h. The §2g d8 escalation extends to d10 against a FULL-EVAL trained-ANN reference — the cascaded AC2 deficit WIDENS d8(2.26pp)→d10(4.83pp) and `conversion_policy` is NET-NEGATIVE at BOTH rungs (`item_id=dcnn_deep_n1000_gatefix_d8_d10`, 2026-06-25)
+
+§2g read the n=1000 bigcores-gatefix `deep_cnn` d8 escalation against an *in-log* ANN
+(~0.9744). This row re-frames d8 **and the next rung d10** against the **full-eval trained
+ANN** (0.9949 / 0.9916) and pairs the `conversion_policy` lever at both depths. `deep_cnn`
+(w16), `ttfs_cycle_based`, `ttfs_cycle_schedule=cascaded`, S=4, `max_simulation_samples=1000`,
+on-chip-majority VALID. Ledger: `cluster:"WS3"`, `kind:"depth"`,
+`item_id:"dcnn_deep_n1000_gatefix_d8_d10"`.
+
+| depth | cpFalse cascaded baseline (3-seed) | trained ANN (AC2 target) | **AC2 casc→ANN gap** | cpTrue rescue | cp lift | rescue n | AC2 verdict |
+|:-----:|-----------------------------------:|-------------------------:|---------------------:|--------------:|--------:|:--------:|:------------|
+| **d8**  | **0.9723** (.96/.981/.976) | 0.9949 | **2.26pp** | 0.9477 | **−2.46pp** | 3 | near-lossless (mild), cp REFUTED |
+| **d10** | **0.9433** (.892/.96/.978) | 0.9916 | **4.83pp** | 0.925 | **−1.83pp** | 2 (s2 `rc=1`) | degraded (widens), cp REFUTED |
+
+- **The cascaded AC2 deficit WIDENS with depth** (d8 2.26pp → d10 4.83pp) against the
+  full-eval trained ANN — degraded but **near-lossless, not collapse** (conv inductive bias
+  caps severity ~5pp), consistent with the §1s sharp-onset → bounded-plateau ladder.
+- **`conversion_policy` rescue REFUTED at BOTH rungs** (d8 −2.46pp, d10 −1.83pp) — a genuine
+  net-negative lever, **not a benign no-op**; at d10 it additionally **trips the NF↔SCM parity
+  gate** (s2 `rc=1`, `NfScmParityError` agreement 0.9531 < 0.98, a wrong-NF-dynamics incident
+  *induced by the lever*). This is the **depth-extension of §2g** (cp net-negative at d8) and
+  confirms **no working `conversion_policy` firing-gain rescue at depth on the convnet**;
+  synchronized remains the unconditional deep_cnn default.
+
+**Confounds.** (1) **No at-chance confound** — trained ANN ~0.99 at every cell (d8
+.9961/.993/.9955, d10 .9888/.9956/.9904 ≫ 0.1135) ⇒ genuine firing-gain regime. (2)
+`mss=1000` → adequate resolution. (3) **No synchronized arm in this batch** — the pairing axis
+is `conversion_policy`, so `casc→sync gap = null`; the ~0.99 lossless reference is the trained
+ANN plus the §1g/§1s synchronized deep_cnn ceiling (0.990–0.994). (4) **d10 cpTrue is n=2**
+(s2 excluded per `rc==0`; its 0.9054 `__target_metric` is a pre-crash value not counted). (5)
+The companion `ttfs_theta_cotrain` lever is unanalyzed — all cotTrue runs crashed `rc=1`
+(`Conv2DPerceptronMapper features_3`, same break as §2d–§2g). (6) The d8 run_ids are also
+cited in §2g (`dcnn_deep_controller_escalation`, in-log ANN 0.9744); this row uses the
+full-eval ANN 0.9949 and the depth-pairing framing. Run ids: cpFalse
+`pdcnnbcn1000fix_d{8,10}_cotFalse_cpFalse_s{0,1,2}`; cpTrue
+`pdcnnbcn1000fix_d{8,10}_cotFalse_cpTrue_s{0,1,2}` (d10 s2 `rc=1`). (Detailed analysis:
+`docs/research/findings/WS3_depth_firing_gain.md` §4z.)
+
+---
+
+## 2i. AC2 on the in-distribution VALID `mlp_mixer_core` keystone vehicle, OFF-MNIST — the near-lossless MNIST cascade is dataset-stable on FashionMNIST (−3.25pp) but DEGRADES on KMNIST (−9.53pp, ~3× FMNIST) (`item_id=mmix_blendoff_dataset_axis`, 2026-06-25)
+
+The WS7 §0.7 keystone MATCH (blend-OFF raw cascade survives, no escalation needed) was
+demonstrated on `mlp_mixer_core` **MNIST**. This row extends that exact blend-OFF / cpTrue
+cascade to the **off-MNIST dataset axis** to test whether the keystone vehicle's near-lossless
+AC2 is dataset-stable. `mlp_mixer_core`, `ttfs_cycle_based`, `ttfs_cycle_schedule=cascaded`,
+`ttfs_blend_fast=false`, `conversion_policy=true`, S=4, `max_simulation_samples=1000`. 6 runs,
+3 seeds/dataset, all `rc=0`. Ledger: `cluster:"WS7"`, `kind:"escalation"`,
+`item_id:"mmix_blendoff_dataset_axis"`.
+
+| dataset | deployed (cascaded, 3-seed mean) | seeds | ANN ref (AC2 target) | **AC2 deployed→ANN gap** | parity | AC2 verdict |
+|:--------|---------------------------------:|:------|---------------------:|-------------------------:|:-------|:------------|
+| MNIST (§0.7 ref) | 0.9547 | .954/.956/.954 | 0.9832 | −2.85pp | 1.0 / 1.0 | keystone MATCH (in-distribution) |
+| **FashionMNIST** | **0.8547** | .870/.858/.836 | 0.8871 | **−3.25pp** | NF↔SCM 1.0, torch↔sim 1.0 | **MATCH / robust off-MNIST** |
+| **KMNIST** | **0.8067** | .815/.798/.807 | 0.9020 | **−9.53pp** (~3× FMNIST) | NF↔SCM 1.0, torch↔sim 1.0 | **DEGRADE off-MNIST** |
+
+- **AC2 keystone MATCH holds on FashionMNIST but NOT on KMNIST.** The blend-OFF cascade
+  survives architecturally robust on FashionMNIST (−3.25pp, close to the MNIST keystone's
+  −2.85pp), but on the harder KMNIST distribution it opens a real **−9.53pp AC2 gap (~3×
+  FMNIST)** — a genuine firing-gain deficit the raw cascade does not survive. This **bounds
+  the §0.7 "no escalation needed" verdict to MNIST + FashionMNIST**.
+
+**Confounds.** (1) **NOT a cascaded-vs-synchronized nor cp true-vs-false pairing** — all 6 runs
+are cascaded blend-OFF cpTrue (no blend-ON `pm_casc_mmix`, no cpFalse arm on FMNIST/KMNIST), so
+`cascaded_to_sync_gap_pp` is **repurposed as the AC2 ANN gap** and `synchronized_*` is
+null/empty. (2) **Not a chance/untrained artifact** — ANN healthy (FMNIST 0.8871, KMNIST 0.9020
+≫ 0.10) ⇒ genuine firing-gain result. (3) **Deployed metric faithful** — NF↔SCM cascaded
+agreement 1.0 and torch↔sim parity 1.0 on all 6 runs. (4) `mss=1000` → ~±1pp granularity; read
+the AC2 gaps (FMNIST seed spread .836–.870 ≈ 3.4pp). (5) All 6 `rc=0`, artifact_ok, 3 seeds.
+(6) **ESCALATE-vs-MATCH not separable** from logs — the KMNIST −9.53pp gap shows the cascade IS
+deficient there but cannot prove whether the absent controller/blend recovery would close it.
+Run ids: `pmmixnb_{FashionMNIST,KMNIST}_DataProvider_cpTrue_s{0,1,2}`. (Detailed analysis:
+`docs/research/findings/WS7_keystone_automatic.md` §0.8.)
+
+---
+
 ## 3. Open AC gaps (what these cells do NOT yet certify)
 
 - ~~**No paired n=1000 synchronized lenet5 run**~~ **CLOSED (§1x, 2026-06-25)** — the
