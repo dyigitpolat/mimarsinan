@@ -26,10 +26,13 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
 
 ## Current honest state (the baseline this roadmap moves)
 
-- **Honest coverage ≈ 0.3%** (deep_cnn breadth 6 / 2048 cells); 97 science-valid cells
-  (VALID 43 / VALID_FLAGGED 38 / INVALID 16, tiers never merged). *Unchanged by Wave 1 (instrument/
-  capability, no new ledger rows); Wave-2 `backend`+`mapping_strategy` screens shrink the denominator
-  → the number RISES then (measured, not asserted).*
+- **Honest coverage = 3.75%** (deep_cnn 6 / **160** cells, firing-pinned; measured `coverage_report.py`);
+  97 science-valid cells (VALID 43 / VALID_FLAGGED 38 / INVALID 16, tiers never merged, invariant under
+  the collapse). *Wave 2 raised it from 0.23% (denominator 2560→160) via two artifact-backed
+  FAITHFULNESS-axis collapses (`backend`, `mapping_strategy`) — the keystone working in the legitimate
+  direction. The semantic knobs `pruning`/`regime` stay enumerated (no fidelity collapse possible).
+  Remaining denominator factors: `pruning`×2 · `regime`×2 · `quantization`×4 = 16× (collapse needs
+  real GPU equivalence screens / capability builds, NOT cheap).*
 - **Wave-1 landed (main `2462241`, all default-off byte-identical + tested):** A4 self-defense guards
   (`scripts/campaign/guards.py`: base-check / stash-intact / `fcntl` singleton) + gated scheduler
   singleton; B4 SqueezeNet vehicle (region-add — VALID, on-chip frac 1.0 offload, 942/1000 cores
@@ -37,6 +40,14 @@ Energy/accuracy/speed are *per-cell outputs*, not the success metric.
   defensible band + backend cost coordinate, default 0.0 byte-identical); B1 cross-sim parity
   screening instrument (`cross_sim_parity.py` + `justifies_collapse`/`assert_cross_sim_screen_sound`
   honesty gate — the artifact A2 consumes to screen the `backend` axis).
+- **Wave-2 landed (main `d7a9515e`, adversarially verified CONFIRMED_CLEAN by a 2-skeptic workflow):**
+  C3 GAP-1 attribution fix (joint `(perceptron_output_slice, ir_id)` keying → per-neuron attribution
+  bit-exact under coalescing+output-tiling, value-domain byte-identical; GAP-1's "neuron_split"
+  framing was sharpened to "output-tiling under compaction reorder"); A2A3 axis-collapse screens
+  (`backend`+`mapping_strategy` → SCREENED_COLLAPSED on measured artifacts, fidelity-only with
+  capability+cost kept as frontiers; the 38 placement-fixable flags auto-owned `program:placement-offload`;
+  honest deep_cnn coverage re-priced **0.23%→3.75%** measured). Introduced the **faithfulness-axis vs
+  semantic-knob** distinction (the integrity rule for which axes may collapse on a fidelity artifact).
 - **Infra note (Wave 1):** the harness's Workflow `isolation:'worktree'` snapshots a STALE base
   (`bcacfeb`, an old session HEAD — its object DB lacks current `main`); the A4 base-check guard caught
   it. Dispatch pattern is now **manually-created `git worktree` from current `main` + absolute-path
@@ -60,8 +71,8 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 | Item | Status | Dep | Cost |
 |---|---|---|---|
 | A1 Self-auditing coverage (screening-status denominator, CI guard, flag aging) | ✅ P1 | — | ◦ |
-| A2 **P3 screens** — flip `ASSERTED_UNSCREENED` axes (cross-sim parity = flagship; pruning; mapping_strategy; regime) → `SCREENED_COLLAPSED` w/ artifact | ⏳ Wave2 | A1, B1✅ | ◦ (regime needs B3) |
-| A3 P1↔P3 declare↔execute wiring (a screen mechanically updates `HYPERVOLUME.md` + re-prices) | ⬜ | A2 | ◦ |
+| A2 **P3 screens** — `backend`+`mapping_strategy` ✅ Wave2 (faithfulness axes; measured artifacts: live cross-sim max_abs_diff=0 + bit-exact fidelity lock; fidelity-only). `pruning`/`regime` are SEMANTIC knobs → can't collapse on fidelity; gated on D4/B3 capability + a real GPU equivalence screen (NOT cheap) | partial Wave2 | A1, B1✅ | ◦ / ◦◦ |
+| A3 P1↔P3 declare↔execute wiring (a screen mechanically updates `HYPERVOLUME.md` + re-prices) | ✅ Wave2 (A2A3 flipped AXES + updated HYPERVOLUME + re-priced in one unit) | A2 | ◦ |
 | A4 Engineering self-defense — base-check guard (stale `bcacfeb` trap), stash-pop guard, scheduler-restart idempotence | ✅ Wave1 (`guards.py`, gated singleton) | — | ◦ |
 
 ### B — Raise honest coverage / breadth (the largest open terrain — the deliverable itself)
@@ -77,7 +88,7 @@ Cost: ◦ cheap (code, days) · ◦◦ medium (capability build) · ◦◦◦ GP
 |---|---|---|---|
 | C1 GAP-R defensible cost model + band | ✅ P2 | — | ◦ |
 | C2 Wire cost into the production cost path + **backend as a first-class cost coordinate** | ✅ Wave1 (`reuse_mj_band` band + `coefficient_band` opt-in emit, default byte-identical; backend coord locked) | C1 | ◦ |
-| C3 **GAP-1 attribution fix** — `(ir_core_id, neuron_range)` joint keying so per-neuron lock survives coalescing+split at scale | ⬜ | — | ◦ |
+| C3 **GAP-1 attribution fix** — `(ir_core_id, neuron_range)` joint keying so per-neuron lock survives coalescing+split at scale | ✅ Wave2 (sharpened: it's coalescing+output-tiling under compaction reorder; fixed bit-exact, value-domain unchanged; verifier reproduced the failing-first) | — | ◦ |
 | C4 Per-region fidelity recording (value-domain vs attribution) | ✅ P1 | — | ◦ |
 
 ### D — Capability contributions that ADD hypervolume regions
