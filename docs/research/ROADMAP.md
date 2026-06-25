@@ -129,6 +129,16 @@ tuning-collapse bug was fixed in a prior session; **NO imagenet ledger row yet**
   harness** (`deploy_imagenet_snn.py` — real deploy_and_eval on the official val, emits a campaign-schema
   ledger row + cost) · B2 CIFAR breadth generator. NEXT: epoch-4 val confirms the fix → run completes →
   deploy the checkpoint as SNN → F4 measured → aggregate F1–F4 → finalize F5.
+- **Wave-9 landed (main `76ec62d0`, parallel-while-ImageNet-trains): the open A/B/D items.** A2
+  **semantic-axis equivalence-screen instrument** (`semantic_axis_screen.py` — measures dense↔pruned /
+  from_scratch↔pretrained equivalence; `assert_semantic_screen_sound` has teeth: a faked collapse over a
+  measured 18pp interaction RAISES; instrument-only, never asserts a collapse) · **pruning deployment
+  wiring** (`prune_sparsity` config, default-0 byte-identical → pruned cells runnable, feed the A2
+  screen) + **D4 measured cost demo** (cores 13→7, phases 2→1, **2.54× cost savings**, every number
+  reproduced from the live instruments) · **D2 Tier-1 deployable** (`mapping/support/residual_merge.py`
+  — flag-gated on-chip param-free residual merge, the `1/T`-characterized deployment; Tier-0 byte-
+  identical, all fidelity locks green). The genuinely-open A/B/D is now LANDED; the remaining A2
+  pruning/regime SCREEN RESULTS + B2/B3 fill as the campaign runs drain.
 
 ---
 
