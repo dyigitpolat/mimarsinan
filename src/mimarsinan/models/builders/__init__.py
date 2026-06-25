@@ -4,6 +4,7 @@ from .torch_mlp_mixer_core_builder import TorchMLPMixerCoreBuilder
 from .torch.torch_vgg16_builder import TorchVGG16Builder
 from .torch.torch_vit_builder import TorchViTBuilder
 from .torch.torch_squeezenet11_builder import TorchSqueezeNet11Builder
+from .torch.torch_resnet50_builder import TorchResNet50Builder
 from .torch_custom_builder import TorchCustomBuilder
 from .torch_sequential_linear_builder import TorchSequentialLinearBuilder
 from .torch_sequential_conv_builder import TorchSequentialConvBuilder
@@ -20,6 +21,7 @@ BUILDERS_REGISTRY = {
     "torch_vgg16": TorchVGG16Builder,
     "torch_vit": TorchViTBuilder,
     "torch_squeezenet11": TorchSqueezeNet11Builder,
+    "torch_resnet50": TorchResNet50Builder,
     "torch_custom": TorchCustomBuilder,
     "torch_sequential_linear": TorchSequentialLinearBuilder,
     "torch_sequential_conv": TorchSequentialConvBuilder,

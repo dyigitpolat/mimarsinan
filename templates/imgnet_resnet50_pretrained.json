@@ -1,0 +1,78 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "imgnet_resnet50_pretrained",
+  "generated_files_path": "./generated",
+  "data_provider_name": "ImageNet_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 4608,
+        "max_neurons": 2048,
+        "count": 512,
+        "has_bias": true
+      }
+    ],
+    "max_axons": 4608,
+    "max_neurons": 2048,
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8,
+    "has_bias": true,
+    "allow_coalescing": false,
+    "allow_scheduling": true
+  },
+  "deployment_parameters": {
+    "lr": 0.0001,
+    "batch_size": 64,
+    "tuning_batch_size": 32,
+    "max_simulation_samples": 500,
+    "simulation_batch_count": 4,
+    "degradation_tolerance": 0.1,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "torch_resnet50",
+    "model_config": {
+      "base_activation": "ReLU"
+    },
+    "spiking_mode": "lif",
+    "firing_mode": "Default",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<=",
+    "activation_quantization": true,
+    "weight_quantization": true,
+    "weight_source": "runs/imagenet/resnet50_state.pt",
+    "finetune_epochs": 0,
+    "allow_scheduling": true,
+    "tuning_budget_scale": 0.5,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "weight_decay": 0.05,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "scheduler": "cosine",
+      "warmup_ratio": 0.1,
+      "grad_clip_norm": 1.0,
+      "layer_wise_lr_decay": 0.75,
+      "label_smoothing": 0.1
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "weight_decay": 0.01,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "scheduler": "cosine",
+      "warmup_ratio": 0.0,
+      "grad_clip_norm": 1.0,
+      "layer_wise_lr_decay": 1.0,
+      "label_smoothing": 0.0
+    }
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}

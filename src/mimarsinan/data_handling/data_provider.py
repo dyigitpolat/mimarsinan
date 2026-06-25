@@ -1,4 +1,12 @@
+import os
+
 import torch
+
+# Global FFCV kill-switch: set ``MIMARSINAN_DISABLE_FFCV=1`` to force every
+# provider onto the torch dataloader path even when it defines FFCV transforms
+# (e.g. running on a host without the compiled ``ffcv`` package installed).
+FFCV_DISABLE_ENV = "MIMARSINAN_DISABLE_FFCV"
+
 
 class ClassificationMode:
     def __init__(self, num_classes):
@@ -104,6 +112,8 @@ class DataProvider:
         return {}
 
     def enable_ffcv(self) -> bool:
+        if os.environ.get(FFCV_DISABLE_ENV) == "1":
+            return False
         return bool(self.ffcv_transforms())
 
     def _assemble_split(self, split: str):

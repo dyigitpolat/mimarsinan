@@ -11,7 +11,9 @@ DataProvider's data surface is four method overrides:
 * ``ffcv_image_field_kwargs()``— ``RGBImageField`` write kwargs
                                  (``max_resolution`` etc.).
 
-``enable_ffcv()`` is derived: ``bool(self.ffcv_transforms())``.
+``enable_ffcv()`` is derived: ``bool(self.ffcv_transforms())``, unless the global
+``MIMARSINAN_DISABLE_FFCV=1`` kill-switch forces every provider onto the torch path
+(for hosts without the compiled ``ffcv`` package).
 """
 
 from __future__ import annotations
@@ -43,6 +45,33 @@ class TestEnableFFCVDerivedFromFFCVTransforms:
                                    "val":   [("SimpleRGBImageDecoder", {})],
                                    "test":  [("SimpleRGBImageDecoder", {})]}}
 
+        assert _Opted().enable_ffcv() is True
+
+    def test_global_kill_switch_forces_opt_out(self, monkeypatch):
+        """``MIMARSINAN_DISABLE_FFCV=1`` overrides a populated ffcv_transforms()."""
+        from mimarsinan.data_handling.data_provider import DataProvider, FFCV_DISABLE_ENV
+
+        class _Opted(DataProvider):
+            def __init__(self): pass
+            def ffcv_transforms(self):
+                return {"splits": {"train": [("SimpleRGBImageDecoder", {})]}}
+
+        p = _Opted()
+        assert p.enable_ffcv() is True
+        monkeypatch.setenv(FFCV_DISABLE_ENV, "1")
+        assert p.enable_ffcv() is False
+        # ffcv_transforms() itself is unchanged — only the gate flips.
+        assert p.ffcv_transforms() != {}
+
+    def test_kill_switch_non_one_value_is_inert(self, monkeypatch):
+        from mimarsinan.data_handling.data_provider import DataProvider, FFCV_DISABLE_ENV
+
+        class _Opted(DataProvider):
+            def __init__(self): pass
+            def ffcv_transforms(self):
+                return {"splits": {"train": [("SimpleRGBImageDecoder", {})]}}
+
+        monkeypatch.setenv(FFCV_DISABLE_ENV, "0")
         assert _Opted().enable_ffcv() is True
 
 

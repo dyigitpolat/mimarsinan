@@ -13,6 +13,7 @@ Factory classes that construct `Supermodel` instances (category "native") or nat
 | `torch_vgg16_builder.py` | `TorchVGG16Builder` | Builds `torchvision.vgg16_bn`, adapting input channels and trimming trailing pools for small inputs while preserving the stock ImageNet layout at `3x224x224` |
 | `torch_vit_builder.py` | `TorchViTBuilder` | Builds a ViT-B-style `VisionTransformer`, choosing a square patch size near `16` for the current input while preserving `vit_b_16` behavior at `3x224x224` |
 | `torch_squeezenet11_builder.py` | `TorchSqueezeNet11Builder` | Builds `torchvision.squeezenet1_1`, adapting input channels while preserving the stock ImageNet stem at `3x224x224` |
+| `torch_resnet50_builder.py` | `TorchResNet50Builder` | Builds `torchvision.resnet50` (Bottleneck residual net, all `groups==1`), adapting the `conv1` stem channels while preserving the stock ImageNet layout at `3x224x224`; the registered (`torch_resnet50`) pipeline entry for the F4 ImageNet deployment recipe (`templates/imgnet_resnet50_pretrained.json`) |
 | `torch_custom_builder.py` | `TorchCustomBuilder` | Builds a native model from a user-provided factory |
 | `torch_sequential_linear_builder.py` | `TorchSequentialLinearBuilder` | Builds native Sequential(Flatten, Linear, …) |
 | `torch_sequential_conv_builder.py` | `TorchSequentialConvBuilder` | Builds native Sequential(Conv2d, ReLU, MaxPool2d, Flatten, Linear, …); two IR segments |
