@@ -214,7 +214,48 @@ memory-bounded; Wave-11) — costed and named, not yet measured. The toolchain's
 measured *lossless* on the VALID small vehicles (§4.4, synchronized ≈ ANN bit-exact), and end-to-end
 ResNet SNN deploy is closed by the D6 bridge. A real ImageNet methodology bug (a class-sorted index-range
 train/val split that handicapped training and made val score at chance) was caught + fixed mid-run — the
-test-don't-assert discipline at GPU scale. See `findings/F4_imagenet_resnet50.md`.
+test-don't-assert discipline at GPU scale. See `findings/F4_imagenet_resnet50.md`. **Superseded in part by
+§4.9**, which resolves *why* the deployed number was hard and shows the collapse was a fixable artifact
+stack, not a frontier.
+
+### 4.9 Deep-residual SNN deployment — the collapse is fixable, not a frontier (measured, verified)
+Pursuing the F4 deployed number turned a phantom "death-cascade frontier" into a chain of **measured,
+adversarially-verified** results. The "ResNet-50 LIF ≈ 0.13" was an **artifact stack**, every layer of
+which was found and fixed:
+
+- **Four tooling bugs blocked an honest measurement** (all fixed + tested on `main`): the adaptation tuner
+  gated on a **leaked validation set** (the provider carved `val` out of the class-sorted *train* split,
+  which a pretrained model has already seen — 0.906 memorized vs 0.72 genuine); the **adaptation target
+  anchored on the collapsed LIF baseline** (≈0.27) instead of the real ANN, death-spiralling its own bar;
+  the tuner had **no run-level keep-best** (R7), so it shipped whatever the ramp + forced-rate-1.0 landed
+  on, below the best committed; and a **per-channel-θ conv broadcast crash** (`[C]` against `W`) had been
+  *crash-masking* the firing-gain lever (`sim_ran=0`, echoing the ANN). The F-harness aggregator was also
+  silently blind (0/0/0 cells, a schema mismatch).
+
+- **`ttfs_cycle` synchronized ≡ `ttfs_quantized`** — proven on the same model (bit-for-bit on the on-chip
+  cascade, flat to depth 12; off-grid host boundaries differ only by the documented, bounded, *non-compounding*
+  ±1/S single-spike wire-snap) and **now locked** (`test_sync_vs_quantized_same_model.py` — the cross-check
+  `nf_scm_parity` had been *excluding*). So a "synchronized collapse" was never a deployment-mode bug.
+
+- **The genuine-spiking loss is per-LAYER rate quantization, not the residual boundaries** — on a strong
+  probe (real conv/BN CIFAR ResNet, ANN 0.875, **decision-fidelity** = argmax-agreement with the ANN,
+  bit-exact NF==HCM): the on-chip residual merge is an **exact no-op**, and the *plain* net (zero residual
+  adds) collapses **hardest** while the residual net degrades gracefully. **The residual skip is *protective***
+  — it reverses the depth penalty (deeper is *better* with skips; cuts required T ≈4×).
+
+- **The fix reaches ≥0.9 (verified REAL):** folded per-layer q=0.99 calibration (the naive uniform scale is
+  itself the chance-collapse) + adequate rate budget T (T64 → 0.91, T256 → 0.96), and **QAT through the
+  BN-frozen genuine spike forward** (KD+CE) reaches **0.9105 at half the T (T32)**. This localises F4's
+  "the adaptation is load-bearing" to a concrete recipe. Levers that *don't* help, measured: DFQ-for-LIF
+  (hurts), on-chip-merge/scheduling (no-ops), and the cascaded-only gain-correction/STE/θ-cotrain (a wash).
+  A silent **BN train/deploy bug** (batch-stats in `.train()` ≠ the deployed `.eval()` forward) was caught
+  en route — naive QAT trained a different function than it deployed.
+
+**Honest scope:** measured on CIFAR-d8 with decision-fidelity; ResNet-50/d50/1000-class *magnitude* is
+argued mechanistically, not yet measured — the named, costed proof run (folded calib + T64 + QAT + the four
+gate fixes). See `findings/deep_residual_lif_deploy_fix.md`. The lesson reinforced twice by the verify gate:
+**strong probe + decision-fidelity + balanced metric**, or "lossless" is a weak-probe / class-imbalance
+lucky-flip artifact.
 
 ## 5. Genuine future gaps (open research / capability, not deferral of understood work)
 
