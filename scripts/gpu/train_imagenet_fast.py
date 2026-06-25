@@ -360,7 +360,12 @@ def _build_real_train_loader_factory(provider, *, per_proc_batch, num_workers, d
     from torch.utils.data import DataLoader, DistributedSampler
     from mimarsinan.data_handling.dataset_views import ApplyTransform
 
-    raw_train = provider.raw_datasets()["train"]
+    # Use the FULL train set (all 1000 classes). The provider's "train" split is a
+    # class-SORTED index-range 95/5 subset (range(0, 0.95N)) that drops the last
+    # ~50 classes — training on it handicaps the model and makes the matching
+    # index-range "val" holdout (the OTHER ~50 classes) score at chance. The
+    # underlying ``.dataset`` is the full ImageNet train.
+    raw_train = provider.raw_datasets()["train"].dataset
 
     def build(size: int):
         tfm = provider._wrap_with_preprocessing([
@@ -422,7 +427,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         num_workers=args.workers, prefer_ffcv=False,
         device=("cuda" if use_cuda else "cpu"),
     )
-    val_loader = loaders["val"]
+    # Eval on the OFFICIAL ImageNet val (split="val", all 1000 classes) — the
+    # headline number. loaders["val"] is the provider's class-sorted 5% index-range
+    # holdout (the ~50 classes the model never trains on -> chance), unusable here.
+    val_loader = loaders["test"]
 
     train_factory = _build_real_train_loader_factory(
         provider, per_proc_batch=per_proc_batch, num_workers=args.workers, dist=dist,
