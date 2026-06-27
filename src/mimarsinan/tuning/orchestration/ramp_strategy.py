@@ -41,11 +41,7 @@ class RampStrategy:
         return None
 
     def make_kd_loss(self, tuner):
-        from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
-            _KDClassificationLoss,
-        )
-
-        return _KDClassificationLoss(tuner._teacher)
+        return tuner._kd_classification_loss(tuner._teacher)
 
     def after_install_blend_pre(self, tuner) -> None:
         """Strategy-specific pre-ramp setup (genuine rebuild / blend distmatch),

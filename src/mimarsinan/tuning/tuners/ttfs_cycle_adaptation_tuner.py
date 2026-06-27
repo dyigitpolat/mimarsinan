@@ -681,7 +681,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         if self._synchronized and bool(
             self.pipeline.config.get("ttfs_finetune_kd_against_rung2", False)
         ):
-            return _KDClassificationLoss(self._build_rung2_teacher())
+            return self._kd_classification_loss(self._build_rung2_teacher())
         return super()._make_kd_loss()
 
     def _build_rung2_teacher(self) -> _Rung2TeacherFlow:

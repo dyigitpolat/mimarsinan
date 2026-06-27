@@ -52,6 +52,12 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # AND clamp ceiling. Raising it toward 1.0 reduces the systematic top-percentile
     # clip bias (trades a little rate-resolution); 0.99 = the historical default.
     "activation_scale_quantile": 0.99,
+    # Conversion fine-tune objective weighting (LIF + TTFS share the KD-blend loss
+    # = kd_ce_alpha*CE + (1-kd_ce_alpha)*KD-to-ANN). 0.3/3.0 = the historical
+    # KD-heavy hardcode; raising kd_ce_alpha toward 1.0 re-weights toward hard-label
+    # CE (the lever when KD-to-ANN under-fits the spiking student on harder datasets).
+    "kd_ce_alpha": 0.3,
+    "kd_temperature": 3.0,
     "degradation_tolerance": 0.05,
     # Per-cycle rollback snapshot scope/location (CheckpointGuard, graduated).
     # Defaults ("full"/"device") delegate verbatim to the on-device clone;
@@ -332,6 +338,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "model_config_mode",
     "hw_config_mode",
     "activation_scale_quantile",
+    "kd_ce_alpha",
+    "kd_temperature",
     "activation_quantization",
     "weight_quantization",
     "pruning",

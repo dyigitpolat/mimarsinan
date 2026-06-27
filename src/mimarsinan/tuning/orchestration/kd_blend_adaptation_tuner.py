@@ -182,6 +182,22 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _make_kd_loss(self):
         return self._ramp.make_kd_loss(self)
 
+    def _kd_classification_loss(self, teacher):
+        """Build the KD+CE blend loss with config-driven weighting.
+
+        SSOT for constructing ``_KDClassificationLoss`` across the LIF + TTFS
+        conversion fine-tune. ``kd_ce_alpha`` (CE weight) / ``kd_temperature``
+        default to the historical 0.3 / 3.0 (KD-heavy), so an unset config is
+        byte-identical; raising ``kd_ce_alpha`` re-weights the objective toward
+        hard-label CE (the lever for datasets where KD-to-ANN under-fits).
+        """
+        cfg = self.pipeline.config
+        return _KDClassificationLoss(
+            teacher,
+            temperature=float(cfg.get("kd_temperature", 3.0)),
+            alpha=float(cfg.get("kd_ce_alpha", 0.3)),
+        )
+
     def _remove_forward(self) -> None:
         """Let the ramp strategy clean up its owned references, then unpatch."""
         self._ramp.on_remove_forward(self)
